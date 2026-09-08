@@ -88,6 +88,10 @@ __all__ = (
     "select_due_blobs",
     "RetentionSweeper",
     "PeriodicRetention",
+    "ARCHIVE_VERIFY_FAILED",
+    "JsonlArchiveWriter",
+    "ArchiveVerificationError",
+    "HotKeyCleaner",
 )
 
 logger = logging.getLogger(__name__)
@@ -322,6 +326,13 @@ class SweepReport:
         invalidations: Receipts drained from the artifact store, which
             the caller turns into ``artifact_invalidated`` events.
         errors: Actions that failed, with their cause.
+        audit_destroyed: One ``(task_id, archive_reference)`` pair per
+            task whose journal was deleted. The second element is
+            ``None`` when no archive was configured, which is the honest
+            record that the audit trail for that task is **gone** rather
+            than relocated. Callers that need a permanent record must
+            read this and write it somewhere outside the journal — the
+            journal that recorded the intent no longer exists.
     """
 
     paused: List[str] = field(default_factory=list)
@@ -333,6 +344,7 @@ class SweepReport:
     deferred: List[Tuple[str, str]] = field(default_factory=list)
     invalidations: List[Any] = field(default_factory=list)
     errors: List[Tuple[str, str]] = field(default_factory=list)
+    audit_destroyed: List[Tuple[str, Optional[str]]] = field(default_factory=list)
 
     @property
     def action_count(self) -> int:
@@ -668,6 +680,8 @@ class RetentionSweeper:
             journal may be deleted when ``archive_uri`` is configured.
         purge: Optional journal purge capability.
         blobs: Optional orphan blob sweeper.
+        hot_keys: Optional :class:`HotKeyCleaner`, to drop a purged
+            task's Redis keys instead of waiting out their TTLs.
     """
 
     def __init__(
@@ -681,6 +695,7 @@ class RetentionSweeper:
         archive: Optional[ArchiveWriter] = None,
         purge: Optional[JournalPurge] = None,
         blobs: Optional[BlobSweeper] = None,
+        hot_keys: Optional[Any] = None,
     ) -> None:
         """Initialize the sweeper."""
         self._store = store
@@ -691,6 +706,7 @@ class RetentionSweeper:
         self._archive = archive
         self._purge = purge
         self._blobs = blobs
+        self._hot_keys = hot_keys
         self.logger = logging.getLogger(__name__)
 
     # ── view construction ────────────────────────────────────────────
@@ -957,10 +973,15 @@ class RetentionSweeper:
         # Terminal expiry.
         await self._announce(action)
 
+        reference: Optional[str] = None
         if action.action == RetentionAction.ARCHIVE_AND_DELETE:
             if self._archive is None:
                 report.deferred.append((action.task_id, "archive_uri is configured but no archive writer is wired"))
                 return
+            # Read AFTER announcing, so the archive contains the very
+            # event recording the intent to destroy it. Without that the
+            # archive would omit the one fact a reader most needs: why
+            # this journal ends here.
             events = await self._journal(action.scope, action.task_id)
             try:
                 reference = await self._archive.write(action.archive_uri or "", action.task_id, events)
@@ -970,7 +991,7 @@ class RetentionSweeper:
                 report.deferred.append((action.task_id, "archive failed; deletion not attempted"))
                 return
             if not verified:
-                report.deferred.append((action.task_id, "archive did not verify; deletion not attempted"))
+                report.deferred.append((action.task_id, ARCHIVE_VERIFY_FAILED))
                 return
             report.archived.append(action.task_id)
 
@@ -980,6 +1001,12 @@ class RetentionSweeper:
         try:
             if await self._purge.purge_task(action.scope, action.task_id):
                 report.deleted.append(action.task_id)
+                # Honest accounting: the journal holding this task's
+                # retention intent is now gone. Say where it went, or
+                # that it went nowhere.
+                report.audit_destroyed.append((action.task_id, reference))
+                if self._hot_keys is not None:
+                    await self._hot_keys.forget_task(action.scope, action.task_id)
         except Exception as exc:  # noqa: BLE001
             report.errors.append((action.task_id, f"purge failed: {type(exc).__name__}: {exc}"))
 
@@ -1014,6 +1041,214 @@ class RetentionSweeper:
                 report.swept_blobs.append(action.storage_ref)
         except Exception as exc:  # noqa: BLE001
             report.errors.append((action.storage_ref, f"{type(exc).__name__}: {exc}"))
+
+
+class ArchiveVerificationError(Exception):
+    """A written archive could not be read back and confirmed complete.
+
+    Raised only by :class:`JsonlArchiveWriter` internals; the sweeper
+    turns it into a deferral. It exists so "the archive is bad" is
+    distinguishable from "the write raised", because the two have
+    different causes and the same consequence: **do not delete**.
+    """
+
+
+#: Deferral reason recorded when an archive is written but does not
+#: verify. Named so operators can grep for it.
+ARCHIVE_VERIFY_FAILED: str = "archive did not verify; deletion not attempted"
+
+
+class JsonlArchiveWriter:
+    """Writes a terminal task's journal as JSONL and verifies it.
+
+    The format is one canonical JSON object per line, in sequence order,
+    which is append-friendly, streamable and trivially countable — the
+    last property is what makes verification cheap enough to be
+    mandatory rather than aspirational.
+
+    **Verification re-reads the object.** It is not enough to trust the
+    write call's return value: the whole point is to catch a storage
+    layer that accepted bytes it did not durably keep. :meth:`verify`
+    downloads what was written, parses every line, and checks the count
+    against what was archived. Only then may the source be deleted.
+
+    **Re-archiving is idempotent.** A retry after a crash between write
+    and delete finds byte-identical content already present and accepts
+    it, rather than writing a second copy under a new name. That is what
+    stops "crash, retry" producing duplicate archives.
+
+    Args:
+        blobs: The blob store, reused for its verified file-manager
+            access rather than duplicating that logic here.
+        scope: Trusted runtime scope, which fixes the archive sub-tree.
+        segment: Archive path segment.
+    """
+
+    def __init__(self, blobs: Any, scope: TaskScope, *, segment: str = "_archive") -> None:
+        """Initialize the writer."""
+        self._blobs = blobs
+        self._scope = scope
+        self._segment = segment
+        self.logger = logging.getLogger(__name__)
+
+    def archive_key(self, task_id: str) -> str:
+        """Return the deterministic archive key for one task.
+
+        Deterministic on purpose: a retry must land on the *same* key so
+        the second attempt is recognisably the same archive rather than
+        a duplicate.
+
+        Args:
+            task_id: The task being archived.
+
+        Returns:
+            The storage key.
+        """
+        root = self._blobs.archive_prefix(self._scope, segment=self._segment)
+        return f"{root}/{self._blobs._segment(task_id)}.jsonl"
+
+    @staticmethod
+    def encode(events: Sequence[JournalEvent]) -> bytes:
+        """Serialize a journal as canonical JSONL.
+
+        Args:
+            events: The events, in sequence order.
+
+        Returns:
+            The encoded bytes, one event per line.
+        """
+        import orjson
+
+        lines = [orjson.dumps(e.model_dump(mode="json"), option=orjson.OPT_SORT_KEYS) for e in events]
+        return b"\n".join(lines) + (b"\n" if lines else b"")
+
+    async def write(self, uri: str, task_id: str, events: Sequence[JournalEvent]) -> str:
+        """Write a task's journal as JSONL and return its location.
+
+        Args:
+            uri: Configured archive destination. Recorded in the intent
+                event; the concrete location comes from the blob store's
+                own scope sub-tree, so an archive can never be written
+                outside it.
+            task_id: The task being archived.
+            events: Its complete journal, INCLUDING the final retention
+                event announcing the deletion.
+
+        Returns:
+            The storage key written.
+
+        Raises:
+            ArchiveVerificationError: If the write is refused. No
+                reference is returned, so the caller cannot proceed to
+                delete.
+        """
+        key = self.archive_key(task_id)
+        payload = self.encode(events)
+
+        existing = await self._existing(key)
+        if existing is not None and existing == payload:
+            # An identical archive is already there: this is a retry
+            # after a crash between archive and delete. Accept it rather
+            # than writing a duplicate.
+            self.logger.info("[TaskMemory] archive for %s already present and identical", task_id)
+            return key
+
+        try:
+            written = await self._blobs._fm.create_from_bytes(key, payload)
+        except Exception as exc:  # noqa: BLE001
+            raise ArchiveVerificationError(f"failed to write archive {key!r}: {exc}") from exc
+        if written is False:
+            raise ArchiveVerificationError(f"file manager declined to write archive {key!r}")
+        return key
+
+    async def verify(self, reference: str, expected_events: int) -> bool:
+        """Confirm a written archive is readable and complete.
+
+        Args:
+            reference: What :meth:`write` returned.
+            expected_events: How many events it should contain.
+
+        Returns:
+            ``True`` only when the object reads back, every line parses,
+            and the count matches. Any doubt returns ``False``, which
+            the sweeper treats as "do not delete".
+        """
+        try:
+            payload = await self._blobs._download(reference)
+        except Exception as exc:  # noqa: BLE001 — unreadable is unverified
+            self.logger.warning("Archive %s could not be read back: %s", reference, exc)
+            return False
+
+        import orjson
+
+        lines = [line for line in payload.split(b"\n") if line.strip()]
+        if len(lines) != expected_events:
+            self.logger.warning(
+                "Archive %s holds %d events, expected %d", reference, len(lines), expected_events
+            )
+            return False
+        for line in lines:
+            try:
+                orjson.loads(line)
+            except Exception as exc:  # noqa: BLE001
+                self.logger.warning("Archive %s has an unparseable line: %s", reference, exc)
+                return False
+        return True
+
+    async def _existing(self, key: str) -> Optional[bytes]:
+        """Return an already-written archive's bytes, if any.
+
+        Args:
+            key: The archive key.
+
+        Returns:
+            The bytes, or ``None`` when absent or unreadable.
+        """
+        try:
+            if not await self._blobs._fm.exists(key):
+                return None
+            return await self._blobs._download(key)
+        except Exception:  # noqa: BLE001 — treat as absent and rewrite
+            return None
+
+
+class HotKeyCleaner:
+    """Removes a purged task's Redis hot keys.
+
+    Terminal deletion removes the durable rows; the lease, recall and
+    context keys for that task would otherwise linger until their TTLs
+    expire. They are all TTL-bounded already, so this is tidiness rather
+    than correctness — which is exactly why it never raises: a failure
+    here must not turn a completed purge into a reported error.
+
+    Args:
+        association: A ``TaskAssociationStore``, which owns the key
+            families and their naming.
+    """
+
+    def __init__(self, association: Any) -> None:
+        """Initialize the cleaner."""
+        self._association = association
+        self.logger = logging.getLogger(__name__)
+
+    async def forget_task(self, scope: TaskScope, task_id: str) -> int:
+        """Delete the hot keys belonging to one task.
+
+        Args:
+            scope: Trusted runtime scope.
+            task_id: The purged task.
+
+        Returns:
+            How many keys were removed. ``0`` on any failure.
+        """
+        try:
+            redis = self._association._redis()
+            keys = [self._association.lease_key(scope, task_id)]
+            removed = await redis.delete(*keys)
+            return int(removed or 0)
+        except Exception as exc:  # noqa: BLE001 — see class docstring
+            self.logger.debug("Could not clear hot keys for %s: %s", task_id, exc)
+            return 0
 
 
 class PeriodicRetention:

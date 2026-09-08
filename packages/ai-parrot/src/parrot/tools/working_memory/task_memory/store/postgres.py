@@ -66,7 +66,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, AsyncIterator, Awaitable, Callable, Optional, Sequence, Tuple
+from typing import TYPE_CHECKING, Any, AsyncIterator, Awaitable, Callable, FrozenSet, List, Optional, Sequence, Tuple
 
 from parrot.interfaces.artifact_store import ArtifactPage, PayloadRefusal, PayloadResult
 from parrot.interfaces.task_memory import (
@@ -1742,6 +1742,165 @@ class PostgresTaskMemoryStore(BaseTaskMemoryStore):
                     task_id,
                 )
             )
+
+    # ── retention: durable purge and reference discovery ─────────────
+
+    async def purge_task(self, scope: TaskScope, task_id: str) -> bool:
+        """Delete one terminal task's journal and projection.
+
+        Implements :class:`~..retention.JournalPurge`. Two guards make
+        this safe to call from a sweeper that may be racing anything
+        else in the system:
+
+        **Only a terminal task is ever purged.** Retention only selects
+        terminal tasks, but the check is repeated here because this is
+        the last point before the rows are gone. A task that was resumed
+        between selection and purge is left alone — the sweeper's view
+        is a snapshot, and acting on a stale one is exactly how live work
+        gets deleted.
+
+        **Pins held by *other* tasks survive.** Deleting the row cascades
+        to this task's ``task_journal`` and ``artifact_evidence`` rows
+        only. A version another, still-live task references keeps that
+        task's evidence row, so it stays pinned and is not swept
+        afterwards. The artifact rows themselves are never touched here.
+
+        .. warning::
+
+           This destroys the local audit trail, including the
+           ``retention_scheduled`` event recording the intent to destroy
+           it. With ``archive_uri`` configured the archive carries that
+           final event; without one the deletion is deliberately
+           irreversible. Nothing in this method preserves in-journal
+           audit, and it does not pretend to.
+
+        Args:
+            scope: Trusted runtime scope.
+            task_id: The task to remove.
+
+        Returns:
+            ``True`` when rows were removed. Idempotent: purging an
+            already-purged task returns ``False`` rather than failing, so
+            a retry after a crash converges instead of erroring.
+        """
+        async with self._unit_of_work(None) as connection:
+            row = await connection.fetchrow(
+                f"""
+                SELECT chatbot_id, user_id, session_id, status
+                  FROM {self._t('tasks')}
+                 WHERE task_id = $1
+                   FOR UPDATE
+                """,
+                task_id,
+            )
+            if row is None:
+                return False
+            if not scope.matches(self._scope_of(row)):
+                return False
+            try:
+                status = TaskStatus(row["status"])
+            except ValueError:
+                self.logger.warning(
+                    "[TaskMemory] refusing to purge task %s: unrecognised status %r",
+                    task_id,
+                    row["status"],
+                )
+                return False
+            if not status.is_terminal:
+                self.logger.warning(
+                    "[TaskMemory] refusing to purge task %s: status is %s, not terminal",
+                    task_id,
+                    status.value,
+                )
+                return False
+            # The cascade removes task_journal and this task's
+            # artifact_evidence rows. Artifacts themselves are deliberately
+            # untouched: their retention is a separate rule with its own
+            # pin check.
+            await connection.execute(
+                f"DELETE FROM {self._t('tasks')} WHERE task_id = $1",
+                task_id,
+            )
+            return True
+
+    async def live_storage_refs(self, scope: TaskScope) -> FrozenSet[str]:
+        """Return every storage key an index row still points at.
+
+        This is the "live index" half of the orphan rule. A blob absent
+        from this set is *not* automatically an orphan — a publish may be
+        in flight, or an archive may reference it — but a blob present in
+        it is definitively not one.
+
+        Args:
+            scope: Trusted runtime scope.
+
+        Returns:
+            The referenced storage keys.
+        """
+        async with self._reader_connection() as connection:
+            rows = await connection.fetch(
+                f"""
+                SELECT DISTINCT storage_ref
+                  FROM {self._t('artifacts')}
+                 WHERE chatbot_id = $1 AND user_id = $2 AND session_id = $3
+                   AND storage_ref IS NOT NULL
+                """,
+                scope.chatbot_id,
+                scope.user_id,
+                scope.session_id,
+            )
+        keys: List[str] = []
+        for row in rows:
+            raw = row["storage_ref"]
+            if not raw:
+                continue
+            # `storage_ref` holds the serialized BlobRef, whose `key` is
+            # the storage path. Reading the whole reference rather than
+            # assuming the column is a bare key: it is not.
+            blob = self._blob_key_of(raw)
+            if blob:
+                keys.append(blob)
+        return frozenset(keys)
+
+    @staticmethod
+    def _blob_key_of(raw: Any) -> Optional[str]:
+        """Extract the storage key from a serialized blob reference.
+
+        Args:
+            raw: The ``storage_ref`` column value.
+
+        Returns:
+            The key, or ``None`` when it cannot be read. An unreadable
+            reference is reported as absent rather than guessed at: the
+            caller treats "not live" conservatively via the other two
+            orphan conditions.
+        """
+        import json
+
+        if raw is None:
+            return None
+        value: Any = raw
+        if isinstance(value, (str, bytes)):
+            try:
+                value = json.loads(value)
+            except (ValueError, TypeError):
+                return str(raw) or None
+        if isinstance(value, dict):
+            key = value.get("key")
+            return str(key) if key else None
+        return None
+
+    @asynccontextmanager
+    async def _reader_connection(self) -> AsyncIterator[Any]:
+        """Yield a pooled connection for a read-only query.
+
+        Yields:
+            The connection.
+        """
+        pool = await self._acquire_pool()
+        async with pool.acquire() as connection:
+            yield connection
+
 
 
 # ---------------------------------------------------------------------------

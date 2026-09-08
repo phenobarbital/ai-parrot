@@ -57,6 +57,8 @@ from __future__ import annotations
 import asyncio
 import io
 import logging
+from dataclasses import dataclass
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Optional, Tuple
 from urllib.parse import quote
@@ -64,7 +66,7 @@ from urllib.parse import quote
 from parrot.interfaces.artifact_store import PayloadRefusal, PayloadResult
 from pydantic import BaseModel, ConfigDict, Field
 
-from .models import ArtifactKind, EvidenceRef, Limits, TaskMemoryError, TaskScope
+from .models import ArtifactKind, EvidenceRef, Limits, TaskMemoryError, TaskScope, utc_now
 from .snapshots import (
     CHECKSUM_ALGORITHM,
     FINGERPRINT_ALGORITHM,
@@ -77,6 +79,7 @@ from .snapshots import (
 )
 
 __all__ = (
+    "DEFAULT_ARCHIVE_SEGMENT",
     "DEFAULT_BLOB_PREFIX",
     "DEFAULT_MAX_ENCODED_BYTES",
     "PARQUET_COMPRESSION",
@@ -87,13 +90,22 @@ __all__ = (
     "BlobImmutabilityError",
     "UnsupportedBlobPayload",
     "BlobRef",
+    "StoredBlob",
     "ArtifactBlobStore",
+    "DurableBlobSweeper",
 )
 
 logger = logging.getLogger(__name__)
 
 #: Root path segment for every task-memory blob.
 DEFAULT_BLOB_PREFIX: str = "task_memory/artifacts"
+
+#: Path segment under which archived copies are kept. Blobs beneath it
+#: are **never** swept as orphans: an archive is a reference, and it is
+#: deliberately the one reference that has no index row pointing at it.
+#: Sweeping by "nothing in the index mentions this" alone would delete
+#: every archive on the first scan after it was written.
+DEFAULT_ARCHIVE_SEGMENT: str = "_archive"
 
 #: Largest encoded object this adapter will transfer in one operation.
 #: Guards the *transport*, which the pinned interface cannot bound (see
@@ -950,3 +962,228 @@ class ArtifactBlobStore:
             await self._fm.delete_file(key)
         except Exception as exc:  # noqa: BLE001 — cleanup must not mask the real failure
             self.logger.warning("Could not clean up unverified blob %s: %s", key, exc)
+
+    # ── retention support ────────────────────────────────────────────
+
+    def scope_prefix(self, scope: TaskScope) -> str:
+        """Return the storage sub-tree holding one scope's blobs.
+
+        Args:
+            scope: Trusted runtime scope.
+
+        Returns:
+            The prefix, without a trailing separator.
+        """
+        q = self._segment
+        return f"{self._prefix}/{q(scope.chatbot_id)}/{q(scope.user_id)}/{q(scope.session_id)}"
+
+    def archive_prefix(self, scope: TaskScope, *, segment: str = DEFAULT_ARCHIVE_SEGMENT) -> str:
+        """Return the sub-tree holding one scope's archived copies.
+
+        Args:
+            scope: Trusted runtime scope.
+            segment: Archive segment name.
+
+        Returns:
+            The archive prefix.
+        """
+        return f"{self.scope_prefix(scope)}/{self._segment(segment)}"
+
+    async def list_stored(self, scope: TaskScope) -> Tuple["StoredBlob", ...]:
+        """Enumerate every object currently stored for a scope.
+
+        Uses ``find_files(prefix=...)``, which is recursive — verified
+        against the installed navigator implementation, which delegates
+        to ``Path.rglob``. ``list_files`` is deliberately **not** used:
+        it is non-recursive and returns nothing for a directory that
+        holds only sub-directories, so it would report every blob as
+        absent and, through the orphan rule, as sweepable.
+
+        Args:
+            scope: Trusted runtime scope.
+
+        Returns:
+            One :class:`StoredBlob` per object, oldest first. An
+            unreadable or absent prefix yields an empty tuple rather
+            than raising: "I could not list" must never be reported as
+            "there is nothing here", which for a sweeper would be a
+            licence to delete.
+        """
+        prefix = self.scope_prefix(scope)
+        try:
+            found = await self._fm.find_files(prefix=prefix)
+        except FileNotFoundError:
+            return ()
+        except Exception as exc:  # noqa: BLE001 — see docstring
+            self.logger.warning("Could not enumerate blobs under %s: %s", prefix, exc)
+            return ()
+
+        stored: list = []
+        for meta in found or ():
+            key = getattr(meta, "path", None)
+            if not key:
+                continue
+            stored.append(
+                StoredBlob(
+                    key=str(key),
+                    byte_size=int(getattr(meta, "size", 0) or 0),
+                    modified_at=_as_utc(getattr(meta, "modified_at", None)),
+                )
+            )
+        return tuple(sorted(stored, key=lambda b: b.key))
+
+
+def _as_utc(value: Optional[datetime]) -> Optional[datetime]:
+    """Normalize a storage timestamp to an aware UTC datetime.
+
+    File managers report naive local timestamps (``LocalFileManager``
+    builds them from ``st_mtime``), while every retention threshold is
+    aware and UTC. Comparing the two raises, so the coercion happens here
+    — at the boundary where the naive value enters — rather than being
+    defended against by each consumer.
+
+    Args:
+        value: The reported timestamp, if any.
+
+    Returns:
+        An aware UTC datetime, or ``None``.
+    """
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.astimezone(timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+@dataclass(frozen=True)
+class StoredBlob:
+    """One object found in storage, independent of any index row.
+
+    Attributes:
+        key: Its storage path.
+        byte_size: Size in bytes.
+        modified_at: Last modification time, when storage reports one.
+    """
+
+    key: str
+    byte_size: int = 0
+    modified_at: Optional[datetime] = None
+
+
+class DurableBlobSweeper:
+    """Finds and removes orphan blobs, conservatively.
+
+    Implements :class:`~.retention.BlobSweeper`. A blob is an orphan only
+    when **all three** references are absent — no live index row, no
+    in-flight publish lease, no archive. Each is checked independently
+    because each fails differently:
+
+    - the index is authoritative but says nothing about a publish that
+      has written its bytes and not yet committed its row;
+    - a publish lease covers exactly that window;
+    - an archive is a reference with deliberately *no* index row, so a
+      sweeper that only consulted the index would delete every archive.
+
+    Every uncertainty resolves to "not an orphan". A blob wrongly kept is
+    swept on the next pass once the doubt clears; a blob wrongly deleted
+    is gone.
+
+    Args:
+        blobs: The blob store, for enumeration and deletion.
+        live_refs: Async callable returning the storage keys the index
+            still references for a scope.
+        publish_lease: Optional async predicate answering "is a publish
+            in flight for this key?". Without one, no key is treated as
+            leased — so wire it in any deployment where a publish can
+            race a sweep.
+        archive_segment: Path segment marking archived copies.
+        clock: Injected clock.
+    """
+
+    def __init__(
+        self,
+        blobs: "ArtifactBlobStore",
+        *,
+        live_refs: Any,
+        publish_lease: Optional[Any] = None,
+        archive_segment: str = DEFAULT_ARCHIVE_SEGMENT,
+        clock: Optional[Any] = None,
+    ) -> None:
+        """Initialize the sweeper."""
+        self._blobs = blobs
+        self._live_refs = live_refs
+        self._publish_lease = publish_lease
+        self._archive_segment = archive_segment
+        self._clock = clock
+        self.logger = logging.getLogger(__name__)
+
+    async def list_orphans(self, scope: TaskScope) -> Tuple[Any, ...]:
+        """Return candidate orphans with their reference flags resolved.
+
+        Args:
+            scope: Trusted runtime scope.
+
+        Returns:
+            One ``BlobRetentionView`` per stored object. The grace period
+            is applied by the pure selector, not here.
+        """
+        from .retention import BlobRetentionView
+
+        stored = await self._blobs.list_stored(scope)
+        if not stored:
+            return ()
+
+        try:
+            live = frozenset(await self._live_refs(scope))
+        except Exception as exc:  # noqa: BLE001 — an unreadable index is not an empty one
+            self.logger.warning("Could not read live storage references: %s; skipping sweep", exc)
+            return ()
+
+        archive_root = self._blobs.archive_prefix(scope, segment=self._archive_segment) + "/"
+        now = self._clock() if self._clock is not None else None
+
+        views: list = []
+        for blob in stored:
+            leased = False
+            if self._publish_lease is not None:
+                try:
+                    leased = bool(await self._publish_lease(scope, blob.key))
+                except Exception as exc:  # noqa: BLE001 — unknown means "leased"
+                    self.logger.warning("Publish-lease probe failed for %s: %s", blob.key, exc)
+                    leased = True
+            views.append(
+                BlobRetentionView(
+                    scope=scope,
+                    storage_ref=blob.key,
+                    written_at=blob.modified_at or now or utc_now(),
+                    has_live_index=blob.key in live,
+                    has_publish_lease=leased,
+                    has_archive_reference=blob.key.startswith(archive_root),
+                )
+            )
+        return tuple(views)
+
+    async def sweep(self, scope: TaskScope, storage_ref: str) -> bool:
+        """Delete one orphan blob.
+
+        Args:
+            scope: Trusted runtime scope.
+            storage_ref: The object to delete.
+
+        Returns:
+            ``True`` when bytes were removed. A missing object returns
+            ``False`` rather than raising, so a retry after a partial
+            sweep converges.
+        """
+        if not storage_ref.startswith(self._blobs.scope_prefix(scope) + "/"):
+            # Refuses to delete outside the scope's own sub-tree even if
+            # a caller hands it a key from elsewhere.
+            self.logger.warning("Refusing to sweep %s: outside the scope's sub-tree", storage_ref)
+            return False
+        try:
+            return bool(await self._blobs._fm.delete_file(storage_ref))
+        except FileNotFoundError:
+            return False
+        except Exception as exc:  # noqa: BLE001 — sweeping is best effort and idempotent
+            self.logger.warning("Failed to sweep orphan blob %s: %s", storage_ref, exc)
+            return False
