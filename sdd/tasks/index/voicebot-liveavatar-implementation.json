@@ -28,7 +28,8 @@
       "acceptance_criteria": [
         "AC3",
         "AC4"
-      ]
+      ],
+      "verification": "verified"
     },
     {
       "id": "TASK-2938",
@@ -53,7 +54,8 @@
       "acceptance_criteria": [
         "AC4",
         "AC5"
-      ]
+      ],
+      "verification": "verified"
     },
     {
       "id": "TASK-2939",
@@ -80,7 +82,8 @@
         "AC5",
         "AC7",
         "AC8"
-      ]
+      ],
+      "verification": "verified"
     },
     {
       "id": "TASK-2940",
@@ -106,7 +109,8 @@
         "AC6",
         "AC7",
         "AC8"
-      ]
+      ],
+      "verification": "verified"
     },
     {
       "id": "TASK-2941",
@@ -133,7 +137,8 @@
         "AC7",
         "AC8",
         "AC9"
-      ]
+      ],
+      "verification": "verified"
     },
     {
       "id": "TASK-2942",
@@ -159,7 +164,8 @@
         "AC1",
         "AC8",
         "AC10"
-      ]
+      ],
+      "verification": "verified"
     },
     {
       "id": "TASK-2943",
@@ -185,7 +191,8 @@
         "AC12",
         "AC14",
         "AC16"
-      ]
+      ],
+      "verification": "verified"
     },
     {
       "id": "TASK-2944",
@@ -211,7 +218,8 @@
         "AC14",
         "AC15",
         "AC16"
-      ]
+      ],
+      "verification": "verified"
     },
     {
       "id": "TASK-2945",
@@ -240,7 +248,8 @@
         "AC14",
         "AC15",
         "AC16"
-      ]
+      ],
+      "verification": "verified"
     },
     {
       "id": "TASK-2946",
@@ -273,7 +282,8 @@
         "AC9",
         "AC10",
         "AC11"
-      ]
+      ],
+      "verification": "verified"
     },
     {
       "id": "TASK-2947",
@@ -300,7 +310,8 @@
         "AC14",
         "AC15",
         "AC16"
-      ]
+      ],
+      "verification": "verified"
     },
     {
       "id": "TASK-2948",
@@ -326,7 +337,8 @@
         "AC2",
         "AC12",
         "AC13"
-      ]
+      ],
+      "verification": "verified"
     },
     {
       "id": "TASK-2949",
@@ -356,7 +368,8 @@
         "AC14",
         "AC15",
         "AC16"
-      ]
+      ],
+      "verification": "partial"
     }
   ]
 }
