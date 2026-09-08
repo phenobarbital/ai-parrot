@@ -3,6 +3,7 @@
 Uses env-driven credentials (monkeypatched) to verify token minting without
 hitting the LiveKit Cloud API.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -79,6 +80,7 @@ def test_room_manager_inline_credentials() -> None:
 # Phase C (FEAT-243): publish-capable browser token + worker dispatch
 # ---------------------------------------------------------------------------
 
+
 def _jwt_payload(token: str) -> dict:
     """Decode a JWT payload without signature verification (test-only)."""
     import base64
@@ -96,11 +98,10 @@ def test_client_token_remains_subscribe_only(mgr: LiveKitRoomManager) -> None:
     assert grants.get("canPublish") in (False, None)
 
 
-
-
 # ---------------------------------------------------------------------------
 # FEAT-537 (TASK-2954): role-specific tokens + room administration
 # ---------------------------------------------------------------------------
+
 
 def test_viewer_token_is_subscribe_only_with_ttl(mgr: LiveKitRoomManager) -> None:
     """A viewer credential can join and subscribe — nothing else."""
@@ -148,9 +149,7 @@ def test_publisher_token_refuses_the_legacy_fixed_identity(
 
 
 def test_publisher_token_accepts_a_display_name(mgr: LiveKitRoomManager) -> None:
-    payload = _jwt_payload(
-        mgr.mint_publisher_token("room-x", "avatar-1234", name="Avatar")
-    )
+    payload = _jwt_payload(mgr.mint_publisher_token("room-x", "avatar-1234", name="Avatar"))
     assert payload["name"] == "Avatar"
 
 
@@ -234,15 +233,11 @@ def fake_api(mocker):
     module.RoomParticipantIdentity = lambda **kw: ("RoomParticipantIdentity", kw)
     module.ListParticipantsRequest = lambda **kw: ("ListParticipantsRequest", kw)
     module.DeleteRoomRequest = lambda **kw: ("DeleteRoomRequest", kw)
-    mocker.patch.object(
-        room_manager_module, "_require_livekit_api", return_value=module
-    )
+    mocker.patch.object(room_manager_module, "_require_livekit_api", return_value=module)
     return module
 
 
-async def test_create_room_uses_api_and_closes(
-    mgr: LiveKitRoomManager, fake_api
-) -> None:
+async def test_create_room_uses_api_and_closes(mgr: LiveKitRoomManager, fake_api) -> None:
     await mgr.create_room("room-x")
     api = _FakeLiveKitAPI.last
     assert api is not None
@@ -257,9 +252,7 @@ async def test_create_room_uses_api_and_closes(
     assert api.closed is True
 
 
-async def test_remove_participant_uses_api_and_closes(
-    mgr: LiveKitRoomManager, fake_api
-) -> None:
+async def test_remove_participant_uses_api_and_closes(mgr: LiveKitRoomManager, fake_api) -> None:
     await mgr.remove_participant("room-x", "viewer-7")
     api = _FakeLiveKitAPI.last
     assert api is not None
@@ -270,9 +263,7 @@ async def test_remove_participant_uses_api_and_closes(
     assert api.closed is True
 
 
-async def test_list_participant_identities(
-    mgr: LiveKitRoomManager, fake_api, mocker
-) -> None:
+async def test_list_participant_identities(mgr: LiveKitRoomManager, fake_api, mocker) -> None:
     def _factory(url: str, key: str, secret: str) -> _FakeLiveKitAPI:
         api = _FakeLiveKitAPI(url, key, secret)
         api.room.participants = [_Identity("viewer-1"), _Identity("avatar-abc")]
@@ -285,9 +276,7 @@ async def test_list_participant_identities(
     assert _FakeLiveKitAPI.last.closed is True
 
 
-async def test_delete_room_uses_api_and_closes(
-    mgr: LiveKitRoomManager, fake_api
-) -> None:
+async def test_delete_room_uses_api_and_closes(mgr: LiveKitRoomManager, fake_api) -> None:
     await mgr.delete_room("room-x")
     api = _FakeLiveKitAPI.last
     assert api is not None
@@ -295,9 +284,7 @@ async def test_delete_room_uses_api_and_closes(
     assert api.closed is True
 
 
-async def test_room_admin_closes_the_client_even_on_failure(
-    mgr: LiveKitRoomManager, fake_api, mocker
-) -> None:
+async def test_room_admin_closes_the_client_even_on_failure(mgr: LiveKitRoomManager, fake_api, mocker) -> None:
     """A failing room-service call must not leak the aiohttp client."""
 
     async def _boom(_request: object) -> object:

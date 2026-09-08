@@ -6,6 +6,7 @@ Uses a fake WebSocket object (not a real aiohttp WS) to verify:
   (≈400 ms first chunk, ≈1 s thereafter, ≤1 MB cap).
 - Reconnect re-opens the (pre-authenticated) WS without any handshake.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -25,10 +26,10 @@ from parrot.integrations.liveavatar.avatar_ws import (
 )
 from parrot.integrations.liveavatar.models import AvatarSessionHandle
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_handle() -> AvatarSessionHandle:
     return AvatarSessionHandle(
@@ -53,6 +54,7 @@ def _build_fake_ws(closed: bool = False) -> MagicMock:
 # ---------------------------------------------------------------------------
 # Gate: no commands before connected
 # ---------------------------------------------------------------------------
+
 
 async def test_avatar_ws_waits_for_connected() -> None:
     """No agent.speak frames sent until session.state_updated == 'connected'."""
@@ -84,6 +86,7 @@ async def test_avatar_ws_waits_for_connected() -> None:
 # Chunking
 # ---------------------------------------------------------------------------
 
+
 async def test_avatar_ws_chunking() -> None:
     """First chunk ≈400 ms, then ≈1 s; no packet > 1 MB."""
     handle = _make_handle()
@@ -107,21 +110,15 @@ async def test_avatar_ws_chunking() -> None:
     assert len(calls) >= 2, "Expected at least 2 chunks for 3 s of PCM"
 
     # First chunk ≈ 400 ms
-    assert len(calls[0]) == _FIRST_CHUNK_BYTES, (
-        f"First chunk should be {_FIRST_CHUNK_BYTES} bytes, got {len(calls[0])}"
-    )
+    assert len(calls[0]) == _FIRST_CHUNK_BYTES, f"First chunk should be {_FIRST_CHUNK_BYTES} bytes, got {len(calls[0])}"
 
     # All subsequent chunks ≤ normal chunk size
     for chunk in calls[1:]:
-        assert len(chunk) <= _NORMAL_CHUNK_BYTES, (
-            f"Subsequent chunk {len(chunk)} > {_NORMAL_CHUNK_BYTES}"
-        )
+        assert len(chunk) <= _NORMAL_CHUNK_BYTES, f"Subsequent chunk {len(chunk)} > {_NORMAL_CHUNK_BYTES}"
 
     # No packet exceeds 1 MB
     for chunk in calls:
-        assert len(chunk) <= _MAX_PACKET_BYTES, (
-            f"Packet {len(chunk)} exceeds 1 MB cap"
-        )
+        assert len(chunk) <= _MAX_PACKET_BYTES, f"Packet {len(chunk)} exceeds 1 MB cap"
 
     # Total bytes round-trip correctly
     total = sum(len(c) for c in calls)
@@ -144,6 +141,7 @@ async def test_avatar_ws_empty_pcm() -> None:
 # ---------------------------------------------------------------------------
 # Finish and interrupt
 # ---------------------------------------------------------------------------
+
 
 async def test_avatar_ws_finish_speaking() -> None:
     """finish_speaking sends agent.speak_end after the gate opens."""
@@ -177,6 +175,7 @@ async def test_avatar_ws_interrupt() -> None:
 # ---------------------------------------------------------------------------
 # Reconnect replay
 # ---------------------------------------------------------------------------
+
 
 async def test_avatar_ws_reconnect_no_handshake() -> None:
     """On reconnect, the WS is re-opened with NO in-band handshake frame."""
@@ -212,15 +211,14 @@ async def test_avatar_ws_reconnect_no_handshake() -> None:
 # Connected gate via server message
 # ---------------------------------------------------------------------------
 
+
 async def test_avatar_ws_connected_gate_set_by_server() -> None:
     """_handle_server_message with state='connected' sets the _connected event."""
     handle = _make_handle()
     avatar_ws = AvatarWebSocket(handle)
 
     assert not avatar_ws._connected.is_set()
-    await avatar_ws._handle_server_message(
-        '{"type": "session.state_updated", "state": "connected"}'
-    )
+    await avatar_ws._handle_server_message('{"type": "session.state_updated", "state": "connected"}')
     assert avatar_ws._connected.is_set()
 
 
@@ -229,15 +227,14 @@ async def test_avatar_ws_connected_gate_not_set_for_other_state() -> None:
     handle = _make_handle()
     avatar_ws = AvatarWebSocket(handle)
 
-    await avatar_ws._handle_server_message(
-        '{"type": "session.state_updated", "state": "starting"}'
-    )
+    await avatar_ws._handle_server_message('{"type": "session.state_updated", "state": "starting"}')
     assert not avatar_ws._connected.is_set()
 
 
 # ---------------------------------------------------------------------------
 # Connected-gate timeout (I-1)
 # ---------------------------------------------------------------------------
+
 
 async def test_await_connected_times_out() -> None:
     """_await_connected raises RuntimeError if 'connected' never arrives."""
@@ -256,6 +253,7 @@ async def test_await_connected_times_out() -> None:
 # ---------------------------------------------------------------------------
 # assume_connected: reused-session path opens the gate on handshake
 # ---------------------------------------------------------------------------
+
 
 async def test_assume_connected_opens_gate_on_connect_without_server_event() -> None:
     """With assume_connected=True the gate opens on handshake, no server event.
@@ -311,6 +309,7 @@ async def test_assume_connected_false_still_gates() -> None:
 # Reader task lifecycle (C-2): _close cancels and awaits the reader
 # ---------------------------------------------------------------------------
 
+
 async def test_close_cancels_reader_task() -> None:
     """_close cancels the background reader task and clears the reference."""
     handle = _make_handle()
@@ -333,6 +332,7 @@ async def test_close_cancels_reader_task() -> None:
 # ---------------------------------------------------------------------------
 # FEAT-537 (TASK-2955): observable events, close notification, aggregation
 # ---------------------------------------------------------------------------
+
 
 def _sent_pcm(ws_obj: MagicMock) -> List[bytes]:
     """Decode every ``agent.speak`` payload the fake WS received, in order."""
@@ -359,6 +359,7 @@ def _open_ws(**kwargs: Any) -> tuple[AvatarWebSocket, MagicMock]:
 
 
 # ── Aggregation ────────────────────────────────────────────────────────────
+
 
 async def test_aggregate_emits_one_second_frames_and_flushes_tail() -> None:
     """Small Nova chunks coalesce into vendor-sized frames without data loss."""
@@ -432,14 +433,13 @@ async def test_aggregation_is_off_by_default() -> None:
 
 # ── Events ─────────────────────────────────────────────────────────────────
 
+
 async def test_every_event_forwarded_to_on_event() -> None:
     """Including messages the transport handles itself."""
     seen: List[dict] = []
     avatar_ws = AvatarWebSocket(_make_handle(), on_event=seen.append)
 
-    await avatar_ws._handle_server_message(
-        '{"type": "session.state_updated", "state": "connected"}'
-    )
+    await avatar_ws._handle_server_message('{"type": "session.state_updated", "state": "connected"}')
     await avatar_ws._handle_server_message('{"type": "agent.speak_started"}')
     await avatar_ws._handle_server_message('{"type": "something.unknown", "x": 1}')
     await avatar_ws._handle_server_message("not json at all")
@@ -471,9 +471,7 @@ async def test_an_exploding_callback_cannot_break_the_transport() -> None:
         raise ValueError("observer bug")
 
     avatar_ws = AvatarWebSocket(_make_handle(), on_event=_boom)
-    await avatar_ws._handle_server_message(
-        '{"type": "session.state_updated", "state": "connected"}'
-    )
+    await avatar_ws._handle_server_message('{"type": "session.state_updated", "state": "connected"}')
     assert avatar_ws._connected.is_set()
 
 
@@ -489,6 +487,7 @@ async def test_async_callbacks_are_awaited() -> None:
 
 
 # ── Permanent close ────────────────────────────────────────────────────────
+
 
 class _ClosingWS:
     """An async-iterable fake WS that yields one CLOSE frame and stops."""
@@ -511,9 +510,7 @@ class _ClosingWS:
 async def test_close_without_reconnect_notifies_once_and_fails_fast() -> None:
     """A dropped control socket is a fallback trigger, not something to hide."""
     reasons: List[str] = []
-    avatar_ws = AvatarWebSocket(
-        _make_handle(), on_close=reasons.append, auto_reconnect=False
-    )
+    avatar_ws = AvatarWebSocket(_make_handle(), on_close=reasons.append, auto_reconnect=False)
     avatar_ws._ws = _ClosingWS(aiohttp.WSMsgType.CLOSE)
     avatar_ws._connected.set()
 
@@ -538,9 +535,7 @@ async def test_close_without_reconnect_notifies_once_and_fails_fast() -> None:
 
 async def test_error_frame_reports_its_own_reason() -> None:
     reasons: List[str] = []
-    avatar_ws = AvatarWebSocket(
-        _make_handle(), on_close=reasons.append, auto_reconnect=False
-    )
+    avatar_ws = AvatarWebSocket(_make_handle(), on_close=reasons.append, auto_reconnect=False)
     avatar_ws._ws = _ClosingWS(aiohttp.WSMsgType.ERROR)
     await avatar_ws._reader_loop()
     assert reasons == ["error"]
@@ -558,6 +553,7 @@ async def test_auto_reconnect_still_reconnects_by_default() -> None:
 
 
 # ── Send deadline ──────────────────────────────────────────────────────────
+
 
 async def test_send_timeout_raises() -> None:
     from parrot.integrations.liveavatar.avatar_ws import AvatarSendTimeout

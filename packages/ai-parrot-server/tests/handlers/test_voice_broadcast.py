@@ -5,6 +5,7 @@ fake LiveKit/media factories, so these exercise the actual authority rules
 rather than a mock's idea of them.  Spec §2's "New Public Interfaces" table
 fixes the status codes; each one is asserted.
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -69,8 +70,7 @@ class FakeMediaSession:
     stall = False
 
     def __init__(
-        self, descriptor: Any, registry: Any, room_manager: Any, worker_id: str,
-        owner_epoch: int, **_kw: Any
+        self, descriptor: Any, registry: Any, room_manager: Any, worker_id: str, owner_epoch: int, **_kw: Any
     ) -> None:
         self.descriptor = descriptor
         self.registry = registry
@@ -117,10 +117,7 @@ class FakeMediaSession:
     async def switch_speaker(self, lease_id: str, floor_epoch: int) -> None:
         self.floor_epoch = floor_epoch
 
-    async def aclose(
-        self, *, final_state: Any = BroadcastState.ENDED, reason: Any = None,
-        **_kw: Any
-    ) -> None:
+    async def aclose(self, *, final_state: Any = BroadcastState.ENDED, reason: Any = None, **_kw: Any) -> None:
         """Mirror the real session: teardown records the terminal state.
 
         Without this the fake would leave the broadcast joinable after a stop,
@@ -151,15 +148,11 @@ class FakeVoiceSession:
 class _StubResolver:
     """Maps an ``X-Test-User`` header to a principal (stands in for a session)."""
 
-    async def __call__(
-        self, request: web.Request, agent_id: str
-    ) -> ParticipantPrincipal:
+    async def __call__(self, request: web.Request, agent_id: str) -> ParticipantPrincipal:
         user = request.headers.get("X-Test-User")
         if not user:
             raise web.HTTPUnauthorized(reason="authentication required")
-        return ParticipantPrincipal(
-            user_id=user, tenant_id=TENANT, agent_id=agent_id, display_name=user
-        )
+        return ParticipantPrincipal(user_id=user, tenant_id=TENANT, agent_id=agent_id, display_name=user)
 
 
 @pytest.fixture(autouse=True)
@@ -196,9 +189,7 @@ async def _create(client: Any, user: str = "creator") -> str:
 
 
 async def _join(client: Any, broadcast_id: str, user: str) -> Dict[str, Any]:
-    response = await client.post(
-        f"{BASE}/{broadcast_id}/viewers", headers=_as(user), json={}
-    )
+    response = await client.post(f"{BASE}/{broadcast_id}/viewers", headers=_as(user), json={})
     assert response.status == 201, await response.text()
     return await response.json()
 
@@ -270,9 +261,7 @@ async def test_eleventh_viewer_409(client) -> None:
     broadcast_id = await _create(client)
     for index in range(MAX_VIEWERS):
         await _join(client, broadcast_id, f"user-{index}")
-    response = await client.post(
-        f"{BASE}/{broadcast_id}/viewers", headers=_as("late"), json={}
-    )
+    response = await client.post(f"{BASE}/{broadcast_id}/viewers", headers=_as("late"), json={})
     assert response.status == 409
     body = await response.json()
     assert body["error"] == "viewer_limit_reached"
@@ -284,17 +273,13 @@ async def test_join_terminal_broadcast_410(client) -> None:
     broadcast_id = await _create(client)
     joined = await _join(client, broadcast_id, "moderator")
     await client.post(f"{BASE}/{broadcast_id}/stop", headers=_as("moderator"), json={})
-    response = await client.post(
-        f"{BASE}/{broadcast_id}/viewers", headers=_as("late"), json={}
-    )
+    response = await client.post(f"{BASE}/{broadcast_id}/viewers", headers=_as("late"), json={})
     assert response.status == 410
     assert joined["role"] == "moderator"
 
 
 async def test_join_unknown_broadcast_404(client) -> None:
-    response = await client.post(
-        f"{BASE}/bc-unknown/viewers", headers=_as("viewer"), json={}
-    )
+    response = await client.post(f"{BASE}/bc-unknown/viewers", headers=_as("viewer"), json={})
     assert response.status == 404
 
 
@@ -387,9 +372,7 @@ async def test_raise_and_cancel_own_hand(client) -> None:
     )
     assert response.status == 200
     body = await response.json()
-    assert [h["lease_id"] for h in body["state"]["hand_requests"]] == [
-        guest["lease_id"]
-    ]
+    assert [h["lease_id"] for h in body["state"]["hand_requests"]] == [guest["lease_id"]]
     # Raising a hand grants no microphone permission.
     assert body["state"]["speaker_display_id"] != guest["lease_id"]
 
@@ -422,13 +405,9 @@ async def test_only_the_moderator_dismisses_a_hand(client) -> None:
         headers=_as("guest"),
         json={"lease_id": guest["lease_id"]},
     )
-    response = await client.delete(
-        f"{BASE}/{broadcast_id}/hands/{guest['lease_id']}", headers=_as("guest")
-    )
+    response = await client.delete(f"{BASE}/{broadcast_id}/hands/{guest['lease_id']}", headers=_as("guest"))
     assert response.status == 403
-    response = await client.delete(
-        f"{BASE}/{broadcast_id}/hands/{guest['lease_id']}", headers=_as("moderator")
-    )
+    response = await client.delete(f"{BASE}/{broadcast_id}/hands/{guest['lease_id']}", headers=_as("moderator"))
     assert response.status == 200
     assert (await response.json())["state"]["hand_requests"] == []
 
@@ -466,9 +445,7 @@ async def test_floor_grant_and_release(client) -> None:
         json={"lease_id": guest["lease_id"]},
     )
     assert response.status == 200
-    assert (await response.json())["state"]["speaker_display_id"] == (
-        moderator["lease_id"]
-    )
+    assert (await response.json())["state"]["speaker_display_id"] == (moderator["lease_id"])
 
 
 async def test_floor_stale_version_409_with_state(client) -> None:
@@ -505,9 +482,7 @@ async def test_floor_requires_moderator(client) -> None:
 async def test_floor_requires_expected_version(client) -> None:
     broadcast_id = await _create(client)
     await _join(client, broadcast_id, "moderator")
-    response = await client.post(
-        f"{BASE}/{broadcast_id}/floor", headers=_as("moderator"), json={}
-    )
+    response = await client.post(f"{BASE}/{broadcast_id}/floor", headers=_as("moderator"), json={})
     assert response.status == 400
 
 
@@ -532,14 +507,10 @@ async def test_stop_requires_moderator_not_creator(client) -> None:
     await _join(client, broadcast_id, "moderator")
     await _join(client, broadcast_id, "creator")
 
-    response = await client.post(
-        f"{BASE}/{broadcast_id}/stop", headers=_as("creator"), json={}
-    )
+    response = await client.post(f"{BASE}/{broadcast_id}/stop", headers=_as("creator"), json={})
     assert response.status == 403
 
-    response = await client.post(
-        f"{BASE}/{broadcast_id}/stop", headers=_as("moderator"), json={}
-    )
+    response = await client.post(f"{BASE}/{broadcast_id}/stop", headers=_as("moderator"), json={})
     assert response.status == 202
     body = await response.json()
     assert body["state"]["state"] in ("stopping", "ended")
@@ -548,13 +519,9 @@ async def test_stop_requires_moderator_not_creator(client) -> None:
 async def test_stop_is_idempotent(client) -> None:
     broadcast_id = await _create(client)
     await _join(client, broadcast_id, "moderator")
-    first = await client.post(
-        f"{BASE}/{broadcast_id}/stop", headers=_as("moderator"), json={}
-    )
+    first = await client.post(f"{BASE}/{broadcast_id}/stop", headers=_as("moderator"), json={})
     assert first.status == 202
-    second = await client.post(
-        f"{BASE}/{broadcast_id}/stop", headers=_as("moderator"), json={}
-    )
+    second = await client.post(f"{BASE}/{broadcast_id}/stop", headers=_as("moderator"), json={})
     assert second.status in (202, 403, 410)
 
 
@@ -573,9 +540,7 @@ async def test_oversized_body_is_refused(client) -> None:
 
 async def test_malformed_json_is_400(client) -> None:
     broadcast_id = await _create(client)
-    response = await client.post(
-        f"{BASE}/{broadcast_id}/hands", headers=_as("moderator"), data=b"{not json"
-    )
+    response = await client.post(f"{BASE}/{broadcast_id}/hands", headers=_as("moderator"), data=b"{not json")
     assert response.status == 400
 
 
@@ -583,9 +548,7 @@ async def test_cross_origin_state_change_is_refused(client) -> None:
     broadcast_id = await _create(client)
     headers = _as("moderator")
     headers["Origin"] = "https://evil.example"
-    response = await client.post(
-        f"{BASE}/{broadcast_id}/viewers", headers=headers, json={}
-    )
+    response = await client.post(f"{BASE}/{broadcast_id}/viewers", headers=headers, json={})
     assert response.status == 403
 
 
@@ -593,9 +556,7 @@ async def test_rate_limit_returns_429(client) -> None:
     broadcast_id = await _create(client, "spammer")
     statuses = []
     for _ in range(RATE_LIMIT_REQUESTS + 5):
-        response = await client.get(
-            f"{BASE}/{broadcast_id}", headers=_as("spammer")
-        )
+        response = await client.get(f"{BASE}/{broadcast_id}", headers=_as("spammer"))
         statuses.append(response.status)
     assert 429 in statuses
 
@@ -631,13 +592,7 @@ async def test_no_secret_keys_in_any_response(client) -> None:
             )
         ).json()
     )
-    payloads.append(
-        await (
-            await client.post(
-                f"{BASE}/{broadcast_id}/stop", headers=_as("moderator"), json={}
-            )
-        ).json()
-    )
+    payloads.append(await (await client.post(f"{BASE}/{broadcast_id}/stop", headers=_as("moderator"), json={})).json())
     for payload in payloads:
         _assert_no_secrets(payload)
     assert moderator["role"] == "moderator"

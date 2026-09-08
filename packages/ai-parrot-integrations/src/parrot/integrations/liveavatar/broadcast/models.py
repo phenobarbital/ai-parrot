@@ -17,6 +17,7 @@ The single most important invariant in this module is the split between:
   of its own field names looks credential-bearing, so a future field that leaks
   breaks loudly in every test rather than silently in production (AC3).
 """
+
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -262,12 +263,8 @@ class HandRequest(BaseModel):
         default=_FALLBACK_DISPLAY_NAME,
         description="Safe bounded label from trusted profile data.",
     )
-    sequence: int = Field(
-        ..., ge=0, description="Monotonic server sequence establishing queue order."
-    )
-    requested_at: datetime = Field(
-        default_factory=_utcnow, description="Server timestamp of the request."
-    )
+    sequence: int = Field(..., ge=0, description="Monotonic server sequence establishing queue order.")
+    requested_at: datetime = Field(default_factory=_utcnow, description="Server timestamp of the request.")
 
     @field_validator("display_name")
     @classmethod
@@ -305,27 +302,17 @@ class ViewerLease(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     lease_id: str = Field(..., description="Unique lease identifier / display ID.")
-    principal: ParticipantPrincipal = Field(
-        ..., description="Scoped principal owning this lease."
-    )
-    livekit_identity: str = Field(
-        ..., description="Unique LiveKit participant identity for this browser."
-    )
-    state: LeaseState = Field(
-        default=LeaseState.PENDING, description="Seat reservation state."
-    )
+    principal: ParticipantPrincipal = Field(..., description="Scoped principal owning this lease.")
+    livekit_identity: str = Field(..., description="Unique LiveKit participant identity for this browser.")
+    state: LeaseState = Field(default=LeaseState.PENDING, description="Seat reservation state.")
     credential_expires_at: Optional[datetime] = Field(
         default=None, description="Admission-credential expiry (not a revocation)."
     )
     admission_deadline: Optional[datetime] = Field(
         default=None, description="When an unconfirmed pending seat may be reclaimed."
     )
-    confirmed: bool = Field(
-        default=False, description="Presence confirmed against LiveKit."
-    )
-    admission_sequence: int = Field(
-        ..., ge=0, description="Server admission order (earliest wins election)."
-    )
+    confirmed: bool = Field(default=False, description="Presence confirmed against LiveKit.")
+    admission_sequence: int = Field(..., ge=0, description="Server admission order (earliest wins election).")
     last_control_heartbeat: Optional[datetime] = Field(
         default=None, description="Last authenticated control-socket heartbeat."
     )
@@ -375,38 +362,20 @@ class BroadcastPublicState(BaseModel):
     state: BroadcastState = Field(..., description="Current lifecycle state.")
     version: int = Field(..., ge=0, description="Monotonic public state version.")
     output_epoch: int = Field(..., ge=0, description="Monotonic output generation.")
-    media_ready: bool = Field(
-        ..., description="Whether room credentials and media are available."
-    )
-    selected_identity: Optional[str] = Field(
-        default=None, description="Publisher identity selected for playback."
-    )
-    selected_audio_track_id: Optional[str] = Field(
-        default=None, description="Authoritative audio track id."
-    )
-    selected_video_track_id: Optional[str] = Field(
-        default=None, description="Avatar video track id, when present."
-    )
-    viewer_count: int = Field(
-        ..., ge=0, description="Reserved seats in use (moderator and speaker included)."
-    )
-    max_viewers: int = Field(
-        ..., ge=1, le=MAX_VIEWERS, description="Seat ceiling for this broadcast."
-    )
-    moderator_display_id: Optional[str] = Field(
-        default=None, description="Lease id of the current moderator."
-    )
+    media_ready: bool = Field(..., description="Whether room credentials and media are available.")
+    selected_identity: Optional[str] = Field(default=None, description="Publisher identity selected for playback.")
+    selected_audio_track_id: Optional[str] = Field(default=None, description="Authoritative audio track id.")
+    selected_video_track_id: Optional[str] = Field(default=None, description="Avatar video track id, when present.")
+    viewer_count: int = Field(..., ge=0, description="Reserved seats in use (moderator and speaker included).")
+    max_viewers: int = Field(..., ge=1, le=MAX_VIEWERS, description="Seat ceiling for this broadcast.")
+    moderator_display_id: Optional[str] = Field(default=None, description="Lease id of the current moderator.")
     speaker_display_id: Optional[str] = Field(
         default=None, description="Lease id of the participant holding the floor."
     )
     floor_state: FloorState = Field(..., description="Current floor state.")
     floor_epoch: int = Field(..., ge=0, description="Monotonic floor generation.")
-    hand_requests: List[HandRequest] = Field(
-        default_factory=list, description="Ordered raised-hand queue."
-    )
-    reason: Optional[BroadcastReason] = Field(
-        default=None, description="Sanitized reason code for the current state."
-    )
+    hand_requests: List[HandRequest] = Field(default_factory=list, description="Ordered raised-hand queue.")
+    reason: Optional[BroadcastReason] = Field(default=None, description="Sanitized reason code for the current state.")
 
     @model_validator(mode="after")
     def _forbid_credential_bearing_fields(self) -> "BroadcastPublicState":
@@ -426,16 +395,10 @@ class BroadcastPublicState(BaseModel):
         offending = [
             name
             for name in type(self).model_fields
-            if any(
-                fragment in name.lower()
-                for fragment in _FORBIDDEN_PUBLIC_FIELD_FRAGMENTS
-            )
+            if any(fragment in name.lower() for fragment in _FORBIDDEN_PUBLIC_FIELD_FRAGMENTS)
         ]
         if offending:
-            raise ValueError(
-                "BroadcastPublicState must not expose credential-bearing fields: "
-                f"{sorted(offending)}"
-            )
+            raise ValueError("BroadcastPublicState must not expose credential-bearing fields: " f"{sorted(offending)}")
         return self
 
 
@@ -457,15 +420,11 @@ class ViewerJoinResponse(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    public_state: BroadcastPublicState = Field(
-        ..., description="Current public projection of the broadcast."
-    )
+    public_state: BroadcastPublicState = Field(..., description="Current public projection of the broadcast.")
     lease_id: str = Field(..., description="The admitted lease id.")
     livekit_url: str = Field(..., description="LiveKit room WebSocket URL.")
     room: str = Field(..., description="LiveKit room name.")
-    client_token: str = Field(
-        ..., description="Subscribe-only JWT unique to this browser."
-    )
+    client_token: str = Field(..., description="Subscribe-only JWT unique to this browser.")
     expires_at: datetime = Field(..., description="Admission-credential expiry.")
 
     @classmethod
@@ -550,82 +509,38 @@ class BroadcastDescriptor(BaseModel):
     broadcast_id: str = Field(..., description="Unique broadcast identifier.")
     tenant_id: str = Field(..., description="Owning tenant.")
     agent_id: str = Field(..., description="Agent this broadcast speaks for.")
-    creator_user_id: str = Field(
-        ..., description="Creator; confers no moderator authority."
-    )
+    creator_user_id: str = Field(..., description="Creator; confers no moderator authority.")
 
-    moderator_lease_id: Optional[str] = Field(
-        default=None, description="Lease of the current moderator."
-    )
-    speaker_lease_id: Optional[str] = Field(
-        default=None, description="Lease permitted to send microphone audio."
-    )
+    moderator_lease_id: Optional[str] = Field(default=None, description="Lease of the current moderator.")
+    speaker_lease_id: Optional[str] = Field(default=None, description="Lease permitted to send microphone audio.")
     floor_epoch: int = Field(default=0, ge=0, description="Monotonic floor generation.")
-    floor_state: FloorState = Field(
-        default=FloorState.IDLE, description="Current floor state."
-    )
-    hand_requests: List[HandRequest] = Field(
-        default_factory=list, description="Ordered raised-hand queue."
-    )
+    floor_state: FloorState = Field(default=FloorState.IDLE, description="Current floor state.")
+    hand_requests: List[HandRequest] = Field(default_factory=list, description="Ordered raised-hand queue.")
 
-    voice_session_id: Optional[str] = Field(
-        default=None, description="Stable conversation key for shared bot memory."
-    )
+    voice_session_id: Optional[str] = Field(default=None, description="Stable conversation key for shared bot memory.")
     room_name: Optional[str] = Field(default=None, description="Allocated LiveKit room.")
 
-    owner_worker_id: Optional[str] = Field(
-        default=None, description="Worker holding the producer lease."
-    )
-    owner_epoch: int = Field(
-        default=0, ge=0, description="Monotonic ownership generation used for fencing."
-    )
+    owner_worker_id: Optional[str] = Field(default=None, description="Worker holding the producer lease.")
+    owner_epoch: int = Field(default=0, ge=0, description="Monotonic ownership generation used for fencing.")
 
-    version: int = Field(
-        default=0, ge=0, description="Monotonic public version for compare-and-set."
-    )
-    state: BroadcastState = Field(
-        default=BroadcastState.PENDING, description="Lifecycle state."
-    )
-    output_epoch: int = Field(
-        default=0, ge=0, description="Monotonic output generation."
-    )
+    version: int = Field(default=0, ge=0, description="Monotonic public version for compare-and-set.")
+    state: BroadcastState = Field(default=BroadcastState.PENDING, description="Lifecycle state.")
+    output_epoch: int = Field(default=0, ge=0, description="Monotonic output generation.")
 
-    avatar_identity: Optional[str] = Field(
-        default=None, description="LiveKit identity of the avatar publisher."
-    )
-    direct_identity: Optional[str] = Field(
-        default=None, description="LiveKit identity of the direct audio publisher."
-    )
-    selected_audio_track_id: Optional[str] = Field(
-        default=None, description="Authoritative audio track id."
-    )
-    selected_video_track_id: Optional[str] = Field(
-        default=None, description="Avatar video track id, when present."
-    )
+    avatar_identity: Optional[str] = Field(default=None, description="LiveKit identity of the avatar publisher.")
+    direct_identity: Optional[str] = Field(default=None, description="LiveKit identity of the direct audio publisher.")
+    selected_audio_track_id: Optional[str] = Field(default=None, description="Authoritative audio track id.")
+    selected_video_track_id: Optional[str] = Field(default=None, description="Avatar video track id, when present.")
 
-    max_viewers: int = Field(
-        default=MAX_VIEWERS, ge=1, le=MAX_VIEWERS, description="Seat ceiling (1–10)."
-    )
-    admission_sequence: int = Field(
-        default=0, ge=0, description="Next server admission sequence to hand out."
-    )
+    max_viewers: int = Field(default=MAX_VIEWERS, ge=1, le=MAX_VIEWERS, description="Seat ceiling (1–10).")
+    admission_sequence: int = Field(default=0, ge=0, description="Next server admission sequence to hand out.")
 
-    created_at: datetime = Field(
-        default_factory=_utcnow, description="Creation timestamp."
-    )
-    updated_at: datetime = Field(
-        default_factory=_utcnow, description="Last mutation timestamp."
-    )
-    started_at: Optional[datetime] = Field(
-        default=None, description="When media initialisation began."
-    )
-    ended_at: Optional[datetime] = Field(
-        default=None, description="When a terminal state was reached."
-    )
+    created_at: datetime = Field(default_factory=_utcnow, description="Creation timestamp.")
+    updated_at: datetime = Field(default_factory=_utcnow, description="Last mutation timestamp.")
+    started_at: Optional[datetime] = Field(default=None, description="When media initialisation began.")
+    ended_at: Optional[datetime] = Field(default=None, description="When a terminal state was reached.")
 
-    failure_reason: Optional[BroadcastReason] = Field(
-        default=None, description="Sanitized reason code, if any."
-    )
+    failure_reason: Optional[BroadcastReason] = Field(default=None, description="Sanitized reason code, if any.")
     liveavatar_session_id: Optional[str] = Field(
         default=None, description="Vendor session id for audit only — never a token."
     )
@@ -721,9 +636,7 @@ class BroadcastAudioFrame(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     owner_epoch: int = Field(..., ge=0, description="Ownership generation.")
-    speaker_lease_id: str = Field(
-        ..., description="Authenticated lease whose turn produced this frame."
-    )
+    speaker_lease_id: str = Field(..., description="Authenticated lease whose turn produced this frame.")
     floor_epoch: int = Field(..., ge=0, description="Floor generation of the input.")
     turn_id: str = Field(..., description="Identifier of the producing turn.")
     output_epoch: int = Field(..., ge=0, description="Output generation.")
@@ -751,9 +664,7 @@ class BroadcastAudioFrame(BaseModel):
         if len(value) % _BYTES_PER_SAMPLE != 0:
             raise ValueError("pcm must be 16-bit aligned")
         if len(value) > MAX_QUEUED_PCM_BYTES:
-            raise ValueError(
-                f"pcm exceeds the {MAX_QUEUED_PCM_BYTES}-byte bounded-queue budget"
-            )
+            raise ValueError(f"pcm exceeds the {MAX_QUEUED_PCM_BYTES}-byte bounded-queue budget")
         return value
 
     @model_validator(mode="after")
@@ -768,10 +679,7 @@ class BroadcastAudioFrame(BaseModel):
         """
         expected = len(self.pcm) // _BYTES_PER_SAMPLE
         if self.sample_count != expected:
-            raise ValueError(
-                f"sample_count {self.sample_count} does not match pcm length "
-                f"({expected} samples)"
-            )
+            raise ValueError(f"sample_count {self.sample_count} does not match pcm length " f"({expected} samples)")
         return self
 
     def is_current(
@@ -794,11 +702,7 @@ class BroadcastAudioFrame(BaseModel):
             ``True`` only when every epoch matches and the turn (if given) is
             the producing turn.
         """
-        if (
-            self.owner_epoch != owner_epoch
-            or self.floor_epoch != floor_epoch
-            or self.output_epoch != output_epoch
-        ):
+        if self.owner_epoch != owner_epoch or self.floor_epoch != floor_epoch or self.output_epoch != output_epoch:
             return False
         return turn_id is None or self.turn_id == turn_id
 

@@ -19,6 +19,7 @@ Three invariants hold at every await point:
 * there is at most one ``speaker_lease_id``, and it is ``None`` for the whole
   duration of a floor switch.
 """
+
 from __future__ import annotations
 
 import abc
@@ -63,9 +64,7 @@ from parrot.integrations.liveavatar.broadcast.models import (
 #: Legal non-terminal state edges.  ``avatar → audio_only`` is one-way: the
 #: reverse edge is absent on purpose (fallback is sticky, spec §2).
 _ALLOWED_TRANSITIONS: Dict[BroadcastState, frozenset[BroadcastState]] = {
-    BroadcastState.PENDING: frozenset(
-        {BroadcastState.STARTING, BroadcastState.ENDED, BroadcastState.FAILED}
-    ),
+    BroadcastState.PENDING: frozenset({BroadcastState.STARTING, BroadcastState.ENDED, BroadcastState.FAILED}),
     BroadcastState.STARTING: frozenset(
         {
             BroadcastState.AVATAR,
@@ -83,9 +82,7 @@ _ALLOWED_TRANSITIONS: Dict[BroadcastState, frozenset[BroadcastState]] = {
             BroadcastState.FAILED,
         }
     ),
-    BroadcastState.AUDIO_ONLY: frozenset(
-        {BroadcastState.STOPPING, BroadcastState.ENDED, BroadcastState.FAILED}
-    ),
+    BroadcastState.AUDIO_ONLY: frozenset({BroadcastState.STOPPING, BroadcastState.ENDED, BroadcastState.FAILED}),
     BroadcastState.STOPPING: frozenset({BroadcastState.ENDED, BroadcastState.FAILED}),
     BroadcastState.ENDED: frozenset(),
     BroadcastState.FAILED: frozenset(),
@@ -206,9 +203,7 @@ def validate_audio_authority(
     if descriptor.speaker_lease_id != lease_id:
         raise FloorNotGranted(message="lease does not hold the floor")
     if descriptor.floor_epoch != floor_epoch:
-        raise StaleFloorEpoch(
-            message=f"floor epoch {floor_epoch} superseded by {descriptor.floor_epoch}"
-        )
+        raise StaleFloorEpoch(message=f"floor epoch {floor_epoch} superseded by {descriptor.floor_epoch}")
     if bound_socket_id is not None and bound_socket_id != socket_id:
         raise SpeakerConnectionExists(message="another capture socket holds the floor")
 
@@ -242,9 +237,7 @@ class BroadcastRegistry(abc.ABC):
         """
 
     @abc.abstractmethod
-    async def get(
-        self, tenant_id: str, broadcast_id: str
-    ) -> Optional[BroadcastDescriptor]:
+    async def get(self, tenant_id: str, broadcast_id: str) -> Optional[BroadcastDescriptor]:
         """Return a descriptor, or ``None`` when unknown or out of tenant scope."""
 
     @abc.abstractmethod
@@ -340,9 +333,7 @@ class BroadcastRegistry(abc.ABC):
         """
 
     @abc.abstractmethod
-    async def confirm_viewer(
-        self, tenant_id: str, broadcast_id: str, lease_id: str
-    ) -> ViewerLease:
+    async def confirm_viewer(self, tenant_id: str, broadcast_id: str, lease_id: str) -> ViewerLease:
         """Mark a lease as an *active, confirmed* room participant."""
 
     @abc.abstractmethod
@@ -368,9 +359,7 @@ class BroadcastRegistry(abc.ABC):
         """Release a seat idempotently and report the moderation consequences."""
 
     @abc.abstractmethod
-    async def list_leases(
-        self, tenant_id: str, broadcast_id: str
-    ) -> List[ViewerLease]:
+    async def list_leases(self, tenant_id: str, broadcast_id: str) -> List[ViewerLease]:
         """Return every lease currently holding a seat, in admission order."""
 
     # ── Hands ──────────────────────────────────────────────────────────
@@ -387,9 +376,7 @@ class BroadcastRegistry(abc.ABC):
         """Record an idempotent raise-hand request.  Grants no permission."""
 
     @abc.abstractmethod
-    async def cancel_hand(
-        self, tenant_id: str, broadcast_id: str, lease_id: str
-    ) -> BroadcastDescriptor:
+    async def cancel_hand(self, tenant_id: str, broadcast_id: str, lease_id: str) -> BroadcastDescriptor:
         """Withdraw the caller's own hand request.  Idempotent."""
 
     @abc.abstractmethod
@@ -443,15 +430,11 @@ class BroadcastRegistry(abc.ABC):
         """
 
     @abc.abstractmethod
-    async def abort_floor(
-        self, tenant_id: str, broadcast_id: str, floor_epoch: int
-    ) -> BroadcastDescriptor:
+    async def abort_floor(self, tenant_id: str, broadcast_id: str, floor_epoch: int) -> BroadcastDescriptor:
         """Abandon a failed or timed-out barrier, leaving the floor idle."""
 
     @abc.abstractmethod
-    async def release_floor(
-        self, tenant_id: str, broadcast_id: str, speaker_lease_id: str
-    ) -> BroadcastDescriptor:
+    async def release_floor(self, tenant_id: str, broadcast_id: str, speaker_lease_id: str) -> BroadcastDescriptor:
         """Speaker-initiated "Finish Speaking" — barrier back to the moderator.
 
         Raises:
@@ -469,9 +452,7 @@ class BroadcastRegistry(abc.ABC):
         """Moderator revoke — :meth:`grant_floor` with a ``None`` target."""
 
     @abc.abstractmethod
-    async def elect_moderator(
-        self, tenant_id: str, broadcast_id: str, *, now: Optional[float] = None
-    ) -> Optional[str]:
+    async def elect_moderator(self, tenant_id: str, broadcast_id: str, *, now: Optional[float] = None) -> Optional[str]:
         """Elect the earliest remaining healthy participant as moderator.
 
         Returns:
@@ -498,17 +479,13 @@ class BroadcastRegistry(abc.ABC):
         """
 
     @abc.abstractmethod
-    async def unbind_speaker_socket(
-        self, tenant_id: str, broadcast_id: str, lease_id: str, socket_id: str
-    ) -> bool:
+    async def unbind_speaker_socket(self, tenant_id: str, broadcast_id: str, lease_id: str, socket_id: str) -> bool:
         """Drop a microphone-socket binding.  Idempotent."""
 
     # ── Stop and reconciliation ────────────────────────────────────────
 
     @abc.abstractmethod
-    async def request_stop(
-        self, tenant_id: str, broadcast_id: str, by_lease_id: str
-    ) -> BroadcastDescriptor:
+    async def request_stop(self, tenant_id: str, broadcast_id: str, by_lease_id: str) -> BroadcastDescriptor:
         """Record the durable desired terminal state.  Moderator only.
 
         Raises:
@@ -520,9 +497,7 @@ class BroadcastRegistry(abc.ABC):
         """Whether a stop has been requested.  Polled by the owner every second."""
 
     @abc.abstractmethod
-    async def expire(
-        self, tenant_id: str, broadcast_id: str, *, now: Optional[float] = None
-    ) -> List[ExpiryEvent]:
+    async def expire(self, tenant_id: str, broadcast_id: str, *, now: Optional[float] = None) -> List[ExpiryEvent]:
         """Run one reconciliation pass and report what expired.
 
         Deliberately conservative: an expired control participant is marked
@@ -626,10 +601,7 @@ class InMemoryBroadcastRegistry(BroadcastRegistry):
         Raises:
             NotModerator: Always, unless ``lease_id`` is the moderator.
         """
-        if (
-            record.descriptor.moderator_lease_id is None
-            or record.descriptor.moderator_lease_id != lease_id
-        ):
+        if record.descriptor.moderator_lease_id is None or record.descriptor.moderator_lease_id != lease_id:
             raise NotModerator(message="caller is not the current moderator")
 
     @staticmethod
@@ -641,9 +613,7 @@ class InMemoryBroadcastRegistry(BroadcastRegistry):
         ]
         return len(record.descriptor.hand_requests) != before
 
-    def _open_barrier(
-        self, record: _Record, target_lease_id: Optional[str], now: float
-    ) -> None:
+    def _open_barrier(self, record: _Record, target_lease_id: Optional[str], now: float) -> None:
         """Enter ``switching``: clear the speaker and increment the floor epoch.
 
         This is the single place the barrier is opened, so grant, revoke,
@@ -741,9 +711,7 @@ class InMemoryBroadcastRegistry(BroadcastRegistry):
             )
             return record.descriptor.model_copy(deep=True)
 
-    async def get(
-        self, tenant_id: str, broadcast_id: str
-    ) -> Optional[BroadcastDescriptor]:
+    async def get(self, tenant_id: str, broadcast_id: str) -> Optional[BroadcastDescriptor]:
         record = self._records.get((tenant_id, broadcast_id))
         if record is None:
             return None
@@ -765,31 +733,20 @@ class InMemoryBroadcastRegistry(BroadcastRegistry):
             now = self._now(None)
             descriptor = record.descriptor
             if descriptor.owner_epoch != expected_owner_epoch:
-                raise NotOwner(
-                    message=(
-                        f"owner epoch {expected_owner_epoch} fenced by "
-                        f"{descriptor.owner_epoch}"
-                    )
-                )
+                raise NotOwner(message=(f"owner epoch {expected_owner_epoch} fenced by " f"{descriptor.owner_epoch}"))
             if descriptor.is_terminal:
                 raise BroadcastTerminal(reason=descriptor.failure_reason)
             if new_state is not descriptor.state:
                 allowed = _ALLOWED_TRANSITIONS[descriptor.state]
                 if new_state not in allowed:
-                    raise ValueError(
-                        f"illegal broadcast transition {descriptor.state.value} → "
-                        f"{new_state.value}"
-                    )
+                    raise ValueError(f"illegal broadcast transition {descriptor.state.value} → " f"{new_state.value}")
             if output_epoch is not None:
                 if output_epoch < descriptor.output_epoch:
                     raise ValueError("output_epoch must be monotonic")
                 descriptor.output_epoch = output_epoch
             if reason is not None:
                 descriptor.failure_reason = reason
-            if (
-                new_state is BroadcastState.STARTING
-                and descriptor.started_at is None
-            ):
+            if new_state is BroadcastState.STARTING and descriptor.started_at is None:
                 descriptor.started_at = _utc(now)
             descriptor.state = new_state
             if descriptor.is_terminal:
@@ -879,14 +836,10 @@ class InMemoryBroadcastRegistry(BroadcastRegistry):
 
             tombstone = record.tombstones.get(livekit_identity)
             if tombstone is not None and tombstone > stamp:
-                raise IdentityTombstoned(
-                    message="livekit identity is tombstoned; obtain a fresh identity"
-                )
+                raise IdentityTombstoned(message="livekit identity is tombstoned; obtain a fresh identity")
 
             if self._occupied(record, stamp) >= descriptor.max_viewers:
-                raise ViewerLimitReached(
-                    message=f"all {descriptor.max_viewers} seats are reserved"
-                )
+                raise ViewerLimitReached(message=f"all {descriptor.max_viewers} seats are reserved")
 
             descriptor.admission_sequence += 1
             lease = ViewerLease(
@@ -920,9 +873,7 @@ class InMemoryBroadcastRegistry(BroadcastRegistry):
             self._touch(record, stamp)
             return Admission(lease=lease.model_copy(deep=True), is_first=is_first)
 
-    async def confirm_viewer(
-        self, tenant_id: str, broadcast_id: str, lease_id: str
-    ) -> ViewerLease:
+    async def confirm_viewer(self, tenant_id: str, broadcast_id: str, lease_id: str) -> ViewerLease:
         record = self._record(tenant_id, broadcast_id)
         async with record.lock:
             now = self._now(None)
@@ -1007,14 +958,10 @@ class InMemoryBroadcastRegistry(BroadcastRegistry):
                 new_moderator=new_moderator,
             )
 
-    async def list_leases(
-        self, tenant_id: str, broadcast_id: str
-    ) -> List[ViewerLease]:
+    async def list_leases(self, tenant_id: str, broadcast_id: str) -> List[ViewerLease]:
         record = self._record(tenant_id, broadcast_id)
         async with record.lock:
-            ordered: Sequence[ViewerLease] = sorted(
-                record.leases.values(), key=lambda lease: lease.admission_sequence
-            )
+            ordered: Sequence[ViewerLease] = sorted(record.leases.values(), key=lambda lease: lease.admission_sequence)
             return [lease.model_copy(deep=True) for lease in ordered]
 
     # ── Hands ──────────────────────────────────────────────────────────
@@ -1046,9 +993,7 @@ class InMemoryBroadcastRegistry(BroadcastRegistry):
                 self._touch(record, stamp)
             return record.descriptor.model_copy(deep=True)
 
-    async def cancel_hand(
-        self, tenant_id: str, broadcast_id: str, lease_id: str
-    ) -> BroadcastDescriptor:
+    async def cancel_hand(self, tenant_id: str, broadcast_id: str, lease_id: str) -> BroadcastDescriptor:
         record = self._record(tenant_id, broadcast_id)
         async with record.lock:
             now = self._now(None)
@@ -1088,21 +1033,14 @@ class InMemoryBroadcastRegistry(BroadcastRegistry):
             descriptor = record.descriptor
             self._require_moderator(record, moderator_lease_id)
             if descriptor.version != expected_version:
-                raise StaleVersion(
-                    message=(
-                        f"expected version {expected_version}, current "
-                        f"{descriptor.version}"
-                    )
-                )
+                raise StaleVersion(message=(f"expected version {expected_version}, current " f"{descriptor.version}"))
             if descriptor.floor_state is FloorState.SWITCHING:
                 raise StaleVersion(message="a floor switch is already in flight")
 
             resolved = target_lease_id or moderator_lease_id
             target = record.leases.get(resolved)
             if target is None or target.state is not LeaseState.ACTIVE:
-                raise FloorNotGranted(
-                    message="only an active admitted participant can hold the floor"
-                )
+                raise FloorNotGranted(message="only an active admitted participant can hold the floor")
             self._open_barrier(record, resolved, now)
             return descriptor.model_copy(deep=True)
 
@@ -1113,10 +1051,7 @@ class InMemoryBroadcastRegistry(BroadcastRegistry):
         async with record.lock:
             now = self._now(None)
             descriptor = record.descriptor
-            if (
-                descriptor.floor_state is not FloorState.SWITCHING
-                or descriptor.floor_epoch != floor_epoch
-            ):
+            if descriptor.floor_state is not FloorState.SWITCHING or descriptor.floor_epoch != floor_epoch:
                 raise StaleFloorEpoch(
                     message=(
                         f"barrier for epoch {floor_epoch} is no longer in flight "
@@ -1137,29 +1072,20 @@ class InMemoryBroadcastRegistry(BroadcastRegistry):
             self._touch(record, now)
             return descriptor.model_copy(deep=True)
 
-    async def abort_floor(
-        self, tenant_id: str, broadcast_id: str, floor_epoch: int
-    ) -> BroadcastDescriptor:
+    async def abort_floor(self, tenant_id: str, broadcast_id: str, floor_epoch: int) -> BroadcastDescriptor:
         record = self._record(tenant_id, broadcast_id)
         async with record.lock:
             now = self._now(None)
             descriptor = record.descriptor
-            if (
-                descriptor.floor_state is not FloorState.SWITCHING
-                or descriptor.floor_epoch != floor_epoch
-            ):
-                raise StaleFloorEpoch(
-                    message=f"no barrier in flight for epoch {floor_epoch}"
-                )
+            if descriptor.floor_state is not FloorState.SWITCHING or descriptor.floor_epoch != floor_epoch:
+                raise StaleFloorEpoch(message=f"no barrier in flight for epoch {floor_epoch}")
             descriptor.floor_state = FloorState.IDLE
             descriptor.speaker_lease_id = None
             record.pending_floor_target = None
             self._touch(record, now)
             return descriptor.model_copy(deep=True)
 
-    async def release_floor(
-        self, tenant_id: str, broadcast_id: str, speaker_lease_id: str
-    ) -> BroadcastDescriptor:
+    async def release_floor(self, tenant_id: str, broadcast_id: str, speaker_lease_id: str) -> BroadcastDescriptor:
         record = self._record(tenant_id, broadcast_id)
         async with record.lock:
             now = self._now(None)
@@ -1177,13 +1103,9 @@ class InMemoryBroadcastRegistry(BroadcastRegistry):
         moderator_lease_id: str,
         expected_version: int,
     ) -> BroadcastDescriptor:
-        return await self.grant_floor(
-            tenant_id, broadcast_id, moderator_lease_id, None, expected_version
-        )
+        return await self.grant_floor(tenant_id, broadcast_id, moderator_lease_id, None, expected_version)
 
-    async def elect_moderator(
-        self, tenant_id: str, broadcast_id: str, *, now: Optional[float] = None
-    ) -> Optional[str]:
+    async def elect_moderator(self, tenant_id: str, broadcast_id: str, *, now: Optional[float] = None) -> Optional[str]:
         record = self._record(tenant_id, broadcast_id)
         async with record.lock:
             stamp = self._now(now)
@@ -1206,21 +1128,15 @@ class InMemoryBroadcastRegistry(BroadcastRegistry):
             descriptor = record.descriptor
             validate_audio_authority(descriptor, lease_id, floor_epoch, socket_id)
             lease = self._lease(record, lease_id)
-            if lease.speaker_socket_id is not None and (
-                lease.speaker_socket_id != socket_id
-            ):
-                raise SpeakerConnectionExists(
-                    message="a capture socket is already bound to this lease"
-                )
+            if lease.speaker_socket_id is not None and (lease.speaker_socket_id != socket_id):
+                raise SpeakerConnectionExists(message="a capture socket is already bound to this lease")
             already_bound = lease.speaker_socket_id == socket_id
             lease.speaker_socket_id = socket_id
             if not already_bound:
                 self._touch(record, now, bump_version=False)
             return True
 
-    async def unbind_speaker_socket(
-        self, tenant_id: str, broadcast_id: str, lease_id: str, socket_id: str
-    ) -> bool:
+    async def unbind_speaker_socket(self, tenant_id: str, broadcast_id: str, lease_id: str, socket_id: str) -> bool:
         record = self._record(tenant_id, broadcast_id)
         async with record.lock:
             lease = record.leases.get(lease_id)
@@ -1231,9 +1147,7 @@ class InMemoryBroadcastRegistry(BroadcastRegistry):
 
     # ── Stop and reconciliation ────────────────────────────────────────
 
-    async def request_stop(
-        self, tenant_id: str, broadcast_id: str, by_lease_id: str
-    ) -> BroadcastDescriptor:
+    async def request_stop(self, tenant_id: str, broadcast_id: str, by_lease_id: str) -> BroadcastDescriptor:
         record = self._record(tenant_id, broadcast_id)
         async with record.lock:
             now = self._now(None)
@@ -1251,9 +1165,7 @@ class InMemoryBroadcastRegistry(BroadcastRegistry):
         async with record.lock:
             return record.stop_requested_by is not None
 
-    async def expire(
-        self, tenant_id: str, broadcast_id: str, *, now: Optional[float] = None
-    ) -> List[ExpiryEvent]:
+    async def expire(self, tenant_id: str, broadcast_id: str, *, now: Optional[float] = None) -> List[ExpiryEvent]:
         record = self._records.get((tenant_id, broadcast_id))
         if record is None:
             return []
@@ -1266,17 +1178,10 @@ class InMemoryBroadcastRegistry(BroadcastRegistry):
             for identity, expiry in list(record.tombstones.items()):
                 if expiry <= stamp:
                     del record.tombstones[identity]
-                    events.append(
-                        ExpiryEvent(
-                            kind=ExpiryKind.TOMBSTONE, detail="identity reusable again"
-                        )
-                    )
+                    events.append(ExpiryEvent(kind=ExpiryKind.TOMBSTONE, detail="identity reusable again"))
 
             if descriptor.is_terminal:
-                if (
-                    record.terminal_at is not None
-                    and (stamp - record.terminal_at) >= TERMINAL_RETENTION_S
-                ):
+                if record.terminal_at is not None and (stamp - record.terminal_at) >= TERMINAL_RETENTION_S:
                     self._records.pop((tenant_id, broadcast_id), None)
                     events.append(
                         ExpiryEvent(

@@ -6,6 +6,7 @@ Verifies:
 - 400 for `count` out of bounds or missing session_id.
 - agent_token is never in the response.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -18,7 +19,6 @@ import pytest
 from aiohttp import web
 
 from parrot.handlers.avatar import AVATAR_SESSIONS_KEY, _mint_viewer_tokens
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -77,6 +77,7 @@ async def test_mint_viewer_tokens_returns_n_tokens():
             sys.modules["parrot.integrations.liveavatar"] = saved
 
     import json
+
     data = json.loads(resp.body)
     viewers = data["viewers"]
     assert len(viewers) == 3
@@ -193,6 +194,7 @@ async def test_two_viewer_tokens_same_room():
             sys.modules["parrot.integrations.liveavatar"] = saved
 
     import json
+
     data = json.loads(resp.body)
     viewers = data["viewers"]
     assert len(viewers) == 2
@@ -205,6 +207,7 @@ async def test_two_viewer_tokens_same_room():
 # ---------------------------------------------------------------------------
 # FEAT-537 (TASK-2962): the legacy viewer helper must not admit broadcast rooms
 # ---------------------------------------------------------------------------
+
 
 async def test_legacy_viewer_helper_rejects_broadcast_room() -> None:
     """A broadcast room name is not mintable through the legacy bypass.

@@ -3,6 +3,7 @@
 Covers spec §2 "Data Models" and the AC3 invariant that the public projection
 never carries a credential.
 """
+
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
@@ -135,11 +136,7 @@ def test_public_state_has_no_secret_like_keys() -> None:
         liveavatar_session_id="vendor-session-9",
     )
     dumped = descriptor.to_public_state(viewer_count=3).model_dump()
-    offending = [
-        key
-        for key in _walk_keys(dumped)
-        if any(fragment in key.lower() for fragment in _FORBIDDEN)
-    ]
+    offending = [key for key in _walk_keys(dumped) if any(fragment in key.lower() for fragment in _FORBIDDEN)]
     assert offending == []
 
 
@@ -188,31 +185,15 @@ def test_public_payload_is_json_safe() -> None:
 
 def test_media_ready_is_false_until_a_media_state_with_a_room() -> None:
     assert _descriptor().to_public_state().media_ready is False
-    assert (
-        _descriptor(state=BroadcastState.STARTING, room_name="r")
-        .to_public_state()
-        .media_ready
-        is False
-    )
-    assert (
-        _descriptor(state=BroadcastState.AVATAR, room_name="r")
-        .to_public_state()
-        .media_ready
-        is True
-    )
-    assert (
-        _descriptor(state=BroadcastState.AVATAR).to_public_state().media_ready is False
-    )
+    assert _descriptor(state=BroadcastState.STARTING, room_name="r").to_public_state().media_ready is False
+    assert _descriptor(state=BroadcastState.AVATAR, room_name="r").to_public_state().media_ready is True
+    assert _descriptor(state=BroadcastState.AVATAR).to_public_state().media_ready is False
 
 
 def test_selected_identity_follows_the_output_mode() -> None:
     kwargs = {"avatar_identity": "avatar-pub", "direct_identity": "direct-pub"}
-    assert _descriptor(state=BroadcastState.AVATAR, **kwargs).selected_identity == (
-        "avatar-pub"
-    )
-    assert _descriptor(state=BroadcastState.AUDIO_ONLY, **kwargs).selected_identity == (
-        "direct-pub"
-    )
+    assert _descriptor(state=BroadcastState.AVATAR, **kwargs).selected_identity == ("avatar-pub")
+    assert _descriptor(state=BroadcastState.AUDIO_ONLY, **kwargs).selected_identity == ("direct-pub")
     # No authoritative source outside the two media states.
     assert _descriptor(state=BroadcastState.STARTING, **kwargs).selected_identity is None
     assert _descriptor(state=BroadcastState.ENDED, **kwargs).selected_identity is None
@@ -289,18 +270,12 @@ def test_display_name_is_bounded_and_stripped() -> None:
 
 def test_blank_display_name_falls_back() -> None:
     assert _principal(display_name="   ").display_name == "participant"
-    assert HandRequest(lease_id="l", display_name="", sequence=0).display_name == (
-        "participant"
-    )
+    assert HandRequest(lease_id="l", display_name="", sequence=0).display_name == ("participant")
 
 
 def test_principal_from_authenticated_user_takes_scope_from_the_caller() -> None:
-    user = AuthenticatedUser(
-        user_id="u-1", username="Ada Lovelace", email="ada@example.com", roles=["admin"]
-    )
-    principal = ParticipantPrincipal.from_authenticated_user(
-        user, tenant_id="acme", agent_id="agent-1"
-    )
+    user = AuthenticatedUser(user_id="u-1", username="Ada Lovelace", email="ada@example.com", roles=["admin"])
+    principal = ParticipantPrincipal.from_authenticated_user(user, tenant_id="acme", agent_id="agent-1")
     assert principal.user_id == "u-1"
     assert principal.tenant_id == "acme"
     assert principal.agent_id == "agent-1"
@@ -400,14 +375,8 @@ def test_audio_frame_rejects_mismatched_sample_count() -> None:
 def test_audio_frame_is_current_only_when_every_epoch_matches() -> None:
     frame = _frame()
     assert frame.is_current(owner_epoch=1, floor_epoch=2, output_epoch=3) is True
-    assert (
-        frame.is_current(owner_epoch=1, floor_epoch=2, output_epoch=3, turn_id="turn-1")
-        is True
-    )
+    assert frame.is_current(owner_epoch=1, floor_epoch=2, output_epoch=3, turn_id="turn-1") is True
     assert frame.is_current(owner_epoch=9, floor_epoch=2, output_epoch=3) is False
     assert frame.is_current(owner_epoch=1, floor_epoch=9, output_epoch=3) is False
     assert frame.is_current(owner_epoch=1, floor_epoch=2, output_epoch=9) is False
-    assert (
-        frame.is_current(owner_epoch=1, floor_epoch=2, output_epoch=3, turn_id="other")
-        is False
-    )
+    assert frame.is_current(owner_epoch=1, floor_epoch=2, output_epoch=3, turn_id="other") is False

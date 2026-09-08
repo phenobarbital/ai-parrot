@@ -15,6 +15,7 @@ It skips by default. A skipped live test is reported as **NOT VERIFIED**, never
 as a pass: `docs/testing/voicebot-multiroom-live-gate.md` is the record, and at
 the time of writing it reads 0 of 12.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -44,9 +45,8 @@ _REQUIRED_ENV: Tuple[str, ...] = (
     "VOICEBOT_BROADCAST_REDIS_URL",
 )
 
-_GATE_ENABLED: bool = (
-    os.environ.get("PARROT_LIVE_BROADCAST_GATE") == "1"
-    and all(os.environ.get(name) for name in _REQUIRED_ENV)
+_GATE_ENABLED: bool = os.environ.get("PARROT_LIVE_BROADCAST_GATE") == "1" and all(
+    os.environ.get(name) for name in _REQUIRED_ENV
 )
 
 _SKIP_REASON: str = (
@@ -55,9 +55,7 @@ _SKIP_REASON: str = (
     f"{', '.join(_REQUIRED_ENV)}; see docs/testing/voicebot-multiroom-live-gate.md)"
 )
 
-pytest.importorskip(
-    "playwright.async_api", reason="playwright is required for browser tests"
-)
+pytest.importorskip("playwright.async_api", reason="playwright is required for browser tests")
 
 #: Seconds of synchronized A/V captured per browser for the human assessment.
 CAPTURE_SECONDS: float = 10.0
@@ -96,8 +94,7 @@ async def test_live_scenario1_three_real_browsers(live_env) -> None:
 async def test_live_scenario2_real_moderated_handoff(live_env) -> None:
     """Scenario 2 against real vendors: two speakers, one conversation."""
     pytest.fail(
-        "UNIMPLEMENTED — see test_live_scenario1_three_real_browsers. "
-        "Requires a real account to author against."
+        "UNIMPLEMENTED — see test_live_scenario1_three_real_browsers. " "Requires a real account to author against."
     )
 
 
@@ -105,8 +102,7 @@ async def test_live_scenario2_real_moderated_handoff(live_env) -> None:
 async def test_live_scenario4_ten_real_browsers(live_env) -> None:
     """Scenario 4 against real vendors: ten browsers, one avatar session."""
     pytest.fail(
-        "UNIMPLEMENTED — see test_live_scenario1_three_real_browsers. "
-        "Requires a real account to author against."
+        "UNIMPLEMENTED — see test_live_scenario1_three_real_browsers. " "Requires a real account to author against."
     )
 
 

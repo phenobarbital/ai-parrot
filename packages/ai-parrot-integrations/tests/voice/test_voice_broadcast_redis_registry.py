@@ -14,6 +14,7 @@ Two layers:
 
 Skipped with an explicit NOT VERIFIED reason when no Redis is reachable.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -114,9 +115,7 @@ del _name, _func, _bound
 
 
 def _principal(user: str) -> ParticipantPrincipal:
-    return ParticipantPrincipal(
-        user_id=user, tenant_id=TENANT, agent_id=AGENT, display_name=user
-    )
+    return ParticipantPrincipal(user_id=user, tenant_id=TENANT, agent_id=AGENT, display_name=user)
 
 
 def _descriptor() -> BroadcastDescriptor:
@@ -129,9 +128,7 @@ def _descriptor() -> BroadcastDescriptor:
 
 
 @pytest.fixture
-async def two_registries(
-    registry: Any, clock: contract.FakeClock
-) -> AsyncIterator[tuple[Any, Any]]:
+async def two_registries(registry: Any, clock: contract.FakeClock) -> AsyncIterator[tuple[Any, Any]]:
     """A second registry object on its own connection, sharing the key space."""
     peer = _new_registry(registry._prefix, clock)  # noqa: SLF001 — same key space
     try:
@@ -147,15 +144,10 @@ async def test_two_instances_never_admit_eleventh(
     await first.create(_descriptor())
 
     async def _join(reg: Any, index: int) -> Any:
-        return await reg.reserve_viewer(
-            TENANT, BROADCAST, _principal(f"user-{index}"), f"identity-{index}"
-        )
+        return await reg.reserve_viewer(TENANT, BROADCAST, _principal(f"user-{index}"), f"identity-{index}")
 
     results = await asyncio.gather(
-        *(
-            _join(first if index % 2 == 0 else second, index)
-            for index in range(MAX_VIEWERS + 2)
-        ),
+        *(_join(first if index % 2 == 0 else second, index) for index in range(MAX_VIEWERS + 2)),
         return_exceptions=True,
     )
     admitted = [r for r in results if not isinstance(r, BaseException)]
@@ -182,12 +174,7 @@ async def test_owner_claim_race_single_winner(
     await first.create(_descriptor())
 
     outcomes = await asyncio.gather(
-        *(
-            (first if index % 2 == 0 else second).claim_owner(
-                TENANT, BROADCAST, f"worker-{index}"
-            )
-            for index in range(6)
-        )
+        *((first if index % 2 == 0 else second).claim_owner(TENANT, BROADCAST, f"worker-{index}") for index in range(6))
     )
     winners = [epoch for claimed, epoch in outcomes if claimed]
     assert len(winners) == 1
@@ -203,9 +190,7 @@ async def test_stop_requested_on_a_is_visible_on_b(
 ) -> None:
     first, second = two_registries
     await first.create(_descriptor())
-    admission = await first.reserve_viewer(
-        TENANT, BROADCAST, _principal("moderator"), "identity-moderator"
-    )
+    admission = await first.reserve_viewer(TENANT, BROADCAST, _principal("moderator"), "identity-moderator")
     assert await second.stop_requested(TENANT, BROADCAST) is False
     await first.request_stop(TENANT, BROADCAST, admission.lease.lease_id)
     assert await second.stop_requested(TENANT, BROADCAST) is True
@@ -216,13 +201,9 @@ async def test_floor_barrier_is_visible_across_instances(
 ) -> None:
     first, second = two_registries
     await first.create(_descriptor())
-    moderator = await first.reserve_viewer(
-        TENANT, BROADCAST, _principal("moderator"), "identity-moderator"
-    )
+    moderator = await first.reserve_viewer(TENANT, BROADCAST, _principal("moderator"), "identity-moderator")
     await first.confirm_viewer(TENANT, BROADCAST, moderator.lease.lease_id)
-    guest = await second.reserve_viewer(
-        TENANT, BROADCAST, _principal("guest"), "identity-guest"
-    )
+    guest = await second.reserve_viewer(TENANT, BROADCAST, _principal("guest"), "identity-guest")
     await second.confirm_viewer(TENANT, BROADCAST, guest.lease.lease_id)
 
     current = await first.get(TENANT, BROADCAST)
@@ -235,9 +216,7 @@ async def test_floor_barrier_is_visible_across_instances(
         current.version,
     )
     # The producer acknowledging the barrier may live on the other worker.
-    granted = await second.commit_floor(
-        TENANT, BROADCAST, guest.lease.lease_id, switching.floor_epoch
-    )
+    granted = await second.commit_floor(TENANT, BROADCAST, guest.lease.lease_id, switching.floor_epoch)
     assert granted.speaker_lease_id == guest.lease.lease_id
 
     seen_by_first = await first.get(TENANT, BROADCAST)
@@ -250,15 +229,11 @@ async def test_conflicting_grants_across_instances_install_one_speaker(
 ) -> None:
     first, second = two_registries
     await first.create(_descriptor())
-    moderator = await first.reserve_viewer(
-        TENANT, BROADCAST, _principal("moderator"), "identity-moderator"
-    )
+    moderator = await first.reserve_viewer(TENANT, BROADCAST, _principal("moderator"), "identity-moderator")
     await first.confirm_viewer(TENANT, BROADCAST, moderator.lease.lease_id)
     guests = []
     for name in ("a", "b"):
-        admission = await second.reserve_viewer(
-            TENANT, BROADCAST, _principal(f"guest-{name}"), f"identity-{name}"
-        )
+        admission = await second.reserve_viewer(TENANT, BROADCAST, _principal(f"guest-{name}"), f"identity-{name}")
         await second.confirm_viewer(TENANT, BROADCAST, admission.lease.lease_id)
         guests.append(admission)
 
@@ -294,9 +269,7 @@ async def test_conflicting_grants_across_instances_install_one_speaker(
 
 async def test_no_secret_like_values_in_redis(registry: Any) -> None:
     await registry.create(_descriptor())
-    moderator = await registry.reserve_viewer(
-        TENANT, BROADCAST, _principal("moderator"), "identity-moderator"
-    )
+    moderator = await registry.reserve_viewer(TENANT, BROADCAST, _principal("moderator"), "identity-moderator")
     await registry.confirm_viewer(TENANT, BROADCAST, moderator.lease.lease_id)
     await registry.claim_owner(TENANT, BROADCAST, "worker-a")
     await registry.raise_hand(TENANT, BROADCAST, moderator.lease.lease_id)

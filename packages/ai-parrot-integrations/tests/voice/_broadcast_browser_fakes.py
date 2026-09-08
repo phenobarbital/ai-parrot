@@ -13,6 +13,7 @@ Faked boundaries and nothing else:
 `fetch` is deliberately **not** faked: the REST API is the real
 `register_voice_broadcast_routes` handler over a real `BroadcastService`.
 """
+
 from __future__ import annotations
 
 import importlib.util
@@ -38,14 +39,21 @@ API_PREFIX = f"/api/v1/agents/{AGENT_ID}/voice-broadcasts"
 #: eleventh admission with a *valid* token (an invalid one would 401 first and
 #: prove nothing about the seat limit).
 PARTICIPANTS: List[str] = [
-    "mod", "alice", "bob", "carol", "dave", "erin", "frank", "grace", "heidi",
-    "ivan", "judy",
+    "mod",
+    "alice",
+    "bob",
+    "carol",
+    "dave",
+    "erin",
+    "frank",
+    "grace",
+    "heidi",
+    "ivan",
+    "judy",
 ]
 
 DEMO_TOKENS: Dict[str, str] = {name: f"tok-{name}" for name in PARTICIPANTS}
-DEMO_PARTICIPANTS_ENV: str = ",".join(
-    f"{name}:{token}" for name, token in DEMO_TOKENS.items()
-)
+DEMO_PARTICIPANTS_ENV: str = ",".join(f"{name}:{token}" for name, token in DEMO_TOKENS.items())
 
 
 def client_stub_modules() -> Optional[Dict[str, Any]]:
@@ -142,9 +150,7 @@ def ensure_server_handler(monkeypatch: Any) -> None:
         handlers = importlib.import_module("parrot.handlers")
         worktree = str(SERVER_PKG_SRC / "parrot" / "handlers")
         if worktree not in handlers.__path__:
-            monkeypatch.setattr(
-                handlers, "__path__", list(handlers.__path__) + [worktree]
-            )
+            monkeypatch.setattr(handlers, "__path__", list(handlers.__path__) + [worktree])
 
 
 # ── Browser init script ────────────────────────────────────────────────────

@@ -10,6 +10,7 @@ easiest to regress: **an ungranted participant's microphone is never opened.**
 `getUserMedia` is spied on rather than mocked away, so "never called" is a
 fact about the page rather than about the test's setup.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -263,13 +264,11 @@ async def _enter_broadcast(page, *, speaker: bool = True) -> None:
         }""",
         speaker,
     )
-    await page.evaluate(
-        """async () => {
+    await page.evaluate("""async () => {
             const client = window.voiceChatClient || window.__client;
             client.demoToken = 'tok-alice';
             await client.enterBroadcast({ broadcastId: 'bc-test' });
-        }"""
-    )
+        }""")
     await page.wait_for_function(
         "() => (window.voiceChatClient || window.__client).broadcastClient !== null",
         timeout=5000,
@@ -296,8 +295,7 @@ async def test_stateful_resampler_carries_phase_across_buffers(demo_page) -> Non
     every time. The signal is one continuous sine split across two buffers, so
     any discontinuity in the output is the resampler's, not the input's.
     """
-    result = await demo_page.evaluate(
-        """async () => {
+    result = await demo_page.evaluate("""async () => {
             const bc = await import('/static/broadcast-ui.js');
             const N = 4800;
             const make = (offset) => {
@@ -317,8 +315,7 @@ async def test_stateful_resampler_carries_phase_across_buffers(demo_page) -> Non
             const naive = 2 * Math.floor(N / (44100 / 16000));
             return { a: a.length, b: b.length, total: joined.length, maxJump, naive,
                      pcmBytes: bc.floatToPcm16(a).byteLength };
-        }"""
-    )
+        }""")
     expected = round(2 * 4800 / (44100 / 16000))
     # No samples lost to per-buffer truncation.
     assert abs(result["total"] - expected) <= 1
@@ -330,15 +327,13 @@ async def test_stateful_resampler_carries_phase_across_buffers(demo_page) -> Non
 
 
 async def test_resampler_passes_through_at_16k(demo_page) -> None:
-    result = await demo_page.evaluate(
-        """async () => {
+    result = await demo_page.evaluate("""async () => {
             const bc = await import('/static/broadcast-ui.js');
             const state = bc.createResamplerState();
             const input = new Float32Array(1600).fill(0.25);
             const out = bc.resampleTo16k(state, input, 16000);
             return { len: out.length, first: out[0] };
-        }"""
-    )
+        }""")
     assert result["len"] == 1600
     assert result["first"] == pytest.approx(0.25)
 
@@ -350,31 +345,25 @@ async def test_ungranted_participant_never_requests_microphone(demo_page) -> Non
     talk_disabled = await demo_page.evaluate("document.getElementById('recordBtn').disabled")
     assert talk_disabled is True
 
-    await demo_page.evaluate(
-        "(window.voiceChatClient || window.__client).startRecording()"
-    )
+    await demo_page.evaluate("(window.voiceChatClient || window.__client).startRecording()")
     assert await demo_page.evaluate("window.__getUserMediaCalls") == 0
 
 
 async def test_ready_to_speak_does_not_enable_talk_without_floor(demo_page) -> None:
     """A generic transport frame must not override server floor permission."""
     await _enter_broadcast(demo_page, speaker=False)
-    await demo_page.evaluate(
-        """() => {
+    await demo_page.evaluate("""() => {
             const client = window.voiceChatClient || window.__client;
             client.handleMessage({ type: 'ready_to_speak', message: 'Ready' });
-        }"""
-    )
+        }""")
     assert await demo_page.evaluate("document.getElementById('recordBtn').disabled") is True
 
     # The same frame in single-user mode still enables Talk — unchanged.
-    await demo_page.evaluate(
-        """() => {
+    await demo_page.evaluate("""() => {
             const client = window.voiceChatClient || window.__client;
             client.broadcastMode = false;
             client.handleMessage({ type: 'ready_to_speak', message: 'Ready' });
-        }"""
-    )
+        }""")
     assert await demo_page.evaluate("document.getElementById('recordBtn').disabled") is False
 
 
@@ -382,38 +371,30 @@ async def test_granted_participant_can_talk_and_sends_floor_epoch(demo_page) -> 
     await _enter_broadcast(demo_page, speaker=True)
     assert await demo_page.evaluate("document.getElementById('recordBtn').disabled") is False
 
-    stamped = await demo_page.evaluate(
-        """() => {
+    stamped = await demo_page.evaluate("""() => {
             const client = window.voiceChatClient || window.__client;
             return client.withFloorEpoch({ type: 'start_recording' });
-        }"""
-    )
+        }""")
     assert stamped["floor_epoch"] == 1
 
 
 async def test_revoke_disables_talk_and_stops_capture(demo_page) -> None:
     await _enter_broadcast(demo_page, speaker=True)
-    await demo_page.evaluate(
-        """() => {
+    await demo_page.evaluate("""() => {
             const client = window.voiceChatClient || window.__client;
             client.isRecording = true;
             window.__serverState.speaker_display_id = 'lease-other';
             window.__serverState.version = 2;
             window.__controlWs.push({ type: 'broadcast_state', state: window.__serverState });
             window.__controlWs.push({ type: 'floor_revoked', floor_epoch: 2 });
-        }"""
-    )
-    await demo_page.wait_for_function(
-        "() => document.getElementById('recordBtn').disabled === true", timeout=5000
-    )
+        }""")
+    await demo_page.wait_for_function("() => document.getElementById('recordBtn').disabled === true", timeout=5000)
     # And no audio may be emitted after the revoke.
     sent_before = await demo_page.evaluate("window.__wsSent.length")
-    await demo_page.evaluate(
-        """() => {
+    await demo_page.evaluate("""() => {
             const client = window.voiceChatClient || window.__client;
             client.sendAudioChunk(new Int16Array([1, 2, 3]).buffer);
-        }"""
-    )
+        }""")
     assert await demo_page.evaluate("window.__wsSent.length") == sent_before
 
 
@@ -437,13 +418,11 @@ async def test_demo_token_is_never_persisted(demo_page) -> None:
 async def test_stale_state_disables_talk(demo_page) -> None:
     """Losing contact with the server must mute the microphone (spec §2)."""
     await _enter_broadcast(demo_page, speaker=True)
-    await demo_page.evaluate(
-        """() => {
+    await demo_page.evaluate("""() => {
             const client = window.voiceChatClient || window.__client;
             client.broadcastClient.lastStateAt = Date.now() - 10000;
             client.broadcastClient.checkFreshness();
-        }"""
-    )
+        }""")
     assert await demo_page.evaluate("document.getElementById('recordBtn').disabled") is True
 
 
@@ -473,9 +452,7 @@ async def test_api_calls_carry_the_bearer_token(demo_page) -> None:
     await _enter_broadcast(demo_page, speaker=True)
     calls = await demo_page.evaluate("window.__fetchCalls")
     assert calls
-    assert all(
-        call["headers"].get("Authorization") == "Bearer tok-alice" for call in calls
-    )
+    assert all(call["headers"].get("Authorization") == "Bearer tok-alice" for call in calls)
 
 
 async def test_no_page_errors(demo_page) -> None:

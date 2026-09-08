@@ -25,6 +25,7 @@ Every vendor-timing threshold is a constructor knob rather than a constant,
 because the TASK-2950 live gate did **not** run (0/12 scenarios, no
 credentials) and so the spec's 15 s / 10 s / 2 s defaults remain *unverified*.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -200,9 +201,7 @@ class BroadcastSession:
             "output_epoch": self.output_epoch,
             "floor_epoch": self.floor_epoch,
             "reason": self.failure_reason.value if self.failure_reason else None,
-            "liveavatar_session_id": getattr(
-                self._avatar, "liveavatar_session_id", None
-            ),
+            "liveavatar_session_id": getattr(self._avatar, "liveavatar_session_id", None),
         }
 
     def _log_state(self, event: str, reason: Optional[BroadcastReason] = None) -> None:
@@ -276,12 +275,8 @@ class BroadcastSession:
         await self._transition(BroadcastState.STARTING)
 
         try:
-            await self.room_manager.create_room(
-                self.room_name, max_participants=ROOM_CAPACITY
-            )
-            direct_token = self.room_manager.mint_publisher_token(
-                self.room_name, self.direct_identity
-            )
+            await self.room_manager.create_room(self.room_name, max_participants=ROOM_CAPACITY)
+            direct_token = self.room_manager.mint_publisher_token(self.room_name, self.direct_identity)
             self._publisher = await self._publisher_factory(
                 livekit_url=self.room_manager.url,
                 token=direct_token,
@@ -299,13 +294,10 @@ class BroadcastSession:
         self._start_tasks()
 
         try:
-            avatar_token = self.room_manager.mint_publisher_token(
-                self.room_name, self.avatar_identity
-            )
+            avatar_token = self.room_manager.mint_publisher_token(self.room_name, self.avatar_identity)
             self._avatar = await self._avatar_factory(
                 agent_id=self.descriptor.agent_id,
-                session_id=self.descriptor.voice_session_id
-                or self.descriptor.broadcast_id,
+                session_id=self.descriptor.voice_session_id or self.descriptor.broadcast_id,
                 tenant_id=self.descriptor.tenant_id,
                 livekit_url=self.room_manager.url,
                 room_name=self.room_name,
@@ -324,8 +316,7 @@ class BroadcastSession:
             # aiohttp WS handshake error carries the full authenticated
             # `ws_url` in its message, which must never reach a log.
             self.logger.warning(
-                "broadcast %s: avatar startup failed (%s: %s) — selecting "
-                "audio_only",
+                "broadcast %s: avatar startup failed (%s: %s) — selecting " "audio_only",
                 self.descriptor.broadcast_id,
                 reason.value,
                 type(exc).__name__,
@@ -353,17 +344,13 @@ class BroadcastSession:
             return self.state
 
         self._last_speech_event_at = self._clock()
-        await self._transition(
-            BroadcastState.AVATAR, output_epoch=self.output_epoch + 1
-        )
+        await self._transition(BroadcastState.AVATAR, output_epoch=self.output_epoch + 1)
         return self.state
 
     def _start_tasks(self) -> None:
         """Start the routing pump and the ownership/stop loop."""
         if self._pump_task is None:
-            self._pump_task = asyncio.create_task(
-                self._pump(), name=f"broadcast-pump-{self.descriptor.broadcast_id}"
-            )
+            self._pump_task = asyncio.create_task(self._pump(), name=f"broadcast-pump-{self.descriptor.broadcast_id}")
         if self._owner_task is None:
             self._owner_task = asyncio.create_task(
                 self._owner_loop(),
@@ -432,9 +419,7 @@ class BroadcastSession:
             # opposite of what a fallback is for.  If it still does not fit, the
             # frame is dropped: spec §2 accepts "a brief gap" at the cutover
             # boundary but never unbounded accumulation.
-            restamped = frame.model_copy(
-                update={"output_epoch": self.output_epoch}
-            )
+            restamped = frame.model_copy(update={"output_epoch": self.output_epoch})
             if self._queued_bytes + len(restamped.pcm) <= self._max_queued_bytes:
                 self._queue.append((self._generation, restamped))
                 self._queued_bytes += len(restamped.pcm)
@@ -487,9 +472,7 @@ class BroadcastSession:
         except asyncio.CancelledError:
             raise
         except Exception:  # noqa: BLE001 — the pump must outlive one bad frame
-            self.logger.exception(
-                "broadcast %s: routing pump error", self.descriptor.broadcast_id
-            )
+            self.logger.exception("broadcast %s: routing pump error", self.descriptor.broadcast_id)
 
     async def _deliver(self, frame: BroadcastAudioFrame) -> None:
         """Hand one frame to whichever sink the current state selects.
@@ -499,9 +482,7 @@ class BroadcastSession:
         """
         if self.state is BroadcastState.AVATAR and self._avatar is not None:
             try:
-                await asyncio.wait_for(
-                    self._avatar.speak(frame.pcm), timeout=self._send_deadline_s
-                )
+                await asyncio.wait_for(self._avatar.speak(frame.pcm), timeout=self._send_deadline_s)
                 self._last_frame_sent_at = self._clock()
             except (AvatarSendTimeout, asyncio.TimeoutError):
                 # The frame's fate is unknown — it may already be playing, so
@@ -544,17 +525,11 @@ class BroadcastSession:
         await self._drain(timeout=self._send_deadline_s * 4)
         if self.state is BroadcastState.AVATAR and self._avatar is not None:
             with contextlib.suppress(Exception):
-                await asyncio.wait_for(
-                    self._avatar.finish_turn(), timeout=self._send_deadline_s
-                )
+                await asyncio.wait_for(self._avatar.finish_turn(), timeout=self._send_deadline_s)
         elif self._publisher is not None:
             with contextlib.suppress(Exception):
-                await self._publisher.wait_for_playout(
-                    timeout_s=self._send_deadline_s * 4
-                )
-        self.logger.debug(
-            "broadcast %s: turn %s finished", self.descriptor.broadcast_id, turn_id
-        )
+                await self._publisher.wait_for_playout(timeout_s=self._send_deadline_s * 4)
+        self.logger.debug("broadcast %s: turn %s finished", self.descriptor.broadcast_id, turn_id)
 
     async def _drain(self, *, timeout: float) -> bool:
         """Wait until the queue empties.
@@ -603,9 +578,7 @@ class BroadcastSession:
 
         if self.state is BroadcastState.AVATAR and self._avatar is not None:
             with contextlib.suppress(Exception):
-                await asyncio.wait_for(
-                    self._avatar.interrupt(), timeout=self._send_deadline_s
-                )
+                await asyncio.wait_for(self._avatar.interrupt(), timeout=self._send_deadline_s)
         if self._publisher is not None:
             with contextlib.suppress(Exception):
                 await self._publisher.flush()
@@ -638,16 +611,11 @@ class BroadcastSession:
         self.floor_epoch = floor_epoch
         await self.interrupt(reason=f"handoff->{new_speaker_lease_id}")
         try:
-            await asyncio.wait_for(
-                self._gen_ack.wait(), timeout=HANDOFF_BARRIER_TIMEOUT_S
-            )
+            await asyncio.wait_for(self._gen_ack.wait(), timeout=HANDOFF_BARRIER_TIMEOUT_S)
         except asyncio.TimeoutError as exc:
             raise BroadcastError(
                 BroadcastReason.STALE_FLOOR_EPOCH,
-                message=(
-                    "producer did not acknowledge the handoff barrier within "
-                    f"{HANDOFF_BARRIER_TIMEOUT_S}s"
-                ),
+                message=("producer did not acknowledge the handoff barrier within " f"{HANDOFF_BARRIER_TIMEOUT_S}s"),
             ) from exc
         self.logger.info(
             "broadcast %s: handoff barrier acknowledged for %s at floor_epoch=%d",
@@ -672,11 +640,7 @@ class BroadcastSession:
             if self.state is not BroadcastState.AVATAR:
                 return  # One-way and idempotent.
 
-            retained = [
-                frame
-                for generation, frame in self._queue
-                if generation == self._generation
-            ]
+            retained = [frame for generation, frame in self._queue if generation == self._generation]
             self._drop_queued()
 
             self.output_epoch += 1
@@ -688,9 +652,7 @@ class BroadcastSession:
                 with contextlib.suppress(Exception):
                     await avatar.aclose()
             with contextlib.suppress(Exception):
-                await self.room_manager.remove_participant(
-                    self.room_name, self.avatar_identity
-                )
+                await self.room_manager.remove_participant(self.room_name, self.avatar_identity)
 
             # Re-stamp with the new output epoch, otherwise the pump would
             # reject the very frames we are trying to save.
@@ -712,8 +674,7 @@ class BroadcastSession:
                 output_epoch=self.output_epoch,
             )
             self.logger.warning(
-                "broadcast %s: cut over to audio_only (%s) — forwarded %d frames, "
-                "dropped %d ambiguous samples",
+                "broadcast %s: cut over to audio_only (%s) — forwarded %d frames, " "dropped %d ambiguous samples",
                 self.descriptor.broadcast_id,
                 reason.value,
                 len(retained),
@@ -824,9 +785,7 @@ class BroadcastSession:
         except asyncio.CancelledError:
             raise
         except Exception:  # noqa: BLE001
-            self.logger.exception(
-                "broadcast %s: owner loop error", self.descriptor.broadcast_id
-            )
+            self.logger.exception("broadcast %s: owner loop error", self.descriptor.broadcast_id)
 
     async def _renew_owner(self) -> bool:
         """Extend the ownership lease, stopping the broadcast if fenced.
@@ -843,7 +802,8 @@ class BroadcastSession:
             )
         except Exception:  # noqa: BLE001 — treat an unreachable store as a loss
             self.logger.warning(
-                "broadcast %s: owner renewal errored", self.descriptor.broadcast_id,
+                "broadcast %s: owner renewal errored",
+                self.descriptor.broadcast_id,
                 exc_info=True,
             )
             renewed = False
@@ -855,20 +815,17 @@ class BroadcastSession:
             "broadcast %s: lost ownership — stopping publication",
             self.descriptor.broadcast_id,
         )
-        await self.aclose(
-            final_state=BroadcastState.FAILED, reason=BroadcastReason.OWNER_LOST
-        )
+        await self.aclose(final_state=BroadcastState.FAILED, reason=BroadcastReason.OWNER_LOST)
         return False
 
     async def _stop_requested(self) -> bool:
         """Poll the durable stop flag, tolerating a store blip."""
         try:
-            return await self.registry.stop_requested(
-                self.descriptor.tenant_id, self.descriptor.broadcast_id
-            )
+            return await self.registry.stop_requested(self.descriptor.tenant_id, self.descriptor.broadcast_id)
         except Exception:  # noqa: BLE001 — a blip must not end the broadcast
             self.logger.debug(
-                "broadcast %s: stop poll failed", self.descriptor.broadcast_id,
+                "broadcast %s: stop poll failed",
+                self.descriptor.broadcast_id,
                 exc_info=True,
             )
             return False
@@ -943,8 +900,7 @@ class BroadcastSession:
                 expected_owner_epoch=self.owner_epoch,
             )
         self.logger.info(
-            "broadcast %s: closed state=%s reason=%s (stale=%d overflow=%d "
-            "ambiguous_samples=%d forwarded=%d)",
+            "broadcast %s: closed state=%s reason=%s (stale=%d overflow=%d " "ambiguous_samples=%d forwarded=%d)",
             self.descriptor.broadcast_id,
             final_state.value,
             reason.value if reason else "-",

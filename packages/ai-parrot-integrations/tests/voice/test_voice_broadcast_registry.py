@@ -7,6 +7,7 @@ prove the two implementations share one set of semantics.
 Covers spec §2 "Ownership, admission and cleanup" and "Moderation and exclusive
 speaking floor", plus AC2/AC3/AC12/AC13/AC14.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -61,9 +62,7 @@ def registry(clock: FakeClock) -> InMemoryBroadcastRegistry:
 
 
 def _principal(user: str = "user-1") -> ParticipantPrincipal:
-    return ParticipantPrincipal(
-        user_id=user, tenant_id=TENANT, agent_id=AGENT, display_name=user
-    )
+    return ParticipantPrincipal(user_id=user, tenant_id=TENANT, agent_id=AGENT, display_name=user)
 
 
 def _descriptor(**kwargs: Any) -> BroadcastDescriptor:
@@ -77,9 +76,7 @@ def _descriptor(**kwargs: Any) -> BroadcastDescriptor:
     return BroadcastDescriptor(**defaults)
 
 
-async def _new_broadcast(
-    registry: InMemoryBroadcastRegistry, **kwargs: Any
-) -> BroadcastDescriptor:
+async def _new_broadcast(registry: InMemoryBroadcastRegistry, **kwargs: Any) -> BroadcastDescriptor:
     return await registry.create(_descriptor(**kwargs))
 
 
@@ -91,9 +88,7 @@ async def _join(
     heartbeat: bool = True,
 ) -> Any:
     """Admit one participant and optionally confirm + heartbeat it."""
-    admission = await registry.reserve_viewer(
-        TENANT, BROADCAST, _principal(user), f"identity-{user}"
-    )
+    admission = await registry.reserve_viewer(TENANT, BROADCAST, _principal(user), f"identity-{user}")
     if confirm:
         await registry.confirm_viewer(TENANT, BROADCAST, admission.lease.lease_id)
     if heartbeat:
@@ -143,9 +138,7 @@ async def test_first_admission_elects_single_moderator_under_race(
     await _new_broadcast(registry)
     admissions = await asyncio.gather(
         *(
-            registry.reserve_viewer(
-                TENANT, BROADCAST, _principal(f"user-{index}"), f"identity-{index}"
-            )
+            registry.reserve_viewer(TENANT, BROADCAST, _principal(f"user-{index}"), f"identity-{index}")
             for index in range(MAX_VIEWERS)
         )
     )
@@ -171,13 +164,9 @@ async def test_first_admission_elects_single_moderator_under_race(
 async def test_eleventh_viewer_rejected(registry: InMemoryBroadcastRegistry) -> None:
     await _new_broadcast(registry)
     for index in range(MAX_VIEWERS):
-        await registry.reserve_viewer(
-            TENANT, BROADCAST, _principal(f"user-{index}"), f"identity-{index}"
-        )
+        await registry.reserve_viewer(TENANT, BROADCAST, _principal(f"user-{index}"), f"identity-{index}")
     with pytest.raises(errors.ViewerLimitReached) as excinfo:
-        await registry.reserve_viewer(
-            TENANT, BROADCAST, _principal("user-11"), "identity-11"
-        )
+        await registry.reserve_viewer(TENANT, BROADCAST, _principal("user-11"), "identity-11")
     assert excinfo.value.reason is BroadcastReason.VIEWER_LIMIT_REACHED
     assert excinfo.value.status == 409
     assert len(await registry.list_leases(TENANT, BROADCAST)) == MAX_VIEWERS
@@ -189,9 +178,7 @@ async def test_concurrent_eleventh_admission_never_over_admits(
     await _new_broadcast(registry)
     results = await asyncio.gather(
         *(
-            registry.reserve_viewer(
-                TENANT, BROADCAST, _principal(f"user-{index}"), f"identity-{index}"
-            )
+            registry.reserve_viewer(TENANT, BROADCAST, _principal(f"user-{index}"), f"identity-{index}")
             for index in range(MAX_VIEWERS + 5)
         ),
         return_exceptions=True,
@@ -206,38 +193,28 @@ async def test_admission_on_terminal_broadcast_rejected(
     registry: InMemoryBroadcastRegistry,
 ) -> None:
     await _new_broadcast(registry)
-    await registry.transition(
-        TENANT, BROADCAST, BroadcastState.FAILED, expected_owner_epoch=0
-    )
+    await registry.transition(TENANT, BROADCAST, BroadcastState.FAILED, expected_owner_epoch=0)
     with pytest.raises(errors.BroadcastTerminal) as excinfo:
         await registry.reserve_viewer(TENANT, BROADCAST, _principal(), "identity-x")
     assert excinfo.value.status == 410
 
 
-async def test_tombstone_blocks_identity_reuse(
-    registry: InMemoryBroadcastRegistry, clock: FakeClock
-) -> None:
+async def test_tombstone_blocks_identity_reuse(registry: InMemoryBroadcastRegistry, clock: FakeClock) -> None:
     await _new_broadcast(registry)
     await _join(registry, "moderator")
     joiner = await _join(registry, "guest")
 
     await registry.release_viewer(TENANT, BROADCAST, joiner.lease.lease_id)
     with pytest.raises(errors.IdentityTombstoned):
-        await registry.reserve_viewer(
-            TENANT, BROADCAST, _principal("guest"), "identity-guest"
-        )
+        await registry.reserve_viewer(TENANT, BROADCAST, _principal("guest"), "identity-guest")
 
     # A fresh identity for the same user is fine straight away.
-    await registry.reserve_viewer(
-        TENANT, BROADCAST, _principal("guest"), "identity-guest-2"
-    )
+    await registry.reserve_viewer(TENANT, BROADCAST, _principal("guest"), "identity-guest-2")
 
     # Once the tombstone lapses the original identity is reusable.
     clock.advance(120)
     await registry.expire(TENANT, BROADCAST)
-    await registry.reserve_viewer(
-        TENANT, BROADCAST, _principal("guest"), "identity-guest"
-    )
+    await registry.reserve_viewer(TENANT, BROADCAST, _principal("guest"), "identity-guest")
 
 
 async def test_tombstoned_seat_is_retained_against_over_admission(
@@ -248,9 +225,7 @@ async def test_tombstoned_seat_is_retained_against_over_admission(
     await registry.release_viewer(TENANT, BROADCAST, leases[-1].lease.lease_id)
     # The departed seat stays reserved until reuse cannot over-admit the room.
     with pytest.raises(errors.ViewerLimitReached):
-        await registry.reserve_viewer(
-            TENANT, BROADCAST, _principal("late"), "identity-late"
-        )
+        await registry.reserve_viewer(TENANT, BROADCAST, _principal("late"), "identity-late")
     clock.advance(120)
     await registry.expire(TENANT, BROADCAST)
     await registry.reserve_viewer(TENANT, BROADCAST, _principal("late"), "identity-late")
@@ -260,9 +235,7 @@ async def test_confirm_and_heartbeat_do_not_bump_version(
     registry: InMemoryBroadcastRegistry,
 ) -> None:
     await _new_broadcast(registry)
-    admission = await registry.reserve_viewer(
-        TENANT, BROADCAST, _principal(), "identity-1"
-    )
+    admission = await registry.reserve_viewer(TENANT, BROADCAST, _principal(), "identity-1")
     await registry.confirm_viewer(TENANT, BROADCAST, admission.lease.lease_id)
     before = await registry.get(TENANT, BROADCAST)
     assert before is not None
@@ -295,9 +268,7 @@ async def test_owner_claimed_once(registry: InMemoryBroadcastRegistry) -> None:
     assert epoch_a == epoch_b == 1
 
 
-async def test_owner_lease_expires(
-    registry: InMemoryBroadcastRegistry, clock: FakeClock
-) -> None:
+async def test_owner_lease_expires(registry: InMemoryBroadcastRegistry, clock: FakeClock) -> None:
     await _new_broadcast(registry)
     _, epoch = await registry.claim_owner(TENANT, BROADCAST, "worker-a")
     assert await registry.renew_owner(TENANT, BROADCAST, "worker-a", epoch) is True
@@ -335,12 +306,8 @@ async def test_fenced_owner_cannot_transition(
 async def test_avatar_fallback_is_one_way(registry: InMemoryBroadcastRegistry) -> None:
     await _new_broadcast(registry)
     _, epoch = await registry.claim_owner(TENANT, BROADCAST, "worker-a")
-    await registry.transition(
-        TENANT, BROADCAST, BroadcastState.STARTING, expected_owner_epoch=epoch
-    )
-    await registry.transition(
-        TENANT, BROADCAST, BroadcastState.AVATAR, expected_owner_epoch=epoch
-    )
+    await registry.transition(TENANT, BROADCAST, BroadcastState.STARTING, expected_owner_epoch=epoch)
+    await registry.transition(TENANT, BROADCAST, BroadcastState.AVATAR, expected_owner_epoch=epoch)
     await registry.transition(
         TENANT,
         BROADCAST,
@@ -350,9 +317,7 @@ async def test_avatar_fallback_is_one_way(registry: InMemoryBroadcastRegistry) -
         expected_owner_epoch=epoch,
     )
     with pytest.raises(ValueError):
-        await registry.transition(
-            TENANT, BROADCAST, BroadcastState.AVATAR, expected_owner_epoch=epoch
-        )
+        await registry.transition(TENANT, BROADCAST, BroadcastState.AVATAR, expected_owner_epoch=epoch)
 
 
 async def test_output_epoch_must_be_monotonic(
@@ -381,13 +346,9 @@ async def test_terminal_broadcast_cannot_transition(
     registry: InMemoryBroadcastRegistry,
 ) -> None:
     await _new_broadcast(registry)
-    await registry.transition(
-        TENANT, BROADCAST, BroadcastState.ENDED, expected_owner_epoch=0
-    )
+    await registry.transition(TENANT, BROADCAST, BroadcastState.ENDED, expected_owner_epoch=0)
     with pytest.raises(errors.BroadcastTerminal):
-        await registry.transition(
-            TENANT, BROADCAST, BroadcastState.STARTING, expected_owner_epoch=0
-        )
+        await registry.transition(TENANT, BROADCAST, BroadcastState.STARTING, expected_owner_epoch=0)
 
 
 # ── Hands ──────────────────────────────────────────────────────────────────
@@ -421,9 +382,7 @@ async def test_raising_a_hand_grants_no_permission(
     descriptor = await registry.raise_hand(TENANT, BROADCAST, guest.lease.lease_id)
     assert descriptor.speaker_lease_id == moderator.lease.lease_id
     with pytest.raises(errors.FloorNotGranted):
-        validate_audio_authority(
-            descriptor, guest.lease.lease_id, descriptor.floor_epoch, "socket-1"
-        )
+        validate_audio_authority(descriptor, guest.lease.lease_id, descriptor.floor_epoch, "socket-1")
 
 
 async def test_cancel_hand_is_idempotent(registry: InMemoryBroadcastRegistry) -> None:
@@ -446,12 +405,8 @@ async def test_only_moderator_dismisses_a_hand(
     await registry.raise_hand(TENANT, BROADCAST, guest_a.lease.lease_id)
 
     with pytest.raises(errors.NotModerator):
-        await registry.dismiss_hand(
-            TENANT, BROADCAST, guest_b.lease.lease_id, guest_a.lease.lease_id
-        )
-    descriptor = await registry.dismiss_hand(
-        TENANT, BROADCAST, moderator.lease.lease_id, guest_a.lease.lease_id
-    )
+        await registry.dismiss_hand(TENANT, BROADCAST, guest_b.lease.lease_id, guest_a.lease.lease_id)
+    descriptor = await registry.dismiss_hand(TENANT, BROADCAST, moderator.lease.lease_id, guest_a.lease.lease_id)
     assert descriptor.hand_requests == []
     # Dismissal changes no microphone permission.
     assert descriptor.speaker_lease_id == moderator.lease.lease_id
@@ -480,9 +435,7 @@ async def test_grant_enters_switching_then_commit_grants(
     assert switching.speaker_lease_id is None
     assert switching.floor_epoch == current.floor_epoch + 1
 
-    granted = await registry.commit_floor(
-        TENANT, BROADCAST, guest.lease.lease_id, switching.floor_epoch
-    )
+    granted = await registry.commit_floor(TENANT, BROADCAST, guest.lease.lease_id, switching.floor_epoch)
     assert granted.floor_state is FloorState.GRANTED
     assert granted.speaker_lease_id == guest.lease.lease_id
 
@@ -596,9 +549,7 @@ async def test_floor_cannot_be_granted_to_an_unadmitted_lease(
     current = await registry.get(TENANT, BROADCAST)
     assert current is not None
     with pytest.raises(errors.FloorNotGranted):
-        await registry.grant_floor(
-            TENANT, BROADCAST, moderator.lease.lease_id, "lease-ghost", current.version
-        )
+        await registry.grant_floor(TENANT, BROADCAST, moderator.lease.lease_id, "lease-ghost", current.version)
 
 
 async def test_revoke_returns_the_floor_to_the_moderator(
@@ -616,18 +567,12 @@ async def test_revoke_returns_the_floor_to_the_moderator(
         guest.lease.lease_id,
         current.version,
     )
-    granted = await registry.commit_floor(
-        TENANT, BROADCAST, guest.lease.lease_id, switching.floor_epoch
-    )
+    granted = await registry.commit_floor(TENANT, BROADCAST, guest.lease.lease_id, switching.floor_epoch)
 
-    revoking = await registry.revoke_floor(
-        TENANT, BROADCAST, moderator.lease.lease_id, granted.version
-    )
+    revoking = await registry.revoke_floor(TENANT, BROADCAST, moderator.lease.lease_id, granted.version)
     assert revoking.floor_state is FloorState.SWITCHING
     assert revoking.speaker_lease_id is None
-    back = await registry.commit_floor(
-        TENANT, BROADCAST, moderator.lease.lease_id, revoking.floor_epoch
-    )
+    back = await registry.commit_floor(TENANT, BROADCAST, moderator.lease.lease_id, revoking.floor_epoch)
     assert back.speaker_lease_id == moderator.lease.lease_id
 
 
@@ -646,19 +591,13 @@ async def test_finish_speaking_returns_the_floor(
         guest.lease.lease_id,
         current.version,
     )
-    await registry.commit_floor(
-        TENANT, BROADCAST, guest.lease.lease_id, switching.floor_epoch
-    )
+    await registry.commit_floor(TENANT, BROADCAST, guest.lease.lease_id, switching.floor_epoch)
 
     with pytest.raises(errors.NotSpeaker):
         await registry.release_floor(TENANT, BROADCAST, moderator.lease.lease_id)
-    released = await registry.release_floor(
-        TENANT, BROADCAST, guest.lease.lease_id
-    )
+    released = await registry.release_floor(TENANT, BROADCAST, guest.lease.lease_id)
     assert released.floor_state is FloorState.SWITCHING
-    back = await registry.commit_floor(
-        TENANT, BROADCAST, moderator.lease.lease_id, released.floor_epoch
-    )
+    back = await registry.commit_floor(TENANT, BROADCAST, moderator.lease.lease_id, released.floor_epoch)
     assert back.speaker_lease_id == moderator.lease.lease_id
 
 
@@ -678,9 +617,7 @@ async def test_commit_with_a_stale_epoch_is_rejected(
         current.version,
     )
     with pytest.raises(errors.StaleFloorEpoch):
-        await registry.commit_floor(
-            TENANT, BROADCAST, guest.lease.lease_id, switching.floor_epoch - 1
-        )
+        await registry.commit_floor(TENANT, BROADCAST, guest.lease.lease_id, switching.floor_epoch - 1)
 
 
 async def test_commit_for_a_departed_target_leaves_the_floor_idle(
@@ -700,9 +637,7 @@ async def test_commit_for_a_departed_target_leaves_the_floor_idle(
     )
     await registry.release_viewer(TENANT, BROADCAST, guest.lease.lease_id)
     with pytest.raises(errors.FloorNotGranted):
-        await registry.commit_floor(
-            TENANT, BROADCAST, guest.lease.lease_id, switching.floor_epoch
-        )
+        await registry.commit_floor(TENANT, BROADCAST, guest.lease.lease_id, switching.floor_epoch)
     descriptor = await registry.get(TENANT, BROADCAST)
     assert descriptor is not None
     assert descriptor.speaker_lease_id is None
@@ -726,23 +661,15 @@ async def test_stale_epoch_audio_rejected(registry: InMemoryBroadcastRegistry) -
         guest.lease.lease_id,
         current.version,
     )
-    granted = await registry.commit_floor(
-        TENANT, BROADCAST, guest.lease.lease_id, switching.floor_epoch
-    )
+    granted = await registry.commit_floor(TENANT, BROADCAST, guest.lease.lease_id, switching.floor_epoch)
 
     # The old speaker's in-flight audio is rejected on both counts.
     with pytest.raises(errors.FloorNotGranted):
-        validate_audio_authority(
-            granted, moderator.lease.lease_id, stale_epoch, "socket-old"
-        )
+        validate_audio_authority(granted, moderator.lease.lease_id, stale_epoch, "socket-old")
     with pytest.raises(errors.StaleFloorEpoch):
-        validate_audio_authority(
-            granted, guest.lease.lease_id, stale_epoch, "socket-new"
-        )
+        validate_audio_authority(granted, guest.lease.lease_id, stale_epoch, "socket-new")
     # The new speaker at the current epoch is accepted.
-    validate_audio_authority(
-        granted, guest.lease.lease_id, granted.floor_epoch, "socket-new"
-    )
+    validate_audio_authority(granted, guest.lease.lease_id, granted.floor_epoch, "socket-new")
 
 
 async def test_no_audio_is_accepted_while_switching(
@@ -762,9 +689,7 @@ async def test_no_audio_is_accepted_while_switching(
     )
     for lease_id in (moderator.lease.lease_id, guest.lease.lease_id):
         with pytest.raises(errors.FloorNotGranted):
-            validate_audio_authority(
-                switching, lease_id, switching.floor_epoch, "socket-1"
-            )
+            validate_audio_authority(switching, lease_id, switching.floor_epoch, "socket-1")
 
 
 async def test_a_second_socket_cannot_take_over(
@@ -823,18 +748,8 @@ async def test_a_second_socket_cannot_take_over(
             bound_socket_id="socket-1",
         )
 
-    assert (
-        await registry.unbind_speaker_socket(
-            TENANT, BROADCAST, moderator.lease.lease_id, "socket-1"
-        )
-        is True
-    )
-    assert (
-        await registry.unbind_speaker_socket(
-            TENANT, BROADCAST, moderator.lease.lease_id, "socket-1"
-        )
-        is False
-    )
+    assert await registry.unbind_speaker_socket(TENANT, BROADCAST, moderator.lease.lease_id, "socket-1") is True
+    assert await registry.unbind_speaker_socket(TENANT, BROADCAST, moderator.lease.lease_id, "socket-1") is False
 
 
 async def test_a_grant_clears_the_previous_socket_binding(
@@ -845,9 +760,7 @@ async def test_a_grant_clears_the_previous_socket_binding(
     guest = await _join(registry, "guest")
     current = await registry.get(TENANT, BROADCAST)
     assert current is not None
-    await registry.bind_speaker_socket(
-        TENANT, BROADCAST, moderator.lease.lease_id, "socket-1", current.floor_epoch
-    )
+    await registry.bind_speaker_socket(TENANT, BROADCAST, moderator.lease.lease_id, "socket-1", current.floor_epoch)
     await registry.grant_floor(
         TENANT,
         BROADCAST,
@@ -855,9 +768,7 @@ async def test_a_grant_clears_the_previous_socket_binding(
         guest.lease.lease_id,
         current.version,
     )
-    leases = {
-        lease.lease_id: lease for lease in await registry.list_leases(TENANT, BROADCAST)
-    }
+    leases = {lease.lease_id: lease for lease in await registry.list_leases(TENANT, BROADCAST)}
     assert leases[moderator.lease.lease_id].speaker_socket_id is None
 
 
@@ -870,9 +781,7 @@ async def test_binding_requires_the_floor(
     descriptor = await registry.get(TENANT, BROADCAST)
     assert descriptor is not None
     with pytest.raises(errors.FloorNotGranted):
-        await registry.bind_speaker_socket(
-            TENANT, BROADCAST, guest.lease.lease_id, "socket-1", descriptor.floor_epoch
-        )
+        await registry.bind_speaker_socket(TENANT, BROADCAST, guest.lease.lease_id, "socket-1", descriptor.floor_epoch)
 
 
 # ── Departure, election, cleanup ───────────────────────────────────────────
@@ -893,9 +802,7 @@ async def test_speaker_departure_returns_the_floor_to_the_moderator(
         guest.lease.lease_id,
         current.version,
     )
-    await registry.commit_floor(
-        TENANT, BROADCAST, guest.lease.lease_id, switching.floor_epoch
-    )
+    await registry.commit_floor(TENANT, BROADCAST, guest.lease.lease_id, switching.floor_epoch)
 
     outcome = await registry.release_viewer(TENANT, BROADCAST, guest.lease.lease_id)
     assert outcome.audience_empty is False
@@ -1025,9 +932,7 @@ async def test_stop_requested_is_true_for_an_unknown_broadcast(
 # ── Expiry / reconciliation ────────────────────────────────────────────────
 
 
-async def test_pending_broadcast_expires(
-    registry: InMemoryBroadcastRegistry, clock: FakeClock
-) -> None:
+async def test_pending_broadcast_expires(registry: InMemoryBroadcastRegistry, clock: FakeClock) -> None:
     await _new_broadcast(registry)
     clock.advance(PENDING_TTL_S - 1)
     assert await registry.expire(TENANT, BROADCAST) == []
@@ -1064,9 +969,7 @@ async def test_stale_control_marks_leaving_but_keeps_the_seat(
     kinds = {event.kind for event in events}
     assert ExpiryKind.CONTROL_HEARTBEAT in kinds
 
-    leases = {
-        lease.lease_id: lease for lease in await registry.list_leases(TENANT, BROADCAST)
-    }
+    leases = {lease.lease_id: lease for lease in await registry.list_leases(TENANT, BROADCAST)}
     # Fail closed: still holding its seat until the caller removes it from the
     # room and calls release_viewer.
     assert guest.lease.lease_id in leases
@@ -1084,15 +987,12 @@ async def test_unconfirmed_seat_past_its_deadline_is_reported(
     matching = [
         event
         for event in events
-        if event.kind is ExpiryKind.ADMISSION_DEADLINE
-        and event.lease_id == pending.lease.lease_id
+        if event.kind is ExpiryKind.ADMISSION_DEADLINE and event.lease_id == pending.lease.lease_id
     ]
     assert matching
 
 
-async def test_terminal_state_is_retained_then_dropped(
-    registry: InMemoryBroadcastRegistry, clock: FakeClock
-) -> None:
+async def test_terminal_state_is_retained_then_dropped(registry: InMemoryBroadcastRegistry, clock: FakeClock) -> None:
     await _new_broadcast(registry)
     only = await _join(registry, "only")
     await registry.release_viewer(TENANT, BROADCAST, only.lease.lease_id)

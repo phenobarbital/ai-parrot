@@ -22,6 +22,7 @@ Vendor boundaries (LiveKit rooms, LiveAvatar, Nova) are faked. **This suite is
 not evidence for AC10**, which requires real vendors — see
 `docs/testing/voicebot-multiroom-live-gate.md`.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -80,17 +81,12 @@ def _redis_reachable() -> Optional[str]:
         client.ping()
         client.close()
     except Exception as exc:  # noqa: BLE001 — any driver error means "no Redis"
-        return (
-            f"Redis not reachable at {REDIS_URL} — NOT VERIFIED "
-            f"({type(exc).__name__}: {exc})"
-        )
+        return f"Redis not reachable at {REDIS_URL} — NOT VERIFIED " f"({type(exc).__name__}: {exc})"
     return None
 
 
 _SKIP_REASON = _redis_reachable()
-pytestmark = pytest.mark.skipif(
-    _SKIP_REASON is not None, reason=_SKIP_REASON or ""
-)
+pytestmark = pytest.mark.skipif(_SKIP_REASON is not None, reason=_SKIP_REASON or "")
 
 
 # ── Vendor fakes ───────────────────────────────────────────────────────────
@@ -188,8 +184,7 @@ class FakeMediaSession:
     instances: List["FakeMediaSession"] = []
 
     def __init__(
-        self, descriptor: Any, registry: Any, room_manager: Any, worker_id: str,
-        owner_epoch: int, **_kw: Any
+        self, descriptor: Any, registry: Any, room_manager: Any, worker_id: str, owner_epoch: int, **_kw: Any
     ) -> None:
         self.descriptor = descriptor
         self.registry = registry
@@ -211,12 +206,16 @@ class FakeMediaSession:
         self.room_manager.mint_publisher_token(self.room_name, self.direct_identity)
         self.room_manager.mint_publisher_token(self.room_name, self.avatar_identity)
         await self.registry.transition(
-            self.descriptor.tenant_id, self.descriptor.broadcast_id,
-            BroadcastState.STARTING, expected_owner_epoch=self.owner_epoch,
+            self.descriptor.tenant_id,
+            self.descriptor.broadcast_id,
+            BroadcastState.STARTING,
+            expected_owner_epoch=self.owner_epoch,
         )
         await self.registry.transition(
-            self.descriptor.tenant_id, self.descriptor.broadcast_id,
-            BroadcastState.AVATAR, output_epoch=1,
+            self.descriptor.tenant_id,
+            self.descriptor.broadcast_id,
+            BroadcastState.AVATAR,
+            output_epoch=1,
             expected_owner_epoch=self.owner_epoch,
         )
         self.state = BroadcastState.AVATAR
@@ -237,15 +236,15 @@ class FakeMediaSession:
     async def switch_speaker(self, lease_id: str, floor_epoch: int) -> None:
         self.floor_epoch = floor_epoch
 
-    async def aclose(
-        self, *, final_state: Any = BroadcastState.ENDED, reason: Any = None,
-        **_kw: Any
-    ) -> None:
+    async def aclose(self, *, final_state: Any = BroadcastState.ENDED, reason: Any = None, **_kw: Any) -> None:
         self.closed.append((final_state, reason))
         try:
             await self.registry.transition(
-                self.descriptor.tenant_id, self.descriptor.broadcast_id,
-                final_state, reason=reason, expected_owner_epoch=self.owner_epoch,
+                self.descriptor.tenant_id,
+                self.descriptor.broadcast_id,
+                final_state,
+                reason=reason,
+                expected_owner_epoch=self.owner_epoch,
             )
         except Exception:  # noqa: BLE001 — fenced owners cannot transition
             pass
@@ -270,9 +269,7 @@ class _StubResolver:
         user = request.headers.get("X-Test-User")
         if not user:
             raise web.HTTPUnauthorized(reason="authentication required")
-        return ParticipantPrincipal(
-            user_id=user, tenant_id=TENANT, agent_id=agent_id, display_name=user
-        )
+        return ParticipantPrincipal(user_id=user, tenant_id=TENANT, agent_id=agent_id, display_name=user)
 
 
 class Worker:
@@ -322,9 +319,7 @@ async def workers(aiohttp_client, clock: FakeClock):
     registries: List[Any] = []
 
     for worker_id in ("worker-a", "worker-b"):
-        registry = RedisBroadcastRegistry.from_url(
-            REDIS_URL, key_prefix=prefix, clock=clock
-        )
+        registry = RedisBroadcastRegistry.from_url(REDIS_URL, key_prefix=prefix, clock=clock)
         registries.append(registry)
         service = BroadcastService(
             registry,
@@ -336,9 +331,7 @@ async def workers(aiohttp_client, clock: FakeClock):
             voice_session_factory=FakeVoiceSession,
         )
         app = web.Application()
-        register_voice_broadcast_routes(
-            app, service, principal_resolver=_StubResolver()
-        )
+        register_voice_broadcast_routes(app, service, principal_resolver=_StubResolver())
         client = await aiohttp_client(app)
         built.append(Worker(worker_id, service, registry, client))
 
@@ -374,9 +367,7 @@ async def _create(worker: Worker, user: str = "creator") -> str:
 
 
 async def _join(worker: Worker, bid: str, user: str) -> Dict[str, Any]:
-    response = await worker.client.post(
-        f"{BASE}/{bid}/viewers", headers=worker.headers(user), json={}
-    )
+    response = await worker.client.post(f"{BASE}/{bid}/viewers", headers=worker.headers(user), json={})
     assert response.status == 201, await response.text()
     return await response.json()
 
@@ -524,9 +515,7 @@ async def test_connection_is_idempotent_across_workers(workers) -> None:
     ).json()
     # The identity is the lease's, so both workers mint for the same subject —
     # no extra seat is taken either way.
-    assert decode_jwt(first["client_token"])["sub"] == (
-        decode_jwt(second["client_token"])["sub"]
-    )
+    assert decode_jwt(first["client_token"])["sub"] == (decode_jwt(second["client_token"])["sub"])
     assert (await _state(worker_a, bid))["viewer_count"] == 1
 
 
@@ -545,9 +534,7 @@ async def test_leave_then_rejoin_uses_a_new_identity_and_tombstones_the_old(
         )
     ).json()
 
-    response = await worker_b.client.delete(
-        f"{BASE}/{bid}/viewers/{old_lease}", headers=worker_b.headers("guest")
-    )
+    response = await worker_b.client.delete(f"{BASE}/{bid}/viewers/{old_lease}", headers=worker_b.headers("guest"))
     assert response.status == 204
 
     # Replaying the released lease's connection is refused.
@@ -565,9 +552,7 @@ async def test_leave_then_rejoin_uses_a_new_identity_and_tombstones_the_old(
         )
     ).json()
     assert rejoined["lease_id"] != old_lease
-    assert decode_jwt(new_token["client_token"])["sub"] != (
-        decode_jwt(old_token["client_token"])["sub"]
-    )
+    assert decode_jwt(new_token["client_token"])["sub"] != (decode_jwt(old_token["client_token"])["sub"])
 
 
 # ── Cross-worker stop ──────────────────────────────────────────────────────
@@ -579,9 +564,7 @@ async def test_stop_on_a_ends_the_producer_owned_by_b(workers) -> None:
     await _join(worker_b, bid, "moderator")  # producer lives on B
     assert worker_b.service.media_session(TENANT, bid) is not None
 
-    response = await worker_a.client.post(
-        f"{BASE}/{bid}/stop", headers=worker_a.headers("moderator"), json={}
-    )
+    response = await worker_a.client.post(f"{BASE}/{bid}/stop", headers=worker_a.headers("moderator"), json={})
     assert response.status == 202
 
     # B's owner loop polls the durable stop flag at 1 Hz. Poll the registry
@@ -593,7 +576,9 @@ async def test_stop_on_a_ends_the_producer_owned_by_b(workers) -> None:
     while time.monotonic() < deadline:
         descriptor = await worker_a.service.get_descriptor(TENANT, bid)
         if descriptor is not None and descriptor.state in (
-            BroadcastState.STOPPING, BroadcastState.ENDED, BroadcastState.FAILED
+            BroadcastState.STOPPING,
+            BroadcastState.ENDED,
+            BroadcastState.FAILED,
         ):
             ended = True
             break
@@ -604,7 +589,9 @@ async def test_stop_on_a_ends_the_producer_owned_by_b(workers) -> None:
         # lifetime; force the poll the way the loop does, then re-check.
         assert await worker_b.service.registry.stop_requested(TENANT, bid) is True
         await worker_b.service.stop_producer(
-            TENANT, bid, final_state=BroadcastState.ENDED,
+            TENANT,
+            bid,
+            final_state=BroadcastState.ENDED,
             reason=BroadcastReason.STOPPED_BY_MODERATOR,
         )
         state = await _state(worker_a, bid, "moderator")
@@ -619,20 +606,15 @@ async def test_non_moderator_stop_is_refused_on_both_workers(workers) -> None:
     await _join(worker_b, bid, "guest")
     await _join(worker_a, bid, "creator")
 
-    for worker, user in ((worker_a, "guest"), (worker_b, "guest"),
-                         (worker_a, "creator"), (worker_b, "creator")):
-        response = await worker.client.post(
-            f"{BASE}/{bid}/stop", headers=worker.headers(user), json={}
-        )
+    for worker, user in ((worker_a, "guest"), (worker_b, "guest"), (worker_a, "creator"), (worker_b, "creator")):
+        response = await worker.client.post(f"{BASE}/{bid}/stop", headers=worker.headers(user), json={})
         assert response.status == 403, f"{worker.worker_id}/{user}"
 
 
 # ── Owner death and fencing ────────────────────────────────────────────────
 
 
-async def test_owner_death_is_fenced_and_the_room_cleaned(
-    workers, clock: FakeClock
-) -> None:
+async def test_owner_death_is_fenced_and_the_room_cleaned(workers, clock: FakeClock) -> None:
     """A dead owner's room is emptied by the OTHER worker's reconciler."""
     worker_a, worker_b, rooms = workers
     bid = await _create(worker_a)
@@ -699,8 +681,7 @@ async def test_conflicting_grants_across_workers_install_one_speaker(workers) ->
     assert statuses == [200, 409]
 
     # Both workers agree on exactly one speaker.
-    speakers = {(await _state(worker, bid))["speaker_display_id"]
-                for worker in (worker_a, worker_b)}
+    speakers = {(await _state(worker, bid))["speaker_display_id"] for worker in (worker_a, worker_b)}
     assert len(speakers) == 1
     speaker = speakers.pop()
     assert speaker in (guest_a["lease_id"], guest_b["lease_id"])
@@ -723,8 +704,7 @@ async def test_moderator_departure_converges_on_both_workers(workers) -> None:
     )
     assert response.status == 204
 
-    moderators = {(await _state(worker, bid, "second"))["moderator_display_id"]
-                  for worker in (worker_a, worker_b)}
+    moderators = {(await _state(worker, bid, "second"))["moderator_display_id"] for worker in (worker_a, worker_b)}
     assert len(moderators) == 1
     assert moderators.pop() == second["lease_id"]
     _EVIDENCE["scenarios"]["moderator_succession"] = {"converged": True}
@@ -742,13 +722,9 @@ async def test_a_second_speaker_socket_is_refused_across_workers(workers) -> Non
     descriptor = await worker_a.service.get_descriptor(TENANT, bid)
     assert descriptor is not None
 
-    assert await worker_a.service.bind_speaker_socket(
-        TENANT, bid, lease, "socket-on-a", descriptor.floor_epoch
-    )
+    assert await worker_a.service.bind_speaker_socket(TENANT, bid, lease, "socket-on-a", descriptor.floor_epoch)
     with pytest.raises(errors.SpeakerConnectionExists):
-        await worker_b.service.bind_speaker_socket(
-            TENANT, bid, lease, "socket-on-b", descriptor.floor_epoch
-        )
+        await worker_b.service.bind_speaker_socket(TENANT, bid, lease, "socket-on-b", descriptor.floor_epoch)
     _EVIDENCE["scenarios"]["duplicate_speaker_socket"] = {"refused": True}
 
 
@@ -764,7 +740,8 @@ async def test_hand_queue_order_is_identical_on_both_workers(workers) -> None:
 
     for worker, name, lease in guests:
         response = await worker.client.post(
-            f"{BASE}/{bid}/hands", headers=worker.headers(name),
+            f"{BASE}/{bid}/hands",
+            headers=worker.headers(name),
             json={"lease_id": lease},
         )
         assert response.status == 200

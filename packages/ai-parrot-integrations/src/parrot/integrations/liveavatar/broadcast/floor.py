@@ -20,6 +20,7 @@ If step 3 fails or times out, ``abort_floor`` leaves the floor **idle** and the
 caller gets a retryable error.  Silence with a visible error is the correct
 outcome; two live speakers is not (spec §2, AC13).
 """
+
 from __future__ import annotations
 
 import logging
@@ -71,9 +72,7 @@ class BroadcastControlService(Protocol):
         """Return the current descriptor, or ``None``."""
         ...
 
-    async def get_lease(
-        self, tenant_id: str, broadcast_id: str, lease_id: str
-    ) -> Any:
+    async def get_lease(self, tenant_id: str, broadcast_id: str, lease_id: str) -> Any:
         """Return one lease, or ``None``."""
         ...
 
@@ -81,15 +80,11 @@ class BroadcastControlService(Protocol):
         """Record a control-socket heartbeat for a lease."""
         ...
 
-    async def attach_control(
-        self, tenant_id: str, broadcast_id: str, lease_id: str, send: Notifier
-    ) -> None:
+    async def attach_control(self, tenant_id: str, broadcast_id: str, lease_id: str, send: Notifier) -> None:
         """Register a control socket so state changes can be pushed to it."""
         ...
 
-    async def detach_control(
-        self, tenant_id: str, broadcast_id: str, lease_id: str
-    ) -> None:
+    async def detach_control(self, tenant_id: str, broadcast_id: str, lease_id: str) -> None:
         """Deregister a control socket."""
         ...
 
@@ -108,9 +103,7 @@ class BroadcastControlService(Protocol):
         """Bind the one microphone socket allowed to send audio."""
         ...
 
-    async def unbind_speaker_socket(
-        self, tenant_id: str, broadcast_id: str, lease_id: str, socket_id: str
-    ) -> bool:
+    async def unbind_speaker_socket(self, tenant_id: str, broadcast_id: str, lease_id: str, socket_id: str) -> bool:
         """Release a microphone-socket binding."""
         ...
 
@@ -122,9 +115,7 @@ class BroadcastControlService(Protocol):
         """Return the ``BroadcastSession`` on this worker, or ``None``."""
         ...
 
-    async def release_floor(
-        self, tenant_id: str, broadcast_id: str, speaker_lease_id: str
-    ) -> Any:
+    async def release_floor(self, tenant_id: str, broadcast_id: str, speaker_lease_id: str) -> Any:
         """Run the Finish-Speaking barrier back to the moderator."""
         ...
 
@@ -227,9 +218,7 @@ class FloorCoordinator:
             if hasattr(result, "__await__"):
                 await result  # type: ignore[misc]
         except Exception:  # noqa: BLE001 — notifications are advisory
-            self.logger.debug(
-                "floor coordinator: notify %s failed", lease_id, exc_info=True
-            )
+            self.logger.debug("floor coordinator: notify %s failed", lease_id, exc_info=True)
 
     async def handoff(
         self,
@@ -315,9 +304,7 @@ class FloorCoordinator:
             NotSpeaker: If the caller does not hold the floor.
             BroadcastError: On barrier failure.
         """
-        switching = await registry.release_floor(
-            tenant_id, broadcast_id, speaker_lease_id
-        )
+        switching = await registry.release_floor(tenant_id, broadcast_id, speaker_lease_id)
         target = switching.moderator_lease_id
         return await self._run_barrier(
             registry,
@@ -421,9 +408,7 @@ class FloorCoordinator:
                 )
                 raise BroadcastError(
                     BroadcastReason.STALE_FLOOR_EPOCH,
-                    message=(
-                        "handoff barrier failed; floor left idle — retry the grant"
-                    ),
+                    message=("handoff barrier failed; floor left idle — retry the grant"),
                 ) from exc
 
         if target_lease_id is None:
@@ -436,9 +421,7 @@ class FloorCoordinator:
 
         # 4. Only now is a speaker permitted again.
         try:
-            granted = await registry.commit_floor(
-                tenant_id, broadcast_id, target_lease_id, floor_epoch
-            )
+            granted = await registry.commit_floor(tenant_id, broadcast_id, target_lease_id, floor_epoch)
         except BroadcastError:
             await self._abort(registry, tenant_id, broadcast_id, floor_epoch)
             raise

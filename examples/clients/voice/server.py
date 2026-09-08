@@ -509,10 +509,7 @@ def build_broadcast_service(app: web.Application):
         from parrot.integrations.liveavatar.broadcast.service import BroadcastService
         from parrot.integrations.liveavatar.room_manager import LiveKitRoomManager
     except ImportError as exc:
-        return None, (
-            f"Broadcast dependencies missing ({exc}); install "
-            "'ai-parrot-integrations[broadcast]'."
-        )
+        return None, (f"Broadcast dependencies missing ({exc}); install " "'ai-parrot-integrations[broadcast]'.")
 
     try:
         room_manager = LiveKitRoomManager()
@@ -524,9 +521,7 @@ def build_broadcast_service(app: web.Application):
         registry,
         room_manager,
         nova_bot_factory=make_nova_bot,
-        worker_id=os.environ.get(
-            "VOICEBOT_BROADCAST_WORKER_ID", f"demo-{os.getpid()}"
-        ),
+        worker_id=os.environ.get("VOICEBOT_BROADCAST_WORKER_ID", f"demo-{os.getpid()}"),
         principal_resolver=lambda user, agent_id: _principal_for(
             getattr(user, "user_id", None) or user["user_id"], agent_id
         ),
@@ -698,9 +693,7 @@ def build_app() -> web.Application:
             nova_bot_factory=make_nova_bot,
             broadcast_service=service,
             require_auth=bool(participants),
-            token_validator=make_demo_token_validator(participants)
-            if participants
-            else None,
+            token_validator=make_demo_token_validator(participants) if participants else None,
             ws_route="/ws/nova-broadcast",
             health_route="/health/broadcast",
         )
@@ -712,22 +705,17 @@ def build_app() -> web.Application:
             )
         except ImportError as exc:  # pragma: no cover — workspace sibling
             logger.warning(
-                "Broadcast HTTP routes unavailable (%s); install "
-                "'ai-parrot-server' from this workspace.",
+                "Broadcast HTTP routes unavailable (%s); install " "'ai-parrot-server' from this workspace.",
                 exc,
             )
-            app["broadcast_unavailable_reason"] = (
-                f"ai-parrot-server is not importable: {exc}"
-            )
+            app["broadcast_unavailable_reason"] = f"ai-parrot-server is not importable: {exc}"
             app["broadcast_service"] = None
         else:
             register_voice_broadcast_routes(
                 app,
                 service,
                 prefix=BROADCAST_ROUTE_PREFIX,
-                principal_resolver=make_demo_principal_resolver(participants)
-                if participants
-                else None,
+                principal_resolver=make_demo_principal_resolver(participants) if participants else None,
             )
             register_failure_injection(app, service)
             logger.info(

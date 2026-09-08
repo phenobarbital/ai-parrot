@@ -22,6 +22,7 @@ Hardening applied to every state-changing request: an 8 KiB JSON body cap, an
 ``Origin`` allow-list (``PARROT_BROADCAST_ALLOWED_ORIGINS``, same-origin by
 default), and a per-principal token bucket (30 requests / 10 s) returning 429.
 """
+
 from __future__ import annotations
 
 import json
@@ -70,9 +71,7 @@ _STATUS_BY_ERROR: Tuple[Tuple[type, int], ...] = (
 )
 
 
-async def navigator_principal_resolver(
-    request: web.Request, agent_id: str
-) -> ParticipantPrincipal:
+async def navigator_principal_resolver(request: web.Request, agent_id: str) -> ParticipantPrincipal:
     """Build a scoped principal from the navigator session.
 
     ``request["user_id"]`` is never set by navigator-auth, so the session is the
@@ -102,9 +101,7 @@ async def navigator_principal_resolver(
     user_id = session.get("user_id") or session.get("username")
     if not user_id:
         raise web.HTTPUnauthorized(reason="session carries no user identity")
-    tenant_id = (
-        session.get("tenant_id") or session.get("program") or "default"
-    )
+    tenant_id = session.get("tenant_id") or session.get("program") or "default"
     return ParticipantPrincipal(
         user_id=str(user_id),
         tenant_id=str(tenant_id),
@@ -152,9 +149,7 @@ async def _session_user(request: web.Request) -> Dict[str, Any]:
 class _RateLimiter:
     """Per-principal sliding-window limiter."""
 
-    def __init__(
-        self, limit: int = RATE_LIMIT_REQUESTS, window_s: float = RATE_LIMIT_WINDOW_S
-    ) -> None:
+    def __init__(self, limit: int = RATE_LIMIT_REQUESTS, window_s: float = RATE_LIMIT_WINDOW_S) -> None:
         self._limit = limit
         self._window_s = window_s
         self._hits: Dict[str, Deque[float]] = {}
@@ -219,9 +214,7 @@ async def _json_body(request: web.Request) -> Dict[str, Any]:
     """
     raw = await request.content.read(MAX_BODY_BYTES + 1)
     if len(raw) > MAX_BODY_BYTES:
-        raise web.HTTPRequestEntityTooLarge(
-            max_size=MAX_BODY_BYTES, actual_size=len(raw)
-        )
+        raise web.HTTPRequestEntityTooLarge(max_size=MAX_BODY_BYTES, actual_size=len(raw))
     if not raw:
         return {}
     try:
@@ -269,9 +262,7 @@ async def _error_response(
     }
     if service is not None and principal is not None and broadcast_id:
         try:
-            body["state"] = await service.public_state(
-                principal.tenant_id, broadcast_id
-            )
+            body["state"] = await service.public_state(principal.tenant_id, broadcast_id)
         except Exception:  # noqa: BLE001 — the error response must still render
             pass
     headers = {}
@@ -328,9 +319,7 @@ def register_voice_broadcast_routes(
             principal = await principal_resolver(request, agent_id)
         else:
             try:
-                principal = await service.resolve_principal(
-                    await _session_user(request), agent_id
-                )
+                principal = await service.resolve_principal(await _session_user(request), agent_id)
             except errors.BroadcastError as exc:
                 raise web.HTTPForbidden(reason=str(exc)) from exc
         if not limiter.allow(f"{principal.tenant_id}:{principal.user_id}"):
@@ -352,9 +341,7 @@ def register_voice_broadcast_routes(
             descriptor = await service.create_broadcast(principal, agent_id)
         except errors.BroadcastError as exc:
             return await _error_response(exc)
-        state = await service.public_state(
-            principal.tenant_id, descriptor.broadcast_id
-        )
+        state = await service.public_state(principal.tenant_id, descriptor.broadcast_id)
         return web.json_response(
             {
                 "broadcast_id": descriptor.broadcast_id,
@@ -387,9 +374,7 @@ def register_voice_broadcast_routes(
         try:
             admission = await service.join(principal, agent_id, broadcast_id)
         except errors.BroadcastTerminal as exc:
-            if exc.reason is None and not await service.get_descriptor(
-                principal.tenant_id, broadcast_id
-            ):
+            if exc.reason is None and not await service.get_descriptor(principal.tenant_id, broadcast_id):
                 raise web.HTTPNotFound(reason="unknown broadcast") from None
             return await _error_response(exc)
         except errors.BroadcastError as exc:
@@ -515,9 +500,7 @@ def register_voice_broadcast_routes(
                 broadcast_id=broadcast_id,
             )
         state = await service.public_state(principal.tenant_id, broadcast_id)
-        return web.json_response(
-            {"state": state, "floor_epoch": result.floor_epoch}
-        )
+        return web.json_response({"state": state, "floor_epoch": result.floor_epoch})
 
     async def release_floor(request: web.Request) -> web.Response:
         """``POST /{bid}/floor/release`` — Finish Speaking, current speaker only."""
@@ -528,14 +511,10 @@ def register_voice_broadcast_routes(
         if not lease_id:
             raise web.HTTPBadRequest(reason="lease_id is required")
         try:
-            lease = await service.get_lease(
-                principal.tenant_id, broadcast_id, lease_id
-            )
+            lease = await service.get_lease(principal.tenant_id, broadcast_id, lease_id)
             if lease is None or lease.principal.user_id != principal.user_id:
                 raise errors.NotSpeaker(message="lease is not owned by this principal")
-            result = await service.release_floor(
-                principal.tenant_id, broadcast_id, lease_id
-            )
+            result = await service.release_floor(principal.tenant_id, broadcast_id, lease_id)
         except errors.BroadcastError as exc:
             return await _error_response(
                 exc,
@@ -566,9 +545,7 @@ def register_voice_broadcast_routes(
     app.router.add_post(base, create)
     app.router.add_get(base + "/{broadcast_id}", get_state)
     app.router.add_post(base + "/{broadcast_id}/viewers", join)
-    app.router.add_get(
-        base + "/{broadcast_id}/viewers/{lease_id}/connection", connection
-    )
+    app.router.add_get(base + "/{broadcast_id}/viewers/{lease_id}/connection", connection)
     app.router.add_delete(base + "/{broadcast_id}/viewers/{lease_id}", leave)
     app.router.add_post(base + "/{broadcast_id}/hands", raise_hand)
     app.router.add_delete(base + "/{broadcast_id}/hands/me", cancel_own_hand)
@@ -579,8 +556,6 @@ def register_voice_broadcast_routes(
 
     app["voice_broadcast_service"] = service
     logger.info("Voice broadcast routes registered at %s", base)
-
-
 
 
 __all__ = [

@@ -34,6 +34,7 @@ Design notes
   lifetime (NOT used as a short-lived ``async with`` block, per the FEAT-242
   keep-alive caveat at avatar.py:157-176).
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -189,16 +190,12 @@ class VoiceAvatarSession:
         api_key = os.environ.get("LIVEAVATAR_API_KEY", "")
         resolved_avatar_id = avatar_id or os.environ.get("LIVEAVATAR_AVATAR_ID", "")
         if not api_key or not resolved_avatar_id:
-            raise RuntimeError(
-                "LIVEAVATAR_API_KEY and LIVEAVATAR_AVATAR_ID must be set in env"
-            )
+            raise RuntimeError("LIVEAVATAR_API_KEY and LIVEAVATAR_AVATAR_ID must be set in env")
 
         cfg = LiveAvatarConfig(
             api_key=api_key,
             avatar_id=resolved_avatar_id,
-            base_url=os.environ.get(
-                "LIVEAVATAR_BASE_URL", "https://api.liveavatar.com"
-            ),
+            base_url=os.environ.get("LIVEAVATAR_BASE_URL", "https://api.liveavatar.com"),
             is_sandbox=os.environ.get("LIVEAVATAR_SANDBOX", "true").lower() != "false",
             max_session_duration=max_session_duration_s,
         )
@@ -207,10 +204,7 @@ class VoiceAvatarSession:
         injected = (livekit_url, room_name, avatar_publisher_token)
         if any(value is not None for value in injected):
             if not all(value is not None for value in injected):
-                raise ValueError(
-                    "livekit_url, room_name and avatar_publisher_token must be "
-                    "supplied together"
-                )
+                raise ValueError("livekit_url, room_name and avatar_publisher_token must be " "supplied together")
             # ``agent_token`` here is the AVATAR publisher token for the shared
             # room — never the direct publisher's. The two must stay distinct
             # or they evict each other in LiveKit (spec §6).
@@ -226,9 +220,7 @@ class VoiceAvatarSession:
             # datetime.utcnow() and PyJWT are thread-safe; offload to avoid
             # blocking the event loop on key-derivation).
             room_manager = LiveKitRoomManager()
-            tokens = await asyncio.to_thread(
-                room_manager.mint_room_tokens, session_id, agent_id
-            )
+            tokens = await asyncio.to_thread(room_manager.mint_room_tokens, session_id, agent_id)
             credentials_injected = False
 
         # LiveKit config passed to the avatar so it joins our room as a publisher.
@@ -254,9 +246,7 @@ class VoiceAvatarSession:
             local_handle: AvatarSessionHandle | None = None
             try:
                 # 4. Create session token with livekit_config
-                local_handle = await local_client.create_session_token(
-                    cfg, livekit_config=livekit_config
-                )
+                local_handle = await local_client.create_session_token(cfg, livekit_config=livekit_config)
                 # Populate the ai-parrot session id and tenant
                 # (create_session_token cannot know these — it is the
                 # HTTP-layer's responsibility).
@@ -305,13 +295,10 @@ class VoiceAvatarSession:
             client, handle, ws = await _bring_up()
         else:
             try:
-                client, handle, ws = await asyncio.wait_for(
-                    _bring_up(), timeout=startup_deadline_s
-                )
+                client, handle, ws = await asyncio.wait_for(_bring_up(), timeout=startup_deadline_s)
             except asyncio.TimeoutError as exc:
                 raise AvatarStartupTimeout(
-                    "VoiceAvatarSession: avatar did not become ready within "
-                    f"{startup_deadline_s}s"
+                    "VoiceAvatarSession: avatar did not become ready within " f"{startup_deadline_s}s"
                 ) from exc
 
         logging.getLogger(__name__).info(

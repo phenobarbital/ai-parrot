@@ -8,6 +8,7 @@ Two halves:
    still sends inline audio and still tees to ``connection.avatar_session``.
    That path is FEAT-536's and must not change.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -103,9 +104,7 @@ class FakeVoiceClient:
 
 
 def _principal(user: str = "speaker-1") -> ParticipantPrincipal:
-    return ParticipantPrincipal(
-        user_id=user, tenant_id=TENANT, agent_id=AGENT, display_name=user
-    )
+    return ParticipantPrincipal(user_id=user, tenant_id=TENANT, agent_id=AGENT, display_name=user)
 
 
 def _response(**overrides: Any) -> LiveVoiceResponse:
@@ -159,9 +158,7 @@ async def test_relay_strips_pcm_from_wire_and_pushes_once(
     await relay._relay(  # noqa: SLF001
         _response(
             audio_data=pcm,
-            tool_calls=[
-                LiveToolCall(id="tc-1", name="get_weather", arguments={"city": "Vigo"})
-            ],
+            tool_calls=[LiveToolCall(id="tc-1", name="get_weather", arguments={"city": "Vigo"})],
         ),
         turn_no=1,
     )
@@ -201,9 +198,7 @@ async def test_sequence_numbers_restart_per_speaker_turn(
     assert broadcast.pushed[-1].sequence == 0
 
 
-async def test_interrupt_and_complete_forwarded(
-    relay: BroadcastVoiceSession, broadcast: FakeBroadcastSession
-) -> None:
+async def test_interrupt_and_complete_forwarded(relay: BroadcastVoiceSession, broadcast: FakeBroadcastSession) -> None:
     relay.begin_speaker_turn("lease-a", _principal(), floor_epoch=1)
 
     await relay._relay(_response(is_interrupted=True, audio_data=b"\x00\x00"), turn_no=1)  # noqa: SLF001
@@ -310,9 +305,7 @@ async def test_late_display_event_from_a_previous_floor_is_suppressed(
 ) -> None:
     relay.begin_speaker_turn("lease-a", _principal(), floor_epoch=1)
     relay.end_speaker_turn()
-    await relay._relay(  # noqa: SLF001
-        _response(metadata={"display_data": {"chart": "old"}}), turn_no=1
-    )
+    await relay._relay(_response(metadata={"display_data": {"chart": "old"}}), turn_no=1)  # noqa: SLF001
     assert relay.sent_frames == []  # type: ignore[attr-defined]
 
 
@@ -423,9 +416,7 @@ def test_build_voice_frames_is_a_pure_module_function() -> None:
     )
     assert _types(frames)[0] == "response_chunk"
 
-    stt_frames = build_voice_frames(
-        _response(text="hi", role="user"), 1, stt_only=True, dedup_state=state
-    )
+    stt_frames = build_voice_frames(_response(text="hi", role="user"), 1, stt_only=True, dedup_state=state)
     # STT-only gating is preserved: only the user transcription survives.
     assert _types(stt_frames) == ["transcription"]
 
@@ -497,18 +488,12 @@ class FakeBroadcastService:
     async def resolve_principal(self, user: Any, agent_id: str) -> ParticipantPrincipal:
         if user is None:
             raise PermissionError("unauthenticated")
-        return ParticipantPrincipal(
-            user_id=user.user_id, tenant_id=TENANT, agent_id=agent_id
-        )
+        return ParticipantPrincipal(user_id=user.user_id, tenant_id=TENANT, agent_id=agent_id)
 
-    async def get_descriptor(
-        self, tenant_id: str, broadcast_id: str
-    ) -> Optional[BroadcastDescriptor]:
+    async def get_descriptor(self, tenant_id: str, broadcast_id: str) -> Optional[BroadcastDescriptor]:
         return await self.registry.get(tenant_id, broadcast_id)
 
-    async def get_lease(
-        self, tenant_id: str, broadcast_id: str, lease_id: str
-    ) -> Optional[ViewerLease]:
+    async def get_lease(self, tenant_id: str, broadcast_id: str, lease_id: str) -> Optional[ViewerLease]:
         for lease in await self.registry.list_leases(tenant_id, broadcast_id):
             if lease.lease_id == lease_id:
                 return lease
@@ -517,14 +502,10 @@ class FakeBroadcastService:
     async def heartbeat(self, tenant_id: str, broadcast_id: str, lease_id: str) -> None:
         await self.registry.heartbeat_control(tenant_id, broadcast_id, lease_id)
 
-    async def attach_control(
-        self, tenant_id: str, broadcast_id: str, lease_id: str, send: Any
-    ) -> None:
+    async def attach_control(self, tenant_id: str, broadcast_id: str, lease_id: str, send: Any) -> None:
         self.controls[lease_id] = send
 
-    async def detach_control(
-        self, tenant_id: str, broadcast_id: str, lease_id: str
-    ) -> None:
+    async def detach_control(self, tenant_id: str, broadcast_id: str, lease_id: str) -> None:
         self.controls.pop(lease_id, None)
         self.detached.append(lease_id)
 
@@ -532,9 +513,7 @@ class FakeBroadcastService:
         descriptor = await self.registry.get(tenant_id, broadcast_id)
         assert descriptor is not None
         leases = await self.registry.list_leases(tenant_id, broadcast_id)
-        return descriptor.to_public_state(viewer_count=len(leases)).model_dump(
-            mode="json"
-        )
+        return descriptor.to_public_state(viewer_count=len(leases)).model_dump(mode="json")
 
     async def bind_speaker_socket(
         self,
@@ -544,16 +523,10 @@ class FakeBroadcastService:
         socket_id: str,
         floor_epoch: int,
     ) -> bool:
-        return await self.registry.bind_speaker_socket(
-            tenant_id, broadcast_id, lease_id, socket_id, floor_epoch
-        )
+        return await self.registry.bind_speaker_socket(tenant_id, broadcast_id, lease_id, socket_id, floor_epoch)
 
-    async def unbind_speaker_socket(
-        self, tenant_id: str, broadcast_id: str, lease_id: str, socket_id: str
-    ) -> bool:
-        return await self.registry.unbind_speaker_socket(
-            tenant_id, broadcast_id, lease_id, socket_id
-        )
+    async def unbind_speaker_socket(self, tenant_id: str, broadcast_id: str, lease_id: str, socket_id: str) -> bool:
+        return await self.registry.unbind_speaker_socket(tenant_id, broadcast_id, lease_id, socket_id)
 
     def voice_session(self, tenant_id: str, broadcast_id: str) -> Any:
         return self.session
@@ -575,9 +548,7 @@ class FakeBroadcastService:
 
         return LocalSpeakerInput(self.session, lease_id, principal, floor_epoch)
 
-    async def release_floor(
-        self, tenant_id: str, broadcast_id: str, speaker_lease_id: str
-    ) -> Any:
+    async def release_floor(self, tenant_id: str, broadcast_id: str, speaker_lease_id: str) -> Any:
         return await self.coordinator.release(
             self.registry,
             None,
@@ -600,17 +571,11 @@ class FakeBroadcastService:
             admission = await self.registry.reserve_viewer(
                 TENANT,
                 BROADCAST_ID,
-                ParticipantPrincipal(
-                    user_id=name, tenant_id=TENANT, agent_id=AGENT, display_name=name
-                ),
+                ParticipantPrincipal(user_id=name, tenant_id=TENANT, agent_id=AGENT, display_name=name),
                 f"identity-{name}",
             )
-            await self.registry.confirm_viewer(
-                TENANT, BROADCAST_ID, admission.lease.lease_id
-            )
-            await self.registry.heartbeat_control(
-                TENANT, BROADCAST_ID, admission.lease.lease_id
-            )
+            await self.registry.confirm_viewer(TENANT, BROADCAST_ID, admission.lease.lease_id)
+            await self.registry.heartbeat_control(TENANT, BROADCAST_ID, admission.lease.lease_id)
             leases[name] = admission.lease
         return leases
 
@@ -640,9 +605,7 @@ async def broadcast_app(aiohttp_client):
 
 
 async def _connect(client: Any, user: str) -> Any:
-    return await client.ws_connect(
-        f"/ws/voice/broadcast/{AGENT}/{BROADCAST_ID}?token={user}"
-    )
+    return await client.ws_connect(f"/ws/voice/broadcast/{AGENT}/{BROADCAST_ID}?token={user}")
 
 
 async def _drain_until(ws: Any, wanted: str, limit: int = 12) -> Dict[str, Any]:
@@ -763,10 +726,7 @@ async def test_ws_speaker_audio_reaches_the_broadcast_session(broadcast_app) -> 
     assert service.session.turns == [(leases["moderator"].lease_id, "moderator", 1)]
     assert service.session.started == 1
 
-    await ws.send_json(
-        {"type": "audio_data", "data": base64.b64encode(b"\x01\x02").decode(),
-         "floor_epoch": 1}
-    )
+    await ws.send_json({"type": "audio_data", "data": base64.b64encode(b"\x01\x02").decode(), "floor_epoch": 1})
     await ws.send_json({"type": "stop_recording", "floor_epoch": 1})
     await _drain_until(ws, "recording_stopped")
     assert service.session.audio == [b"\x01\x02"]
@@ -794,10 +754,7 @@ async def test_ws_duplicate_speaker_socket_409(broadcast_app) -> None:
     assert error["code"] == "speaker_connection_exists"
 
     # The original binding survived.
-    await first.send_json(
-        {"type": "audio_data", "data": base64.b64encode(b"\x03\x04").decode(),
-         "floor_epoch": 1}
-    )
+    await first.send_json({"type": "audio_data", "data": base64.b64encode(b"\x03\x04").decode(), "floor_epoch": 1})
     await first.send_json({"type": "stop_recording", "floor_epoch": 1})
     await _drain_until(first, "recording_stopped")
     assert b"\x03\x04" in service.session.audio

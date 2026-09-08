@@ -14,6 +14,7 @@ importing this package must keep working — for the models, the in-memory
 registry and every deterministic unit test — on an installation that has no
 ``redis`` at all.
 """
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any

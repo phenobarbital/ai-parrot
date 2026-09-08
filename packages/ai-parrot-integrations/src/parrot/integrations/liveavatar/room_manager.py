@@ -15,6 +15,7 @@ Tokens:
 ``livekit-api`` is an optional dependency; a clear error is raised on import
 if the package is not installed (install with the ``liveavatar`` extra).
 """
+
 from __future__ import annotations
 
 import logging
@@ -44,6 +45,7 @@ def _require_livekit_api() -> object:
     """
     try:
         from livekit import api as livekit_api  # type: ignore[import-untyped]
+
         return livekit_api
     except ImportError as exc:
         raise ImportError(
@@ -114,10 +116,7 @@ class LiveKitRoomManager:
             can_subscribe=True,
         )
         client_token: str = (
-            livekit_api.AccessToken(self._key, self._secret)
-            .with_identity(identity)
-            .with_grants(client_grants)
-            .to_jwt()
+            livekit_api.AccessToken(self._key, self._secret).with_identity(identity).with_grants(client_grants).to_jwt()
         )
 
         # Agent token — publish + subscribe (avatar participant)
@@ -134,9 +133,7 @@ class LiveKitRoomManager:
             .to_jwt()
         )
 
-        self.logger.debug(
-            "LiveKitRoomManager: minted tokens for room=%s identity=%s", room, identity
-        )
+        self.logger.debug("LiveKitRoomManager: minted tokens for room=%s identity=%s", room, identity)
         return LiveKitRoomTokens(
             livekit_url=self.url,
             room=room,
@@ -268,9 +265,9 @@ class LiveKitRoomManager:
         than configured twice.  A non-``ws`` URL is passed through unchanged.
         """
         if self.url.startswith("wss://"):
-            return "https://" + self.url[len("wss://"):]
+            return "https://" + self.url[len("wss://") :]
         if self.url.startswith("ws://"):
-            return "http://" + self.url[len("ws://"):]
+            return "http://" + self.url[len("ws://") :]
         return self.url
 
     def _api(self) -> object:
@@ -342,12 +339,8 @@ class LiveKitRoomManager:
         livekit_api = _require_livekit_api()
         client = self._api()
         try:
-            await client.room.remove_participant(
-                livekit_api.RoomParticipantIdentity(room=room, identity=identity)
-            )
-            self.logger.info(
-                "LiveKitRoomManager: removed identity=%s from room=%s", identity, room
-            )
+            await client.room.remove_participant(livekit_api.RoomParticipantIdentity(room=room, identity=identity))
+            self.logger.info("LiveKitRoomManager: removed identity=%s from room=%s", identity, room)
         finally:
             await client.aclose()
 
@@ -370,9 +363,7 @@ class LiveKitRoomManager:
         livekit_api = _require_livekit_api()
         client = self._api()
         try:
-            response = await client.room.list_participants(
-                livekit_api.ListParticipantsRequest(room=room)
-            )
+            response = await client.room.list_participants(livekit_api.ListParticipantsRequest(room=room))
             return [participant.identity for participant in response.participants]
         finally:
             await client.aclose()
@@ -393,4 +384,3 @@ class LiveKitRoomManager:
             self.logger.info("LiveKitRoomManager: deleted room=%s", room)
         finally:
             await client.aclose()
-

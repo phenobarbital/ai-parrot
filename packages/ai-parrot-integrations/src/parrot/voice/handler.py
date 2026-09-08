@@ -67,6 +67,7 @@ _THOUGHT_FILTER_PATTERN = re.compile(r"^\s*(?:(\*\*|##)?\s*[A-Z][a-z]+ing\b|(\*\
 
 # ── FEAT-537: moderated broadcast control socket ────────────────────────────
 
+
 #: Participant control/input route.  Credentials never appear in the path —
 #: only the agent and broadcast ids, which are not secrets (a share link
 #: carries the broadcast id and nothing else, spec §2).
@@ -944,9 +945,7 @@ class VoiceChatHandler:
         if self.broadcast_enabled:
             broadcast_ws_path = f"{prefix}{self.ws_broadcast_route}"
             app.router.add_get(broadcast_ws_path, self.handle_broadcast_websocket)
-            self.logger.info(
-                "Broadcast WebSocket route registered: %s", broadcast_ws_path
-            )
+            self.logger.info("Broadcast WebSocket route registered: %s", broadcast_ws_path)
 
         # Health check
         if include_health:
@@ -1179,9 +1178,7 @@ class VoiceChatHandler:
     # FEAT-537 — Broadcast control / input socket
     # =========================================================================
 
-    async def handle_broadcast_websocket(
-        self, request: web.Request
-    ) -> web.WebSocketResponse:
+    async def handle_broadcast_websocket(self, request: web.Request) -> web.WebSocketResponse:
         """Participant control and microphone socket for one broadcast.
 
         Route: ``/ws/voice/broadcast/{agent_id}/{broadcast_id}``.
@@ -1241,9 +1238,7 @@ class VoiceChatHandler:
         await ws.prepare(request)
 
         if self.require_auth and user is None:
-            await ws.close(
-                code=WS_CLOSE_UNAUTHENTICATED, message=b"authentication required"
-            )
+            await ws.close(code=WS_CLOSE_UNAUTHENTICATED, message=b"authentication required")
             return ws
 
         socket_id = str(uuid.uuid4())
@@ -1265,9 +1260,7 @@ class VoiceChatHandler:
         try:
             state.principal = await service.resolve_principal(user, agent_id)
         except Exception as exc:  # noqa: BLE001 — no scope, no socket
-            self.logger.warning(
-                "broadcast socket %s: principal resolution failed: %s", socket_id, exc
-            )
+            self.logger.warning("broadcast socket %s: principal resolution failed: %s", socket_id, exc)
             await ws.close(code=WS_CLOSE_FORBIDDEN, message=b"not authorized")
             self.connections.pop(socket_id, None)
             return ws
@@ -1281,9 +1274,7 @@ class VoiceChatHandler:
             self.connections.pop(socket_id, None)
         return ws
 
-    async def _run_broadcast_socket(
-        self, service: Any, state: "_BroadcastSocketState"
-    ) -> None:
+    async def _run_broadcast_socket(self, service: Any, state: "_BroadcastSocketState") -> None:
         """Attach the socket to a lease, then serve its message loop."""
         if not await self._attach_broadcast_socket(service, state):
             return
@@ -1305,27 +1296,21 @@ class VoiceChatHandler:
                 await self._send_broadcast_error(state.ws, "invalid_json", "Invalid JSON")
                 continue
             if not state.allow_message():
-                await self._send_broadcast_error(
-                    state.ws, "rate_limited", "too many messages"
-                )
+                await self._send_broadcast_error(state.ws, "rate_limited", "too many messages")
                 continue
             try:
                 await self._handle_broadcast_message(service, state, message)
             except Exception as exc:  # noqa: BLE001 — one bad message, not the socket
                 await self._report_broadcast_error(state, exc)
 
-    async def _attach_broadcast_socket(
-        self, service: Any, state: "_BroadcastSocketState"
-    ) -> bool:
+    async def _attach_broadcast_socket(self, service: Any, state: "_BroadcastSocketState") -> bool:
         """Consume the mandatory ``attach`` message and verify lease ownership.
 
         Returns:
             ``True`` when the socket is attached and may proceed.
         """
         try:
-            msg = await asyncio.wait_for(
-                state.ws.receive(), timeout=BROADCAST_ATTACH_TIMEOUT_S
-            )
+            msg = await asyncio.wait_for(state.ws.receive(), timeout=BROADCAST_ATTACH_TIMEOUT_S)
         except asyncio.TimeoutError:
             await state.ws.close(code=WS_CLOSE_FORBIDDEN, message=b"attach timeout")
             return False
@@ -1359,9 +1344,7 @@ class VoiceChatHandler:
 
         state.lease_id = lease_id
         state.attached = True
-        await service.attach_control(
-            tenant_id, state.broadcast_id, lease_id, state.push
-        )
+        await service.attach_control(tenant_id, state.broadcast_id, lease_id, state.push)
         await service.heartbeat(tenant_id, state.broadcast_id, lease_id)
 
         descriptor = await service.get_descriptor(tenant_id, state.broadcast_id)
@@ -1371,30 +1354,21 @@ class VoiceChatHandler:
                 "type": "attached",
                 "lease_id": lease_id,
                 "broadcast_id": state.broadcast_id,
-                "is_moderator": bool(
-                    descriptor and descriptor.moderator_lease_id == lease_id
-                ),
+                "is_moderator": bool(descriptor and descriptor.moderator_lease_id == lease_id),
             },
         )
         await self._push_broadcast_state(service, state)
         return True
 
-    async def _push_broadcast_state(
-        self, service: Any, state: "_BroadcastSocketState"
-    ) -> None:
+    async def _push_broadcast_state(self, service: Any, state: "_BroadcastSocketState") -> None:
         """Send the public projection plus this socket's own floor permission."""
         tenant_id = state.principal.tenant_id
         public = await service.public_state(tenant_id, state.broadcast_id)
-        await self._send_message(
-            state.ws, {"type": "broadcast_state", "state": public}
-        )
+        await self._send_message(state.ws, {"type": "broadcast_state", "state": public})
         descriptor = await service.get_descriptor(tenant_id, state.broadcast_id)
         if descriptor is None:
             return
-        granted = (
-            descriptor.speaker_lease_id == state.lease_id
-            and descriptor.floor_state.value == "granted"
-        )
+        granted = descriptor.speaker_lease_id == state.lease_id and descriptor.floor_state.value == "granted"
         # Sent explicitly so the browser gates its microphone on the SERVER's
         # answer, never on a generic ready_to_speak frame (spec §2).
         await self._send_message(
@@ -1444,9 +1418,7 @@ class VoiceChatHandler:
             return
 
         if msg_type == "finish_speaking":
-            await service.release_floor(
-                tenant_id, state.broadcast_id, state.lease_id
-            )
+            await service.release_floor(tenant_id, state.broadcast_id, state.lease_id)
             await self._push_broadcast_state(service, state)
             return
 
@@ -1457,9 +1429,7 @@ class VoiceChatHandler:
             await self._send_message(state.ws, {"type": "session_ended"})
             return
 
-        self.logger.warning(
-            "broadcast socket %s: unknown message type %r", state.socket_id, msg_type
-        )
+        self.logger.warning("broadcast socket %s: unknown message type %r", state.socket_id, msg_type)
 
     async def _handle_broadcast_audio(
         self,
@@ -1483,9 +1453,7 @@ class VoiceChatHandler:
         descriptor = await service.get_descriptor(tenant_id, state.broadcast_id)
         lease = await service.get_lease(tenant_id, state.broadcast_id, state.lease_id)
         if descriptor is None:
-            await self._send_broadcast_error(
-                state.ws, "not_found", "broadcast is gone"
-            )
+            await self._send_broadcast_error(state.ws, "not_found", "broadcast is gone")
             return
 
         try:
@@ -1565,31 +1533,23 @@ class VoiceChatHandler:
             return
         if len(raw) > BROADCAST_MAX_AUDIO_B64_BYTES:
             state.rejected_frames += 1
-            await self._send_broadcast_error(
-                state.ws, "payload_too_large", "audio payload exceeds the limit"
-            )
+            await self._send_broadcast_error(state.ws, "payload_too_large", "audio payload exceeds the limit")
             return
         try:
             pcm = base64.b64decode(raw)
         except (ValueError, binascii.Error):
             state.rejected_frames += 1
-            await self._send_broadcast_error(
-                state.ws, "invalid_audio", "audio payload is not valid base64"
-            )
+            await self._send_broadcast_error(state.ws, "invalid_audio", "audio payload is not valid base64")
             return
         # Cheap, caller-independent validation happens above; only the actual
         # hand-off to the producer needs an established recording turn.
         if state.speaker_input is None:
             state.rejected_frames += 1
-            await self._send_broadcast_error(
-                state.ws, "floor_not_granted", "send start_recording first"
-            )
+            await self._send_broadcast_error(state.ws, "floor_not_granted", "send start_recording first")
             return
         await state.speaker_input.push_audio(pcm)
 
-    async def _release_speaking(
-        self, service: Any, state: "_BroadcastSocketState"
-    ) -> None:
+    async def _release_speaking(self, service: Any, state: "_BroadcastSocketState") -> None:
         """Unbind this socket and, if it held the floor, hand it back."""
         if not state.attached or state.lease_id is None:
             return
@@ -1599,39 +1559,27 @@ class VoiceChatHandler:
                 await state.speaker_input.aclose()
             state.speaker_input = None
         with contextlib.suppress(Exception):
-            await service.unbind_speaker_socket(
-                tenant_id, state.broadcast_id, state.lease_id, state.socket_id
-            )
+            await service.unbind_speaker_socket(tenant_id, state.broadcast_id, state.lease_id, state.socket_id)
         state.bound = False
         descriptor = await self._safe_descriptor(service, state)
         if descriptor is not None and descriptor.speaker_lease_id == state.lease_id:
             with contextlib.suppress(Exception):
-                await service.release_floor(
-                    tenant_id, state.broadcast_id, state.lease_id
-                )
+                await service.release_floor(tenant_id, state.broadcast_id, state.lease_id)
 
-    async def _safe_descriptor(
-        self, service: Any, state: "_BroadcastSocketState"
-    ) -> Any:
+    async def _safe_descriptor(self, service: Any, state: "_BroadcastSocketState") -> Any:
         """Fetch the descriptor without letting a store blip break teardown."""
         try:
-            return await service.get_descriptor(
-                state.principal.tenant_id, state.broadcast_id
-            )
+            return await service.get_descriptor(state.principal.tenant_id, state.broadcast_id)
         except Exception:  # noqa: BLE001
             return None
 
-    async def _teardown_broadcast_socket(
-        self, service: Any, state: "_BroadcastSocketState"
-    ) -> None:
+    async def _teardown_broadcast_socket(self, service: Any, state: "_BroadcastSocketState") -> None:
         """Release the socket's bindings and deregister it.  Never raises."""
         if not state.attached or state.lease_id is None:
             return
         await self._release_speaking(service, state)
         with contextlib.suppress(Exception):
-            await service.detach_control(
-                state.principal.tenant_id, state.broadcast_id, state.lease_id
-            )
+            await service.detach_control(state.principal.tenant_id, state.broadcast_id, state.lease_id)
         self.logger.info(
             "broadcast socket %s closed (lease=%s, rejected_frames=%d)",
             state.socket_id,
@@ -1639,22 +1587,16 @@ class VoiceChatHandler:
             state.rejected_frames,
         )
 
-    async def _send_broadcast_error(
-        self, ws: web.WebSocketResponse, code: str, message: str
-    ) -> None:
+    async def _send_broadcast_error(self, ws: web.WebSocketResponse, code: str, message: str) -> None:
         """Send a coded error frame.
 
         Broadcast clients branch on ``code`` (``floor_not_granted``,
         ``stale_floor_epoch``, ``speaker_connection_exists``, …); the legacy
         ``_send_error`` sends only a human message.
         """
-        await self._send_message(
-            ws, {"type": "error", "code": code, "message": message}
-        )
+        await self._send_message(ws, {"type": "error", "code": code, "message": message})
 
-    async def _report_broadcast_error(
-        self, state: "_BroadcastSocketState", exc: BaseException
-    ) -> None:
+    async def _report_broadcast_error(self, state: "_BroadcastSocketState", exc: BaseException) -> None:
         """Translate an exception into a coded error frame."""
         reason = getattr(exc, "reason", None)
         code = getattr(reason, "value", None) or "internal_error"
@@ -1662,12 +1604,8 @@ class VoiceChatHandler:
             # The detail stays server-side: an unhandled exception's text can
             # embed connection strings or internal hosts (aiohttp/redis errors
             # routinely do), and the peer is only a lease holder.
-            self.logger.exception(
-                "broadcast socket %s: unhandled error", state.socket_id
-            )
-        await self._send_broadcast_error(
-            state.ws, code, _public_broadcast_message(exc)
-        )
+            self.logger.exception("broadcast socket %s: unhandled error", state.socket_id)
+        await self._send_broadcast_error(state.ws, code, _public_broadcast_message(exc))
 
     # =========================================================================
     # Message Handlers

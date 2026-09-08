@@ -25,6 +25,7 @@ Hence, deliberately:
 * Bounded message size, bounded queue, idle timeout, and a constant-time shared
   service token compared with :func:`hmac.compare_digest`.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -153,9 +154,7 @@ class WorkerAddressRegistry:
         """
         parsed = urlparse(url)
         if parsed.scheme not in ("ws", "wss") or not parsed.hostname:
-            raise WorkerTransportError(
-                message=f"refusing non-WebSocket worker address: {url!r}"
-            )
+            raise WorkerTransportError(message=f"refusing non-WebSocket worker address: {url!r}")
         return url
 
     async def register(self, worker_id: str, url: str) -> None:
@@ -247,9 +246,7 @@ class RelayFrame:
             lease_id = str(payload["lease_id"])
             floor_epoch = int(payload["floor_epoch"])
         except (KeyError, TypeError, ValueError) as exc:
-            raise WorkerTransportError(
-                message="relay frame is missing its fencing tuple"
-            ) from exc
+            raise WorkerTransportError(message="relay frame is missing its fencing tuple") from exc
 
         pcm = b""
         if kind == "audio":
@@ -327,10 +324,7 @@ class WorkerRelayServer:
         """
         if not self._token:
             raise WorkerTransportError(
-                message=(
-                    f"{WORKER_TOKEN_ENV} must be set before mounting the broadcast "
-                    "worker relay"
-                )
+                message=(f"{WORKER_TOKEN_ENV} must be set before mounting the broadcast " "worker relay")
             )
         app.router.add_get(f"{prefix}{RELAY_ROUTE}", self.handle_relay)
         self.logger.info("Broadcast worker relay mounted at %s%s", prefix, RELAY_ROUTE)
@@ -375,9 +369,7 @@ class WorkerRelayServer:
         tenant_id = request.query.get("tenant_id", "")
         broadcast_id = request.query.get("broadcast_id", "")
 
-        ws = web.WebSocketResponse(
-            max_msg_size=MAX_RELAY_MESSAGE_BYTES, heartbeat=RELAY_IDLE_TIMEOUT_S
-        )
+        ws = web.WebSocketResponse(max_msg_size=MAX_RELAY_MESSAGE_BYTES, heartbeat=RELAY_IDLE_TIMEOUT_S)
         await ws.prepare(request)
 
         accepted = 0
@@ -385,9 +377,7 @@ class WorkerRelayServer:
         try:
             while True:
                 try:
-                    msg = await asyncio.wait_for(
-                        ws.receive(), timeout=RELAY_IDLE_TIMEOUT_S
-                    )
+                    msg = await asyncio.wait_for(ws.receive(), timeout=RELAY_IDLE_TIMEOUT_S)
                 except asyncio.TimeoutError:
                     await ws.close(code=WS_CLOSE_POLICY_VIOLATION, message=b"idle")
                     break
@@ -444,15 +434,11 @@ class WorkerRelayServer:
         producer_epoch = self._service.owner_epoch(tenant_id, broadcast_id)
         session = self._service.voice_session(tenant_id, broadcast_id)
         if producer_epoch is None or session is None:
-            await ws.close(
-                code=WS_CLOSE_POLICY_VIOLATION, message=b"not the producer"
-            )
+            await ws.close(code=WS_CLOSE_POLICY_VIOLATION, message=b"not the producer")
             return None
         if frame.owner_epoch != producer_epoch:
             # The sender is talking to a producer that no longer exists.
-            await ws.close(
-                code=WS_CLOSE_POLICY_VIOLATION, message=b"stale_owner_epoch"
-            )
+            await ws.close(code=WS_CLOSE_POLICY_VIOLATION, message=b"stale_owner_epoch")
             return None
 
         descriptor = await self._service.get_descriptor(tenant_id, broadcast_id)
@@ -535,9 +521,7 @@ class LocalSpeakerInput(SpeakerInput):
         floor_epoch: Floor epoch this input was authorised under.
     """
 
-    def __init__(
-        self, session: Any, lease_id: str, principal: Any, floor_epoch: int
-    ) -> None:
+    def __init__(self, session: Any, lease_id: str, principal: Any, floor_epoch: int) -> None:
         self._session = session
         self._lease_id = lease_id
         self._principal = principal
@@ -547,9 +531,7 @@ class LocalSpeakerInput(SpeakerInput):
 
     async def start_turn(self) -> None:
         if not self._begun:
-            self._generation = self._session.begin_speaker_turn(
-                self._lease_id, self._principal, self._floor_epoch
-            )
+            self._generation = self._session.begin_speaker_turn(self._lease_id, self._principal, self._floor_epoch)
             self._begun = True
         await self._session.start_turn()
 
@@ -610,9 +592,7 @@ class RemoteSpeakerInput(SpeakerInput):
     ) -> None:
         WorkerAddressRegistry.validate_url(url)
         if not _is_loopback(url) and not url.startswith("wss://"):
-            raise WorkerTransportError(
-                message="non-loopback worker relay must use wss://"
-            )
+            raise WorkerTransportError(message="non-loopback worker relay must use wss://")
         self._url = url
         self._tenant_id = tenant_id
         self._broadcast_id = broadcast_id
@@ -636,13 +616,10 @@ class RemoteSpeakerInput(SpeakerInput):
         if self._ws is not None:
             return
         if not self._token:
-            raise WorkerTransportError(
-                message=f"{WORKER_TOKEN_ENV} is required to relay speaker input"
-            )
+            raise WorkerTransportError(message=f"{WORKER_TOKEN_ENV} is required to relay speaker input")
         self._client = self._session_factory()
         self._ws = await self._client.ws_connect(
-            f"{self._url}{RELAY_ROUTE}"
-            f"?tenant_id={self._tenant_id}&broadcast_id={self._broadcast_id}",
+            f"{self._url}{RELAY_ROUTE}" f"?tenant_id={self._tenant_id}&broadcast_id={self._broadcast_id}",
             headers={WORKER_TOKEN_HEADER: self._token},
             max_msg_size=MAX_RELAY_MESSAGE_BYTES,
         )

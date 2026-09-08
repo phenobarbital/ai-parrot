@@ -26,6 +26,7 @@ PCM size constants (from supertonic_backend.py, verified):
     => 1 s = 24000 * 1 * 2 = 48 000 bytes
     => 400 ms ≈ 9 600 samples * 2 bytes = 19 200 bytes
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -44,14 +45,15 @@ import aiohttp
 from parrot.integrations.liveavatar.models import AvatarSessionHandle
 
 # PCM size constants (mirror supertonic_backend.py — no resampling)
-_SAMPLE_RATE: int = 24_000   # Hz
-_BYTES_PER_SAMPLE: int = 2   # 16-bit mono
+_SAMPLE_RATE: int = 24_000  # Hz
+_BYTES_PER_SAMPLE: int = 2  # 16-bit mono
 _BYTES_PER_SECOND: int = _SAMPLE_RATE * _BYTES_PER_SAMPLE  # 48 000
 
 # Chunk sizes
-_FIRST_CHUNK_BYTES: int = int(_BYTES_PER_SECOND * 0.4)   # ≈ 400 ms — 19 200 bytes
-_NORMAL_CHUNK_BYTES: int = _BYTES_PER_SECOND              # ≈ 1 s   — 48 000 bytes
-_MAX_PACKET_BYTES: int = 1_024 * 1_024                    # 1 MB hard cap
+_FIRST_CHUNK_BYTES: int = int(_BYTES_PER_SECOND * 0.4)  # ≈ 400 ms — 19 200 bytes
+_NORMAL_CHUNK_BYTES: int = _BYTES_PER_SECOND  # ≈ 1 s   — 48 000 bytes
+_MAX_PACKET_BYTES: int = 1_024 * 1_024  # 1 MB hard cap
+
 
 # Max time to wait for the server's ``session.state_updated == "connected"``
 # event before giving up (prevents an indefinite hang if the media server
@@ -270,7 +272,7 @@ class AvatarWebSocket:
             chunk_size = _FIRST_CHUNK_BYTES if is_first else _NORMAL_CHUNK_BYTES
             # Never exceed the hard cap
             chunk_size = min(chunk_size, _MAX_PACKET_BYTES)
-            chunk = pcm[offset: offset + chunk_size]
+            chunk = pcm[offset : offset + chunk_size]
             await self._emit_chunk(chunk, is_first)
             offset += chunk_size
             is_first = False
@@ -359,9 +361,7 @@ class AvatarWebSocket:
         self._buffer.clear()
         self._first_frame_sent = False
         await self._send_json({"type": "agent.interrupt"})
-        self.logger.debug(
-            "AvatarWebSocket: agent.interrupt sent (dropped %d buffered bytes)", dropped
-        )
+        self.logger.debug("AvatarWebSocket: agent.interrupt sent (dropped %d buffered bytes)", dropped)
 
     # ── Connection management ──────────────────────────────────────────
 
@@ -376,18 +376,14 @@ class AvatarWebSocket:
         if self._session is None:
             raise RuntimeError("AvatarWebSocket: no aiohttp session available")
 
-        self.logger.debug(
-            "AvatarWebSocket: connecting to %s", self.handle.ws_url
-        )
+        self.logger.debug("AvatarWebSocket: connecting to %s", self.handle.ws_url)
         self._ws = await self._session.ws_connect(self.handle.ws_url)
         # Reusing an already-connected session: the server will NOT re-emit the
         # one-time ``connected`` state to this late-attaching WS, so open the
         # gate now (the session is already live) instead of timing out.
         if self._assume_connected:
             self._connected.set()
-            self.logger.debug(
-                "AvatarWebSocket: assume_connected — gate opened on handshake"
-            )
+            self.logger.debug("AvatarWebSocket: assume_connected — gate opened on handshake")
         # Start the reader coroutine in the background; it sets _connected.
         self._reader_task = asyncio.create_task(
             self._reader_loop(),
@@ -414,9 +410,7 @@ class AvatarWebSocket:
                         # strand the audience in a half-dead avatar mode.
                         await self._notify_closed(reason)
                         return
-                    self.logger.warning(
-                        "AvatarWebSocket: WS closed/error — attempting reconnect"
-                    )
+                    self.logger.warning("AvatarWebSocket: WS closed/error — attempting reconnect")
                     await self._reconnect()
                     return
             if not self._auto_reconnect:
@@ -444,9 +438,7 @@ class AvatarWebSocket:
         # Log every inbound server event at INFO so the real LITE-mode protocol
         # (esp. under LiveKit BYO transport) can be confirmed from logs — the
         # speaker path was only ever exercised against fakes.
-        self.logger.info(
-            "AvatarWebSocket: server event type=%r payload=%s", msg_type, raw[:300]
-        )
+        self.logger.info("AvatarWebSocket: server event type=%r payload=%s", msg_type, raw[:300])
         if msg_type == "session.state_updated":
             state = msg.get("state", "")
             if state == "connected":
@@ -507,9 +499,7 @@ class AvatarWebSocket:
         # Release anyone blocked on the connect gate so they fail fast with the
         # close error rather than waiting out the full connect timeout.
         self._connected.set()
-        self.logger.warning(
-            "AvatarWebSocket: transport closed permanently (reason=%s)", reason
-        )
+        self.logger.warning("AvatarWebSocket: transport closed permanently (reason=%s)", reason)
         await _invoke(self._on_close, reason)
 
     async def _close(self) -> None:
@@ -541,24 +531,19 @@ class AvatarWebSocket:
                 :data:`_CONNECT_TIMEOUT` seconds.
         """
         if self.closed.is_set():
-            raise RuntimeError(
-                f"AvatarWebSocket: closed ({self._close_reason})"
-            )
+            raise RuntimeError(f"AvatarWebSocket: closed ({self._close_reason})")
         if self._connected.is_set():
             return
         # Already gave up earlier this turn — fail immediately rather than
         # waiting another full _CONNECT_TIMEOUT for every subsequent sentence.
         if self._connect_failed:
-            raise RuntimeError(
-                "AvatarWebSocket: connected gate previously timed out this turn"
-            )
+            raise RuntimeError("AvatarWebSocket: connected gate previously timed out this turn")
         try:
             await asyncio.wait_for(self._connected.wait(), timeout=_CONNECT_TIMEOUT)
         except asyncio.TimeoutError as exc:
             self._connect_failed = True
             raise RuntimeError(
-                "AvatarWebSocket: timed out waiting for "
-                f"session.state_updated='connected' after {_CONNECT_TIMEOUT}s"
+                "AvatarWebSocket: timed out waiting for " f"session.state_updated='connected' after {_CONNECT_TIMEOUT}s"
             ) from exc
 
     async def _send_json(self, payload: Dict[str, Any]) -> None:
@@ -579,11 +564,8 @@ class AvatarWebSocket:
             await self._ws.send_json(payload)
             return
         try:
-            await asyncio.wait_for(
-                self._ws.send_json(payload), timeout=self._send_timeout_s
-            )
+            await asyncio.wait_for(self._ws.send_json(payload), timeout=self._send_timeout_s)
         except asyncio.TimeoutError as exc:
             raise AvatarSendTimeout(
-                "AvatarWebSocket: vendor send exceeded "
-                f"{self._send_timeout_s}s deadline"
+                "AvatarWebSocket: vendor send exceeded " f"{self._send_timeout_s}s deadline"
             ) from exc

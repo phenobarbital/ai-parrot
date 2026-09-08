@@ -16,6 +16,7 @@ interruption latency or audio quality. Those belong to the real-vendor gate
 Each scenario writes a per-browser measurement table to
 `artifacts/logs/feat-537-browser-<scenario>-<stamp>.json`.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -55,8 +56,7 @@ class FakeMediaSession:
     fail_avatar = False
 
     def __init__(
-        self, descriptor: Any, registry: Any, room_manager: Any, worker_id: str,
-        owner_epoch: int, **_kw: Any
+        self, descriptor: Any, registry: Any, room_manager: Any, worker_id: str, owner_epoch: int, **_kw: Any
     ) -> None:
         from parrot.integrations.liveavatar.broadcast import BroadcastState
 
@@ -81,8 +81,10 @@ class FakeMediaSession:
 
         FakeMediaSession.starts += 1
         await self.registry.transition(
-            self.descriptor.tenant_id, self.descriptor.broadcast_id,
-            BroadcastState.STARTING, expected_owner_epoch=self.owner_epoch,
+            self.descriptor.tenant_id,
+            self.descriptor.broadcast_id,
+            BroadcastState.STARTING,
+            expected_owner_epoch=self.owner_epoch,
         )
         if FakeMediaSession.fail_avatar:
             # Startup degradation: the audience keeps Nova audio in the same
@@ -90,8 +92,10 @@ class FakeMediaSession:
             self.state = BroadcastState.AUDIO_ONLY
             self.output_epoch = 1
             await self.registry.transition(
-                self.descriptor.tenant_id, self.descriptor.broadcast_id,
-                BroadcastState.AUDIO_ONLY, output_epoch=1,
+                self.descriptor.tenant_id,
+                self.descriptor.broadcast_id,
+                BroadcastState.AUDIO_ONLY,
+                output_epoch=1,
                 reason=BroadcastReason.AVATAR_STARTUP_TIMEOUT,
                 expected_owner_epoch=self.owner_epoch,
             )
@@ -100,8 +104,10 @@ class FakeMediaSession:
         self.state = BroadcastState.AVATAR
         self.output_epoch = 1
         await self.registry.transition(
-            self.descriptor.tenant_id, self.descriptor.broadcast_id,
-            BroadcastState.AVATAR, output_epoch=1,
+            self.descriptor.tenant_id,
+            self.descriptor.broadcast_id,
+            BroadcastState.AVATAR,
+            output_epoch=1,
             expected_owner_epoch=self.owner_epoch,
         )
         return self.state
@@ -139,8 +145,10 @@ class FakeMediaSession:
         self.state = BroadcastState.AUDIO_ONLY
         self.output_epoch += 1
         await self.registry.transition(
-            self.descriptor.tenant_id, self.descriptor.broadcast_id,
-            BroadcastState.AUDIO_ONLY, output_epoch=self.output_epoch,
+            self.descriptor.tenant_id,
+            self.descriptor.broadcast_id,
+            BroadcastState.AUDIO_ONLY,
+            output_epoch=self.output_epoch,
             reason=BroadcastReason(reason),
             expected_owner_epoch=self.owner_epoch,
         )
@@ -151,8 +159,11 @@ class FakeMediaSession:
         target = final_state or BroadcastState.ENDED
         try:
             await self.registry.transition(
-                self.descriptor.tenant_id, self.descriptor.broadcast_id,
-                target, reason=reason, expected_owner_epoch=self.owner_epoch,
+                self.descriptor.tenant_id,
+                self.descriptor.broadcast_id,
+                target,
+                reason=reason,
+                expected_owner_epoch=self.owner_epoch,
             )
         except Exception:  # noqa: BLE001
             pass
@@ -239,7 +250,8 @@ async def demo_server(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("VOICEBOT_DEMO_PARTICIPANTS", fakes.DEMO_PARTICIPANTS_ENV)
     monkeypatch.setenv("VOICEBOT_BROADCAST_FAILURE_HOOK", "1")
     monkeypatch.setattr(
-        redis_registry.RedisBroadcastRegistry, "from_url",
+        redis_registry.RedisBroadcastRegistry,
+        "from_url",
         classmethod(lambda cls, *a, **kw: InMemoryBroadcastRegistry()),
     )
     monkeypatch.setattr(room_manager_module, "LiveKitRoomManager", FakeRoomManager)
@@ -290,33 +302,24 @@ class Tab:
         )
 
     async def state(self) -> Optional[Dict[str, Any]]:
-        return await self.page.evaluate(
-            "() => window.voiceChatClient.broadcastClient?.state || null"
-        )
+        return await self.page.evaluate("() => window.voiceChatClient.broadcastClient?.state || null")
 
     async def refresh(self) -> Optional[Dict[str, Any]]:
         return await self.page.evaluate(
-            "async () => { const c = window.voiceChatClient.broadcastClient;"
-            " return c ? await c.refresh() : null; }"
+            "async () => { const c = window.voiceChatClient.broadcastClient;" " return c ? await c.refresh() : null; }"
         )
 
     async def permissions(self) -> Dict[str, Any]:
-        return await self.page.evaluate(
-            "() => window.voiceChatClient.broadcastClient?.permissions || {}"
-        )
+        return await self.page.evaluate("() => window.voiceChatClient.broadcastClient?.permissions || {}")
 
     async def talk_disabled(self) -> bool:
-        return await self.page.evaluate(
-            "() => document.getElementById('recordBtn').disabled"
-        )
+        return await self.page.evaluate("() => document.getElementById('recordBtn').disabled")
 
     async def counters(self) -> Dict[str, Any]:
-        return await self.page.evaluate(
-            """() => ({ video: window.__videoFrames, audio: window.__audioSamples,
+        return await self.page.evaluate("""() => ({ video: window.__videoFrames, audio: window.__audioSamples,
                         attached: window.__attachedIdentities,
                         detached: window.__detachCount,
-                        getUserMedia: window.__getUserMediaCalls })"""
-        )
+                        getUserMedia: window.__getUserMediaCalls })""")
 
     async def publish(self, identity: str, kinds: List[str]) -> None:
         """Simulate a publisher starting to send in this browser's room."""
@@ -366,9 +369,7 @@ async def _settle(seconds: float = 0.2) -> None:
     await asyncio.sleep(seconds)
 
 
-async def _state_settles(
-    tab: Any, predicate: Callable[[Dict[str, Any]], bool], timeout: float = 5.0
-) -> Dict[str, Any]:
+async def _state_settles(tab: Any, predicate: Callable[[Dict[str, Any]], bool], timeout: float = 5.0) -> Dict[str, Any]:
     """Poll a tab's cached broadcast state until ``predicate`` holds.
 
     ``tab.state()`` returns the last state the fan-out *pushed to that
@@ -422,14 +423,10 @@ async def confirm_all_leases(demo_server: Any) -> None:
         demo_server: The running test server.
     """
     service = demo_server.app["broadcast_service"]
-    for (tenant_id, broadcast_id) in list(service._known):  # noqa: SLF001
+    for tenant_id, broadcast_id in list(service._known):  # noqa: SLF001
         for lease in await service.registry.list_leases(tenant_id, broadcast_id):
-            await service.registry.confirm_viewer(
-                tenant_id, broadcast_id, lease.lease_id
-            )
-            await service.registry.heartbeat_control(
-                tenant_id, broadcast_id, lease.lease_id
-            )
+            await service.registry.confirm_viewer(tenant_id, broadcast_id, lease.lease_id)
+            await service.registry.heartbeat_control(tenant_id, broadcast_id, lease.lease_id)
 
 
 # ── Scenario 1: combined path across three browsers ────────────────────────
@@ -486,11 +483,14 @@ async def test_scenario1_three_browsers_share_one_broadcast(tabs) -> None:
     assert late["video"] > 0
     measurements["carol_late_join"] = late
 
-    fakes.write_measurements("scenario1-three-browsers", {
-        "producer_starts": FakeMediaSession.starts,
-        "avatar_sessions": FakeMediaSession.instances[0].avatar_starts,
-        "per_browser": measurements,
-    })
+    fakes.write_measurements(
+        "scenario1-three-browsers",
+        {
+            "producer_starts": FakeMediaSession.starts,
+            "avatar_sessions": FakeMediaSession.instances[0].avatar_starts,
+            "per_browser": measurements,
+        },
+    )
     for tab in (mod, alice, carol):
         assert tab.errors == []
 
@@ -514,9 +514,7 @@ async def test_scenario2_moderated_handoff(tabs, demo_server) -> None:
 
     # Both raise hands; neither gains any permission by doing so.
     for tab in (alice, bob):
-        await tab.page.evaluate(
-            "async () => { await window.voiceChatClient.broadcastClient.raiseHand(); }"
-        )
+        await tab.page.evaluate("async () => { await window.voiceChatClient.broadcastClient.raiseHand(); }")
     await _settle()
     state = await mod.refresh()
     assert [hand["lease_id"] for hand in state["hand_requests"]] == [a["leaseId"], b["leaseId"]]
@@ -525,8 +523,7 @@ async def test_scenario2_moderated_handoff(tabs, demo_server) -> None:
 
     # Moderator grants alice.
     await mod.page.evaluate(
-        "async ([lease]) => { const c = window.voiceChatClient.broadcastClient;"
-        " await c.setFloor(lease); }",
+        "async ([lease]) => { const c = window.voiceChatClient.broadcastClient;" " await c.setFloor(lease); }",
         [a["leaseId"]],
     )
     await _settle()
@@ -538,8 +535,7 @@ async def test_scenario2_moderated_handoff(tabs, demo_server) -> None:
 
     # Moderator grants bob: alice loses the floor in the same breath.
     await mod.page.evaluate(
-        "async ([lease]) => { const c = window.voiceChatClient.broadcastClient;"
-        " await c.setFloor(lease); }",
+        "async ([lease]) => { const c = window.voiceChatClient.broadcastClient;" " await c.setFloor(lease); }",
         [b["leaseId"]],
     )
     await _settle()
@@ -550,8 +546,7 @@ async def test_scenario2_moderated_handoff(tabs, demo_server) -> None:
 
     # Moderator reclaims.
     await mod.page.evaluate(
-        "async () => { const c = window.voiceChatClient.broadcastClient;"
-        " await c.setFloor(c.leaseId); }"
+        "async () => { const c = window.voiceChatClient.broadcastClient;" " await c.setFloor(c.leaseId); }"
     )
     await _settle()
     for tab in (mod, alice, bob):
@@ -561,11 +556,14 @@ async def test_scenario2_moderated_handoff(tabs, demo_server) -> None:
 
     # One conversation throughout: the producer was never rebuilt.
     assert FakeMediaSession.starts == 1
-    fakes.write_measurements("scenario2-handoff", {
-        "grants": ["alice", "bob", "moderator"],
-        "producer_starts": FakeMediaSession.starts,
-        "single_speaker_invariant": True,
-    })
+    fakes.write_measurements(
+        "scenario2-handoff",
+        {
+            "grants": ["alice", "bob", "moderator"],
+            "producer_starts": FakeMediaSession.starts,
+            "single_speaker_invariant": True,
+        },
+    )
 
 
 # ── Scenario 3: races and departure ────────────────────────────────────────
@@ -617,11 +615,14 @@ async def test_scenario3_races_and_departure(tabs, demo_server) -> None:
     assert len(successors) == 1
     assert successors.pop() in (a, b)
 
-    fakes.write_measurements("scenario3-races", {
-        "single_moderator_under_race": True,
-        "conflicting_grants": outcome,
-        "succession_converged": True,
-    })
+    fakes.write_measurements(
+        "scenario3-races",
+        {
+            "single_moderator_under_race": True,
+            "conflicting_grants": outcome,
+            "succession_converged": True,
+        },
+    )
 
 
 # ── Scenario 4: the ten-viewer limit ───────────────────────────────────────
@@ -668,12 +669,15 @@ async def test_scenario4_ten_viewers_and_an_eleventh_refused(tabs) -> None:
     assert FakeMediaSession.starts == 1
     assert FakeMediaSession.instances[0].avatar_starts == 1
 
-    fakes.write_measurements("scenario4-ten-viewers", {
-        "admitted": 10,
-        "eleventh": outcome,
-        "producer_starts": FakeMediaSession.starts,
-        "avatar_sessions": FakeMediaSession.instances[0].avatar_starts,
-    })
+    fakes.write_measurements(
+        "scenario4-ten-viewers",
+        {
+            "admitted": 10,
+            "eleventh": outcome,
+            "producer_starts": FakeMediaSession.starts,
+            "avatar_sessions": FakeMediaSession.instances[0].avatar_starts,
+        },
+    )
 
 
 # ── Scenario 5: startup degradation ────────────────────────────────────────
@@ -709,11 +713,14 @@ async def test_scenario5_startup_degradation_keeps_audio_for_everyone(tabs) -> N
         assert not any(i.startswith("avatar-pub") for i in counters["attached"])
     assert FakeMediaSession.starts == 1
 
-    fakes.write_measurements("scenario5-startup-degradation", {
-        "state": "audio_only",
-        "reason": "avatar_startup_timeout",
-        "per_browser": measurements,
-    })
+    fakes.write_measurements(
+        "scenario5-startup-degradation",
+        {
+            "state": "audio_only",
+            "reason": "avatar_startup_timeout",
+            "per_browser": measurements,
+        },
+    )
 
 
 # ── Scenario 6: runtime degradation ────────────────────────────────────────
@@ -780,18 +787,22 @@ async def test_scenario6_runtime_degradation_cuts_over_everywhere(
     for tab in (mod, alice):
         counters = await tab.counters()
         attached_after_cutover = [
-            entry for entry in counters["attached"][len(before[tab.name]["attached"]):]
+            entry
+            for entry in counters["attached"][len(before[tab.name]["attached"]) :]
             if entry.startswith("avatar-pub")
         ]
         assert attached_after_cutover == []
 
-    fakes.write_measurements(f"scenario6-runtime-{kind}", {
-        "kind": kind,
-        "reason": expected_reason,
-        "switch_latency_s": latencies,
-        "per_browser_after": after,
-        "late_avatar_rejected": True,
-    })
+    fakes.write_measurements(
+        f"scenario6-runtime-{kind}",
+        {
+            "kind": kind,
+            "reason": expected_reason,
+            "switch_latency_s": latencies,
+            "per_browser_after": after,
+            "late_avatar_rejected": True,
+        },
+    )
 
 
 # ── Scenario 7: barge-in, stop and owner death ─────────────────────────────
@@ -805,9 +816,7 @@ async def test_scenario7_stop_and_owner_death(tabs, demo_server) -> None:
     await alice.enter(bid)
 
     # Moderator Stop ends it for everyone.
-    await mod.page.evaluate(
-        "async () => { await window.voiceChatClient.broadcastClient.stop(); }"
-    )
+    await mod.page.evaluate("async () => { await window.voiceChatClient.broadcastClient.stop(); }")
     await _settle(0.3)
     for tab in (mod, alice):
         state = await tab.refresh()
@@ -827,10 +836,13 @@ async def test_scenario7_stop_and_owner_death(tabs, demo_server) -> None:
     state = await mod2.refresh()
     assert state["state"] in ("ended", "failed")
 
-    fakes.write_measurements("scenario7-stop-and-owner-death", {
-        "stop_state": "ended",
-        "owner_death_state": state["state"],
-    })
+    fakes.write_measurements(
+        "scenario7-stop-and-owner-death",
+        {
+            "stop_state": "ended",
+            "owner_death_state": state["state"],
+        },
+    )
 
 
 # ── Scenario 8: browser permissions and credential hygiene ─────────────────
@@ -850,9 +862,7 @@ async def test_scenario8_permissions_and_no_leaked_credentials(tabs) -> None:
     assert (await alice.counters())["getUserMedia"] == 0
 
     # A generic transport frame cannot override the server's answer.
-    await alice.page.evaluate(
-        "() => window.voiceChatClient.handleMessage({ type: 'ready_to_speak' })"
-    )
+    await alice.page.evaluate("() => window.voiceChatClient.handleMessage({ type: 'ready_to_speak' })")
     assert await alice.talk_disabled() is True
     assert (await alice.counters())["getUserMedia"] == 0
 
@@ -878,10 +888,13 @@ async def test_scenario8_permissions_and_no_leaked_credentials(tabs) -> None:
         assert report["inConsole"] is False
         assert report["shareLink"] == f"/?broadcast={bid}"
 
-    fakes.write_measurements("scenario8-permissions", {
-        "ungranted_getusermedia_calls": 0,
-        "ready_to_speak_did_not_enable_talk": True,
-        "credential_hygiene": hygiene,
-    })
+    fakes.write_measurements(
+        "scenario8-permissions",
+        {
+            "ungranted_getusermedia_calls": 0,
+            "ready_to_speak_did_not_enable_talk": True,
+            "credential_hygiene": hygiene,
+        },
+    )
     for tab in (mod, alice):
         assert tab.errors == []

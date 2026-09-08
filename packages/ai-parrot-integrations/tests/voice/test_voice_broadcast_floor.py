@@ -4,6 +4,7 @@ Covers spec §2 "Moderation and exclusive speaking floor" and AC12–AC14 on the
 server side: who may send microphone audio, and the ordering guarantee that
 makes "never two live speakers" a property rather than a hope.
 """
+
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
@@ -52,9 +53,7 @@ class FakeSession:
     async def switch_speaker(self, lease_id: str, floor_epoch: int) -> None:
         self.switches.append((lease_id, floor_epoch))
         if self.fail:
-            raise errors.BroadcastError(
-                BroadcastReason.STALE_FLOOR_EPOCH, message="barrier timed out"
-            )
+            raise errors.BroadcastError(BroadcastReason.STALE_FLOOR_EPOCH, message="barrier timed out")
 
 
 class RecordingNotifier:
@@ -91,9 +90,7 @@ def coordinator(notifier: RecordingNotifier) -> FloorCoordinator:
 
 
 def _principal(user: str) -> ParticipantPrincipal:
-    return ParticipantPrincipal(
-        user_id=user, tenant_id=TENANT, agent_id=AGENT, display_name=user
-    )
+    return ParticipantPrincipal(user_id=user, tenant_id=TENANT, agent_id=AGENT, display_name=user)
 
 
 async def _seed(registry: InMemoryBroadcastRegistry, *names: str) -> Dict[str, Any]:
@@ -108,9 +105,7 @@ async def _seed(registry: InMemoryBroadcastRegistry, *names: str) -> Dict[str, A
     )
     leases: Dict[str, Any] = {}
     for name in names:
-        admission = await registry.reserve_viewer(
-            TENANT, BROADCAST, _principal(name), f"identity-{name}"
-        )
+        admission = await registry.reserve_viewer(TENANT, BROADCAST, _principal(name), f"identity-{name}")
         await registry.confirm_viewer(TENANT, BROADCAST, admission.lease.lease_id)
         await registry.heartbeat_control(TENANT, BROADCAST, admission.lease.lease_id)
         leases[name] = admission.lease
@@ -134,9 +129,7 @@ async def test_validate_audio_authority_accepts_the_current_speaker(
     descriptor = await registry.get(TENANT, BROADCAST)
     assert descriptor is not None
     lease = await _lease(registry, leases["moderator"].lease_id)
-    validate_audio_authority(
-        descriptor, lease, floor_epoch=descriptor.floor_epoch, socket_id="sock-1"
-    )
+    validate_audio_authority(descriptor, lease, floor_epoch=descriptor.floor_epoch, socket_id="sock-1")
 
 
 async def test_validate_audio_authority_rejects_non_speaker_and_stale_epoch(
@@ -148,14 +141,14 @@ async def test_validate_audio_authority_rejects_non_speaker_and_stale_epoch(
 
     guest = await _lease(registry, leases["guest"].lease_id)
     with pytest.raises(errors.FloorNotGranted):
-        validate_audio_authority(
-            descriptor, guest, floor_epoch=descriptor.floor_epoch, socket_id="sock-2"
-        )
+        validate_audio_authority(descriptor, guest, floor_epoch=descriptor.floor_epoch, socket_id="sock-2")
 
     moderator = await _lease(registry, leases["moderator"].lease_id)
     with pytest.raises(errors.StaleFloorEpoch):
         validate_audio_authority(
-            descriptor, moderator, floor_epoch=descriptor.floor_epoch - 1,
+            descriptor,
+            moderator,
+            floor_epoch=descriptor.floor_epoch - 1,
             socket_id="sock-1",
         )
 
@@ -169,9 +162,7 @@ async def test_missing_floor_epoch_is_treated_as_stale(
     assert descriptor is not None
     lease = await _lease(registry, leases["moderator"].lease_id)
     with pytest.raises(errors.StaleFloorEpoch):
-        validate_audio_authority(
-            descriptor, lease, floor_epoch=None, socket_id="sock-1"
-        )
+        validate_audio_authority(descriptor, lease, floor_epoch=None, socket_id="sock-1")
 
 
 async def test_missing_lease_is_rejected(
@@ -191,19 +182,13 @@ async def test_a_second_socket_is_rejected(
     descriptor = await registry.get(TENANT, BROADCAST)
     assert descriptor is not None
     lease_id = leases["moderator"].lease_id
-    await registry.bind_speaker_socket(
-        TENANT, BROADCAST, lease_id, "sock-1", descriptor.floor_epoch
-    )
+    await registry.bind_speaker_socket(TENANT, BROADCAST, lease_id, "sock-1", descriptor.floor_epoch)
     lease = await _lease(registry, lease_id)
     with pytest.raises(errors.SpeakerConnectionExists):
-        validate_audio_authority(
-            descriptor, lease, floor_epoch=descriptor.floor_epoch, socket_id="sock-2"
-        )
+        validate_audio_authority(descriptor, lease, floor_epoch=descriptor.floor_epoch, socket_id="sock-2")
 
 
-async def test_stale_control_heartbeat_refuses_audio(
-    registry: InMemoryBroadcastRegistry, clock: FakeClock
-) -> None:
+async def test_stale_control_heartbeat_refuses_audio(registry: InMemoryBroadcastRegistry, clock: FakeClock) -> None:
     """Uncertain control ownership fails closed rather than admitting audio."""
     leases = await _seed(registry, "moderator")
     descriptor = await registry.get(TENANT, BROADCAST)
@@ -211,12 +196,18 @@ async def test_stale_control_heartbeat_refuses_audio(
     lease = await _lease(registry, leases["moderator"].lease_id)
     # Fresh: fine.
     validate_audio_authority(
-        descriptor, lease, floor_epoch=descriptor.floor_epoch, socket_id="s",
+        descriptor,
+        lease,
+        floor_epoch=descriptor.floor_epoch,
+        socket_id="s",
         now=clock(),
     )
     with pytest.raises(errors.FloorNotGranted, match="heartbeat"):
         validate_audio_authority(
-            descriptor, lease, floor_epoch=descriptor.floor_epoch, socket_id="s",
+            descriptor,
+            lease,
+            floor_epoch=descriptor.floor_epoch,
+            socket_id="s",
             now=clock() + 20.0,
         )
 
@@ -238,9 +229,7 @@ async def test_no_audio_accepted_while_switching(
     for name in ("moderator", "guest"):
         lease = await _lease(registry, leases[name].lease_id)
         with pytest.raises(errors.FloorNotGranted):
-            validate_audio_authority(
-                switching, lease, floor_epoch=switching.floor_epoch, socket_id="s"
-            )
+            validate_audio_authority(switching, lease, floor_epoch=switching.floor_epoch, socket_id="s")
 
 
 # ── Handoff barrier ────────────────────────────────────────────────────────
@@ -312,9 +301,7 @@ async def test_handoff_barrier_timeout_leaves_floor_idle(
     for name in ("moderator", "guest"):
         lease = await _lease(registry, leases[name].lease_id)
         with pytest.raises(errors.FloorNotGranted):
-            validate_audio_authority(
-                descriptor, lease, floor_epoch=descriptor.floor_epoch, socket_id="s"
-            )
+            validate_audio_authority(descriptor, lease, floor_epoch=descriptor.floor_epoch, socket_id="s")
 
 
 async def test_only_the_moderator_can_hand_off(
@@ -335,9 +322,7 @@ async def test_only_the_moderator_can_hand_off(
         )
 
 
-async def test_concurrent_handoffs_conflict(
-    registry: InMemoryBroadcastRegistry, coordinator: FloorCoordinator
-) -> None:
+async def test_concurrent_handoffs_conflict(registry: InMemoryBroadcastRegistry, coordinator: FloorCoordinator) -> None:
     leases = await _seed(registry, "moderator", "a", "b")
     current = await registry.get(TENANT, BROADCAST)
     assert current is not None
@@ -439,9 +424,7 @@ async def test_moderator_succession_completes_the_election_barrier(
 ) -> None:
     """Election opens the barrier atomically; the producer closes it."""
     leases = await _seed(registry, "moderator", "second")
-    outcome = await registry.release_viewer(
-        TENANT, BROADCAST, leases["moderator"].lease_id
-    )
+    outcome = await registry.release_viewer(TENANT, BROADCAST, leases["moderator"].lease_id)
     assert outcome.new_moderator == leases["second"].lease_id
 
     switching = await registry.get(TENANT, BROADCAST)

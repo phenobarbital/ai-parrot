@@ -2,6 +2,7 @@
 
 The livekit realtime SDK is mocked — no real network connections are made.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -12,7 +13,6 @@ import pytest
 
 from parrot.integrations.liveavatar.models import LiveKitRoomTokens
 from parrot.integrations.liveavatar.room_audio_publisher import RoomAudioPublisher
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -38,9 +38,7 @@ class _FakeAudioSource:
     ``livekit.rtc.AudioSource`` on livekit 1.1.14.
     """
 
-    def __init__(
-        self, sample_rate: int, num_channels: int, queue_size_ms: int = 1000
-    ) -> None:
+    def __init__(self, sample_rate: int, num_channels: int, queue_size_ms: int = 1000) -> None:
         self.sample_rate = sample_rate
         self.num_channels = num_channels
         self.queue_size_ms = queue_size_ms
@@ -326,11 +324,7 @@ async def test_aclose_on_room_disconnect_failure_does_not_raise(
 
 # A JWT-shaped token whose payload decodes to {"sub": "direct-abcd1234"};
 # signature is meaningless (the publisher never verifies it).
-_DIRECT_TOKEN = (
-    "eyJhbGciOiJIUzI1NiJ9."
-    "eyJzdWIiOiAiZGlyZWN0LWFiY2QxMjM0In0."
-    "not-a-real-signature"
-)
+_DIRECT_TOKEN = "eyJhbGciOiJIUzI1NiJ9." "eyJzdWIiOiAiZGlyZWN0LWFiY2QxMjM0In0." "not-a-real-signature"
 
 
 async def _start_publisher(**kwargs: Any) -> RoomAudioPublisher:
@@ -346,6 +340,7 @@ async def _start_publisher(**kwargs: Any) -> RoomAudioPublisher:
 
 
 # ── Calling conventions ────────────────────────────────────────────────────
+
 
 async def test_start_with_explicit_token_and_track_name() -> None:
     """The broadcast direct publisher joins under its own identity."""
@@ -378,9 +373,7 @@ async def test_start_requires_exactly_one_calling_convention(
         with pytest.raises(ValueError, match="exactly one"):
             await RoomAudioPublisher.start()
         with pytest.raises(ValueError, match="exactly one"):
-            await RoomAudioPublisher.start(
-                fake_room_tokens, livekit_url="wss://x", token="t"
-            )
+            await RoomAudioPublisher.start(fake_room_tokens, livekit_url="wss://x", token="t")
 
 
 async def test_queue_size_is_passed_to_the_audio_source() -> None:
@@ -394,6 +387,7 @@ async def test_identity_is_none_for_an_undecodable_token() -> None:
 
 
 # ── Native queue purge ─────────────────────────────────────────────────────
+
 
 async def test_flush_clears_native_queue() -> None:
     """The whole point of TASK-2956: flush is a real purge, not a flag."""
@@ -425,6 +419,7 @@ async def test_flush_survives_a_failing_clear_queue() -> None:
 
 # ── Playout ────────────────────────────────────────────────────────────────
 
+
 async def test_wait_for_playout_timeout_returns_false() -> None:
     publisher = await _start_publisher()
     publisher.source.playout_gate = asyncio.Event()  # never set
@@ -438,6 +433,7 @@ async def test_wait_for_playout_returns_true_when_drained() -> None:
 
 
 # ── Failure propagation ────────────────────────────────────────────────────
+
 
 async def test_capture_failure_invokes_on_failure_once() -> None:
     reasons: List[str] = []
@@ -488,6 +484,7 @@ async def test_an_exploding_failure_callback_is_contained() -> None:
 
 
 # ── Teardown ───────────────────────────────────────────────────────────────
+
 
 async def test_aclose_clears_queue_unpublishes_then_disconnects() -> None:
     publisher = await _start_publisher()

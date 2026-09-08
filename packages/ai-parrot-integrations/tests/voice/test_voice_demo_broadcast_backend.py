@@ -9,6 +9,7 @@ Nothing here contacts Redis, LiveKit or LiveAvatar: the registry is swapped for
 the in-memory one and the media session for a fake, so these assert the
 *wiring*, not vendor behaviour.
 """
+
 from __future__ import annotations
 
 import importlib.util
@@ -181,9 +182,7 @@ def test_nova_voice_config_explicit(server_module) -> None:
 
 
 def test_demo_participants_parsing(server_module, monkeypatch) -> None:
-    monkeypatch.setenv(
-        "VOICEBOT_DEMO_PARTICIPANTS", "alice:tokA, bob:tokB ,,broken,carol:tokC"
-    )
+    monkeypatch.setenv("VOICEBOT_DEMO_PARTICIPANTS", "alice:tokA, bob:tokB ,,broken,carol:tokC")
     table = server_module._demo_participants()
     # Keyed by token, so a participant *name* can never be used as a credential.
     assert table == {"tokA": "alice", "tokB": "bob", "tokC": "carol"}
@@ -250,7 +249,7 @@ def _extract_config(html: str) -> Dict[str, Any]:
     # assignment.
     match = re.search(r"window\.__CONFIG__ = (?=\{)", html)
     assert match is not None, "templated __CONFIG__ assignment not found"
-    config, _end = json.JSONDecoder().raw_decode(html[match.end():])
+    config, _end = json.JSONDecoder().raw_decode(html[match.end() :])
     return config
 
 
@@ -270,9 +269,7 @@ def _walk(value: Any) -> List[Any]:
     return [value]
 
 
-async def test_config_broadcast_block_has_no_tokens(
-    server_module, aiohttp_client, monkeypatch
-) -> None:
+async def test_config_broadcast_block_has_no_tokens(server_module, aiohttp_client, monkeypatch) -> None:
     """Participant NAMES reach the page; their tokens never do."""
     monkeypatch.setenv("VOICEBOT_DEMO_PARTICIPANTS", "alice:super-secret-a,bob:tok-b")
     app = server_module.build_app()
@@ -294,12 +291,8 @@ async def test_config_block_shape(server_module, aiohttp_client) -> None:
     config = _extract_config(await (await client.get("/")).text())
     block = config["broadcast"]
     assert block["agentId"] == "voice-assistant"
-    assert block["apiPrefix"] == (
-        "/api/v1/agents/voice-assistant/voice-broadcasts"
-    )
-    assert block["wsPath"] == (
-        "/ws/voice/broadcast/voice-assistant/{broadcast_id}"
-    )
+    assert block["apiPrefix"] == ("/api/v1/agents/voice-assistant/voice-broadcasts")
+    assert block["wsPath"] == ("/ws/voice/broadcast/voice-assistant/{broadcast_id}")
     assert block["maxViewers"] == 10
 
 
@@ -321,12 +314,16 @@ class _FakeMediaSession:
         from parrot.integrations.liveavatar.broadcast import BroadcastState
 
         await self.registry.transition(
-            self.descriptor.tenant_id, self.descriptor.broadcast_id,
-            BroadcastState.STARTING, expected_owner_epoch=self.owner_epoch,
+            self.descriptor.tenant_id,
+            self.descriptor.broadcast_id,
+            BroadcastState.STARTING,
+            expected_owner_epoch=self.owner_epoch,
         )
         await self.registry.transition(
-            self.descriptor.tenant_id, self.descriptor.broadcast_id,
-            BroadcastState.AVATAR, output_epoch=1,
+            self.descriptor.tenant_id,
+            self.descriptor.broadcast_id,
+            BroadcastState.AVATAR,
+            output_epoch=1,
             expected_owner_epoch=self.owner_epoch,
         )
         return BroadcastState.AVATAR
@@ -425,9 +422,7 @@ def broadcast_app(server_module, monkeypatch):
         "from_url",
         classmethod(lambda cls, *a, **kw: InMemoryBroadcastRegistry()),
     )
-    monkeypatch.setattr(
-        server_module, "make_nova_bot", lambda: None, raising=False
-    )
+    monkeypatch.setattr(server_module, "make_nova_bot", lambda: None, raising=False)
 
     real_service = service_module.BroadcastService
 
@@ -440,9 +435,7 @@ def broadcast_app(server_module, monkeypatch):
 
     import parrot.integrations.liveavatar.room_manager as room_manager_module
 
-    monkeypatch.setattr(
-        room_manager_module, "LiveKitRoomManager", _FakeRoomManager
-    )
+    monkeypatch.setattr(room_manager_module, "LiveKitRoomManager", _FakeRoomManager)
     return server_module.build_app()
 
 
@@ -452,10 +445,7 @@ async def test_broadcast_routes_are_mounted(broadcast_app, aiohttp_client) -> No
     assert config["broadcast"]["available"] is True
     assert config["broadcast"]["unavailableReason"] is None
 
-    paths = {
-        getattr(route.resource, "canonical", "")
-        for route in broadcast_app.router.routes()
-    }
+    paths = {getattr(route.resource, "canonical", "") for route in broadcast_app.router.routes()}
     # Registered as a TEMPLATE so `match_info["agent_id"]` resolves, exactly as
     # in production; the browser calls the concrete path in `apiPrefix`.
     assert "/api/v1/agents/{agent_id}/voice-broadcasts" in paths
@@ -472,14 +462,10 @@ async def test_demo_bearer_required(broadcast_app, aiohttp_client) -> None:
     response = await client.post(url, json={})
     assert response.status == 401
 
-    response = await client.post(
-        url, json={}, headers={"Authorization": "Bearer wrong"}
-    )
+    response = await client.post(url, json={}, headers={"Authorization": "Bearer wrong"})
     assert response.status == 401
 
-    response = await client.post(
-        url, json={}, headers={"Authorization": "Bearer tokA"}
-    )
+    response = await client.post(url, json={}, headers={"Authorization": "Bearer tokA"})
     assert response.status == 201
     body = await response.json()
     assert body["broadcast_id"].startswith("bc-")
@@ -487,27 +473,15 @@ async def test_demo_bearer_required(broadcast_app, aiohttp_client) -> None:
     assert body["state"]["moderator_display_id"] is None
 
 
-async def test_first_admitted_participant_becomes_moderator(
-    broadcast_app, aiohttp_client
-) -> None:
+async def test_first_admitted_participant_becomes_moderator(broadcast_app, aiohttp_client) -> None:
     client = await aiohttp_client(broadcast_app)
     url = "/api/v1/agents/voice-assistant/voice-broadcasts"
-    created = await (
-        await client.post(url, json={}, headers={"Authorization": "Bearer tokA"})
-    ).json()
+    created = await (await client.post(url, json={}, headers={"Authorization": "Bearer tokA"})).json()
     bid = created["broadcast_id"]
 
     # bob joins first, so bob is moderator — not alice, who created it.
-    first = await (
-        await client.post(
-            f"{url}/{bid}/viewers", json={}, headers={"Authorization": "Bearer tokB"}
-        )
-    ).json()
-    second = await (
-        await client.post(
-            f"{url}/{bid}/viewers", json={}, headers={"Authorization": "Bearer tokA"}
-        )
-    ).json()
+    first = await (await client.post(f"{url}/{bid}/viewers", json={}, headers={"Authorization": "Bearer tokB"})).json()
+    second = await (await client.post(f"{url}/{bid}/viewers", json={}, headers={"Authorization": "Bearer tokA"})).json()
     assert first["role"] == "moderator"
     assert second["role"] == "viewer"
 
@@ -518,9 +492,7 @@ async def test_first_admitted_participant_becomes_moderator(
 def test_refuses_non_loopback_in_demo_mode(server_module, monkeypatch) -> None:
     """Demo tokens are config-file secrets, not credentials."""
     monkeypatch.setenv("VOICEBOT_DEMO_PARTICIPANTS", "alice:tokA")
-    monkeypatch.setattr(
-        server_module, "parse_args", lambda: _Args(host="0.0.0.0", port=8080)
-    )
+    monkeypatch.setattr(server_module, "parse_args", lambda: _Args(host="0.0.0.0", port=8080))
     with pytest.raises(SystemExit, match="Refusing to bind demo mode"):
         server_module.main()
 
@@ -528,30 +500,20 @@ def test_refuses_non_loopback_in_demo_mode(server_module, monkeypatch) -> None:
 @pytest.mark.parametrize("host", ["localhost", "127.0.0.1", "::1"])
 def test_loopback_hosts_are_accepted(server_module, monkeypatch, host: str) -> None:
     monkeypatch.setenv("VOICEBOT_DEMO_PARTICIPANTS", "alice:tokA")
-    monkeypatch.setattr(
-        server_module, "parse_args", lambda: _Args(host=host, port=8080)
-    )
+    monkeypatch.setattr(server_module, "parse_args", lambda: _Args(host=host, port=8080))
     monkeypatch.setattr(server_module, "build_app", lambda: web.Application())
     ran: List[Any] = []
-    monkeypatch.setattr(
-        server_module.web, "run_app", lambda *a, **kw: ran.append(kw)
-    )
+    monkeypatch.setattr(server_module.web, "run_app", lambda *a, **kw: ran.append(kw))
     server_module.main()
     assert ran
 
 
-def test_no_loopback_restriction_without_demo_participants(
-    server_module, monkeypatch
-) -> None:
+def test_no_loopback_restriction_without_demo_participants(server_module, monkeypatch) -> None:
     """Real authentication in front means any bind host is the operator's call."""
-    monkeypatch.setattr(
-        server_module, "parse_args", lambda: _Args(host="0.0.0.0", port=8080)
-    )
+    monkeypatch.setattr(server_module, "parse_args", lambda: _Args(host="0.0.0.0", port=8080))
     monkeypatch.setattr(server_module, "build_app", lambda: web.Application())
     ran: List[Any] = []
-    monkeypatch.setattr(
-        server_module.web, "run_app", lambda *a, **kw: ran.append(kw)
-    )
+    monkeypatch.setattr(server_module.web, "run_app", lambda *a, **kw: ran.append(kw))
     server_module.main()
     assert ran
 
@@ -568,16 +530,12 @@ async def test_failure_hook_absent_by_default(broadcast_app, aiohttp_client) -> 
     assert response.status == 404
 
 
-async def test_failure_hook_present_only_with_the_flag(
-    server_module, monkeypatch
-) -> None:
+async def test_failure_hook_present_only_with_the_flag(server_module, monkeypatch) -> None:
     app = web.Application()
     assert server_module.register_failure_injection(app, object()) is False
 
     monkeypatch.setenv("VOICEBOT_BROADCAST_FAILURE_HOOK", "1")
     app2 = web.Application()
     assert server_module.register_failure_injection(app2, object()) is True
-    paths = {
-        getattr(route.resource, "canonical", "") for route in app2.router.routes()
-    }
+    paths = {getattr(route.resource, "canonical", "") for route in app2.router.routes()}
     assert "/__demo__/broadcasts/{broadcast_id}/inject" in paths

@@ -5,6 +5,7 @@ broadcast under a race, idempotent admission credentials, moderator-only stop,
 and a watchdog that fences a dead owner, evicts its room and reports what it
 could **not** confirm rather than assuming it.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -89,8 +90,7 @@ class FakeMediaSession:
     instances: List["FakeMediaSession"] = []
 
     def __init__(
-        self, descriptor: Any, registry: Any, room_manager: Any, worker_id: str,
-        owner_epoch: int, **_kwargs: Any
+        self, descriptor: Any, registry: Any, room_manager: Any, worker_id: str, owner_epoch: int, **_kwargs: Any
     ) -> None:
         self.descriptor = descriptor
         self.registry = registry
@@ -229,9 +229,7 @@ def test_default_principal_resolver_takes_tenant_from_configuration() -> None:
         default_principal_resolver(None, AGENT)
 
 
-async def test_authorization_is_more_than_authentication(
-    clock: FakeClock, room_manager: FakeRoomManager
-) -> None:
+async def test_authorization_is_more_than_authentication(clock: FakeClock, room_manager: FakeRoomManager) -> None:
     service = BroadcastService(
         InMemoryBroadcastRegistry(clock=clock),
         room_manager,  # type: ignore[arg-type]
@@ -247,9 +245,7 @@ async def test_out_of_scope_broadcast_is_indistinguishable_from_missing(
     service: BroadcastService,
 ) -> None:
     principal, broadcast_id = await _create(service)
-    other = ParticipantPrincipal(
-        user_id="x", tenant_id=TENANT, agent_id="another-agent"
-    )
+    other = ParticipantPrincipal(user_id="x", tenant_id=TENANT, agent_id="another-agent")
     with pytest.raises(errors.BroadcastTerminal):
         await service.get_public_state(other, "another-agent", broadcast_id)
 
@@ -277,9 +273,7 @@ async def test_first_join_starts_producer_once_under_race(
     _principal_obj, broadcast_id = await _create(service)
     principals = [await _principal(service, f"user-{i}") for i in range(MAX_VIEWERS)]
 
-    admissions = await asyncio.gather(
-        *(service.join(p, AGENT, broadcast_id) for p in principals)
-    )
+    admissions = await asyncio.gather(*(service.join(p, AGENT, broadcast_id) for p in principals))
     assert sum(1 for a in admissions if a.is_first) == 1
     assert len(FakeMediaSession.instances) == 1
     assert FakeMediaSession.instances[0].started == 1
@@ -346,9 +340,7 @@ async def test_connection_is_idempotent_per_lease(service: BroadcastService) -> 
     assert room_manager.names().count("mint_viewer_token") == 1
 
 
-async def test_connection_is_not_ready_while_starting(
-    clock: FakeClock, room_manager: FakeRoomManager
-) -> None:
+async def test_connection_is_not_ready_while_starting(clock: FakeClock, room_manager: FakeRoomManager) -> None:
     """A browser polls; the server does not pretend credentials exist."""
 
     class _StalledSession(FakeMediaSession):
@@ -417,19 +409,13 @@ async def test_set_floor_runs_the_barrier_on_the_local_producer(
     guest = await _principal(service, "guest")
     mod_admission = await service.join(moderator, AGENT, broadcast_id)
     guest_admission = await service.join(guest, AGENT, broadcast_id)
-    await service.registry.confirm_viewer(
-        TENANT, broadcast_id, guest_admission.lease.lease_id
-    )
+    await service.registry.confirm_viewer(TENANT, broadcast_id, guest_admission.lease.lease_id)
 
     descriptor = await service.get_descriptor(TENANT, broadcast_id)
     assert descriptor is not None
-    result = await service.set_floor(
-        moderator, broadcast_id, guest_admission.lease.lease_id, descriptor.version
-    )
+    result = await service.set_floor(moderator, broadcast_id, guest_admission.lease.lease_id, descriptor.version)
     assert result.descriptor.speaker_lease_id == guest_admission.lease.lease_id
-    assert FakeMediaSession.instances[0].switches == [
-        (guest_admission.lease.lease_id, result.floor_epoch)
-    ]
+    assert FakeMediaSession.instances[0].switches == [(guest_admission.lease.lease_id, result.floor_epoch)]
     assert result.previous_speaker_lease_id == mod_admission.lease.lease_id
 
 
@@ -444,9 +430,7 @@ async def test_only_the_moderator_can_set_the_floor(
     descriptor = await service.get_descriptor(TENANT, broadcast_id)
     assert descriptor is not None
     with pytest.raises(errors.NotModerator):
-        await service.set_floor(
-            guest, broadcast_id, guest_admission.lease.lease_id, descriptor.version
-        )
+        await service.set_floor(guest, broadcast_id, guest_admission.lease.lease_id, descriptor.version)
 
 
 async def test_raise_and_cancel_hand(service: BroadcastService) -> None:
@@ -523,9 +507,7 @@ async def test_last_departure_stops_the_producer(service: BroadcastService) -> N
     await service.leave(moderator, broadcast_id, admission.lease.lease_id)
 
     assert service.media_session(TENANT, broadcast_id) is None
-    assert FakeMediaSession.instances[0].closed_with[-1][1] is (
-        BroadcastReason.AUDIENCE_EMPTY
-    )
+    assert FakeMediaSession.instances[0].closed_with[-1][1] is (BroadcastReason.AUDIENCE_EMPTY)
 
 
 async def test_moderator_departure_elects_and_completes_the_barrier(
@@ -536,12 +518,8 @@ async def test_moderator_departure_elects_and_completes_the_barrier(
     second = await _principal(service, "second")
     mod_admission = await service.join(moderator, AGENT, broadcast_id)
     second_admission = await service.join(second, AGENT, broadcast_id)
-    await service.registry.confirm_viewer(
-        TENANT, broadcast_id, second_admission.lease.lease_id
-    )
-    await service.registry.heartbeat_control(
-        TENANT, broadcast_id, second_admission.lease.lease_id
-    )
+    await service.registry.confirm_viewer(TENANT, broadcast_id, second_admission.lease.lease_id)
+    await service.registry.heartbeat_control(TENANT, broadcast_id, second_admission.lease.lease_id)
 
     await service.leave(moderator, broadcast_id, mod_admission.lease.lease_id)
     descriptor = await service.get_descriptor(TENANT, broadcast_id)
@@ -566,9 +544,7 @@ async def test_state_is_pushed_to_attached_control_sockets(
     async def _send(frame: Dict[str, Any]) -> None:
         seen.append(frame)
 
-    await service.attach_control(
-        TENANT, broadcast_id, admission.lease.lease_id, _send
-    )
+    await service.attach_control(TENANT, broadcast_id, admission.lease.lease_id, _send)
     await service.raise_hand(moderator, broadcast_id, admission.lease.lease_id)
     assert any(frame["type"] == "broadcast_state" for frame in seen)
 
@@ -586,9 +562,7 @@ async def test_a_dead_socket_cannot_break_fan_out(service: BroadcastService) -> 
     async def _boom(_frame: Dict[str, Any]) -> None:
         raise RuntimeError("socket gone")
 
-    await service.attach_control(
-        TENANT, broadcast_id, admission.lease.lease_id, _boom
-    )
+    await service.attach_control(TENANT, broadcast_id, admission.lease.lease_id, _boom)
     await service.raise_hand(moderator, broadcast_id, admission.lease.lease_id)
 
 
@@ -605,9 +579,7 @@ async def test_attach_speaker_input_is_local_when_this_worker_produces(
     _p, broadcast_id = await _create(service)
     moderator = await _principal(service, "moderator")
     admission = await service.join(moderator, AGENT, broadcast_id)
-    sink = await service.attach_speaker_input(
-        TENANT, broadcast_id, admission.lease.lease_id, moderator, 1
-    )
+    sink = await service.attach_speaker_input(TENANT, broadcast_id, admission.lease.lease_id, moderator, 1)
     assert isinstance(sink, LocalSpeakerInput)
     await sink.start_turn()
     voice = service.voice_session(TENANT, broadcast_id)
@@ -620,22 +592,28 @@ async def test_attach_speaker_input_refuses_an_unreachable_producer(
     """No registered worker address means no relay — never a guessed URL."""
     registry = InMemoryBroadcastRegistry(clock=clock)
     owner = BroadcastService(
-        registry, room_manager, nova_bot_factory=lambda: None,  # type: ignore[arg-type]
-        worker_id="worker-a", clock=clock,
-        session_factory=FakeMediaSession, voice_session_factory=FakeVoiceSession,
+        registry,
+        room_manager,
+        nova_bot_factory=lambda: None,  # type: ignore[arg-type]
+        worker_id="worker-a",
+        clock=clock,
+        session_factory=FakeMediaSession,
+        voice_session_factory=FakeVoiceSession,
     )
     ingress = BroadcastService(
-        registry, room_manager, worker_id="worker-b", clock=clock,  # type: ignore[arg-type]
-        session_factory=FakeMediaSession, voice_session_factory=FakeVoiceSession,
+        registry,
+        room_manager,
+        worker_id="worker-b",
+        clock=clock,  # type: ignore[arg-type]
+        session_factory=FakeMediaSession,
+        voice_session_factory=FakeVoiceSession,
     )
     _p, broadcast_id = await _create(owner)
     principal = await _principal(owner, "moderator")
     admission = await owner.join(principal, AGENT, broadcast_id)
 
     with pytest.raises(errors.BroadcastError, match="not reachable"):
-        await ingress.attach_speaker_input(
-            TENANT, broadcast_id, admission.lease.lease_id, principal, 1
-        )
+        await ingress.attach_speaker_input(TENANT, broadcast_id, admission.lease.lease_id, principal, 1)
 
 
 async def test_attach_speaker_input_relays_to_a_registered_worker(
@@ -647,13 +625,21 @@ async def test_attach_speaker_input_relays_to_a_registered_worker(
 
     registry = InMemoryBroadcastRegistry(clock=clock)
     owner = BroadcastService(
-        registry, room_manager, nova_bot_factory=lambda: None,  # type: ignore[arg-type]
-        worker_id="worker-a", clock=clock,
-        session_factory=FakeMediaSession, voice_session_factory=FakeVoiceSession,
+        registry,
+        room_manager,
+        nova_bot_factory=lambda: None,  # type: ignore[arg-type]
+        worker_id="worker-a",
+        clock=clock,
+        session_factory=FakeMediaSession,
+        voice_session_factory=FakeVoiceSession,
     )
     ingress = BroadcastService(
-        registry, room_manager, worker_id="worker-b", clock=clock,  # type: ignore[arg-type]
-        session_factory=FakeMediaSession, voice_session_factory=FakeVoiceSession,
+        registry,
+        room_manager,
+        worker_id="worker-b",
+        clock=clock,  # type: ignore[arg-type]
+        session_factory=FakeMediaSession,
+        voice_session_factory=FakeVoiceSession,
         worker_token="shared-secret",
     )
     await ingress.worker_registry.register("worker-a", "ws://127.0.0.1:9999")
@@ -662,9 +648,7 @@ async def test_attach_speaker_input_relays_to_a_registered_worker(
     principal = await _principal(owner, "moderator")
     admission = await owner.join(principal, AGENT, broadcast_id)
 
-    sink = await ingress.attach_speaker_input(
-        TENANT, broadcast_id, admission.lease.lease_id, principal, 1
-    )
+    sink = await ingress.attach_speaker_input(TENANT, broadcast_id, admission.lease.lease_id, principal, 1)
     assert isinstance(sink, RemoteSpeakerInput)
     await sink.aclose()
 
@@ -672,19 +656,25 @@ async def test_attach_speaker_input_relays_to_a_registered_worker(
 # ── Reconciliation watchdog ────────────────────────────────────────────────
 
 
-async def test_reconciler_fences_dead_owner_and_cleans_room(
-    clock: FakeClock, room_manager: FakeRoomManager
-) -> None:
+async def test_reconciler_fences_dead_owner_and_cleans_room(clock: FakeClock, room_manager: FakeRoomManager) -> None:
     """Fence, evict every listed identity, delete the room, mark failed."""
     registry = InMemoryBroadcastRegistry(clock=clock)
     owner = BroadcastService(
-        registry, room_manager, nova_bot_factory=lambda: None,  # type: ignore[arg-type]
-        worker_id="worker-dead", clock=clock,
-        session_factory=FakeMediaSession, voice_session_factory=FakeVoiceSession,
+        registry,
+        room_manager,
+        nova_bot_factory=lambda: None,  # type: ignore[arg-type]
+        worker_id="worker-dead",
+        clock=clock,
+        session_factory=FakeMediaSession,
+        voice_session_factory=FakeVoiceSession,
     )
     watchdog = BroadcastService(
-        registry, room_manager, worker_id="worker-live", clock=clock,  # type: ignore[arg-type]
-        session_factory=FakeMediaSession, voice_session_factory=FakeVoiceSession,
+        registry,
+        room_manager,
+        worker_id="worker-live",
+        clock=clock,  # type: ignore[arg-type]
+        session_factory=FakeMediaSession,
+        voice_session_factory=FakeVoiceSession,
     )
     _p, broadcast_id = await _create(owner)
     principal = await _principal(owner, "moderator")
@@ -720,13 +710,21 @@ async def test_reconciler_fails_closed_when_livekit_is_unreachable(
 ) -> None:
     registry = InMemoryBroadcastRegistry(clock=clock)
     owner = BroadcastService(
-        registry, room_manager, nova_bot_factory=lambda: None,  # type: ignore[arg-type]
-        worker_id="worker-dead", clock=clock,
-        session_factory=FakeMediaSession, voice_session_factory=FakeVoiceSession,
+        registry,
+        room_manager,
+        nova_bot_factory=lambda: None,  # type: ignore[arg-type]
+        worker_id="worker-dead",
+        clock=clock,
+        session_factory=FakeMediaSession,
+        voice_session_factory=FakeVoiceSession,
     )
     watchdog = BroadcastService(
-        registry, room_manager, worker_id="worker-live", clock=clock,  # type: ignore[arg-type]
-        session_factory=FakeMediaSession, voice_session_factory=FakeVoiceSession,
+        registry,
+        room_manager,
+        worker_id="worker-live",
+        clock=clock,  # type: ignore[arg-type]
+        session_factory=FakeMediaSession,
+        voice_session_factory=FakeVoiceSession,
     )
     _p, broadcast_id = await _create(owner)
     await owner.join(await _principal(owner, "moderator"), AGENT, broadcast_id)
@@ -747,21 +745,15 @@ async def test_reconciler_evicts_an_expired_control_lease_before_releasing_it(
     guest = await _principal(service, "guest")
     await service.join(moderator, AGENT, broadcast_id)
     guest_admission = await service.join(guest, AGENT, broadcast_id)
-    await service.registry.confirm_viewer(
-        TENANT, broadcast_id, guest_admission.lease.lease_id
-    )
-    await service.registry.heartbeat_control(
-        TENANT, broadcast_id, guest_admission.lease.lease_id
-    )
+    await service.registry.confirm_viewer(TENANT, broadcast_id, guest_admission.lease.lease_id)
+    await service.registry.heartbeat_control(TENANT, broadcast_id, guest_admission.lease.lease_id)
 
     clock.advance(20.0)
     report = await service.reconcile_once()
     assert guest_admission.lease.lease_id in report.released_leases
     assert "remove_participant" in room_manager.names()
     leases = await service.registry.list_leases(TENANT, broadcast_id)
-    assert guest_admission.lease.lease_id not in {
-        lease.lease_id for lease in leases
-    }
+    assert guest_admission.lease.lease_id not in {lease.lease_id for lease in leases}
 
 
 async def test_reconciler_survives_a_registry_outage(

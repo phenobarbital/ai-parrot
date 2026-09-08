@@ -29,6 +29,7 @@ Usage::
     # ... on session end ...
     await publisher.aclose()
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -50,9 +51,9 @@ FAILURE_CAPTURE: str = "capture_failed"
 FAILURE_DISCONNECTED: str = "room_disconnected"
 
 # PCM constants — mirror avatar_ws.py / supertonic (no resampling)
-_SAMPLE_RATE: int = 24_000   # Hz
-_NUM_CHANNELS: int = 1        # mono
-_BYTES_PER_SAMPLE: int = 2    # 16-bit
+_SAMPLE_RATE: int = 24_000  # Hz
+_NUM_CHANNELS: int = 1  # mono
+_BYTES_PER_SAMPLE: int = 2  # 16-bit
 
 _logger = logging.getLogger(__name__)
 
@@ -226,8 +227,7 @@ class RoomAudioPublisher:
         explicit = livekit_url is not None and token is not None
         if (tokens is None) == (not explicit):
             raise ValueError(
-                "RoomAudioPublisher.start requires exactly one of `tokens` or "
-                "(`livekit_url` + `token`)"
+                "RoomAudioPublisher.start requires exactly one of `tokens` or " "(`livekit_url` + `token`)"
             )
         if tokens is not None:
             url, jwt, room_name = tokens.livekit_url, tokens.agent_token, tokens.room
@@ -337,9 +337,7 @@ class RoomAudioPublisher:
         try:
             await self.source.capture_frame(frame)
         except Exception:  # noqa: BLE001 — reported, not swallowed
-            self.logger.warning(
-                "RoomAudioPublisher: capture_frame failed", exc_info=True
-            )
+            self.logger.warning("RoomAudioPublisher: capture_frame failed", exc_info=True)
             # Awaited outside the try so an observer's own failure cannot be
             # mistaken for another capture failure.
             await self._report_failure(FAILURE_CAPTURE)
@@ -370,16 +368,13 @@ class RoomAudioPublisher:
         clear = getattr(self.source, "clear_queue", None)
         if clear is None:
             self.logger.warning(
-                "RoomAudioPublisher: AudioSource has no clear_queue — queued "
-                "audio may still play out"
+                "RoomAudioPublisher: AudioSource has no clear_queue — queued " "audio may still play out"
             )
             return
         try:
             clear()
         except Exception:  # noqa: BLE001 — interrupt must never raise
-            self.logger.warning(
-                "RoomAudioPublisher: clear_queue failed", exc_info=True
-            )
+            self.logger.warning("RoomAudioPublisher: clear_queue failed", exc_info=True)
 
     async def wait_for_playout(self, timeout_s: Optional[float] = None) -> bool:
         """Await the native queue draining at *normal* turn completion.
@@ -407,9 +402,7 @@ class RoomAudioPublisher:
                 await asyncio.wait_for(waiter(), timeout=timeout_s)
             return True
         except asyncio.TimeoutError:
-            self.logger.warning(
-                "RoomAudioPublisher: playout did not drain within %.3fs", timeout_s
-            )
+            self.logger.warning("RoomAudioPublisher: playout did not drain within %.3fs", timeout_s)
             return False
 
     async def aclose(self) -> None:
@@ -435,9 +428,7 @@ class RoomAudioPublisher:
         await self._guarded("room.disconnect", getattr(self.room, "disconnect", None))
         self.logger.info("RoomAudioPublisher: disconnected from room")
 
-    async def _guarded(
-        self, label: str, call: Optional[Callable[..., Any]], *args: Any
-    ) -> None:
+    async def _guarded(self, label: str, call: Optional[Callable[..., Any]], *args: Any) -> None:
         """Run one teardown step, tolerating absence and failure.
 
         Args:
@@ -452,6 +443,4 @@ class RoomAudioPublisher:
             if inspect.isawaitable(result):
                 await result
         except Exception:  # noqa: BLE001 — teardown must never raise
-            self.logger.warning(
-                "RoomAudioPublisher: %s failed during teardown", label, exc_info=True
-            )
+            self.logger.warning("RoomAudioPublisher: %s failed during teardown", label, exc_info=True)

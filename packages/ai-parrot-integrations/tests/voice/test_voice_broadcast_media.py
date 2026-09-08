@@ -9,6 +9,7 @@ These tests cover spec §2 "Audio routing, failure and interruption" and
 AC5/AC6/AC7.  They are **not** evidence for those criteria: AC10 requires real
 vendor media, and the TASK-2950 live gate did not run.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -205,9 +206,7 @@ async def _build(
     registry = InMemoryBroadcastRegistry(clock=clock)
     desc = descriptor or _descriptor()
     await registry.create(desc)
-    _claimed, owner_epoch = await registry.claim_owner(
-        TENANT, desc.broadcast_id, "worker-a"
-    )
+    _claimed, owner_epoch = await registry.claim_owner(TENANT, desc.broadcast_id, "worker-a")
     stored = await registry.get(TENANT, desc.broadcast_id)
     assert stored is not None
 
@@ -264,10 +263,7 @@ async def test_startup_allocates_room_and_direct_publisher_before_avatar() -> No
         ]
         # Direct publisher token is minted (and the publisher started) BEFORE
         # the avatar's token exists at all.
-        identities = [
-            args for name, args in harness.room_manager.calls
-            if name == "mint_publisher_token"
-        ]
+        identities = [args for name, args in harness.room_manager.calls if name == "mint_publisher_token"]
         assert identities[0].startswith("direct-")
         assert identities[1].startswith("avatar-")
         assert identities[0] != identities[1]
@@ -277,9 +273,7 @@ async def test_startup_allocates_room_and_direct_publisher_before_avatar() -> No
 
         assert harness.publisher.kwargs["track_name"] == DIRECT_TRACK_NAME
         assert harness.publisher.kwargs["token"] == f"token-for-{identities[0]}"
-        assert harness.avatar.kwargs["avatar_publisher_token"] == (
-            f"token-for-{identities[1]}"
-        )
+        assert harness.avatar.kwargs["avatar_publisher_token"] == (f"token-for-{identities[1]}")
         assert harness.avatar.kwargs["broadcast"] is True
         assert harness.session.output_epoch == 1
     finally:
@@ -402,9 +396,7 @@ async def test_queue_never_exceeds_the_byte_budget() -> None:
 
 async def test_direct_sink_overflow_aborts_the_turn() -> None:
     """AC: with nowhere left to fall, the turn fails loudly rather than lagging."""
-    harness = await _build(
-        max_queued_bytes=1_000, avatar_error=RuntimeError("no avatar")
-    )
+    harness = await _build(max_queued_bytes=1_000, avatar_error=RuntimeError("no avatar"))
     state = await harness.session.start()
     assert state is BroadcastState.AUDIO_ONLY
     try:
@@ -459,9 +451,7 @@ async def test_control_socket_close_triggers_a_single_cutover() -> None:
         assert harness.session.state is BroadcastState.AUDIO_ONLY
         assert harness.session.output_epoch == 2
         assert harness.avatar.aclose_calls == 1
-        assert ("remove_participant", harness.session.avatar_identity) in (
-            harness.room_manager.calls
-        )
+        assert ("remove_participant", harness.session.avatar_identity) in (harness.room_manager.calls)
     finally:
         await harness.session.aclose()
 
@@ -485,9 +475,7 @@ async def test_avatar_participant_loss_triggers_cutover() -> None:
     try:
         await harness.session.on_participant_disconnected("some-viewer")
         assert harness.session.state is BroadcastState.AVATAR
-        await harness.session.on_participant_disconnected(
-            harness.session.avatar_identity
-        )
+        await harness.session.on_participant_disconnected(harness.session.avatar_identity)
         assert harness.session.state is BroadcastState.AUDIO_ONLY
         assert harness.session.failure_reason is BroadcastReason.AVATAR_TRACK_LOST
     finally:
@@ -547,17 +535,13 @@ async def test_stale_avatar_event_cannot_recover() -> None:
         await on_event({"type": "agent.speak_started"})
         await on_event({"type": "session.state_updated", "state": "connected"})
         await on_event({"type": "session.error"})
-        await harness.session.on_participant_disconnected(
-            harness.session.avatar_identity
-        )
+        await harness.session.on_participant_disconnected(harness.session.avatar_identity)
 
         assert harness.session.state is BroadcastState.AUDIO_ONLY
         assert harness.session.output_epoch == epoch_after_cutover
 
         # And audio still flows, to the direct sink only.
-        await harness.session.push_audio(
-            _frame(9, output_epoch=harness.session.output_epoch)
-        )
+        await harness.session.push_audio(_frame(9, output_epoch=harness.session.output_epoch))
         await _settle()
         assert harness.publisher.captured
         assert harness.avatar.spoken == []
@@ -707,9 +691,7 @@ async def test_stop_request_tears_the_producer_down() -> None:
     harness = await _build()
     session = harness.session
     await session.start()
-    admission = await harness.registry.reserve_viewer(
-        TENANT, BROADCAST, _principal(), "identity-mod"
-    )
+    admission = await harness.registry.reserve_viewer(TENANT, BROADCAST, _principal(), "identity-mod")
     await harness.registry.request_stop(TENANT, BROADCAST, admission.lease.lease_id)
     assert await session._stop_requested() is True  # noqa: SLF001
 

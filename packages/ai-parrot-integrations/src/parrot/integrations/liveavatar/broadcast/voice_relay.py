@@ -22,6 +22,7 @@ Text, transcription, tool and lifecycle frames are still produced by the very
 same :func:`~parrot.voice.handler.build_voice_frames` the single-user path
 uses, so the two cannot drift in what a browser receives.
 """
+
 from __future__ import annotations
 
 import logging
@@ -223,8 +224,7 @@ class BroadcastVoiceSession(VoiceSession):
             raise BroadcastError(
                 BroadcastReason.STALE_FLOOR_EPOCH,
                 message=(
-                    f"speaker turn is at floor epoch {self._speaker_floor_epoch}, "
-                    f"the broadcast is at {live_epoch}"
+                    f"speaker turn is at floor epoch {self._speaker_floor_epoch}, " f"the broadcast is at {live_epoch}"
                 ),
             )
 
@@ -248,9 +248,7 @@ class BroadcastVoiceSession(VoiceSession):
             return
 
         speaker_lease_id = self._speaker_lease_id
-        speaker_user_id = (
-            self._speaker_principal.user_id if self._speaker_principal else None
-        )
+        speaker_user_id = self._speaker_principal.user_id if self._speaker_principal else None
         floor_epoch = self._speaker_floor_epoch or 0
 
         # Stamp attribution BEFORE frames are built, so transcripts and audit
@@ -287,14 +285,14 @@ class BroadcastVoiceSession(VoiceSession):
         audio = getattr(resp, "audio_data", None)
         if audio:
             await self._push_pcm(
-                audio, speaker_lease_id=speaker_lease_id, floor_epoch=floor_epoch,
+                audio,
+                speaker_lease_id=speaker_lease_id,
+                floor_epoch=floor_epoch,
                 turn_id=str(getattr(resp, "turn_id", "") or f"turn-{turn_no}"),
             )
 
         if getattr(resp, "is_complete", False):
-            await self._broadcast.finish_turn(
-                str(getattr(resp, "turn_id", "") or f"turn-{turn_no}")
-            )
+            await self._broadcast.finish_turn(str(getattr(resp, "turn_id", "") or f"turn-{turn_no}"))
 
     async def _push_pcm(
         self,

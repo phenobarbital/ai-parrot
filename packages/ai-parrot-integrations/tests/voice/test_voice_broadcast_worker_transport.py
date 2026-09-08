@@ -6,6 +6,7 @@ The tests therefore concentrate on refusals — bad token, plaintext non-loopbac
 oversize frame, stale owner epoch, revoked floor, arbitrary URL — as much as on
 the happy path.
 """
+
 from __future__ import annotations
 
 import base64
@@ -92,9 +93,7 @@ class FakeOwnerService:
     async def get_descriptor(self, tenant_id: str, broadcast_id: str) -> Any:
         return await self.registry.get(tenant_id, broadcast_id)
 
-    async def get_lease(
-        self, tenant_id: str, broadcast_id: str, lease_id: str
-    ) -> Any:
+    async def get_lease(self, tenant_id: str, broadcast_id: str, lease_id: str) -> Any:
         for lease in await self.registry.list_leases(tenant_id, broadcast_id):
             if lease.lease_id == lease_id:
                 return lease
@@ -113,17 +112,11 @@ class FakeOwnerService:
         admission = await self.registry.reserve_viewer(
             TENANT,
             BROADCAST,
-            ParticipantPrincipal(
-                user_id="speaker", tenant_id=TENANT, agent_id=AGENT
-            ),
+            ParticipantPrincipal(user_id="speaker", tenant_id=TENANT, agent_id=AGENT),
             "identity-speaker",
         )
-        await self.registry.confirm_viewer(
-            TENANT, BROADCAST, admission.lease.lease_id
-        )
-        await self.registry.heartbeat_control(
-            TENANT, BROADCAST, admission.lease.lease_id
-        )
+        await self.registry.confirm_viewer(TENANT, BROADCAST, admission.lease.lease_id)
+        await self.registry.heartbeat_control(TENANT, BROADCAST, admission.lease.lease_id)
         self.lease_id = admission.lease.lease_id
         return self.lease_id
 
@@ -229,12 +222,22 @@ def test_remote_input_requires_tls_off_loopback() -> None:
         )
     # Loopback plaintext is fine, and so is real TLS.
     RemoteSpeakerInput(
-        "ws://127.0.0.1:9001", tenant_id=TENANT, broadcast_id=BROADCAST,
-        owner_epoch=1, lease_id="lease-a", floor_epoch=1, token=TOKEN,
+        "ws://127.0.0.1:9001",
+        tenant_id=TENANT,
+        broadcast_id=BROADCAST,
+        owner_epoch=1,
+        lease_id="lease-a",
+        floor_epoch=1,
+        token=TOKEN,
     )
     RemoteSpeakerInput(
-        "wss://worker-2.internal", tenant_id=TENANT, broadcast_id=BROADCAST,
-        owner_epoch=1, lease_id="lease-a", floor_epoch=1, token=TOKEN,
+        "wss://worker-2.internal",
+        tenant_id=TENANT,
+        broadcast_id=BROADCAST,
+        owner_epoch=1,
+        lease_id="lease-a",
+        floor_epoch=1,
+        token=TOKEN,
     )
 
 
@@ -268,9 +271,7 @@ def test_relay_frame_round_trip() -> None:
         json.dumps({"kind": "audio", "lease_id": "l", "floor_epoch": 1}),
         json.dumps({"kind": "audio", "owner_epoch": 1, "floor_epoch": 1}),
         json.dumps({"kind": "audio", "owner_epoch": 1, "lease_id": "l"}),
-        json.dumps(
-            {"kind": "audio", "owner_epoch": 1, "lease_id": "l", "floor_epoch": 1}
-        ),
+        json.dumps({"kind": "audio", "owner_epoch": 1, "lease_id": "l", "floor_epoch": 1}),
         json.dumps(
             {
                 "kind": "audio",
@@ -292,9 +293,7 @@ def test_malformed_frames_are_refused(raw: str) -> None:
 
 async def test_relay_rejects_bad_token(relay_client) -> None:
     client, _service, _lease = relay_client
-    response = await client.get(
-        RELAY_ROUTE, headers={WORKER_TOKEN_HEADER: "wrong-token"}
-    )
+    response = await client.get(RELAY_ROUTE, headers={WORKER_TOKEN_HEADER: "wrong-token"})
     assert response.status == 401
     response = await client.get(RELAY_ROUTE)
     assert response.status == 401
@@ -326,9 +325,7 @@ async def test_relay_revalidates_the_floor_on_the_owner(relay_client) -> None:
     # A revoke lands between ingress and the producer.
     descriptor = await service.registry.get(TENANT, BROADCAST)
     assert descriptor is not None
-    await service.registry.grant_floor(
-        TENANT, BROADCAST, lease_id, lease_id, descriptor.version
-    )
+    await service.registry.grant_floor(TENANT, BROADCAST, lease_id, lease_id, descriptor.version)
     switching = await service.registry.get(TENANT, BROADCAST)
     assert switching is not None
     assert switching.floor_state is FloorState.SWITCHING
@@ -547,9 +544,7 @@ async def test_remote_speaker_input_aclose_is_idempotent(relay_client) -> None:
 
 async def test_local_speaker_input_begins_the_turn_once() -> None:
     session = FakeOwnerVoiceSession()
-    principal = ParticipantPrincipal(
-        user_id="ada", tenant_id=TENANT, agent_id=AGENT
-    )
+    principal = ParticipantPrincipal(user_id="ada", tenant_id=TENANT, agent_id=AGENT)
     sink = LocalSpeakerInput(session, "lease-a", principal, 4)
     await sink.start_turn()
     await sink.start_turn()

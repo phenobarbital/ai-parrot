@@ -23,6 +23,7 @@ does **not** hold the owner-only vendor token, so it cannot confirm that the
 LiveAvatar session stopped.  That is reported honestly as
 ``orphaned_vendor_session`` instead of being assumed (spec §7).
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -123,9 +124,7 @@ class ReconcileReport:
     uncertain: List[str] = field(default_factory=list)
 
 
-def default_principal_resolver(
-    user: Any, agent_id: str, *, tenant_id: str = "default"
-) -> ParticipantPrincipal:
+def default_principal_resolver(user: Any, agent_id: str, *, tenant_id: str = "default") -> ParticipantPrincipal:
     """Map an authenticated user to a scoped principal.
 
     The default takes the tenant from server configuration, never from the
@@ -257,9 +256,7 @@ class BroadcastService:
         if principal.agent_id != agent_id:
             raise BroadcastError(message="principal is scoped to a different agent")
 
-    async def _descriptor_in_scope(
-        self, principal: ParticipantPrincipal, broadcast_id: str
-    ) -> BroadcastDescriptor:
+    async def _descriptor_in_scope(self, principal: ParticipantPrincipal, broadcast_id: str) -> BroadcastDescriptor:
         """Fetch a descriptor, treating out-of-scope ids as absent.
 
         Returns:
@@ -277,9 +274,7 @@ class BroadcastService:
 
     # ── Lifecycle ──────────────────────────────────────────────────────
 
-    async def create_broadcast(
-        self, principal: ParticipantPrincipal, agent_id: str
-    ) -> BroadcastDescriptor:
+    async def create_broadcast(self, principal: ParticipantPrincipal, agent_id: str) -> BroadcastDescriptor:
         """Create a pending broadcast.
 
         Creation confers **no** moderator authority: the first successful
@@ -320,21 +315,15 @@ class BroadcastService:
         descriptor = await self._descriptor_in_scope(principal, broadcast_id)
         return await self._project(descriptor)
 
-    async def _project(
-        self, descriptor: BroadcastDescriptor
-    ) -> BroadcastPublicState:
+    async def _project(self, descriptor: BroadcastDescriptor) -> BroadcastPublicState:
         """Build the public state, folding in producer-owned media facts.
 
         ``BroadcastRegistry.transition`` has no parameters for the room or the
         publisher identities (TASK-2958's completion note flags this), so the
         service is where the live media state is joined onto the durable state.
         """
-        leases = await self.registry.list_leases(
-            descriptor.tenant_id, descriptor.broadcast_id
-        )
-        producer = self._producers.get(
-            (descriptor.tenant_id, descriptor.broadcast_id)
-        )
+        leases = await self.registry.list_leases(descriptor.tenant_id, descriptor.broadcast_id)
+        producer = self._producers.get((descriptor.tenant_id, descriptor.broadcast_id))
         if producer is not None:
             media = producer.session.media_state()
             descriptor = descriptor.model_copy(
@@ -347,9 +336,7 @@ class BroadcastService:
             )
         return descriptor.to_public_state(viewer_count=len(leases))
 
-    async def join(
-        self, principal: ParticipantPrincipal, agent_id: str, broadcast_id: str
-    ) -> Admission:
+    async def join(self, principal: ParticipantPrincipal, agent_id: str, broadcast_id: str) -> Admission:
         """Reserve a seat, starting the producer on the first admission only.
 
         Args:
@@ -369,9 +356,7 @@ class BroadcastService:
         self._known.add((principal.tenant_id, broadcast_id))
 
         identity = f"viewer-{uuid.uuid4().hex[:16]}"
-        admission = await self.registry.reserve_viewer(
-            principal.tenant_id, broadcast_id, principal, identity
-        )
+        admission = await self.registry.reserve_viewer(principal.tenant_id, broadcast_id, principal, identity)
         if admission.is_first:
             await self._claim_and_start(principal.tenant_id, broadcast_id)
         await self._publish_state(principal.tenant_id, broadcast_id)
@@ -383,9 +368,7 @@ class BroadcastService:
         A worker that loses the race does **not** start a second producer — it
         will serve its participants through the relay instead.
         """
-        claimed, owner_epoch = await self.registry.claim_owner(
-            tenant_id, broadcast_id, self.worker_id
-        )
+        claimed, owner_epoch = await self.registry.claim_owner(tenant_id, broadcast_id, self.worker_id)
         if not claimed:
             self.logger.info(
                 "broadcast %s: another worker owns the producer (epoch %d)",
@@ -395,9 +378,7 @@ class BroadcastService:
             return
         await self.start_producer(tenant_id, broadcast_id, owner_epoch)
 
-    async def start_producer(
-        self, tenant_id: str, broadcast_id: str, owner_epoch: int
-    ) -> Optional[BroadcastSession]:
+    async def start_producer(self, tenant_id: str, broadcast_id: str, owner_epoch: int) -> Optional[BroadcastSession]:
         """Bring up the media session and the broadcast-owned voice session.
 
         Guarded by a per-broadcast lock and an existence check, so concurrent
@@ -432,25 +413,19 @@ class BroadcastService:
             bot = self.nova_bot_factory() if self.nova_bot_factory else None
             voice = self._build_voice_session(descriptor, session, bot)
             voice.set_fanout(self._make_fanout(tenant_id, broadcast_id))
-            self._producers[key] = _Producer(
-                session=session, voice=voice, owner_epoch=owner_epoch, bot=bot
-            )
+            self._producers[key] = _Producer(session=session, voice=voice, owner_epoch=owner_epoch, bot=bot)
             self._known.add(key)
 
             try:
                 await session.start()
             except Exception:  # noqa: BLE001 — the session already marked failed
-                self.logger.exception(
-                    "broadcast %s: producer startup failed", broadcast_id
-                )
+                self.logger.exception("broadcast %s: producer startup failed", broadcast_id)
                 self._producers.pop(key, None)
                 raise
             await self._publish_state(tenant_id, broadcast_id)
             return session
 
-    def _build_voice_session(
-        self, descriptor: BroadcastDescriptor, session: Any, bot: Any
-    ) -> Any:
+    def _build_voice_session(self, descriptor: BroadcastDescriptor, session: Any, bot: Any) -> Any:
         """Construct the broadcast-owned voice session.
 
         The conversation key is the broadcast's stable ``voice_session_id`` —
@@ -468,9 +443,7 @@ class BroadcastService:
             broadcast=session,
         )
 
-    async def connection(
-        self, principal: ParticipantPrincipal, broadcast_id: str, lease_id: str
-    ) -> ViewerJoinResponse:
+    async def connection(self, principal: ParticipantPrincipal, broadcast_id: str, lease_id: str) -> ViewerJoinResponse:
         """Issue this lease's subscribe-only room credentials.
 
         Idempotent per lease: the same identity and token are returned on every
@@ -508,9 +481,7 @@ class BroadcastService:
         if not room:
             raise BroadcastNotReady(message="room is not allocated yet")
 
-        expires_at = datetime.now(timezone.utc) + timedelta(
-            seconds=self._credential_ttl_s
-        )
+        expires_at = datetime.now(timezone.utc) + timedelta(seconds=self._credential_ttl_s)
         token = await asyncio.to_thread(
             self.room_manager.mint_viewer_token,
             room,
@@ -528,9 +499,7 @@ class BroadcastService:
         self._connections[cache_key] = response
         return response
 
-    async def leave(
-        self, principal: ParticipantPrincipal, broadcast_id: str, lease_id: str
-    ) -> None:
+    async def leave(self, principal: ParticipantPrincipal, broadcast_id: str, lease_id: str) -> None:
         """Release a seat and run whatever succession it triggers.
 
         Args:
@@ -551,15 +520,11 @@ class BroadcastService:
             room = descriptor.room_name if descriptor else None
             if room:
                 with contextlib.suppress(Exception):
-                    await self.room_manager.remove_participant(
-                        room, lease.livekit_identity
-                    )
+                    await self.room_manager.remove_participant(room, lease.livekit_identity)
 
         await self._settle_departure(tenant_id, broadcast_id, outcome, lease_id)
 
-    async def _settle_departure(
-        self, tenant_id: str, broadcast_id: str, outcome: Any, lease_id: str
-    ) -> None:
+    async def _settle_departure(self, tenant_id: str, broadcast_id: str, outcome: Any, lease_id: str) -> None:
         """Complete the barrier a departure opened, or tear the producer down."""
         producer = self._producers.get((tenant_id, broadcast_id))
         session = producer.session if producer else None
@@ -601,9 +566,7 @@ class BroadcastService:
                     )
         await self._publish_state(tenant_id, broadcast_id)
 
-    async def stop(
-        self, principal: ParticipantPrincipal, broadcast_id: str
-    ) -> BroadcastDescriptor:
+    async def stop(self, principal: ParticipantPrincipal, broadcast_id: str) -> BroadcastDescriptor:
         """Moderator-only broadcast-wide stop.
 
         Records a **durable** desired state; the owning worker observes it
@@ -666,9 +629,7 @@ class BroadcastService:
     ) -> BroadcastPublicState:
         """Record an idempotent raise-hand.  Grants no microphone permission."""
         await self._require_own_lease(principal, broadcast_id, lease_id)
-        descriptor = await self.registry.raise_hand(
-            principal.tenant_id, broadcast_id, lease_id
-        )
+        descriptor = await self.registry.raise_hand(principal.tenant_id, broadcast_id, lease_id)
         await self._publish_state(principal.tenant_id, broadcast_id)
         return await self._project(descriptor)
 
@@ -677,9 +638,7 @@ class BroadcastService:
     ) -> BroadcastPublicState:
         """Withdraw the caller's own hand request."""
         await self._require_own_lease(principal, broadcast_id, lease_id)
-        descriptor = await self.registry.cancel_hand(
-            principal.tenant_id, broadcast_id, lease_id
-        )
+        descriptor = await self.registry.cancel_hand(principal.tenant_id, broadcast_id, lease_id)
         await self._publish_state(principal.tenant_id, broadcast_id)
         return await self._project(descriptor)
 
@@ -688,14 +647,10 @@ class BroadcastService:
     ) -> BroadcastPublicState:
         """Moderator-only dismissal of somebody else's request."""
         tenant_id = principal.tenant_id
-        moderator_lease_id = await self._lease_id_for(
-            tenant_id, broadcast_id, principal
-        )
+        moderator_lease_id = await self._lease_id_for(tenant_id, broadcast_id, principal)
         if moderator_lease_id is None:
             raise NotModerator(message="caller holds no lease")
-        descriptor = await self.registry.dismiss_hand(
-            tenant_id, broadcast_id, moderator_lease_id, target_lease_id
-        )
+        descriptor = await self.registry.dismiss_hand(tenant_id, broadcast_id, moderator_lease_id, target_lease_id)
         await self._publish_state(tenant_id, broadcast_id)
         return await self._project(descriptor)
 
@@ -723,9 +678,7 @@ class BroadcastService:
             BroadcastError: With ``stale_floor_epoch`` if the barrier fails.
         """
         tenant_id = principal.tenant_id
-        moderator_lease_id = await self._lease_id_for(
-            tenant_id, broadcast_id, principal
-        )
+        moderator_lease_id = await self._lease_id_for(tenant_id, broadcast_id, principal)
         if moderator_lease_id is None:
             raise NotModerator(message="caller holds no lease")
         producer = self._producers.get((tenant_id, broadcast_id))
@@ -741,9 +694,7 @@ class BroadcastService:
         await self._publish_state(tenant_id, broadcast_id)
         return result
 
-    async def release_floor(
-        self, tenant_id: str, broadcast_id: str, speaker_lease_id: str
-    ) -> HandoffResult:
+    async def release_floor(self, tenant_id: str, broadcast_id: str, speaker_lease_id: str) -> HandoffResult:
         """Finish Speaking — return the floor to the moderator via the barrier."""
         producer = self._producers.get((tenant_id, broadcast_id))
         result = await self.coordinator.release(
@@ -758,52 +709,38 @@ class BroadcastService:
 
     # ── Control-socket protocol surface (TASK-2960) ────────────────────
 
-    async def get_descriptor(
-        self, tenant_id: str, broadcast_id: str
-    ) -> Optional[BroadcastDescriptor]:
+    async def get_descriptor(self, tenant_id: str, broadcast_id: str) -> Optional[BroadcastDescriptor]:
         """Return the current descriptor, or ``None``."""
         return await self.registry.get(tenant_id, broadcast_id)
 
-    async def get_lease(
-        self, tenant_id: str, broadcast_id: str, lease_id: str
-    ) -> Optional[ViewerLease]:
+    async def get_lease(self, tenant_id: str, broadcast_id: str, lease_id: str) -> Optional[ViewerLease]:
         """Return one lease, or ``None``."""
         for lease in await self.registry.list_leases(tenant_id, broadcast_id):
             if lease.lease_id == lease_id:
                 return lease
         return None
 
-    async def heartbeat(
-        self, tenant_id: str, broadcast_id: str, lease_id: str
-    ) -> None:
+    async def heartbeat(self, tenant_id: str, broadcast_id: str, lease_id: str) -> None:
         """Record a control heartbeat.  Never bumps the public version."""
         with contextlib.suppress(BroadcastError):
             await self.registry.heartbeat_control(tenant_id, broadcast_id, lease_id)
 
-    async def attach_control(
-        self, tenant_id: str, broadcast_id: str, lease_id: str, send: Any
-    ) -> None:
+    async def attach_control(self, tenant_id: str, broadcast_id: str, lease_id: str, send: Any) -> None:
         """Register a control socket for in-process fan-out."""
         self._controls.setdefault((tenant_id, broadcast_id), {})[lease_id] = send
         self._known.add((tenant_id, broadcast_id))
 
-    async def detach_control(
-        self, tenant_id: str, broadcast_id: str, lease_id: str
-    ) -> None:
+    async def detach_control(self, tenant_id: str, broadcast_id: str, lease_id: str) -> None:
         """Deregister a control socket."""
         self._controls.get((tenant_id, broadcast_id), {}).pop(lease_id, None)
 
     # ``subscribe``/``unsubscribe`` are the broadcast-wide aliases used by the
     # example; control sockets use the lease-scoped pair above.
-    async def subscribe(
-        self, tenant_id: str, broadcast_id: str, lease_id: str, send: Any
-    ) -> None:
+    async def subscribe(self, tenant_id: str, broadcast_id: str, lease_id: str, send: Any) -> None:
         """Alias of :meth:`attach_control`."""
         await self.attach_control(tenant_id, broadcast_id, lease_id, send)
 
-    async def unsubscribe(
-        self, tenant_id: str, broadcast_id: str, lease_id: str
-    ) -> None:
+    async def unsubscribe(self, tenant_id: str, broadcast_id: str, lease_id: str) -> None:
         """Alias of :meth:`detach_control`."""
         await self.detach_control(tenant_id, broadcast_id, lease_id)
 
@@ -823,17 +760,11 @@ class BroadcastService:
         floor_epoch: int,
     ) -> bool:
         """Bind the single microphone socket permitted to send audio."""
-        return await self.registry.bind_speaker_socket(
-            tenant_id, broadcast_id, lease_id, socket_id, floor_epoch
-        )
+        return await self.registry.bind_speaker_socket(tenant_id, broadcast_id, lease_id, socket_id, floor_epoch)
 
-    async def unbind_speaker_socket(
-        self, tenant_id: str, broadcast_id: str, lease_id: str, socket_id: str
-    ) -> bool:
+    async def unbind_speaker_socket(self, tenant_id: str, broadcast_id: str, lease_id: str, socket_id: str) -> bool:
         """Release a microphone-socket binding."""
-        return await self.registry.unbind_speaker_socket(
-            tenant_id, broadcast_id, lease_id, socket_id
-        )
+        return await self.registry.unbind_speaker_socket(tenant_id, broadcast_id, lease_id, socket_id)
 
     def voice_session(self, tenant_id: str, broadcast_id: str) -> Any:
         """Return the broadcast-owned voice session on this worker, or ``None``."""
@@ -879,15 +810,11 @@ class BroadcastService:
         """
         producer = self._producers.get((tenant_id, broadcast_id))
         if producer is not None:
-            return LocalSpeakerInput(
-                producer.voice, lease_id, principal, floor_epoch
-            )
+            return LocalSpeakerInput(producer.voice, lease_id, principal, floor_epoch)
 
         descriptor = await self.registry.get(tenant_id, broadcast_id)
         if descriptor is None or not descriptor.owner_worker_id:
-            raise BroadcastError(
-                BroadcastReason.OWNER_LOST, message="no producer owns this broadcast"
-            )
+            raise BroadcastError(BroadcastReason.OWNER_LOST, message="no producer owns this broadcast")
         url = await self.worker_registry.resolve(descriptor.owner_worker_id)
         if not url:
             raise BroadcastError(
@@ -906,9 +833,7 @@ class BroadcastService:
 
     # ── Fan-out ────────────────────────────────────────────────────────
 
-    def _make_fanout(
-        self, tenant_id: str, broadcast_id: str
-    ) -> Callable[[Dict[str, Any]], Awaitable[None]]:
+    def _make_fanout(self, tenant_id: str, broadcast_id: str) -> Callable[[Dict[str, Any]], Awaitable[None]]:
         """Build the relay's fan-out: one frame to every attached socket."""
 
         async def _fanout(frame: Dict[str, Any]) -> None:
@@ -916,9 +841,7 @@ class BroadcastService:
 
         return _fanout
 
-    async def _broadcast_frame(
-        self, tenant_id: str, broadcast_id: str, frame: Dict[str, Any]
-    ) -> None:
+    async def _broadcast_frame(self, tenant_id: str, broadcast_id: str, frame: Dict[str, Any]) -> None:
         """Send one frame to every control socket, tolerating dead ones."""
         for send in list(self._controls.get((tenant_id, broadcast_id), {}).values()):
             with contextlib.suppress(Exception):
@@ -943,9 +866,7 @@ class BroadcastService:
             return
         with contextlib.suppress(Exception):
             state = await self.public_state(tenant_id, broadcast_id)
-            await self._broadcast_frame(
-                tenant_id, broadcast_id, {"type": "broadcast_state", "state": state}
-            )
+            await self._broadcast_frame(tenant_id, broadcast_id, {"type": "broadcast_state", "state": state})
 
     async def _require_own_lease(
         self, principal: ParticipantPrincipal, broadcast_id: str, lease_id: str
@@ -960,9 +881,7 @@ class BroadcastService:
             raise BroadcastError(message="lease is not owned by this principal")
         return lease
 
-    async def _lease_id_for(
-        self, tenant_id: str, broadcast_id: str, principal: ParticipantPrincipal
-    ) -> Optional[str]:
+    async def _lease_id_for(self, tenant_id: str, broadcast_id: str, principal: ParticipantPrincipal) -> Optional[str]:
         """Return the lease this principal holds in a broadcast, if any."""
         for lease in await self.registry.list_leases(tenant_id, broadcast_id):
             if lease.principal.user_id == principal.user_id:
@@ -974,9 +893,7 @@ class BroadcastService:
     def start_reconciler(self) -> None:
         """Start the background watchdog (idempotent)."""
         if self._reconciler is None or self._reconciler.done():
-            self._reconciler = asyncio.create_task(
-                self.run_reconciler(), name=f"broadcast-reconciler-{self.worker_id}"
-            )
+            self._reconciler = asyncio.create_task(self.run_reconciler(), name=f"broadcast-reconciler-{self.worker_id}")
 
     async def run_reconciler(self) -> None:
         """Run :meth:`reconcile_once` on a fixed period until closed."""
@@ -1004,8 +921,7 @@ class BroadcastService:
             except Exception:  # noqa: BLE001 — store unreachable: fail closed
                 report.uncertain.append(broadcast_id)
                 self.logger.warning(
-                    "broadcast %s: reconciliation_uncertain (registry unreachable) — "
-                    "retaining seats",
+                    "broadcast %s: reconciliation_uncertain (registry unreachable) — " "retaining seats",
                     broadcast_id,
                     exc_info=True,
                 )
@@ -1018,31 +934,23 @@ class BroadcastService:
                     ExpiryKind.CONTROL_HEARTBEAT,
                     ExpiryKind.ADMISSION_DEADLINE,
                 ):
-                    await self._evict_expired_lease(
-                        tenant_id, broadcast_id, event.lease_id, report
-                    )
+                    await self._evict_expired_lease(tenant_id, broadcast_id, event.lease_id, report)
                 elif event.kind is ExpiryKind.TERMINAL_RETENTION:
                     self._known.discard((tenant_id, broadcast_id))
         return report
 
-    async def _fence_dead_owner(
-        self, tenant_id: str, broadcast_id: str, report: ReconcileReport
-    ) -> None:
+    async def _fence_dead_owner(self, tenant_id: str, broadcast_id: str, report: ReconcileReport) -> None:
         """Take ownership of an abandoned broadcast and clean it up.
 
         Claiming ownership advances ``owner_epoch``, which fences the dead
         worker: any of its in-flight registry writes are now rejected, and any
         relay connection still pointed at it closes.
         """
-        claimed, owner_epoch = await self.registry.claim_owner(
-            tenant_id, broadcast_id, self.worker_id
-        )
+        claimed, owner_epoch = await self.registry.claim_owner(tenant_id, broadcast_id, self.worker_id)
         if not claimed:
             return
         report.fenced_owners.append(broadcast_id)
-        self.logger.warning(
-            "broadcast %s: fenced a dead owner at epoch %d", broadcast_id, owner_epoch
-        )
+        self.logger.warning("broadcast %s: fenced a dead owner at epoch %d", broadcast_id, owner_epoch)
 
         descriptor = await self.registry.get(tenant_id, broadcast_id)
         room = descriptor.room_name if descriptor else None
@@ -1062,8 +970,7 @@ class BroadcastService:
                 )
 
         avatar_was_live = descriptor is not None and (
-            descriptor.state is BroadcastState.AVATAR
-            or bool(descriptor.liveavatar_session_id)
+            descriptor.state is BroadcastState.AVATAR or bool(descriptor.liveavatar_session_id)
         )
         if avatar_was_live:
             # The vendor stop call needs the owner-only session token, which
@@ -1118,9 +1025,7 @@ class BroadcastService:
         room = descriptor.room_name if descriptor else None
         if lease is not None and room:
             try:
-                await self.room_manager.remove_participant(
-                    room, lease.livekit_identity
-                )
+                await self.room_manager.remove_participant(room, lease.livekit_identity)
                 report.removed_participants.append((room, lease.livekit_identity))
             except Exception:  # noqa: BLE001 — retain the seat, retry next pass
                 report.uncertain.append(broadcast_id)

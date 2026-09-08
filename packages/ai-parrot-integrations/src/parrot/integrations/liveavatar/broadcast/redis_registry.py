@@ -27,6 +27,7 @@ construction, ``owner_worker_id`` is an opaque worker id (never a network
 address — address resolution belongs to the service layer), and no PCM, AWS
 credential or LiveAvatar access token touches these keys.
 """
+
 from __future__ import annotations
 
 import json
@@ -75,11 +76,7 @@ DEFAULT_KEY_PREFIX: str = "parrot:voice-broadcast"
 #: entered from.  Derived from the single definition in ``registry.py`` so the
 #: Lua guard and the in-memory reference can never disagree about a legal edge.
 _LEGAL_SOURCES: Dict[BroadcastState, str] = {
-    target: ",".join(
-        source.value
-        for source, targets in _ALLOWED_TRANSITIONS.items()
-        if target in targets
-    )
+    target: ",".join(source.value for source, targets in _ALLOWED_TRANSITIONS.items() if target in targets)
     for target in BroadcastState
 }
 
@@ -757,10 +754,7 @@ class RedisBroadcastRegistry(BroadcastRegistry):
         self._prefix = key_prefix
         self._clock = clock
         self._owns_client = owns_client
-        self._scripts = {
-            name: redis_client.register_script(_PRELUDE + body)
-            for name, body in _SCRIPTS.items()
-        }
+        self._scripts = {name: redis_client.register_script(_PRELUDE + body) for name, body in _SCRIPTS.items()}
         self.logger = logging.getLogger(__name__)
 
     # ── Construction / teardown ────────────────────────────────────────
@@ -800,9 +794,7 @@ class RedisBroadcastRegistry(BroadcastRegistry):
         """Close the underlying client when this registry owns it."""
         if not self._owns_client:
             return
-        close = getattr(self._redis, "aclose", None) or getattr(
-            self._redis, "close", None
-        )
+        close = getattr(self._redis, "aclose", None) or getattr(self._redis, "close", None)
         if close is not None:
             result = close()
             if hasattr(result, "__await__"):
@@ -877,9 +869,7 @@ class RedisBroadcastRegistry(BroadcastRegistry):
 
         argv: List[Any] = [f"{now:.6f}", _iso(now), str(CONTROL_EXPIRY_S), *extra]
         try:
-            return await self._scripts[name](
-                keys=self._keys(tenant_id, broadcast_id), args=argv
-            )
+            return await self._scripts[name](keys=self._keys(tenant_id, broadcast_id), args=argv)
         except ResponseError as exc:
             code = str(exc).strip()
             mapped = _ERROR_MAP.get(code)
@@ -934,9 +924,7 @@ class RedisBroadcastRegistry(BroadcastRegistry):
         )
         return self._descriptor(raw)
 
-    async def get(
-        self, tenant_id: str, broadcast_id: str
-    ) -> Optional[BroadcastDescriptor]:
+    async def get(self, tenant_id: str, broadcast_id: str) -> Optional[BroadcastDescriptor]:
         now = await self._now(None)
         raw = await self._run("get", tenant_id, broadcast_id, now)
         return None if raw is None else self._descriptor(raw)
@@ -1032,9 +1020,7 @@ class RedisBroadcastRegistry(BroadcastRegistry):
         )
         return Admission(lease=self._lease(lease_raw), is_first=bool(is_first))
 
-    async def confirm_viewer(
-        self, tenant_id: str, broadcast_id: str, lease_id: str
-    ) -> ViewerLease:
+    async def confirm_viewer(self, tenant_id: str, broadcast_id: str, lease_id: str) -> ViewerLease:
         now = await self._now(None)
         raw = await self._run("confirm_viewer", tenant_id, broadcast_id, now, lease_id)
         return self._lease(raw)
@@ -1073,9 +1059,7 @@ class RedisBroadcastRegistry(BroadcastRegistry):
             new_moderator=new_moderator or None,
         )
 
-    async def list_leases(
-        self, tenant_id: str, broadcast_id: str
-    ) -> List[ViewerLease]:
+    async def list_leases(self, tenant_id: str, broadcast_id: str) -> List[ViewerLease]:
         now = await self._now(None)
         rows = await self._run("list_leases", tenant_id, broadcast_id, now)
         return [self._lease(row) for row in rows]
@@ -1094,9 +1078,7 @@ class RedisBroadcastRegistry(BroadcastRegistry):
         raw = await self._run("raise_hand", tenant_id, broadcast_id, stamp, lease_id)
         return self._descriptor(raw)
 
-    async def cancel_hand(
-        self, tenant_id: str, broadcast_id: str, lease_id: str
-    ) -> BroadcastDescriptor:
+    async def cancel_hand(self, tenant_id: str, broadcast_id: str, lease_id: str) -> BroadcastDescriptor:
         now = await self._now(None)
         raw = await self._run("cancel_hand", tenant_id, broadcast_id, now, lease_id)
         return self._descriptor(raw)
@@ -1155,22 +1137,14 @@ class RedisBroadcastRegistry(BroadcastRegistry):
         )
         return self._descriptor(raw)
 
-    async def abort_floor(
-        self, tenant_id: str, broadcast_id: str, floor_epoch: int
-    ) -> BroadcastDescriptor:
+    async def abort_floor(self, tenant_id: str, broadcast_id: str, floor_epoch: int) -> BroadcastDescriptor:
         now = await self._now(None)
-        raw = await self._run(
-            "abort_floor", tenant_id, broadcast_id, now, str(floor_epoch)
-        )
+        raw = await self._run("abort_floor", tenant_id, broadcast_id, now, str(floor_epoch))
         return self._descriptor(raw)
 
-    async def release_floor(
-        self, tenant_id: str, broadcast_id: str, speaker_lease_id: str
-    ) -> BroadcastDescriptor:
+    async def release_floor(self, tenant_id: str, broadcast_id: str, speaker_lease_id: str) -> BroadcastDescriptor:
         now = await self._now(None)
-        raw = await self._run(
-            "release_floor", tenant_id, broadcast_id, now, speaker_lease_id
-        )
+        raw = await self._run("release_floor", tenant_id, broadcast_id, now, speaker_lease_id)
         return self._descriptor(raw)
 
     async def revoke_floor(
@@ -1180,13 +1154,9 @@ class RedisBroadcastRegistry(BroadcastRegistry):
         moderator_lease_id: str,
         expected_version: int,
     ) -> BroadcastDescriptor:
-        return await self.grant_floor(
-            tenant_id, broadcast_id, moderator_lease_id, None, expected_version
-        )
+        return await self.grant_floor(tenant_id, broadcast_id, moderator_lease_id, None, expected_version)
 
-    async def elect_moderator(
-        self, tenant_id: str, broadcast_id: str, *, now: Optional[float] = None
-    ) -> Optional[str]:
+    async def elect_moderator(self, tenant_id: str, broadcast_id: str, *, now: Optional[float] = None) -> Optional[str]:
         stamp = await self._now(now)
         elected = await self._run("elect_moderator", tenant_id, broadcast_id, stamp)
         return elected or None
@@ -1213,33 +1183,23 @@ class RedisBroadcastRegistry(BroadcastRegistry):
         )
         return bool(result)
 
-    async def unbind_speaker_socket(
-        self, tenant_id: str, broadcast_id: str, lease_id: str, socket_id: str
-    ) -> bool:
+    async def unbind_speaker_socket(self, tenant_id: str, broadcast_id: str, lease_id: str, socket_id: str) -> bool:
         now = await self._now(None)
-        result = await self._run(
-            "unbind_speaker_socket", tenant_id, broadcast_id, now, lease_id, socket_id
-        )
+        result = await self._run("unbind_speaker_socket", tenant_id, broadcast_id, now, lease_id, socket_id)
         return bool(result)
 
     # ── Stop and reconciliation ────────────────────────────────────────
 
-    async def request_stop(
-        self, tenant_id: str, broadcast_id: str, by_lease_id: str
-    ) -> BroadcastDescriptor:
+    async def request_stop(self, tenant_id: str, broadcast_id: str, by_lease_id: str) -> BroadcastDescriptor:
         now = await self._now(None)
-        raw = await self._run(
-            "request_stop", tenant_id, broadcast_id, now, by_lease_id
-        )
+        raw = await self._run("request_stop", tenant_id, broadcast_id, now, by_lease_id)
         return self._descriptor(raw)
 
     async def stop_requested(self, tenant_id: str, broadcast_id: str) -> bool:
         now = await self._now(None)
         return bool(await self._run("stop_requested", tenant_id, broadcast_id, now))
 
-    async def expire(
-        self, tenant_id: str, broadcast_id: str, *, now: Optional[float] = None
-    ) -> List[ExpiryEvent]:
+    async def expire(self, tenant_id: str, broadcast_id: str, *, now: Optional[float] = None) -> List[ExpiryEvent]:
         stamp = await self._now(now)
         rows = await self._run(
             "expire",
@@ -1254,11 +1214,7 @@ class RedisBroadcastRegistry(BroadcastRegistry):
         events: List[ExpiryEvent] = []
         for row in rows:
             kind, lease_id, detail = row.split("|", 2)
-            events.append(
-                ExpiryEvent(
-                    kind=ExpiryKind(kind), lease_id=lease_id or None, detail=detail
-                )
-            )
+            events.append(ExpiryEvent(kind=ExpiryKind(kind), lease_id=lease_id or None, detail=detail))
         return events
 
 

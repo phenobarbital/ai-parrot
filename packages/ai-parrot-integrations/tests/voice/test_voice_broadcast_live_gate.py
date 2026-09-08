@@ -35,6 +35,7 @@ not a contract we control.
 Evidence is written, sanitized, to ``artifacts/logs/feat-537-live-gate-*``.
 No token, ``ws_url`` or API secret is ever printed, logged or persisted here.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -67,9 +68,8 @@ _REQUIRED_ENV: Tuple[str, ...] = (
     "LIVEKIT_API_SECRET",
 )
 
-_GATE_ENABLED: bool = (
-    os.environ.get("PARROT_LIVE_BROADCAST_GATE") == "1"
-    and all(os.environ.get(name) for name in _REQUIRED_ENV)
+_GATE_ENABLED: bool = os.environ.get("PARROT_LIVE_BROADCAST_GATE") == "1" and all(
+    os.environ.get(name) for name in _REQUIRED_ENV
 )
 
 _SKIP_REASON: str = (
@@ -80,11 +80,11 @@ _SKIP_REASON: str = (
 
 # ── Probe constants ────────────────────────────────────────────────────────
 
-_SAMPLE_RATE: int = 24_000       # Hz — LITE agent.speak contract
-_NUM_CHANNELS: int = 1           # mono
-_BYTES_PER_SAMPLE: int = 2       # PCM16
+_SAMPLE_RATE: int = 24_000  # Hz — LITE agent.speak contract
+_NUM_CHANNELS: int = 1  # mono
+_BYTES_PER_SAMPLE: int = 2  # PCM16
 _TONE_HZ: float = 440.0
-_TONE_AMPLITUDE: int = 12_000    # well below int16 clipping
+_TONE_AMPLITUDE: int = 12_000  # well below int16 clipping
 
 #: Seconds of tone pushed per utterance (kept short — total vendor time must
 #: stay far below ``max_session_duration``).
@@ -165,10 +165,7 @@ def _tone_pcm(seconds: float, *, start_sample: int = 0) -> bytes:
     """
     total = int(seconds * _SAMPLE_RATE)
     step = 2.0 * math.pi * _TONE_HZ / _SAMPLE_RATE
-    samples = [
-        int(_TONE_AMPLITUDE * math.sin(step * (start_sample + index)))
-        for index in range(total)
-    ]
+    samples = [int(_TONE_AMPLITUDE * math.sin(step * (start_sample + index))) for index in range(total)]
     return struct.pack(f"<{total}h", *samples)
 
 
@@ -195,9 +192,7 @@ def _frame_peak(frame: Any) -> int:
 class _Evidence:
     """Accumulates sanitized probe observations for the run report."""
 
-    started_at: str = field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
-    )
+    started_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     versions: Dict[str, str] = field(default_factory=dict)
     scenarios: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     events: List[str] = field(default_factory=list)
@@ -342,13 +337,9 @@ class _Subscriber:
                 }
             )
             if str(getattr(track, "kind", "")).endswith("AUDIO"):
-                self._pumps.append(
-                    asyncio.create_task(self._pump_audio(rtc.AudioStream(track)))
-                )
+                self._pumps.append(asyncio.create_task(self._pump_audio(rtc.AudioStream(track))))
             elif str(getattr(track, "kind", "")).endswith("VIDEO"):
-                self._pumps.append(
-                    asyncio.create_task(self._pump_video(rtc.VideoStream(track)))
-                )
+                self._pumps.append(asyncio.create_task(self._pump_video(rtc.VideoStream(track))))
 
         self._room.on("track_subscribed", _on_track_subscribed)
         await self._room.connect(url, token)
@@ -398,10 +389,7 @@ class _Subscriber:
             "audible_frames": self.audible_frames,
             "video_frames": self.video_frames,
             "peak_amplitude": self.peak,
-            "tracks": [
-                {key: value for key, value in track.items() if key != "subscribed_at"}
-                for track in self.tracks
-            ],
+            "tracks": [{key: value for key, value in track.items() if key != "subscribed_at"} for track in self.tracks],
         }
 
     async def aclose(self) -> None:
@@ -475,9 +463,7 @@ class _AvatarProbeSession:
         self.client = LiveAvatarClient(self.config)
         await self.client.aopen()
         try:
-            self.handle = await self.client.create_session_token(
-                self.config, livekit_config=livekit_config
-            )
+            self.handle = await self.client.create_session_token(self.config, livekit_config=livekit_config)
             self.max_duration_accepted = True
         except Exception as exc:  # noqa: BLE001 — recorded, then re-raised
             self.max_duration_error = f"{type(exc).__name__}: {exc}"
@@ -581,11 +567,7 @@ async def test_nova_pcm_reaches_two_subscribers(
             await session.speak_tone(_UTTERANCE_SECONDS)
             await asyncio.sleep(_OBSERVE_SECONDS)
             latencies = {
-                sub.identity: (
-                    round(sub.first_audio_at - started, 3)
-                    if sub.first_audio_at is not None
-                    else None
-                )
+                sub.identity: (round(sub.first_audio_at - started, 3) if sub.first_audio_at is not None else None)
                 for sub in subscribers
             }
             evidence.events.extend(_harvest_event_types(caplog))
@@ -656,10 +638,7 @@ async def test_interrupt_stops_avatar_audio_within_budget(
                 "interrupt",
                 time_to_silence_seconds=time_to_silence,
                 budget_seconds=_INTERRUPT_BUDGET_SECONDS,
-                within_budget=(
-                    time_to_silence is not None
-                    and time_to_silence <= _INTERRUPT_BUDGET_SECONDS
-                ),
+                within_budget=(time_to_silence is not None and time_to_silence <= _INTERRUPT_BUDGET_SECONDS),
                 second_utterance_audible_frames=second_audible,
                 subscriber=listener.manifest(),
             )
@@ -667,12 +646,8 @@ async def test_interrupt_stops_avatar_audio_within_budget(
         for subscriber in subscribers:
             await subscriber.aclose()
 
-    assert time_to_silence is not None, (
-        "avatar audio never went silent after agent.interrupt within 5 s"
-    )
-    assert second_audible > 0, (
-        "session did not survive agent.interrupt — second utterance was inaudible"
-    )
+    assert time_to_silence is not None, "avatar audio never went silent after agent.interrupt within 5 s"
+    assert second_audible > 0, "session did not survive agent.interrupt — second utterance was inaudible"
 
 
 @pytest.mark.skipif(not _GATE_ENABLED, reason=_SKIP_REASON)
@@ -721,10 +696,7 @@ async def test_direct_publisher_clear_queue_stops_audio(
             audible_frames_before_clear=heard_before_clear,
             time_to_silence_seconds=time_to_silence,
             budget_seconds=_INTERRUPT_BUDGET_SECONDS,
-            within_budget=(
-                time_to_silence is not None
-                and time_to_silence <= _INTERRUPT_BUDGET_SECONDS
-            ),
+            within_budget=(time_to_silence is not None and time_to_silence <= _INTERRUPT_BUDGET_SECONDS),
             subscriber=listener.manifest(),
         )
     finally:
@@ -734,6 +706,4 @@ async def test_direct_publisher_clear_queue_stops_audio(
             await subscriber.aclose()
 
     assert heard_before_clear > 0, "direct publisher produced no audible audio at all"
-    assert time_to_silence is not None, (
-        "direct-publisher audio never went silent after AudioSource.clear_queue()"
-    )
+    assert time_to_silence is not None, "direct-publisher audio never went silent after AudioSource.clear_queue()"

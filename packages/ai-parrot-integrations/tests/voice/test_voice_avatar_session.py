@@ -3,11 +3,11 @@
 All external calls (LiveKitRoomManager, LiveAvatarClient, AvatarWebSocket) are
 mocked — no real network, LiveKit, or LiveAvatar connections.
 """
+
 from __future__ import annotations
 
 import pytest
 from parrot.integrations.liveavatar.voice_session import VoiceAvatarSession
-
 
 # patched_stack fixture lives in conftest.py (shared with integration tests)
 
@@ -94,13 +94,9 @@ async def test_start_with_avatar_id_override(patched_stack, mocker):
     captured_cfg: list = []
     mocker.patch(
         "parrot.integrations.liveavatar.voice_session.LiveAvatarConfig",
-        side_effect=lambda **kwargs: (
-            captured_cfg.append(kwargs) or LiveAvatarConfig(**kwargs)
-        ),
+        side_effect=lambda **kwargs: (captured_cfg.append(kwargs) or LiveAvatarConfig(**kwargs)),
     )
-    await VoiceAvatarSession.start(
-        agent_id="ag", session_id="sess-1", tenant_id=None, avatar_id="custom-av"
-    )
+    await VoiceAvatarSession.start(agent_id="ag", session_id="sess-1", tenant_id=None, avatar_id="custom-av")
     assert captured_cfg[0]["avatar_id"] == "custom-av"
 
 
@@ -224,9 +220,7 @@ async def test_viewer_credentials_on_the_injected_path(patched_stack):
 async def test_viewer_credentials_default_to_empty_without_a_viewer_token(
     patched_stack,
 ):
-    session = await VoiceAvatarSession.start(
-        agent_id="ag", session_id="b1", tenant_id="t", **_INJECTED
-    )
+    session = await VoiceAvatarSession.start(agent_id="ag", session_id="b1", tenant_id="t", **_INJECTED)
     assert session.viewer_credentials["client_token"] == ""
 
 
@@ -297,9 +291,7 @@ async def test_max_session_duration_reaches_the_config(patched_stack, mocker):
     captured: list = []
     mocker.patch(
         "parrot.integrations.liveavatar.voice_session.LiveAvatarConfig",
-        side_effect=lambda **kwargs: (
-            captured.append(kwargs) or LiveAvatarConfig(**kwargs)
-        ),
+        side_effect=lambda **kwargs: (captured.append(kwargs) or LiveAvatarConfig(**kwargs)),
     )
     await VoiceAvatarSession.start(
         agent_id="ag",
@@ -312,6 +304,7 @@ async def test_max_session_duration_reaches_the_config(patched_stack, mocker):
 
 
 # ── Startup deadline ───────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_startup_deadline_cleans_up(patched_stack):
@@ -365,9 +358,7 @@ async def test_startup_deadline_cleans_up_an_opened_websocket(patched_stack):
 
 @pytest.mark.asyncio
 async def test_startup_deadline_not_applied_when_unset(patched_stack):
-    session = await VoiceAvatarSession.start(
-        agent_id="ag", session_id="b1", tenant_id="t", **_INJECTED
-    )
+    session = await VoiceAvatarSession.start(agent_id="ag", session_id="b1", tenant_id="t", **_INJECTED)
     assert session.closed is False
 
 
@@ -380,9 +371,7 @@ async def test_avatar_startup_timeout_is_a_runtime_error(patched_stack):
 async def test_audit_properties(patched_stack):
     _rm, client, _ws, _tokens = patched_stack
     client.create_session_token.return_value.liveavatar_session_id = "vendor-123"
-    session = await VoiceAvatarSession.start(
-        agent_id="ag", session_id="b1", tenant_id="t", **_INJECTED
-    )
+    session = await VoiceAvatarSession.start(agent_id="ag", session_id="b1", tenant_id="t", **_INJECTED)
     assert session.liveavatar_session_id == "vendor-123"
     await session.aclose()
     assert session.closed is True

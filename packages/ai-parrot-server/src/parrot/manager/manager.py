@@ -1884,8 +1884,7 @@ class BotManager:
             from parrot.models.voice import VoiceConfig, VoiceProvider
         except ImportError as exc:
             self.logger.warning(
-                "Voice broadcast (FEAT-537) disabled (%s); install "
-                "'ai-parrot-integrations[broadcast]'.",
+                "Voice broadcast (FEAT-537) disabled (%s); install " "'ai-parrot-integrations[broadcast]'.",
                 exc,
             )
             return None, None
@@ -1932,14 +1931,10 @@ class BotManager:
         app.on_startup.append(_start_reconciler)
         app.on_cleanup.append(_close_service)
         app["voice_broadcast_service"] = service
-        self.logger.info(
-            "Voice broadcast (FEAT-537) enabled on worker %s.", service.worker_id
-        )
+        self.logger.info("Voice broadcast (FEAT-537) enabled on worker %s.", service.worker_id)
         return service, _nova_bot_factory
 
-    def _register_voice_broadcast_routes(
-        self, app: web.Application, service
-    ) -> bool:
+    def _register_voice_broadcast_routes(self, app: web.Application, service) -> bool:
         """Mount the broadcast HTTP API under the optional-integration guard.
 
         Args:
@@ -1954,14 +1949,11 @@ class BotManager:
                 register_voice_broadcast_routes,
             )
         except ImportError as exc:
-            self.logger.warning(
-                "Voice broadcast HTTP routes disabled (%s).", exc
-            )
+            self.logger.warning("Voice broadcast HTTP routes disabled (%s).", exc)
             return False
         register_voice_broadcast_routes(app, service)
         self.logger.info(
-            "Voice broadcast routes registered at "
-            "/api/v1/agents/{agent_id}/voice-broadcasts (FEAT-537)."
+            "Voice broadcast routes registered at " "/api/v1/agents/{agent_id}/voice-broadcasts (FEAT-537)."
         )
         return True
 

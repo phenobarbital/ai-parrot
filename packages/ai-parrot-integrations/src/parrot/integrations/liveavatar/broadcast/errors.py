@@ -9,6 +9,7 @@ Authorization failures (:class:`NotModerator`, :class:`NotSpeaker`) carry no
 public reason at all: they map to a bare ``403`` and must not tell the caller
 who the moderator or speaker actually is.
 """
+
 from __future__ import annotations
 
 from typing import ClassVar, Optional
@@ -48,9 +49,7 @@ class BroadcastError(Exception):
 class ViewerLimitReached(BroadcastError):
     """All :data:`~.models.MAX_VIEWERS` seats are reserved (HTTP 409)."""
 
-    default_reason: ClassVar[Optional[BroadcastReason]] = (
-        BroadcastReason.VIEWER_LIMIT_REACHED
-    )
+    default_reason: ClassVar[Optional[BroadcastReason]] = BroadcastReason.VIEWER_LIMIT_REACHED
     status: ClassVar[int] = 409
 
 
@@ -67,9 +66,7 @@ class IdentityTombstoned(BroadcastError):
     else is in the room.
     """
 
-    default_reason: ClassVar[Optional[BroadcastReason]] = (
-        BroadcastReason.VIEWER_LIMIT_REACHED
-    )
+    default_reason: ClassVar[Optional[BroadcastReason]] = BroadcastReason.VIEWER_LIMIT_REACHED
     status: ClassVar[int] = 409
 
 
@@ -89,27 +86,21 @@ class StaleVersion(BroadcastError):
 class FloorNotGranted(BroadcastError):
     """The participant does not hold the speaking floor (HTTP 403)."""
 
-    default_reason: ClassVar[Optional[BroadcastReason]] = (
-        BroadcastReason.FLOOR_NOT_GRANTED
-    )
+    default_reason: ClassVar[Optional[BroadcastReason]] = BroadcastReason.FLOOR_NOT_GRANTED
     status: ClassVar[int] = 403
 
 
 class StaleFloorEpoch(BroadcastError):
     """Input or a barrier acknowledgement arrived for a superseded floor epoch."""
 
-    default_reason: ClassVar[Optional[BroadcastReason]] = (
-        BroadcastReason.STALE_FLOOR_EPOCH
-    )
+    default_reason: ClassVar[Optional[BroadcastReason]] = BroadcastReason.STALE_FLOOR_EPOCH
     status: ClassVar[int] = 409
 
 
 class SpeakerConnectionExists(BroadcastError):
     """A different microphone socket is already bound to the floor (HTTP 409)."""
 
-    default_reason: ClassVar[Optional[BroadcastReason]] = (
-        BroadcastReason.SPEAKER_CONNECTION_EXISTS
-    )
+    default_reason: ClassVar[Optional[BroadcastReason]] = BroadcastReason.SPEAKER_CONNECTION_EXISTS
     status: ClassVar[int] = 409
 
 
