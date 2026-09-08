@@ -414,11 +414,17 @@ class NovaAudio:
         )
         from smithy_aws_core.identity.chain import create_default_chain
 
+        from ._voice_protocol import NovaVoiceProtocol
+
         client_cls = _resolve_voice_client_class()
 
         config_kwargs: Dict[str, Any] = {"region": self._region}
         access_key = getattr(self, "_aws_access_key", None)
         secret_key = getattr(self, "_aws_secret_key", None)
+        if bool(access_key) != bool(secret_key):
+            raise ValueError(
+                "Nova Sonic requires both aws_access_key and aws_secret_key when using explicit credentials"
+            )
         if access_key and secret_key:
             config_kwargs["aws_access_key_id"] = access_key
             config_kwargs["aws_secret_access_key"] = secret_key
@@ -427,13 +433,13 @@ class NovaAudio:
         elif getattr(self, "_aws_bearer_token", None):
             self.logger.warning(
                 "A Bedrock API key (bearer token) is configured, but the "
-                "Pre-Alpha voice SDK has no bearer-auth scheme — it cannot "
-                "authenticate a Nova Sonic stream. Falling back to the SDK's "
+                "Bedrock InvokeModelWithBidirectionalStream API does not support "
+                "bearer authentication. Falling back to the SDK's "
                 "environment/IMDS credential chain; pass aws_access_key/"
                 "aws_secret_key (or a named aws_id profile) for voice."
             )
 
-        config = Config(**config_kwargs)
+        config = Config(protocol=NovaVoiceProtocol(), **config_kwargs)
 
         # Setting the static key fields is NOT sufficient: the SDK leaves
         # ``aws_credentials_identity_resolver`` at None by default, and SigV4
@@ -1745,10 +1751,13 @@ class NovaAudio:
         # StopAsyncIteration so the loop can tell "stream ended" apart from
         # "next event is falsy".
         _STREAM_END = object()
-        events_iter = self._iter_events(stream)
+        events_iter: Optional[AsyncIterator[Dict[str, Any]]] = None
 
         async def _read_next_event():
+            nonlocal events_iter
             try:
+                if events_iter is None:
+                    events_iter = self._iter_events(stream)
                 return await events_iter.__anext__()
             except StopAsyncIteration:
                 return _STREAM_END
@@ -2052,7 +2061,10 @@ class NovaAudio:
             # metadata payload of {"error": ""} — undiagnosable, and falsy
             # enough that consumers testing truthiness miss the failure
             # entirely. Always include the exception type.
-            error_message = f"{type(exc).__name__}: {exc}" if str(exc) else type(exc).__name__
+            # Smithy modeled errors store the service's reason in .message;
+            # their str() can be empty even when AWS sent a detailed denial.
+            error_detail = getattr(exc, "message", None) or str(exc)
+            error_message = f"{type(exc).__name__}: {error_detail}" if error_detail else type(exc).__name__
 
             # Nova Sonic sends a ValidationException after 55 s of no audio
             # or interactive content — this is normal idle-session expiry,

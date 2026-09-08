@@ -324,6 +324,29 @@ class TestEnvelopeMigration:
     frame."""
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("stt_only", [False, True])
+    @pytest.mark.parametrize("message", ["AccessDeniedException: permission denied", ""])
+    async def test_provider_error_is_not_a_success(self, handler, connection, stt_only, message):
+        """Both relays must report failed turns, including empty SDK messages."""
+        connection.stt_only = stt_only
+        session = _HandlerVoiceSession(
+            client=_capable_mock_client(),
+            send_fn=connection.ws.send_json,
+            system_prompt="test voice prompt",
+            handler=handler,
+            connection=connection,
+        )
+        response = LiveVoiceResponse(is_complete=True, metadata={"error": message})
+        expected_message = message or "Unknown voice provider error"
+        await session._relay(response, turn_no=1)
+        assert _sent_types(connection) == ["error"]
+        assert connection.ws.send_json.await_args.args[0]["message"] == expected_message
+        connection.ws.send_json.reset_mock()
+        await handler._send_voice_response(connection, response)
+        assert _sent_types(connection) == ["error"]
+        assert connection.ws.send_json.await_args.args[0]["message"] == expected_message
+
+    @pytest.mark.asyncio
     async def test_transcription_frame_from_role(self, handler, connection):
         """Replaces test_user_transcription_still_forwarded's old
         metadata-key-based scenario with a direct role-based one."""

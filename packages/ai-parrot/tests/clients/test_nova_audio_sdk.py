@@ -139,6 +139,15 @@ class TestResolveVoiceClientClass:
 
 class TestOpenStream:
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("credentials", [{"aws_access_key": "test-key"}, {"aws_secret_key": "test-secret"}])
+    async def test_partial_credentials_do_not_fall_back_to_another_identity(self, credentials) -> None:
+        client = _make_client(**credentials)
+        with patch.object(audio_mod, "_resolve_voice_client_class") as sdk_client:
+            with pytest.raises(ValueError, match="both aws_access_key and aws_secret_key"):
+                await client._open_stream("amazon.nova-2-sonic-v1:0")
+        sdk_client.return_value.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_builds_real_config_and_operation_input(self):
         client = _make_client(region="us-west-2", aws_access_key="AKIATEST", aws_secret_key="SECRET")
         captured = {}
@@ -384,6 +393,62 @@ class TestCloseStream:
 
 
 class TestErrorReporting:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "payload, expected",
+        [
+            ({"Message": "Missing bedrock:InvokeModel permission"}, "Missing bedrock:InvokeModel permission"),
+            ({"message": "Modeled message", "Message": "Gateway message"}, "Modeled message"),
+            ({}, ""),
+        ],
+    )
+    async def test_gateway_message_reaches_real_sdk_exception(self, payload, expected) -> None:
+        """Exercise actual Smithy deserialization, including capitalized Message."""
+        from smithy_core.types import TypedProperties
+        from smithy_http import Field, Fields
+        from smithy_http.aio import HTTPResponse
+
+        from parrot.clients.amazon.nova._voice_protocol import NovaVoiceProtocol
+
+        operation = sdk_models.INVOKE_MODEL_WITH_BIDIRECTIONAL_STREAM
+        response = HTTPResponse(
+            status=403,
+            fields=Fields(
+                [
+                    Field(name="content-type", values=["application/json"]),
+                    Field(name="x-amzn-errortype", values=["AccessDeniedException"]),
+                ]
+            ),
+            body=json.dumps(payload).encode(),
+        )
+        with pytest.raises(sdk_models.AccessDeniedException) as caught:
+            await NovaVoiceProtocol().deserialize_response(
+                operation=operation,
+                request=MagicMock(),
+                response=response,
+                error_registry=operation.error_registry,
+                context=TypedProperties(),
+            )
+        assert caught.value.message == expected
+
+    @pytest.mark.asyncio
+    async def test_service_message_is_preserved(self) -> None:
+        """A modeled error's message may not appear in its string value."""
+        client = _make_client()
+        error = sdk_models.AccessDeniedException(message="Not authorized to invoke this model")
+
+        async def audio_iterator():
+            yield b"\x00\x00" * 8
+
+        stream = _FakeDuplexStream()
+        stream.await_output = AsyncMock(side_effect=error)
+        with (
+            patch.object(client, "_open_stream", return_value=stream),
+            patch.object(client, "_send_event", new=AsyncMock()),
+        ):
+            responses = [response async for response in client.stream_voice(audio_iterator())]
+        assert responses[-1].metadata["error"] == "AccessDeniedException: Not authorized to invoke this model"
+
     @pytest.mark.asyncio
     async def test_empty_service_error_still_reports_the_exception_type(self):
         """AWS's modelled errors (AccessDeniedException on a 403, for one) often

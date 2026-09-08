@@ -41,6 +41,15 @@ Requirements
   route stays mounted but reports itself unavailable, both proactively (the
   browser's provider toggle is disabled with a reason) and defensively (a
   session-start attempt returns a clear WebSocket error instead of hanging).
+  Voice requires SigV4 credentials with ``bedrock:InvokeModel`` permission
+  on ``amazon.nova-2-sonic-v1:0`` in the selected region. Set
+  ``AWS_NOVA_SONIC_KEY_ID``, ``AWS_NOVA_SONIC_SECRET_KEY``, and
+  ``AWS_NOVA_SONIC_REGION`` in ``env/.env`` (plus
+  ``AWS_NOVA_SONIC_SESSION_TOKEN`` for temporary credentials), or pass
+  explicit AWS credentials / ``aws_id`` to the bot factory. Otherwise the
+  voice SDK uses its environment/IMDS chain. ``AWS_NOVA_API_KEY`` alone
+  cannot authenticate voice: Bedrock API keys do not support
+  ``InvokeModelWithBidirectionalStream``.
 
 Usage
 -----
