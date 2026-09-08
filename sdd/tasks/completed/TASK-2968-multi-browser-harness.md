@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-537 — Nova VoiceBot avatar broadcast for multiple browsers
 **Spec**: `sdd/specs/voicebot-multiroom-heygen-avatar.spec.md`
-**Status**: pending
+**Status**: done-with-issues
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-2965, TASK-2967
@@ -96,7 +96,76 @@ async def test_browser_permissions_and_no_secret_leaks(...): ...
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
+**Completed by**: `sdd-worker` (autonomous session)
+**Date**: 2026-09-08
+**Status**: done-with-issues (see the product finding below)
+
 **Notes**:
-**Deviations from spec**:
+
+- Created `_broadcast_browser_fakes.py` (shared init script, multi-participant
+  `FakeRoom` with per-page media counters, server loader, measurement writer),
+  `test_voice_demo_multibrowser.py` (**9 passed**, stable over three consecutive runs)
+  and `test_voice_demo_multibrowser_live.py` (**2 passed, 3 skipped — NOT VERIFIED**).
+  `ruff check` clean. Full `tests/voice/` matches the pre-FEAT-537 baseline
+  (11 failed / 27 errors, all pre-existing environment breakage).
+- The suite drives the **real** example app — real REST handlers over a real
+  `BroadcastService`, the real page, real Chromium, up to eleven independent browser
+  contexts. Only the vendor boundaries are faked.
+- **Media is counted, not assumed.** Attached fake tracks tick real
+  `__videoFrames`/`__audioSamples` counters, so every assertion is "this browser received
+  media", not "a badge said connected" — spec §4 says explicitly that a connected badge
+  or a published track alone is insufficient.
+- **`getUserMedia` is a spy**, so scenario 8's "an ungranted participant never requests
+  the microphone" is a fact about the page.
+
+**🔴 PRODUCT FINDING — blocking, NOT fixed here (the task's scope says found bugs are
+noted, not fixed):**
+
+> **`BroadcastRegistry.confirm_viewer()` has no production caller, so no floor grant can
+> ever succeed.** Nothing in `BroadcastService`, the HTTP handlers or the control socket
+> transitions a lease from `pending` to `active`, but `grant_floor` requires the target
+> to be `active` — so a moderator pressing **Grant** would always get
+> `403 floor_not_granted`. Found by scenario 2 failing exactly that way against the real
+> service.
+>
+> Per spec §2 a lease becomes confirmed when presence is confirmed against LiveKit
+> (participant events or periodic reconciliation), so the fix belongs in
+> `BroadcastService` — most plausibly on control-socket attach plus reconciliation.
+> It is documented in `confirm_all_leases()` in the suite, which establishes the
+> precondition server-side so the browser scenarios exercise the real handoff machinery
+> instead of being blocked by it. **This must be fixed before FEAT-537 can be considered
+> functionally complete**, and is carried into TASK-2969.
+
+**Scenario coverage (each writes `artifacts/logs/feat-537-browser-<scenario>-<stamp>.json`;
+32 measurement files produced across runs):**
+
+| # | Scenario | Covered |
+|---|---|---|
+| 1 | Three browsers, one broadcast | ✅ one producer + one avatar session for three pages; non-zero video/audio counters on **each**; a viewer leaving does not disturb the others; a late joiner attaches already-flowing media |
+| 2 | Moderated handoff | ✅ hands raised grant nothing; grant alice → only alice may talk (moderator yields); grant bob → alice loses it in the same breath; reclaim; producer never rebuilt |
+| 3 | Races and departure | ✅ simultaneous joins → one moderator; conflicting grants → exactly `["ok", "stale_version"]`; moderator closes tab → both remaining pages converge on the same successor |
+| 4 | Ten-viewer limit | ✅ ten live pages, eleventh (with a **valid** token, so it tests the seat limit and not auth) → `viewer_limit_reached`; one producer, one avatar session |
+| 5 | Startup degradation | ✅ every page shows `audio_only` / `avatar_startup_timeout`, attaches `direct-pub`, hears audio, and attaches **no** avatar media |
+| 6 | Runtime degradation | ✅ parametrised over `avatar_control_close` and `avatar_track_lost` via the demo hook; per-page switch latency measured and asserted **< 3 s**; avatar tracks detached; late avatar reappearance rejected |
+| 7 | Stop and owner death | ✅ moderator Stop ends it on every page; `owner_death` injection lands `ended`/`failed` |
+| 8 | Permissions and hygiene | ✅ ungranted page: 0 `getUserMedia` calls, and a `ready_to_speak` frame does not change that; tokens absent from URL, `localStorage` **and** console; share link is `/?broadcast=<id>` |
+
+**Deviations from spec — two, both about not fabricating evidence:**
+
+1. **No real Nova turns are driven.** Scenarios 1 and 2 assert broadcast state, roles and
+   per-page media rather than spoken turns with transcripts and tool calls. Driving a
+   *faked* provider through a "spoken turn" would produce a green test that says nothing
+   about transcripts, interruption latency or audio quality — the very things AC10
+   reserves for real vendors. What is asserted here is real; what is not asserted is
+   named rather than simulated.
+2. **The live variant is a gated harness, not an implemented run.** Its three scenarios
+   are skipped without credentials (with a NOT VERIFIED reason naming every missing
+   variable and pointing at the gate report) and `pytest.fail` with an explanation if
+   somehow reached. Authoring assertions about track manifests, codecs and lip-sync
+   against an account I cannot reach would be inventing vendor behaviour. Two assertions
+   **do** run unconditionally: that the gate is off by default and that its skip reason
+   says NOT VERIFIED — so a green CI run can never be mistaken for real-vendor coverage.
+
+Also recorded: one full-suite run showed a single extra browser-test failure under load;
+three consecutive isolated runs of the module were 9/9, so it is a load flake rather than
+a defect, but it is worth watching in CI.
