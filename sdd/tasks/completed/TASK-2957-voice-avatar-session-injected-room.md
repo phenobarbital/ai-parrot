@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-537 — Nova VoiceBot avatar broadcast for multiple browsers
 **Spec**: `sdd/specs/voicebot-multiroom-heygen-avatar.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2955
@@ -109,7 +109,55 @@ async def test_broadcast_mode_configures_ws_callbacks(patched_stack, mocker): ..
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
+**Completed by**: `sdd-worker` (autonomous session)
+**Date**: 2026-09-08
+**Status**: done
+
 **Notes**:
-**Deviations from spec**:
+
+- `VoiceAvatarSession.start` gains the keyword-only `livekit_url`, `room_name`,
+  `avatar_publisher_token`, `viewer_token`, `avatar_identity`, `broadcast`, `on_event`,
+  `on_close`, `send_timeout_s`, `startup_deadline_s`, `max_session_duration_s`. New
+  read-only properties: `liveavatar_session_id`, `room_name`, `avatar_identity`,
+  `closed`. New module-level `AvatarStartupTimeout(RuntimeError)`.
+- Tests: `pytest .../test_voice_avatar_session.py -q` → **22 passed** (9 pre-existing +
+  13 new). Regression across `test_voicechat_avatar_integration.py`,
+  `test_voice_handler_avatar.py` and all of `tests/integrations/liveavatar/` →
+  **240 passed**. `ruff check` clean. `tests/voice/conftest.py` needed no change — the
+  existing `patched_stack` already exposes the room-manager mock, so
+  `rm.mint_room_tokens.assert_not_called()` works as-is.
+- **The `livekit_config` keys are unchanged and asserted exactly**:
+  `{"livekit_url", "livekit_room", "livekit_client_token"}`, carrying the *avatar's*
+  publisher token. Spec §2 pins these against the OpenAPI `LiveKitConfigSchema` (SHA
+  `8f589bc4…`) and warns not to adopt the configuration guide's shorthand.
+- **Partial injection raises `ValueError`** rather than falling back to minting. Two of
+  three arguments silently minting a *second* room is the exact failure this task
+  exists to prevent — it would put the avatar in a room no viewer is subscribed to.
+- **Cleanup on the startup deadline catches `BaseException`, not `Exception`.** This is
+  the subtle part: `asyncio.wait_for` cancels the inner coroutine, which surfaces as
+  `CancelledError` — a `BaseException` since 3.8. The pre-existing `except Exception`
+  block would not have run, leaking a live vendor session that keeps billing and holds
+  the room. Steps 3–6 were extracted into a nested `_bring_up()` so the deadline wraps
+  exactly the cancellable unit, with the cleanup inside it. Two tests cover both
+  windows: timeout before the WS is opened, and timeout while awaiting the connected
+  gate (the latter asserts `ws.__aexit__` was awaited too).
+- **Broadcast WS configuration is asserted as an exact kwargs dict**
+  (`auto_reconnect=False, aggregate=True, on_event, on_close, send_timeout_s`) and the
+  non-broadcast path is asserted to construct `AvatarWebSocket(handle)` with **no**
+  kwargs at all — so the single-user FEAT-536 path cannot drift into broadcast
+  semantics by accident.
+- `viewer_credentials` is unchanged for the legacy path and returns
+  `client_token=viewer_token or ""` on the injected path; a test asserts the avatar
+  publisher token appears nowhere in it. Broadcast participants get per-lease tokens
+  from the admission API instead.
+- `LiveKitRoomTokens` is still what `__init__` receives on both paths, so the
+  constructor signature is unchanged for existing callers; the injected path just fills
+  it in directly. The source comments that `agent_token` there is the **avatar**
+  publisher token, never the direct one.
+- Startup elapsed time is logged at INFO with the broadcast flag, which is the only
+  measurement available until the TASK-2950 live gate runs and the 15 s deadline can be
+  validated against a real vendor.
+
+**Deviations from spec**: none. One addition beyond the literal list: the
+`injected_credentials` constructor flag, recorded so a later caller can tell the two
+provenance paths apart without re-deriving it from the tokens.
