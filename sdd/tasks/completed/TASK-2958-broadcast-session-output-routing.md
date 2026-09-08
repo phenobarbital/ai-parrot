@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-537 — Nova VoiceBot avatar broadcast for multiple browsers
 **Spec**: `sdd/specs/voicebot-multiroom-heygen-avatar.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-2950, TASK-2952, TASK-2954, TASK-2955, TASK-2956, TASK-2957
@@ -103,7 +103,80 @@ async def test_aclose_idempotent_and_cancellation_safe(): ...
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
+**Completed by**: `sdd-worker` (autonomous session)
+**Date**: 2026-09-08
+**Status**: done
+
 **Notes**:
-**Deviations from spec**:
+
+- Created `broadcast/session.py` (`BroadcastSession`, `ROOM_CAPACITY=12`,
+  `STOP_POLL_S`, `DIRECT_TRACK_NAME="direct-voice"`), exported it from the package,
+  and added `tests/voice/test_voice_broadcast_media.py`.
+- Tests: `pytest .../test_voice_broadcast_media.py -q` → **30 passed**. Whole
+  `tests/voice/` → **318 passed** (baseline was 137; the 11 failures / 27 errors are the
+  same pre-existing environment ones — `ai-parrot-client-*` satellites are not installed
+  in this venv). `ruff check` clean.
+- **Startup order is asserted, not assumed**: the fake room manager's call log must read
+  `create_room → mint(direct-…) → mint(avatar-…)`, and the two publisher identities must
+  differ. `max_participants` is asserted `== ROOM_CAPACITY == 12` with the spec §7
+  reason inline. The direct publisher exists before the avatar is even tokenised, so an
+  avatar failure degrades in the room the audience already joined.
+- **Avatar failure at all four stages is parametrised** (token mint, `start_session`,
+  WS gate, startup deadline) — each selects `audio_only`, leaves the publisher alive,
+  raises nothing at the caller, and is followed by an assertion that audio actually
+  flows to the direct sink. Only the deadline maps to `avatar_startup_timeout`; the rest
+  map to `avatar_control_lost`.
+- **A LiveKit/room failure is `failed`, never a fallback** (AC7). `start()` re-raises
+  after `_abort()`, and the descriptor shows `failed` / `livekit_failure`. Direct
+  publisher failure does the same — there is no sink below it.
+- **Ambiguity handling is the subtle part.** On cutover only frames still *in the deque*
+  are re-routed; the frame whose send was in flight is counted in
+  `dropped_ambiguous_samples` and dropped. `test_cutover_forwards_only_unsubmitted_frames`
+  pins exactly that: 240 ambiguous samples dropped, 3 frames forwarded, nothing spoken
+  twice. Retained frames are **re-stamped** with the new `output_epoch` — without that
+  the pump would reject the very frames the cutover was trying to save.
+- **`audio_only` is sticky**, verified against every late avatar signal
+  (`agent.speak_started`, a fresh `connected`, a fatal error, participant loss):
+  `test_stale_avatar_event_cannot_recover` asserts the state and `output_epoch` are
+  unmoved and that audio still reaches only the direct sink.
+- **The handoff barrier is acknowledged by the pump, not assumed.** `switch_speaker`
+  bumps a generation and waits for the pump to observe it; a cancelled pump makes the
+  barrier time out and raise `stale_floor_epoch`, so the caller leaves the floor idle
+  rather than installing a second speaker (`test_switch_speaker_barrier_times_out`).
+- **Bounded-queue policy needed a correction found by a failing test.** The first
+  implementation re-offered the overflow frame through `push_audio` after cutting over —
+  but the cutover has just refilled the queue with the retained backlog, so the recursive
+  call saw a full queue in `audio_only` and aborted the turn, i.e. the fallback killed
+  the speech it existed to save. It now appends directly if it fits and otherwise drops
+  one frame: spec §2 accepts "a brief gap" at the cutover boundary but never unbounded
+  accumulation. Sustained overflow in `audio_only` still aborts the turn with
+  `livekit_failure`.
+- `interrupt()` clears **all three** layers — deque, vendor (`avatar.interrupt()`), and
+  the native `AudioSource` queue via `publisher.flush()` (a real `clear_queue` since
+  TASK-2956). `finish_turn()` is the only place that *waits* for playout, and only on
+  the active sink; spec §2 forbids waiting for stale audio during cancellation.
+- Owner renewal failure closes the session immediately with `owner_lost` and the test
+  proves publication really stopped (a later `push_audio` produces nothing). The owner
+  loop also polls the stop flag at 1 Hz and runs the speech watchdog, which deliberately
+  returns `False` when nothing was sent recently — idle silence is not failure (spec §2).
+- Every vendor-timing threshold is a constructor knob (`avatar_startup_deadline_s`,
+  `speech_watchdog_s`, `send_deadline_s`, `max_queued_bytes`, `max_session_duration_s`)
+  because TASK-2950's live gate did **not** run; the module docstring says so.
+- Avatar event *names* are matched by substring (`speak`, `error`/`fail`), never
+  hard-coded, for the same reason.
+
+**Deviations from spec — one, and it needs a follow-up decision:**
+
+The task's Scope says `transition(avatar, output_epoch+1, avatar_identity=…,
+direct_identity=…)`. **`BroadcastRegistry.transition` has no such parameters** — TASK-2952
+defined it as `(tenant_id, broadcast_id, new_state, *, output_epoch, reason,
+expected_owner_epoch)`, and TASK-2958's own Files table lists only `session.py`,
+`__init__.py` and the test module, so adding them here would violate file fidelity (and
+would also require re-writing TASK-2953's Lua `transition` script, well outside scope).
+
+Resolution taken: the session owns `room_name` / `avatar_identity` / `direct_identity`
+and exposes them through a credential-free `media_state()` snapshot (tested to contain no
+`token`/`secret`/`ws_url`/`api_key`). **TASK-2961 (`BroadcastService`) or TASK-2962 must
+persist these onto the descriptor**, otherwise `BroadcastPublicState.selected_identity`
+and the selected track ids stay `None` and the browser policy in TASK-2964 has nothing to
+select on. Flagging it here rather than silently widening another task's API.
