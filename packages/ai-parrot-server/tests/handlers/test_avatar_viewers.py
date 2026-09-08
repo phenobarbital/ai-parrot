@@ -15,6 +15,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from aiohttp import web
+
 from parrot.handlers.avatar import AVATAR_SESSIONS_KEY, _mint_viewer_tokens
 
 
@@ -198,3 +200,52 @@ async def test_two_viewer_tokens_same_room():
     assert viewers[0]["livekit_url"] == viewers[1]["livekit_url"]
     # But identities differ
     assert viewers[0]["identity"] != viewers[1]["identity"]
+
+
+# ---------------------------------------------------------------------------
+# FEAT-537 (TASK-2962): the legacy viewer helper must not admit broadcast rooms
+# ---------------------------------------------------------------------------
+
+async def test_legacy_viewer_helper_rejects_broadcast_room() -> None:
+    """A broadcast room name is not mintable through the legacy bypass.
+
+    ``_mint_viewer_tokens`` will mint up to 50 subscribe tokens for *any*
+    ``session_id`` present in ``app[AVATAR_SESSIONS_KEY]``, with no seat
+    accounting, no lease and no moderator concept. FEAT-537's ten-seat rule
+    lives entirely in the broadcast registry, so a broadcast room reachable
+    through this helper would be an unbounded admission bypass (spec §2
+    "Viewer admission compatibility").
+
+    The guarantee is structural: ``BroadcastService`` never writes to that
+    store, so a broadcast id can never be found there. This test pins that —
+    if a future change starts registering broadcasts in the avatar store, it
+    fails here rather than silently reopening the bypass.
+    """
+    broadcast_room = "bcast-bc-0123456789abcdef"
+    # An avatar store populated by the legacy path only.
+    store = {"legacy-avatar-session": {"room": "legacy-avatar-session"}}
+    req = _make_request({"session_id": broadcast_room, "count": 3}, app_store=store)
+
+    # The helper signals a missing session by raising HTTPNotFound.
+    with pytest.raises(web.HTTPNotFound):
+        await _mint_viewer_tokens(req)
+
+
+def test_broadcast_service_never_writes_to_the_avatar_session_store() -> None:
+    """No code path in the broadcast package touches AVATAR_SESSIONS_KEY."""
+    import pathlib
+
+    import parrot.integrations.liveavatar.broadcast as broadcast_pkg
+
+    package = pathlib.Path(broadcast_pkg.__file__).parent
+    assert package.is_dir(), f"broadcast package not found at {package}"
+    offenders = [
+        path.name
+        for path in package.glob("*.py")
+        if "AVATAR_SESSIONS_KEY" in path.read_text() or "avatar_sessions" in path.read_text()
+    ]
+    assert offenders == [], (
+        f"{offenders} reference the legacy avatar session store; a broadcast "
+        "registered there would be admissible through _mint_viewer_tokens "
+        "without any seat accounting"
+    )

@@ -8,6 +8,7 @@ from typing import Any, Dict, Type, Optional, Tuple, List, TYPE_CHECKING
 from importlib import import_module
 from pathlib import Path
 import contextlib
+import os
 import time
 import asyncio
 import copy
@@ -1836,9 +1837,132 @@ class BotManager:
             )
             return False
 
-        handler = VoiceChatHandler()
+        broadcast_service, nova_bot_factory = self._build_broadcast_service(app)
+        handler = VoiceChatHandler(
+            broadcast_service=broadcast_service,
+            nova_bot_factory=nova_bot_factory,
+        )
         handler.setup_routes(app, include_health=False, include_static=False)
         self.logger.info("VoiceChatHandler registered at /ws/voice (Mode D).")
+        if broadcast_service is not None:
+            self._register_voice_broadcast_routes(app, broadcast_service)
+        return True
+
+    def _build_broadcast_service(self, app: web.Application):
+        """Build the FEAT-537 broadcast service, or ``(None, None)``.
+
+        Guarded exactly like every other optional integration: a server without
+        ``PARROT_BROADCAST_REDIS_URL``, without the LiveKit/Redis extras, or
+        without LiveKit credentials still boots — broadcast mode is simply not
+        offered.  Returning ``None`` also leaves ``/ws/voice`` byte-identical to
+        its pre-FEAT-537 behaviour.
+
+        Args:
+            app: The aiohttp Application (used for startup/cleanup hooks).
+
+        Returns:
+            ``(service, nova_bot_factory)``, or ``(None, None)`` when disabled.
+        """
+        redis_url = os.environ.get("PARROT_BROADCAST_REDIS_URL")
+        if not redis_url:
+            self.logger.info(
+                "Voice broadcast (FEAT-537) disabled: set "
+                "PARROT_BROADCAST_REDIS_URL to enable moderated multi-browser "
+                "broadcasts."
+            )
+            return None, None
+
+        try:
+            from parrot.bots.voice import create_voice_bot
+            from parrot.integrations.liveavatar.broadcast.redis_registry import (
+                RedisBroadcastRegistry,
+            )
+            from parrot.integrations.liveavatar.broadcast.service import (
+                BroadcastService,
+            )
+            from parrot.integrations.liveavatar.room_manager import LiveKitRoomManager
+            from parrot.models.voice import VoiceConfig, VoiceProvider
+        except ImportError as exc:
+            self.logger.warning(
+                "Voice broadcast (FEAT-537) disabled (%s); install "
+                "'ai-parrot-integrations[broadcast]'.",
+                exc,
+            )
+            return None, None
+
+        try:
+            room_manager = LiveKitRoomManager()
+        except KeyError as exc:
+            self.logger.warning(
+                "Voice broadcast (FEAT-537) disabled: missing LiveKit env var %s.",
+                exc,
+            )
+            return None, None
+
+        def _nova_bot_factory():
+            """Build the single Nova VoiceBot one broadcast uses.
+
+            A broadcast fixes the provider for its lifetime (spec §2), so this
+            is deliberately separate from the handler's general bot factory,
+            which the UI may rebind when a user switches provider.
+            """
+            return create_voice_bot(
+                name="BroadcastAgent",
+                voice_config=VoiceConfig(
+                    provider=VoiceProvider.NOVA,
+                    model="nova-2-sonic",
+                    voice_name="matthew",
+                ),
+            )
+
+        registry = RedisBroadcastRegistry.from_url(redis_url)
+        service = BroadcastService(
+            registry,
+            room_manager,
+            nova_bot_factory=_nova_bot_factory,
+        )
+
+        async def _start_reconciler(_app: web.Application) -> None:
+            service.start_reconciler()
+
+        async def _close_service(_app: web.Application) -> None:
+            await service.aclose()
+            await registry.aclose()
+
+        app.on_startup.append(_start_reconciler)
+        app.on_cleanup.append(_close_service)
+        app["voice_broadcast_service"] = service
+        self.logger.info(
+            "Voice broadcast (FEAT-537) enabled on worker %s.", service.worker_id
+        )
+        return service, _nova_bot_factory
+
+    def _register_voice_broadcast_routes(
+        self, app: web.Application, service
+    ) -> bool:
+        """Mount the broadcast HTTP API under the optional-integration guard.
+
+        Args:
+            app: The aiohttp Application.
+            service: The built ``BroadcastService``.
+
+        Returns:
+            ``True`` if the routes were registered.
+        """
+        try:
+            from parrot.handlers.voice_broadcast import (
+                register_voice_broadcast_routes,
+            )
+        except ImportError as exc:
+            self.logger.warning(
+                "Voice broadcast HTTP routes disabled (%s).", exc
+            )
+            return False
+        register_voice_broadcast_routes(app, service)
+        self.logger.info(
+            "Voice broadcast routes registered at "
+            "/api/v1/agents/{agent_id}/voice-broadcasts (FEAT-537)."
+        )
         return True
 
     def _register_avatar_routes(self, router) -> bool:
