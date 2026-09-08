@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-538 - Recoverable Task Memory for WorkingMemoryToolkit
 **Spec**: `sdd/specs/workingmemory-toolkit.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2976, TASK-2980, TASK-2992
@@ -144,4 +144,67 @@ New test modules should use local fixtures unless the shared fixture task is alr
 
 ## Completion Note
 
-Not completed. The implementing agent records completed-by, date, verification evidence, notes, and any approved deviations here when acceptance passes.
+**Completed by**: Claude Opus 5 (sdd-worker, delegated fork) — session `01WeeSf3QmPq58bBxturogRX`
+**Date**: 2026-09-08
+**Status**: done
+
+### Evidence
+- `test_repl_binding_resolver.py` → **21 passed, 0 skipped**.
+  `test_strict_worker_transport.py` still **23 passed**.
+  Log: `artifacts/logs/task-2993-tm-repl-resolver.log`.
+- `ruff`/`black`/`isort` clean.
+
+### A REAL subprocess ran — verified, not skipped
+`test_real_subprocess_worker_round_trip` spawns an actual `WorkerHandle`,
+injects a 20-row frame through the strict Arrow/shm path and reads it
+back with `assert_frame_equal`. Confirmed with `-v` that it reports
+**PASSED** rather than SKIPPED, and re-confirmed independently during
+review. The in-process handle is covered separately, and both are
+asserted to satisfy the `WorkerLike` protocol.
+
+### Ordering is the guarantee, and it is asserted as such
+Scope, existence, availability, kind, verifiability and the byte ceiling
+are all settled **before** any load; the fingerprint is verified **before**
+any injection; the binding is published only **after** the worker
+acknowledges.
+
+Every refusal test asserts `worker.call_count == 0`. This matters: a
+resolver that injected and *then* returned a refusal would pass a naive
+"it refused" assertion having already done the damage.
+
+### Design decisions
+1. **`artifact_locatable` is on every result, and both halves are
+   asserted.** A stale binding and lost bytes are different failures.
+   Reporting lost evidence as a stale binding hides data loss; reporting
+   a stale binding as lost evidence makes a routine worker restart look
+   like corruption.
+2. **A foreign scope and a nonexistent version return the identical
+   refusal** (`unknown_version`), deliberately — distinguishing them
+   would make this an existence oracle for another scope's artifact ids.
+3. **Fingerprints are recomputed via `snapshots.py`**, not re-derived.
+   Two independent implementations of "the canonical bytes" would
+   eventually disagree, and the disagreement would surface as a spurious
+   mutation report.
+4. **`ReplBinding.worker_session_id` carries the handle's `generation`
+   string** (a uuid4 hex), matching how the committed `recall.py` already
+   reads it (`binding.worker_session_id != availability.worker_generation`),
+   so recall's staleness check works against these bindings unchanged.
+   The model's separate integer `worker_generation` stays 0.
+5. **The public surface is asserted to be exactly `{describe, load}`**, so
+   no bulk namespace-restore entry point can be added without a test
+   noticing.
+
+### Two test bugs of its own, fixed rather than worked around
+The first structural checks used substring matching over raw source and
+so flagged the modules' **own prose** ("there is no pickle fallback",
+"never calls `load_payload`"). Replaced with an AST walk over referenced
+identifiers — the stronger check anyway, since *documenting* that you
+never call something is fine while *calling* it is not.
+
+### CONTRACT CORRECTION
+The task listed `inject_dataframe(self, name, df)` at `handle.py:1036` —
+the **pre-TASK-2992** signature. The committed one is
+`inject_dataframe(name, df, *, strict=, envelope=, max_bytes=)`, and
+`WorkerHandle.generation` did not exist at the pinned commit either. Both
+are TASK-2992 outputs and were correctly flagged in the task's "Does NOT
+Exist" section; the implementation codes against the committed reality.

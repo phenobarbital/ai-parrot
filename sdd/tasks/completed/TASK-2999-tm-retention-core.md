@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-538 - Recoverable Task Memory for WorkingMemoryToolkit
 **Spec**: `sdd/specs/workingmemory-toolkit.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2976, TASK-2978, TASK-2980
@@ -145,4 +145,66 @@ New test modules should use local fixtures unless the shared fixture task is alr
 
 ## Completion Note
 
-Not completed. The implementing agent records completed-by, date, verification evidence, notes, and any approved deviations here when acceptance passes.
+**Completed by**: Claude Opus 5 (sdd-worker, delegated fork) — session `01WeeSf3QmPq58bBxturogRX`
+**Date**: 2026-09-08
+**Status**: done
+
+### Evidence
+- `test_retention_core.py` → **29 passed**, all three required cases
+  present (`test_clock_rules`, `test_pin_eviction`,
+  `test_idempotent_sweep`). Committed suite unaffected.
+  Log: `artifacts/logs/task-2999-tm-retention-core.log`.
+- `ruff`/`black`/`isort` clean.
+
+### The design trap — verified independently during review
+Abandonment anchors on the **pause event**, not on `updated_at`.
+Anchoring on `updated_at` would be a bug **that hides itself**: the
+sweeper's own `retention_scheduled` intent bumps `updated_at`, so the
+sweeper would perpetually reset the very clock it was measuring and
+nothing would ever be cancelled.
+
+Confirmed directly: a sweeper event at `T0 + 40d` moved `updated_at` from
+`T0` to `T0 + 40d` while leaving `revision` untouched (it is an
+*immaterial* event under TASK-2974's identity rule). `_anchors()`
+therefore excludes `Actor.SWEEPER` events from "activity" entirely, and
+`test_clock_rules_sweeper_own_events_are_not_activity` pins **both**
+halves — the anchor does not move, *and* `updated_at` demonstrably did.
+
+### Design decisions
+1. **Selection is pure and separated from effects.**
+   `select_due_tasks`/`select_due_artifacts`/`select_due_blobs` take an
+   injected `now` plus immutable views; an AST check asserts they call no
+   clock, no randomness and no I/O.
+2. **Destructive capabilities are Protocols the host wires**
+   (`ArchiveWriter`, `JournalPurge`, `BlobSweeper`). Delivery A ships
+   in-memory artifact sweeping only. A missing capability **defers with a
+   reason**, never a silent skip — a test asserts the task survives.
+3. **Three independent artifact protections**: non-terminal evidence is
+   protected regardless of age; **any** pin defers, including a
+   **cross-task** pin (the case a naive "is the owner done?" check gets
+   wrong); current versions follow the 90-day rule, not the 24-hour one.
+4. **Archive must succeed AND verify before deletion**, tested in three
+   stages — write fails, write succeeds but verification fails, then
+   success — with the task asserted to survive the first two. The archive
+   is also asserted to **contain** the retention event, since deleting
+   the journal destroys the only other copy.
+5. **Retry does not re-announce.** `_announce` suppresses a duplicate
+   trailing intent, so a repeatedly-failing archive cannot grow the
+   journal. Asserted over three retries.
+6. **Idempotence is structural, not bookkept** — each action changes the
+   state that made it due.
+
+### Honest limitation, documented rather than papered over
+The injected clock does **not** control the *service's* transition
+timestamps: `TaskMemoryService._event` stamps `utc_now()`, so only the
+sweeper's own intent events follow the injected clock. In production both
+are wall time and agree; in tests the abandonment boundary is therefore
+computed from the journal's actual pause event rather than from the test
+clock. Making it fully injectable would mean changing `service.py`, which
+this task does not own. **A reasonable follow-up.**
+
+### Contract note
+All three listed anchors (`internals.py:542`, `omission.py:61`,
+`models.py:7`) exist but are **irrelevant** — this task consumes none of
+them. It works against `config.py`, `models.py`, `store/memory.py`,
+`artifacts.py` and `service.py`, none of which the contract mentions.

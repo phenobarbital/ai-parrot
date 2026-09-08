@@ -848,7 +848,7 @@
       "feature_id": "FEAT-538",
       "feature": "workingmemory-toolkit",
       "spec": "sdd/specs/workingmemory-toolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "estimated_hours": 4,
@@ -868,9 +868,9 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": "2026-09-08T13:39:08+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2993-tm-repl-resolver.md",
-      "verification": null,
+      "completed_at": "2026-09-08T16:29:40+00:00",
+      "file": "sdd/tasks/completed/TASK-2993-tm-repl-resolver.md",
+      "verification": "21 focused tests incl. a REAL worker subprocess round trip (confirmed PASSED, not skipped); strict transport suite still 23 passed",
       "owned_files": [
         "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/repl.py",
         "packages/ai-parrot/tests/tools/working_memory/task_memory/test_repl_binding_resolver.py"
@@ -1071,7 +1071,7 @@
       "feature_id": "FEAT-538",
       "feature": "workingmemory-toolkit",
       "spec": "sdd/specs/workingmemory-toolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "estimated_hours": 4,
@@ -1091,9 +1091,9 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": "2026-09-08T13:39:08+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2999-tm-retention-core.md",
-      "verification": null,
+      "completed_at": "2026-09-08T16:29:40+00:00",
+      "file": "sdd/tasks/completed/TASK-2999-tm-retention-core.md",
+      "verification": "29 focused tests with an injected clock; the updated_at self-reset hazard verified independently; ruff/black/isort clean",
       "owned_files": [
         "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/retention.py",
         "packages/ai-parrot/tests/tools/working_memory/task_memory/test_retention_core.py"
