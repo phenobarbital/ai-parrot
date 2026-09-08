@@ -35,37 +35,38 @@ if str(_SERVER_PKG_SRC) not in sys.path:
     sys.path.insert(0, str(_SERVER_PKG_SRC))
 
 
-def _install_client_stubs() -> Optional[str]:
-    """Make ``server.py`` importable without the client satellites.
+def _client_stub_modules() -> Optional[Dict[str, Any]]:
+    """Build stand-ins for the client satellites, when they are absent.
 
     ``server.py`` imports ``GeminiLiveClient`` and ``NovaClient`` at module
-    level (from the ``ai-parrot-client-google`` / ``-amazon`` distributions)
-    purely to read each provider's ``voice_capabilities`` descriptor for the
-    UI panel.  Neither is involved in broadcast wiring, so when the satellites
-    are absent this installs minimal stubs rather than skipping the whole
-    module — the pre-existing ``test_voice_demo_assets.py`` /
-    ``test_voice_demo_avatar_browser.py`` modules fail to collect for exactly
-    this reason, and adding a third un-runnable module would hide whether
-    FEAT-537's own wiring is sound.
+    level (from ``ai-parrot-client-google`` / ``-amazon``) purely to read each
+    provider's ``voice_capabilities`` descriptor for the UI panel.  Neither is
+    involved in broadcast wiring, so when the satellites are missing these
+    stubs let the example import and the FEAT-537 wiring actually be tested,
+    instead of adding a third un-runnable module (``test_voice_demo_assets.py``
+    and ``test_voice_demo_avatar_browser.py`` already fail to collect for
+    exactly this reason).
 
-    The stubs expose a real :class:`VoiceCapabilities` so the capability panel
-    still serialises correctly; nothing else about them is exercised.
+    Installed per test via ``monkeypatch.setitem`` so they are reverted
+    afterwards — a process-global install would change how *other* test
+    modules import and is exactly the kind of cross-test pollution that makes
+    a suite order-dependent.
 
     Returns:
-        The reason stubs were installed, or ``None`` when the real clients are
-        present and were used.
+        ``{module_name: module}`` to install, or ``None`` when the real
+        clients are importable.
     """
     try:
         import parrot.clients.google.live  # noqa: F401
         import parrot.clients.amazon.nova  # noqa: F401
-    except Exception as exc:  # noqa: BLE001
-        reason = str(exc)
+    except Exception:  # noqa: BLE001
+        pass
     else:
         return None
 
     from parrot.models.voice import AudioFormat, VoiceCapabilities, VoiceProvider
 
-    def _caps(provider: VoiceProvider, voice: str) -> VoiceCapabilities:
+    def _caps(provider: Any, voice: str) -> Any:
         return VoiceCapabilities(
             provider=provider,
             native_stt_only=True,
@@ -101,24 +102,18 @@ def _install_client_stubs() -> Optional[str]:
         def voice_capabilities(self) -> Any:
             return _caps(VoiceProvider.NOVA, "matthew")
 
+    google_pkg = types.ModuleType("parrot.clients.google")
     google_live = types.ModuleType("parrot.clients.google.live")
     google_live.GeminiLiveClient = _StubGemini  # type: ignore[attr-defined]
+    amazon_pkg = types.ModuleType("parrot.clients.amazon")
     amazon_nova = types.ModuleType("parrot.clients.amazon.nova")
     amazon_nova.NovaClient = _StubNova  # type: ignore[attr-defined]
-
-    for name, module in (
-        ("parrot.clients.google", types.ModuleType("parrot.clients.google")),
-        ("parrot.clients.google.live", google_live),
-        ("parrot.clients.amazon", types.ModuleType("parrot.clients.amazon")),
-        ("parrot.clients.amazon.nova", amazon_nova),
-    ):
-        sys.modules.setdefault(name, module)
-    sys.modules["parrot.clients.google.live"] = google_live
-    sys.modules["parrot.clients.amazon.nova"] = amazon_nova
-    return reason
-
-
-_STUB_REASON = _install_client_stubs()
+    return {
+        "parrot.clients.google": google_pkg,
+        "parrot.clients.google.live": google_live,
+        "parrot.clients.amazon": amazon_pkg,
+        "parrot.clients.amazon.nova": amazon_nova,
+    }
 
 
 def _load_server_module(name: str = "voice_demo_server_broadcast"):
@@ -133,7 +128,11 @@ def _load_server_module(name: str = "voice_demo_server_broadcast"):
 
 @pytest.fixture
 def server_module(monkeypatch: pytest.MonkeyPatch):
-    """A freshly imported server module with a clean broadcast environment."""
+    """A freshly imported server module with a clean broadcast environment.
+
+    Client stubs (when needed) are installed through ``monkeypatch`` so they
+    disappear with the test and cannot change how any other module imports.
+    """
     for name in (
         "VOICEBOT_BROADCAST_REDIS_URL",
         "VOICEBOT_DEMO_PARTICIPANTS",
@@ -141,7 +140,16 @@ def server_module(monkeypatch: pytest.MonkeyPatch):
         "VOICEBOT_BROADCAST_WORKER_ID",
     ):
         monkeypatch.delenv(name, raising=False)
-    return _load_server_module()
+
+    stubs = _client_stub_modules()
+    if stubs:
+        for name, module in stubs.items():
+            monkeypatch.setitem(sys.modules, name, module)
+    module_name = f"voice_demo_server_broadcast_{id(monkeypatch)}"
+    monkeypatch.setitem(sys.modules, module_name, types.ModuleType(module_name))
+    loaded = _load_server_module(module_name)
+    monkeypatch.setitem(sys.modules, module_name, loaded)
+    return loaded
 
 
 # ── Nova configuration ─────────────────────────────────────────────────────
@@ -375,6 +383,32 @@ class _FakeRoomManager:
         return None
 
 
+def _ensure_server_handler(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make this worktree's ``parrot.handlers.voice_broadcast`` importable.
+
+    Worktree artifact, not a product concern: the editable install resolves
+    ``parrot.handlers`` to the **main checkout**, which has no
+    ``voice_broadcast`` module, and once another test module has imported
+    ``parrot.handlers`` the package's ``__path__`` is already fixed — so a
+    module-level ``sys.path`` insert only works when this file happens to run
+    first.  Extending ``__path__`` here makes the test order-independent, and
+    ``monkeypatch`` puts it back afterwards.
+    """
+    import importlib
+
+    try:
+        importlib.import_module("parrot.handlers.voice_broadcast")
+    except ModuleNotFoundError:
+        handlers = importlib.import_module("parrot.handlers")
+        worktree_handlers = str(_SERVER_PKG_SRC / "parrot" / "handlers")
+        if worktree_handlers not in handlers.__path__:
+            monkeypatch.setattr(
+                handlers,
+                "__path__",
+                list(handlers.__path__) + [worktree_handlers],
+            )
+
+
 @pytest.fixture
 def broadcast_app(server_module, monkeypatch):
     """The example app with broadcast mode enabled over in-memory fakes."""
@@ -382,6 +416,7 @@ def broadcast_app(server_module, monkeypatch):
     from parrot.integrations.liveavatar.broadcast import service as service_module
     from parrot.integrations.liveavatar.broadcast import redis_registry
 
+    _ensure_server_handler(monkeypatch)
     monkeypatch.setenv("VOICEBOT_BROADCAST_REDIS_URL", "redis://unused/0")
     monkeypatch.setenv("VOICEBOT_DEMO_PARTICIPANTS", "alice:tokA,bob:tokB")
     monkeypatch.setattr(server_module, "NOVA_AVAILABLE", True)
