@@ -427,15 +427,20 @@ class _HandlerVoiceSession(VoiceSession):
         connection = self._connection
 
         if not connection.stt_only:
-            is_thought = bool(resp.text and _THOUGHT_FILTER_PATTERN.match(resp.text))
-            text_to_send = "" if is_thought else resp.text
-            if (resp.audio_data or text_to_send) and not resp.is_complete:
+            # `response_chunk` is audio-only on the wire (see the assistant
+            # `transcription` frame below, the sole source of bubble text —
+            # a7f0c5fa5's contract). Echoing resp.text here duplicated every
+            # assistant delta (once via response_chunk, once via
+            # transcription) and, for a role="user" input-transcription
+            # frame, leaked the caller's own speech into the assistant
+            # bubble — this branch never checked resp.role.
+            if resp.audio_data and not resp.is_complete:
                 frames.append(
                     {
                         "type": "response_chunk",
-                        "text": text_to_send or "",
-                        "audio_base64": base64.b64encode(resp.audio_data).decode() if resp.audio_data else "",
-                        "audio_format": "audio/pcm;rate=24000" if resp.audio_data else "",
+                        "text": "",
+                        "audio_base64": base64.b64encode(resp.audio_data).decode(),
+                        "audio_format": "audio/pcm;rate=24000",
                         "is_interrupted": resp.is_interrupted,
                     }
                 )
@@ -1761,24 +1766,21 @@ class VoiceChatHandler:
 
         # STT-only: skip all model response frames — only transcription is allowed.
         if not connection.stt_only:
-            # Send response_chunk for audio OR text (not just audio)
-            # FILTER: Skip internal thought processes that leak into output
-            # (see _THOUGHT_FILTER_PATTERN's docstring for the two patterns).
-            is_thought = bool(response.text and _THOUGHT_FILTER_PATTERN.match(response.text))
-
-            # Determine strict text to send (suppress if thought)
-            text_to_send = response.text
-            if is_thought:
-                text_to_send = ""
-
-            if (response.audio_data or text_to_send) and not response.is_complete:
+            # `response_chunk` is audio-only on the wire (see the assistant
+            # `transcription` frame below, the sole source of bubble text —
+            # a7f0c5fa5's contract). Echoing response.text here duplicated
+            # every assistant delta (once via response_chunk, once via
+            # transcription) and, for a role="user" input-transcription
+            # frame, leaked the caller's own speech into the assistant
+            # bubble — this branch never checked response.role.
+            if response.audio_data and not response.is_complete:
                 await self._send_message(
                     connection.ws,
                     {
                         "type": "response_chunk",
-                        "text": text_to_send or "",
-                        "audio_base64": base64.b64encode(response.audio_data).decode() if response.audio_data else "",
-                        "audio_format": "audio/pcm;rate=24000" if response.audio_data else "",
+                        "text": "",
+                        "audio_base64": base64.b64encode(response.audio_data).decode(),
+                        "audio_format": "audio/pcm;rate=24000",
                         "is_interrupted": response.is_interrupted,
                     },
                 )

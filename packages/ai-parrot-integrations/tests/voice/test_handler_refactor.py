@@ -152,7 +152,11 @@ class TestFrameProtocolUnchanged:
     (text/audio/turn_complete/...)."""
 
     @pytest.mark.asyncio
-    async def test_text_response_uses_response_chunk_not_text(self, handler, connection):
+    async def test_audio_response_uses_response_chunk_not_text(self, handler, connection):
+        """``response_chunk`` is the audio-carrying frame — a text-only,
+        non-user delta (no audio_data) no longer synthesizes one (that
+        duplicated the ``transcription`` frame's text into the same
+        message bubble; see the handler's own comment on this branch)."""
         session = _HandlerVoiceSession(
             client=_capable_mock_client(),
             send_fn=AsyncMock(),
@@ -161,12 +165,31 @@ class TestFrameProtocolUnchanged:
             connection=connection,
         )
         await session._relay(
-            LiveVoiceResponse(text="hello", is_complete=False),
+            LiveVoiceResponse(text="hello", audio_data=b"\x00\x01" * 50, is_complete=False),
             turn_no=1,
         )
         types = _sent_types(connection)
         assert "response_chunk" in types
         assert "text" not in types
+
+    @pytest.mark.asyncio
+    async def test_text_only_delta_skips_response_chunk(self, handler, connection):
+        """A text-only delta (no audio) is carried solely by the
+        ``transcription`` frame — ``response_chunk`` stays audio-only."""
+        session = _HandlerVoiceSession(
+            client=_capable_mock_client(),
+            send_fn=AsyncMock(),
+            system_prompt="hi",
+            handler=handler,
+            connection=connection,
+        )
+        await session._relay(
+            LiveVoiceResponse(text="hello", role="assistant", is_complete=False),
+            turn_no=1,
+        )
+        types = _sent_types(connection)
+        assert "response_chunk" not in types
+        assert "transcription" in types
 
     @pytest.mark.asyncio
     async def test_completion_uses_response_complete_not_turn_complete(self, handler, connection):

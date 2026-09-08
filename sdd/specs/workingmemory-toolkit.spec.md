@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-538
 **Date**: 2026-09-08
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: next
 **Source**: `sdd/proposals/workingmemory-toolkit.proposal.md`
 **Verified implementation commit**: `4f066afcbd9807532e3320ab701c00864e19f1c2`
