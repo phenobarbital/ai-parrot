@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-538 - Recoverable Task Memory for WorkingMemoryToolkit
 **Spec**: `sdd/specs/workingmemory-toolkit.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2980, TASK-2981, TASK-2982
@@ -157,4 +157,59 @@ New test modules should use local fixtures unless the shared fixture task is alr
 
 ## Completion Note
 
-Not completed. The implementing agent records completed-by, date, verification evidence, notes, and any approved deviations here when acceptance passes.
+**Completed by**: Claude Opus 5 (sdd-worker) — session `01WeeSf3QmPq58bBxturogRX`
+**Date**: 2026-09-08
+**Status**: done
+
+### Evidence
+- `test_task_observer.py` → **23 passed**.
+  Log: `artifacts/logs/task-2983-tm-observer-service.log`.
+- `ruff`/`black --line-length 120 --target-version py312`/`isort` clean.
+
+### Acceptance mapping
+
+| Required case | Evidence |
+|---|---|
+| `test_start_failure` — durable append failure prevents the side-effect counter | `test_start_failure_durable_mode_prevents_the_effect` asserts `effect.count == 0`, using a **real side-effect counter**, not a mock's call list |
+| `test_terminal_failure` — effect + journal failure returns unknown/degraded, never safe-to-retry success | `test_terminal_failure_returns_unknown_not_success`: `effect.count == 1`, outcome `UNKNOWN`, `executed=True`, "do not retry automatically" |
+| `test_read_only` — repeated recall/listing changes neither sequence nor activity | `test_read_only_recall_and_listing_append_nothing`: 15 read calls leave `journal.seq == 0` |
+| `test_collector` — exactly one normalized `ToolInvocation` per physical call | `test_collector_*` (6 cases) |
+
+### A bug my own test caught
+The first version identified a physical attempt by `parent_call_id is
+None`, which **counted the parent aggregate**: an ordinary top-level call
+also has no parent, so that predicate cannot distinguish the two.
+`_is_aggregate()` now asks the real question — does any other call this
+turn name it as parent? Evaluated at terminal time, which is sound
+because an aggregate necessarily terminates *after* the children it
+aggregates.
+
+### Design decisions
+1. **A real side-effect counter, not a mock.** The property under test is
+   whether an external effect *happened*; only something that records
+   having happened can demonstrate that. It stores each invocation rather
+   than counting, so "ran once, result lost" is distinguishable from "ran
+   twice".
+2. **Ordering is asserted mid-flight**, not just at the end:
+   `test_start_failure_start_precedes_the_attempt` checks that at the
+   instant after `begin()` the start is durable and the effect has *not*
+   run.
+3. **Denials get no fictitious `tool_started`.** Recording a start for a
+   call that never reached a tool body would claim an execution that did
+   not occur and corrupt attempt counts. `executed=False`,
+   `counted=False`.
+4. **Cancellation never suppresses.** Recording is shielded and bounded,
+   and a journal failure *while* recording a cancellation is itself
+   swallowed — a cancellation we could not record is still a
+   cancellation, and bookkeeping must not turn it into a completion.
+5. **Read-only exemption is per tool, not a blanket switch** — a
+   mutating tool in the same turn still appends.
+6. **Artifact receipts are retrievable after the dispatch finished**,
+   which is the Phase 0 hazard: `PlanToolNode._store` runs once the
+   manager has reset its invocation context.
+7. **The observer takes a narrow `append` callable, not a whole store.**
+   It appends and does nothing else, so it cannot grow a dependency on
+   the store's read paths.
+8. **`append=None` still collects.** The observed-but-disabled
+   configuration gets canonical capture for the conversation turn without
+   any journalling.
