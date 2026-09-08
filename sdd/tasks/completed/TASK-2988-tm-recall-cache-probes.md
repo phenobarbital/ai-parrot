@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-538 - Recoverable Task Memory for WorkingMemoryToolkit
 **Spec**: `sdd/specs/workingmemory-toolkit.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2986, TASK-2987
@@ -145,4 +145,86 @@ New test modules should use local fixtures unless the shared fixture task is alr
 
 ## Completion Note
 
-Not completed. The implementing agent records completed-by, date, verification evidence, notes, and any approved deviations here when acceptance passes.
+**Completed by**: Claude Opus 5 (sdd-worker, delegated fork) — session `01WeeSf3QmPq58bBxturogRX`
+**Date**: 2026-09-08
+**Status**: done
+
+### Evidence
+- `test_recall_cache.py` → **27 passed, 0 skipped**. Redis was reachable,
+  so both live cases **ran**. `test_recall_selector.py` still **25
+  passed**. `unit/memory` **115 passed**.
+  Log: `artifacts/logs/task-2988-tm-recall-cache-probes.log`.
+- `ruff`/`black`/`isort` clean.
+
+### A conflict with TASK-2987 resolved WITHOUT gaming it
+`test_recall_selector.py::test_determinism_recall_is_pure` AST-scans
+`recall.py` and forbids importing `time`/`os`/`asyncio` **anywhere in the
+module**. That guard was written when the file was selector-only; this
+task's mandate is to add an I/O layer to the *same* file, so `import time`
+for the cache TTL broke it.
+
+Dodging the scan with `__import__("time")` would have defeated the
+guard's purpose. Instead `InMemoryRecallCache` takes its clock as a
+**required argument**: no clock is imported anywhere in `recall.py`, the
+guard stays meaningful **and unmodified**, and the time source becomes
+explicit at the call site. Production wiring passes `time.monotonic`;
+tests pass a fake, which is also how TTL expiry is tested without
+sleeping.
+
+Verified during review: no dynamic-import dodge is present, and the guard
+still passes.
+
+### The cache initially saved nothing — and the test caught it
+The first version built the full `RecallInputs` **before** computing the
+key, so a "hit" avoided only the final serialization: the journal page
+and the omission probes ran anyway. Restructured into `_read_fence`
+(projection + descriptor page — the two reads a key *cannot* be computed
+without) → cache check → `_complete_inputs` (journal page + probes) only
+on a miss. `test_cache_keys_ttl_expires_without_sleeping` counts
+`list_events` calls, so it fails if that ordering ever regresses.
+
+### The probe is the point, enforced by an armed trap
+`OmissionStore.get` **loads content**, so recall must never call it merely
+to test existence — omitted payloads are by construction the large ones.
+`RedisOmissionStore.probe` uses `HEXISTS` (verified during review), and
+the test's `_TrapClient.hget` **raises**, so an implementation that
+reached for the payload fails loudly rather than passing slowly.
+`probe_many` batches into one pipeline round trip, falling back to the
+base loop for clients without `pipeline` rather than crashing on them —
+the same lesson TASK-2986 learned with `_FakeRedis`.
+
+**`probe` is deliberately not abstract.** A store written before FEAT-538
+keeps working and inherits `None` — *unknown*. Unknown is never reported
+as available: claiming content is present when the store cannot say so
+would let recall promise recoverable text that may be long gone.
+
+### Other decisions
+1. **`build_cache_key_parts` was extracted, not duplicated.** The reader
+   needs the key *before* selecting — a cache keyable only after doing the
+   work it avoids is useless — but a second copy of the key definition
+   would drift. `select_recall` now calls the same function, so its
+   `cache_key_parts` and the reader's key cannot disagree.
+2. **`cache_digest` hashes the canonical serialization, not a joined
+   string.** A test pins the case a naive `":".join` gets wrong
+   (`"a:b"+"c"` vs `"a"+"b:c"`).
+3. **Each cache dimension is varied independently.** Varying several at
+   once would still pass if one were silently ignored.
+4. **Cache failures degrade to a miss, never to an error** — a broken
+   cache, a corrupt entry and a `RuntimeError` on read all recompute, with
+   the task's revision asserted unchanged afterwards.
+
+### Contract note
+No stale anchors — `omission.py:61`/`:87`, `InMemoryOmissionStore` at 120,
+`RedisOmissionStore` at 149, the single `om_` prefix and `tokens.py:89`
+all verified as described. One **omission** rather than an error: the
+contract does not mention `FileOmissionStore` (line 199), which is also a
+built-in and therefore also got a real probe.
+
+### Environment gaps (reported, not patched)
+- `hypothesis` is missing from the pruned venv, so `test_compact.py` and
+  `test_normalize.py` cannot be collected (2 collection errors).
+- `tests/outputs/a2ui/test_artifacts.py` fails 5 tests. **Verified
+  pre-existing** — the agent swapped in the committed `HEAD` `omission.py`,
+  got the same 5 failures and restored its file md5-identically; the
+  reviewer independently reproduced the same 5 failures on unmodified
+  `dev` in the main checkout.
