@@ -254,11 +254,7 @@ async def _terminal_events(store: PostgresTaskMemoryStore, task_id: str, call_id
         The terminal events, in sequence order.
     """
     page = await store.list_events(SCOPE, task_id, after_seq=0, limit=200)
-    return [
-        e
-        for e in page.events
-        if e.call_id == call_id and e.event_type.value in TERMINAL_CALL_EVENTS
-    ]
+    return [e for e in page.events if e.call_id == call_id and e.event_type.value in TERMINAL_CALL_EVENTS]
 
 
 # ─────────────────────────────────────────────────────────────
@@ -279,9 +275,9 @@ async def test_healthy_call(pg_store: PostgresTaskMemoryStore, ownership: TaskAs
     # it only needs the append lease while appending.
     assert await ownership.acquire_lease(SCOPE, task_id, worker)
     await ownership._redis.delete(ownership.lease_key(SCOPE, task_id))
-    assert await ownership.call_owner(SCOPE, task_id, call_id) == worker, (
-        "expiring the append lease must not disturb per-call ownership"
-    )
+    assert (
+        await ownership.call_owner(SCOPE, task_id, call_id) == worker
+    ), "expiring the append lease must not disturb per-call ownership"
 
     # A second pod scans. It sees an unresolved call that started a while
     # ago and asks the only question that counts: does anyone still hold
@@ -500,9 +496,7 @@ async def test_late_owner_durable_fence_survives_a_lost_cache(
     async def dead(call: UnresolvedCall) -> Optional[bool]:
         return False
 
-    await pg_store.reconcile_calls(
-        SCOPE, task_id, is_live=dead, now=datetime.now(timezone.utc) + timedelta(hours=1)
-    )
+    await pg_store.reconcile_calls(SCOPE, task_id, is_live=dead, now=datetime.now(timezone.utc) + timedelta(hours=1))
     assert await pg_store.has_terminal_event(SCOPE, task_id, call_id) is True
 
     # Even with every Redis key gone, the durable check still reports the
@@ -572,9 +566,9 @@ async def test_heartbeat_keeps_a_long_call_owned_past_its_ttl(
 
     # Well past the 1s TTL. Only renewal can keep the claim alive.
     await asyncio.sleep(1.6)
-    assert await ownership.call_owner(SCOPE, task_id, call.call_id) == "pod-slow", (
-        "the heartbeat failed to renew the claim, so a healthy long call would be declared dead"
-    )
+    assert (
+        await ownership.call_owner(SCOPE, task_id, call.call_id) == "pod-slow"
+    ), "the heartbeat failed to renew the claim, so a healthy long call would be declared dead"
 
     async def probe(pending: UnresolvedCall) -> Optional[bool]:
         return await ownership.is_call_alive(SCOPE, task_id, pending.call_id)

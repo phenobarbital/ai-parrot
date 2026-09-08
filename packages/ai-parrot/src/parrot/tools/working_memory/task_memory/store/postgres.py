@@ -1535,9 +1535,7 @@ class PostgresTaskMemoryStore(BaseTaskMemoryStore):
         """
         pool = await self._acquire_pool()
         async with pool.acquire() as connection:
-            row = await connection.fetchrow(
-                f"SELECT * FROM {self._t('tasks')} WHERE task_id = $1", task_id
-            )
+            row = await connection.fetchrow(f"SELECT * FROM {self._t('tasks')} WHERE task_id = $1", task_id)
             if row is None:
                 raise ScopeViolation(f"task {task_id!r} does not exist in this scope")
             self._ensure_scope(scope, self._scope_of(row), subject="task")
@@ -1564,9 +1562,7 @@ class PostgresTaskMemoryStore(BaseTaskMemoryStore):
         """
         pool = await self._acquire_pool()
         async with pool.acquire() as connection:
-            row = await connection.fetchrow(
-                f"SELECT * FROM {self._t('tasks')} WHERE task_id = $1", task_id
-            )
+            row = await connection.fetchrow(f"SELECT * FROM {self._t('tasks')} WHERE task_id = $1", task_id)
             if row is None:
                 raise ScopeViolation(f"task {task_id!r} does not exist in this scope")
             self._ensure_scope(scope, self._scope_of(row), subject="task")

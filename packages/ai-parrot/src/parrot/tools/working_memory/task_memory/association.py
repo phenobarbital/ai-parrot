@@ -584,9 +584,7 @@ class TaskAssociationStore:
         client = self._redis
         if client is None:
             return False
-        result = await client.eval(
-            _RELEASE_SCRIPT, 1, self.call_lease_key(scope, task_id, call_id), owner
-        )
+        result = await client.eval(_RELEASE_SCRIPT, 1, self.call_lease_key(scope, task_id, call_id), owner)
         return bool(result)
 
     async def call_owner(self, scope: TaskScope, task_id: str, call_id: str) -> Optional[str]:

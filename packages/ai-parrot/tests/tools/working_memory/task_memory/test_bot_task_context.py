@@ -378,11 +378,17 @@ async def test_disabled() -> None:
     assert bot.observed_tool_invocations() is None
     response = _Response([_ToolCall("wm_get_result")])
     enabled_off = ConversationTurn.from_ai_message(
-        user_message="q", response=response, user_id="u", chatbot_id="bot-a",
+        user_message="q",
+        response=response,
+        user_id="u",
+        chatbot_id="bot-a",
         tool_invocations=bot.observed_tool_invocations(),
     )
     legacy = ConversationTurn.from_ai_message(
-        user_message="q", response=response, user_id="u", chatbot_id="bot-a",
+        user_message="q",
+        response=response,
+        user_id="u",
+        chatbot_id="bot-a",
     )
     assert enabled_off.to_dict()["tool_invocations"] == legacy.to_dict()["tool_invocations"]
     assert [i.tool_name for i in enabled_off.tool_invocations] == ["wm_get_result"]

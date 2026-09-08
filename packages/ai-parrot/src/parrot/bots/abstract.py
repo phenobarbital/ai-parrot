@@ -46,7 +46,13 @@ from ..memory import (
     HistoryMessage,
     render_history,
 )
-from ..memory.compaction.models import ContextBudget, CompactionCommit, CompactionResult, FALLBACK_WINDOW, ToolInvocation
+from ..memory.compaction.models import (
+    ContextBudget,
+    CompactionCommit,
+    CompactionResult,
+    FALLBACK_WINDOW,
+    ToolInvocation,
+)
 from ..memory.compaction.budget import build_default_budget, compaction_disabled_by_env, resolve_window
 from ..memory.compaction.compact import compact_history
 from ..memory.compaction.tokens import get_default_counter

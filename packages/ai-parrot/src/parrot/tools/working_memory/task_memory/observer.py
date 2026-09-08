@@ -626,9 +626,7 @@ class InvocationObserver:
         if not call.owned or not self._ownable():
             return
         try:
-            await self._ownership.release_call(
-                self._session.scope, self._session.task_id, call_id, self._owner
-            )
+            await self._ownership.release_call(self._session.scope, self._session.task_id, call_id, self._owner)
         except Exception:  # noqa: BLE001 — an unreleased claim expires by itself
             logger.debug("could not release ownership of call %s", call_id, exc_info=True)
 
