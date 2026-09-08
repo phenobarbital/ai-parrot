@@ -34,7 +34,7 @@ Requirements
 * Google Gemini Live: ``GOOGLE_API_KEY`` (or Vertex AI credentials) resolved
   the same way ``GeminiLiveClient`` always resolves them.
 * Amazon Nova 2 Sonic: AWS Bedrock credentials, and **Python >= 3.12** with
-  ``pip install 'aws_sdk_bedrock_runtime==0.7.0'`` for the voice path.
+  ``pip install 'aws_sdk_bedrock_runtime[awscrt]==0.11.0'`` for the voice path.
   ``NovaClient`` itself imports and constructs fine without the SDK — it is
   only required at the first ``stream_voice()`` call. When the SDK is
   missing (e.g. Python 3.11), this example does NOT fail startup: the Nova
@@ -42,7 +42,9 @@ Requirements
   browser's provider toggle is disabled with a reason) and defensively (a
   session-start attempt returns a clear WebSocket error instead of hanging).
   Voice requires SigV4 credentials with ``bedrock:InvokeModel`` permission
-  on ``amazon.nova-2-sonic-v1:0`` in the selected region. Set
+  on ``amazon.nova-2-sonic-v1:0`` in the selected region. This demo selects
+  the ``nova_sonic`` entry in ``AWS_CREDENTIALS`` via ``aws_id``.
+  To use environment credentials instead, remove that factory argument and set
   ``AWS_NOVA_SONIC_KEY_ID``, ``AWS_NOVA_SONIC_SECRET_KEY``, and
   ``AWS_NOVA_SONIC_REGION`` in ``env/.env`` (plus
   ``AWS_NOVA_SONIC_SESSION_TOKEN`` for temporary credentials), or pass
@@ -313,6 +315,7 @@ def make_nova_bot() -> VoiceBot:
         system_prompt=SYSTEM_PROMPT,
         tools=[VoiceDemoWeatherTool()],
         voice_config=VoiceConfig(provider=VoiceProvider.NOVA, voice_name="matthew"),
+        aws_id="nova_sonic",
     )
 
 
