@@ -31,12 +31,13 @@ from __future__ import annotations
 import asyncio
 import base64
 import contextlib
+import inspect
 import json
 import logging
 import os
 import uuid
 from types import TracebackType
-from typing import Any, Dict, Optional, Type
+from typing import Any, Awaitable, Callable, Dict, Optional, Type, Union
 
 import aiohttp
 
@@ -72,6 +73,41 @@ def _connect_timeout_default() -> float:
 
 _CONNECT_TIMEOUT: float = _connect_timeout_default()  # seconds
 
+#: A callback may be sync or async; both are supported everywhere.
+EventCallback = Callable[[Dict[str, Any]], Union[Awaitable[None], None]]
+CloseCallback = Callable[[str], Union[Awaitable[None], None]]
+
+
+class AvatarSendTimeout(RuntimeError):
+    """A vendor send exceeded its per-send deadline.
+
+    Distinct from a generic :class:`RuntimeError` so the broadcast session can
+    treat "the avatar sink is stalling" as a fallback trigger (spec §2 runtime
+    fallback triggers: "send timeout") rather than as an unknown error.
+    """
+
+
+async def _invoke(callback: Optional[Callable[..., Any]], *args: Any) -> None:
+    """Call a possibly-async callback, swallowing and logging its failures.
+
+    A misbehaving observer must never take down the reader loop or abort a
+    turn — the callback is telemetry/routing, not part of the audio path.
+
+    Args:
+        callback: The callback, or ``None``.
+        *args: Positional arguments to pass.
+    """
+    if callback is None:
+        return
+    try:
+        result = callback(*args)
+        if inspect.isawaitable(result):
+            await result
+    except Exception:  # noqa: BLE001 — observers must not break the transport
+        logging.getLogger(__name__).exception(
+            "AvatarWebSocket: callback %r raised", getattr(callback, "__name__", callback)
+        )
+
 
 class AvatarWebSocket:
     """WebSocket bridge that pushes PCM audio frames to the LiveAvatar media server.
@@ -104,6 +140,21 @@ class AvatarWebSocket:
             event, so waiting for it would always time out.  The one-shot
             orchestrator, which opens its WS at the exact connect transition,
             leaves this ``False`` and genuinely waits for the event.
+        on_event: Called with every parsed server message.  This is the only
+            observation point for LITE lifecycle events until the live gate
+            (TASK-2950) confirms their names, so messages are forwarded whole
+            and unfiltered rather than being mapped to invented constants.
+        on_close: Called once with a short reason string when the transport
+            closes permanently.  Only meaningful with ``auto_reconnect=False``.
+        auto_reconnect: Keep the legacy silent-reconnect behaviour (default).
+            A broadcast sets this ``False``: an avatar control socket that
+            drops is a *fallback trigger*, and silently reconnecting would
+            hide it and strand the audience in a half-dead avatar mode.
+        send_timeout_s: Per-send deadline.  Exceeding it raises
+            :class:`AvatarSendTimeout` (spec §2 default for broadcast: 2 s).
+        aggregate: Buffer PCM **across** ``send_audio_frame`` calls so small
+            Nova chunks become ~1 s vendor frames instead of a flood of tiny
+            ``agent.speak`` messages.
     """
 
     def __init__(
@@ -112,12 +163,33 @@ class AvatarWebSocket:
         *,
         session: Optional[aiohttp.ClientSession] = None,
         assume_connected: bool = False,
+        on_event: Optional[EventCallback] = None,
+        on_close: Optional[CloseCallback] = None,
+        auto_reconnect: bool = True,
+        send_timeout_s: Optional[float] = None,
+        aggregate: bool = False,
     ) -> None:
         self.handle = handle
         self.logger = logging.getLogger(__name__)
         self._session: Optional[aiohttp.ClientSession] = session
         self._owns_session: bool = session is None
         self._assume_connected: bool = assume_connected
+        self._on_event: Optional[EventCallback] = on_event
+        self._on_close: Optional[CloseCallback] = on_close
+        self._auto_reconnect: bool = auto_reconnect
+        self._send_timeout_s: Optional[float] = send_timeout_s
+        self._aggregate: bool = aggregate
+        #: Verbatim ``type`` of the last speaking-related server event.  The
+        #: real LITE names are unconfirmed until the TASK-2950 live gate runs,
+        #: so nothing here hard-codes ``agent.speaking_started``.
+        self.speaking_state: Optional[str] = None
+        #: Set once the transport is permanently closed (``auto_reconnect``
+        #: off).  Callers await it instead of polling.
+        self.closed: asyncio.Event = asyncio.Event()
+        self._close_reason: str = ""
+        self._close_notified: bool = False
+        self._buffer: bytearray = bytearray()
+        self._first_frame_sent: bool = False
         self._ws: Optional[aiohttp.ClientWebSocketResponse] = None
         self._connected: asyncio.Event = asyncio.Event()
         # Latched True once the connected gate times out, so the remaining
@@ -187,6 +259,11 @@ class AvatarWebSocket:
         if not pcm:
             return
 
+        if self._aggregate:
+            self._buffer.extend(pcm)
+            await self._drain_buffer()
+            return
+
         offset = 0
         is_first = True
         while offset < len(pcm):
@@ -194,15 +271,61 @@ class AvatarWebSocket:
             # Never exceed the hard cap
             chunk_size = min(chunk_size, _MAX_PACKET_BYTES)
             chunk = pcm[offset: offset + chunk_size]
-            audio_b64 = base64.b64encode(chunk).decode("ascii")
-            await self._send_json({"type": "agent.speak", "audio": audio_b64})
-            self.logger.debug(
-                "AvatarWebSocket: sent %d-byte PCM chunk as agent.speak (first=%s)",
-                len(chunk),
-                is_first,
-            )
+            await self._emit_chunk(chunk, is_first)
             offset += chunk_size
             is_first = False
+
+    @property
+    def pending_bytes(self) -> int:
+        """Bytes buffered but not yet submitted to the vendor.
+
+        Only these are safe to re-route on a fallback cutover: anything already
+        submitted may or may not have been played, and replaying it would
+        duplicate speech (spec §2).
+        """
+        return len(self._buffer)
+
+    async def _emit_chunk(self, chunk: bytes, is_first: bool) -> None:
+        """Base64-encode one slice and send it as a single ``agent.speak``.
+
+        Args:
+            chunk: Raw PCM slice, already sized to the vendor's limits.
+            is_first: Whether this is the utterance's first (shorter) frame.
+        """
+        audio_b64 = base64.b64encode(chunk).decode("ascii")
+        await self._send_json({"type": "agent.speak", "audio": audio_b64})
+        self.logger.debug(
+            "AvatarWebSocket: sent %d-byte PCM chunk as agent.speak (first=%s)",
+            len(chunk),
+            is_first,
+        )
+
+    async def _drain_buffer(self, *, flush: bool = False) -> None:
+        """Emit whole frames from the aggregation buffer, in order.
+
+        Bytes are never reordered or duplicated: each emitted frame is the
+        exact prefix of the buffer, and the buffer is truncated by exactly
+        what was sent.
+
+        Args:
+            flush: Also emit a final short frame with whatever remains, which
+                is what ``finish_speaking`` needs before ``agent.speak_end``.
+        """
+        while True:
+            target = _NORMAL_CHUNK_BYTES if self._first_frame_sent else _FIRST_CHUNK_BYTES
+            target = min(target, _MAX_PACKET_BYTES)
+            if len(self._buffer) >= target:
+                chunk = bytes(self._buffer[:target])
+                del self._buffer[:target]
+                await self._emit_chunk(chunk, not self._first_frame_sent)
+                self._first_frame_sent = True
+                continue
+            if flush and self._buffer:
+                chunk = bytes(self._buffer)
+                self._buffer.clear()
+                await self._emit_chunk(chunk, not self._first_frame_sent)
+                self._first_frame_sent = True
+            return
 
     async def finish_speaking(self) -> None:
         """Send the ``agent.speak_end`` frame to flush the playback buffer.
@@ -214,6 +337,11 @@ class AvatarWebSocket:
             RuntimeError: If the WebSocket connection is not open.
         """
         await self._await_connected()
+        if self._aggregate:
+            # The tail must reach the vendor BEFORE speak_end, or the last
+            # fraction of a second of the utterance is silently dropped.
+            await self._drain_buffer(flush=True)
+            self._first_frame_sent = False
         event_id = uuid.uuid4().hex
         await self._send_json({"type": "agent.speak_end", "event_id": event_id})
         self.logger.debug("AvatarWebSocket: agent.speak_end sent (event_id=%s)", event_id)
@@ -225,8 +353,15 @@ class AvatarWebSocket:
             RuntimeError: If the WebSocket connection is not open.
         """
         await self._await_connected()
+        # Drop pending bytes BEFORE the interrupt so a concurrent drain cannot
+        # push stale audio in behind it.
+        dropped = len(self._buffer)
+        self._buffer.clear()
+        self._first_frame_sent = False
         await self._send_json({"type": "agent.interrupt"})
-        self.logger.debug("AvatarWebSocket: agent.interrupt sent")
+        self.logger.debug(
+            "AvatarWebSocket: agent.interrupt sent (dropped %d buffered bytes)", dropped
+        )
 
     # ── Connection management ──────────────────────────────────────────
 
@@ -272,13 +407,26 @@ class AvatarWebSocket:
                 if msg.type == aiohttp.WSMsgType.TEXT:
                     await self._handle_server_message(msg.data)
                 elif msg.type in (aiohttp.WSMsgType.CLOSE, aiohttp.WSMsgType.ERROR):
+                    reason = "close" if msg.type == aiohttp.WSMsgType.CLOSE else "error"
+                    if not self._auto_reconnect:
+                        # A broadcast treats this as a fallback trigger.
+                        # Reconnecting silently would hide the failure and
+                        # strand the audience in a half-dead avatar mode.
+                        await self._notify_closed(reason)
+                        return
                     self.logger.warning(
                         "AvatarWebSocket: WS closed/error — attempting reconnect"
                     )
                     await self._reconnect()
                     return
+            if not self._auto_reconnect:
+                await self._notify_closed("eof")
+        except asyncio.CancelledError:
+            raise
         except Exception:  # noqa: BLE001
             self.logger.exception("AvatarWebSocket: reader loop error")
+            if not self._auto_reconnect:
+                await self._notify_closed("error")
 
     async def _handle_server_message(self, raw: str) -> None:
         """Process an incoming server text frame.
@@ -304,6 +452,15 @@ class AvatarWebSocket:
             if state == "connected":
                 self._connected.set()
                 self.logger.info("AvatarWebSocket: session connected — gate open")
+        lowered = msg_type.lower()
+        if "speak" in lowered or "speaking" in lowered:
+            # Recorded verbatim: the real LITE speaking-event names are
+            # unconfirmed until the TASK-2950 live gate runs, so this must not
+            # normalise them into invented constants.
+            self.speaking_state = msg_type
+        # Forward EVERY message, including ones handled above — the broadcast
+        # session is the component that decides what an event means.
+        await _invoke(self._on_event, msg)
 
     async def _reconnect(self) -> None:
         """Reconnect the WebSocket after a drop.
@@ -336,6 +493,25 @@ class AvatarWebSocket:
         except Exception:  # noqa: BLE001
             self.logger.exception("AvatarWebSocket: reconnect failed")
 
+    async def _notify_closed(self, reason: str) -> None:
+        """Latch the permanent-close state and notify the observer exactly once.
+
+        Args:
+            reason: Short, non-sensitive reason code (``close``/``error``/``eof``).
+        """
+        if self._close_notified:
+            return
+        self._close_notified = True
+        self._close_reason = reason
+        self.closed.set()
+        # Release anyone blocked on the connect gate so they fail fast with the
+        # close error rather than waiting out the full connect timeout.
+        self._connected.set()
+        self.logger.warning(
+            "AvatarWebSocket: transport closed permanently (reason=%s)", reason
+        )
+        await _invoke(self._on_close, reason)
+
     async def _close(self) -> None:
         """Cancel the reader task and close the underlying WebSocket gracefully."""
         # Cancel + await the reader FIRST so it cannot re-enter ``_reconnect``
@@ -364,6 +540,10 @@ class AvatarWebSocket:
             RuntimeError: If the connected event does not arrive within
                 :data:`_CONNECT_TIMEOUT` seconds.
         """
+        if self.closed.is_set():
+            raise RuntimeError(
+                f"AvatarWebSocket: closed ({self._close_reason})"
+            )
         if self._connected.is_set():
             return
         # Already gave up earlier this turn — fail immediately rather than
@@ -388,8 +568,22 @@ class AvatarWebSocket:
             payload: Dict to serialise as JSON.
 
         Raises:
-            RuntimeError: If the WebSocket is not open.
+            RuntimeError: If the WebSocket is not open or permanently closed.
+            AvatarSendTimeout: If the send exceeds ``send_timeout_s``.
         """
+        if self.closed.is_set():
+            raise RuntimeError(f"AvatarWebSocket: closed ({self._close_reason})")
         if self._ws is None or self._ws.closed:
             raise RuntimeError("AvatarWebSocket: cannot send — WS not connected")
-        await self._ws.send_json(payload)
+        if self._send_timeout_s is None:
+            await self._ws.send_json(payload)
+            return
+        try:
+            await asyncio.wait_for(
+                self._ws.send_json(payload), timeout=self._send_timeout_s
+            )
+        except asyncio.TimeoutError as exc:
+            raise AvatarSendTimeout(
+                "AvatarWebSocket: vendor send exceeded "
+                f"{self._send_timeout_s}s deadline"
+            ) from exc
