@@ -34,7 +34,7 @@
       "started_at": "2026-09-08T13:39:08+00:00",
       "completed_at": "2026-09-08T14:06:30+00:00",
       "file": "sdd/tasks/completed/TASK-2970-tm-integration-spike.md",
-      "verification": "bench_snapshot_costs.py exit 0; artifacts/logs/task-2970-tm-integration-spike.log; ruff/black/isort clean",
+      "verification": "verified",
       "owned_files": [
         "docs/memory/task-memory-integration-map.md",
         "packages/ai-parrot/tests/tools/working_memory/task_memory/bench_snapshot_costs.py"
@@ -69,7 +69,7 @@
       "started_at": "2026-09-08T13:39:08+00:00",
       "completed_at": "2026-09-08T14:23:11+00:00",
       "file": "sdd/tasks/completed/TASK-2971-tm-domain-models.md",
-      "verification": "55 focused tests pass (test_models.py); ruff/black/isort clean; artifacts/logs/task-2971-tm-domain-models.log; 2 pre-existing baseline failures documented",
+      "verification": "verified",
       "owned_files": [
         "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/__init__.py",
         "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/models.py",
@@ -106,7 +106,7 @@
       "started_at": "2026-09-08T13:39:08+00:00",
       "completed_at": "2026-09-08T14:34:06+00:00",
       "file": "sdd/tasks/completed/TASK-2972-tm-store-contracts.md",
-      "verification": "35 focused tests (test_contracts.py); 90 across task_memory suite; ruff/black/isort clean; artifacts/logs/task-2972-tm-store-contracts.log",
+      "verification": "verified",
       "owned_files": [
         "packages/ai-parrot/src/parrot/interfaces/task_memory.py",
         "packages/ai-parrot/src/parrot/interfaces/artifact_store.py",
@@ -142,7 +142,7 @@
       "started_at": "2026-09-08T13:39:08+00:00",
       "completed_at": "2026-09-08T14:58:22+00:00",
       "file": "sdd/tasks/completed/TASK-2973-tm-reducer-plan.md",
-      "verification": "40 focused tests (test_reducer_plan.py); 219 across task_memory suite; ruff/black/isort clean; artifacts/logs/task-2973-tm-reducer-plan.log",
+      "verification": "verified",
       "owned_files": [
         "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/reducer.py",
         "packages/ai-parrot/tests/tools/working_memory/task_memory/test_reducer_plan.py"
@@ -178,7 +178,7 @@
       "started_at": "2026-09-08T13:39:08+00:00",
       "completed_at": "2026-09-08T15:26:35+00:00",
       "file": "sdd/tasks/completed/TASK-2974-tm-reducer-evidence.md",
-      "verification": "36 focused tests; 448 across suite; revision-identity semantics verified independently",
+      "verification": "verified",
       "owned_files": [
         "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/reducer.py",
         "packages/ai-parrot/tests/tools/working_memory/task_memory/test_reducer_evidence.py"
@@ -212,7 +212,7 @@
       "started_at": "2026-09-08T13:39:08+00:00",
       "completed_at": "2026-09-08T14:58:22+00:00",
       "file": "sdd/tasks/completed/TASK-2975-tm-snapshots.md",
-      "verification": "49 focused tests (test_snapshots.py); 219 across task_memory suite; claims independently re-verified; artifacts/logs/task-2975-tm-snapshots.log",
+      "verification": "verified",
       "owned_files": [
         "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/snapshots.py",
         "packages/ai-parrot/tests/tools/working_memory/task_memory/test_snapshots.py"
@@ -248,7 +248,7 @@
       "started_at": "2026-09-08T13:39:08+00:00",
       "completed_at": "2026-09-08T15:26:35+00:00",
       "file": "sdd/tasks/completed/TASK-2976-tm-artifact-memory.md",
-      "verification": "42 focused tests incl. 9 inherited conformance cases; 448 across suite; protocol conformance verified",
+      "verification": "verified",
       "owned_files": [
         "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/artifacts.py",
         "packages/ai-parrot/tests/tools/working_memory/task_memory/test_artifact_memory.py"
@@ -282,7 +282,7 @@
       "started_at": "2026-09-08T13:39:08+00:00",
       "completed_at": "2026-09-08T15:46:39+00:00",
       "file": "sdd/tasks/completed/TASK-2977-tm-catalog-async.md",
-      "verification": "30 focused tests; 561 across suite; AC13 legacy path verified directly; downstream suites show only the 2 known pre-existing failures",
+      "verification": "verified",
       "owned_files": [
         "packages/ai-parrot/src/parrot/tools/working_memory/internals.py",
         "packages/ai-parrot/tests/tools/working_memory/task_memory/test_catalog_async.py"
@@ -318,7 +318,7 @@
       "started_at": "2026-09-08T13:39:08+00:00",
       "completed_at": "2026-09-08T15:46:39+00:00",
       "file": "sdd/tasks/completed/TASK-2978-tm-task-memory-store.md",
-      "verification": "33 focused tests incl. inherited conformance; 561/6 across suite; fixed 2 defects in TASK-2972's conformance fixture",
+      "verification": "verified",
       "owned_files": [
         "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/store/memory.py",
         "packages/ai-parrot/tests/tools/working_memory/task_memory/test_task_store_memory.py",
@@ -355,7 +355,7 @@
       "started_at": "2026-09-08T13:39:08+00:00",
       "completed_at": "2026-09-08T15:55:32+00:00",
       "file": "sdd/tasks/completed/TASK-2979-tm-task-commands.md",
-      "verification": "23 focused tests against the real store and reducer; ruff/black/isort clean; artifacts/logs/task-2979-tm-task-commands.log",
+      "verification": "verified",
       "owned_files": [
         "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/service.py",
         "packages/ai-parrot/tests/tools/working_memory/task_memory/test_task_commands.py"
@@ -389,7 +389,7 @@
       "started_at": "2026-09-08T13:39:08+00:00",
       "completed_at": "2026-09-08T16:15:40+00:00",
       "file": "sdd/tasks/completed/TASK-2980-tm-completion-validators.md",
-      "verification": "19 focused tests (42 with the service suite); two implementation defects found by its own tests and fixed; ruff/black/isort clean",
+      "verification": "verified",
       "owned_files": [
         "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/validators.py",
         "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/service.py",
@@ -424,7 +424,7 @@
       "started_at": "2026-09-08T13:39:08+00:00",
       "completed_at": "2026-09-08T14:58:22+00:00",
       "file": "sdd/tasks/completed/TASK-2981-tm-turn-context.md",
-      "verification": "39 focused tests (test_task_context.py); 219 across task_memory suite; cancellation/child-publish/snapshot-freeze independently re-verified; artifacts/logs/task-2981-tm-turn-context.log",
+      "verification": "verified",
       "owned_files": [
         "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/context.py",
         "packages/ai-parrot/tests/tools/working_memory/task_memory/test_task_context.py"
@@ -458,7 +458,7 @@
       "started_at": "2026-09-08T13:39:08+00:00",
       "completed_at": "2026-09-08T15:26:35+00:00",
       "file": "sdd/tasks/completed/TASK-2982-tm-result-redaction.md",
-      "verification": "127 focused tests; 448 across suite; ReDoS fix and credential redaction verified independently",
+      "verification": "verified",
       "owned_files": [
         "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/adapters.py",
         "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/redaction.py",
@@ -497,7 +497,7 @@
       "started_at": "2026-09-08T13:39:08+00:00",
       "completed_at": "2026-09-08T16:22:58+00:00",
       "file": "sdd/tasks/completed/TASK-2983-tm-observer-service.md",
-      "verification": "23 focused tests using a real side-effect counter; aggregate-counting bug found and fixed; ruff/black/isort clean",
+      "verification": "verified",
       "owned_files": [
         "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/observer.py",
         "packages/ai-parrot/tests/tools/working_memory/task_memory/test_task_observer.py"
@@ -532,7 +532,7 @@
       "started_at": "2026-09-08T13:39:08+00:00",
       "completed_at": "2026-09-08T16:42:51+00:00",
       "file": "sdd/tasks/completed/TASK-2984-tm-manager-hooks.md",
-      "verification": "18 focused tests against the real ToolManager; dispatcher failure SET byte-identical to dev baseline (1925 passed/53 pre-existing)",
+      "verification": "verified",
       "owned_files": [
         "packages/ai-parrot/src/parrot/tools/manager.py",
         "packages/ai-parrot/tests/tools/working_memory/task_memory/test_manager_observer.py"
@@ -567,7 +567,7 @@
       "started_at": "2026-09-08T13:39:08+00:00",
       "completed_at": "2026-09-08T16:52:27+00:00",
       "file": "sdd/tasks/completed/TASK-2985-tm-wm-enabled-paths.md",
-      "verification": "22 focused tests; AC13 verified — disabled schema byte-identical and tools/plan failure SET identical to dev baseline (1947 passed/53 pre-existing)",
+      "verification": "verified",
       "owned_files": [
         "packages/ai-parrot/src/parrot/tools/working_memory/tool.py",
         "packages/ai-parrot/src/parrot/tools/working_memory/models.py",
@@ -602,7 +602,7 @@
       "started_at": "2026-09-08T13:39:08+00:00",
       "completed_at": "2026-09-08T16:15:40+00:00",
       "file": "sdd/tasks/completed/TASK-2986-tm-redis-association.md",
-      "verification": "13 tests LIVE against real Redis, 0 skipped; memory suite 158 passed; legacy_rekey 24 passed after fixing a regression it caused",
+      "verification": "verified",
       "owned_files": [
         "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/association.py",
         "packages/ai-parrot/src/parrot/memory/redis.py",
@@ -637,7 +637,7 @@
       "started_at": "2026-09-08T13:39:08+00:00",
       "completed_at": "2026-09-08T15:33:37+00:00",
       "file": "sdd/tasks/completed/TASK-2987-tm-recall-selector.md",
-      "verification": "25 focused tests pass first run; ruff/black/isort clean; artifacts/logs/task-2987-tm-recall-selector.log",
+      "verification": "verified",
       "owned_files": [
         "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/recall.py",
         "packages/ai-parrot/tests/tools/working_memory/task_memory/test_recall_selector.py"
@@ -672,7 +672,7 @@
       "started_at": "2026-09-08T13:39:08+00:00",
       "completed_at": "2026-09-08T16:31:54+00:00",
       "file": "sdd/tasks/completed/TASK-2988-tm-recall-cache-probes.md",
-      "verification": "27 focused tests with LIVE Redis; purity guard honoured not gamed (verified); HEXISTS probe with an armed HGET trap; selector suite still 25",
+      "verification": "verified",
       "owned_files": [
         "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/recall.py",
         "packages/ai-parrot/src/parrot/memory/compaction/omission.py",
@@ -711,7 +711,7 @@
       "started_at": "2026-09-08T13:39:08+00:00",
       "completed_at": "2026-09-08T17:14:07+00:00",
       "file": "sdd/tasks/completed/TASK-2989-tm-task-tools.md",
-      "verification": null,
+      "verification": "verified",
       "owned_files": [
         "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/tools.py",
         "packages/ai-parrot/src/parrot/tools/working_memory/tool.py",
@@ -751,7 +751,7 @@
       "started_at": "2026-09-08T13:39:08+00:00",
       "completed_at": "2026-09-08T21:33:05+00:00",
       "file": "sdd/tasks/completed/TASK-2990-tm-bot-turn-capture.md",
-      "verification": null,
+      "verification": "verified",
       "owned_files": [
         "packages/ai-parrot/src/parrot/bots/abstract.py",
         "packages/ai-parrot/src/parrot/bots/base.py",
@@ -792,7 +792,7 @@
       "started_at": "2026-09-08T13:39:08+00:00",
       "completed_at": "2026-09-08T17:53:23+00:00",
       "file": "sdd/tasks/completed/TASK-2991-tm-plan-tee-receipts.md",
-      "verification": null,
+      "verification": "verified",
       "owned_files": [
         "packages/ai-parrot/src/parrot/bots/flows/plan/node.py",
         "packages/ai-parrot/src/parrot/bots/flows/plan/models.py",
@@ -830,7 +830,7 @@
       "started_at": "2026-09-08T13:39:08+00:00",
       "completed_at": "2026-09-08T15:26:35+00:00",
       "file": "sdd/tasks/completed/TASK-2992-tm-worker-strict.md",
-      "verification": "23 focused tests incl. real subprocess round trip; repl_worker failure SET byte-identical to dev baseline",
+      "verification": "verified",
       "owned_files": [
         "packages/ai-parrot/src/parrot/tools/repl_worker/transport.py",
         "packages/ai-parrot/src/parrot/tools/repl_worker/protocol.py",
@@ -870,7 +870,7 @@
       "started_at": "2026-09-08T13:39:08+00:00",
       "completed_at": "2026-09-08T16:29:40+00:00",
       "file": "sdd/tasks/completed/TASK-2993-tm-repl-resolver.md",
-      "verification": "21 focused tests incl. a REAL worker subprocess round trip (confirmed PASSED, not skipped); strict transport suite still 23 passed",
+      "verification": "verified",
       "owned_files": [
         "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/repl.py",
         "packages/ai-parrot/tests/tools/working_memory/task_memory/test_repl_binding_resolver.py"
@@ -905,7 +905,7 @@
       "started_at": "2026-09-08T13:39:08+00:00",
       "completed_at": "2026-09-08T15:46:39+00:00",
       "file": "sdd/tasks/completed/TASK-2994-tm-postgres-schema.md",
-      "verification": "24 passed / 6 EXPLICIT environmental skips (no DSN in review env); schema structure, non-null namespace, absent pinned flag and lazy asyncpg import all verified directly",
+      "verification": "verified",
       "owned_files": [
         "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/migrations/001_task_memory.sql",
         "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/store/postgres.py",
@@ -943,7 +943,7 @@
       "started_at": "2026-09-08T13:39:08+00:00",
       "completed_at": "2026-09-08T16:06:31+00:00",
       "file": "sdd/tasks/completed/TASK-2995-tm-postgres-journal.md",
-      "verification": "60 tests pass LIVE against real PostgreSQL 17 (reproduced independently during review); 0 wm_test_* schemas left; skips are explicit when no DSN",
+      "verification": "verified",
       "owned_files": [
         "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/store/postgres.py",
         "packages/ai-parrot/tests/tools/working_memory/task_memory/test_postgres_task_store.py"
@@ -978,7 +978,7 @@
       "started_at": "2026-09-08T13:39:08+00:00",
       "completed_at": "2026-09-08T16:06:31+00:00",
       "file": "sdd/tasks/completed/TASK-2996-tm-blob-adapter.md",
-      "verification": "38 focused tests with a real LocalFileManager; ruff/black/isort clean; artifacts/logs/task-2996-tm-blob-adapter.log",
+      "verification": "verified",
       "owned_files": [
         "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/blob.py",
         "packages/ai-parrot/tests/tools/working_memory/task_memory/test_artifact_blob.py"
@@ -1017,7 +1017,7 @@
       "started_at": "2026-09-08T13:39:08+00:00",
       "completed_at": "2026-09-08T16:42:51+00:00",
       "file": "sdd/tasks/completed/TASK-2997-tm-postgres-artifacts.md",
-      "verification": "27 focused tests LIVE against real PostgreSQL 17.3 (87 across all postgres suites); FOR UPDATE mutation reproduced during review; 0 test schemas left",
+      "verification": "verified",
       "owned_files": [
         "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/store/postgres.py",
         "packages/ai-parrot/tests/tools/working_memory/task_memory/test_postgres_artifacts.py"
@@ -1054,7 +1054,7 @@
       "started_at": "2026-09-08T13:39:08+00:00",
       "completed_at": "2026-09-08T21:33:05+00:00",
       "file": "sdd/tasks/completed/TASK-2998-tm-lease-recovery.md",
-      "verification": null,
+      "verification": "verified",
       "owned_files": [
         "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/observer.py",
         "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/context.py",
@@ -1093,7 +1093,7 @@
       "started_at": "2026-09-08T13:39:08+00:00",
       "completed_at": "2026-09-08T16:29:40+00:00",
       "file": "sdd/tasks/completed/TASK-2999-tm-retention-core.md",
-      "verification": "29 focused tests with an injected clock; the updated_at self-reset hazard verified independently; ruff/black/isort clean",
+      "verification": "verified",
       "owned_files": [
         "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/retention.py",
         "packages/ai-parrot/tests/tools/working_memory/task_memory/test_retention_core.py"
@@ -1129,7 +1129,7 @@
       "started_at": "2026-09-08T13:39:08+00:00",
       "completed_at": "2026-09-08T22:17:40+00:00",
       "file": "sdd/tasks/completed/TASK-3000-tm-retention-durable.md",
-      "verification": null,
+      "verification": "verified",
       "owned_files": [
         "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/retention.py",
         "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/store/postgres.py",
@@ -1167,7 +1167,7 @@
       "started_at": "2026-09-08T13:39:08+00:00",
       "completed_at": "2026-09-08T22:17:40+00:00",
       "file": "sdd/tasks/completed/TASK-3001-tm-stage2-recall.md",
-      "verification": null,
+      "verification": "verified",
       "owned_files": [
         "packages/ai-parrot/src/parrot/bots/abstract.py",
         "packages/ai-parrot/tests/tools/working_memory/task_memory/test_stage2_task_recall.py"
@@ -1211,7 +1211,7 @@
       "started_at": "2026-09-08T13:39:08+00:00",
       "completed_at": "2026-09-08T22:17:40+00:00",
       "file": "sdd/tasks/completed/TASK-3002-tm-delivery-a.md",
-      "verification": null,
+      "verification": "verified",
       "owned_files": [
         "packages/ai-parrot/tests/tools/working_memory/task_memory/test_delivery_a.py",
         "packages/ai-parrot/tests/tools/working_memory/task_memory/test_disabled_compatibility.py"
@@ -1250,7 +1250,7 @@
       "started_at": "2026-09-08T13:39:08+00:00",
       "completed_at": "2026-09-08T22:52:23+00:00",
       "file": "sdd/tasks/completed/TASK-3003-tm-durable-wiring.md",
-      "verification": null,
+      "verification": "verified",
       "owned_files": [
         "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/config.py",
         "packages/ai-parrot/src/parrot/tools/working_memory/tool.py",
@@ -1297,7 +1297,7 @@
       "started_at": "2026-09-08T13:39:08+00:00",
       "completed_at": "2026-09-08T23:15:12+00:00",
       "file": "sdd/tasks/completed/TASK-3004-tm-delivery-b.md",
-      "verification": null,
+      "verification": "verified",
       "owned_files": [
         "packages/ai-parrot/tests/tools/working_memory/task_memory/test_delivery_b.py",
         "packages/ai-parrot/tests/tools/working_memory/task_memory/test_crash_matrix.py"
@@ -1331,7 +1331,7 @@
       "started_at": "2026-09-08T13:39:08+00:00",
       "completed_at": "2026-09-08T23:29:20+00:00",
       "file": "sdd/tasks/completed/TASK-3005-tm-docs-metrics.md",
-      "verification": null,
+      "verification": "verified",
       "owned_files": [
         "docs/memory/recoverable-task-memory.md",
         "packages/ai-parrot/tests/tools/working_memory/task_memory/bench_task_memory.py"
