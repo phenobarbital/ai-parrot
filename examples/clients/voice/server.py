@@ -34,13 +34,24 @@ Requirements
 * Google Gemini Live: ``GOOGLE_API_KEY`` (or Vertex AI credentials) resolved
   the same way ``GeminiLiveClient`` always resolves them.
 * Amazon Nova 2 Sonic: AWS Bedrock credentials, and **Python >= 3.12** with
-  ``pip install 'aws_sdk_bedrock_runtime==0.7.0'`` for the voice path.
+  ``pip install 'aws_sdk_bedrock_runtime[awscrt]==0.11.0'`` for the voice path.
   ``NovaClient`` itself imports and constructs fine without the SDK — it is
   only required at the first ``stream_voice()`` call. When the SDK is
   missing (e.g. Python 3.11), this example does NOT fail startup: the Nova
   route stays mounted but reports itself unavailable, both proactively (the
   browser's provider toggle is disabled with a reason) and defensively (a
   session-start attempt returns a clear WebSocket error instead of hanging).
+  Voice requires SigV4 credentials with ``bedrock:InvokeModel`` permission
+  on ``amazon.nova-2-sonic-v1:0`` in the selected region. This demo selects
+  the ``nova_sonic`` entry in ``AWS_CREDENTIALS`` via ``aws_id``.
+  To use environment credentials instead, remove that factory argument and set
+  ``AWS_NOVA_SONIC_KEY_ID``, ``AWS_NOVA_SONIC_SECRET_KEY``, and
+  ``AWS_NOVA_SONIC_REGION`` in ``env/.env`` (plus
+  ``AWS_NOVA_SONIC_SESSION_TOKEN`` for temporary credentials), or pass
+  explicit AWS credentials / ``aws_id`` to the bot factory. Otherwise the
+  voice SDK uses its environment/IMDS chain. ``AWS_NOVA_API_KEY`` alone
+  cannot authenticate voice: Bedrock API keys do not support
+  ``InvokeModelWithBidirectionalStream``.
 
 Usage
 -----
@@ -58,11 +69,14 @@ call, only the voice differs.
 from __future__ import annotations
 
 import argparse
+import asyncio
+import contextlib
 import dataclasses
 import logging
 import os
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 # ---------------------------------------------------------------------------
 # Load env/.env so AWS_NOVA_SONIC_* vars are available as os.environ defaults
@@ -84,7 +98,7 @@ from parrot.bots import VoiceBot
 from parrot.clients.google.live import GeminiLiveClient
 from parrot.clients.protocols import VoiceCapable
 from parrot.models.voice import VoiceCapabilities, VoiceConfig, VoiceProvider
-from parrot.tools import tool
+from parrot.tools.abstract import AbstractTool, AbstractToolArgsSchema, ToolResult
 from parrot.voice.handler import VoiceChatHandler
 
 logging.basicConfig(
@@ -107,18 +121,70 @@ SYSTEM_PROMPT = (
 
 
 # ---------------------------------------------------------------------------
-# Shared tool — both bots register the SAME tool so a tool call is directly
-# comparable across providers (spec §3 Module 12 Key Constraints).
+# Demo tool (FEAT-536 TASK-2948 — spec §3 Module 6): a deterministic,
+# voice-aware AbstractTool so BOTH providers exercise the SAME supported
+# dual-output ToolResult route (voice_text + display_data), not just a
+# plain string return. Both factories below instantiate their OWN fresh
+# tool object — never a shared module-level singleton — so this tool's
+# per-instance state (the resolved demo delay) can never leak between the
+# Gemini and Nova bots, or between connections (spec: "Instantiate tools
+# per bot factory; share their definition/behavior rather than mutable
+# invocation state"). All returned data is a labeled demo fixture, not a
+# real weather lookup.
 # ---------------------------------------------------------------------------
 
 
-@tool
-def get_weather(location: str) -> str:
-    """Get the current weather for a location."""
-    return f"It's sunny and 25°C in {location}."
+class _WeatherArgs(AbstractToolArgsSchema):
+    location: str = ""
 
 
-SHARED_TOOLS = [get_weather]
+class VoiceDemoWeatherTool(AbstractTool):
+    """Deterministic weather demo tool with a bounded, opt-in slow-tool
+    scenario.
+
+    Set ``VOICEBOT_DEMO_TOOL_DELAY_SECONDS`` (clamped to
+    ``[0, _MAX_DEMO_DELAY_SECONDS]``) to make this tool sleep before
+    answering, so the real-live tool-interruption acceptance scenario
+    (spec §4) can actually be exercised on demand — the demo runs at its
+    normal (instant) speed otherwise.
+    """
+
+    name = "get_weather"
+    description = "Get the current weather for a location."
+    args_schema = _WeatherArgs
+
+    _MAX_DEMO_DELAY_SECONDS = 30.0
+    _DELAY_ENV_VAR = "VOICEBOT_DEMO_TOOL_DELAY_SECONDS"
+
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self._delay_seconds = self._resolve_demo_delay()
+
+    def _resolve_demo_delay(self) -> float:
+        raw = os.environ.get(self._DELAY_ENV_VAR, "0")
+        try:
+            value = float(raw)
+        except ValueError:
+            return 0.0
+        return max(0.0, min(value, self._MAX_DEMO_DELAY_SECONDS))
+
+    async def _execute(self, location: str = "", **kwargs: Any) -> ToolResult:
+        if self._delay_seconds:
+            await asyncio.sleep(self._delay_seconds)
+        location_label = location or "your area"
+        return ToolResult(
+            success=True,
+            status="success",
+            result={"location": location_label, "condition": "sunny", "temp_c": 25},
+            voice_text=f"It's sunny and 25 degrees Celsius in {location_label}.",
+            display_data={
+                "kind": "weather",
+                "location": location_label,
+                "condition": "sunny",
+                "temp_c": 25,
+                "demo_fixture": True,
+            },
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -146,6 +212,76 @@ NOVA_UNAVAILABLE_REASON = (
 
 
 # ---------------------------------------------------------------------------
+# LiveKit SDK asset (FEAT-536 TASK-2943 — spec §2 "Delivering the existing
+# LiveKit SDK to the standalone page"): serve the SAME locked
+# `livekit-client` dependency `packages/ai-parrot-server/ui/package.json`
+# already declares (^2.19.2, pnpm-lock.yaml resolves 2.22.1) from that
+# package's own node_modules — never a CDN, never a different/upgraded
+# version, and never node_modules at large. Missing installation degrades
+# the avatar viewer only; both voice-provider WebSocket routes keep
+# working regardless.
+# ---------------------------------------------------------------------------
+
+_UI_PACKAGE_DIR = Path(__file__).resolve().parents[3] / "packages" / "ai-parrot-server" / "ui"
+_LIVEKIT_UMD_ROUTE = "/voice-assets/livekit-client.umd.js"
+
+
+def _resolve_livekit_umd_path() -> Path | None:
+    """Resolve the installed ``livekit-client`` UMD asset.
+
+    Verified against the upstream 2.22.1 package manifest (spec §2) and
+    the local lockfile: the UMD build lives at ``dist/livekit-client.umd.js``
+    inside the package. Resolves through pnpm's symlinked
+    ``node_modules/livekit-client`` — the real (symlink-followed) path is
+    checked to still live under that same package directory, so a
+    malformed/malicious symlink can never cause an unrelated file to be
+    served.
+
+    Returns:
+        The resolved, existing path to the UMD asset, or ``None`` when
+        the package is not installed (``pnpm install`` has not been run
+        for the UI workspace) — a documented prerequisite, not a hard
+        failure for this example.
+    """
+    package_dir = (_UI_PACKAGE_DIR / "node_modules" / "livekit-client").resolve()
+    candidate = (package_dir / "dist" / "livekit-client.umd.js").resolve()
+    if not candidate.is_file():
+        return None
+    try:
+        candidate.relative_to(package_dir)
+    except ValueError:
+        # The resolved path escaped the package directory (e.g. a
+        # tampered symlink) — refuse to serve it.
+        return None
+    return candidate
+
+
+async def voice_assets_livekit_handler(request: web.Request) -> web.Response:  # noqa: ARG001
+    """Serve the installed ``livekit-client`` UMD asset at a single,
+    narrowly-scoped, EXACT route (no path parameter, so no traversal
+    surface exists for this route at all — aiohttp's exact-match routing
+    never dispatches ``/voice-assets/../…`` or any other URL here).
+
+    Returns a controlled, non-crashing response when the package is not
+    installed — the avatar viewer is unavailable, but both voice-provider
+    WebSocket routes and the page itself keep working.
+    """
+    path = _resolve_livekit_umd_path()
+    if path is None:
+        return web.Response(
+            status=503,
+            text=(
+                "livekit-client is not installed for the UI workspace "
+                "(packages/ai-parrot-server/ui) — run its install step to "
+                "enable the avatar viewer. Voice-provider routes are "
+                "unaffected."
+            ),
+            content_type="text/plain",
+        )
+    return web.FileResponse(path, headers={"Content-Type": "application/javascript"})
+
+
+# ---------------------------------------------------------------------------
 # Bot factories — VoiceChatHandler calls bot_factory() fresh for every new
 # WebSocket connection (see _handle_start_session), so each factory must
 # build a brand-new VoiceBot rather than returning a shared instance.
@@ -157,7 +293,7 @@ def make_gemini_bot() -> VoiceBot:
     return VoiceBot(
         name=BOT_NAME,
         system_prompt=SYSTEM_PROMPT,
-        tools=list(SHARED_TOOLS),
+        tools=[VoiceDemoWeatherTool()],
         voice_config=VoiceConfig(provider=VoiceProvider.GOOGLE_LIVE, voice_name="Puck"),
     )
 
@@ -179,8 +315,22 @@ def make_nova_bot() -> VoiceBot:
     return VoiceBot(
         name=BOT_NAME,
         system_prompt=SYSTEM_PROMPT,
-        tools=list(SHARED_TOOLS),
-        voice_config=VoiceConfig(provider=VoiceProvider.NOVA, voice_name="matthew"),
+        tools=[VoiceDemoWeatherTool()],
+        # FEAT-537: every field the broadcast path depends on is explicit
+        # rather than defaulted, so a change to VoiceConfig's defaults cannot
+        # silently alter the wire format the LiveAvatar bridge assumes
+        # (input 16 kHz mic PCM, output 24 kHz mono PCM16 — spec §2).
+        voice_config=VoiceConfig(
+            provider=VoiceProvider.NOVA,
+            model="nova-2-sonic",
+            voice_name="matthew",
+            input_sample_rate=16_000,
+            output_sample_rate=24_000,
+        ),
+        # Credential profile resolved from the [nova_sonic] section of
+        # env/.env (dev's AWS Nova 2 audio work) — orthogonal to the wire
+        # format above, so both are kept.
+        aws_id="nova_sonic",
     )
 
 
@@ -236,6 +386,317 @@ def build_capabilities() -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# FEAT-537 — moderated multi-browser broadcast (demo wiring)
+#
+# The broadcast producer is deliberately independent of any browser socket: the
+# provider toggle in the UI switches which single-user handler a *page* talks
+# to, and cannot affect a running broadcast, which is fixed to Nova for its
+# lifetime (spec §2).
+#
+# Demo authentication maps server-configured participant tokens to fixed scoped
+# principals. It is explicitly localhost-only: `main()` refuses a non-loopback
+# bind while demo participants are configured, because these tokens are shared
+# secrets in a config file, not real credentials.
+# ---------------------------------------------------------------------------
+
+BROADCAST_AGENT_ID = "voice-assistant"
+#: Route TEMPLATE registered on the router — the `{agent_id}` placeholder must
+#: survive, because the handlers read the agent from `match_info` exactly as
+#: they do in production (`manager.py`). Registering the concrete path instead
+#: would leave `match_info["agent_id"]` missing and 500 every request.
+BROADCAST_ROUTE_PREFIX = "/api/v1/agents/{agent_id}/voice-broadcasts"
+#: Concrete path the browser calls.
+BROADCAST_API_PREFIX = f"/api/v1/agents/{BROADCAST_AGENT_ID}/voice-broadcasts"
+BROADCAST_WS_PATH = f"/ws/voice/broadcast/{BROADCAST_AGENT_ID}/{{broadcast_id}}"
+BROADCAST_TENANT_ID = "demo"
+
+_LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+
+
+def _demo_participants() -> dict[str, str]:
+    """Parse ``VOICEBOT_DEMO_PARTICIPANTS`` into ``{token: name}``.
+
+    Format: ``alice:tokA,bob:tokB``.  Keyed by *token* so lookup is a single
+    dict hit and a name can never be used as a credential.
+
+    Returns:
+        Mapping of token to participant name; empty when unset.
+    """
+    raw = os.environ.get("VOICEBOT_DEMO_PARTICIPANTS", "").strip()
+    table: dict[str, str] = {}
+    for entry in raw.split(","):
+        entry = entry.strip()
+        if not entry or ":" not in entry:
+            continue
+        name, _, token = entry.partition(":")
+        name, token = name.strip(), token.strip()
+        if name and token:
+            table[token] = name
+    return table
+
+
+def _principal_for(name: str, agent_id: str):
+    """Build the fixed scoped principal for a demo participant.
+
+    Moderator and speaker authority still come **only** from admission and
+    grants — this decides identity, never role.
+    """
+    from parrot.integrations.liveavatar.broadcast.models import ParticipantPrincipal
+
+    return ParticipantPrincipal(
+        user_id=name,
+        tenant_id=BROADCAST_TENANT_ID,
+        agent_id=agent_id,
+        display_name=name.title(),
+    )
+
+
+def make_demo_token_validator(table: dict[str, str]):
+    """Build a ``TokenValidator`` over the demo participant table.
+
+    Shared with the WebSocket route so one table authenticates both transports;
+    two tables would be two places to get authorization wrong.
+
+    Args:
+        table: ``{token: name}``.
+
+    Returns:
+        A ``TokenValidator``.
+    """
+    from parrot.core.ws_auth import TokenValidator
+
+    def _validate(token: str):
+        name = table.get(token)
+        if not name:
+            return None
+        return {"user_id": name, "username": name.title()}
+
+    return TokenValidator(validator_func=_validate)
+
+
+def make_demo_principal_resolver(table: dict[str, str]):
+    """Build the HTTP principal resolver for the demo participant table.
+
+    Args:
+        table: ``{token: name}``.
+
+    Returns:
+        An ``async (request, agent_id) -> ParticipantPrincipal`` resolver.
+    """
+
+    async def _resolve(request: web.Request, agent_id: str):
+        header = request.headers.get("Authorization", "")
+        token = header[7:].strip() if header.lower().startswith("bearer ") else ""
+        name = table.get(token)
+        if not name:
+            raise web.HTTPUnauthorized(reason="demo participant token required")
+        return _principal_for(name, agent_id)
+
+    return _resolve
+
+
+def build_broadcast_service(app: web.Application):
+    """Build the demo's ``BroadcastService``, or ``None`` when unavailable.
+
+    Broadcast mode needs Redis (cross-worker state), LiveKit (the output room)
+    and — for avatar mode — LiveAvatar.  Any of them missing disables broadcast
+    mode with an actionable reason surfaced in ``__CONFIG__`` instead of
+    breaking the single-user demo.
+
+    Args:
+        app: The aiohttp application, for startup/cleanup hooks.
+
+    Returns:
+        ``(service, reason)`` — exactly one of which is ``None``.
+    """
+    redis_url = os.environ.get("VOICEBOT_BROADCAST_REDIS_URL", "").strip()
+    if not redis_url:
+        return None, (
+            "Set VOICEBOT_BROADCAST_REDIS_URL (and LIVEKIT_URL/LIVEKIT_API_KEY/"
+            "LIVEKIT_API_SECRET) to enable moderated broadcast mode."
+        )
+    if not NOVA_AVAILABLE:
+        return None, f"Broadcast mode requires Nova: {NOVA_UNAVAILABLE_REASON}"
+
+    try:
+        from parrot.integrations.liveavatar.broadcast.redis_registry import (
+            RedisBroadcastRegistry,
+        )
+        from parrot.integrations.liveavatar.broadcast.service import BroadcastService
+        from parrot.integrations.liveavatar.broadcast.worker_transport import (
+            WorkerAddressRegistry,
+        )
+        from parrot.integrations.liveavatar.room_manager import LiveKitRoomManager
+    except ImportError as exc:
+        return None, (f"Broadcast dependencies missing ({exc}); install " "'ai-parrot-integrations[broadcast]'.")
+
+    try:
+        room_manager = LiveKitRoomManager()
+    except KeyError as exc:
+        return None, f"Missing LiveKit environment variable: {exc}"
+
+    registry = RedisBroadcastRegistry.from_url(redis_url)
+    # Share the registry's Redis so a second demo worker can resolve this one's
+    # relay address; without it, a speaker admitted on the other worker fails
+    # closed with `owner_lost` instead of being heard.
+    worker_registry = WorkerAddressRegistry(getattr(registry, "_redis", None))
+    service = BroadcastService(
+        registry,
+        room_manager,
+        nova_bot_factory=make_nova_bot,
+        worker_id=os.environ.get("VOICEBOT_BROADCAST_WORKER_ID", f"demo-{os.getpid()}"),
+        worker_registry=worker_registry,
+        principal_resolver=lambda user, agent_id: _principal_for(
+            getattr(user, "user_id", None) or user["user_id"], agent_id
+        ),
+    )
+
+    async def _start(_app: web.Application) -> None:
+        service.start_reconciler()
+
+    async def _stop(_app: web.Application) -> None:
+        await service.aclose()
+        # Guarded: the in-memory registry used by tests has no client to close.
+        closer = getattr(registry, "aclose", None)
+        if closer is not None:
+            await closer()
+
+    app.on_startup.append(_start)
+    app.on_cleanup.append(_stop)
+    _register_demo_worker_relay(app, service, worker_registry)
+    return service, None
+
+
+def _register_demo_worker_relay(app: web.Application, service, worker_registry) -> bool:
+    """Serve the cross-worker speaker relay for a two-worker demo.
+
+    Opt-in, exactly like the production wiring: set
+    ``VOICEBOT_BROADCAST_WORKER_URL`` to the address the *other* demo worker
+    should dial, plus ``PARROT_BROADCAST_WORKER_TOKEN``. A single-worker demo
+    needs neither — the speaker and the producer share a process.
+
+    Args:
+        app: The demo application.
+        service: The broadcast service.
+        worker_registry: Registry this worker advertises itself in.
+
+    Returns:
+        ``True`` when the relay will be started.
+    """
+    from parrot.integrations.liveavatar.broadcast.worker_transport import (
+        WorkerAddressRegistry,
+        WorkerRelayServer,
+        resolve_worker_token,
+    )
+
+    advertised = os.environ.get("VOICEBOT_BROADCAST_WORKER_URL")
+    if not advertised:
+        return False
+    if not resolve_worker_token(None):
+        logger.warning(
+            "VOICEBOT_BROADCAST_WORKER_URL is set but "
+            "PARROT_BROADCAST_WORKER_TOKEN is not — refusing to serve an "
+            "unauthenticated relay."
+        )
+        return False
+    try:
+        url = WorkerAddressRegistry.validate_url(advertised)
+    except Exception as exc:  # noqa: BLE001 — bad config, not a crash
+        logger.warning("Demo worker relay disabled: %s", exc)
+        return False
+
+    parsed = urlparse(url)
+    state: dict = {}
+
+    async def _start_relay(_app: web.Application) -> None:
+        relay_app = web.Application()
+        WorkerRelayServer(service, require_tls=False).setup_routes(relay_app)
+        runner = web.AppRunner(relay_app)
+        await runner.setup()
+        site = web.TCPSite(runner, parsed.hostname or "127.0.0.1", parsed.port or 9401)
+        await site.start()
+        state["runner"] = runner
+        await worker_registry.register(service.worker_id, url)
+        logger.info("Demo worker relay listening, advertised as %s", url)
+
+    async def _stop_relay(_app: web.Application) -> None:
+        with contextlib.suppress(Exception):
+            await worker_registry.unregister(service.worker_id)
+        runner = state.pop("runner", None)
+        if runner is not None:
+            await runner.cleanup()
+
+    app.on_startup.append(_start_relay)
+    app.on_cleanup.append(_stop_relay)
+    return True
+
+
+def register_failure_injection(app: web.Application, service) -> bool:
+    """Mount the demo failure-injection hook, only when explicitly enabled.
+
+    Disabled by default and never registered by the production
+    ``manager.py`` — this exists so the operations runbook can demonstrate
+    avatar failure and owner death without unplugging real infrastructure.
+
+    Args:
+        app: The aiohttp application.
+        service: The broadcast service.
+
+    Returns:
+        ``True`` when the route was mounted.
+    """
+    if os.environ.get("VOICEBOT_BROADCAST_FAILURE_HOOK") != "1":
+        return False
+
+    async def _inject(request: web.Request) -> web.Response:
+        broadcast_id = request.match_info["broadcast_id"]
+        payload = await request.json()
+        kind = str(payload.get("kind", ""))
+        session = service.media_session(BROADCAST_TENANT_ID, broadcast_id)
+        if session is None:
+            raise web.HTTPNotFound(reason="no local producer for that broadcast")
+        if kind == "avatar_control_close":
+            await session._on_avatar_close("injected")  # noqa: SLF001
+        elif kind == "avatar_track_lost":
+            await session.on_participant_disconnected(session.avatar_identity)
+        elif kind == "owner_death":
+            await session.aclose()
+        else:
+            raise web.HTTPBadRequest(reason=f"unknown failure kind {kind!r}")
+        return web.json_response({"injected": kind})
+
+    app.router.add_post("/__demo__/broadcasts/{broadcast_id}/inject", _inject)
+    logger.warning(
+        "Demo failure-injection hook ENABLED at "
+        "/__demo__/broadcasts/{broadcast_id}/inject — never enable this "
+        "outside a local demo."
+    )
+    return True
+
+
+def broadcast_config(app: web.Application) -> dict[str, Any]:
+    """Browser-facing broadcast configuration block.
+
+    Carries participant **names** for the demo picker and never their tokens.
+
+    Args:
+        app: The aiohttp application.
+
+    Returns:
+        A JSON-serialisable, credential-free config block.
+    """
+    return {
+        "available": app.get("broadcast_service") is not None,
+        "unavailableReason": app.get("broadcast_unavailable_reason"),
+        "agentId": BROADCAST_AGENT_ID,
+        "apiPrefix": BROADCAST_API_PREFIX,
+        "wsPath": BROADCAST_WS_PATH,
+        "demoParticipants": sorted(app.get("demo_participants", {}).values()),
+        "maxViewers": 10,
+    }
+
+
 async def index_handler(request: web.Request) -> web.Response:
     """Serve the provider-switch UI, templated with provider/capability data."""
     import json
@@ -257,6 +718,17 @@ async def index_handler(request: web.Request) -> web.Response:
             },
         },
         "capabilities": request.app["capabilities"],
+        # FEAT-536 TASK-2943: only the asset URL and its availability are
+        # exposed here — never a credential, never a LiveAvatar/LiveKit
+        # secret (those only ever reach the browser via each session's own
+        # session_started.avatar viewer credentials, Module 5/TASK-2945).
+        "avatar": {
+            "sdkUrl": _LIVEKIT_UMD_ROUTE,
+            "available": _resolve_livekit_umd_path() is not None,
+        },
+        # FEAT-537: names and paths only. Demo participant TOKENS are never
+        # templated into the page — a test walks this dict to prove it.
+        "broadcast": broadcast_config(request.app),
     }
     # Anchored to the exact bootstrap statement (`window.__CONFIG__ =
     # __CONFIG__;`), count=1 — a bare token-wide str.replace() would ALSO
@@ -295,8 +767,61 @@ def build_app() -> web.Application:
     gemini_handler.setup_routes(app, include_static=False)
     nova_handler.setup_routes(app, include_static=False)
 
+    # ── FEAT-537: broadcast mode ───────────────────────────────────────
+    # A THIRD handler instance, so the two single-user routes above keep
+    # exactly their pre-FEAT-537 behaviour (AC15: no second example, and no
+    # regression in the ordinary Gemini/Nova path).
+    participants = _demo_participants()
+    app["demo_participants"] = participants
+    service, reason = build_broadcast_service(app)
+    app["broadcast_service"] = service
+    app["broadcast_unavailable_reason"] = reason
+
+    if service is not None:
+        broadcast_handler = VoiceChatHandler(
+            bot_factory=make_nova_bot,
+            nova_bot_factory=make_nova_bot,
+            broadcast_service=service,
+            require_auth=bool(participants),
+            token_validator=make_demo_token_validator(participants) if participants else None,
+            ws_route="/ws/nova-broadcast",
+            health_route="/health/broadcast",
+        )
+        broadcast_handler.setup_routes(app, include_static=False)
+
+        try:
+            from parrot.handlers.voice_broadcast import (
+                register_voice_broadcast_routes,
+            )
+        except ImportError as exc:  # pragma: no cover — workspace sibling
+            logger.warning(
+                "Broadcast HTTP routes unavailable (%s); install " "'ai-parrot-server' from this workspace.",
+                exc,
+            )
+            app["broadcast_unavailable_reason"] = f"ai-parrot-server is not importable: {exc}"
+            app["broadcast_service"] = None
+        else:
+            register_voice_broadcast_routes(
+                app,
+                service,
+                prefix=BROADCAST_ROUTE_PREFIX,
+                principal_resolver=make_demo_principal_resolver(participants) if participants else None,
+            )
+            register_failure_injection(app, service)
+            logger.info(
+                "Broadcast mode enabled: %s + %s",
+                BROADCAST_API_PREFIX,
+                BROADCAST_WS_PATH,
+            )
+    else:
+        logger.info("Broadcast mode disabled: %s", reason)
+
     app.router.add_get("/", index_handler)
     app.router.add_static("/static/", path=STATIC_DIR, name="static")
+    # FEAT-536 TASK-2943: single, exact, narrowly-scoped route — never a
+    # prefix/static mount over node_modules (that would expose the whole
+    # tree, not just the one locked asset).
+    app.router.add_get(_LIVEKIT_UMD_ROUTE, voice_assets_livekit_handler)
 
     if not NOVA_AVAILABLE:
         logger.warning("Nova route mounted but reports unavailable: %s", NOVA_UNAVAILABLE_REASON)
@@ -315,8 +840,38 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
-    """Run the aiohttp provider-switch demo server."""
+    """Run the aiohttp provider-switch demo server.
+
+    Raises:
+        SystemExit: When broadcast demo mode would be reachable off-host.
+            Both configurations are refused, because the *weaker* one was the
+            one previously left open: with ``VOICEBOT_DEMO_PARTICIPANTS`` set,
+            the tokens are shared secrets in a config file rather than real
+            credentials; with it unset, ``require_auth`` is ``False`` and the
+            broadcast socket accepts anyone at all. Either way, anyone who can
+            reach the port gets a seat and a microphone
+            (spec §2: "Refuse non-loopback binding in demo mode").
+    """
     args = parse_args()
+    off_host = args.host not in _LOOPBACK_HOSTS
+    if _demo_participants() and off_host:
+        raise SystemExit(
+            f"Refusing to bind demo mode to {args.host!r}: "
+            "VOICEBOT_DEMO_PARTICIPANTS maps shared tokens to fixed principals "
+            "and is localhost-only. Bind to localhost/127.0.0.1/::1, or unset "
+            "VOICEBOT_DEMO_PARTICIPANTS and put real authentication in front."
+        )
+    if off_host and os.environ.get("PARROT_BROADCAST_REDIS_URL"):
+        # No participants configured means require_auth is False, so the
+        # broadcast socket would accept anyone. This is the weaker of the two
+        # configurations and was the one left open.
+        raise SystemExit(
+            f"Refusing to bind broadcast demo mode to {args.host!r} with "
+            "authentication disabled: VOICEBOT_DEMO_PARTICIPANTS is unset, so "
+            "the broadcast socket would accept any caller that can reach the "
+            "port. Bind to localhost/127.0.0.1/::1, or set "
+            "VOICEBOT_DEMO_PARTICIPANTS and put real authentication in front."
+        )
     app = build_app()
     logger.info(
         "Provider-switch voice demo on http://%s:%d  (nova_available=%s)",

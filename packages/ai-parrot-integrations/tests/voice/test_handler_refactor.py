@@ -152,7 +152,11 @@ class TestFrameProtocolUnchanged:
     (text/audio/turn_complete/...)."""
 
     @pytest.mark.asyncio
-    async def test_text_response_uses_response_chunk_not_text(self, handler, connection):
+    async def test_audio_response_uses_response_chunk_not_text(self, handler, connection):
+        """``response_chunk`` is the audio-carrying frame — a text-only,
+        non-user delta (no audio_data) no longer synthesizes one (that
+        duplicated the ``transcription`` frame's text into the same
+        message bubble; see the handler's own comment on this branch)."""
         session = _HandlerVoiceSession(
             client=_capable_mock_client(),
             send_fn=AsyncMock(),
@@ -161,12 +165,31 @@ class TestFrameProtocolUnchanged:
             connection=connection,
         )
         await session._relay(
-            LiveVoiceResponse(text="hello", is_complete=False),
+            LiveVoiceResponse(text="hello", audio_data=b"\x00\x01" * 50, is_complete=False),
             turn_no=1,
         )
         types = _sent_types(connection)
         assert "response_chunk" in types
         assert "text" not in types
+
+    @pytest.mark.asyncio
+    async def test_text_only_delta_skips_response_chunk(self, handler, connection):
+        """A text-only delta (no audio) is carried solely by the
+        ``transcription`` frame — ``response_chunk`` stays audio-only."""
+        session = _HandlerVoiceSession(
+            client=_capable_mock_client(),
+            send_fn=AsyncMock(),
+            system_prompt="hi",
+            handler=handler,
+            connection=connection,
+        )
+        await session._relay(
+            LiveVoiceResponse(text="hello", role="assistant", is_complete=False),
+            turn_no=1,
+        )
+        types = _sent_types(connection)
+        assert "response_chunk" not in types
+        assert "transcription" in types
 
     @pytest.mark.asyncio
     async def test_completion_uses_response_complete_not_turn_complete(self, handler, connection):
@@ -301,6 +324,29 @@ class TestEnvelopeMigration:
     frame."""
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("stt_only", [False, True])
+    @pytest.mark.parametrize("message", ["AccessDeniedException: permission denied", ""])
+    async def test_provider_error_is_not_a_success(self, handler, connection, stt_only, message):
+        """Both relays must report failed turns, including empty SDK messages."""
+        connection.stt_only = stt_only
+        session = _HandlerVoiceSession(
+            client=_capable_mock_client(),
+            send_fn=connection.ws.send_json,
+            system_prompt="test voice prompt",
+            handler=handler,
+            connection=connection,
+        )
+        response = LiveVoiceResponse(is_complete=True, metadata={"error": message})
+        expected_message = message or "Unknown voice provider error"
+        await session._relay(response, turn_no=1)
+        assert _sent_types(connection) == ["error"]
+        assert connection.ws.send_json.await_args.args[0]["message"] == expected_message
+        connection.ws.send_json.reset_mock()
+        await handler._send_voice_response(connection, response)
+        assert _sent_types(connection) == ["error"]
+        assert connection.ws.send_json.await_args.args[0]["message"] == expected_message
+
+    @pytest.mark.asyncio
     async def test_transcription_frame_from_role(self, handler, connection):
         """Replaces test_user_transcription_still_forwarded's old
         metadata-key-based scenario with a direct role-based one."""
@@ -421,6 +467,131 @@ class TestUsageInResponseComplete:
         assert "usage" not in complete_frame
 
 
+class TestToolCallDedup:
+    """FEAT-536 TASK-2942 (spec §2 "Event delivery and completion
+    snapshots"): a delta emits tool_call once; the final snapshot only
+    emits IDs not seen earlier; a final-only tool call still emits once;
+    IDs may legitimately be reused in a later turn."""
+
+    @pytest.mark.asyncio
+    async def test_tool_final_only_and_next_turn_id_reuse(self, handler, connection):
+        from parrot.models.voice import LiveToolCall
+
+        session = _HandlerVoiceSession(
+            client=_capable_mock_client(),
+            send_fn=AsyncMock(),
+            system_prompt="hi",
+            handler=handler,
+            connection=connection,
+        )
+
+        tc1 = LiveToolCall(id="tu_1", name="get_weather", arguments={}, result={"output": "sunny"})
+
+        # Delta: streamed once.
+        await session._relay(
+            LiveVoiceResponse(text="", tool_calls=[tc1], is_complete=False),
+            turn_no=1,
+        )
+        assert len([t for t in _sent_types(connection) if t == "tool_call"]) == 1
+
+        # Final snapshot for the SAME turn carries the SAME id again — must
+        # NOT be re-sent as a second tool_call frame.
+        await session._relay(
+            LiveVoiceResponse(text="", tool_calls=[tc1], is_complete=True),
+            turn_no=1,
+        )
+        assert len([t for t in _sent_types(connection) if t == "tool_call"]) == 1
+
+        # A final-only tool call (never streamed as its own delta) still
+        # emits exactly once, alongside the already-seen id.
+        tc2 = LiveToolCall(id="tu_2", name="get_time", arguments={}, result={"output": "noon"})
+        await session._relay(
+            LiveVoiceResponse(text="", tool_calls=[tc1, tc2], is_complete=True),
+            turn_no=1,
+        )
+        assert len([t for t in _sent_types(connection) if t == "tool_call"]) == 2
+
+        # A LATER turn may legitimately reuse "tu_1" — bookkeeping resets
+        # per turn_no, so it must be delivered again.
+        connection.ws.send_json.reset_mock()
+        await session._relay(
+            LiveVoiceResponse(text="", tool_calls=[tc1], is_complete=False),
+            turn_no=2,
+        )
+        assert len([t for t in _sent_types(connection) if t == "tool_call"]) == 1
+
+    @pytest.mark.asyncio
+    async def test_concurrent_connections_do_not_share_dedup_state(self, handler, connection):
+        """Two independent _HandlerVoiceSession instances (one per
+        connection) must not share tool-call dedup bookkeeping."""
+        from parrot.models.voice import LiveToolCall
+
+        mock_ws2 = MagicMock()
+        mock_ws2.send_json = AsyncMock()
+        connection2 = WebSocketConnection(ws=mock_ws2, session_id="sess-2")
+
+        session1 = _HandlerVoiceSession(
+            client=_capable_mock_client(),
+            send_fn=AsyncMock(),
+            system_prompt="hi",
+            handler=handler,
+            connection=connection,
+        )
+        session2 = _HandlerVoiceSession(
+            client=_capable_mock_client(),
+            send_fn=AsyncMock(),
+            system_prompt="hi",
+            handler=handler,
+            connection=connection2,
+        )
+
+        tc = LiveToolCall(id="tu_shared_id", name="get_weather", arguments={}, result="sunny")
+        await session1._relay(LiveVoiceResponse(text="", tool_calls=[tc], is_complete=False), turn_no=1)
+        await session2._relay(LiveVoiceResponse(text="", tool_calls=[tc], is_complete=False), turn_no=1)
+
+        assert len([t for t in _sent_types(connection) if t == "tool_call"]) == 1
+        assert len([t for t in _sent_types(connection2) if t == "tool_call"]) == 1
+
+
+class TestExplicitTurnReplacementInterruptsAvatar:
+    """FEAT-536 TASK-2942 (spec §2 "Demo interruption controls"): explicit
+    start_recording interrupts an active avatar before start_turn; avatar
+    failures are isolated and never block recording or WebSocket delivery."""
+
+    @pytest.mark.asyncio
+    async def test_explicit_turn_replacement_interrupts_avatar(self, handler, connection):
+        avatar_session = MagicMock()
+        avatar_session.interrupt = AsyncMock()
+        connection.avatar_session = avatar_session
+
+        await handler._handle_start_recording(connection, {})
+
+        avatar_session.interrupt.assert_awaited_once()
+        assert connection.is_recording is True
+        assert "recording_started" in _sent_types(connection)
+
+    @pytest.mark.asyncio
+    async def test_no_avatar_session_skips_interrupt_call(self, handler, connection):
+        connection.avatar_session = None
+        await handler._handle_start_recording(connection, {})
+        assert connection.is_recording is True
+        assert "recording_started" in _sent_types(connection)
+
+    @pytest.mark.asyncio
+    async def test_avatar_failure_preserves_websocket_delivery(self, handler, connection):
+        """An avatar interrupt() failure must not prevent recording from
+        starting or the recording_started frame from being sent."""
+        avatar_session = MagicMock()
+        avatar_session.interrupt = AsyncMock(side_effect=RuntimeError("avatar exploded"))
+        connection.avatar_session = avatar_session
+
+        await handler._handle_start_recording(connection, {})  # must not raise
+
+        avatar_session.interrupt.assert_awaited_once()
+        assert connection.is_recording is True
+        assert "recording_started" in _sent_types(connection)
+
+
 class TestNamespacePackagingFix:
     """Regression guard for the packaging bug this task had to fix:
     ``parrot.voice`` is split across two installed distributions
@@ -449,3 +620,124 @@ class TestNamespacePackagingFix:
 
         core_voice_dir = os.path.dirname(core_session.__file__)
         assert not os.path.exists(os.path.join(core_voice_dir, "__init__.py"))
+
+
+class TestAssistantTranscriptDedup:
+    """A turn's closing frame must not re-append the transcript already
+    streamed to the assistant bubble.
+
+    Gemini Live streams ``output_transcription`` deltas as
+    ``role="assistant"`` frames, then its ``turn_complete`` frame carries
+    ``text=""`` plus ``turn_metadata.output_transcription`` (the full
+    concatenation) and its interrupt frame carries the same text as
+    ``accumulated_text``. Both used to reach the frontend as a second
+    ``transcription`` frame, rendering the reply twice.
+    """
+
+    @staticmethod
+    def _session(handler, connection):
+        return _HandlerVoiceSession(
+            client=_capable_mock_client(),
+            send_fn=AsyncMock(),
+            system_prompt="hi",
+            handler=handler,
+            connection=connection,
+        )
+
+    @staticmethod
+    def _assistant_texts(frames) -> list:
+        return [f["text"] for f in frames if f["type"] == "transcription" and not f["is_user"]]
+
+    @pytest.mark.asyncio
+    async def test_turn_complete_recap_not_repeated(self, handler, connection):
+        from parrot.models.voice import VoiceTurnMetadata
+
+        session = self._session(handler, connection)
+        streamed = []
+        for delta in ("Hello! How", " can I", " help", " you today?"):
+            frames = session.build_frames(
+                LiveVoiceResponse(text=delta, role="assistant", is_complete=False), turn_no=1
+            )
+            streamed += self._assistant_texts(frames)
+        assert "".join(streamed) == "Hello! How can I help you today?"
+
+        meta = VoiceTurnMetadata(turn_id="t1", output_transcription="Hello! How can I help you today?")
+        final = session.build_frames(
+            LiveVoiceResponse(text="", is_complete=True, turn_metadata=meta), turn_no=1
+        )
+        assert self._assistant_texts(final) == []
+        assert [f["type"] for f in final] == ["response_complete", "ready_to_speak"]
+
+    @pytest.mark.asyncio
+    async def test_interrupt_recap_not_repeated(self, handler, connection):
+        session = self._session(handler, connection)
+        session.build_frames(LiveVoiceResponse(text="Hello! How", role="assistant"), turn_no=1)
+        session.build_frames(LiveVoiceResponse(text=" can I", role="assistant"), turn_no=1)
+        final = session.build_frames(
+            LiveVoiceResponse(
+                text="Hello! How can I", role="assistant", is_complete=True, is_interrupted=True
+            ),
+            turn_no=1,
+        )
+        assert self._assistant_texts(final) == []
+
+    @pytest.mark.asyncio
+    async def test_final_frame_emits_only_unseen_suffix(self, handler, connection):
+        session = self._session(handler, connection)
+        session.build_frames(LiveVoiceResponse(text="Hello! How", role="assistant"), turn_no=1)
+        final = session.build_frames(
+            LiveVoiceResponse(text="Hello! How can I help?", role="assistant", is_complete=True),
+            turn_no=1,
+        )
+        assert self._assistant_texts(final) == [" can I help?"]
+
+    @pytest.mark.asyncio
+    async def test_final_frame_without_prior_deltas_is_forwarded(self, handler, connection):
+        """A provider that only reports the transcript on the final frame
+        must still get its text through (the fallback's original purpose)."""
+        from parrot.models.voice import VoiceTurnMetadata
+
+        session = self._session(handler, connection)
+        meta = VoiceTurnMetadata(turn_id="t1", output_transcription="Only at the end")
+        final = session.build_frames(
+            LiveVoiceResponse(text="", is_complete=True, turn_metadata=meta), turn_no=1
+        )
+        assert self._assistant_texts(final) == ["Only at the end"]
+
+    @pytest.mark.asyncio
+    async def test_bookkeeping_resets_per_turn(self, handler, connection):
+        session = self._session(handler, connection)
+        session.build_frames(LiveVoiceResponse(text="Hi", role="assistant"), turn_no=1)
+        session.build_frames(LiveVoiceResponse(text="Hi", role="assistant", is_complete=True), turn_no=1)
+        # Same words in a NEW turn are a new delta, not a recap.
+        frames = session.build_frames(LiveVoiceResponse(text="Hi", role="assistant"), turn_no=2)
+        assert self._assistant_texts(frames) == ["Hi"]
+
+    @pytest.mark.asyncio
+    async def test_delta_starting_with_sent_text_is_not_trimmed(self, handler, connection):
+        """Only closing frames are treated as recaps — a mid-turn delta that
+        happens to start with the already-sent words is appended intact."""
+        session = self._session(handler, connection)
+        session.build_frames(LiveVoiceResponse(text="Yes", role="assistant"), turn_no=1)
+        frames = session.build_frames(LiveVoiceResponse(text="Yes, indeed", role="assistant"), turn_no=1)
+        assert self._assistant_texts(frames) == ["Yes, indeed"]
+
+    @pytest.mark.asyncio
+    async def test_direct_send_path_dedupes_too(self, handler, connection):
+        """``_send_voice_response`` (the non-session relay) keeps the same
+        per-turn bookkeeping on the connection."""
+        from parrot.models.voice import VoiceTurnMetadata
+
+        await handler._send_voice_response(
+            connection, LiveVoiceResponse(text="Hello! How", role="assistant", turn_id="t1")
+        )
+        await handler._send_voice_response(
+            connection, LiveVoiceResponse(text=" can I help?", role="assistant", turn_id="t1")
+        )
+        meta = VoiceTurnMetadata(turn_id="t1", output_transcription="Hello! How can I help?")
+        await handler._send_voice_response(
+            connection, LiveVoiceResponse(text="", is_complete=True, turn_metadata=meta, turn_id="t1")
+        )
+        sent = [c.args[0] for c in connection.ws.send_json.await_args_list if c.args]
+        assistant = [m["text"] for m in sent if m["type"] == "transcription" and not m["is_user"]]
+        assert assistant == ["Hello! How", " can I help?"]

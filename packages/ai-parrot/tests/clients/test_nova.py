@@ -25,6 +25,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from parrot.clients.amazon.nova import NovaClient
+from parrot.tools.abstract import ToolResult
 
 
 def _make_client(**kwargs) -> NovaClient:
@@ -219,7 +220,15 @@ class TestStreamVoice:
         """FEAT-408: execution happens on contentEnd(type="TOOL"), not on the
         toolUse frame itself — Nova's toolUse.content is a JSON string, and
         the result is sent as a three-frame contentStart/toolResult/contentEnd
-        envelope keyed by contentName, not toolUseId."""
+        envelope keyed by contentName, not toolUseId.
+
+        FEAT-536 TASK-2940: tool execution now goes through
+        ``_execute_tool_full()`` (TASK-2939's manager complete-result mode),
+        not the reducing ``_execute_tool()`` — so that is mocked here, and
+        it must return a ``ToolResult`` (``_map_tool_result_to_nova()``
+        reads its fields directly). A bare string ``result`` with no
+        ``voice_text`` override maps to ``{"output": <str>}`` (spec §2).
+        """
         events = [
             {"toolUse": {"toolUseId": "tu_1", "toolName": "get_weather", "content": '{"city": "NYC"}'}},
             {"contentEnd": {"type": "TOOL"}},
@@ -240,7 +249,9 @@ class TestStreamVoice:
             patch.object(nova_client, "_open_stream", return_value=AsyncMock()),
             patch.object(nova_client, "_send_event", new=capture_send),
             patch.object(nova_client, "_iter_events", return_value=fake_events()),
-            patch.object(nova_client, "_execute_tool", return_value="Sunny, 25C"),
+            patch.object(
+                nova_client, "_execute_tool_full", return_value=ToolResult(status="success", result="Sunny, 25C")
+            ),
         ):
             responses = [r async for r in nova_client.stream_voice(_fake_audio_iterator())]
 
@@ -251,7 +262,7 @@ class TestStreamVoice:
         assert len(tool_call_responses) == 2
         assert not tool_call_responses[0].is_complete
         assert tool_call_responses[0].tool_calls[0].name == "get_weather"
-        assert tool_call_responses[0].tool_calls[0].result == "Sunny, 25C"
+        assert tool_call_responses[0].tool_calls[0].result == {"output": "Sunny, 25C"}
         assert tool_call_responses[1].is_complete
         # A toolResult event must have been sent back to the stream, as part
         # of the three-frame contentStart/toolResult/contentEnd envelope —

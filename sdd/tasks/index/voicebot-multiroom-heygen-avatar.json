@@ -1,0 +1,570 @@
+{
+  "feature": "voicebot-multiroom-heygen-avatar",
+  "feature_id": "FEAT-537",
+  "spec": "sdd/specs/voicebot-multiroom-heygen-avatar.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-09-08T07:34:55+00:00",
+  "completed_at": "2026-09-08T16:26:46+00:00",
+  "external_dependencies": [
+    {
+      "feature_id": "FEAT-536",
+      "feature": "voicebot-liveavatar-implementation",
+      "status": "merged (PR #1333, dev f8a56c48b) \u2014 real-vendor acceptance NOT RUN (TASK-2949 done-with-issues: 0/8 live scenarios executed)",
+      "gate": "Spec \u00a79/AC15 require FEAT-536 integrated AND verified before FEAT-537 implementation; TASK-2950 re-runs the dependent live rows. Do not treat TASK-2950/2951/2954/2955/2956 as runnable on local depends_on alone without acknowledging this gate."
+    }
+  ],
+  "tasks": [
+    {
+      "id": "TASK-2950",
+      "slug": "live-contract-probe",
+      "title": "Live vendor contract probe (Nova PCM \u2192 LITE \u2192 two LiveKit subscribers)",
+      "feature_id": "FEAT-537",
+      "feature": "voicebot-multiroom-heygen-avatar",
+      "spec": "sdd/specs/voicebot-multiroom-heygen-avatar.spec.md",
+      "status": "done-with-issues",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Only task touching `docs/testing/` and `artifacts/logs/` evidence for the live gate. Needs real LIVEAVATAR/LIVEKIT/AWS credentials and a human observer; if absent, record NOT RUN (see Scope) and finish as `done-with-issues` exactly like FEAT-536 TASK-2949.",
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": "2026-09-08T11:03:02+00:00",
+      "completed_at": "2026-09-08T11:12:37+00:00",
+      "file": "sdd/tasks/completed/TASK-2950-live-contract-probe.md",
+      "acceptance_criteria": [
+        "AC10",
+        "AC15"
+      ],
+      "verification": "verified",
+      "note": "live gate EXECUTED: 8/12 (7 pass, 1 vendor rejection found); Nova SDK now installed \u2014 rows 1-3 remain NOT RUN for want of a human observer, not tooling"
+    },
+    {
+      "id": "TASK-2951",
+      "slug": "broadcast-models",
+      "title": "Broadcast data models and public-state projection",
+      "feature_id": "FEAT-537",
+      "feature": "voicebot-multiroom-heygen-avatar",
+      "spec": "sdd/specs/voicebot-multiroom-heygen-avatar.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Creates only the new `broadcast/{__init__,models}.py` files and their test; shares no file with TASK-2950/2954/2955/2956/2957. Safe to run in a separate worktree.",
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": "2026-09-08T11:03:02+00:00",
+      "completed_at": "2026-09-08T11:17:10+00:00",
+      "file": "sdd/tasks/completed/TASK-2951-broadcast-models.md",
+      "acceptance_criteria": [
+        "AC3"
+      ],
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-2952",
+      "slug": "broadcast-registry-interface-memory",
+      "title": "BroadcastRegistry interface + in-memory reference implementation",
+      "feature_id": "FEAT-537",
+      "feature": "voicebot-multiroom-heygen-avatar",
+      "spec": "sdd/specs/voicebot-multiroom-heygen-avatar.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-2951"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Extends the `broadcast/` package created by TASK-2951 (imports its models). Does not touch handler/session files, so it can run alongside TASK-2954\u20132957 in the same worktree if edited sequentially.",
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": "2026-09-08T11:03:02+00:00",
+      "completed_at": "2026-09-08T11:27:25+00:00",
+      "file": "sdd/tasks/completed/TASK-2952-broadcast-registry-interface-memory.md",
+      "acceptance_criteria": [
+        "AC2",
+        "AC12",
+        "AC13",
+        "AC14"
+      ],
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-2953",
+      "slug": "broadcast-redis-registry",
+      "title": "RedisBroadcastRegistry (cross-worker atomic admission, ownership, floor)",
+      "feature_id": "FEAT-537",
+      "feature": "voicebot-multiroom-heygen-avatar",
+      "spec": "sdd/specs/voicebot-multiroom-heygen-avatar.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-2952"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Adds `broadcast/redis_registry.py` and a Redis-gated test module; reuses TASK-2952's contract suite. No shared production file with other tasks.",
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": "2026-09-08T11:03:02+00:00",
+      "completed_at": "2026-09-08T11:36:51+00:00",
+      "file": "sdd/tasks/completed/TASK-2953-broadcast-redis-registry.md",
+      "acceptance_criteria": [
+        "AC2",
+        "AC7",
+        "AC12",
+        "AC13",
+        "AC14"
+      ],
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-2954",
+      "slug": "room-manager-role-tokens",
+      "title": "LiveKitRoomManager role-specific tokens and room admin operations",
+      "feature_id": "FEAT-537",
+      "feature": "voicebot-multiroom-heygen-avatar",
+      "spec": "sdd/specs/voicebot-multiroom-heygen-avatar.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Touches only `room_manager.py` and its existing test module; no overlap with any other FEAT-537 task's files.",
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": "2026-09-08T11:03:02+00:00",
+      "completed_at": "2026-09-08T11:39:19+00:00",
+      "file": "sdd/tasks/completed/TASK-2954-room-manager-role-tokens.md",
+      "acceptance_criteria": [
+        "AC3"
+      ],
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-2955",
+      "slug": "avatar-ws-events-aggregation",
+      "title": "AvatarWebSocket observable events, close notification and cross-call frame aggregation",
+      "feature_id": "FEAT-537",
+      "feature": "voicebot-multiroom-heygen-avatar",
+      "spec": "sdd/specs/voicebot-multiroom-heygen-avatar.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Touches only `avatar_ws.py` and `test_avatar_ws.py`. Vendor event semantics are pending TASK-2950; expose them as data (callbacks + names) so no assumption is baked in.",
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": "2026-09-08T11:03:02+00:00",
+      "completed_at": "2026-09-08T11:42:55+00:00",
+      "file": "sdd/tasks/completed/TASK-2955-avatar-ws-events-aggregation.md",
+      "acceptance_criteria": [
+        "AC5",
+        "AC6"
+      ],
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-2956",
+      "slug": "room-audio-publisher-native-queue",
+      "title": "RoomAudioPublisher \u2014 explicit publisher identity, real native queue flush, failure propagation",
+      "feature_id": "FEAT-537",
+      "feature": "voicebot-multiroom-heygen-avatar",
+      "spec": "sdd/specs/voicebot-multiroom-heygen-avatar.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Touches only `room_audio_publisher.py` and `test_room_audio_publisher.py`.",
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": "2026-09-08T11:03:02+00:00",
+      "completed_at": "2026-09-08T11:46:54+00:00",
+      "file": "sdd/tasks/completed/TASK-2956-room-audio-publisher-native-queue.md",
+      "acceptance_criteria": [
+        "AC5",
+        "AC6"
+      ],
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-2957",
+      "slug": "voice-avatar-session-injected-room",
+      "title": "VoiceAvatarSession \u2014 injected room credentials, lifecycle callbacks, startup deadline",
+      "feature_id": "FEAT-537",
+      "feature": "voicebot-multiroom-heygen-avatar",
+      "spec": "sdd/specs/voicebot-multiroom-heygen-avatar.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2955"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Touches `voice_session.py` + its tests; consumes TASK-2955's `AvatarWebSocket` kwargs. No overlap with TASK-2954/2956 files.",
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": "2026-09-08T11:03:02+00:00",
+      "completed_at": "2026-09-08T11:49:48+00:00",
+      "file": "sdd/tasks/completed/TASK-2957-voice-avatar-session-injected-room.md",
+      "acceptance_criteria": [
+        "AC3",
+        "AC5"
+      ],
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-2958",
+      "slug": "broadcast-session-output-routing",
+      "title": "BroadcastSession \u2014 producer lifecycle, output routing, fallback and interruption",
+      "feature_id": "FEAT-537",
+      "feature": "voicebot-multiroom-heygen-avatar",
+      "spec": "sdd/specs/voicebot-multiroom-heygen-avatar.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-2950",
+        "TASK-2952",
+        "TASK-2954",
+        "TASK-2955",
+        "TASK-2956",
+        "TASK-2957"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Central media object; consumes every Module 2/3 extension. Creates `broadcast/session.py` + `test_voice_broadcast_media.py` only. TASK-2950 dependency is the spec's live gate: if TASK-2950 finished `done-with-issues` (NOT RUN), implement against the spec defaults and make every vendor-dependent threshold a constructor knob.",
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": "2026-09-08T11:03:02+00:00",
+      "completed_at": "2026-09-08T11:58:45+00:00",
+      "file": "sdd/tasks/completed/TASK-2958-broadcast-session-output-routing.md",
+      "acceptance_criteria": [
+        "AC5",
+        "AC6",
+        "AC7"
+      ],
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-2959",
+      "slug": "handler-broadcast-voice-relay",
+      "title": "Broadcast-owned VoiceSession and response relay in VoiceChatHandler",
+      "feature_id": "FEAT-537",
+      "feature": "voicebot-multiroom-heygen-avatar",
+      "spec": "sdd/specs/voicebot-multiroom-heygen-avatar.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-2958"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Edits the shared hot spot `voice/handler.py` (FEAT-536 owns its baseline). TASK-2960 edits the same file afterwards \u2014 strictly sequential.",
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": "2026-09-08T11:03:02+00:00",
+      "completed_at": "2026-09-08T12:05:48+00:00",
+      "file": "sdd/tasks/completed/TASK-2959-handler-broadcast-voice-relay.md",
+      "acceptance_criteria": [
+        "AC1",
+        "AC13",
+        "AC15"
+      ],
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-2960",
+      "slug": "broadcast-floor-control-ws-route",
+      "title": "Broadcast WebSocket route \u2014 lease-bound control sockets, floor validation, handoff barrier",
+      "feature_id": "FEAT-537",
+      "feature": "voicebot-multiroom-heygen-avatar",
+      "spec": "sdd/specs/voicebot-multiroom-heygen-avatar.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-2959"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Second sequential edit of `voice/handler.py` (after TASK-2959). Also creates `broadcast/floor.py`. No other task edits handler.py after this except TASK-2961's small service hook.",
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": "2026-09-08T11:03:02+00:00",
+      "completed_at": "2026-09-08T12:15:19+00:00",
+      "file": "sdd/tasks/completed/TASK-2960-broadcast-floor-control-ws-route.md",
+      "acceptance_criteria": [
+        "AC12",
+        "AC13",
+        "AC14"
+      ],
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-2961",
+      "slug": "broadcast-worker-transport-service",
+      "title": "BroadcastService facade, owner reconciliation watchdog and authenticated worker transport",
+      "feature_id": "FEAT-537",
+      "feature": "voicebot-multiroom-heygen-avatar",
+      "spec": "sdd/specs/voicebot-multiroom-heygen-avatar.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-2953",
+        "TASK-2960"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Creates `broadcast/service.py` + `broadcast/worker_transport.py`; one small hook in `handler.py` (`broadcast_service` becomes a typed `BroadcastService`). Sequential after TASK-2960.",
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": "2026-09-08T11:03:02+00:00",
+      "completed_at": "2026-09-08T13:28:30+00:00",
+      "file": "sdd/tasks/completed/TASK-2961-broadcast-worker-transport-service.md",
+      "acceptance_criteria": [
+        "AC4",
+        "AC7",
+        "AC13"
+      ],
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-2962",
+      "slug": "server-broadcast-http-routes",
+      "title": "Server HTTP API `/api/v1/agents/{agent_id}/voice-broadcasts` and manager wiring",
+      "feature_id": "FEAT-537",
+      "feature": "voicebot-multiroom-heygen-avatar",
+      "spec": "sdd/specs/voicebot-multiroom-heygen-avatar.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-2961"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Only task editing `packages/ai-parrot-server` (new `handlers/voice_broadcast.py`, `manager/manager.py` wiring, one guard test on `handlers/avatar.py`).",
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": "2026-09-08T11:03:02+00:00",
+      "completed_at": "2026-09-08T13:35:54+00:00",
+      "file": "sdd/tasks/completed/TASK-2962-server-broadcast-http-routes.md",
+      "acceptance_criteria": [
+        "AC2",
+        "AC3",
+        "AC4",
+        "AC12",
+        "AC14"
+      ],
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-2963",
+      "slug": "example-broadcast-backend",
+      "title": "Extend the runnable example backend (`examples/clients/voice/server.py`) with broadcast mode",
+      "feature_id": "FEAT-537",
+      "feature": "voicebot-multiroom-heygen-avatar",
+      "spec": "sdd/specs/voicebot-multiroom-heygen-avatar.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2962"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Only task editing `examples/clients/voice/server.py`. TASK-2965 (HTML) and TASK-2968 (browser harness) depend on its `__CONFIG__.broadcast` contract.",
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": "2026-09-08T11:03:02+00:00",
+      "completed_at": "2026-09-08T13:46:17+00:00",
+      "file": "sdd/tasks/completed/TASK-2963-example-broadcast-backend.md",
+      "acceptance_criteria": [
+        "AC11",
+        "AC15"
+      ],
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-2964",
+      "slug": "avatar-viewer-broadcast-policy",
+      "title": "`avatar-viewer.js` broadcast policy \u2014 descriptor-driven source selection, epoch fencing, no single-user fallback",
+      "feature_id": "FEAT-537",
+      "feature": "voicebot-multiroom-heygen-avatar",
+      "spec": "sdd/specs/voicebot-multiroom-heygen-avatar.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2951"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Touches only `examples/clients/voice/static/avatar-viewer.js` and the vitest file that imports it. Depends on TASK-2951 only for the `BroadcastPublicState` wire shape (field names). TASK-2965 consumes this API.",
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": "2026-09-08T11:03:02+00:00",
+      "completed_at": "2026-09-08T13:51:03+00:00",
+      "file": "sdd/tasks/completed/TASK-2964-avatar-viewer-broadcast-policy.md",
+      "acceptance_criteria": [
+        "AC4",
+        "AC5",
+        "AC8"
+      ],
+      "verification": "verified",
+      "note": "vitest blocker retired: pnpm install --frozen-lockfile then pnpm test \u2192 46 files / 316 tests pass, incl. voice-demo-avatar.test.ts 22/22"
+    },
+    {
+      "id": "TASK-2965",
+      "slug": "dual-provider-broadcast-ui",
+      "title": "Broadcast mode in `dual_provider.html` \u2014 roles, raised hands, floor-gated mic, real resampling",
+      "feature_id": "FEAT-537",
+      "feature": "voicebot-multiroom-heygen-avatar",
+      "spec": "sdd/specs/voicebot-multiroom-heygen-avatar.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-2963",
+        "TASK-2964"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Only task editing `dual_provider.html`. Requires the backend config contract (TASK-2963) and the viewer API (TASK-2964).",
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": "2026-09-08T11:03:02+00:00",
+      "completed_at": "2026-09-08T14:01:20+00:00",
+      "file": "sdd/tasks/completed/TASK-2965-dual-provider-broadcast-ui.md",
+      "acceptance_criteria": [
+        "AC8",
+        "AC12",
+        "AC13",
+        "AC14",
+        "AC15"
+      ],
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-2966",
+      "slug": "broadcast-docs-runbook",
+      "title": "README extension, operations guide and dependency extra for broadcast mode",
+      "feature_id": "FEAT-537",
+      "feature": "voicebot-multiroom-heygen-avatar",
+      "spec": "sdd/specs/voicebot-multiroom-heygen-avatar.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2965"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Docs-only plus a possible extras tweak; must describe the code as actually landed, so it runs after the UI task.",
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": "2026-09-08T11:03:02+00:00",
+      "completed_at": "2026-09-08T14:06:23+00:00",
+      "file": "sdd/tasks/completed/TASK-2966-broadcast-docs-runbook.md",
+      "acceptance_criteria": [
+        "AC11"
+      ],
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-2967",
+      "slug": "cross-worker-redis-integration-tests",
+      "title": "Cross-worker Redis integration tests, admission limit and LiveKit token/admission suite",
+      "feature_id": "FEAT-537",
+      "feature": "voicebot-multiroom-heygen-avatar",
+      "spec": "sdd/specs/voicebot-multiroom-heygen-avatar.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2962"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Test-only task; creates `tests/e2e/test_voicebot_multiroom_heygen_avatar.py` (deterministic + Redis-gated parts) and may extend the Redis registry test module. Can run alongside TASK-2965 (different files).",
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": "2026-09-08T11:03:02+00:00",
+      "completed_at": "2026-09-08T14:10:12+00:00",
+      "file": "sdd/tasks/completed/TASK-2967-cross-worker-redis-integration-tests.md",
+      "acceptance_criteria": [
+        "AC2",
+        "AC3",
+        "AC4",
+        "AC7",
+        "AC12",
+        "AC13",
+        "AC14"
+      ],
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-2968",
+      "slug": "multi-browser-harness",
+      "title": "Multi-browser Playwright harness \u2014 moderated handoff, ten viewers, degradation and permissions",
+      "feature_id": "FEAT-537",
+      "feature": "voicebot-multiroom-heygen-avatar",
+      "spec": "sdd/specs/voicebot-multiroom-heygen-avatar.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-2965",
+        "TASK-2967"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Test-only; creates one browser suite module plus an opt-in real-vendor variant. Runs after the UI and the two-worker fixtures exist (it reuses both).",
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": "2026-09-08T11:03:02+00:00",
+      "completed_at": "2026-09-08T14:22:23+00:00",
+      "file": "sdd/tasks/completed/TASK-2968-multi-browser-harness.md",
+      "acceptance_criteria": [
+        "AC1",
+        "AC4",
+        "AC5",
+        "AC6",
+        "AC8",
+        "AC12",
+        "AC13",
+        "AC14"
+      ],
+      "verification": "verified",
+      "note": "confirm_viewer blocker resolved on this branch; harness now drives the production confirmation path"
+    },
+    {
+      "id": "TASK-2969",
+      "slug": "operational-acceptance-gate",
+      "title": "Real-vendor operational acceptance gate and AC evidence report",
+      "feature_id": "FEAT-537",
+      "feature": "voicebot-multiroom-heygen-avatar",
+      "spec": "sdd/specs/voicebot-multiroom-heygen-avatar.spec.md",
+      "status": "done-with-issues",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-2950",
+        "TASK-2966",
+        "TASK-2967",
+        "TASK-2968"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Final combined gate (spec \u00a73 Module 7 \"final combined gate last\"). Docs/evidence only; no production code. If the environment lacks credentials/human, record NOT RUN per row and finish `done-with-issues` \u2014 never claim acceptance from mocks (AC10).",
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": "2026-09-08T11:03:02+00:00",
+      "completed_at": "2026-09-08T14:27:47+00:00",
+      "file": "sdd/tasks/completed/TASK-2969-operational-acceptance-gate.md",
+      "acceptance_criteria": [
+        "AC9",
+        "AC10",
+        "AC11",
+        "AC15"
+      ],
+      "verification": "verified",
+      "note": "NOT ACCEPTED \u2014 AC1/AC10 require real vendor media; all code findings fixed"
+    }
+  ]
+}

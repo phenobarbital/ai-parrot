@@ -1,11 +1,24 @@
 """Tests for parallel tool execution gated by `parallel_tool_execution`
-(FEAT-416, TASK-2148 — spec §3 Module 4).
+(FEAT-416, TASK-2148 — spec §3 Module 4; result mapping and the
+immediate-admission coordinator updated by FEAT-536 TASK-2939/2940).
 
 Exercised via ``NovaAudio.stream_voice()`` (mock harness established by
 ``test_nova_tool_result.py``): two ``toolUse``/``contentEnd(TOOL)`` pairs
 arrive back-to-back before the turn's ``completionEnd``, each backed by a
-mocked ``_execute_tool`` that sleeps ~100ms, to measure real wall-clock
-concurrency rather than asserting on mocked call counts alone.
+mocked ``_execute_tool_full`` that sleeps ~100ms, to measure real
+wall-clock concurrency rather than asserting on mocked call counts alone.
+
+FEAT-536 TASK-2940: tool execution now goes through
+``_execute_tool_full()`` (TASK-2939's manager complete-result mode), NOT
+the reducing ``_execute_tool()`` this file used to patch/measure — so
+that's what's mocked here now, and it must return a ``ToolResult`` (a bare
+string ``result`` with no ``voice_text`` override maps to ``{"output":
+<str>}`` per spec §2, hence the updated result assertions below). The
+timing assertions are unaffected in spirit: with the new "admit and start
+executing immediately" coordinator (replacing the old "queue and flush on
+next non-tool event" model), the default (serial) cap still runs one tool
+at a time and ``parallel_tool_execution=True`` still runs up to 4
+concurrently — so the same wall-clock expectations hold.
 """
 
 import asyncio
@@ -15,6 +28,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from parrot.clients.amazon.nova import NovaClient
+from parrot.tools.abstract import ToolResult
 
 TOOL_A_USE = {"toolUse": {"toolName": "tool_a", "toolUseId": "tu_a", "content": '{"which": "a"}'}}
 TOOL_B_USE = {"toolUse": {"toolName": "tool_b", "toolUseId": "tu_b", "content": '{"which": "b"}'}}
@@ -52,15 +66,15 @@ async def _run(frames, execute, **stream_voice_kwargs):
         patch.object(client, "_send_event", new=capture),
         patch.object(client, "_iter_events", new=iter_events),
         patch.object(client, "_close_stream", new=AsyncMock()),
-        patch.object(client, "_execute_tool", new=execute),
+        patch.object(client, "_execute_tool_full", new=execute),
     ):
         out = [r async for r in client.stream_voice(audio(), **stream_voice_kwargs)]
     return out, sent
 
 
-async def _sleep_100ms(_name, args):
+async def _sleep_100ms(_name, args, **_kwargs):
     await asyncio.sleep(0.1)
-    return f"result-for-{args.get('which')}"
+    return ToolResult(status="success", result=f"result-for-{args.get('which')}")
 
 
 class TestParallelToolExecution:
@@ -79,8 +93,8 @@ class TestParallelToolExecution:
         assert elapsed_ms < 150, f"expected < 150ms, took {elapsed_ms:.1f}ms"
         assert execute.await_count == 2
         results = [tc.result for r in out for tc in r.tool_calls]
-        assert "result-for-a" in results
-        assert "result-for-b" in results
+        assert {"output": "result-for-a"} in results
+        assert {"output": "result-for-b"} in results
 
     @pytest.mark.asyncio
     async def test_sequential_default(self):
@@ -93,18 +107,18 @@ class TestParallelToolExecution:
         assert elapsed_ms >= 180, f"expected >= 180ms (sequential), took {elapsed_ms:.1f}ms"
         assert execute.await_count == 2
         results = [tc.result for r in out for tc in r.tool_calls]
-        assert "result-for-a" in results
-        assert "result-for-b" in results
+        assert {"output": "result-for-a"} in results
+        assert {"output": "result-for-b"} in results
 
     @pytest.mark.asyncio
     async def test_parallel_error_isolation(self):
         """One failing tool doesn't prevent the other from completing."""
 
-        async def _one_fails(name, args):
+        async def _one_fails(name, args, **_kwargs):
             if args.get("which") == "a":
                 raise RuntimeError("tool_a blew up")
             await asyncio.sleep(0.05)
-            return "result-for-b"
+            return ToolResult(status="success", result="result-for-b")
 
         execute = AsyncMock(side_effect=_one_fails)
         out, sent = await _run(
@@ -113,13 +127,19 @@ class TestParallelToolExecution:
             parallel_tool_execution=True,
         )
 
-        tool_calls = [tc for r in out for tc in r.tool_calls]
+        # Code-review finding (FEAT-536 completion): Nova's own final
+        # completion snapshot re-lists every admitted call's LiveToolCall
+        # object alongside its earlier per-call delta (TASK-2940/2941's
+        # documented, intentional arrival-order snapshot) — a naive flatten
+        # across all responses double-counts each call. Dedupe by id, the
+        # same way the WS-relay's own dedup (handler.py, TASK-2942) does.
+        tool_calls = list({tc.id: tc for r in out for tc in r.tool_calls}.values())
         errored = [tc for tc in tool_calls if tc.error]
         succeeded = [tc for tc in tool_calls if not tc.error]
         assert len(errored) == 1
         assert "tool_a blew up" in errored[0].error
         assert len(succeeded) == 1
-        assert succeeded[0].result == "result-for-b"
+        assert succeeded[0].result == {"output": "result-for-b"}
         # Both results must still be sent back to the model.
         tool_results = [e["event"]["toolResult"] for e in sent if "toolResult" in e.get("event", {})]
         assert len(tool_results) == 2

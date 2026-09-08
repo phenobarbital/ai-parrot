@@ -1,0 +1,112 @@
+{
+  "feature": "ui-surfaces-tenant-visibility",
+  "feature_id": "FEAT-535",
+  "spec": "sdd/specs/ui-surfaces-tenant-visibility.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-09-07T03:49:37.189781+00:00",
+  "completed_at": "2026-09-07T04:25:52+00:00",
+  "notes": "Decomposed 2026-09-06. Ids TASK-2932..2936 reserved by scripts/sdd/reserve_ids.py (commit 467748dc6). Spec decisions came from FieldSync FEAT-562's Q&A; no brainstorm in this repo. Downstream: FieldSync installs its own resolver and backfills recipe_params.fieldsync_tenant into the new column (FieldSync follow-up feature).",
+  "tasks": [
+    {
+      "id": "TASK-2932",
+      "slug": "ui-surfaces-visibility-schema-store",
+      "title": "ui_surfaces visibility columns, record fields and store methods",
+      "feature_id": "FEAT-535",
+      "feature": "ui-surfaces-tenant-visibility",
+      "spec": "sdd/specs/ui-surfaces-tenant-visibility.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Module 1. Only models/ui_surfaces.py + its tests; shares no file with 2933.",
+      "assigned_to": null,
+      "started_at": "2026-09-07T03:51:16+00:00",
+      "completed_at": "2026-09-07T04:03:21+00:00",
+      "file": "sdd/tasks/completed/TASK-2932-ui-surfaces-visibility-schema-store.md"
+    },
+    {
+      "id": "TASK-2933",
+      "slug": "ui-surfaces-scope-resolver",
+      "title": "SurfaceScope, SurfaceScopeResolver and the default session resolver",
+      "feature_id": "FEAT-535",
+      "feature": "ui-surfaces-tenant-visibility",
+      "spec": "sdd/specs/ui-surfaces-tenant-visibility.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2932"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Module 2. New module; depends on 2932 only for the SurfaceVisibility/UISurfaceRecord types in scope_grants.",
+      "assigned_to": null,
+      "started_at": "2026-09-07T03:51:16+00:00",
+      "completed_at": "2026-09-07T04:07:20+00:00",
+      "file": "sdd/tasks/completed/TASK-2933-ui-surfaces-scope-resolver.md"
+    },
+    {
+      "id": "TASK-2934",
+      "slug": "ui-surfaces-handler-visibility",
+      "title": "Handler: scope-aware access rule, visible listing, visibility on save, PATCH, metadata",
+      "feature_id": "FEAT-535",
+      "feature": "ui-surfaces-tenant-visibility",
+      "spec": "sdd/specs/ui-surfaces-tenant-visibility.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-2932",
+        "TASK-2933"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Module 3, REST lane. Integration point of 2932 and 2933.",
+      "assigned_to": null,
+      "started_at": "2026-09-07T03:51:16+00:00",
+      "completed_at": "2026-09-07T04:14:23+00:00",
+      "file": "sdd/tasks/completed/TASK-2934-ui-surfaces-handler-visibility.md"
+    },
+    {
+      "id": "TASK-2935",
+      "slug": "a2ui-mirror-scope-and-e2e",
+      "title": "A2UIHandler mirror route passes the scope; end-to-end visibility round trip",
+      "feature_id": "FEAT-535",
+      "feature": "ui-surfaces-tenant-visibility",
+      "spec": "sdd/specs/ui-surfaces-tenant-visibility.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2934"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Module 3, mirror + e2e. Depends on the access-rule kwarg from 2934.",
+      "assigned_to": null,
+      "started_at": "2026-09-07T03:51:16+00:00",
+      "completed_at": "2026-09-07T04:22:38+00:00",
+      "file": "sdd/tasks/completed/TASK-2935-a2ui-mirror-scope-and-e2e.md"
+    },
+    {
+      "id": "TASK-2936",
+      "slug": "ui-surfaces-visibility-docs",
+      "title": "Documentation: reference guide, Postman collection, host-resolver contract",
+      "feature_id": "FEAT-535",
+      "feature": "ui-surfaces-tenant-visibility",
+      "spec": "sdd/specs/ui-surfaces-tenant-visibility.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-2934",
+        "TASK-2935"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Module 4. Documents the merged behaviour; reads the Completion Notes.",
+      "assigned_to": null,
+      "started_at": "2026-09-07T03:51:16+00:00",
+      "completed_at": "2026-09-07T04:25:52+00:00",
+      "file": "sdd/tasks/completed/TASK-2936-ui-surfaces-visibility-docs.md"
+    }
+  ]
+}

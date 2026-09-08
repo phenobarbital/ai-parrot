@@ -7,7 +7,7 @@ import logging
 from enum import Enum
 import aiohttp
 import pandas as pd
-from .abstract import AbstractTool, ToolResult
+from .abstract import AbstractTool, ToolResult, _run_tool_output_guardrails
 from .compression import CompressionStage, CompressorRegistry
 from .compression import (
     codecs as _compression_codecs,
@@ -1516,6 +1516,8 @@ class ToolManager(MCPToolManagerMixin):
         tool_name: str,
         parameters: Dict[str, Any],
         permission_context: Optional["PermissionContext"] = None,
+        *,
+        return_tool_result: bool = False,
     ) -> Any:
         """Execute a registered tool function.
 
@@ -1530,15 +1532,40 @@ class ToolManager(MCPToolManagerMixin):
                 enforcement parity). If not provided, no new enforcement
                 occurs beyond what was already unconditional (e.g. an
                 unconditional guardrail pipeline).
+            return_tool_result: Keyword-only, opt-in (FEAT-536 TASK-2937).
+                When ``False`` (default), behavior is byte-for-byte
+                unchanged: raw values/exceptions/early statuses, guard
+                order, compression and hook behavior are all preserved
+                exactly as before this option existed. When ``True``,
+                returns the full ``ToolResult`` envelope instead of the
+                reduced payload — ``voice_text``/``display_data`` survive
+                uncompressed, non-success statuses (``error``,
+                ``forbidden``, ``not_found``, ``cancelled``, ``timeout``,
+                ``pending``, ``authorization_required``, ...) are returned
+                rather than raised/reduced, and the returned envelope is a
+                copy with a distinct ``metadata`` dict — the tool-owned
+                instance/envelope is never mutated. Uses the exact same
+                dispatch and enforcement path exactly once; never executes
+                the tool twice or bypasses the manager.
 
         Returns:
-            Tool execution result.
+            Tool execution result — a raw value/exception by default, or
+            a ``ToolResult`` when ``return_tool_result=True``.
 
         Raises:
-            ValueError: If tool not found or execution fails.
+            ValueError: If tool not found or execution fails (default
+                mode only — ``return_tool_result=True`` returns non-success
+                statuses instead of raising, except for resolver/pipeline/
+                dispatch exceptions and ``CancelledError``, which always
+                propagate).
         """
         if tool_name not in self._tools:
             return ToolResult(success=False, status="not_found", error=f"Tool '{tool_name}' not found", result=None)
+        # FEAT-536 TASK-2938: only set once the AbstractTool full-result
+        # branch below has actually acquired the tool instance's lock —
+        # released in the `finally` at the bottom of this method, covering
+        # every exit path (return or exception) while it is held.
+        full_result_lock: Optional[asyncio.Lock] = None
         try:
             tool = self._tools[tool_name]
             tool_kind = "tool_definition" if isinstance(tool, ToolDefinition) else "abstract_tool"
@@ -1674,6 +1701,58 @@ class ToolManager(MCPToolManagerMixin):
                     )
                 # === End manager-level Layer 2 resolver check ===
 
+                if return_tool_result:
+                    # Opt-in mode (TASK-2937): normalize a raw return into
+                    # ToolResult(status="success", result=value); preserve
+                    # an already-returned ToolResult as-is. Do not
+                    # interpret an arbitrary business dict as an envelope
+                    # merely because it has similar keys — only an actual
+                    # ToolResult instance is treated as one. Retain the
+                    # existing plain-function processing behavior: no
+                    # AbstractTool compression pipeline or result hooks
+                    # are added to plain-function execution in either
+                    # mode. Offload a synchronous function to a thread so
+                    # it cannot block the event loop; default mode below
+                    # remains unchanged (inline synchronous call).
+                    if asyncio.iscoroutinefunction(tool.function):
+                        full_result = await tool.function(**parameters)
+                    else:
+                        full_result = await asyncio.to_thread(tool.function, **parameters)
+
+                    self.logger.debug("Executed tool %r with parameters: %s", tool_name, parameters)
+                    if isinstance(full_result, ToolResult):
+                        # Code-review finding (FEAT-536 completion): a
+                        # plain @tool-decorated function CAN return a
+                        # ToolResult carrying voice_text/display_data
+                        # directly (TASK-2939's own test fixtures do this)
+                        # — this path previously returned it with ZERO
+                        # TOOL_OUTPUT guardrail/redaction processing,
+                        # unlike the AbstractTool branch below. A
+                        # ToolDefinition has no per-tool guard state of
+                        # its own, so use the MANAGER's own
+                        # enable_redaction/_tool_output_pipeline — the
+                        # same values register_tool()/add_tool() stamp
+                        # onto every AbstractTool instance it owns.
+                        if full_result.voice_text is not None or full_result.display_data is not None:
+                            guard_meta: Dict[str, Any] = dict(full_result.metadata) if full_result.metadata else {}
+                            guarded_voice, guarded_display = await self._apply_output_guards(
+                                self.enable_redaction,
+                                self._tool_output_pipeline,
+                                tool_name,
+                                full_result.voice_text,
+                                full_result.display_data,
+                                guard_meta,
+                            )
+                            return full_result.model_copy(
+                                update={
+                                    "voice_text": guarded_voice,
+                                    "display_data": guarded_display,
+                                    "metadata": guard_meta,
+                                }
+                            )
+                        return full_result
+                    return ToolResult(status="success", result=full_result)
+
                 if asyncio.iscoroutinefunction(tool.function):
                     result = await tool.function(**parameters)
                 else:
@@ -1683,6 +1762,20 @@ class ToolManager(MCPToolManagerMixin):
                 return result
 
             elif isinstance(tool, AbstractTool):
+                if return_tool_result:
+                    # FEAT-536 TASK-2938: serialize complete-result calls to
+                    # THIS instance — from pipeline stamping (right below)
+                    # through `tool.execute()` through result copying in
+                    # `_finish_abstract_tool_full_result()` — because a
+                    # `ToolManager.clone()` shares tool *instances* by
+                    # reference across managers. Different tool instances
+                    # never contend for each other's lock. Assign to the
+                    # outer `full_result_lock` only AFTER a successful
+                    # acquire, so a cancellation while waiting never
+                    # attempts to release a lock this call never held.
+                    _fr_lock = tool._get_full_result_lock()
+                    await _fr_lock.acquire()
+                    full_result_lock = _fr_lock
                 # Redaction opt-in: stamp the owning agent's flag onto the tool
                 # so AbstractTool.execute() scrubs only for flagged agents.
                 if self.enable_redaction and not tool.enable_redaction:
@@ -1775,6 +1868,14 @@ class ToolManager(MCPToolManagerMixin):
                         exec_kwargs.setdefault("_cred_user_id", getattr(permission_context, "user_id", None))
 
                 result = await tool.execute(**exec_kwargs)
+
+                if return_tool_result:
+                    # Opt-in complete-result mode (TASK-2937): use the same
+                    # dispatch above exactly once — never re-execute the
+                    # tool or bypass the manager.
+                    return await self._finish_abstract_tool_full_result(
+                        tool_name, tool, tool_kind, result, permission_context
+                    )
 
                 # Handle ToolResult objects
                 if isinstance(result, ToolResult):
@@ -1873,6 +1974,13 @@ class ToolManager(MCPToolManagerMixin):
         except Exception as e:
             self.logger.error("Error executing tool %s: %s", tool_name, e)
             raise
+        finally:
+            # FEAT-536 TASK-2938: release the complete-result lock (if this
+            # call actually acquired one) on every exit path — normal
+            # return, early guard-denial return, or an exception/
+            # CancelledError propagating out of the try block above.
+            if full_result_lock is not None:
+                full_result_lock.release()
 
     async def register_a2a_agent(self, url: str) -> RegisteredAgent:
         """
@@ -1998,6 +2106,270 @@ class ToolManager(MCPToolManagerMixin):
             return {"type": "tool_result", "tool_use_id": tool_id, "content": str(tool_result)}
         except Exception as e:
             return {"type": "tool_result", "tool_use_id": tool_id, "is_error": True, "content": str(e)}
+
+    async def _apply_output_guards(
+        self,
+        enable_redaction: bool,
+        pipeline: Optional[Any],
+        tool_name: str,
+        voice_text: Optional[str],
+        display_data: Optional[Dict[str, Any]],
+        meta: Dict[str, Any],
+    ) -> tuple[Optional[str], Optional[Dict[str, Any]]]:
+        """Run ``voice_text``/``display_data`` through a TOOL_OUTPUT
+        guard/redaction pipeline (FEAT-536 TASK-2938; hardened post-review
+        to close a guardrail-bypass gap).
+
+        Shared by every ``return_tool_result=True`` code path in this
+        module: the success and non-success branches of
+        :meth:`_finish_abstract_tool_full_result` (``AbstractTool``/
+        ``ToolkitTool``, passing that tool's own
+        ``enable_redaction``/``_tool_output_pipeline``) — so a non-success
+        envelope that happens to carry these fields is never returned
+        unguarded just because today's in-tree consumers
+        (``_map_tool_result_to_nova``, ``LiveToolAdapter.execute_tool``)
+        both happen to gate on ``status == "success"`` before reading
+        them — and the plain-``ToolDefinition`` (``@tool``-decorated
+        function) branch of :meth:`execute_tool`, which has no per-tool
+        guard state of its own and passes the MANAGER's own
+        ``self.enable_redaction``/``self._tool_output_pipeline`` instead
+        (the same values ``register_tool()``/``add_tool()`` stamp onto
+        every ``AbstractTool`` instance it owns) — closing the gap where a
+        plain-function voice tool previously bypassed output guardrails
+        entirely in complete-result mode.
+
+        Args:
+            enable_redaction: The caller's (tool- or manager-level) redaction flag.
+            pipeline: The caller's (tool- or manager-level) TOOL_OUTPUT pipeline, or ``None``.
+            tool_name: Registered tool name (only used for logging/guard
+                context, never for dispatch here).
+            voice_text: The candidate spoken text, or ``None``.
+            display_data: The candidate visual payload, or ``None``.
+            meta: Metadata dict to update in place with any
+                ``guardrails``/``output_guard_errors`` bookkeeping.
+
+        Returns:
+            ``(voice_text, display_data)`` — guarded/redacted, or
+            suppressed (``None``) if guard processing failed or changed
+            the field's expected shape. Unchanged (pass-through) when no
+            guard/redaction is configured.
+        """
+        if voice_text is None and display_data is None:
+            return voice_text, display_data
+        has_guardrails = pipeline is not None and pipeline.has_guardrails
+        if not (enable_redaction or has_guardrails):
+            return voice_text, display_data
+
+        flag_reports: Dict[str, Dict[str, Any]] = {}
+        output_guard_errors: Dict[str, str] = {}
+
+        if voice_text is not None:
+            try:
+                processed_voice, reports = await _run_tool_output_guardrails(pipeline, voice_text, tool_name)
+                if isinstance(processed_voice, str):
+                    voice_text = processed_voice
+                    flag_reports.update(reports)
+                else:
+                    # Guardrail processing changed the field's shape
+                    # (should not happen for a str input, but never
+                    # forward an unexpected type) — suppress rather than
+                    # risk leaking it raw.
+                    voice_text = None
+                    output_guard_errors["voice_text"] = "suppressed: unexpected type after guard processing"
+            except Exception as guard_exc:  # noqa: BLE001
+                self.logger.warning(
+                    "Output guardrail failed for voice_text on %s: %s",
+                    tool_name,
+                    guard_exc,
+                )
+                voice_text = None
+                output_guard_errors["voice_text"] = f"suppressed: {guard_exc}"
+
+        if display_data is not None:
+            try:
+                processed_display, reports = await _run_tool_output_guardrails(pipeline, display_data, tool_name)
+                if isinstance(processed_display, dict):
+                    display_data = processed_display
+                    flag_reports.update(reports)
+                else:
+                    # Lost its dict shape after blocking/redaction —
+                    # suppress rather than forward the original unsafe
+                    # (or now-malformed) value.
+                    display_data = None
+                    output_guard_errors["display_data"] = "suppressed: not a dict after guard processing"
+            except Exception as guard_exc:  # noqa: BLE001
+                self.logger.warning(
+                    "Output guardrail failed for display_data on %s: %s",
+                    tool_name,
+                    guard_exc,
+                )
+                display_data = None
+                output_guard_errors["display_data"] = f"suppressed: {guard_exc}"
+
+        if flag_reports:
+            meta.setdefault("guardrails", {}).update(flag_reports)
+        if output_guard_errors:
+            meta["output_guard_errors"] = output_guard_errors
+
+        return voice_text, display_data
+
+    async def _finish_abstract_tool_full_result(
+        self,
+        tool_name: str,
+        tool: "AbstractTool",
+        tool_kind: str,
+        result: ToolResult,
+        permission_context: Optional["PermissionContext"],
+    ) -> ToolResult:
+        """Opt-in complete-result finish for ``AbstractTool``/``ToolkitTool``.
+
+        (FEAT-536 TASK-2937.) Called once, immediately after
+        ``tool.execute()`` in ``execute_tool(..., return_tool_result=True)``
+        — never a second dispatch. Mirrors the default-mode postprocess /
+        result-hooks / compression pipeline (see the ``isinstance(result,
+        ToolResult)`` block right below this method) but returns the full
+        envelope instead of the reduced ``result.result`` payload:
+
+        - ``forbidden``: returned as-is (already logged by
+          ``AbstractTool.execute()``'s own Layer 2 resolver check —
+          logged here the same way the default branch does, for
+          uniform observability, FEAT-474 G6).
+        - Any other non-success envelope (``status != "success"`` or
+          ``success is not True`` — e.g. ``error``, ``pending``,
+          ``cancelled``, ``timeout``, ``not_found``,
+          ``authorization_required``): returned as-is, full
+          status/error/metadata intact. Never turned into success merely
+          because ``result`` is empty; no success hooks run. The existing
+          error-payload capture (tee) still runs for ``status == "error"``
+          — matching the default branch's tee-before-raise — but the
+          envelope is *returned*, not raised as ``ValueError``.
+        - Successful envelope (``status == "success" and success is
+          True``): extraction/result hooks observe the original payload
+          exactly once, before compression — on a **copied** metadata
+          dict so the tool-owned envelope's ``metadata`` is never
+          mutated. Compression runs on ``result`` only;
+          ``voice_text``/``display_data`` are never compressed but DO
+          run through the tool's configured TOOL_OUTPUT guard/redaction
+          helper (FEAT-536 TASK-2938) when
+          ``tool.enable_redaction or tool._has_tool_output_guardrails()``
+          — the same gate ``AbstractTool.execute()`` already uses for
+          ``result``/``error``/``metadata`` (never processed twice here;
+          only the two newly-exposed fields are handled in this method).
+          A ``display_data`` value that no longer has dict shape after
+          guardrail processing is suppressed (``None``) rather than
+          forwarded; a field whose processing itself raises is likewise
+          suppressed and a controlled note is added to
+          ``metadata["output_guard_errors"]`` — the original unsafe value
+          is never returned. Returns ``result.model_copy(update=...)`` —
+          a new envelope, not the original instance.
+
+        Args:
+            tool_name: Registered tool name (dispatch key).
+            tool: The ``AbstractTool``/``ToolkitTool`` instance just executed.
+            tool_kind: ``"abstract_tool"`` (for ``_log_enforcement``).
+            result: The ``ToolResult`` returned by ``tool.execute()``.
+            permission_context: The context passed to ``execute_tool()``,
+                forwarded to ``_log_enforcement`` for the forbidden case.
+
+        Returns:
+            The full ``ToolResult`` envelope to return to the caller.
+        """
+        if result.status == "forbidden":
+            self._log_enforcement(
+                tool_name,
+                tool_kind,
+                "resolver",
+                "deny",
+                permission_context,
+                result.error,
+            )
+            return result
+
+        is_successful = result.status == "success" and result.success is True
+        if not is_successful:
+            if result.status == "error":
+                # Preserve the existing error-payload capture hook (tee)
+                # where it applies — the full-mode envelope is returned
+                # (not raised), so the payload would otherwise never be
+                # teed anywhere else.
+                try:
+                    self._bind_compression_tee()
+                    await self._compression_tee.store(tool_name, result.result, "error")
+                except Exception as tee_exc:  # noqa: BLE001
+                    self.logger.warning(
+                        "Compression tee failed while capturing error payload for %s: %s",
+                        tool_name,
+                        tee_exc,
+                    )
+            # Code-review finding (FEAT-536 completion): a non-success
+            # ToolResult is not schema-forbidden from carrying voice_text/
+            # display_data. Every current in-tree consumer
+            # (_map_tool_result_to_nova, LiveToolAdapter.execute_tool)
+            # already gates on status=="success" before ever reading
+            # either field, so this is currently unreachable in
+            # practice — but this is a public, reusable ToolManager API
+            # (return_tool_result=True), so route both fields through the
+            # same output-guard helper here too, defensively, rather than
+            # relying on every future caller to re-derive that gate.
+            if result.voice_text is not None or result.display_data is not None:
+                non_success_meta: Dict[str, Any] = dict(result.metadata) if result.metadata else {}
+                guarded_voice, guarded_display = await self._apply_output_guards(
+                    tool.enable_redaction,
+                    tool._tool_output_pipeline,
+                    tool_name,
+                    result.voice_text,
+                    result.display_data,
+                    non_success_meta,
+                )
+                return result.model_copy(
+                    update={
+                        "voice_text": guarded_voice,
+                        "display_data": guarded_display,
+                        "metadata": non_success_meta,
+                    }
+                )
+            return result
+
+        out = result.result
+        # Distinct metadata dict: hooks/compression mutate this copy, never
+        # the tool-owned `result.metadata` object.
+        meta: Dict[str, Any] = dict(result.metadata) if result.metadata else {}
+        self._postprocess_result(tool_name, out, meta)
+        self._run_result_hooks(tool_name, out, meta)
+
+        self._bind_compression_tee()
+        compressed_out, comp_meta = await self._compression_stage.run(
+            tool_name,
+            out,
+            status=result.status,
+            metadata=meta,
+            return_direct=getattr(tool, "return_direct", False),
+        )
+        meta.update(comp_meta)
+
+        # voice_text/display_data are intentionally NOT passed through
+        # compression, but — when output guardrails/redaction are
+        # configured for this tool — DO go through the same TOOL_OUTPUT
+        # guard helper `AbstractTool.execute()` already applies to
+        # result/error/metadata (FEAT-536 TASK-2938). This is the ONLY
+        # place these two newly-exposed fields are processed on the
+        # success path; result/error/metadata are never re-processed here
+        # (already handled once inside `tool.execute()` above, before this
+        # method ran). `_apply_output_guards()` is shared with the
+        # non-success branch above and the plain-``ToolDefinition`` full-
+        # result path in ``execute_tool()`` (code-review finding).
+        voice_text, display_data = await self._apply_output_guards(
+            tool.enable_redaction, tool._tool_output_pipeline, tool_name, result.voice_text, result.display_data, meta
+        )
+
+        return result.model_copy(
+            update={
+                "result": compressed_out,
+                "metadata": meta,
+                "voice_text": voice_text,
+                "display_data": display_data,
+            }
+        )
 
     def _postprocess_result(self, tool_name: str, out: Any, meta: Dict[str, Any]) -> None:
         """Auto-share DataFrame outputs and push to PythonPandasTool."""

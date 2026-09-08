@@ -1507,44 +1507,95 @@
                 }
             }
 
+            getPlaybackContext() {
+                // One persistent AudioContext for all playback: a fresh
+                // context per response added start-up latency and lost the
+                // shared clock that gapless scheduling relies on.
+                if (!this.playbackContext || this.playbackContext.state === 'closed') {
+                    this.playbackContext = new AudioContext({ sampleRate: 24000 });
+                    this.playbackCursor = 0;
+                    this.scheduledSources = new Set();
+                }
+                return this.playbackContext;
+            }
+
             async playStreamingAudio() {
                 if (this.isStreamingAudio) return;
                 this.isStreamingAudio = true;
 
-                const audioContext = new AudioContext({ sampleRate: 24000 });
-
-                if (audioContext.state === 'suspended') {
-                    await audioContext.resume();
-                }
-
-                while (this.audioPlaybackQueue && this.audioPlaybackQueue.length > 0) {
-                    const pcmData = this.audioPlaybackQueue.shift();
-
-                    try {
-                        const int16Array = new Int16Array(pcmData);
-                        const float32Array = new Float32Array(int16Array.length);
-                        for (let i = 0; i < int16Array.length; i++) {
-                            float32Array[i] = int16Array[i] / 32768;
+                try {
+                    const audioContext = this.getPlaybackContext();
+                    if (audioContext.state === 'suspended') {
+                        try {
+                            await audioContext.resume();
+                        } catch (e) {
+                            console.error('Failed to resume AudioContext:', e);
                         }
-
-                        const audioBuffer = audioContext.createBuffer(1, float32Array.length, 24000);
-                        audioBuffer.getChannelData(0).set(float32Array);
-
-                        const source = audioContext.createBufferSource();
-                        source.buffer = audioBuffer;
-                        source.connect(audioContext.destination);
-
-                        await new Promise((resolve) => {
-                            source.onended = resolve;
-                            source.start();
-                        });
-                    } catch (error) {
-                        console.error('Error playing audio chunk:', error);
                     }
-                }
 
-                audioContext.close();
-                this.isStreamingAudio = false;
+                    while (this.audioPlaybackQueue && this.audioPlaybackQueue.length > 0) {
+                        const pcmData = this.audioPlaybackQueue.shift();
+                        try {
+                            this.scheduleAudioChunk(audioContext, pcmData);
+                        } catch (error) {
+                            console.error('Error scheduling audio chunk:', error);
+                        }
+                    }
+                } finally {
+                    this.isStreamingAudio = false;
+                }
+            }
+
+            scheduleAudioChunk(audioContext, pcmData) {
+                // Chunks are scheduled back-to-back on the context clock
+                // instead of awaiting `onended` between them. The await
+                // path only starts the next buffer after the event loop
+                // observes the previous one finishing, which leaves a
+                // small silent gap at every chunk boundary — audible as a
+                // click/jitter while the model is speaking.
+                const int16Array = new Int16Array(pcmData, 0, pcmData.byteLength >> 1);
+                const float32Array = new Float32Array(int16Array.length);
+                for (let i = 0; i < int16Array.length; i++) {
+                    float32Array[i] = int16Array[i] / 32768;
+                }
+                const audioBuffer = audioContext.createBuffer(1, float32Array.length, 24000);
+                audioBuffer.getChannelData(0).set(float32Array);
+                const source = audioContext.createBufferSource();
+                source.buffer = audioBuffer;
+                source.connect(audioContext.destination);
+
+                const now = audioContext.currentTime;
+                if (this.playbackCursor < now) {
+                    // Timeline drained (first chunk of a reply, or the
+                    // network fell behind): restart with a small lead so
+                    // the buffer is never scheduled in the past.
+                    this.playbackCursor = now + 0.04;
+                }
+                source.start(this.playbackCursor);
+                this.playbackCursor += audioBuffer.duration;
+
+                this.scheduledSources.add(source);
+                source.onended = () => this.scheduledSources.delete(source);
+            }
+
+            stopLocalPlayback() {
+                // Chunks are scheduled ahead of the clock, so every
+                // already-queued source must be stopped for barge-in to
+                // be audible — clearing the queue alone is not enough.
+                if (this.audioPlaybackQueue) this.audioPlaybackQueue.length = 0;
+                if (this.scheduledSources) {
+                    for (const source of this.scheduledSources) {
+                        try {
+                            source.stop();
+                        } catch (e) {
+                            // Already stopped/ended — ignore.
+                        }
+                    }
+                    this.scheduledSources.clear();
+                }
+                if (this.playbackContext) {
+                    this.playbackCursor = this.playbackContext.currentTime;
+                }
             }
 
             // =====================================

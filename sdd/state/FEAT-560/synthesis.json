@@ -1,0 +1,531 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-560",
+  "mode": "enrichment",
+  "summary_oneline": "Completar paridad de Nova 2 Sonic en VoiceBot: herramientas, audio y datos estructurados.",
+  "localization": [
+    {
+      "path": "packages/ai-parrot/src/parrot/bots/voice.py",
+      "symbol": "VoiceBot._resolve_llm_config",
+      "lines": "205-220",
+      "role": "Contrato y selección de proveedor",
+      "evidence": [
+        "F001"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/bots/voice.py",
+      "symbol": "VoiceBot._create_llm_client",
+      "lines": "296-312",
+      "role": "Contrato y selección de proveedor",
+      "evidence": [
+        "F001"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/bots/voice.py",
+      "symbol": "VoiceBot.ask_stream",
+      "lines": "600-616",
+      "role": "Contrato y selección de proveedor",
+      "evidence": [
+        "F001"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/clients/protocols.py",
+      "symbol": "VoiceCapable",
+      "lines": "17-23",
+      "role": "Contrato y selección de proveedor",
+      "evidence": [
+        "F001"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/models/voice.py",
+      "symbol": "VoiceStreamOptions",
+      "lines": "175-183",
+      "role": "Contrato y selección de proveedor",
+      "evidence": [
+        "F001"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/models/voice.py",
+      "symbol": "LiveVoiceResponse",
+      "lines": "370-379",
+      "role": "Contrato y selección de proveedor",
+      "evidence": [
+        "F001"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-client-google/src/parrot/clients/google/live.py",
+      "symbol": "LiveToolAdapter.execute_tool",
+      "lines": "285-306",
+      "role": "Referencia dual output",
+      "evidence": [
+        "F002"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-client-google/src/parrot/clients/google/live.py",
+      "symbol": "GeminiLiveClient.stream_voice",
+      "lines": "1074-1089",
+      "role": "Referencia dual output",
+      "evidence": [
+        "F002"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/abstract.py",
+      "symbol": "ToolResult",
+      "lines": "250-266",
+      "role": "Referencia dual output",
+      "evidence": [
+        "F002"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-client-amazon/src/parrot/clients/amazon/nova/audio.py",
+      "symbol": "NovaAudio._flush_pending_tools",
+      "lines": "785-798",
+      "role": "Pérdida del resultado enriquecido",
+      "evidence": [
+        "F003"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/clients/base.py",
+      "symbol": "AbstractClient._execute_tool",
+      "lines": "1456-1467",
+      "role": "Pérdida del resultado enriquecido",
+      "evidence": [
+        "F003"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+      "symbol": "ToolManager.execute_tool",
+      "lines": "1807-1820",
+      "role": "Pérdida del resultado enriquecido",
+      "evidence": [
+        "F003"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-integrations/src/parrot/voice/handler.py",
+      "symbol": "_HandlerVoiceSession.build_frames",
+      "lines": "437-458",
+      "role": "Consumidor WebSocket y avatar",
+      "evidence": [
+        "F004"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-integrations/src/parrot/voice/handler.py",
+      "symbol": "_HandlerVoiceSession._relay",
+      "lines": "511-545",
+      "role": "Consumidor WebSocket y avatar",
+      "evidence": [
+        "F004"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-integrations/src/parrot/integrations/liveavatar/voice_session.py",
+      "symbol": "VoiceAvatarSession",
+      "lines": "1-7",
+      "role": "Consumidor WebSocket y avatar",
+      "evidence": [
+        "F004"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-integrations/src/parrot/integrations/liveavatar/voice_session.py",
+      "symbol": "VoiceAvatarSession.speak",
+      "lines": "223-233",
+      "role": "Consumidor WebSocket y avatar",
+      "evidence": [
+        "F004"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-client-amazon/src/parrot/clients/amazon/nova/audio.py",
+      "symbol": "NovaAudio",
+      "lines": "303-305",
+      "role": "Consumidor WebSocket y avatar",
+      "evidence": [
+        "F004"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-client-amazon/src/parrot/clients/amazon/nova/audio.py",
+      "symbol": "NovaAudio._build_tool_configuration",
+      "lines": "622-631",
+      "role": "Protocolo y progreso de herramientas",
+      "evidence": [
+        "F005"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-client-amazon/src/parrot/clients/amazon/nova/audio.py",
+      "symbol": "NovaAudio._build_prompt_start",
+      "lines": "643-665",
+      "role": "Protocolo y progreso de herramientas",
+      "evidence": [
+        "F005"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-client-amazon/src/parrot/clients/amazon/nova/audio.py",
+      "symbol": "NovaAudio._send_tool_result",
+      "lines": "667-683",
+      "role": "Protocolo y progreso de herramientas",
+      "evidence": [
+        "F005"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-client-amazon/src/parrot/clients/amazon/nova/audio.py",
+      "symbol": "NovaAudio.stream_voice",
+      "lines": "1087-1110",
+      "role": "Protocolo y progreso de herramientas",
+      "evidence": [
+        "F005"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/tests/clients/test_nova_tool_result.py",
+      "symbol": "_run",
+      "lines": "32-47",
+      "role": "Validación existente",
+      "evidence": [
+        "F007"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/tests/clients/test_live_tool_routing.py",
+      "symbol": "VoiceTool",
+      "lines": "14-23",
+      "role": "Validación existente",
+      "evidence": [
+        "F007"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/tests/voice/test_provider_conformance.py",
+      "symbol": "TestDropInEquivalence",
+      "lines": "147-169",
+      "role": "Validación existente",
+      "evidence": [
+        "F007"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-integrations/tests/voice/test_voicechat_avatar_integration.py",
+      "symbol": "test_gemini_audio_to_avatar_end_to_end",
+      "lines": "55-67",
+      "role": "Validación existente",
+      "evidence": [
+        "F007"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-client-amazon/src/parrot/clients/amazon/nova/client.py",
+      "symbol": "NovaClient",
+      "lines": "30-43",
+      "role": "Empaquetado",
+      "evidence": [
+        "F008"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-client-amazon/pyproject.toml",
+      "symbol": "project.dependencies",
+      "lines": "15-23",
+      "role": "Empaquetado",
+      "evidence": [
+        "F008"
+      ]
+    }
+  ],
+  "constraints": [
+    {
+      "statement": "Preservar campos del ToolResult y controles de ejecución antes de reducir el payload.",
+      "evidence": [
+        "F002",
+        "F003",
+        "F006"
+      ],
+      "implication": "Diseñar una ruta optativa de resultado completo en la capa de herramientas; no cambiar el contrato global del cliente base."
+    },
+    {
+      "statement": "Los consumidores existentes usan metadata.display_data y PCM a 24 kHz.",
+      "evidence": [
+        "F004"
+      ],
+      "implication": "Conservar envelopes de frontend y transporte de avatar."
+    },
+    {
+      "statement": "AWS requiere un resultado para cada herramienta y el SDK de voz es opcional en el manifiesto.",
+      "evidence": [
+        "F008",
+        "F010"
+      ],
+      "implication": "Probar progreso, errores y SDK simulado; documentar requisitos para smoke real sin añadir dependencias."
+    }
+  ],
+  "investigation": null,
+  "enrichment": {
+    "scope_confidence": "high",
+    "new": [
+      "Cobertura de paridad dual entre proveedores y prueba de progreso con flujo condicionado al resultado."
+    ],
+    "modified": [
+      {
+        "path": "packages/ai-parrot-client-amazon/src/parrot/clients/amazon/nova/audio.py",
+        "symbol": "NovaAudio._flush_pending_tools",
+        "evidence": [
+          "F003"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+        "symbol": "ToolManager.execute_tool",
+        "evidence": [
+          "F003"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/tests/clients/test_nova_tool_result.py",
+        "symbol": "_run",
+        "evidence": [
+          "F007"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/tests/clients/test_live_tool_routing.py",
+        "symbol": "VoiceTool",
+        "evidence": [
+          "F007"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/tests/voice/test_provider_conformance.py",
+        "symbol": "TestDropInEquivalence",
+        "evidence": [
+          "F007"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot-integrations/tests/voice/test_voicechat_avatar_integration.py",
+        "symbol": "test_gemini_audio_to_avatar_end_to_end",
+        "evidence": [
+          "F007"
+        ]
+      }
+    ],
+    "untouched": [
+      "Sin nuevo proveedor ni nuevo servicio de avatar",
+      "Sin cambios globales en el cliente base",
+      "JSON-schema del modelo sin herramientas fuera del alcance aceptado."
+    ],
+    "patterns": [
+      {
+        "statement": "Mantener un resultado de herramienta con canal hablado y canal visual.",
+        "evidence": [
+          "F002"
+        ]
+      },
+      {
+        "statement": "Mantener guardrails, permisos, hooks y contexto confiable.",
+        "evidence": [
+          "F006"
+        ]
+      }
+    ],
+    "risks": [
+      {
+        "statement": "Pérdida del resultado enriquecido antes de crear el evento de voz.",
+        "evidence": [
+          "F003"
+        ]
+      },
+      {
+        "statement": "Espera circular posible y bloqueo del receptor durante herramientas lentas.",
+        "evidence": [
+          "F005",
+          "F010"
+        ]
+      },
+      {
+        "statement": "Duplicación de eventos de herramientas acumulados al cierre; definir eventos frente a snapshot final.",
+        "evidence": [
+          "F004",
+          "F005"
+        ]
+      }
+    ]
+  },
+  "confidence_map": [
+    {
+      "id": "C1",
+      "statement": "VoiceBot ya selecciona Nova y consume el contrato común de voz.",
+      "evidence": [
+        "F001"
+      ],
+      "confidence": "high",
+      "reasoning": "Lectura directa del contrato."
+    },
+    {
+      "id": "C2",
+      "statement": "Gemini separa voice_text y display_data de ToolResult.",
+      "evidence": [
+        "F002"
+      ],
+      "confidence": "high",
+      "reasoning": "Lectura directa del contrato."
+    },
+    {
+      "id": "C3",
+      "statement": "El camino de herramientas Nova no conserva los campos multimodales.",
+      "evidence": [
+        "F003"
+      ],
+      "confidence": "high",
+      "reasoning": "Lectura directa del contrato."
+    },
+    {
+      "id": "C4",
+      "statement": "WebSocket y LiveAvatar ya consumen la envoltura y PCM de 24 kHz.",
+      "evidence": [
+        "F004"
+      ],
+      "confidence": "high",
+      "reasoning": "Lectura directa del contrato."
+    },
+    {
+      "id": "C5",
+      "statement": "El diferimiento de herramientas Nova puede causar espera circular si AWS espera el resultado.",
+      "evidence": [
+        "F005",
+        "F010"
+      ],
+      "confidence": "medium",
+      "reasoning": "Inferencia; pendiente de decisión de alcance o reproducción con stream interactivo."
+    },
+    {
+      "id": "C6",
+      "statement": "Hay diferencias de contexto y controles que la solución debe conservar o reconciliar.",
+      "evidence": [
+        "F006"
+      ],
+      "confidence": "high",
+      "reasoning": "Lectura directa del contrato."
+    },
+    {
+      "id": "C7",
+      "statement": "Las pruebas leídas no cubren la paridad dual completa con herramientas reales en Nova.",
+      "evidence": [
+        "F007"
+      ],
+      "confidence": "high",
+      "reasoning": "Lectura directa del contrato."
+    },
+    {
+      "id": "C8",
+      "statement": "Reutilizar el resultado enriquecido y los consumidores existentes es el alcance probable.",
+      "evidence": [
+        "F001",
+        "F002",
+        "F003",
+        "F004"
+      ],
+      "confidence": "medium",
+      "reasoning": "Inferencia; pendiente de decisión de alcance o reproducción con stream interactivo."
+    }
+  ],
+  "unknowns": [
+    {
+      "id": "U1",
+      "question": "¿Salida estructurada significa voice_text + display_data de herramientas, o también JSON del modelo validado contra un esquema sin herramientas?",
+      "blocks_claims": [
+        "C8"
+      ],
+      "plausible_answers": [
+        "Paridad con ToolResult",
+        "También salida de modelo contra esquema"
+      ],
+      "ask_user": true,
+      "answer": "Paridad con ToolResult.voice_text + display_data; sin JSON-schema del modelo adicional.",
+      "status": "resolved",
+      "user_reply_verbatim": "continuar con este alcance",
+      "resolution_basis": "Aceptación del alcance presentado en el review gate y la propuesta."
+    },
+    {
+      "id": "U2",
+      "question": "¿LiveAvatar se incluye como validación de la integración existente o solo WebSocket?",
+      "blocks_claims": [
+        "C8"
+      ],
+      "plausible_answers": [
+        "WebSocket y LiveAvatar existentes",
+        "Solo WebSocket"
+      ],
+      "ask_user": true,
+      "answer": "Validar WebSocket y la integración de audio LiveAvatar existente.",
+      "status": "resolved",
+      "user_reply_verbatim": "continuar con este alcance",
+      "resolution_basis": "Aceptación del alcance presentado en el review gate y la propuesta."
+    }
+  ],
+  "recommended_next_command": {
+    "command": "sdd-spec",
+    "rationale": "Usuario aceptó paridad de ToolResult y validación WebSocket/LiveAvatar existentes; la spec concretará la extensión optativa de herramientas y sus pruebas. No saltar a tareas."
+  },
+  "overall_confidence": "medium",
+  "meta": {
+    "findings_used": [
+      "F001",
+      "F002",
+      "F003",
+      "F004",
+      "F005",
+      "F006",
+      "F007",
+      "F008",
+      "F009",
+      "F010",
+      "F011"
+    ],
+    "findings_unused": [],
+    "notes": "Investigación limitada por tiempo; no validación real AWS/LiveAvatar. FEAT-560 es identidad local de propuesta, no reserva formal de especificación.",
+    "review_gate": {
+      "status": "accepted",
+      "choices": [
+        "proceed",
+        "refine research",
+        "refine synthesis",
+        "abort"
+      ],
+      "user_reply_verbatim": "continuar con este alcance",
+      "answered_at": "2026-09-07T05:40:15.236810+00:00"
+    },
+    "qa_answers": [
+      {
+        "id": "U1",
+        "answer": "Paridad con ToolResult.voice_text + display_data; sin JSON-schema del modelo adicional.",
+        "user_reply_verbatim": "continuar con este alcance"
+      },
+      {
+        "id": "U2",
+        "answer": "Validar WebSocket y la integración de audio LiveAvatar existente.",
+        "user_reply_verbatim": "continuar con este alcance"
+      }
+    ],
+    "budget": {
+      "profile": "default",
+      "truncated": true,
+      "truncation_reason": "Se cerró investigación al alcanzar el presupuesto temporal, sin profundizar en prototipo ni sesión real."
+    }
+  }
+}

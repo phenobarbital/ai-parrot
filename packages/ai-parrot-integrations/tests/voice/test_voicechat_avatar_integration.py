@@ -128,6 +128,34 @@ async def test_barge_in_clears_avatar(patched_stack, handler, connection):
 
 
 @pytest.mark.asyncio
+async def test_avatar_failure_preserves_websocket_delivery(patched_stack, handler, connection):
+    """FEAT-536 TASK-2942 (spec §2 "Avatar viewer": avatar errors must be
+    isolated): an avatar-tee failure (e.g. a transport error from
+    AvatarWebSocket.send_audio_frame) must not prevent the browser from
+    receiving its own WebSocket frames — the avatar tee is best-effort
+    and isolated from ordinary voice delivery.
+    """
+    _, _, ws, _ = patched_stack
+    ws.send_audio_frame.side_effect = RuntimeError("avatar transport exploded")
+
+    avatar_session = await VoiceAvatarSession.start(agent_id="ag", session_id="sess-1", tenant_id=None)
+    connection.avatar_session = avatar_session
+
+    pcm = b"\x00\x01" * 2400
+    await handler._send_voice_response(
+        connection,
+        LiveVoiceResponse(text="hello", audio_data=pcm, is_complete=False),
+    )
+
+    # The avatar attempt was made (and failed) ...
+    ws.send_audio_frame.assert_awaited_once_with(pcm)
+    # ... but the browser still received its own response_chunk frame —
+    # the avatar failure did not abort or skip ordinary WebSocket delivery.
+    sent_types = [c.args[0]["type"] for c in connection.ws.send_json.await_args_list if c.args]
+    assert "response_chunk" in sent_types
+
+
+@pytest.mark.asyncio
 async def test_pcm_bytes_unchanged_no_resample(patched_stack, handler, connection):
     """Assert byte identity: the PCM handed to speak() is the same object,
     confirming zero-copy (no resampling, no intermediate buffer).

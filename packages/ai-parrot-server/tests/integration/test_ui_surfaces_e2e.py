@@ -32,8 +32,9 @@ from aiohttp.web_urldispatcher import MatchInfoError
 from parrot.bots.mixins import InfographicAuthoringMixin
 from parrot.handlers.a2ui import A2UIHandler
 from parrot.handlers.models import ui_surfaces as store_module
-from parrot.handlers.models.ui_surfaces import PgUISurfaceStore
+from parrot.handlers.models.ui_surfaces import PgUISurfaceStore, SurfaceVisibility
 from parrot.handlers.ui_surfaces import SurfaceNegotiationService, UISurfacesHandler
+from parrot.handlers.ui_surfaces_scope import SurfaceScope
 from parrot.outputs.a2ui.models import Component, CreateSurface
 
 pytestmark = pytest.mark.asyncio
@@ -70,63 +71,59 @@ def _row_from_insert_args(args) -> dict:
         "recipe_name": args[8],
         "recipe_owner": args[9],
         "recipe_params": args[10],
-        "created_at": args[11],
-        "updated_at": args[12],
+        "tenant": args[11],
+        "visibility": args[12],
+        "allowed_groups": args[13],
+        "created_at": args[14],
+        "updated_at": args[15],
     }
 
 
+def _row_allowed_groups(row: dict) -> list[str]:
+    """Decode a fake row's ``allowed_groups`` (JSON string, list, or missing)."""
+    raw = row.get("allowed_groups")
+    if raw is None:
+        return []
+    if isinstance(raw, list):
+        return list(raw)
+    return json.loads(raw)
+
+
+def _row_visible(row: dict, *, user_id, tenant, groups, is_superuser) -> bool:
+    """Mirrors ``_LIST_VISIBLE_SQL``'s WHERE clause (identical to
+    ``test_ui_surfaces_store.py``'s fake — TASK-2932)."""
+    if row["user_id"] == user_id:
+        return True
+    row_tenant = row.get("tenant")
+    if tenant is None or row_tenant is None or row_tenant != tenant:
+        return False
+    visibility = row.get("visibility") or store_module.SurfaceVisibility.private.value
+    if visibility == store_module.SurfaceVisibility.tenant.value:
+        return True
+    if is_superuser:
+        return True
+    if visibility == store_module.SurfaceVisibility.groups.value:
+        return bool(set(_row_allowed_groups(row)) & set(groups))
+    return False
+
+
 class _FakeConn:
+    """Mirrors ``test_ui_surfaces_store.py``'s fake (TASK-2932) — the store's
+    own asyncdb-quirks fix (2026-09-05) routes DDL through ``execute``,
+    every write with a ``RETURNING`` clause through ``fetchval``, and reads
+    through ``fetch_one``/``fetch_all`` (never ``fetchrow``/``fetchall``)."""
+
     def __init__(self, state):
         self.state = state
 
     async def execute(self, sql, *args):
-        m = store_module
         state = self.state
-        if sql == m._INSERT_SQL:
-            surface_id = args[0]
-            if surface_id in state.surfaces:
-                raise Exception(  # noqa: TRY002 - mimic asyncpg's message heuristic
-                    'duplicate key value violates unique constraint "ui_surfaces_pkey"'
-                )
-            state.surfaces[surface_id] = _row_from_insert_args(args)
-            return
-        if sql == m._UPSERT_SQL:
-            state.surfaces[args[0]] = _row_from_insert_args(args)
-            return
-        if sql == m._UPDATE_ENVELOPE_SQL:
-            surface_id, envelope_json, params_json = args
-            row = state.surfaces.get(surface_id)
-            if row is not None:
-                row["envelope"] = envelope_json
-                row["recipe_params"] = params_json
-                row["updated_at"] = datetime.now(UTC)
-            return
-        if sql == m._MINT_SHARE_SQL:
-            token, surface_id, expires_at, created_at = args
-            state.shares[token] = {
-                "token": token,
-                "surface_id": surface_id,
-                "permissions": "read+refresh",
-                "expires_at": expires_at,
-                "revoked": False,
-                "claimed_by": None,
-                "claimed_at": None,
-                "created_at": created_at,
-            }
-            return
-        if sql == m._CLAIM_SHARE_SQL:
-            token, user_id = args
-            row = state.shares.get(token)
-            if row is not None and row["claimed_by"] is None:
-                row["claimed_by"] = user_id
-                row["claimed_at"] = datetime.now(UTC)
-            return
-        if sql.strip().upper().startswith("CREATE"):
+        if sql.strip().upper().startswith(("CREATE", "ALTER")):
             state.ddl_calls.append(sql)
-            return
+            return None
         raise AssertionError(f"Unexpected execute SQL: {sql!r}")
 
-    async def fetchrow(self, sql, *args):
+    async def fetch_one(self, sql, *args):
         m = store_module
         state = self.state
         if sql == m._GET_SQL:
@@ -139,11 +136,38 @@ class _FakeConn:
             if row["expires_at"] is not None and row["expires_at"] <= datetime.now(UTC):
                 return None
             return dict(row)
-        raise AssertionError(f"Unexpected fetchrow SQL: {sql!r}")
+        raise AssertionError(f"Unexpected fetch_one SQL: {sql!r}")
 
     async def fetchval(self, sql, *args):
         m = store_module
         state = self.state
+        if sql == m._INSERT_OR_SKIP_SQL:
+            surface_id = args[0]
+            if surface_id in state.surfaces:
+                return None  # ON CONFLICT DO NOTHING — no RETURNING row
+            state.surfaces[surface_id] = _row_from_insert_args(args)
+            return surface_id
+        if sql == m._UPSERT_SQL:
+            surface_id = args[0]
+            state.surfaces[surface_id] = _row_from_insert_args(args)
+            return surface_id
+        if sql == m._UPDATE_ENVELOPE_SQL:
+            surface_id, envelope_json, params_json = args
+            row = state.surfaces.get(surface_id)
+            if row is not None:
+                row["envelope"] = envelope_json
+                row["recipe_params"] = params_json
+                row["updated_at"] = datetime.now(UTC)
+            return surface_id
+        if sql == m._UPDATE_VISIBILITY_SQL:
+            surface_id, user_id, visibility, allowed_groups_value = args
+            row = state.surfaces.get(surface_id)
+            if row is not None and row["user_id"] == user_id:
+                row["visibility"] = visibility
+                row["allowed_groups"] = allowed_groups_value
+                row["updated_at"] = datetime.now(UTC)
+                return surface_id
+            return None
         if sql == m._DELETE_SQL:
             surface_id, user_id = args
             row = state.surfaces.get(surface_id)
@@ -151,6 +175,26 @@ class _FakeConn:
                 del state.surfaces[surface_id]
                 return surface_id
             return None
+        if sql == m._MINT_SHARE_SQL:
+            token, surface_id, expires_at, created_at = args
+            state.shares[token] = {
+                "token": token,
+                "surface_id": surface_id,
+                "permissions": "read+refresh",
+                "expires_at": expires_at,
+                "revoked": False,
+                "claimed_by": None,
+                "claimed_at": None,
+                "created_at": created_at,
+            }
+            return token
+        if sql == m._CLAIM_SHARE_SQL:
+            token, user_id = args
+            row = state.shares.get(token)
+            if row is not None and row["claimed_by"] is None:
+                row["claimed_by"] = user_id
+                row["claimed_at"] = datetime.now(UTC)
+            return token
         if sql == m._REVOKE_SHARE_SQL:
             token, surface_id = args
             row = state.shares.get(token)
@@ -160,7 +204,7 @@ class _FakeConn:
             return None
         raise AssertionError(f"Unexpected fetchval SQL: {sql!r}")
 
-    async def fetchall(self, sql, *args):
+    async def fetch_all(self, sql, *args):
         m = store_module
         state = self.state
         if sql == m._LIST_SQL:
@@ -183,8 +227,23 @@ class _FakeConn:
         elif sql == m._LIST_SHARES_SQL:
             surface_id = args[0]
             rows = [r for r in state.shares.values() if r["surface_id"] == surface_id]
+        elif sql == m._LIST_VISIBLE_SQL:
+            user_id, tenant, groups, is_superuser = args
+            rows = [
+                r
+                for r in state.surfaces.values()
+                if _row_visible(r, user_id=user_id, tenant=tenant, groups=groups, is_superuser=is_superuser)
+            ]
+        elif sql == m._LIST_VISIBLE_BY_KIND_SQL:
+            user_id, tenant, groups, is_superuser, kind = args
+            rows = [
+                r
+                for r in state.surfaces.values()
+                if _row_visible(r, user_id=user_id, tenant=tenant, groups=groups, is_superuser=is_superuser)
+                and r["kind"] == kind
+            ]
         else:
-            raise AssertionError(f"Unexpected fetchall SQL: {sql!r}")
+            raise AssertionError(f"Unexpected fetch_all SQL: {sql!r}")
         rows = sorted(rows, key=lambda r: r["updated_at" if "updated_at" in r else "created_at"], reverse=True)
         return [dict(r) for r in rows]
 
@@ -255,8 +314,24 @@ async def _delete(h):
     return await _unwrap(UISurfacesHandler.delete)(h)
 
 
+async def _patch(h):
+    return await _unwrap(UISurfacesHandler.patch)(h)
+
+
 async def _decode(response) -> dict:
     return json.loads(response.body)
+
+
+class _StubResolver:
+    """Installs a fixed :class:`SurfaceScope` on ``app["ui_surfaces_scope_resolver"]``
+    (FEAT-535, spec §3 Module 2/3 — same fixture idiom as
+    ``test_ui_surfaces_handler.py``/``test_a2ui_surfaces_route.py``)."""
+
+    def __init__(self, scope: SurfaceScope):
+        self._scope = scope
+
+    async def resolve(self, request):
+        return self._scope
 
 
 # ---------------------------------------------------------------------------
@@ -511,6 +586,129 @@ class TestE2E:
         h_get2 = _handler(app, match_info={"surface_id": surface_id}, user_id="viewer-1", query={"share": token})
         resp_get2 = await _get(h_get2)
         assert resp_get2.status == 410
+
+    async def test_e2e_tenant_visibility_roundtrip(self, store):
+        """FEAT-535 spec §4 Integration Tests: pin (``visibility=tenant``) ->
+        list as a tenant peer (``access=tenant``) -> GET+refresh as that peer
+        -> absent/404 for a caller in a DIFFERENT tenant -> PATCH to
+        ``groups`` -> group hit/miss -> superuser sees it regardless ->
+        viewer delete stays ``404``, row intact.
+
+        A stub :class:`SurfaceScopeResolver` is installed on the app dict
+        (spec §3 Module 2/3 test fixture) and swapped between calls to
+        simulate different callers hitting the SAME running app — exactly
+        how ``app["ui_surfaces_scope_resolver"]`` is meant to be consumed.
+        """
+        tenant_t = "epson"
+        tenant_u = "acme"
+        scope_a = SurfaceScope(user_id="user-a", tenant=tenant_t, groups=frozenset(), is_superuser=False)
+        app = {"ui_surfaces_store": store, "ui_surfaces_scope_resolver": _StubResolver(scope_a)}
+
+        envelope = _chart_envelope("surface-e2e-tenant")
+        h_post = _handler(
+            app,
+            match_info={},
+            path="/api/v1/ui/surfaces",
+            json_body={
+                "kind": "dashboard",
+                "title": "Program Report",
+                "envelope": envelope,
+                "visibility": "tenant",
+                "recipe_name": "daily-budget",
+                "recipe_owner": "user-a",
+            },
+            user_id="user-a",
+        )
+        resp_post = await _post(h_post)
+        assert resp_post.status == 201
+        surface_id = (await _decode(resp_post))["surface_id"]
+
+        stored = await store.get(surface_id)
+        assert stored.tenant == tenant_t
+        assert stored.visibility is SurfaceVisibility.tenant
+
+        # List as B (same tenant): present, tagged "tenant".
+        scope_b = SurfaceScope(user_id="user-b", tenant=tenant_t, groups=frozenset(), is_superuser=False)
+        app["ui_surfaces_scope_resolver"] = _StubResolver(scope_b)
+        h_list_b = _handler(app, match_info={}, user_id="user-b")
+        resp_list_b = await _get(h_list_b)
+        assert resp_list_b.status == 200
+        access_by_id = {s["surface_id"]: s["access"] for s in (await _decode(resp_list_b))["surfaces"]}
+        assert access_by_id.get(surface_id) == "tenant"
+
+        # GET as B: 200.
+        h_get_b = _handler(app, match_info={"surface_id": surface_id}, user_id="user-b")
+        resp_get_b = await _get(h_get_b)
+        assert resp_get_b.status == 200
+
+        # Refresh as B: 200, replay still runs under OWNER's (A's) pctx.
+        runner = MagicMock()
+        refreshed = _chart_envelope(surface_id)
+        runner.run = AsyncMock(return_value=SimpleNamespace(metadata={"source_envelope": refreshed}))
+        app["recipe_runner"] = runner
+        h_refresh_b = _handler(
+            app,
+            match_info={"surface_id": surface_id},
+            path=f"/api/v1/ui/surfaces/{surface_id}/refresh",
+            json_body={},
+            user_id="user-b",
+        )
+        resp_refresh_b = await _post(h_refresh_b)
+        assert resp_refresh_b.status == 200
+        _, kwargs = runner.run.call_args
+        assert kwargs["pctx"].user_id == "user-a"
+
+        # List as C in a DIFFERENT tenant: absent.
+        scope_c = SurfaceScope(user_id="user-c", tenant=tenant_u, groups=frozenset(), is_superuser=False)
+        app["ui_surfaces_scope_resolver"] = _StubResolver(scope_c)
+        h_list_c = _handler(app, match_info={}, user_id="user-c")
+        resp_list_c = await _get(h_list_c)
+        surfaces_c = {s["surface_id"] for s in (await _decode(resp_list_c))["surfaces"]}
+        assert surface_id not in surfaces_c
+
+        # GET as C directly: 404, no existence oracle.
+        h_get_c = _handler(app, match_info={"surface_id": surface_id}, user_id="user-c")
+        resp_get_c = await _get(h_get_c)
+        assert resp_get_c.status == 404
+
+        # PATCH to visibility=groups, allowed_groups=["g1"] as owner A.
+        app["ui_surfaces_scope_resolver"] = _StubResolver(scope_a)
+        h_patch = _handler(
+            app,
+            match_info={"surface_id": surface_id},
+            json_body={"visibility": "groups", "allowed_groups": ["g1"]},
+            user_id="user-a",
+        )
+        resp_patch = await _patch(h_patch)
+        assert resp_patch.status == 200
+
+        # B with groups=["g1"]: sees it.
+        scope_b_g1 = SurfaceScope(user_id="user-b", tenant=tenant_t, groups=frozenset({"g1"}), is_superuser=False)
+        app["ui_surfaces_scope_resolver"] = _StubResolver(scope_b_g1)
+        h_get_b_g1 = _handler(app, match_info={"surface_id": surface_id}, user_id="user-b")
+        resp_get_b_g1 = await _get(h_get_b_g1)
+        assert resp_get_b_g1.status == 200
+
+        # B with groups=["g2"]: does not.
+        scope_b_g2 = SurfaceScope(user_id="user-b", tenant=tenant_t, groups=frozenset({"g2"}), is_superuser=False)
+        app["ui_surfaces_scope_resolver"] = _StubResolver(scope_b_g2)
+        h_get_b_g2 = _handler(app, match_info={"surface_id": surface_id}, user_id="user-b")
+        resp_get_b_g2 = await _get(h_get_b_g2)
+        assert resp_get_b_g2.status == 404
+
+        # Superuser in T sees it regardless of allowed_groups.
+        scope_super = SurfaceScope(user_id="root", tenant=tenant_t, groups=frozenset(), is_superuser=True)
+        app["ui_surfaces_scope_resolver"] = _StubResolver(scope_super)
+        h_get_super = _handler(app, match_info={"surface_id": surface_id}, user_id="root")
+        resp_get_super = await _get(h_get_super)
+        assert resp_get_super.status == 200
+
+        # Viewer (B, groups=["g1"]) cannot delete -> 404, row intact.
+        app["ui_surfaces_scope_resolver"] = _StubResolver(scope_b_g1)
+        h_delete_b = _handler(app, match_info={"surface_id": surface_id}, user_id="user-b")
+        resp_delete_b = await _delete(h_delete_b)
+        assert resp_delete_b.status == 404
+        assert await store.get(surface_id) is not None
 
     async def test_integration_routes_registered(self, store):
         """After route registration (mirrors BotManager.setup_app()'s FEAT-492
