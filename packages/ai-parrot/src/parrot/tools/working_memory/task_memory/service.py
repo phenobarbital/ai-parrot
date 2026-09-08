@@ -33,6 +33,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
+from parrot.interfaces.artifact_store import ArtifactStore
 from parrot.interfaces.task_memory import AppendResult, TaskMemoryStore, TaskPage, TaskSnapshot
 
 from .config import TaskMemoryConfig
@@ -71,10 +72,13 @@ from .models import (
     utc_now,
 )
 from .reducer import validate_plan_graph
+from .validators import CompletionValidationError, EvidenceMutated, assert_unchanged, validate_completion
 
 __all__ = (
     "TaskNotFound",
     "TaskMemoryService",
+    "CompletionValidationError",
+    "EvidenceMutated",
 )
 
 #: Which lifecycle event each requested status maps to. A status with no
@@ -123,15 +127,27 @@ class TaskMemoryService:
         config: Capacity and retention configuration.
     """
 
-    def __init__(self, store: TaskMemoryStore, config: Optional[TaskMemoryConfig] = None) -> None:
+    def __init__(
+        self,
+        store: TaskMemoryStore,
+        config: Optional[TaskMemoryConfig] = None,
+        artifacts: Optional["ArtifactStore"] = None,
+    ) -> None:
         """Initialize the service.
 
         Args:
             store: The injected task store.
             config: Configuration; defaults to :class:`TaskMemoryConfig`.
+            artifacts: Artifact store used to validate evidence-bound
+                completions. Optional: without it, ``complete_step``
+                refuses rather than completing unvalidated. Refusing is
+                the safe default — silently accepting a completion whose
+                evidence was never checked is exactly the failure this
+                feature exists to prevent.
         """
         self._store = store
         self._config = config or TaskMemoryConfig()
+        self._artifacts = artifacts
 
     # ── internals ────────────────────────────────────────────────────
 
@@ -752,6 +768,125 @@ class TaskMemoryService:
             step_id=step_id,
         )
         return await self._store.append_events(scope, task_id, [event])
+
+    async def complete_step(
+        self,
+        scope: TaskScope,
+        task_id: str,
+        step_id: str,
+        *,
+        expected_revision: int,
+        evidence_refs: Sequence[EvidenceRef] = (),
+        note: Optional[str] = None,
+        turn_id: Optional[str] = None,
+        max_attempts: int = 2,
+    ) -> AppendResult:
+        """Complete a step, but only if its evidence supports it.
+
+        This is the evidence-bound path. Validation runs **outside** the
+        store's lock — validators may do real work, and holding a lock
+        across them would serialize the whole task on the slowest check.
+        The result is then committed against the same task revision and
+        the same evidence fingerprints it validated; if either moved, the
+        attempt is discarded and retried rather than committing a stale
+        completion.
+
+        Args:
+            scope: Trusted runtime scope.
+            task_id: The owning task.
+            step_id: The step to complete.
+            expected_revision: The revision the caller believes is
+                current.
+            evidence_refs: Exact artifact versions offered as evidence.
+            note: The completion note.
+            turn_id: Conversation turn.
+            max_attempts: How many times to revalidate when the task
+                moves underneath the validation.
+
+        Returns:
+            The append result.
+
+        Raises:
+            CompletionValidationError: If the evidence does not support
+                the completion. The step is left exactly as it was.
+            EvidenceMutated: If content changed behind a bound version.
+                This is not an ordinary refusal — anything already
+                completed against that version must be reopened.
+            UnknownValidatorError: If the policy names an unregistered
+                validator.
+            RevisionConflict: If the task kept moving across every
+                attempt.
+        """
+        if self._artifacts is None:
+            raise CompletionValidationError(
+                "completion validation requires an artifact store; refusing to complete "
+                "a step whose evidence cannot be checked"
+            )
+
+        revision = expected_revision
+        last_conflict: Optional[RevisionConflict] = None
+
+        for _ in range(max(1, max_attempts)):
+            snapshot = await self._require(scope, task_id)
+            state = snapshot.state
+            self._reject_terminal(state)
+            if state.revision != revision:
+                raise RevisionConflict(task_id, revision, state.revision)
+
+            outcome = await validate_completion(
+                self._artifacts,
+                scope,
+                state,
+                step_id,
+                evidence_refs=evidence_refs,
+                note=note,
+            )
+            if not outcome.passed:
+                raise CompletionValidationError(f"step {step_id} cannot complete: " + "; ".join(outcome.failures))
+
+            # Capture the fingerprints validation actually saw, ONCE, so
+            # the commit-time re-check compares against those rather than
+            # re-reading and comparing a value with itself.
+            validated_fingerprints: List[Optional[str]] = []
+            for ref in outcome.bound:
+                descriptor = await self._artifacts.get_version(scope, ref, task_id=task_id)
+                validated_fingerprints.append(descriptor.fingerprint if descriptor else None)
+
+            # Re-check what validation depended on, now that it is done.
+            fresh = await self._require(scope, task_id)
+            try:
+                await assert_unchanged(
+                    self._artifacts,
+                    scope,
+                    task_id=task_id,
+                    validated_revision=state.revision,
+                    current_revision=fresh.state.revision,
+                    bound=outcome.bound,
+                    fingerprints=validated_fingerprints,
+                )
+            except RevisionConflict as conflict:
+                # The task moved while we validated. Revalidate against
+                # the new state rather than committing what we checked
+                # against the old one.
+                last_conflict = conflict
+                revision = fresh.state.revision
+                continue
+
+            return await self.update_step(
+                scope,
+                task_id,
+                step_id,
+                expected_revision=state.revision,
+                status=StepStatus.COMPLETED,
+                evidence_refs=outcome.bound,
+                note=note,
+                completion_source=outcome.source,
+                validator_results=outcome.results,
+                turn_id=turn_id,
+            )
+
+        assert last_conflict is not None
+        raise last_conflict
 
     # ── reads ────────────────────────────────────────────────────────
 
