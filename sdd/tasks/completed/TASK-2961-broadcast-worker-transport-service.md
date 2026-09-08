@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-537 — Nova VoiceBot avatar broadcast for multiple browsers
 **Spec**: `sdd/specs/voicebot-multiroom-heygen-avatar.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-2953, TASK-2960
@@ -90,7 +90,74 @@ async def test_relay_forwards_authorized_pcm(aiohttp_client): ...
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
+**Completed by**: `sdd-worker` (autonomous session)
+**Date**: 2026-09-08
+**Status**: done
+
 **Notes**:
-**Deviations from spec**:
+
+- Created `broadcast/service.py` (`BroadcastService`, `BroadcastNotReady`,
+  `ReconcileReport`, `default_principal_resolver`) and
+  `broadcast/worker_transport.py` (`WorkerAddressRegistry`, `WorkerRelayServer`,
+  `RelayFrame`, `SpeakerInput`/`LocalSpeakerInput`/`RemoteSpeakerInput`,
+  `WorkerTransportError`), exported both from the package, and routed the handler's
+  microphone path through `service.attach_speaker_input(...)`.
+- Tests: `test_voice_broadcast_service.py` → **30 passed**;
+  `test_voice_broadcast_worker_transport.py` → **35 passed**. Whole `tests/voice/`
+  → **434 passed** (was 369; same 11 pre-existing environment failures / 27 errors).
+  `ruff check` clean.
+- **Every AC has a named test:**
+  - 10 concurrent `join()` → exactly one `is_first`, exactly one `FakeMediaSession`
+    instance, `started == 1`, one owner at epoch 1. A second service on a *different*
+    worker id joining the same broadcast starts **nothing**
+    (`test_a_worker_that_loses_the_owner_race_does_not_start_media`) — spec §2 forbids
+    a second producer, and a loser serves through the relay.
+  - `connection()` returns the *same object* on retry and mints exactly one viewer
+    token; `BroadcastNotReady` (status 409) while `starting`; another principal's lease
+    is refused.
+  - `stop()` refuses a viewer **and the creator** — only the current moderator.
+  - Reconciler: owner silent 16 s → fenced, all three listed identities removed,
+    `delete_room`, `failed`/`owner_lost`, `orphaned_vendor_sessions` flagged, and the
+    elapsed simulated time asserted `<= 30 s`.
+  - Transport: right token+epoch reaches `push_audio`; wrong/absent token → 401;
+    oversize → close 1009/1008; stale owner epoch → close; non-`ws(s)://` URL refused
+    (6 parametrised cases).
+- **The relay re-validates on the owner.** `test_relay_revalidates_the_floor_on_the_owner`
+  lands a revoke between ingress and the producer and asserts the frame is refused there.
+  Passing ingress validation is explicitly not a permit — that second check is the whole
+  reason the relay carries the fencing tuple rather than just PCM.
+- **Security choices worth review:** the owner's address comes only from
+  `WorkerAddressRegistry` and goes through one `validate_url` choke point; non-loopback
+  relays must be `wss://` on the client side and TLS-or-loopback on the server side; the
+  shared token is compared with `hmac.compare_digest`; and `WorkerRelayServer.setup_routes`
+  **refuses to mount** without a token rather than starting unauthenticated.
+- `RemoteSpeakerInput` drops oversized blocks and counts them instead of buffering:
+  microphone audio delivered seconds late would have the agent answer a question the
+  speaker has moved on from.
+- **`_project()` closes the TASK-2958 seam.** `BroadcastRegistry.transition` has no
+  parameters for `room_name` / `avatar_identity` / `direct_identity`, so the service
+  joins the producer's `media_state()` onto the descriptor when building the public
+  projection. `test_public_state_carries_producer_media_facts` asserts
+  `selected_identity == "avatar-x"`, `media_ready is True`, and that the result still
+  contains no `token`/`secret`/`ws_url`/`api_key`.
+- **`orphaned_vendor_session` is keyed off the broadcast having reached `avatar`**, not
+  off `descriptor.liveavatar_session_id`. Found by a failing test: nothing persists that
+  id onto the descriptor (same `transition` gap), so the field-based condition would have
+  silently never fired and the honest "we cannot confirm the vendor stopped" report would
+  never have been emitted. Commented in the source.
+- Reconciliation fails closed everywhere: a registry outage or a LiveKit outage records
+  `reconciliation_uncertain` and **retains** seats; an expired control lease is removed
+  from the room *before* its seat is released, so a replacement admission can never
+  overlap a still-connected participant.
+
+**Deviations from spec**: none of substance. Notes for the reviewer:
+1. `BroadcastNotReady` is defined in `service.py` rather than `errors.py`, because
+   `errors.py` belongs to TASK-2952's file set and this task's Files table does not
+   include it.
+2. The task listed `subscribe(bid, send_fn)/unsubscribe`; the implemented pair is
+   lease-scoped (`attach_control`/`detach_control`, with `subscribe`/`unsubscribe` as
+   aliases) because TASK-2960's `BroadcastControlService` protocol — already merged and
+   tested — requires the lease-scoped form to route `floor_revoked` to one participant.
+3. `default_principal_resolver` takes the tenant from server configuration with a
+   `default` fallback rather than from the request; a client-chosen tenant would defeat
+   the scoping model. Real multi-tenant deployments inject their own resolver.
