@@ -60,6 +60,43 @@ unavailable: the browser's Nova toggle is shown disabled with the reason,
 and a session-start attempt on `/ws/nova` returns a clear WebSocket
 `error` frame instead of hanging. The Gemini route is unaffected.
 
+### LiveAvatar viewer (optional, FEAT-536)
+
+The page's Avatar toggle is **off by default** and layered entirely on
+top of the two voice routes above — leaving it off (or missing any of
+the following) never affects ordinary voice with either provider.
+
+1. **Backend opt-in.** LiveAvatar sessions are default-deny
+   (`parrot.integrations.liveavatar.optin.is_avatar_enabled()`). Enable
+   the tenant/agent combination you plan to test through whatever
+   mechanism your deployment's opt-in store uses before expecting
+   `session_started.avatar.active` to ever be `true`.
+2. **LiveAvatar/LiveKit server configuration.** The same environment
+   variables `VoiceAvatarSession.start()` already reads:
+   `LIVEAVATAR_API_KEY`, `LIVEAVATAR_AVATAR_ID` (required), plus optional
+   `LIVEAVATAR_BASE_URL` / `LIVEAVATAR_SANDBOX`, and this deployment's own
+   LiveKit room-token configuration (`LiveKitRoomManager`).
+3. **Locked frontend SDK install.** The viewer loads the SAME
+   `livekit-client` dependency `packages/ai-parrot-server/ui/package.json`
+   already declares (`^2.19.2`, `pnpm-lock.yaml` resolves `2.22.1`) from
+   that package's own `node_modules` — never a CDN, never a different
+   version. Install it once for the UI workspace:
+
+   ```bash
+   pnpm --dir packages/ai-parrot-server/ui install --frozen-lockfile
+   ```
+
+   Without this step, `/voice-assets/livekit-client.umd.js` responds with
+   a controlled `503` and the page's Avatar section reports "SDK not
+   installed — voice-only"; both `/ws/gemini` and `/ws/nova` are
+   completely unaffected.
+
+With all three prerequisites met: open Settings (⚙️), check "Enable
+avatar (off by default)", optionally set a Tenant ID / Avatar ID
+override, and start (or restart) a session — the video card in the
+bottom-left corner shows the LiveKit room once `session_started.avatar`
+reports `active: true`.
+
 ## Run it
 
 ```bash
@@ -84,7 +121,14 @@ Both `make_gemini_bot()` and `make_nova_bot()` (`server.py`) construct a
 `VoiceBot` with:
 
 - the same `name` ("Assistant") and `system_prompt`,
-- the same tool: a single `@tool`-decorated `get_weather(location)`,
+- the same tool **definition and behavior**: `VoiceDemoWeatherTool`, a
+  deterministic `AbstractTool` (`name="get_weather"`) that returns a
+  short spoken sentence (`voice_text`) plus a structured visual payload
+  (`display_data`) — every value it returns is a labeled demo fixture,
+  not a real weather lookup. Each factory call constructs its **own
+  fresh instance** — never a shared module-level object — so the two
+  bots (and every new connection) get isolated tool state while still
+  being directly comparable across providers,
 
 and differ only in `VoiceConfig.provider` (`GOOGLE_LIVE` vs. `NOVA`) and
 the corresponding default voice (`Puck` vs. `matthew`).
@@ -94,12 +138,46 @@ connection — so the "fresh session" behavior when switching providers
 falls directly out of that contract, not out of anything special this
 example does.
 
+### Triggering a slow tool (for the interruption scenario below)
+
+Set `VOICEBOT_DEMO_TOOL_DELAY_SECONDS` (0–30, clamped) before starting
+the server to make `get_weather` sleep before answering — bounded and
+clearly a demo knob, not a permanent slowdown:
+
+```bash
+VOICEBOT_DEMO_TOOL_DELAY_SECONDS=8 python examples/clients/voice/server.py
+```
+
+## Real-live acceptance runbook (spec §4, AC13)
+
+Run this matrix by hand against the actually-served page above — not a
+hand-written stand-in — with real Gemini/Nova credentials and (for the
+avatar rows) a real LiveAvatar/LiveKit backend. Record which scenarios
+actually passed and link that evidence from your own report; this
+runbook does not itself claim a passing run.
+
+| # | Scenario | Steps | Expected |
+|---|---|---|---|
+| 1 | Gemini, voice-only | Hold record, ask "what's the weather in Miami?" | Spoken + text reply; a `get_weather` tool event with Miami's fixture data appears in settings/tool panel |
+| 2 | Nova, voice-only | Switch provider, repeat step 1 | Same agent behavior/tool result, different voice (matthew) |
+| 3 | Gemini + Avatar | Enable Avatar (Settings), start a session, ask a question | Video card shows the LiveKit room; avatar audio takes over once its track is playable (see the demo's "Enable avatar audio" prompt if autoplay is blocked); text/tool panels keep updating |
+| 4 | Nova + Avatar | Same as #3 on the Nova route | Identical avatar behavior — the avatar path is provider-agnostic |
+| 5 | Second turn (either provider) | After a completed turn, ask a follow-up | New turn starts cleanly; no leftover audio/tool state from turn 1 |
+| 6 | Tool interruption | Start the server with `VOICEBOT_DEMO_TOOL_DELAY_SECONDS=8`, ask for the weather, click **Interrupt** while it is "thinking" | Local (and, if Avatar is on, avatar) playback stops immediately; a fresh recording starts via the existing `start_recording` path — no hang, no duplicate reply once the slow tool eventually finishes |
+| 7 | Reconnect / provider switch with Avatar on | With Avatar enabled and connected, switch provider (or wait out a session limit) | Old WebSocket/avatar session closes cleanly, a fresh one starts, no two-rooms/two-audio-sources state |
+| 8 | Avatar failure fallback | Point `LIVEAVATAR_*` at an invalid/unreachable config, enable Avatar | Session reports `avatar.active: false` with a reason; voice-only keeps working exactly as scenario #1/#2 |
+
+Evidence for a completed run belongs in this feature's operational
+acceptance report (`sdd/tasks/completed/TASK-2949-voice-liveavatar-operational-acceptance.md`
+once filed) — link results there rather than duplicating them here.
+
 ## Files
 
 | File | Description |
 |---|---|
-| `server.py` | aiohttp app: two `VoiceChatHandler`s, two `VoiceBot` factories, the `__CONFIG__`-templated index route, and the capability-descriptor JSON builder |
-| `static/dual_provider.html` | The provider-switch UI (adapted from `chat.html`) |
+| `server.py` | aiohttp app: two `VoiceChatHandler`s, two `VoiceBot` factories, the `VoiceDemoWeatherTool` dual-output demo tool, the `__CONFIG__`-templated index route, the capability-descriptor JSON builder, and the scoped `/voice-assets/livekit-client.umd.js` route |
+| `static/dual_provider.html` | The provider-switch UI (adapted from `chat.html`), including the Avatar viewer card, tool/data events panel and Interrupt control |
+| `static/avatar-viewer.js` | The subscribe-only LiveKit Room lifecycle controller the avatar viewer above uses (`AvatarViewerController`) |
 | `static/index.html`, `static/app.js` | **Not used by this example** — the raw-client asset from TASK-2177, served by `examples/clients/nova/audio.py` instead |
 
 ## Related

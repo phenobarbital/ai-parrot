@@ -12,15 +12,18 @@ Adding a third provider costs exactly one entry in ``PROVIDER_BUILDERS``
 plus a scenario-event builder pair, mirroring this module's shape.
 """
 
+import asyncio
 import sys
 from collections.abc import AsyncIterator
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, Optional
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from parrot.clients.google.live import GeminiLiveClient
 from parrot.clients.amazon.nova import NovaClient
+from parrot.tools.abstract import AbstractTool, AbstractToolArgsSchema, ToolResult
+from parrot.tools.manager import ToolManager
 
 
 async def empty_audio_iterator() -> AsyncIterator[bytes]:
@@ -29,6 +32,68 @@ async def empty_audio_iterator() -> AsyncIterator[bytes]:
     just needs to not hang."""
     return
     yield  # pragma: no cover — makes this an async generator
+
+
+# ---------------------------------------------------------------------
+# Dual-output conformance (FEAT-536 TASK-2946) — the SAME deterministic
+# real voice-aware AbstractTool registered on both providers, so
+# test_provider_dual_output_conformance can compare semantic spoken and
+# visual output without mocking stream_voice, _execute_tool, or
+# ToolManager.execute_tool.
+# ---------------------------------------------------------------------
+
+
+class _DualOutputArgs(AbstractToolArgsSchema):
+    topic: str = ""
+
+
+class VoiceAwareEchoTool(AbstractTool):
+    """Deterministic real tool returning both spoken and visual output —
+    shared by the Gemini and Nova tool-call scenarios below so a
+    dual-output conformance assertion compares the SAME tool definition/
+    behavior (spec §3 Module 6: "Instantiate tools per bot factory; share
+    their definition/behavior rather than mutable invocation state")."""
+
+    name = "voice_echo"
+    description = "Echo a topic back with spoken text and a visual chart."
+    args_schema = _DualOutputArgs
+
+    async def _execute(self, topic: str = "", **kwargs) -> ToolResult:
+        return ToolResult(
+            success=True,
+            status="success",
+            result={"topic": topic},
+            voice_text=f"Echo: {topic}",
+            display_data={"topic": topic, "kind": "echo"},
+        )
+
+
+def make_tool_manager(tool: Optional[AbstractTool] = None) -> ToolManager:
+    """A real ToolManager with one real tool registered — never mocked."""
+    tm = ToolManager(include_search_tool=False)
+    tm.register_tool(tool or VoiceAwareEchoTool())
+    return tm
+
+
+def gated_nova_iter_events(pre_gate_events: list, gate: "asyncio.Event", post_gate_events: list):
+    """A CAUSALLY-GATED Nova ``_iter_events`` replacement — not a single
+    preloaded array. Yields *pre_gate_events*, then suspends on *gate*
+    before yielding *post_gate_events*, so a test can deterministically
+    control whether a provider event (e.g. ``completionEnd``) arrives
+    before or after some other real, independently-timed event (e.g. a
+    slow tool execution) — the same causal-gate pattern
+    ``test_nova_tool_progress.py`` uses in place of timing-sensitive
+    sleeps.
+    """
+
+    async def _iter_events(_stream):
+        for event in pre_gate_events:
+            yield event
+        await gate.wait()
+        for event in post_gate_events:
+            yield event
+
+    return _iter_events
 
 
 # ---------------------------------------------------------------------
@@ -126,9 +191,31 @@ def gemini_reconnect_events() -> list:
     ]
 
 
-def build_gemini_client(monkeypatch, scenario: str) -> GeminiLiveClient:
-    client = GeminiLiveClient(voice_name="Puck")
-    events = gemini_basic_turn_events() if scenario == "basic_turn" else gemini_reconnect_events()
+def gemini_tool_call_events(tool_name: str = "voice_echo", tool_id: str = "fc_1", args: Optional[dict] = None) -> list:
+    """A single ``tool_call`` event (one function call), then turn_complete
+    — the google-genai ``LiveServerMessage`` shape ``GeminiLiveClient.
+    stream_voice()`` reads at ``response.tool_call.function_calls``."""
+    return [
+        _gemini_event(
+            tool_call=SimpleNamespace(
+                function_calls=[SimpleNamespace(name=tool_name, id=tool_id, args=args or {"topic": "weather"})]
+            ),
+        ),
+        _gemini_event(server_content=SimpleNamespace(turn_complete=True)),
+    ]
+
+
+def build_gemini_client(monkeypatch, scenario: str, *, tool_manager: Optional[ToolManager] = None) -> GeminiLiveClient:
+    kwargs: dict = {"voice_name": "Puck"}
+    if tool_manager is not None:
+        kwargs.update(tool_manager=tool_manager, use_tools=True)
+    client = GeminiLiveClient(**kwargs)
+    if scenario == "basic_turn":
+        events = gemini_basic_turn_events()
+    elif scenario == "tool_call":
+        events = gemini_tool_call_events()
+    else:
+        events = gemini_reconnect_events()
     session = _FakeGeminiSession(events)
     captured_configs: list = []
     fake_sdk_client = _FakeGeminiSdkClient(session, captured_configs)
@@ -166,6 +253,19 @@ def nova_reconnect_events() -> list:
     ]
 
 
+def nova_tool_call_events(
+    tool_use_id: str = "tu_1", tool_name: str = "voice_echo", args_json: str = '{"topic": "weather"}'
+) -> list:
+    """One ``toolUse``/``contentEnd(TOOL)`` pair (admitted-and-executed
+    immediately, TASK-2940/2941), then ``completionEnd``."""
+    return [
+        {"contentStart": {"role": "ASSISTANT"}},
+        {"toolUse": {"toolUseId": tool_use_id, "toolName": tool_name, "content": args_json}},
+        {"contentEnd": {"type": "TOOL"}},
+        {"completionEnd": {}},
+    ]
+
+
 def _fake_nova_events(events):
     async def _iter_events(_stream):
         for event in events:
@@ -174,10 +274,18 @@ def _fake_nova_events(events):
     return _iter_events
 
 
-def build_nova_client(monkeypatch, scenario: str) -> NovaClient:
+def build_nova_client(monkeypatch, scenario: str, *, tool_manager: Optional[ToolManager] = None) -> NovaClient:
     monkeypatch.setitem(sys.modules, "aws_sdk_bedrock_runtime", MagicMock())
-    client = NovaClient(model="nova-2-sonic", voice_id="matthew")
-    events = nova_basic_turn_events() if scenario == "basic_turn" else nova_reconnect_events()
+    kwargs: dict = {"model": "nova-2-sonic", "voice_id": "matthew"}
+    if tool_manager is not None:
+        kwargs.update(tool_manager=tool_manager, use_tools=True)
+    client = NovaClient(**kwargs)
+    if scenario == "basic_turn":
+        events = nova_basic_turn_events()
+    elif scenario == "tool_call":
+        events = nova_tool_call_events()
+    else:
+        events = nova_reconnect_events()
     monkeypatch.setattr(client, "_open_stream", AsyncMock(return_value=AsyncMock()))
     monkeypatch.setattr(client, "_send_event", AsyncMock())
     monkeypatch.setattr(client, "_iter_events", _fake_nova_events(events))
@@ -232,10 +340,13 @@ def provider(request) -> str:
     return request.param
 
 
-def build_client(monkeypatch, provider_name: str, scenario: str = "basic_turn") -> Any:
+def build_client(
+    monkeypatch, provider_name: str, scenario: str = "basic_turn", *, tool_manager: Optional[ToolManager] = None
+) -> Any:
     """Construct *provider_name*'s real client, mocked at its own
-    provider-SDK boundary for *scenario* ("basic_turn" or "reconnect")."""
-    return PROVIDER_BUILDERS[provider_name](monkeypatch, scenario)
+    provider-SDK boundary for *scenario* ("basic_turn", "reconnect" or
+    "tool_call" — the latter requires *tool_manager*, TASK-2946)."""
+    return PROVIDER_BUILDERS[provider_name](monkeypatch, scenario, tool_manager=tool_manager)
 
 
 async def collect_responses(client, **kwargs) -> list:

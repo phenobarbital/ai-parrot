@@ -14,7 +14,7 @@
       "feature_id": "FEAT-536",
       "feature": "voicebot-liveavatar-implementation",
       "spec": "sdd/specs/voicebot-liveavatar-implementation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -23,12 +23,13 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": "2026-09-07T20:36:36+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2937-toolmanager-complete-result.md",
+      "completed_at": "2026-09-07T20:46:50+00:00",
+      "file": "sdd/tasks/completed/TASK-2937-toolmanager-complete-result.md",
       "acceptance_criteria": [
         "AC3",
         "AC4"
-      ]
+      ],
+      "verification": "verified"
     },
     {
       "id": "TASK-2938",
@@ -37,7 +38,7 @@
       "feature_id": "FEAT-536",
       "feature": "voicebot-liveavatar-implementation",
       "spec": "sdd/specs/voicebot-liveavatar-implementation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -48,12 +49,13 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": "2026-09-07T20:36:36+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2938-toolmanager-voice-field-safety.md",
+      "completed_at": "2026-09-07T20:57:41+00:00",
+      "file": "sdd/tasks/completed/TASK-2938-toolmanager-voice-field-safety.md",
       "acceptance_criteria": [
         "AC4",
         "AC5"
-      ]
+      ],
+      "verification": "verified"
     },
     {
       "id": "TASK-2939",
@@ -62,7 +64,7 @@
       "feature_id": "FEAT-536",
       "feature": "voicebot-liveavatar-implementation",
       "spec": "sdd/specs/voicebot-liveavatar-implementation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -73,14 +75,15 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": "2026-09-07T20:36:36+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2939-nova-voice-tool-adapter.md",
+      "completed_at": "2026-09-07T21:07:13+00:00",
+      "file": "sdd/tasks/completed/TASK-2939-nova-voice-tool-adapter.md",
       "acceptance_criteria": [
         "AC2",
         "AC5",
         "AC7",
         "AC8"
-      ]
+      ],
+      "verification": "verified"
     },
     {
       "id": "TASK-2940",
@@ -89,7 +92,7 @@
       "feature_id": "FEAT-536",
       "feature": "voicebot-liveavatar-implementation",
       "spec": "sdd/specs/voicebot-liveavatar-implementation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -100,13 +103,14 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": "2026-09-07T20:36:36+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2940-nova-tool-progress-coordinator.md",
+      "completed_at": "2026-09-07T21:35:50+00:00",
+      "file": "sdd/tasks/completed/TASK-2940-nova-tool-progress-coordinator.md",
       "acceptance_criteria": [
         "AC6",
         "AC7",
         "AC8"
-      ]
+      ],
+      "verification": "verified"
     },
     {
       "id": "TASK-2941",
@@ -115,7 +119,7 @@
       "feature_id": "FEAT-536",
       "feature": "voicebot-liveavatar-implementation",
       "spec": "sdd/specs/voicebot-liveavatar-implementation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -126,14 +130,15 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": "2026-09-07T20:36:36+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2941-nova-tool-lifecycle.md",
+      "completed_at": "2026-09-07T22:14:20+00:00",
+      "file": "sdd/tasks/completed/TASK-2941-nova-tool-lifecycle.md",
       "acceptance_criteria": [
         "AC6",
         "AC7",
         "AC8",
         "AC9"
-      ]
+      ],
+      "verification": "verified"
     },
     {
       "id": "TASK-2942",
@@ -142,7 +147,7 @@
       "feature_id": "FEAT-536",
       "feature": "voicebot-liveavatar-implementation",
       "spec": "sdd/specs/voicebot-liveavatar-implementation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -153,13 +158,14 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": "2026-09-07T20:36:36+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2942-voice-relay-tool-dedup.md",
+      "completed_at": "2026-09-07T22:23:10+00:00",
+      "file": "sdd/tasks/completed/TASK-2942-voice-relay-tool-dedup.md",
       "acceptance_criteria": [
         "AC1",
         "AC8",
         "AC10"
-      ]
+      ],
+      "verification": "verified"
     },
     {
       "id": "TASK-2943",
@@ -168,7 +174,7 @@
       "feature_id": "FEAT-536",
       "feature": "voicebot-liveavatar-implementation",
       "spec": "sdd/specs/voicebot-liveavatar-implementation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -179,13 +185,14 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": "2026-09-07T20:36:36+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2943-voice-demo-sdk-asset.md",
+      "completed_at": "2026-09-07T22:32:07+00:00",
+      "file": "sdd/tasks/completed/TASK-2943-voice-demo-sdk-asset.md",
       "acceptance_criteria": [
         "AC12",
         "AC14",
         "AC16"
-      ]
+      ],
+      "verification": "verified"
     },
     {
       "id": "TASK-2944",
@@ -194,7 +201,7 @@
       "feature_id": "FEAT-536",
       "feature": "voicebot-liveavatar-implementation",
       "spec": "sdd/specs/voicebot-liveavatar-implementation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -205,13 +212,14 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": "2026-09-07T20:36:36+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2944-voice-avatar-controller.md",
+      "completed_at": "2026-09-07T22:42:04+00:00",
+      "file": "sdd/tasks/completed/TASK-2944-voice-avatar-controller.md",
       "acceptance_criteria": [
         "AC14",
         "AC15",
         "AC16"
-      ]
+      ],
+      "verification": "verified"
     },
     {
       "id": "TASK-2945",
@@ -220,7 +228,7 @@
       "feature_id": "FEAT-536",
       "feature": "voicebot-liveavatar-implementation",
       "spec": "sdd/specs/voicebot-liveavatar-implementation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -232,15 +240,16 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": "2026-09-07T20:36:36+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2945-voice-ui-avatar-and-events.md",
+      "completed_at": "2026-09-07T22:52:44+00:00",
+      "file": "sdd/tasks/completed/TASK-2945-voice-ui-avatar-and-events.md",
       "acceptance_criteria": [
         "AC1",
         "AC12",
         "AC14",
         "AC15",
         "AC16"
-      ]
+      ],
+      "verification": "verified"
     },
     {
       "id": "TASK-2946",
@@ -249,7 +258,7 @@
       "feature_id": "FEAT-536",
       "feature": "voicebot-liveavatar-implementation",
       "spec": "sdd/specs/voicebot-liveavatar-implementation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -260,8 +269,8 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": "2026-09-07T20:36:36+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2946-voice-provider-dual-output-integration.md",
+      "completed_at": "2026-09-07T23:12:51+00:00",
+      "file": "sdd/tasks/completed/TASK-2946-voice-provider-dual-output-integration.md",
       "acceptance_criteria": [
         "AC1",
         "AC2",
@@ -273,7 +282,8 @@
         "AC9",
         "AC10",
         "AC11"
-      ]
+      ],
+      "verification": "verified"
     },
     {
       "id": "TASK-2947",
@@ -282,7 +292,7 @@
       "feature_id": "FEAT-536",
       "feature": "voicebot-liveavatar-implementation",
       "spec": "sdd/specs/voicebot-liveavatar-implementation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -293,14 +303,15 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": "2026-09-07T20:36:36+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2947-voice-demo-browser-e2e.md",
+      "completed_at": "2026-09-07T23:28:52+00:00",
+      "file": "sdd/tasks/completed/TASK-2947-voice-demo-browser-e2e.md",
       "acceptance_criteria": [
         "AC11",
         "AC14",
         "AC15",
         "AC16"
-      ]
+      ],
+      "verification": "verified"
     },
     {
       "id": "TASK-2948",
@@ -309,7 +320,7 @@
       "feature_id": "FEAT-536",
       "feature": "voicebot-liveavatar-implementation",
       "spec": "sdd/specs/voicebot-liveavatar-implementation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -320,13 +331,14 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": "2026-09-07T20:36:36+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2948-voice-demo-tools-and-runbook.md",
+      "completed_at": "2026-09-07T23:42:12+00:00",
+      "file": "sdd/tasks/completed/TASK-2948-voice-demo-tools-and-runbook.md",
       "acceptance_criteria": [
         "AC2",
         "AC12",
         "AC13"
-      ]
+      ],
+      "verification": "verified"
     },
     {
       "id": "TASK-2949",
@@ -335,7 +347,7 @@
       "feature_id": "FEAT-536",
       "feature": "voicebot-liveavatar-implementation",
       "spec": "sdd/specs/voicebot-liveavatar-implementation.spec.md",
-      "status": "in-progress",
+      "status": "done-with-issues",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -348,15 +360,16 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": "2026-09-07T20:36:36+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2949-voice-liveavatar-operational-acceptance.md",
+      "completed_at": "2026-09-07T23:45:40+00:00",
+      "file": "sdd/tasks/completed/TASK-2949-voice-liveavatar-operational-acceptance.md",
       "acceptance_criteria": [
         "AC11",
         "AC13",
         "AC14",
         "AC15",
         "AC16"
-      ]
+      ],
+      "verification": "partial"
     }
   ]
 }

@@ -1,38 +1,37 @@
-# TASK-2946: Prove Gemini/Nova dual output through real tools and VoiceBot
+# TASK-2939: Map complete tool results to Nova speech and visual deltas
 
 **Feature**: FEAT-536 - VoiceBot — Nova dual output and LiveAvatar in the Voice UI
 **Spec**: `sdd/specs/voicebot-liveavatar-implementation.spec.md`
 **Status**: pending
 **Priority**: high
-**Estimated effort**: M (2–4h; target 4h)
-**Depends-on**: TASK-2945
+**Estimated effort**: M (2–4h; target 3h)
+**Depends-on**: TASK-2938
 **Assigned-to**: unassigned
-**Parallel**: true
-**Parallelism notes**: May run alongside TASK-2946/TASK-2947/TASK-2948 after TASK-2945; each owns disjoint files. Read-only references confer no edit ownership.
+**Parallel**: false
+**Parallelism notes**: Serial dependency boundary. Shared production/test files must not be edited concurrently; complete listed prerequisites first.
 
 ---
 
 ## Context
 
-Implements §3 Modules 4 and 6 and contributes to AC1, AC2, AC3, AC4, AC5, AC6, AC8, AC9, AC10, AC11. The approved spec remains authoritative for cross-task behavior. This task is one bounded deliverable in the single FEAT-536 worktree.
+Implements §3 Module 2 and contributes to AC2, AC5, AC7, AC8. The approved spec remains authoritative for cross-task behavior. This task is one bounded deliverable in the single FEAT-536 worktree.
 
 ## Scope
 
-- Extend provider-boundary fixtures for the same deterministic real voice-aware AbstractTool on Gemini and Nova; compare semantic spoken and visual output.
-- Add actual VoiceBot → Nova → _AskStreamVoiceClient/_HandlerVoiceSession tests with a real manager, capturing provider toolResult, PCM, one display frame and one tool event.
-- Include the real VoiceAvatarSession over fake HTTP/avatar/room transports; assert identical PCM, finish/interrupt/close and failure fallback.
-- Exercise interleaved sessions, later turns, final-only tools and delta/final dedup. Use a causally gated provider fixture for tool progress.
-- Run focused feature and existing conformance/enforcement/protocol regressions, retaining commands/results in artifacts/logs. Fix production failures via the owning scoped task, not unplanned code edits here.
+- Replace the reducing base-client route only in Nova voice with the manager full-result option. Implement private typed helpers, preserving the existing wire adapter.
+- Inject trusted session_id/user_id/turn_id only where accepted by schema/signature; trusted identities override model values. Reject provider-supplied internal execution kwargs and keep optional Python permission_context local.
+- Implement the spec mapping: nonempty voice_text wins; dict payload stays dict, string becomes output, scalar zero survives and None maps to Success. Require success=True and status=success for visual delivery.
+- Emit nonempty JSON-serializable display_data in metadata on one tool delta. Suppress malformed visual data with diagnostics while valid speech survives; errors carry status and no success visual.
+- Record effective safe arguments, tool ID, tool_status and tool-scoped authorization metadata. Update timing/execution count once. Do not place permission objects in events or prompts.
 
-**NOT in scope**: No production changes and no cloud calls. Automated conformance does not establish operational homologation.
+**NOT in scope**: No AbstractClient._execute_tool override, Google import from Amazon, scheduler rewrite or browser protocol changes.
 
 ## Files to Create / Modify
 
 | File | Action | Description |
 |---|---|---|
-| `packages/ai-parrot-integrations/tests/voice/test_nova_dual_output_integration.py` | CREATE | Scoped deliverable owned by TASK-2946 |
-| `packages/ai-parrot/tests/voice/conftest.py` | MODIFY | Scoped deliverable owned by TASK-2946 |
-| `packages/ai-parrot/tests/voice/test_provider_conformance.py` | MODIFY | Scoped deliverable owned by TASK-2946 |
+| `packages/ai-parrot-client-amazon/src/parrot/clients/amazon/nova/audio.py` | MODIFY | Scoped deliverable owned by TASK-2939 |
+| `packages/ai-parrot/tests/clients/test_nova_dual_output.py` | CREATE | Scoped deliverable owned by TASK-2939 |
 
 Only the files above belong to this task, plus its task state and per-spec index. You are not alone in this codebase: preserve others' edits and adapt to completed dependencies. Read-only references below do not grant edit ownership.
 
@@ -44,13 +43,12 @@ Re-read and verified on 2026-09-07 against dev `77bd1a50c1282694444e05b4f41ad413
 
 ```python
 from parrot.clients.amazon.nova import NovaClient
-from parrot.clients.google.live import GeminiLiveClient
-from parrot.bots.voice import VoiceBot
 from parrot.tools.manager import ToolManager, ToolDefinition
 from parrot.tools.abstract import AbstractTool, ToolResult
 from parrot.models.voice import LiveVoiceResponse, LiveToolCall, VoiceStreamOptions
-from parrot.voice.handler import VoiceChatHandler, WebSocketConnection
-from parrot.integrations.liveavatar.voice_session import VoiceAvatarSession
+from parrot.auth.permission import PermissionContext
+from parrot.clients.google.live import GeminiLiveClient
+from parrot.bots.voice import VoiceBot
 ```
 
 Imports are verified from local definitions/usage, not an all-package runtime smoke. Browser SDK access is through the existing livekit-client package exposed as LivekitClient UMD; the controller accepts an injected SDK in tests.
@@ -127,42 +125,6 @@ def _create_llm_client(self, config) -> VoiceCapable
 # packages/ai-parrot/src/parrot/bots/voice.py:475
 async def ask_stream(self, audio_input: Union[bytes, AsyncIterator[bytes]], session_id: Optional[str]=None, user_id: Optional[str]=None, stt_only: bool=False, **kwargs) -> AsyncIterator[LiveVoiceResponse]
 
-# packages/ai-parrot-integrations/src/parrot/voice/handler.py:184
-class WebSocketConnection
-
-# packages/ai-parrot-integrations/src/parrot/voice/handler.py:296
-class _AskStreamVoiceClient
-
-# packages/ai-parrot-integrations/src/parrot/voice/handler.py:353
-class _HandlerVoiceSession
-
-# packages/ai-parrot-integrations/src/parrot/voice/handler.py:370
-def build_frames(self, resp, turn_no: int) -> list
-
-# packages/ai-parrot-integrations/src/parrot/voice/handler.py:510
-async def _relay(self, resp, turn_no: int) -> None
-
-# packages/ai-parrot-integrations/src/parrot/voice/handler.py:1631
-async def _run_voice_session(self, connection: WebSocketConnection) -> None
-
-# packages/ai-parrot-integrations/src/parrot/voice/handler.py:1688
-async def _send_voice_response(self, connection: WebSocketConnection, response: Any) -> None
-
-# packages/ai-parrot-integrations/src/parrot/integrations/liveavatar/voice_session.py:55
-class VoiceAvatarSession
-
-# packages/ai-parrot-integrations/src/parrot/integrations/liveavatar/voice_session.py:223
-async def speak(self, pcm: bytes) -> None
-
-# packages/ai-parrot-integrations/src/parrot/integrations/liveavatar/voice_session.py:235
-async def finish_turn(self) -> None
-
-# packages/ai-parrot-integrations/src/parrot/integrations/liveavatar/voice_session.py:243
-async def interrupt(self) -> None
-
-# packages/ai-parrot-integrations/src/parrot/integrations/liveavatar/voice_session.py:252
-async def aclose(self) -> None
-
 # packages/ai-parrot/src/parrot/models/voice.py:150
 class VoiceStreamOptions
 
@@ -172,11 +134,8 @@ class LiveToolCall
 # packages/ai-parrot/src/parrot/models/voice.py:361
 class LiveVoiceResponse
 
-# packages/ai-parrot-integrations/src/parrot/voice/handler.py:1274
-async def _handle_start_recording(self, connection: WebSocketConnection, message: Dict[str, Any]) -> None
-
-# packages/ai-parrot-integrations/src/parrot/integrations/liveavatar/voice_session.py:208
-def viewer_credentials(self) -> dict[str, str]
+# packages/ai-parrot/src/parrot/auth/permission.py:81
+class PermissionContext
 
 # packages/ai-parrot/src/parrot/tools/manager.py:2067
 def clone(self, *, include_search_tool: bool=False) -> 'ToolManager'
@@ -184,28 +143,21 @@ def clone(self, *, include_search_tool: bool=False) -> 'ToolManager'
 
 ### Task-specific References
 
-- `packages/ai-parrot-integrations/tests/voice/test_nova_dual_output_integration.py` — NEW deliverable of this feature; verify dependent task exports before importing.
-- `packages/ai-parrot/tests/voice/conftest.py` — Provider SDK boundaries are mocked; existing build_gemini_client/build_nova_client and collect_responses are verified definitions. Add causal gates, not just preloaded arrays.
-- `packages/ai-parrot/tests/voice/test_provider_conformance.py` — Current tests cover options, canonical roles, reconnect and capability honesty; they do not prove real-tool dual output.
 - `packages/ai-parrot-client-amazon/src/parrot/clients/amazon/nova/audio.py` — Current queue admission 1200–1233 waits for next non-tool flush at 1087–1110. _send_tool_result 667–734 owns wire association; audio sender 1329–1392 must share safe writer ownership.
-- `packages/ai-parrot-client-google/src/parrot/clients/google/live.py` — Verified definitions: LiveToolAdapter:81, GeminiLiveClient:328, create_live_client:1491, __init__:89, _build_tool_map:109, _clean_schema_for_google:124.
-- `packages/ai-parrot/src/parrot/bots/voice.py` — Verified definitions: VoiceBot:89, create_voice_bot:838, __init__:119, _default_voice_prompt:186, _resolve_llm_config:190, _create_llm_client:281.
+- `packages/ai-parrot/tests/clients/test_nova_dual_output.py` — NEW deliverable of this feature; verify dependent task exports before importing.
 - `packages/ai-parrot/src/parrot/tools/manager.py` — execute_tool currently reduces AbstractTool result at 1781–1852; full-result option is proposed. clone at 2067 shares tool registrations. ToolDefinition fields: name, description, input_schema, function, routing_meta, required_permissions.
 - `packages/ai-parrot/src/parrot/tools/abstract.py` — ToolResult at 250–278 includes result/success/status/error/metadata/voice_text/display_data. _current_pctx at 892–899 is mutable. Guard helper returns (processed_value, flag_reports); existing output block 1041–1092 omits voice/display.
 - `packages/ai-parrot/src/parrot/models/voice.py` — Verified definitions: AudioFormat:27, VoiceProvider:34, VoiceConfig:55, VoiceStreamOptions:150, VoiceCapabilities:187, LiveCompletionUsage:263.
-- `packages/ai-parrot-integrations/src/parrot/voice/handler.py` — display_data.data and tool_call frames at 437–458 and 1749–1778. Avatar request/response at 1150–1214 uses top-level avatar/tenant_id/avatar_id and viewer credentials. start_recording currently invokes start_turn without avatar interruption.
-- `packages/ai-parrot-integrations/src/parrot/integrations/liveavatar/voice_session.py` — viewer_credentials returns only livekit_url/client_token/room. speak forwards 24 kHz PCM unchanged. Session teardown method is aclose(), not close().
-- `packages/ai-parrot-integrations/tests/voice/test_handler_refactor.py` — Verified definitions: _capable_mock_client:28, handler:60, connection:75, _sent_types:85, TestHandlerRefactor:89, TestFrameProtocolUnchanged:148.
-- `packages/ai-parrot-integrations/tests/voice/test_voicechat_avatar_integration.py` — Verified definitions: handler:26, connection:41, test_gemini_audio_to_avatar_end_to_end:56, test_gemini_audio_mid_turn_no_finish:94, test_barge_in_clears_avatar:112, test_pcm_bytes_unchanged_no_resample:131.
-- `packages/ai-parrot/tests/clients/test_live_tool_routing.py` — Verified definitions: VoiceTool:13, ForbiddenTool:25, ErroringTool:48, plain_callable:56, _call:60, live_client:65.
+- `packages/ai-parrot/src/parrot/auth/permission.py` — Verified definitions: UserSession:21, PermissionContext:81, build_principal_context:166, to_eval_context:209, __post_init__:51, has_role:57.
+- `packages/ai-parrot-client-google/src/parrot/clients/google/live.py` — Verified definitions: LiveToolAdapter:81, GeminiLiveClient:328, create_live_client:1491, __init__:89, _build_tool_map:109, _clean_schema_for_google:124.
+- `packages/ai-parrot/src/parrot/bots/voice.py` — Verified definitions: VoiceBot:89, create_voice_bot:838, __init__:119, _default_voice_prompt:186, _resolve_llm_config:190, _create_llm_client:281.
 
 ### Does NOT Exist
 
 - No root parrot/ source tree; use workspace package paths. No model-native JSON-schema voice output is added.
 - No shared last-result storage or LiveVoiceResponse.display_data attribute; structured output uses response.metadata["display_data"].
-- The demo avatar controller and /voice-assets/livekit-client.umd.js route are NEW; no existing exports or route should be assumed.
-- The admin Svelte viewer is not importable into standalone HTML. No second REST avatar session or microphone publication is allowed.
-- Passing mocked provider/browser tests is not proof of a real AWS/Gemini/LiveAvatar session.
+- return_tool_result is absent at this baseline and introduced by TASK-2937; downstream tasks must re-read its completed implementation.
+- NovaClient._execute_tool override is not part of this feature.
 
 ## Implementation Notes
 
@@ -222,26 +174,23 @@ Use the task-specific source anchors and spec §2 behavior. Preserve existing ex
 
 ## Acceptance Criteria
 
-- [ ] No mocks replace stream_voice, _execute_tool or ToolManager.execute_tool on paths intended to prove dual output.
-- [ ] Both real provider adapters preserve speech and structured data; tool executes once and context/results remain isolated.
-- [ ] Avatar errors preserve WebSocket output and inherited VoiceSession continues to invoke VoiceBot.
+- [ ] A real tool and real manager yield the intended Nova spoken payload and exact visual object; no mock of their execution.
+- [ ] Plain/error/pending/empty/zero and malformed visual outputs follow the mapping.
+- [ ] Two concurrent streams cannot exchange IDs, context or output; reserved kwargs cannot be injected.
 - [ ] Scoped tests and relevant regressions pass; evidence is recorded, not inferred from source inspection.
 
 ## Test Specification
 
-- test_provider_dual_output_conformance
-- test_voicebot_nova_websocket_tool_audio_display
-- test_voicebot_nova_avatar_audio_and_lifecycle
-- test_avatar_failure_preserves_websocket_delivery
-- test_two_voice_sessions_do_not_mix_results
-- test_tool_final_only_and_next_turn_id_reuse
+- test_nova_dual_output_from_real_tool
+- test_nova_context_overrides_model_identity
+- test_nova_mapping_plain_error_and_empty_values
 
 Use behavioral fixtures with real tools/manager where that path is under test. Mock only provider/transport boundaries for conformance. Event gates and patched deadlines should replace timing-sensitive sleeps. Browser tests load the actual demo page. No live test runs are required for automated CI.
 
 Commands to run from the feature worktree using its configured environment (capture output in artifacts/logs/):
 
 ```bash
-pytest packages/ai-parrot-integrations/tests/voice/test_nova_dual_output_integration.py packages/ai-parrot/tests/voice/conftest.py packages/ai-parrot/tests/voice/test_provider_conformance.py -q
+pytest packages/ai-parrot/tests/clients/test_nova_dual_output.py -q
 ```
 
 Missing optional SDK/browser/live credentials are prerequisites to record explicitly; they cannot be reported as passing verification. For the operational acceptance task, the live matrix itself is mandatory and completion remains pending until all required scenarios pass.
@@ -258,9 +207,91 @@ Missing optional SDK/browser/live credentials are prerequisites to record explic
 
 ## Completion Note
 
-Pending implementation and verification. No runtime or live acceptance is claimed by task creation.
+Implemented Module 2 in `packages/ai-parrot-client-amazon/src/parrot/clients/amazon/nova/audio.py`:
 
-**Completed by**: unassigned
-**Date**: pending
-**Notes**: pending
-**Deviations from spec**: none recorded
+- `_build_trusted_tool_arguments()` — strips `_RESERVED_TOOL_KWARGS`
+  (`_permission_context`/`_resolver`/`_broker`/`_cred_channel`/
+  `_cred_user_id`) from model-supplied args first, then merges trusted
+  `session_id`/`user_id`/`turn_id` LAST (filtered through the existing
+  `AbstractClient._tool_param_names()` — `None` means "accept
+  everything", used for `**kwargs` tools and any bare `AbstractTool`
+  subclass whose introspection can't resolve a signature), so trusted
+  values always win — the deliberate opposite of
+  `AbstractClient._execute_tool()`'s `{**filtered_ctx, **parameters}`.
+- `_execute_tool_full()` — calls
+  `self.tool_manager.execute_tool(name, merged_args, permission_context=...,
+  return_tool_result=True)` exactly once (never bypasses the manager,
+  never calls `tool.execute()`/`_execute()` directly the way Gemini's
+  `LiveToolAdapter.execute_tool()` does — Nova gets the full
+  permissions/grant/confirmation/credential-broker/lifecycle/hook
+  pipeline Gemini's route skips).
+- `_map_tool_result_to_nova()` — pure mapping function implementing
+  the spec §2 precedence table exactly (voice_text > dict > string >
+  None="Success" > str(other); falsy scalars `False`/`0`/`0.0`
+  preserved distinctly from `None`; non-success envelope never emits a
+  visual; empty `display_data` dict stays suppressed;
+  non-JSON-serializable `display_data` is omitted with a logged
+  warning while the spoken result still reaches Nova).
+- `_flush_pending_tools()` — signature gained an optional
+  `permission_context` kwarg (plumbed from `stream_voice()`'s
+  `**kwargs`, defaulting to `getattr(self, "_permission_context",
+  None)`, same convention `AbstractClient._execute_tool()` already
+  uses); `_run_one()` now calls `_execute_tool_full()` +
+  `_map_tool_result_to_nova()` instead of the reducing
+  `self._execute_tool()`; `LiveToolCall.result` now holds the
+  NORMALIZED provider-facing payload (not the raw envelope, per spec
+  §2 "LiveToolCall.result contains the normalized provider-facing
+  result"); each yielded `LiveVoiceResponse.metadata` carries
+  `tool_status` and, when present, `display_data`.
+- No scheduling/admission changes (queue-on-next-non-tool-event stays
+  as-is — TASK-2940 scope). No `NovaClient._execute_tool` override, no
+  Google import from Amazon.
+
+**Evidence**:
+- `pytest packages/ai-parrot/tests/clients/test_nova_dual_output.py -q`
+  → 16 passed (`artifacts/logs/task-2939-nova-suite.log` covers the
+  broader run below; the dedicated file-only run was captured
+  separately and is identical to the passing subset there).
+- `pytest packages/ai-parrot/tests/clients/ -k nova -q` → 148 passed,
+  8 skipped, 5 failed (`artifacts/logs/task-2939-nova-suite.log`).
+  Of the 5 failures:
+  - `test_nova_protocol_frames.py::test_prompt_start_declares_tool_use_output_configuration`
+    is **pre-existing on unmodified `dev`** (verified) — unrelated to
+    this task.
+  - The other 4 —
+    `test_nova.py::TestStreamVoice::test_stream_voice_tool_use`,
+    `test_nova_tool_result.py::TestToolTiming::test_executed_on_tool_content_end`,
+    `test_nova_tool_result.py::TestToolArguments::test_json_string_content_parsed_to_kwargs`,
+    `test_nova_tool_result.py::TestToolResultEnvelope::test_non_json_serializable_result_does_not_abort_turn`
+    — are a **known, spec-anticipated consequence** of this task: they
+    `patch.object(client, "_execute_tool", ...)` to intercept Nova's
+    tool-flush path, which no longer calls that method (by design —
+    this task's whole point is routing through
+    `ToolManager.execute_tool(..., return_tool_result=True)` instead).
+    The spec's own Module 3 (§3, TASK-2940) explicitly plans to
+    "update existing `test_nova_tool_result.py` assumptions"; three of
+    these four failures are exactly that file.
+    `test_nova.py::test_stream_voice_tool_use` has the identical root
+    cause but was not itself named in TASK-2940's file table — flagged
+    here for TASK-2940 to also fix (same worktree, executed next in
+    this session), since "retain protocol, shutdown and interruption
+    regression suites" is that module's own acceptance bar and this is
+    a one-assertion fix caused by the same architectural change.
+    **Not left unresolved**: TASK-2940 addresses this immediately
+    after in the same session.
+- `ruff check` on both changed/created files: clean, zero findings.
+
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-07
+**Notes**: Confirmed via `AbstractTool.execute()`'s `validate_args()`/
+`_shallow_dump()` path that a bare `AbstractTool` subclass with no
+custom `args_schema` silently drops ALL kwargs (including trusted
+context AND model-supplied arguments) — not specific to this task, but
+required giving the test fixtures explicit `args_schema` classes to
+actually exercise the trusted-context-override behavior; documented in
+the test file's fixture docstrings.
+**Deviations from spec**: none in the implementation. One test-scope
+note: `test_nova.py::test_stream_voice_tool_use` needs the same
+`_execute_tool`-assumption fix TASK-2940 already plans for
+`test_nova_tool_result.py` — addressed there, not silently left
+broken.

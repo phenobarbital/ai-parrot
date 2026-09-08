@@ -128,9 +128,49 @@ Missing optional SDK/browser/live credentials are prerequisites to record explic
 
 ## Completion Note
 
-Pending implementation and verification. No runtime or live acceptance is claimed by task creation.
+Implemented `_UI_PACKAGE_DIR`/`_LIVEKIT_UMD_ROUTE`/`_resolve_livekit_umd_path()`
+and `voice_assets_livekit_handler()` in `examples/clients/voice/server.py`.
+The route resolves `packages/ai-parrot-server/ui/node_modules/livekit-client/
+dist/livekit-client.umd.js`, validates the resolved real path stays inside
+the package directory (`Path.relative_to()` — rejects a symlink-escape),
+and returns a controlled 503 (`text/plain`, "not installed for the UI
+workspace ... run its install step") when the artifact is absent — the
+sandbox's actual state, since `packages/ai-parrot-server/ui/node_modules`
+is not installed here. `index_handler()`'s `__CONFIG__` bootstrap gained
+an `"avatar": {"sdkUrl": ..., "available": ...}` section via the existing
+single anchored `str.replace(..., count=1)` — no second replacement call
+added, no credentials in the payload. `build_app()` registers the new
+route alongside the existing `/ws/gemini`, `/ws/nova`, `/static/` mounts;
+those routes and the index page are unaffected when the SDK is missing.
 
-**Completed by**: unassigned
-**Date**: pending
-**Notes**: pending
+Created `packages/ai-parrot-integrations/tests/voice/test_voice_demo_assets.py`
+(11 tests, all passing) covering: a fixture UMD file serving successfully
+with the correct content-type; the real missing-SDK case returning 503
+with an "not installed" message; traversal-shaped adjacent URLs failing
+to route to the handler (404/400, no path parameter exists on the route);
+a symlink-escape defense-in-depth test (`_resolve_livekit_umd_path()`
+returns `None` when a `dist` symlink points outside the package dir);
+`/health/gemini`, `/`, and both `/ws/*` routes staying mounted/working
+with the SDK missing; `window.__CONFIG__` bootstrap JSON validity via a
+`json.JSONDecoder().raw_decode()`-based extractor (robust to semicolons
+inside nested config strings); the avatar section reflecting both the
+available and unavailable cases; no credential-shaped keys in the
+rendered config; and a regression guard (`inspect.getsource`) asserting
+the templating remains a single anchored `count=1` replace so it cannot
+also corrupt the page's `window.__CONFIG__.providers`/`.capabilities`
+property-access lines.
+
+Verification: `ruff check` clean on both files
+(`artifacts/logs/TASK-2943-ruff.log`); `pytest .../test_voice_demo_assets.py`
+— 11 passed (`artifacts/logs/TASK-2943-pytest.log`).
+
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-09-07
+**Notes**: The real `livekit-client` UMD build is not installed in this
+sandbox (`packages/ai-parrot-server/ui/node_modules` absent) — a
+documented prerequisite per the task's own instructions, not something
+this task's test suite can install. The "known fixture SDK file serves
+successfully" acceptance criterion is covered via a monkeypatched fixture
+file standing in for the real 2.22.1 artifact; the genuinely-missing case
+is also covered directly (this sandbox's real state).
 **Deviations from spec**: none recorded

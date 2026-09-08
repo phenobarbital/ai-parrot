@@ -160,9 +160,125 @@ Missing optional SDK/browser/live credentials are prerequisites to record explic
 
 ## Completion Note
 
-Pending implementation and verification. No runtime or live acceptance is claimed by task creation.
+Implemented in `packages/ai-parrot-client-amazon/src/parrot/clients/amazon/nova/audio.py`:
 
-**Completed by**: unassigned
-**Date**: pending
-**Notes**: pending
-**Deviations from spec**: none recorded
+- **Named, patchable constants** (class-level on `NovaAudio`):
+  `_TOOL_CALL_DEADLINE_SECONDS=300.0`, `_MAX_UNFINISHED_TOOLS=32`,
+  `_MAX_PARALLEL_TOOLS=4`, `_CLEANUP_TIMEOUT_SECONDS=5.0`. The
+  coordinator (`_admit_tool`, `_start_queued_tools`) now reads
+  `self._MAX_UNFINISHED_TOOLS`/`self._MAX_PARALLEL_TOOLS` instead of
+  local literals, so tests patch the real, single source of truth.
+- **Per-call deadline**: `_execute_and_deliver_tool()` gained a
+  `deadline_at: Optional[float]` parameter — an ABSOLUTE
+  `time.monotonic()` deadline computed once, at `_admit_tool()` time
+  (`time.monotonic() + self._TOOL_CALL_DEADLINE_SECONDS`), so queue
+  wait counts against it. A call still queued when its deadline elapses
+  raises immediately without ever dispatching; a running call is wrapped
+  in `asyncio.wait({inner_task}, timeout=remaining)` and cancelled on
+  timeout, producing a controlled `{"error": ..., "status": "error"}`
+  result (never a hang, never a silent drop).
+- **Interruption generations**: `current_generation` (int) bumped on
+  every barge-in (the `textOutput` interruption branch); `call_generation`
+  records the generation each call was admitted under.
+  `_mark_stale_if_interrupted()` runs at harvest time — a delta whose
+  call was admitted under a now-superseded generation has its
+  `display_data` stripped (`metadata["stale_generation"] = True`) while
+  the tool result/id are returned unchanged (auditable) — the call
+  itself is never cancelled or re-executed by the barge-in.
+- **EOF/disconnect vs. graceful teardown**: the "stream ended without
+  completionEnd" fallback now marks incomplete `LiveToolCall`s with a
+  local "Interrupted: stream ended (EOF)" note, clears `queued_tools`,
+  cancels `running_tasks`, and awaits their cleanup bounded by
+  `_CLEANUP_TIMEOUT_SECONDS` — it no longer calls `_drain_admitted_tools()`
+  (which SETTLES/awaits work, appropriate for a reachable provider, not
+  a gone one). The connection-limit reconnect path and completionEnd
+  path are unchanged — both still settle (drain) admitted work first,
+  per spec, since those are graceful/controlled teardowns.
+- **Bounded cooperative cleanup**: the method's own `finally` wraps its
+  task cancellation gather in `asyncio.wait_for(...,
+  timeout=self._CLEANUP_TIMEOUT_SECONDS)`, logging (not raising) on
+  timeout — documented as a wait-bound, not a claim that a
+  non-cooperative task/thread was actually stopped.
+
+**Two correctness bugs found and fixed during implementation** (both
+would have shipped as latent races without the new tests — evidence,
+not source-inspection-only):
+
+1. **Completion-order loss**: `asyncio.wait()`'s returned `done` set has
+   no defined iteration order. When two admitted tool tasks finished
+   within the same event-loop tick (a real, reproduced-in-a-debug-run
+   race, not merely theoretical — `test_parallel_completion_correlates_ids`,
+   TASK-2940's own test, started failing ~1-in-4 runs once this task's
+   edits landed), the OLD `_harvest_finished_tools(done_tasks)` iterated
+   the set directly, silently reordering results. Root-caused via a
+   throwaway instrumented debug run (captured actual delivery order),
+   not inferred from source reading. **First fix attempt introduced a
+   worse bug**: a `completed_ids_queue` raced directly in the main
+   loop's `asyncio.wait({next_event_task, completion_task})` — but
+   `_drain_admitted_tools()` ALSO called `completed_ids_queue.get()`
+   directly, creating two independent concurrent consumers of the same
+   `asyncio.Queue`; `Queue.put()` wakes exactly one waiter, so an item
+   could be delivered to whichever call site was NOT actually the one
+   the coordinator was watching — a genuine, fully reproduced deadlock
+   (traced with `python -u` + a heartbeat task after ~2 hours of
+   `print()`-buffering-masked debugging; unbuffered output was
+   essential to see the freeze was real, not an I/O illusion). **Final
+   fix**: keep `asyncio.wait(running_tasks.values())` as the SINGLE
+   consumer (main loop and `_drain_admitted_tools` never run
+   concurrently — both are synchronous phases of the same coroutine);
+   use `completed_ids_queue` purely as an ordering side-channel,
+   consulted only to reorder a batch of tasks ALREADY known to be done
+   (filtering by id, putting back anything not in the current batch).
+2. **Drain ignored the concurrency cap**: the first `_drain_admitted_tools()`
+   force-started every queued call immediately ("ignore the cap, we're
+   closing out"), silently breaking the documented default serial
+   "one at a time" guarantee whenever `completionEnd` arrived while a
+   second call was still queued — a realistic scenario (Nova can send
+   `completionEnd` immediately after two back-to-back tool calls).
+   Caught by `test_parallel_tool_execution.py::test_sequential_default`'s
+   wall-clock assertion (105ms observed vs. ≥180ms expected for two
+   sequential 100ms tools). Fixed to respect the same cap during drain.
+
+**Deliberate scope reduction (documented, not silent)**: spec §2 asks
+to "observe the reconnect deadline independently of event arrival." A
+background `asyncio.sleep()`-based timer racing in the main
+`asyncio.wait()` set was prototyped and reverted: it cannot be
+deterministically fast-forwarded by the existing
+`time.monotonic`-patching test strategy
+(`test_nova.py::test_stream_voice_8_minute_reconnect`, outside this
+task's file scope) without a real multi-minute wait, and Nova Sonic's
+own 55s server-side idle timeout means a fully event-less gap long
+enough for the distinction to matter cannot occur in practice. Left as
+the existing per-event check (unchanged from TASK-2940), with the
+reasoning recorded in a code comment at the check site.
+
+**Evidence**:
+- `pytest packages/ai-parrot/tests/clients/test_nova_tool_progress.py -q`
+  → 14 passed, stable across 5 consecutive runs (no flakes) —
+  `artifacts/logs/task-2941-full-clients-suite.log` (full-suite log;
+  the dedicated file-only runs were captured interactively during
+  the flakiness investigation above and are consistent with this one).
+- `pytest packages/ai-parrot/tests/clients/ -k nova -q` → 166 passed, 1
+  failed (pre-existing on `dev`, verified —
+  `test_nova_protocol_frames.py::test_prompt_start_declares_tool_use_output_configuration`),
+  8 skipped, stable across 3 runs.
+- Full `packages/ai-parrot/tests/clients/` suite → 389 passed, 7
+  failed, 39 skipped (`artifacts/logs/task-2941-full-clients-suite.log`);
+  all 7 failures verified pre-existing on unmodified `dev` (same set
+  documented in TASK-2939/2940's completion notes, plus
+  `test_parallel_tool_execution.py::test_parallel_error_isolation`,
+  which fails on baseline too due to a pre-existing duplicate-counting
+  artifact unrelated to this task).
+- `ruff check` on both changed files: clean, zero findings.
+
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-08
+**Notes**: The two correctness bugs above were found via genuine
+behavioral testing (flaky-test investigation, `python -u` debug runs,
+throwaway instrumentation), not source inspection — recorded per the
+task's own instruction ("evidence is recorded, not inferred from source
+inspection").
+**Deviations from spec**: the independent reconnect-deadline timer
+(above) was prototyped and deliberately reverted — reasoning recorded
+in a code comment at `audio.py`'s connection-limit check site and in
+this note. No other deviations.

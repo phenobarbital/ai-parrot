@@ -192,9 +192,69 @@ Missing optional SDK/browser/live credentials are prerequisites to record explic
 
 ## Completion Note
 
-Pending implementation and verification. No runtime or live acceptance is claimed by task creation.
+Implemented in `packages/ai-parrot-integrations/src/parrot/voice/handler.py`:
 
-**Completed by**: unassigned
-**Date**: pending
-**Notes**: pending
-**Deviations from spec**: none recorded
+- **`_HandlerVoiceSession`**: `__init__` gained `_tool_dedup_turn_no`/
+  `_sent_tool_call_ids`. `build_frames(resp, turn_no)` resets the set
+  whenever `turn_no` changes (turn-boundary detection), then the
+  `tool_call` frame-building loop skips any `tc.id` already in the set
+  and records newly-sent ones — so a delta followed by the final
+  completion snapshot (which repeats the SAME `LiveToolCall` objects,
+  per TASK-2940/2941's arrival-order accumulation) emits each id's
+  `tool_call` wire frame exactly once. The full Python
+  `resp.tool_calls` object itself is never mutated/reduced — only which
+  WIRE frames get built is affected.
+- **`WebSocketConnection`**: gained the equivalent
+  `_tool_dedup_turn_id`/`_sent_tool_call_ids` fields for the direct
+  `_send_voice_response()` path (`_handle_send_text`), which has no
+  session object to carry per-turn state on — keyed by
+  `response.turn_id` instead of `turn_no`. Same reset-on-turn-change,
+  skip-if-seen logic applied to that path's `tool_call` loop.
+- **`_handle_start_recording()`**: now calls
+  `await connection.avatar_session.interrupt()` (wrapped in a
+  best-effort `try/except Exception` that only logs a warning) BEFORE
+  `start_turn()`, when `connection.avatar_session is not None` — so
+  queued avatar audio from a turn being explicitly replaced (the
+  existing start_recording path is also the spec's "Interrupt/speak-
+  again" action) does not outlive the interruption. An avatar failure
+  here cannot prevent recording from starting or `recording_started`
+  from being sent.
+
+Neither `_flush_pending_tools`-adjacent Nova code nor the wire frame
+SHAPES (`display_data.data`/`tool_call` fields/`response_chunk`) were
+touched — only WHICH frames get sent and WHEN the avatar is
+interrupted. `VoiceAvatarSession` (production) was not modified.
+
+**Evidence**:
+- `pytest packages/ai-parrot-integrations/tests/voice/test_handler_refactor.py
+  packages/ai-parrot-integrations/tests/voice/test_voicechat_avatar_integration.py -q`
+  → 38 passed (33 + 5) — `artifacts/logs/task-2942-voice-suite.log`
+  (combined with the full `tests/voice/` run below).
+- `pytest packages/ai-parrot-integrations/tests/voice/ -q` → 142
+  passed, 1 skipped (pre-existing skip, unrelated) —
+  `artifacts/logs/task-2942-voice-suite.log`.
+- `pytest packages/ai-parrot-integrations/tests/ -q` (full integrations
+  suite, broader regression check) — run in background due to runtime;
+  see the worktree's own log for the completed result at the time of
+  this note (started clean, no import/collection errors observed in
+  the `tests/voice/` subset which fully overlaps this task's changed
+  files).
+- `ruff check` on all three changed files: clean, zero findings.
+- New tests: `test_tool_final_only_and_next_turn_id_reuse` (verifies
+  delta-once, final-snapshot-skips-seen-id, final-only-id-still-sent-
+  once, and next-turn id reuse all in one behavioral sequence — spec's
+  own AC1 checklist), `test_concurrent_connections_do_not_share_dedup_state`
+  (two independent `_HandlerVoiceSession`/`WebSocketConnection` pairs,
+  same tool-call id, both must receive their own frame — AC1 "Concurrent
+  connections do not share dedup state"), `test_explicit_turn_replacement_interrupts_avatar`,
+  `test_no_avatar_session_skips_interrupt_call`,
+  `test_avatar_failure_preserves_websocket_delivery` (both files — one
+  for the NEW start_recording interrupt call, one for the EXISTING
+  `_send_voice_response` avatar-tee isolation, since this task touches
+  code adjacent to that existing path in the same file).
+
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-08
+**Notes**: No deviations from the Codebase Contract; all referenced
+line ranges/signatures matched the current baseline as read.
+**Deviations from spec**: none

@@ -149,9 +149,79 @@ Missing optional SDK/browser/live credentials are prerequisites to record explic
 
 ## Completion Note
 
-Pending implementation and verification. No runtime or live acceptance is claimed by task creation.
+Implemented both scope items on top of TASK-2937's `return_tool_result`:
 
-**Completed by**: unassigned
-**Date**: pending
-**Notes**: pending
-**Deviations from spec**: none recorded
+1. **Output-field guard processing** — `ToolManager._finish_abstract_tool_full_result()`
+   now runs `voice_text`/`display_data` through the existing
+   `_run_tool_output_guardrails()` helper (imported from `.abstract`)
+   when `tool.enable_redaction or tool._has_tool_output_guardrails()`
+   — the identical gate `AbstractTool.execute()` already uses for
+   `result`/`error`/`metadata`, so those three fields are never
+   re-processed by this new code (only the two newly-exposed fields
+   are handled here). FLAG reports merge into
+   `metadata["guardrails"]`. A `display_data` value that no longer has
+   dict shape after processing (a misbehaving guardrail's `scrub()`
+   returning a non-dict) is suppressed to `None`; a field whose
+   processing genuinely raises is likewise suppressed with a note in
+   `metadata["output_guard_errors"]`. Verified the original sensitive
+   value never appears in the returned envelope for every case (block,
+   malformed-scrub, raising pipeline, fail-closed scrub error).
+2. **Per-instance lock** — `AbstractTool._get_full_result_lock()`
+   (abstract.py) lazily creates and caches `self._full_result_lock`
+   (`asyncio.Lock`). `ToolManager.execute_tool()` acquires it — only
+   when `return_tool_result=True` — as the very first statement inside
+   the `AbstractTool` branch (before the existing redaction/pipeline
+   stamping), and releases it in a `finally` added to the method's
+   *existing* outer `try/except`. This required NO re-indentation of
+   the existing (large) AbstractTool-branch body: the lock variable
+   (`full_result_lock`, initialized to `None` before the `try`) is only
+   ever set to a real lock *after* a successful `acquire()`, so the
+   `finally`'s `if full_result_lock is not None: full_result_lock.release()`
+   is a true no-op in default mode (zero behavioral change verified by
+   the full regression suite) and correctly skips releasing a
+   never-acquired lock if `acquire()` itself is cancelled while
+   waiting. Verified: two managers sharing one tool instance (via
+   `clone()`) serialize full-mode calls (the second never enters
+   `_execute()` until the first releases the gate); two *different*
+   tool instances run fully concurrently (no cross-instance
+   contention); a cancelled in-flight call releases the lock so the
+   next call on the same instance completes without deadlocking.
+
+**Evidence**:
+- `pytest packages/ai-parrot/tests/tools/test_toolmanager_full_result.py -q`
+  → 33 passed (22 from TASK-2937 + 11 new: 7 output-guard fixtures + 3
+  isolation/concurrency + 1 cancellation) — `artifacts/logs/task-2938-regression-pytest.log`.
+- Regression: `test_tooldefinition_enforcement.py` +
+  `test_manager_integration.py` (compression) +
+  `test_toolmanager_confirmation.py` + the full-result suite → 74
+  passed (`artifacts/logs/task-2938-regression-pytest.log`).
+- Full `packages/ai-parrot/tests/tools/` suite → 1091 passed, 52
+  failed, 7 skipped (`artifacts/logs/task-2938-full-tools-suite.log`);
+  the 52 failures are the same pre-existing `dev`-baseline failures
+  documented in TASK-2937's completion note (unrelated
+  `test_toolkit_ddl_guard.py`/`test_auto_registration_hooks.py`
+  fixtures) — 11 more passing tests than TASK-2937's run, matching
+  the 11 tests added here; no new regressions.
+- `ruff check` on all three changed/created files: `abstract.py` and
+  the test file are clean; `manager.py` has the same 2 pre-existing
+  findings noted in TASK-2937 (unused `codecs` import, `F821
+  AbstractToolkit` forward-ref) — not introduced by this task.
+
+**Discovered while implementing**: a test fixture initially stamped
+`_tool_output_pipeline` directly onto the tool INSTANCE — the
+pre-existing manager code (lines ~1757-1758, unmodified by this task)
+unconditionally re-stamps `tool._tool_output_pipeline =
+self._tool_output_pipeline` (the MANAGER's own, defaulting to `None`)
+whenever they differ, silently overwriting a directly-set instance
+pipeline right before dispatch. Fixed by configuring the pipeline on
+the `ToolManager` (`tm._tool_output_pipeline = ...`) instead, matching
+real usage (the manager owns/stamps the pipeline, not the tool). Not a
+code change — a test-authoring correction; noted here since it is easy
+to reproduce by accident.
+
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-07
+**Notes**: No deviations from the Codebase Contract; all Verified
+Imports/Signatures/References matched the current baseline (post
+TASK-2937) as read.
+**Deviations from spec**: none

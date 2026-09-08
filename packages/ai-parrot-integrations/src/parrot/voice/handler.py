@@ -255,6 +255,17 @@ class WebSocketConnection:
     # (lazy import so /ws/voice works without the ai-parrot-integrations[liveavatar] extra).
     avatar_session: Optional[Any] = None
 
+    # FEAT-536 TASK-2942: per-connection tool-call dedup bookkeeping for
+    # the direct _send_voice_response() streaming path (_handle_send_text)
+    # — equivalent to _HandlerVoiceSession's own turn_no-keyed bookkeeping,
+    # since that path has no session object to carry it on. Keyed by
+    # response.turn_id (that path's only available turn-boundary marker)
+    # so IDs may legitimately be reused in a later turn; naturally reset
+    # on session close since a new WebSocketConnection is created per
+    # connection.
+    _tool_dedup_turn_id: Optional[str] = None
+    _sent_tool_call_ids: set = field(default_factory=set)
+
 
 # =============================================================================
 # VoiceSession relay adapter (FEAT-416 TASK-2152; re-based on the
@@ -358,6 +369,20 @@ class _HandlerVoiceSession(VoiceSession):
         super().__init__(*args, **kwargs)
         self._handler = handler
         self._connection = connection
+        # FEAT-536 TASK-2942 (spec §2 "Event delivery and completion
+        # snapshots"): per-turn dedup bookkeeping — the streamed delta and
+        # the final Python completion snapshot both carry the SAME
+        # LiveToolCall objects (arrival-order accumulation, TASK-2940/
+        # 2941), so build_frames() would otherwise emit a duplicate
+        # tool_call wire frame for every already-relayed id. Keyed by
+        # turn_no (not a single running set) so IDs may legitimately be
+        # reused in a LATER turn — reset happens naturally at a turn
+        # boundary in build_frames() below; "session close" reset is
+        # satisfied by this being a fresh instance per session (a new
+        # _HandlerVoiceSession is constructed per voice session, never
+        # reused across sessions).
+        self._tool_dedup_turn_no: Optional[int] = None
+        self._sent_tool_call_ids: set = set()
 
     async def _send(self, payload: dict) -> None:
         # Code-review fix: route through the handler's own _send_message()
@@ -367,7 +392,7 @@ class _HandlerVoiceSession(VoiceSession):
         # every other frame this handler sends.
         await self._handler._send_message(self._connection.ws, payload)
 
-    def build_frames(self, resp, turn_no: int) -> list:  # noqa: ARG002 — turn_no kept for signature parity
+    def build_frames(self, resp, turn_no: int) -> list:
         """Reproduce VoiceChatHandler's real WebSocket frame protocol
         (FEAT-418, TASK-2174).
 
@@ -386,7 +411,18 @@ class _HandlerVoiceSession(VoiceSession):
         Transcription frames now come from canonical ``role`` (FEAT-418)
         instead of the removed ``metadata["user_transcription"]``/
         ``metadata["assistant_transcription"]`` keys.
+
+        FEAT-536 TASK-2942: ``tool_call`` frames are deduped per
+        ``turn_no`` — a streamed delta and the final completion snapshot
+        both carry the SAME ``LiveToolCall`` objects (arrival-order
+        accumulation, TASK-2940/2941); without this, every already-
+        relayed id would be sent again on ``is_complete``. Deduped by
+        id only — never by tool name or payload (spec §2).
         """
+        if turn_no != self._tool_dedup_turn_no:
+            self._tool_dedup_turn_no = turn_no
+            self._sent_tool_call_ids = set()
+
         frames: list = []
         connection = self._connection
 
@@ -444,6 +480,9 @@ class _HandlerVoiceSession(VoiceSession):
                 )
 
             for tc in resp.tool_calls:
+                if tc.id in self._sent_tool_call_ids:
+                    continue
+                self._sent_tool_call_ids.add(tc.id)
                 frames.append(
                     {
                         "type": "tool_call",
@@ -1278,6 +1317,23 @@ class VoiceChatHandler:
         connection.is_recording = True
         connection.recording_start_time = datetime.now()
 
+        # FEAT-536 TASK-2942 (spec §2 "Demo interruption controls"): this
+        # existing start_recording path is also the explicit Interrupt/
+        # speak-again action — it replaces whatever voice turn (and its
+        # avatar output) was in progress. Interrupt an active avatar
+        # BEFORE start_turn() below so queued avatar audio from the turn
+        # being replaced does not outlive it. Best-effort/isolated: an
+        # avatar failure must never prevent the user from starting a new
+        # turn or block ordinary WebSocket voice delivery.
+        if connection.avatar_session is not None:
+            try:
+                await connection.avatar_session.interrupt()
+            except Exception as exc:  # noqa: BLE001
+                self.logger.warning(
+                    "VoiceChatHandler: avatar interrupt on start_recording failed " "(voice recording unaffected): %s",
+                    exc,
+                )
+
         # FEAT-416 (TASK-2152): in streaming mode, each recording is one
         # VoiceSession turn — start_turn() creates the (fresh, per-turn)
         # audio queue that _handle_audio_data()/_handle_stop_recording()
@@ -1691,7 +1747,18 @@ class VoiceChatHandler:
         In STT-only mode (connection.stt_only=True) only ``transcription``
         frames (is_user=True) are forwarded; ``response_chunk`` and model
         audio frames are suppressed (double-brain guard).
+
+        FEAT-536 TASK-2942: ``tool_call`` frames are deduped per turn
+        (keyed by ``response.turn_id`` — this path's only available
+        turn-boundary marker, tracked on ``connection`` — see its own
+        field comment) — equivalent to ``_HandlerVoiceSession.build_frames()``'s
+        ``turn_no``-keyed bookkeeping for the streaming relay path.
         """
+        turn_id = getattr(response, "turn_id", None)
+        if turn_id != connection._tool_dedup_turn_id:
+            connection._tool_dedup_turn_id = turn_id
+            connection._sent_tool_call_ids = set()
+
         # STT-only: skip all model response frames — only transcription is allowed.
         if not connection.stt_only:
             # Send response_chunk for audio OR text (not just audio)
@@ -1760,6 +1827,9 @@ class VoiceChatHandler:
             await self._send_message(connection.ws, {"type": "display_data", "data": response.metadata["display_data"]})
 
         for tc in response.tool_calls:
+            if tc.id in connection._sent_tool_call_ids:
+                continue
+            connection._sent_tool_call_ids.add(tc.id)
             await self._send_message(
                 connection.ws,
                 {
