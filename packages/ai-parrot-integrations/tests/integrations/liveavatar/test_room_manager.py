@@ -300,3 +300,33 @@ async def test_room_admin_closes_the_client_even_on_failure(mgr: LiveKitRoomMana
         await mgr.delete_room("room-x")
     assert _FakeLiveKitAPI.last is not None
     assert _FakeLiveKitAPI.last.closed is True
+
+
+# ── Vendor token grants (live-run regressions) ─────────────────────────────
+
+
+def test_avatar_publisher_token_can_grant_data_publishing(mgr: LiveKitRoomManager) -> None:
+    """LiveAvatar refuses a token without ``canPublishData``.
+
+    Found only by running the demo against the real vendor:
+    ``422 Bad LiveKit configuration. Input Livekit token needs to grant
+    canPublishData permission.`` Avatar startup degrades instead of raising,
+    so this turned every broadcast into a silent audio-only fallback.
+    """
+    token = mgr.mint_publisher_token("room-1", "avatar-x", can_publish_data=True)
+    grants = _jwt_payload(token)["video"]
+    assert grants["canPublishData"] is True
+    assert grants["canPublish"] is True
+
+
+def test_publisher_token_withholds_data_publishing_by_default(mgr: LiveKitRoomManager) -> None:
+    """Least privilege: only the caller that needs it asks for it."""
+    grants = _jwt_payload(mgr.mint_publisher_token("room-1", "direct-x"))["video"]
+    assert grants.get("canPublishData", False) is False
+
+
+def test_viewer_token_never_grants_data_publishing(mgr: LiveKitRoomManager) -> None:
+    """Viewers stay subscribe-only regardless of the publisher change (AC3)."""
+    grants = _jwt_payload(mgr.mint_viewer_token("room-1", "viewer-x"))["video"]
+    assert grants.get("canPublish", False) is False
+    assert grants.get("canPublishData", False) is False
