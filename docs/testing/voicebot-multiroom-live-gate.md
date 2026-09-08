@@ -40,11 +40,21 @@ exists to surface:
 Run command:
 
 ```bash
+# Credentials are read from env/.env via navconfig — no manual exports.
+# PARROT_LIVEAVATAR_MAX_SESSION_DURATION_S / PARROT_LIVE_MAX_SESSION_DURATION are
+# needed only on an account whose session cap is below the spec's 600 s.
 PARROT_LIVE_BROADCAST_GATE=1 PARROT_LIVEAVATAR_MAX_SESSION_DURATION_S=60 \
 PARROT_LIVE_MAX_SESSION_DURATION=60 \
   pytest packages/ai-parrot-integrations/tests/voice/test_voice_broadcast_live_gate.py
 # 3 passed in 29.18s
 ```
+
+> **Fixed after this report was first written.** The gate used to require the caller to
+> hand-export the five credential variables, because it read `os.environ` at import time
+> and nothing in its import graph loaded `env/.env`. It now imports `navconfig` first, so
+> the command above works as written on any machine that has credentials configured the
+> normal way. The old "export them yourself" instruction was a workaround for a defect in
+> the gate, and it was wrong to document it as the procedure.
 
 ### Measured results
 

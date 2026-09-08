@@ -55,6 +55,20 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import pytest
 
+# Load the project's configuration layer BEFORE reading os.environ below.
+#
+# The gate's enablement is decided at import time, but credentials live in
+# `env/.env`, which only reaches os.environ when navconfig is imported. Nothing
+# in this module's own import graph pulls navconfig in, so running
+# `PARROT_LIVE_BROADCAST_GATE=1 pytest <this file>` on a machine that HAS
+# credentials still skipped — and the skip text blames "credentials missing",
+# which makes the wrong diagnosis look confirmed. Requiring the caller to
+# hand-export the five variables was a workaround for this, not a fix.
+try:  # pragma: no cover — configuration bootstrap, not logic under test
+    import navconfig  # noqa: F401
+except ImportError:  # navconfig absent: fall back to a bare os.environ read
+    pass
+
 # Every test in this module is a live-vendor probe.
 pytestmark = pytest.mark.live_vendor
 
@@ -72,11 +86,30 @@ _GATE_ENABLED: bool = os.environ.get("PARROT_LIVE_BROADCAST_GATE") == "1" and al
     os.environ.get(name) for name in _REQUIRED_ENV
 )
 
-_SKIP_REASON: str = (
-    "live vendor gate not enabled / credentials missing — NOT VERIFIED "
-    "(set PARROT_LIVE_BROADCAST_GATE=1 plus "
-    f"{', '.join(_REQUIRED_ENV)})"
-)
+
+def _skip_reason() -> str:
+    """Say which precondition is actually unmet.
+
+    A single "not enabled / credentials missing" string cannot distinguish the
+    switch being off from a credential being absent, and reading as though it
+    were the latter sent this feature's own acceptance report down the wrong
+    path for days. Name the specific missing pieces instead.
+
+    Returns:
+        A precise, actionable skip reason.
+    """
+    missing = [name for name in _REQUIRED_ENV if not os.environ.get(name)]
+    if os.environ.get("PARROT_LIVE_BROADCAST_GATE") != "1":
+        return "live vendor gate is OFF — NOT VERIFIED. Set " "PARROT_LIVE_BROADCAST_GATE=1 to run it" + (
+            f" (also missing: {', '.join(missing)})" if missing else " (all five credentials were found)"
+        )
+    return (
+        "live vendor gate is ON but credentials are missing — NOT VERIFIED. "
+        f"Absent from the environment: {', '.join(missing)}"
+    )
+
+
+_SKIP_REASON: str = _skip_reason()
 
 # ── Probe constants ────────────────────────────────────────────────────────
 
