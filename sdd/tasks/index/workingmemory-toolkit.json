@@ -511,7 +511,7 @@
       "feature_id": "FEAT-538",
       "feature": "workingmemory-toolkit",
       "spec": "sdd/specs/workingmemory-toolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "estimated_hours": 4,
@@ -530,9 +530,9 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": "2026-09-08T13:39:08+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2984-tm-manager-hooks.md",
-      "verification": null,
+      "completed_at": "2026-09-08T16:42:51+00:00",
+      "file": "sdd/tasks/completed/TASK-2984-tm-manager-hooks.md",
+      "verification": "18 focused tests against the real ToolManager; dispatcher failure SET byte-identical to dev baseline (1925 passed/53 pre-existing)",
       "owned_files": [
         "packages/ai-parrot/src/parrot/tools/manager.py",
         "packages/ai-parrot/tests/tools/working_memory/task_memory/test_manager_observer.py"
@@ -992,7 +992,7 @@
       "feature_id": "FEAT-538",
       "feature": "workingmemory-toolkit",
       "spec": "sdd/specs/workingmemory-toolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "estimated_hours": 4,
@@ -1015,9 +1015,9 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": "2026-09-08T13:39:08+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2997-tm-postgres-artifacts.md",
-      "verification": null,
+      "completed_at": "2026-09-08T16:42:51+00:00",
+      "file": "sdd/tasks/completed/TASK-2997-tm-postgres-artifacts.md",
+      "verification": "27 focused tests LIVE against real PostgreSQL 17.3 (87 across all postgres suites); FOR UPDATE mutation reproduced during review; 0 test schemas left",
       "owned_files": [
         "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/store/postgres.py",
         "packages/ai-parrot/tests/tools/working_memory/task_memory/test_postgres_artifacts.py"

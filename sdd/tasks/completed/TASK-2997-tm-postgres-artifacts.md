@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-538 - Recoverable Task Memory for WorkingMemoryToolkit
 **Spec**: `sdd/specs/workingmemory-toolkit.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2976, TASK-2995, TASK-2996
@@ -144,4 +144,74 @@ New test modules should use local fixtures unless the shared fixture task is alr
 
 ## Completion Note
 
-Not completed. The implementing agent records completed-by, date, verification evidence, notes, and any approved deviations here when acceptance passes.
+**Completed by**: Claude Opus 5 (sdd-worker, delegated fork) — session `01WeeSf3QmPq58bBxturogRX`
+**Date**: 2026-09-08
+**Status**: done (Delivery B)
+
+### Evidence — LIVE, and mutation-tested
+- **27 focused tests passed against real PostgreSQL 17.3**, including all
+  9 inherited `ArtifactStoreConformance` cases and the three required
+  cases. **87 passed** across all three postgres suites together
+  (artifacts + schema + task store), re-run independently during review.
+- Without a DSN: 27 skipped, each saying *"This is an ENVIRONMENTAL SKIP,
+  not a pass."*
+- **Zero `wm_test_*` schemas remain**; the real `working_memory` schema
+  was never created; no credentials in any committed file or log.
+- `ruff`/`black`/`isort` clean. Journal CRUD untouched — all six
+  TASK-2995 methods intact, their suites still green.
+
+### Mutation testing — and the reviewer reproduced it
+27/27 passing first time is weak evidence on its own, so the two
+guarantees this task exists for were mutation-tested:
+
+- Commenting out `FOR UPDATE` in the alias allocation makes
+  `test_alias_concurrency_distinct_versions_from_separate_pools` **fail**
+  (versions collide). **Reproduced during review**: mutated → 1 failed,
+  restored → 5 passed, file confirmed byte-identical by md5.
+- Committing the index row before the caller commits makes
+  `test_atomic_publish_rollback_leaves_no_index_row` **fail**.
+
+Concurrency is proven with genuinely separate pools, not coroutines
+sharing one connection — the latter would not exercise the row lock at
+all.
+
+### Design decisions
+1. **The whole `BlobRef` is persisted in `storage_ref`, not just the
+   key.** `blob.load()` needs the checksum to distinguish correct bytes
+   from corrupted ones; storing only the key would have made corruption
+   undetectable. The descriptor still exposes the plain key, so it reads
+   identically to the in-memory store's. **No column was added** — the
+   migration SQL is outside this task's ownership.
+2. **`_BorrowedTransaction`** lets the artifact store hand its own
+   connection to the task store's append path, so `artifact_registered`
+   is allocated a sequence, takes the task row lock and passes through
+   the reducer like any other event — rather than writing a journal row
+   directly and quietly bypassing all three.
+3. **`availability_generation` is derived from stored counts**, not an
+   in-memory counter. A counter would reset on restart and disagree
+   across pods, so recall's cache key would go stale precisely when a pod
+   restarted.
+4. **A `task_id` naming no task is not an error**: the artifact still
+   registers, without a journal event. Refusing would lose an artifact
+   over a bookkeeping detail.
+5. **`evict` updates the index first, deletes the object second.** A
+   crash between them leaves an orphan blob (sweepable); the reverse
+   order would leave the index pointing at bytes already gone.
+6. **A failed blob write is recorded as `missing` +
+   `evidence_verifiable=False`** rather than raising. Metadata without
+   bytes is honest; metadata *presented as* durable evidence is not. The
+   test injects the failure and asserts it was actually reached
+   (`calls["n"] == 1`), so a no-op patch could not make it pass
+   vacuously.
+7. **The test imports `LocalFileManager` from `navigator.utils.file`**,
+   not `parrot.interfaces.file`, and skips if it gets a stub — the repo
+   `conftest`'s `AsyncMock` has a truthy `exists()` that would let I/O
+   assertions pass **vacuously**. TASK-2996 flagged this hazard; it bit
+   here too, which is evidence the flag was worth raising.
+
+### Contract note
+No stale anchors, but all three listed (`internals.py:542`,
+`pyproject.toml:54`, `plan/models.py:413`) are **irrelevant** — this task
+consumes none of them. It works against `interfaces/artifact_store.py`,
+`artifacts.py`, `blob.py`, `snapshots.py` and `store/_base.py`, none of
+which the contract mentions.

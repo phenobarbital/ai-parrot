@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-538 - Recoverable Task Memory for WorkingMemoryToolkit
 **Spec**: `sdd/specs/workingmemory-toolkit.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2983
@@ -157,4 +157,72 @@ New test modules should use local fixtures unless the shared fixture task is alr
 
 ## Completion Note
 
-Not completed. The implementing agent records completed-by, date, verification evidence, notes, and any approved deviations here when acceptance passes.
+**Completed by**: Claude Opus 5 (sdd-worker) — session `01WeeSf3QmPq58bBxturogRX`
+**Date**: 2026-09-08
+**Status**: done
+
+### Evidence
+- `test_manager_observer.py` → **18 passed**, against the **real**
+  `ToolManager`, real `AbstractTool`, real `PermissionContext`/
+  `UserSession` and the real denying-resolver path.
+  Log: `artifacts/logs/task-2984-tm-manager-hooks.log`.
+- **Regression evidence (the critical one — this modifies the
+  dispatcher):** `tests/tools` + `tests/bots/flows/plan` give **1925
+  passed / 53 failed** on this branch, and the sorted `FAILED` list is
+  **byte-identical** to unmodified `dev` — zero additions, zero removals.
+- The two `ruff` findings in `manager.py` (`F401 compression.codecs`,
+  `F821 AbstractToolkit`) are present on baseline and are not from this
+  task.
+
+### Structure, and why it is shaped this way
+`execute_tool`'s body moved **verbatim** to `_execute_tool_impl`, and the
+public `execute_tool` became a thin wrapper.
+
+The split exists because early returns — unknown tool, guardrail or grant
+denial, authorization required — never reach a tool body and must be
+classified as unsuccessful *dispatch* outcomes with `executed=False`.
+Intercepting a `return` is impossible from inside, and giving every early
+return site observer knowledge would have meant touching a dozen places
+in the most safety-critical method in the repository. Guard ordering,
+compression, envelopes and every early return in the body are
+byte-for-byte unchanged.
+
+The four `[EXECUTED]` sites Phase 0 pinned now route through one
+`_observed` helper — the only place a tool body is invoked, sitting after
+every guard. That is exactly where the spec requires `tool_started`:
+late enough that a doomed call never records a start, early enough that
+no external effect can happen without one.
+
+### Concurrency
+The per-dispatch marker is a **local `_Observation` object** passed down a
+single call, never manager state. Were it instance state, a denial racing
+a real execution could mark the denial "executed" and suppress its
+`not_executed` record.
+`test_disabled_clone_concurrent_dispatches_do_not_share_observation` runs
+exactly that race — two real calls and one unknown tool concurrently —
+and asserts the 2/1 split.
+
+**Clones do not inherit the observer.** They share tool *instances* but
+own their mutable state; a shared observer would let one clone's turn
+capture collect another's calls. Two observed clones run concurrently and
+each captures exactly its own calls (3 and 5), with disjoint task ids.
+
+### Assertions chosen to be hard to fake
+1. **Ordering is asserted from INSIDE the tool body.**
+   `test_guard_order_start_is_written_before_the_body_runs` has the tool
+   read the journal while executing and asserts it sees exactly
+   `[TOOL_STARTED]` — proving the start is durable *before* the body
+   runs, rather than merely checking the final order afterwards.
+2. **The cancellation case does not stop at "it raised."** It then runs a
+   **second** full-result call on the same manager and requires it to
+   complete, because a leaked FEAT-536 lock would hang precisely there.
+3. **A denial asserts both halves** — the body never ran *and* no
+   `tool_started` was recorded.
+
+### A mistake worth recording
+My first draft of the test guessed at three APIs —
+`register_tool_instance`, `_run`, and a `PermissionContext` import from
+`parrot.tools.abstract`. All three were wrong. They were corrected
+against the actual source (`add_tool`, `_execute`,
+`parrot.auth.permission`) rather than worked around, which is precisely
+the anti-hallucination rule the task file states.
