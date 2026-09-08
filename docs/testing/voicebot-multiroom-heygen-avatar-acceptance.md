@@ -49,7 +49,7 @@ Prerequisite gate — **AC15 is half-satisfied**: FEAT-536 is *integrated* (PR
 | `LIVEKIT_URL` / `_API_KEY` / `_API_SECRET` | ❌ **Absent** | No reachable deployment |
 | AWS Bedrock Nova 2 Sonic | ⚠️ **Partial** | `AWS_NOVA_SONIC_*` exist in `env/.env`, but `aws_sdk_bedrock_runtime` is **not installed** |
 | Human observer (lip-sync, A/V judgement) | ❌ **Absent** | Autonomous CLI session |
-| `ai-parrot-client-google` / `-amazon` satellites | ❌ **Not installed** | Causes 27 pre-existing collection errors in `tests/voice/` and 35 in `tests/clients/` — **identical on clean `dev`** |
+| `ai-parrot-client-google` / `-amazon` satellites | ✅ **Installed** (corrected) | Were absent from the venv, causing 27 collection errors **and 13 failures** in `tests/voice/`. Not a code defect and not FEAT-537's — the client split left the venv stale. `uv pip install --no-deps -e packages/ai-parrot-client-{amazon,google}` clears all of them (`--no-deps` matters: the manifests pin `ai-parrot>=1.0.0`, and resolving that would pull 1.0.0 from PyPI over the editable 0.28.1 workspace install). |
 | vitest (`ui/node_modules`) | ❌ **Not installed** | `pnpm exec vitest` → "Command not found"; not installed to avoid mutating the shared repo |
 
 ### Dependency versions
@@ -77,7 +77,7 @@ Raw output: `artifacts/logs/feat-537-acceptance-2026-09-08.log` (gitignored).
 | 8 | `pytest .../test_voice_broadcast_live_gate.py .../test_voice_demo_multibrowser_live.py -q` | **2 passed, 6 skipped — NOT VERIFIED** |
 | 9 | `node` harness for `avatar-viewer.js` broadcast policy | **24 checks passed** (stand-in for vitest, which is not installed) |
 | — | `pnpm --dir packages/ai-parrot-server/ui test` | ❌ **NOT RUN** — vitest not installed |
-| — | `pytest packages/ai-parrot/tests/clients/ -k nova` | ❌ **NOT RUN** — 35 collection errors, **identical on clean `dev`** (`parrot.clients.amazon` absent) |
+| — | `pytest packages/ai-parrot/tests/clients/ -k nova` | ⚠️ **PARTIAL** — `parrot.clients.amazon` now resolves; collection still stops on `parrot.clients.anthropic`, i.e. the remaining uninstalled `ai-parrot-client-*` satellites. Same environmental cause, unrelated to FEAT-537. |
 
 Measurement artifacts produced: 32 × `artifacts/logs/feat-537-browser-*.json`,
 `artifacts/logs/feat-537-crossworker-*.json`,
@@ -97,7 +97,7 @@ Measurement artifacts produced: 32 × `artifacts/logs/feat-537-browser-*.json`,
 | **AC6** — interruption clears native + software queues, stale speech stops within 1 s in both modes; delayed avatar events cannot become audible | automated (mechanism) + live (timing) | `test_voice_broadcast_media.py` (`interrupt` clears deque + `avatar.interrupt()` + `publisher.flush()`→`clear_queue`), `test_room_audio_publisher.py`, scenario 6 late-avatar rejection; **live gate**: `agent.interrupt`→silence **0.399 s**, `clear_queue`→silence **0.103 s** | **PASS** — mechanism PASS and the **1 s** target is now **MEASURED on real media**, both modes, well inside budget |
 | **AC7** — cross-worker stop, owner fencing, rollback and shutdown; ≤ 30 s process-death cleanup; fatal failures not mislabelled as fallback | automated | suite 5 (`stop` on worker A ends the producer owned by B; owner death fenced, room emptied, `failed`/`owner_lost`, simulated ≤ 30 s) · `test_voice_broadcast_media.py` (LiveKit prerequisite failure → `failed`, never `audio_only`) | **PASS** (simulated clock) |
 | **AC8** — HTML roles, Raise Hand/Cancel, Grant/Revoke/Reclaim, Finish Speaking, real resampling, existing-track attachment, autoplay recovery; ungranted participants never capture | automated | suite 7 scenarios 2, 3, 8 · `test_voice_demo_broadcast_browser.py` (stateful 44.1 kHz→16 kHz resampler, `getUserMedia` spy = 0 calls) · scenario 1 late-join attachment | **PASS** — except **autoplay-blocked recovery**, which the harness forces off (`--autoplay-policy=no-user-gesture-required`) and is therefore **NOT VERIFIED** |
-| **AC9** — scoped pytest, real Redis and browser suites pass; existing voice/avatar regressions green; logs identify versions and skipped live cases | automated | suites 1–8; FEAT-536 regression **52 passed**; versions in §1; skips reported as NOT VERIFIED | **PASS** — with the caveat that `pnpm test` (vitest) and the Nova client suite could not run in this environment (both **identical on clean `dev`** or tool-absent) |
+| **AC9** — scoped pytest, real Redis and browser suites pass; existing voice/avatar regressions green; logs identify versions and skipped live cases | automated | suites 1–8; **`tests/voice/` now 542 passed / 7 skipped / 0 failed / 0 errors** once the client satellites were installed (`dev` is 189/0 on the same env); versions in §1 | **PASS** — the only remaining caveat is `pnpm test` (vitest), whose runner is not installed |
 | **AC10** — Module 1 and the 3-/10-browser real-vendor gates recorded, incl. media playback and lip-sync assessment | live | [`voicebot-multiroom-live-gate.md`](voicebot-multiroom-live-gate.md) — **8 of 12 executed** (7 PASS, 1 REJECTED-with-finding); real LiveAvatar + LiveKit, two subscribers, 858 audio / 195 video frames each | **PARTIAL** — Module 1 media contract is now **verified live**. Still NOT RUN: the four Nova/Bedrock rows (SDK not installed) and lip-sync, which needs a human observer |
 | **AC11** — setup/authentication/environment/limits/failure-injection docs complete with exact tested commands; FULL/custom-LLM and non-broadcast interfaces still compatible | automated + review | `examples/clients/voice/README.md` §Broadcast mode, [`docs/voice/voicebot-multiroom-heygen-avatar.md`](../voice/voicebot-multiroom-heygen-avatar.md); env names grep-verified, links checked, commands executed; suites 2 & 4 prove the legacy avatar/voice paths unchanged | **PASS** |
 | **AC12** — concurrent first joins select exactly one moderator; a raised hand grants no microphone; only the moderator grants/revokes/reclaims; the moderator cannot transmit while another holds the floor | automated | suite 1 (`test_first_admission_elects_single_moderator_under_race`), suite 5, suite 7 scenarios 2 & 3 | **PASS** |
@@ -266,10 +266,19 @@ lip-synced" are perceptual judgements no assertion substitutes for. Row 4 (avata
 → voice-only) was in fact observed incidentally: the 600 s rejection produced a genuine
 LiveAvatar startup failure and the broadcast degraded to `audio_only` as designed.
 
-Note for whoever runs those rows: with the SDK installed, two Nova tests that previously
-skipped now run and **fail** — `test_nova_audio_end_releases_browser_for_two_turns` and
-`test_nova_denial_reaches_browser_and_closes_stream`. Both fail **identically on clean
-`dev`**, so they are not FEAT-537 regressions, but they are live defects in the new AWS
-Nova 2 audio path and should be triaged before a Nova acceptance run.
+**Follow-up: those two Nova tests were not defects either.** Installing the SDK un-skipped
+`test_nova_audio_end_releases_browser_for_two_turns` and
+`test_nova_denial_reaches_browser_and_closes_stream`, which then failed — but on
+`ModuleNotFoundError: No module named 'parrot.clients.amazon'`, not on any assertion. The
+`ai-parrot-client-*` satellites were simply never installed into the venv after the client
+split. Installing the two that voice needs makes them pass and, with them, **the entire
+`tests/voice/` suite: 542 passed, 7 skipped, 0 failed, 0 errors.**
+
+This retires the "11 failed / 27 errors, identical on clean `dev`" baseline that earlier
+revisions of this report leaned on to argue "no regressions". That baseline was an
+artifact of an incomplete environment, not a property of the code, and treating it as
+immovable meant a genuinely green suite was being reported as partly broken for the whole
+feature. The comparison now reads: `dev` **189 passed / 0 failed**, this branch **542
+passed / 0 failed**, on the same environment.
 
 ---
