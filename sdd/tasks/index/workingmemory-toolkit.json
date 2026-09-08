@@ -17,7 +17,7 @@
       "feature_id": "FEAT-538",
       "feature": "workingmemory-toolkit",
       "spec": "sdd/specs/workingmemory-toolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "estimated_hours": 4,
@@ -32,9 +32,9 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": "2026-09-08T13:39:08+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2970-tm-integration-spike.md",
-      "verification": null,
+      "completed_at": "2026-09-08T14:06:30+00:00",
+      "file": "sdd/tasks/completed/TASK-2970-tm-integration-spike.md",
+      "verification": "bench_snapshot_costs.py exit 0; artifacts/logs/task-2970-tm-integration-spike.log; ruff/black/isort clean",
       "owned_files": [
         "docs/memory/task-memory-integration-map.md",
         "packages/ai-parrot/tests/tools/working_memory/task_memory/bench_snapshot_costs.py"

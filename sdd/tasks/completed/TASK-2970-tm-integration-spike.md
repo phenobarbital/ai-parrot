@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-538 - Recoverable Task Memory for WorkingMemoryToolkit
 **Spec**: `sdd/specs/workingmemory-toolkit.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -176,4 +176,81 @@ New test modules should use local fixtures unless the shared fixture task is alr
 
 ## Completion Note
 
-Not completed. The implementing agent records completed-by, date, verification evidence, notes, and any approved deviations here when acceptance passes.
+**Completed by**: Claude Opus 5 (sdd-worker) — session `01WeeSf3QmPq58bBxturogRX`
+**Date**: 2026-09-08
+**Status**: done
+
+### Evidence
+
+- `uv run python packages/ai-parrot/tests/tools/working_memory/task_memory/bench_snapshot_costs.py`
+  → exit 0. Full output retained at `artifacts/logs/task-2970-tm-integration-spike.log`.
+- `ruff check` clean; `black --line-length 120 --target-version py312` and
+  `isort` applied.
+- Contract inventory verified against live source at `1447c25a8c` (dev
+  `0b4920b2f` + the SDD start commit); every pinned anchor re-checked with
+  `grep -n` before being written into the map.
+
+### Results
+
+| Payload | 8 MiB | 64 MiB | 256 MiB |
+|---|---|---|---|
+| numeric/string DF — copy / fingerprint (s) | 0.001 / 0.390 | 0.006 / 2.301 | 0.030 / 9.458 |
+| nested-object DF — copy / fingerprint (s) | 0.001 / 3.949 | 0.004 / 31.191 | 0.015 / 122.741 |
+| JSON/text stdlib — encode / fingerprint (s) | 1.993 / 0.012 | 16.647 / 0.113 | 65.097 / 0.417 |
+| JSON/text orjson — encode / fingerprint (s) | 0.050 / 0.013 | 0.434 / 0.115 | 1.614 / 0.417 |
+
+Environment: Python 3.12.3, Linux 7.0.0-31-generic x86_64, pandas 2.2.3,
+numpy 2.4.6. Single host, single run — orders of magnitude, not an SLO.
+
+### Decisions recorded
+
+- **OQ3 resolved**: `snapshot_max_bytes` default stays **64 MiB**.
+- **P0-1**: canonical JSON uses `orjson` + `OPT_SORT_KEYS` (byte-identical
+  to the stdlib arm, ~40x faster, ~25% lower peak). No new dependency.
+- **P0-2**: nested mutable object cells ⇒ `evidence_verifiable=False`.
+  pandas does *not* raise on unhashable cells — it silently hashes their
+  string repr, so a computable fingerprint there is not integrity proof.
+  `df.copy(deep=True)` also does not detach them (verified by object
+  identity at every size).
+- **P0-3**: blob I/O uses `create_from_bytes` / `get_file_metadata` /
+  `download_file(BytesIO)`; the `FileMetadata.size` pre-check is the byte
+  ceiling. There is no chunked writer and no byte-limit parameter on the
+  interface — do not invent one.
+- **P0-4**: the invocation observer attaches to the `ToolManager`, not to
+  tool instances — `clone()` (`manager.py:2439`) shares tool instances but
+  gives the clone its own mutable manager state.
+- OQ1 and OQ2 keep their spec defaults; nothing measured contradicts them.
+
+### Spec contract corrections
+
+None required. The spec's Codebase Contract was re-verified anchor by
+anchor and every claim held, including the `storage/overflow.py:20` claim
+(confirmed JSON-definition oriented: `json.dumps` above a 200 KB
+`INLINE_THRESHOLD`, written to a `{prefix}.json` key — not a versioned
+Parquet store). Several line anchors quoted in the map were corrected
+against the current tree during writing (e.g. `clone()` at `:2439`, not
+`:2459`; `_store_turn` at `redis.py:261`, with the non-atomic metadata
+rewrite at `:290-297`).
+
+### Approved deviations
+
+Two empty `__init__.py` files were created alongside the benchmark
+(`packages/ai-parrot/tests/tools/working_memory/__init__.py` and
+`.../task_memory/__init__.py`). They are not in the ownership table, but
+every sibling test package under `packages/ai-parrot/tests/tools/` has one
+and pytest's package-style collection needs them to avoid basename
+collisions with later task modules. Deliberate, minimal, and recorded here.
+
+### Notes for downstream tasks
+
+- **There is no universal hook.** 9 direct catalog writes, 3 external
+  catalog reads (the plan node reaches into `_catalog` directly), 5
+  `render_context_history` call sites and 4 `from_ai_message` call sites.
+  Design accordingly — §1.1 of the map.
+- `tool_started` must be persisted before **four** distinct `[EXECUTED]`
+  lines in `execute_tool`, not one (§1.3).
+- `PlanToolNode._store` (`:347`) runs *after* dispatch returned, so the
+  attempt receipt must be retained across that boundary or
+  `producer_call_id` is lost (§1.4).
+- Registration must run hashing in a thread and must never hold the
+  catalog lock across it: the copy is cheap, the fingerprint is not.
