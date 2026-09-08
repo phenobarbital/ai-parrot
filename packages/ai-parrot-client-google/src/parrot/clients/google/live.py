@@ -784,6 +784,15 @@ class GeminiLiveClient(AbstractClient):
         accumulated_audio = b""
         tool_calls_list: List[LiveToolCall] = []
 
+        def _note_first_token() -> None:
+            """Stamp ``usage.first_token_time_ms`` on the turn's first model output.
+
+            Reads the enclosing ``usage``/``turn_metadata`` bindings, which are
+            rebound at every turn boundary, so it always stamps the current turn.
+            """
+            if not usage.first_token_time_ms:
+                usage.first_token_time_ms = (datetime.now() - turn_metadata.started_at).total_seconds() * 1000
+
         self.logger.info(f"Starting voice session {session_id}, turn {turn_id}")
 
         try:
@@ -794,6 +803,18 @@ class GeminiLiveClient(AbstractClient):
                 try:
                     async for response in session.receive():
                         # self.logger.debug(f"Received message: {response}")
+
+                        # Token usage rides on the SAME server message as
+                        # ``turn_complete``, so it must be folded in BEFORE
+                        # the server_content branch below: that branch
+                        # yields the final frame and ``continue``s, which
+                        # used to skip usage entirely and left every
+                        # response_complete reporting 0/0 tokens.  Merge
+                        # (not replace) so the turn's audio-duration, tool
+                        # and timing counters survive.
+                        if getattr(response, "usage_metadata", None):
+                            usage.merge_tokens(LiveCompletionUsage.from_gemini_usage(response.usage_metadata))
+
                         # Handle server content (audio/text responses)
                         if response.server_content:
                             server_content = response.server_content
@@ -846,6 +867,7 @@ class GeminiLiveClient(AbstractClient):
                                         else:
                                             # TEXT mode — model_turn text IS
                                             # the actual response.
+                                            _note_first_token()
                                             accumulated_text += part.text
                                             yield LiveVoiceResponse(
                                                 text=part.text,
@@ -859,6 +881,7 @@ class GeminiLiveClient(AbstractClient):
                                     # Audio (inline_data)
                                     if hasattr(part, "inline_data") and part.inline_data:
                                         audio_chunk = part.inline_data.data
+                                        _note_first_token()
                                         accumulated_audio += audio_chunk
                                         duration = self._estimate_audio_duration(audio_chunk)
                                         usage.output_audio_duration_ms += duration
@@ -902,6 +925,7 @@ class GeminiLiveClient(AbstractClient):
                                 text = getattr(server_content.output_transcription, "text", "")
                                 if text:
                                     self.logger.info(f"Model transcription: {text}")
+                                    _note_first_token()
                                     # Accumulate (not overwrite) — Gemini
                                     # sends multi-chunk transcriptions.
                                     if turn_metadata.output_transcription:
@@ -1086,10 +1110,6 @@ class GeminiLiveClient(AbstractClient):
                                     user_id=user_id,
                                     metadata=metadata,
                                 )
-
-                        # Handle usage metadata if available
-                        if hasattr(response, "usage_metadata") and response.usage_metadata:
-                            usage = LiveCompletionUsage.from_gemini_usage(response.usage_metadata)
 
                         # Retain the session resumption handle (FEAT-418,
                         # TASK-2168) so the NEXT stream_voice() call (a

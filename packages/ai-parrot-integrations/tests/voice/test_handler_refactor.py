@@ -597,3 +597,124 @@ class TestNamespacePackagingFix:
 
         core_voice_dir = os.path.dirname(core_session.__file__)
         assert not os.path.exists(os.path.join(core_voice_dir, "__init__.py"))
+
+
+class TestAssistantTranscriptDedup:
+    """A turn's closing frame must not re-append the transcript already
+    streamed to the assistant bubble.
+
+    Gemini Live streams ``output_transcription`` deltas as
+    ``role="assistant"`` frames, then its ``turn_complete`` frame carries
+    ``text=""`` plus ``turn_metadata.output_transcription`` (the full
+    concatenation) and its interrupt frame carries the same text as
+    ``accumulated_text``. Both used to reach the frontend as a second
+    ``transcription`` frame, rendering the reply twice.
+    """
+
+    @staticmethod
+    def _session(handler, connection):
+        return _HandlerVoiceSession(
+            client=_capable_mock_client(),
+            send_fn=AsyncMock(),
+            system_prompt="hi",
+            handler=handler,
+            connection=connection,
+        )
+
+    @staticmethod
+    def _assistant_texts(frames) -> list:
+        return [f["text"] for f in frames if f["type"] == "transcription" and not f["is_user"]]
+
+    @pytest.mark.asyncio
+    async def test_turn_complete_recap_not_repeated(self, handler, connection):
+        from parrot.models.voice import VoiceTurnMetadata
+
+        session = self._session(handler, connection)
+        streamed = []
+        for delta in ("Hello! How", " can I", " help", " you today?"):
+            frames = session.build_frames(
+                LiveVoiceResponse(text=delta, role="assistant", is_complete=False), turn_no=1
+            )
+            streamed += self._assistant_texts(frames)
+        assert "".join(streamed) == "Hello! How can I help you today?"
+
+        meta = VoiceTurnMetadata(turn_id="t1", output_transcription="Hello! How can I help you today?")
+        final = session.build_frames(
+            LiveVoiceResponse(text="", is_complete=True, turn_metadata=meta), turn_no=1
+        )
+        assert self._assistant_texts(final) == []
+        assert [f["type"] for f in final] == ["response_complete", "ready_to_speak"]
+
+    @pytest.mark.asyncio
+    async def test_interrupt_recap_not_repeated(self, handler, connection):
+        session = self._session(handler, connection)
+        session.build_frames(LiveVoiceResponse(text="Hello! How", role="assistant"), turn_no=1)
+        session.build_frames(LiveVoiceResponse(text=" can I", role="assistant"), turn_no=1)
+        final = session.build_frames(
+            LiveVoiceResponse(
+                text="Hello! How can I", role="assistant", is_complete=True, is_interrupted=True
+            ),
+            turn_no=1,
+        )
+        assert self._assistant_texts(final) == []
+
+    @pytest.mark.asyncio
+    async def test_final_frame_emits_only_unseen_suffix(self, handler, connection):
+        session = self._session(handler, connection)
+        session.build_frames(LiveVoiceResponse(text="Hello! How", role="assistant"), turn_no=1)
+        final = session.build_frames(
+            LiveVoiceResponse(text="Hello! How can I help?", role="assistant", is_complete=True),
+            turn_no=1,
+        )
+        assert self._assistant_texts(final) == [" can I help?"]
+
+    @pytest.mark.asyncio
+    async def test_final_frame_without_prior_deltas_is_forwarded(self, handler, connection):
+        """A provider that only reports the transcript on the final frame
+        must still get its text through (the fallback's original purpose)."""
+        from parrot.models.voice import VoiceTurnMetadata
+
+        session = self._session(handler, connection)
+        meta = VoiceTurnMetadata(turn_id="t1", output_transcription="Only at the end")
+        final = session.build_frames(
+            LiveVoiceResponse(text="", is_complete=True, turn_metadata=meta), turn_no=1
+        )
+        assert self._assistant_texts(final) == ["Only at the end"]
+
+    @pytest.mark.asyncio
+    async def test_bookkeeping_resets_per_turn(self, handler, connection):
+        session = self._session(handler, connection)
+        session.build_frames(LiveVoiceResponse(text="Hi", role="assistant"), turn_no=1)
+        session.build_frames(LiveVoiceResponse(text="Hi", role="assistant", is_complete=True), turn_no=1)
+        # Same words in a NEW turn are a new delta, not a recap.
+        frames = session.build_frames(LiveVoiceResponse(text="Hi", role="assistant"), turn_no=2)
+        assert self._assistant_texts(frames) == ["Hi"]
+
+    @pytest.mark.asyncio
+    async def test_delta_starting_with_sent_text_is_not_trimmed(self, handler, connection):
+        """Only closing frames are treated as recaps — a mid-turn delta that
+        happens to start with the already-sent words is appended intact."""
+        session = self._session(handler, connection)
+        session.build_frames(LiveVoiceResponse(text="Yes", role="assistant"), turn_no=1)
+        frames = session.build_frames(LiveVoiceResponse(text="Yes, indeed", role="assistant"), turn_no=1)
+        assert self._assistant_texts(frames) == ["Yes, indeed"]
+
+    @pytest.mark.asyncio
+    async def test_direct_send_path_dedupes_too(self, handler, connection):
+        """``_send_voice_response`` (the non-session relay) keeps the same
+        per-turn bookkeeping on the connection."""
+        from parrot.models.voice import VoiceTurnMetadata
+
+        await handler._send_voice_response(
+            connection, LiveVoiceResponse(text="Hello! How", role="assistant", turn_id="t1")
+        )
+        await handler._send_voice_response(
+            connection, LiveVoiceResponse(text=" can I help?", role="assistant", turn_id="t1")
+        )
+        meta = VoiceTurnMetadata(turn_id="t1", output_transcription="Hello! How can I help?")
+        await handler._send_voice_response(
+            connection, LiveVoiceResponse(text="", is_complete=True, turn_metadata=meta, turn_id="t1")
+        )
+        sent = [c.args[0] for c in connection.ws.send_json.await_args_list if c.args]
+        assistant = [m["text"] for m in sent if m["type"] == "transcription" and not m["is_user"]]
+        assert assistant == ["Hello! How", " can I help?"]
