@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-538 - Recoverable Task Memory for WorkingMemoryToolkit
 **Spec**: `sdd/specs/workingmemory-toolkit.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2983, TASK-2986, TASK-2991, TASK-2997
@@ -145,4 +145,67 @@ New test modules should use local fixtures unless the shared fixture task is alr
 
 ## Completion Note
 
-Not completed. The implementing agent records completed-by, date, verification evidence, notes, and any approved deviations here when acceptance passes.
+**Completed by**: sdd-worker via delegated agent (Claude Opus 5) — 2026-09-08
+**Commit**: `ada582eae`
+
+### What was built
+
+Per-call ownership layered on top of the short append leases:
+`acquire_call`/`heartbeat_call`/`release_call`/`call_owner`/
+`is_call_alive` in `association.py`, a `FencedCallError` and a fence
+checked **before** the terminal write in `observer.py`, and
+`unresolved_calls`/`has_terminal_event`/`reconcile_calls` under the task
+lock in `store/postgres.py`.
+
+### The decision that carries the task
+
+Ownership is a **sub-key of the append lease**, not a fourth key family —
+the spec names three, and ownership is a lease. But it is a deliberately
+**separate key**, because *an expired append lease is not evidence a call
+died*: a long-running call lets the append lease lapse constantly. This
+is precisely what `test_healthy_call` pins.
+
+`is_call_alive` is **tri-state**, and only a definite `False` may be
+reconciled. An unreachable Redis returns `None` and settles nothing —
+inventing a death there is exactly how a healthy call gets its external
+side effect retried. Verified in source: the reconciler treats `None` as
+`unknown` and `True` as `alive`, reconciling neither.
+
+### Verification evidence (reproduced by me, not taken on trust)
+
+- `test_call_recovery.py`: **10/10 against LIVE PostgreSQL 17.3 and live
+  Redis**, on an isolated scratch database. I re-ran this independently
+  after the agent reported it. All three required cases used real
+  services; no durability claim rests on a double.
+- `tests/tools/working_memory`: **887 passed / 0 failed WITH services**;
+  **815 passed / 72 skipped / 0 failed WITHOUT**. Both figures
+  independently reproduced. Skips are explicit and are never counted as
+  passes.
+- `ruff` clean on all five owned files.
+- Mutation-tested: six mutations each killed exactly the intended test
+  (e.g. treating `None` liveness as death kills the unknown-liveness
+  case; removing the fence kills `test_late_owner`).
+- `test_reconcile_once` was raised from 2 to 8 concurrent reconcilers —
+  two can pass on scheduling luck.
+
+### Notes for the reviewer
+
+- On a failed terminal journal write the claim is deliberately **not**
+  released; it expires by TTL instead, so a reconciler still gets to
+  settle a call we could not record.
+- An `already_resolved` field was added and then removed: because the
+  unresolved set is read *inside* the task lock it could never be
+  populated, and a structurally-always-empty field implies a distinction
+  the design does not make.
+- Three stale anchors in this task's Codebase Contract were reported, not
+  edited: it was written at `0b4920b2f`, before these files existed, so
+  its "Does NOT Exist" list is stale for work since built by TASK-2983
+  and TASK-2991.
+- Three wrong-API guesses were caught against source during
+  implementation: `create_task` takes no positional `task_id`; `_reader()`
+  is on `PostgresArtifactStore`, not the task store; `list_events`
+  returns an `EventPage`, not a sequence.
+
+### Approved deviations
+
+None.

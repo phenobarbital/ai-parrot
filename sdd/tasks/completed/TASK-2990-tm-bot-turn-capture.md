@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-538 - Recoverable Task Memory for WorkingMemoryToolkit
 **Spec**: `sdd/specs/workingmemory-toolkit.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2984, TASK-2986, TASK-2989
@@ -170,4 +170,66 @@ New test modules should use local fixtures unless the shared fixture task is alr
 
 ## Completion Note
 
-Not completed. The implementing agent records completed-by, date, verification evidence, notes, and any approved deviations here when acceptance passes.
+**Completed by**: sdd-worker (Claude Opus 5) — 2026-09-08
+**Commit**: `f8c549728`
+
+### What was built
+
+`AbstractBot` gained an opt-in, default-`None` `task_memory` plus the
+turn-context seams: `_task_scope` (derived from the stable
+`memory_key_id` and the runtime user/session — never from a tool
+argument, and deliberately the same value that keys conversation
+history), `_enter_task_turn`/`_exit_task_turn`, and
+`observed_tool_invocations`. `BasicAgent.configure` adopts a registered
+toolkit's task memory rather than constructing a second composition root
+over the same stores.
+
+### Contract correction
+
+**The task's Codebase Contract named two `render_context_history` call
+sites (1147 ordinary, 1788 streaming). There are FOUR.** The others are
+`_conversation_body` (backs `chat`) and `invoke` (the structured path
+AC14 explicitly requires). All four are now bracketed; had I trusted the
+contract, half the entry points would have gone uncovered.
+
+### Design decision
+
+A token plus each method's EXISTING top-level `finally` was chosen over
+re-indenting four large methods into `async with`. The deciding reason is
+correctness, not diff size: `session_id` is normalized *inside* each body
+with a fresh `uuid4()`, so an outer wrapper would have minted a
+**different** session id than the body used. `_task_turn = None` is
+declared before each `try` so the `finally` cannot `NameError` and mask
+the real failure, and `_exit_task_turn` swallows its own errors for the
+same reason. It also tolerates a `ContextVar` token reset in a different
+Context, which is how a cancelled streaming generator finalizes.
+
+### Single writer
+
+`from_ai_message(tool_invocations=...)` **replaces** the
+`AIMessage.tool_calls` derivation rather than appending to it — the test
+asserts the overlapping names appear once each, not five entries. The
+observer is strictly the more complete source: it also holds calls that
+were denied, cancelled or never executed, which never produce a
+`tool_call` at all. The streaming path builds its turn by hand, so it was
+wired separately; without that an observed stream would have persisted no
+invocations.
+
+### Verification evidence
+
+- `test_bot_task_context.py`: 6 passed, including an AST check that all
+  four entry points both enter AND release inside a `finally`, and a
+  tripwire proving the disabled path constructs no observer.
+  Log: `artifacts/logs/task-2990-tm-bot-turn-capture.log`.
+- `tests/bots`: FAILED-set **identical** to a dev-source baseline over the
+  same tests (84 pre-existing failures) — compared as sets, not counts.
+  This was the load-bearing regression check, since `base.py`'s four
+  entry points were edited.
+- `tests/memory` + `tests/tools/working_memory`: 973 passed, 0 failed.
+- Zero new lint findings under the project ruff config (the 12 in
+  `bots/abstract.py` are pre-existing E402 in the import block; verified
+  `bots/base.py` is unchanged at 5).
+
+### Approved deviations
+
+None.
