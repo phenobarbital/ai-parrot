@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-537 — Nova VoiceBot avatar broadcast for multiple browsers
 **Spec**: `sdd/specs/voicebot-multiroom-heygen-avatar.spec.md`
-**Status**: pending
+**Status**: done-with-issues
 **Priority**: high
 **Estimated effort**: L (4-8h; most of it is live-environment time)
 **Depends-on**: none (external gate: FEAT-536 merged in PR #1333, but its real-vendor acceptance matrix `docs/testing/voicebot-liveavatar-acceptance.md` records 0 of 8 scenarios RUN — see Context)
@@ -146,9 +146,61 @@ async def test_direct_publisher_clear_queue_stops_audio(): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: `sdd-worker` (autonomous session)
+**Date**: 2026-09-08
+**Status**: `done-with-issues` — **the live gate is NOT satisfied**.
 
-**Completed by**:
-**Date**:
 **Notes**:
-**Deviations from spec**:
+
+- Landed the env-gated probe `packages/ai-parrot-integrations/tests/voice/test_voice_broadcast_live_gate.py`
+  with the three specified scenarios (`test_nova_pcm_reaches_two_subscribers`,
+  `test_interrupt_stops_avatar_audio_within_budget`,
+  `test_direct_publisher_clear_queue_stops_audio`). It skips cleanly:
+  `pytest .../test_voice_broadcast_live_gate.py -q` → `3 skipped in 0.19s`.
+  `ruff check` clean. Registered the `live_vendor` marker in
+  `packages/ai-parrot-integrations/pyproject.toml` `[tool.pytest.ini_options]`
+  (that file is the rootdir configfile for this test path, so `--strict-markers`
+  resolves against it).
+- **Which rows RAN: none. 0 of 12 scenarios executed; 12 of 12 NOT RUN.**
+  `docs/testing/voicebot-multiroom-live-gate.md` records each row with its concrete
+  reason. Prerequisite check this session: `PARROT_LIVE_BROADCAST_GATE` unset;
+  `LIVEAVATAR_API_KEY`, `LIVEAVATAR_AVATAR_ID`, `LIVEKIT_URL`, `LIVEKIT_API_KEY`,
+  `LIVEKIT_API_SECRET` all absent (not in the process env, not in `env/.env`);
+  `aws_sdk_bedrock_runtime` not installed; no human observer for lip-sync.
+  `AWS_NOVA_SONIC_*` credentials DO exist in `env/.env`, but without the Sonic SDK
+  they cannot open a session — and rows 5–12 use a deterministic tone anyway, so
+  Nova is not the blocker; LiveAvatar/LiveKit are.
+- **AC15 is only half-satisfied.** FEAT-536 is *integrated* (PR #1333, `dev` `f8a56c48b`)
+  but not *verified* — its own `docs/testing/voicebot-liveavatar-acceptance.md` records
+  0/8 real-vendor scenarios. This report re-states that gap rather than treating the
+  merge as verification. The four FEAT-536 rows this feature depends on are carried
+  into the FEAT-537 matrix as rows 1–4, also NOT RUN.
+- Sanitized evidence written to `artifacts/logs/feat-537-live-gate-2026-09-08.{md,json}`.
+  Note `artifacts/` is gitignored (`.gitignore:283`), so those two files exist on disk
+  but are intentionally NOT committed; the committed, reviewable evidence is
+  `docs/testing/voicebot-multiroom-live-gate.md`.
+- Code-level facts the probe *does* establish (explicitly not vendor evidence): no
+  credential is read at import time; every persisted value passes through `_sanitize()`
+  which strips JWTs, `ws(s)://` URLs and literal credential values;
+  `rtc.AudioSource.clear_queue` / `wait_for_playout` exist on the installed
+  `livekit` 1.1.14 (symbol presence only, not behaviour).
+- Recorded versions: `livekit` 1.1.14, `livekit-api` 1.2.0, `livekit-client` UMD 2.22.1,
+  `playwright` 1.52.0, `redis` 5.2.1, `aws_sdk_bedrock_runtime` not installed, Python 3.12.3.
+- Regression baseline: `pytest packages/ai-parrot-integrations/tests/voice/` gives
+  `11 failed, 137 passed, 4 skipped, 27 errors` in this worktree and
+  `11 failed, 137 passed, 1 skipped, 27 errors` on clean `dev`. The delta is exactly the
+  3 new skips. The pre-existing failures/errors are environmental — the
+  `ai-parrot-client-*` satellite distributions are not installed in this venv, so
+  `parrot.clients.amazon` / `parrot.clients.google.live` do not resolve. Not caused by,
+  and not in scope for, this task.
+
+**Consequence for downstream tasks**: every vendor-timing value in spec §2/§7 remains an
+**unverified default** and MUST be implemented as a configurable knob, never a hard-coded
+constant — 15 s avatar startup deadline, 10 s expected-speech watchdog, 2 s per-send
+deadline, 1 s interrupt target, 3 s post-fallback audible target, 600 s max vendor session.
+AC5/AC6/AC10 must NOT be reported as satisfied on mocked evidence (AC10: "Mock-only results
+cannot complete this feature").
+
+**Deviations from spec**: none. The task's own contingency branch ("If credentials/SDK/human
+are unavailable: still land the probe code + report with every scenario NOT RUN … mark this
+task `done-with-issues`") is the branch taken, verbatim.

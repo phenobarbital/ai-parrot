@@ -22,7 +22,7 @@
       "feature_id": "FEAT-537",
       "feature": "voicebot-multiroom-heygen-avatar",
       "spec": "sdd/specs/voicebot-multiroom-heygen-avatar.spec.md",
-      "status": "in-progress",
+      "status": "done-with-issues",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -31,8 +31,8 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": "2026-09-08T11:03:02+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2950-live-contract-probe.md",
+      "completed_at": "2026-09-08T11:12:37+00:00",
+      "file": "sdd/tasks/completed/TASK-2950-live-contract-probe.md",
       "acceptance_criteria": [
         "AC10",
         "AC15"
