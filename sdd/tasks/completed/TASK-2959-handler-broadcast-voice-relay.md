@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-537 — Nova VoiceBot avatar broadcast for multiple browsers
 **Spec**: `sdd/specs/voicebot-multiroom-heygen-avatar.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-2958
@@ -113,7 +113,74 @@ async def test_legacy_relay_still_sends_audio_and_tees(handler, connection): ...
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
+**Completed by**: `sdd-worker` (autonomous session)
+**Date**: 2026-09-08
+**Status**: done
+
 **Notes**:
-**Deviations from spec**:
+
+- `handler.py`: extracted the frame protocol into a **pure** module-level
+  `build_voice_frames(resp, turn_no, *, stt_only, dedup_state)` plus a
+  `ToolCallDedupState` dataclass; `_HandlerVoiceSession.build_frames` is now a thin
+  wrapper. Added `broadcast_service` / `nova_bot_factory` kwargs and a
+  `broadcast_enabled` property, plus `_AskStreamVoiceClient.set_user_id`.
+- New `broadcast/voice_relay.py` with `BroadcastVoiceSession`.
+- New `tests/voice/test_voice_broadcast_relay.py` → **17 passed**. Regression suites
+  (`test_handler_refactor.py`, `test_voice_handler_avatar.py`,
+  `test_voicechat_avatar_integration.py`) → **52 passed**, unmodified. Whole
+  `tests/voice/` → **335 passed** (was 318 before this task; same 11 pre-existing
+  environment failures / 27 errors). `ruff check` clean.
+- **The extraction is behaviour-preserving by construction**: the pure function is the
+  original body moved verbatim, and the wrapper writes `_tool_dedup_turn_no` /
+  `_sent_tool_call_ids` back onto the instance so existing readers (tests and
+  `_send_voice_response`'s own dedup path) still see them.
+  `test_legacy_dedup_attributes_still_exposed` pins that. The FEAT-536 regression suites
+  passed *before* any broadcast code existed, which is how I know the extraction alone
+  changed nothing.
+- **The single-user path is explicitly re-asserted**, not just left alone:
+  `test_legacy_relay_still_sends_audio_and_tees` proves `response_chunk` still carries
+  `audio_base64` + `audio_format` and that `connection.avatar_session.speak()` is still
+  awaited, and a second test covers the interrupt/completion tee.
+- **PCM is stripped from broadcast wire frames, but the frame types are not.**
+  `_strip_audio` removes only `audio_base64`/`audio_format`; browsers still get
+  `response_chunk` with its text. Echoing PCM per socket would give every participant a
+  second, unsynchronised audible source alongside the room's — the exact "one audible
+  source" rule spec §2 forbids breaking.
+- **Per-turn speaker attribution needed a real API change.** `VoiceSession` never passes
+  `user_id` to `stream_voice`; `_AskStreamVoiceClient` resolves it from a value fixed at
+  construction. Since a broadcast keeps one client while the floor moves, I added
+  `_AskStreamVoiceClient.set_user_id()` (in-scope file) and `begin_speaker_turn` calls it
+  through a `getattr` guard. Without this the entire broadcast would run as whoever
+  started it, lending that user's tool permissions to every later speaker.
+  `test_per_turn_user_id_follows_the_speaker` asserts the exact sequence
+  `["ada", "grace", None]`.
+- **Fail-closed is enforced at three points**, not one: `start_turn`, `push_audio` and
+  `_relay` all refuse without a speaker context. The first two raise
+  `BroadcastError(floor_not_granted)` **before** any provider call, so an unattributable
+  turn never reaches the bot; `_relay` silently suppresses instead (a response already in
+  flight is not an error, it is stale).
+- **Stale suppression is checked twice** — before building frames and again before
+  touching the media sinks — because the floor can move between those two points. The
+  second check is what stops a previous speaker's audio slipping through after a handoff.
+- Epochs for `BroadcastAudioFrame` are read from the `BroadcastSession` **at send time**,
+  never cached at turn start, so a cutover or ownership change mid-turn fences the frame
+  instead of it passing under a stale epoch. Sequence numbers restart per speaker turn
+  (asserted).
+- `set_fanout()` lets TASK-2960 attach the real participant fan-out after construction;
+  the default is a no-op sink. `_send` is overridden to read `self._fanout` so a late
+  attachment takes effect.
+- `broadcast_service` is typed `Optional[Any]` deliberately — the handler must not
+  hard-import the broadcast package, which pulls in the optional LiveKit/Redis stack.
+  `None` leaves every existing code path byte-identical.
+- `nova_bot_factory` is separate from `bot_factory` because the shared example rebinds
+  `bot_factory` when the user switches provider in the UI, and spec §2 fixes a broadcast
+  to Nova for its lifetime.
+
+**Deviations from spec**: none of substance. Two notes:
+1. The task suggested `BroadcastVoiceSession` take `send_fn=fan_out` at construction; it
+   accepts that *and* `set_fanout()`, because TASK-2960 creates the control sockets after
+   the producer already exists.
+2. `_AskStreamVoiceClient.set_user_id` is an addition to `handler.py` beyond the task's
+   literal list of changes to that file. It is the only way to satisfy the task's own
+   requirement that "`begin_speaker_turn()` sets the per-turn `user_id` to the speaker"
+   without reaching into another class's private attribute from a different module.
