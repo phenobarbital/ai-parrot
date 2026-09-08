@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-538 - Recoverable Task Memory for WorkingMemoryToolkit
 **Spec**: `sdd/specs/workingmemory-toolkit.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2977, TASK-2978
@@ -128,4 +128,66 @@ New test modules should use local fixtures unless the shared fixture task is alr
 
 ## Completion Note
 
-Not completed. The implementing agent records completed-by, date, verification evidence, notes, and any approved deviations here when acceptance passes.
+**Completed by**: Claude Opus 5 (sdd-worker) — session `01WeeSf3QmPq58bBxturogRX`
+**Date**: 2026-09-08
+**Status**: done
+
+### Evidence
+- `uv run pytest .../test_task_commands.py -q` → **23 passed**.
+  Log: `artifacts/logs/task-2979-tm-task-commands.log`.
+- `ruff`/`black --line-length 120 --target-version py312`/`isort` clean.
+- Exercised against the **real** in-memory store and the **real** reducer,
+  not a mock. A mocked store would have let the service claim an
+  atomicity it never actually demonstrated.
+
+### Acceptance mapping
+
+| Criterion | Evidence |
+|---|---|
+| Begin/replan/pause/resume/cancel/decisions/hints produce expected typed events and revisions | `test_command_flow_*` (8 cases) — event *kinds and order* asserted from the journal, not just the projection |
+| Cycle / missing dependency / stale revision leaves journal and projection unchanged | `test_rejected_batch_*` (6 cases), each via `_assert_unchanged`, which compares projection, sequence AND event count |
+| Scope is runtime-owned; explicit task ids cannot cross a scope | `test_identity_*` (5 cases), varying each scope component independently |
+| AC1 | Begin → replan → complete flow restores runtime ids and ready work |
+| AC2 | Service is store-agnostic; both backends are behaviourally identical by construction |
+| AC7 | Supersession retains history; completion gate walks plan-incomplete → required-outstanding → success |
+| AC11 | Structural check that no method accepts a scope component; `TaskNotFound` is not an existence oracle |
+
+### Design decisions worth flagging downstream
+
+1. **Runtime ids are minted here, never accepted.** A model-authored step
+   id would let one task's command name another task's step. Asserted:
+   two tasks built from the *same* labels get disjoint step ids.
+2. **Labels resolve before anything is appended.** A malformed initial
+   plan creates **no task at all** — asserted by checking the scope's task
+   list is still empty after three different rejection modes.
+3. **Batch validation runs against the RESULTING plan**, not per
+   operation. That is what catches a cycle only two operations together
+   would create, and a test builds exactly that case.
+4. **`begin_task` commits `task_started` and `plan_updated` together**, so
+   there is no window in which a task exists with a half-built plan.
+5. **`TaskNotFound` is deliberately indistinguishable** between "belongs
+   to another scope" and "does not exist". A test asserts both the type
+   and that neither message says "forbidden" or "another".
+6. **`update_step` records, it does not judge.** Completion validators
+   (TASK-2980) supply `completion_source` and `validator_results`; this
+   layer passes them through for replay to consume rather than deciding
+   whether evidence justifies a completion.
+7. **`expected_revision` is required for plan/step/lifecycle changes but
+   optional for decisions.** A decision does not conflict with concurrent
+   work the way a plan revision does.
+8. **Completion is still gated by the reducer**, not re-implemented here —
+   the service cannot be used to bypass the plan-complete or
+   required-steps checks.
+9. **`compact_state` is deliberately tiny** — a command acknowledgement
+   should let the caller issue its next command, not re-deliver the task.
+   A test asserts the exact key set and that `goal`/`steps` are absent.
+
+### Environment incident during this task (not a code defect)
+Mid-task the shared `.venv` was pruned by a concurrent process: `pytest`,
+`pytest-asyncio`, `black`, `isort`, `ruff` and **seven of the nine
+workspace distributions** (including `ai-parrot-server`, which owns
+`parrot.mcp.transports`) disappeared, so the suite failed to collect. This
+is the documented shared-venv hazard. Restored by reinstalling the dev
+tools and re-installing each workspace package editable with `--no-deps`
+(to avoid another resolution pass). All results above were produced after
+the restore.
