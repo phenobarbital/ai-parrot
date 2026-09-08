@@ -2057,7 +2057,11 @@
                             ? 'Avatar unavailable: ' + avatarBlock.reason
                             : 'Avatar unavailable — voice-only'
                     );
-                    await this.teardownAvatarViewer();
+                    // preserveStatusText: true — the message just set above
+                    // is more specific than teardown's own generic "Avatar
+                    // off" text; do not let it clobber this one (code-review
+                    // finding).
+                    await this.teardownAvatarViewer({ preserveStatusText: true });
                     return;
                 }
 
@@ -2078,7 +2082,7 @@
                 }
             }
 
-            async teardownAvatarViewer() {
+            async teardownAvatarViewer({ preserveStatusText = false } = {}) {
                 if (this.avatarController) {
                     try {
                         await this.avatarController.teardown();
@@ -2086,7 +2090,13 @@
                         console.warn('Avatar teardown failed (non-fatal):', err);
                     }
                 }
-                this.setAvatarStatusText(this.avatarConfig.enabled ? 'Avatar off' : '');
+                // Code-review finding: a caller that just set a more
+                // specific status (e.g. "Avatar unavailable: <reason>")
+                // must not have it immediately clobbered by this generic
+                // message — pass preserveStatusText: true in that case.
+                if (!preserveStatusText) {
+                    this.setAvatarStatusText(this.avatarConfig.enabled ? 'Avatar off' : '');
+                }
                 if (this.avatarStatusDot) this.avatarStatusDot.className = 'avatar-status-dot';
                 if (this.avatarEnableAudioBtn) this.avatarEnableAudioBtn.hidden = true;
             }

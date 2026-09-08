@@ -564,11 +564,32 @@ class TestLimitsTimeoutDisconnectAndReconnect:
             gate.set()
             yield {"completionEnd": {}}
 
-        responses, _ = await _run(client, fake_events())
+        responses, sent_events = await _run(client, fake_events())
 
         overloaded = [r for r in responses if r.metadata.get("tool_status") == "overloaded"]
         assert len(overloaded) == 1
         assert overloaded[0].tool_calls[0].id == "tu_2"
+
+        # Code-review finding (FEAT-536 completion): the overloaded call
+        # must ALSO get a real, correlated toolResult sent back to Nova —
+        # not just a local Python delta — or Nova is left waiting on
+        # tu_2's toolUseId forever. Assert the actual 3-frame wire
+        # sequence was sent for it.
+        content_starts = [
+            e["event"]["contentStart"]
+            for e in sent_events
+            if "contentStart" in e.get("event", {})
+            and e["event"]["contentStart"].get("toolResultInputConfiguration", {}).get("toolUseId") == "tu_2"
+        ]
+        assert len(content_starts) == 1, "expected exactly one correlated contentStart(TOOL) for the rejected call"
+        content_name = content_starts[0]["contentName"]
+        tool_results = [
+            e["event"]["toolResult"]
+            for e in sent_events
+            if "toolResult" in e.get("event", {}) and e["event"]["toolResult"].get("contentName") == content_name
+        ]
+        assert len(tool_results) == 1
+        assert "overloaded" in tool_results[0]["content"]
 
     @pytest.mark.asyncio
     async def test_stream_eof_cleans_up_without_replay(self):
@@ -597,18 +618,16 @@ class TestLimitsTimeoutDisconnectAndReconnect:
         assert _tool_deltas(responses) == []
 
     @pytest.mark.asyncio
-    async def test_reconnect_deadline_settles_admitted_work_first(self):
-        """Approaching the connection-limit still settles admitted work
-        (spec §2) before signalling reconnect_required — reusing
-        TASK-2940's drain path, now cap-respecting (TASK-2941).
-
-        The connection-limit check runs once per received provider event
-        (see audio.py's own note on why this is not an independent
-        wall-clock timer). A tiny (but nonzero) patched limit plus a
-        short real sleep — bounded and deterministic, not a race — lets
-        the limit genuinely elapse only AFTER echo_tool is admitted, so
-        the settle-before-reconnect behavior is exercised rather than
-        short-circuited before admission ever happens.
+    async def test_reconnect_deadline_settles_already_finished_work(self):
+        """Approaching the connection-limit still delivers a call that
+        already finished BEFORE the limit was ever checked (the normal
+        harvest-races-the-next-event-read path, TASK-2940/2941 — nothing
+        reconnect-specific fires for a call that is no longer running).
+        Distinguishes this from a genuinely still-running call at
+        reconnect time, which is CANCELLED — see
+        ``test_reconnect_deadline_cancels_still_running_work`` below
+        (code-review finding; the two behaviors were previously
+        conflated).
         """
         tm = ToolManager(include_search_tool=False)
         tm.register_tool(_EchoTool())
@@ -623,9 +642,69 @@ class TestLimitsTimeoutDisconnectAndReconnect:
 
         responses, _ = await _run(client, fake_events())
 
-        # The admitted echo_tool call was settled (delivered) even though
-        # the connection limit fired on the very next event.
+        # The admitted echo_tool call had already completed (it returns
+        # immediately) and was harvested via the normal completion race,
+        # independent of the reconnect check.
         deltas = _tool_deltas(responses)
         assert len(deltas) == 1
         assert deltas[0].tool_calls[0].id == "tu_1"
         assert responses[-1].metadata.get("reconnect_required") is True
+
+    @pytest.mark.asyncio
+    async def test_reconnect_deadline_cancels_still_running_work(self):
+        """A tool STILL RUNNING when the connection-limit fires is
+        CANCELLED at reconnect shutdown, never awaited to completion
+        (spec §2: "On reconnect shutdown, cancel outstanding jobs,
+        report interrupted/incomplete work locally ... send correlated
+        cancellation results only if the old stream remains writable
+        within cleanup, and never replay them on the new stream") —
+        code-review finding: this previously called the same drain/
+        SETTLE path normal completion uses, which could hold the old
+        connection open up to the call's own 300s deadline past the
+        proactive 8-minute limit.
+        """
+        tm = ToolManager(include_search_tool=False)
+        gate = asyncio.Event()
+        entered = asyncio.Event()
+        tm.register_tool(_GatedTool(name="slow_tool", gate=gate, entered=entered))
+        client = _make_client(tm)
+        client._CONNECTION_LIMIT_SECONDS = 0.02
+
+        async def fake_events():
+            yield {"toolUse": {"toolUseId": "tu_1", "toolName": "slow_tool", "content": "{}"}}
+            yield {"contentEnd": {"type": "TOOL"}}
+            await asyncio.wait_for(entered.wait(), timeout=5)  # genuinely running now
+            await asyncio.sleep(0.05)  # let the tiny connection limit elapse while it runs
+            yield {"textOutput": {"content": "should not be reached before reconnect"}}
+            # `gate` is intentionally never set — a cancelled task must
+            # never be awaited to completion.
+
+        responses, sent_events = await _run(client, fake_events())
+
+        # Cancelled, not settled: no streamed delta for it, and the final
+        # reconnect response reports it as locally interrupted.
+        assert _tool_deltas(responses) == []
+        final = responses[-1]
+        assert final.metadata.get("reconnect_required") is True
+        assert len(final.tool_calls) == 1
+        assert final.tool_calls[0].id == "tu_1"
+        assert final.tool_calls[0].error is not None
+        assert "reconnect" in final.tool_calls[0].error.lower()
+
+        # A best-effort correlated cancellation result was still sent on
+        # the old stream (still nominally writable during cleanup).
+        content_starts = [
+            e["event"]["contentStart"]
+            for e in sent_events
+            if "contentStart" in e.get("event", {})
+            and e["event"]["contentStart"].get("toolResultInputConfiguration", {}).get("toolUseId") == "tu_1"
+        ]
+        assert len(content_starts) == 1
+        content_name = content_starts[0]["contentName"]
+        tool_results = [
+            e["event"]["toolResult"]
+            for e in sent_events
+            if "toolResult" in e.get("event", {}) and e["event"]["toolResult"].get("contentName") == content_name
+        ]
+        assert len(tool_results) == 1
+        assert "cancelled" in tool_results[0]["content"]

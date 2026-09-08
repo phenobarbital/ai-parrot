@@ -127,7 +127,13 @@ class TestParallelToolExecution:
             parallel_tool_execution=True,
         )
 
-        tool_calls = [tc for r in out for tc in r.tool_calls]
+        # Code-review finding (FEAT-536 completion): Nova's own final
+        # completion snapshot re-lists every admitted call's LiveToolCall
+        # object alongside its earlier per-call delta (TASK-2940/2941's
+        # documented, intentional arrival-order snapshot) — a naive flatten
+        # across all responses double-counts each call. Dedupe by id, the
+        # same way the WS-relay's own dedup (handler.py, TASK-2942) does.
+        tool_calls = list({tc.id: tc for r in out for tc in r.tool_calls}.values())
         errored = [tc for tc in tool_calls if tc.error]
         succeeded = [tc for tc in tool_calls if not tc.error]
         assert len(errored) == 1

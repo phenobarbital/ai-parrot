@@ -1550,7 +1550,7 @@ class NovaAudio:
                     _run_and_report(next_pending, next_raw_input, next_deadline_at)
                 )
 
-        def _admit_tool(pending: LiveToolCall, raw_input: Optional[str]) -> Optional[LiveVoiceResponse]:
+        async def _admit_tool(pending: LiveToolCall, raw_input: Optional[str]) -> Optional[LiveVoiceResponse]:
             """Admit a fully-parsed contentEnd(TOOL) call immediately.
 
             Returns a controlled overload-error :class:`LiveVoiceResponse`
@@ -1577,6 +1577,18 @@ class NovaAudio:
                     self._MAX_UNFINISHED_TOOLS,
                     pending.id,
                 )
+                # Code-review finding: Nova is left waiting on a toolResult
+                # for this toolUseId forever unless we send one — a local
+                # Python delta alone is not a "correlated error result"
+                # (spec §2: "Reject excess work with a correlated error
+                # result"). Send the same 3-frame contentStart/toolResult/
+                # contentEnd sequence _execute_and_deliver_tool() uses,
+                # under the same write_lock, so Nova's own turn can
+                # proceed instead of stalling on this call.
+                overload_result = {"error": pending.error, "status": "overloaded"}
+                pending.result = overload_result
+                async with write_lock:
+                    await self._send_tool_result(stream, prompt_name, pending.id, overload_result)
                 return LiveVoiceResponse(
                     text="",
                     tool_calls=[pending],
@@ -1666,6 +1678,66 @@ class NovaAudio:
                 for response in await _harvest_finished_tools(done):
                     yield response
 
+        async def _cancel_admitted_tools_for_reconnect() -> None:
+            """Cancel outstanding admitted work at RECONNECT shutdown —
+            distinct from :func:`_drain_admitted_tools`'s SETTLE/await
+            behavior, which is spec-scoped to normal provider completion
+            only.
+
+            Spec §2: "On reconnect shutdown, cancel outstanding jobs,
+            report interrupted/incomplete work locally, send correlated
+            cancellation results only if the old stream remains writable
+            within cleanup, and never replay them on the new stream."
+            (Code-review finding: the coordinator previously called
+            ``_drain_admitted_tools()`` here too, which AWAITS full
+            completion — up to each call's individual 300s deadline —
+            instead of cancelling, risking a hard server-side disconnect
+            mid-tool-execution well past the proactive 8-minute limit
+            this check exists to avoid.)
+
+            Mirrors the EOF/disconnect cancellation path below (queued
+            calls dropped, running tasks cancelled and awaited under the
+            same bounded cleanup timeout, `tool_calls_list` marked
+            in-place so the final snapshot reports the interruption
+            locally) — but additionally attempts a best-effort correlated
+            cancellation `toolResult` for each cancelled call, since
+            (unlike EOF) the old stream is still nominally writable here:
+            this runs BEFORE `_end_session()`/`_close_stream()`. Never
+            sent on the NEW stream after reconnect.
+            """
+            incomplete_ids = {*running_tasks.keys(), *(p.id for p, _raw, _dl in queued_tools)}
+            for tc in tool_calls_list:
+                if tc.id in incomplete_ids and tc.error is None and tc.result is None:
+                    tc.error = "Interrupted: connection-limit reconnect before this call completed."
+            cancelled_ids = list(running_tasks.keys())
+            queued_tools.clear()
+            for leftover_task in running_tasks.values():
+                leftover_task.cancel()
+            if running_tasks:
+                with contextlib.suppress(asyncio.TimeoutError):
+                    await asyncio.wait_for(
+                        asyncio.gather(*running_tasks.values(), return_exceptions=True),
+                        timeout=self._CLEANUP_TIMEOUT_SECONDS,
+                    )
+                running_tasks.clear()
+            for tool_use_id in cancelled_ids:
+                try:
+                    async with write_lock:
+                        await self._send_tool_result(
+                            stream,
+                            prompt_name,
+                            tool_use_id,
+                            {"error": "cancelled: connection reconnecting", "status": "cancelled"},
+                        )
+                except Exception as send_exc:  # noqa: BLE001
+                    self.logger.warning(
+                        "Nova Sonic session %s: failed to send cancellation result for %s "
+                        "during reconnect (old stream may already be unwritable): %s",
+                        session_id,
+                        tool_use_id,
+                        send_exc,
+                    )
+
         # Reads exactly one event per call — wrapped in its own Task so the
         # coordinator loop below can race it against in-flight tool tasks
         # via asyncio.wait(FIRST_COMPLETED). A private sentinel (not None,
@@ -1712,14 +1784,14 @@ class NovaAudio:
                 # handler never delays the read.
                 next_event_task = asyncio.create_task(_read_next_event())
                 if time.monotonic() - connection_start >= self._CONNECTION_LIMIT_SECONDS:
-                    # FEAT-536 TASK-2940/2941: settle every admitted-but-
-                    # unfinished tool call before tearing down for
-                    # reconnect — otherwise the 8-minute connection limit
-                    # landing mid-flight would silently drop a call: never
-                    # executed, its result never sent to Nova (same
-                    # requirement the old "flush before teardown" fix
-                    # addressed, TASK-2148/2152 — now via the coordinator's
-                    # own drain instead of a pending_tools queue).
+                    # FEAT-536 TASK-2940/2941 (hardened post-review): CANCEL
+                    # every admitted-but-unfinished tool call for reconnect
+                    # shutdown — never settle/await it, per spec §2's
+                    # explicit distinction between normal completion
+                    # (settle) and reconnect shutdown (cancel). Pending
+                    # work must not keep the old stream open past the
+                    # proactive 8-minute limit waiting on a call's own
+                    # up-to-300s deadline.
                     #
                     # NOTE (spec §2 "Observe the existing reconnect
                     # deadline independently of event arrival"): this check
@@ -1738,8 +1810,7 @@ class NovaAudio:
                     # outside this task's file scope) without real-time
                     # waits — not a case this task's own scope should
                     # force a change onto.
-                    async for tool_response in _drain_admitted_tools():
-                        yield tool_response
+                    await _cancel_admitted_tools_for_reconnect()
 
                     self.logger.info(
                         "Nova Sonic session %s approaching 8-minute connection " "limit — signalling reconnect.",
@@ -1748,6 +1819,7 @@ class NovaAudio:
                     yield LiveVoiceResponse(
                         text=accumulated_text,
                         is_complete=True,
+                        tool_calls=tool_calls_list,
                         metadata={"reconnect_required": True},
                         usage=usage,
                         turn_metadata=turn_metadata,
@@ -1897,7 +1969,7 @@ class NovaAudio:
                     raw_input = turn_state.pending_tool_raw_input
                     turn_state.pending_tool = None
                     turn_state.pending_tool_raw_input = None
-                    if (overload_response := _admit_tool(pending, raw_input)) is not None:
+                    if (overload_response := await _admit_tool(pending, raw_input)) is not None:
                         yield overload_response
                     continue
 

@@ -465,17 +465,13 @@ class TestVoiceDemoBrowserInterruptAndFallback:
         # (ordinary voice must not be blocked on it).
         assert await page.evaluate("window.__connectCalls") in (None, 0)
         assert await page.inner_text("#avatarStatusText") != "Avatar live"
-        # KNOWN ISSUE (found by this test, reported to TASK-2945 — out of
-        # this task's file scope to fix, spec's "report cross-scope
-        # failures to the owning task"): handleAvatarSessionStarted()'s
-        # inactive-branch status text ("Avatar unavailable: <reason>") is
-        # immediately overwritten by teardownAvatarViewer()'s own
-        # unconditional setAvatarStatusText("Avatar off") call a few lines
-        # later, so the specific reason never reaches the visible panel.
-        # Asserting the literal "unavailable" substring here would either
-        # falsely pass (masking the bug) or permanently fail on this
-        # otherwise-correct implementation — tracked instead of asserted.
+        # Post-code-review fix: teardownAvatarViewer({preserveStatusText:
+        # true}) no longer clobbers handleAvatarSessionStarted()'s more
+        # specific "Avatar unavailable: <reason>" message with its own
+        # generic "Avatar off" text — the actual reason must reach the
+        # visible panel.
         status_text = await page.inner_text("#avatarStatusText")
+        assert "unavailable" in status_text.lower()
         # Never leak internal reasons that could resemble credentials —
         # nothing token/secret-shaped appears in the visible panel,
         # regardless of which of the two messages above ends up shown.
