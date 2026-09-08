@@ -92,8 +92,8 @@ msagentsdk = [
 # the livekit-api transport and incurs LiveAvatar/LiveKit minutes, so it is
 # opt-in only. Install explicitly: ai-parrot-integrations[liveavatar].
 liveavatar = [
-    "livekit-api>=1.0",
-    "livekit~=1.1",
+    "livekit-api>=1.2.1,<2.0",
+    "livekit>=1.1.18,<2.0",
 ]
 # FEAT-537 — moderated multi-browser broadcast. Adds the cross-worker Redis
 # registry on top of the LiveKit/LiveAvatar transport. `redis` is otherwise

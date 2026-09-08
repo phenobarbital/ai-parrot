@@ -20,12 +20,11 @@ file intentionally lives at ``tests/bots/`` (not
 ``parrot.bots.prompts.layers`` and would poison collection for every test
 in that directory regardless of what any individual test file imports.
 """
+
 import ast
 from pathlib import Path
 
-VOICE_BOT_SOURCE = (
-    Path(__file__).resolve().parents[2] / "src" / "parrot" / "bots" / "voice.py"
-)
+VOICE_BOT_SOURCE = Path(__file__).resolve().parents[2] / "src" / "parrot" / "bots" / "voice.py"
 
 
 class TestVoiceBotResolvesNovaProvider:
@@ -42,7 +41,9 @@ class TestVoiceBotResolvesNovaProvider:
     def test_resolve_llm_config_branches_on_provider(self):
         method_source = self._get_method_source("_resolve_llm_config")
         assert "self.voice_config.provider" in method_source
-        assert "'nova'" in method_source
+        assert any(
+            isinstance(node, ast.Constant) and node.value == "nova" for node in ast.walk(ast.parse(method_source))
+        )
         assert "NovaClient" in method_source
 
     def test_resolve_llm_config_no_nova_sonic_reference(self):
@@ -66,7 +67,9 @@ class TestVoiceBotResolvesNovaProvider:
     def test_create_llm_client_branches_on_provider(self):
         method_source = self._get_method_source("_create_llm_client")
         assert "config.provider" in method_source
-        assert "'nova'" in method_source
+        assert any(
+            isinstance(node, ast.Constant) and node.value == "nova" for node in ast.walk(ast.parse(method_source))
+        )
         assert "NovaClient" in method_source
 
     def test_create_llm_client_no_nova_sonic_reference(self):

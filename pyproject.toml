@@ -160,6 +160,11 @@ override-dependencies = [
     "packaging>=26.2",
 ]
 constraint-dependencies = [
+    # Keep the shared runtime on the Protobuf 6.31 line. This is required by
+    # the pinned ortools/flowtask path and is supported by the Google SDKs.
+    # LiveKit 1.1.18 still ships stubs generated with Protobuf 5.29.3; remove
+    # this constraint only when LiveKit publishes regenerated compatible stubs.
+    "protobuf>=6.31.1,<6.32",
     # Narrow the otel instrumentation search space. openlit pulls 15+ otel
     # instrumentation sub-packages, each with 59 versions and an exact
     # semantic-conventions pin. Without this, the resolver backtracks hundreds

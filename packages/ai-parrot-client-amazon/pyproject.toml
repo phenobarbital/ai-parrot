@@ -15,7 +15,7 @@ authors = [
 dependencies = [
     "ai-parrot>=1.0.0",
     "aioboto3>=13.2.0",
-    # NOT declared here: `aws_sdk_bedrock_runtime` (Pre-Alpha, ==0.7.0,
+    # NOT declared here: `aws_sdk_bedrock_runtime` (Pre-Alpha, ==0.11.0,
     # Python>=3.12) — NovaClient's voice/audio path imports it lazily
     # (nova/audio.py) with a graceful ImportError, matching how core left
     # it undeclared before this extraction; install it manually to use

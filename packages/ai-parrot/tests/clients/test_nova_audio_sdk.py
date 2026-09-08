@@ -37,7 +37,10 @@ pytest.importorskip(
 # Imported after the importorskip above on purpose: these must not be
 # collected when the Pre-Alpha SDK is absent.
 from aws_sdk_bedrock_runtime import models as sdk_models
-from aws_sdk_bedrock_runtime.config import Config
+from aws_sdk_bedrock_runtime import config as sdk_config
+from smithy_http.aio.crt import AWSCRTHTTPClient
+
+Config = getattr(sdk_config, "AsyncBedrockRuntimeConfig", None) or sdk_config.Config
 from parrot.clients.amazon.nova import NovaClient
 from parrot.clients.amazon.nova import audio as audio_mod
 
@@ -168,6 +171,7 @@ class TestOpenStream:
         # The SDK takes a Config object — NOT a region= kwarg.
         config = captured["config"]
         assert isinstance(config, Config)
+        assert isinstance(config.transport, AWSCRTHTTPClient)
         assert config.region == "us-west-2"
         assert config.aws_access_key_id == "AKIATEST"
         assert config.aws_secret_access_key == "SECRET"
@@ -212,7 +216,10 @@ class TestOpenStream:
         assert identity.secret_access_key == "SECRET"
 
     @pytest.mark.asyncio
-    async def test_forwards_session_token_when_present(self):
+    async def test_forwards_session_token_when_present(self, monkeypatch):
+        monkeypatch.setenv("AWS_ACCESS_KEY_ID", "UNRELATED-ENV-KEY")
+        monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "UNRELATED-ENV-SECRET")
+        monkeypatch.setenv("AWS_SESSION_TOKEN", "UNRELATED-ENV-TOKEN")
         client = _make_client(
             aws_access_key="AKIATEST",
             aws_secret_key="SECRET",
@@ -230,7 +237,18 @@ class TestOpenStream:
         with patch.object(audio_mod, "_resolve_voice_client_class", return_value=FakeSDKClient):
             await client._open_stream("amazon.nova-2-sonic-v1:0")
 
-        assert captured["config"].aws_session_token == "TOKEN"
+        config = captured["config"]
+        assert config.aws_session_token == "TOKEN"
+        identity = await config.aws_credentials_identity_resolver.get_identity(
+            properties={
+                "access_key_id": config.aws_access_key_id,
+                "secret_access_key": config.aws_secret_access_key,
+                "session_token": config.aws_session_token,
+            }
+        )
+        assert identity.access_key_id == "AKIATEST"
+        assert identity.secret_access_key == "SECRET"
+        assert identity.session_token == "TOKEN"
 
     @pytest.mark.asyncio
     async def test_omits_credential_kwargs_when_no_static_keys(self):
