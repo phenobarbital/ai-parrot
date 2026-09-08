@@ -153,6 +153,36 @@ bug fix. It should be resolved together with the `confirm_viewer` wiring above.
 
 ---
 
+## 4c. Adversarial review findings carried to the PR
+
+Two independent adversarial reviews were run against this branch with neutral
+briefs (no conclusions supplied): the external `codex` CLI and the Claude
+`code-reviewer` subagent. Confirmed CRITICAL findings were fixed on the branch
+(see commit `fix(voicebot-multiroom-heygen-avatar): adversarial review
+remediation`). The findings below were **verified as real but deliberately not
+fixed**, because the fix falls outside the file scope of every task in this
+feature — recorded here so the PR reviewer decides, rather than being silently
+dropped.
+
+| # | Finding | Why not fixed here |
+|---|---|---|
+| 1 | `WorkerRelayServer` is never mounted and `WorkerAddressRegistry.register()` is never called in production wiring, so `attach_speaker_input` always raises `owner_lost` for a speaker not co-located with the producer — the cross-worker path is dead code in a real multi-worker deployment. | TASK-2961 scopes only `worker_transport.py`/`service.py`/`handler.py`; no task lists `manager.py` or `server.py` for the mount. Mounting an *internal* relay route also requires choosing whether it binds to the public app or a separate internal listener — a security-relevant architectural decision, not a bug fix. **ESCALATE.** |
+| 2 | A cross-worker `grant_floor` does not run the producer handoff barrier. | Same boundary: the barrier lives in `FloorCoordinator`, but making it cross-worker needs a producer-side notification channel that no task specifies. **ESCALATE.** |
+| 3 | The reconciler scans only process-local `_known`, so a worker that never served a broadcast cannot discover its dead owner despite the Redis index. | The Redis index exists (`redis_registry.py`); iterating it is a design change to reconciliation ownership. **ESCALATE.** |
+| 4 | A transient LiveKit removal failure returns without releasing, and the lease is already marked `leaving`, so later passes skip it and the seat is stranded. | Genuine defect; the retry/requeue semantics for eviction work are unspecified. **ESCALATE.** |
+| 5 | A viewer token (TTL 60 s) can outlive its identity tombstone. | Fixing means changing a documented spec timing constant. **ESCALATE.** |
+| 6 | `?token=` query-parameter auth is still accepted by the voice WS handler, exposing credentials to access logs. | Pre-existing behaviour on `handler.py`, not introduced by FEAT-537; the shipped broadcast browser already uses subprotocol auth. **REJECT for this PR** (out of scope), worth a follow-up. |
+| 7 | `_RateLimiter._hits` grows one deque per `tenant:user` forever. | SUGGESTION severity; unbounded only over the lifetime of a process with unbounded distinct principals. Noted for follow-up. |
+
+Findings the reviews raised that were checked and **rejected with evidence**:
+
+- *"The same-worker audio path never re-validates against the live floor, so a
+  revoked speaker's PCM can reach Nova."* — Not true as of the remediation
+  commit: `BroadcastVoiceSession.push_audio` calls both `_require_speaker()`
+  and `_require_current_floor()` (`voice_relay.py`), the latter comparing the
+  speaker's floor epoch against the live broadcast's and raising
+  `stale_floor_epoch`. The review sampled the branch before that fix landed.
+
 ## 5. What is still required to accept this feature
 
 1. Fix the `confirm_viewer` gap above (and, with it, the §4b succession

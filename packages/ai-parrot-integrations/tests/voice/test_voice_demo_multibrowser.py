@@ -21,7 +21,8 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
-from typing import Any, Dict, List, Optional, Tuple
+import time
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import pytest
 import uvloop
@@ -365,6 +366,39 @@ async def _settle(seconds: float = 0.2) -> None:
     await asyncio.sleep(seconds)
 
 
+async def _state_settles(
+    tab: Any, predicate: Callable[[Dict[str, Any]], bool], timeout: float = 5.0
+) -> Dict[str, Any]:
+    """Poll a tab's cached broadcast state until ``predicate`` holds.
+
+    ``tab.state()`` returns the last state the fan-out *pushed to that
+    browser*, not an authoritative read.  Asserting on a single sample races
+    the push: a tab can still be showing the snapshot from before the most
+    recent join.  The product guarantees the state converges, not that it
+    arrives synchronously, so the test waits for convergence and fails with
+    the last value it actually saw.
+
+    Args:
+        tab: The browser tab wrapper.
+        predicate: Condition the state must satisfy.
+        timeout: Seconds to wait before giving up.
+
+    Returns:
+        The first state satisfying ``predicate``.
+
+    Raises:
+        AssertionError: If the state never converges within ``timeout``.
+    """
+    deadline = time.monotonic() + timeout
+    latest: Optional[Dict[str, Any]] = None
+    while time.monotonic() < deadline:
+        latest = await tab.state()
+        if latest and predicate(latest):
+            return latest
+        await _settle(0.1)
+    raise AssertionError(f"broadcast state never converged; last seen: {latest}")
+
+
 async def confirm_all_leases(demo_server: Any) -> None:
     """Mark every admitted lease as an *active, confirmed* participant.
 
@@ -431,7 +465,7 @@ async def test_scenario1_three_browsers_share_one_broadcast(tabs) -> None:
         assert counters["audio"] > 0, f"{tab.name} received no audio samples"
         assert "avatar-pub:video" in counters["attached"]
 
-    state = await mod.state()
+    state = await _state_settles(mod, lambda st: st.get("viewer_count") == 3)
     assert state["viewer_count"] == 3
     assert state["moderator_display_id"] == created["leaseId"]
 
