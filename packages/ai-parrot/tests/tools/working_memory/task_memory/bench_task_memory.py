@@ -96,10 +96,7 @@ async def _task_with_plan(tm: TaskMemory, steps: int) -> str:
     # real plan grows, rather than arriving whole.
     batch = 20
     first = min(steps, batch)
-    specs = [
-        InitialStepSpec(label=f"s{i}", title=f"step {i}", description="d" * 40)
-        for i in range(first)
-    ]
+    specs = [InitialStepSpec(label=f"s{i}", title=f"step {i}", description="d" * 40) for i in range(first)]
     result = await tm.service.begin_task(
         tm.scope, goal="benchmark task " + ("g" * 80), constraints=("c" * 60,), steps=specs
     )
@@ -111,8 +108,7 @@ async def _task_with_plan(tm: TaskMemory, steps: int) -> str:
         chunk = min(batch, steps - added)
         changes = PlanChanges(
             changes=tuple(
-                AddStep(label=f"s{i}", title=f"step {i}", description="d" * 40)
-                for i in range(added, added + chunk)
+                AddStep(label=f"s{i}", title=f"step {i}", description="d" * 40) for i in range(added, added + chunk)
             )
         )
         revision = (await tm.service.get_task(tm.scope, task_id)).state.revision
@@ -155,9 +151,7 @@ async def measure_recall() -> List[Dict[str, Any]]:
 
         assert result is not None and result.status is RecallStatus.OK, result
         budget = tm.config.recall_max_tokens
-        assert result.estimated_tokens <= budget, (
-            f"recall exceeded its budget: {result.estimated_tokens} > {budget}"
-        )
+        assert result.estimated_tokens <= budget, f"recall exceeded its budget: {result.estimated_tokens} > {budget}"
         assert result.estimated_tokens <= MAX_RECALL_TOKENS
 
         durations.sort()
@@ -325,8 +319,7 @@ async def measure_invalid_reference_rate() -> Dict[str, Any]:
             bare_rejected += 1
 
     assert refused == attempted, (
-        f"{attempted - refused} invalid reference(s) were ACCEPTED; unverifiable evidence "
-        "must never complete a step"
+        f"{attempted - refused} invalid reference(s) were ACCEPTED; unverifiable evidence " "must never complete a step"
     )
     assert bare_rejected == 3, "a bare alias must not parse as an exact version reference"
 
@@ -535,8 +528,7 @@ def test_docs_examples() -> Dict[str, Any]:
                 module = importlib.import_module(node.module)
                 for alias in node.names:
                     assert hasattr(module, alias.name), (
-                        f"example #{i} imports {alias.name!r} from {node.module!r}, "
-                        "which does not exist"
+                        f"example #{i} imports {alias.name!r} from {node.module!r}, " "which does not exist"
                     )
                     checked_imports.append(f"{node.module}.{alias.name}")
 
@@ -546,9 +538,9 @@ def test_docs_examples() -> Dict[str, Any]:
     lowered = text.lower()
     for banned in ("automatically retried", "automatically retries", "retry the effect"):
         assert banned not in lowered, f"documentation advertises unsafe retry behaviour: {banned!r}"
-    assert "non-durable" in lowered or "not durable" in lowered, (
-        "documentation must state that Delivery A is not durable"
-    )
+    assert (
+        "non-durable" in lowered or "not durable" in lowered
+    ), "documentation must state that Delivery A is not durable"
 
     return {"python_blocks": len(blocks), "imports_verified": sorted(set(checked_imports))}
 
