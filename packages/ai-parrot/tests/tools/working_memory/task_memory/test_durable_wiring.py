@@ -47,8 +47,7 @@ pytestmark = pytest.mark.asyncio
 
 DSN_ENV = "TASK_MEMORY_TEST_DSN"
 _PG_SKIP = (
-    f"{DSN_ENV} is not set. Durable startup checks require a real PostgreSQL; "
-    "this case is SKIPPED, not passed."
+    f"{DSN_ENV} is not set. Durable startup checks require a real PostgreSQL; " "this case is SKIPPED, not passed."
 )
 
 
@@ -149,9 +148,7 @@ async def test_configured_graph_durable_shares_one_pool() -> None:
     dsn = _dsn_or_skip()
     await _apply_migration(dsn)
     fm = _FileManager()
-    runtime = TaskMemoryRuntime(
-        TaskMemoryConfig(enabled=True, durable=True, dsn=dsn), file_manager=fm
-    )
+    runtime = TaskMemoryRuntime(TaskMemoryConfig(enabled=True, durable=True, dsn=dsn), file_manager=fm)
     await runtime.start(start_scheduler=False)
     try:
         # PostgresArtifactStore takes the task store itself, so sharing a
@@ -180,9 +177,7 @@ async def test_startup_failure() -> None:
     assert "fall back" in str(no_dsn.value)
 
     # ── no blob backend: durable storage has nowhere to put payloads
-    runtime = TaskMemoryRuntime(
-        TaskMemoryConfig(enabled=True, durable=True, dsn="postgresql://x/y"), file_manager=None
-    )
+    runtime = TaskMemoryRuntime(TaskMemoryConfig(enabled=True, durable=True, dsn="postgresql://x/y"), file_manager=None)
     with pytest.raises(DurableStartupError) as no_blob:
         await runtime.start()
     assert "file_manager" in str(no_blob.value)
@@ -192,9 +187,7 @@ async def test_startup_failure() -> None:
 
     # ── unreachable database: a startup error, not a first-append error
     unreachable = TaskMemoryRuntime(
-        TaskMemoryConfig(
-            enabled=True, durable=True, dsn="postgresql://nobody:nobody@127.0.0.1:1/nonexistent"
-        ),
+        TaskMemoryConfig(enabled=True, durable=True, dsn="postgresql://nobody:nobody@127.0.0.1:1/nonexistent"),
         file_manager=_FileManager(),
     )
     with pytest.raises(DurableStartupError) as unreachable_err:
@@ -224,9 +217,7 @@ async def test_startup_failure_missing_migration_names_the_migration() -> None:
     finally:
         await store.close()
 
-    runtime = TaskMemoryRuntime(
-        TaskMemoryConfig(enabled=True, durable=True, dsn=dsn), file_manager=_FileManager()
-    )
+    runtime = TaskMemoryRuntime(TaskMemoryConfig(enabled=True, durable=True, dsn=dsn), file_manager=_FileManager())
     runtime.config = runtime.config.model_copy(update={})
     # Point the runtime's store at the un-migrated schema by building it
     # the same way start() does, then verifying.
@@ -340,9 +331,7 @@ async def test_shutdown_closes_a_pool_it_created() -> None:
     dsn = _dsn_or_skip()
     await _apply_migration(dsn)
 
-    runtime = TaskMemoryRuntime(
-        TaskMemoryConfig(enabled=True, durable=True, dsn=dsn), file_manager=_FileManager()
-    )
+    runtime = TaskMemoryRuntime(TaskMemoryConfig(enabled=True, durable=True, dsn=dsn), file_manager=_FileManager())
     await runtime.start(start_scheduler=False)
     store = runtime.store
     assert store._owns_pool is True
