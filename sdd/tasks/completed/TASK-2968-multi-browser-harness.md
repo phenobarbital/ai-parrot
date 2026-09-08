@@ -136,6 +136,16 @@ noted, not fixed):**
 > instead of being blocked by it. **This must be fixed before FEAT-537 can be considered
 > functionally complete**, and is carried into TASK-2969.
 
+**✅ RESOLVED on this branch (post-implementation review).** The finding above was
+correct when written; it has since been fixed. Confirmation is now driven by
+server-observed LiveKit presence — the producer's own room connection handles
+`participant_connected`, and `BroadcastService.confirm_present_participants()`
+re-checks the room roster on every reconciler pass as the backstop. `confirm_all_leases()`
+in this suite no longer pokes the registry: it calls the production
+`confirm_present_participants()` and only LiveKit's roster is faked, so the browser
+scenarios now reach the floor through the real code path. See the commit
+`fix(voicebot-multiroom-heygen-avatar): wire lease confirmation to LiveKit presence`.
+
 **Scenario coverage (each writes `artifacts/logs/feat-537-browser-<scenario>-<stamp>.json`;
 32 measurement files produced across runs):**
 

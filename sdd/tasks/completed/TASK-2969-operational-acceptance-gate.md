@@ -139,6 +139,18 @@ places confirmation at LiveKit presence confirmation, so the fix belongs in
 `BroadcastService`. **Must be fixed and re-verified before a live acceptance run is worth
 scheduling.**
 
+**✅ RESOLVED on this branch (post-implementation review).** Fixed exactly where this
+note predicted — in `BroadcastService`, driven by server-observed LiveKit presence
+(participant events plus roster reconciliation), so `confirmed` still means the LiveKit
+server saw the browser in the room rather than a client asserting readiness. The
+succession consequence it caused (ending a broadcast with `audience_empty` while viewers
+remained, against spec §105) is fixed too, as are all remaining adversarial-review
+findings — §4/§4b/§4c of the acceptance report now table each against its resolution.
+
+**The AC verdict is unchanged: still NOT ACCEPTED**, because what remains outstanding is
+live vendor evidence (AC1/AC10 NOT RUN), which no code change can supply from this
+environment. This task stays `done-with-issues` for that reason.
+
 **Explicit non-claims**: no criterion is reported as passing on the strength of a mocked
 vendor; where a criterion has an automated and a live half, both are stated separately;
 no lip-sync, cutover-perception or interruption-latency measurement against real media
