@@ -17,6 +17,10 @@ server-enforced moderator and a single exclusive speaking floor.
 > deployment and no Nova Sonic SDK were available. FEAT-536's own acceptance
 > matrix is likewise **0 of 8**.
 >
+> A **blocking defect** was also found during acceptance:
+> `confirm_viewer()` has no production caller, so no floor grant can succeed —
+> see the acceptance report, §4.
+>
 > Everything in this document is verified against deterministic tests and a
 > local Redis. Every **vendor** timing below is a spec default that has never
 > been measured against a real LiveAvatar session, which is why each one is a
@@ -312,6 +316,7 @@ pytest packages/ai-parrot-integrations/tests/voice/test_voice_broadcast_live_gat
 
 | What | Where |
 |---|---|
+| **FEAT-537 acceptance matrix (AC1–AC15)** | [`docs/testing/voicebot-multiroom-heygen-avatar-acceptance.md`](../testing/voicebot-multiroom-heygen-avatar-acceptance.md) — **NOT ACCEPTED**: 8 PASS / 5 partial / 2 NOT RUN, plus one blocking defect |
 | FEAT-537 real-vendor gate | [`docs/testing/voicebot-multiroom-live-gate.md`](../testing/voicebot-multiroom-live-gate.md) — **NOT RUN** |
 | FEAT-536 acceptance matrix | [`docs/testing/voicebot-liveavatar-acceptance.md`](../testing/voicebot-liveavatar-acceptance.md) — **NOT RUN** |
 | Sanitized run logs / track manifests | `artifacts/logs/feat-537-live-gate-*` (gitignored) |
