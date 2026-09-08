@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-538 - Recoverable Task Memory for WorkingMemoryToolkit
 **Spec**: `sdd/specs/workingmemory-toolkit.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2989, TASK-2993, TASK-3000, TASK-3001
@@ -154,4 +154,79 @@ New test modules should use local fixtures unless the shared fixture task is alr
 
 ## Completion Note
 
-Not completed. The implementing agent records completed-by, date, verification evidence, notes, and any approved deviations here when acceptance passes.
+**Completed by**: sdd-worker (Claude Opus 5) — 2026-09-09
+**Commit**: `ec59fa570`
+
+### What was built
+
+`TaskMemoryRuntime` and `DurableStartupError` in `config.py`, plus the
+durable connection settings (`dsn`, pool bounds, `blob_prefix`,
+`retention_interval_seconds`). The runtime builds **one** task store and
+**one** artifact store over it, so the toolkit, observer and plan factory
+share a backend and a transaction coordinator (D1).
+`WorkingMemoryToolkit.from_runtime(runtime, scope)` is the wiring entry
+point; `BasicAgent.task_memory_runtime` (None by default) is started in
+`configure()` and stopped in `shutdown()` under `asyncio.shield`.
+
+It lives in `config.py` because that is the wiring the configuration
+describes, and because `config.py` is this task's owned home for it —
+no new module was permitted by the ownership table.
+
+### No silent fallback, by design
+
+`durable=True` without a `dsn` is refused at construction; a missing blob
+backend, an unreachable database, or an un-applied migration each fail
+**startup** with a message naming what is absent. Startup failure is
+deliberately allowed to fail `configure()`. Degrading to the in-memory
+store would be the worst outcome available: the deployment looks healthy
+right up until the restart it was supposed to survive.
+
+`run_once(scopes)` is exposed so a host qworker or cron can drive
+retention without this package taking a queue dependency; the in-process
+`PeriodicRetention` loop is opt-out via `start_scheduler=False`.
+
+### A correction mutation testing forced
+
+Shutdown originally skipped `store.close()` whenever the pool was
+borrowed. But the store **already** tracks pool ownership and leaves a
+borrowed pool open, so gating on the runtime's own flag skipped the
+store's cleanup entirely — a different leak dressed up as a safeguard.
+The store is now always closed.
+
+That same mutation exposed a **vacuous test of my own**: the
+borrowed-pool case ran on the in-memory path, where no pool exists at
+all, so it asserted that a pool nothing could have closed was not
+closed. It passed regardless of the implementation. It now runs on the
+durable path and proves the borrowed pool still **serves queries** after
+shutdown, with a counterpart test that a self-created pool IS closed.
+
+### Verification evidence
+
+- `test_durable_wiring.py`: **10/10 against live PostgreSQL 17.3**. Two
+  cases skip explicitly without a DSN; a skip is never reported as a
+  pass. Log: `artifacts/logs/task-3003-tm-durable-wiring.log`.
+- `tests/tools/working_memory`: **924 passed / 0 failed** with services;
+  **842 passed / 82 skipped / 0 failed** without.
+- `tests/bots`: FAILED-set **identical** to the dev baseline (84
+  pre-existing) — the check that matters, since `agent.py` was edited.
+- 5 mutations, each caught by the intended test: silent durable-to-memory
+  fallback, closing a borrowed pool, an unstopped retention loop,
+  unreleased leases, and a sibling artifact store.
+- `ruff` clean apart from one pre-existing F401 in `tool.py`
+  (`AnswerMemory` under `TYPE_CHECKING`), previously verified to exist on
+  `dev` and left alone as out of scope.
+
+### Notes for the reviewer
+
+- The runtime does **not** invent a scope. A scope is per user/session
+  and is unknown at `configure()` time, so binding a toolkit to the
+  runtime is the host's call via `from_runtime(runtime, scope)`. The
+  agent adopts whatever the toolkit already holds (TASK-2990).
+- `verify_schema()` already existed from TASK-2997/2998 and is reused
+  rather than reimplemented; it names the missing table or migration.
+- Shutdown never raises: each step is independent and reports, so one
+  failing close cannot skip the rest and leak the others.
+
+### Approved deviations
+
+None.
