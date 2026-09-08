@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-538 - Recoverable Task Memory for WorkingMemoryToolkit
 **Spec**: `sdd/specs/workingmemory-toolkit.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2971
@@ -149,4 +149,82 @@ New test modules should use local fixtures unless the shared fixture task is alr
 
 ## Completion Note
 
-Not completed. The implementing agent records completed-by, date, verification evidence, notes, and any approved deviations here when acceptance passes.
+**Completed by**: Claude Opus 5 (sdd-worker) — session `01WeeSf3QmPq58bBxturogRX`
+**Date**: 2026-09-08
+**Status**: done
+
+### Evidence
+
+- `uv run pytest packages/ai-parrot/tests/tools/working_memory/task_memory/test_contracts.py -q`
+  → **35 passed**. Whole task_memory suite: **90 passed**.
+  Log: `artifacts/logs/task-2972-tm-store-contracts.log`.
+- `ruff check` clean; `black --line-length 120 --target-version py312` and `isort` applied.
+
+### Acceptance mapping
+
+| Criterion | Evidence |
+|---|---|
+| Import protocols without loading heavy backend/worker modules | `test_leaf_imports` (AST + import-delta probes), `test_leaf_imports_records_the_package_baseline` |
+| All lookup/load/invalidation signatures require trusted scope | `test_scope_required` (structural over both protocols), `test_scope_required_scope_types_are_the_trusted_model`, `test_scope_required_helper_rejects_every_mismatched_component`, `test_scope_required_cache_keys_cannot_be_forged` |
+| Conformance fixtures express no-mutation-on-conflict, exact replay, scoped pagination, alias version monotonicity | `TaskMemoryStoreConformance` (8 cases) + `ArtifactStoreConformance` (8 cases), both run against the reference double; `test_contracts` asserts the published suites actually contain them |
+| AC2 (both stores identical) | The conformance suites are the mechanism; `_base.py` centralises the rules where a difference would be a security bug |
+| AC5 (overwrite preserves old evidence) | `test_conformance_overwrite_preserves_older_evidence`, `test_conformance_drop_alias_keeps_versions`, `test_conformance_invalidate_is_not_deletion` |
+| AC11 (scope isolation) | `test_conformance_scope_isolation`, `test_conformance_version_lookup_requires_scope`, cursor-across-scope rejection |
+
+### Finding for the M5 owner (TASK-2985 / TASK-2989)
+
+`packages/ai-parrot/src/parrot/tools/working_memory/__init__.py:2` does
+`from .tool import WorkingMemoryToolkit` eagerly. Because the FEAT-538
+domain models live at `parrot.tools.working_memory.task_memory.models`,
+importing **any** of them — including the deliberately leaf-safe contract
+modules — executes that `__init__` and therefore loads pandas, numpy,
+pyarrow, asyncpg and redis.
+
+The contract modules themselves are clean: `test_leaf_imports` proves
+structurally (AST) that none of them asks for a forbidden module, and
+behaviourally that none adds one beyond the baseline the package layout
+already imposes. But the spec's intent ("do not import pandas, REPL
+workers, or concrete database backends into contract modules") is only
+half-honoured while that eager import stands.
+
+**Recommendation**: whoever owns `working_memory/__init__.py` should make
+the toolkit re-export lazy (module `__getattr__`). When that lands,
+`test_leaf_imports_records_the_package_baseline` will fail on purpose —
+delete it and tighten `test_leaf_imports` to an absolute check. This was
+NOT done here because that file is outside this task's ownership table.
+
+### Design decisions worth flagging downstream
+
+1. **The conformance suite covers storage, not the reducer.** Plan
+   validation, readiness and completion gating are pure-function
+   behaviour owned by TASK-2973/2974 and are identical across backends by
+   construction once both call the same reducer. Putting them in the
+   storage conformance suite would have meant asserting the same pure
+   function twice.
+2. **A reference double lives in the test module.** The task's scope
+   permits "explicit protocol fixtures, never runtime stubs shipped as
+   complete implementations". The double stores events and tracks
+   revisions but runs **no reducer**, so it is incapable of being
+   mistaken for a backend, while still being enough to prove the suite is
+   executable and discriminating.
+3. **Cursors are bound to scope AND query.** A cursor from another scope,
+   or from the same scope with different filters, is rejected as
+   `CursorError`. All three failure modes give the caller one answer:
+   this cursor is not usable here.
+4. **`expected_revision=None` is legal** and skips the check. It is
+   reserved for runtime-authored events (recovery, retention) that
+   cannot meaningfully conflict with an agent's optimistic view.
+5. **`ArtifactPage.availability_generation`** exists because availability
+   can change with no task event — an eviction, an expiry, a worker
+   restart. Recall folds it into its cache key, which is how
+   "deterministic" avoids collapsing into "expired content stays
+   available forever at the same task sequence".
+6. **`PayloadRefusal` is a `str` subclass, not an enum**, so the reason
+   survives JSON and reaches a tool result without a second enum to keep
+   in sync with the tool schema.
+
+### Notes
+
+Test runs in this worktree need
+`PYTHONPATH=<worktree>/packages/ai-parrot/src` (the shared venv resolves
+`parrot` from the main checkout).
