@@ -37,7 +37,10 @@ pytest.importorskip(
 # Imported after the importorskip above on purpose: these must not be
 # collected when the Pre-Alpha SDK is absent.
 from aws_sdk_bedrock_runtime import models as sdk_models
-from aws_sdk_bedrock_runtime.config import Config
+from aws_sdk_bedrock_runtime import config as sdk_config
+from smithy_http.aio.crt import AWSCRTHTTPClient
+
+Config = getattr(sdk_config, "AsyncBedrockRuntimeConfig", None) or sdk_config.Config
 from parrot.clients.amazon.nova import NovaClient
 from parrot.clients.amazon.nova import audio as audio_mod
 
@@ -139,6 +142,15 @@ class TestResolveVoiceClientClass:
 
 class TestOpenStream:
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("credentials", [{"aws_access_key": "test-key"}, {"aws_secret_key": "test-secret"}])
+    async def test_partial_credentials_do_not_fall_back_to_another_identity(self, credentials) -> None:
+        client = _make_client(**credentials)
+        with patch.object(audio_mod, "_resolve_voice_client_class") as sdk_client:
+            with pytest.raises(ValueError, match="both aws_access_key and aws_secret_key"):
+                await client._open_stream("amazon.nova-2-sonic-v1:0")
+        sdk_client.return_value.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_builds_real_config_and_operation_input(self):
         client = _make_client(region="us-west-2", aws_access_key="AKIATEST", aws_secret_key="SECRET")
         captured = {}
@@ -159,6 +171,7 @@ class TestOpenStream:
         # The SDK takes a Config object — NOT a region= kwarg.
         config = captured["config"]
         assert isinstance(config, Config)
+        assert isinstance(config.transport, AWSCRTHTTPClient)
         assert config.region == "us-west-2"
         assert config.aws_access_key_id == "AKIATEST"
         assert config.aws_secret_access_key == "SECRET"
@@ -203,7 +216,10 @@ class TestOpenStream:
         assert identity.secret_access_key == "SECRET"
 
     @pytest.mark.asyncio
-    async def test_forwards_session_token_when_present(self):
+    async def test_forwards_session_token_when_present(self, monkeypatch):
+        monkeypatch.setenv("AWS_ACCESS_KEY_ID", "UNRELATED-ENV-KEY")
+        monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "UNRELATED-ENV-SECRET")
+        monkeypatch.setenv("AWS_SESSION_TOKEN", "UNRELATED-ENV-TOKEN")
         client = _make_client(
             aws_access_key="AKIATEST",
             aws_secret_key="SECRET",
@@ -221,7 +237,18 @@ class TestOpenStream:
         with patch.object(audio_mod, "_resolve_voice_client_class", return_value=FakeSDKClient):
             await client._open_stream("amazon.nova-2-sonic-v1:0")
 
-        assert captured["config"].aws_session_token == "TOKEN"
+        config = captured["config"]
+        assert config.aws_session_token == "TOKEN"
+        identity = await config.aws_credentials_identity_resolver.get_identity(
+            properties={
+                "access_key_id": config.aws_access_key_id,
+                "secret_access_key": config.aws_secret_access_key,
+                "session_token": config.aws_session_token,
+            }
+        )
+        assert identity.access_key_id == "AKIATEST"
+        assert identity.secret_access_key == "SECRET"
+        assert identity.session_token == "TOKEN"
 
     @pytest.mark.asyncio
     async def test_omits_credential_kwargs_when_no_static_keys(self):
@@ -384,6 +411,62 @@ class TestCloseStream:
 
 
 class TestErrorReporting:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "payload, expected",
+        [
+            ({"Message": "Missing bedrock:InvokeModel permission"}, "Missing bedrock:InvokeModel permission"),
+            ({"message": "Modeled message", "Message": "Gateway message"}, "Modeled message"),
+            ({}, ""),
+        ],
+    )
+    async def test_gateway_message_reaches_real_sdk_exception(self, payload, expected) -> None:
+        """Exercise actual Smithy deserialization, including capitalized Message."""
+        from smithy_core.types import TypedProperties
+        from smithy_http import Field, Fields
+        from smithy_http.aio import HTTPResponse
+
+        from parrot.clients.amazon.nova._voice_protocol import NovaVoiceProtocol
+
+        operation = sdk_models.INVOKE_MODEL_WITH_BIDIRECTIONAL_STREAM
+        response = HTTPResponse(
+            status=403,
+            fields=Fields(
+                [
+                    Field(name="content-type", values=["application/json"]),
+                    Field(name="x-amzn-errortype", values=["AccessDeniedException"]),
+                ]
+            ),
+            body=json.dumps(payload).encode(),
+        )
+        with pytest.raises(sdk_models.AccessDeniedException) as caught:
+            await NovaVoiceProtocol().deserialize_response(
+                operation=operation,
+                request=MagicMock(),
+                response=response,
+                error_registry=operation.error_registry,
+                context=TypedProperties(),
+            )
+        assert caught.value.message == expected
+
+    @pytest.mark.asyncio
+    async def test_service_message_is_preserved(self) -> None:
+        """A modeled error's message may not appear in its string value."""
+        client = _make_client()
+        error = sdk_models.AccessDeniedException(message="Not authorized to invoke this model")
+
+        async def audio_iterator():
+            yield b"\x00\x00" * 8
+
+        stream = _FakeDuplexStream()
+        stream.await_output = AsyncMock(side_effect=error)
+        with (
+            patch.object(client, "_open_stream", return_value=stream),
+            patch.object(client, "_send_event", new=AsyncMock()),
+        ):
+            responses = [response async for response in client.stream_voice(audio_iterator())]
+        assert responses[-1].metadata["error"] == "AccessDeniedException: Not authorized to invoke this model"
+
     @pytest.mark.asyncio
     async def test_empty_service_error_still_reports_the_exception_type(self):
         """AWS's modelled errors (AccessDeniedException on a 403, for one) often

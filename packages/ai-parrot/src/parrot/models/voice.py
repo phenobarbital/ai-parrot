@@ -300,20 +300,57 @@ class LiveCompletionUsage:
         if not self.total_tokens:
             self.total_tokens = self.prompt_tokens + self.completion_tokens
 
+    @staticmethod
+    def _int_attr(obj: Any, *names: str) -> int:
+        """Return the first attribute in ``names`` that holds a real int.
+
+        Non-int values (``None``, mocks, floats) are skipped so that a
+        provider object missing one alias falls through to the next.
+        """
+        for name in names:
+            value = getattr(obj, name, None)
+            if isinstance(value, int) and not isinstance(value, bool):
+                return value
+        return 0
+
     @classmethod
     def from_gemini_usage(cls, usage_metadata: Any) -> "LiveCompletionUsage":
-        """Create from Gemini usage metadata when available."""
+        """Create from Gemini usage metadata when available.
+
+        The Live API (``types.UsageMetadata``) reports the output side as
+        ``response_token_count``; the GenerateContent API uses
+        ``candidates_token_count``. Both are accepted so a Live turn no
+        longer reports ``output_tokens=0``.
+        """
         if usage_metadata is None:
             return cls()
 
+        prompt = cls._int_attr(usage_metadata, "prompt_token_count")
+        completion = cls._int_attr(usage_metadata, "response_token_count", "candidates_token_count")
+        total = cls._int_attr(usage_metadata, "total_token_count") or (prompt + completion)
         return cls(
-            prompt_tokens=getattr(usage_metadata, "prompt_token_count", 0) or 0,
-            completion_tokens=getattr(usage_metadata, "candidates_token_count", 0) or 0,
-            total_tokens=getattr(usage_metadata, "total_token_count", 0) or 0,
-            input_tokens=getattr(usage_metadata, "prompt_token_count", 0) or 0,
-            output_tokens=getattr(usage_metadata, "candidates_token_count", 0) or 0,
+            prompt_tokens=prompt,
+            completion_tokens=completion,
+            total_tokens=total,
+            input_tokens=prompt,
+            output_tokens=completion,
             extra=usage_metadata.__dict__ if hasattr(usage_metadata, "__dict__") else {},
         )
+
+    def merge_tokens(self, other: "LiveCompletionUsage") -> None:
+        """Copy token counters from ``other`` while keeping this turn's own
+        timing/audio/tool counters.
+
+        Used by streaming clients that receive token usage as a separate
+        server message: replacing the whole object would discard
+        ``response_time_ms``, ``output_audio_duration_ms`` and the tool
+        counters accumulated during the turn.
+        """
+        self.prompt_tokens = self.input_tokens = other.prompt_tokens
+        self.completion_tokens = self.output_tokens = other.completion_tokens
+        self.total_tokens = other.total_tokens
+        if other.extra:
+            self.extra = other.extra
 
 
 @dataclass
