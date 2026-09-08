@@ -21,6 +21,7 @@ from __future__ import annotations
 import asyncio
 import concurrent.futures
 import contextlib
+import functools
 import json
 import logging
 import os
@@ -29,6 +30,7 @@ import subprocess
 import sys
 import threading
 import time
+import uuid
 from typing import Any, BinaryIO, Optional
 
 from .observer import ProcessObserver, read_proc_cpu_seconds, read_proc_status, read_proc_wchan
@@ -48,6 +50,7 @@ from .protocol import (
     SetVarRequest,
     SnapshotRequest,
     SnapshotResponse,
+    TransportEnvelope,
     ValueResponse,
     WorkerConfig,
     decode_value,
@@ -203,6 +206,12 @@ class WorkerHandle:
         self._config = config or WorkerConfig()
         self._output_dir = output_dir
         self._repl_kwargs = repl_kwargs or {}
+        #: FEAT-538: stable identity of THIS worker generation. A PID is
+        #: not a generation identity — the OS recycles PIDs, so a fresh
+        #: worker could masquerade as the one a REPL binding was made
+        #: against. A handle is created per process, so a uuid4 minted here
+        #: changes exactly when the worker does.
+        self._generation: str = uuid.uuid4().hex
         self._proc: Optional[subprocess.Popen] = None
         self._to_worker: Optional[BinaryIO] = None
         self._from_worker: Optional[BinaryIO] = None
@@ -1033,7 +1042,30 @@ class WorkerHandle:
             "soft limit — delete DataFrames you no longer need (del name) before continuing."
         )
 
-    async def inject_dataframe(self, name: str, df: Any) -> None:
+    @property
+    def generation(self) -> str:
+        """Stable identity of this worker generation (FEAT-538).
+
+        A REPL binding records this value. When a binding is presented
+        against a handle whose generation differs, the binding is stale
+        and the artifact must be re-resolved — the persisted artifact is
+        still perfectly locatable, only the *binding* is invalid.
+
+        Deliberately not the pid: the OS recycles pids, so a fresh worker
+        could otherwise masquerade as the one the binding was made
+        against.
+        """
+        return self._generation
+
+    async def inject_dataframe(
+        self,
+        name: str,
+        df: Any,
+        *,
+        strict: bool = False,
+        envelope: Optional[TransportEnvelope] = None,
+        max_bytes: Optional[int] = None,
+    ) -> None:
         """Inject a DataFrame into the worker namespace via Arrow IPC/shm (TASK-1945).
 
         Encodes ``df`` (Arrow IPC into a shared-memory block, or pickle as a
@@ -1046,6 +1078,20 @@ class WorkerHandle:
         Args:
             name: Variable name to bind the DataFrame to.
             df: The ``pandas.DataFrame`` to inject.
+            strict: FEAT-538 opt-in strict evidence transport. When
+                ``True``, an unsupported dtype raises
+                :class:`~.transport.StrictTransportError` **before** any
+                pickle payload is created, the encoded size is checked
+                against ``max_bytes``, and the worker independently
+                refuses a non-Arrow strict frame. Defaults to ``False``,
+                which preserves the legacy behaviour exactly.
+            envelope: Bounded runtime context to carry across the process
+                boundary, revalidated on return.
+            max_bytes: Strict-mode ceiling for the encoded stream.
+
+        Raises:
+            StrictTransportError: In strict mode, when the value cannot
+                travel safely. No shared-memory block is left behind.
         """
         # Local import: `transport.py` pulls in `pyarrow` (heavy) — the host
         # process already pays this cost elsewhere via pandas, but keep it
@@ -1055,14 +1101,20 @@ class WorkerHandle:
 
         loop = asyncio.get_event_loop()
         # Encoding is CPU/memory-bound (Arrow conversion + a shm copy) — run
-        # it off the event loop (Key Constraint).
-        encoded = await loop.run_in_executor(self._executor, encode_dataframe, df, name)
+        # it off the event loop (Key Constraint). A strict refusal raises
+        # out of here, before any block exists to leak.
+        encoded = await loop.run_in_executor(
+            self._executor,
+            functools.partial(encode_dataframe, df, name, strict=strict, max_bytes=max_bytes),
+        )
         request = InjectDfRequest(
             name=name,
             format=encoded.format,
             shm_name=encoded.shm_name,
             size=encoded.size,
             payload=encoded.payload,
+            strict=strict,
+            envelope=envelope,
         )
         try:
             await self._send(request, timeout_s=self._namespace_timeout_s)
@@ -1070,8 +1122,11 @@ class WorkerHandle:
             if encoded.shm_name is not None:
                 # Host owns the block's lifecycle: unlink only now that the
                 # worker has ack'd (read + closed its handle) via the
-                # response awaited above.
-                await loop.run_in_executor(self._executor, unlink_shm, encoded.shm_name)
+                # response awaited above. This `finally` also covers a
+                # cancelled send and a timeout — the segment is freed on
+                # every exit path, which is what stops a cancelled strict
+                # load from leaking one.
+                await asyncio.shield(loop.run_in_executor(self._executor, unlink_shm, encoded.shm_name))
         self.known_vars = sorted(set(self.known_vars) | {name})
 
     @property
