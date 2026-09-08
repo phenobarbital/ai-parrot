@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-538 - Recoverable Task Memory for WorkingMemoryToolkit
 **Spec**: `sdd/specs/workingmemory-toolkit.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-3001, TASK-3004
@@ -155,4 +155,86 @@ New test modules should use local fixtures unless the shared fixture task is alr
 
 ## Completion Note
 
-Not completed. The implementing agent records completed-by, date, verification evidence, notes, and any approved deviations here when acceptance passes.
+**Completed by**: sdd-worker (Claude Opus 5) — 2026-09-09
+**Commit**: `c821f824d`
+
+### What was built
+
+`docs/memory/recoverable-task-memory.md` and
+`bench_task_memory.py`. The benchmark imports the 8/64/256 MiB
+measurement from `bench_snapshot_costs.py` rather than reimplementing
+it, so that measurement keeps a single definition.
+
+### The three required cases are checks, not prose
+
+- **`test_docs_examples`** parses every python block in the document and
+  resolves every `parrot.*` symbol it imports. A documentation example
+  naming a symbol that does not exist is worse than no example — it is
+  confidently wrong and a reader cannot tell without trying it. It also
+  refuses documentation that advertises automatic retry of external
+  effects, or that omits that Delivery A is non-durable.
+- **`test_traceability`** asserts that every repo-relative path the
+  document cites actually exists (11 of them), and that both delivery
+  gates, the crash matrix and the migration are named. A traceability
+  link to a file that is not there is not traceability.
+- **`test_metrics`** records all five AC16 metrics and asserts the three
+  required payload sizes are covered.
+
+### Measured results (recorded, not asserted as SLOs)
+
+| Metric | Result |
+|---|---|
+| Recall, 5 / 25 / 100 steps | 647 / 2 339 / 2 429 tokens; 0.6 / 2.0 / **313** ms median |
+| Observer overhead | ≈48 µs per call capture-only; ≈197 µs journalled (in-memory) |
+| Invalid-reference rate | 3/3 refused; 3/3 bare aliases rejected |
+| Repeated operations after recovery | **0** |
+| Fingerprint, DataFrame 8/64/256 MiB | 0.29 s / 2.32 s / **9.36 s** |
+| Canonicalise JSON 8/64/256 MiB | peak RSS 32 MiB / 254 MiB / **1 014 MiB** |
+
+Two findings are written into the document rather than smoothed over:
+
+1. **Recall build time is markedly non-linear.** A 100-step plan costs
+   roughly 150× a 25-step one while producing barely more output,
+   because the selector is doing far more work deciding what to *drop*.
+   The token cap still holds at every size — that part is asserted — but
+   anyone running plans that large should measure rather than assume
+   recall is cheap.
+2. **The payload measurements justify the 64 MiB snapshot cap (D4).**
+   Fingerprinting 256 MiB takes ~9.4 s and canonicalising 256 MiB of
+   JSON peaks near 1 GB resident, because encoding holds the live value
+   and its encoded form at once. Snapshotting that in RAM on a request
+   path is not viable, which is exactly why the default stays 64 MiB.
+   The spec asked for the cap decision to be recorded against
+   measurement; this is that record.
+
+### Verification evidence
+
+- `python bench_task_memory.py` exits 0 with all three cases passing at
+  the full 8/64/256 MiB. Log:
+  `artifacts/logs/task-3005-tm-docs-metrics.log`.
+- `tests/tools/working_memory`: **932 passed / 0 failed** with services;
+  **842 passed / 90 skipped / 0 failed** without. Both figures were
+  reproduced *before* being written into the document, and the document
+  states plainly that the 90 skips are the durable cases and that a skip
+  is never a pass.
+- The documented enabling snippet was **executed**, not just parsed: it
+  publishes 23 tools, 10 of them the task tools.
+- `ruff` clean.
+
+### Notes for the reviewer
+
+- Two API assumptions were corrected against source while writing the
+  benchmark: `DispatchOutcome.succeeded` is a property, not a
+  constructor — the dispatcher's real call is
+  `observer.finish(call, value=...)`; and a 100-step plan cannot be
+  created in one `begin_task`, because a single journal event may not
+  exceed the 8 KiB payload cap. The benchmark now builds large plans in
+  batches, which is also how a real plan grows.
+- One bug of my own: the journalled observer measurement first closed
+  over a *different* store than the session's task lived in, so every
+  append failed and the fail-closed observer refused to run the tool at
+  all. The append is now bound to the same store.
+
+### Approved deviations
+
+None.
