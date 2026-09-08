@@ -22,7 +22,7 @@
       "feature_id": "FEAT-537",
       "feature": "voicebot-multiroom-heygen-avatar",
       "spec": "sdd/specs/voicebot-multiroom-heygen-avatar.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -30,7 +30,7 @@
       "parallelism_notes": "Only task touching `docs/testing/` and `artifacts/logs/` evidence for the live gate. Needs real LIVEAVATAR/LIVEKIT/AWS credentials and a human observer; if absent, record NOT RUN (see Scope) and finish as `done-with-issues` exactly like FEAT-536 TASK-2949.",
       "assigned_to": null,
       "assigned_at": null,
-      "started_at": null,
+      "started_at": "2026-09-08T11:03:02+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2950-live-contract-probe.md",
       "acceptance_criteria": [
@@ -46,7 +46,7 @@
       "feature_id": "FEAT-537",
       "feature": "voicebot-multiroom-heygen-avatar",
       "spec": "sdd/specs/voicebot-multiroom-heygen-avatar.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -54,7 +54,7 @@
       "parallelism_notes": "Creates only the new `broadcast/{__init__,models}.py` files and their test; shares no file with TASK-2950/2954/2955/2956/2957. Safe to run in a separate worktree.",
       "assigned_to": null,
       "assigned_at": null,
-      "started_at": null,
+      "started_at": "2026-09-08T11:03:02+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2951-broadcast-models.md",
       "acceptance_criteria": [
@@ -69,7 +69,7 @@
       "feature_id": "FEAT-537",
       "feature": "voicebot-multiroom-heygen-avatar",
       "spec": "sdd/specs/voicebot-multiroom-heygen-avatar.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -79,7 +79,7 @@
       "parallelism_notes": "Extends the `broadcast/` package created by TASK-2951 (imports its models). Does not touch handler/session files, so it can run alongside TASK-2954–2957 in the same worktree if edited sequentially.",
       "assigned_to": null,
       "assigned_at": null,
-      "started_at": null,
+      "started_at": "2026-09-08T11:03:02+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2952-broadcast-registry-interface-memory.md",
       "acceptance_criteria": [
@@ -97,7 +97,7 @@
       "feature_id": "FEAT-537",
       "feature": "voicebot-multiroom-heygen-avatar",
       "spec": "sdd/specs/voicebot-multiroom-heygen-avatar.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -107,7 +107,7 @@
       "parallelism_notes": "Adds `broadcast/redis_registry.py` and a Redis-gated test module; reuses TASK-2952's contract suite. No shared production file with other tasks.",
       "assigned_to": null,
       "assigned_at": null,
-      "started_at": null,
+      "started_at": "2026-09-08T11:03:02+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2953-broadcast-redis-registry.md",
       "acceptance_criteria": [
@@ -126,7 +126,7 @@
       "feature_id": "FEAT-537",
       "feature": "voicebot-multiroom-heygen-avatar",
       "spec": "sdd/specs/voicebot-multiroom-heygen-avatar.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -134,7 +134,7 @@
       "parallelism_notes": "Touches only `room_manager.py` and its existing test module; no overlap with any other FEAT-537 task's files.",
       "assigned_to": null,
       "assigned_at": null,
-      "started_at": null,
+      "started_at": "2026-09-08T11:03:02+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2954-room-manager-role-tokens.md",
       "acceptance_criteria": [
@@ -149,7 +149,7 @@
       "feature_id": "FEAT-537",
       "feature": "voicebot-multiroom-heygen-avatar",
       "spec": "sdd/specs/voicebot-multiroom-heygen-avatar.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -157,7 +157,7 @@
       "parallelism_notes": "Touches only `avatar_ws.py` and `test_avatar_ws.py`. Vendor event semantics are pending TASK-2950; expose them as data (callbacks + names) so no assumption is baked in.",
       "assigned_to": null,
       "assigned_at": null,
-      "started_at": null,
+      "started_at": "2026-09-08T11:03:02+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2955-avatar-ws-events-aggregation.md",
       "acceptance_criteria": [
@@ -173,7 +173,7 @@
       "feature_id": "FEAT-537",
       "feature": "voicebot-multiroom-heygen-avatar",
       "spec": "sdd/specs/voicebot-multiroom-heygen-avatar.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -181,7 +181,7 @@
       "parallelism_notes": "Touches only `room_audio_publisher.py` and `test_room_audio_publisher.py`.",
       "assigned_to": null,
       "assigned_at": null,
-      "started_at": null,
+      "started_at": "2026-09-08T11:03:02+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2956-room-audio-publisher-native-queue.md",
       "acceptance_criteria": [
@@ -197,7 +197,7 @@
       "feature_id": "FEAT-537",
       "feature": "voicebot-multiroom-heygen-avatar",
       "spec": "sdd/specs/voicebot-multiroom-heygen-avatar.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -207,7 +207,7 @@
       "parallelism_notes": "Touches `voice_session.py` + its tests; consumes TASK-2955's `AvatarWebSocket` kwargs. No overlap with TASK-2954/2956 files.",
       "assigned_to": null,
       "assigned_at": null,
-      "started_at": null,
+      "started_at": "2026-09-08T11:03:02+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2957-voice-avatar-session-injected-room.md",
       "acceptance_criteria": [
@@ -223,7 +223,7 @@
       "feature_id": "FEAT-537",
       "feature": "voicebot-multiroom-heygen-avatar",
       "spec": "sdd/specs/voicebot-multiroom-heygen-avatar.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -238,7 +238,7 @@
       "parallelism_notes": "Central media object; consumes every Module 2/3 extension. Creates `broadcast/session.py` + `test_voice_broadcast_media.py` only. TASK-2950 dependency is the spec's live gate: if TASK-2950 finished `done-with-issues` (NOT RUN), implement against the spec defaults and make every vendor-dependent threshold a constructor knob.",
       "assigned_to": null,
       "assigned_at": null,
-      "started_at": null,
+      "started_at": "2026-09-08T11:03:02+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2958-broadcast-session-output-routing.md",
       "acceptance_criteria": [
@@ -255,7 +255,7 @@
       "feature_id": "FEAT-537",
       "feature": "voicebot-multiroom-heygen-avatar",
       "spec": "sdd/specs/voicebot-multiroom-heygen-avatar.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -265,7 +265,7 @@
       "parallelism_notes": "Edits the shared hot spot `voice/handler.py` (FEAT-536 owns its baseline). TASK-2960 edits the same file afterwards — strictly sequential.",
       "assigned_to": null,
       "assigned_at": null,
-      "started_at": null,
+      "started_at": "2026-09-08T11:03:02+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2959-handler-broadcast-voice-relay.md",
       "acceptance_criteria": [
@@ -282,7 +282,7 @@
       "feature_id": "FEAT-537",
       "feature": "voicebot-multiroom-heygen-avatar",
       "spec": "sdd/specs/voicebot-multiroom-heygen-avatar.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -292,7 +292,7 @@
       "parallelism_notes": "Second sequential edit of `voice/handler.py` (after TASK-2959). Also creates `broadcast/floor.py`. No other task edits handler.py after this except TASK-2961's small service hook.",
       "assigned_to": null,
       "assigned_at": null,
-      "started_at": null,
+      "started_at": "2026-09-08T11:03:02+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2960-broadcast-floor-control-ws-route.md",
       "acceptance_criteria": [
@@ -309,7 +309,7 @@
       "feature_id": "FEAT-537",
       "feature": "voicebot-multiroom-heygen-avatar",
       "spec": "sdd/specs/voicebot-multiroom-heygen-avatar.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -320,7 +320,7 @@
       "parallelism_notes": "Creates `broadcast/service.py` + `broadcast/worker_transport.py`; one small hook in `handler.py` (`broadcast_service` becomes a typed `BroadcastService`). Sequential after TASK-2960.",
       "assigned_to": null,
       "assigned_at": null,
-      "started_at": null,
+      "started_at": "2026-09-08T11:03:02+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2961-broadcast-worker-transport-service.md",
       "acceptance_criteria": [
@@ -337,7 +337,7 @@
       "feature_id": "FEAT-537",
       "feature": "voicebot-multiroom-heygen-avatar",
       "spec": "sdd/specs/voicebot-multiroom-heygen-avatar.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -347,7 +347,7 @@
       "parallelism_notes": "Only task editing `packages/ai-parrot-server` (new `handlers/voice_broadcast.py`, `manager/manager.py` wiring, one guard test on `handlers/avatar.py`).",
       "assigned_to": null,
       "assigned_at": null,
-      "started_at": null,
+      "started_at": "2026-09-08T11:03:02+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2962-server-broadcast-http-routes.md",
       "acceptance_criteria": [
@@ -366,7 +366,7 @@
       "feature_id": "FEAT-537",
       "feature": "voicebot-multiroom-heygen-avatar",
       "spec": "sdd/specs/voicebot-multiroom-heygen-avatar.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -376,7 +376,7 @@
       "parallelism_notes": "Only task editing `examples/clients/voice/server.py`. TASK-2965 (HTML) and TASK-2968 (browser harness) depend on its `__CONFIG__.broadcast` contract.",
       "assigned_to": null,
       "assigned_at": null,
-      "started_at": null,
+      "started_at": "2026-09-08T11:03:02+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2963-example-broadcast-backend.md",
       "acceptance_criteria": [
@@ -392,7 +392,7 @@
       "feature_id": "FEAT-537",
       "feature": "voicebot-multiroom-heygen-avatar",
       "spec": "sdd/specs/voicebot-multiroom-heygen-avatar.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -402,7 +402,7 @@
       "parallelism_notes": "Touches only `examples/clients/voice/static/avatar-viewer.js` and the vitest file that imports it. Depends on TASK-2951 only for the `BroadcastPublicState` wire shape (field names). TASK-2965 consumes this API.",
       "assigned_to": null,
       "assigned_at": null,
-      "started_at": null,
+      "started_at": "2026-09-08T11:03:02+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2964-avatar-viewer-broadcast-policy.md",
       "acceptance_criteria": [
@@ -419,7 +419,7 @@
       "feature_id": "FEAT-537",
       "feature": "voicebot-multiroom-heygen-avatar",
       "spec": "sdd/specs/voicebot-multiroom-heygen-avatar.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -430,7 +430,7 @@
       "parallelism_notes": "Only task editing `dual_provider.html`. Requires the backend config contract (TASK-2963) and the viewer API (TASK-2964).",
       "assigned_to": null,
       "assigned_at": null,
-      "started_at": null,
+      "started_at": "2026-09-08T11:03:02+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2965-dual-provider-broadcast-ui.md",
       "acceptance_criteria": [
@@ -449,7 +449,7 @@
       "feature_id": "FEAT-537",
       "feature": "voicebot-multiroom-heygen-avatar",
       "spec": "sdd/specs/voicebot-multiroom-heygen-avatar.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -459,7 +459,7 @@
       "parallelism_notes": "Docs-only plus a possible extras tweak; must describe the code as actually landed, so it runs after the UI task.",
       "assigned_to": null,
       "assigned_at": null,
-      "started_at": null,
+      "started_at": "2026-09-08T11:03:02+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2966-broadcast-docs-runbook.md",
       "acceptance_criteria": [
@@ -474,7 +474,7 @@
       "feature_id": "FEAT-537",
       "feature": "voicebot-multiroom-heygen-avatar",
       "spec": "sdd/specs/voicebot-multiroom-heygen-avatar.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -484,7 +484,7 @@
       "parallelism_notes": "Test-only task; creates `tests/e2e/test_voicebot_multiroom_heygen_avatar.py` (deterministic + Redis-gated parts) and may extend the Redis registry test module. Can run alongside TASK-2965 (different files).",
       "assigned_to": null,
       "assigned_at": null,
-      "started_at": null,
+      "started_at": "2026-09-08T11:03:02+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2967-cross-worker-redis-integration-tests.md",
       "acceptance_criteria": [
@@ -505,7 +505,7 @@
       "feature_id": "FEAT-537",
       "feature": "voicebot-multiroom-heygen-avatar",
       "spec": "sdd/specs/voicebot-multiroom-heygen-avatar.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -516,7 +516,7 @@
       "parallelism_notes": "Test-only; creates one browser suite module plus an opt-in real-vendor variant. Runs after the UI and the two-worker fixtures exist (it reuses both).",
       "assigned_to": null,
       "assigned_at": null,
-      "started_at": null,
+      "started_at": "2026-09-08T11:03:02+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2968-multi-browser-harness.md",
       "acceptance_criteria": [
@@ -538,7 +538,7 @@
       "feature_id": "FEAT-537",
       "feature": "voicebot-multiroom-heygen-avatar",
       "spec": "sdd/specs/voicebot-multiroom-heygen-avatar.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -551,7 +551,7 @@
       "parallelism_notes": "Final combined gate (spec §3 Module 7 \"final combined gate last\"). Docs/evidence only; no production code. If the environment lacks credentials/human, record NOT RUN per row and finish `done-with-issues` — never claim acceptance from mocks (AC10).",
       "assigned_to": null,
       "assigned_at": null,
-      "started_at": null,
+      "started_at": "2026-09-08T11:03:02+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2969-operational-acceptance-gate.md",
       "acceptance_criteria": [
