@@ -58,6 +58,7 @@ from .errors import (
     StaleVersion,
     ViewerLimitReached,
 )
+from .session import BroadcastSession
 from .registry import (
     Admission,
     BroadcastRegistry,
@@ -89,6 +90,7 @@ __all__ = [
     "BroadcastPublicState",
     "BroadcastReason",
     "BroadcastRegistry",
+    "BroadcastSession",
     "BroadcastState",
     "BroadcastTerminal",
     "ExpiryEvent",
