@@ -1,0 +1,105 @@
+"""Shared LLM resolution for the bookstore CLI and MCP server.
+
+The model is configured via environment variables (or an explicit CLI
+flag) as an ``LLMFactory`` spec string:
+
+- ``PARROT_BOOKSTORE_LLM`` — heavy model, e.g. ``"google:gemini-2.5-flash"``
+  or ``"anthropic:claude-sonnet-5"``.
+- ``PARROT_BOOKSTORE_LLM_LIGHT`` — optional cheap model **id** for
+  PageIndex helper calls. Must belong to the same provider as the heavy
+  model: ``PageIndexToolkit`` pairs the heavy adapter's client with this
+  id (see ``wiki/cli.py:_build_adapters`` for the same constraint).
+
+When ``PARROT_BOOKSTORE_LLM`` is unset, this module auto-detects an
+available coding-agent CLI session (Claude Code preferred, falling back
+to Codex — see ``parrot.clients.detection.detect_coding_agent_llm``) and
+defaults to it, logging a visible warning naming the auto-selected spec.
+Set ``PARROT_NO_AUTO_LLM`` to disable this auto-detection.
+
+When nothing is configured (no explicit spec and no coding-agent CLI
+detected, or auto-detection is disabled) the bookstore runs degraded
+(BM25/catalog only) — that is a supported mode, not an error.
+
+Heavy parrot imports happen lazily inside the functions, under a
+stdout→stderr redirect, so this module is safe to import from the MCP
+server (stdout purity) and keeps fast CLI commands fast.
+"""
+
+from __future__ import annotations
+
+import contextlib
+import logging
+import os
+import sys
+from typing import Any, Optional
+
+ENV_LLM = "PARROT_BOOKSTORE_LLM"
+ENV_LLM_LIGHT = "PARROT_BOOKSTORE_LLM_LIGHT"
+
+logger = logging.getLogger(__name__)
+
+
+def resolve_adapter(
+    llm_spec: Optional[str] = None,
+    lightweight_model: Optional[str] = None,
+) -> tuple[Optional[Any], Optional[str], Optional[Any]]:
+    """Build the PageIndex adapter from a spec or the environment.
+
+    Args:
+        llm_spec: Explicit ``provider:model`` spec; falls back to
+            ``PARROT_BOOKSTORE_LLM``.
+        lightweight_model: Explicit light model id; falls back to
+            ``PARROT_BOOKSTORE_LLM_LIGHT``.
+
+    Returns:
+        ``(adapter, lightweight_model, client)`` — all ``None`` when no
+        model is configured or the provider cannot be constructed (a
+        warning is logged; the caller runs degraded).
+    """
+    spec = llm_spec or os.environ.get(ENV_LLM)
+    light = lightweight_model or os.environ.get(ENV_LLM_LIGHT)
+    if not spec:
+        if not os.environ.get("PARROT_NO_AUTO_LLM"):
+            try:
+                with contextlib.redirect_stdout(sys.stderr):
+                    from parrot.clients.detection import detect_coding_agent_llm
+
+                    detected = detect_coding_agent_llm()
+            except Exception as exc:  # noqa: BLE001 — degrade, never crash startup
+                logger.warning(
+                    "Coding-agent CLI auto-detection failed (%s) — running degraded",
+                    exc,
+                )
+                detected = None
+            if detected:
+                logger.warning(
+                    "No LLM configured (%s unset) — auto-selected %r because a "
+                    "coding-agent CLI session was detected. Set %s to override, "
+                    "or PARROT_NO_AUTO_LLM=1 to disable auto-detection.",
+                    ENV_LLM,
+                    detected,
+                    ENV_LLM,
+                )
+                spec = detected
+        if not spec:
+            logger.warning(
+                "No LLM configured (%s unset) — bookstore runs BM25/catalog only",
+                ENV_LLM,
+            )
+            return None, None, None
+    try:
+        with contextlib.redirect_stdout(sys.stderr):
+            from parrot.clients.factory import LLMFactory
+            from parrot.knowledge.pageindex.llm_adapter import PageIndexLLMAdapter
+
+            _, model_id = LLMFactory.parse_llm_string(spec)
+            client = LLMFactory.create(spec)
+            adapter = PageIndexLLMAdapter(client, model=model_id)
+    except Exception as exc:  # noqa: BLE001 — degrade, never crash startup
+        logger.warning(
+            "Could not build LLM client for %r (%s) — running degraded",
+            spec,
+            exc,
+        )
+        return None, None, None
+    return adapter, light, client

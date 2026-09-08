@@ -18,6 +18,7 @@ by 8x INSIDE a single client — measured on AWS Bedrock 2026-09-03,
 ``_model_max_tokens`` both lifts a known model to its real limit and clamps
 anything above it.
 """
+
 from __future__ import annotations
 
 import inspect
@@ -30,6 +31,7 @@ from parrot.clients.base import AbstractClient
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _bare(cls, **attrs):
     """Build a client without running __init__ (mirrors tests/integration/test_invoke.py)."""
@@ -67,19 +69,19 @@ class _StubClient(AbstractClient):
 
 CLIENT_PATHS = [
     ("parrot.clients.base", "AbstractClient"),
-    ("parrot.clients.claude", "AnthropicClient"),
+    ("parrot.clients.anthropic.client", "AnthropicClient"),
     ("parrot.clients.google.client", "GoogleGenAIClient"),
     ("parrot.clients.openai_base", "OpenAIBaseClient"),
-    ("parrot.clients.gpt", "OpenAIClient"),
-    ("parrot.clients.groq", "GroqClient"),
-    ("parrot.clients.grok", "GrokClient"),
-    ("parrot.clients.zai", "ZaiClient"),
-    ("parrot.clients.bedrock", "BedrockConverseBase"),
-    ("parrot.clients.localllm", "LocalLLMClient"),
-    ("parrot.clients.claude_agent", "ClaudeAgentClient"),
-    ("parrot.clients.codex_agent", "OpenAICodexClient"),
-    ("parrot.clients.hf", "TransformersClient"),
-    ("parrot.clients.gemma4", "Gemma4Client"),
+    ("parrot.clients.openai.client", "OpenAIClient"),
+    ("parrot.clients.groq.client", "GroqClient"),
+    ("parrot.clients.grok.client", "GrokClient"),
+    ("parrot.clients.zai.client", "ZaiClient"),
+    ("parrot.clients.amazon.bedrock", "BedrockConverseBase"),
+    ("parrot.clients.local.client", "LocalLLMClient"),
+    ("parrot.clients.anthropic.claude_agent", "ClaudeAgentClient"),
+    ("parrot.clients.openai.codex_agent", "OpenAICodexClient"),
+    ("parrot.clients.hf.client", "TransformersClient"),
+    ("parrot.clients.gemma4.client", "Gemma4Client"),
 ]
 
 
@@ -144,6 +146,7 @@ def test_no_method_hardcodes_a_numeric_max_tokens(module_path, class_name):
 # Resolution chain
 # ---------------------------------------------------------------------------
 
+
 class TestResolutionChain:
     """_resolve_invoke_max_tokens() precedence rules."""
 
@@ -200,6 +203,7 @@ class TestResolutionChain:
 # ask() / ask_stream() resolution chain — the same resolver, for_invoke=False
 # ---------------------------------------------------------------------------
 
+
 class TestAskResolutionChain:
     """_resolve_max_tokens() precedence rules on the ask() side."""
 
@@ -232,6 +236,7 @@ class TestAskResolutionChain:
         GoogleGenAIClient does exactly this, so Gemini applies its own (much
         larger) per-model ceiling instead of a number this framework invented.
         """
+
         class _NoCapClient(_StubClient):
             _default_max_tokens = None
 
@@ -241,6 +246,7 @@ class TestAskResolutionChain:
 
     def test_invoke_never_returns_none(self):
         """Unlike ask(), invoke() always yields a concrete cap."""
+
         class _NoCapClient(_StubClient):
             _default_max_tokens = None
             _invoke_max_tokens = 4096
@@ -262,6 +268,7 @@ class TestAskResolutionChain:
 # Per-client class defaults
 # ---------------------------------------------------------------------------
 
+
 class TestPerClientDefaults:
     """Each client declares its own budget; providers with hard caps stay low."""
 
@@ -274,13 +281,13 @@ class TestPerClientDefaults:
 
     def test_anthropic_default_is_non_none(self):
         """The Anthropic SDK multiplies max_tokens for its timeout calc."""
-        from parrot.clients.claude import AnthropicClient
+        from parrot.clients.anthropic import AnthropicClient
 
         assert AnthropicClient._default_max_tokens is not None
         assert _bare(AnthropicClient)._resolve_max_tokens() is not None
 
     def test_bedrock_keeps_conservative_converse_cap(self):
-        bedrock = pytest.importorskip("parrot.clients.bedrock")
+        bedrock = pytest.importorskip("parrot.clients.amazon.bedrock")
         assert bedrock.BedrockConverseBase._default_max_tokens == 4096
 
     def test_grok_preserves_its_large_budget(self):
@@ -288,14 +295,15 @@ class TestPerClientDefaults:
 
         assert GrokClient._default_max_tokens == 16000
 
-    @pytest.mark.parametrize("module_path,class_name,expected", [
-        ("parrot.clients.localllm", "LocalLLMClient", 4096),
-        ("parrot.clients.hf", "TransformersClient", 512),
-        ("parrot.clients.gemma4", "Gemma4Client", 512),
-    ])
-    def test_local_backends_ask_budget_stays_conservative(
-        self, module_path, class_name, expected
-    ):
+    @pytest.mark.parametrize(
+        "module_path,class_name,expected",
+        [
+            ("parrot.clients.local.client", "LocalLLMClient", 4096),
+            ("parrot.clients.hf.client", "TransformersClient", 512),
+            ("parrot.clients.gemma4.client", "Gemma4Client", 512),
+        ],
+    )
+    def test_local_backends_ask_budget_stays_conservative(self, module_path, class_name, expected):
         module = pytest.importorskip(module_path)
         assert getattr(module, class_name)._default_max_tokens == expected
 
@@ -312,19 +320,24 @@ class TestPerClientDefaults:
 
     def test_google_gets_extra_headroom_for_reasoning(self):
         from parrot.clients.google.client import GoogleGenAIClient
+
         assert GoogleGenAIClient._invoke_max_tokens == 16384
 
     def test_groq_capped_below_the_provider_limit(self):
         # Groq refuses max_tokens at or above 4096 — the limit is exclusive.
         from parrot.clients.groq import GroqClient
+
         assert GroqClient._default_max_tokens == 4095
         assert GroqClient()._resolve_invoke_max_tokens(None, "openai/gpt-oss-120b") < 4096
 
-    @pytest.mark.parametrize("module_path,class_name", [
-        ("parrot.clients.localllm", "LocalLLMClient"),
-        ("parrot.clients.hf", "TransformersClient"),
-        ("parrot.clients.gemma4", "Gemma4Client"),
-    ])
+    @pytest.mark.parametrize(
+        "module_path,class_name",
+        [
+            ("parrot.clients.local.client", "LocalLLMClient"),
+            ("parrot.clients.hf.client", "TransformersClient"),
+            ("parrot.clients.gemma4.client", "Gemma4Client"),
+        ],
+    )
     def test_local_backends_stay_conservative(self, module_path, class_name):
         module = pytest.importorskip(module_path)
         cls = getattr(module, class_name)
@@ -338,6 +351,7 @@ class TestPerClientDefaults:
         reasoning_content from the answer's budget) was ignored by invoke().
         """
         from parrot.clients.nvidia import NvidiaClient
+
         assert NvidiaClient._default_max_tokens == 65536
         assert NvidiaClient()._resolve_invoke_max_tokens(None, "openai/gpt-oss-120b") == 65536
 
@@ -346,8 +360,10 @@ class TestPerClientDefaults:
 # End-to-end: the resolved budget reaches the provider payload
 # ---------------------------------------------------------------------------
 
+
 def _init_json(client):
     from datamodel.parsers.json import JSONContent
+
     client._json = JSONContent()
 
 
@@ -376,9 +392,7 @@ class TestBudgetReachesProvider:
             part = SimpleNamespace(text="hello")
             content = SimpleNamespace(parts=[part])
             candidate = SimpleNamespace(content=content, finish_reason="STOP")
-            um = SimpleNamespace(
-                prompt_token_count=1, candidates_token_count=1, total_token_count=2
-            )
+            um = SimpleNamespace(prompt_token_count=1, candidates_token_count=1, total_token_count=2)
             return SimpleNamespace(candidates=[candidate], text="hello", usage_metadata=um)
 
         sdk = MagicMock()
@@ -393,7 +407,7 @@ class TestBudgetReachesProvider:
         assert captured["config"].max_output_tokens == 1234
 
     async def test_openai_base_sends_resolved_max_tokens(self, bind_sdk_client):
-        from parrot.clients.gpt import OpenAIClient
+        from parrot.clients.openai import OpenAIClient
 
         client = _bare(
             OpenAIClient,
@@ -420,10 +434,7 @@ class TestBudgetReachesProvider:
         await client.invoke("hi")
         # OpenAI sets no _invoke_max_tokens of its own, so invoke() picks up
         # AbstractClient._default_max_tokens rather than a separate base value.
-        assert (
-            sdk.chat.completions.create.await_args.kwargs["max_tokens"]
-            == AbstractClient._default_max_tokens
-        )
+        assert sdk.chat.completions.create.await_args.kwargs["max_tokens"] == AbstractClient._default_max_tokens
 
     async def test_groq_stays_at_provider_cap(self, bind_sdk_client):
         from parrot.clients.groq import GroqClient
@@ -463,6 +474,7 @@ class TestBudgetReachesProvider:
 # Model awareness: _model_max_tokens lifts a known model to its real limit and
 # clamps anything above it.
 # ---------------------------------------------------------------------------
+
 
 class _ModelAwareClient(_StubClient):
     """Stub whose models have deliberately divergent limits."""
@@ -532,21 +544,25 @@ class TestMeasuredProviderLimits:
     """Limits measured against live providers on 2026-09-03."""
 
     def test_bedrock_lifts_opus_5(self):
-        from parrot.clients.bedrock import BedrockConverseClient
+        from parrot.clients.amazon.bedrock import BedrockConverseClient
+
         client = BedrockConverseClient()
         assert client._resolve_max_tokens(None, "us.anthropic.claude-opus-5", for_invoke=True) == 65536
 
     def test_bedrock_holds_qwen3_32b_down(self):
-        from parrot.clients.bedrock import BedrockConverseClient
+        from parrot.clients.amazon.bedrock import BedrockConverseClient
+
         client = BedrockConverseClient()
         assert client._resolve_max_tokens(None, "qwen.qwen3-32b-v1:0", for_invoke=True) == 16384
 
     def test_nova_pro_stays_under_its_10k_limit(self):
-        from parrot.clients.nova import NovaClient
+        from parrot.clients.amazon.nova import NovaClient
+
         assert NovaClient()._resolve_max_tokens(None, "us.amazon.nova-pro-v1:0", for_invoke=True) == 8192
 
     def test_nova_2_lite_gets_its_larger_limit(self):
-        from parrot.clients.nova import NovaClient
+        from parrot.clients.amazon.nova import NovaClient
+
         assert NovaClient()._resolve_max_tokens(None, "us.amazon.nova-2-lite-v1:0", for_invoke=True) == 32768
 
 
@@ -563,30 +579,31 @@ class TestAnthropicNonStreamingCeiling:
     NON_STREAMING_CEILING = 128_000 * 600 // 3600  # 21_333
 
     def test_default_sits_at_the_sdk_ceiling(self):
-        from parrot.clients.claude import AnthropicClient
+        from parrot.clients.anthropic import AnthropicClient
+
         assert AnthropicClient._default_max_tokens == self.NON_STREAMING_CEILING
 
-    @pytest.mark.parametrize(
-        "model", ["claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5-20251001"]
-    )
+    @pytest.mark.parametrize("model", ["claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5-20251001"])
     def test_no_model_resolves_above_the_ceiling(self, model):
-        from parrot.clients.claude import AnthropicClient
+        from parrot.clients.anthropic import AnthropicClient
+
         budget = AnthropicClient()._resolve_max_tokens(None, model, for_invoke=True)
         assert budget <= self.NON_STREAMING_CEILING
 
     def test_the_ceiling_is_the_transports_not_the_models(self):
         # boto3 Converse has no such guard, so the same model gets far more room.
-        from parrot.clients.bedrock import BedrockConverseClient
-        from parrot.clients.claude import AnthropicClient
-        assert (
-            BedrockConverseClient()._resolve_max_tokens(None, "claude-opus-5")
-            > AnthropicClient()._resolve_max_tokens(None, "claude-opus-5")
-        )
+        from parrot.clients.amazon.bedrock import BedrockConverseClient
+        from parrot.clients.anthropic import AnthropicClient
+
+        assert BedrockConverseClient()._resolve_max_tokens(
+            None, "claude-opus-5"
+        ) > AnthropicClient()._resolve_max_tokens(None, "claude-opus-5")
 
 
 # ---------------------------------------------------------------------------
 # Google invoke(): reasoning is switched off where it earns nothing
 # ---------------------------------------------------------------------------
+
 
 def _google_client(model="gemini-3.1-pro-preview"):
     from parrot.clients.google.client import GoogleGenAIClient
@@ -610,9 +627,7 @@ def _google_response(text="hello"):
     part = SimpleNamespace(text=text)
     content = SimpleNamespace(parts=[part])
     candidate = SimpleNamespace(content=content, finish_reason="STOP")
-    um = SimpleNamespace(
-        prompt_token_count=1, candidates_token_count=1, total_token_count=2
-    )
+    um = SimpleNamespace(prompt_token_count=1, candidates_token_count=1, total_token_count=2)
     return SimpleNamespace(candidates=[candidate], text=text, usage_metadata=um)
 
 

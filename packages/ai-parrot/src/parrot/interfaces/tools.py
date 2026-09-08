@@ -318,7 +318,7 @@ class ToolInterface:
         Configuration of LLM at runtime (during conversation/ask methods)
         """
         config = self._resolve_llm_config(llm, **kwargs)
-        llm = self._create_llm_client(config, self.conversation_memory)
+        llm = self._create_llm_client(config)
         try:
             if self.tool_manager and hasattr(llm, "tool_manager"):
                 self.sync_tools(llm)
@@ -338,6 +338,12 @@ class ToolInterface:
         """
         try:
             if cls := SUPPORTED_CLIENTS.get(llm.lower(), None):
+                # FEAT-523 (TASK-2852): a provider registered via a real
+                # `parrot.clients` entry point is stored as `ep.load`
+                # itself — a zero-arg callable, not the class directly.
+                # Resolve it the same way LLMFactory.create() does.
+                if callable(cls) and not isinstance(cls, type):
+                    cls = cls()
                 return cls(model=model, **kwargs)
             raise ValueError(f"Unsupported LLM: {llm}")
         except Exception:

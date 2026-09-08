@@ -29,6 +29,59 @@ jobs:
       - name: Check registry freshness
         run: uv run python scripts/generate_tool_registry.py --check
 
+      # FEAT-522: `generate_a2ui_css.py` shells out to the Tailwind v4 CLI
+      # (npm install into an isolated temp dir, never this repo's own
+      # node_modules — see the script's own `_run_tailwind_cli()` docstring)
+      # — this job otherwise only sets up Python/uv, so Node.js must be
+      # provisioned explicitly. Mirrors release.yml's `actions/setup-node@v4`
+      # pattern for consistency (same pinned major version).
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Check A2UI Tailwind CSS freshness (FEAT-522)
+        run: uv run python scripts/generate_a2ui_css.py --check
+
+      # FEAT-522 (spec §3 Module 6): a second, distinct check from the one
+      # above — catches drift that happens purely from a `folium` version
+      # bump in pyproject.toml/uv.lock (no `interactive_html.py`/vendored-
+      # asset code change at all). Introspects the CI runner's ACTUALLY-
+      # installed `folium` package's live `default_js`/`default_css` names
+      # (same assertion shape as TASK-2785's
+      # `test_all_folium_default_resources_have_a_vendored_path` unit test,
+      # run here as a CI gate). `ai-parrot-visualizations`'s `map` extra
+      # (folium) is not part of the workspace-wide sync above, so it is
+      # synced explicitly, scoped to this one step.
+      - name: Sync ai-parrot-visualizations map extra (FEAT-522)
+        run: uv sync --package ai-parrot-visualizations --extra map
+
+      - name: Check vendored map asset freshness (FEAT-522)
+        run: |
+          uv run python -c "
+          import folium
+          import folium.plugins as fp
+
+          from parrot.outputs.a2ui_renderers._map_vendor import VENDORED_ASSET_PATHS
+
+          m = folium.Map()
+          mc = fp.MarkerCluster()
+          names = {n for n, _ in m.default_js} | {n for n, _ in m.default_css}
+          names |= {n for n, _ in mc.default_js} | {n for n, _ in mc.default_css}
+          missing_names = sorted(names - set(VENDORED_ASSET_PATHS))
+          missing_files = sorted(
+              n for n in names if n in VENDORED_ASSET_PATHS and not VENDORED_ASSET_PATHS[n].exists()
+          )
+          if missing_names or missing_files:
+              print('Vendored map assets are STALE relative to the installed folium package.')
+              if missing_names:
+                  print(f'  folium resource name(s) with no vendored mapping: {missing_names}')
+              if missing_files:
+                  print(f'  Mapped but missing on disk: {missing_files}')
+              raise SystemExit(1)
+          print('Vendored map assets are up to date.')
+          "
+
       # FEAT-387: fails the build on any NEW TASK-<NNN> collision (a task
       # number reused across two different features). scripts/sdd/.collision_baseline.json
       # is a one-time baseline exception listing every TASK-ID collision that
@@ -121,8 +174,115 @@ jobs:
       - name: Scaffold NavConfig environment
         run: mkdir -p env/dev && touch env/dev/.env
 
+      # FEAT-532: this job installs `wiki-languages`, which now includes
+      # `tree-sitter-luau` — verify the grammar actually imports AND
+      # parses BEFORE running any test, as a hard, standalone gate. Every
+      # Luau/Roblox test that needs the grammar is written with a
+      # `pytestmark = pytest.mark.skipif(get_parser("luau") is None, ...)`
+      # guard, which is correct for a machine where the extra is genuinely
+      # absent — but would let a BROKEN wheel install silently skip every
+      # one of those tests right here, in the one job meant to exercise
+      # them for real, and still report green. Failing fast here means a
+      # later "0 passed, N skipped" in this job is never mistaken for success.
+      - name: Verify Luau grammar imports and parses (FEAT-532)
+        run: |
+          uv run python -c "
+          from tree_sitter import Language, Parser
+          import tree_sitter_luau
+          lang = Language(tree_sitter_luau.language())
+          parser = Parser(lang)
+          tree = parser.parse(b'return 1')
+          assert tree is not None and tree.root_node is not None
+          print('tree-sitter-luau import/parse OK')
+          "
+
       - name: Run wiki tests with both extras installed
         run: uv run pytest tests/knowledge/wiki/ -q --tb=short --continue-on-collection-errors
+
+      # FEAT-532: the broad sweep above uses `--continue-on-collection-errors`
+      # and pytest's default summary doesn't fail the job on skips — so
+      # re-run the Luau/Roblox-specific suites in isolation and fail
+      # explicitly if anything skipped. With the grammar-presence gate
+      # above already green, a skip here can only mean a regression in
+      # this job's own setup, never "the extra was never really installed".
+      - name: Confirm no Luau/Roblox tests were skipped (grammar is present)
+        run: |
+          uv run pytest tests/knowledge/wiki/languages/test_luau.py \
+            tests/knowledge/wiki/languages/test_treesitter.py \
+            tests/knowledge/wiki/languages/test_registry.py \
+            tests/knowledge/wiki/roblox/ \
+            -v --tb=short 2>&1 | tee /tmp/luau-focused-tests.log
+          if grep -q "SKIPPED" /tmp/luau-focused-tests.log; then
+            echo "::error::Luau/Roblox test(s) were skipped even though tree-sitter-luau is installed and verified above."
+            exit 1
+          fi
+
+      # FEAT-532 TASK-2896: the measured resource-policy benchmark is run
+      # here too, wrapped in an EXTERNAL `timeout` (not a new pytest
+      # plugin — this job already has `timeout` from coreutils) so a
+      # genuine parser regression that reintroduces a hang cannot block
+      # this job indefinitely; it fails after 120s instead.
+      - name: Run bounded Luau parser resource benchmark (FEAT-532 TASK-2896)
+        run: |
+          mkdir -p artifacts/logs
+          timeout 120 uv run python scripts/benchmarks/luau_parser_limits.py \
+            --deadline-seconds 5.0 \
+            --out artifacts/logs/ci-luau-parser-limits.json
+
+      - name: Upload Luau CI logs (FEAT-532)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: luau-ci-logs
+          path: |
+            /tmp/luau-focused-tests.log
+            artifacts/logs/ci-luau-parser-limits.json
+          retention-days: 14
+          if-no-files-found: ignore
+
+  # FEAT-532: `test-wiki-extras` above proves the Luau grammar path works
+  # end to end; this job proves the COMPLEMENT — the bounded heuristic
+  # fallback still works correctly even when OTHER wiki extras (here,
+  # `wiki-structural`/ast-grep) ARE installed, so a partial-extras
+  # environment degrades on Luau specifically, not everywhere at once.
+  test-wiki-luau-fallback:
+    name: "Test Luau bounded heuristic fallback (wiki-languages absent)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      # Deliberately NO `--extra wiki-languages` — tree-sitter-luau (and
+      # every other grammar wheel) stays absent, while `wiki-structural`
+      # IS installed, matching "even when other extras are installed".
+      - name: Sync core package with wiki-structural only
+        run: uv sync --package ai-parrot --extra wiki-structural
+
+      - name: Scaffold NavConfig environment
+        run: mkdir -p env/dev && touch env/dev/.env
+
+      - name: Verify Luau grammar is genuinely absent
+        run: |
+          if uv run python -c "import tree_sitter_luau" 2>/dev/null; then
+            echo "::error::tree_sitter_luau imported but this job must not have it installed."
+            exit 1
+          fi
+          echo "tree_sitter_luau absent, as expected."
+
+      - name: Run Luau/Roblox tests on the bounded heuristic path
+        run: |
+          uv run pytest tests/knowledge/wiki/languages/test_luau.py \
+            tests/knowledge/wiki/roblox/ \
+            -q --tb=short --continue-on-collection-errors
 
   test-navrules:
     name: "Test navrules (rust=${{ matrix.rust }})"

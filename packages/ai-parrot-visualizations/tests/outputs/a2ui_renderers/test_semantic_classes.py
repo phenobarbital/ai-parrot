@@ -3,6 +3,7 @@ resolution precedence (FEAT-493, TASK-2710)."""
 
 import logging
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -181,4 +182,115 @@ class TestGoldensUntouched:
         # (TASK-2715); catalog/parrot/__init__.py registering the new
         # `filterbar` module in its import list is the one other
         # unavoidable touch — every new catalog component requires it.
-        assert all("filterbar" in c or c.endswith("catalog/parrot/__init__.py") for c in changed), changed
+        #
+        # FEAT-527 permits three further, explicit, spec-sanctioned classes
+        # of change:
+        # 1. TASK-2859/2860: "FEAT-493 froze them for its scope; this
+        #    feature legitimately changes lower() output for
+        #    Infographic/Chart/KPICard/DataTable" (spec §7 "Golden
+        #    fixtures"). Presentation-parity props (chart types/layout,
+        #    KPICard icon/color, DataTable style, Infographic half-width Row
+        #    grouping) are additive and gated on the value being present, so
+        #    none of the FROZEN goldens actually changed byte-for-byte —
+        #    only the `lower()` source allowing the new behavior did.
+        # 2. TASK-2862: the generic `tool_only` registration gate
+        #    (`catalog/base.py`, `catalog/__init__.py`) — additive, mirrors
+        #    the existing `requires_actions` gate mechanism.
+        # 3. TASK-2863: a brand-new component, `HtmlDocument` (spec G5) —
+        #    same "new component" precedent as `filterbar.py`.
+        _FEAT_527_FROZEN_LOWER_FILES = (
+            "catalog/parrot/chart.py",
+            "catalog/parrot/datatable.py",
+            "catalog/parrot/infographic.py",
+            "catalog/parrot/kpicard.py",
+        )
+        _FEAT_527_TOOL_ONLY_GATE_FILES = (
+            "catalog/base.py",
+            "catalog/__init__.py",
+        )
+        # FEAT-529 Module 0 (TASK-2881): the viz-core catalog SHELL —
+        # spec-sanctioned, additive-only changes that rekey `_CATALOG` by
+        # `(catalog_id, name)` and scope export/instructions per catalog.
+        # No existing `lower()` is touched; no existing golden changes.
+        # TASK-2885 (Module 2) adds the ONE new golden this feature owns:
+        # `golden/graph_lowered.json` — same "new component, new golden"
+        # precedent as `filterbar`/`htmldocument` above.
+        _FEAT_529_VIZ_CORE_SHELL_FILES = (
+            "catalog/__init__.py",
+            "catalog/export.py",
+        )
+        assert all(
+            "filterbar" in c
+            or "htmldocument" in c
+            or "viz_core" in c
+            or "graph_lowered" in c
+            or c.endswith("catalog/parrot/__init__.py")
+            or c.endswith(_FEAT_527_FROZEN_LOWER_FILES)
+            or c.endswith(_FEAT_527_TOOL_ONLY_GATE_FILES)
+            or c.endswith(_FEAT_529_VIZ_CORE_SHELL_FILES)
+            for c in changed
+        ), changed
+
+
+class TestTailwindCoverageIntegration:
+    """FEAT-522 TASK-2790: DesignSystem.stylesheet() folds in the generated
+    Tailwind CSS (design_system/tailwind.generated.css, TASK-2789's output)."""
+
+    def test_stylesheet_includes_tailwind_generated_rules(self):
+        sheet = DesignSystem.stylesheet()
+        assert ".a2ui-col" in sheet  # a known base-primitive selector from TASK-2789's output
+
+    def test_stylesheet_degrades_gracefully_if_tailwind_css_missing(self, monkeypatch):
+        """`_read_asset()`'s existing missing-file contract (None -> `""`)
+        must keep `stylesheet()` returning a normal, non-empty sheet — never
+        raising — even if `tailwind.generated.css` is absent."""
+        import parrot.outputs.formats.assets.design_system as design_system_module
+
+        monkeypatch.setattr(design_system_module, "_TAILWIND_CSS", "")
+        DesignSystem._cache.clear()
+        try:
+            sheet = DesignSystem.stylesheet()
+            assert sheet  # base/components CSS + theme vars still present
+            assert ".a2ui-col" not in sheet  # the Tailwind-only rule is gone
+        finally:
+            DesignSystem._cache.clear()
+
+
+def _generate_a2ui_css_module():
+    """Import `scripts/generate_a2ui_css.py` as a module (FEAT-522 TASK-2793).
+
+    `scripts/` isn't part of any installed package's import path — mirrors
+    `tests/scripts/test_generate_tool_registry.py`'s own
+    `sys.path.insert(0, str(Path(__file__).resolve().parents[N] / "scripts"))`
+    pattern so this test reuses the REAL AST-scanning logic (never a
+    hand-duplicated copy that could drift from the actual generator).
+    """
+    scripts_dir = str(_REPO_ROOT / "scripts")
+    if scripts_dir not in sys.path:
+        sys.path.insert(0, scripts_dir)
+    import generate_a2ui_css
+
+    return generate_a2ui_css
+
+
+class TestTailwindClassCoverage:
+    """FEAT-522 TASK-2793: coverage-audit — every class
+    `interactive_html.py` can emit has a real CSS rule somewhere in
+    `DesignSystem.stylesheet()`'s output (not necessarily from the
+    Tailwind-generated file specifically — `kpi-grid` is deliberately
+    excluded from Tailwind generation, TASK-2788's follow-up fix, but is
+    still covered via `components.css`/`layout-*.css`)."""
+
+    def test_all_a2ui_classes_have_css_rule(self):
+        gen = _generate_a2ui_css_module()
+        # Post-review fix: union in the curated `a2ui-<role>` classes too
+        # (`_render_prim_Text`'s `f"a2ui-{role}"` is a dynamically-
+        # interpolated, non-literal class the plain AST scan alone can
+        # never see — see `scan_dynamic_role_classes()`'s docstring).
+        # Without this union, this test would be self-referentially blind
+        # to the exact same gap `generate_a2ui_css.py`'s generator has,
+        # rather than actually verifying the renderer's real output.
+        classes = gen.scan_classes(gen.INTERACTIVE_HTML_PATH) | gen.scan_dynamic_role_classes(gen.SEMANTICS_PATH)
+        sheet = DesignSystem.stylesheet()
+        missing = sorted(cls for cls in classes if f".{cls}" not in sheet)
+        assert not missing, f"Classes with no CSS rule in DesignSystem.stylesheet(): {missing}"

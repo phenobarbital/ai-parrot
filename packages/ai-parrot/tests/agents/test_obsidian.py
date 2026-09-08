@@ -21,7 +21,7 @@ from parrot.agents.obsidian import (
     _filters_to_tool_args,
     _merge_filters,
 )
-from parrot.clients.codex_agent import CodexAgentRunOptions, OpenAICodexClient
+from parrot.clients.openai.codex_agent import CodexAgentRunOptions, OpenAICodexClient
 from pydantic import ValidationError
 
 
@@ -90,37 +90,25 @@ class TestNoteTitleGeneration:
 
     def test_basic_title_generation(self):
         """Generate title from date and meeting title."""
-        title = FirefliesObsidianAgent._make_note_title(
-            "2026-08-16",
-            "Quarterly Planning"
-        )
+        title = FirefliesObsidianAgent._make_note_title("2026-08-16", "Quarterly Planning")
         assert title == "2026-08-16-quarterly-planning"
 
     def test_title_with_special_chars(self):
         """Handle special characters in title."""
-        title = FirefliesObsidianAgent._make_note_title(
-            "2026-08-16",
-            "Q3 Planning / Review & Analysis"
-        )
+        title = FirefliesObsidianAgent._make_note_title("2026-08-16", "Q3 Planning / Review & Analysis")
         assert "-" in title
         assert "/" not in title
         assert "&" not in title
 
     def test_title_with_iso_datetime(self):
         """Parse ISO datetime format."""
-        title = FirefliesObsidianAgent._make_note_title(
-            "2026-08-16T14:30:00",
-            "Team Standup"
-        )
+        title = FirefliesObsidianAgent._make_note_title("2026-08-16T14:30:00", "Team Standup")
         assert title.startswith("2026-08-16")
         assert "team-standup" in title
 
     def test_title_fallback_to_utc(self):
         """Fallback to UTC when date parsing fails."""
-        title = FirefliesObsidianAgent._make_note_title(
-            "invalid-date",
-            "Test Meeting"
-        )
+        title = FirefliesObsidianAgent._make_note_title("invalid-date", "Test Meeting")
         # Should contain date part (even if today's date)
         assert title.count("-") >= 2
 
@@ -130,26 +118,17 @@ class TestAnalysisPromptBuilding:
 
     def test_minimal_granularity(self):
         """Minimal granularity keeps prompt concise."""
-        prompt = FirefliesObsidianAgent._build_analysis_prompt(
-            "Test transcript content",
-            granularity="minimal"
-        )
+        prompt = FirefliesObsidianAgent._build_analysis_prompt("Test transcript content", granularity="minimal")
         assert "minimal" in prompt.lower() or "essential" in prompt.lower()
 
     def test_standard_granularity(self):
         """Standard granularity is balanced."""
-        prompt = FirefliesObsidianAgent._build_analysis_prompt(
-            "Test transcript content",
-            granularity="standard"
-        )
+        prompt = FirefliesObsidianAgent._build_analysis_prompt("Test transcript content", granularity="standard")
         assert "standard" in prompt.lower() or "balanced" in prompt.lower()
 
     def test_detailed_granularity(self):
         """Detailed granularity covers comprehensive analysis."""
-        prompt = FirefliesObsidianAgent._build_analysis_prompt(
-            "Test transcript content",
-            granularity="detailed"
-        )
+        prompt = FirefliesObsidianAgent._build_analysis_prompt("Test transcript content", granularity="detailed")
         assert "comprehensive" in prompt.lower() or "detailed" in prompt.lower()
 
     def test_prompt_includes_transcript(self):
@@ -189,9 +168,7 @@ class TestAnalysisResponseParsing:
             def __init__(self, msg):
                 self.message = msg
 
-        result = FirefliesObsidianAgent._parse_analysis_response(
-            MockAIMessage(response_text)
-        )
+        result = FirefliesObsidianAgent._parse_analysis_response(MockAIMessage(response_text))
 
         assert "Q3 planning" in result["summary"]
         assert len(result["follow_ups"]) == 3
@@ -206,9 +183,7 @@ class TestAnalysisResponseParsing:
             def __init__(self, msg):
                 self.message = msg
 
-        result = FirefliesObsidianAgent._parse_analysis_response(
-            MockAIMessage(response_text)
-        )
+        result = FirefliesObsidianAgent._parse_analysis_response(MockAIMessage(response_text))
 
         assert isinstance(result["summary"], str)
         assert isinstance(result["follow_ups"], list)
@@ -281,9 +256,7 @@ class TestSyncMethod:
     @pytest.mark.asyncio
     async def test_sync_handles_error(self, agent):
         """Sync handles errors gracefully."""
-        agent.add_fireflies_mcp_server = AsyncMock(
-            side_effect=Exception("MCP connection failed")
-        )
+        agent.add_fireflies_mcp_server = AsyncMock(side_effect=Exception("MCP connection failed"))
 
         report = await agent.sync_fireflies_transcripts()
 
@@ -313,13 +286,9 @@ class TestSummarizeMethod:
     async def test_summarize_reads_note(self, agent):
         """Summarize reads note from vault."""
         agent.obsidian_toolkit = AsyncMock()
-        agent.obsidian_toolkit.read_note = AsyncMock(
-            return_value={"content": "Meeting transcript"}
-        )
+        agent.obsidian_toolkit.read_note = AsyncMock(return_value={"content": "Meeting transcript"})
         agent.client = AsyncMock()
-        agent.client.complete = AsyncMock(
-            return_value=MagicMock(message="## Summary\nTest\n\n## Follow-ups\n1. Item")
-        )
+        agent.client.complete = AsyncMock(return_value=MagicMock(message="## Summary\nTest\n\n## Follow-ups\n1. Item"))
 
         result = await agent.summarize_transcript("test-meeting")
 
@@ -329,13 +298,9 @@ class TestSummarizeMethod:
     async def test_summarize_calls_llm(self, agent):
         """Summarize calls LLM for analysis."""
         agent.obsidian_toolkit = AsyncMock()
-        agent.obsidian_toolkit.read_note = AsyncMock(
-            return_value={"content": "Meeting transcript"}
-        )
+        agent.obsidian_toolkit.read_note = AsyncMock(return_value={"content": "Meeting transcript"})
         agent.client = AsyncMock()
-        agent.client.complete = AsyncMock(
-            return_value=MagicMock(message="## Summary\nTest")
-        )
+        agent.client.complete = AsyncMock(return_value=MagicMock(message="## Summary\nTest"))
 
         await agent.summarize_transcript("test-meeting")
 
@@ -345,9 +310,7 @@ class TestSummarizeMethod:
     async def test_summarize_updates_note(self, agent):
         """Summarize updates note with analysis."""
         agent.obsidian_toolkit = AsyncMock()
-        agent.obsidian_toolkit.read_note = AsyncMock(
-            return_value={"content": "Transcript"}
-        )
+        agent.obsidian_toolkit.read_note = AsyncMock(return_value={"content": "Transcript"})
         agent.obsidian_toolkit.update_note = AsyncMock()
         agent.client = AsyncMock()
         agent.client.complete = AsyncMock(
@@ -475,9 +438,7 @@ class TestGetExistingMeetings:
     async def test_handle_list_error(self, agent):
         """Handle errors when listing notes."""
         agent.obsidian_toolkit = AsyncMock()
-        agent.obsidian_toolkit.list_notes = AsyncMock(
-            side_effect=Exception("List failed")
-        )
+        agent.obsidian_toolkit.list_notes = AsyncMock(side_effect=Exception("List failed"))
 
         titles = await agent._get_existing_meeting_titles()
 
@@ -561,9 +522,7 @@ class TestHasAnalysis:
     @pytest.mark.asyncio
     async def test_detects_existing_analysis(self, agent):
         """A note carrying the Analysis heading reports True."""
-        enhanced = agent._append_analysis_section(
-            "Transcript body", "A summary", ["Q1"], ["Insight"]
-        )
+        enhanced = agent._append_analysis_section("Transcript body", "A summary", ["Q1"], ["Insight"])
         await agent.obsidian_toolkit.create_note(
             path=f"{agent.meetings_folder}/2026-08-19-analyzed.md",
             content=enhanced,
@@ -583,9 +542,7 @@ class TestSummarizePendingTranscripts:
     @pytest.mark.asyncio
     async def test_summarizes_every_pending_note(self, agent):
         """All notes without analysis are summarized, not just the newest."""
-        agent._get_existing_meeting_titles = AsyncMock(
-            return_value={"2026-08-19-a", "2026-08-19-b", "2026-08-18-c"}
-        )
+        agent._get_existing_meeting_titles = AsyncMock(return_value={"2026-08-19-a", "2026-08-19-b", "2026-08-18-c"})
         agent._has_analysis = AsyncMock(return_value=False)
         agent.summarize_transcript = AsyncMock(
             return_value={"status": "ok", "summary": "s", "follow_ups": [], "insights": []}
@@ -600,9 +557,7 @@ class TestSummarizePendingTranscripts:
     @pytest.mark.asyncio
     async def test_skips_already_analyzed_notes(self, agent):
         """Notes that already carry an Analysis section are skipped."""
-        agent._get_existing_meeting_titles = AsyncMock(
-            return_value={"2026-08-19-a", "2026-08-19-b"}
-        )
+        agent._get_existing_meeting_titles = AsyncMock(return_value={"2026-08-19-a", "2026-08-19-b"})
         agent._has_analysis = AsyncMock(side_effect=[True, False])
         agent.summarize_transcript = AsyncMock(
             return_value={"status": "ok", "summary": "s", "follow_ups": [], "insights": []}
@@ -631,9 +586,7 @@ class TestSummarizePendingTranscripts:
     @pytest.mark.asyncio
     async def test_limit_bounds_llm_calls(self, agent):
         """limit caps how many notes are analyzed per run."""
-        agent._get_existing_meeting_titles = AsyncMock(
-            return_value={f"2026-08-19-{i}" for i in range(5)}
-        )
+        agent._get_existing_meeting_titles = AsyncMock(return_value={f"2026-08-19-{i}" for i in range(5)})
         agent._has_analysis = AsyncMock(return_value=False)
         agent.summarize_transcript = AsyncMock(
             return_value={"status": "ok", "summary": "s", "follow_ups": [], "insights": []}
@@ -653,9 +606,7 @@ class TestSummarizePendingTranscripts:
             return_value={"status": "ok", "summary": "s", "follow_ups": [], "insights": []}
         )
 
-        outcome = await agent.summarize_pending_transcripts(
-            note_titles=["2026-08-19-explicit"]
-        )
+        outcome = await agent.summarize_pending_transcripts(note_titles=["2026-08-19-explicit"])
 
         assert outcome["analyzed"] == ["2026-08-19-explicit"]
         agent._get_existing_meeting_titles.assert_not_awaited()
@@ -663,9 +614,7 @@ class TestSummarizePendingTranscripts:
     @pytest.mark.asyncio
     async def test_failures_are_collected_not_raised(self, agent):
         """One failing note does not abort the batch."""
-        agent._get_existing_meeting_titles = AsyncMock(
-            return_value={"2026-08-19-a", "2026-08-19-b"}
-        )
+        agent._get_existing_meeting_titles = AsyncMock(return_value={"2026-08-19-a", "2026-08-19-b"})
         agent._has_analysis = AsyncMock(return_value=False)
         agent.summarize_transcript = AsyncMock(
             side_effect=[
@@ -717,6 +666,7 @@ class TestStripListMarker:
 
     def test_rendered_section_has_single_bullet(self):
         """End-to-end: parsed items render as one '- ' each."""
+
         class MockAIMessage:
             def __init__(self, msg):
                 self.message = msg
@@ -742,21 +692,15 @@ class TestStripAnalysisSection:
     def test_strips_appended_block(self):
         """The block written by _append_analysis_section round-trips away."""
         transcript = "Speaker A: hello\nSpeaker B: hi"
-        enhanced = FirefliesObsidianAgent._append_analysis_section(
-            transcript, "A summary", ["Q1"], ["Insight"]
-        )
+        enhanced = FirefliesObsidianAgent._append_analysis_section(transcript, "A summary", ["Q1"], ["Insight"])
 
-        assert (
-            FirefliesObsidianAgent._strip_analysis_section(enhanced) == transcript
-        )
+        assert FirefliesObsidianAgent._strip_analysis_section(enhanced) == transcript
 
     def test_plain_transcript_untouched(self):
         """A note with no Analysis block is returned unchanged."""
         transcript = "Speaker A: hello"
 
-        assert (
-            FirefliesObsidianAgent._strip_analysis_section(transcript) == transcript
-        )
+        assert FirefliesObsidianAgent._strip_analysis_section(transcript) == transcript
 
     @pytest.mark.asyncio
     async def test_reanalysis_keeps_one_section(self, agent):
@@ -773,17 +717,13 @@ class TestStripAnalysisSection:
 
         agent.client = MagicMock()
         agent.client.complete = AsyncMock(
-            return_value=MockAIMessage(
-                "## Summary\nA summary.\n\n## Follow-ups\n1. Q?\n\n## Insights\n- I\n"
-            )
+            return_value=MockAIMessage("## Summary\nA summary.\n\n## Follow-ups\n1. Q?\n\n## Insights\n- I\n")
         )
 
         await agent.summarize_transcript(note_title)
         await agent.summarize_transcript(note_title)
 
-        note = await agent.obsidian_toolkit.read_note(
-            path=f"{agent.meetings_folder}/{note_title}"
-        )
+        note = await agent.obsidian_toolkit.read_note(path=f"{agent.meetings_folder}/{note_title}")
         assert note["content"].count(FirefliesObsidianAgent.ANALYSIS_HEADING) == 1
 
 
@@ -827,9 +767,7 @@ class TestFiltersToToolArgs:
     """Test the _filters_to_tool_args() field-name mapping (TASK-2346)."""
 
     def test_maps_camel_case_fields(self):
-        f = FirefliesFilters(
-            from_date="2026-08-01", to_date="2026-08-31", channel_id="abc123"
-        )
+        f = FirefliesFilters(from_date="2026-08-01", to_date="2026-08-31", channel_id="abc123")
         args = _filters_to_tool_args(f)
         assert args["fromDate"] == "2026-08-01"
         assert args["toDate"] == "2026-08-31"
@@ -923,9 +861,7 @@ class TestSyncPagination:
     async def test_no_filters_single_call_unchanged(self, agent):
         """Zero-filter callers still make exactly one tool call."""
         agent._ensure_fireflies_mcp = AsyncMock()
-        agent._call_fireflies_tool = AsyncMock(
-            return_value=MagicMock(success=True, result="")
-        )
+        agent._call_fireflies_tool = AsyncMock(return_value=MagicMock(success=True, result=""))
         agent._get_existing_meeting_titles = AsyncMock(return_value=set())
 
         await agent.sync_fireflies_transcripts(limit=10)
@@ -943,9 +879,7 @@ class TestSyncPagination:
     async def test_filters_merge_into_tool_args(self, agent):
         """Passing filters maps to the correct camelCase tool args."""
         agent._ensure_fireflies_mcp = AsyncMock()
-        agent._call_fireflies_tool = AsyncMock(
-            return_value=MagicMock(success=True, result="")
-        )
+        agent._call_fireflies_tool = AsyncMock(return_value=MagicMock(success=True, result=""))
         agent._get_existing_meeting_titles = AsyncMock(return_value=set())
 
         await agent.sync_fireflies_transcripts(
@@ -1001,10 +935,7 @@ class TestSyncPagination:
 
         assert report["synced"] == 5
         # Only one list-fetch call (the per-transcript fetches follow after)
-        list_calls = [
-            c for c in agent._call_fireflies_tool.call_args_list
-            if c.args[0] == "fireflies_get_transcripts"
-        ]
+        list_calls = [c for c in agent._call_fireflies_tool.call_args_list if c.args[0] == "fireflies_get_transcripts"]
         assert len(list_calls) == 1
 
     @pytest.mark.asyncio
@@ -1035,16 +966,16 @@ class TestIncludeSummary:
         agent._ensure_fireflies_mcp = AsyncMock()
         agent.obsidian_toolkit = AsyncMock()
         agent._get_existing_meeting_titles = AsyncMock(return_value=set())
-        agent._call_fireflies_tool = AsyncMock(side_effect=[
-            MagicMock(success=True, result='  - id: "id1"'),
-            MagicMock(success=True, result="transcript text"),
-        ])
+        agent._call_fireflies_tool = AsyncMock(
+            side_effect=[
+                MagicMock(success=True, result='  - id: "id1"'),
+                MagicMock(success=True, result="transcript text"),
+            ]
+        )
 
         await agent.sync_fireflies_transcripts(limit=1)
 
-        called_tools = [
-            c.args[0] for c in agent._call_fireflies_tool.call_args_list
-        ]
+        called_tools = [c.args[0] for c in agent._call_fireflies_tool.call_args_list]
         assert "fireflies_get_summary" not in called_tools
 
     @pytest.mark.asyncio
@@ -1053,11 +984,13 @@ class TestIncludeSummary:
         agent._ensure_fireflies_mcp = AsyncMock()
         agent.obsidian_toolkit = AsyncMock()
         agent._get_existing_meeting_titles = AsyncMock(return_value=set())
-        agent._call_fireflies_tool = AsyncMock(side_effect=[
-            MagicMock(success=True, result='  - id: "id1"'),
-            MagicMock(success=True, result="transcript text"),
-            MagicMock(success=True, result="native summary text"),
-        ])
+        agent._call_fireflies_tool = AsyncMock(
+            side_effect=[
+                MagicMock(success=True, result='  - id: "id1"'),
+                MagicMock(success=True, result="transcript text"),
+                MagicMock(success=True, result="native summary text"),
+            ]
+        )
 
         await agent.sync_fireflies_transcripts(limit=1, include_summary=True)
 
@@ -1072,11 +1005,13 @@ class TestIncludeSummary:
         agent._ensure_fireflies_mcp = AsyncMock()
         agent.obsidian_toolkit = AsyncMock()
         agent._get_existing_meeting_titles = AsyncMock(return_value=set())
-        agent._call_fireflies_tool = AsyncMock(side_effect=[
-            MagicMock(success=True, result='  - id: "id1"'),
-            MagicMock(success=True, result="transcript text"),
-            Exception("summary fetch failed"),
-        ])
+        agent._call_fireflies_tool = AsyncMock(
+            side_effect=[
+                MagicMock(success=True, result='  - id: "id1"'),
+                MagicMock(success=True, result="transcript text"),
+                Exception("summary fetch failed"),
+            ]
+        )
 
         report = await agent.sync_fireflies_transcripts(limit=1, include_summary=True)
 
@@ -1092,11 +1027,13 @@ class TestIncludeSummary:
         agent._ensure_fireflies_mcp = AsyncMock()
         agent.obsidian_toolkit = AsyncMock()
         agent._get_existing_meeting_titles = AsyncMock(return_value=set())
-        agent._call_fireflies_tool = AsyncMock(side_effect=[
-            MagicMock(success=True, result='  - id: "id1"'),
-            MagicMock(success=True, result="transcript text"),
-            MagicMock(success=False, result=""),
-        ])
+        agent._call_fireflies_tool = AsyncMock(
+            side_effect=[
+                MagicMock(success=True, result='  - id: "id1"'),
+                MagicMock(success=True, result="transcript text"),
+                MagicMock(success=False, result=""),
+            ]
+        )
 
         report = await agent.sync_fireflies_transcripts(limit=1, include_summary=True)
 

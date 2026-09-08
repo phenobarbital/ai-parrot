@@ -77,10 +77,15 @@ from typing import Any
 # registered so lowering/dispatch can resolve every component name.
 import parrot.outputs.a2ui.catalog.basic
 import parrot.outputs.a2ui.catalog.parrot  # noqa: F401 — ensure registration
+import parrot.outputs.a2ui.catalog.viz_core  # noqa: F401 — ensure Graph registration (FEAT-529)
 from parrot.outputs.a2ui.artifacts import RenderedArtifact
 from parrot.outputs.a2ui.baking import bake_envelope
 from parrot.outputs.a2ui.catalog import get_component
-from parrot.outputs.a2ui.catalog.base import BasicNode, TabSpec, to_components
+from parrot.outputs.a2ui.catalog.base import BasicNode, DEFAULT_CATALOG_ID, TabSpec, to_components
+from parrot.outputs.a2ui.catalog.basic import BASIC_CATALOG_ID
+from parrot.outputs.a2ui.catalog.viz_core import VIZ_CORE_CATALOG_ID
+from parrot.outputs.a2ui.catalog.viz_core.graph import GraphComponent
+from parrot.outputs.a2ui.graph import MAX_STATIC_NODES, GraphSpec, GraphTooLargeError, to_mermaid
 from parrot.outputs.a2ui.models import Component, ComponentMetadata, CreateSurface
 from parrot.outputs.a2ui.renderers import (
     AbstractA2UIRenderer,
@@ -90,6 +95,8 @@ from parrot.outputs.a2ui.renderers import (
 from parrot.outputs.a2ui.renderers.degrade import degradation_record, degrade
 from parrot.outputs.formats.assets.design_system import DesignSystem
 
+from ._graph_svg import render_graph_svg
+from ._intercept import intercepts
 from ._semantics import (
     is_kpi_row,
     kpi_unit_html,
@@ -101,13 +108,30 @@ from ._semantics import (
 from ._shell import document_shell
 from ._table_format import format_cell_html
 
+# NOTE (post-review, FEAT-522): deliberately NOT a top-level `from .folium_map
+# import build_map_document`. `folium_map.py` builds its `_OFFLINE_URL_MAP`
+# constant eagerly at ITS OWN import time, which requires `folium` to be
+# installed — a top-level import here would make `folium` a hard,
+# unconditional import-time dependency of the ENTIRE `interactive-html`
+# renderer surface (breaking `import interactive_html` for anyone using only
+# Chart/DataTable/Infographic rendering without the optional `map` extra).
+# `build_map_document` is imported lazily inside `_render_map()` instead, so
+# that cost is paid only when a Map component is actually rendered.
+
 logger = logging.getLogger(__name__)
 
 _SURFACE_NAME = "interactive-html"
 
 #: Components intercepted BEFORE lowering — their real (graphics/nested)
-#: rendering is this renderer's own job, not their catalog `lower()`.
-_INTERCEPTED = {"Chart", "DataTable", "Infographic"}
+#: rendering is this renderer's own job, not their catalog `lower()`. All
+#: Parrot catalog, bare-name unambiguous (FEAT-529 Module 0: Graph is
+#: viz-core-only and resolved catalog-aware via `_GRAPH_INTERCEPT_TABLE`
+#: below, not this set).
+_INTERCEPTED = {"Chart", "DataTable", "Infographic", "Map", "HtmlDocument"}
+
+#: The one (catalog_id, name) pair intercepted as a native Graph — used
+#: with the shared catalog-aware `intercepts()` helper (FEAT-529).
+_GRAPH_INTERCEPT_TABLE = frozenset({(VIZ_CORE_CATALOG_ID, "Graph")})
 
 
 def _propagate_extensions(parent: Component, lowered: list[Component]) -> list[Component]:
@@ -136,6 +160,39 @@ def _propagate_extensions(parent: Component, lowered: list[Component]) -> list[C
     return merged_components
 
 
+#: Wire Component-level keys (never part of GraphSpec) — `data` is
+#: deliberately KEPT out of this set: `GraphComponent.lower()` reads it off
+#: `Component.model_extra` itself for its `parrot_graph_data` pass-through
+#: (FEAT-529).
+_GRAPH_COMPONENT_ONLY_KEYS = frozenset(
+    {"id", "component", "catalogId", "child", "children", "weight", "accessibility", "checks", "action", "metadata"}
+)
+
+
+def _strip_graph_component_keys(props: dict[str, Any]) -> dict[str, Any]:
+    """Strip wire Component-level keys from a baked Graph props dict, keeping ``data``."""
+    return {key: value for key, value in props.items() if key not in _GRAPH_COMPONENT_ONLY_KEYS}
+
+
+def _graph_spec_props(props: dict[str, Any]) -> dict[str, Any]:
+    """``_strip_graph_component_keys`` plus ``data`` — a bare GraphSpec's own props."""
+    return {key: value for key, value in _strip_graph_component_keys(props).items() if key != "data"}
+
+
+def _truncate_graph_edge_list(tree: BasicNode) -> None:
+    """Truncate a lowered ``Graph``'s edge-list ``Column`` children to
+    :data:`~parrot.outputs.a2ui.graph.MAX_STATIC_NODES` rows, in place
+    (FEAT-529 oversize-graph fallback)."""
+    column = tree.child
+    if column is None or not isinstance(column.children, list):
+        return
+    for child in column.children:
+        if isinstance(child, BasicNode) and node_extensions(child).get("parrot_role") == "edge-list":
+            if isinstance(child.children, list) and len(child.children) > MAX_STATIC_NODES:
+                child.children = child.children[:MAX_STATIC_NODES]
+            break
+
+
 #: Vendored Chart.js v4.5.1 UMD bundle (MIT license header preserved in the
 #: file itself). Shares the `formats/assets/` placement convention with the
 #: vendored ECharts bundle (`echarts.py`'s `_ECHARTS_JS_PATH`).
@@ -147,14 +204,23 @@ _CHART_JS_PATH = Path(__file__).parent.parent / "formats" / "assets" / "chart.um
 #: never changes at runtime.
 _CHART_JS_SOURCE = _CHART_JS_PATH.read_text(encoding="utf-8")
 
-# A2UI Chart type -> Chart.js chart type.
+# A2UI Chart type -> Chart.js chart type. FEAT-527: donut/radar are Chart.js
+# natives (doughnut/radar); the 5 new types (gauge/funnel/waterfall/heatmap/
+# treemap) have no Chart.js equivalent and degrade to "bar" — see
+# `_UNSUPPORTED_CHART_TYPES` and `_render_chart()`.
 _CHART_TYPE = {
     "bar": "bar",
     "line": "line",
     "area": "line",
     "scatter": "scatter",
     "pie": "pie",
+    "donut": "doughnut",
+    "radar": "radar",
 }
+
+#: Chart types with no Chart.js native equivalent — degrade to "bar" with a
+#: recorded, visible degradation (never silent). FEAT-527.
+_UNSUPPORTED_CHART_TYPES = frozenset({"gauge", "funnel", "waterfall", "heatmap", "treemap"})
 
 _CONTAINER_COMPONENTS = {"Column": "a2ui-col", "Row": "a2ui-row"}
 
@@ -180,7 +246,13 @@ _BEHAVIOR_JS = r"""
     });
   }
 
-  var chartTypeMap = { bar: "bar", line: "line", area: "line", scatter: "scatter", pie: "pie" };
+  // FEAT-527: donut/radar are Chart.js natives; the 5 new types with no
+  // Chart.js equivalent already arrive here pre-degraded to "bar" by
+  // _render_chart() (Python side) — this map only needs the natives.
+  var chartTypeMap = {
+    bar: "bar", line: "line", area: "line", scatter: "scatter", pie: "pie",
+    donut: "doughnut", radar: "radar",
+  };
 
   // Populated as each chart is created below; consulted by the FilterBar
   // runtime (TASK-2716) to re-render a chart's ALREADY-embedded rows
@@ -534,6 +606,7 @@ def _esc(value: Any) -> str:
         supports_actions=False,
         supports_updates=False,
         output="text/html",
+        supported_catalog_ids=[BASIC_CATALOG_ID, DEFAULT_CATALOG_ID, VIZ_CORE_CATALOG_ID],
         supported_components={
             "AudioPlayer",
             "Button",
@@ -556,6 +629,8 @@ def _esc(value: Any) -> str:
             "Chart",
             "DataTable",
             "Infographic",
+            "Map",
+            "Graph",
         },
     ),
 )
@@ -648,6 +723,9 @@ class InteractiveHTMLRenderer(AbstractA2UIRenderer):
             if comp.component in _INTERCEPTED:
                 new_components.append(comp)
                 continue
+            if comp.component == "Graph" and intercepts(_GRAPH_INTERCEPT_TABLE, comp, envelope.catalog_id):
+                new_components.append(comp)
+                continue
             try:
                 entry = get_component(comp.component)
             except KeyError:
@@ -681,22 +759,32 @@ class InteractiveHTMLRenderer(AbstractA2UIRenderer):
     ) -> str:
         name = comp["component"]
         if name == "Chart":
-            return self._render_chart(comp)
+            return self._render_chart(comp, degradations)
         if name == "DataTable":
             return self._render_datatable(comp)
         if name == "Infographic":
-            return self._render_infographic(comp)
+            return self._render_infographic(comp, degradations)
+        if name == "Map":
+            return self._render_map(comp)
+        if name == "HtmlDocument":
+            return self._render_htmldocument(comp)
+        if name == "Graph":
+            return self._render_graph(comp, degradations)
         node = self._reconstruct(comp["id"], by_id)
         return self._render_basic(node, degradations)
 
-    def _render_descriptor(self, descriptor: dict[str, Any]) -> str:
+    def _render_descriptor(self, descriptor: dict[str, Any], degradations: list[dict[str, Any]]) -> str:
         """Render a nested component descriptor (e.g. inside an Infographic section)."""
         name = descriptor.get("component")
         properties = descriptor.get("properties") or {}
         if name == "Chart":
-            return self._render_chart(properties)
+            return self._render_chart(properties, degradations)
         if name == "DataTable":
             return self._render_datatable(properties)
+        if name == "Map":
+            return self._render_map(properties)
+        if name == "HtmlDocument":
+            return self._render_htmldocument(properties)
         try:
             entry = get_component(name)
         except KeyError:
@@ -956,9 +1044,38 @@ class InteractiveHTMLRenderer(AbstractA2UIRenderer):
         label_html = f'<span class="a2ui-field-label">{_esc(label)}</span>' if label else ""
         return f'<div class="a2ui-field">{label_html}<span class="a2ui-field-value">{_esc(value)}</span></div>'
 
-    # -- Chart / DataTable / Infographic (graphics-needing, intercepted) ----
+    # -- Chart / DataTable / Infographic / Map (graphics-needing, intercepted) -
 
-    def _render_chart(self, props: dict[str, Any]) -> str:
+    def _render_map(self, props: dict[str, Any]) -> str:
+        """Render a live, offline-safe Leaflet map ``<iframe>`` from RESOLVED
+        Map properties (FEAT-522).
+
+        Bypasses catalog lowering entirely (``MapComponent.lower()``
+        intentionally degrades to a text layer-summary — real map rendering
+        is a renderer concern, same precedent as ``_render_chart``/
+        ``_render_datatable``). ``props`` is the baked component's own
+        top-level dict (v1.0 — never nested under a "properties" key),
+        mirroring :meth:`_render_chart`'s exact shape.
+
+        Calls the shared, synchronous
+        :func:`~parrot.outputs.a2ui_renderers.folium_map.build_map_document`
+        directly — never ``await FoliumMapRenderer().render(...)``, since
+        this class's entire internal render chain
+        (``_render_top``/``_render_descriptor``) is synchronous (spec §2).
+        By this point the document is already offline-safe (every folium
+        default CDN resource swapped for an inlined ``data:`` URI —
+        TASK-2787), so embedding it in an ``iframe srcdoc`` leaks nothing.
+
+        Imports ``folium_map`` lazily (here, not at module top level) — see
+        the note above the module's imports for why.
+        """
+        from .folium_map import build_map_document
+
+        document, _ = build_map_document(props, cluster_threshold=500)
+        escaped = html.escape(document.decode("utf-8"))
+        return f'<iframe sandbox="allow-scripts allow-popups" srcdoc="{escaped}"></iframe>'
+
+    def _render_chart(self, props: dict[str, Any], degradations: list[dict[str, Any]]) -> str:
         """Render a live Chart.js ``<canvas>`` from RESOLVED Chart properties.
 
         Bypasses catalog lowering entirely (``ChartComponent.lower()``
@@ -966,14 +1083,32 @@ class InteractiveHTMLRenderer(AbstractA2UIRenderer):
         renderer concern, same precedent as ``EChartsRenderer``). ``props``
         is the baked component's own top-level dict (v1.0 — never nested
         under a "properties" key).
+
+        FEAT-527: ``gauge``/``funnel``/``waterfall``/``heatmap``/``treemap``
+        have no Chart.js equivalent — they render as ``"bar"`` AND append a
+        record to ``degradations`` (never a silent substitution), plus a
+        visible caption naming the original type.
         """
         chart_id = f"chart-{uuid.uuid4().hex[:8]}"
         rows = props.get("data")
         rows = rows if isinstance(rows, list) else []
         y_columns = props.get("y") or []
         tabs = props.get("tabs")
+        original_type = props.get("type", "bar")
+        degraded_caption = ""
+        if original_type in _UNSUPPORTED_CHART_TYPES:
+            degradations.append(
+                degradation_record(
+                    BasicNode(id=props.get("id", chart_id), component="Chart"),
+                    f"{_SURFACE_NAME} renders '{original_type}' as bar (no {original_type} support in this surface)",
+                )
+            )
+            degraded_caption = (
+                '<p class="a2ui-notice">'
+                f"rendered as bar (no {html.escape(str(original_type))} support in this surface)</p>"
+            )
         config: dict[str, Any] = {
-            "type": props.get("type", "bar"),
+            "type": "bar" if original_type in _UNSUPPORTED_CHART_TYPES else original_type,
             "x": props.get("x"),
             "y": y_columns,
             "data": rows,
@@ -984,6 +1119,7 @@ class InteractiveHTMLRenderer(AbstractA2UIRenderer):
 
         title = props.get("title")
         title_html = f'<p class="a2ui-heading">{html.escape(str(title))}</p>' if title else ""
+        title_html += degraded_caption
 
         tabs_html = ""
         if isinstance(tabs, list) and tabs:
@@ -1089,7 +1225,7 @@ class InteractiveHTMLRenderer(AbstractA2UIRenderer):
             f'<tbody>{"".join(body_rows)}</tbody></table>{pager_html}{notice_html}</div>'
         )
 
-    def _render_infographic(self, props: dict[str, Any]) -> str:
+    def _render_infographic(self, props: dict[str, Any], degradations: list[dict[str, Any]]) -> str:
         """Render an Infographic's title/subtitle/sections, recursing into
         nested descriptors via :meth:`_render_descriptor` (Chart/DataTable
         aware) rather than delegating to ``InfographicComponent.lower()``
@@ -1115,7 +1251,108 @@ class InteractiveHTMLRenderer(AbstractA2UIRenderer):
                 section_parts.append(f'<p class="a2ui-text a2ui-body">{html.escape(str(text))}</p>')
             for descriptor in section.get("components") or []:
                 if isinstance(descriptor, dict):
-                    section_parts.append(self._render_descriptor(descriptor))
+                    section_parts.append(self._render_descriptor(descriptor, degradations))
             parts.append(f'<div class="a2ui-col a2ui-section">{"".join(section_parts)}</div>')
 
         return f'<div class="a2ui-card" data-variant="infographic">{"".join(parts)}</div>'
+
+    def _render_htmldocument(self, props: dict[str, Any]) -> str:
+        """Render an ``HtmlDocument`` as a sandboxed ``<iframe>`` (FEAT-527).
+
+        Bypasses catalog lowering entirely (``HtmlDocumentComponent.lower()``
+        intentionally degrades to a text placeholder and never carries the
+        raw HTML — real embedding is a renderer concern, same precedent as
+        ``EChartsRenderer``/``_render_chart``). ``props`` is the baked
+        component's own top-level dict (v1.0 — never nested under a
+        "properties" key), so ``html``/``srcUrl`` are read directly here,
+        pre-lowering.
+
+        Security: ``sandbox="allow-scripts"`` WITHOUT ``allow-same-origin``
+        — the embedded document cannot reach the host DOM/storage. The raw
+        ``html`` is escaped into the ``srcdoc`` attribute (never evaluated by
+        the host page itself); inline style only (FEAT-493 self-contained
+        invariant — no external CSS/JS).
+        """
+        title = props.get("title") or ""
+        title_html = f'<h3 class="a2ui-heading">{html.escape(str(title))}</h3>' if title else ""
+        iframe_style = "width:100%;min-height:480px;border:1px solid #ccc"
+
+        raw_html = props.get("html")
+        if raw_html is not None:
+            iframe = (
+                f'<iframe sandbox="allow-scripts" style="{iframe_style}" '
+                f'srcdoc="{html.escape(str(raw_html), quote=True)}"></iframe>'
+            )
+        else:
+            src_url = props.get("srcUrl") or ""
+            iframe = (
+                f'<iframe sandbox="allow-scripts" style="{iframe_style}" '
+                f'src="{html.escape(str(src_url), quote=True)}"></iframe>'
+            )
+
+        return f'<section class="a2ui-html-document">{title_html}{iframe}</section>'
+
+    # -- Graph (FEAT-529) ----------------------------------------------------
+
+    def _render_graph(self, props: dict[str, Any], degradations: list[dict[str, Any]]) -> str:
+        """Render a viz-core ``Graph`` as an inline SVG plus its mermaid source.
+
+        Bypasses catalog lowering entirely (``GraphComponent.lower()``
+        intentionally degrades to a text/edge-list summary — real graphics
+        are a renderer concern, same precedent as ``_render_chart``).
+        ``props`` is the baked component's own top-level dict.
+
+        ``layout.engine == "force"`` has no interactive-renderer-specific
+        force-directed drawing here either (spec: force is a hint for
+        interactive renderers "only" in general, but THIS static-SVG path
+        has none) — it degrades to the deterministic layered layout, same
+        as every other static lane. A graph above
+        :data:`~parrot.outputs.a2ui.graph.MAX_STATIC_NODES` degrades to
+        ``GraphComponent``'s own lowered edge list, truncated to the cap.
+        """
+        node_id = props.get("id", "graph")
+        working_props = dict(props)
+        layout = working_props.get("layout") or {}
+        if layout.get("engine") == "force":
+            degradations.append(
+                degradation_record(
+                    BasicNode(id=node_id, component="Graph"),
+                    f"{_SURFACE_NAME} has no force layout; rendered with the deterministic layered layout instead",
+                )
+            )
+            working_props = {key: value for key, value in working_props.items() if key != "layout"}
+
+        try:
+            svg = render_graph_svg(working_props)
+        except GraphTooLargeError:
+            degradations.append(
+                degradation_record(
+                    BasicNode(id=node_id, component="Graph"),
+                    f"{_SURFACE_NAME}: graph exceeds the static node cap ({MAX_STATIC_NODES}); "
+                    "rendered as a truncated edge list",
+                )
+            )
+            return self._render_graph_truncated_fallback(working_props, degradations)
+
+        mermaid_source = to_mermaid(GraphSpec.model_validate(_graph_spec_props(working_props)))
+        return (
+            '<div class="a2ui-card a2ui-graph-wrap">'
+            f"{svg}"
+            '<details class="a2ui-graph-source"><summary>Mermaid source</summary>'
+            f"<pre>{html.escape(mermaid_source)}</pre></details></div>"
+        )
+
+    def _render_graph_truncated_fallback(self, props: dict[str, Any], degradations: list[dict[str, Any]]) -> str:
+        """Oversize-graph fallback: ``GraphComponent``'s own lowered tree,
+        with its edge-list Column truncated to :data:`MAX_STATIC_NODES` rows.
+
+        ``GraphComponent.lower()`` returns an already self-contained
+        ``BasicNode`` tree (no external id references left to resolve), so
+        it is handed straight to ``_render_basic`` — unlike the flat baked-
+        dict trees ``_reconstruct`` rebuilds elsewhere in this module.
+        """
+        node_id = props.get("id", "graph")
+        component = Component(id=node_id, component="Graph", **_strip_graph_component_keys(props))
+        tree = GraphComponent().lower(component, {})
+        _truncate_graph_edge_list(tree)
+        return self._render_basic(tree, degradations)

@@ -1,0 +1,1531 @@
+{
+  "feature": "workingmemory-toolkit",
+  "feature_id": "FEAT-538",
+  "spec": "sdd/specs/workingmemory-toolkit.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-09-08T13:24:38+00:00",
+  "completed_at": null,
+  "isolation": "per-spec",
+  "contract_verified_commit": "0b4920b2f",
+  "parallelism_notes": "One worktree. Shared-file writers are ordered by dependencies. parallel=true permits disjoint ready work only; integration gates run with no concurrent production edits. Phase 0 precedes implementation. Delivery A is non-durable; completion requires Delivery B and documentation metrics.",
+  "tasks": [
+    {
+      "id": "TASK-2970",
+      "slug": "tm-integration-spike",
+      "title": "Pin integration contracts and measure snapshot costs",
+      "feature_id": "FEAT-538",
+      "feature": "workingmemory-toolkit",
+      "spec": "sdd/specs/workingmemory-toolkit.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "estimated_hours": 4,
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Serial verification gate: wait for all dependencies and run without concurrent edits to production files exercised by the checks.",
+      "delivery": "A",
+      "acceptance_criteria": [
+        "AC13",
+        "AC16"
+      ],
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": "2026-09-08T13:39:08+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2970-tm-integration-spike.md",
+      "verification": null,
+      "owned_files": [
+        "docs/memory/task-memory-integration-map.md",
+        "packages/ai-parrot/tests/tools/working_memory/task_memory/bench_snapshot_costs.py"
+      ],
+      "contract_verified_commit": "0b4920b2f"
+    },
+    {
+      "id": "TASK-2971",
+      "slug": "tm-domain-models",
+      "title": "Define bounded task models and configuration",
+      "feature_id": "FEAT-538",
+      "feature": "workingmemory-toolkit",
+      "spec": "sdd/specs/workingmemory-toolkit.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "estimated_hours": 4,
+      "depends_on": [
+        "TASK-2970"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Serial prerequisite on the critical path; downstream tasks wait for its contract to be committed.",
+      "delivery": "A",
+      "acceptance_criteria": [
+        "AC2",
+        "AC7",
+        "AC11",
+        "AC12"
+      ],
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": "2026-09-08T13:39:08+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2971-tm-domain-models.md",
+      "verification": null,
+      "owned_files": [
+        "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/__init__.py",
+        "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/models.py",
+        "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/config.py",
+        "packages/ai-parrot/tests/tools/working_memory/task_memory/test_models.py",
+        "packages/ai-parrot/tests/tools/working_memory/task_memory/__init__.py"
+      ],
+      "contract_verified_commit": "0b4920b2f"
+    },
+    {
+      "id": "TASK-2972",
+      "slug": "tm-store-contracts",
+      "title": "Define task and catalog backend protocols",
+      "feature_id": "FEAT-538",
+      "feature": "workingmemory-toolkit",
+      "spec": "sdd/specs/workingmemory-toolkit.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "estimated_hours": 4,
+      "depends_on": [
+        "TASK-2971"
+      ],
+      "parallel": true,
+      "parallelism_notes": "May run with ready disjoint tasks such as TASK-2973, TASK-2974, TASK-2981 after prerequisites. Owns distinct output files; do not modify package exports or shared fixtures outside this scope.",
+      "delivery": "A",
+      "acceptance_criteria": [
+        "AC2",
+        "AC5",
+        "AC11"
+      ],
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": "2026-09-08T13:39:08+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2972-tm-store-contracts.md",
+      "verification": null,
+      "owned_files": [
+        "packages/ai-parrot/src/parrot/interfaces/task_memory.py",
+        "packages/ai-parrot/src/parrot/interfaces/artifact_store.py",
+        "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/store/__init__.py",
+        "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/store/_base.py",
+        "packages/ai-parrot/tests/tools/working_memory/task_memory/test_contracts.py"
+      ],
+      "contract_verified_commit": "0b4920b2f"
+    },
+    {
+      "id": "TASK-2973",
+      "slug": "tm-reducer-plan",
+      "title": "Implement pure task and plan transition reduction",
+      "feature_id": "FEAT-538",
+      "feature": "workingmemory-toolkit",
+      "spec": "sdd/specs/workingmemory-toolkit.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "estimated_hours": 4,
+      "depends_on": [
+        "TASK-2971"
+      ],
+      "parallel": true,
+      "parallelism_notes": "May run with ready disjoint tasks such as TASK-2972, TASK-2975, TASK-2976 after prerequisites. Owns distinct output files; do not modify package exports or shared fixtures outside this scope.",
+      "delivery": "A",
+      "acceptance_criteria": [
+        "AC2",
+        "AC7"
+      ],
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": "2026-09-08T13:39:08+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2973-tm-reducer-plan.md",
+      "verification": null,
+      "owned_files": [
+        "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/reducer.py",
+        "packages/ai-parrot/tests/tools/working_memory/task_memory/test_reducer_plan.py"
+      ],
+      "contract_verified_commit": "0b4920b2f"
+    },
+    {
+      "id": "TASK-2974",
+      "slug": "tm-reducer-evidence",
+      "title": "Reduce call outcomes and evidence invalidations",
+      "feature_id": "FEAT-538",
+      "feature": "workingmemory-toolkit",
+      "spec": "sdd/specs/workingmemory-toolkit.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "estimated_hours": 4,
+      "depends_on": [
+        "TASK-2973"
+      ],
+      "parallel": true,
+      "parallelism_notes": "May run with ready disjoint tasks such as TASK-2972, TASK-2975, TASK-2976 after prerequisites. Shared-file predecessors: TASK-2973; do not edit their files concurrently.",
+      "delivery": "A",
+      "acceptance_criteria": [
+        "AC2",
+        "AC3",
+        "AC5",
+        "AC7",
+        "AC8"
+      ],
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": "2026-09-08T13:39:08+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2974-tm-reducer-evidence.md",
+      "verification": null,
+      "owned_files": [
+        "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/reducer.py",
+        "packages/ai-parrot/tests/tools/working_memory/task_memory/test_reducer_evidence.py"
+      ],
+      "contract_verified_commit": "0b4920b2f"
+    },
+    {
+      "id": "TASK-2975",
+      "slug": "tm-snapshots",
+      "title": "Implement bounded snapshots and deterministic fingerprints",
+      "feature_id": "FEAT-538",
+      "feature": "workingmemory-toolkit",
+      "spec": "sdd/specs/workingmemory-toolkit.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "estimated_hours": 4,
+      "depends_on": [
+        "TASK-2972"
+      ],
+      "parallel": true,
+      "parallelism_notes": "May run with ready disjoint tasks such as TASK-2973, TASK-2974, TASK-2978 after prerequisites. Owns distinct output files; do not modify package exports or shared fixtures outside this scope.",
+      "delivery": "A",
+      "acceptance_criteria": [
+        "AC5",
+        "AC6",
+        "AC16"
+      ],
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": "2026-09-08T13:39:08+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2975-tm-snapshots.md",
+      "verification": null,
+      "owned_files": [
+        "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/snapshots.py",
+        "packages/ai-parrot/tests/tools/working_memory/task_memory/test_snapshots.py"
+      ],
+      "contract_verified_commit": "0b4920b2f"
+    },
+    {
+      "id": "TASK-2976",
+      "slug": "tm-artifact-memory",
+      "title": "Implement scoped versioned in-memory artifact backend",
+      "feature_id": "FEAT-538",
+      "feature": "workingmemory-toolkit",
+      "spec": "sdd/specs/workingmemory-toolkit.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "estimated_hours": 4,
+      "depends_on": [
+        "TASK-2972",
+        "TASK-2975"
+      ],
+      "parallel": true,
+      "parallelism_notes": "May run with ready disjoint tasks such as TASK-2973, TASK-2974, TASK-2978 after prerequisites. Owns distinct output files; do not modify package exports or shared fixtures outside this scope.",
+      "delivery": "A",
+      "acceptance_criteria": [
+        "AC5",
+        "AC6",
+        "AC11",
+        "AC12"
+      ],
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": "2026-09-08T13:39:08+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2976-tm-artifact-memory.md",
+      "verification": null,
+      "owned_files": [
+        "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/artifacts.py",
+        "packages/ai-parrot/tests/tools/working_memory/task_memory/test_artifact_memory.py"
+      ],
+      "contract_verified_commit": "0b4920b2f"
+    },
+    {
+      "id": "TASK-2977",
+      "slug": "tm-catalog-async",
+      "title": "Add awaited catalog API and shared entry descriptors",
+      "feature_id": "FEAT-538",
+      "feature": "workingmemory-toolkit",
+      "spec": "sdd/specs/workingmemory-toolkit.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "estimated_hours": 4,
+      "depends_on": [
+        "TASK-2976"
+      ],
+      "parallel": true,
+      "parallelism_notes": "May run with ready disjoint tasks such as TASK-2973, TASK-2974, TASK-2978 after prerequisites. Owns distinct output files; do not modify package exports or shared fixtures outside this scope.",
+      "delivery": "A",
+      "acceptance_criteria": [
+        "AC5",
+        "AC6",
+        "AC13"
+      ],
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": "2026-09-08T13:39:08+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2977-tm-catalog-async.md",
+      "verification": null,
+      "owned_files": [
+        "packages/ai-parrot/src/parrot/tools/working_memory/internals.py",
+        "packages/ai-parrot/tests/tools/working_memory/task_memory/test_catalog_async.py"
+      ],
+      "contract_verified_commit": "0b4920b2f"
+    },
+    {
+      "id": "TASK-2978",
+      "slug": "tm-task-memory-store",
+      "title": "Implement atomic in-memory journal and projections",
+      "feature_id": "FEAT-538",
+      "feature": "workingmemory-toolkit",
+      "spec": "sdd/specs/workingmemory-toolkit.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "estimated_hours": 4,
+      "depends_on": [
+        "TASK-2972",
+        "TASK-2974"
+      ],
+      "parallel": true,
+      "parallelism_notes": "May run with ready disjoint tasks such as TASK-2975, TASK-2976, TASK-2977 after prerequisites. Owns distinct output files; do not modify package exports or shared fixtures outside this scope.",
+      "delivery": "A",
+      "acceptance_criteria": [
+        "AC2",
+        "AC7",
+        "AC11",
+        "AC12"
+      ],
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": "2026-09-08T13:39:08+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2978-tm-task-memory-store.md",
+      "verification": null,
+      "owned_files": [
+        "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/store/memory.py",
+        "packages/ai-parrot/tests/tools/working_memory/task_memory/test_task_store_memory.py",
+        "packages/ai-parrot/tests/tools/working_memory/task_memory/conftest.py"
+      ],
+      "contract_verified_commit": "0b4920b2f"
+    },
+    {
+      "id": "TASK-2979",
+      "slug": "tm-task-commands",
+      "title": "Implement task, plan, decision and hint commands",
+      "feature_id": "FEAT-538",
+      "feature": "workingmemory-toolkit",
+      "spec": "sdd/specs/workingmemory-toolkit.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "estimated_hours": 4,
+      "depends_on": [
+        "TASK-2977",
+        "TASK-2978"
+      ],
+      "parallel": true,
+      "parallelism_notes": "May run with ready disjoint tasks such as TASK-2981, TASK-2982, TASK-2987 after prerequisites. Owns distinct output files; do not modify package exports or shared fixtures outside this scope.",
+      "delivery": "A",
+      "acceptance_criteria": [
+        "AC1",
+        "AC2",
+        "AC7",
+        "AC11"
+      ],
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": "2026-09-08T13:39:08+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2979-tm-task-commands.md",
+      "verification": null,
+      "owned_files": [
+        "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/service.py",
+        "packages/ai-parrot/tests/tools/working_memory/task_memory/test_task_commands.py"
+      ],
+      "contract_verified_commit": "0b4920b2f"
+    },
+    {
+      "id": "TASK-2980",
+      "slug": "tm-completion-validators",
+      "title": "Implement evidence-bound completion validation",
+      "feature_id": "FEAT-538",
+      "feature": "workingmemory-toolkit",
+      "spec": "sdd/specs/workingmemory-toolkit.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "estimated_hours": 4,
+      "depends_on": [
+        "TASK-2979"
+      ],
+      "parallel": true,
+      "parallelism_notes": "May run with ready disjoint tasks such as TASK-2981, TASK-2982, TASK-2986 after prerequisites. Shared-file predecessors: TASK-2979; do not edit their files concurrently.",
+      "delivery": "A",
+      "acceptance_criteria": [
+        "AC3",
+        "AC5",
+        "AC7"
+      ],
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": "2026-09-08T13:39:08+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2980-tm-completion-validators.md",
+      "verification": null,
+      "owned_files": [
+        "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/validators.py",
+        "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/service.py",
+        "packages/ai-parrot/tests/tools/working_memory/task_memory/test_completion_validators.py"
+      ],
+      "contract_verified_commit": "0b4920b2f"
+    },
+    {
+      "id": "TASK-2981",
+      "slug": "tm-turn-context",
+      "title": "Implement turn declaration registry and invocation receipts",
+      "feature_id": "FEAT-538",
+      "feature": "workingmemory-toolkit",
+      "spec": "sdd/specs/workingmemory-toolkit.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "estimated_hours": 4,
+      "depends_on": [
+        "TASK-2971"
+      ],
+      "parallel": true,
+      "parallelism_notes": "May run with ready disjoint tasks such as TASK-2972, TASK-2973, TASK-2974 after prerequisites. Owns distinct output files; do not modify package exports or shared fixtures outside this scope.",
+      "delivery": "A",
+      "acceptance_criteria": [
+        "AC4",
+        "AC11",
+        "AC14"
+      ],
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": "2026-09-08T13:39:08+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2981-tm-turn-context.md",
+      "verification": null,
+      "owned_files": [
+        "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/context.py",
+        "packages/ai-parrot/tests/tools/working_memory/task_memory/test_task_context.py"
+      ],
+      "contract_verified_commit": "0b4920b2f"
+    },
+    {
+      "id": "TASK-2982",
+      "slug": "tm-result-redaction",
+      "title": "Implement typed result adapters and journal redaction",
+      "feature_id": "FEAT-538",
+      "feature": "workingmemory-toolkit",
+      "spec": "sdd/specs/workingmemory-toolkit.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "estimated_hours": 4,
+      "depends_on": [
+        "TASK-2971"
+      ],
+      "parallel": true,
+      "parallelism_notes": "May run with ready disjoint tasks such as TASK-2972, TASK-2973, TASK-2974 after prerequisites. Owns distinct output files; do not modify package exports or shared fixtures outside this scope.",
+      "delivery": "A",
+      "acceptance_criteria": [
+        "AC3",
+        "AC8",
+        "AC11"
+      ],
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": "2026-09-08T13:39:08+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2982-tm-result-redaction.md",
+      "verification": null,
+      "owned_files": [
+        "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/adapters.py",
+        "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/redaction.py",
+        "packages/ai-parrot/tests/tools/working_memory/task_memory/test_result_adapters.py",
+        "packages/ai-parrot/tests/tools/working_memory/task_memory/test_journal_redaction.py"
+      ],
+      "contract_verified_commit": "0b4920b2f"
+    },
+    {
+      "id": "TASK-2983",
+      "slug": "tm-observer-service",
+      "title": "Implement canonical invocation observer lifecycle",
+      "feature_id": "FEAT-538",
+      "feature": "workingmemory-toolkit",
+      "spec": "sdd/specs/workingmemory-toolkit.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "estimated_hours": 4,
+      "depends_on": [
+        "TASK-2980",
+        "TASK-2981",
+        "TASK-2982"
+      ],
+      "parallel": true,
+      "parallelism_notes": "May run with ready disjoint tasks such as TASK-2986, TASK-2987, TASK-2988 after prerequisites. Owns distinct output files; do not modify package exports or shared fixtures outside this scope.",
+      "delivery": "A",
+      "acceptance_criteria": [
+        "AC3",
+        "AC4",
+        "AC8",
+        "AC10"
+      ],
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": "2026-09-08T13:39:08+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2983-tm-observer-service.md",
+      "verification": null,
+      "owned_files": [
+        "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/observer.py",
+        "packages/ai-parrot/tests/tools/working_memory/task_memory/test_task_observer.py"
+      ],
+      "contract_verified_commit": "0b4920b2f"
+    },
+    {
+      "id": "TASK-2984",
+      "slug": "tm-manager-hooks",
+      "title": "Integrate observer with every manager dispatch outcome",
+      "feature_id": "FEAT-538",
+      "feature": "workingmemory-toolkit",
+      "spec": "sdd/specs/workingmemory-toolkit.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "estimated_hours": 4,
+      "depends_on": [
+        "TASK-2983"
+      ],
+      "parallel": true,
+      "parallelism_notes": "May run with ready disjoint tasks such as TASK-2986, TASK-2987, TASK-2988 after prerequisites. Owns distinct output files; do not modify package exports or shared fixtures outside this scope.",
+      "delivery": "A",
+      "acceptance_criteria": [
+        "AC3",
+        "AC4",
+        "AC8",
+        "AC13"
+      ],
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": "2026-09-08T13:39:08+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2984-tm-manager-hooks.md",
+      "verification": null,
+      "owned_files": [
+        "packages/ai-parrot/src/parrot/tools/manager.py",
+        "packages/ai-parrot/tests/tools/working_memory/task_memory/test_manager_observer.py"
+      ],
+      "contract_verified_commit": "0b4920b2f"
+    },
+    {
+      "id": "TASK-2985",
+      "slug": "tm-wm-enabled-paths",
+      "title": "Route enabled working-memory operations and cap raw reads",
+      "feature_id": "FEAT-538",
+      "feature": "workingmemory-toolkit",
+      "spec": "sdd/specs/workingmemory-toolkit.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "estimated_hours": 4,
+      "depends_on": [
+        "TASK-2977",
+        "TASK-2984"
+      ],
+      "parallel": true,
+      "parallelism_notes": "May run with ready disjoint tasks such as TASK-2986, TASK-2987, TASK-2988 after prerequisites. Owns distinct output files; do not modify package exports or shared fixtures outside this scope.",
+      "delivery": "A",
+      "acceptance_criteria": [
+        "AC5",
+        "AC6",
+        "AC13"
+      ],
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": "2026-09-08T13:39:08+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2985-tm-wm-enabled-paths.md",
+      "verification": null,
+      "owned_files": [
+        "packages/ai-parrot/src/parrot/tools/working_memory/tool.py",
+        "packages/ai-parrot/src/parrot/tools/working_memory/models.py",
+        "packages/ai-parrot/tests/tools/working_memory/task_memory/test_enabled_working_memory.py"
+      ],
+      "contract_verified_commit": "0b4920b2f"
+    },
+    {
+      "id": "TASK-2986",
+      "slug": "tm-redis-association",
+      "title": "Implement task association and atomic Redis metadata merging",
+      "feature_id": "FEAT-538",
+      "feature": "workingmemory-toolkit",
+      "spec": "sdd/specs/workingmemory-toolkit.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "estimated_hours": 4,
+      "depends_on": [
+        "TASK-2979"
+      ],
+      "parallel": true,
+      "parallelism_notes": "May run with ready disjoint tasks such as TASK-2980, TASK-2981, TASK-2982 after prerequisites. Owns distinct output files; do not modify package exports or shared fixtures outside this scope.",
+      "delivery": "A",
+      "acceptance_criteria": [
+        "AC1",
+        "AC11",
+        "AC13"
+      ],
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": "2026-09-08T13:39:08+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2986-tm-redis-association.md",
+      "verification": null,
+      "owned_files": [
+        "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/association.py",
+        "packages/ai-parrot/src/parrot/memory/redis.py",
+        "packages/ai-parrot/tests/tools/working_memory/task_memory/test_task_association.py"
+      ],
+      "contract_verified_commit": "0b4920b2f"
+    },
+    {
+      "id": "TASK-2987",
+      "slug": "tm-recall-selector",
+      "title": "Implement deterministic bounded recall selection",
+      "feature_id": "FEAT-538",
+      "feature": "workingmemory-toolkit",
+      "spec": "sdd/specs/workingmemory-toolkit.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "estimated_hours": 4,
+      "depends_on": [
+        "TASK-2972",
+        "TASK-2974"
+      ],
+      "parallel": true,
+      "parallelism_notes": "May run with ready disjoint tasks such as TASK-2975, TASK-2976, TASK-2977 after prerequisites. Owns distinct output files; do not modify package exports or shared fixtures outside this scope.",
+      "delivery": "A",
+      "acceptance_criteria": [
+        "AC1",
+        "AC10"
+      ],
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": "2026-09-08T13:39:08+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2987-tm-recall-selector.md",
+      "verification": null,
+      "owned_files": [
+        "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/recall.py",
+        "packages/ai-parrot/tests/tools/working_memory/task_memory/test_recall_selector.py"
+      ],
+      "contract_verified_commit": "0b4920b2f"
+    },
+    {
+      "id": "TASK-2988",
+      "slug": "tm-recall-cache-probes",
+      "title": "Add bounded recall reads, cache and omission probes",
+      "feature_id": "FEAT-538",
+      "feature": "workingmemory-toolkit",
+      "spec": "sdd/specs/workingmemory-toolkit.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "estimated_hours": 4,
+      "depends_on": [
+        "TASK-2986",
+        "TASK-2987"
+      ],
+      "parallel": true,
+      "parallelism_notes": "May run with ready disjoint tasks such as TASK-2980, TASK-2981, TASK-2982 after prerequisites. Shared-file predecessors: TASK-2987; do not edit their files concurrently.",
+      "delivery": "A",
+      "acceptance_criteria": [
+        "AC1",
+        "AC10",
+        "AC11"
+      ],
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": "2026-09-08T13:39:08+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2988-tm-recall-cache-probes.md",
+      "verification": null,
+      "owned_files": [
+        "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/recall.py",
+        "packages/ai-parrot/src/parrot/memory/compaction/omission.py",
+        "packages/ai-parrot/tests/tools/working_memory/task_memory/test_recall_cache.py"
+      ],
+      "contract_verified_commit": "0b4920b2f"
+    },
+    {
+      "id": "TASK-2989",
+      "slug": "tm-task-tools",
+      "title": "Expose enabled task command, selection and recall tools",
+      "feature_id": "FEAT-538",
+      "feature": "workingmemory-toolkit",
+      "spec": "sdd/specs/workingmemory-toolkit.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "estimated_hours": 4,
+      "depends_on": [
+        "TASK-2980",
+        "TASK-2985",
+        "TASK-2988"
+      ],
+      "parallel": true,
+      "parallelism_notes": "May run with ready disjoint tasks such as TASK-2991, TASK-2992, TASK-2993 after prerequisites. Shared-file predecessors: TASK-2985; do not edit their files concurrently.",
+      "delivery": "A",
+      "acceptance_criteria": [
+        "AC1",
+        "AC7",
+        "AC10",
+        "AC11",
+        "AC13"
+      ],
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": "2026-09-08T13:39:08+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2989-tm-task-tools.md",
+      "verification": null,
+      "owned_files": [
+        "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/tools.py",
+        "packages/ai-parrot/src/parrot/tools/working_memory/tool.py",
+        "packages/ai-parrot/src/parrot/tools/working_memory/__init__.py",
+        "packages/ai-parrot/tests/tools/working_memory/task_memory/test_task_tools.py"
+      ],
+      "contract_verified_commit": "0b4920b2f"
+    },
+    {
+      "id": "TASK-2990",
+      "slug": "tm-bot-turn-capture",
+      "title": "Wire bot turn context and single invocation persistence",
+      "feature_id": "FEAT-538",
+      "feature": "workingmemory-toolkit",
+      "spec": "sdd/specs/workingmemory-toolkit.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "estimated_hours": 4,
+      "depends_on": [
+        "TASK-2984",
+        "TASK-2986",
+        "TASK-2989"
+      ],
+      "parallel": true,
+      "parallelism_notes": "May run with ready disjoint tasks such as TASK-2991, TASK-2992, TASK-2993 after prerequisites. Owns distinct output files; do not modify package exports or shared fixtures outside this scope.",
+      "delivery": "A",
+      "acceptance_criteria": [
+        "AC1",
+        "AC4",
+        "AC11",
+        "AC13",
+        "AC14"
+      ],
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": "2026-09-08T13:39:08+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2990-tm-bot-turn-capture.md",
+      "verification": null,
+      "owned_files": [
+        "packages/ai-parrot/src/parrot/bots/abstract.py",
+        "packages/ai-parrot/src/parrot/bots/base.py",
+        "packages/ai-parrot/src/parrot/bots/agent.py",
+        "packages/ai-parrot/src/parrot/memory/abstract.py",
+        "packages/ai-parrot/tests/tools/working_memory/task_memory/test_bot_task_context.py"
+      ],
+      "contract_verified_commit": "0b4920b2f"
+    },
+    {
+      "id": "TASK-2991",
+      "slug": "tm-plan-tee-receipts",
+      "title": "Preserve plan and tee artifact provenance after dispatch",
+      "feature_id": "FEAT-538",
+      "feature": "workingmemory-toolkit",
+      "spec": "sdd/specs/workingmemory-toolkit.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "estimated_hours": 4,
+      "depends_on": [
+        "TASK-2981",
+        "TASK-2984",
+        "TASK-2985"
+      ],
+      "parallel": true,
+      "parallelism_notes": "May run with ready disjoint tasks such as TASK-2986, TASK-2987, TASK-2988 after prerequisites. Owns distinct output files; do not modify package exports or shared fixtures outside this scope.",
+      "delivery": "A",
+      "acceptance_criteria": [
+        "AC3",
+        "AC4",
+        "AC5",
+        "AC8",
+        "AC13"
+      ],
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": "2026-09-08T13:39:08+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2991-tm-plan-tee-receipts.md",
+      "verification": null,
+      "owned_files": [
+        "packages/ai-parrot/src/parrot/bots/flows/plan/node.py",
+        "packages/ai-parrot/src/parrot/bots/flows/plan/models.py",
+        "packages/ai-parrot/src/parrot/tools/execution_plan/toolkit.py",
+        "packages/ai-parrot/src/parrot/tools/compression/tee.py",
+        "packages/ai-parrot/tests/tools/working_memory/task_memory/test_plan_task_receipts.py"
+      ],
+      "contract_verified_commit": "0b4920b2f"
+    },
+    {
+      "id": "TASK-2992",
+      "slug": "tm-worker-strict",
+      "title": "Add strict Arrow and safe JSON worker transport",
+      "feature_id": "FEAT-538",
+      "feature": "workingmemory-toolkit",
+      "spec": "sdd/specs/workingmemory-toolkit.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "estimated_hours": 4,
+      "depends_on": [
+        "TASK-2975",
+        "TASK-2981"
+      ],
+      "parallel": true,
+      "parallelism_notes": "May run with ready disjoint tasks such as TASK-2973, TASK-2974, TASK-2976 after prerequisites. Owns distinct output files; do not modify package exports or shared fixtures outside this scope.",
+      "delivery": "A",
+      "acceptance_criteria": [
+        "AC6",
+        "AC9",
+        "AC13"
+      ],
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": "2026-09-08T13:39:08+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2992-tm-worker-strict.md",
+      "verification": null,
+      "owned_files": [
+        "packages/ai-parrot/src/parrot/tools/repl_worker/transport.py",
+        "packages/ai-parrot/src/parrot/tools/repl_worker/protocol.py",
+        "packages/ai-parrot/src/parrot/tools/repl_worker/handle.py",
+        "packages/ai-parrot/src/parrot/tools/repl_worker/worker.py",
+        "packages/ai-parrot/src/parrot/tools/repl_worker/inprocess.py",
+        "packages/ai-parrot/tests/tools/working_memory/task_memory/test_strict_worker_transport.py"
+      ],
+      "contract_verified_commit": "0b4920b2f"
+    },
+    {
+      "id": "TASK-2993",
+      "slug": "tm-repl-resolver",
+      "title": "Resolve exact evidence versions into current REPL workers",
+      "feature_id": "FEAT-538",
+      "feature": "workingmemory-toolkit",
+      "spec": "sdd/specs/workingmemory-toolkit.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "estimated_hours": 4,
+      "depends_on": [
+        "TASK-2976",
+        "TASK-2980",
+        "TASK-2992"
+      ],
+      "parallel": true,
+      "parallelism_notes": "May run with ready disjoint tasks such as TASK-2982, TASK-2983, TASK-2984 after prerequisites. Owns distinct output files; do not modify package exports or shared fixtures outside this scope.",
+      "delivery": "A",
+      "acceptance_criteria": [
+        "AC5",
+        "AC6",
+        "AC9"
+      ],
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": "2026-09-08T13:39:08+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2993-tm-repl-resolver.md",
+      "verification": null,
+      "owned_files": [
+        "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/repl.py",
+        "packages/ai-parrot/tests/tools/working_memory/task_memory/test_repl_binding_resolver.py"
+      ],
+      "contract_verified_commit": "0b4920b2f"
+    },
+    {
+      "id": "TASK-2994",
+      "slug": "tm-postgres-schema",
+      "title": "Define PostgreSQL migrations and shared transaction coordinator",
+      "feature_id": "FEAT-538",
+      "feature": "workingmemory-toolkit",
+      "spec": "sdd/specs/workingmemory-toolkit.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "estimated_hours": 4,
+      "depends_on": [
+        "TASK-2972"
+      ],
+      "parallel": true,
+      "parallelism_notes": "May run with ready disjoint tasks such as TASK-2973, TASK-2974, TASK-2975 after prerequisites. Owns distinct output files; do not modify package exports or shared fixtures outside this scope.",
+      "delivery": "B",
+      "acceptance_criteria": [
+        "AC2",
+        "AC5",
+        "AC11",
+        "AC12"
+      ],
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": "2026-09-08T13:39:08+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2994-tm-postgres-schema.md",
+      "verification": null,
+      "owned_files": [
+        "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/migrations/001_task_memory.sql",
+        "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/store/postgres.py",
+        "packages/ai-parrot/tests/tools/working_memory/task_memory/test_postgres_schema.py"
+      ],
+      "contract_verified_commit": "0b4920b2f"
+    },
+    {
+      "id": "TASK-2995",
+      "slug": "tm-postgres-journal",
+      "title": "Implement durable task journal and reducer projections",
+      "feature_id": "FEAT-538",
+      "feature": "workingmemory-toolkit",
+      "spec": "sdd/specs/workingmemory-toolkit.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "estimated_hours": 4,
+      "depends_on": [
+        "TASK-2978",
+        "TASK-2994"
+      ],
+      "parallel": true,
+      "parallelism_notes": "May run with ready disjoint tasks such as TASK-2975, TASK-2976, TASK-2977 after prerequisites. Shared-file predecessors: TASK-2994; do not edit their files concurrently.",
+      "delivery": "B",
+      "acceptance_criteria": [
+        "AC2",
+        "AC7",
+        "AC8",
+        "AC11",
+        "AC12"
+      ],
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": "2026-09-08T13:39:08+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2995-tm-postgres-journal.md",
+      "verification": null,
+      "owned_files": [
+        "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/store/postgres.py",
+        "packages/ai-parrot/tests/tools/working_memory/task_memory/test_postgres_task_store.py"
+      ],
+      "contract_verified_commit": "0b4920b2f"
+    },
+    {
+      "id": "TASK-2996",
+      "slug": "tm-blob-adapter",
+      "title": "Implement bounded immutable artifact blob I/O",
+      "feature_id": "FEAT-538",
+      "feature": "workingmemory-toolkit",
+      "spec": "sdd/specs/workingmemory-toolkit.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "estimated_hours": 4,
+      "depends_on": [
+        "TASK-2975",
+        "TASK-2994"
+      ],
+      "parallel": true,
+      "parallelism_notes": "May run with ready disjoint tasks such as TASK-2973, TASK-2974, TASK-2976 after prerequisites. Owns distinct output files; do not modify package exports or shared fixtures outside this scope.",
+      "delivery": "B",
+      "acceptance_criteria": [
+        "AC5",
+        "AC6",
+        "AC9"
+      ],
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": "2026-09-08T13:39:08+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2996-tm-blob-adapter.md",
+      "verification": null,
+      "owned_files": [
+        "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/blob.py",
+        "packages/ai-parrot/tests/tools/working_memory/task_memory/test_artifact_blob.py"
+      ],
+      "contract_verified_commit": "0b4920b2f"
+    },
+    {
+      "id": "TASK-2997",
+      "slug": "tm-postgres-artifacts",
+      "title": "Implement atomic durable aliases, versions and evidence pins",
+      "feature_id": "FEAT-538",
+      "feature": "workingmemory-toolkit",
+      "spec": "sdd/specs/workingmemory-toolkit.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "estimated_hours": 4,
+      "depends_on": [
+        "TASK-2976",
+        "TASK-2995",
+        "TASK-2996"
+      ],
+      "parallel": true,
+      "parallelism_notes": "May run with ready disjoint tasks such as TASK-2977, TASK-2979, TASK-2980 after prerequisites. Shared-file predecessors: TASK-2995; do not edit their files concurrently.",
+      "delivery": "B",
+      "acceptance_criteria": [
+        "AC2",
+        "AC5",
+        "AC6",
+        "AC9",
+        "AC11",
+        "AC12"
+      ],
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": "2026-09-08T13:39:08+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2997-tm-postgres-artifacts.md",
+      "verification": null,
+      "owned_files": [
+        "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/store/postgres.py",
+        "packages/ai-parrot/tests/tools/working_memory/task_memory/test_postgres_artifacts.py"
+      ],
+      "contract_verified_commit": "0b4920b2f"
+    },
+    {
+      "id": "TASK-2998",
+      "slug": "tm-lease-recovery",
+      "title": "Implement fenced call ownership and crash reconciliation",
+      "feature_id": "FEAT-538",
+      "feature": "workingmemory-toolkit",
+      "spec": "sdd/specs/workingmemory-toolkit.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "estimated_hours": 4,
+      "depends_on": [
+        "TASK-2983",
+        "TASK-2986",
+        "TASK-2991",
+        "TASK-2997"
+      ],
+      "parallel": true,
+      "parallelism_notes": "May run with ready disjoint tasks such as TASK-2987, TASK-2988, TASK-2989 after prerequisites. Shared-file predecessors: TASK-2983, TASK-2981, TASK-2997, TASK-2986; do not edit their files concurrently.",
+      "delivery": "B",
+      "acceptance_criteria": [
+        "AC4",
+        "AC8",
+        "AC11"
+      ],
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": "2026-09-08T13:39:08+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2998-tm-lease-recovery.md",
+      "verification": null,
+      "owned_files": [
+        "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/observer.py",
+        "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/context.py",
+        "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/store/postgres.py",
+        "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/association.py",
+        "packages/ai-parrot/tests/tools/working_memory/task_memory/test_call_recovery.py"
+      ],
+      "contract_verified_commit": "0b4920b2f"
+    },
+    {
+      "id": "TASK-2999",
+      "slug": "tm-retention-core",
+      "title": "Implement deterministic retention decisions and in-memory sweeping",
+      "feature_id": "FEAT-538",
+      "feature": "workingmemory-toolkit",
+      "spec": "sdd/specs/workingmemory-toolkit.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "estimated_hours": 4,
+      "depends_on": [
+        "TASK-2976",
+        "TASK-2978",
+        "TASK-2980"
+      ],
+      "parallel": true,
+      "parallelism_notes": "May run with ready disjoint tasks such as TASK-2981, TASK-2982, TASK-2983 after prerequisites. Owns distinct output files; do not modify package exports or shared fixtures outside this scope.",
+      "delivery": "A",
+      "acceptance_criteria": [
+        "AC5",
+        "AC7",
+        "AC12"
+      ],
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": "2026-09-08T13:39:08+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2999-tm-retention-core.md",
+      "verification": null,
+      "owned_files": [
+        "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/retention.py",
+        "packages/ai-parrot/tests/tools/working_memory/task_memory/test_retention_core.py"
+      ],
+      "contract_verified_commit": "0b4920b2f"
+    },
+    {
+      "id": "TASK-3000",
+      "slug": "tm-retention-durable",
+      "title": "Implement verified archive and crash-safe durable cleanup",
+      "feature_id": "FEAT-538",
+      "feature": "workingmemory-toolkit",
+      "spec": "sdd/specs/workingmemory-toolkit.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "estimated_hours": 4,
+      "depends_on": [
+        "TASK-2997",
+        "TASK-2998",
+        "TASK-2999"
+      ],
+      "parallel": true,
+      "parallelism_notes": "May run with ready disjoint tasks such as TASK-2987, TASK-2988, TASK-2989 after prerequisites. Shared-file predecessors: TASK-2999, TASK-2998, TASK-2996; do not edit their files concurrently.",
+      "delivery": "B",
+      "acceptance_criteria": [
+        "AC8",
+        "AC9",
+        "AC12"
+      ],
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": "2026-09-08T13:39:08+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3000-tm-retention-durable.md",
+      "verification": null,
+      "owned_files": [
+        "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/retention.py",
+        "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/store/postgres.py",
+        "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/blob.py",
+        "packages/ai-parrot/tests/tools/working_memory/task_memory/test_retention_durable.py"
+      ],
+      "contract_verified_commit": "0b4920b2f"
+    },
+    {
+      "id": "TASK-3001",
+      "slug": "tm-stage2-recall",
+      "title": "Inject task recall into budgeted Stage 2 rendering",
+      "feature_id": "FEAT-538",
+      "feature": "workingmemory-toolkit",
+      "spec": "sdd/specs/workingmemory-toolkit.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "estimated_hours": 4,
+      "depends_on": [
+        "TASK-2988",
+        "TASK-2990"
+      ],
+      "parallel": true,
+      "parallelism_notes": "May run with ready disjoint tasks such as TASK-2991, TASK-2992, TASK-2993 after prerequisites. Shared-file predecessors: TASK-2990; do not edit their files concurrently.",
+      "delivery": "B",
+      "acceptance_criteria": [
+        "AC1",
+        "AC10",
+        "AC13",
+        "AC14"
+      ],
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": "2026-09-08T13:39:08+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3001-tm-stage2-recall.md",
+      "verification": null,
+      "owned_files": [
+        "packages/ai-parrot/src/parrot/bots/abstract.py",
+        "packages/ai-parrot/tests/tools/working_memory/task_memory/test_stage2_task_recall.py"
+      ],
+      "contract_verified_commit": "0b4920b2f"
+    },
+    {
+      "id": "TASK-3002",
+      "slug": "tm-delivery-a",
+      "title": "Verify in-process continuity and disabled compatibility",
+      "feature_id": "FEAT-538",
+      "feature": "workingmemory-toolkit",
+      "spec": "sdd/specs/workingmemory-toolkit.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "estimated_hours": 4,
+      "depends_on": [
+        "TASK-2990",
+        "TASK-2991",
+        "TASK-2993",
+        "TASK-2999"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Serial verification gate: wait for all dependencies and run without concurrent edits to production files exercised by the checks.",
+      "delivery": "A",
+      "acceptance_criteria": [
+        "AC1",
+        "AC3",
+        "AC4",
+        "AC5",
+        "AC6",
+        "AC7",
+        "AC10",
+        "AC11",
+        "AC13",
+        "AC14"
+      ],
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": "2026-09-08T13:39:08+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3002-tm-delivery-a.md",
+      "verification": null,
+      "owned_files": [
+        "packages/ai-parrot/tests/tools/working_memory/task_memory/test_delivery_a.py",
+        "packages/ai-parrot/tests/tools/working_memory/task_memory/test_disabled_compatibility.py"
+      ],
+      "contract_verified_commit": "0b4920b2f"
+    },
+    {
+      "id": "TASK-3003",
+      "slug": "tm-durable-wiring",
+      "title": "Wire durable backend lifecycle and retention scheduling",
+      "feature_id": "FEAT-538",
+      "feature": "workingmemory-toolkit",
+      "spec": "sdd/specs/workingmemory-toolkit.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "estimated_hours": 4,
+      "depends_on": [
+        "TASK-2989",
+        "TASK-2993",
+        "TASK-3000",
+        "TASK-3001"
+      ],
+      "parallel": true,
+      "parallelism_notes": "May run with ready disjoint tasks such as TASK-3002 after prerequisites. Shared-file predecessors: TASK-2971, TASK-2989, TASK-2990; do not edit their files concurrently.",
+      "delivery": "B",
+      "acceptance_criteria": [
+        "AC8",
+        "AC9",
+        "AC12",
+        "AC13",
+        "AC14"
+      ],
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": "2026-09-08T13:39:08+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3003-tm-durable-wiring.md",
+      "verification": null,
+      "owned_files": [
+        "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/config.py",
+        "packages/ai-parrot/src/parrot/tools/working_memory/tool.py",
+        "packages/ai-parrot/src/parrot/bots/agent.py",
+        "packages/ai-parrot/tests/tools/working_memory/task_memory/test_durable_wiring.py"
+      ],
+      "contract_verified_commit": "0b4920b2f"
+    },
+    {
+      "id": "TASK-3004",
+      "slug": "tm-delivery-b",
+      "title": "Verify durable restart, concurrency and crash boundaries",
+      "feature_id": "FEAT-538",
+      "feature": "workingmemory-toolkit",
+      "spec": "sdd/specs/workingmemory-toolkit.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "estimated_hours": 4,
+      "depends_on": [
+        "TASK-2997",
+        "TASK-2998",
+        "TASK-3002",
+        "TASK-3003"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Serial verification gate: wait for all dependencies and run without concurrent edits to production files exercised by the checks.",
+      "delivery": "B",
+      "acceptance_criteria": [
+        "AC1",
+        "AC2",
+        "AC4",
+        "AC5",
+        "AC8",
+        "AC9",
+        "AC10",
+        "AC11",
+        "AC12",
+        "AC14",
+        "AC15"
+      ],
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": "2026-09-08T13:39:08+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3004-tm-delivery-b.md",
+      "verification": null,
+      "owned_files": [
+        "packages/ai-parrot/tests/tools/working_memory/task_memory/test_delivery_b.py",
+        "packages/ai-parrot/tests/tools/working_memory/task_memory/test_crash_matrix.py"
+      ],
+      "contract_verified_commit": "0b4920b2f"
+    },
+    {
+      "id": "TASK-3005",
+      "slug": "tm-docs-metrics",
+      "title": "Document task memory operations and record acceptance metrics",
+      "feature_id": "FEAT-538",
+      "feature": "workingmemory-toolkit",
+      "spec": "sdd/specs/workingmemory-toolkit.spec.md",
+      "status": "in-progress",
+      "priority": "medium",
+      "effort": "M",
+      "estimated_hours": 4,
+      "depends_on": [
+        "TASK-3001",
+        "TASK-3004"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Serial verification gate: wait for all dependencies and run without concurrent edits to production files exercised by the checks.",
+      "delivery": "B",
+      "acceptance_criteria": [
+        "AC15",
+        "AC16"
+      ],
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": "2026-09-08T13:39:08+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3005-tm-docs-metrics.md",
+      "verification": null,
+      "owned_files": [
+        "docs/memory/recoverable-task-memory.md",
+        "packages/ai-parrot/tests/tools/working_memory/task_memory/bench_task_memory.py"
+      ],
+      "contract_verified_commit": "0b4920b2f"
+    }
+  ],
+  "deliveries": {
+    "A": {
+      "gate": "TASK-3002",
+      "durable": false
+    },
+    "B": {
+      "gate": "TASK-3004",
+      "durable": true
+    },
+    "complete": {
+      "gate": "TASK-3005"
+    }
+  },
+  "acceptance_coverage": {
+    "AC1": [
+      "TASK-2979",
+      "TASK-2986",
+      "TASK-2987",
+      "TASK-2988",
+      "TASK-2989",
+      "TASK-2990",
+      "TASK-3001",
+      "TASK-3002",
+      "TASK-3004"
+    ],
+    "AC2": [
+      "TASK-2971",
+      "TASK-2972",
+      "TASK-2973",
+      "TASK-2974",
+      "TASK-2978",
+      "TASK-2979",
+      "TASK-2994",
+      "TASK-2995",
+      "TASK-2997",
+      "TASK-3004"
+    ],
+    "AC3": [
+      "TASK-2974",
+      "TASK-2980",
+      "TASK-2982",
+      "TASK-2983",
+      "TASK-2984",
+      "TASK-2991",
+      "TASK-3002"
+    ],
+    "AC4": [
+      "TASK-2981",
+      "TASK-2983",
+      "TASK-2984",
+      "TASK-2990",
+      "TASK-2991",
+      "TASK-2998",
+      "TASK-3002",
+      "TASK-3004"
+    ],
+    "AC5": [
+      "TASK-2972",
+      "TASK-2974",
+      "TASK-2975",
+      "TASK-2976",
+      "TASK-2977",
+      "TASK-2980",
+      "TASK-2985",
+      "TASK-2991",
+      "TASK-2993",
+      "TASK-2994",
+      "TASK-2996",
+      "TASK-2997",
+      "TASK-2999",
+      "TASK-3002",
+      "TASK-3004"
+    ],
+    "AC6": [
+      "TASK-2975",
+      "TASK-2976",
+      "TASK-2977",
+      "TASK-2985",
+      "TASK-2992",
+      "TASK-2993",
+      "TASK-2996",
+      "TASK-2997",
+      "TASK-3002"
+    ],
+    "AC7": [
+      "TASK-2971",
+      "TASK-2973",
+      "TASK-2974",
+      "TASK-2978",
+      "TASK-2979",
+      "TASK-2980",
+      "TASK-2989",
+      "TASK-2995",
+      "TASK-2999",
+      "TASK-3002"
+    ],
+    "AC8": [
+      "TASK-2974",
+      "TASK-2982",
+      "TASK-2983",
+      "TASK-2984",
+      "TASK-2991",
+      "TASK-2995",
+      "TASK-2998",
+      "TASK-3000",
+      "TASK-3003",
+      "TASK-3004"
+    ],
+    "AC9": [
+      "TASK-2992",
+      "TASK-2993",
+      "TASK-2996",
+      "TASK-2997",
+      "TASK-3000",
+      "TASK-3003",
+      "TASK-3004"
+    ],
+    "AC10": [
+      "TASK-2983",
+      "TASK-2987",
+      "TASK-2988",
+      "TASK-2989",
+      "TASK-3001",
+      "TASK-3002",
+      "TASK-3004"
+    ],
+    "AC11": [
+      "TASK-2971",
+      "TASK-2972",
+      "TASK-2976",
+      "TASK-2978",
+      "TASK-2979",
+      "TASK-2981",
+      "TASK-2982",
+      "TASK-2986",
+      "TASK-2988",
+      "TASK-2989",
+      "TASK-2990",
+      "TASK-2994",
+      "TASK-2995",
+      "TASK-2997",
+      "TASK-2998",
+      "TASK-3002",
+      "TASK-3004"
+    ],
+    "AC12": [
+      "TASK-2971",
+      "TASK-2976",
+      "TASK-2978",
+      "TASK-2994",
+      "TASK-2995",
+      "TASK-2997",
+      "TASK-2999",
+      "TASK-3000",
+      "TASK-3003",
+      "TASK-3004"
+    ],
+    "AC13": [
+      "TASK-2970",
+      "TASK-2977",
+      "TASK-2984",
+      "TASK-2985",
+      "TASK-2986",
+      "TASK-2989",
+      "TASK-2990",
+      "TASK-2991",
+      "TASK-2992",
+      "TASK-3001",
+      "TASK-3002",
+      "TASK-3003"
+    ],
+    "AC14": [
+      "TASK-2981",
+      "TASK-2990",
+      "TASK-3001",
+      "TASK-3002",
+      "TASK-3003",
+      "TASK-3004"
+    ],
+    "AC15": [
+      "TASK-3004",
+      "TASK-3005"
+    ],
+    "AC16": [
+      "TASK-2970",
+      "TASK-2975",
+      "TASK-3005"
+    ]
+  }
+}

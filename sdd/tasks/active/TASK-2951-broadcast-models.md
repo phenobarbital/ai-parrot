@@ -1,0 +1,116 @@
+# TASK-2951: Broadcast data models and public-state projection
+
+**Feature**: FEAT-537 — Nova VoiceBot avatar broadcast for multiple browsers
+**Spec**: `sdd/specs/voicebot-multiroom-heygen-avatar.spec.md`
+**Status**: pending
+**Priority**: high
+**Estimated effort**: M (2-4h)
+**Depends-on**: none
+**Assigned-to**: unassigned
+**Parallel**: true
+**Parallelism notes**: Creates only the new `broadcast/{__init__,models}.py` files and their test; shares no file with TASK-2950/2954/2955/2956/2957. Safe to run in a separate worktree.
+
+---
+
+## Context
+
+Implements spec §2 "Data Models" (Module 2 foundation). Every later module (registry, session, handler, HTTP API, browser) serialises these contracts. The public projection is the **only** thing that may reach a browser; getting the "never leaks credentials" invariant right here protects AC3.
+
+## Scope
+
+- Create package `packages/ai-parrot-integrations/src/parrot/integrations/liveavatar/broadcast/` with `__init__.py` (re-exports) and `models.py` containing Pydantic v2 models:
+  - Enums: `BroadcastState` (`pending|starting|avatar|audio_only|stopping|ended|failed`), `FloorState` (`idle|switching|granted`), `LeaseState` (`pending|active|leaving`), `BroadcastReason` (safe reason codes: `viewer_limit_reached`, `speaker_connection_exists`, `floor_not_granted`, `stale_floor_epoch`, `stale_version`, `avatar_startup_timeout`, `avatar_control_lost`, `avatar_track_lost`, `nova_failure`, `livekit_failure`, `owner_lost`, `stopped_by_moderator`, `audience_empty`, `pending_expired`).
+  - `HandRequest(lease_id, display_name, sequence, requested_at)`.
+  - `ParticipantPrincipal(user_id, tenant_id, agent_id, display_name, roles)` — the scoped authenticated principal every API/WS op is checked against (the existing `AuthenticatedUser` carries `user_id/username/email/roles`; this model adds tenant/agent scope).
+  - `BroadcastDescriptor` — all fields listed in spec §2 table incl. `moderator_lease_id`, `speaker_lease_id`, `floor_epoch`, `floor_state`, `hand_requests: list[HandRequest]`, `voice_session_id`, `room_name`, `owner_worker_id`, `owner_epoch`, `version`, `state`, `output_epoch`, `avatar_identity`, `direct_identity`, `selected_audio_track_id`, `selected_video_track_id`, `max_viewers: int = 10` (ge=1, le=10), `admission_sequence`, timestamps, `failure_reason: BroadcastReason | None`, `liveavatar_session_id: str | None` (audit only; never a token).
+  - `BroadcastPublicState` + `BroadcastDescriptor.to_public_state()` — includes viewer count/limit, moderator/speaker **display IDs** (lease IDs, never user IDs/emails), floor state/epoch, hand queue, `media_ready`, `state`, `version`, `output_epoch`, selected identity/track IDs, `reason`. Must reject (model-level `model_validator`) any field named like `*token*`, `*secret*`, `ws_url`, `owner_worker_address`.
+  - `ViewerLease(lease_id, principal: ParticipantPrincipal, livekit_identity, state, credential_expires_at, admission_deadline, confirmed, admission_sequence, last_control_heartbeat, speaker_socket_id: str | None)`.
+  - `ViewerJoinResponse(public_state, lease_id, livekit_url, room, client_token, expires_at)`.
+  - `BroadcastAudioFrame(owner_epoch, speaker_lease_id, floor_epoch, turn_id, output_epoch, sequence, pcm: bytes, sample_count)` with validators: even byte length, `sample_count == len(pcm)//2`, non-empty, ≤ 96_000 bytes.
+- Constants module-level: `MAX_VIEWERS = 10`, `PENDING_TTL_S = 60`, `OWNER_LEASE_TTL_S = 15`, `OWNER_RENEW_S = 5`, `CONTROL_HEARTBEAT_S = 5`, `CONTROL_EXPIRY_S = 15`, `TERMINAL_RETENTION_S = 300`, `VIEWER_CREDENTIAL_TTL_S = 60`, `HANDOFF_BARRIER_TIMEOUT_S = 3.0`, `AVATAR_STARTUP_DEADLINE_S = 15.0`, `MAX_QUEUED_PCM_BYTES = 96_000`, `INPUT_SAMPLE_RATE = 16_000`, `OUTPUT_SAMPLE_RATE = 24_000`.
+- Tests in `packages/ai-parrot-integrations/tests/voice/test_voice_broadcast_models.py`.
+
+**NOT in scope**: registry logic, Redis, HTTP, JS.
+
+## Files to Create / Modify
+
+| File | Action | Description |
+|---|---|---|
+| `packages/ai-parrot-integrations/src/parrot/integrations/liveavatar/broadcast/__init__.py` | CREATE | Re-export models/constants |
+| `packages/ai-parrot-integrations/src/parrot/integrations/liveavatar/broadcast/models.py` | CREATE | Pydantic contracts + projection |
+| `packages/ai-parrot-integrations/tests/voice/test_voice_broadcast_models.py` | CREATE | Unit tests |
+
+## Codebase Contract (Anti-Hallucination)
+
+### Verified Imports
+```python
+from pydantic import BaseModel, Field  # verified: liveavatar/models.py:15 (pydantic v2 style used throughout)
+from parrot.core.ws_auth import AuthenticatedUser  # packages/ai-parrot/src/parrot/core/ws_auth.py:34 (dataclass: user_id, username, email, roles, permissions, raw_payload)
+from parrot.integrations.liveavatar.models import LiveKitRoomTokens  # models.py:58 (livekit_url, room, client_token, agent_token) — NEVER serialise whole model to a viewer
+```
+
+### Existing Signatures to Follow
+```python
+# packages/ai-parrot-integrations/src/parrot/integrations/liveavatar/models.py:18-56
+class LiveAvatarConfig(BaseModel):
+    api_key: str = Field(..., description="...")   # style: Field(..., description=...) on every attr
+```
+
+### Does NOT Exist
+- ~~`parrot.integrations.liveavatar.broadcast`~~ — you are creating it.
+- ~~`ParticipantPrincipal`, `BroadcastDescriptor`, `BroadcastPublicState`, `ViewerLease`, `ViewerJoinResponse`, `BroadcastAudioFrame`~~ — new.
+- ~~A tenant field on `AuthenticatedUser`~~ — it has none; tenant/agent scope comes from the resolver (TASK-2962) and lives on `ParticipantPrincipal`.
+
+## Implementation Notes
+
+- Pydantic v2: use `model_config = ConfigDict(frozen=False, extra="forbid")`; `to_public_state()` is a plain method returning `BroadcastPublicState`.
+- `BroadcastAudioFrame.pcm: bytes` — validate with `@field_validator("pcm")`; reject odd lengths with `ValueError("pcm must be 16-bit aligned")`.
+- Display names: `HandRequest.display_name` must be sanitised (`str.strip()[:64]`, fallback `"participant"`).
+- Google-style docstrings on every class; `from __future__ import annotations`.
+
+## Acceptance Criteria
+
+- [ ] `from parrot.integrations.liveavatar.broadcast import BroadcastDescriptor, BroadcastPublicState, ViewerLease, ViewerJoinResponse, BroadcastAudioFrame, ParticipantPrincipal` works.
+- [ ] `to_public_state()` output never contains keys matching `token|secret|ws_url|api_key|worker` (test asserts recursively over `model_dump()`).
+- [ ] `max_viewers > 10` and odd-length PCM raise `ValidationError`.
+- [ ] `pytest packages/ai-parrot-integrations/tests/voice/test_voice_broadcast_models.py -q` passes; `ruff check` clean.
+
+## Test Specification
+
+```python
+import pytest
+from pydantic import ValidationError
+from parrot.integrations.liveavatar.broadcast import (
+    BroadcastDescriptor, BroadcastAudioFrame, BroadcastState, FloorState, MAX_VIEWERS,
+)
+
+def _descriptor(**kw) -> BroadcastDescriptor: ...
+
+def test_public_state_has_no_secret_like_keys():
+    dumped = _descriptor().to_public_state().model_dump()
+    forbidden = ("token", "secret", "ws_url", "api_key", "worker")
+    def walk(o): ...
+    assert not any(any(f in k.lower() for f in forbidden) for k in walk(dumped))
+
+def test_max_viewers_cannot_exceed_ten():
+    with pytest.raises(ValidationError):
+        _descriptor(max_viewers=11)
+
+def test_audio_frame_rejects_odd_length():
+    with pytest.raises(ValidationError):
+        BroadcastAudioFrame(owner_epoch=1, speaker_lease_id="l", floor_epoch=1, turn_id="t", output_epoch=1, sequence=0, pcm=b"\x00\x01\x02", sample_count=1)
+
+def test_state_enum_values():
+    assert {s.value for s in BroadcastState} == {"pending","starting","avatar","audio_only","stopping","ended","failed"}
+```
+
+## Agent Instructions
+1. Read spec §2 "Data Models" + "New Public Interfaces".
+2. Verify imports above. 3. Index → `in-progress`. 4. Implement + tests. 5. Move to `completed/`, index → `done`, fill Completion Note.
+
+## Completion Note
+
+**Completed by**:
+**Date**:
+**Notes**:
+**Deviations from spec**:

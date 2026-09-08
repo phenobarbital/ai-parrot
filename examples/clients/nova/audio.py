@@ -1,7 +1,7 @@
 """End-to-end Nova 2 Sonic voice chat — aiohttp server + push-to-talk web UI.
 
 A single-file, self-contained demo of
-:meth:`parrot.clients.nova.audio.NovaAudio.stream_voice` (``NovaClient``)
+:meth:`parrot.clients.amazon.nova.audio.NovaAudio.stream_voice` (``NovaClient``)
 driven straight from a browser microphone. No ``VoiceBot``, no
 ``VoiceChatHandler`` — the WebSocket handler talks to the raw client so the
 client contract is visible end to end::
@@ -62,6 +62,7 @@ See ``docs/nova_voice_protocol.md`` (FEAT-408) for the full Nova Sonic event
 sequence this client drives, including how ``LiveVoiceResponse.role``
 distinguishes your transcription from the assistant's reply.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -73,7 +74,7 @@ from pathlib import Path
 
 from aiohttp import WSMsgType, web
 from navconfig import config
-from parrot.clients.nova import NovaClient
+from parrot.clients.amazon.nova import NovaClient
 from parrot.voice.session import VoiceSession
 
 # ---------------------------------------------------------------------------
@@ -96,8 +97,12 @@ logging.basicConfig(
 # Silence the verbose smithy/CRT debug chatter — they log full HTTP
 # headers (including credentials) and every raw event-stream frame.
 for _noisy in (
-    "smithy_core", "smithy_http", "smithy_aws", "smithy_aws_event_stream",
-    "awscrt", "botocore",
+    "smithy_core",
+    "smithy_http",
+    "smithy_aws",
+    "smithy_aws_event_stream",
+    "awscrt",
+    "botocore",
 ):
     logging.getLogger(_noisy).setLevel(logging.WARNING)
 logger = logging.getLogger("nova.audio.example")
@@ -135,10 +140,14 @@ async def index_handler(request: web.Request) -> web.Response:
     # str.replace("__CONFIG__", ...) also rewrites the substring inside
     # `window.__CONFIG__` (the JS global), producing `window.{...}` which
     # is a syntax error. Match the full statement instead (count=1).
-    html = (STATIC_DIR / "index.html").read_text().replace(
-        "window.__CONFIG__ = __CONFIG__;",
-        f"window.__CONFIG__ = {json.dumps(cfg)};",
-        1,
+    html = (
+        (STATIC_DIR / "index.html")
+        .read_text()
+        .replace(
+            "window.__CONFIG__ = __CONFIG__;",
+            f"window.__CONFIG__ = {json.dumps(cfg)};",
+            1,
+        )
     )
     return web.Response(text=html, content_type="text/html")
 
@@ -160,12 +169,14 @@ async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
     request.app["sessions"].add(session)
     logger.info("Browser connected — session %s", session.session_id)
 
-    await ws.send_json({
-        "type": "ready",
-        "session_id": session.session_id,
-        "model": request.app["model"],
-        "voice": request.app["voice"],
-    })
+    await ws.send_json(
+        {
+            "type": "ready",
+            "session_id": session.session_id,
+            "model": request.app["model"],
+            "voice": request.app["voice"],
+        }
+    )
 
     try:
         async for msg in ws:
@@ -249,6 +260,7 @@ def build_app(args: argparse.Namespace) -> web.Application:
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def parse_args() -> argparse.Namespace:
     """Parse command-line options for the demo server."""
     parser = argparse.ArgumentParser(
@@ -296,7 +308,11 @@ def main() -> None:
     app = build_app(args)
     logger.info(
         "Nova 2 Sonic voice chat on http://%s:%d  (model=%s, voice=%s, region=%s)",
-        args.host, args.port, args.model, args.voice, app["region"],
+        args.host,
+        args.port,
+        args.model,
+        args.voice,
+        app["region"],
     )
     web.run_app(app, host=args.host, port=args.port, print=None)
 

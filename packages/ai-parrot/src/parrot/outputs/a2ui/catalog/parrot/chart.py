@@ -31,13 +31,15 @@ CHART_SCHEMA: dict[str, Any] = derive_schema(
 
 CHART_INSTRUCTIONS = (
     "Use Chart to visualize numeric series over a categorical/temporal axis. "
-    "Set `type` (bar/line/area/scatter/pie/donut/radar/horizontalBar), `x` (label "
-    "column) and `y` (one or more value columns). Optional styling: `stacked`, "
-    "`splitSeries` (one chart per y series), `trendline`, `showLegend`, `xAxisMode` "
+    "Set `type` (bar/line/area/scatter/pie/donut/radar/horizontalBar/gauge/"
+    "funnel/waterfall/heatmap/treemap), `x` (label column) and `y` (one or "
+    "more value columns). Optional styling: `stacked`, `splitSeries` (one "
+    "chart per y series), `trendline`, `showLegend`, `xAxisMode` "
     "('category'/'time'), `palette` (hex colours), `colorBySign` with "
-    "`negativeColor`/`positiveColor`, `xAxisLabel`/`yAxisLabel`, `mapName` "
-    "(required when type='map'), `title`/`description`, and `dataVariable` (the "
-    "DataFrame variable name backing the chart). Bind the row data with "
+    "`negativeColor`/`positiveColor`, `xAxisLabel`/`yAxisLabel`, `layout` "
+    "('full'/'half' width hint), `mapName` (required when type='map'), "
+    "`title`/`description`, and `dataVariable` (the DataFrame variable name "
+    "backing the chart). Bind the row data with "
     '`data: {"path": "/pointer"}` into the data model — never inline large '
     "arrays. Display-only."
 )

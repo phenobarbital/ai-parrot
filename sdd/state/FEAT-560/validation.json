@@ -1,0 +1,13 @@
+{
+  "state_schema": "passed",
+  "research_plan_schema": "passed",
+  "evidence_references": "passed",
+  "localization_paths_and_symbols": "passed",
+  "user_scope": "accepted",
+  "baseline_tests": {
+    "passed": 19,
+    "warnings": 8,
+    "seconds": 1.45
+  },
+  "commit_locator": "git log -1 -- sdd/proposals/voicebot-liveavatar-implementation.proposal.md"
+}

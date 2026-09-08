@@ -7,7 +7,9 @@ import pytest
 from parrot.outputs.a2ui.catalog import (
     DEFAULT_CATALOG_ID,
     ProducerOrigin,
+    catalog_header_instructions,
     catalog_instructions,
+    get_component,
     register_component,
     resolve_catalog,
     unregister_component,
@@ -20,11 +22,13 @@ from parrot.outputs.a2ui.catalog.base import (
     DANGLING_CHILD,
     DUPLICATE_ID,
     MISSING_ROOT,
+    TOOL_ONLY_NOT_ALLOWED_FOR_LLM,
     UNALLOWED_CHILD,
     UNALLOWED_PARENT,
     CatalogValidationError,
 )
 from parrot.outputs.a2ui.catalog.basic import BASIC_CATALOG_ID
+from parrot.outputs.a2ui.catalog.viz_core import VIZ_CORE_CATALOG_ID, VIZ_CORE_INSTRUCTIONS
 from parrot.outputs.a2ui.models import A2UIAgentMessage, Component, CreateSurface
 
 
@@ -183,6 +187,54 @@ class TestAllErrorsReportedAtOnce:
         assert DUPLICATE_ID in codes
 
 
+class TestLlmOriginRejectsToolOnly:
+    """FEAT-527: `tool_only` registration gate (mirrors `requires_actions`)."""
+
+    def test_tool_only_rejected_for_llm_origin(self, cleanup_catalog):
+        @register_component("ToolOnlyProbe", tool_only=True)
+        class _ToolOnlyProbe:
+            def lower(self, component, data_model):
+                return None
+
+        cleanup_catalog.append("ToolOnlyProbe")
+
+        surface = _root_surface(Component(id="root", component="ToolOnlyProbe", title="t"))
+        with pytest.raises(CatalogValidationError) as exc:
+            validate_envelope(surface, origin=ProducerOrigin.LLM)
+        codes = {i["code"] for i in exc.value.issues}
+        assert TOOL_ONLY_NOT_ALLOWED_FOR_LLM in codes
+
+    def test_tool_only_accepted_for_tool_origin(self, cleanup_catalog):
+        @register_component("ToolOnlyProbe", tool_only=True)
+        class _ToolOnlyProbe:
+            def lower(self, component, data_model):
+                return None
+
+        cleanup_catalog.append("ToolOnlyProbe")
+
+        surface = _root_surface(Component(id="root", component="ToolOnlyProbe", title="t"))
+        validate_envelope(surface, origin=ProducerOrigin.TOOL)  # must not raise
+
+    def test_tool_only_reported_together_with_other_problems(self, cleanup_catalog):
+        """The tool-only problem is collected, not raised first-failure."""
+
+        @register_component("ToolOnlyProbe", tool_only=True)
+        class _ToolOnlyProbe:
+            def lower(self, component, data_model):
+                return None
+
+        cleanup_catalog.append("ToolOnlyProbe")
+
+        surface = _root_surface(
+            Component(id="root", component="ToolOnlyProbe", title="t", children=["ghost"]),
+        )
+        with pytest.raises(CatalogValidationError) as exc:
+            validate_envelope(surface, origin=ProducerOrigin.LLM)
+        codes = {i["code"] for i in exc.value.issues}
+        assert TOOL_ONLY_NOT_ALLOWED_FOR_LLM in codes
+        assert DANGLING_CHILD in codes
+
+
 class TestCatalogInstructionsNoRstripBug:
     def test_catalog_instructions_no_rstrip_bug(self, cleanup_catalog):
         @register_component("TrailingColon")
@@ -194,3 +246,76 @@ class TestCatalogInstructionsNoRstripBug:
 
         cleanup_catalog.append("TrailingColon")
         assert "TrailingColon: Always end with a colon:" in catalog_instructions()
+
+
+class TestCatalogInstructionsScoped:
+    """FEAT-529 Module 0."""
+
+    def test_catalog_instructions_scoped(self, cleanup_catalog):
+        @register_component("GraphProbeScoped", catalog_id=VIZ_CORE_CATALOG_ID)
+        class GraphProbeScoped:
+            INSTRUCTIONS = "Use GraphProbeScoped for probes."
+
+            def lower(self, component, data_model):
+                return None
+
+        try:
+            scoped = catalog_instructions([VIZ_CORE_CATALOG_ID])
+            assert scoped.startswith(VIZ_CORE_INSTRUCTIONS)
+            assert "GraphProbeScoped: Use GraphProbeScoped for probes." in scoped
+            assert "InfoCard" not in scoped
+
+            unscoped = catalog_instructions()
+            assert VIZ_CORE_INSTRUCTIONS in unscoped
+            assert "GraphProbeScoped: Use GraphProbeScoped for probes." in unscoped
+        finally:
+            unregister_component("GraphProbeScoped", VIZ_CORE_CATALOG_ID)
+
+    def test_catalog_header_instructions(self):
+        assert catalog_header_instructions(VIZ_CORE_CATALOG_ID) == VIZ_CORE_INSTRUCTIONS
+        assert catalog_header_instructions(DEFAULT_CATALOG_ID) is None
+        assert catalog_header_instructions(BASIC_CATALOG_ID) is None
+
+
+class TestIntercepts:
+    """FEAT-529 Module 0/6: the satellite's catalog-aware interception helper."""
+
+    def test_intercepts_resolves_catalog(self):
+        from parrot.outputs.a2ui_renderers._intercept import intercepts
+
+        # Deliberately fake, never-registered names — this Module 0 test only
+        # exercises the resolution/membership logic, not real catalog content
+        # (real components would collide with whatever Module 2+ registers
+        # elsewhere in the same test session).
+        table = frozenset(
+            {
+                (DEFAULT_CATALOG_ID, "FakeParrotComposite"),
+                (VIZ_CORE_CATALOG_ID, "FakeVizComposite"),
+            }
+        )
+
+        parrot_no_own_catalog = Component(id="c0", component="FakeParrotComposite")
+        assert intercepts(table, parrot_no_own_catalog, DEFAULT_CATALOG_ID) is True
+
+        viz_with_catalog = Component(id="g0", component="FakeVizComposite", catalogId=VIZ_CORE_CATALOG_ID)
+        assert intercepts(table, viz_with_catalog, DEFAULT_CATALOG_ID) is True
+
+        viz_no_catalog = Component(id="g1", component="FakeVizComposite")
+        assert intercepts(table, viz_no_catalog, DEFAULT_CATALOG_ID) is False
+
+
+class TestGetComponentAmbiguity:
+    """FEAT-529 Module 0: ``get_component`` catalog-aware resolution."""
+
+    def test_get_component_explicit_catalog_id(self, cleanup_catalog):
+        @register_component("ExplicitProbe", catalog_id=VIZ_CORE_CATALOG_ID)
+        class ExplicitProbe:
+            def lower(self, component, data_model):
+                return None
+
+        try:
+            assert get_component("ExplicitProbe", VIZ_CORE_CATALOG_ID).component_cls is ExplicitProbe
+            with pytest.raises(KeyError):
+                get_component("ExplicitProbe", DEFAULT_CATALOG_ID)
+        finally:
+            unregister_component("ExplicitProbe", VIZ_CORE_CATALOG_ID)

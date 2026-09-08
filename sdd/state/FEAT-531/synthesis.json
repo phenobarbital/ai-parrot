@@ -1,0 +1,203 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-531",
+  "mode": "enrichment",
+  "summary_oneline": "Auto-detect an available coding-agent CLI (Claude Code, then Codex) and default wikitoolkit/bookstore's unset LLM env vars to it, with a visible warning and an opt-out.",
+
+  "localization": [
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/bookstore/_llm.py",
+      "symbol": "resolve_adapter",
+      "lines": "35-75",
+      "role": "single shared LLM-resolution seam for bookstore CLI + MCP server; currently returns (None, None, None) when PARROT_BOOKSTORE_LLM is unset",
+      "evidence": ["F001", "F003"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/bookstore/library.py",
+      "symbol": "_NullAdapter",
+      "lines": "59-78",
+      "role": "degraded-mode stand-in; ask_structured() raises the exact 'No LLM configured for the bookstore' error the requester observed",
+      "evidence": ["F004"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/cli.py",
+      "symbol": "_extract_into_graph",
+      "lines": "2712-2723",
+      "role": "resolves WIKI_EXTRACT_LLM, skips extraction (not an error) when unset",
+      "evidence": ["F005"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/cli.py",
+      "symbol": "_resolve_model_id",
+      "lines": "3409-3428",
+      "role": "generic 'flag or env, else ClickException' resolver used by ingest-style commands",
+      "evidence": ["F005"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/cli.py",
+      "symbol": "_build_triage_adapters",
+      "lines": "3431-3462",
+      "role": "builds the lightweight+heavy PageIndexLLMAdapter pair via LLMFactory.create; documents a same-provider constraint between light/heavy",
+      "evidence": ["F005"]
+    },
+    {
+      "path": "packages/ai-parrot-client-anthropic/src/parrot/clients/anthropic/claude_agent.py",
+      "symbol": "ClaudeAgentClient",
+      "lines": "1-16",
+      "role": "already-registered AbstractClient wrapping claude-agent-sdk / the claude CLI; strictly lazy SDK import",
+      "evidence": ["F002", "F008"]
+    },
+    {
+      "path": "packages/ai-parrot-client-anthropic/pyproject.toml",
+      "symbol": "entry-points.parrot.clients",
+      "lines": "26-32",
+      "role": "registers ClaudeAgentClient under claude-agent and claude-code provider keys",
+      "evidence": ["F002"]
+    },
+    {
+      "path": "packages/ai-parrot-client-openai/src/parrot/clients/openai/codex_agent.py",
+      "symbol": "OpenAICodexClient",
+      "lines": "46-81, 656-660",
+      "role": "symmetric already-registered client wrapping the codex CLI; codex_bin='codex', default_model='gpt-5.1-codex', lazy _import_sdk()",
+      "evidence": ["F007", "F008"]
+    },
+    {
+      "path": "packages/ai-parrot-client-openai/pyproject.toml",
+      "symbol": "entry-points.parrot.clients",
+      "lines": "37-41",
+      "role": "registers OpenAICodexClient under codex-agent / openai-codex / codex-code provider keys",
+      "evidence": ["F007"]
+    },
+    {
+      "path": "packages/ai-parrot-client-anthropic/src/parrot/clients/anthropic/models.py",
+      "symbol": "ClaudeModel.HAIKU_4_5",
+      "lines": "12-24",
+      "role": "existing enum value 'claude-haiku-4-5-20251001' — the cheap/deterministic model id the requester asked for",
+      "evidence": ["F002"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/coding_agents.py",
+      "symbol": "_AGENTS",
+      "lines": "45-49",
+      "role": "existing precedent naming the three canonical coding-agent CLI identifiers (codex/claude/gemini), but for wiki-hook installation, not LLM defaulting — not directly reusable",
+      "evidence": ["F006"]
+    }
+  ],
+
+  "constraints": [
+    {
+      "statement": "Neither bookstore nor wikitoolkit hardcodes a default LLM provider today; unset env vars are a deliberately supported degraded mode (BM25/deterministic carding only), not a bug.",
+      "evidence": ["F003"],
+      "implication": "the proposal is a genuine philosophy change (documented explicitly, per the requester's own framing) and must say so plainly rather than being framed as 'fixing a wrong default'"
+    },
+    {
+      "statement": "PageIndexToolkit pairs the heavy adapter's client with the lightweight model id internally, so light/heavy must resolve to the same provider.",
+      "evidence": ["F005"],
+      "implication": "an auto-detected default must pick one provider and apply it to both WIKI_MODEL and WIKI_LIGHTWEIGHT_MODEL (and PARROT_BOOKSTORE_LLM / PARROT_BOOKSTORE_LLM_LIGHT) together, never mix"
+    },
+    {
+      "statement": "Both ClaudeAgentClient and OpenAICodexClient already exist, are registered in LLMFactory, and guard their real SDK import behind a lazy, exception-safe helper.",
+      "evidence": ["F002", "F007", "F008"],
+      "implication": "no new client code is needed; detection can safely mirror the same 'try: import <sdk>' idiom plus a `shutil.which(<cli_bin>)` check, with zero subprocess/network calls during detection itself"
+    },
+    {
+      "statement": "A cheap, deterministic Claude model id (ClaudeModel.HAIKU_4_5 = 'claude-haiku-4-5-20251001') already exists; no equivalent cheap Codex model id was found in this research pass (only default_model='gpt-5.1-codex').",
+      "evidence": ["F002", "F007"],
+      "implication": "the Claude Code default model choice is fully grounded; the Codex default model choice is not — flagged as an unknown rather than guessed"
+    },
+    {
+      "statement": "wiki/coding_agents.py already treats 'codex', 'claude', and 'gemini' as the three canonical coding-agent CLI identifiers for a different purpose (installing wiki-nudge hooks).",
+      "evidence": ["F006"],
+      "implication": "the new detection helper should reuse the same three identifiers/naming for consistency, even though it can't reuse the code"
+    }
+  ],
+
+  "investigation": null,
+
+  "enrichment": {
+    "new": [
+      "A shared, provider-agnostic detection helper (proposed location: `packages/ai-parrot/src/parrot/clients/detection.py`) exposing something like `detect_coding_agent_llm() -> Optional[str]` that returns an `LLMFactory` spec string (e.g. `claude-code:claude-haiku-4-5-20251001`) or `None`, using only `shutil.which(cli_bin)` + a lazy SDK-importable check — never a real request."
+    ],
+    "modified": [
+      {"path": "packages/ai-parrot/src/parrot/knowledge/bookstore/_llm.py", "change": "resolve_adapter() falls back to the detection helper when PARROT_BOOKSTORE_LLM is unset, before returning degraded (None, None, None); logs a visible warning naming the auto-selected spec and the override env var", "evidence": ["F001", "F003"]},
+      {"path": "packages/ai-parrot/src/parrot/knowledge/wiki/cli.py", "change": "the three resolution points (_extract_into_graph, _resolve_model_id, _build_triage_adapters call sites) fall back to the same detection helper instead of erroring/skipping when their env var is unset", "evidence": ["F005"]}
+    ],
+    "untouched": [
+      "ClaudeAgentClient and OpenAICodexClient themselves — no client-level code changes, this is purely a defaulting/detection layer above LLMFactory.create()",
+      "The existing explicit-config path (PARROT_BOOKSTORE_LLM / WIKI_MODEL / WIKI_LIGHTWEIGHT_MODEL / WIKI_EXTRACT_LLM set by the user) — always takes precedence over auto-detection, unchanged",
+      "Gemini/Google support — remains fully available as an explicit choice, just never auto-selected"
+    ],
+    "patterns_to_follow": [
+      "Lazy heavy imports under stdout→stderr redirect, matching _llm.py's existing 'safe to import from the MCP server' constraint (F001/F003)",
+      "The 'try: import <sdk>; except ImportError' idiom already used inside ClaudeAgentClient/OpenAICodexClient (F008)",
+      "Never fail startup on detection/resolution failure — always degrade gracefully with a warning, matching the existing except Exception: return None, None, None pattern (F003)"
+    ],
+    "integration_risks": [
+      "Silent behavior change on any machine that happens to have `claude` or `codex` on PATH but where the user did NOT intend wikitoolkit to spend their coding-agent session/budget on background summarization — mitigated by the visible-warning + opt-out requirement from the source request, but the exact opt-out mechanism is still an open question (see unknowns)",
+      "Precedence when both `claude` and `codex` CLIs are detected on the same machine is unresolved — needs a deterministic, documented rule (see unknowns)"
+    ]
+  },
+
+  "confidence_map": [
+    {"id": "C1", "statement": "No code path in bookstore or wikitoolkit currently defaults to Gemini or any other provider; unset env vars mean fully degraded/no-LLM mode by design.", "evidence": ["F003", "F004"], "confidence": "high", "reasoning": "Directly read source + docstring stating this is a supported, intentional mode."},
+    {"id": "C2", "statement": "ClaudeAgentClient is already a fully registered LLMFactory provider under 'claude-code' with zero new client code required.", "evidence": ["F002"], "confidence": "high", "reasoning": "Entry point and class both read directly."},
+    {"id": "C3", "statement": "OpenAICodexClient is already a fully registered LLMFactory provider under 'codex-code'/'openai-codex' with zero new client code required.", "evidence": ["F007"], "confidence": "high", "reasoning": "Entry point and class attributes both read directly."},
+    {"id": "C4", "statement": "ClaudeModel.HAIKU_4_5 ('claude-haiku-4-5-20251001') is the correct, already-existing cheap/deterministic model id for the Claude Code default.", "evidence": ["F002"], "confidence": "high", "reasoning": "Enum value read directly from models.py."},
+    {"id": "C5", "statement": "A safe, non-invasive detection check can be built as 'shutil.which(cli_bin) + lazy SDK import', mirroring what the two clients already do internally, with no subprocess spawn or network call.", "evidence": ["F008"], "confidence": "high", "reasoning": "Both clients' own lazy-import docstrings/code confirm this idiom is already the established safe pattern in this codebase."},
+    {"id": "C6", "statement": "The fix touches exactly two files (bookstore/_llm.py and wiki/cli.py) plus one new shared helper module.", "evidence": ["F001", "F005"], "confidence": "medium", "reasoning": "Confirmed for the resolution points found; a small chance a fourth call site exists elsewhere in wiki/cli.py's ~4300 lines that this pass's greps did not surface."},
+    {"id": "C7", "statement": "There is no existing reusable CLI-availability-detection utility elsewhere in the repo to build on.", "evidence": ["F006"], "confidence": "medium", "reasoning": "wiki/coding_agents.py was the single strongest lexical match for 'coding agent CLI detection' and does not do availability probing; a broader repo-wide search was not exhaustive."},
+    {"id": "C8", "statement": "There is no equivalent cheap/'mini' Codex model id documented in this codebase today comparable to Claude's Haiku.", "evidence": ["F007"], "confidence": "low", "reasoning": "Only default_model was inspected; a cheaper Codex model id may exist but wasn't found in this pass — moved to unknowns rather than asserted as absent."}
+  ],
+
+  "unknowns": [
+    {
+      "id": "U1",
+      "question": "When both a `claude` and a `codex` CLI are detected on the same machine, which provider should win by default?",
+      "blocks_claims": ["C6"],
+      "plausible_answers": [
+        "Claude Code always wins (matches the source request's framing, and this codebase is 'AI-Parrot' built primarily around Claude workflows)",
+        "First one found wins, in a fixed check order (e.g. claude, then codex) — same practical effect as (a) unless codex-only",
+        "Configurable via an env var (e.g. PARROT_AUTO_LLM_PREFERENCE=claude-code,codex) with the above as the built-in default order"
+      ],
+      "ask_user": true,
+      "user_answer": "Claude Code always wins by default."
+    },
+    {
+      "id": "U2",
+      "question": "What should the opt-out mechanism be called, and should it disable auto-detection everywhere at once or per-subsystem (bookstore vs wikitoolkit)?",
+      "blocks_claims": ["C6"],
+      "plausible_answers": [
+        "One global env var, e.g. PARROT_NO_AUTO_LLM=1, disabling auto-detection for both subsystems",
+        "Two scoped env vars mirroring the existing PARROT_BOOKSTORE_LLM / WIKI_* naming",
+        "No separate opt-out var at all — setting any explicit *_LLM env var already opts out per-subsystem, and that's enough"
+      ],
+      "ask_user": true,
+      "user_answer": "One global env var, PARROT_NO_AUTO_LLM=1, disabling auto-detection for both bookstore and wikitoolkit at once."
+    },
+    {
+      "id": "U3",
+      "question": "Since no cheap/deterministic Codex model id was found in this pass (only default_model='gpt-5.1-codex'), what model id should the Codex fallback use, or should Codex auto-defaulting be deferred to a follow-up until that's confirmed?",
+      "blocks_claims": ["C8"],
+      "plausible_answers": [
+        "Use OpenAICodexClient.default_model ('gpt-5.1-codex') as-is — Codex CLI billing/model selection may not expose a cheaper tier the same way Claude does",
+        "Defer Codex auto-defaulting entirely to a fast-follow proposal; ship Claude Code detection only in this feature",
+        "The requester already knows the right Codex model id from personal usage and can supply it directly"
+      ],
+      "ask_user": true,
+      "user_answer": "Use OpenAICodexClient.default_model ('gpt-5.1-codex') as-is; ship Codex detection in this same feature (not deferred)."
+    }
+  ],
+
+  "recommended_next_command": {
+    "command": "sdd-spec",
+    "rationale": "Localization is high-confidence across both subsystems and both required clients already exist and are registered — the remaining unknowns are small, user-answerable policy choices (precedence, opt-out naming, Codex model id) that a spec's Open Questions section can carry into implementation, not architectural forks that would need a brainstorm."
+  },
+
+  "overall_confidence": "medium",
+
+  "meta": {
+    "findings_used": ["F001", "F002", "F003", "F004", "F005", "F006", "F007", "F008"],
+    "findings_unused": [],
+    "notes": "overall_confidence capped at medium because C6 and C8 are medium/low — a full sweep of wiki/cli.py (~4300 lines) for any additional LLM-resolution call sites, and a confirmed cheap Codex model id, are the two gaps a spec-time re-check should close."
+  }
+}

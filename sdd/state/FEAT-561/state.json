@@ -1,0 +1,79 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-561",
+  "feature_slug": "voicebot-multiroom-heygen-avatar",
+  "started_at": "2026-09-07T05:37:12.639239+00:00",
+  "updated_at": "2026-09-07T05:48:12.622469+00:00",
+  "source": {
+    "kind": "inline",
+    "raw_path": "sdd/state/FEAT-561/source.md",
+    "fetched_at": "2026-09-07T05:37:12.639239+00:00",
+    "summary_oneline": "VoiceBot Nova audio with a HeyGen avatar participant in a multi-agent RTC room"
+  },
+  "mode": "auto",
+  "detected_mode": "enrichment",
+  "phase": "committed",
+  "phases": {
+    "source": {
+      "status": "completed"
+    },
+    "plan": {
+      "status": "completed",
+      "approved_by_user": false
+    },
+    "research": {
+      "status": "completed",
+      "files_read": 32,
+      "grep_calls": 20,
+      "git_calls": 2,
+      "depth_reached": 2,
+      "truncated": true,
+      "truncation_reason": "Recorded research-and-finding-persistence wall time reached 337.3 seconds against 300 seconds; additional vendor account/capacity probes deferred.",
+      "notes": "Counts cover unique repository evidence files/snippet reads (not skills/templates); external web and wiki recorded separately. Research stopped after output fan-out localization; live account probe deferred to implementation."
+    },
+    "synthesis": {
+      "status": "completed",
+      "synthesis_path": "sdd/state/FEAT-561/synthesis.json",
+      "overall_confidence": "medium",
+      "claims_total": 12,
+      "claims_high_conf": 10,
+      "claims_medium_conf": 1,
+      "claims_low_conf": 1,
+      "unknowns_count": 0,
+      "lint_passed": true,
+      "lint_iterations": 2
+    },
+    "qa": {
+      "status": "completed",
+      "questions_total": 4,
+      "questions_answered": 4,
+      "notes": "Output-only scope and complete HTML requirement supplied by user; audience and fallback answered explicitly."
+    },
+    "output": {
+      "status": "completed",
+      "proposal_path": "sdd/proposals/voicebot-multiroom-heygen-avatar.proposal.md",
+      "commit_sha": null,
+      "next_command_recommended": "sdd-spec",
+      "next_command_rationale": "All material user requirements are resolved; specify the complete combined path and HTML acceptance fixture, with a mandatory vendor contract spike and cross-worker/fallback validation.",
+      "notes": "Commit SHA is reported by git after commit; self-referential SHA intentionally null. Proposal review gate remains open; user scope and requirements confirmed."
+    }
+  },
+  "budget": {
+    "profile": "default",
+    "max_files_read": 40,
+    "max_grep_calls": 25,
+    "max_git_calls": 10,
+    "max_depth": 2,
+    "max_wall_seconds": 300
+  },
+  "consumed": {
+    "files_read": 32,
+    "grep_calls": 20,
+    "git_calls": 2,
+    "wall_seconds": 337.3
+  },
+  "resume_hint": {
+    "next_phase": "review_gate",
+    "next_action": "Review the committed proposal; proceed to sdd-spec when requested, or refine research/synthesis."
+  }
+}

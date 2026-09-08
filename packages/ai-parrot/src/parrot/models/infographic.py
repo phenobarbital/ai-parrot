@@ -556,6 +556,23 @@ class ChartBlock(BaseModel):
             "its theme's negative/danger color."
         ),
     )
+    trendline: Optional[bool] = Field(
+        None,
+        description=(
+            "FEAT-527: whether the frontend should render a trend line over "
+            "the chart data. Forwarded as-is to the A2UI Chart component's "
+            "'trendline' property (see StructuredChartConfig.trendline)."
+        ),
+    )
+    x_axis_mode: Optional[Literal["category", "time"]] = Field(
+        None,
+        description=(
+            "FEAT-527: x-axis scale hint — 'category' (default, discrete "
+            "labels) or 'time' (labels are parsed as ISO 8601 timestamps). "
+            "Forwarded as 'xAxisMode' to the A2UI Chart component (see "
+            "StructuredChartConfig.x_axis_mode)."
+        ),
+    )
 
     @field_validator("positive_color", "negative_color", mode="before")
     @classmethod

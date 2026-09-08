@@ -143,7 +143,15 @@ class TestRichTableMarkup:
             rows=[{"region": "EU"}],
         )
         doc = (await renderer_cls().render(env)).content.decode()
-        assert "a2ui-table-notice" not in doc
+        # Checked against the concrete rendered element, not a bare
+        # substring (FEAT-522): DesignSystem.stylesheet() now folds in
+        # generated Tailwind CSS coverage for every a2ui-* class
+        # interactive_html.py can emit, including a `.a2ui-table-notice {
+        # ... }` rule in the embedded <style> block — that selector text is
+        # always present regardless of whether the notice element itself
+        # renders, same gotcha already documented on
+        # `test_no_pager_below_threshold` below for `.a2ui-table-pager`.
+        assert 'class="a2ui-table-notice"' not in doc
 
 
 class TestPaginationThreshold:

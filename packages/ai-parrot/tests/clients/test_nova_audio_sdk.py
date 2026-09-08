@@ -18,6 +18,7 @@ them, so a future rename or shape change fails here instead of in production.
 
 Requires the Pre-Alpha SDK (Python >= 3.12); the whole module skips without it.
 """
+
 import asyncio
 import json
 from pathlib import Path
@@ -37,8 +38,8 @@ pytest.importorskip(
 # collected when the Pre-Alpha SDK is absent.
 from aws_sdk_bedrock_runtime import models as sdk_models
 from aws_sdk_bedrock_runtime.config import Config
-from parrot.clients.nova import NovaClient
-from parrot.clients.nova import audio as audio_mod
+from parrot.clients.amazon.nova import NovaClient
+from parrot.clients.amazon.nova import audio as audio_mod
 
 
 def _make_client(**kwargs) -> NovaClient:
@@ -50,6 +51,7 @@ def _make_client(**kwargs) -> NovaClient:
 # ---------------------------------------------------------------------------
 # Test doubles for smithy's DuplexEventStream contract
 # ---------------------------------------------------------------------------
+
 
 class _FakeReceiver:
     """Async-iterable stand-in for ``smithy_core`` ``EventReceiver``."""
@@ -91,15 +93,14 @@ class _FakeDuplexStream:
 def _payload_chunk(frame: dict):
     """Build a real SDK output chunk carrying *frame* as JSON bytes."""
     return sdk_models.InvokeModelWithBidirectionalStreamOutputChunk(
-        value=sdk_models.BidirectionalOutputPayloadPart(
-            bytes_=json.dumps(frame).encode("utf-8")
-        )
+        value=sdk_models.BidirectionalOutputPayloadPart(bytes_=json.dumps(frame).encode("utf-8"))
     )
 
 
 # ---------------------------------------------------------------------------
 # _resolve_voice_client_class
 # ---------------------------------------------------------------------------
+
 
 class TestResolveVoiceClientClass:
     def test_resolves_a_real_class_from_the_installed_sdk(self):
@@ -123,9 +124,7 @@ class TestResolveVoiceClientClass:
     def test_unknown_name_raises_listing_what_is_available(self, monkeypatch):
         """The error must be actionable when the Pre-Alpha SDK renames again:
         it names what was tried AND what the package actually exposes."""
-        monkeypatch.setattr(
-            audio_mod, "_VOICE_CLIENT_CLASS_NAMES", ("TotallyNotAClient",)
-        )
+        monkeypatch.setattr(audio_mod, "_VOICE_CLIENT_CLASS_NAMES", ("TotallyNotAClient",))
         with pytest.raises(ImportError) as excinfo:
             audio_mod._resolve_voice_client_class()
         message = str(excinfo.value)
@@ -137,12 +136,20 @@ class TestResolveVoiceClientClass:
 # _open_stream
 # ---------------------------------------------------------------------------
 
+
 class TestOpenStream:
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("credentials", [{"aws_access_key": "test-key"}, {"aws_secret_key": "test-secret"}])
+    async def test_partial_credentials_do_not_fall_back_to_another_identity(self, credentials) -> None:
+        client = _make_client(**credentials)
+        with patch.object(audio_mod, "_resolve_voice_client_class") as sdk_client:
+            with pytest.raises(ValueError, match="both aws_access_key and aws_secret_key"):
+                await client._open_stream("amazon.nova-2-sonic-v1:0")
+        sdk_client.return_value.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_builds_real_config_and_operation_input(self):
-        client = _make_client(
-            region="us-west-2", aws_access_key="AKIATEST", aws_secret_key="SECRET"
-        )
+        client = _make_client(region="us-west-2", aws_access_key="AKIATEST", aws_secret_key="SECRET")
         captured = {}
 
         class FakeSDKClient:
@@ -153,9 +160,7 @@ class TestOpenStream:
                 captured["input"] = inp
                 return "THE-STREAM"
 
-        with patch.object(
-            audio_mod, "_resolve_voice_client_class", return_value=FakeSDKClient
-        ):
+        with patch.object(audio_mod, "_resolve_voice_client_class", return_value=FakeSDKClient):
             stream = await client._open_stream("amazon.nova-2-sonic-v1:0")
 
         assert stream == "THE-STREAM"
@@ -190,9 +195,7 @@ class TestOpenStream:
             async def invoke_model_with_bidirectional_stream(self, inp, plugins=None):
                 return MagicMock()
 
-        with patch.object(
-            audio_mod, "_resolve_voice_client_class", return_value=FakeSDKClient
-        ):
+        with patch.object(audio_mod, "_resolve_voice_client_class", return_value=FakeSDKClient):
             await client._open_stream("amazon.nova-2-sonic-v1:0")
 
         resolver = captured["config"].aws_credentials_identity_resolver
@@ -224,9 +227,7 @@ class TestOpenStream:
             async def invoke_model_with_bidirectional_stream(self, inp, plugins=None):
                 return MagicMock()
 
-        with patch.object(
-            audio_mod, "_resolve_voice_client_class", return_value=FakeSDKClient
-        ):
+        with patch.object(audio_mod, "_resolve_voice_client_class", return_value=FakeSDKClient):
             await client._open_stream("amazon.nova-2-sonic-v1:0")
 
         assert captured["config"].aws_session_token == "TOKEN"
@@ -248,9 +249,7 @@ class TestOpenStream:
             async def invoke_model_with_bidirectional_stream(self, inp, plugins=None):
                 return MagicMock()
 
-        with patch.object(
-            audio_mod, "_resolve_voice_client_class", return_value=FakeSDKClient
-        ):
+        with patch.object(audio_mod, "_resolve_voice_client_class", return_value=FakeSDKClient):
             await client._open_stream("amazon.nova-2-sonic-v1:0")
 
         config = captured["config"]
@@ -273,9 +272,10 @@ class TestOpenStream:
             async def invoke_model_with_bidirectional_stream(self, inp, plugins=None):
                 return MagicMock()
 
-        with patch.object(
-            audio_mod, "_resolve_voice_client_class", return_value=FakeSDKClient
-        ), patch.object(client, "logger") as mock_logger:
+        with (
+            patch.object(audio_mod, "_resolve_voice_client_class", return_value=FakeSDKClient),
+            patch.object(client, "logger") as mock_logger,
+        ):
             await client._open_stream("amazon.nova-2-sonic-v1:0")
 
         mock_logger.warning.assert_called_once()
@@ -285,6 +285,7 @@ class TestOpenStream:
 # ---------------------------------------------------------------------------
 # _send_event
 # ---------------------------------------------------------------------------
+
 
 class TestSendEvent:
     @pytest.mark.asyncio
@@ -299,9 +300,7 @@ class TestSendEvent:
 
         stream.input_stream.send.assert_awaited_once()
         chunk = stream.input_stream.send.await_args[0][0]
-        assert isinstance(
-            chunk, sdk_models.InvokeModelWithBidirectionalStreamInputChunk
-        )
+        assert isinstance(chunk, sdk_models.InvokeModelWithBidirectionalStreamInputChunk)
         assert isinstance(chunk.value, sdk_models.BidirectionalInputPayloadPart)
         assert isinstance(chunk.value.bytes_, bytes)
         assert json.loads(chunk.value.bytes_) == frame
@@ -311,15 +310,18 @@ class TestSendEvent:
 # _iter_events
 # ---------------------------------------------------------------------------
 
+
 class TestIterEvents:
     @pytest.mark.asyncio
     async def test_awaits_output_decodes_json_and_unwraps_event_envelope(self):
         client = _make_client()
-        stream = _FakeDuplexStream([
-            _payload_chunk({"event": {"textOutput": {"content": "hello"}}}),
-            _payload_chunk({"event": {"audioOutput": {"content": "QUJD"}}}),
-            _payload_chunk({"event": {"completionEnd": {}}}),
-        ])
+        stream = _FakeDuplexStream(
+            [
+                _payload_chunk({"event": {"textOutput": {"content": "hello"}}}),
+                _payload_chunk({"event": {"audioOutput": {"content": "QUJD"}}}),
+                _payload_chunk({"event": {"completionEnd": {}}}),
+            ]
+        )
 
         events = [event async for event in client._iter_events(stream)]
 
@@ -354,10 +356,7 @@ class TestIterEvents:
                 await asyncio.Event().wait()  # never resolves
 
         with pytest.raises(RuntimeError, match="did not return an initial response"):
-            [
-                event
-                async for event in client._iter_events(_NeverReadyStream())
-            ]
+            [event async for event in client._iter_events(_NeverReadyStream())]
 
     @pytest.mark.asyncio
     async def test_raises_on_non_payload_chunk(self):
@@ -374,6 +373,7 @@ class TestIterEvents:
 # ---------------------------------------------------------------------------
 # _close_stream + stream_voice integration
 # ---------------------------------------------------------------------------
+
 
 class TestCloseStream:
     @pytest.mark.asyncio
@@ -394,6 +394,62 @@ class TestCloseStream:
 
 class TestErrorReporting:
     @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "payload, expected",
+        [
+            ({"Message": "Missing bedrock:InvokeModel permission"}, "Missing bedrock:InvokeModel permission"),
+            ({"message": "Modeled message", "Message": "Gateway message"}, "Modeled message"),
+            ({}, ""),
+        ],
+    )
+    async def test_gateway_message_reaches_real_sdk_exception(self, payload, expected) -> None:
+        """Exercise actual Smithy deserialization, including capitalized Message."""
+        from smithy_core.types import TypedProperties
+        from smithy_http import Field, Fields
+        from smithy_http.aio import HTTPResponse
+
+        from parrot.clients.amazon.nova._voice_protocol import NovaVoiceProtocol
+
+        operation = sdk_models.INVOKE_MODEL_WITH_BIDIRECTIONAL_STREAM
+        response = HTTPResponse(
+            status=403,
+            fields=Fields(
+                [
+                    Field(name="content-type", values=["application/json"]),
+                    Field(name="x-amzn-errortype", values=["AccessDeniedException"]),
+                ]
+            ),
+            body=json.dumps(payload).encode(),
+        )
+        with pytest.raises(sdk_models.AccessDeniedException) as caught:
+            await NovaVoiceProtocol().deserialize_response(
+                operation=operation,
+                request=MagicMock(),
+                response=response,
+                error_registry=operation.error_registry,
+                context=TypedProperties(),
+            )
+        assert caught.value.message == expected
+
+    @pytest.mark.asyncio
+    async def test_service_message_is_preserved(self) -> None:
+        """A modeled error's message may not appear in its string value."""
+        client = _make_client()
+        error = sdk_models.AccessDeniedException(message="Not authorized to invoke this model")
+
+        async def audio_iterator():
+            yield b"\x00\x00" * 8
+
+        stream = _FakeDuplexStream()
+        stream.await_output = AsyncMock(side_effect=error)
+        with (
+            patch.object(client, "_open_stream", return_value=stream),
+            patch.object(client, "_send_event", new=AsyncMock()),
+        ):
+            responses = [response async for response in client.stream_voice(audio_iterator())]
+        assert responses[-1].metadata["error"] == "AccessDeniedException: Not authorized to invoke this model"
+
+    @pytest.mark.asyncio
     async def test_empty_service_error_still_reports_the_exception_type(self):
         """AWS's modelled errors (AccessDeniedException on a 403, for one) often
         have an empty str(), which produced metadata={"error": ""} — falsy, so
@@ -412,9 +468,11 @@ class TestErrorReporting:
         def _boom(_stream):
             raise AccessDeniedException()
 
-        with patch.object(client, "_open_stream", return_value=_FakeDuplexStream()), \
-             patch.object(client, "_send_event", new=AsyncMock()), \
-             patch.object(client, "_iter_events", new=_boom):
+        with (
+            patch.object(client, "_open_stream", return_value=_FakeDuplexStream()),
+            patch.object(client, "_send_event", new=AsyncMock()),
+            patch.object(client, "_iter_events", new=_boom),
+        ):
             responses = [r async for r in client.stream_voice(audio_iterator())]
 
         assert responses[-1].metadata["error"] == "AccessDeniedException"
@@ -428,20 +486,22 @@ class TestStreamVoiceUsesRealWrappers:
     @pytest.mark.asyncio
     async def test_turn_completes_and_stream_is_closed(self):
         client = _make_client()
-        stream = _FakeDuplexStream([
-            _payload_chunk({"event": {"textOutput": {"content": "hello"}}}),
-            _payload_chunk({"event": {"completionEnd": {}}}),
-        ])
+        stream = _FakeDuplexStream(
+            [
+                _payload_chunk({"event": {"textOutput": {"content": "hello"}}}),
+                _payload_chunk({"event": {"completionEnd": {}}}),
+            ]
+        )
 
         async def audio_iterator():
             yield b"\x00\x01" * 8
             yield None
 
-        with patch.object(client, "_open_stream", return_value=stream), \
-             patch.object(client, "_send_event", new=AsyncMock()):
-            responses = [
-                r async for r in client.stream_voice(audio_iterator())
-            ]
+        with (
+            patch.object(client, "_open_stream", return_value=stream),
+            patch.object(client, "_send_event", new=AsyncMock()),
+        ):
+            responses = [r async for r in client.stream_voice(audio_iterator())]
 
         assert any(r.text == "hello" for r in responses)
         assert responses[-1].is_complete is True

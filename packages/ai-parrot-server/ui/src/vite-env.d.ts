@@ -11,3 +11,4 @@ declare const __AGENTCHAT_CANVAS__: boolean;
 declare const __AGENTCHAT_INFOGRAPHIC__: boolean;
 declare const __AGENTCHAT_DATASETS__: boolean;
 declare const __AGENTCHAT_RICH_EDITOR__: boolean;
+declare const __AGENTCHAT_A2UI__: boolean;

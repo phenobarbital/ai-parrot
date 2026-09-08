@@ -1,0 +1,318 @@
+"""Tests for the bookstore CLI (scope resolution and guards)."""
+
+from __future__ import annotations
+
+from unittest.mock import patch
+
+from click.testing import CliRunner
+
+from parrot.knowledge.bookstore import cli as bookstore_cli
+from parrot.knowledge.bookstore.config import ENV_LIBRARY_DIR
+
+
+def _make_repo(tmp_path):
+    repo = tmp_path / "repo"
+    (repo / ".git").mkdir(parents=True)
+    return repo
+
+
+def test_locations_resolves_from_invocation_cwd(tmp_path, monkeypatch):
+    """The CLI must resolve the project scope from the directory the
+    user invoked it in — captured before any heavy import can chdir()
+    the process (the navconfig import side effect)."""
+    repo = _make_repo(tmp_path)
+    monkeypatch.delenv(ENV_LIBRARY_DIR, raising=False)
+    monkeypatch.setenv("PARROT_HOME", str(tmp_path / "home"))
+    monkeypatch.setattr(bookstore_cli, "_INVOCATION_CWD", str(repo))
+    # Simulate the post-import chdir: the process CWD is somewhere else
+    # entirely; resolution must NOT look at it.
+    monkeypatch.chdir(tmp_path)
+    result = CliRunner().invoke(bookstore_cli.bookstore, ["locations"])
+    assert result.exit_code == 0, result.output
+    assert str(repo / ".parrot" / "library") in result.output
+    assert str(tmp_path / "home" / "library") in result.output
+
+
+def test_add_outside_repo_gives_clear_error(tmp_path, monkeypatch):
+    lone = tmp_path / "nowhere"
+    lone.mkdir()
+    book = lone / "b.md"
+    book.write_text("# B\n\ncontent\n", encoding="utf-8")
+    monkeypatch.delenv(ENV_LIBRARY_DIR, raising=False)
+    monkeypatch.setenv("PARROT_HOME", str(tmp_path / "home"))
+    monkeypatch.setattr(bookstore_cli, "_INVOCATION_CWD", str(lone))
+    result = CliRunner().invoke(bookstore_cli.bookstore, ["add", str(book), "--no-llm"])
+    assert result.exit_code != 0
+    assert "--global" in result.output
+
+
+def test_add_anchors_relative_path_to_invocation_cwd(tmp_path, monkeypatch):
+    """A relative FILE must resolve against the invocation directory,
+    not whatever CWD the heavy imports later chdir() the process into
+    (the navconfig import side effect). The chdir is simulated inside
+    _open_bookstore — after click parsing, before add_book — which is
+    exactly where it happens in real life."""
+    import os
+
+    workdir = tmp_path / "work"
+    workdir.mkdir()
+    (workdir / "b.md").write_text(
+        "# B\n\nEnough content to clear the markdown thinning threshold "
+        "for this synthetic single-chapter book fixture.\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv(ENV_LIBRARY_DIR, str(tmp_path / "lib"))
+    monkeypatch.setenv("PARROT_HOME", str(tmp_path / "home"))
+    monkeypatch.setattr(bookstore_cli, "_INVOCATION_CWD", str(workdir))
+    monkeypatch.chdir(workdir)
+
+    real_open = bookstore_cli._open_bookstore
+
+    def _chdir_then_open(*args, **kwargs):
+        os.chdir(tmp_path)  # what the navconfig import chain does
+        return real_open(*args, **kwargs)
+
+    monkeypatch.setattr(bookstore_cli, "_open_bookstore", _chdir_then_open)
+    result = CliRunner().invoke(bookstore_cli.bookstore, ["add", "b.md", "--no-llm"])
+    assert result.exit_code == 0, result.output
+    assert (tmp_path / "lib" / "trees" / "b.json").is_file()
+
+
+SAMPLE_BOOK = (
+    "# Sample\n\nEnough content to clear the markdown thinning threshold "
+    "for this synthetic single-chapter book fixture used by the CLI tests.\n"
+)
+
+
+def _books_folder(tmp_path):
+    root = tmp_path / "books"
+    root.mkdir()
+    (root / "one.md").write_text(SAMPLE_BOOK, encoding="utf-8")
+    (root / "two.md").write_text(SAMPLE_BOOK + "\nDifferent sha.\n", encoding="utf-8")
+    (root / "cover.png").write_bytes(b"x")
+    return root
+
+
+def test_add_folder_dry_run_changes_nothing(tmp_path, monkeypatch):
+    root = _books_folder(tmp_path)
+    monkeypatch.setenv(ENV_LIBRARY_DIR, str(tmp_path / "lib"))
+    monkeypatch.setenv("PARROT_HOME", str(tmp_path / "home"))
+    monkeypatch.setattr(bookstore_cli, "_INVOCATION_CWD", str(tmp_path))
+    result = CliRunner().invoke(bookstore_cli.bookstore, ["add-folder", str(root), "--dry-run"])
+    assert result.exit_code == 0, result.output
+    assert "Would index 2 file(s)" in result.output
+    assert "cover.png" in result.output
+    assert not (tmp_path / "lib").exists()
+
+
+def test_add_folder_ingests_all_supported_files(tmp_path, monkeypatch):
+    root = _books_folder(tmp_path)
+    monkeypatch.setenv(ENV_LIBRARY_DIR, str(tmp_path / "lib"))
+    monkeypatch.setenv("PARROT_HOME", str(tmp_path / "home"))
+    monkeypatch.setattr(bookstore_cli, "_INVOCATION_CWD", str(tmp_path))
+    result = CliRunner().invoke(bookstore_cli.bookstore, ["add-folder", str(root), "--no-llm"])
+    assert result.exit_code == 0, result.output
+    assert "added: 2" in result.output
+    assert (tmp_path / "lib" / "trees" / "one.json").is_file()
+    assert (tmp_path / "lib" / "trees" / "two.json").is_file()
+    # Re-run: sha dedupe skips everything.
+    rerun = CliRunner().invoke(bookstore_cli.bookstore, ["add-folder", str(root), "--no-llm"])
+    assert rerun.exit_code == 0, rerun.output
+    assert "skipped: 2" in rerun.output
+
+
+def test_add_folder_relative_path_anchors_to_invocation_cwd(tmp_path, monkeypatch):
+    root = _books_folder(tmp_path)
+    monkeypatch.setenv(ENV_LIBRARY_DIR, str(tmp_path / "lib"))
+    monkeypatch.setenv("PARROT_HOME", str(tmp_path / "home"))
+    monkeypatch.setattr(bookstore_cli, "_INVOCATION_CWD", str(tmp_path))
+    monkeypatch.chdir(tmp_path)
+    result = CliRunner().invoke(bookstore_cli.bookstore, ["add-folder", "books", "--no-llm"])
+    assert result.exit_code == 0, result.output
+    assert (tmp_path / "lib" / "trees" / "one.json").is_file()
+
+
+def test_list_requires_existing_library(tmp_path, monkeypatch):
+    lone = tmp_path / "nowhere"
+    lone.mkdir()
+    monkeypatch.delenv(ENV_LIBRARY_DIR, raising=False)
+    monkeypatch.setenv("PARROT_HOME", str(tmp_path / "home"))
+    monkeypatch.setattr(bookstore_cli, "_INVOCATION_CWD", str(lone))
+    result = CliRunner().invoke(bookstore_cli.bookstore, ["list"])
+    assert result.exit_code != 0
+    assert "No library found" in result.output
+
+
+def test_bookstore_cli_degrades_without_any_config_or_cli(tmp_path, monkeypatch):
+    """FEAT-531 regression guard (spec §4 integration test): with no
+    PARROT_BOOKSTORE_LLM configured and no coding-agent CLI detected
+    (shutil.which mocked to None for both `claude` and `codex`), the
+    `bookstore` CLI must still run in the exact same degraded (no-LLM)
+    mode as before this feature — same success outcome as `--no-llm`."""
+    root = _books_folder(tmp_path)
+    for var in ("PARROT_BOOKSTORE_LLM", "PARROT_BOOKSTORE_LLM_LIGHT", "PARROT_NO_AUTO_LLM"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv(ENV_LIBRARY_DIR, str(tmp_path / "lib"))
+    monkeypatch.setenv("PARROT_HOME", str(tmp_path / "home"))
+    monkeypatch.setattr(bookstore_cli, "_INVOCATION_CWD", str(tmp_path))
+    with patch("shutil.which", return_value=None):
+        result = CliRunner().invoke(bookstore_cli.bookstore, ["add-folder", str(root)])
+    assert result.exit_code == 0, result.output
+    assert "added: 2" in result.output
+    assert (tmp_path / "lib" / "trees" / "one.json").is_file()
+    assert (tmp_path / "lib" / "trees" / "two.json").is_file()
+
+def test_related_cli_table_and_json(tmp_path, monkeypatch):
+    import json as jsonlib
+
+    from parrot.knowledge.bookstore.catalog import CatalogStore
+    from parrot.knowledge.bookstore.models import BookCard, BookRelation
+
+    lib_dir = tmp_path / "lib"
+    monkeypatch.setenv(ENV_LIBRARY_DIR, str(lib_dir))
+    monkeypatch.setenv("PARROT_HOME", str(tmp_path / "home"))
+    monkeypatch.setattr(bookstore_cli, "_INVOCATION_CWD", str(tmp_path))
+
+    now = "2026-09-06T00:00:00+00:00"
+    catalog = CatalogStore(lib_dir / "library.db")
+    for book_id, title in (("a", "Book A"), ("b", "Book B")):
+        catalog.upsert(
+            BookCard(
+                book_id=book_id,
+                title=title,
+                tree_name=book_id,
+                source_path=f"/books/{book_id}.md",
+                source_sha256=f"{book_id:0<64}"[:64],
+                source_format="md",
+                added_at=now,
+            )
+        )
+    catalog.upsert_relations(
+        [
+            BookRelation(
+                src_book_id="a",
+                dst_book_id="b",
+                rel="same_author",
+                origin="deterministic",
+                weight=0.9,
+                computed_at=now,
+            )
+        ]
+    )
+
+    result = CliRunner().invoke(bookstore_cli.bookstore, ["related", "a"])
+    assert result.exit_code == 0, result.output
+    assert "same_author" in result.output
+    assert "Book B" in result.output
+
+    json_result = CliRunner().invoke(bookstore_cli.bookstore, ["related", "a", "--json"])
+    assert json_result.exit_code == 0, json_result.output
+    payload = jsonlib.loads(json_result.output)
+    assert payload[0]["book"]["book_id"] == "b"
+    assert payload[0]["rel"] == "same_author"
+
+
+def test_relate_cli_requires_target(tmp_path, monkeypatch):
+    monkeypatch.setenv(ENV_LIBRARY_DIR, str(tmp_path / "lib"))
+    monkeypatch.setenv("PARROT_HOME", str(tmp_path / "home"))
+    monkeypatch.setattr(bookstore_cli, "_INVOCATION_CWD", str(tmp_path))
+    result = CliRunner().invoke(bookstore_cli.bookstore, ["relate"])
+    assert result.exit_code != 0
+    assert "--all" in result.output
+
+
+def test_relate_cli_all_prints_summary(tmp_path, monkeypatch):
+    from parrot.knowledge.bookstore.catalog import CatalogStore
+    from parrot.knowledge.bookstore.models import BookCard
+
+    lib_dir = tmp_path / "lib"
+    monkeypatch.setenv(ENV_LIBRARY_DIR, str(lib_dir))
+    monkeypatch.setenv("PARROT_HOME", str(tmp_path / "home"))
+    monkeypatch.setattr(bookstore_cli, "_INVOCATION_CWD", str(tmp_path))
+
+    now = "2026-09-06T00:00:00+00:00"
+    catalog = CatalogStore(lib_dir / "library.db")
+    for book_id in ("a", "b"):
+        catalog.upsert(
+            BookCard(
+                book_id=book_id,
+                title=book_id,
+                tree_name=book_id,
+                source_path=f"/books/{book_id}.md",
+                source_sha256=f"{book_id:0<64}"[:64],
+                source_format="md",
+                added_at=now,
+                authors=["Same Author"],
+            )
+        )
+
+    result = CliRunner().invoke(bookstore_cli.bookstore, ["relate", "--all", "--no-llm"])
+    assert result.exit_code == 0, result.output
+    assert "targets: 2" in result.output
+    assert "deterministic edges: 1" in result.output
+    assert "LLM skipped" in result.output
+
+
+def test_communities_cli_table_and_json(tmp_path, monkeypatch):
+    import json as jsonlib
+
+    from parrot.knowledge.bookstore.catalog import CatalogStore
+    from parrot.knowledge.bookstore.models import BookCard
+
+    lib_dir = tmp_path / "lib"
+    monkeypatch.setenv(ENV_LIBRARY_DIR, str(lib_dir))
+    monkeypatch.setenv("PARROT_HOME", str(tmp_path / "home"))
+    monkeypatch.setattr(bookstore_cli, "_INVOCATION_CWD", str(tmp_path))
+
+    now = "2026-09-06T00:00:00+00:00"
+    catalog = CatalogStore(lib_dir / "library.db")
+    for book_id, author in (("a", "X"), ("b", "X"), ("c", "Y")):
+        catalog.upsert(
+            BookCard(
+                book_id=book_id,
+                title=book_id,
+                tree_name=book_id,
+                source_path=f"/books/{book_id}.md",
+                source_sha256=f"{book_id:0<64}"[:64],
+                source_format="md",
+                added_at=now,
+                authors=[author],
+            )
+        )
+
+    relate_result = CliRunner().invoke(bookstore_cli.bookstore, ["relate", "--all", "--no-llm"])
+    assert relate_result.exit_code == 0, relate_result.output
+
+    table = CliRunner().invoke(bookstore_cli.bookstore, ["communities"])
+    assert table.exit_code == 0, table.output
+    assert "leiden" in table.output or "louvain" in table.output
+
+    json_result = CliRunner().invoke(bookstore_cli.bookstore, ["communities", "--json"])
+    assert json_result.exit_code == 0, json_result.output
+    payload = jsonlib.loads(json_result.output)
+    assert len(payload) >= 1
+    assert "community_id" in payload[0]
+
+
+def test_show_prints_classification(capsys):
+    from parrot.knowledge.bookstore.models import BookCard
+
+    card = BookCard(
+        book_id="meditations",
+        title="Meditations",
+        tree_name="meditations",
+        source_path="/books/meditations.pdf",
+        source_sha256="a" * 64,
+        source_format="pdf",
+        added_at="2026-09-06T00:00:00+00:00",
+        genre="essay",
+        traditions=["estoicismo"],
+        period="Imperio romano",
+        community_label="Virtue ethics",
+    )
+    bookstore_cli._echo_card(card)
+    out = capsys.readouterr().out
+    assert "essay" in out
+    assert "estoicismo" in out
+    assert "Imperio romano" in out
+    assert "Virtue ethics" in out

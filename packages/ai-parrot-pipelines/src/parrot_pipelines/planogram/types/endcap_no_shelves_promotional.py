@@ -6,6 +6,7 @@ No physical products are expected — compliance is determined by verifying
 that both zones are present and that the backlit panel is correctly
 illuminated.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -15,7 +16,6 @@ from typing import Any, Dict, List, Optional, Tuple
 from PIL import Image
 
 from .abstract import AbstractPlanogramType, _DEFAULT_ILLUMINATION_PENALTY
-from parrot.models.google import GoogleModel
 from parrot.models.detections import (
     Detection,
     DetectionBox,
@@ -104,7 +104,7 @@ class EndcapNoShelvesPromotional(AbstractPlanogramType):
                     msg = await client.ask_to_image(
                         image=image_small,
                         prompt=prompt,
-                        model=GoogleModel.GEMINI_3_FLASH_PREVIEW,
+                        model="gemini-3.5-flash",
                         no_memory=True,
                         structured_output=Detections,
                         max_tokens=8192,
@@ -119,9 +119,7 @@ class EndcapNoShelvesPromotional(AbstractPlanogramType):
                     )
                     await asyncio.sleep(10)
                 else:
-                    self.logger.error(
-                        "ROI detection failed after %d attempts: %s", max_attempts, exc
-                    )
+                    self.logger.error("ROI detection failed after %d attempts: %s", max_attempts, exc)
                     return None, None, None, None, []
 
         data = msg.structured_output or msg.output or {}
@@ -147,9 +145,7 @@ class EndcapNoShelvesPromotional(AbstractPlanogramType):
                         b["x2"] = min(1.0, max(0.0, b.get("x2", 0) / iw_s))
                         b["y2"] = min(1.0, max(0.0, b.get("y2", 0) / ih_s))
                 data = Detections(**raw)
-                self.logger.info(
-                    "Recovered ROI detections after normalizing pixel coordinates."
-                )
+                self.logger.info("Recovered ROI detections after normalizing pixel coordinates.")
             except Exception as parse_err:
                 self.logger.warning("ROI coordinate recovery failed: %s", parse_err)
                 return None, None, None, None, []
@@ -255,7 +251,7 @@ class EndcapNoShelvesPromotional(AbstractPlanogramType):
                     msg = await client.ask_to_image(
                         image=image_small,
                         prompt=prompt,
-                        model=GoogleModel.GEMINI_3_FLASH_PREVIEW,
+                        model="gemini-3.5-flash",
                         no_memory=True,
                         structured_output=Detections,
                         max_tokens=8192,
@@ -295,13 +291,9 @@ class EndcapNoShelvesPromotional(AbstractPlanogramType):
                         b["x2"] = min(1.0, max(0.0, b.get("x2", 0) / iw_s))
                         b["y2"] = min(1.0, max(0.0, b.get("y2", 0) / ih_s))
                 data = Detections(**raw)
-                self.logger.info(
-                    "Recovered zone detections after normalizing pixel coordinates."
-                )
+                self.logger.info("Recovered zone detections after normalizing pixel coordinates.")
             except Exception as parse_err:
-                self.logger.warning(
-                    "Zone coordinate recovery failed: %s", parse_err
-                )
+                self.logger.warning("Zone coordinate recovery failed: %s", parse_err)
                 return []
 
         return data.detections or []
@@ -389,10 +381,7 @@ class EndcapNoShelvesPromotional(AbstractPlanogramType):
                 if prod_illum_required is not None:
                     zone_has_illum = True
                 else:
-                    zone_has_illum = any(
-                        f.lower().startswith("illumination_status:")
-                        for f in prod_visual_features
-                    )
+                    zone_has_illum = any(f.lower().startswith("illumination_status:") for f in prod_visual_features)
 
                 visual_features: List[str] = []
 
@@ -407,9 +396,7 @@ class EndcapNoShelvesPromotional(AbstractPlanogramType):
                         )
                     # Seed first so _extract_illumination_state uses first-match.
                     visual_features = [roi_illumination]
-                    self.logger.debug(
-                        "Zone '%s': illumination_state=%s", prod_name, roi_illumination
-                    )
+                    self.logger.debug("Zone '%s': illumination_state=%s", prod_name, roi_illumination)
 
                 product = IdentifiedProduct(
                     product_model=prod_name,
@@ -479,21 +466,22 @@ class EndcapNoShelvesPromotional(AbstractPlanogramType):
             {
                 "level": "backlit_panel",
                 "products": [
-                    {"name": "backlit_panel", "visual_features": ["illumination_status: ON"],
-                     "mandatory": True, "compliance_threshold": 0.8},
+                    {
+                        "name": "backlit_panel",
+                        "visual_features": ["illumination_status: ON"],
+                        "mandatory": True,
+                        "compliance_threshold": 0.8,
+                    },
                 ],
             },
             {
                 "level": "lower_poster",
                 "products": [
-                    {"name": "lower_poster", "visual_features": [],
-                     "mandatory": True, "compliance_threshold": 0.8},
+                    {"name": "lower_poster", "visual_features": [], "mandatory": True, "compliance_threshold": 0.8},
                 ],
             },
         ]
-        global_threshold = (
-            getattr(planogram_description, "global_compliance_threshold", None) or 0.8
-        )
+        global_threshold = getattr(planogram_description, "global_compliance_threshold", None) or 0.8
 
         # Index products by shelf_location for O(1) lookup
         by_shelf: Dict[str, List[IdentifiedProduct]] = {}
@@ -541,11 +529,7 @@ class EndcapNoShelvesPromotional(AbstractPlanogramType):
 
                 expected_names.append(prod_name)
 
-                detected = (
-                    products_on_shelf[prod_idx]
-                    if prod_idx < len(products_on_shelf)
-                    else None
-                )
+                detected = products_on_shelf[prod_idx] if prod_idx < len(products_on_shelf) else None
                 zone_found = detected is not None and detected.confidence > 0.0
 
                 _found_idx: Optional[int] = None
@@ -568,39 +552,44 @@ class EndcapNoShelvesPromotional(AbstractPlanogramType):
                     expected_illum = self._extract_illumination_state(prod_visual_features)
 
                 if zone_found and expected_illum is not None:
-                    detected_features = (
-                        detected.visual_features if detected else []
-                    ) or []
+                    detected_features = (detected.visual_features if detected else []) or []
                     detected_illum = self._extract_illumination_state(detected_features)
                     if detected_illum is not None and detected_illum != expected_illum:
-                        penalty = float(max(0.0, min(1.0,
-                            prod_illum_penalty
-                            if prod_illum_penalty is not None
-                            else _DEFAULT_ILLUMINATION_PENALTY
-                        )))
-                        zone_score *= (1.0 - penalty)
+                        penalty = float(
+                            max(
+                                0.0,
+                                min(
+                                    1.0,
+                                    (
+                                        prod_illum_penalty
+                                        if prod_illum_penalty is not None
+                                        else _DEFAULT_ILLUMINATION_PENALTY
+                                    ),
+                                ),
+                            )
+                        )
+                        zone_score *= 1.0 - penalty
                         self.logger.debug(
-                            "Illumination mismatch on zone '%s': expected=%s "
-                            "detected=%s penalty=%s → score=%.3f",
-                            prod_name, expected_illum, detected_illum,
-                            penalty, zone_score,
+                            "Illumination mismatch on zone '%s': expected=%s " "detected=%s penalty=%s → score=%.3f",
+                            prod_name,
+                            expected_illum,
+                            detected_illum,
+                            penalty,
+                            zone_score,
                         )
                         # Replace the found_name with one that reflects actual state
                         actual_label = f"{prod_name} (LIGHT_{detected_illum.upper()})"
                         if _found_idx is not None:
                             found_names[_found_idx] = actual_label
                         missing.append(
-                            f"{prod_name} — backlight {detected_illum.upper()} "
-                                f"(required: {expected_illum.upper()})"
-                            )
+                            f"{prod_name} — backlight {detected_illum.upper()} " f"(required: {expected_illum.upper()})"
+                        )
 
                 # ----------------------------------------------------------
                 # Text requirements check
                 # ----------------------------------------------------------
                 if zone_found and prod_text_requirements:
-                    detected_features = (
-                        detected.visual_features if detected else []
-                    ) or []
+                    detected_features = (detected.visual_features if detected else []) or []
                     for text_req in prod_text_requirements:
                         if isinstance(text_req, dict):
                             req_text = text_req.get("required_text", "")
@@ -630,13 +619,9 @@ class EndcapNoShelvesPromotional(AbstractPlanogramType):
                 zone_scores.append(effective_score)
 
             if text_results:
-                text_score = sum(
-                    r.confidence for r in text_results if r.found
-                ) / len(text_results)
+                text_score = sum(r.confidence for r in text_results if r.found) / len(text_results)
 
-            combined_score = (
-                sum(zone_scores) / len(zone_scores) if zone_scores else 0.0
-            )
+            combined_score = sum(zone_scores) / len(zone_scores) if zone_scores else 0.0
             combined_score = min(1.0, max(0.0, combined_score))
 
             # MISSING only when no zone was actually detected; NON_COMPLIANT
@@ -650,9 +635,11 @@ class EndcapNoShelvesPromotional(AbstractPlanogramType):
                 status = ComplianceStatus.NON_COMPLIANT
 
             self.logger.info(
-                "EndcapNoShelvesPromotional compliance zone=%s score=%.3f "
-                "status=%s missing=%s",
-                shelf_level, combined_score, status, missing,
+                "EndcapNoShelvesPromotional compliance zone=%s score=%.3f " "status=%s missing=%s",
+                shelf_level,
+                combined_score,
+                status,
+                missing,
             )
 
             results.append(
@@ -665,9 +652,7 @@ class EndcapNoShelvesPromotional(AbstractPlanogramType):
                     compliance_status=status,
                     compliance_score=round(combined_score, 4),
                     text_compliance_results=text_results,
-                    text_compliance_score=min(
-                        1.0, max(0.0, text_score if text_results else 1.0)
-                    ),
+                    text_compliance_score=min(1.0, max(0.0, text_score if text_results else 1.0)),
                     overall_text_compliant=overall_text_ok,
                     brand_compliance_result=None,
                 )

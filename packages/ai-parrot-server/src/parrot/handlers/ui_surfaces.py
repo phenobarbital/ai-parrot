@@ -30,8 +30,14 @@ from parrot.auth.permission import build_principal_context
 from parrot.handlers.infographic_recipes import get_recipe_runner
 from parrot.handlers.models.ui_surfaces import (
     PgUISurfaceStore,
+    SurfaceVisibility,
     UISurfaceKind,
     UISurfaceRecord,
+)
+from parrot.handlers.ui_surfaces_scope import (
+    SurfaceScope,
+    get_scope_resolver,
+    scope_grants,
 )
 from parrot.outputs.a2ui.models import CreateSurface
 from parrot.storage.artifacts import ArtifactStore
@@ -74,6 +80,12 @@ class PublishSurfaceRequest(BaseModel):
     recipe_name: str | None = None
     recipe_owner: str | None = None
     recipe_params: dict[str, Any] = Field(default_factory=dict)
+    visibility: SurfaceVisibility = SurfaceVisibility.private
+    allowed_groups: list[str] = Field(default_factory=list)
+    # NOTE: deliberately NO `tenant` field (spec §2/§6) — the server always
+    # sets it from the resolved `SurfaceScope`; pydantic ignores an unknown
+    # `tenant` key in the body (default `extra="ignore"`), so a client
+    # sending one has no effect.
 
 
 class RefreshSurfaceRequest(BaseModel):
@@ -87,6 +99,13 @@ class MintShareRequest(BaseModel):
 
     expires_at: datetime | None = None
     ttl: bool = False
+
+
+class PatchVisibilityRequest(BaseModel):
+    """Body of ``PATCH /api/v1/ui/surfaces/{id}`` (owner-only)."""
+
+    visibility: SurfaceVisibility
+    allowed_groups: list[str] = Field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -132,30 +151,49 @@ def _surface_metadata(record: UISurfaceRecord) -> dict[str, Any]:
         "updated_at": record.updated_at.isoformat(),
         "catalog_id": record.catalog_id,
         "agent_id": record.agent_id,
+        "tenant": record.tenant,
+        "visibility": record.visibility.value,
+        "allowed_groups": record.allowed_groups,
+        "recipe_name": record.recipe_name,
+        "recipe_params": record.recipe_params,
     }
 
 
 async def resolve_surface_access(
-    store: PgUISurfaceStore, surface_id: str, user_id: str | None, token: str | None
+    store: PgUISurfaceStore,
+    surface_id: str,
+    user_id: str | None,
+    token: str | None,
+    *,
+    scope: SurfaceScope | None = None,
 ) -> tuple[UISurfaceRecord | None, tuple[str, int] | None]:
-    """Resolve owner-or-share access to a surface.
+    """Resolve owner-or-scope-or-share access to a surface.
 
     SHARED between ``UISurfacesHandler`` (this module) and
-    ``A2UIHandler``'s mirror route (``handlers/a2ui.py``, TASK-2703) — code
-    review follow-up: this rule set was originally duplicated between the
-    two handlers (each building its own ``web.Response``); promoted to a
+    ``A2UIHandler``'s mirror route (``handlers/a2ui.py``, TASK-2703/2935) —
+    code review follow-up: this rule set was originally duplicated between
+    the two handlers (each building its own ``web.Response``); promoted to a
     module-level, framework-response-agnostic function so it cannot drift
     between the two routes. Returns ``(record, None)`` on success, or
     ``(None, (message, status))`` on failure — the caller builds the actual
     ``web.Response`` with its own response helper.
 
-    Unknown/foreign-without-token id -> 404 (no existence oracle).
+    Access order (FEAT-535): owner -> scope (tenant/group/superuser) ->
+    share token -> 404. The scope check runs BEFORE the token check
+    because it never needs the caller to have anything out-of-band, but a
+    share token still grants access to a surface from a FOREIGN tenant —
+    minting/handing out a token is explicit, out-of-band consent that the
+    tenant/group rule must not block (spec §2).
+
+    Unknown/foreign-without-token-or-scope id -> 404 (no existence oracle).
     Revoked/expired/missing token (when one WAS supplied) -> 410.
     """
     record = await store.get(surface_id)
     if record is None:
         return None, ("Surface not found", 404)
     if record.user_id == user_id:
+        return record, None
+    if scope is not None and scope_grants(record, scope):
         return record, None
     if token:
         share = await store.resolve_share(token)
@@ -310,6 +348,15 @@ class UISurfacesHandler(BaseView):
     async def _user_id(self) -> str | None:
         return await _get_user_id(self.request)
 
+    async def _scope(self) -> SurfaceScope:
+        """Resolve the caller's :class:`SurfaceScope` for this request.
+
+        Resolved ONCE per request via the host's installed
+        ``app["ui_surfaces_scope_resolver"]`` (or the default session
+        resolver) — never re-resolved per store call.
+        """
+        return await get_scope_resolver(self.request.app).resolve(self.request)
+
     def _error(self, message: str, *, status: int = 400) -> web.Response:
         """Build a JSON error response directly via ``json_response``.
 
@@ -330,9 +377,10 @@ class UISurfacesHandler(BaseView):
         """``GET /api/v1/ui/surfaces[/{surface_id}]``."""
         surface_id = self.request.match_info.get("surface_id")
         user_id = await self._user_id()
+        scope = await self._scope()
         if surface_id:
-            return await self._get_one(surface_id, user_id)
-        return await self._get_list(user_id)
+            return await self._get_one(surface_id, user_id, scope)
+        return await self._get_list(user_id, scope)
 
     async def post(self) -> web.Response:
         """Dispatch ``POST`` by path suffix: ``/refresh``, ``/share``, or pin/save."""
@@ -342,6 +390,15 @@ class UISurfacesHandler(BaseView):
         if path.endswith("/share"):
             return await self._mint_share()
         return await self._pin_save()
+
+    async def patch(self) -> web.Response:
+        """``PATCH /api/v1/ui/surfaces/{surface_id}`` — owner-only visibility change.
+
+        Rides the existing ``/{surface_id}`` view (``manager.py`` untouched,
+        spec §2/§6) — aiohttp's ``View`` dispatches any HTTP verb to a
+        same-named coroutine.
+        """
+        return await self._patch_visibility()
 
     async def delete(self) -> web.Response:
         """Dispatch ``DELETE``: revoke a share token, or delete a surface."""
@@ -354,19 +411,23 @@ class UISurfacesHandler(BaseView):
     # ── GET ──────────────────────────────────────────────────────────────
 
     async def _resolve_surface_for_access(
-        self, surface_id: str, user_id: str | None, token: str | None
+        self,
+        surface_id: str,
+        user_id: str | None,
+        token: str | None,
+        scope: SurfaceScope | None = None,
     ) -> tuple[UISurfaceRecord | None, web.Response | None]:
-        """Resolve owner-or-share access to a surface.
+        """Resolve owner-or-scope-or-share access to a surface.
 
         Thin wrapper building this handler's OWN ``web.Response`` from the
         SHARED :func:`resolve_surface_access` rule set (module-level —
-        also used by ``A2UIHandler``'s mirror route, TASK-2703 — so the
+        also used by ``A2UIHandler``'s mirror route, TASK-2703/2935 — so the
         rule set cannot drift between the two routes).
 
         Returns:
             ``(record, None)`` on success, or ``(None, error_response)``.
         """
-        record, error = await resolve_surface_access(self.store, surface_id, user_id, token)
+        record, error = await resolve_surface_access(self.store, surface_id, user_id, token, scope=scope)
         if error is None:
             return record, None
         message, status = error
@@ -376,16 +437,16 @@ class UISurfacesHandler(BaseView):
         # including 410 (NOT in that whitelist).
         return None, self._error(message, status=status)
 
-    async def _get_one(self, surface_id: str, user_id: str | None) -> web.Response:
+    async def _get_one(self, surface_id: str, user_id: str | None, scope: SurfaceScope) -> web.Response:
         qs = self.query_parameters(self.request)
         token = qs.get("share")
-        record, err = await self._resolve_surface_for_access(surface_id, user_id, token)
+        record, err = await self._resolve_surface_for_access(surface_id, user_id, token, scope)
         if err is not None:
             return err
         accept = self.negotiation.negotiate(self.request)
         return await self.negotiation.respond(record, accept)
 
-    async def _get_list(self, user_id: str | None) -> web.Response:
+    async def _get_list(self, user_id: str | None, scope: SurfaceScope) -> web.Response:
         if not user_id:
             return self._error("User ID not found in session", status=401)
         qs = self.query_parameters(self.request)
@@ -397,15 +458,33 @@ class UISurfacesHandler(BaseView):
             except ValueError:
                 return self._error(f"Unknown kind: {kind_str!r}", status=400)
 
-        owned = await self.store.list(user_id, kind=kind)
+        visible = await self.store.list_visible(scope, kind=kind)
         shared = await self.store.list_shared_with(user_id)
         if kind is not None:
             shared = [r for r in shared if r.kind == kind]
 
-        items = [{**_surface_metadata(r), "access": "owner"} for r in owned] + [
-            {**_surface_metadata(r), "access": "shared"} for r in shared
-        ]
+        items = self._tag_and_merge(user_id, visible, shared)
         return self.json_response({"status": "success", "count": len(items), "surfaces": items})
+
+    def _tag_and_merge(
+        self, user_id: str | None, visible: list[UISurfaceRecord], shared: list[UISurfaceRecord]
+    ) -> list[dict[str, Any]]:
+        """Dedupe ``visible`` (owner ∪ tenant ∪ group ∪ superuser) with
+        ``shared`` (token-claimed) by ``surface_id``, tagging ``access``.
+
+        A surface both token-shared and tenant/group-visible is reported
+        ONCE, tagged by the ``visible`` pass — "visible wins over shared,
+        owner wins over both" (spec §7 Known Risk).
+        """
+        tagged: dict[str, dict[str, Any]] = {}
+        for record in visible:
+            access = "owner" if record.user_id == user_id else "tenant"
+            tagged[record.surface_id] = {**_surface_metadata(record), "access": access}
+        for record in shared:
+            if record.surface_id in tagged:
+                continue
+            tagged[record.surface_id] = {**_surface_metadata(record), "access": "shared"}
+        return list(tagged.values())
 
     # ── POST: pin/save ──────────────────────────────────────────────────
 
@@ -413,6 +492,7 @@ class UISurfacesHandler(BaseView):
         user_id = await self._user_id()
         if not user_id:
             return self._error("User ID not found in session", status=401)
+        scope = await self._scope()
         try:
             body = await self.request.json()
         except Exception:  # noqa: BLE001
@@ -427,6 +507,9 @@ class UISurfacesHandler(BaseView):
                 {"status": "error", "message": "Invalid request", "errors": exc.errors()},
                 status=400,
             )
+
+        if req.visibility is not SurfaceVisibility.private and scope.tenant is None:
+            return self._error("visibility requires a tenant scope", status=422)
 
         has_inline = req.envelope is not None
         has_artifact = req.source_artifact_id is not None
@@ -480,6 +563,9 @@ class UISurfacesHandler(BaseView):
             recipe_name=req.recipe_name,
             recipe_owner=req.recipe_owner,
             recipe_params=req.recipe_params,
+            tenant=scope.tenant,  # server-set, NEVER from the body (spec §2/§6)
+            visibility=req.visibility,
+            allowed_groups=req.allowed_groups,
             created_at=now,
             updated_at=now,
         )
@@ -494,9 +580,10 @@ class UISurfacesHandler(BaseView):
             return self._error("surface_id is required", status=400)
 
         user_id = await self._user_id()
+        scope = await self._scope()
         qs = self.query_parameters(self.request)
         token = qs.get("share")
-        record, err = await self._resolve_surface_for_access(surface_id, user_id, token)
+        record, err = await self._resolve_surface_for_access(surface_id, user_id, token, scope)
         if err is not None:
             return err
 
@@ -555,6 +642,55 @@ class UISurfacesHandler(BaseView):
         updated = await self.store.get(surface_id)
         accept = self.negotiation.negotiate(self.request)
         return await self.negotiation.respond(updated, accept)
+
+    # ── PATCH: visibility ────────────────────────────────────────────────
+
+    async def _patch_visibility(self) -> web.Response:
+        """Owner-only visibility/``allowed_groups`` change (spec §2/§3).
+
+        Ownership is checked the same way ``_mint_share``/``_revoke_share``
+        already do in this file — a single ``store.get()`` compared in
+        Python — so the tenant-rule check below never runs (and never
+        leaks whether a surface exists) for anyone but the confirmed owner.
+        ``store.update_visibility`` ALSO enforces ownership in SQL
+        (``WHERE surface_id = $1 AND user_id = $2``, spec §7); the ``404``
+        after it is a defensive fallback (e.g. deleted between the two
+        calls), never the primary gate.
+        """
+        surface_id = self.request.match_info.get("surface_id")
+        if not surface_id:
+            return self._error("surface_id is required", status=400)
+        user_id = await self._user_id()
+        if not user_id:
+            return self._error("User ID not found in session", status=401)
+
+        try:
+            body = await self.request.json()
+        except Exception:  # noqa: BLE001
+            return self._error("Invalid JSON body", status=400)
+        if not isinstance(body, dict):
+            return self._error("Request body must be a JSON object", status=400)
+        try:
+            req = PatchVisibilityRequest.model_validate(body)
+        except ValidationError as exc:
+            return self.json_response(
+                {"status": "error", "message": "Invalid request", "errors": exc.errors()},
+                status=400,
+            )
+
+        record = await self.store.get(surface_id)
+        if record is None or record.user_id != user_id:
+            return self._error("Surface not found", status=404)
+
+        if req.visibility is not SurfaceVisibility.private and record.tenant is None:
+            return self._error("visibility requires a tenant on the surface", status=422)
+
+        ok = await self.store.update_visibility(surface_id, user_id, req.visibility, req.allowed_groups)
+        if not ok:
+            return self._error("Surface not found", status=404)
+
+        updated = await self.store.get(surface_id)
+        return self.json_response({"status": "success", "metadata": _surface_metadata(updated)})
 
     # ── POST: share mint ─────────────────────────────────────────────────
 

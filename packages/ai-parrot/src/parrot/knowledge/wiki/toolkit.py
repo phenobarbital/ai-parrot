@@ -22,25 +22,12 @@ from pathlib import Path
 from typing import Any, Optional
 
 from parrot.knowledge.wiki.bookkeeper import WikiBookkeeper
-from parrot.knowledge.wiki.context import (
-    DEFAULT_BUDGET_TOKENS,
-    pack_results,
-    truncate_to_tokens,
-)
+from parrot.knowledge.wiki.context import DEFAULT_BUDGET_TOKENS, pack_results, truncate_to_tokens
 from parrot.knowledge.wiki.ingest import IngestReport, WikiIngestOrchestrator
-from parrot.knowledge.wiki.models import (
-    WikiConfig,
-    WikiLintReport,
-    WikiPageCategory,
-)
+from parrot.knowledge.wiki.models import WikiConfig, WikiLintReport, WikiPageCategory
 from parrot.knowledge.wiki.search import WikiCombinedSearch
 from parrot.knowledge.wiki.sources import SourceCollectionManager
-from parrot.knowledge.wiki.store import (
-    BaseWikiStore,
-    WikiPageRecord,
-    create_wiki_store,
-    estimate_tokens,
-)
+from parrot.knowledge.wiki.store import BaseWikiStore, WikiPageRecord, create_wiki_store, estimate_tokens
 from parrot.tools.toolkit import AbstractToolkit
 
 
@@ -129,10 +116,7 @@ class LLMWikiToolkit(AbstractToolkit):
             # no arango-specific fields), resolved the same way
             # WikiProjectConfig-driven callers do.
             from parrot.knowledge.wiki.arango_store import ArangoDBWikiStore
-            from parrot.knowledge.wiki.project import (
-                WikiProjectConfig,
-                resolve_arango_params,
-            )
+            from parrot.knowledge.wiki.project import WikiProjectConfig, resolve_arango_params
 
             arango_params = resolve_arango_params(WikiProjectConfig(wiki_name=config.wiki_name))
             self._store = ArangoDBWikiStore(arango_params, wiki_name=config.wiki_name)
@@ -311,10 +295,7 @@ class LLMWikiToolkit(AbstractToolkit):
             Dict with the phase reports: ``raw_ingest``, ``graph_bridge``
             (nodes/edges imported) and optionally ``entity_extraction``.
         """
-        from parrot.loaders.obsidian import (
-            ObsidianGraphBridge,
-            ObsidianVaultLoader,
-        )
+        from parrot.loaders.obsidian import ObsidianGraphBridge, ObsidianVaultLoader
 
         self.logger.info("Ingesting Obsidian vault into wiki '%s': %s", wiki_name, vault_path)
         effective_config = self._local_config_for(wiki_name)
@@ -484,11 +465,24 @@ class LLMWikiToolkit(AbstractToolkit):
                     uncovered_sources.append(str(candidate))
 
         # Cross-reference issues: broken edges + pages without bodies.
+        #
+        # Routed through `_store_for(wiki_name)` (FEAT-532 TASK-2905) so a
+        # federated read context is honored here too: when `wiki_name`
+        # names a specific namespace ("all"/"local"/a declared namespace),
+        # cross-ref checks scope to that namespace's own store (e.g. a
+        # `FederatedWikiStore.broken_edges()` classifies local candidates
+        # at the federated boundary). Source staleness/orphan/uncovered
+        # checks above stay tied to `self._store`'s LOCAL plane regardless
+        # — those are inherently repo-file concerns, never a foreign
+        # namespace's. Non-federated toolkits are unaffected: `_store_for`
+        # returns `self._store` unchanged when nothing is federated.
+        read_store = self._store_for(wiki_name)
         cross_ref_issues: list[dict[str, Any]] = [
             {"kind": "broken_edge", **edge} for edge in await self._store.broken_edges()
+            {"kind": "broken_edge", **edge} for edge in await read_store.broken_edges()
         ]
         cross_ref_issues.extend(
-            {"kind": "missing_body", "concept_id": cid} for cid in await self._store.missing_bodies()
+            {"kind": "missing_body", "concept_id": cid} for cid in await read_store.missing_bodies()
         )
 
         report = WikiLintReport(

@@ -5,9 +5,9 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from parrot.clients.localllm import LocalLLMClient
+from parrot.clients.local import LocalLLMClient
 from parrot.clients.vllm import vLLMClient
-from parrot.models.vllm import VLLMServerInfo
+from parrot.clients.vllm.models import VLLMServerInfo
 from pydantic import BaseModel
 
 
@@ -21,9 +21,7 @@ def make_mock_completion(content: str = "ok"):
     mock_choice.stop_reason = "stop"
     mock_response = MagicMock()
     mock_response.choices = [mock_choice]
-    mock_response.usage = MagicMock(
-        prompt_tokens=1, completion_tokens=1, total_tokens=2
-    )
+    mock_response.usage = MagicMock(prompt_tokens=1, completion_tokens=1, total_tokens=2)
     mock_response.dict = MagicMock(return_value={})
     mock_response.model_dump = MagicMock(return_value={})
     return mock_response
@@ -68,13 +66,9 @@ async def mocked_sdk(target_client, recorder=None, content: str = "ok"):
     # "find" it and never fall back to the stubbed ``.create``, matching
     # the SimpleNamespace convention already used in
     # tests/clients/test_openai_base_parity.py.
-    fake_sdk = SimpleNamespace(
-        chat=SimpleNamespace(completions=SimpleNamespace(create=mock_create))
-    )
+    fake_sdk = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=mock_create)))
 
-    with patch.object(
-        LocalLLMClient, "get_client", new=AsyncMock(return_value=fake_sdk)
-    ):
+    with patch.object(LocalLLMClient, "get_client", new=AsyncMock(return_value=fake_sdk)):
         await target_client.__aenter__()
         try:
             yield mock_create
@@ -125,14 +119,10 @@ async def mocked_stream_sdk(target_client, pieces, recorder=None):
     # why a MagicMock would defeat the getattr(..., "parse", ...create)
     # fallback in OpenAIBaseClient._chat_completion.
     fake_sdk = SimpleNamespace(
-        chat=SimpleNamespace(
-            completions=SimpleNamespace(create=AsyncMock(side_effect=_fake_create))
-        )
+        chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock(side_effect=_fake_create)))
     )
 
-    with patch.object(
-        LocalLLMClient, "get_client", new=AsyncMock(return_value=fake_sdk)
-    ):
+    with patch.object(LocalLLMClient, "get_client", new=AsyncMock(return_value=fake_sdk)):
         await target_client.__aenter__()
         try:
             yield
@@ -141,6 +131,7 @@ async def mocked_stream_sdk(target_client, pieces, recorder=None):
 
 
 # ---- Client Initialization Tests ----
+
 
 class TestVLLMClientInit:
     """Tests for vLLMClient initialization."""
@@ -185,10 +176,7 @@ class TestVLLMClientInit:
         monkeypatch.setenv("VLLM_BASE_URL", "http://env:8000/v1")
         monkeypatch.setenv("VLLM_API_KEY", "env-key")
 
-        client = vLLMClient(
-            base_url="http://explicit:9000/v1",
-            api_key="explicit-key"
-        )
+        client = vLLMClient(base_url="http://explicit:9000/v1", api_key="explicit-key")
         assert client.base_url == "http://explicit:9000/v1"
         assert client.api_key == "explicit-key"
 
@@ -203,6 +191,7 @@ class TestVLLMClientInit:
 
 
 # ---- Helper Method Tests ----
+
 
 class TestVLLMClientHelpers:
     """Tests for helper methods."""
@@ -225,6 +214,7 @@ class TestVLLMClientHelpers:
 
 # ---- ask() Method Tests ----
 
+
 class TestVLLMClientAsk:
     """Tests for vLLMClient.ask() method."""
 
@@ -234,11 +224,7 @@ class TestVLLMClientAsk:
         client = vLLMClient()
 
         # Mock the parent's ask method
-        with patch.object(
-            client.__class__.__bases__[0],
-            'ask',
-            new_callable=AsyncMock
-        ) as mock_ask:
+        with patch.object(client.__class__.__bases__[0], "ask", new_callable=AsyncMock) as mock_ask:
             mock_response = MagicMock()
             mock_response.content = "Hello!"
             mock_ask.return_value = mock_response
@@ -340,14 +326,7 @@ class TestVLLMClientAsk:
         captured: dict = {}
 
         async with mocked_sdk(client, captured):
-            await client.ask(
-                "Test",
-                model="test",
-                top_k=50,
-                min_p=0.1,
-                repetition_penalty=1.2,
-                length_penalty=0.9
-            )
+            await client.ask("Test", model="test", top_k=50, min_p=0.1, repetition_penalty=1.2, length_penalty=0.9)
 
         extra_body = captured["extra_body"]
         assert extra_body["top_k"] == 50
@@ -374,12 +353,7 @@ class TestVLLMClientAsk:
         client = vLLMClient()
 
         with pytest.raises(ValueError) as exc_info:
-            await client.ask(
-                "Test",
-                model="test",
-                guided_json={"type": "object"},
-                guided_regex=r"\d+"
-            )
+            await client.ask("Test", model="test", guided_json={"type": "object"}, guided_regex=r"\d+")
         assert "Only one guided constraint" in str(exc_info.value)
 
     @pytest.mark.asyncio
@@ -394,18 +368,14 @@ class TestVLLMClientAsk:
         captured: dict = {}
 
         async with mocked_sdk(client, captured, content="test"):
-            await client.ask(
-                "Test",
-                model="test",
-                guided_json=explicit_schema,
-                structured_output=Person
-            )
+            await client.ask("Test", model="test", guided_json=explicit_schema, structured_output=Person)
 
         # structured_output should be ignored when guided_json is explicit
         assert captured["extra_body"]["guided_json"] == explicit_schema
 
 
 # ---- ask_stream() Method Tests ----
+
 
 class TestVLLMClientAskStream:
     """Tests for vLLMClient.ask_stream() method."""
@@ -419,11 +389,7 @@ class TestVLLMClientAskStream:
             for chunk in ["Hello", " ", "World"]:
                 yield chunk
 
-        with patch.object(
-            client.__class__.__bases__[0],
-            'ask_stream',
-            mock_stream
-        ):
+        with patch.object(client.__class__.__bases__[0], "ask_stream", mock_stream):
             chunks = []
             async for chunk in client.ask_stream("Hi", model="test"):
                 chunks.append(chunk)
@@ -458,16 +424,14 @@ class TestVLLMClientAskStream:
 
         with pytest.raises(ValueError) as exc_info:
             async for _ in client.ask_stream(
-                "Test",
-                model="test",
-                guided_json={"type": "object"},
-                guided_choice=["a", "b"]
+                "Test", model="test", guided_json={"type": "object"}, guided_choice=["a", "b"]
             ):
                 pass
         assert "Only one guided constraint" in str(exc_info.value)
 
 
 # ---- health_check() Tests ----
+
 
 class TestVLLMClientHealthCheck:
     """Tests for vLLMClient.health_check() method."""
@@ -477,17 +441,16 @@ class TestVLLMClientHealthCheck:
         """health_check returns True when server responds 200."""
         client = vLLMClient()
 
-        with patch('parrot.clients.vllm.aiohttp.ClientSession') as mock_session_cls:
+        with patch("parrot.clients.vllm.client.aiohttp.ClientSession") as mock_session_cls:
             mock_response = MagicMock()
             mock_response.status = 200
 
             mock_session = MagicMock()
             mock_session.__aenter__ = AsyncMock(return_value=mock_session)
             mock_session.__aexit__ = AsyncMock()
-            mock_session.get = MagicMock(return_value=MagicMock(
-                __aenter__=AsyncMock(return_value=mock_response),
-                __aexit__=AsyncMock()
-            ))
+            mock_session.get = MagicMock(
+                return_value=MagicMock(__aenter__=AsyncMock(return_value=mock_response), __aexit__=AsyncMock())
+            )
             mock_session_cls.return_value = mock_session
 
             result = await client.health_check()
@@ -498,17 +461,16 @@ class TestVLLMClientHealthCheck:
         """health_check returns False when server responds non-200."""
         client = vLLMClient()
 
-        with patch('parrot.clients.vllm.aiohttp.ClientSession') as mock_session_cls:
+        with patch("parrot.clients.vllm.client.aiohttp.ClientSession") as mock_session_cls:
             mock_response = MagicMock()
             mock_response.status = 503
 
             mock_session = MagicMock()
             mock_session.__aenter__ = AsyncMock(return_value=mock_session)
             mock_session.__aexit__ = AsyncMock()
-            mock_session.get = MagicMock(return_value=MagicMock(
-                __aenter__=AsyncMock(return_value=mock_response),
-                __aexit__=AsyncMock()
-            ))
+            mock_session.get = MagicMock(
+                return_value=MagicMock(__aenter__=AsyncMock(return_value=mock_response), __aexit__=AsyncMock())
+            )
             mock_session_cls.return_value = mock_session
 
             result = await client.health_check()
@@ -519,7 +481,7 @@ class TestVLLMClientHealthCheck:
         """health_check returns False when connection fails."""
         client = vLLMClient()
 
-        with patch('parrot.clients.vllm.aiohttp.ClientSession') as mock_session_cls:
+        with patch("parrot.clients.vllm.client.aiohttp.ClientSession") as mock_session_cls:
             mock_session = MagicMock()
             mock_session.__aenter__ = AsyncMock(side_effect=Exception("Connection refused"))
             mock_session.__aexit__ = AsyncMock()
@@ -531,6 +493,7 @@ class TestVLLMClientHealthCheck:
 
 # ---- server_info() Tests ----
 
+
 class TestVLLMClientServerInfo:
     """Tests for vLLMClient.server_info() method."""
 
@@ -539,24 +502,25 @@ class TestVLLMClientServerInfo:
         """server_info returns VLLMServerInfo on success."""
         client = vLLMClient()
 
-        with patch('parrot.clients.vllm.aiohttp.ClientSession') as mock_session_cls:
+        with patch("parrot.clients.vllm.client.aiohttp.ClientSession") as mock_session_cls:
             mock_response = MagicMock()
             mock_response.status = 200
-            mock_response.json = AsyncMock(return_value={
-                "version": "0.4.0",
-                "model_id": "llama3:8b",
-                "gpu_memory_utilization": 0.9,
-                "max_model_len": 8192,
-                "tensor_parallel_size": 1
-            })
+            mock_response.json = AsyncMock(
+                return_value={
+                    "version": "0.4.0",
+                    "model_id": "llama3:8b",
+                    "gpu_memory_utilization": 0.9,
+                    "max_model_len": 8192,
+                    "tensor_parallel_size": 1,
+                }
+            )
 
             mock_session = MagicMock()
             mock_session.__aenter__ = AsyncMock(return_value=mock_session)
             mock_session.__aexit__ = AsyncMock()
-            mock_session.get = MagicMock(return_value=MagicMock(
-                __aenter__=AsyncMock(return_value=mock_response),
-                __aexit__=AsyncMock()
-            ))
+            mock_session.get = MagicMock(
+                return_value=MagicMock(__aenter__=AsyncMock(return_value=mock_response), __aexit__=AsyncMock())
+            )
             mock_session_cls.return_value = mock_session
 
             result = await client.server_info()
@@ -589,7 +553,7 @@ class TestVLLMClientServerInfo:
         mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session_ctx.__aexit__ = AsyncMock(return_value=None)
 
-        with patch('parrot.clients.vllm.aiohttp.ClientSession', return_value=mock_session_ctx):
+        with patch("parrot.clients.vllm.client.aiohttp.ClientSession", return_value=mock_session_ctx):
             with pytest.raises(ConnectionError) as exc_info:
                 await client.server_info()
             assert "HTTP 500" in str(exc_info.value)
@@ -609,13 +573,14 @@ class TestVLLMClientServerInfo:
         mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session_ctx.__aexit__ = AsyncMock(return_value=None)
 
-        with patch('parrot.clients.vllm.aiohttp.ClientSession', return_value=mock_session_ctx):
+        with patch("parrot.clients.vllm.client.aiohttp.ClientSession", return_value=mock_session_ctx):
             with pytest.raises(ConnectionError) as exc_info:
                 await client.server_info()
             assert "Cannot connect" in str(exc_info.value)
 
 
 # ---- list_models() Tests ----
+
 
 class TestVLLMClientListModels:
     """Tests for vLLMClient.list_models() method."""
@@ -656,6 +621,7 @@ class TestVLLMClientListModels:
 
 # ---- batch_process() Tests ----
 
+
 class TestVLLMClientBatchProcess:
     """Tests for vLLMClient.batch_process() method."""
 
@@ -664,7 +630,7 @@ class TestVLLMClientBatchProcess:
         """batch_process handles single request."""
         client = vLLMClient()
 
-        with patch.object(client, 'ask', new_callable=AsyncMock) as mock_ask:
+        with patch.object(client, "ask", new_callable=AsyncMock) as mock_ask:
             mock_ask.return_value = MagicMock(content="Response 1")
 
             requests = [{"prompt": "Question 1", "model": "test"}]
@@ -678,7 +644,7 @@ class TestVLLMClientBatchProcess:
         """batch_process handles multiple requests concurrently."""
         client = vLLMClient()
 
-        with patch.object(client, 'ask', new_callable=AsyncMock) as mock_ask:
+        with patch.object(client, "ask", new_callable=AsyncMock) as mock_ask:
             mock_ask.side_effect = [
                 MagicMock(content="Response 1"),
                 MagicMock(content="Response 2"),
@@ -700,7 +666,7 @@ class TestVLLMClientBatchProcess:
         """batch_process applies default kwargs to all requests."""
         client = vLLMClient()
 
-        with patch.object(client, 'ask', new_callable=AsyncMock) as mock_ask:
+        with patch.object(client, "ask", new_callable=AsyncMock) as mock_ask:
             mock_ask.return_value = MagicMock(content="Response")
 
             requests = [{"prompt": "Q1"}, {"prompt": "Q2"}]
@@ -716,7 +682,7 @@ class TestVLLMClientBatchProcess:
         """Individual request params override default kwargs."""
         client = vLLMClient()
 
-        with patch.object(client, 'ask', new_callable=AsyncMock) as mock_ask:
+        with patch.object(client, "ask", new_callable=AsyncMock) as mock_ask:
             mock_ask.return_value = MagicMock(content="Response")
 
             requests = [
@@ -744,7 +710,7 @@ class TestVLLMClientBatchProcess:
         """batch_process returns results in same order as requests."""
         client = vLLMClient()
 
-        with patch.object(client, 'ask', new_callable=AsyncMock) as mock_ask:
+        with patch.object(client, "ask", new_callable=AsyncMock) as mock_ask:
             # Simulate different response times (but asyncio.gather preserves order)
             mock_ask.side_effect = [
                 MagicMock(content="First"),
@@ -768,7 +734,7 @@ class TestVLLMClientBatchProcess:
         """batch_process does not modify input request dicts."""
         client = vLLMClient()
 
-        with patch.object(client, 'ask', new_callable=AsyncMock) as mock_ask:
+        with patch.object(client, "ask", new_callable=AsyncMock) as mock_ask:
             mock_ask.return_value = MagicMock(content="Response")
 
             original_request = {"prompt": "Test", "model": "test"}
@@ -785,12 +751,10 @@ class TestVLLMClientBatchProcess:
         client = vLLMClient()
         schema = {"type": "object", "properties": {"name": {"type": "string"}}}
 
-        with patch.object(client, 'ask', new_callable=AsyncMock) as mock_ask:
+        with patch.object(client, "ask", new_callable=AsyncMock) as mock_ask:
             mock_ask.return_value = MagicMock(content='{"name": "Alice"}')
 
-            requests = [
-                {"prompt": "Extract name", "model": "test", "guided_json": schema}
-            ]
+            requests = [{"prompt": "Extract name", "model": "test", "guided_json": schema}]
             await client.batch_process(requests)
 
             call_kwargs = mock_ask.call_args.kwargs
@@ -798,6 +762,7 @@ class TestVLLMClientBatchProcess:
 
 
 # ---- Error Handling Tests ----
+
 
 class TestVLLMClientErrorHandling:
     """Tests for error handling in vLLMClient."""
@@ -807,11 +772,7 @@ class TestVLLMClientErrorHandling:
         """ask() propagates errors from parent class."""
         client = vLLMClient()
 
-        with patch.object(
-            client.__class__.__bases__[0],
-            'ask',
-            new_callable=AsyncMock
-        ) as mock_ask:
+        with patch.object(client.__class__.__bases__[0], "ask", new_callable=AsyncMock) as mock_ask:
             mock_ask.side_effect = Exception("API Error")
 
             with pytest.raises(Exception) as exc_info:

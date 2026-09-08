@@ -1,5 +1,3 @@
-
-
 from .abstract import AbstractBot
 from .agent import Agent, BasicAgent
 from .base import BaseBot
@@ -23,7 +21,7 @@ __all__ = (
 
 
 # Lazy imports: heavy optional classes resolved on first access only.
-# - VoiceBot pulls parrot.clients.live -> google.genai (optional google-genai)
+# - VoiceBot pulls parrot.clients.google.live -> google.genai (optional google-genai)
 # - InfoAgent pulls the heavy a2ui/infographic chain via its mixins
 _LAZY_ATTRS = {
     "VoiceBot": ".voice",

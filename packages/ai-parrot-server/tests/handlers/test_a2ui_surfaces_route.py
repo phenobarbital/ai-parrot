@@ -20,11 +20,13 @@ from navigator_session.data import SessionData
 from parrot.handlers.a2ui import A2UIHandler
 from parrot.handlers.agent import AgentTalk
 from parrot.handlers.models.ui_surfaces import (
+    SurfaceVisibility,
     UISurfaceKind,
     UISurfaceRecord,
     UISurfaceShare,
 )
 from parrot.handlers.ui_surfaces import SurfaceNegotiationService, UISurfacesHandler
+from parrot.handlers.ui_surfaces_scope import SurfaceScope
 from parrot.memory.file import FileConversationMemory
 from parrot.outputs.a2ui.catalog.base import DEFAULT_CATALOG_ID
 from parrot.outputs.a2ui.models import CreateSurface
@@ -130,6 +132,18 @@ def _auth_params(user_id="u-1", session_id="sess-1"):
     return {"user_id": user_id, "session_id": session_id}
 
 
+class _StubResolver:
+    """Installs a fixed :class:`SurfaceScope` on ``app["ui_surfaces_scope_resolver"]``
+    (FEAT-535, spec §3 Module 2/3 test fixture — mirrors the REST lane's own
+    ``test_ui_surfaces_handler.py::_StubResolver``)."""
+
+    def __init__(self, scope: SurfaceScope):
+        self._scope = scope
+
+    async def resolve(self, request):
+        return self._scope
+
+
 class TestMirrorRouteNegotiation:
     async def test_mirror_route_json_and_html_negotiation(self, client, fake_store):
         fake_store.get.return_value = _make_record()
@@ -198,6 +212,33 @@ class TestMirrorRouteNegotiation:
         r = await client.get("/api/v1/agents/demo/a2ui/surfaces/surface-1", params=params)
 
         assert r.status == 410
+
+    async def test_mirror_route_tenant_visible_viewer_200(self, client, fake_store):
+        """FEAT-535: the mirror route resolves a ``SurfaceScope`` via the SAME
+        ``get_scope_resolver(app)`` seam as the REST lane, so a tenant-visible
+        surface owned by someone else is readable here too."""
+        rec = _make_record(user_id="owner-a", tenant="epson", visibility=SurfaceVisibility.tenant)
+        fake_store.get.return_value = rec
+        client.app["ui_surfaces_scope_resolver"] = _StubResolver(
+            SurfaceScope(user_id="u-1", tenant="epson", groups=frozenset(), is_superuser=False)
+        )
+
+        r = await client.get(f"/api/v1/agents/demo/a2ui/surfaces/{rec.surface_id}", params=_auth_params(user_id="u-1"))
+
+        assert r.status == 200
+
+    async def test_mirror_route_foreign_tenant_404(self, client, fake_store):
+        """A caller whose scope tenant differs from the record's never
+        matches the tenant/group rule — same ``404``, no existence oracle."""
+        rec = _make_record(user_id="owner-a", tenant="epson", visibility=SurfaceVisibility.tenant)
+        fake_store.get.return_value = rec
+        client.app["ui_surfaces_scope_resolver"] = _StubResolver(
+            SurfaceScope(user_id="u-1", tenant="other-tenant", groups=frozenset(), is_superuser=False)
+        )
+
+        r = await client.get(f"/api/v1/agents/demo/a2ui/surfaces/{rec.surface_id}", params=_auth_params(user_id="u-1"))
+
+        assert r.status == 404
 
 
 class TestCapabilitiesAndSSEUnchanged:

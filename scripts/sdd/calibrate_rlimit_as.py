@@ -1,11 +1,17 @@
 #!/usr/bin/env python
-"""Empirical calibration of ``WorkerConfig.rlimit_as_bytes`` (FEAT-380 TASK-1946).
+"""Empirical calibration of ``WorkerConfig.rlimit_as_bytes`` (FEAT-380 TASK-1946)
+and ``memory_soft/hard_limit_bytes`` (FEAT-521 TASK-2783).
 
 Spawns REAL REPL workers — the exact deployed code path (spawn + preexec
 rlimits, `parrot.tools.repl_worker.handle.WorkerHandle`) — and measures each
-workload's peak *virtual* memory (`VmPeak` from `/proc/<worker-pid>/status`,
-polled from THIS host process, never from inside the sandboxed worker) while
-running under a generous ceiling so the workload isn't clipped mid-measurement.
+workload's peak *virtual* memory (`VmPeak`) alongside peak *resident* memory
+(`VmRSS` — the metric FEAT-521's `memory_soft/hard_limit_bytes` actually
+guards, via `psutil`'s `memory_info().rss` inside `ProcessObserver`) and
+`VmHWM` (the kernel's own "high water mark" resident-memory record, a
+useful independent cross-check on the sampled `VmRSS` peak). All three are
+read from `/proc/<worker-pid>/status`, polled from THIS host process, never
+from inside the sandboxed worker, while running under a generous ceiling so
+the workload isn't clipped mid-measurement.
 
 Linux/POSIX only (`/proc/<pid>/status` + `resource.setrlimit`), matching the
 feature's own POSIX-only rlimit enforcement (spec AC16 — Windows has no
@@ -52,11 +58,19 @@ if sys.platform != "linux":
     raise SystemExit("calibrate_rlimit_as.py is Linux-only (reads /proc/<pid>/status)")
 
 
+#: /proc/<pid>/status fields tracked as running peaks across the workload's
+#: whole lifetime (spec Q1: RSS is the metric `memory_soft/hard_limit_bytes`
+#: actually enforces; VmPeak/VmHWM stay for the RLIMIT_AS calibration this
+#: script already did, and as an independent cross-check on the RSS peak).
+_TRACKED_FIELDS = ("VmPeak", "VmHWM", "VmRSS")
+
+
 @dataclass
 class Measurement:
     workload: str
     vm_peak_kb: int
     vm_hwm_kb: int
+    vm_rss_peak_kb: int
     survived: bool
     detail: str = ""
 
@@ -68,14 +82,18 @@ class Measurement:
     def vm_hwm_mb(self) -> float:
         return self.vm_hwm_kb / 1024
 
+    @property
+    def vm_rss_peak_mb(self) -> float:
+        return self.vm_rss_peak_kb / 1024
+
 
 def _read_proc_status(pid: int) -> dict[str, int]:
-    """Read VmPeak/VmHWM (KiB) for `pid` from /proc — host-side, unsandboxed."""
+    """Read VmPeak/VmHWM/VmRSS (KiB) for `pid` from /proc — host-side, unsandboxed."""
     out: dict[str, int] = {}
     try:
         with open(f"/proc/{pid}/status") as f:
             for line in f:
-                for key in ("VmPeak", "VmHWM"):
+                for key in _TRACKED_FIELDS:
                     if line.startswith(f"{key}:"):
                         out[key] = int(line.split()[1])
     except FileNotFoundError:
@@ -85,10 +103,10 @@ def _read_proc_status(pid: int) -> dict[str, int]:
 
 async def _run_with_peak_tracking(handle: WorkerHandle, code: Optional[str], poll_interval: float = 0.05):
     """Run `code` in the worker (or just wait if `code` is None, for the
-    bootstrap-only workload) while polling its VmPeak/VmHWM from the host.
+    bootstrap-only workload) while polling its VmPeak/VmHWM/VmRSS from the host.
     """
     pid = handle._proc.pid
-    peaks = {"VmPeak": 0, "VmHWM": 0}
+    peaks = {key: 0 for key in _TRACKED_FIELDS}
     stop = asyncio.Event()
 
     async def poll() -> None:
@@ -137,7 +155,14 @@ async def calibrate(sizes_mb: list[int], limit_gib: float, output_dir: str) -> l
     try:
         _, peaks = await _run_with_peak_tracking(handle, None)
         measurements.append(
-            Measurement("bootstrap", peaks["VmPeak"], peaks["VmHWM"], True, "pandas/numpy/matplotlib/seaborn import")
+            Measurement(
+                "bootstrap",
+                peaks["VmPeak"],
+                peaks["VmHWM"],
+                peaks["VmRSS"],
+                True,
+                "pandas/numpy/matplotlib/seaborn import",
+            )
         )
 
         # 2. load_<N>mb for each requested size (same worker, cumulative state
@@ -162,7 +187,11 @@ async def calibrate(sizes_mb: list[int], limit_gib: float, output_dir: str) -> l
             survived = isinstance(output, str)
             measurements.append(
                 Measurement(
-                    f"load_{size_mb}mb", peaks["VmPeak"], peaks["VmHWM"], survived,
+                    f"load_{size_mb}mb",
+                    peaks["VmPeak"],
+                    peaks["VmHWM"],
+                    peaks["VmRSS"],
+                    survived,
                     f"shape=({rows},{cols}) + key/cat cols" if survived else str(output),
                 )
             )
@@ -179,7 +208,14 @@ async def calibrate(sizes_mb: list[int], limit_gib: float, output_dir: str) -> l
             output, peaks = await _run_with_peak_tracking(handle, code)
             survived = isinstance(output, str)
             measurements.append(
-                Measurement("merge_groupby", peaks["VmPeak"], peaks["VmHWM"], survived, f"{a} x {b}" if survived else str(output))
+                Measurement(
+                    "merge_groupby",
+                    peaks["VmPeak"],
+                    peaks["VmHWM"],
+                    peaks["VmRSS"],
+                    survived,
+                    f"{a} x {b}" if survived else str(output),
+                )
             )
 
         # 4. plot
@@ -188,7 +224,7 @@ async def calibrate(sizes_mb: list[int], limit_gib: float, output_dir: str) -> l
             code = f"plt.plot({first}.iloc[:2000, 0])\nresult = save_current_plot()"
             output, peaks = await _run_with_peak_tracking(handle, code)
             survived = isinstance(output, str)
-            measurements.append(Measurement("plot", peaks["VmPeak"], peaks["VmHWM"], survived))
+            measurements.append(Measurement("plot", peaks["VmPeak"], peaks["VmHWM"], peaks["VmRSS"], survived))
     finally:
         await handle.kill()
 
@@ -196,9 +232,14 @@ async def calibrate(sizes_mb: list[int], limit_gib: float, output_dir: str) -> l
 
 
 def _print_table(measurements: list[Measurement]) -> None:
-    print(f"{'workload':<16} {'VmPeak (MB)':>12} {'VmHWM (MB)':>12} {'survived':>9}  detail")
+    print(
+        f"{'workload':<16} {'VmPeak (MB)':>12} {'VmHWM (MB)':>12} {'VmRSS peak (MB)':>16} " f"{'survived':>9}  detail"
+    )
     for m in measurements:
-        print(f"{m.workload:<16} {m.vm_peak_mb:>12.1f} {m.vm_hwm_mb:>12.1f} {str(m.survived):>9}  {m.detail}")
+        print(
+            f"{m.workload:<16} {m.vm_peak_mb:>12.1f} {m.vm_hwm_mb:>12.1f} {m.vm_rss_peak_mb:>16.1f} "
+            f"{str(m.survived):>9}  {m.detail}"
+        )
 
 
 def main() -> None:
@@ -210,9 +251,17 @@ def main() -> None:
 
     sizes_mb = [int(s) for s in args.sizes.split(",")]
 
+    import os
     import tempfile
 
     with tempfile.TemporaryDirectory(prefix="rlimit-calibration-") as tmp:
+        # `AbstractTool.__init__`'s output_dir guard requires `output_dir`
+        # to fall under `STATIC_DIR`/`OUTPUT_DIR` (parrot.conf). The WORKER
+        # subprocess re-imports `parrot.conf` fresh and inherits this
+        # process' environment (`subprocess.Popen` default), so setting the
+        # env var here — before any worker is spawned — is what lets the
+        # freshly-created temp dir pass the guard inside the child.
+        os.environ["STATIC_DIR"] = tmp
         measurements = asyncio.run(calibrate(sizes_mb, args.limit_gib, tmp))
 
     _print_table(measurements)

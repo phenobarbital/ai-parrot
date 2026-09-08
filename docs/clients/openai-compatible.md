@@ -6,9 +6,15 @@ debugging why one leaked an OpenAI `gpt-*` default.
 **Related files**:
 
 - `packages/ai-parrot/src/parrot/clients/openai_base.py` — `OpenAIBaseClient`
-- `packages/ai-parrot/src/parrot/clients/gpt.py` — `OpenAIClient` (OpenAI-only)
-- `packages/ai-parrot/src/parrot/clients/{openrouter,moonshot,nvidia,localllm,groq,zai}.py`,
-  `packages/ai-parrot/src/parrot/clients/nova/mantle.py` — the 8 wire subclasses
+  (stays in core — see FEAT-523 note below)
+- `packages/ai-parrot-client-openai/src/parrot/clients/openai/client.py` —
+  `OpenAIClient` (OpenAI-only)
+- `packages/ai-parrot-client-{openrouter,moonshot,nvidia,local,groq,zai}/
+  src/parrot/clients/{openrouter,moonshot,nvidia,local,groq,zai}/client.py`,
+  `packages/ai-parrot-client-amazon/src/parrot/clients/amazon/nova/mantle.py`
+  — the 8 wire subclasses (FEAT-523: each now ships from its own
+  `ai-parrot-client-<provider>` satellite distribution — see
+  `docs/migration/feat-523-llm-client-satellites.md`)
 - `packages/ai-parrot/src/parrot/clients/base.py` — `AbstractClient` (shared machinery)
 - `sdd/specs/openai-compatible-clients.spec.md` — full design (FEAT-438)
 - `tests/clients/test_openai_base.py`, `test_openai_base_parity.py`,
@@ -43,17 +49,24 @@ protocol (message shaping, the tool-calling loop, streaming, `invoke()`,
 ```
 AbstractClient (base.py)                     [+ FEAT-438 G5 shadowing fix]
    ├── OpenAIBaseClient (openai_base.py)     [NEW — wire protocol, no OpenAI defaults]
-   │      ├── OpenAIClient (gpt.py)          [OpenAI-only: gpt-*, Responses API, Sora…]
-   │      ├── OpenRouterClient
-   │      ├── MoonshotClient                 [drops ask_stream/invoke bypass overrides]
-   │      ├── NvidiaClient
-   │      ├── LocalLLMClient ── vLLMClient   [drops _is_responses_model override]
-   │      ├── BedrockMantleClient            [drops fallback_model workaround]
-   │      ├── GroqClient   (Phase 2, keeps native AsyncGroq SDK)
-   │      └── ZaiClient    (Phase 2, keeps native zai SDK)
-   ├── GrokClient                            [UNCHANGED — xai_sdk, not OpenAI wire]
-   └── AnthropicClient / BedrockConverseClient / GoogleGenAIClient / …  [unchanged]
+   │      ├── OpenAIClient (ai-parrot-client-openai)      [OpenAI-only: gpt-*, Responses API, Sora…]
+   │      ├── OpenRouterClient (ai-parrot-client-openrouter)
+   │      ├── MoonshotClient  (ai-parrot-client-moonshot) [drops ask_stream/invoke bypass overrides]
+   │      ├── NvidiaClient    (ai-parrot-client-nvidia)
+   │      ├── LocalLLMClient ── vLLMClient (ai-parrot-client-local / -vllm) [drops _is_responses_model override]
+   │      ├── BedrockMantleClient (ai-parrot-client-amazon)  [drops fallback_model workaround]
+   │      ├── GroqClient   (ai-parrot-client-groq, keeps native AsyncGroq SDK)
+   │      └── ZaiClient    (ai-parrot-client-zai, keeps native zai SDK)
+   ├── GrokClient (ai-parrot-client-grok)    [UNCHANGED — xai_sdk, not OpenAI wire]
+   └── AnthropicClient / BedrockConverseClient / GoogleGenAIClient / …  [each its own satellite — see FEAT-523 note below]
 ```
+
+**FEAT-523 (PEP 420 LLM Client Extraction)**: every class named above
+except `AbstractClient`/`OpenAIBaseClient` themselves now ships from its
+own `ai-parrot-client-<provider>` satellite distribution rather than
+`ai-parrot` core — see "Adding a New OpenAI-Compatible Provider" below
+for the current registration mechanism, and
+`docs/migration/feat-523-llm-client-satellites.md` for the full picture.
 
 `OpenAIClient` is the one privileged subclass: it's the only place `gpt-*`
 model ids, `OpenAIModel` alias/deprecation normalization, the Responses API,
@@ -207,16 +220,41 @@ every wire subclass (`WIRE_SUBCLASSES` in that file).
 
 ## Adding a New OpenAI-Compatible Provider
 
-1. **Subclass `OpenAIBaseClient`**, not `OpenAIClient`:
+**FEAT-523 note**: as of the PEP 420 LLM Client Extraction, a new provider
+is a new *satellite distribution*, not a new file inside `ai-parrot`
+core. The folder convention and entry-point registration below are
+normative for every provider, OpenAI-wire-compatible or not — see
+`sdd/specs/pep-420-llm-clients.spec.md` §2.
+
+1. **Create the satellite's folder convention** at
+   `packages/ai-parrot-client-myprovider/src/parrot/clients/myprovider/`:
+
+   ```
+   parrot/clients/myprovider/
+   ├── __init__.py   # re-exports the client class(es) + model enum, __all__
+   ├── client.py     # subclasses OpenAIBaseClient (or AbstractClient directly)
+   └── models.py     # MyProviderModel(str, Enum) + capability sets; pure data,
+                      # must NOT import client.py
+   ```
+
+   **Subclass `OpenAIBaseClient`**, not `OpenAIClient`, if the provider is
+   OpenAI-wire-compatible:
 
    ```python
-   from .openai_base import OpenAIBaseClient
+   # packages/ai-parrot-client-myprovider/src/parrot/clients/myprovider/client.py
+   from ..openai_base import OpenAIBaseClient  # 2 dots — client.py lives
+                                                # one level deeper than the
+                                                # old flat clients/<p>.py files
 
    class MyProviderClient(OpenAIBaseClient):
        client_type: str = "myprovider"
        client_name: str = "myprovider"
-       # Only set these if MyProvider actually has a sensible one —
-       # never an OpenAI gpt-* id:
+       # Every provider_keys entry this class answers to (primary first) and
+       # the model catalog enum it owns — required by LLMFactory discovery:
+       provider_keys: tuple[str, ...] = ("myprovider",)
+       models: type[MyProviderModel] = MyProviderModel
+       # Only set the model-default attributes below if MyProvider actually
+       # has a sensible one — never an OpenAI gpt-* id:
        # _default_model: str = "myprovider/some-model"
        # _lightweight_model: str = "myprovider/small-model"
 
@@ -229,11 +267,30 @@ every wire subclass (`WIRE_SUBCLASSES` in that file).
            )
            # AbstractClient.__init__ only assigns self.api_key from kwargs
            # when 'api_key' is present — re-set explicitly if your class
-           # needs to guarantee it (see the pattern in nvidia.py/openrouter.py).
+           # needs to guarantee it (see the pattern in nvidia/openrouter's
+           # own client.py).
            self.api_key = resolved_key
    ```
 
-2. **Register it** in `LLMFactory.SUPPORTED_CLIENTS` (`factory.py`).
+2. **Register it via a `parrot.clients` entry point** — declare it in the
+   satellite's own `pyproject.toml`, one line per `provider_keys` entry
+   (target `parrot.clients.myprovider:MyProviderClient`):
+
+   ```toml
+   [project.entry-points."parrot.clients"]
+   myprovider = "parrot.clients.myprovider:MyProviderClient"
+   ```
+
+   `LLMFactory._discover()` reads
+   `importlib.metadata.entry_points(group="parrot.clients")` lazily, on
+   first use — there is no manual registry to edit in `factory.py`
+   anymore (the old `SUPPORTED_CLIENTS` dict literal / hand-written
+   `_lazy_*` closures were removed by FEAT-523). Also add `ai-parrot` as
+   a dependency (`[tool.uv.sources] ai-parrot = { workspace = true }` for
+   an in-repo satellite) and only the SDK your provider's own code
+   genuinely imports — grep first; don't assume `openai` is needed even
+   if you subclass `OpenAIBaseClient`, since that SDK is a base
+   `ai-parrot` dependency already.
 
 3. **Only override `get_client()`** if you need a non-`AsyncOpenAI` SDK
    (native Groq/Zai pattern) or extra client kwargs (OpenRouter's custom

@@ -20,8 +20,8 @@ from parrot.clients.base import AbstractClient
 
 CLIENT_SPECS = [
     ("parrot.clients.google.client", "GoogleGenAIClient", "gemini-3.1-flash-lite-preview"),
-    ("parrot.clients.claude", "AnthropicClient", "claude-sonnet-4.5"),
-    ("parrot.clients.gpt", "OpenAIClient", "gpt-5-nano"),
+    ("parrot.clients.anthropic.client", "AnthropicClient", "claude-sonnet-4.5"),
+    ("parrot.clients.openai.client", "OpenAIClient", "gpt-5-nano"),
 ]
 
 CAPACITY_ERROR_MESSAGES = [
@@ -89,7 +89,7 @@ class TestFallbackDecisionLogic:
 
 def _make_base_client(**attrs):
     """Create a concrete AbstractClient subclass instance for testing."""
-    from parrot.clients.gpt import OpenAIClient
+    from parrot.clients.openai import OpenAIClient
 
     client = OpenAIClient.__new__(OpenAIClient)
     client._fallback_model = None
@@ -208,7 +208,7 @@ class TestProviderSpecificCapacityErrors:
 
     def test_openai_detects_rate_limit_error_instance(self):
         from openai import RateLimitError
-        from parrot.clients.gpt import OpenAIClient
+        from parrot.clients.openai import OpenAIClient
 
         client = OpenAIClient.__new__(OpenAIClient)
         error = RateLimitError.__new__(RateLimitError)
@@ -216,7 +216,7 @@ class TestProviderSpecificCapacityErrors:
 
     def test_openai_detects_api_error_502(self):
         from openai import APIError
-        from parrot.clients.gpt import OpenAIClient
+        from parrot.clients.openai import OpenAIClient
 
         client = OpenAIClient.__new__(OpenAIClient)
         error = APIError.__new__(APIError)
@@ -225,7 +225,7 @@ class TestProviderSpecificCapacityErrors:
 
     def test_openai_detects_api_error_503(self):
         from openai import APIError
-        from parrot.clients.gpt import OpenAIClient
+        from parrot.clients.openai import OpenAIClient
 
         client = OpenAIClient.__new__(OpenAIClient)
         error = APIError.__new__(APIError)
@@ -234,7 +234,7 @@ class TestProviderSpecificCapacityErrors:
 
     def test_openai_ignores_api_error_400(self):
         from openai import APIError
-        from parrot.clients.gpt import OpenAIClient
+        from parrot.clients.openai import OpenAIClient
 
         client = OpenAIClient.__new__(OpenAIClient)
         error = APIError.__new__(APIError)
@@ -243,7 +243,7 @@ class TestProviderSpecificCapacityErrors:
 
     def test_anthropic_detects_rate_limit_error(self):
         from anthropic import RateLimitError
-        from parrot.clients.claude import AnthropicClient
+        from parrot.clients.anthropic import AnthropicClient
 
         client = AnthropicClient.__new__(AnthropicClient)
         client._fallback_model = "claude-sonnet-4.5"
@@ -252,7 +252,7 @@ class TestProviderSpecificCapacityErrors:
 
     def test_anthropic_detects_api_status_error_429(self):
         from anthropic import APIStatusError
-        from parrot.clients.claude import AnthropicClient
+        from parrot.clients.anthropic import AnthropicClient
 
         client = AnthropicClient.__new__(AnthropicClient)
         client._fallback_model = "claude-sonnet-4.5"
@@ -262,7 +262,7 @@ class TestProviderSpecificCapacityErrors:
 
     def test_anthropic_detects_api_status_error_529(self):
         from anthropic import APIStatusError
-        from parrot.clients.claude import AnthropicClient
+        from parrot.clients.anthropic import AnthropicClient
 
         client = AnthropicClient.__new__(AnthropicClient)
         client._fallback_model = "claude-sonnet-4.5"
@@ -272,7 +272,7 @@ class TestProviderSpecificCapacityErrors:
 
     def test_anthropic_ignores_api_status_error_400(self):
         from anthropic import APIStatusError
-        from parrot.clients.claude import AnthropicClient
+        from parrot.clients.anthropic import AnthropicClient
 
         client = AnthropicClient.__new__(AnthropicClient)
         client._fallback_model = "claude-sonnet-4.5"

@@ -1,0 +1,1404 @@
+from __future__ import annotations
+import traceback
+from enum import Enum
+from typing import AsyncIterator, List, Optional, Union, Any, TYPE_CHECKING, Sequence
+from pathlib import Path
+from logging import getLogger
+import uuid
+import time
+import json
+from dataclasses import is_dataclass
+from pydantic import BaseModel, TypeAdapter
+from datamodel.parsers.json import json_decoder  # pylint: disable=E0611 # noqa
+from navconfig import config
+from ...memory.render import HistoryMessage
+
+# FEAT-524: ids are no longer ask() parameters; response metadata reads them
+# from the per-call ContextVars BaseBot binds (FEAT-228).
+from parrot.observability.context import current_session_id, current_user_id
+from ..openai_base import OpenAIBaseClient
+from ...tools.manager import ToolFormat
+
+if TYPE_CHECKING:
+    from groq import AsyncGroq
+from ...models import (
+    AIMessage,
+    AIMessageFactory,
+    ToolCall,
+    CompletionUsage,
+    StructuredOutputConfig,
+    OutputFormat,
+)
+from ...models.responses import InvokeResult
+from ...exceptions import InvokeError
+from .models import GroqModel
+from ...models.outputs import SentimentAnalysis, ProductReview
+
+getLogger("httpx").setLevel("WARNING")
+getLogger("httpcore").setLevel("WARNING")
+getLogger("groq").setLevel("INFO")
+
+
+STRUCTURED_OUTPUT_COMPATIBLE_MODELS = {
+    GroqModel.LLAMA_4_SCOUT_17B.value,
+    GroqModel.LLAMA_4_MAVERICK_17B.value,
+    GroqModel.KIMI_K2_INSTRUCT.value,
+    GroqModel.OPENAI_GPT_OSS_SAFEGUARD_20B.value,
+    GroqModel.OPENAI_GPT_OSS_20B.value,
+    GroqModel.OPENAI_GPT_OSS_120B.value,
+}
+
+
+class GroqClient(OpenAIBaseClient):
+    """Client for interacting with Groq's API.
+
+    FEAT-438 (TASK-2303): rebased onto ``OpenAIBaseClient`` — the
+    OpenAI-compatible wire protocol with none of OpenAI-the-provider's
+    defaults — while keeping Groq's native ``groq.AsyncGroq`` SDK behind
+    ``get_client()`` (the ``AsyncOpenAI`` swap was explicitly rejected at
+    spec time; ``AsyncGroq`` mirrors the OpenAI SDK's
+    ``chat.completions.create`` surface closely enough that the shared
+    ``_chat_completion`` funnel seam drives it directly — this class
+    overrides it only to force ``.create()`` unconditionally, since
+    ``AsyncGroq`` offers no ``.parse()`` guarantee).
+
+    ``tool_format`` MUST be declared explicitly as ``ToolFormat.GROQ``
+    here: ``OpenAIBaseClient`` declares ``ToolFormat.OPENAI``, and an
+    explicit ``tool_format`` attribute wins over the ``client_type`` map
+    in ``AbstractClient._resolve_tool_format()`` (base.py:1392) — without
+    this override, Groq would silently inherit OPENAI's tool format and
+    start sending ``"strict": true``, which Groq rejects.
+
+    Note: Groq has a limitation where structured output (JSON mode) cannot be
+    combined with tool calling in the same request. When both are requested,
+    this client handles tools first, then makes a separate request for
+    structured output formatting.
+
+    """
+
+    client_type: str = "groq"
+    client_name: str = "groq"
+
+    # FEAT-523 folder-convention attributes (read by LLMFactory).
+    provider_keys: tuple[str, ...] = ("groq",)
+    models: type[Enum] = GroqModel
+    tool_format: ToolFormat = ToolFormat.GROQ
+    model: str = GroqModel.LLAMA_3_3_70B_VERSATILE
+    _default_model: str = "openai/gpt-oss-120b"
+    _lightweight_model: str = "kimi-k2-instruct"
+    # Groq caps completion tokens at 4096 for most hosted models and rejects an
+    # over-cap request outright rather than clamping it, so this client pins its
+    # own budget below AbstractClient's more generous default. 4095, not 4096:
+    # the limit is exclusive — 4096 itself is refused.
+    #
+    # ask() and invoke() share this; _invoke_max_tokens stays unset so there is
+    # a single number to keep correct.
+    _default_max_tokens: int = 4095
+
+    def __init__(self, api_key: str = None, base_url: str = "https://api.groq.com/openai/v1", **kwargs):
+        resolved_key = api_key or config.get("GROQ_API_KEY")
+        super().__init__(
+            api_key=resolved_key,
+            base_url=base_url,
+            **kwargs,
+        )
+        # Re-set after super().__init__ because AbstractClient may overwrite
+        # self.api_key during its own initialisation. This mirrors the
+        # guard used by NvidiaClient (nvidia.py) / OpenRouterClient
+        # (openrouter.py).
+        self.api_key = resolved_key
+
+    async def get_client(self) -> "AsyncGroq":
+        """Initialize the Groq client.
+
+        NOTE (spec §7 known quirk, preserved verbatim): ``self.base_url``
+        is stored but deliberately NOT passed to ``AsyncGroq`` — the
+        official SDK resolves its own endpoint. Do not "fix" this.
+        """
+        try:
+            from groq import AsyncGroq
+        except ImportError as exc:
+            raise ImportError(
+                "GroqClient requires the 'groq' SDK. " "Install with: pip install ai-parrot[groq]"
+            ) from exc
+        return AsyncGroq(api_key=self.api_key)
+
+    async def _chat_completion(
+        self, model: str, messages: Any, use_tools: bool = False, stream: bool = False, **kwargs
+    ) -> Any:
+        """Groq-specific completion funnel.
+
+        Always uses ``.create()`` — ``AsyncGroq`` offers no ``.parse()``
+        guarantee (unlike the OpenAI SDK), so this unconditionally
+        overrides the base's use_tools-gated ``.parse()``-preferring
+        dispatch, mirroring ``NvidiaClient._chat_completion``'s
+        create-not-parse pattern.
+
+        Args:
+            model: The resolved model id.
+            messages: The chat-completions message list.
+            use_tools: Unused for dispatch (Groq always uses ``.create()``);
+                accepted for interface parity with the base funnel seam.
+            stream: Forwarded to the SDK as ``stream=True``/``False``.
+            **kwargs: Additional Groq chat-completions request kwargs.
+
+        Returns:
+            The raw Groq SDK response object (or async stream when
+            ``stream=True``).
+        """
+        return await self.client.chat.completions.create(model=model, messages=messages, stream=stream, **kwargs)
+
+    def _fix_schema_for_groq(self, schema: dict) -> dict:
+        """
+        Fix JSON schema to comply with Groq's structured-output validator.
+
+        - Start from the OpenAI-normalized schema (handles additionalProperties, required, etc.).
+        - Collapse Optional[T] patterns:
+            anyOf: [T, {"type": "null"}]  ->  T (keeping default/title/description).
+        - Resolve Groq's ambiguity with integer vs number:
+            anyOf: [{"type": "integer"}, {"type": "number"}, ...] -> drop "integer".
+        - Drop some scalar constraints Groq doesn't care about.
+        """
+        # First apply your generic OpenAI-style normalization
+        schema = self._oai_normalize_schema(schema, force_required_all=False)
+
+        unsupported_constraints = [
+            "minimum",
+            "maximum",
+            "exclusiveMinimum",
+            "exclusiveMaximum",
+            "minLength",
+            "maxLength",
+            "pattern",
+            "format",
+            "minItems",
+            "maxItems",
+            "uniqueItems",
+            "minProperties",
+            "maxProperties",
+        ]
+
+        def visit(node):
+            if isinstance(node, dict):
+                # Drop constraints Groq doesn't care about
+                for c in unsupported_constraints:
+                    node.pop(c, None)
+
+                # --- Handle anyOf ---
+                if "anyOf" in node and isinstance(node["anyOf"], list):
+                    variants = node["anyOf"]
+
+                    # 1) Fix integer/number overlap for Groq
+                    type_variants = [v.get("type") for v in variants if isinstance(v, dict) and "type" in v]
+                    if "number" in type_variants and "integer" in type_variants:
+                        new_variants = []
+                        for v in variants:
+                            if isinstance(v, dict) and v.get("type") == "integer":
+                                # drop integer variant when number is also present
+                                continue
+                            new_variants.append(v)
+                        variants = new_variants
+                        node["anyOf"] = variants
+
+                    # 2) Collapse Optional[T] pattern: anyOf: [T, {"type": "null"}]
+                    # 2) Collapse Optional[T] pattern: anyOf: [T, {"type": "null"}]
+                    # COMMENTED OUT: This removes nullability which causes validation errors when model returns null
+                    # non_null = [
+                    #     v for v in variants
+                    #     if not (isinstance(v, dict) and v.get("type") == "null")
+                    # ]
+                    # nulls = [
+                    #     v for v in variants
+                    #     if isinstance(v, dict) and v.get("type") == "null"
+                    # ]
+
+                    # if len(non_null) == 1 and len(nulls) >= 1:
+                    #     base = visit(non_null[0])  # recurse into T
+                    #
+                    #     # Preserve metadata from wrapper (title, default, description...)
+                    #     for k, v in list(node.items()):
+                    #         if k == "anyOf":
+                    #             continue
+                    #         base.setdefault(k, v)
+                    #
+                    #     node.clear()
+                    #     node.update(base)
+                    # else:
+                    #     # Just recurse into each variant
+                    #     node["anyOf"] = [visit(v) for v in variants]
+
+                    # Original logic above was stripping NULL from AnyOf.
+                    # We simply recurse now.
+                    node["anyOf"] = [visit(v) for v in variants]
+
+                # Recurse into object properties / patternProperties
+                for key in ("properties", "patternProperties"):
+                    if key in node and isinstance(node[key], dict):
+                        for k, v in list(node[key].items()):
+                            node[key][k] = visit(v)
+
+                # Recurse into items (array element schemas)
+                if "items" in node and isinstance(node["items"], (dict, list)):
+                    node["items"] = visit(node["items"])
+
+                # Recurse into combinators other than anyOf
+                for key in ("allOf", "oneOf"):
+                    if key in node and isinstance(node[key], list):
+                        node[key] = [visit(v) for v in node[key]]
+
+                # 🔴 IMPORTANT: recurse into $defs / definitions (this is what was missing)
+                for key in ("$defs", "definitions"):
+                    if key in node and isinstance(node[key], dict):
+                        for k, v in list(node[key].items()):
+                            node[key][k] = visit(v)
+
+            elif isinstance(node, list):
+                return [visit(v) for v in node]
+
+            return node
+
+        return visit(dict(schema))
+
+    def _prepare_groq_tools(self) -> List[dict]:
+        groq_tools = []
+        for tool in self.tool_manager.all_tools():
+            tool_name = tool.name if hasattr(tool, "name") else tool.__class__.__name__
+            self.logger.debug("Preparing Groq tool: %s", tool_name)
+
+            # 1) get a *parameter* schema, not a full tool descriptor
+            if hasattr(tool, "input_schema") and tool.input_schema:
+                param_schema = tool.input_schema
+            elif hasattr(tool, "get_schema"):
+                full = tool.get_schema()
+                param_schema = full.get("parameters", full)
+            else:
+                param_schema = {
+                    "type": "object",
+                    "properties": {},
+                    "additionalProperties": False,
+                }
+
+            # 2) normalize for Groq
+            fixed_schema = self._fix_schema_for_groq(param_schema)
+
+            groq_tools.append(
+                {
+                    "type": "function",
+                    "function": {
+                        "name": tool_name,
+                        "description": getattr(tool, "description", "") or "",
+                        "parameters": fixed_schema,
+                    },
+                }
+            )
+        return groq_tools
+
+    def _prepare_structured_output_format(self, structured_output: type) -> dict:
+        if not structured_output:
+            return {}
+
+        # Normalize instance → class
+        if isinstance(structured_output, BaseModel):
+            structured_output = structured_output.__class__
+        if is_dataclass(structured_output) and not isinstance(structured_output, type):
+            structured_output = structured_output.__class__
+
+        # Pydantic models
+        if isinstance(structured_output, type) and hasattr(structured_output, "model_json_schema"):
+            schema = structured_output.model_json_schema()
+            fixed_schema = self._fix_schema_for_groq(schema)
+            return {
+                "response_format": {
+                    "type": "json_schema",
+                    "json_schema": {"name": structured_output.__name__.lower(), "schema": fixed_schema, "strict": True},
+                }
+            }
+
+        # Dataclasses
+        if is_dataclass(structured_output):
+            schema = TypeAdapter(structured_output).json_schema()
+            fixed_schema = self._fix_schema_for_groq(schema)
+            return {
+                "response_format": {
+                    "type": "json_schema",
+                    "json_schema": {"name": structured_output.__name__.lower(), "schema": fixed_schema, "strict": True},
+                }
+            }
+
+        # Fallback
+        return {"response_format": {"type": "json_object"}}
+
+    async def ask(
+        self,
+        prompt: str,
+        model: str = GroqModel.LLAMA_3_3_70B_VERSATILE,
+        max_tokens: Optional[int] = None,
+        temperature: float = 0.1,
+        top_p: float = 0.9,
+        files: Optional[List[Union[str, Path]]] = None,
+        system_prompt: Optional[str] = None,
+        history: Optional[Sequence[HistoryMessage]] = None,
+        structured_output: Union[type, StructuredOutputConfig, None] = None,
+        tools: Optional[List[dict]] = None,
+        use_tools: Optional[bool] = None,
+        use_code_interpreter: Optional[bool] = None,
+    ) -> AIMessage:
+        """Ask Groq a question with optional conversation memory."""
+        max_tokens = self._resolve_max_tokens(max_tokens)
+        model = model.value if isinstance(model, GroqModel) else model
+        max_tokens = self._resolve_max_tokens(max_tokens, model, for_invoke=True)
+        # Generate unique turn ID for tracking
+        turn_id = str(uuid.uuid4())
+        original_prompt = prompt
+        _use_tools = use_tools if use_tools is not None else self.enable_tools
+
+        messages = self._build_messages(prompt, files, history)
+        # FEAT-176: lifecycle event — BeforeClientCallEvent
+        import time as _lc_time_groq
+
+        _lc_tc_groq = self._emit_before_call(
+            client_name="groq",
+            model=model,
+            temperature=temperature if temperature is not None else self.temperature,
+            system_prompt=system_prompt,
+            has_tools=bool(_use_tools),
+            parent_trace=None,
+        )
+        _lc_t0_groq = _lc_time_groq.perf_counter()
+
+        if system_prompt:
+            messages.insert(0, {"role": "system", "content": system_prompt})
+
+        # Prepare tools
+        if tools and isinstance(tools, list):
+            for tool in tools:
+                self.register_tool(tool)
+        if _use_tools:
+            tools = self._prepare_groq_tools()
+        else:
+            tools = None
+
+        # Groq doesn't support combining structured output with tools
+        # Priority: tools first, then structured output in separate request if needed
+        output_config = self._get_structured_config(structured_output)
+        use_tools = _use_tools
+        use_structured_output = bool(output_config)
+
+        structured_output_for_later: Optional[StructuredOutputConfig] = None
+        request_output_config: Optional[StructuredOutputConfig] = output_config
+
+        # NEW: per-request flag
+        request_use_structured_output = bool(request_output_config)
+
+        if use_structured_output and model not in STRUCTURED_OUTPUT_COMPATIBLE_MODELS:
+            self.logger.error(
+                f"The model '{model}' does not support structured output. " "Please choose a compatible model."
+            )
+            model = GroqModel.LLAMA_4_SCOUT_17B.value
+
+        if use_tools and request_use_structured_output:
+            # Handle tools first, structured output later
+            structured_output_for_later = output_config
+            request_output_config = None
+            request_use_structured_output = False  # IMPORTANT
+
+        # Track tool calls for the response
+        all_tool_calls = []
+
+        # Prepare request arguments
+        request_args = {
+            "model": model,
+            "messages": messages,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "top_p": top_p,
+            "stream": False,
+        }
+
+        if use_tools and not request_use_structured_output:
+            request_args["tool_choice"] = "auto"
+            request_args["tools"] = tools or []
+            if model != getattr(GroqModel, "GEMMA2_9B_IT", None) and model != getattr(
+                GroqModel, "GEMMA2_9B_IT", "google/gemma-2-9b-it"
+            ):
+                request_args["parallel_tool_calls"] = True
+        elif use_code_interpreter:
+            if model in ("openai/gpt-oss-20b", "openai/gpt-oss-120b"):
+                request_args["tool_choice"] = "required"
+                request_args["tools"] = [{"type": "browser_search"}, {"type": "code_interpreter"}]
+
+        # Add structured output format if no tools
+        if request_output_config and not use_tools:
+            self._ensure_json_instruction(
+                messages, "Please respond with a valid JSON object that matches the requested schema."
+            )
+            if request_output_config.format == OutputFormat.JSON:
+                if output_type := request_output_config.output_type:
+                    request_args.update(self._prepare_structured_output_format(output_type))
+                else:
+                    request_args["response_format"] = {"type": "json_object"}
+
+        # FEAT-397: per-round token usage accumulation across the tool loop.
+        def _lc_groq_extract_usage(response_obj):
+            """Build (per-round CompletionUsage, JSON-safe raw usage dict) from
+            a groq.py SDK response's ``.usage``."""
+            usage_obj = getattr(response_obj, "usage", None)
+            if not usage_obj:
+                return None, None
+            per_round = CompletionUsage.from_groq(usage_obj)
+            raw = None
+            if hasattr(usage_obj, "model_dump"):
+                try:
+                    raw = usage_obj.model_dump()
+                except Exception:  # pylint: disable=broad-except
+                    raw = None
+            elif isinstance(usage_obj, dict):
+                raw = usage_obj
+            return per_round, raw
+
+        # Make initial request
+        self.logger.debug(
+            f"Groq request: use_tools={use_tools}, "
+            f"request_output_config={'yes' if request_output_config else 'no'}, "
+            f"tools_in_request={'tools' in request_args}"
+        )
+        _lc_round_number_groq = 1
+        _lc_accumulated_usage_groq: "Optional[CompletionUsage]" = None
+        _lc_round_t0_groq = _lc_time_groq.perf_counter()
+        response = await self._chat_completion(**request_args, use_tools=use_tools)
+        result = response.choices[0].message
+        # FEAT-397: round 1 is this initial call.
+        _lc_round_duration_groq = (_lc_time_groq.perf_counter() - _lc_round_t0_groq) * 1000
+        _lc_round_usage_groq, _lc_round_raw_usage_groq = _lc_groq_extract_usage(response)
+        if _lc_round_usage_groq is not None:
+            _lc_accumulated_usage_groq = _lc_round_usage_groq
+
+        # Handle tool calls in a loop (only if tools were enabled)
+        if use_tools:
+            # Keep track of conversation turns
+            conversation_turns = 0
+            max_turns = 10  # Prevent infinite loops
+
+            while result.tool_calls and conversation_turns < max_turns:
+                conversation_turns += 1
+                _lc_round_tool_names_groq = []
+
+                # Add the assistant's message with tool calls to conversation
+                messages.append(
+                    {
+                        "role": "assistant",
+                        "content": result.content or "",
+                        "tool_calls": [
+                            {
+                                "id": tc.id,
+                                "type": "function",
+                                "function": {"name": tc.function.name, "arguments": tc.function.arguments},
+                            }
+                            for tc in result.tool_calls
+                        ],
+                    }
+                )
+
+                # Execute each tool call
+                for tool_call in result.tool_calls:
+                    tool_name = tool_call.function.name
+                    try:
+                        tool_args = self._json.loads(tool_call.function.arguments)
+                    except json.JSONDecodeError:
+                        tool_args = json_decoder(tool_call.function.arguments)
+
+                    # Create ToolCall object and execute
+                    tc = ToolCall(id=tool_call.id, name=tool_name, arguments=tool_args)
+
+                    try:
+                        start_time = time.time()
+                        tool_result = await self._execute_tool(tool_name, tool_args)
+                        execution_time = time.time() - start_time
+                        tc.result = tool_result
+                        tc.execution_time = execution_time
+
+                        # Add tool result to conversation
+                        messages.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": tool_call.id,
+                                "name": tool_name,
+                                "content": str(tool_result),
+                            }
+                        )
+                    except Exception as e:
+                        from parrot.core.exceptions import HumanInteractionInterrupt
+
+                        if isinstance(e, HumanInteractionInterrupt):
+                            e.session_id = current_session_id.get()
+                            e.messages = messages.copy()
+                            e.tool_call_id = tool_call.id
+                            e.agent_name = model
+                            raise
+                        tc.error = str(e)
+                        trace = traceback.format_exc()
+                        # Add error to conversation
+                        messages.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": tool_call.id,
+                                "name": tool_name,
+                                "content": f"Error: {str(e)}",
+                                "traceback": trace,
+                            }
+                        )
+
+                    all_tool_calls.append(tc)
+                    _lc_round_tool_names_groq.append(tool_name)
+
+                # Continue conversation with tool results to get final response
+                continue_args = {
+                    "model": model,
+                    "messages": messages,
+                    "max_tokens": max_tokens,
+                    "temperature": temperature,
+                    "top_p": top_p,
+                    "stream": False,
+                }
+
+                # Only add tools if we want to allow further tool calls
+                # For final response, we might want to remove tools to force a text response
+                if conversation_turns < max_turns - 1:  # Allow more tool calls if not at limit
+                    continue_args["tools"] = tools
+                    continue_args["tool_choice"] = "auto"
+                    if model != GroqModel.GEMMA2_9B_IT:
+                        continue_args["parallel_tool_calls"] = True
+                else:
+                    # Force final response without more tool calls
+                    continue_args["tool_choice"] = "none"
+
+                # FEAT-397: emit ClientRoundEvent for the round whose tool
+                # calls were just executed above.
+                self._emit_round_event(
+                    _lc_tc_groq,
+                    client_name="groq",
+                    model=model,
+                    round_number=_lc_round_number_groq,
+                    usage=_lc_round_usage_groq,
+                    raw_usage=_lc_round_raw_usage_groq,
+                    tool_calls=_lc_round_tool_names_groq,
+                    duration_ms=_lc_round_duration_groq,
+                )
+
+                _lc_round_t0_groq = _lc_time_groq.perf_counter()
+                response = await self._chat_completion(**continue_args, use_tools=use_tools)
+                result = response.choices[0].message
+                # FEAT-397: accumulate this new round's usage
+                _lc_round_number_groq += 1
+                _lc_round_duration_groq = (_lc_time_groq.perf_counter() - _lc_round_t0_groq) * 1000
+                _lc_round_usage_groq, _lc_round_raw_usage_groq = _lc_groq_extract_usage(response)
+                if _lc_round_usage_groq is not None:
+                    _lc_accumulated_usage_groq = (
+                        _lc_round_usage_groq
+                        if _lc_accumulated_usage_groq is None
+                        else _lc_accumulated_usage_groq + _lc_round_usage_groq
+                    )
+
+        # Handle structured output after tools if needed
+        final_output = None
+        parsed_config: Optional[StructuredOutputConfig] = None
+        if structured_output_for_later and use_tools:
+            # Add the final tool response to messages
+            if result.content:
+                messages.append({"role": "assistant", "content": result.content})
+
+            # Make a new request for structured output
+            json_followup_instruction = (
+                "Please format the above response as valid JSON that matches the requested structure."
+            )
+            messages.append({"role": "user", "content": [{"type": "text", "text": json_followup_instruction}]})
+
+            self._ensure_json_instruction(messages, json_followup_instruction)
+
+            structured_args = {
+                "model": model,
+                "messages": messages,
+                "max_tokens": max_tokens,
+                "temperature": temperature,
+                "top_p": top_p,
+                "stream": False,
+            }
+
+            if structured_output_for_later.format == OutputFormat.JSON:
+                output_type = structured_output_for_later.output_type
+                if output_type:
+                    structured_args.update(self._prepare_structured_output_format(output_type))
+                else:
+                    structured_args["response_format"] = {"type": "json_object"}
+
+            structured_response = await self._chat_completion(**structured_args, use_tools=False)
+            result = (
+                structured_response.message
+                if hasattr(structured_response, "message")
+                else structured_response.choices[0].message
+            )
+
+            parsed_config = structured_output_for_later
+            _final_response = structured_response
+        else:
+            parsed_config = request_output_config
+            _final_response = response
+
+        response_text = result.content if isinstance(result.content, str) else self._json.dumps(result.content)
+        if parsed_config:
+            try:
+                final_output = await self._parse_structured_output(
+                    response_text,
+                    parsed_config,
+                    finish_reason=self._extract_finish_reason(_final_response),
+                )
+            except InvokeError:
+                raise
+            except Exception:  # pylint: disable=broad-except
+                final_output = response_text
+        else:
+            final_output = result.content
+
+        # Add final assistant message to conversation (if not already added)
+        if not (use_tools and result.content):  # Only add if we haven't already added it in tool handling
+            messages.append({"role": "assistant", "content": result.content or ""})
+
+        # Update conversation memory
+        # FEAT-524: no memory write — AbstractBot.save_conversation_turn is the single writer.
+
+        # Create AIMessage using factory
+        structured_payload = None
+        if (
+            parsed_config
+            and final_output is not None
+            and not (isinstance(final_output, str) and final_output == response_text)
+        ):
+            structured_payload = final_output
+
+        ai_message = AIMessageFactory.from_groq(
+            response=response,
+            input_text=original_prompt,
+            model=model,
+            user_id=current_user_id.get(),
+            session_id=current_session_id.get(),
+            turn_id=turn_id,
+            structured_output=structured_payload,
+        )
+
+        # FEAT-397: replace the last-round-only usage with the accumulated
+        # multi-round total. For single-round calls (no tool use), the
+        # accumulated total equals the last (only) round's usage, so this
+        # is a no-op for existing single-round behavior.
+        if _lc_accumulated_usage_groq is not None:
+            if _lc_round_number_groq > 1:
+                _lc_accumulated_usage_groq.extra_usage["rounds"] = _lc_round_number_groq
+            ai_message.usage = _lc_accumulated_usage_groq
+
+        # Add tool calls to the response
+        ai_message.tool_calls = all_tool_calls
+
+        # FEAT-176: lifecycle event — AfterClientCallEvent
+        _lc_groq_usage = getattr(ai_message, "usage", None)
+        await self._emit_after_call(
+            _lc_tc_groq,
+            client_name="groq",
+            model=model,
+            duration_ms=(_lc_time_groq.perf_counter() - _lc_t0_groq) * 1000,
+            input_tokens=getattr(_lc_groq_usage, "prompt_tokens", None) if _lc_groq_usage else None,
+            output_tokens=getattr(_lc_groq_usage, "completion_tokens", None) if _lc_groq_usage else None,
+            finish_reason=None,
+        )
+        return ai_message
+
+    async def ask_stream(
+        self,
+        prompt: str,
+        model: str = GroqModel.LLAMA_3_3_70B_VERSATILE,
+        max_tokens: Optional[int] = None,
+        temperature: float = 0.1,
+        top_p: float = 0.9,
+        files: Optional[List[Union[str, Path]]] = None,
+        system_prompt: Optional[str] = None,
+        history: Optional[Sequence[HistoryMessage]] = None,
+        tools: Optional[List[dict]] = None,
+        deep_research: bool = False,
+        agent_config: Optional[dict] = None,
+        lazy_loading: bool = False,
+    ) -> AsyncIterator[Union[str, AIMessage]]:
+        """Stream Groq's response with optional conversation memory.
+
+        Yields successive string chunks followed by a final
+        :class:`~parrot.models.responses.AIMessage` with metadata.
+        """
+        max_tokens = self._resolve_max_tokens(max_tokens)
+
+        # Generate unique turn ID for tracking
+        turn_id = str(uuid.uuid4())
+        model = model.value if isinstance(model, GroqModel) else model
+
+        messages = self._build_messages(prompt, files, history)
+        if system_prompt:
+            messages.insert(0, {"role": "system", "content": system_prompt})
+
+        # FEAT-176: lifecycle event — BeforeClientCallEvent for stream
+        import time as _lc_time_groqs
+        from parrot.core.events.lifecycle.events import ClientStreamChunkEvent as _GroqStreamChunkEvent
+
+        _lc_tc_groqs = self._emit_before_call(
+            client_name="groq",
+            model=model,
+            temperature=temperature if temperature is not None else self.temperature,
+            system_prompt=system_prompt,
+            has_tools=False,
+            parent_trace=None,
+        )
+        _lc_t0_groqs = _lc_time_groqs.perf_counter()
+        _lc_has_chunk_subs_groq = self.events.has_subscribers(_GroqStreamChunkEvent)
+        _lc_chunk_idx_groq = 0
+
+        # Prepare request arguments
+        request_args = {
+            "model": model,
+            "messages": messages,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "top_p": top_p,
+            "stream": True,
+            "stream_options": {"include_usage": True},
+        }
+
+        # Note: For streaming, we don't handle tools in this version
+        # You might want to implement a more sophisticated streaming + tools handler
+        if tools and isinstance(tools, list):
+            for tool in tools:
+                self.register_tool(tool)
+        # Prepare tools for the request
+        tools = self._prepare_groq_tools()
+        if tools:
+            request_args["tools"] = tools
+            request_args["tool_choice"] = "auto"
+
+        response_stream = await self._chat_completion(**request_args, use_tools=bool(tools))
+
+        assistant_content = ""
+        usage_data = None
+        async for chunk in response_stream:
+            if chunk.choices and chunk.choices[0].delta.content:
+                text_chunk = chunk.choices[0].delta.content
+                assistant_content += text_chunk
+                # FEAT-176: per-chunk event
+                if _lc_has_chunk_subs_groq:
+                    await self.events.emit(
+                        _GroqStreamChunkEvent(
+                            trace_context=_lc_tc_groqs,
+                            client_name="groq",
+                            model=model,
+                            chunk_index=_lc_chunk_idx_groq,
+                            chunk_size_bytes=len(text_chunk.encode("utf-8")),
+                            source_type="client",
+                            source_name="groq",
+                        )
+                    )
+                    _lc_chunk_idx_groq += 1
+                yield text_chunk
+            # Capture usage from the final chunk (present when stream_options.include_usage=True)
+            if hasattr(chunk, "usage") and chunk.usage is not None:
+                usage_data = chunk.usage
+
+        # Build and yield final AIMessage
+        if usage_data is not None:
+            usage = CompletionUsage.from_groq(usage_data)
+        else:
+            usage = CompletionUsage(prompt_tokens=0, completion_tokens=0, total_tokens=0)
+        ai_message = AIMessage(
+            input=prompt,
+            output=assistant_content,
+            response=assistant_content,
+            model=model,
+            provider="groq",
+            usage=usage,
+            user_id=current_user_id.get(),
+            session_id=current_session_id.get(),
+            turn_id=turn_id,
+        )
+        # Update conversation memory BEFORE yielding the final AIMessage so the
+        # memory write executes even if the consumer stops iterating after receiving
+        # the sentinel (generators are not fully drained once the caller exits the
+        # async-for loop).
+        if assistant_content:
+            messages.append({"role": "assistant", "content": assistant_content})
+            # FEAT-524: no memory write — AbstractBot.save_conversation_turn is the single writer.
+
+        # FEAT-176: lifecycle event — AfterClientCallEvent (stream)
+        _lc_groqs_usage = getattr(ai_message, "usage", None)
+        await self._emit_after_call(
+            _lc_tc_groqs,
+            client_name="groq",
+            model=model,
+            duration_ms=(_lc_time_groqs.perf_counter() - _lc_t0_groqs) * 1000,
+            input_tokens=getattr(_lc_groqs_usage, "prompt_tokens", None) if _lc_groqs_usage else None,
+            output_tokens=getattr(_lc_groqs_usage, "completion_tokens", None) if _lc_groqs_usage else None,
+            finish_reason=None,
+        )
+        yield ai_message
+
+    async def resume(self, session_id: str, user_input: str, state: dict) -> AIMessage:
+        """Resume a suspended model execution after HandoffTool pause.
+
+        Args:
+            session_id: The session ID.
+            user_input: The user's input to inject as tool result.
+            state: The suspended state containing messages and tool_call_id.
+
+        Returns:
+            AIMessage: The response from the LLM.
+        """
+        messages = state["messages"]
+        tool_call_id = state["tool_call_id"]
+        model = state.get("agent_name", self.model or self._default_model)
+
+        # Inject user input as tool result for the handoff tool call
+        messages.append({"role": "tool", "tool_call_id": tool_call_id, "name": "handoff_tool", "content": user_input})
+
+        all_tool_calls: list = []
+        turn_id = str(uuid.uuid4())
+
+        # Prepare tools
+        tools = self._prepare_groq_tools() if self.enable_tools else None
+
+        request_args = {
+            "model": model,
+            "messages": messages,
+            # Not a literal: 4096 is the exact value Groq refuses (the cap is
+            # exclusive), and a literal here also ignores a configured budget.
+            "max_tokens": self._resolve_max_tokens(None, model),
+            "temperature": 0.1,
+            "top_p": 0.9,
+            "stream": False,
+        }
+        if tools:
+            request_args["tools"] = tools
+            request_args["tool_choice"] = "auto"
+
+        response = await self._chat_completion(**request_args, use_tools=True)
+        result = response.choices[0].message
+
+        max_turns = 10
+        conversation_turns = 0
+
+        while result.tool_calls and conversation_turns < max_turns:
+            conversation_turns += 1
+
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": result.content or "",
+                    "tool_calls": [
+                        {
+                            "id": tc.id,
+                            "type": "function",
+                            "function": {"name": tc.function.name, "arguments": tc.function.arguments},
+                        }
+                        for tc in result.tool_calls
+                    ],
+                }
+            )
+
+            for tool_call in result.tool_calls:
+                tool_name = tool_call.function.name
+                try:
+                    tool_args = self._json.loads(tool_call.function.arguments)
+                except json.JSONDecodeError:
+                    tool_args = json_decoder(tool_call.function.arguments)
+
+                tc = ToolCall(id=tool_call.id, name=tool_name, arguments=tool_args)
+
+                try:
+                    start_time_t = time.time()
+                    tool_result = await self._execute_tool(tool_name, tool_args)
+                    execution_time = time.time() - start_time_t
+                    tc.result = tool_result
+                    tc.execution_time = execution_time
+
+                    messages.append(
+                        {"role": "tool", "tool_call_id": tool_call.id, "name": tool_name, "content": str(tool_result)}
+                    )
+                except Exception as e:
+                    from parrot.core.exceptions import HumanInteractionInterrupt
+
+                    if isinstance(e, HumanInteractionInterrupt):
+                        e.session_id = session_id
+                        e.messages = messages.copy()
+                        e.tool_call_id = tool_call.id
+                        e.agent_name = model
+                        raise
+                    tc.error = str(e)
+                    messages.append(
+                        {"role": "tool", "tool_call_id": tool_call.id, "name": tool_name, "content": f"Error: {str(e)}"}
+                    )
+                all_tool_calls.append(tc)
+
+            continue_args = {
+                "model": model,
+                "messages": messages,
+                "max_tokens": self._resolve_max_tokens(None, model),
+                "temperature": 0.1,
+                "top_p": 0.9,
+                "stream": False,
+            }
+            if tools and conversation_turns < max_turns - 1:
+                continue_args["tools"] = tools
+                continue_args["tool_choice"] = "auto"
+
+            response = await self._chat_completion(**continue_args, use_tools=True)
+            result = response.choices[0].message
+
+        ai_message = AIMessageFactory.from_groq(
+            response=response,
+            input_text="[Resumed Conversation]",
+            model=model,
+            user_id="unknown",
+            session_id=session_id,
+            turn_id=turn_id,
+        )
+        ai_message.tool_calls = all_tool_calls
+        return ai_message
+
+    # batch_ask() deleted (FEAT-438 TASK-2303) — was a pure pass-through
+    # (`return await super().batch_ask(requests)`); OpenAIBaseClient's
+    # generic sequential-loop implementation is inherited unchanged.
+
+    async def summarize_text(
+        self,
+        text: str,
+        model: str = GroqModel.LLAMA_3_3_70B_VERSATILE,
+        max_tokens: Optional[int] = None,
+        temperature: float = 0.1,
+        system_prompt: Optional[str] = None,
+        top_p: float = 0.9,
+        user_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+    ) -> AIMessage:
+        """Summarize the given text using Groq API.
+
+        Args:
+            text (str): The text to be summarized.
+            model (str): The Groq model to use.
+            max_tokens (Optional[int]): Maximum tokens for the response.
+                ``None`` (the default) resolves via ``_resolve_max_tokens()``
+                — the per-instance ``max_tokens``, then
+                ``_default_max_tokens`` (4095 for Groq).
+            temperature (float): Sampling temperature.
+            top_p (float): Top-p sampling.
+
+        Returns:
+            str: The summarized text.
+        """
+        max_tokens = self._resolve_max_tokens(max_tokens)
+        # Generate unique turn ID for tracking
+        turn_id = str(uuid.uuid4())
+        original_prompt = text
+        model = model.value if isinstance(model, GroqModel) else model
+
+        system_prompt = system_prompt or "Summarize the following text:"
+
+        # FEAT-524: stateless one-shot analysis — no conversation history.
+        messages = self._build_messages(original_prompt, None, None)
+        if system_prompt:
+            messages.insert(0, {"role": "system", "content": system_prompt})
+
+        # Prepare request arguments
+        request_args = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": text},
+            ],
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "top_p": top_p,
+            "stream": False,
+        }
+
+        # Make request to Groq API
+        response = await self.client.chat.completions.create(**request_args)
+        result = response.choices[0].message
+
+        # Extract summarized text
+        summarized_text = result.content
+
+        # Add final assistant message to conversation
+        messages.append({"role": "assistant", "content": result.content})
+
+        # Update conversation memory
+        # return only 100 characters of the summarized text
+        # FEAT-524: no memory write — AbstractBot.save_conversation_turn is the single writer.
+
+        # Create AIMessage using factory
+        ai_message = AIMessageFactory.from_groq(
+            response=response,
+            input_text=original_prompt,
+            model=model,
+            user_id=user_id,
+            session_id=session_id,
+            turn_id=turn_id,
+            structured_output=summarized_text,
+        )
+
+        return ai_message
+
+    async def analyze_sentiment(
+        self,
+        text: str,
+        model: Union[GroqModel, str] = GroqModel.KIMI_K2_INSTRUCT,
+        temperature: Optional[float] = 0.1,
+        max_tokens: Optional[int] = None,
+        top_p: float = 0.9,
+        user_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+        use_structured: bool = False,
+    ) -> AIMessage:
+        """
+        Analyze the sentiment of a given text.
+
+        Args:
+            text (str): The text content to analyze.
+            model (Union[GroqModel, str]): The model to use.
+            temperature (float): Sampling temperature for response generation.
+            user_id (Optional[str]): Optional user identifier for tracking.
+            session_id (Optional[str]): Optional session identifier for tracking.
+        """
+        max_tokens = self._resolve_max_tokens(max_tokens)
+        await self._ensure_client()
+
+        model = model.value if isinstance(model, GroqModel) else model
+
+        turn_id = str(uuid.uuid4())
+        original_prompt = text
+
+        if use_structured:
+            system_prompt = (
+                "You are a sentiment analysis expert. Analyze the sentiment of the given text "
+                "and respond with structured data including sentiment classification, "
+                "confidence level, emotional indicators, and reasoning."
+            )
+        else:
+            system_prompt = """
+Analyze the sentiment of the following text and provide a structured response.
+Your response should include:
+1. Overall sentiment (Positive, Negative, Neutral, or Mixed)
+2. Confidence level (High, Medium, Low)
+3. Key emotional indicators found in the text
+4. Brief explanation of your analysis
+Format your response clearly with these sections.
+            """
+
+        # FEAT-524: stateless one-shot analysis — no conversation history.
+        messages = self._build_messages(original_prompt, None, None)
+        if system_prompt:
+            messages.insert(0, {"role": "system", "content": system_prompt})
+
+        # Prepare request arguments
+        request_args = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": text},
+            ],
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "top_p": top_p,
+            "stream": False,
+        }
+
+        # Add structured output if requested
+        structured_output = None
+        if use_structured:
+            request_args.update(self._prepare_structured_output_format(SentimentAnalysis))
+            structured_output = SentimentAnalysis
+
+        # Make request to Groq API
+        response = await self.client.chat.completions.create(**request_args)
+        result = response.choices[0].message
+
+        # Extract sentiment analysis result
+        sentiment_result = result.content
+
+        # Add final assistant message to conversation
+        messages.append({"role": "assistant", "content": result.content})
+
+        # Handle structured output
+        final_output = None
+        if structured_output:
+            # Prepare structured output configuration
+            output_config = self._get_structured_config(structured_output)
+            try:
+                final_output = await self._parse_structured_output(
+                    result.content,
+                    output_config,
+                    finish_reason=self._extract_finish_reason(response),
+                )
+            except InvokeError:
+                raise
+            except Exception:
+                final_output = result.content
+
+        # Update conversation memory
+        # return only 100 characters of the sentiment analysis result
+        # FEAT-524: no memory write — AbstractBot.save_conversation_turn is the single writer.
+
+        # Create AIMessage using factory
+        ai_message = AIMessageFactory.from_groq(
+            response=response,
+            input_text=original_prompt,
+            model=model,
+            user_id=user_id,
+            session_id=session_id,
+            turn_id=turn_id,
+            structured_output=final_output if final_output is not None else sentiment_result,
+        )
+
+        return ai_message
+
+    async def analyze_product_review(
+        self,
+        review_text: str,
+        product_id: str,
+        product_name: str,
+        model: Union[GroqModel, str] = GroqModel.KIMI_K2_INSTRUCT,
+        temperature: Optional[float] = 0.1,
+        max_tokens: Optional[int] = None,
+        top_p: float = 0.9,
+        user_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+    ) -> AIMessage:
+        """
+        Analyze a product review and extract structured information.
+
+        Args:
+            review_text (str): The product review text to analyze.
+            product_id (str): Unique identifier for the product.
+            product_name (str): Name of the product being reviewed.
+            model (Union[GroqModel, str]): The model to use.
+            temperature (float): Sampling temperature for response generation.
+            max_tokens (Optional[int]): Maximum tokens in response. ``None``
+                (the default) resolves via ``_resolve_max_tokens()`` — the
+                per-instance ``max_tokens``, then ``_default_max_tokens``
+                (4095 for Groq).
+            top_p (float): Top-p sampling parameter.
+            user_id (Optional[str]): Optional user identifier for tracking.
+            session_id (Optional[str]): Optional session identifier for tracking.
+        """
+        max_tokens = self._resolve_max_tokens(max_tokens)
+        await self._ensure_client()
+
+        turn_id = str(uuid.uuid4())
+        original_prompt = review_text
+        model = model.value if isinstance(model, GroqModel) else model
+
+        system_prompt = (
+            f"You are a product review analysis expert. Analyze the given product review "
+            f"for '{product_name}' (ID: {product_id}) and extract structured information "
+            f"including sentiment, rating, and key features mentioned in the review."
+        )
+
+        # FEAT-524: stateless one-shot analysis — no conversation history.
+        messages = self._build_messages(original_prompt, None, None)
+        if system_prompt:
+            messages.insert(0, {"role": "system", "content": system_prompt})
+
+        # Prepare request arguments with structured output
+        request_args = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {
+                    "role": "user",
+                    "content": f"Product ID: {product_id}\nProduct Name: {product_name}\nReview: {review_text}",
+                },
+            ],
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "top_p": top_p,
+            "stream": False,
+        }
+
+        # Add structured output format
+        request_args.update(self._prepare_structured_output_format(ProductReview))
+
+        # Make request to Groq API
+        response = await self.client.chat.completions.create(**request_args)
+        result = response.choices[0].message
+
+        # Add final assistant message to conversation
+        messages.append({"role": "assistant", "content": result.content})
+
+        # Update conversation memory
+        # FEAT-524: no memory write — AbstractBot.save_conversation_turn is the single writer.
+        # Handle structured output
+        final_output = None
+        # Prepare structured output configuration
+        output_config = self._get_structured_config(ProductReview)
+        try:
+            final_output = await self._parse_structured_output(
+                result.content,
+                output_config,
+                finish_reason=self._extract_finish_reason(response),
+            )
+        except InvokeError:
+            raise
+        except Exception:
+            final_output = result.content
+
+        # Create AIMessage using factory
+        ai_message = AIMessageFactory.from_groq(
+            response=response,
+            input_text=original_prompt,
+            model=model,
+            user_id=user_id,
+            session_id=session_id,
+            turn_id=turn_id,
+            structured_output=final_output if final_output is not None else result.content,
+        )
+
+        return ai_message
+
+    async def invoke(
+        self,
+        prompt: str,
+        *,
+        output_type: Optional[type] = None,
+        structured_output: Optional[StructuredOutputConfig] = None,
+        model: Optional[str] = None,
+        system_prompt: Optional[str] = None,
+        max_tokens: Optional[int] = None,
+        temperature: float = 0.0,
+        use_tools: bool = False,
+        tools: Optional[list] = None,
+    ) -> InvokeResult:
+        """Lightweight stateless invocation for GroqClient.
+
+        Uses JSON mode with ``_fix_schema_for_groq()`` normalization for
+        structured output.  Groq cannot combine JSON mode with tool calling,
+        so a two-call strategy is used when both are requested:
+
+        1. First call: tools enabled, no JSON mode — gets tool results.
+        2. Second call: raw result as input, JSON mode + schema — parses into schema.
+
+        Args:
+            prompt: User prompt.
+            output_type: Pydantic model or dataclass to parse the response into.
+            structured_output: Full :class:`StructuredOutputConfig`; takes
+                precedence over ``output_type``.
+            model: Model override. Falls back to an explicitly selected
+                ``self.model``, then ``_lightweight_model``
+                (``kimi-k2-instruct``).
+            system_prompt: System prompt override.
+            max_tokens: Maximum completion tokens.
+            temperature: Sampling temperature.
+            use_tools: Whether to inject registered tools.
+            tools: Additional tool definitions.
+
+        Returns:
+            :class:`InvokeResult` with parsed output.
+
+        Raises:
+            :class:`InvokeError`: On provider errors.
+        """
+        try:
+            resolved_prompt = self._resolve_invoke_system_prompt(system_prompt)
+            config = self._build_invoke_structured_config(output_type, structured_output)
+            resolved_model = self._resolve_invoke_model(model)
+            max_tokens = self._resolve_max_tokens(max_tokens, resolved_model, for_invoke=True)
+
+            await self._ensure_client()
+
+            needs_two_call = use_tools and config is not None
+
+            if needs_two_call:
+                # --- First call: tools, no JSON mode ---
+                tool_defs = self._prepare_tools()
+                first_messages = [
+                    {"role": "system", "content": resolved_prompt},
+                    {"role": "user", "content": prompt},
+                ]
+                first_kwargs: dict = {
+                    "model": resolved_model,
+                    "max_tokens": max_tokens,
+                    "temperature": temperature,
+                    "messages": first_messages,
+                }
+                if tool_defs:
+                    first_kwargs["tools"] = tool_defs
+
+                first_response = await self._chat_completion(**first_kwargs, use_tools=bool(tool_defs))
+                first_text = first_response.choices[0].message.content or ""
+
+                # --- Second call: JSON mode + schema, no tools ---
+                second_messages = [
+                    {"role": "system", "content": resolved_prompt},
+                    {
+                        "role": "user",
+                        "content": (
+                            f"Based on this information:\n{first_text}\n\n"
+                            f"Original request: {prompt}\n\nProvide structured output."
+                        ),
+                    },
+                ]
+                schema = config.get_schema()
+                fixed_schema = self._fix_schema_for_groq(schema)
+                second_kwargs: dict = {
+                    "model": resolved_model,
+                    "max_tokens": max_tokens,
+                    "temperature": temperature,
+                    "messages": second_messages,
+                    "response_format": {
+                        "type": "json_object",
+                        "schema": fixed_schema,
+                    },
+                }
+                final_response = await self._chat_completion(**second_kwargs, use_tools=False)
+                raw_text = final_response.choices[0].message.content or ""
+
+            else:
+                messages = [
+                    {"role": "system", "content": resolved_prompt},
+                    {"role": "user", "content": prompt},
+                ]
+                kwargs: dict = {
+                    "model": resolved_model,
+                    "max_tokens": max_tokens,
+                    "temperature": temperature,
+                    "messages": messages,
+                }
+                if config:
+                    schema = config.get_schema()
+                    fixed_schema = self._fix_schema_for_groq(schema)
+                    kwargs["response_format"] = {
+                        "type": "json_object",
+                        "schema": fixed_schema,
+                    }
+                final_response = await self._chat_completion(**kwargs, use_tools=False)
+                raw_text = final_response.choices[0].message.content or ""
+
+            # Parse output
+            output: Any = raw_text
+            if config:
+                # Known-truncated output must not reach a custom parser either.
+                self._raise_if_truncated(self._extract_finish_reason(final_response), model=resolved_model)
+                if config.custom_parser:
+                    output = config.custom_parser(raw_text)
+                else:
+                    output = await self._parse_structured_output(
+                        raw_text,
+                        config,
+                        finish_reason=self._extract_finish_reason(final_response),
+                        model=resolved_model,
+                    )
+
+            usage = CompletionUsage.from_groq(final_response.usage)
+            return self._build_invoke_result(output, output_type, resolved_model, usage, final_response)
+        except InvokeError:
+            raise
+        except Exception as exc:
+            raise self._handle_invoke_error(exc)

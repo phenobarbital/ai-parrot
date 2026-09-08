@@ -4,6 +4,7 @@ These tests verify the full invoke() contract — correct InvokeResult fields,
 error types, model resolution, and output parsing — using mocked provider SDKs.
 No real API calls are made.
 """
+
 from __future__ import annotations
 import pytest
 from types import SimpleNamespace
@@ -16,19 +17,21 @@ from parrot.models.outputs import StructuredOutputConfig, OutputFormat
 from parrot.models.basic import CompletionUsage
 from parrot.exceptions import InvokeError
 
-
 # ---------------------------------------------------------------------------
 # Shared fixture Pydantic / dataclass models
 # ---------------------------------------------------------------------------
 
+
 class PersonInfo(BaseModel):
     """Target model for structured output tests."""
+
     name: str = Field(description="Full name")
     age: int = Field(description="Age in years")
 
 
 class SentimentResult(BaseModel):
     """Secondary model for variety in tests."""
+
     sentiment: str
     confidence: float
 
@@ -36,6 +39,7 @@ class SentimentResult(BaseModel):
 @dataclass
 class SimpleData:
     """Dataclass target for structured output tests."""
+
     key: str
     value: str
 
@@ -43,6 +47,7 @@ class SimpleData:
 # ---------------------------------------------------------------------------
 # Client factory helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_openai_response(text: str = '{"name": "John", "age": 30}'):
     """OpenAI-compatible mock response."""
@@ -57,28 +62,30 @@ def _make_google_response(text: str = '{"name": "John", "age": 30}'):
     part = SimpleNamespace(text=text)
     content = SimpleNamespace(parts=[part])
     candidate = SimpleNamespace(content=content, finish_reason="STOP")
-    um = SimpleNamespace(
-        prompt_token_count=10, candidates_token_count=5, total_token_count=15
-    )
+    um = SimpleNamespace(prompt_token_count=10, candidates_token_count=5, total_token_count=15)
     return SimpleNamespace(candidates=[candidate], text=text, usage_metadata=um)
 
 
 def _make_anthropic_response(text: str = '{"name": "John", "age": 30}'):
     """Anthropic-compatible mock response."""
     block = SimpleNamespace(text=text)
-    usage = SimpleNamespace(**{"input_tokens": 10, "output_tokens": 5, "__dict__": {"input_tokens": 10, "output_tokens": 5}})
+    usage = SimpleNamespace(
+        **{"input_tokens": 10, "output_tokens": 5, "__dict__": {"input_tokens": 10, "output_tokens": 5}}
+    )
     return SimpleNamespace(content=[block], usage=usage)
 
 
 def _init_json(client):
     """Attach JSON parser to client."""
     from datamodel.parsers.json import JSONContent
+
     client._json = JSONContent()
 
 
 def _make_anthropic_client(response_text: str = '{"name": "John", "age": 30}'):
     """AnthropicClient with mocked SDK."""
-    from parrot.clients.claude import AnthropicClient
+    from parrot.clients.anthropic import AnthropicClient
+
     client = AnthropicClient.__new__(AnthropicClient)
     client.model = "claude-sonnet-4-5"
     client._lightweight_model = "claude-haiku-4-5-20251001"
@@ -88,9 +95,7 @@ def _make_anthropic_client(response_text: str = '{"name": "John", "age": 30}'):
     client._tool_manager.get_tool_schemas.return_value = []
     _init_json(client)
     sdk = MagicMock()
-    sdk.messages.create = AsyncMock(
-        return_value=_make_anthropic_response(response_text)
-    )
+    sdk.messages.create = AsyncMock(return_value=_make_anthropic_response(response_text))
     # __new__ skips __init__ (FEAT-112 per-loop cache lives there).
     client._clients_by_loop = {}
     client._locks_by_loop = {}
@@ -100,7 +105,8 @@ def _make_anthropic_client(response_text: str = '{"name": "John", "age": 30}'):
 
 def _make_openai_client(response_text: str = '{"name": "John", "age": 30}'):
     """OpenAIClient with mocked SDK."""
-    from parrot.clients.gpt import OpenAIClient
+    from parrot.clients.openai import OpenAIClient
+
     client = OpenAIClient.__new__(OpenAIClient)
     client.model = "gpt-4o"
     client._lightweight_model = "gpt-4.1"
@@ -110,9 +116,7 @@ def _make_openai_client(response_text: str = '{"name": "John", "age": 30}'):
     client._tool_manager.get_tool_schemas.return_value = []
     _init_json(client)
     sdk = MagicMock()
-    sdk.chat.completions.create = AsyncMock(
-        return_value=_make_openai_response(response_text)
-    )
+    sdk.chat.completions.create = AsyncMock(return_value=_make_openai_response(response_text))
     # __new__ skips __init__ (FEAT-112 per-loop cache lives there).
     client._clients_by_loop = {}
     client._locks_by_loop = {}
@@ -123,6 +127,7 @@ def _make_openai_client(response_text: str = '{"name": "John", "age": 30}'):
 def _make_google_client(response_text: str = '{"name": "John", "age": 30}'):
     """GoogleGenAIClient with mocked SDK."""
     from parrot.clients.google.client import GoogleGenAIClient
+
     client = GoogleGenAIClient.__new__(GoogleGenAIClient)
     client.model = "gemini-2.5-flash"
     client._lightweight_model = "gemini-3-flash-lite"
@@ -134,9 +139,7 @@ def _make_google_client(response_text: str = '{"name": "John", "age": 30}'):
     sdk = MagicMock()
     sdk.aio = MagicMock()
     sdk.aio.models = MagicMock()
-    sdk.aio.models.generate_content = AsyncMock(
-        return_value=_make_google_response(response_text)
-    )
+    sdk.aio.models.generate_content = AsyncMock(return_value=_make_google_response(response_text))
     # __new__ skips __init__ (FEAT-112 per-loop cache lives there).
     client._clients_by_loop = {}
     client._locks_by_loop = {}
@@ -147,6 +150,7 @@ def _make_google_client(response_text: str = '{"name": "John", "age": 30}'):
 def _make_groq_client(response_text: str = '{"name": "John", "age": 30}'):
     """GroqClient with mocked SDK."""
     from parrot.clients.groq import GroqClient
+
     client = GroqClient.__new__(GroqClient)
     client.model = "llama-3.3-70b-versatile"
     client._lightweight_model = "kimi-k2-instruct"
@@ -156,9 +160,7 @@ def _make_groq_client(response_text: str = '{"name": "John", "age": 30}'):
     client._tool_manager.get_tool_schemas.return_value = []
     _init_json(client)
     sdk = MagicMock()
-    sdk.chat.completions.create = AsyncMock(
-        return_value=_make_openai_response(response_text)
-    )
+    sdk.chat.completions.create = AsyncMock(return_value=_make_openai_response(response_text))
     # __new__ skips __init__ (FEAT-112 per-loop cache lives there).
     client._clients_by_loop = {}
     client._locks_by_loop = {}
@@ -187,8 +189,12 @@ def _make_grok_client(response_text: str = '{"name": "John", "age": 30}'):
     mock_resp.content = response_text
     mock_resp.tool_calls = []
     mock_resp.usage = MagicMock(
-        prompt_tokens=10, completion_tokens=5, total_tokens=15,
-        reasoning_tokens=0, cached_prompt_text_tokens=0, prompt_image_tokens=0,
+        prompt_tokens=10,
+        completion_tokens=5,
+        total_tokens=15,
+        reasoning_tokens=0,
+        cached_prompt_text_tokens=0,
+        prompt_image_tokens=0,
     )
     mock_resp.finish_reason = "stop"
     mock_chat = MagicMock()
@@ -208,7 +214,8 @@ def _make_grok_client(response_text: str = '{"name": "John", "age": 30}'):
 
 def _make_localllm_client(response_text: str = '{"name": "John", "age": 30}'):
     """LocalLLMClient with mocked SDK."""
-    from parrot.clients.localllm import LocalLLMClient
+    from parrot.clients.local import LocalLLMClient
+
     client = LocalLLMClient.__new__(LocalLLMClient)
     client.model = "llama3.1:8b"
     client._lightweight_model = None
@@ -219,9 +226,7 @@ def _make_localllm_client(response_text: str = '{"name": "John", "age": 30}'):
     client._tool_manager.get_tool_schemas.return_value = []
     _init_json(client)
     sdk = MagicMock()
-    sdk.chat.completions.create = AsyncMock(
-        return_value=_make_openai_response(response_text)
-    )
+    sdk.chat.completions.create = AsyncMock(return_value=_make_openai_response(response_text))
     # __new__ skips __init__ (FEAT-112 per-loop cache lives there).
     client._clients_by_loop = {}
     client._locks_by_loop = {}
@@ -232,6 +237,7 @@ def _make_localllm_client(response_text: str = '{"name": "John", "age": 30}'):
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture(params=["anthropic", "openai", "google", "groq", "grok", "localllm"])
 def mock_client(request, bind_sdk_client):
@@ -263,10 +269,12 @@ def two_call_client(request, bind_sdk_client):
             _make_google_response('{"name": "John", "age": 30}'),
         ]
         call_count = {"n": 0}
+
         async def mock_generate(**kwargs):
             resp = responses[min(call_count["n"], 1)]
             call_count["n"] += 1
             return resp
+
         client.client.aio.models.generate_content = mock_generate
         return client
     else:  # groq
@@ -277,10 +285,12 @@ def two_call_client(request, bind_sdk_client):
             _make_openai_response('{"name": "John", "age": 30}'),
         ]
         call_count = {"n": 0}
+
         async def mock_create(**kwargs):
             resp = responses[min(call_count["n"], 1)]
             call_count["n"] += 1
             return resp
+
         client.client.chat.completions.create = mock_create
         return client
 
@@ -289,14 +299,13 @@ def two_call_client(request, bind_sdk_client):
 # Tests
 # ---------------------------------------------------------------------------
 
+
 class TestInvokeStructuredOutput:
     """Verify structured output contract across all clients."""
 
     async def test_pydantic_model(self, mock_client):
         """invoke() returns validated Pydantic model instance."""
-        result = await mock_client.invoke(
-            "Extract: John is 30", output_type=PersonInfo
-        )
+        result = await mock_client.invoke("Extract: John is 30", output_type=PersonInfo)
         assert isinstance(result, InvokeResult)
         assert isinstance(result.output, PersonInfo)
         assert result.output_type is PersonInfo
@@ -305,6 +314,7 @@ class TestInvokeStructuredOutput:
 
     async def test_custom_parser(self, mock_client):
         """StructuredOutputConfig with custom_parser is applied."""
+
         def my_parser(text: str) -> PersonInfo:
             return PersonInfo(name="Parsed", age=0)
 
@@ -313,14 +323,13 @@ class TestInvokeStructuredOutput:
             format=OutputFormat.JSON,
             custom_parser=my_parser,
         )
-        result = await mock_client.invoke(
-            "test", structured_output=config
-        )
+        result = await mock_client.invoke("test", structured_output=config)
         assert isinstance(result, InvokeResult)
         assert result.output.name == "Parsed"
 
     async def test_structured_output_config_takes_precedence(self, mock_client):
         """structured_output param takes precedence over output_type."""
+
         def strict_parser(text: str) -> PersonInfo:
             return PersonInfo(name="Override", age=99)
 
@@ -329,9 +338,7 @@ class TestInvokeStructuredOutput:
             format=OutputFormat.JSON,
             custom_parser=strict_parser,
         )
-        result = await mock_client.invoke(
-            "test", output_type=SentimentResult, structured_output=config
-        )
+        result = await mock_client.invoke("test", output_type=SentimentResult, structured_output=config)
         # custom_parser wins over any attempt to parse with SentimentResult
         assert result.output.name == "Override"
 
@@ -369,9 +376,7 @@ class TestInvokeTwoCall:
 
     async def test_single_call_without_tools(self, two_call_client):
         """Without tools, single call is made even with structured output."""
-        result = await two_call_client.invoke(
-            "Extract person", output_type=PersonInfo, use_tools=False
-        )
+        result = await two_call_client.invoke("Extract person", output_type=PersonInfo, use_tools=False)
         assert isinstance(result, InvokeResult)
 
 
@@ -383,9 +388,10 @@ class TestInvokeErrors:
         original_error = RuntimeError("API unavailable")
 
         # Detect client type and patch the relevant SDK call
-        from parrot.clients.claude import AnthropicClient
+        from parrot.clients.anthropic import AnthropicClient
         from parrot.clients.google.client import GoogleGenAIClient
         from parrot.clients.grok import GrokClient
+
         if isinstance(mock_client, AnthropicClient):
             mock_client.client.messages.create = AsyncMock(side_effect=original_error)
         elif isinstance(mock_client, GoogleGenAIClient):
@@ -403,6 +409,7 @@ class TestInvokeErrors:
     async def test_invoke_error_is_exception(self, mock_client):
         """InvokeError is a proper Exception subclass."""
         from parrot.clients.grok import GrokClient
+
         if isinstance(mock_client, GrokClient):
             mock_client.get_client = AsyncMock(side_effect=RuntimeError("no client"))
         else:

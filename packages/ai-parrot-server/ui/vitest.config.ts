@@ -18,6 +18,7 @@ const AGENTCHAT_DEFINES = {
   __AGENTCHAT_INFOGRAPHIC__: 'true',
   __AGENTCHAT_DATASETS__: 'true',
   __AGENTCHAT_RICH_EDITOR__: 'true',
+  __AGENTCHAT_A2UI__: 'true',
 };
 
 export default defineConfig({

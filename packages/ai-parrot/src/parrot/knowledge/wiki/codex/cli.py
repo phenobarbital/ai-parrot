@@ -36,7 +36,7 @@ def _resolve_root(path: Optional[str]) -> Path:
 
 @click.group(name="codex")
 def codex() -> None:
-    """Codex integration for the repository LLM Wiki."""
+    """Codex integration for the repository LLM Wiki and Bookstore."""
 
 
 @codex.command()
@@ -54,12 +54,18 @@ def codex() -> None:
     show_default=True,
     help="Build the wiki plane now if it does not exist yet.",
 )
-def install(path_: Optional[str], gitignore: bool, build_now: bool) -> None:
-    """Install WikiToolkit MCP, skill, and permissions for Codex."""
+@click.option(
+    "--bookstore/--no-bookstore",
+    default=True,
+    show_default=True,
+    help="Install Bookstore MCP and skill when an indexed library exists (no indexing).",
+)
+def install(path_: Optional[str], gitignore: bool, build_now: bool, bookstore: bool) -> None:
+    """Install WikiToolkit and Bookstore MCP servers and skills for Codex."""
     root = _resolve_root(path_)
     try:
         config = load_effective_config(root).config
-        actions = install_codex_integration(root, config, gitignore=gitignore)
+        actions = install_codex_integration(root, config, gitignore=gitignore, bookstore=bookstore)
     except (RuntimeError, WikiConfigError) as exc:
         raise click.ClickException(str(exc)) from exc
 
@@ -75,7 +81,7 @@ def install(path_: Optional[str], gitignore: bool, build_now: bool) -> None:
 
     click.secho(
         "Codex integration installed. Restart Codex in this trusted repository "
-        "to load its MCP server, skill, and permission rules.",
+        "to load its MCP servers, skills, and permission rules.",
         fg="green",
     )
 
@@ -101,7 +107,7 @@ def status(path_: Optional[str], as_json: bool) -> None:
     root = _resolve_root(path_)
     try:
         info = integration_status(root)
-    except WikiConfigError as exc:
+    except (RuntimeError, WikiConfigError) as exc:
         raise click.ClickException(str(exc)) from exc
     if as_json:
         click.echo(json.dumps(info, indent=2))
@@ -114,6 +120,8 @@ def status(path_: Optional[str], as_json: bool) -> None:
         "skill": "parrot-wiki Codex skill",
         "mcp": "wikitoolkit MCP with automatic approval",
         "permissions": "wikitoolkit command permissions",
+        "bookstore_mcp": "bookstore PageIndex MCP",
+        "bookstore_skill": "bookstore research skill",
     }
     for key, label in labels.items():
         mark = "✓" if info.get(key) else "✗"

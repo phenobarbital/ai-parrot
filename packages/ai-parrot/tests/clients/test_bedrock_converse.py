@@ -6,11 +6,12 @@ required. ``get_client()`` is exercised for real since ``aioboto3`` is
 already available in this environment (client construction does not
 require valid credentials or network I/O).
 """
+
 from unittest.mock import patch
 
 import pytest
 
-from parrot.clients.bedrock import BedrockConverseClient
+from parrot.clients.amazon.bedrock import BedrockConverseClient
 from parrot.models.responses import AIMessage
 
 
@@ -19,7 +20,7 @@ def mock_bedrock_response():
     return {
         "output": {"message": {"role": "assistant", "content": [{"text": "Hello!"}]}},
         "stopReason": "end_turn",
-        "usage": {"inputTokens": 10, "outputTokens": 5}
+        "usage": {"inputTokens": 10, "outputTokens": 5},
     }
 
 
@@ -48,15 +49,13 @@ class TestBedrockConverseClient:
         assert client._fallback_model == "claude-haiku-4-5"
 
     def test_fallback_model_explicit_override_respected(self):
-        client = BedrockConverseClient(
-            model="claude-sonnet-4-5", fallback_model="custom-fallback"
-        )
+        client = BedrockConverseClient(model="claude-sonnet-4-5", fallback_model="custom-fallback")
         assert client._fallback_model == "custom-fallback"
 
     @pytest.mark.asyncio
     async def test_ask_basic(self, mock_bedrock_response):
         client = BedrockConverseClient(model="claude-sonnet-4-5")
-        with patch.object(client, '_sdk_create', return_value=mock_bedrock_response):
+        with patch.object(client, "_sdk_create", return_value=mock_bedrock_response):
             result = await client.ask("Hello")
             assert isinstance(result, AIMessage)
             assert result.output == "Hello!"
@@ -66,20 +65,23 @@ class TestBedrockConverseClient:
     @pytest.mark.asyncio
     async def test_ask_tool_use_loop(self):
         tool_response = {
-            "output": {"message": {"role": "assistant", "content": [
-                {"toolUse": {"toolUseId": "tu_1", "name": "get_weather", "input": {"city": "NYC"}}}
-            ]}},
+            "output": {
+                "message": {
+                    "role": "assistant",
+                    "content": [{"toolUse": {"toolUseId": "tu_1", "name": "get_weather", "input": {"city": "NYC"}}}],
+                }
+            },
             "stopReason": "tool_use",
-            "usage": {"inputTokens": 20, "outputTokens": 10}
+            "usage": {"inputTokens": 20, "outputTokens": 10},
         }
         final_response = {
             "output": {"message": {"role": "assistant", "content": [{"text": "NYC is sunny."}]}},
             "stopReason": "end_turn",
-            "usage": {"inputTokens": 30, "outputTokens": 15}
+            "usage": {"inputTokens": 30, "outputTokens": 15},
         }
         client = BedrockConverseClient(model="claude-sonnet-4-5")
-        with patch.object(client, '_sdk_create', side_effect=[tool_response, final_response]):
-            with patch.object(client, '_execute_tool', return_value="Sunny, 25C"):
+        with patch.object(client, "_sdk_create", side_effect=[tool_response, final_response]):
+            with patch.object(client, "_execute_tool", return_value="Sunny, 25C"):
                 result = await client.ask("What's the weather in NYC?", use_tools=True)
                 assert result.output == "NYC is sunny."
                 assert result.stop_reason == "end_turn"
@@ -89,20 +91,22 @@ class TestBedrockConverseClient:
         """reasoningContent blocks (with signature) must survive the tool
         loop unmodified — re-appended verbatim in the assistant turn."""
         tool_response = {
-            "output": {"message": {"role": "assistant", "content": [
-                {"reasoningContent": {
-                    "reasoningText": {"text": "Thinking..."},
-                    "signature": "sig_abc123"
-                }},
-                {"toolUse": {"toolUseId": "tu_2", "name": "get_weather", "input": {"city": "LA"}}}
-            ]}},
+            "output": {
+                "message": {
+                    "role": "assistant",
+                    "content": [
+                        {"reasoningContent": {"reasoningText": {"text": "Thinking..."}, "signature": "sig_abc123"}},
+                        {"toolUse": {"toolUseId": "tu_2", "name": "get_weather", "input": {"city": "LA"}}},
+                    ],
+                }
+            },
             "stopReason": "tool_use",
-            "usage": {"inputTokens": 20, "outputTokens": 10}
+            "usage": {"inputTokens": 20, "outputTokens": 10},
         }
         final_response = {
             "output": {"message": {"role": "assistant", "content": [{"text": "LA is sunny."}]}},
             "stopReason": "end_turn",
-            "usage": {"inputTokens": 30, "outputTokens": 15}
+            "usage": {"inputTokens": 30, "outputTokens": 15},
         }
         client = BedrockConverseClient(model="claude-sonnet-4-5")
         captured_payloads = []
@@ -111,17 +115,15 @@ class TestBedrockConverseClient:
             captured_payloads.append(payload)
             return tool_response if len(captured_payloads) == 1 else final_response
 
-        with patch.object(client, '_sdk_create', side_effect=fake_sdk_create):
-            with patch.object(client, '_execute_tool', return_value="Sunny, 20C"):
+        with patch.object(client, "_sdk_create", side_effect=fake_sdk_create):
+            with patch.object(client, "_execute_tool", return_value="Sunny, 20C"):
                 result = await client.ask("Weather in LA?", use_tools=True)
                 assert result.output == "LA is sunny."
 
         # Second call's messages must include the reasoningContent block
         # with its signature intact.
         second_payload_messages = captured_payloads[1]["messages"]
-        assistant_turn = next(
-            m for m in second_payload_messages if m["role"] == "assistant"
-        )
+        assistant_turn = next(m for m in second_payload_messages if m["role"] == "assistant")
         reasoning_blocks = [b for b in assistant_turn["content"] if "reasoningContent" in b]
         assert len(reasoning_blocks) == 1
         assert reasoning_blocks[0]["reasoningContent"]["signature"] == "sig_abc123"
@@ -136,9 +138,10 @@ class TestBedrockConverseClient:
                 yield {"contentBlockDelta": {"delta": {"text": "lo!"}}}
                 yield {"messageStop": {"stopReason": "end_turn"}}
                 yield {"metadata": {"usage": {"inputTokens": 5, "outputTokens": 3}}}
+
             return _events()
 
-        with patch.object(client, '_sdk_stream', side_effect=fake_stream):
+        with patch.object(client, "_sdk_stream", side_effect=fake_stream):
             chunks = []
             async for item in client.ask_stream("Hi"):
                 chunks.append(item)
@@ -155,14 +158,14 @@ class TestBedrockConverseClient:
         final_response = {
             "output": {"message": {"role": "assistant", "content": [{"text": "Done."}]}},
             "stopReason": "end_turn",
-            "usage": {"inputTokens": 15, "outputTokens": 5}
+            "usage": {"inputTokens": 15, "outputTokens": 5},
         }
         client = BedrockConverseClient(model="claude-sonnet-4-5")
         state = {
             "messages": [{"role": "user", "content": [{"text": "What's the weather?"}]}],
             "tool_call_id": "tu_1",
         }
-        with patch.object(client, '_sdk_create', return_value=final_response):
+        with patch.object(client, "_sdk_create", return_value=final_response):
             result = await client.resume("session-1", "Sunny, 25C", state)
             assert result.output == "Done."
             assert result.session_id == "session-1"
@@ -176,12 +179,12 @@ class TestBedrockConverseClient:
         final_response = {
             "output": {"message": {"role": "assistant", "content": [{"text": "Done."}]}},
             "stopReason": "end_turn",
-            "usage": {"inputTokens": 15, "outputTokens": 5}
+            "usage": {"inputTokens": 15, "outputTokens": 5},
         }
         client = BedrockConverseClient(model="claude-sonnet-4-5")
         original_messages = [{"role": "user", "content": [{"text": "What's the weather?"}]}]
         state = {"messages": original_messages, "tool_call_id": "tu_1"}
-        with patch.object(client, '_sdk_create', return_value=final_response):
+        with patch.object(client, "_sdk_create", return_value=final_response):
             await client.resume("session-1", "Sunny, 25C", state)
         assert len(original_messages) == 1
         assert state["messages"] is original_messages
@@ -189,7 +192,7 @@ class TestBedrockConverseClient:
     @pytest.mark.asyncio
     async def test_invoke(self, mock_bedrock_response):
         client = BedrockConverseClient(model="claude-sonnet-4-5")
-        with patch.object(client, '_sdk_create', return_value=mock_bedrock_response):
+        with patch.object(client, "_sdk_create", return_value=mock_bedrock_response):
             result = await client.invoke("Hello")
             assert result.output == "Hello!"
             assert result.model  # resolved via translate()
@@ -197,7 +200,7 @@ class TestBedrockConverseClient:
     @pytest.mark.asyncio
     async def test_model_id_translated(self, mock_bedrock_response):
         client = BedrockConverseClient(model="claude-sonnet-4-5")
-        with patch.object(client, '_sdk_create', return_value=mock_bedrock_response) as mocked:
+        with patch.object(client, "_sdk_create", return_value=mock_bedrock_response) as mocked:
             await client.ask("Hello")
             sent_payload = mocked.call_args[0][0]
             assert sent_payload["modelId"] == "anthropic.claude-sonnet-4-5-20250929-v1:0"

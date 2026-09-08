@@ -1,13 +1,14 @@
 """Unit tests for LocalLLMClient and LocalLLMModel."""
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from parrot.clients.localllm import LocalLLMClient
+from parrot.clients.local import LocalLLMClient
 from parrot.clients.factory import LLMFactory, SUPPORTED_CLIENTS
-from parrot.models.localllm import LocalLLMModel
-
+from parrot.clients.local.models import LocalLLMModel
 
 # ---- Model Enum Tests ----
+
 
 class TestLocalLLMModel:
     """Tests for LocalLLMModel enum."""
@@ -29,6 +30,7 @@ class TestLocalLLMModel:
 
 
 # ---- Client Initialization Tests ----
+
 
 class TestLocalLLMClientInit:
     """Tests for LocalLLMClient initialization."""
@@ -69,17 +71,14 @@ class TestLocalLLMClientInit:
 
     def test_all_params_together(self):
         """All params set together."""
-        client = LocalLLMClient(
-            api_key="key",
-            base_url="http://my-server:9000/v1",
-            model="phi3:mini"
-        )
+        client = LocalLLMClient(api_key="key", base_url="http://my-server:9000/v1", model="phi3:mini")
         assert client.api_key == "key"
         assert client.base_url == "http://my-server:9000/v1"
         assert client.model == "phi3:mini"
 
 
 # ---- Override Tests ----
+
 
 class TestLocalLLMClientOverrides:
     """Tests for method overrides."""
@@ -118,16 +117,27 @@ class TestLocalLLMClientOverrides:
 
 # ---- Factory Tests ----
 
+
 class TestLocalLLMFactory:
     """Tests for LLMFactory registration."""
 
-    @pytest.mark.parametrize("alias", [
-        "local", "localllm", "ollama", "vllm", "llamacpp"
-    ])
+    @pytest.mark.parametrize("alias", ["local", "localllm", "ollama", "vllm", "llamacpp"])
     def test_factory_alias_registered(self, alias):
-        """Each alias maps to LocalLLMClient in SUPPORTED_CLIENTS."""
+        """Each alias maps to LocalLLMClient in SUPPORTED_CLIENTS.
+
+        FEAT-523 (TASK-2853): "local"/"localllm"/"ollama"/"llamacpp" are
+        now discovered via a real `parrot.clients` entry point
+        (ai-parrot-client-local) — the registered value is the entry
+        point's zero-arg loader, resolved to the real class the same way
+        LLMFactory.create() does. ("vllm" is a pre-existing mis-included
+        parametrize case — it resolves to vLLMClient, a distinct
+        subclass, not LocalLLMClient itself; unaffected by this change.)
+        """
         assert alias in SUPPORTED_CLIENTS
-        assert SUPPORTED_CLIENTS[alias] is LocalLLMClient
+        registered = SUPPORTED_CLIENTS[alias]
+        if callable(registered) and not isinstance(registered, type):
+            registered = registered()
+        assert registered is LocalLLMClient
 
     def test_factory_create_local(self):
         """LLMFactory.create('local') returns LocalLLMClient."""
@@ -148,16 +158,14 @@ class TestLocalLLMFactory:
 
     def test_factory_with_model_args(self):
         """Factory passes model_args through correctly."""
-        client = LLMFactory.create(
-            "local",
-            model_args={"temperature": 0.5, "max_tokens": 2048}
-        )
+        client = LLMFactory.create("local", model_args={"temperature": 0.5, "max_tokens": 2048})
         assert isinstance(client, LocalLLMClient)
         assert client.temperature == 0.5
         assert client.max_tokens == 2048
 
 
 # ---- Utility Method Tests ----
+
 
 class TestLocalLLMUtilities:
     """Tests for list_models() and health_check()."""
@@ -201,9 +209,7 @@ class TestLocalLLMUtilities:
         client = LocalLLMClient()
 
         mock_client = MagicMock()
-        mock_client.models.list = AsyncMock(
-            side_effect=Exception("Connection refused")
-        )
+        mock_client.models.list = AsyncMock(side_effect=Exception("Connection refused"))
         client.client = mock_client
 
         result = await client.health_check()

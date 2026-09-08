@@ -1,0 +1,278 @@
+{
+  "feat_id": "FEAT-520",
+  "mode": "enrichment",
+  "overall_confidence": "medium",
+  "localization": [
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/graphindex/persist.py",
+      "symbol": "GraphIndexPersistence",
+      "role": "Arango backend whose public API (persist_graph, replace_document_slice, load_graph, apply_update/commit protocol) a persist_postgres.py must mirror",
+      "evidence": [
+        "F001"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/graphindex/persist_sqlite.py",
+      "symbol": "SQLitePersistence",
+      "role": "aiosqlite backend with FTS5/BM25 + files staleness table — the declared mirror pattern and closest structural template for the port",
+      "evidence": [
+        "F001"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/graphindex/factory.py",
+      "symbol": "create_* factory",
+      "role": "backend selection point where the third backend registers",
+      "evidence": [
+        "F001"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/graphindex/schema.py",
+      "symbol": "UniversalNode/UniversalEdge/Provenance/EdgeKind/AssertionMeta/GraphUpdate",
+      "role": "models the SQL schema must represent; UniversalEdge validator: confidence iff INFERRED; node.content_ref = markdown-on-disk pointer",
+      "evidence": [
+        "F006"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/store.py",
+      "symbol": "BaseWikiStore + WIKI_SCHEMA_SQL + SCHEMA_VERSION + _MIGRATION_COLUMNS",
+      "role": "the OTHER contract (wiki plane) — 16 abstract methods + non-abstract schema-v2 symbol surface; only relevant if the Postgres backend also targets the wiki plane (U1)",
+      "evidence": [
+        "F002"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot-embeddings/src/parrot/stores/postgres.py",
+      "symbol": "PgVectorStore.hybrid_search (line 1728)",
+      "role": "EXISTING dense+ColBERT hybrid on the vector store (SQLAlchemy) — naming collision and integration decision for D6",
+      "evidence": [
+        "F003"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/pageindex/hybrid_search.py",
+      "symbol": "HybridPageIndexSearch._rrf_fuse/_apply_reranker",
+      "role": "reusable RRF (k=60) + reranker consumption pattern for D6 steps 2 and 4",
+      "evidence": [
+        "F004",
+        "F005"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/graphindex/grounding.py",
+      "symbol": "ground_claim (line 204)",
+      "role": "evidence = stable_edge_id paths over in-memory graph; no chunk FK exists — evidence_ref is a new field",
+      "evidence": [
+        "F006"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/tests/knowledge/wiki/test_store.py + tests/knowledge/graphindex/test_persist_commit_protocol.py",
+      "symbol": "store fixture params=[sqlite, memory]",
+      "role": "OQ4 answer: wiki suite is backend-parametrized; graphindex commit-protocol suite is the parity bar",
+      "evidence": [
+        "F007"
+      ],
+      "confidence": "high"
+    }
+  ],
+  "claims": [
+    {
+      "id": "C1",
+      "statement": "GraphIndex and the LLM wiki have SEPARATE store contracts with separate backend implementations (GraphIndexPersistence/SQLitePersistence vs BaseWikiStore); no shared seam exists today, so 'the Postgres backend' must pick its contract explicitly.",
+      "confidence": "high",
+      "evidence": [
+        "F001",
+        "F002"
+      ]
+    },
+    {
+      "id": "C2",
+      "statement": "hybrid_search already exists on PgVectorStore (dense+ColBERT, Python-side weighted merge, SQLAlchemy) — the brainstorm's 'no existe hybrid_search()' is false at the vector-store layer and true only for the graph/wiki store contracts.",
+      "confidence": "high",
+      "evidence": [
+        "F003"
+      ]
+    },
+    {
+      "id": "C3",
+      "statement": "No BM25 over Postgres exists to plug into: the only Postgres FTS artifact is a hardcoded-English GIN tsvector index. Real BM25 lives in bm25s (pageindex), SQLite FTS5 (wiki + graphindex), and VectorSeedPolicy. D6's FTS leg must be built new; the reusable assets are the RRF pattern and the reranker seam.",
+      "confidence": "high",
+      "evidence": [
+        "F004"
+      ]
+    },
+    {
+      "id": "C4",
+      "statement": "The re-ranking seam is exactly as the brainstorm assumed: AbstractReranker + factory + LocalCrossEncoderReranker (HuggingFace), with a proven consumption pattern in HybridPageIndexSearch._apply_reranker.",
+      "confidence": "high",
+      "evidence": [
+        "F005"
+      ]
+    },
+    {
+      "id": "C5",
+      "statement": "ground_claim(claim: str) -> GroundingResult grounds via stable edge-id paths over the in-memory graph; no chunk FK exists anywhere, so evidence_ref is a brand-new field with no existing consumer — OQ2 is a design decision, not archaeology.",
+      "confidence": "high",
+      "evidence": [
+        "F006"
+      ]
+    },
+    {
+      "id": "C6",
+      "statement": "The 'asyncpg, no SQLAlchemy' invariant holds for core modules (core/hooks/postgres.py, eval/sink.py, retrieval/pin.py) but NOT for the vector-store layer (PgVectorStore is SQLAlchemy). An asyncpg graphindex backend has precedent but cannot reuse PgVectorStore connection machinery — and D6's 'one roundtrip' claim depends on where embeddings live (U4).",
+      "confidence": "medium",
+      "evidence": [
+        "F003"
+      ]
+    },
+    {
+      "id": "C7",
+      "statement": "OQ4 resolved: the wiki store suite IS backend-parametrized (params=['sqlite','memory'], Arango gated separately); the graphindex parity bar is the commit-protocol behavioral suite. A Postgres param slots in like Arango (live-DB gated).",
+      "confidence": "high",
+      "evidence": [
+        "F007"
+      ]
+    },
+    {
+      "id": "C8",
+      "statement": "A graphindex Postgres backend must also implement the graph commit protocol (apply_update/revert_commit with pre-images) to reach parity — recently landed on BOTH existing backends and used by GraphPublisher for agent memory. Postgres transactions make this strictly easier than Arango's lock-based serialization.",
+      "confidence": "high",
+      "evidence": [
+        "F001",
+        "F008"
+      ]
+    },
+    {
+      "id": "C9",
+      "statement": "No temporal support (tstzrange/valid_from) exists in any backend, and no in-flight Postgres backend work exists — greenfield, no collision. Schema-v2 symbols (wiki) just landed and are still moving; a wiki-plane backend would need the symbol surface or graceful skip.",
+      "confidence": "medium",
+      "evidence": [
+        "F002",
+        "F006",
+        "F008"
+      ]
+    }
+  ],
+  "hypotheses": [
+    {
+      "rank": 1,
+      "statement": "Implement the Postgres backend as a THIRD GraphIndex persistence backend (persist_postgres.py, asyncpg, schema graphindex.*) mirroring the GraphIndexPersistence public API including the commit protocol, with the bitemporal schema (D1-D5) native to it; the one-pass hybrid (D6) is new work on this backend — its FTS leg is built (not reused), its RRF follows the pageindex pattern in SQL, its reranker leg reuses parrot/rerankers. A Postgres BaseWikiStore is a separate, optional follow-up feature. [AMENDED by Q&A: U1 chose BOTH contracts over one shared graphindex.* schema, so the feature also delivers a Postgres BaseWikiStore view of the same schema.]",
+      "confidence": "medium",
+      "evidence": [
+        "F001",
+        "F003",
+        "F004",
+        "F005",
+        "F008"
+      ],
+      "reasoning": "The brainstorm's temporal schema (concept_id/node_versions/edges) maps 1:1 to graphindex models, not wiki pages; the two contracts are separate today and merging them is a bigger architectural change than the brainstorm scopes."
+    }
+  ],
+  "corrections_to_source": [
+    {
+      "target": "§1 table row 'BM25 + re-ranking existente ... sobre PgVector'",
+      "correction": "Half-verified: reranking seam exists (parrot/rerankers); BM25 over Postgres does NOT exist (C3). D6 step 1 'BM25 (seam existente sobre pgvector)' must read 'FTS leg built new (tsvector/ts_rank_cd)'."
+    },
+    {
+      "target": "§1 'Lo que NO existe: hybrid_search()'",
+      "correction": "PgVectorStore.hybrid_search exists (dense+ColBERT). True only for graph/wiki store contracts. Rename or namespace the new method deliberately (C2)."
+    },
+    {
+      "target": "§1 'asyncpg estándar del proyecto (no SQLAlchemy)' + D8",
+      "correction": "True for core, false for the vector-store layer (SQLAlchemy). D8 stands for the new backend, but embeddings co-location must be decided (U4) since PgVectorStore machinery is SQLAlchemy (C6)."
+    },
+    {
+      "target": "§1 'punto de partida del port: wiki/store.py SQLite'",
+      "correction": "If the backend targets GraphIndex (hypothesis 1), the port template is graphindex/persist_sqlite.py + persist.py, not wiki/store.py (C1)."
+    }
+  ],
+  "unknowns": [
+    {
+      "id": "U1",
+      "question": "Which contract does the Postgres backend implement first: GraphIndexPersistence (persist_postgres.py), BaseWikiStore (PostgresWikiStore), or both over one graphindex.* schema? The codebase shows two separate seams (C1); the brainstorm's temporal schema maps naturally to graphindex.",
+      "resolves": [
+        "C1"
+      ],
+      "options": [
+        "a) GraphIndex persistence only (recommended by evidence)",
+        "b) Both from the start, one shared schema",
+        "c) BaseWikiStore first (wiki plane)"
+      ],
+      "user_answer": "Both contracts over ONE shared graphindex.* Postgres schema: the backend implements GraphIndexPersistence (incl. commit protocol) AND BaseWikiStore against the same schema. Bigger than hypothesis-1 scope; the spec must define how wiki pages map onto nodes/node_versions."
+    },
+    {
+      "id": "U2",
+      "question": "Where does the backend ship: core package (aiosqlite/asyncpg precedents in core) or ai-parrot-embeddings satellite (FEAT-201 policy puts concrete DB backends there)?",
+      "resolves": [
+        "C6"
+      ],
+      "options": [
+        "a) Core, next to persist.py/persist_sqlite.py (siblings live there)",
+        "b) ai-parrot-embeddings satellite via PEP 420"
+      ],
+      "user_answer": "Core package, next to the siblings: packages/ai-parrot/src/parrot/knowledge/graphindex/ (persist_postgres.py; wiki-plane store file location settled in the spec). asyncpg gated as an optional extra."
+    },
+    {
+      "id": "U3",
+      "question": "evidence_ref (D4/OQ2): pgvector chunk id, (body_ref, byte_offset), both — or defer the column to Sprint 4 since no consumer exists today (C5)?",
+      "resolves": [
+        "C5"
+      ],
+      "options": [
+        "a) Defer: add nullable column now, define semantics in Sprint 4",
+        "b) (body_ref, offset) zvec-grep style now",
+        "c) FK to pgvector chunk now"
+      ],
+      "user_answer": "(body_ref, byte_offset) zvec-grep style, defined from day one — evidence cites the markdown file on disk plus exact offset."
+    },
+    {
+      "id": "U4",
+      "question": "For the one-pass hybrid (D6): do embeddings move INTO the graphindex.* schema (pgvector column managed via asyncpg — true one roundtrip) or stay in PgVectorStore (SQLAlchemy — the graph/FTS legs and the KNN leg become two roundtrips fused in Python)?",
+      "resolves": [
+        "C6",
+        "C2"
+      ],
+      "options": [
+        "a) Embeddings in graphindex.node_versions (true one-pass)",
+        "b) Stay in PgVectorStore, fuse in Python (reuses existing ingestion)",
+        "c) Sprint 1-2 without KNN leg; decide with OQ3 spike"
+      ],
+      "user_answer": "RESOLVED at review gate: PgVectorStore is NOT reused (it is SQLAlchemy); the graphindex-postgres backend is asyncpg — this is MANDATORY. Embeddings live in the graphindex.* schema managed via asyncpg (true one-pass). The re-ranking seam (parrot/rerankers) and the BM25/RRF machinery patterns ARE reused."
+    },
+    {
+      "id": "U5",
+      "question": "Migration of existing Arango graphs (OQ6): export/import tool in scope, or fresh ingests only?",
+      "resolves": [],
+      "options": [
+        "a) Fresh ingests only (v1)",
+        "b) Export/import tool in Sprint 4"
+      ],
+      "user_answer": "Fresh ingests only in v1; existing Arango tenants stay on Arango. No export/import tool in scope."
+    }
+  ],
+  "recommended_next_command": {
+    "command": "sdd-spec",
+    "rationale": "Localization is high-confidence and the brainstorm already carries closed decisions D1-D8; after the five unknowns are answered the spec can encode the corrected contract (graphindex seam, built-not-reused FTS leg, commit-protocol parity) directly. /sdd-brainstorm would re-tread ground the source document already covers."
+  },
+  "budget_status": {
+    "truncated": false,
+    "consumed": {
+      "files_read": 5,
+      "grep_calls": 9,
+      "git_calls": 2,
+      "wiki_calls": 7,
+      "depth_reached": 2
+    }
+  }
+}

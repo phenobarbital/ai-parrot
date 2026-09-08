@@ -1,4 +1,5 @@
 """Tests for WebScrapingToolkit — TASK-053."""
+
 import json
 
 import pytest
@@ -12,17 +13,18 @@ from parrot.tools.scraping.toolkit_models import (
     PlanSummary,
 )
 
-
 # ── Fixtures ──────────────────────────────────────────────────────────
 
-VALID_PLAN_JSON = json.dumps({
-    "url": "https://example.com/products",
-    "objective": "Extract products",
-    "steps": [
-        {"action": "navigate", "url": "https://example.com/products"},
-        {"action": "wait", "condition": ".product-list", "condition_type": "selector"},
-    ],
-})
+VALID_PLAN_JSON = json.dumps(
+    {
+        "url": "https://example.com/products",
+        "objective": "Extract products",
+        "steps": [
+            {"action": "navigate", "url": "https://example.com/products"},
+            {"action": "wait", "condition": ".product-list", "condition_type": "selector"},
+        ],
+    }
+)
 
 HTML_BODY = "<html><body><h1>Test Page</h1><p class='info'>Content</p></body></html>"
 
@@ -86,6 +88,7 @@ def mock_driver():
 
 # ── TestInheritance ───────────────────────────────────────────────────
 
+
 class TestInheritance:
     def test_inherits_abstract_toolkit(self, toolkit):
         from parrot.tools.toolkit import AbstractToolkit
@@ -99,13 +102,19 @@ class TestInheritance:
     def test_tool_names(self, toolkit):
         names = toolkit.list_tool_names()
         expected = {
-            "plan_create", "plan_save", "plan_load",
-            "plan_list", "plan_delete", "scrape", "crawl",
+            "plan_create",
+            "plan_save",
+            "plan_load",
+            "plan_list",
+            "plan_delete",
+            "scrape",
+            "crawl",
         }
         assert set(names) == expected
 
 
 # ── TestConstructor ───────────────────────────────────────────────────
+
 
 class TestConstructor:
     def test_default_config(self, toolkit):
@@ -134,8 +143,30 @@ class TestConstructor:
         assert tk._session_based is True
         assert tk._session_driver is None
 
+    def test_obscura_driver_type_accepted(self, tmp_path, mock_llm_client):
+        """FEAT-530 review fix: DriverConfig.driver_type must accept
+        'obscura' — it previously raised a pydantic ValidationError,
+        blocking WebScrapingToolkit(driver_type='obscura') entirely."""
+        tk = WebScrapingToolkit(
+            driver_type="obscura",
+            obscura_binary="/usr/local/bin/obscura",
+            cdp_endpoint_url="http://127.0.0.1:9333",
+            obscura_port=9333,
+            obscura_stealth=True,
+            obscura_allow_private_network=True,
+            plans_dir=tmp_path / "plans",
+            llm_client=mock_llm_client,
+        )
+        assert tk._config.driver_type == "obscura"
+        assert tk._config.obscura_binary == "/usr/local/bin/obscura"
+        assert tk._config.cdp_endpoint_url == "http://127.0.0.1:9333"
+        assert tk._config.obscura_port == 9333
+        assert tk._config.obscura_stealth is True
+        assert tk._config.obscura_allow_private_network is True
+
 
 # ── TestLifecycle ─────────────────────────────────────────────────────
+
 
 class TestLifecycle:
     @pytest.mark.asyncio
@@ -158,6 +189,33 @@ class TestLifecycle:
         finally:
             if original:
                 DriverRegistry.register("selenium", original)
+            await tk.stop()
+
+    @pytest.mark.asyncio
+    async def test_start_creates_obscura_session_driver(self, tmp_path, mock_llm_client, mock_driver):
+        """FEAT-530 review fix: WebScrapingToolkit's session-based path
+        (start() -> DriverRegistry.get('obscura')) must resolve to a
+        registered factory — previously 'obscura' had no DriverRegistry
+        entry at all (only 'selenium'/'playwright' were registered)."""
+        tk = WebScrapingToolkit(
+            driver_type="obscura",
+            session_based=True,
+            plans_dir=tmp_path / "plans",
+            llm_client=mock_llm_client,
+        )
+        mock_setup = MagicMock()
+        mock_setup.get_driver = AsyncMock(return_value=mock_driver)
+
+        from parrot.tools.scraping.driver_context import DriverRegistry
+
+        original = DriverRegistry._factories.get("obscura")
+        DriverRegistry.register("obscura", lambda cfg: mock_setup)
+        try:
+            await tk.start()
+            assert tk._session_driver is mock_driver
+        finally:
+            if original:
+                DriverRegistry.register("obscura", original)
             await tk.stop()
 
     @pytest.mark.asyncio
@@ -184,12 +242,11 @@ class TestLifecycle:
 
 # ── TestPlanCreate ────────────────────────────────────────────────────
 
+
 class TestPlanCreate:
     @pytest.mark.asyncio
     async def test_generates_plan_via_llm(self, toolkit):
-        plan = await toolkit.plan_create(
-            "https://example.com/products", "Extract products"
-        )
+        plan = await toolkit.plan_create("https://example.com/products", "Extract products")
         assert isinstance(plan, ScrapingPlan)
         assert plan.url == "https://example.com/products"
 
@@ -198,9 +255,7 @@ class TestPlanCreate:
         # Save a plan first
         await toolkit.plan_save(sample_plan)
         # Now plan_create should return from cache
-        plan = await toolkit.plan_create(
-            "https://example.com/products", "Extract products"
-        )
+        plan = await toolkit.plan_create("https://example.com/products", "Extract products")
         assert isinstance(plan, ScrapingPlan)
 
     @pytest.mark.asyncio
@@ -222,6 +277,7 @@ class TestPlanCreate:
 
 
 # ── TestPlanSave ──────────────────────────────────────────────────────
+
 
 class TestPlanSave:
     @pytest.mark.asyncio
@@ -248,6 +304,7 @@ class TestPlanSave:
 
 # ── TestPlanLoad ──────────────────────────────────────────────────────
 
+
 class TestPlanLoad:
     @pytest.mark.asyncio
     async def test_load_by_url(self, toolkit, sample_plan):
@@ -269,6 +326,7 @@ class TestPlanLoad:
 
 
 # ── TestPlanList ──────────────────────────────────────────────────────
+
 
 class TestPlanList:
     @pytest.mark.asyncio
@@ -309,6 +367,7 @@ class TestPlanList:
 
 # ── TestPlanDelete ────────────────────────────────────────────────────
 
+
 class TestPlanDelete:
     @pytest.mark.asyncio
     async def test_delete_existing(self, toolkit, sample_plan):
@@ -333,12 +392,11 @@ class TestPlanDelete:
 
 # ── TestScrape ────────────────────────────────────────────────────────
 
+
 class TestScrape:
     @pytest.mark.asyncio
     async def test_scrape_with_explicit_plan(self, toolkit, sample_plan, mock_driver):
-        with patch(
-            "parrot.tools.scraping.toolkit.driver_context"
-        ) as mock_ctx:
+        with patch("parrot.tools.scraping.toolkit.driver_context") as mock_ctx:
             mock_ctx.return_value.__aenter__ = AsyncMock(return_value=mock_driver)
             mock_ctx.return_value.__aexit__ = AsyncMock(return_value=False)
             result = await toolkit.scrape(
@@ -350,9 +408,7 @@ class TestScrape:
 
     @pytest.mark.asyncio
     async def test_scrape_with_raw_steps(self, toolkit, mock_driver):
-        with patch(
-            "parrot.tools.scraping.toolkit.driver_context"
-        ) as mock_ctx:
+        with patch("parrot.tools.scraping.toolkit.driver_context") as mock_ctx:
             mock_ctx.return_value.__aenter__ = AsyncMock(return_value=mock_driver)
             mock_ctx.return_value.__aexit__ = AsyncMock(return_value=False)
             result = await toolkit.scrape(
@@ -365,9 +421,7 @@ class TestScrape:
     @pytest.mark.asyncio
     async def test_scrape_with_cached_plan(self, toolkit, sample_plan, mock_driver):
         await toolkit.plan_save(sample_plan)
-        with patch(
-            "parrot.tools.scraping.toolkit.driver_context"
-        ) as mock_ctx:
+        with patch("parrot.tools.scraping.toolkit.driver_context") as mock_ctx:
             mock_ctx.return_value.__aenter__ = AsyncMock(return_value=mock_driver)
             mock_ctx.return_value.__aexit__ = AsyncMock(return_value=False)
             result = await toolkit.scrape("https://example.com/products")
@@ -375,9 +429,7 @@ class TestScrape:
 
     @pytest.mark.asyncio
     async def test_scrape_auto_generate(self, toolkit, mock_driver):
-        with patch(
-            "parrot.tools.scraping.toolkit.driver_context"
-        ) as mock_ctx:
+        with patch("parrot.tools.scraping.toolkit.driver_context") as mock_ctx:
             mock_ctx.return_value.__aenter__ = AsyncMock(return_value=mock_driver)
             mock_ctx.return_value.__aexit__ = AsyncMock(return_value=False)
             result = await toolkit.scrape(
@@ -400,9 +452,7 @@ class TestScrape:
             "objective": "Test",
             "steps": [{"action": "navigate", "url": "https://example.com"}],
         }
-        with patch(
-            "parrot.tools.scraping.toolkit.driver_context"
-        ) as mock_ctx:
+        with patch("parrot.tools.scraping.toolkit.driver_context") as mock_ctx:
             mock_ctx.return_value.__aenter__ = AsyncMock(return_value=mock_driver)
             mock_ctx.return_value.__aexit__ = AsyncMock(return_value=False)
             result = await toolkit.scrape(
@@ -414,6 +464,7 @@ class TestScrape:
 
 # ── TestCrawl ─────────────────────────────────────────────────────────
 
+
 class TestCrawl:
     @pytest.mark.asyncio
     async def test_crawl_not_implemented(self, toolkit):
@@ -423,6 +474,7 @@ class TestCrawl:
 
 
 # ── TestPlanResolution ────────────────────────────────────────────────
+
 
 class TestPlanResolution:
     @pytest.mark.asyncio
@@ -435,9 +487,7 @@ class TestPlanResolution:
         )
         await toolkit.plan_save(other)
 
-        resolved = await toolkit._resolve_plan(
-            "https://example.com/products", plan=sample_plan
-        )
+        resolved = await toolkit._resolve_plan("https://example.com/products", plan=sample_plan)
         assert resolved.objective == "Extract products"
 
     @pytest.mark.asyncio
@@ -457,7 +507,9 @@ class TestPlanResolution:
 
     @pytest.mark.asyncio
     async def test_objective_suppresses_domain_fallback(
-        self, toolkit, sample_plan,
+        self,
+        toolkit,
+        sample_plan,
     ):
         """A cached plan for one path must not be reused for a different
         path on the same domain when the caller passes a fresh objective.
@@ -479,7 +531,9 @@ class TestPlanResolution:
 
     @pytest.mark.asyncio
     async def test_no_objective_keeps_domain_fallback(
-        self, toolkit, sample_plan,
+        self,
+        toolkit,
+        sample_plan,
     ):
         """Without an objective, callers still benefit from the existing
         domain-only fallback (a deliberate "share a plan across a site"
@@ -503,14 +557,13 @@ class TestPlanResolution:
             "objective": "Test",
             "steps": [{"action": "navigate", "url": "https://example.com"}],
         }
-        resolved = await toolkit._resolve_plan(
-            "https://example.com", plan=plan_dict
-        )
+        resolved = await toolkit._resolve_plan("https://example.com", plan=plan_dict)
         assert isinstance(resolved, ScrapingPlan)
         assert resolved.url == "https://example.com"
 
 
 # ── TestEnsureRegistry ────────────────────────────────────────────────
+
 
 class TestEnsureRegistry:
     @pytest.mark.asyncio
@@ -524,6 +577,7 @@ class TestEnsureRegistry:
 
 
 # ── TestLegacyAdvancedActionDelegation (FEAT-222 TASK-1447) ───────────
+
 
 class TestLegacyAdvancedActionDelegation:
     """The legacy WebScrapingTool delegates loop/conditional/substitution
@@ -556,12 +610,8 @@ class TestLegacyAdvancedActionDelegation:
     async def test_exec_loop_uses_advanced_actions(self, legacy_tool):
         from parrot.tools.scraping.models import Loop
 
-        action = Loop(
-            actions=[{"action": "click", "selector": ".btn"}], iterations=1
-        )
-        with patch(
-            "parrot.tools.scraping.tool.exec_loop", new=AsyncMock(return_value=True)
-        ) as mock_exec_loop:
+        action = Loop(actions=[{"action": "click", "selector": ".btn"}], iterations=1)
+        with patch("parrot.tools.scraping.tool.exec_loop", new=AsyncMock(return_value=True)) as mock_exec_loop:
             await legacy_tool._exec_loop(action, "https://example.com")
         mock_exec_loop.assert_awaited_once()
         # First positional arg is the abstract driver.
@@ -586,9 +636,7 @@ class TestLegacyAdvancedActionDelegation:
     async def test_exec_conditional_uses_advanced_actions(self, legacy_tool):
         from parrot.tools.scraping.models import Conditional
 
-        action = Conditional(
-            target=".element", condition_type="exists", expected_value="true"
-        )
+        action = Conditional(target=".element", condition_type="exists", expected_value="true")
         with patch(
             "parrot.tools.scraping.tool.exec_conditional",
             new=AsyncMock(return_value=True),
@@ -603,13 +651,9 @@ class TestLegacyAdvancedActionDelegation:
 
     def test_substitute_template_vars_current_value(self, legacy_tool):
         # current_value positioned at values[iteration] by the wrapper.
-        out = legacy_tool._substitute_template_vars(
-            "{value}", 2, current_value="hello"
-        )
+        out = legacy_tool._substitute_template_vars("{value}", 2, current_value="hello")
         assert out == "hello"
 
     def test_substitute_template_vars_nested(self, legacy_tool):
-        out = legacy_tool._substitute_template_vars(
-            {"url": "p-{i}", "n": 5}, 4
-        )
+        out = legacy_tool._substitute_template_vars({"url": "p-{i}", "n": 5}, 4)
         assert out == {"url": "p-4", "n": 5}

@@ -651,7 +651,8 @@ async def _ingest_files(
     root: Path,
     scan: Any,
     force: bool = False,
-) -> dict[str, int]:
+    force_rel_paths: set[str] | None = None,
+) -> dict[str, Any]:
     """Ingest scanned file slices into the plane (incremental).
 
     Unchanged files (same hash + mtime as the manifest) are skipped
@@ -663,9 +664,20 @@ async def _ingest_files(
 
     Sync manifest I/O (hashing, SQLite writes) is offloaded via
     ``asyncio.to_thread`` so the event loop is never blocked.
+
+    Args:
+        force_rel_paths: FEAT-532 TASK-2909 — rel_paths that must be
+            written regardless of hash/mtime staleness, because
+            something OTHER than the file's own bytes changed (a Roblox
+            DataModel mapping, the active API generation, the renderer
+            schema, or the configured namespace). ``None`` (the default)
+            preserves the exact pre-existing staleness rule for every
+            other caller.
     """
     written = 0
     unchanged = 0
+    written_rel_paths: set[str] = set()
+    force_rel_paths = force_rel_paths or set()
     edges_by_src: dict[str, list[tuple[str, str, str]]] = {}
     for edge in scan.import_edges:
         edges_by_src.setdefault(edge[0], []).append(edge)
@@ -704,7 +716,8 @@ async def _ingest_files(
     pending: list[tuple[Any, Path]] = []
     for file_slice, abs_path in zip(scan.files, paths):
         entry = known.get(str(abs_path))
-        if entry is not None and not force and not sources.entry_is_stale(entry):
+        must_force = force or file_slice.rel_path in force_rel_paths
+        if entry is not None and not must_force and not sources.entry_is_stale(entry):
             unchanged += 1
             continue
         pending.append((file_slice, abs_path))
@@ -719,6 +732,16 @@ async def _ingest_files(
         source_id = id_by_uri[str(abs_path)]
         file_slice.record.source_id = source_id
         slice_edges = edges_by_src.get(file_slice.record.concept_id, [])
+        # FEAT-532 TASK-2909: a Luau file's resolved external (Roblox
+        # API) reference edges travel with its own source-owned slice,
+        # same as any other outgoing edge — kept as a SEPARATE carrier
+        # at the model layer (repo_scan.py's FileSlice.external_edges,
+        # never merged into scan.import_edges) but written through the
+        # exact same replace_source_slice/add_edges call so a later
+        # re-ingest of this source correctly prunes an edge whose API
+        # use was removed (the store has no notion of "edge origin").
+        if file_slice.external_edges:
+            slice_edges = [*slice_edges, *file_slice.external_edges]
 
         # FEAT-498: this file's sym: records + defines/contains/calls/
         # extends/implements edges travel in the SAME replace_source_slice
@@ -749,6 +772,7 @@ async def _ingest_files(
             await store.upsert_symbols(file_slice.symbols, source_id=source_id)
         ingested_pages.setdefault(source_id, []).append(file_slice.record.concept_id)
         written += 1
+        written_rel_paths.add(file_slice.rel_path)
 
     if bulk_records:
         await store.upsert_pages(bulk_records)
@@ -756,7 +780,145 @@ async def _ingest_files(
         await store.add_edges(bulk_edges)
     if ingested_pages:
         await asyncio.to_thread(sources.mark_ingested_many, ingested_pages)
-    return {"written": written, "unchanged": unchanged}
+    return {"written": written, "unchanged": unchanged, "written_rel_paths": written_rel_paths}
+
+
+# --------------------------------------------------------------------------
+# Roblox scan enrichment integration (FEAT-532 TASK-2909)
+# --------------------------------------------------------------------------
+
+
+async def _discovered_paths_for_mapping(root: Path, scan: Any, sources: SourceCollectionManager) -> frozenset[str]:
+    """Best-available "every file in this project" set for DataModel mapping.
+
+    A Roblox sourcemap/project-file mapping needs the FULL repository
+    file list to resolve correctly (spec: "Partial targets resolve
+    through full mapping") — a partial ``upsert`` scan only carries the
+    handful of files it touched. Rather than paying for a second full
+    filesystem walk on every incremental upsert, this unions the
+    CURRENT scan's files with every rel_path already known to the
+    source manifest from a previous full ``build`` — cheap (one
+    manifest read, no re-scanning) and correct for the common case
+    (a full build has already registered the rest of the project).
+    A repository that has NEVER had a full build and is only ever
+    touched via partial ``upsert`` calls will see a mapping limited to
+    whatever has been upserted so far — a documented limitation, not a
+    silent correctness gap (TASK-2898's resolver already degrades any
+    genuinely unresolvable target to "not found" rather than guessing).
+    """
+    from_scan = {fs.rel_path for fs in scan.files}
+    known_sources = await asyncio.to_thread(sources.list_sources)
+    from_manifest: set[str] = set()
+    resolved_root = root.resolve()
+    for entry in known_sources:
+        try:
+            rel = Path(entry.source_uri).resolve().relative_to(resolved_root).as_posix()
+        except ValueError:
+            continue
+        from_manifest.add(rel)
+    return frozenset(from_scan | from_manifest)
+
+
+async def _load_active_roblox_catalog() -> Any | None:
+    """The currently-published Roblox API generation's catalog, or ``None``.
+
+    Reconstructed from a read-only, already-published generation's OWN
+    SQLite plane (never a new query surface, never a network request) —
+    ``RobloxApiCatalog`` itself is an in-memory render artifact
+    (TASK-2901) that publication (TASK-2902) never persisted as a
+    standalone file, so this is the one honest source of truth for "what
+    classes/enums does the active generation have" outside a fresh render.
+    """
+    from parrot.knowledge.wiki.roblox import generations as roblox_generations
+    from parrot.knowledge.wiki.roblox.models import RobloxApiCatalog
+    from parrot.knowledge.wiki.store import SQLiteWikiStore
+
+    pointer = roblox_generations.read_active_pointer()
+    if pointer is None or not roblox_generations.generation_is_valid(pointer.generation_id):
+        return None
+    gen_dir = roblox_generations.generation_dir_for(pointer.generation_id)
+    generation_store = SQLiteWikiStore(gen_dir / "wiki.db", read_only=True)
+    class_pages = await generation_store.list_pages(category="roblox-class", limit=1_000_000)
+    enum_pages = await generation_store.list_pages(category="roblox-enum", limit=1_000_000)
+    # Derive the raw API name from the concept_id (`class/<Name>` / `enum/<Name>`),
+    # never from `title` — enum pages render their title as "<Name> (Enum)"
+    # (render.py's `_render_enum_body` display convention), which would silently
+    # never match a raw extracted reference name (e.g. "Material") if used as
+    # the catalog key here.
+    classes = {str(p["concept_id"]).removeprefix("class/"): str(p["concept_id"]) for p in class_pages}
+    enums = {str(p["concept_id"]).removeprefix("enum/"): str(p["concept_id"]) for p in enum_pages}
+    return RobloxApiCatalog(generation_id=pointer.generation_id, classes=classes, enums=enums)
+
+
+async def _apply_roblox_enrichment(
+    root: Path,
+    scan: Any,
+    storage_dir: Path,
+    sources: SourceCollectionManager,
+) -> tuple[Any, set[str], dict[str, Any]]:
+    """Attach Roblox DataModel/API enrichment to this scan's Luau files.
+
+    A cheap no-op (returns ``scan`` unchanged) when the scan carries no
+    Luau files at all — every non-Roblox project pays nothing for this.
+
+    Returns:
+        ``(enriched_scan, force_rel_paths, enrichment_by_path)`` —
+        ``force_rel_paths`` names files whose enrichment CONTEXT
+        (mapping/catalog/renderer schema/namespace) changed since the
+        last recorded fingerprint, which ``_ingest_files`` must write
+        even when the file's own bytes are unchanged;
+        ``enrichment_by_path`` is TASK-2907's full per-file record, kept
+        so the caller can persist updated fingerprints ONLY after the
+        corresponding writes actually succeed (never before).
+    """
+    if not any(fs.language == "luau" for fs in scan.files):
+        return scan, set(), {}
+
+    from parrot.knowledge.wiki.roblox import enrichment_state as roblox_enrichment_state
+    from parrot.knowledge.wiki.roblox.enrichment import DEFAULT_ROBLOX_NAMESPACE, enrich_repo_scan
+    from parrot.knowledge.wiki.roblox.ingest import RENDERER_SCHEMA_VERSION
+    from parrot.knowledge.wiki.roblox.project import build_instance_index
+
+    discovered = await _discovered_paths_for_mapping(root, scan, sources)
+    instance_index = build_instance_index(root, discovered)
+    catalog = await _load_active_roblox_catalog()
+
+    enriched_scan, enrichment_by_path = enrich_repo_scan(
+        scan,
+        instance_index=instance_index,
+        catalog=catalog,
+        namespace=DEFAULT_ROBLOX_NAMESPACE,
+        renderer_schema_version=RENDERER_SCHEMA_VERSION,
+    )
+
+    stored = roblox_enrichment_state.load_state(storage_dir)
+    candidates = {rel: record.dependency_digest for rel, record in enrichment_by_path.items()}
+    force_rel_paths = roblox_enrichment_state.files_needing_enrichment(candidates, stored)
+    return enriched_scan, force_rel_paths, enrichment_by_path
+
+
+def _record_roblox_enrichment_success(
+    storage_dir: Path,
+    enrichment_by_path: dict[str, Any],
+    written_rel_paths: set[str],
+) -> None:
+    """Persist updated fingerprints — ONLY for rel_paths this run actually
+    wrote successfully (spec: "Atomically record fingerprints only after
+    the corresponding source-slice writes succeed"). Called after
+    ``_ingest_files`` returns without raising; a raised exception means
+    this is never reached, so a failed write leaves the previous
+    (stale-but-retryable) fingerprint in place for the next run to retry.
+    """
+    if not enrichment_by_path:
+        return
+    from parrot.knowledge.wiki.roblox import enrichment_state as roblox_enrichment_state
+
+    stored = roblox_enrichment_state.load_state(storage_dir)
+    for rel in written_rel_paths:
+        record = enrichment_by_path.get(rel)
+        if record is not None:
+            stored[rel] = record.dependency_digest
+    roblox_enrichment_state.save_state(storage_dir, stored)
 
 
 async def _prune_removed(
@@ -1290,11 +1452,25 @@ def build(
             if config.backend == "arangodb":
                 await store.initialize()
             sources = _open_sources(root, config, store=store)
-            counts = await _ingest_files(store, sources, root, scan, force=force)
-            await store.upsert_pages(scan.dir_records)
-            await store.add_edges(scan.dir_edges)
-            counts["removed"] = await _prune_removed(store, sources, root, scan)
+            # FEAT-532 TASK-2909: attach Roblox DataModel/API enrichment
+            # BEFORE ingestion, so external reference edges travel with
+            # their owning source slice in the same call as any other
+            # edge. A no-op (same `scan` object back) when this scan has
+            # no Luau files at all.
+            enriched_scan, force_rel_paths, enrichment_by_path = await _apply_roblox_enrichment(
+                root, scan, output_dir, sources
+            )
+            counts = await _ingest_files(
+                store, sources, root, enriched_scan, force=force, force_rel_paths=force_rel_paths
+            )
+            await store.upsert_pages(enriched_scan.dir_records)
+            await store.add_edges(enriched_scan.dir_edges)
+            counts["removed"] = await _prune_removed(store, sources, root, enriched_scan)
             counts["stats"] = await store.stats()
+            # Fingerprints are recorded only now — after every write above
+            # has succeeded — so a failure anywhere leaves the previous,
+            # retryable fingerprint in place for the next run.
+            _record_roblox_enrichment_success(output_dir, enrichment_by_path, counts["written_rel_paths"])
 
             okf_report: dict[str, Any] | None = None
             if not no_export:
@@ -1521,12 +1697,23 @@ def upsert(
             rel_paths=existing,
         )
 
-        async def _pipeline() -> dict[str, int]:
+        async def _pipeline() -> dict[str, Any]:
             store = _open_store(root, config)
             if config.backend == "arangodb":
                 await store.initialize()
             sources = _open_sources(root, config, store=store)
-            counts = await _ingest_files(store, sources, root, scan, force=True)
+            # FEAT-532 TASK-2909: same enrichment pass as `build` — a
+            # no-op when this partial scan has no Luau files. `force=True`
+            # below already forces every file IN this scan regardless of
+            # staleness, so `force_rel_paths` is redundant here but kept
+            # for consistency; it matters only for `build`'s full scans.
+            storage_dir = config.storage_path(root)
+            enriched_scan, force_rel_paths, enrichment_by_path = await _apply_roblox_enrichment(
+                root, scan, storage_dir, sources
+            )
+            counts = await _ingest_files(
+                store, sources, root, enriched_scan, force=True, force_rel_paths=force_rel_paths
+            )
             removed = 0
             for rel in deleted:
                 uri = str((root / rel).resolve())
@@ -1536,6 +1723,7 @@ def upsert(
                     await asyncio.to_thread(sources.remove_source, source_id)
                     removed += 1
             counts["removed"] = removed
+            _record_roblox_enrichment_success(storage_dir, enrichment_by_path, counts["written_rel_paths"])
             return counts
 
         try:
@@ -1834,6 +2022,15 @@ def status(path_: str | None, ns_opt: str | None, as_json: bool) -> None:
     if namespaces is not None:
         payload["namespaces"] = namespaces
         payload["skipped"] = ns_skipped or []
+    # FEAT-532 TASK-2908: the federated Roblox API plane's stored
+    # download timestamp + recorded Studio/creator-docs versions — a
+    # pure local-manifest read (`get_roblox_status()`), never an API/CDN
+    # probe. Machine-wide (parrot_home()-scoped), so this is included
+    # regardless of which project/namespace `status` is otherwise
+    # reporting on.
+    from parrot.knowledge.wiki.roblox.ingest import get_roblox_status
+
+    payload["roblox_api"] = get_roblox_status()
     if as_json:
         click.echo(json.dumps(payload, indent=2, default=str))
         return
@@ -1871,6 +2068,16 @@ def status(path_: str | None, ns_opt: str | None, as_json: bool) -> None:
         click.echo(f"  {skip['name']:<16} {skip['reason']}{hint}")
     if stale:
         click.echo("Run `wikitoolkit build` to refresh stale sources.")
+    roblox_api = payload.get("roblox_api")
+    if roblox_api is None:
+        click.echo("\nRoblox API : not downloaded — run `wikitoolkit ingest roblox-api --refresh`.")
+    else:
+        click.echo(
+            f"\nRoblox API : Studio {roblox_api['studio_version']}, "
+            f"creator-docs {roblox_api['creator_docs_commit'][:12]}, "
+            f"downloaded {roblox_api['downloaded_at']} "
+            f"({roblox_api['class_count']} classes, {roblox_api['enum_count']} enums)"
+        )
 
 
 # --------------------------------------------------------------------------
@@ -2710,6 +2917,21 @@ def _extract_into_graph(
         Extraction summary dict, or ``None`` when unavailable/failed.
     """
     spec = _env_setting("WIKI_EXTRACT_LLM")
+    if not spec and not _env_setting("PARROT_NO_AUTO_LLM"):
+        try:
+            from parrot.clients.detection import detect_coding_agent_llm
+
+            detected = detect_coding_agent_llm()
+        except Exception as exc:  # noqa: BLE001 — detection is best-effort
+            click.echo(f"[coding-agent CLI auto-detection failed: {exc}]")
+            detected = None
+        if detected:
+            click.echo(
+                f"[auto-selected {detected} for WIKI_EXTRACT_LLM — a coding-agent CLI "
+                "session was detected. Set WIKI_EXTRACT_LLM to override, or "
+                "PARROT_NO_AUTO_LLM=1 to disable auto-detection.]"
+            )
+            spec = detected
     if not spec:
         click.echo("[extract skipped: set WIKI_EXTRACT_LLM (e.g." " 'anthropic:claude-haiku-4-5') to enable]")
         return None
@@ -3543,6 +3765,115 @@ def _print_triage_summary(entries: list[Any], skipped: list[str] | None = None) 
     Console().print(table)
 
 
+#: Document-ingest option defaults, keyed by the same parameter names
+#: ``ingest()`` receives them as. Used only to detect an EXPLICITLY
+#: passed, and therefore incompatible, document-ingest flag alongside
+#: the reserved ``SOURCE=roblox-api`` — a caller's untouched Click
+#: default is never treated as a conflict (FEAT-532 TASK-2908).
+_ROBLOX_API_INCOMPATIBLE_FLAG_DEFAULTS: dict[str, Any] = {
+    "charter_opt": None,
+    "dry_run": False,
+    "review_opt": None,
+    "interactive_flag": False,
+    "auto_flag": False,
+    "extract_flag": False,
+    "lightweight_model_opt": None,
+    "model_opt": None,
+    "audit_rate": 0.1,
+    "manifest_opt": None,
+    "recursive": True,
+    "fetch_timeout": 30.0,
+}
+
+#: CLI flag spelling for each of the parameters above, for a readable
+#: UsageError — not derivable by naive suffix-stripping (e.g. ``recursive``
+#: defaults ``True``, so its EXPLICIT/conflicting form is ``--no-recursive``).
+_ROBLOX_API_INCOMPATIBLE_FLAG_NAMES: dict[str, str] = {
+    "charter_opt": "--charter",
+    "dry_run": "--dry-run",
+    "review_opt": "--review",
+    "interactive_flag": "--interactive",
+    "auto_flag": "--auto",
+    "extract_flag": "--extract",
+    "lightweight_model_opt": "--lightweight-model",
+    "model_opt": "--model",
+    "audit_rate": "--audit-rate",
+    "manifest_opt": "--manifest",
+    "recursive": "--no-recursive",
+    "fetch_timeout": "--fetch-timeout",
+}
+
+
+def _dispatch_roblox_api_ingest(
+    *,
+    refresh: bool,
+    charter_opt: str | None,
+    dry_run: bool,
+    review_opt: Path | None,
+    interactive_flag: bool,
+    auto_flag: bool,
+    extract_flag: bool,
+    lightweight_model_opt: str | None,
+    model_opt: str | None,
+    audit_rate: float,
+    manifest_opt: Path | None,
+    recursive: bool,
+    fetch_timeout: float,
+) -> None:
+    """Dispatch ``wikitoolkit ingest roblox-api [--refresh]`` (FEAT-532 TASK-2908).
+
+    Called from ``ingest()`` before any document-mode validation or
+    LLM/document import — this function's own imports are the first
+    roblox-specific imports on this path. Rejects only an EXPLICITLY
+    passed (non-default) document-ingest flag; an untouched Click
+    default is never a conflict.
+
+    Without ``--refresh``, this makes zero network requests: it reads
+    the last published generation, or raises a
+    :class:`click.ClickException` naming the exact ``--refresh`` command
+    to run (spec §8: "First acquisition therefore requires --refresh").
+    """
+    from parrot.knowledge.wiki.roblox.ingest import RobloxApiNotIngestedError, ingest_roblox_api
+
+    observed = {
+        "charter_opt": charter_opt,
+        "dry_run": dry_run,
+        "review_opt": review_opt,
+        "interactive_flag": interactive_flag,
+        "auto_flag": auto_flag,
+        "extract_flag": extract_flag,
+        "lightweight_model_opt": lightweight_model_opt,
+        "model_opt": model_opt,
+        "audit_rate": audit_rate,
+        "manifest_opt": manifest_opt,
+        "recursive": recursive,
+        "fetch_timeout": fetch_timeout,
+    }
+    conflicts = [
+        _ROBLOX_API_INCOMPATIBLE_FLAG_NAMES[name]
+        for name, value in observed.items()
+        if value != _ROBLOX_API_INCOMPATIBLE_FLAG_DEFAULTS[name]
+    ]
+    if conflicts:
+        raise click.UsageError(
+            "SOURCE 'roblox-api' does not use document-ingest options; " f"remove: {', '.join(sorted(conflicts))}"
+        )
+
+    try:
+        result = _run(ingest_roblox_api(refresh=refresh))
+    except RobloxApiNotIngestedError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    click.echo(f"Roblox API plane : {result.generation_dir}")
+    click.echo(f"Studio version   : {result.manifest.studio_version}")
+    click.echo(f"creator-docs SHA : {result.manifest.creator_docs_commit}")
+    click.echo(f"Downloaded at    : {result.manifest.downloaded_at}")
+    click.echo(f"Classes / Enums  : {result.manifest.class_count} / {result.manifest.enum_count}")
+    click.echo(f"Reused / Published: {result.reused} / {result.published}")
+    for diagnostic in result.diagnostics:
+        click.echo(f"  {diagnostic}")
+
+
 @wiki.command()
 @click.argument("source")
 @path_option
@@ -3623,6 +3954,19 @@ def _print_triage_summary(entries: list[Any], skipped: list[str] | None = None) 
     show_default=True,
     help="Timeout (seconds) for a URL SOURCE fetch.",
 )
+@click.option(
+    "--refresh",
+    "refresh_flag",
+    is_flag=True,
+    help=(
+        "Only meaningful for the reserved SOURCE 'roblox-api': fetch the "
+        "current Studio API dump + creator-docs and (re)publish the "
+        "federated Roblox API plane. This is the ONLY thing that ever "
+        "makes network requests for that plane — without --refresh, "
+        "'roblox-api' is a pure offline read of the last published "
+        "generation. Ignored for every other SOURCE."
+    ),
+)
 def ingest(
     source: str,
     path_: str | None,
@@ -3638,6 +3982,7 @@ def ingest(
     manifest_opt: Path | None,
     recursive: bool,
     fetch_timeout: float,
+    refresh_flag: bool,
 ) -> None:
     """Supervised (charter-driven) ingestion of a document corpus.
 
@@ -3660,7 +4005,32 @@ def ingest(
     --review PATH  Apply decisions from a hand-edited manifest.
     --interactive  Prompt per-document (before any async work starts).
     --auto         Thresholds decide; flags a stratified audit sample.
+
+    \b
+    SOURCE 'roblox-api' (FEAT-532) is reserved: it dispatches to the
+    federated Roblox API plane instead of document ingestion, entirely
+    before any document-mode validation or LLM import below. A literal
+    local path spelled './roblox-api' is unaffected — bare 'roblox-api'
+    is the only form this dispatch claims.
     """
+    if source == "roblox-api":
+        _dispatch_roblox_api_ingest(
+            refresh=refresh_flag,
+            charter_opt=charter_opt,
+            dry_run=dry_run,
+            review_opt=review_opt,
+            interactive_flag=interactive_flag,
+            auto_flag=auto_flag,
+            extract_flag=extract_flag,
+            lightweight_model_opt=lightweight_model_opt,
+            model_opt=model_opt,
+            audit_rate=audit_rate,
+            manifest_opt=manifest_opt,
+            recursive=recursive,
+            fetch_timeout=fetch_timeout,
+        )
+        return
+
     from parrot.knowledge.pageindex.toolkit import PageIndexToolkit
     from parrot.knowledge.wiki.bookkeeper import WikiBookkeeper
     from parrot.knowledge.wiki.charter import (
@@ -3711,9 +4081,30 @@ def ingest(
             for uri in skipped:
                 click.echo(f"  skipped: {uri}")
 
-    lightweight_model = _resolve_model_id(lightweight_model_opt, "WIKI_LIGHTWEIGHT_MODEL")
-    model = _resolve_model_id(model_opt, "WIKI_MODEL")
-    light_adapter, heavy_adapter, light_model_id, same_provider = _build_triage_adapters(lightweight_model, model)
+    lightweight_model_value = lightweight_model_opt or _env_setting("WIKI_LIGHTWEIGHT_MODEL")
+    model_value = model_opt or _env_setting("WIKI_MODEL")
+    if not lightweight_model_value and not model_value and not _env_setting("PARROT_NO_AUTO_LLM"):
+        try:
+            from parrot.clients.detection import detect_coding_agent_llm
+
+            detected = detect_coding_agent_llm()
+        except Exception as exc:  # noqa: BLE001 — detection is best-effort
+            click.echo(f"[coding-agent CLI auto-detection failed: {exc}]")
+            detected = None
+        if detected:
+            click.echo(
+                f"[auto-selected {detected} for WIKI_MODEL/WIKI_LIGHTWEIGHT_MODEL — a "
+                "coding-agent CLI session was detected. Set WIKI_MODEL / WIKI_LIGHTWEIGHT_MODEL "
+                "to override, or PARROT_NO_AUTO_LLM=1 to disable auto-detection.]"
+            )
+            lightweight_model_value = detected
+            model_value = detected
+    lightweight_model = _resolve_model_id(lightweight_model_value, "WIKI_LIGHTWEIGHT_MODEL")
+    model = _resolve_model_id(model_value, "WIKI_MODEL")
+    try:
+        light_adapter, heavy_adapter, light_model_id, same_provider = _build_triage_adapters(lightweight_model, model)
+    except Exception as exc:
+        raise click.ClickException(f"Could not build LLM client(s) for {lightweight_model!r}/{model!r}: {exc}") from exc
     pageindex_dir = wiki_dir / "pageindex"
     pageindex_dir.mkdir(parents=True, exist_ok=True)
     # PageIndexToolkit builds its OWN internal lightweight adapter as
@@ -4266,5 +4657,5 @@ def _register_agent_command(name: str) -> None:
             click.echo(f"  ✓ {item}")
 
 
-for _agent_name in ("codex", "claude", "gemini"):
+for _agent_name in ("codex", "claude", "gemini", "google"):
     _register_agent_command(_agent_name)

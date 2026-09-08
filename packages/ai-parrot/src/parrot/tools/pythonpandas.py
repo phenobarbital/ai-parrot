@@ -288,6 +288,12 @@ class PythonPandasTool(PythonREPLTool):
         clone._worker_config = getattr(self, "_worker_config", None)
         clone._worker_pool = None
         clone._pending_worker_reset = False
+        # Execution mode is a deployment/instance decision, so the clone
+        # inherits it — but never the source's `InProcessHandle`, which is
+        # bound to the SOURCE's namespace; the clone lazily builds its own
+        # over its copied `locals`/`globals` (see `_get_inprocess_handle`).
+        clone._execution_mode = getattr(self, "_execution_mode", "worker")
+        clone._inprocess_handle = None
         clone._worker_repl_kwargs = dict(getattr(self, "_worker_repl_kwargs", {}) or {})
         clone._seeded_df_names = set()
         clone._seeded_worker_handle_id = None
@@ -301,6 +307,15 @@ class PythonPandasTool(PythonREPLTool):
         # Fresh execution_results per session
         clone.locals["execution_results"] = {}
         clone.globals["execution_results"] = {}
+        if clone._execution_mode == "inprocess":
+            # Code-review fix: the copied namespace still holds the SOURCE's
+            # helper closures (`store_result`, `list_variables`,
+            # `execute_safely` capture `self` in `_setup_environment()`), so
+            # code run in-process on the clone could read/mutate the source
+            # session through them. Re-run the setup on the clone to rebind
+            # those helpers over the clone's own `locals`. Irrelevant in
+            # worker mode, where the worker builds its own tool instance.
+            clone._setup_environment()
 
         # ── Sync DataFrames from the session DM ──
         clone.dataframes = {}

@@ -50,7 +50,7 @@ import numpy as np
 import pandas as pd
 from parrot.outputs.a2ui.recipes.transformers import infographic_transformer
 
-from agents.flex_dashboard.normalize import (
+from .normalize import (
     canonicalize_columns,
     month_period,
     normalize_currency_columns,

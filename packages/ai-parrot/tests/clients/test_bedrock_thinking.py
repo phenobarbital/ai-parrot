@@ -14,7 +14,7 @@ that is NOT in that family (the "no regression" acceptance criterion).
 from unittest.mock import patch
 
 import pytest
-from parrot.clients.bedrock import BedrockConverseClient, _requires_adaptive_thinking
+from parrot.clients.amazon.bedrock import BedrockConverseClient, _requires_adaptive_thinking
 
 ADAPTIVE_MODELS = [
     "us.anthropic.claude-opus-5",

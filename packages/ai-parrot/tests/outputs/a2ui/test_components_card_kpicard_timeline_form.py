@@ -92,6 +92,40 @@ class TestKPICardComponent:
         two = _dump(kpicard.KPICardComponent().lower(_kpicard(), {}))
         assert one == two == (GOLDEN_DIR / "kpicard_lowered.json").read_bytes()
 
+    def test_kpicard_schema_accepts_icon_color_comparison_period(self):
+        """FEAT-527."""
+        props = kpicard.KPICARD_SCHEMA["properties"]
+        assert {"icon", "color", "comparisonPeriod"} <= set(props)
+
+    def test_kpicard_lower_emits_icon_color_comparison_period_as_extensions(self):
+        """FEAT-527: presentation-only, ride on the Card's extensions — never
+        a new visible Text node."""
+        comp = Component(
+            id="blk-003",
+            component="KPICard",
+            label="Revenue",
+            value=1200,
+            icon="💰",
+            color="#0a0",
+            comparisonPeriod="vs Q2",
+        )
+        tree = kpicard.KPICardComponent().lower(comp, {})
+        assert tree.component == "Card"
+        extensions = tree.metadata.extensions.root
+        assert extensions["parrot_icon"] == "💰"
+        assert extensions["parrot_color"] == "#0a0"
+        assert extensions["parrot_comparison_period"] == "vs Q2"
+        # Never a new visible Text node for these.
+        text_roles = {n.metadata.extensions.root.get("parrot_role") for n in tree.child.children if n.metadata}
+        assert "icon" not in text_roles and "color" not in text_roles
+
+    def test_kpicard_lower_omits_extensions_when_absent(self):
+        tree = kpicard.KPICardComponent().lower(_kpicard(), {})
+        extensions = tree.metadata.extensions.root
+        assert "parrot_icon" not in extensions
+        assert "parrot_color" not in extensions
+        assert "parrot_comparison_period" not in extensions
+
     def test_kpicard_emits_v1_primitives(self):
         _validates(kpicard.KPICardComponent().lower(_kpicard(), {}))
 

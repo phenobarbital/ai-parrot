@@ -1,18 +1,19 @@
 """Tests for LLMFactory FEAT-232 additions (TASK-1519).
 
 Verifies that the new ``bedrock`` and ``anthropic-aws`` provider keys
-resolve to :class:`~parrot.clients.claude.AnthropicClient` with the
+resolve to :class:`~parrot.clients.anthropic.AnthropicClient` with the
 correct ``backend`` attribute pre-bound, and that all existing providers
 remain unaffected.
 """
+
 from __future__ import annotations
 
 import pytest
 from parrot.clients.factory import LLMFactory, SUPPORTED_CLIENTS, PROVIDER_BACKEND
-from parrot.clients.claude import AnthropicClient
-
+from parrot.clients.anthropic import AnthropicClient
 
 # ── FEAT-232 new keys ────────────────────────────────────────────────────────
+
 
 def test_bedrock_key_returns_anthropic_client():
     """LLMFactory.create('bedrock:...') returns AnthropicClient."""
@@ -54,6 +55,7 @@ def test_anthropic_aws_without_model():
 
 # ── Existing providers unchanged ────────────────────────────────────────────
 
+
 def test_existing_anthropic_unchanged():
     """'anthropic' provider still returns AnthropicClient with backend='direct'."""
     client = LLMFactory.create("anthropic")
@@ -69,12 +71,16 @@ def test_existing_claude_unchanged():
 
 
 def test_unsupported_provider_raises():
-    """Unsupported provider key raises ValueError."""
-    with pytest.raises(ValueError, match="Unsupported LLM provider"):
+    """FEAT-523 (TASK-2847): unsupported provider key raises ImportError,
+    naming the satellite distribution that would provide it — no longer
+    ValueError, now that a missing provider can genuinely mean "not
+    installed" rather than "never existed"."""
+    with pytest.raises(ImportError, match="ai-parrot-client-not-a-provider"):
         LLMFactory.create("not-a-provider:some-model")
 
 
 # ── PROVIDER_BACKEND mapping ─────────────────────────────────────────────────
+
 
 def test_provider_backend_mapping_has_bedrock():
     """PROVIDER_BACKEND contains 'bedrock' → 'bedrock'."""
@@ -97,6 +103,7 @@ def test_supported_clients_has_anthropic_aws():
 
 
 # ── Explicit backend kwarg override ─────────────────────────────────────────
+
 
 def test_explicit_backend_kwarg_wins():
     """An explicit backend= kwarg overrides the PROVIDER_BACKEND injection."""

@@ -345,3 +345,21 @@ class TestRenderRouteRegistration:
         render_idx = source.index("{resource:render}")
         agent_id_idx = source.index("/api/v1/agents/infographic/{agent_id}")
         assert render_idx < agent_id_idx
+
+
+class TestGetRenderToolkitEmitsA2ui:
+    def test_lazily_built_toolkit_inherits_a2ui_default(self, fake_artifact_store):
+        """Code-review gap (spec §3 Module 1 test table, FEAT-527):
+        `_get_render_toolkit`'s lazy-build branch constructs its own
+        InfographicToolkit with no explicit emit_a2ui= — prove it inherits
+        the dual-emit default. Uses a fresh `app` with NO pre-seeded
+        'infographic_render_toolkit' so the lazy-build branch actually runs
+        (the `app` fixture above pre-seeds one, bypassing this branch)."""
+        application = web.Application()
+        application["artifact_store"] = fake_artifact_store
+        request = make_mocked_request("GET", "/", app=application)
+        handler = _handler(request)
+        toolkit = handler._get_render_toolkit()
+        assert toolkit._emit_a2ui is True
+        # Cached: a second call returns the SAME instance.
+        assert handler._get_render_toolkit() is toolkit

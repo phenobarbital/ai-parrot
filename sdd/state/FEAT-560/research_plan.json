@@ -1,0 +1,92 @@
+{
+  "schema_version": "1.0",
+  "mode_hint": "enrichment",
+  "rationale": "Comprobar los contratos ya homologados y localizar brechas para tools y audio con salida estructurada en VoiceBot.",
+  "queries": [
+    {
+      "id": "Q001",
+      "intent": "Localizar proveedores y consumidores de voz",
+      "type": "grep",
+      "priority": 1,
+      "depth": 0,
+      "params": {
+        "pattern": "structured|tool_call|stream_voice|LiveAvatar",
+        "path": "packages",
+        "max_results": 100
+      }
+    },
+    {
+      "id": "Q002",
+      "intent": "Leer el contrato de VoiceBot y sus opciones",
+      "type": "read",
+      "priority": 1,
+      "depth": 0,
+      "params": {
+        "path": "packages/ai-parrot/src/parrot/bots/voice.py",
+        "lines": null
+      }
+    },
+    {
+      "id": "Q003",
+      "intent": "Comparar salida dual y ejecución de herramientas en Gemini",
+      "type": "read",
+      "priority": 1,
+      "depth": 0,
+      "params": {
+        "path": "packages/ai-parrot-client-google/src/parrot/clients/google/live.py",
+        "lines": null
+      }
+    },
+    {
+      "id": "Q004",
+      "intent": "Comparar salida dual y ejecución de herramientas en Nova",
+      "type": "read",
+      "priority": 1,
+      "depth": 0,
+      "params": {
+        "path": "packages/ai-parrot-client-amazon/src/parrot/clients/amazon/nova/audio.py",
+        "lines": null
+      }
+    },
+    {
+      "id": "Q005",
+      "intent": "Localizar tests y consumidores WebSocket y avatar",
+      "type": "glob",
+      "priority": 1,
+      "depth": 0,
+      "params": {
+        "pattern": "**/*voice*.py",
+        "max_results": 500
+      }
+    },
+    {
+      "id": "Q006",
+      "intent": "Verificar historia reciente de la homologación de voz",
+      "type": "git_log",
+      "priority": 1,
+      "depth": 0,
+      "params": {
+        "path": "packages/ai-parrot-client-amazon/src/parrot/clients/amazon/nova/audio.py",
+        "since": "2026-08-01",
+        "max_results": 5
+      }
+    }
+  ],
+  "expected_findings": [
+    "Paridad existente FEAT-418",
+    "Brechas dual output",
+    "Compatibilidad WebSocket y LiveAvatar"
+  ],
+  "meta": {
+    "wiki_queries": [
+      "VoiceBot Gemini Live Nova Sonic websocket tool calling dual output structured output"
+    ],
+    "estimated_budget_use": {
+      "files_read": 24,
+      "grep_calls": 10,
+      "git_calls": 3
+    },
+    "notes": "Rutas wiki pre-FEAT-523 actualizadas tras localizar paquetes satélite; lecturas dependientes depth=1, máximo 2. Consultada documentación AWS oficial para verificar tool-calling actual.",
+    "schema_note": "Schema oneOf overlaps: read params include lines=null; glob max_results=500 selects the glob variant unambiguously. No schema files modified."
+  }
+}

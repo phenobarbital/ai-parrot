@@ -12,7 +12,7 @@ base_branch: main
 Fill in the issue key before creating the worktree.*
 **Date**: 2026-09-03
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 0.28.1
 
 ---

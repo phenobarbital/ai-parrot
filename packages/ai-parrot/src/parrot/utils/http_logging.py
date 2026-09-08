@@ -16,7 +16,7 @@ that stack ships under *different top-level names* — ``httpx2`` and
 still require ``httpx<1``, so BOTH stacks are live in one process. That is
 why the long-standing ``logging.getLogger("httpcore").setLevel(WARNING)``
 lines around the codebase never silenced the OpenAI-protocol clients — and
-those include :class:`~parrot.clients.nova.mantle.BedrockMantleClient`, which
+those include :class:`~parrot.clients.amazon.nova.mantle.BedrockMantleClient`, which
 reaches AWS Bedrock over Bedrock Mantle's OpenAI-compatible endpoint via the
 OpenAI SDK. Its transport logs as ``httpcore2``, so the ``httpcore`` rule
 missed it entirely.

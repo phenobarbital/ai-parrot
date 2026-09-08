@@ -9,6 +9,365 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [1.0.0] — 2026-09-07 — First stable release
+
+**First stable release.** `ai-parrot` and its eleven sibling distributions —
+`ai-parrot-server`, `-tools`, `-loaders`, `-embeddings`, `-pipelines`,
+`-visualizations`, `-integrations`, `-advisors`, `parrot-formdesigner`,
+`navrules` and `parrot-codec` — all move to `1.0.0` together. The fifteen
+`ai-parrot-client-<provider>` satellites and `ai-parrot-openlit-bridge` stay on
+their own `0.2.0` line; they were first published two days ago and are
+versioned independently of the core.
+
+`0.29.0` was version-bumped in the tree (`c390e9e56c`) but never tagged or
+published — PyPI goes `0.28.1` → `1.0.0`. Everything documented under the old
+`[0.29.0]` heading (FEAT-520 … FEAT-526) therefore reaches users **for the
+first time here**, and has been folded into this section rather than left as a
+release nobody can install.
+
+### Breaking Changes
+
+#### FEAT-523: PEP 420 LLM clients — every provider ships from its own `ai-parrot-client-<provider>` satellite
+
+Core `ai-parrot` no longer bundles any provider client. Each provider is a
+separate distribution — a PEP 420 namespace package under
+`parrot.clients.<provider>` that registers itself with `LLMFactory` through
+the `parrot.clients` entry-point group. Hard cut: no deprecation shims.
+
+Spec: `sdd/specs/pep-420-llm-clients.spec.md`.
+
+**15 new distributions**: `ai-parrot-client-openai`, `-anthropic`,
+`-google`, `-amazon`, `-meta`, `-gemma4`, `-hf`, `-groq`, `-grok`, `-zai`,
+`-nvidia`, `-moonshot`, `-openrouter`, `-local`, `-vllm`.
+
+- **Extras install satellites.** `ai-parrot[anthropic]`, `[openai]`,
+  `[google]`, `[groq]`, `[bedrock-native]`, … each pull the matching
+  satellite; `ai-parrot[llms]` pulls all 15. `openai` / `tiktoken` stay core
+  dependencies because `OpenAIBaseClient` stays in core (subclassed by seven
+  satellites).
+- **`LLMFactory.create()` for a provider whose satellite is not installed
+  raises `ImportError` naming the distribution to install.**
+- **Module renames** (callers updated in-feature):
+  `parrot.clients.gpt` → `parrot.clients.openai`;
+  `.claude` / `.claude_agent` / `.claude_agent_bridge` / `.anthropic_backends`
+  → `.anthropic`; `.bedrock` + `.nova` → `.amazon`; `.live` → `.google.live`;
+  `.localllm` → `.local`; `gemma4`, `hf`, `groq`, `grok`, `zai`, `nvidia`,
+  `moonshot`, `openrouter`, `vllm` become `clients/<provider>/` folder
+  subpackages (`{__init__,client,models}.py`).
+- **Provider enums left `parrot.models`.** Every `parrot.models.<provider>`
+  enum now lives in `parrot.clients.<provider>.models`;
+  `parrot/models/{openai,claude,groq,localllm,moonshot,nvidia,openrouter,zai,bedrock_models}.py`
+  are deleted. `LiveVoiceResponse` moved to `parrot.models.voice`.
+- Added `LLMFactory.list_providers()` / `list_models()` (entry-point-backed
+  catalogue); the server LLM handler lists models through it.
+- Release tooling now covers 28 distributions: `scripts/release.py`,
+  `make bump-all` and `release.yml` discover the satellites;
+  `make build-clients publish-clients` bootstraps a never-published
+  satellite on PyPI with twine.
+
+#### FEAT-524: Conversation History Ownership — memory-less clients
+
+`ConversationHistory` had two owners: `AbstractClient` and `AbstractBot` both
+read and both wrote it under the same key. Every stateful round persisted **two**
+turns and sent the history to the provider **twice** — once as replayed messages
+from the client, once as a text digest injected into the system prompt.
+`AbstractBot` is now the sole owner. Hard cut: no deprecation shims.
+
+Guide: `docs/memory/conversation-history-ownership.md`.
+Spec: `sdd/specs/conversation-history-ownership.spec.md`.
+
+**`AbstractClient` (base + all 19 concrete clients)**
+- `conversation_memory` constructor kwarg removed (and its `InMemoryConversation()`
+  default).
+- `user_id` / `session_id` removed from `ask()` and `ask_stream()`. Pass
+  `history: Sequence[HistoryMessage]` instead. Telemetry still resolves ids from
+  the `parrot.observability.context` ContextVars that `BaseBot` binds.
+- `stateless` removed from `ask()` / `ask_stream()` — a stateless call is one with
+  no `history`.
+- Removed: `start_conversation`, `get_conversation`, `clear_conversation`,
+  `delete_conversation`, `list_user_conversations`, `_get_chatbot_key`,
+  `_prepare_conversation_context`, `_update_conversation_memory`,
+  `create_conversation_memory`.
+- Added: `_format_history()` (the single per-provider override point),
+  `_build_messages()`, `_existing_files()`.
+
+**`parrot.memory`**
+- `ConversationHistory.get_messages_for_api()` removed → new pure
+  `parrot.memory.render_history()`, exported alongside `HistoryMessage`.
+- `ConversationTurn.chatbot_id` added (last field; legacy records deserialize to
+  `None`) plus the canonical `ConversationTurn.from_ai_message()` constructor.
+
+**`AbstractBot`**
+- `build_conversation_context()` removed, with the `conversation_context` kwarg on
+  `create_system_prompt()` / `_build_prompt()` and the `## Conversation Context:`
+  block. History never appears in a system prompt again.
+- `save_conversation_turn()` lost its `chatbot_id` parameter and is now the single
+  writer; it raises `ValueError` if `turn.chatbot_id != memory_key_id`.
+- `_create_llm_client()` lost its `conversation_memory` parameter.
+- New `memory_key_id` property: the explicit `chatbot_id` if configured, else
+  `self.name` (never the random per-process `uuid4()` default).
+
+**Storage key** — unified to `(chatbot, user, session)` on all three backends.
+Legacy un-segmented Redis/File histories are **re-keyed lazily on first read**;
+the legacy record is left in place for rollback. No offline migration job.
+
+### Added
+
+#### FEAT-534: `LyriaToolkit` — natural-language music generation
+
+- `LyriaToolkit(AbstractToolkit)` in `parrot_tools.google.lyria` exposes Lyria
+  to tool-calling agents for the first time: `generate_music`,
+  `list_genres_and_moods`, and the standalone `parse_music_prompt` heuristic.
+- Free-form text ("a soft ambient music with slow tempo") maps to structured
+  Lyria controls — `bpm`, `genre`, `mood`, `density`, `brightness`,
+  `temperature`, `negative_prompt`, `seed` — through documented ranges the LLM
+  reads off the tool schema.
+- Exact `n`-second output (default 10s, range 1–120s): the RealTime stream is
+  collected as 48kHz 16-bit stereo PCM and framed into a valid WAV, so both
+  streaming and the fixed-30s Vertex `lyria-002` batch path honour the
+  requested duration.
+
+#### FEAT-533: Bookstore conceptual relations — a book graph with communities
+
+- The flat ficha catalog gains a relation graph: deterministic relations from
+  existing `BookCard` fields (authorship, topic, language, era), classification
+  relations from new LLM-filled card fields written at carding time, and
+  LLM-judged conceptual relations with a persisted judgement log.
+- Communities are derived through `graphindex` with LLM-generated labels and
+  persisted alongside the catalog; `bookstore relate` and `export-wiki` (into a
+  `wikitoolkit` plane, with namespace registration) are the CLI surface.
+- Three new agent tools plus `related_books`; edge weights land in the
+  graphindex payload. Docs: `docs/bookstore-graph.md`.
+
+#### FEAT-532: Luau / Roblox support for wikitoolkit
+
+- `.luau` / `.lua` are indexed by the offline build, with comments, functions,
+  signatures, exported types and module-table exports in the outline.
+- Static `require` resolution walks `sourcemap.json`, then
+  `default.project.json`, then relative string imports; DataModel and external
+  references are attached to offline scans without changing file identity.
+- A federated **Roblox API plane** — one page per platform class and enum,
+  generated from the official API dump and enriched with SHA-pinned
+  creator-docs prose, with no LLM calls and no vendored dumps. Shared under
+  `PARROT_HOME`, queried through namespace `roblox`, and published as immutable
+  generations with an explicit refresh.
+
+#### FEAT-531: wikitoolkit / bookstore CLIs auto-detect a coding-agent LLM
+
+- When `PARROT_BOOKSTORE_LLM` / `WIKI_MODEL` / `WIKI_LIGHTWEIGHT_MODEL` /
+  `WIKI_EXTRACT_LLM` are unset, both CLIs now detect an authenticated Claude
+  Code or Codex session on the machine and default to it, instead of silently
+  degrading to BM25 / deterministic carding.
+- Detection is non-invasive: no subprocess spawn, no network call, no LLM
+  request. Claude Code wins when both are present, on a cheap model (Haiku).
+- The auto-selection is announced with an unmissable warning naming the
+  provider, the model, and the env var that overrides it. Detection or
+  construction failures degrade gracefully to the previous behaviour.
+
+#### FEAT-530: Supervised Obscura headless browser
+
+- `ObscuraProcessManager` supervises the pinned Linux Obscura `v0.2.2` binary;
+  `PlaywrightDriver` gains an explicit connect-over-CDP mode selected through
+  the existing `DriverFactory`, leaving `AbstractDriver`, the scraping plan and
+  the browsing toolkit contracts untouched.
+- Obscura's native MCP server is registered as a first-class agent/Codex
+  browser capability, alongside — not replacing — Chrome DevTools MCP.
+- New CLI commands start, stop and inspect the supervised process. The Selenium
+  ChromeDriver backend is unchanged, and Obscura is not yet the default engine.
+
+#### FEAT-529: A2UI `Graph` component under the new `viz-core` catalog
+
+- The first graph/DAG/flow component in any Parrot A2UI catalog, shipped
+  together with the **`viz-core` catalog shell** and its resolution contract.
+- The wire carries **typed nodes and edges**, not a mermaid string: per-node
+  state is bindable to the data model, and per-node clicks dispatch v1.0
+  actions. Mermaid remains a *codec* (import text → typed shape, export back).
+- Native rendering in all four lanes — ECharts, interactive HTML, SSR
+  HTML/PDF, and the bundled Svelte canvas — over a shared `Graph` SVG contract
+  and a deterministic layered layout. A `FlowDefinition` adapter renders
+  `AgentsFlow` graphs directly.
+
+#### FEAT-528: `PgRecipeStore` + parent-agnostic agent packages
+
+- `PgRecipeStore` is a third `AbstractRecipeStore`: one relational row per
+  recipe, so a recipe becomes editable, backed-up, queryable data living
+  alongside the `navigator.ui_surfaces` it produces. `FileRecipeStore` and the
+  Redis-backed `DBRecipeStore` are unchanged.
+- The `flex_dashboard` agent package is now importable under **any** parent
+  package name — a host whose repo root already owns an `agents/` package no
+  longer gets `ModuleNotFoundError`.
+- `load_transformer_module()` lets a host register a recipe's transformers
+  without importing the agent class, its LLM or its toolkit.
+  `parrot.handlers.models.recipes.PgRecipeStore` and
+  `parrot.tools.infographic_recipes.load_transformer_module` are public
+  contract paths.
+
+#### FEAT-527: Infographic → A2UI migration (dual-emit)
+
+- `InfographicToolkit.emit_a2ui` defaults to `True` and the HTML-lane
+  `DeprecationWarning` is dropped: infographic turns now dual-emit an A2UI
+  envelope alongside the legacy HTML document, ending the G7 policy
+  contradiction.
+- New `HtmlDocument` catalog component and `build_html_document()`;
+  `render_template` / `render_data_template` emit it as a surface, rendered in
+  a sandboxed iframe and degrading to a titled link elsewhere. A `tool_only`
+  registration gate rejects tool-only components in LLM-origin envelopes.
+- Chart-type parity: `ChartType` gains five types, donut/radar are no longer
+  collapsed, and `KPICard` / `DataTable` props plus half-width `Row` lowering
+  land in the adapter pass-through.
+- The bundled Svelte UI opens the infographic canvas in a2ui mode from chat
+  turns behind a `features.a2ui` flag, with a Rendered/HTML toggle.
+
+#### Bookstore — indexed book library for Claude Code
+
+New core package `parrot.knowledge.bookstore`: a *library* on top of PageIndex,
+where each book carries a consultable catalog card ("ficha hemeroteca") so a
+research agent decides which book to open before opening it.
+
+- SQLite + FTS5 `library.db` (WAL, additive migrations, sanitized MATCH, LIKE
+  fallback when FTS5 is absent) with multi-scope merge, project scope winning.
+- LLM carding with a deterministic no-LLM fallback; `BookstoreToolkit` as the
+  read-only agent surface, a `bookstore` console script (also
+  `parrot bookstore`), and an MCP stdio server.
+- Bulk `add-folder` ingest, plus EPUB, MOBI and DOCX readers shared with
+  wikitoolkit ingestion. Ships with a Claude Code skill and a `/bookstore`
+  command.
+
+#### FEAT-525: Per-turn conversation compaction
+
+Deterministic, budget-driven retention of conversation history — the
+extension point FEAT-524 left open. Guide:
+`docs/memory/per-turn-conversation-compaction.md`.
+
+- `ConversationMemory.add_turn()` is now a concrete template method
+  (Stage 0 normalize → Stage 0.5 token count → write-time oversize offload →
+  one write via the abstract `_store_turn()`). Custom backends implement
+  `_store_turn`, never `add_turn`.
+- `parrot.memory.compaction.compact_history()` — pure three-tier pre-pass
+  (verbatim / pruned / dropped) driven by a `ContextBudget` auto-resolved
+  per model from `MODEL_WINDOWS`; kill switch `context_budget=False` or
+  `PARROT_COMPACTION_DISABLED=1`. `PrunePolicy` registry with built-ins.
+- Pruned tool output is offloaded to a memory-owned `OmissionStore`
+  (InMemory / Redis / File) and recoverable through the
+  `read_omitted_content` tool (ContextVar-scoped, fails closed; excluded
+  from `search_tools`).
+- `AbstractBot.render_context_history()` feeds every bot entry point;
+  `save_conversation_turn(compaction=)`; `ConversationTurn` schema v2;
+  `render_history()` also accepts `Sequence[TurnView]`.
+
+#### FEAT-526: Meta (Muse) LLM client — `ai-parrot-client-meta`
+
+- `MetaClient` in `parrot.clients.meta` (subclass of `OpenAIBaseClient`),
+  `LLMFactory.create("meta:muse-spark-1.3")`, with a `MetaModel` catalogue
+  of the seven live-verified model ids and capability sets.
+- Chat Completions path (chat, tool calling, structured output, streaming,
+  `invoke()`) plus a client-local Responses API path unlocking search
+  grounding and `count_input_tokens()`. Live e2e suite mirrors the OpenAI
+  one.
+
+#### FEAT-522: Interactive HTML `Map` components + generated Tailwind CSS
+
+- `Map` renders as a real interactive Leaflet map — top-level and
+  Infographic-nested — inside `interactive-html` documents through a shared
+  `build_map_document()`; `MarkerCluster` wraps a layer past 500 points
+  (per-layer overridable).
+- Genuinely offline: folium CDN resources are swapped for vendored
+  data URIs (license manifest included), which also closes the CDN leak in
+  the standalone `folium_map` renderer.
+- `scripts/generate_a2ui_css.py` AST-scans every class `interactive_html.py`
+  emits and generates Tailwind v4 CSS folded into
+  `DesignSystem.stylesheet()`; a CI freshness gate (`--check`) keeps the
+  generated CSS and vendored assets from drifting.
+
+#### FEAT-521: Python REPL worker — idle detection and memory guardrails
+
+- `ProcessObserver` samples every live worker (CPU time, RSS, state, thread
+  count) and derives `settled` / `computing` / `stalled` verdicts; every
+  timeout, bootstrap failure and namespace-loss error names the verdict and
+  the last sample.
+- Two-stage deadline: SIGINT first (the worker returns a bounded
+  `interrupted` result and keeps its namespace), SIGKILL only after
+  `interrupt_grace_ms`.
+- `WorkerPool` enforces a host memory reserve with pressure eviction.
+  `execution_mode="inprocess"` escape hatch and worker bootstrap
+  diagnostics; `python_repl_execution_mode` exposed on `flex_dashboard` /
+  `finance_reporter`.
+
+#### FEAT-520: GraphIndex Postgres Backend — Bitemporal Plane + One-Pass Hybrid Retrieval
+
+Third GraphIndex persistence backend (`PostgresPersistence`) at parity
+with `SQLitePersistence`/`GraphIndexPersistence`, plus a fourth
+`BaseWikiStore` implementation (`PostgresWikiStore`) — both over ONE
+shared, engine-enforced bitemporal `graphindex.*` schema. asyncpg only;
+zero SQLAlchemy; `PgVectorStore` is explicitly not reused.
+
+- `PostgresPersistence` — full parity surface (`persist_graph`,
+  `replace_document_slice`, `is_stale`, `load_graph`) plus the graph
+  commit protocol (`apply_update`/`get_commit`/`list_commits`/
+  `revert_commit`) on real transactions.
+- Bitemporal writes: `node_versions.validity` is a `tstzrange` protected
+  by a GiST `EXCLUDE` constraint — overlapping versions of one concept
+  are rejected by the ENGINE, not ingest discipline. Corrections
+  close-and-insert; content is never `UPDATE`d.
+- Temporal read contract (Postgres-only in v1): `as_of(t)`, `history
+  (concept_id)`, `diff(concept_id, t1, t2)`.
+- `hybrid_retrieve` — graph expansion + pgvector KNN + `ts_rank_cd` FTS as
+  CTEs of ONE SQL statement, RRF-fused (`Σ w/(60+rank)`) in SQL, with
+  cross-encoder re-ranking through the existing `parrot.rerankers` seam.
+- `PostgresWikiStore` — full `BaseWikiStore` surface over the same
+  schema, including the schema-v2 symbol surface (`upsert_symbols`,
+  `find_symbols`, trigram+FTS `search_symbols_fts`).
+- In-schema pgvector embeddings (`graphindex.embeddings`) with a
+  config-driven ANN index (`ivfflat` default — see the TASK-2770 spike
+  artifact for the measured HNSW-vs-IVFFlat tradeoff).
+- `build_graph_memory_toolkit(backend="postgres", ...)` factory path; four
+  mono-purpose temporal/hybrid agent tools (`graph_as_of`,
+  `graph_concept_history`, `graph_diff`, `graph_hybrid_retrieve`),
+  registered only when the bound persistence exposes the temporal surface
+  (duck-typed).
+- Docs: [`docs/graphindex.md`](docs/graphindex.md) backend matrix,
+  Temporal API, and Hybrid Retrieval sections.
+
+### Fixed
+
+#### Hotfix `chromemanager-async-migration`: async `ChromeManager` (requests → aiohttp)
+
+`ChromeManager` (`parrot.mcp.chrome`, ai-parrot-server) probed and launched
+Chrome with `requests`, `subprocess` and `time.sleep`, and was reached from the
+async `add_chrome_devtools_mcp_server()` hook — so `WebAgent.configure()` could
+block the event loop for 10+ seconds while Chrome came up.
+Spec: `sdd/specs/chromemanager-async-migration.spec.md`.
+
+- `ChromeManager.is_running()`, `start(headless=True, timeout=10.0)` and
+  `stop()` are now coroutines (aiohttp probe of `/json/version`,
+  `asyncio.create_subprocess_exec`, `asyncio.sleep`/`wait_for`). The
+  `requests` import is gone. `is_chrome_running()` remains as a deprecated
+  coroutine alias of `is_running()`; `is_port_open()` was removed.
+- `create_chrome_devtools_mcp_server()` no longer launches Chrome as a side
+  effect — it is a pure `MCPServerConfig` builder. Callers that built a
+  config and called `add_mcp_server()` themselves must now call the new
+  `ensure_chrome_running(browser_url, headless=False)` coroutine (or use the
+  mixin hook).
+- `MCPEnabledMixin.add_chrome_devtools_mcp_server()` gained
+  `ensure_running: bool = True`: it awaits `ensure_chrome_running()` before
+  connecting (skipped when `auto_connect=True`). `WebAgent` behaviour is
+  unchanged. `MCPEnabledMixin.shutdown()` now awaits `ChromeManager.stop()`.
+- The `WebAgent` unit tests no longer spawn a real Chrome when calling the
+  factory with default arguments.
+
+#### Other fixes
+
+- **Security** — closed a path-injection on `PandasAgent.report_dir`
+  (CodeQL alert #213).
+- Google client: `invoke()` recovers a raw-string structured parse; no
+  longer forces `thinking_budget=0` on `gemini-3.5-flash-lite`.
+- OpenAI-family `ask()` no longer double-encodes the current turn;
+  gemma4 / hf `ask_stream()` forward `history=`.
+- dev-loop: dropped the unusable `model: gpt-5.5` from `sdd-secondopinion`;
+  SDD command frontmatter uses the valid `haiku` alias.
+
+---
+
 ## [0.28.0] — 2026-08-26
 
 ### Added

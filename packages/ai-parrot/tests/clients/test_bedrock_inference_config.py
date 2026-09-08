@@ -10,9 +10,10 @@ That broke the ``bedrock-converse`` sample agents on Claude Opus 5 while the
 same payload worked on Claude Haiku 4.5, so the suppression has to be
 per-model, not global.
 """
+
 import pytest
 
-from parrot.clients.bedrock import (
+from parrot.clients.amazon.bedrock import (
     NO_SAMPLING_MODEL_FAMILIES,
     BedrockConverseClient,
     rejects_sampling_params,
@@ -78,9 +79,7 @@ def test_inference_config_omits_explicit_temperature_too(client):
 
 
 def test_inference_config_keeps_temperature_for_haiku(client):
-    config = client._inference_config(
-        "us.anthropic.claude-haiku-4-5-20251001-v1:0", 512, 0.7
-    )
+    config = client._inference_config("us.anthropic.claude-haiku-4-5-20251001-v1:0", 512, 0.7)
     assert config == {"maxTokens": 512, "temperature": 0.7}
 
 

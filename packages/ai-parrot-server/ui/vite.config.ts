@@ -28,6 +28,7 @@ function agentchatDefines(env: Record<string, string>): Record<string, string> {
     'INFOGRAPHIC',
     'DATASETS',
     'RICH_EDITOR',
+    'A2UI',
   ] as const;
   const defines: Record<string, string> = {};
   for (const name of names) {

@@ -50,7 +50,7 @@ def _patch_fake_anthropic(monkeypatch):
     ``_create_llm_client``) requires to treat it as a real client instance
     instead of falling through to a (failing) provider-string lookup.
     """
-    from parrot.clients.claude import AnthropicClient
+    from parrot.clients.anthropic import AnthropicClient
 
     captured: dict = {}
 

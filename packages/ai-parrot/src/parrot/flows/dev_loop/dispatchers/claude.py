@@ -3,7 +3,7 @@
 The dispatcher is the heart of FEAT-129. It is intentionally a *thin*
 class: it owns the global concurrency cap, the Redis stream plumbing,
 and the profile → run-options resolver, but delegates all SDK work to
-:class:`parrot.clients.claude_agent.ClaudeAgentClient` (FEAT-124) via
+:class:`parrot.clients.anthropic.claude_agent.ClaudeAgentClient` (FEAT-124) via
 :class:`parrot.clients.factory.LLMFactory`.
 
 Responsibilities (per spec §3 Module 2):
@@ -39,7 +39,6 @@ from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Type
 from pydantic import BaseModel, ValidationError
 
 from parrot import conf
-from parrot.clients.claude_agent import ClaudeAgentRunOptions
 from parrot.clients.factory import LLMFactory
 from parrot.core.events.lifecycle import TraceContext
 from parrot.core.events.lifecycle.events.client import (
@@ -67,6 +66,11 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
     from claude_agent_sdk.types import AgentDefinition  # noqa: F401
 
     from parrot.core.events.lifecycle import EventRegistry
+
+    # FEAT-523 (TASK-2846): type-check-only — core must not import a
+    # provider module at module scope (AC-3); the real import is deferred
+    # to _resolve_run_options().
+    from parrot.clients.anthropic.claude_agent import ClaudeAgentRunOptions
 
 # Edit/Write tools that let a dispatched session mutate the filesystem through
 # the SDK's own tool surface. A dispatch whose profile excludes ALL of these
@@ -544,6 +548,10 @@ class ClaudeCodeDispatcher:
         does NOT re-validate ``cwd`` — callers exercising it in
         isolation are expected to validate the path themselves.
         """
+        # FEAT-523 (TASK-2846): lazy import — core must not import a
+        # provider module at module scope (AC-3).
+        from parrot.clients.anthropic.claude_agent import ClaudeAgentRunOptions
+
         agents_dict: Optional[Dict[str, Any]] = None
         system_prompt: Optional[str] = None
 

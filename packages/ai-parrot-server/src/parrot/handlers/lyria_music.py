@@ -1,20 +1,25 @@
 """HTTP handler for Lyria music generation."""
+
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, TYPE_CHECKING
 import logging
 
 from aiohttp import web
 from navigator.views import BaseView
 from pydantic import ValidationError
 
-from parrot.clients.google import GoogleGenAIClient
 from parrot.models.google import (
     MusicGenerationRequest,
     MusicGenre,
     MusicMood,
-    GoogleModel,
 )
+
+if TYPE_CHECKING:
+    # FEAT-523 (TASK-2846): type-check-only — core must not import a
+    # provider module at module scope (AC-3); the real import is deferred
+    # to LyriaMusicHandler.post().
+    from parrot.clients.google import GoogleGenAIClient
 
 
 class LyriaMusicHandler(BaseView):
@@ -45,7 +50,7 @@ class LyriaMusicHandler(BaseView):
 
         # Extract control keys separately; pass only model fields to Pydantic.
         stream_mode = data.get("stream", True)
-        model = data.get("model", GoogleModel.LYRIA.value)
+        model = data.get("model", "lyria-3-pro-preview")
         _control_keys = {"stream", "model"}
         model_data = {k: v for k, v in data.items() if k not in _control_keys}
 
@@ -53,6 +58,10 @@ class LyriaMusicHandler(BaseView):
             req = MusicGenerationRequest(**model_data)
         except ValidationError as exc:
             return self.error(str(exc), status=400)
+
+        # FEAT-523 (TASK-2846): lazy import — core must not import a
+        # provider module at module scope (AC-3).
+        from parrot.clients.google import GoogleGenAIClient
 
         client = GoogleGenAIClient(model=model)
         async with client:
@@ -103,9 +112,7 @@ class LyriaMusicHandler(BaseView):
             "timeout": req.timeout,
         }
 
-    async def _stream_music(
-        self, client: GoogleGenAIClient, req: MusicGenerationRequest
-    ) -> web.StreamResponse:
+    async def _stream_music(self, client: GoogleGenAIClient, req: MusicGenerationRequest) -> web.StreamResponse:
         """Stream WAV audio chunks via chunked transfer encoding."""
         stream = web.StreamResponse(
             status=200,
@@ -122,9 +129,7 @@ class LyriaMusicHandler(BaseView):
         await stream.write_eof()
         return stream
 
-    async def _download_music(
-        self, client: GoogleGenAIClient, req: MusicGenerationRequest
-    ) -> web.Response:
+    async def _download_music(self, client: GoogleGenAIClient, req: MusicGenerationRequest) -> web.Response:
         """Buffer full audio and return with Content-Length."""
         audio_chunks: list[bytes] = []
 

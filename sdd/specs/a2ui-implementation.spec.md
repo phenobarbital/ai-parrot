@@ -71,6 +71,19 @@ first-class catalog citizens.
 - **G7 — Coexist + deprecate**: legacy `OutputMode` formats keep working with
   deprecation warnings; new pipeline is additive behind `OutputMode.A2UI`.
   Removal is a later feature.
+  > **Amendment (FEAT-527, 2026-09)**: the infographic-HTML lane
+  > (`OutputMode.INFOGRAPHIC`, `InfographicHTMLRenderer`) is carved out of
+  > this deprecate-and-later-remove policy. `InfographicToolkit` now
+  > dual-emits by default (`emit_a2ui=True`): every render produces the
+  > HTML artifact **and** a validated A2UI `Infographic`/`HtmlDocument`
+  > envelope as **permanent, parallel sibling emissions** — the HTML lane
+  > is not superseded and carries no removal timeline. The unconditional
+  > `DeprecationWarning` on toolkit construction was removed accordingly.
+  > Every OTHER legacy `OutputMode` in `_A2UI_REPLACEMENTS`
+  > (`parrot/outputs/formats/__init__.py`) remains deprecated under this
+  > goal's original policy, unchanged. See
+  > `sdd/specs/infographic-a2ui-migration.spec.md` (FEAT-527) for the full
+  > rationale.
 - **G8 — Packaging**: envelope models, catalog, registries, lowering in
   ai-parrot core under `parrot.outputs.a2ui`; ALL concrete renderers in
   `ai-parrot-visualizations` behind new `a2ui`/`a2ui-pdf` extras (PEP 420
@@ -395,6 +408,10 @@ def catalog_v1():
 - [ ] **G5**: `RenderedArtifact` delivered end-to-end — email + Telegram real attachments, Teams via Graph upload, Slack via public URL with degraded-delivery log line
 - [ ] **G6**: deep-link round-trip proven on Telegram AND web (mint → click → single-use consume → structured user message in the same session); replay + expiry rejected
 - [ ] **G7**: full legacy test suite still green; replaced modes emit `DeprecationWarning`; no legacy behavior change
+  (amended by FEAT-527: `OutputMode.INFOGRAPHIC`/`InfographicHTMLRenderer` is
+  a permanent sibling emission, exempt from this AC's "replaced modes"
+  language and the removed unconditional `DeprecationWarning`; every other
+  legacy mode is unaffected)
 - [ ] **G8**: `ai-parrot` core installs/imports with zero new heavy deps; renderers resolve only with `ai-parrot-visualizations[a2ui]`; missing-extra error is actionable
 - [ ] Envelope-complete streaming: `ask_stream` chunked contract unchanged (header `X-Parrot-Stream: chunked-aimessage` preserved)
 - [ ] SPK-1 evidence committed under `artifacts/spikes/` with a recorded backend decision; SPK-3 fidelity numbers recorded and retry budget set from them

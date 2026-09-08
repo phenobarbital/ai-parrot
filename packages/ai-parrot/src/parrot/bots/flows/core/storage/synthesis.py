@@ -13,9 +13,9 @@ FEAT-163 additions:
     ``AgentsFlow`` callers. Compatible with both ``on_complete`` hooks and
     in-graph ``SynthesisNode`` DAG nodes.
 """
+
 from __future__ import annotations
 
-import uuid
 from typing import TYPE_CHECKING, Any, Optional, Union
 
 from navconfig.logging import logging
@@ -96,11 +96,13 @@ class SynthesisMixin:
             else:
                 result = str(response)
 
-            context_parts.extend([
-                f"\n## Agent {i + 1}: {agent_name}\n",
-                str(result),
-                "\n---\n",
-            ])
+            context_parts.extend(
+                [
+                    f"\n## Agent {i + 1}: {agent_name}\n",
+                    str(result),
+                    "\n---\n",
+                ]
+            )
 
         research_context = "\n".join(context_parts)
         final_prompt = f"{research_context}\n\n{synthesis_prompt}"
@@ -113,17 +115,10 @@ class SynthesisMixin:
                     prompt=final_prompt,
                     max_tokens=max_tokens,
                     temperature=temperature,
-                    user_id=user_id or "crew_user",
-                    session_id=session_id or str(uuid.uuid4()),
-                    use_conversation_history=False,
                     **kwargs,
                 )
 
-            return (
-                synthesis_response.content
-                if hasattr(synthesis_response, "content")
-                else str(synthesis_response)
-            )
+            return synthesis_response.content if hasattr(synthesis_response, "content") else str(synthesis_response)
         except Exception as e:
             logger.error("Error during synthesis: %s", e, exc_info=True)
             return None
@@ -191,11 +186,13 @@ async def synthesize_results(
         else:
             text = str(response)
 
-        context_parts.extend([
-            f"\n## Agent {i + 1}: {node_id}\n",
-            str(text),
-            "\n---\n",
-        ])
+        context_parts.extend(
+            [
+                f"\n## Agent {i + 1}: {node_id}\n",
+                str(text),
+                "\n---\n",
+            ]
+        )
 
     research_context = "\n".join(context_parts)
     final_prompt = f"{research_context}\n\n{SYNTHESIS_PROMPT}"
@@ -206,16 +203,9 @@ async def synthesize_results(
         question=final_prompt,
         max_tokens=max_tokens,
         temperature=temperature,
-        user_id=user_id or "flow_user",
-        session_id=session_id or str(uuid.uuid4()),
-        use_conversation_history=False,
     )
 
-    summary = (
-        synthesis_response.content
-        if hasattr(synthesis_response, "content")
-        else str(synthesis_response)
-    )
+    summary = synthesis_response.content if hasattr(synthesis_response, "content") else str(synthesis_response)
 
     # Store on result if it supports the summary attribute
     if hasattr(result, "summary"):

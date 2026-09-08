@@ -118,6 +118,7 @@ class AcquiredDocument(BaseModel):
     ref: DocumentRef
     text: str
     metadata: DocumentMetadata
+    ebook_sections: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class TriageProvenance(BaseModel):
@@ -655,9 +656,9 @@ class DocumentAcquirer:
                 f"{path}: ai-parrot-loaders is not installed; cannot extract " f"{ref.suffix or 'this file type'}"
             ) from exc
 
-        loader_cls = get_loader_class(ref.suffix)
-        loader = loader_cls(str(path))
         try:
+            loader_cls = get_loader_class(ref.suffix)
+            loader = loader_cls(str(path))
             docs = await loader._load(str(path))
         except Exception as exc:
             raise DocumentAcquisitionError(f"{path}: loader extraction failed: {exc}") from exc
@@ -665,7 +666,12 @@ class DocumentAcquirer:
         if not docs:
             raise DocumentAcquisitionError(f"{path}: loader extracted no content")
 
-        text = docs[0].page_content
+        from parrot.loaders.ebook import ebook_markdown, ebook_sections
+
+        sections = ebook_sections(docs)
+        text = ebook_markdown(sections) if sections else "\n\n".join(
+            doc.page_content for doc in docs
+        )
         _validate_extracted_text(text, path)
 
         metadata = _normalize_metadata(docs[0].metadata)
@@ -685,4 +691,7 @@ class DocumentAcquirer:
             except Exception as exc:  # noqa: BLE001 — page count is nice-to-have, never fatal
                 logger.warning("Could not read page count for %s: %s", path, exc)
 
-        return AcquiredDocument(ref=ref, text=text, metadata=metadata)
+        return AcquiredDocument(
+            ref=ref, text=text, metadata=metadata,
+            ebook_sections=[section.model_dump() for section in sections],
+        )

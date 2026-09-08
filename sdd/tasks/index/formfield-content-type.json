@@ -5,12 +5,12 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-01T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-09-03T11:28:33+00:00",
   "tasks": [
     {
       "id": "TASK-2677",
       "slug": "formfield-schema-extension",
-      "title": "FormField Schema Extension \u2014 Add content_type and accept_content_types",
+      "title": "FormField Schema Extension — Add content_type and accept_content_types",
       "feature_id": "FEAT-488",
       "feature": "formfield-content-type",
       "spec": "sdd/specs/formfield-content-type.spec.md",
@@ -19,11 +19,12 @@
       "effort": "S",
       "depends_on": [],
       "parallel": false,
-      "parallelism_notes": "First task \u2014 no dependencies; all other tasks depend on this one.",
+      "parallelism_notes": "First task — no dependencies; all other tasks depend on this one.",
       "assigned_to": null,
       "started_at": null,
       "completed_at": "2026-09-01T18:22:43+00:00",
-      "file": "sdd/tasks/completed/TASK-2677-formfield-schema-extension.md"
+      "file": "sdd/tasks/completed/TASK-2677-formfield-schema-extension.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2678",
@@ -43,7 +44,8 @@
       "assigned_to": null,
       "started_at": null,
       "completed_at": "2026-09-01T18:27:02+00:00",
-      "file": "sdd/tasks/completed/TASK-2678-voice-answer-envelope.md"
+      "file": "sdd/tasks/completed/TASK-2678-voice-answer-envelope.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2679",
@@ -63,12 +65,13 @@
       "assigned_to": null,
       "started_at": null,
       "completed_at": "2026-09-01T18:28:03+00:00",
-      "file": "sdd/tasks/completed/TASK-2679-validator-dict-passthrough.md"
+      "file": "sdd/tasks/completed/TASK-2679-validator-dict-passthrough.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2680",
       "slug": "jsonschema-renderer-content-type",
-      "title": "JSON Schema Renderer \u2014 Emit content_type Extension Keys",
+      "title": "JSON Schema Renderer — Emit content_type Extension Keys",
       "feature_id": "FEAT-488",
       "feature": "formfield-content-type",
       "spec": "sdd/specs/formfield-content-type.spec.md",
@@ -79,16 +82,17 @@
         "TASK-2677"
       ],
       "parallel": false,
-      "parallelism_notes": "Depends on TASK-2677 only; independent of TASK-2678/2679/2682/2683. Priority renderer \u2014 ordered before audio and xforms.",
+      "parallelism_notes": "Depends on TASK-2677 only; independent of TASK-2678/2679/2682/2683. Priority renderer — ordered before audio and xforms.",
       "assigned_to": null,
       "started_at": null,
       "completed_at": "2026-09-01T20:25:00+00:00",
-      "file": "sdd/tasks/completed/TASK-2680-jsonschema-renderer-content-type.md"
+      "file": "sdd/tasks/completed/TASK-2680-jsonschema-renderer-content-type.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2681",
       "slug": "audio-renderer-accept-content-types",
-      "title": "Audio Renderer \u2014 Read accept_content_types for Submission Shape",
+      "title": "Audio Renderer — Read accept_content_types for Submission Shape",
       "feature_id": "FEAT-488",
       "feature": "formfield-content-type",
       "spec": "sdd/specs/formfield-content-type.spec.md",
@@ -104,12 +108,13 @@
       "assigned_to": null,
       "started_at": null,
       "completed_at": "2026-09-01T21:42:30+00:00",
-      "file": "sdd/tasks/completed/TASK-2681-audio-renderer-accept-content-types.md"
+      "file": "sdd/tasks/completed/TASK-2681-audio-renderer-accept-content-types.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2682",
       "slug": "xforms-renderer-bind-metadata",
-      "title": "XForms Renderer \u2014 Emit content_type in <xf:bind>",
+      "title": "XForms Renderer — Emit content_type in <xf:bind>",
       "feature_id": "FEAT-488",
       "feature": "formfield-content-type",
       "spec": "sdd/specs/formfield-content-type.spec.md",
@@ -124,12 +129,13 @@
       "assigned_to": null,
       "started_at": null,
       "completed_at": "2026-09-01T21:00:00+00:00",
-      "file": "sdd/tasks/completed/TASK-2682-xforms-renderer-bind-metadata.md"
+      "file": "sdd/tasks/completed/TASK-2682-xforms-renderer-bind-metadata.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2683",
       "slug": "field-helpers-text-area-snippet",
-      "title": "Field Helpers \u2014 Update TEXT_AREA Snippet with content_type Example",
+      "title": "Field Helpers — Update TEXT_AREA Snippet with content_type Example",
       "feature_id": "FEAT-488",
       "feature": "formfield-content-type",
       "spec": "sdd/specs/formfield-content-type.spec.md",
@@ -144,16 +150,17 @@
       "assigned_to": null,
       "started_at": null,
       "completed_at": "2026-09-01T18:42:03+00:00",
-      "file": "sdd/tasks/completed/TASK-2683-field-helpers-text-area-snippet.md"
+      "file": "sdd/tasks/completed/TASK-2683-field-helpers-text-area-snippet.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2684",
       "slug": "tests",
-      "title": "Tests \u2014 Unit and Integration Tests for FEAT-488",
+      "title": "Tests — Unit and Integration Tests for FEAT-488",
       "feature_id": "FEAT-488",
       "feature": "formfield-content-type",
       "spec": "sdd/specs/formfield-content-type.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -166,11 +173,12 @@
         "TASK-2683"
       ],
       "parallel": false,
-      "parallelism_notes": "Final task \u2014 depends on all prior tasks. Cannot run until all implementation tasks are complete.",
+      "parallelism_notes": "Final task — depends on all prior tasks. Cannot run until all implementation tasks are complete.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2684-tests.md"
+      "completed_at": "2026-09-03T11:03:18+00:00",
+      "file": "sdd/tasks/completed/TASK-2684-tests.md",
+      "verification": "verified"
     }
   ]
 }

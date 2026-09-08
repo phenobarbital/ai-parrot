@@ -256,3 +256,32 @@ class TestTASK2545:
         card = json.loads((await AdaptiveCardsRenderer().render(env)).content)
         element = card["body"][0]
         assert _decode_binding_id(element["id"]) == "root"
+
+
+class TestHtmlDocumentDegradesToTextBlockAndOpenUrl:
+    """FEAT-527: adaptive_cards cannot embed HtmlDocument — a TextBlock with
+    the title, plus a top-level Action.OpenUrl when a srcUrl exists."""
+
+    async def test_htmldocument_with_src_url_gets_openurl_action(self):
+        env = _envelope(
+            Component(id="root", component="HtmlDocument", title="Doc", srcUrl="https://x/infographic-a.html")
+        )
+        art = await AdaptiveCardsRenderer().render(env)
+        card = json.loads(art.content)
+
+        assert len(card["actions"]) == 1
+        action = card["actions"][0]
+        assert action["type"] == "Action.OpenUrl"
+        assert action["url"] == "https://x/infographic-a.html"
+        assert action["title"] == "Doc"
+        assert any("HtmlDocument" in d.get("reason", "") for d in art.metadata["degraded"])
+
+    async def test_htmldocument_inline_only_no_action(self):
+        env = _envelope(Component(id="root", component="HtmlDocument", title="Doc", html="<p>hi</p>"))
+        art = await AdaptiveCardsRenderer().render(env)
+        card = json.loads(art.content)
+
+        assert card.get("actions", []) == []
+        assert any("HtmlDocument" in d.get("reason", "") for d in art.metadata["degraded"])
+        body_text = json.dumps(card["body"])
+        assert "<p>hi</p>" not in body_text

@@ -21,6 +21,13 @@ and `response.data` before returning to the HTTP layer.
 
 ## Tools
 
+Every tool below **dual-emits by default** (FEAT-527): `InfographicToolkit`'s
+`emit_a2ui` constructor keyword defaults to `True`, so `InfographicRenderResult`
+carries a validated A2UI v1.0 envelope (`a2ui_envelope`) alongside the HTML
+artifact on every call. The HTML lane is a permanent sibling emission — pass
+`emit_a2ui=False` to opt back into HTML-only rendering. See
+`docs/outputs/a2ui-v1.md` "Infographics: dual emission" for the full contract.
+
 ### `infographic_render`
 
 Validate blocks, render the deterministic HTML skeleton, optionally enhance it with
@@ -85,6 +92,15 @@ missing variables raise under `StrictUndefined`.
 
 **Returns**: `InfographicRenderResult` (same shape as `infographic_render`;
 `data_variables` is empty, `enhanced` is `false`).
+
+**A2UI envelope (FEAT-527)**: unlike the typed-blocks lane (which lowers to an
+`Infographic` composite), this Jinja lane's `a2ui_envelope` root is an
+`HtmlDocument` component — an opaque, `tool_only` wrapper around the same
+rendered HTML (inline when < 50 KB, else the signed `html_url` as `srcUrl`).
+The synthetic title+summary envelope this lane used to build was replaced
+because the Jinja template — not typed blocks — owns the layout; the
+`HtmlDocument` wrapper is the only faithful A2UI representation of "trusted,
+already-rendered HTML".
 
 Any agent (not only `PandasAgent`) finalizes the result: the `BaseBot.ask()`
 post-loop detects `InfographicRenderResult` and sets `response.output` (HTML or
@@ -161,12 +177,24 @@ When `output_mode=infographic`, the JSON envelope is:
     "enhanced": false,
     "template_name": "...",
     "theme": "dark"
-  }
+  },
+  "a2ui_envelope": {"version": "v1.0", "createSurface": {"...": "..."}}
 }
 ```
 
+`a2ui_envelope` is additive (FEAT-527, dual-emit by default — see
+`docs/outputs/a2ui-v1.md` "Infographics: dual emission") and is **omitted
+entirely** when the toolkit was constructed with `emit_a2ui=False` or the
+envelope build failed (additive-lane policy: a build failure never breaks
+the HTML response).
+
 `Accept: text/html` or `?format=html` returns `Content-Type: text/html` with
-the raw HTML body.
+the raw HTML body — unaffected by `a2ui_envelope`.
+
+When `output_mode=a2ui` is explicitly requested instead, the JSON envelope
+carries `a2ui_envelope` as the primary payload and additionally exposes
+`metadata.html_url`/`artifact_id`/`template_name`/`theme` so an HTML-only
+consumer can still iframe the sibling artifact.
 
 ---
 

@@ -1,0 +1,62 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-520",
+  "feature_slug": "graphindex-postgres-backend",
+  "started_at": "2026-09-03T00:00:00Z",
+  "updated_at": "2026-09-03T00:00:00Z",
+  "source": {
+    "kind": "file",
+    "jira_key": null,
+    "jira_url": null,
+    "file_path": "sdd/proposals/claude_brainstorm-graphindex-postgres.md",
+    "raw_path": "sdd/state/FEAT-520/source.md",
+    "fetched_at": "2026-09-03T00:00:00Z",
+    "summary_oneline": "Postgres backend for GraphIndex with native bitemporal plane (tstzrange) and one-pass hybrid retrieval (graph + pgvector KNN + BM25 + reranking)"
+  },
+  "mode": "enrichment",
+  "phase": "committed",
+  "wiki_available": true,
+  "phases": {
+    "plan": {
+      "status": "complete",
+      "approved_by_user": true,
+      "queries_total": 15
+    },
+    "research": {
+      "status": "complete",
+      "findings": 8,
+      "truncated": false
+    },
+    "synthesis": {
+      "status": "complete",
+      "overall_confidence": "medium",
+      "lint": "pass"
+    },
+    "qa": {
+      "status": "complete",
+      "questions_total": 5,
+      "questions_answered": 5,
+      "resolved_at_review_gate": 1
+    },
+    "output": {
+      "proposal_path": "sdd/proposals/graphindex-postgres-backend.proposal.md",
+      "commit_sha": "9c06c3c22"
+    }
+  },
+  "budget": {
+    "files_read": 40,
+    "grep_calls": 25,
+    "git_calls": 10,
+    "max_depth": 2,
+    "max_wall_seconds": 300,
+    "profile": "default"
+  },
+  "consumed": {
+    "files_read": 5,
+    "grep_calls": 9,
+    "git_calls": 2,
+    "wiki_calls": 7,
+    "depth_reached": 2,
+    "wall_seconds": 0
+  }
+}

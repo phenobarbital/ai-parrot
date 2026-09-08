@@ -1,0 +1,83 @@
+# FEAT-527 dual-emit smoke — 2026-09-04T23:26:16Z
+# Command: python examples/smoke/feat_527_dual_emit_smoke.py
+
+[32m[DEBUG] 2026-09-05 01:26:17,740 root(conf.py:19) :: ::: STARTING APP: Navigator ::: [0m
+USE SSL::  False
+[32m[DEBUG] 2026-09-05 01:26:17,741 root(conf.py:301) :: :: Settings Directory: /home/jesuslara/proyectos/ai-parrot/settings[0m
+[32m[DEBUG] 2026-09-05 01:26:17,787 parrot.outputs.a2ui.recipes.transformers(transformers.py:114) :: Registered infographic transformer 'day_totals'[0m
+[32m[DEBUG] 2026-09-05 01:26:17,788 parrot.outputs.a2ui.recipes.transformers(transformers.py:114) :: Registered infographic transformer 'division_breakdown'[0m
+[32m[DEBUG] 2026-09-05 01:26:17,788 parrot.outputs.a2ui.recipes.transformers(transformers.py:114) :: Registered infographic transformer 'variance_analysis'[0m
+[32m[DEBUG] 2026-09-05 01:26:17,788 parrot.outputs.a2ui.recipes.transformers(transformers.py:114) :: Registered infographic transformer 'top_movers'[0m
+[32m[DEBUG] 2026-09-05 01:26:17,788 parrot.outputs.a2ui.recipes.transformers(transformers.py:114) :: Registered infographic transformer 'narrative_facts'[0m
+[32m[DEBUG] 2026-09-05 01:26:17,788 parrot.outputs.a2ui.recipes.transformers(transformers.py:114) :: Registered infographic transformer 'groupby_aggregate'[0m
+[32m[DEBUG] 2026-09-05 01:26:17,788 parrot.outputs.a2ui.recipes.transformers(transformers.py:114) :: Registered infographic transformer 'pivot'[0m
+[32m[DEBUG] 2026-09-05 01:26:17,788 parrot.outputs.a2ui.recipes.transformers(transformers.py:114) :: Registered infographic transformer 'latest_vs_baseline'[0m
+[32m[DEBUG] 2026-09-05 01:26:17,795 parrot.outputs.a2ui.catalog(__init__.py:170) :: Registered A2UI catalog component 'Chart' (ChartComponent)[0m
+[32m[DEBUG] 2026-09-05 01:26:17,796 parrot.outputs.a2ui.catalog(__init__.py:170) :: Registered A2UI catalog component 'DataTable' (DataTableComponent)[0m
+[32m[DEBUG] 2026-09-05 01:26:17,797 parrot.outputs.a2ui.catalog(__init__.py:170) :: Registered A2UI catalog component 'FilterBar' (FilterBarComponent)[0m
+[32m[DEBUG] 2026-09-05 01:26:17,797 parrot.outputs.a2ui.catalog(__init__.py:170) :: Registered A2UI catalog component 'HtmlDocument' (HtmlDocumentComponent)[0m
+[32m[DEBUG] 2026-09-05 01:26:17,797 parrot.outputs.a2ui.catalog(__init__.py:170) :: Registered A2UI catalog component 'InfoCard' (InfoCardComponent)[0m
+[32m[DEBUG] 2026-09-05 01:26:17,841 parrot.outputs.a2ui.catalog(__init__.py:170) :: Registered A2UI catalog component 'Text' (Text)[0m
+[32m[DEBUG] 2026-09-05 01:26:17,841 parrot.outputs.a2ui.catalog(__init__.py:170) :: Registered A2UI catalog component 'Image' (Image)[0m
+[32m[DEBUG] 2026-09-05 01:26:17,842 parrot.outputs.a2ui.catalog(__init__.py:170) :: Registered A2UI catalog component 'Icon' (Icon)[0m
+[32m[DEBUG] 2026-09-05 01:26:17,842 parrot.outputs.a2ui.catalog(__init__.py:170) :: Registered A2UI catalog component 'Video' (Video)[0m
+[32m[DEBUG] 2026-09-05 01:26:17,842 parrot.outputs.a2ui.catalog(__init__.py:170) :: Registered A2UI catalog component 'AudioPlayer' (AudioPlayer)[0m
+[32m[DEBUG] 2026-09-05 01:26:17,842 parrot.outputs.a2ui.catalog(__init__.py:170) :: Registered A2UI catalog component 'Row' (Row)[0m
+[32m[DEBUG] 2026-09-05 01:26:17,842 parrot.outputs.a2ui.catalog(__init__.py:170) :: Registered A2UI catalog component 'Column' (Column)[0m
+[32m[DEBUG] 2026-09-05 01:26:17,842 parrot.outputs.a2ui.catalog(__init__.py:170) :: Registered A2UI catalog component 'List' (List)[0m
+[32m[DEBUG] 2026-09-05 01:26:17,842 parrot.outputs.a2ui.catalog(__init__.py:170) :: Registered A2UI catalog component 'Card' (Card)[0m
+[32m[DEBUG] 2026-09-05 01:26:17,842 parrot.outputs.a2ui.catalog(__init__.py:170) :: Registered A2UI catalog component 'Tabs' (Tabs)[0m
+[32m[DEBUG] 2026-09-05 01:26:17,842 parrot.outputs.a2ui.catalog(__init__.py:170) :: Registered A2UI catalog component 'Modal' (Modal)[0m
+[32m[DEBUG] 2026-09-05 01:26:17,842 parrot.outputs.a2ui.catalog(__init__.py:170) :: Registered A2UI catalog component 'Divider' (Divider)[0m
+[32m[DEBUG] 2026-09-05 01:26:17,842 parrot.outputs.a2ui.catalog(__init__.py:170) :: Registered A2UI catalog component 'Button' (Button)[0m
+[32m[DEBUG] 2026-09-05 01:26:17,842 parrot.outputs.a2ui.catalog(__init__.py:170) :: Registered A2UI catalog component 'TextField' (TextField)[0m
+[32m[DEBUG] 2026-09-05 01:26:17,842 parrot.outputs.a2ui.catalog(__init__.py:170) :: Registered A2UI catalog component 'CheckBox' (CheckBox)[0m
+[32m[DEBUG] 2026-09-05 01:26:17,842 parrot.outputs.a2ui.catalog(__init__.py:170) :: Registered A2UI catalog component 'ChoicePicker' (ChoicePicker)[0m
+[32m[DEBUG] 2026-09-05 01:26:17,842 parrot.outputs.a2ui.catalog(__init__.py:170) :: Registered A2UI catalog component 'Slider' (Slider)[0m
+[32m[DEBUG] 2026-09-05 01:26:17,842 parrot.outputs.a2ui.catalog(__init__.py:170) :: Registered A2UI catalog component 'DateTimeInput' (DateTimeInput)[0m
+[32m[DEBUG] 2026-09-05 01:26:17,843 parrot.outputs.a2ui.catalog(__init__.py:202) :: Registered A2UI catalog function 'required'[0m
+[32m[DEBUG] 2026-09-05 01:26:17,843 parrot.outputs.a2ui.catalog(__init__.py:202) :: Registered A2UI catalog function 'regex'[0m
+[32m[DEBUG] 2026-09-05 01:26:17,843 parrot.outputs.a2ui.catalog(__init__.py:202) :: Registered A2UI catalog function 'length'[0m
+[32m[DEBUG] 2026-09-05 01:26:17,843 parrot.outputs.a2ui.catalog(__init__.py:202) :: Registered A2UI catalog function 'numeric'[0m
+[32m[DEBUG] 2026-09-05 01:26:17,843 parrot.outputs.a2ui.catalog(__init__.py:202) :: Registered A2UI catalog function 'email'[0m
+[32m[DEBUG] 2026-09-05 01:26:17,843 parrot.outputs.a2ui.catalog(__init__.py:202) :: Registered A2UI catalog function 'formatString'[0m
+[32m[DEBUG] 2026-09-05 01:26:17,843 parrot.outputs.a2ui.catalog(__init__.py:202) :: Registered A2UI catalog function 'formatNumber'[0m
+[32m[DEBUG] 2026-09-05 01:26:17,843 parrot.outputs.a2ui.catalog(__init__.py:202) :: Registered A2UI catalog function 'formatCurrency'[0m
+[32m[DEBUG] 2026-09-05 01:26:17,843 parrot.outputs.a2ui.catalog(__init__.py:202) :: Registered A2UI catalog function 'formatDate'[0m
+[32m[DEBUG] 2026-09-05 01:26:17,843 parrot.outputs.a2ui.catalog(__init__.py:202) :: Registered A2UI catalog function 'pluralize'[0m
+[32m[DEBUG] 2026-09-05 01:26:17,843 parrot.outputs.a2ui.catalog(__init__.py:202) :: Registered A2UI catalog function 'openUrl'[0m
+[32m[DEBUG] 2026-09-05 01:26:17,843 parrot.outputs.a2ui.catalog(__init__.py:202) :: Registered A2UI catalog function 'and'[0m
+[32m[DEBUG] 2026-09-05 01:26:17,843 parrot.outputs.a2ui.catalog(__init__.py:202) :: Registered A2UI catalog function 'or'[0m
+[32m[DEBUG] 2026-09-05 01:26:17,843 parrot.outputs.a2ui.catalog(__init__.py:202) :: Registered A2UI catalog function 'not'[0m
+[32m[DEBUG] 2026-09-05 01:26:17,843 parrot.outputs.a2ui.catalog(__init__.py:170) :: Registered A2UI catalog component 'Infographic' (InfographicComponent)[0m
+[32m[DEBUG] 2026-09-05 01:26:17,843 parrot.outputs.a2ui.catalog(__init__.py:170) :: Registered A2UI catalog component 'KPICard' (KPICardComponent)[0m
+[32m[DEBUG] 2026-09-05 01:26:17,847 parrot.outputs.a2ui.catalog(__init__.py:170) :: Registered A2UI catalog component 'Map' (MapComponent)[0m
+[32m[DEBUG] 2026-09-05 01:26:17,847 parrot.outputs.a2ui.catalog(__init__.py:170) :: Registered A2UI catalog component 'Report' (ReportComponent)[0m
+[32m[DEBUG] 2026-09-05 01:26:17,847 parrot.outputs.a2ui.catalog(__init__.py:170) :: Registered A2UI catalog component 'Timeline' (TimelineComponent)[0m
+========================================================================
+FEAT-527 smoke: Infographic -> A2UI dual-emit (offline)
+========================================================================
+[32m[DEBUG] 2026-09-05 01:26:17,898 markdown_it.rules_block.code(code.py:11) :: entering code: StateBlock(line=0,level=0,tokens=0), 0, 1, False[0m
+[32m[DEBUG] 2026-09-05 01:26:17,898 markdown_it.rules_block.fence(fence.py:48) :: entering fence: StateBlock(line=0,level=0,tokens=0), 0, 1, False[0m
+[32m[DEBUG] 2026-09-05 01:26:17,898 markdown_it.rules_block.blockquote(blockquote.py:13) :: entering blockquote: StateBlock(line=0,level=0,tokens=0), 0, 1, False[0m
+[32m[DEBUG] 2026-09-05 01:26:17,898 markdown_it.rules_block.hr(hr.py:15) :: entering hr: StateBlock(line=0,level=0,tokens=0), 0, 1, False[0m
+[32m[DEBUG] 2026-09-05 01:26:17,898 markdown_it.rules_block.list(list.py:102) :: entering list: StateBlock(line=0,level=0,tokens=0), 0, 1, False[0m
+[32m[DEBUG] 2026-09-05 01:26:17,898 markdown_it.rules_block.reference(reference.py:10) :: entering reference: StateBlock(line=0,level=0,tokens=0), 0, 1, False[0m
+[32m[DEBUG] 2026-09-05 01:26:17,898 markdown_it.rules_block.html_block(html_block.py:35) :: entering html_block: StateBlock(line=0,level=0,tokens=0), 0, 1, False[0m
+[32m[DEBUG] 2026-09-05 01:26:17,898 markdown_it.rules_block.heading(heading.py:14) :: entering heading: StateBlock(line=0,level=0,tokens=0), 0, 1, False[0m
+[32m[DEBUG] 2026-09-05 01:26:17,898 markdown_it.rules_block.lheading(lheading.py:10) :: entering lheading: StateBlock(line=0,level=0,tokens=0), 0, 1, False[0m
+[32m[DEBUG] 2026-09-05 01:26:17,898 markdown_it.rules_block.paragraph(paragraph.py:11) :: entering paragraph: StateBlock(line=0,level=0,tokens=0), 0, 1, False[0m
+[37m[INFO] 2026-09-05 01:26:17,901 parrot.tools.infographic_toolkit(infographic_toolkit.py:517) :: Rendered infographic: template=financial_variance theme=light enhanced=False size=1059671 bytes[0m
+[render()]          html_url=/api/v1/artifacts/public/1789169177.DaP1b3TUdI1gL94SBn62j8px5Kngd8Us3mujuYd7p2E/infographic-dc079ea9720f.html?user_id=_anon&agent_id=_anon&session_id=_anon
+[render()]          a2ui root component = 'Infographic'
+[render()]          a2ui surfaceId       = 'infographic-dc079ea9720f'
+[32m[DEBUG] 2026-09-05 01:26:17,917 parrot.template.engine(engine.py:132) :: AsyncTemplateEngine initialized: dirs=[], extensions=['jinja2.ext.i18n', 'jinja2.ext.loopcontrols', 'jinja2_time.TimeExtension', 'jinja2_iso8601.ISO8601Extension', 'jinja2.ext.do', 'jinja2_humanize_extension.HumanizeExtension'], bytecode_cache=False[0m
+[37m[INFO] 2026-09-05 01:26:17,919 parrot.tools.infographic_toolkit(infographic_toolkit.py:624) :: Rendered template infographic: template=hello theme=None size=37 bytes[0m
+[render_template()]  html_url=/api/v1/artifacts/public/1789169177.y_dBpA9z38wgoRqbvejxr_kswnZLsQIx4l5lcITKSes/infographic-db0bc17e0dd6.html?user_id=_anon&agent_id=_anon&session_id=_anon
+[render_template()]  a2ui root component = 'HtmlDocument'
+[render_template()]  a2ui surfaceId       = 'infographic-db0bc17e0dd6'
+------------------------------------------------------------------------
+FEAT-527 smoke: OK - both lanes dual-emit (html_url + validated a2ui_envelope)
+------------------------------------------------------------------------
+
+# Exit code: 0

@@ -816,3 +816,20 @@ async def test_run_tests_screenshot_path_includes_predictable_name():
         prompt = agent.ask.call_args[0][0]
         assert "/tmp/qa-screenshots/t1_" in prompt
         assert ".png" in prompt
+
+
+@pytest.mark.asyncio
+async def test_add_chrome_devtools_ensure_running_false_skips_launch():
+    """ensure_running=False must never touch ensure_chrome_running()
+    (HOTFIX-chromemanager-async-migration-2). WebAgent.configure() itself is
+    unchanged and keeps the default ensure_running=True."""
+    from parrot.mcp import integration as integ
+
+    agent = WebAgent.__new__(WebAgent)
+    agent.add_mcp_server = AsyncMock(return_value=[])
+    with patch.object(integ, "ensure_chrome_running", AsyncMock()) as ensure:
+        await integ.MCPEnabledMixin.add_chrome_devtools_mcp_server(
+            agent, ensure_running=False
+        )
+    ensure.assert_not_awaited()
+    agent.add_mcp_server.assert_awaited_once()

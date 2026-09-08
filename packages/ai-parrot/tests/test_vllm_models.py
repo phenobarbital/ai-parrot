@@ -3,7 +3,7 @@
 import pytest
 from pydantic import BaseModel, ValidationError
 
-from parrot.models.vllm import (
+from parrot.clients.vllm.models import (
     VLLMConfig,
     VLLMSamplingParams,
     VLLMLoRARequest,
@@ -14,8 +14,8 @@ from parrot.models.vllm import (
     pydantic_to_guided_json,
 )
 
-
 # ---- VLLMConfig Tests ----
+
 
 class TestVLLMConfig:
     """Tests for VLLMConfig model."""
@@ -29,11 +29,7 @@ class TestVLLMConfig:
 
     def test_custom_values(self):
         """Custom values are set correctly."""
-        config = VLLMConfig(
-            base_url="http://custom:9000/v1",
-            api_key="secret-key",
-            timeout=60
-        )
+        config = VLLMConfig(base_url="http://custom:9000/v1", api_key="secret-key", timeout=60)
         assert config.base_url == "http://custom:9000/v1"
         assert config.api_key == "secret-key"
         assert config.timeout == 60
@@ -48,6 +44,7 @@ class TestVLLMConfig:
 
 
 # ---- VLLMSamplingParams Tests ----
+
 
 class TestVLLMSamplingParams:
     """Tests for VLLMSamplingParams model."""
@@ -64,12 +61,7 @@ class TestVLLMSamplingParams:
 
     def test_custom_values(self):
         """Custom values are set correctly."""
-        params = VLLMSamplingParams(
-            top_k=50,
-            min_p=0.1,
-            repetition_penalty=1.2,
-            length_penalty=0.8
-        )
+        params = VLLMSamplingParams(top_k=50, min_p=0.1, repetition_penalty=1.2, length_penalty=0.8)
         assert params.top_k == 50
         assert params.min_p == 0.1
         assert params.repetition_penalty == 1.2
@@ -90,11 +82,7 @@ class TestVLLMSamplingParams:
 
     def test_to_extra_body_includes_non_defaults(self):
         """to_extra_body includes only non-default values."""
-        params = VLLMSamplingParams(
-            top_k=50,
-            min_p=0.1,
-            repetition_penalty=1.2
-        )
+        params = VLLMSamplingParams(top_k=50, min_p=0.1, repetition_penalty=1.2)
         extra = params.to_extra_body()
         assert extra["top_k"] == 50
         assert extra["min_p"] == 0.1
@@ -103,6 +91,7 @@ class TestVLLMSamplingParams:
 
 
 # ---- VLLMLoRARequest Tests ----
+
 
 class TestVLLMLoRARequest:
     """Tests for VLLMLoRARequest model."""
@@ -116,11 +105,7 @@ class TestVLLMLoRARequest:
 
     def test_all_fields(self):
         """All fields can be set."""
-        request = VLLMLoRARequest(
-            lora_name="adapter1",
-            lora_int_id=42,
-            lora_local_path="/path/to/adapter"
-        )
+        request = VLLMLoRARequest(lora_name="adapter1", lora_int_id=42, lora_local_path="/path/to/adapter")
         assert request.lora_name == "adapter1"
         assert request.lora_int_id == 42
         assert request.lora_local_path == "/path/to/adapter"
@@ -133,11 +118,7 @@ class TestVLLMLoRARequest:
 
     def test_to_extra_body_full(self):
         """to_extra_body with all optional fields."""
-        request = VLLMLoRARequest(
-            lora_name="adapter",
-            lora_int_id=5,
-            lora_local_path="/adapters/v1"
-        )
+        request = VLLMLoRARequest(lora_name="adapter", lora_int_id=5, lora_local_path="/adapters/v1")
         extra = request.to_extra_body()
         assert extra["lora_request"]["lora_name"] == "adapter"
         assert extra["lora_request"]["lora_int_id"] == 5
@@ -145,6 +126,7 @@ class TestVLLMLoRARequest:
 
 
 # ---- VLLMGuidedParams Tests ----
+
 
 class TestVLLMGuidedParams:
     """Tests for VLLMGuidedParams model."""
@@ -181,16 +163,10 @@ class TestVLLMGuidedParams:
     def test_mutually_exclusive_validation(self):
         """Only one constraint can be specified."""
         with pytest.raises(ValidationError):
-            VLLMGuidedParams(
-                guided_json={"type": "object"},
-                guided_regex=r"\d+"
-            )
+            VLLMGuidedParams(guided_json={"type": "object"}, guided_regex=r"\d+")
 
         with pytest.raises(ValidationError):
-            VLLMGuidedParams(
-                guided_choice=["a", "b"],
-                guided_grammar="root ::= 'x'"
-            )
+            VLLMGuidedParams(guided_choice=["a", "b"], guided_grammar="root ::= 'x'")
 
     def test_to_extra_body_empty(self):
         """to_extra_body returns empty dict when no constraint."""
@@ -221,6 +197,7 @@ class TestVLLMGuidedParams:
 
 # ---- VLLMBatchRequest Tests ----
 
+
 class TestVLLMBatchRequest:
     """Tests for VLLMBatchRequest model."""
 
@@ -243,7 +220,7 @@ class TestVLLMBatchRequest:
             max_tokens=100,
             guided_json=schema,
             lora_adapter="my-lora",
-            sampling_params=sampling
+            sampling_params=sampling,
         )
         assert request.prompt == "Test prompt"
         assert request.model == "llama3:8b"
@@ -263,6 +240,7 @@ class TestVLLMBatchRequest:
 
 
 # ---- VLLMBatchResponse Tests ----
+
 
 class TestVLLMBatchResponse:
     """Tests for VLLMBatchResponse model."""
@@ -284,7 +262,7 @@ class TestVLLMBatchResponse:
             total_requests=3,
             successful=3,
             failed=0,
-            total_tokens=150
+            total_tokens=150,
         )
         assert len(response.responses) == 3
         assert response.successful == 3
@@ -297,7 +275,7 @@ class TestVLLMBatchResponse:
             errors={1: "Model not found"},
             total_requests=3,
             successful=2,
-            failed=1
+            failed=1,
         )
         assert response.responses[0] == "Response 1"
         assert response.responses[1] is None
@@ -306,6 +284,7 @@ class TestVLLMBatchResponse:
 
 
 # ---- VLLMServerInfo Tests ----
+
 
 class TestVLLMServerInfo:
     """Tests for VLLMServerInfo model."""
@@ -326,7 +305,7 @@ class TestVLLMServerInfo:
             model_id="meta-llama/Llama-3.1-8B-Instruct",
             gpu_memory_utilization=0.9,
             max_model_len=8192,
-            tensor_parallel_size=2
+            tensor_parallel_size=2,
         )
         assert info.version == "0.4.0"
         assert info.model_id == "meta-llama/Llama-3.1-8B-Instruct"
@@ -336,6 +315,7 @@ class TestVLLMServerInfo:
 
 
 # ---- pydantic_to_guided_json Tests ----
+
 
 class TestPydanticToGuidedJson:
     """Tests for pydantic_to_guided_json helper."""

@@ -213,7 +213,7 @@ Registered in `manager.py:2047-2052`, literal sub-routes first.
 | `POST` | `/api/v1/agents/{agent_id}/a2ui?session_id=…[&user_id=…][&agent_name=…]` | Dispatch one renderer→agent envelope, a JSON array of them, or JSONL |
 | `GET` | `/api/v1/agents/{agent_id}/a2ui?session_id=…` | **SSE** stream of queued `callRendererFunction` envelopes for that session |
 | `GET` | `/api/v1/agents/{agent_id}/a2ui/capabilities` | `{"v1.0":{"supportedCatalogIds":[parrot, basic],"acceptsInlineCatalogs":false}}` |
-| `GET` | `/api/v1/agents/{agent_id}/a2ui/surfaces/{surface_id}[?format=html\|json][&share=token]` | Mirror of the persisted-surface GET (§3.4), same negotiation service |
+| `GET` | `/api/v1/agents/{agent_id}/a2ui/surfaces/{surface_id}[?format=html\|json][&share=token]` | Mirror of the persisted-surface GET (§3.4), same negotiation service — same scope-aware access rule too (§3.4.1): a tenant/group-visible surface owned by someone else is readable here exactly as it is through the REST lane |
 
 **POST semantics** (`a2ui.py:135-204`):
 
@@ -227,21 +227,22 @@ Registered in `manager.py:2047-2052`, literal sub-routes first.
 
 **SSE stream** (`a2ui.py:274-315`): `Content-Type: text/event-stream`, frames `data: {"version":"v1.0","callRendererFunction":{…}}\n\n`, keepalive comment `: keepalive` every 15 s. Records are only marked delivered after a successful write, so a dropped connection redelivers on reconnect. Use `EventSource` (cookie auth) or a `fetch` reader (bearer auth) — `EventSource` cannot set headers.
 
-### 3.4 Persistent surfaces: `UISurfacesHandler` (FEAT-492)
+### 3.4 Persistent surfaces: `UISurfacesHandler` (FEAT-492, tenant/group visibility FEAT-535)
 
 Kinds: `UISurfaceKind = "dashboard" | "infographic" | "widget"`. Table `navigator.ui_surfaces` (+ `ui_surface_shares`). Every route requires an authenticated user; errors are always `{"status":"error","message":"…"}`.
 
 | Method | Route | Body / params | Response |
 |---|---|---|---|
-| `GET` | `/api/v1/ui/surfaces[?kind=dashboard\|infographic\|widget]` | — | `{"status":"success","count":N,"surfaces":[{surface_id, kind, title, refreshable, created_at, updated_at, catalog_id, agent_id, access:"owner"\|"shared"}]}` |
-| `GET` | `/api/v1/ui/surfaces/{surface_id}[?share=token][&format=json\|html]` | `Accept: text/html` also selects HTML; `?format=` wins; default JSON | JSON: `{"status":"success","envelope":{…createSurface…},"metadata":{…same fields as list…}}` · HTML: `text/html` rendered on the fly by `InteractiveHTMLRenderer` |
-| `POST` | `/api/v1/ui/surfaces` | `PublishSurfaceRequest` (below) | `201 {"status":"success","surface_id":"<uuid4>"}` |
-| `POST` | `/api/v1/ui/surfaces/{surface_id}/refresh[?share=token]` | `{"params":{…}}` | The **negotiated** (JSON or HTML) refreshed surface |
-| `POST` | `/api/v1/ui/surfaces/{surface_id}/share` | `{"expires_at": iso8601\|null, "ttl": false}` | `201 {"status":"success","token":"…","expires_at":…,"permissions":"read+refresh"}` |
-| `DELETE` | `/api/v1/ui/surfaces/{surface_id}` | — | `{"status":"success"}` |
-| `DELETE` | `/api/v1/ui/surfaces/{surface_id}/share/{token}` | — | `{"status":"success"}` |
+| `GET` | `/api/v1/ui/surfaces[?kind=dashboard\|infographic\|widget]` | — | `{"status":"success","count":N,"surfaces":[{surface_id, kind, title, refreshable, created_at, updated_at, catalog_id, agent_id, tenant, visibility, allowed_groups, recipe_name, recipe_params, access:"owner"\|"tenant"\|"shared"}]}` — owned ∪ tenant/group-visible ∪ token-shared, deduplicated by `surface_id` (a row both visible-by-scope AND token-shared is reported once, tagged `"tenant"`; owner always wins) |
+| `GET` | `/api/v1/ui/surfaces/{surface_id}[?share=token][&format=json\|html]` | `Accept: text/html` also selects HTML; `?format=` wins; default JSON | JSON: `{"status":"success","envelope":{…createSurface…},"metadata":{…same fields as list…}}` · HTML: `text/html` rendered on the fly by `InteractiveHTMLRenderer` — a tenant/group-visible viewer gets `200` here exactly like the owner (§3.4.1) |
+| `POST` | `/api/v1/ui/surfaces` | `PublishSurfaceRequest` (below) | `201 {"status":"success","surface_id":"<uuid4>"}` · `422` when `visibility` is not `"private"` and the caller has no scope tenant (§3.4.1) |
+| `POST` | `/api/v1/ui/surfaces/{surface_id}/refresh[?share=token]` | `{"params":{…}}` | The **negotiated** (JSON or HTML) refreshed surface — a tenant/group viewer may refresh too, same as a share bearer, still under the **owner's** permission context |
+| `POST` | `/api/v1/ui/surfaces/{surface_id}/share` | `{"expires_at": iso8601\|null, "ttl": false}` | `201 {"status":"success","token":"…","expires_at":…,"permissions":"read+refresh"}` — **owner-only**, `404` otherwise (no oracle) |
+| `PATCH` | `/api/v1/ui/surfaces/{surface_id}` | `PatchVisibilityRequest`: `{"visibility": "private"\|"tenant"\|"groups", "allowed_groups": ["…"]}` | `200 {"status":"success","metadata":{…}}` — **owner-only**. `400` on an invalid body. `404` for a non-owner or unknown id (no oracle — same response either way). `422` when `visibility` is not `"private"` and the STORED surface has no `tenant` |
+| `DELETE` | `/api/v1/ui/surfaces/{surface_id}` | — | `{"status":"success"}` — **owner-only**, `404` otherwise |
+| `DELETE` | `/api/v1/ui/surfaces/{surface_id}/share/{token}` | — | `{"status":"success"}` — **owner-only**, `404` otherwise |
 
-`PublishSurfaceRequest` (`ui_surfaces.py:58-76`):
+`PublishSurfaceRequest` (`ui_surfaces.py`):
 
 ```jsonc
 {
@@ -253,7 +254,9 @@ Kinds: `UISurfaceKind = "dashboard" | "infographic" | "widget"`. Table `navigato
   "session_id": "…",
   "recipe_name": "flex-program-dashboard",   // optional: makes the surface refreshable
   "recipe_owner": null,
-  "recipe_params": {"month": "2025-10"}
+  "recipe_params": {"month": "2025-10"},
+  "visibility": "private",             // optional, default "private" — "private" | "tenant" | "groups"
+  "allowed_groups": []                 // optional, default [] — only consulted when visibility="groups"
 }
 ```
 
@@ -261,9 +264,46 @@ Rules that matter to the client:
 
 - `envelope` is validated as `CreateSurface` (the **inner** object). Pass `a2ui_envelope.createSurface`, not the whole `{version, createSurface}` envelope. Validation failure → `400 {"status":"error","message":"Invalid envelope","errors":[…pydantic…]}`.
 - The stored `surface_id` is **always a fresh uuid4** — it differs from the envelope's own `surfaceId`. Key your UI state on the stored id; keep the envelope's `surfaceId` for RPC messages.
-- Access: owner, or anyone presenting a valid `?share=` token. Unknown / foreign-without-token → `404` (no existence oracle). Token supplied but revoked/expired/mismatched → `410`. A token is **claimed** by the first authenticated user who opens it and then appears in that user's list with `access: "shared"`.
-- `refreshable` is `true` iff `recipe_name` is set. Refresh precedence: request `params` > stored `recipe_params` > recipe defaults. Refresh runs under the **owner's** permission context even for share bearers. Non-refreshable → `409 {"status":"error","message":"Surface has no recipe_ref and cannot be refreshed","refreshable":false}`. Recipe failure → `422` (or `502` when the failing stage is `data`) with `RecipeRunError` fields (`recipe, stage, transformer, dataset, missing_columns, detail`).
+- Access: owner, or tenant/group-visible by the caller's scope (§3.4.1), or anyone presenting a valid `?share=` token. Unknown / foreign-without-any-of-those → `404` (no existence oracle). Token supplied but revoked/expired/mismatched → `410`. A token is **claimed** by the first authenticated user who opens it and then appears in that user's list with `access: "shared"`.
+- **There is no `tenant` field in the request body** — the server always sets `record.tenant` from the caller's resolved scope; a client-supplied `tenant` key is silently ignored. `visibility`/`allowed_groups` ARE client-supplied, on save (above) and later via `PATCH` (above).
+- `refreshable` is `true` iff `recipe_name` is set. Refresh precedence: request `params` > stored `recipe_params` > recipe defaults. Refresh runs under the **owner's** permission context even for share bearers AND tenant/group viewers. Non-refreshable → `409 {"status":"error","message":"Surface has no recipe_ref and cannot be refreshed","refreshable":false}`. Recipe failure → `422` (or `502` when the failing stage is `data`) with `RecipeRunError` fields (`recipe, stage, transformer, dataset, missing_columns, detail`).
 - HTML lane unavailable (visualizations package not installed) → `501`.
+
+#### 3.4.1 Visibility and the host scope resolver (FEAT-535)
+
+A surface carries a `visibility`, one of:
+
+- **`private`** (the default) — owner + share-token bearers only. Identical to pre-FEAT-535 behaviour; every row written before this feature loads as `private` with `tenant: null`, `allowed_groups: []`.
+- **`tenant`** — every caller whose resolved scope tenant equals the surface's `tenant`.
+- **`groups`** — tenant match AND the caller's groups intersect `allowed_groups`.
+
+Access order for `GET`/`?format=`/`refresh`: **owner → scope (tenant/group/superuser) → share token → `404`**. A share token still works across a foreign tenant — minting one is explicit, out-of-band consent that the tenant/group rule does not block. **Delete, share mint/revoke, and `PATCH` stay owner-only** regardless of scope — a tenant/group viewer can read and refresh, never mutate or share.
+
+A **superuser** scope sees every surface whose `tenant` equals the scope's own tenant — never cross-tenant, and never a surface with no `tenant` at all.
+
+The caller's identity, tenant, groups and superuser flag come from a **host-pluggable scope resolver** installed on the aiohttp app under `app["ui_surfaces_scope_resolver"]` (`parrot.handlers.ui_surfaces_scope.SurfaceScopeResolver` protocol — `async def resolve(request) -> SurfaceScope`, where `SurfaceScope` is `(user_id, tenant, groups, is_superuser)`). When no resolver is installed, the **default** (`SessionSurfaceScopeResolver`) reads the navigator-auth session (`user_id`, `programs`, `groups`, `superuser`) and resolves a `tenant` **only when the session carries exactly one program** — a multi-program session (e.g. an admin spanning several programs) yields `tenant: null`, which makes every tenant/group rule evaluate to "no match", keeping today's owner-only behaviour for any host that has not opted in.
+
+A host with its own tenancy seam — FieldSync, whose tenant is declared in the URL rather than the session — installs its own resolver instead of relying on the default, e.g.:
+
+```python
+class FieldsyncSurfaceScopeResolver:
+    async def resolve(self, request):
+        tenant = declared_programme(request)          # URL-declared, not session-derived
+        session = await get_session(request)          # navigator_session, the request-dict entry
+        _programs, is_superuser = resolve_session_authorization(session)  # (programs, superuser) — groups are NOT in it
+        userinfo = session.get(AUTH_SESSION_OBJECT) if session is not None else None
+        groups = userinfo.get("groups") if isinstance(userinfo, dict) else []
+        user_id = resolve_user_id(request, session)
+        return SurfaceScope(user_id, tenant, frozenset(g for g in groups if isinstance(g, str)), is_superuser)
+
+app["ui_surfaces_scope_resolver"] = FieldsyncSurfaceScopeResolver()
+```
+
+The SAME resolver is consulted by both the REST lane (`UISurfacesHandler`) and the A2UI mirror route (`GET .../a2ui/surfaces/{surface_id}`, §3.3) — access cannot drift between the two.
+
+**The group-vocabulary contract**: `allowed_groups` and `scope.groups` are **opaque strings** to parrot — the rule is a plain set intersection, nothing more. Parrot does not validate, normalize, or interpret them. Whoever writes `allowed_groups` (the surface's owner, via `POST`/`PATCH`) MUST use the same vocabulary the host's installed resolver emits in `scope.groups` (FieldSync's convention: session group names such as `<program>_fieldsync_manager`). A vocabulary mismatch makes a `groups`-visibility surface visible to nobody but its owner — by construction, not a bug parrot can detect or report.
+
+Back-compat: a client that sends none of the new fields (`visibility`, `allowed_groups`) observes **exactly** today's behaviour — owner-only list, owner-or-token direct access. Existing rows load as `visibility: "private"`, `tenant: null`, `allowed_groups: []` regardless of when they were written.
 
 ### 3.5 Deep-link resume (FEAT-469)
 
@@ -454,7 +494,7 @@ The Parrot catalog adds **agent functions**: every tool on the agent's `ToolMana
 | `Slider` | `label`, `min` (default 0), **`max`**, **`value`**: DynamicNumber, `steps` (int ≥ 1) | | `Slider` |
 | `DateTimeInput` | **`value`**: DynamicString (ISO 8601), `enableDate`, `enableTime`, `min`, `max`, `label` | both flags default `false` | `AppDatePicker` / `Calendar` |
 
-### 5.2 Parrot presentation catalog — 9 composites (`catalog/parrot/*.py`)
+### 5.2 Parrot presentation catalog — 10 composites (`catalog/parrot/*.py`)
 
 All are display-only from the LLM's point of view (an LLM-origin envelope may never carry `action`, and may never inline rows — rows always arrive via a binding into `dataModel`). Each composite has a deterministic `lower()` to Basic primitives; the backend renderers **intercept** `Chart`, `DataTable`, `Infographic` (and FilterBar) before lowering and lower the rest. **Do the same**: render these natively, lower anything you do not support.
 
@@ -462,17 +502,17 @@ All are display-only from the LLM's point of view (an LLM-origin envelope may ne
 
 | Prop | Type | Notes |
 |---|---|---|
-| `type` | `bar, horizontalBar, line, area, scatter, pie, donut, radar, map` | Same enum as the frontend's `chart-contract.ts` `ChartType` |
+| `type` | `bar, horizontalBar, line, area, scatter, pie, donut, radar, map, gauge, funnel, waterfall, heatmap, treemap` | **FEAT-527**: `donut`/`radar` no longer collapse to `pie`/`line`; 5 new types added. ECharts renders all natively; `interactive-html`/`ssr-html` degrade the 5 new types to `bar` with a recorded `degraded` entry. Same enum as the frontend's `chart-contract.ts` `ChartType` |
 | `x` | string | category column |
 | `y` | string[] | one or more value columns (multi-series) |
 | `data` | `{"path": …}` | row set binding (structured outputs use `/rows`; recipes use `/<section>/series`) |
-| `title`, `description`, `stacked`, `splitSeries`, `trendline`, `showLegend`, `xAxisMode` (`category`\|`time`), `xAxisLabel`, `yAxisLabel`, `palette` (hex[]), `colorBySign`, `negativeColor`, `positiveColor`, `mapName`, `dataVariable` | | all optional |
+| `title`, `description`, `stacked`, `splitSeries`, `trendline`, `showLegend`, `xAxisMode` (`category`\|`time`), `xAxisLabel`, `yAxisLabel`, `palette` (hex[]), `colorBySign`, `negativeColor`, `positiveColor`, `mapName`, `dataVariable`, `layout` (`full`\|`half`, **FEAT-527**) | | all optional. `layout: "half"` marks the chart as half-width; `Infographic.lower()` groups consecutive `half` siblings into a `Row` |
 
 **There is no ECharts option on the wire.** `Chart` is the same declarative config the frontend already renders through `AppChart.svelte` (`AppChartConfig`) — map `Chart` props 1:1 onto `AppChartConfig` and feed it the bound rows. The lowered fallback is `Card{Column[Text title, Text "Chart (<type>)", axis texts, series list]}` with `parrot_series_data` preserving the binding.
 
 #### `DataTable` (`datatable.py`) — required `columns`
 
-`columns: [{name, type, title, format?}]` with `type ∈ string, integer, number, boolean, date, datetime, time, duration, any` and `format ∈ currency, percent, email, uri, enum, id, code`; `data: {"path": …}`; `totalRows`, `truncated` (rows are capped at 1000 in structured outputs — the full set is in the chat response `data`), `explanation`, `title`. Lowering produces the row-template pattern (header `Row` of `column-header` texts + a `Column` whose `children` is a `ChildTemplate` over the rows, cells binding column-relative). Render natively with `DataTable.svelte` (or a new shadcn data-table — none exists in the frontend yet). Mirror the FEAT-493 rich table: numeric alignment + `tabular-nums` for `integer`/`number`, `currency`/`percent` formatting, sticky header, "showing N of M" when `truncated`, and search + pagination only above 100 rows.
+`columns: [{name, type, title, format?}]` with `type ∈ string, integer, number, boolean, date, datetime, time, duration, any` and `format ∈ currency, percent, email, uri, enum, id, code`; `data: {"path": …}`; `totalRows`, `truncated` (rows are capped at 1000 in structured outputs — the full set is in the chat response `data`), `explanation`, `title`, `style` (**FEAT-527**: `default, striped, bordered, compact, comparison`, mirrors `TableStyle`; recorded as `parrot_style` in the row-body `metadata.extensions`, presentation-only). Lowering produces the row-template pattern (header `Row` of `column-header` texts + a `Column` whose `children` is a `ChildTemplate` over the rows, cells binding column-relative). Render natively with `DataTable.svelte` (or a new shadcn data-table — none exists in the frontend yet). Mirror the FEAT-493 rich table: numeric alignment + `tabular-nums` for `integer`/`number`, `currency`/`percent` formatting, sticky header, "showing N of M" when `truncated`, and search + pagination only above 100 rows.
 
 #### `Map` (`map.py`) — required `layers`
 
@@ -480,7 +520,7 @@ All are display-only from the LLM's point of view (an LLM-origin envelope may ne
 
 #### `KPICard` (`kpicard.py`) — required `label`, `value`
 
-`label`, `value` (number | string | binding), `unit`, `delta` (number | string | binding), `trend ∈ up, down, flat`. Lowering: `Card{Column[Text label, Text value(+parrot_unit), Text delta|trend(+parrot_trend)]}`, `parrot_variant: kpi`. On the un-lowered wire `value` is the raw number; on the lowered tree it is stringified. Map onto the existing `HeroCardBlock` / `InfographicHeroCardBlock` design (`{label, value, icon?, trend?, trend_value?}`).
+`label`, `value` (number | string | binding), `unit`, `delta` (number | string | binding), `trend ∈ up, down, flat`, `icon`, `color`, `comparisonPeriod` (**FEAT-527**). Lowering: `Card{Column[Text label, Text value(+parrot_unit), Text delta|trend(+parrot_trend)]}`, `parrot_variant: kpi`; `icon`/`color`/`comparisonPeriod` ride on the Card's own `metadata.extensions` (`parrot_icon`, `parrot_color`, `parrot_comparison_period`) — never new visible Text nodes. On the un-lowered wire `value` is the raw number; on the lowered tree it is stringified. Map onto the existing `HeroCardBlock` / `InfographicHeroCardBlock` design (`{label, value, icon?, trend?, trend_value?, comparison_period?, color?}`).
 
 #### `InfoCard` (`infocard.py`) — required `title`
 
@@ -506,6 +546,29 @@ Lowering: `Card{Column[Text title (parrot_role: title), Text subtitle?, Tabs | C
 
 Lowers to `Row{parrot_variant: "filter-bar"}` of `ChoicePicker`s (`id = "<bar-id>-f<i>"`, `variant = multipleSelection | mutuallyExclusive`, `value = [only option]` when exactly one option else `[]` meaning "all"), each tagged `parrot_role: "filter"` + `parrot_filter_column`. Display-only on the wire; the **client-side filtering contract** is in §7.4.
 
+#### `HtmlDocument` (`htmldocument.py`, **FEAT-527**) — required `title`; `tool_only`
+
+```json
+{"component": "HtmlDocument", "title": "Q3 Report", "html": "<html>…</html>"}
+// or, when too large to inline (>= 50 KB):
+{"component": "HtmlDocument", "title": "Q3 Report", "srcUrl": "https://.../infographic-abc123.html"}
+```
+
+`title` (required), exactly one of `html` (inline, trusted, already-rendered
+HTML) or `srcUrl` (signed artifact URL) via `oneOf`, optional `theme`.
+**`tool_only: true`** — the SAME gate mechanism as `requires_actions`: an
+LLM-origin envelope containing it fails `validate_envelope`. Only
+deterministic tool builders (`build_html_document()`) may emit it — it
+wraps the Jinja `render_template`/`render_data_template` lane's rendered
+HTML as an opaque A2UI surface (spec G5). Lowering never copies the raw
+`html` into the tree (`Card{Column[Text title, Text "[HTML document:
+<title>]" (parrot_role: html_document, parrot_src_url, parrot_inline_html)]}`)
+— only a renderer that can safely embed it reads the ORIGINAL component's
+`html`/`srcUrl` directly, pre-lowering. `interactive-html` embeds it in a
+sandboxed `<iframe sandbox="allow-scripts">` (never `allow-same-origin`);
+`ssr-html`/`pdf`/`adaptive_cards` degrade to a titled link (or an
+`Action.OpenUrl` for Adaptive Cards) and record a `degraded` entry.
+
 #### Forms — composed, not a component
 
 `build_form()` (`catalog/parrot/form.py`) emits a flat fragment: a root `Column` (id = prefix), title, one Basic input per field (`text→TextField shortText`, `textarea→longText`, `number→number`, `select→ChoicePicker`, `checkbox→CheckBox`, `date→DateTimeInput enableDate`), each binding `value: {"path": "/<prefix>/<name>"}` and, when required, `checks: [{condition: {call: "required", …}, message}]`, then a submit `Button` whose `action.event.context` maps field names to those bindings. Nothing special to implement: it is just primitives + one action.
@@ -516,14 +579,131 @@ Core defines `RendererCapabilities{interactive, supports_actions, supports_updat
 
 | id | interactive | actions | updates | output | supported components |
 |---|---|---|---|---|---|
-| `interactive-html` | ✓ | ✗ | ✗ | `text/html` | 18 Basic + `Chart`, `DataTable`, `Infographic` (+ FilterBar handled via lowering) |
-| `ssr_html` | ✗ | ✗ | ✗ | `text/html` | 18 Basic |
+| `interactive-html` | ✓ | ✗ | ✗ | `text/html` | 18 Basic + `Chart`, `DataTable`, `Infographic`, `HtmlDocument` (**FEAT-527**, sandboxed iframe), `Graph` (**FEAT-529**, viz-core) (+ FilterBar handled via lowering) |
+| `ssr_html` | ✗ | ✗ | ✗ | `text/html` | 18 Basic + `Graph` (**FEAT-529**, viz-core) |
 | `pdf` | ✗ | ✗ | ✗ | `application/pdf` | SSR minus `Video`, `AudioPlayer` |
-| `echarts` | ✗ | ✗ | ✗ | `application/json` | `Chart` |
+| `echarts` | ✗ | ✗ | ✗ | `application/json` | `Chart`, `Graph` (**FEAT-529**, viz-core) |
 | `folium_map` | ✗ | ✗ | ✗ | `text/html` | `Map` |
 | `adaptive_cards` | ✗ | ✓ | ✗ | Adaptive Cards | Text, Image, Row, Column, Card, TextField, CheckBox, ChoicePicker, Slider, DateTimeInput, Button |
 
+`echarts`/`interactive-html`/`ssr_html`/`pdf` additionally declare
+`https://ai-parrot.dev/a2ui/catalogs/viz-core/1.0/catalog.json` in
+`supported_catalog_ids` (**FEAT-529**) — `adaptive_cards`/`folium_map` do
+not, so a `Graph` there always lowers/is skipped with one `degraded` entry
+naming that catalog id (§5.4).
+
 The Svelte renderer will be the first one with `interactive: true, supports_actions: true, supports_updates: true, output: "live"`. Rule inherited from `renderers/degrade.py`: **never throw on an unsupported component** — render a visible notice `Text` (`"[<Component> not supported here: <reason>]"`, `parrot_role: notice`) that **keeps the original id** so references still resolve, and collect `{id, component, reason}` records (`degraded[]`) for telemetry.
+
+> **FEAT-527**: the bundled `ai-parrot-server/ui` SPA (NOT navigator-frontend-next
+> — that remains the primary A2UI consumer, unaffected by this feature) now
+> ships a minimal, display-only `Infographic` renderer of its own
+> (`canvas/a2ui/{A2UISurface,A2UIInfographic,A2UINode}.svelte`), behind the
+> `features.a2ui` build flag (`PUBLIC_AGENTCHAT_A2UI`, default `true`, same
+> `agentchatFlag()`/`__AGENTCHAT_A2UI__` pattern as every other AgentChat
+> flag — see `docs/admin-ui.md`). It covers `KPICard`/`Chart`/`DataTable`/
+> `InfoCard`/`Timeline`/`HtmlDocument` and the display Basic primitives by
+> reusing the existing infographic block renderers (`InfographicChartBlock`
+> et al.) — action-bearing/unknown components degrade to a placeholder, same
+> rule as above. A chat turn opens the infographic canvas in
+> `mode: "a2ui"` (Rendered view) when the flag is on and the envelope has an
+> `Infographic`/`Report` root; a toolbar toggle falls back to the existing
+> HTML iframe view. This is unrelated to (and does not replace)
+> navigator-frontend-next's own Svelte renderer referenced above.
+
+### 5.4 viz-core catalog (FEAT-529)
+
+A THIRD catalog, `catalogId: "https://ai-parrot.dev/a2ui/catalogs/viz-core/1.0/catalog.json"`,
+alongside Basic and Parrot (§5.1/§5.2, still 10 composites — viz-core is
+additive, nothing moved). Its rule: **describe what, never how** — no
+colour, font, pixel size, or renderer-library option on the wire; semantic
+colour roles/formats; `size` is layout intent (`inline`/`tile`/`hero`),
+never pixels; every visual carries `accessibleDescription`; the standard
+`action` is the only interaction primitive. A viz-core component ALWAYS
+carries its own explicit `catalogId` — the surface's default stays
+Parrot's; resolve a component's effective catalog as `component.catalogId
+?? surface.catalogId` (mirrors the backend's `catalog.resolve_catalog`).
+
+#### `Graph` (`catalog/viz_core/graph.py`) — required `nodes`, `edges`
+
+| Prop | Type | Notes |
+|---|---|---|
+| `kind` | `flowchart, state, sequence, dag` | default `flowchart`; `dag` rejects cycles, the others legally allow them (real workflows loop) |
+| `direction` | `TB, LR, BT, RL` | default `TB` |
+| `nodes` | `[{id, label?, shape?, group?, state?, icon?, meta?}]` | `shape ∈ rect (default), rounded, diamond, circle, hexagon, subroutine`; `state ∈ pending, running, completed, failed, skipped, waiting` — DATA, see the status-role table below |
+| `edges` | `[{from, to, label?, kind?, condition?}]` | `kind ∈ solid (default), dashed, thick` |
+| `groups` | `[{id, label?, nodes: [id, ...]}]` | rendered as a bounding box |
+| `layout` | `{engine: layered (default) \| force \| manual, rankSep?, nodeSep?, positions?}` | `positions` (when present) are SERVER-PREPARED — draw them as-is, never recompute; `manual` requires `positions` for every node |
+| `selection` | `{selectable?, selected?}` | |
+| `data` | `{"path": …}` | binding to `{node_id: {state?, label?, meta?}}` — overlays per-node state at render time |
+| `accessibleDescription`, `size` (`inline, tile (default), hero`) | | viz-core common props, same meaning everywhere |
+| `action` | the standard v1.0 `Action` | TOOL origin only (D10b gate, same as everywhere else) — dispatched on node click with `context.nodeId`/`context.nodeLabel` added |
+
+Node `state` → semantic status role → theme token (the SAME five roles
+this app's own `A2UIGraph.svelte` and the backend's `_graph_svg`/`echarts`
+renderers use — only the token NAMES differ per surface, since this app's
+theme schema has no `--accent-*`/`--neutral-muted` of its own):
+
+| `state` | status role | this app's Tailwind/shadcn token |
+|---|---|---|
+| `completed` | `good` | `--chart-2` |
+| `waiting` | `warning` | `--chart-3` |
+| `failed` | `critical` | `--destructive` |
+| `running` | `primary` | `--primary` |
+| `pending`, `skipped` | `neutral` | `--muted-foreground` |
+
+Lowered fallback (any lane without viz-core support, or without a graph
+engine): `Card{Column[Text description, Text title?, Text caption, Column
+edge-list, Text graph-source]}`, `parrot_variant: "graph"` — see
+[`docs/outputs/a2ui-v1.md`](../outputs/a2ui-v1.md#graph--the-viz-core-workflowstate-machine-component-feat-529)
+for the exhaustive lowering-role table, the mermaid codec subset, and the
+layout/degradation contract (force → layered, oversize → truncated edge
+list, both recorded).
+
+**Frontend**: dispatch `Graph` via ECharts' native `graph` series
+(`layout: "none"` from `layout.positions` when present, else `"circular"`)
+— no new graph/diagram npm dependency (no mermaid/dagre/elkjs/@xyflow/
+svelteflow). `A2UIGraph.svelte` (bundled UI reference implementation)
+resolves positions, maps `state` to the token table above, shows a
+tooltip from `meta`, and exposes an `onNodeClick` hook with NO action
+transport wired yet (that ships with the live-workflow-surface follow-up).
+
+```json a2ui-envelope
+{
+  "version": "v1.0",
+  "createSurface": {
+    "surfaceId": "workflow",
+    "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
+    "components": [
+      {"id": "root", "component": "Column", "children": ["graph"]},
+      {
+        "id": "graph",
+        "component": "Graph",
+        "catalogId": "https://ai-parrot.dev/a2ui/catalogs/viz-core/1.0/catalog.json",
+        "kind": "flowchart",
+        "direction": "TB",
+        "nodes": [
+          {"id": "start", "label": "Start", "shape": "circle", "state": "completed"},
+          {"id": "research", "label": "Research", "state": "running"},
+          {"id": "end", "label": "End", "shape": "circle"}
+        ],
+        "edges": [
+          {"from": "start", "to": "research"},
+          {"from": "research", "to": "end", "label": "done"}
+        ],
+        "accessibleDescription": "A tiny research workflow: start, research, end."
+      }
+    ]
+  }
+}
+```
+
+This example is deliberately **mixed-catalog**: the surface's own default
+`catalogId` is the official Basic Catalog (its `root` `Column` resolves
+under it with no override), while `graph` carries its own explicit
+viz-core `catalogId` — exactly the shape `catalog.resolve_catalog`/
+`validate_envelope` are built to handle. Dropping `graph`'s `catalogId`
+here would make it resolve against the Basic surface default instead,
+where `Graph` does not exist — `UNKNOWN_COMPONENT`.
 
 ---
 
@@ -534,7 +714,7 @@ The Svelte renderer will be the first one with `interactive: true, supports_acti
 | Kind | Produced by | Root component | Typical `surfaceId` | Rows |
 |---|---|---|---|---|
 | **Widget** | a structured-output turn (`structured_chart` / `_table` / `_map`, dual-emitted as A2UI) or a `KPICard` builder | `Chart`, `DataTable`, `Map`, `KPICard` | `structured_chart-<8hex>`, `chart`, `kpi` | `dataModel.rows` (cap 1000) or `dataModel.layers[i].features` |
-| **Infographic** | an LLM-authored `Infographic` surface (`InfographicToolkit`, producer loop with catalog validation and up to 3 attempts) | `Infographic` | `infographic-<12hex>` | `dataModel.charts.<id>`, `dataModel.tables.<id>` |
+| **Infographic** | an LLM-authored `Infographic` surface (`InfographicToolkit`, producer loop with catalog validation and up to 3 attempts). **FEAT-527**: `InfographicToolkit` dual-emits by default (`emit_a2ui=True`) — the envelope is now ALSO present on plain `output_mode: infographic` chat turns (as an additive `a2ui_envelope` key alongside the documented HTML response), not only on an explicit `output_mode: a2ui` request. | `Infographic` (or `HtmlDocument` for the Jinja `render_template` lane — an opaque, `tool_only` wrapper around trusted rendered HTML; see `docs/outputs/a2ui-v1.md`) | `infographic-<12hex>` | `dataModel.charts.<id>`, `dataModel.tables.<id>` |
 | **Dashboard** | a **recipe** (`InfographicRecipe`, deterministic: datasets → transforms → `LayoutSpec` → envelope), replayed by `RecipeRunner` or the `refresh_dashboard` agent function | `Infographic` (multi-section → `Tabs`) | `<recipe-name>-infographic` | `dataModel.<section>/…` as declared by the layout bindings |
 
 All three ride the **same `createSurface` message**. Persisting to the ui_surfaces plane is where the kind becomes explicit (`kind` in `PublishSurfaceRequest`).
@@ -907,6 +1087,6 @@ Verified on `dev @ a1eca82b4`. Items marked **backend** need a backend fix; the 
 11. **Streaming is chunked, not SSE**, on the chat endpoint; the only SSE route is `GET /api/v1/agents/{agent_id}/a2ui`.
 12. **Surface-state concurrency is process-local** (`asyncio.Lock` per session inside `ConversationMemorySurfaceStore`); a multi-worker deployment can race the same session. Pending renderer calls expire after 900 s; surface state has no TTL.
 13. **`refresh_dashboard` is not registered by default** on `FlexDashboard` — the backend must call `agent.build_refresh_tool(pctx)` with a real `PermissionContext` (`RecipeRunner.run` fails open on a falsy one). Check `…/a2ui/capabilities`-adjacent function export before showing a "Refresh via agent" control; prefer the ui_surfaces `refresh` route.
-14. **Docs drift**: `docs/agent.md` documents a non-existent bare `POST /api/v1/agents/chat/` route, a `{success, content}` response shape that is dead code, and `mcp_servers` in the POST body (stripped; use `PATCH`); it never mentions `output_mode`, `a2ui`, streaming, or HITL. `docs/infographic_handler_api.md` points at `packages/ai-parrot/…/handlers/infographic.py` (the file is in `ai-parrot-server`) and omits the `/render` and `/render/jobs/{id}` routes. `sdd/specs/flex-agent-infographic-a2ui.spec.md` says datasets are registered with `add_dataset(query_slug=…)`; the code uses `add_query` (deliberately, to avoid eager fetches). `handlers/artifacts.py` documents the public route as `{artifact_id}.html`; the registered pattern is `{artifact_id_html}` with the suffix stripped in code.
+14. **Docs drift**: `docs/agent.md` documents a non-existent bare `POST /api/v1/agents/chat/` route, a `{success, content}` response shape that is dead code, and `mcp_servers` in the POST body (stripped; use `PATCH`); it never mentions `output_mode`, `a2ui`, streaming, or HITL. ~~`docs/infographic_handler_api.md` points at `packages/ai-parrot/…/handlers/infographic.py` (the file is in `ai-parrot-server`) and omits the `/render` and `/render/jobs/{id}` routes.~~ **Fixed by FEAT-527** — the path and both routes are now correct there. `sdd/specs/flex-agent-infographic-a2ui.spec.md` says datasets are registered with `add_dataset(query_slug=…)`; the code uses `add_query` (deliberately, to avoid eager fetches). `handlers/artifacts.py` documents the public route as `{artifact_id}.html`; the registered pattern is `{artifact_id_html}` with the suffix stripped in code.
 15. **No `docs/outputs/` page exists for FEAT-492** (surfaces); the spec and source are the only documentation besides this file.
 16. **`AGENTS.md` in the frontend is stale** (claims Flowbite, Playwright, `svelte-echarts`, Chart.js — none are dependencies); `CLAUDE.md` §"Chat System" and §"API Client Layer" are accurate. There is no shadcn `table`, `tabs`, `tooltip`, `dropdown-menu` or `scroll-area` directory yet — `AppTabs`, `AppTooltip`, `AppDropdown` (bits-ui wrappers) and `DataTable.svelte` / `SimpleTable` are the current substitutes.

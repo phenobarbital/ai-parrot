@@ -11,6 +11,7 @@ environment, so ``parrot.bots`` cannot be imported directly.  Config-level
 tests use the real ``VoiceConfig``; wiring tests use AST source inspection
 (same strategy as ``test_voicebot_nova_wiring.py``).
 """
+
 from __future__ import annotations
 
 import ast
@@ -20,21 +21,20 @@ from typing import Any, Dict, List, Optional
 
 import pytest
 
-from parrot.clients.live import (
+from parrot.models.voice import (
     LiveCompletionUsage,
     LiveToolCall,
     LiveVoiceResponse,
+    VoiceConfig,
 )
-from parrot.models.voice import VoiceConfig
 
-VOICE_BOT_SOURCE = (
-    Path(__file__).resolve().parents[2] / "src" / "parrot" / "bots" / "voice.py"
-)
+VOICE_BOT_SOURCE = Path(__file__).resolve().parents[2] / "src" / "parrot" / "bots" / "voice.py"
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _get_voicebot_method(method_name: str) -> str:
     """Extract a VoiceBot method's source text via AST."""
@@ -43,10 +43,7 @@ def _get_voicebot_method(method_name: str) -> str:
     for node in ast.walk(tree):
         if isinstance(node, ast.ClassDef) and node.name == "VoiceBot":
             for item in node.body:
-                if (
-                    isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef))
-                    and item.name == method_name
-                ):
+                if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)) and item.name == method_name:
                     return ast.get_source_segment(source, item)
     raise AssertionError(f"Method {method_name} not found in VoiceBot")
 
@@ -97,6 +94,7 @@ async def switch_provider(bot: _FakeVoiceBot, new_provider: str) -> None:
 # 1. VoiceConfig provider mutation
 # ===================================================================
 
+
 class TestVoiceConfigProviderSwitch:
     """VoiceConfig is a mutable dataclass — switching provider at runtime
     must update all related fields consistently."""
@@ -135,6 +133,7 @@ class TestVoiceConfigProviderSwitch:
 # 2. VoiceBot wiring supports lazy client creation (AST)
 # ===================================================================
 
+
 class TestVoiceBotLazyClientWiring:
     """The hot-swap pattern works because VoiceBot lazily creates
     ``self._llm`` when it is ``None``.  Verify that both ``ask_stream``
@@ -168,6 +167,7 @@ class TestVoiceBotLazyClientWiring:
 # ===================================================================
 # 3. switch_provider() example helper
 # ===================================================================
+
 
 class TestSwitchProviderHelper:
     """End-to-end test of the switch logic from examples/voice/bot.py."""
@@ -215,6 +215,7 @@ class TestSwitchProviderHelper:
 # ===================================================================
 # 4. Token usage tracking and accumulation
 # ===================================================================
+
 
 class TestLiveCompletionUsageAccumulation:
     """Verify LiveCompletionUsage arithmetic used to track tokens
@@ -401,6 +402,7 @@ class TestTokenAccumulationAcrossChunks:
 # ===================================================================
 # 5. LiveVoiceResponse metadata and provider tracking
 # ===================================================================
+
 
 class TestLiveVoiceResponseProviderMetadata:
     """Verify that provider info can ride in the metadata dict so callers

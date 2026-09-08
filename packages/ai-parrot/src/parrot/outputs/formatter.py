@@ -32,6 +32,7 @@ class OutputRetryConfig:
         include_original_prompt: Whether to include the original user prompt in retry
         custom_retry_prompts: Optional dict mapping OutputMode to custom retry prompts
     """
+
     max_retries: int = 2
     retry_on_parse_error: bool = True
     retry_model: Optional[str] = None
@@ -67,7 +68,6 @@ DEFAULT_RETRY_PROMPTS = {
 5. Do NOT add explanations - just the fixed JSON
 
 **Fixed JSON:**""",
-
     OutputMode.JSON: """You are a JSON repair assistant. The previous response contained malformed JSON.
 
 **Original Output:**
@@ -79,7 +79,6 @@ DEFAULT_RETRY_PROMPTS = {
 {error_message}
 
 **Task:** Return ONLY the corrected, valid JSON inside a ```json code block. No explanations.""",
-
     OutputMode.YAML: """You are a YAML repair assistant. The previous response contained malformed YAML.
 
 **Original Output:**
@@ -106,6 +105,7 @@ class OutputRetryResult:
         original_error: The original error that triggered retry
         final_error: The final error if all retries failed (None if success)
     """
+
     success: bool
     content: Any
     wrapped_content: Optional[Any]
@@ -124,7 +124,7 @@ class OutputFormatter:
 
     Example usage with retry:
         ```python
-        from parrot.clients.claude import AnthropicClient
+        from parrot.clients.anthropic import AnthropicClient
         from parrot.outputs.formatter import OutputFormatter, OutputRetryConfig
 
         # Create LLM client for retries
@@ -203,6 +203,7 @@ class OutputFormatter:
             if "IPython" not in sys.modules:
                 return False
             from IPython import get_ipython
+
             return get_ipython() is not None
         except (ImportError, NameError):
             return False
@@ -210,6 +211,7 @@ class OutputFormatter:
     def _detect_notebook(self) -> bool:
         try:
             from IPython import get_ipython
+
             ipython = get_ipython()
             return ipython is not None and "IPKernelApp" in ipython.config
         except Exception:
@@ -232,9 +234,7 @@ class OutputFormatter:
                 # Lazy initialize TemplateEngine if not provided
                 if self._template_engine is None:
                     self._template_engine = TemplateEngine()
-                self._renderers[mode] = renderer_cls(
-                    template_engine=self._template_engine
-                )
+                self._renderers[mode] = renderer_cls(template_engine=self._template_engine)
             else:
                 self._renderers[mode] = renderer_cls()
         return self._renderers[mode]
@@ -264,12 +264,7 @@ class OutputFormatter:
         """
         return has_system_prompt(mode)
 
-    async def format(
-        self,
-        mode: OutputMode,
-        data: Any,
-        **kwargs
-    ) -> Tuple[str, Optional[str]]:
+    async def format(self, mode: OutputMode, data: Any, **kwargs) -> Tuple[str, Optional[str]]:
         """
         Format output based on mode
 
@@ -300,60 +295,64 @@ class OutputFormatter:
                 debug_dir = "static/html/tests"
                 if not os.path.exists(debug_dir):
                     os.makedirs(debug_dir, exist_ok=True)
-                
+
                 # Generate unique filename
                 file_id = str(uuid.uuid4())
                 filename = f"debug_{file_id}.html"
                 file_path = os.path.join(debug_dir, filename)
-                
+
                 # Write content to file
                 content_to_save = wrapped if wrapped else content
                 with open(file_path, "w", encoding="utf-8") as f:
                     f.write(str(content_to_save))
-                
+
                 logger.info(f"Saved debug HTML output to: {file_path}")
             except Exception as e:
                 logger.warning(f"Failed to save debug HTML output: {e}")
-        
+
         # Debug: Save complete HTML to file for inspection in Table, Chart, and Plot modes
-        if mode in (OutputMode.TABLE, OutputMode.ECHARTS) and kwargs.get("output_format") == "html" and kwargs.get("html_mode") == "complete":
-             try:
-                 # Create debug directory if it doesn't exist
-                 debug_dir = "static/html/tests"
-                 if not os.path.exists(debug_dir):
-                     os.makedirs(debug_dir, exist_ok=True)
-                 
-                 filename = "debug.html"
-                 file_path = os.path.join(debug_dir, filename)
-                 
-                 # Write content to file
-                 content_to_save = wrapped if wrapped else content
-                 with open(file_path, "w", encoding="utf-8") as f:
-                     f.write(str(content_to_save))
-                 
-                 logger.info(f"Saved debug HTML output to: {file_path}")
-             except Exception as e:
-                 logger.warning(f"Failed to save debug HTML output for Table: {e}")
+        if (
+            mode in (OutputMode.TABLE, OutputMode.ECHARTS)
+            and kwargs.get("output_format") == "html"
+            and kwargs.get("html_mode") == "complete"
+        ):
+            try:
+                # Create debug directory if it doesn't exist
+                debug_dir = "static/html/tests"
+                if not os.path.exists(debug_dir):
+                    os.makedirs(debug_dir, exist_ok=True)
+
+                filename = "debug.html"
+                file_path = os.path.join(debug_dir, filename)
+
+                # Write content to file
+                content_to_save = wrapped if wrapped else content
+                with open(file_path, "w", encoding="utf-8") as f:
+                    f.write(str(content_to_save))
+
+                logger.info(f"Saved debug HTML output to: {file_path}")
+            except Exception as e:
+                logger.warning(f"Failed to save debug HTML output for Table: {e}")
 
         return content, wrapped
 
     def extract_data(self, data: Any) -> Optional[List[Dict[str, Any]]]:
         """
         Extract data from response using Table extraction logic.
-        
+
         Args:
             data: The response data to extract from
-            
+
         Returns:
             List of dictionaries representing the data, or None if extraction failed/empty
         """
         try:
             renderer = self._get_renderer(OutputMode.TABLE)
-            if hasattr(renderer, '_extract_data'):
+            if hasattr(renderer, "_extract_data"):
                 df = renderer._extract_data(data)
                 # Check if it's a pandas DataFrame (has empty property)
-                if hasattr(df, 'empty') and not df.empty:
-                    return df.to_dict(orient='records')
+                if hasattr(df, "empty") and not df.empty:
+                    return df.to_dict(orient="records")
         except Exception as e:
             logger.warning(f"Failed to extract data: {e}")
         return None
@@ -381,7 +380,7 @@ class OutputFormatter:
 
         # Get or create the TEMPLATE_REPORT renderer to add the template
         renderer = self._get_renderer(OutputMode.TEMPLATE_REPORT)
-        if hasattr(renderer, 'add_template'):
+        if hasattr(renderer, "add_template"):
             renderer.add_template(name, content)
 
     # =========================================================================
@@ -417,11 +416,7 @@ class OutputFormatter:
         return self._retry_config
 
     def _get_retry_prompt(
-        self,
-        mode: OutputMode,
-        original_output: str,
-        error_message: str,
-        original_prompt: Optional[str] = None
+        self, mode: OutputMode, original_output: str, error_message: str, original_prompt: Optional[str] = None
     ) -> str:
         """
         Build the retry prompt for fixing malformed output.
@@ -444,10 +439,7 @@ class OutputFormatter:
             template = DEFAULT_RETRY_PROMPTS.get(mode)
 
         if template:
-            prompt = template.format(
-                original_output=original_output,
-                error_message=error_message
-            )
+            prompt = template.format(original_output=original_output, error_message=error_message)
         else:
             # Generic fallback for modes without specific prompts
             prompt = f"""The previous output was malformed and could not be parsed.
@@ -482,32 +474,29 @@ class OutputFormatter:
             Raw output string
         """
         # Handle AIMessage-like objects
-        if hasattr(data, 'response') and data.response:
+        if hasattr(data, "response") and data.response:
             return str(data.response)
-        if hasattr(data, 'content') and data.content:
+        if hasattr(data, "content") and data.content:
             return str(data.content)
-        if hasattr(data, 'output') and data.output:
+        if hasattr(data, "output") and data.output:
             return str(data.output)
-        if hasattr(data, 'to_text'):
+        if hasattr(data, "to_text"):
             return str(data.to_text)
 
         # Handle dict responses
         if isinstance(data, dict):
-            if 'response' in data:
-                return str(data['response'])
-            if 'content' in data:
-                return str(data['content'])
-            if 'output' in data:
-                return str(data['output'])
+            if "response" in data:
+                return str(data["response"])
+            if "content" in data:
+                return str(data["content"])
+            if "output" in data:
+                return str(data["output"])
 
         # Fallback to string conversion
         return str(data)
 
     def _is_parse_error_result(
-        self,
-        content: Any,
-        wrapped: Optional[Any],
-        mode: OutputMode
+        self, content: Any, wrapped: Optional[Any], mode: OutputMode
     ) -> Tuple[bool, Optional[str]]:
         """
         Detect if the format result indicates a parsing error.
@@ -541,7 +530,7 @@ class OutputFormatter:
             "SyntaxError",
             "ParseError",
             "class='error'",
-            "class=\"error\"",
+            'class="error"',
             "No ECharts configuration found",
             "must include 'series'",
         ]
@@ -555,11 +544,7 @@ class OutputFormatter:
         return False, None
 
     async def _request_output_fix(
-        self,
-        mode: OutputMode,
-        original_output: str,
-        error_message: str,
-        original_prompt: Optional[str] = None
+        self, mode: OutputMode, original_output: str, error_message: str, original_prompt: Optional[str] = None
     ) -> Optional[Any]:
         """
         Request the LLM to fix malformed output.
@@ -574,16 +559,11 @@ class OutputFormatter:
             Fixed response from LLM, or None if request fails
         """
         if not self._llm_client:
-            logger.warning(
-                "Cannot retry output fix: no LLM client configured"
-            )
+            logger.warning("Cannot retry output fix: no LLM client configured")
             return None
 
         retry_prompt = self._get_retry_prompt(
-            mode=mode,
-            original_output=original_output,
-            error_message=error_message,
-            original_prompt=original_prompt
+            mode=mode, original_output=original_output, error_message=error_message, original_prompt=original_prompt
         )
 
         # Get system prompt for the output mode (helps LLM understand the format)
@@ -612,7 +592,7 @@ class OutputFormatter:
         original_prompt: Optional[str] = None,
         llm_client: Optional["AbstractClient"] = None,
         retry_config: Optional[OutputRetryConfig] = None,
-        **kwargs
+        **kwargs,
     ) -> OutputRetryResult:
         """
         Format output with automatic LLM-based retry on parsing failures.
@@ -665,9 +645,7 @@ class OutputFormatter:
                 content, wrapped = await self.format(mode, current_data, **kwargs)
 
                 # Check if result indicates a parse error
-                is_error, error_msg = self._is_parse_error_result(
-                    content, wrapped, mode
-                )
+                is_error, error_msg = self._is_parse_error_result(content, wrapped, mode)
 
                 if not is_error:
                     # Success!
@@ -676,7 +654,7 @@ class OutputFormatter:
                         content=content,
                         wrapped_content=wrapped,
                         retry_count=retry_count,
-                        original_error=original_error
+                        original_error=original_error,
                     )
 
                 # We have a parse error
@@ -692,41 +670,34 @@ class OutputFormatter:
                         wrapped_content=wrapped,
                         retry_count=retry_count,
                         original_error=original_error,
-                        final_error=error_msg
+                        final_error=error_msg,
                     )
 
                 if retry_count >= config.max_retries:
-                    logger.warning(
-                        f"Max retries ({config.max_retries}) exceeded for {mode}"
-                    )
+                    logger.warning(f"Max retries ({config.max_retries}) exceeded for {mode}")
                     return OutputRetryResult(
                         success=False,
                         content=content,
                         wrapped_content=wrapped,
                         retry_count=retry_count,
                         original_error=original_error,
-                        final_error=error_msg
+                        final_error=error_msg,
                     )
 
                 if not client:
-                    logger.warning(
-                        "Cannot retry: no LLM client available"
-                    )
+                    logger.warning("Cannot retry: no LLM client available")
                     return OutputRetryResult(
                         success=False,
                         content=content,
                         wrapped_content=wrapped,
                         retry_count=retry_count,
                         original_error=original_error,
-                        final_error="No LLM client available for retry"
+                        final_error="No LLM client available for retry",
                     )
 
                 # Attempt retry with LLM fix
                 retry_count += 1
-                logger.info(
-                    f"Attempting retry {retry_count}/{config.max_retries} "
-                    f"for {mode} output"
-                )
+                logger.info(f"Attempting retry {retry_count}/{config.max_retries} " f"for {mode} output")
 
                 # Extract raw output for retry
                 raw_output = self._extract_raw_output(current_data)
@@ -736,7 +707,7 @@ class OutputFormatter:
                     mode=mode,
                     original_output=raw_output,
                     error_message=error_msg or "Unknown parsing error",
-                    original_prompt=original_prompt
+                    original_prompt=original_prompt,
                 )
 
                 if fixed_response is None:
@@ -747,7 +718,7 @@ class OutputFormatter:
                         wrapped_content=wrapped,
                         retry_count=retry_count,
                         original_error=original_error,
-                        final_error="LLM fix request failed"
+                        final_error="LLM fix request failed",
                     )
 
                 # Use fixed response for next iteration
@@ -769,7 +740,7 @@ class OutputFormatter:
                         wrapped_content=None,
                         retry_count=retry_count,
                         original_error=original_error,
-                        final_error=error_msg
+                        final_error=error_msg,
                     )
 
                 # Attempt retry
@@ -777,10 +748,7 @@ class OutputFormatter:
                 raw_output = self._extract_raw_output(current_data)
 
                 fixed_response = await self._request_output_fix(
-                    mode=mode,
-                    original_output=raw_output,
-                    error_message=error_msg,
-                    original_prompt=original_prompt
+                    mode=mode, original_output=raw_output, error_message=error_msg, original_prompt=original_prompt
                 )
 
                 if fixed_response is None:
@@ -790,7 +758,7 @@ class OutputFormatter:
                         wrapped_content=None,
                         retry_count=retry_count,
                         original_error=original_error,
-                        final_error="LLM fix request failed"
+                        final_error="LLM fix request failed",
                     )
 
                 current_data = fixed_response

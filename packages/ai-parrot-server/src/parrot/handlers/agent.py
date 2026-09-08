@@ -52,6 +52,9 @@ from parrot.auth.oauth2.models import AuthRequiredEnvelope
 # Canonical PBAC EvalContext builder (FEAT-446) — single source of truth.
 from parrot.auth.eval_context import build_eval_context as _core_build_eval_context
 
+# Backend-independent session identity resolution (see module docstring).
+from parrot.auth.session_identity import resolve_user_id
+
 # FEAT-204: HumanInteractionInterrupt lives in core.exceptions (no parrot.human dependency)
 from parrot.core.exceptions import HumanInteractionInterrupt
 
@@ -874,8 +877,19 @@ class AgentTalk(BaseView):
         Note: We intentionally do NOT use browser session as it causes history mixing
 
         Priority for user_id:
-        1. Explicit 'user_id' in request body
-        2. From authenticated user session context
+        1. Explicit 'user_id' in request body / query string
+        2. The authenticated identity, resolved backend-independently by
+           ``parrot.auth.session_identity.resolve_user_id`` — ``request.user``
+           (``Identity.id``) first, then the session's configured
+           ``AUTH_USERID_ATTRIBUTE``, flat and nested. A flat session
+           ``user_id`` is a BasicAuth-shaped convention, NOT a navigator-auth
+           guarantee: each backend has its own ``userid_attribute`` (``id``
+           on Azure, ``upn`` on ADFS, ``login`` on GitHub, ...), and nothing
+           in navigator-auth ever sets ``request["user_id"]``.
+
+        The returned ``user_id`` is always a ``str`` (or ``None``):
+        ``Identity.id`` is typed ``Any`` and is an ``int`` primary key for
+        DB-backed users, which callers key memory/permission contexts by.
 
         Args:
             data: Request body data
@@ -883,17 +897,19 @@ class AgentTalk(BaseView):
         Returns:
             Tuple of (user_id, session_id)
         """
+        # ``request["user_id"]`` is not set by navigator-auth; it is kept as a
+        # hook for host apps whose own middleware populates it.
         user_id = data.pop("user_id", None) or self.request.get("user_id", None)
         session_id = data.pop("session_id", None)
-        # Try to get user_id from request session if not provided
+        request_session = None
         with contextlib.suppress(AttributeError):
             request_session = self.request.session or await get_session(self.request)
-            if not user_id:
-                user_id = request_session.get("user_id")
+        if not user_id:
+            user_id = resolve_user_id(self.request, request_session)
         # Generate new session_id if not provided by client (never use browser session)
         if not session_id:
             session_id = uuid.uuid4().hex
-        return user_id, session_id
+        return (str(user_id) if user_id is not None else None), session_id
 
     async def _get_agent(self, data: Dict[str, Any]) -> Union[AbstractBot, web.Response]:
         """
@@ -2715,12 +2731,27 @@ class AgentTalk(BaseView):
         # forwarded verbatim (envelope-agnostic) — v1.0-ness is guaranteed upstream by
         # parrot.outputs.a2ui.emission.finalize_a2ui_response.
         if getattr(response, "output_mode", None) == OutputMode.A2UI:
+            # FEAT-527: dual-emit — when the A2UI surface originated from an
+            # infographic render, the HTML sibling artifact rides along in
+            # `metadata` so an HTML-only consumer can still iframe it.
+            a2ui_metadata = dict(getattr(response, "metadata", None) or {})
+            a2ui_metadata.update(
+                {
+                    "model": getattr(response, "model", None),
+                    "provider": getattr(response, "provider", None),
+                    "session_id": str(getattr(response, "session_id", "") or ""),
+                    "turn_id": str(getattr(response, "turn_id", "") or ""),
+                    "response_time": response_time_ms,
+                }
+            )
             return self.json_response(
                 {
                     "input": getattr(response, "input", None),
                     "output": response.response or "",
                     "output_mode": OutputMode.A2UI.value,
                     "a2ui_envelope": getattr(response, "a2ui_envelope", None),
+                    "artifact_id": getattr(response, "artifact_id", None),
+                    "metadata": a2ui_metadata,
                 }
             )
 
@@ -3061,7 +3092,8 @@ class AgentTalk(BaseView):
                 "template_name": "...",
                 "theme": "...",
                 ...
-            }
+            },
+            "a2ui_envelope": {"version": "v1.0", "createSurface": {...}}   # FEAT-527: additive, omitted when None
         }
         ```
         ``Accept: text/html`` or ``?format=html`` returns the raw HTML body.
@@ -3117,6 +3149,11 @@ class AgentTalk(BaseView):
             "sources": [],
             "tool_calls": [],
         }
+        # FEAT-527: dual-emit — additive key only, byte-identical body when no
+        # envelope was produced (G6).
+        _a2ui_envelope = getattr(response, "a2ui_envelope", None)
+        if _a2ui_envelope is not None:
+            obj_response["a2ui_envelope"] = _a2ui_envelope
         return web.json_response(
             obj_response,
             dumps=json_encoder,

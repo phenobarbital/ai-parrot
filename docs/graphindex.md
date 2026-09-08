@@ -23,6 +23,8 @@ that references a module).
 - [Building Programmatically](#building-programmatically)
 - [Incremental Ingest](#incremental-ingest)
 - [Persistence Backends](#persistence-backends)
+- [Temporal API (Postgres only)](#temporal-api-postgres-only)
+- [Hybrid Retrieval (Postgres only)](#hybrid-retrieval-postgres-only)
 - [Analytics and the Graph Report](#analytics-and-the-graph-report)
 - [The Agent Toolkit](#the-agent-toolkit)
 - [Persistent Graph Memory](#persistent-graph-memory)
@@ -240,14 +242,18 @@ The SQLite backend tracks `mtime`/`sha1` per file in a `files` table, so
 
 ## Persistence Backends
 
-| Backend | Class | Use it when |
-|---|---|---|
-| **SQLite** | `SQLitePersistence` | Local-first, single file per tenant. WAL journal mode, FTS5/BM25 lexical search over nodes, incremental staleness tracking. This is what agent graph memory uses. |
-| **ArangoDB + pgvector** | `GraphIndexPersistence` | Multi-tenant server deployments where the graph is shared, and embeddings live in pgvector. |
+| Backend | Class | Bitemporal | Hybrid retrieval | Use it when |
+|---|---|---|---|---|
+| **SQLite** | `SQLitePersistence` | No (`t = now()` only) | No | Local-first, single file per tenant. WAL journal mode, FTS5/BM25 lexical search over nodes, incremental staleness tracking. This is what agent graph memory uses. |
+| **ArangoDB + pgvector** | `GraphIndexPersistence` | No (`t = now()` only) | No | Multi-tenant server deployments where the graph is shared, and embeddings live in pgvector. |
+| **Postgres** (FEAT-520) | `PostgresPersistence` | **Yes** — engine-enforced (`tstzrange` + `EXCLUDE`) | **Yes** — `hybrid_retrieve` | One shared `graphindex.*` schema serving BOTH the graph plane (`PostgresPersistence`) and the wiki retrieval plane (`PostgresWikiStore`, see [LLM Wiki](llm-wiki.md)). The only backend with temporal queries and one-pass hybrid retrieval. |
 
-Both expose the same core surface — `persist_graph()`,
-`replace_document_slice()`, `is_stale()` — so the builder is agnostic to which
-one it was handed.
+All three expose the same core surface — `persist_graph()`,
+`replace_document_slice()`, `is_stale()`, `load_graph()` — so the builder is
+agnostic to which one it was handed (duck-typed, never `isinstance`). The
+Postgres backend ADDITIONALLY exposes `as_of()`/`history()`/`diff()`
+(temporal) and `hybrid_retrieve()` (one-pass graph+KNN+FTS) — callers
+feature-detect these via `hasattr()`; SQLite and ArangoDB do not grow them.
 
 ### Audited writes
 
@@ -255,7 +261,73 @@ Agent writes do not go straight to the backend. `GraphPublisher` takes a
 validated `GraphUpdate` (nodes + edges + attribution), stamps `AssertionMeta`
 onto anything unattributed, and applies the batch as **one audited,
 revertible commit**, returning a `CommitReceipt`. That is what makes
-`graph_history()` and `revert_write()` possible.
+`graph_history()` and `revert_write()` possible. On the Postgres backend the
+pre-image capture, the commit row, and every mutation happen inside ONE
+database transaction — a mid-apply crash rolls back everything, including
+the audit trail itself.
+
+---
+
+## Temporal API (Postgres only)
+
+`PostgresPersistence` is bitemporal from the schema up: `node_versions.
+validity` is a `tstzrange` protected by a GiST `EXCLUDE` constraint, so the
+database itself rejects two overlapping versions of the same concept — the
+invariant is enforced by the engine, not by ingest discipline. Corrections
+close the current version's range and insert a new row; content is never
+`UPDATE`d.
+
+```python
+from datetime import datetime, timezone
+
+# Snapshot the graph as it existed at a point in time
+nodes, edges = await persistence.as_of(ctx, datetime(2026, 6, 1, tzinfo=timezone.utc))
+
+# Every version of one concept, oldest first
+versions = await persistence.history(ctx, concept_id="acme:widget")
+
+# Structured diff — version changes + incident-edge deltas, never raw text
+diff = await persistence.diff(ctx, "acme:widget", t1, t2)
+print(diff.version_changes, diff.edges_added, diff.edges_removed)
+```
+
+`as_of`/`history`/`diff` all reject naive `datetime` inputs (`ValueError`) —
+every temporal parameter is `timestamptz`. `SQLitePersistence` and
+`GraphIndexPersistence` do NOT grow these methods; callers feature-detect
+via `hasattr(persistence, "as_of")` rather than an `isinstance` check.
+
+---
+
+## Hybrid Retrieval (Postgres only)
+
+`hybrid_retrieve` runs three optional legs — temporal graph expansion (from
+seed `concept_id`s), pgvector KNN, and `ts_rank_cd` full-text search — as
+CTEs of **one SQL statement** against the same `as_of` snapshot, fused with
+Reciprocal Rank Fusion (`Σ w_leg/(60+rank_leg)`) in SQL. Cross-encoder
+re-ranking then runs in Python through the existing `parrot.rerankers` seam.
+
+```python
+candidates = await persistence.hybrid_retrieve(
+    ctx,
+    seeds=["acme:widget"],           # graph leg
+    query_embedding=query_vec,        # KNN leg
+    fts_terms="widget pricing",       # FTS leg
+    limit=20,
+    reranker=my_reranker,             # optional
+)
+for c in candidates:
+    print(c.concept_id, c.score, c.signals, c.evidence)
+```
+
+At least one of `seeds` / `query_embedding` / `fts_terms` is required
+(`ValueError` otherwise). `HybridCandidate.signals` exposes each leg's
+per-candidate contribution for debuggability; `HybridCandidate.evidence`
+carries `(body_ref, byte_offset)` pairs from the graph edges that connected
+the candidate into the seed hood. The method is named `hybrid_retrieve`,
+**not** `hybrid_search` — that name is reserved by `PgVectorStore.
+hybrid_search` (`ai-parrot-embeddings`, SQLAlchemy-based, dense+ColBERT),
+which this backend does not use or import from (`parrot.stores.postgres`
+is out of scope for FEAT-520 — asyncpg is the only driver, zero SQLAlchemy).
 
 ---
 
@@ -320,6 +392,21 @@ attached.
 | `ground_claim(claim)` | Check a claim against the graph, surfacing contradictions. |
 | `graph_history(...)` / `revert_write(commit_id)` | Audit and undo. |
 
+**Temporal & hybrid (Postgres-backed durable plane only, FEAT-520)**
+
+These four tools are excluded from tool generation entirely — not merely
+error-returning — unless the toolkit's `publisher.persistence` exposes the
+temporal surface (`hasattr(persistence, "as_of")`, duck-typed per spec D5).
+Building the toolkit with `build_graph_memory_toolkit(backend="postgres",
+...)` (see [Persistent Graph Memory](#persistent-graph-memory)) unlocks them.
+
+| Tool | Purpose |
+|---|---|
+| `graph_as_of(timestamp)` | Snapshot the graph as it existed at a point in time. |
+| `graph_concept_history(concept_id)` | Every version of ONE concept over time — distinct from `graph_history` above (durable WRITE-commit log, not per-concept version history). |
+| `graph_diff(concept_id, t1, t2)` | Structured version + incident-edge diff between two points in time. |
+| `graph_hybrid_retrieve(query, seeds)` | One-pass graph+FTS retrieval. Fusion weights and result limits are FIXED operator configuration — never exposed as tool parameters, so the agent picks WHAT to search for, never HOW (brainstorm D6). |
+
 ---
 
 ## Persistent Graph Memory
@@ -342,6 +429,33 @@ It loads the SQLite plane, assembles the in-memory `rustworkx` graph, embeds
 the loaded nodes (the offline `HashingGraphEmbedder` by default, so no model
 is needed) and wires a `GraphPublisher` so every write persists as an audited
 commit.
+
+Pass `backend="postgres"` for the FEAT-520 bitemporal, shared-schema plane
+instead (unlocks the toolkit's temporal/hybrid tools, above):
+
+```python
+toolkit = await build_graph_memory_toolkit(
+    tenant_id="default",
+    agent_id="my-agent",
+    backend="postgres",
+    dsn="postgres://...",       # defaults to GRAPHINDEX_PG_DSN / default_dsn
+    schema="graphindex",
+)
+```
+
+`db_dir` is only required (and only used) for `backend="sqlite"` — the
+Postgres backend has no per-tenant directory; its shared schema is not
+tenant-partitioned in v1.
+
+### Config keys (Postgres backend)
+
+| Key | Purpose | Default |
+|---|---|---|
+| `GRAPHINDEX_PG_DSN` | asyncpg DSN. Also gates live tests. | `parrot.conf.default_dsn` |
+| `GRAPHINDEX_PG_SCHEMA` | Schema name. | `graphindex` |
+| `GRAPHINDEX_EMBEDDING_DIM` | pgvector column dimension. | `1536` |
+| `GRAPHINDEX_FTS_REGCONFIG` | Namespace-prefix → Postgres FTS regconfig map (declarative, never hardcoded in SQL). | `{"legal:": "spanish", "sym:": "simple"}` |
+| `GRAPHINDEX_ANN_INDEX_KIND` | `"hnsw"` or `"ivfflat"` — see `artifacts/logs/feat-520-oq3-spike.md` for the measured tradeoff. | `ivfflat` |
 
 For bots, `GraphMemoryMixin` does the same declaratively:
 

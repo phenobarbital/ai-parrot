@@ -1,0 +1,65 @@
+{
+  "feature_id": "FEAT-527",
+  "id_provisional": true,
+  "id_note": "FEAT-527 matches .id_ledger.json next_feature_id at time of writing; shared main checkout carries another session's untracked files, so reserve_ids.py was not run. /sdd-spec must perform the authoritative reservation.",
+  "slug": "infographic-a2ui-migration",
+  "phase": "review",
+  "mode": "investigation",
+  "type": "feature",
+  "base_branch": "dev",
+  "started_at": "2026-09-04T19:30:00Z",
+  "updated_at": "2026-09-04T20:20:00Z",
+  "source": {
+    "kind": "inline",
+    "jira_key": null,
+    "summary_oneline": "Determine whether AgentTalk infographics are A2UI surfaces or legacy HTML/Jinja templates, and plan migration"
+  },
+  "budget": {
+    "profile": "default",
+    "files_read": 40,
+    "grep_calls": 25,
+    "git_calls": 10,
+    "max_depth": 2,
+    "max_wall_seconds": 300
+  },
+  "consumed": {
+    "files_read": 36,
+    "grep_calls": 20,
+    "git_calls": 2,
+    "wiki_calls": 4,
+    "depth_reached": 1
+  },
+  "truncated": false,
+  "truncation_reason": null,
+  "phases": {
+    "plan": {
+      "status": "complete",
+      "approved_by_user": false,
+      "note": "gate auto-advanced; plan recorded in research_plan.json",
+      "queries_total": 19
+    },
+    "research": {
+      "status": "complete",
+      "queries_total": 19,
+      "queries_skipped": 0,
+      "findings": 11
+    },
+    "synthesis": {
+      "status": "complete",
+      "claims_high": 8,
+      "claims_medium": 3,
+      "claims_low": 1,
+      "lint": "pass"
+    },
+    "qa": {
+      "status": "complete",
+      "questions_total": 4,
+      "questions_answered": 4
+    },
+    "output": {
+      "proposal_path": "sdd/proposals/infographic-a2ui-migration.proposal.md",
+      "commit_sha": "41633f6e5 (initial); see git log for the Q&A follow-up"
+    }
+  },
+  "wiki_available": true
+}

@@ -13,6 +13,7 @@ upgrade spans 36 minor versions, so we explicitly re-verify:
 Live integration is covered by the ``test_anthropic_live_smoke`` test, which
 is gated on ``ANTHROPIC_API_KEY`` and the ``@pytest.mark.live`` marker.
 """
+
 from __future__ import annotations
 
 import os
@@ -20,10 +21,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Helpers — build SDK exceptions without their full network-bound __init__
 # ---------------------------------------------------------------------------
+
 
 def _make_api_status_error(status_code: int):
     """Construct an APIStatusError without invoking its real constructor."""
@@ -33,9 +34,7 @@ def _make_api_status_error(status_code: int):
     mock_response.status_code = status_code
     mock_response.headers = {}
     mock_response.text = f"{status_code} Error"
-    mock_response.json.return_value = {
-        "error": {"message": f"{status_code} Error"}
-    }
+    mock_response.json.return_value = {"error": {"message": f"{status_code} Error"}}
     error = APIStatusError.__new__(APIStatusError)
     error.status_code = status_code
     error.response = mock_response
@@ -52,9 +51,7 @@ def _make_rate_limit_error():
     mock_response.status_code = 429
     mock_response.headers = {}
     mock_response.text = "429 Too Many Requests"
-    mock_response.json.return_value = {
-        "error": {"message": "rate limit exceeded"}
-    }
+    mock_response.json.return_value = {"error": {"message": "rate limit exceeded"}}
     error = RateLimitError.__new__(RateLimitError)
     error.status_code = 429
     error.response = mock_response
@@ -71,7 +68,7 @@ def _make_anthropic_client():
     base machinery (logger, conversation memory, …) just to assert pure
     branching logic on exceptions or payload shaping.
     """
-    from parrot.clients.claude import AnthropicClient
+    from parrot.clients.anthropic import AnthropicClient
 
     client = AnthropicClient.__new__(AnthropicClient)
     client._fallback_model = "claude-sonnet-4.5"
@@ -82,12 +79,13 @@ def _make_anthropic_client():
 # Test 1 — SDK imports survive the 0.61 → 0.97 upgrade
 # ---------------------------------------------------------------------------
 
+
 def test_anthropic_imports_097():
     """Verify critical SDK imports survive the 0.61 → 0.97 upgrade.
 
     The ai-parrot codebase depends on these specific names being importable
     from the published ``anthropic`` package; a regression here would surface
-    as ``ImportError`` at module load time of ``parrot.clients.claude``.
+    as ``ImportError`` at module load time of ``parrot.clients.anthropic``.
     """
     from anthropic import (  # noqa: F401
         APIStatusError,
@@ -109,14 +107,13 @@ def test_anthropic_version_at_least_097():
 
     parts = anthropic.__version__.split(".")
     major, minor = int(parts[0]), int(parts[1])
-    assert (major, minor) >= (0, 97), (
-        f"anthropic SDK is {anthropic.__version__}, expected >=0.97.0"
-    )
+    assert (major, minor) >= (0, 97), f"anthropic SDK is {anthropic.__version__}, expected >=0.97.0"
 
 
 # ---------------------------------------------------------------------------
 # Test 2 — ``_is_capacity_error`` still detects modern SDK exception shapes
 # ---------------------------------------------------------------------------
+
 
 class TestCapacityErrorDetection097:
     """Re-verify capacity-error classification under SDK 0.97."""
@@ -146,6 +143,7 @@ class TestCapacityErrorDetection097:
 # Test 3 — ``betas=["context-1m-2025-08-07"]`` is forwarded to messages.create
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_anthropic_betas_param_passthrough():
     """`context_1m=True` should add ``betas=['context-1m-2025-08-07']`` to
@@ -154,7 +152,7 @@ async def test_anthropic_betas_param_passthrough():
     The test is fully mocked so it neither talks to the network nor depends on
     a configured ANTHROPIC_API_KEY.
     """
-    from parrot.clients.claude import AnthropicClient
+    from parrot.clients.anthropic import AnthropicClient
 
     # Mock the response object the SDK returns.
     mock_response = MagicMock()
@@ -172,9 +170,7 @@ async def test_anthropic_betas_param_passthrough():
     # base class' per-loop cache.
     client = AnthropicClient(api_key="test-key")
 
-    with patch.object(
-        AnthropicClient, "get_client", new=AsyncMock(return_value=fake_async_client)
-    ):
+    with patch.object(AnthropicClient, "get_client", new=AsyncMock(return_value=fake_async_client)):
         try:
             await client.ask(
                 "Hello, world!",
@@ -189,8 +185,7 @@ async def test_anthropic_betas_param_passthrough():
     assert fake_async_client.messages.create.await_count >= 1
     call_kwargs = fake_async_client.messages.create.await_args.kwargs
     assert "betas" in call_kwargs, (
-        "context_1m=True must forward `betas` to messages.create; "
-        f"observed kwargs: {sorted(call_kwargs)}"
+        "context_1m=True must forward `betas` to messages.create; " f"observed kwargs: {sorted(call_kwargs)}"
     )
     assert call_kwargs["betas"] == ["context-1m-2025-08-07"]
 
@@ -198,7 +193,7 @@ async def test_anthropic_betas_param_passthrough():
 @pytest.mark.asyncio
 async def test_anthropic_betas_param_omitted_by_default():
     """Without ``context_1m=True`` the betas header must NOT be forwarded."""
-    from parrot.clients.claude import AnthropicClient
+    from parrot.clients.anthropic import AnthropicClient
 
     mock_response = MagicMock()
     mock_response.content = [MagicMock(text="ok", type="text")]
@@ -213,9 +208,7 @@ async def test_anthropic_betas_param_omitted_by_default():
 
     client = AnthropicClient(api_key="test-key")
 
-    with patch.object(
-        AnthropicClient, "get_client", new=AsyncMock(return_value=fake_async_client)
-    ):
+    with patch.object(AnthropicClient, "get_client", new=AsyncMock(return_value=fake_async_client)):
         try:
             await client.ask(
                 "Hello, world!",
@@ -227,14 +220,14 @@ async def test_anthropic_betas_param_omitted_by_default():
     assert fake_async_client.messages.create.await_count >= 1
     call_kwargs = fake_async_client.messages.create.await_args.kwargs
     assert "betas" not in call_kwargs, (
-        "betas should not be present unless context_1m=True; "
-        f"observed kwargs: {sorted(call_kwargs)}"
+        "betas should not be present unless context_1m=True; " f"observed kwargs: {sorted(call_kwargs)}"
     )
 
 
 # ---------------------------------------------------------------------------
 # Test 4 — Live smoke test (skipped without ANTHROPIC_API_KEY)
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.live
 @pytest.mark.asyncio
@@ -247,11 +240,9 @@ async def test_anthropic_live_smoke():
     if not os.environ.get("ANTHROPIC_API_KEY"):
         pytest.skip("ANTHROPIC_API_KEY not set; live test skipped.")
 
-    from parrot.clients.claude import AnthropicClient
+    from parrot.clients.anthropic import AnthropicClient
 
     client = AnthropicClient()
     result = await client.ask("ping")
     assert result is not None
-    assert getattr(result, "output", None), (
-        "Live AnthropicClient.ask did not produce an output."
-    )
+    assert getattr(result, "output", None), "Live AnthropicClient.ask did not produce an output."

@@ -129,6 +129,11 @@ def get_infographic_html_renderer():
     need to call ``render_to_html()``, which is not part of the base
     ``Renderer`` Protocol.
 
+    This is the HTML sibling emission of the A2UI Infographic lane (FEAT-527):
+    ``InfographicToolkit`` renders through this class first and then — by
+    default — additionally builds a validated A2UI envelope. Neither path is
+    deprecated; they are permanent, parallel emissions of the same render.
+
     Returns:
         Type[InfographicHTMLRenderer]: The concrete renderer class.
 
@@ -137,14 +142,8 @@ def get_infographic_html_renderer():
             installed — the renderer moved there in FEAT-200; the message
             names the exact pip extra to install.
     """
-    # FEAT-273 (G7): the infographic-HTML path is superseded; the JSON path is kept.
-    warnings.warn(
-        "The infographic-HTML renderer path is deprecated (FEAT-273): use "
-        "OutputMode.A2UI with the Infographic catalog component and the SSR-HTML "
-        "renderer. The infographic-JSON path is unaffected.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
+    # FEAT-527 (amends FEAT-273 G7): the infographic-HTML path is the permanent
+    # HTML sibling emission of the A2UI Infographic lane, not a deprecated path.
     try:
         from .infographic_html import InfographicHTMLRenderer as _Cls
     except ModuleNotFoundError as exc:

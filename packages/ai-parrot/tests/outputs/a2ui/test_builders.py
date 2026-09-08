@@ -36,6 +36,7 @@ class TestEnvelopeBuilders:
             builders.build_card(title="Hi"),
             builders.build_datatable(columns=[{"name": "a"}]),
             builders.build_infographic(title="T", sections=[{"heading": "H"}]),
+            builders.build_html_document(title="Report", html="<p>hi</p>"),
         ):
             assert env.components[0].id == "root"
 
@@ -52,6 +53,32 @@ class TestEnvelopeBuilders:
     def test_builder_rejects_unknown_component(self):
         with pytest.raises(CatalogValidationError):
             builders.build_surface("NotAComponent", {}, surface_id="bad")
+
+
+class TestBuildHtmlDocument:
+    """FEAT-527."""
+
+    def test_builder_inline_and_url(self):
+        env = builders.build_html_document(title="Report", html="<html><body>x</body></html>")
+        assert env.components[0].component == "HtmlDocument"
+        env2 = builders.build_html_document(title="Report", src_url="https://x/infographic-a.html")
+        assert env2.components[0].model_extra["srcUrl"].endswith(".html")
+
+    def test_builder_xor(self):
+        with pytest.raises(ValueError):
+            builders.build_html_document(title="R")
+        with pytest.raises(ValueError):
+            builders.build_html_document(title="R", html="<p/>", src_url="https://x")
+
+    def test_builder_is_tool_origin_by_default(self):
+        """HtmlDocument is tool_only — TOOL origin must not raise."""
+        env = builders.build_html_document(title="R", html="<p>hi</p>")
+        validate_envelope(env, origin=ProducerOrigin.TOOL)
+
+    def test_llm_origin_rejected(self):
+        env = builders.build_html_document(title="R", html="<p>hi</p>")
+        with pytest.raises(CatalogValidationError):
+            validate_envelope(env, origin=ProducerOrigin.LLM)
 
     def test_builders_make_no_llm_calls(self):
         # The builder module imports no client/LLM/agent surfaces (G8 one-way rule).

@@ -62,7 +62,7 @@ class ProductAdvisorMixin:
         selection_manager: Optional[SelectionStateManager] = None,
         question_set: Optional[QuestionSet] = None,
         auto_register_tools: bool = True,
-        **kwargs
+        **kwargs,
     ):
         """
         Initialize ProductAdvisorMixin.
@@ -110,25 +110,17 @@ class ProductAdvisorMixin:
                 catalog_kwargs["table"] = "products"
 
             self._product_catalog = ProductCatalog(
-                catalog_id=self._catalog_id,
-                vector_store=self.store,
-                **catalog_kwargs
+                catalog_id=self._catalog_id, vector_store=self.store, **catalog_kwargs
             )
 
         if not self._product_catalog:
-            raise ValueError(
-                "ProductAdvisorMixin requires either a 'catalog' or 'vector_store'"
-            )
+            raise ValueError("ProductAdvisorMixin requires either a 'catalog' or 'vector_store'")
 
         # Initialize state manager
-        self._selection_manager = (
-            self._selection_manager or SelectionStateManager()
-        )
+        self._selection_manager = self._selection_manager or SelectionStateManager()
 
         # Initialize or generate question set
-        self._question_set = (
-            question_set or self._question_set or await self._generate_questions()
-        )
+        self._question_set = question_set or self._question_set or await self._generate_questions()
 
         # Register tools
         if self._auto_register_tools:
@@ -148,16 +140,23 @@ class ProductAdvisorMixin:
 
         # For VoiceBot, _llm is GeminiLiveClient which has different ask() signature.
         # If bot has ask_text() method, use text LLM for question generation.
-        llm = getattr(self, '_llm', None) or getattr(self, 'llm', None)
+        llm = getattr(self, "_llm", None) or getattr(self, "llm", None)
 
         # Check if LLM is a voice-only client (GeminiLiveClient has stream_voice)
-        if llm and hasattr(llm, 'stream_voice'):
+        if llm and hasattr(llm, "stream_voice"):
             # Create a text-based LLM for question generation
             # Note: Don't use llm.model as it's an audio-only model
-            GoogleGenAIClient = SUPPORTED_CLIENTS.get('google')
+            GoogleGenAIClient = SUPPORTED_CLIENTS.get("google")
+            # FEAT-523 (TASK-2852): a provider registered via a real
+            # `parrot.clients` entry point (e.g. "google", extracted to
+            # ai-parrot-client-google) is stored as `ep.load` itself — a
+            # zero-arg callable, not the class directly. Resolve it the
+            # same way LLMFactory.create() does before instantiating.
+            if callable(GoogleGenAIClient) and not isinstance(GoogleGenAIClient, type):
+                GoogleGenAIClient = GoogleGenAIClient()
             if GoogleGenAIClient:
                 llm = GoogleGenAIClient(
-                    model='gemini-3.1-flash-lite-preview',
+                    model="gemini-3.1-flash-lite-preview",
                     temperature=0.3,
                 )
                 self.logger.debug("Using text LLM for question generation (voice LLM not compatible)")
@@ -165,11 +164,7 @@ class ProductAdvisorMixin:
         if not llm:
             raise ValueError("No LLM available for question generation")
 
-        return await generate_discriminant_questions(
-            products=products,
-            llm=llm,
-            catalog_id=self._catalog_id
-        )
+        return await generate_discriminant_questions(products=products, llm=llm, catalog_id=self._catalog_id)
 
     async def _register_advisor_tools(self) -> None:
         """Register all product advisor tools."""
@@ -217,19 +212,17 @@ class ProductAdvisorMixin:
         ]
 
         # Register with the bot's tool manager
-        tool_manager = getattr(self, 'tool_manager')
+        tool_manager = getattr(self, "tool_manager")
         for tool in self._advisor_tools:
             tool_manager.register_tool(tool)
 
         # Sync tools to the LLM client's tool manager
-        llm = getattr(self, '_llm', None)
-        if llm and hasattr(self, 'sync_tools'):
+        llm = getattr(self, "_llm", None)
+        if llm and hasattr(self, "sync_tools"):
             self.sync_tools(llm)
             # Enable tools on the LLM client (may have been False at creation time)
             llm.enable_tools = True
-            self.logger.info(
-                f"Synced {len(self._advisor_tools)} advisor tools to LLM (enable_tools=True)"
-            )
+            self.logger.info(f"Synced {len(self._advisor_tools)} advisor tools to LLM (enable_tools=True)")
 
     # ─────────────────────────────────────────────────────────────────────────
     # Convenience Methods
@@ -250,17 +243,12 @@ class ProductAdvisorMixin:
         product_ids = [p.product_id for p in products]
 
         state = await self._selection_manager.create_state(
-            session_id=session_id,
-            user_id=user_id,
-            catalog_id=self._catalog_id,
-            product_ids=product_ids
+            session_id=session_id, user_id=user_id, catalog_id=self._catalog_id, product_ids=product_ids
         )
 
         # Get first question
         first_question = self._question_set.get_next_question(
-            asked=[],
-            criteria={},
-            remaining_products=len(product_ids)
+            asked=[], criteria={}, remaining_products=len(product_ids)
         )
 
         return (

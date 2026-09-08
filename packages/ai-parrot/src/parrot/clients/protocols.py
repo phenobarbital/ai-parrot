@@ -5,12 +5,12 @@ not part of the ``AbstractClient`` ABC itself. Follows the same
 ``typing.Protocol`` + ``@runtime_checkable`` pattern used by
 ``AnthropicBackendProtocol`` (``parrot/clients/anthropic_backends.py``).
 """
+
 from __future__ import annotations
 
 from typing import AsyncIterator, Optional, Protocol, runtime_checkable
 
-from ..models.voice import VoiceCapabilities, VoiceStreamOptions
-from .live import LiveVoiceResponse
+from ..models.voice import LiveVoiceResponse, VoiceCapabilities, VoiceStreamOptions
 
 
 @runtime_checkable
@@ -50,5 +50,4 @@ class VoiceCapable(Protocol):
         user_id: Optional[str] = None,
         options: Optional[VoiceStreamOptions] = None,
         **kwargs,
-    ) -> AsyncIterator[LiveVoiceResponse]:
-        ...
+    ) -> AsyncIterator[LiveVoiceResponse]: ...

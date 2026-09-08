@@ -86,6 +86,20 @@ class TestChartComponent:
         props = chart.CHART_SCHEMA["properties"]
         assert {"type", "x", "y", "showLegend"} <= set(props)
 
+    def test_chart_schema_type_enum_includes_new_chart_types(self):
+        """FEAT-527: gauge/funnel/waterfall/heatmap/treemap parity."""
+        enum = chart.CHART_SCHEMA["properties"]["type"]["enum"]
+        for t in ("gauge", "funnel", "waterfall", "heatmap", "treemap", "donut", "radar"):
+            assert t in enum
+
+    def test_chart_schema_has_layout(self):
+        """FEAT-527: layout ('full'/'half') added to StructuredChartConfig."""
+        props = chart.CHART_SCHEMA["properties"]
+        assert "layout" in props
+        # Optional[Literal[...]] renders as anyOf: [{enum: [...]}, {type: null}].
+        layout_enum = next(branch["enum"] for branch in props["layout"]["anyOf"] if "enum" in branch)
+        assert set(layout_enum) == {"full", "half"}
+
     def test_chart_lowering_golden(self):
         comp = _chart_component()
         one = _dump(chart.ChartComponent().lower(comp, {}))
@@ -126,6 +140,34 @@ class TestDataTableComponent:
         assert body.children.path == "/tables/blk-001"
         assert body.template_source is not None
         assert body.children.component_id == body.template_source.id
+
+    def test_datatable_schema_accepts_style(self):
+        """FEAT-527."""
+        props = datatable.DATATABLE_SCHEMA["properties"]
+        assert "style" in props
+        assert set(props["style"]["enum"]) == {
+            "default",
+            "striped",
+            "bordered",
+            "compact",
+            "comparison",
+        }
+
+    def test_datatable_lower_records_style_extension(self):
+        comp = Component(
+            id="blk-001",
+            component="DataTable",
+            columns=[{"name": "region"}],
+            style="striped",
+        )
+        tree = datatable.DataTableComponent().lower(comp, {})
+        body = tree.child.children[-1]
+        assert body.metadata.extensions.root["parrot_style"] == "striped"
+
+    def test_datatable_lower_omits_style_extension_when_absent(self):
+        tree = datatable.DataTableComponent().lower(_datatable_component(), {})
+        body = tree.child.children[-1]
+        assert "parrot_style" not in body.metadata.extensions.root
 
     def test_datatable_emits_v1_primitives(self):
         comp = Component(id="t1", component="DataTable", columns=[{"name": "a"}, {"name": "b"}])

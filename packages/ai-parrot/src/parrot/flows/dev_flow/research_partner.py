@@ -27,8 +27,6 @@ from pydantic import BaseModel, Field
 
 from parrot import conf
 from parrot.clients.base import AbstractClient
-from parrot.clients.nova.client import NovaClient
-from parrot.clients.nova.mantle import BedrockMantleClient
 from parrot.flows.dev_loop.catalog import (
     resolve_research_partner_backend,
     validate_research_partner_model,
@@ -200,8 +198,8 @@ class BedrockResearchPartner(AbstractResearchPartner):
     ``gpt`` (default) and ``nova`` both reach AWS Bedrock on the same
     ``AWS_NOVA_API_KEY`` credential and share one call shape —
     ``ask(use_tools=True, structured_output=ResearchFindings)`` — because
-    :class:`~parrot.clients.nova.mantle.BedrockMantleClient` and
-    :class:`~parrot.clients.nova.client.NovaClient` are both
+    :class:`~parrot.clients.amazon.nova.mantle.BedrockMantleClient` and
+    :class:`~parrot.clients.amazon.nova.client.NovaClient` are both
     :class:`~parrot.clients.base.AbstractClient` subclasses sharing one
     tool registry and one ``_execute_tool`` path. No per-transport tool
     adapter exists, or should exist, here.
@@ -263,6 +261,11 @@ class BedrockResearchPartner(AbstractResearchPartner):
         # FEAT-486: an explicit `model=` wins over the conf mapping; the
         # family guard below runs either way, so an injected model is no
         # less validated than a configured one.
+        # FEAT-523 (TASK-2846): lazy import — core must not import a
+        # provider module at module scope (AC-3).
+        from parrot.clients.amazon.nova.client import NovaClient
+        from parrot.clients.amazon.nova.mantle import BedrockMantleClient
+
         model = self.model or resolve_backend_model(self.backend)
         validate_research_partner_model(model)
         if self.backend == "gpt":

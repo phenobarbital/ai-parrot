@@ -1,57 +1,27 @@
 """Unit tests for `agents/flex_dashboard/transformers.py` (FEAT-491 TASK-2694)."""
 
-import importlib.util
-import sys
 from pathlib import Path
 
 import pandas as pd
 import pytest
 from parrot.outputs.a2ui.recipes.transformers import transformer_registry
+from parrot.tools.infographic_recipes import load_transformer_module
 
-# Same worktree-safe file-path loading technique as
-# `test_finance_reporter_descriptors.py::_load_finance_reporter` and
-# `test_flex_dashboard_normalize.py::_load_normalize`. `transformers.py`
-# additionally does `from agents.flex_dashboard.normalize import ...` (an
-# absolute, real package import) — to make that resolve deterministically
-# from THIS worktree's files (and not risk crossing into a different
-# worktree's `agents/` via ambient sys.path state), the full package chain
-# ("agents" -> "agents.flex_dashboard" -> "...normalize" -> "...transformers")
-# is pre-registered in `sys.modules` in dependency order before exec'ing
-# transformers.py, so its internal import resolves purely from cache.
+# FEAT-528 Module 2: `transformers.py` now uses a RELATIVE import
+# (`from .normalize import ...`), so it must be loaded as a package
+# submodule for that import to resolve — `load_transformer_module` (the
+# same host-side loader `agents/flex_dashboard.py` itself uses) does
+# exactly that, and its synthetic package name is deterministic per
+# resolved path, so it stays a single, idempotent registration no matter
+# which test file (or the agent module itself) loads it first in a shared
+# pytest session.
 _REPO_ROOT = Path(__file__).resolve().parents[5]
 _AGENTS_DIR = _REPO_ROOT / "agents"
 _FLEX_DIR = _AGENTS_DIR / "flex_dashboard"
 
 
-def _load_package(name: str, init_path: Path, search_dir: Path):
-    if name in sys.modules:
-        return sys.modules[name]
-    spec = importlib.util.spec_from_file_location(name, init_path, submodule_search_locations=[str(search_dir)])
-    if spec is None or spec.loader is None:
-        raise ImportError(f"Cannot load package {name!r} from {init_path}")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[name] = module
-    spec.loader.exec_module(module)  # type: ignore[union-attr]
-    return module
-
-
-def _load_module(name: str, path: Path):
-    if name in sys.modules:
-        return sys.modules[name]
-    spec = importlib.util.spec_from_file_location(name, path)
-    if spec is None or spec.loader is None:
-        raise ImportError(f"Cannot load {path}")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[name] = module
-    spec.loader.exec_module(module)  # type: ignore[union-attr]
-    return module
-
-
 def _load_flex_transformers():
-    _load_package("agents", _AGENTS_DIR / "__init__.py", _AGENTS_DIR)
-    _load_package("agents.flex_dashboard", _FLEX_DIR / "__init__.py", _FLEX_DIR)
-    _load_module("agents.flex_dashboard.normalize", _FLEX_DIR / "normalize.py")
-    return _load_module("agents.flex_dashboard.transformers", _FLEX_DIR / "transformers.py")
+    return load_transformer_module(_FLEX_DIR / "transformers.py")
 
 
 @pytest.fixture(scope="module")

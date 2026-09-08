@@ -3,6 +3,7 @@
 Handles planogram compliance for product-on-shelves displays (endcaps with
 poster/header panels and shelved products below).
 """
+
 import asyncio
 import re
 import unicodedata
@@ -14,7 +15,6 @@ from parrot_pipelines.planogram.grid.detector import GridDetector
 from parrot_pipelines.planogram.grid.strategy import AbstractGridStrategy, NoGrid
 from PIL import Image
 from .abstract import AbstractPlanogramType
-from parrot.models.google import GoogleModel
 from parrot.models.detections import (
     Detection,
     DetectionBox,
@@ -152,12 +152,8 @@ class ProductOnShelves(AbstractPlanogramType):
         # Determine detection path: grid or legacy
         grid_config = getattr(self.config, "detection_grid", None)
         if grid_config and grid_config.grid_type != GridType.NO_GRID:
-            self.logger.info(
-                "Using grid detection path (grid_type=%s).", grid_config.grid_type
-            )
-            identified_products = await self._detect_with_grid(
-                target_image, planogram_description, grid_config
-            )
+            self.logger.info("Using grid detection path (grid_type=%s).", grid_config.grid_type)
+            identified_products = await self._detect_with_grid(target_image, planogram_description, grid_config)
             # Apply ROI offset to grid results
             # (grid coords are relative to the ROI crop, not full image)
             for p in identified_products:
@@ -182,8 +178,7 @@ class ProductOnShelves(AbstractPlanogramType):
         _pcfg = getattr(self.config, "planogram_config", None) or {}
         _raw_shelves = _pcfg.get("shelves", [])
         self.logger.debug(
-            "Illumination enrichment: scanning %d raw shelves from "
-            "self.config.planogram_config",
+            "Illumination enrichment: scanning %d raw shelves from " "self.config.planogram_config",
             len(_raw_shelves),
         )
         # Match by product_type only (NOT shelf_location): at this point in
@@ -215,16 +210,13 @@ class ProductOnShelves(AbstractPlanogramType):
                             planogram_description=planogram_description,
                         )
                         self.logger.info(
-                            "Illumination check result for type=%s "
-                            "(model=%r): %s",
+                            "Illumination check result for type=%s " "(model=%r): %s",
                             ip.product_type,
                             ip.product_model,
                             illum_result,
                         )
                     if illum_result is not None:
-                        ip.visual_features = [illum_result] + list(
-                            ip.visual_features or []
-                        )
+                        ip.visual_features = [illum_result] + list(ip.visual_features or [])
         # ── end illumination enrichment ───────────────────────────────────────
 
         return identified_products, shelf_regions
@@ -302,17 +294,17 @@ class ProductOnShelves(AbstractPlanogramType):
             "Detect all retail products, empty slots, and shelf regions in this image.\n"
             "Use the provided reference images to identify specific products.\n\n"
             "IMPORTANT:\n"
-            "- If you see a cardboard box containing a product image/name, label it as \"[Product Name] box\".\n"
-            "- If you see the bare product itself (e.g. a loose printer), label it as \"[Product Name]\".\n"
+            '- If you see a cardboard box containing a product image/name, label it as "[Product Name] box".\n'
+            '- If you see the bare product itself (e.g. a loose printer), label it as "[Product Name]".\n'
             f"- Prefer the following product names if they match: {hints_str}\n"
-            "- If an item is NOT in the list, provide a descriptive name (e.g. \"Ink Bottle\", \"Printer\") "
-            "rather than just \"unknown\".\n"
-            "- Do not output \"unknown\" unless strictly necessary.\n\n"
+            '- If an item is NOT in the list, provide a descriptive name (e.g. "Ink Bottle", "Printer") '
+            'rather than just "unknown".\n'
+            '- Do not output "unknown" unless strictly necessary.\n\n'
             "Output a JSON list where each entry contains:\n"
             "- \"label\": The identified product name/model or 'shelf' or 'unknown'.\n"
-            "- \"box_2d\": [ymin, xmin, ymax, xmax] normalized 0-1000.\n"
-            "- \"confidence\": 0-1.\n"
-            "- \"type\": \"product\" (for loose items), \"product_box\" (for boxes), \"shelf\", \"gap\".\n"
+            '- "box_2d": [ymin, xmin, ymax, xmax] normalized 0-1000.\n'
+            '- "confidence": 0-1.\n'
+            '- "type": "product" (for loose items), "product_box" (for boxes), "shelf", "gap".\n'
         )
 
         # Flatten reference images — values may be a single image or a list of images
@@ -371,9 +363,7 @@ class ProductOnShelves(AbstractPlanogramType):
                     ShelfRegion(
                         shelf_id=f"shelf_{len(shelf_regions)}",
                         level=label,
-                        bbox=DetectionBox(
-                            x1=abs_x1, y1=abs_y1, x2=abs_x2, y2=abs_y2, confidence=conf
-                        ),
+                        bbox=DetectionBox(x1=abs_x1, y1=abs_y1, x2=abs_x2, y2=abs_y2, confidence=conf),
                     )
                 )
             else:
@@ -382,9 +372,7 @@ class ProductOnShelves(AbstractPlanogramType):
                     ptype = "product_box"
                 identified_products.append(
                     IdentifiedProduct(
-                        detection_box=DetectionBox(
-                            x1=abs_x1, y1=abs_y1, x2=abs_x2, y2=abs_y2, confidence=conf
-                        ),
+                        detection_box=DetectionBox(x1=abs_x1, y1=abs_y1, x2=abs_x2, y2=abs_y2, confidence=conf),
                         product_model=label,
                         confidence=conf,
                         product_type=ptype,
@@ -401,9 +389,17 @@ class ProductOnShelves(AbstractPlanogramType):
         """Check compliance of identified products against the planogram."""
         # All LLM aliases that map to a promotional_graphic concept
         _PROMO_TYPES = {
-            "promotional_graphic", "graphic", "banner", "backlit_graphic", "backlit",
-            "advertisement", "advertisement_graphic", "display_graphic",
-            "promotional_display", "promotional_material", "promotional_materials",
+            "promotional_graphic",
+            "graphic",
+            "banner",
+            "backlit_graphic",
+            "backlit",
+            "advertisement",
+            "advertisement_graphic",
+            "display_graphic",
+            "promotional_display",
+            "promotional_material",
+            "promotional_materials",
             "text_overlay",  # injected utility carrier for poster OCR text
         }
 
@@ -412,11 +408,11 @@ class ProductOnShelves(AbstractPlanogramType):
         # NOTE: PlanogramDescription is a Pydantic view that does NOT expose
         # the raw planogram_config. Read it from self.config (PlanogramConfig)
         # which holds the raw dict.
-        _pcfg = getattr(self.config, 'planogram_config', None) or {}
+        _pcfg = getattr(self.config, "planogram_config", None) or {}
         if isinstance(_pcfg, dict):
-            _product_subtypes = set(_pcfg.get('product_subtypes', []))
+            _product_subtypes = set(_pcfg.get("product_subtypes", []))
         else:
-            _product_subtypes = set(getattr(_pcfg, 'product_subtypes', []) or [])
+            _product_subtypes = set(getattr(_pcfg, "product_subtypes", []) or [])
 
         # Raw shelves for illumination penalty lookups (non-Pydantic fields).
         _raw_shelves = _pcfg.get("shelves", []) if isinstance(_pcfg, dict) else []
@@ -443,7 +439,7 @@ class ProductOnShelves(AbstractPlanogramType):
             (e_ptype, e_base), (f_ptype, f_base) = ek, fk
 
             # Relaxed type matching
-            type_match = (e_ptype == f_ptype)
+            type_match = e_ptype == f_ptype
             if not type_match:
                 # specific overrides
                 if {e_ptype, f_ptype} <= {"printer", "product"}:
@@ -467,11 +463,25 @@ class ProductOnShelves(AbstractPlanogramType):
                     else:
                         # 2) Hardcoded fallback for unlisted types
                         _non_product_types = {
-                            "promotional_graphic", "graphic", "banner", "backlit_graphic",
-                            "backlit", "advertisement", "advertisement_graphic",
-                            "display_graphic", "promotional_display", "promotional_material",
-                            "promotional_materials", "product_box", "printer",
-                            "fact_tag", "price_tag", "slot", "brand_logo", "gap", "shelf",
+                            "promotional_graphic",
+                            "graphic",
+                            "banner",
+                            "backlit_graphic",
+                            "backlit",
+                            "advertisement",
+                            "advertisement_graphic",
+                            "display_graphic",
+                            "promotional_display",
+                            "promotional_material",
+                            "promotional_materials",
+                            "product_box",
+                            "printer",
+                            "fact_tag",
+                            "price_tag",
+                            "slot",
+                            "brand_logo",
+                            "gap",
+                            "shelf",
                         }
                         if other_type not in _non_product_types:
                             type_match = True
@@ -485,23 +495,25 @@ class ProductOnShelves(AbstractPlanogramType):
             if f_base == e_base or e_base in f_base or f_base in e_base:
                 return True
             if e_ptype == "promotional_graphic":
+
                 def fam(s):
                     return "canvas-tv" if "canvas-tv" in s else s
+
                 return fam(e_base) == fam(f_base)
             return e_base in f_base or f_base in e_base
 
         results: List[ComplianceResult] = []
         planogram_brand = planogram_description.brand.lower()
         norm_patterns = planogram_description.model_normalization_patterns or None
-        found_brand_product = next((
-            p for p in identified_products if p.brand and p.brand.lower() == planogram_brand
-        ), None)
+        found_brand_product = next(
+            (p for p in identified_products if p.brand and p.brand.lower() == planogram_brand), None
+        )
 
         brand_compliance_result = BrandComplianceResult(
             expected_brand=planogram_description.brand,
             found_brand=found_brand_product.brand if found_brand_product else None,
             found=bool(found_brand_product),
-            confidence=found_brand_product.confidence if found_brand_product else 0.0
+            confidence=found_brand_product.confidence if found_brand_product else 0.0,
         )
         brand_check_ok = brand_compliance_result.found
         by_shelf = defaultdict(list)
@@ -520,9 +532,7 @@ class ProductOnShelves(AbstractPlanogramType):
             for _sp in _shelf_cfg.products:
                 if _sp.product_type in ("fact_tag", "price_tag", "slot"):
                     continue
-                _ek = self._canonical_expected_key(
-                    _sp, brand=planogram_brand, patterns=norm_patterns
-                )
+                _ek = self._canonical_expected_key(_sp, brand=planogram_brand, patterns=norm_patterns)
                 all_expected_keys.add(_ek)
 
         for shelf_cfg in planogram_description.shelves:
@@ -576,8 +586,8 @@ class ProductOnShelves(AbstractPlanogramType):
                         globally_matched_keys.add(fk)
                         shelf_product = expected_products[i]
                         identified_product = found_products[j]
-                        if hasattr(shelf_product, 'visual_features') and shelf_product.visual_features:
-                            detected_features = getattr(identified_product, 'visual_features', []) or []
+                        if hasattr(shelf_product, "visual_features") and shelf_product.visual_features:
+                            detected_features = getattr(identified_product, "visual_features", []) or []
                             # Only score visual features when enrichment was actually
                             # performed (detected_features non-empty).  If the product
                             # was found geometrically but no OCR/visual enrichment ran
@@ -592,20 +602,17 @@ class ProductOnShelves(AbstractPlanogramType):
                         _illum_req = _find_raw_illum_required(shelf_level, shelf_product.name)
                         if _illum_req is not None:
                             _detected_illum = self._extract_illumination_state(
-                                getattr(identified_product, 'visual_features', []) or []
+                                getattr(identified_product, "visual_features", []) or []
                             )
                             self.logger.info(
                                 "Illumination check for %s: expected=%s detected=%s",
-                                shelf_product.name, _illum_req, _detected_illum,
+                                shelf_product.name,
+                                _illum_req,
+                                _detected_illum,
                             )
-                            if (
-                                _detected_illum is not None
-                                and _detected_illum != _illum_req.strip().lower()
-                            ):
+                            if _detected_illum is not None and _detected_illum != _illum_req.strip().lower():
                                 _penalty = _find_raw_illum_penalty(shelf_level, shelf_product.name)
-                                illum_mismatches.append(
-                                    (i, j, _detected_illum, _illum_req.strip().lower(), _penalty)
-                                )
+                                illum_mismatches.append((i, j, _detected_illum, _illum_req.strip().lower(), _penalty))
                         break
 
             expected_readable = expected_names
@@ -622,10 +629,8 @@ class ProductOnShelves(AbstractPlanogramType):
 
             missing = [expected_readable[i] for i, ok in enumerate(matched) if not ok]
             # Append illumination mismatch entries to missing list.
-            for (i_idx, _j, det, exp_s, _pen) in illum_mismatches:
-                missing.append(
-                    f"{expected_readable[i_idx]} — backlight {det.upper()} (required: {exp_s.upper()})"
-                )
+            for i_idx, _j, det, exp_s, _pen in illum_mismatches:
+                missing.append(f"{expected_readable[i_idx]} — backlight {det.upper()} (required: {exp_s.upper()})")
             unexpected = []
             if not shelf_cfg.allow_extra_products:
                 for used, (f_ptype, f_base), (_, _, original_label) in zip(consumed, found_keys, found_lookup):
@@ -652,9 +657,7 @@ class ProductOnShelves(AbstractPlanogramType):
                             f"model='{original_label}' key=({f_ptype},{f_base}) from unexpected"
                         )
 
-            basic_score = (
-                sum(1 for ok in matched if ok) / (len(expected) or 1.0)
-            )
+            basic_score = sum(1 for ok in matched if ok) / (len(expected) or 1.0)
 
             visual_feature_score = 1.0
             if visual_feature_scores:
@@ -672,7 +675,7 @@ class ProductOnShelves(AbstractPlanogramType):
                             for feat in promo.visual_features:
                                 if isinstance(feat, str) and feat.startswith("ocr:"):
                                     ocr_blocks.append(feat[4:].strip())
-                            ocr_text = getattr(promo, 'ocr_text', None) or getattr(promo.detection_box, 'ocr_text', '')
+                            ocr_text = getattr(promo, "ocr_text", None) or getattr(promo.detection_box, "ocr_text", "")
                             if ocr_text:
                                 ocr_blocks.append(ocr_text.strip())
                     if ocr_blocks:
@@ -683,13 +686,15 @@ class ProductOnShelves(AbstractPlanogramType):
                     if not promos and shelf_level == "header":
                         overall_text_ok = False
                         for text_req in endcap.text_requirements:
-                            text_results.append(TextComplianceResult(
-                                required_text=text_req.required_text,
-                                found=False,
-                                matched_features=[],
-                                confidence=0.0,
-                                match_type=text_req.match_type
-                            ))
+                            text_results.append(
+                                TextComplianceResult(
+                                    required_text=text_req.required_text,
+                                    found=False,
+                                    matched_features=[],
+                                    confidence=0.0,
+                                    match_type=text_req.match_type,
+                                )
+                            )
                     else:
                         for text_req in endcap.text_requirements:
                             result = TextMatcher.check_text_match(
@@ -697,27 +702,24 @@ class ProductOnShelves(AbstractPlanogramType):
                                 visual_features=all_features,
                                 match_type=text_req.match_type,
                                 case_sensitive=text_req.case_sensitive,
-                                confidence_threshold=text_req.confidence_threshold
+                                confidence_threshold=text_req.confidence_threshold,
                             )
                             text_results.append(result)
                             if not result.found and text_req.mandatory:
                                 overall_text_ok = False
                         if text_results:
-                            text_score = sum(
-                                r.confidence for r in text_results if r.found
-                            ) / len(text_results)
+                            text_score = sum(r.confidence for r in text_results if r.found) / len(text_results)
 
             elif shelf_level != "header":
                 overall_text_ok = True
                 text_score = 1.0
 
             threshold = getattr(
-                shelf_cfg,
-                "compliance_threshold",
-                planogram_description.global_compliance_threshold or 0.8
+                shelf_cfg, "compliance_threshold", planogram_description.global_compliance_threshold or 0.8
             )
             major_unexpected = [
-                p for p in unexpected
+                p
+                for p in unexpected
                 if "ink" not in p.lower()
                 and "price tag" not in p.lower()
                 and "fact_tag" not in p.lower()
@@ -733,41 +735,32 @@ class ProductOnShelves(AbstractPlanogramType):
             else:
                 if not brand_check_ok:
                     status = ComplianceStatus.NON_COMPLIANT
-                elif (
-                    basic_score >= threshold
-                    and not major_unexpected
-                    and overall_text_ok
-                    and not illum_mismatches
-                ):
+                elif basic_score >= threshold and not major_unexpected and overall_text_ok and not illum_mismatches:
                     status = ComplianceStatus.COMPLIANT
                 elif basic_score == 0.0 and len(expected) > 0:
                     status = ComplianceStatus.MISSING
                 else:
                     status = ComplianceStatus.NON_COMPLIANT
 
-            visual_weight = getattr(
-                planogram_description,
-                'visual_features_weight',
-                0.2
-            )
+            visual_weight = getattr(planogram_description, "visual_features_weight", 0.2)
             if shelf_level == "header" and endcap:
                 adjusted_product_weight = endcap.product_weight * (1 - visual_weight)
                 visual_feature_weight = endcap.product_weight * visual_weight
                 combined_score = (
-                    (basic_score * adjusted_product_weight) +
-                    (text_score * endcap.text_weight) +
-                    (brand_compliance_result.confidence * getattr(endcap, "brand_weight", 0.0)) +
-                    (visual_feature_score * visual_feature_weight)
+                    (basic_score * adjusted_product_weight)
+                    + (text_score * endcap.text_weight)
+                    + (brand_compliance_result.confidence * getattr(endcap, "brand_weight", 0.0))
+                    + (visual_feature_score * visual_feature_weight)
                 )
             else:
                 # Per-shelf weights override globals when defined in planogram_config
                 s_visual_weight = shelf_cfg.visual_weight if shelf_cfg.visual_weight is not None else visual_weight
                 s_text_weight = shelf_cfg.text_weight if shelf_cfg.text_weight is not None else 0.1
-                s_product_weight = shelf_cfg.product_weight if shelf_cfg.product_weight is not None else (1 - s_visual_weight)
+                s_product_weight = (
+                    shelf_cfg.product_weight if shelf_cfg.product_weight is not None else (1 - s_visual_weight)
+                )
                 combined_score = (
-                    basic_score * s_product_weight +
-                    text_score * s_text_weight +
-                    visual_feature_score * s_visual_weight
+                    basic_score * s_product_weight + text_score * s_text_weight + visual_feature_score * s_visual_weight
                 )
 
             # Apply illumination penalty at combined_score level so the user-facing
@@ -796,7 +789,7 @@ class ProductOnShelves(AbstractPlanogramType):
                     text_compliance_results=text_results,
                     text_compliance_score=text_score,
                     overall_text_compliant=overall_text_ok,
-                    brand_compliance_result=brand_compliance_result
+                    brand_compliance_result=brand_compliance_result,
                 )
             )
         return results
@@ -824,11 +817,7 @@ class ProductOnShelves(AbstractPlanogramType):
 
         # downscale for LLM
         image_small = self.pipeline._downscale_image(image, max_side=1024, quality=78)
-        prompt = partial_prompt.format(
-            brand=brand,
-            tag_hint=tag_hint,
-            image_size=image_small.size
-        )
+        prompt = partial_prompt.format(brand=brand, tag_hint=tag_hint, image_size=image_small.size)
         max_attempts = 2
         msg = None
         for attempt in range(max_attempts):
@@ -837,10 +826,10 @@ class ProductOnShelves(AbstractPlanogramType):
                     msg = await client.ask_to_image(
                         image=image_small,
                         prompt=prompt,
-                        model=GoogleModel.GEMINI_3_FLASH_PREVIEW,
+                        model="gemini-3.5-flash",
                         no_memory=True,
                         structured_output=Detections,
-                        max_tokens=8192
+                        max_tokens=8192,
                     )
                 break
             except Exception as e:
@@ -855,14 +844,14 @@ class ProductOnShelves(AbstractPlanogramType):
         # normalizing the bbox values against the downscaled image dimensions.
         if isinstance(data, str):
             import json as _json
+
             try:
                 raw = _json.loads(data)
                 iw, ih = image_small.size
                 for d in raw.get("detections", []):
                     b = d.get("bbox", {})
                     # If any coordinate exceeds 1.0 it's in pixel space -> normalize.
-                    if any(v > 1.0 for v in (b.get("x1", 0), b.get("y1", 0),
-                                             b.get("x2", 0), b.get("y2", 0))):
+                    if any(v > 1.0 for v in (b.get("x1", 0), b.get("y1", 0), b.get("x2", 0), b.get("y2", 0))):
                         b["x1"] = min(1.0, max(0.0, b.get("x1", 0) / iw))
                         b["y1"] = min(1.0, max(0.0, b.get("y1", 0) / ih))
                         b["x2"] = min(1.0, max(0.0, b.get("x2", 0) / iw))
@@ -884,18 +873,15 @@ class ProductOnShelves(AbstractPlanogramType):
             wanted = {lbl.strip().lower() for lbl in labels}
             return next((d for d in dets if _norm_label(d) in wanted), None)
 
-        panel_det = (
-            _first_by_labels(["poster_panel", "poster"])
-            or (max(dets, key=lambda x: float(x.confidence)) if dets else None)
+        panel_det = _first_by_labels(["poster_panel", "poster"]) or (
+            max(dets, key=lambda x: float(x.confidence)) if dets else None
         )
 
         text_det = _first_by_labels(["poster_text"])
         brand_det = _first_by_labels(["brand_logo", "brand logo"])
 
         if not panel_det:
-            self.logger.error(
-                "Critical failure: Could not detect the poster_panel."
-            )
+            self.logger.error("Critical failure: Could not detect the poster_panel.")
             return None, None, None, None, []
 
         promo_graphic_det = _first_by_labels(["promotional_graphic"])
@@ -914,8 +900,7 @@ class ProductOnShelves(AbstractPlanogramType):
         # that may sit *beside* the product display), force full image width so
         # the ROI crop always includes the background graphic.
         has_background_shelf = any(
-            getattr(s, "is_background", False)
-            for s in (getattr(planogram, "shelves", None) or [])
+            getattr(s, "is_background", False) for s in (getattr(planogram, "shelves", None) or [])
         )
         if has_background_shelf:
             side_margin_percent = max(side_margin_percent, 0.5)
@@ -948,9 +933,7 @@ class ProductOnShelves(AbstractPlanogramType):
             ey2 = min(1.0, ey2 + (panel_h * 0.35))
 
         # Add horizontal buffer
-        x_buffer = max(
-            self.left_margin_ratio * (px2 - px1), self.right_margin_ratio * (px2 - px1)
-        )
+        x_buffer = max(self.left_margin_ratio * (px2 - px1), self.right_margin_ratio * (px2 - px1))
         ex1 = min(ex1, px1 - x_buffer)
         ex2 = max(ex2, px2 + x_buffer)
 
@@ -959,10 +942,7 @@ class ProductOnShelves(AbstractPlanogramType):
         full_height_hint = False
         if endcap and getattr(endcap, "position", None) == "header" and getattr(endcap, "full_height_roi", True):
             shelves = getattr(planogram, "shelves", []) or []
-            has_non_header = any(
-                getattr(s, "level", None) and getattr(s, "level") != "header"
-                for s in shelves
-            )
+            has_non_header = any(getattr(s, "level", None) and getattr(s, "level") != "header" for s in shelves)
             full_height_hint = has_non_header
         if full_height_hint:
             ey2 = 1.0
@@ -980,10 +960,7 @@ class ProductOnShelves(AbstractPlanogramType):
 
         if endcap_det is None:
             endcap_det = Detection(
-                label="endcap",
-                confidence=0.9,
-                content=None,
-                bbox=BoundingBox(x1=ex1, y1=ey1, x2=ex2, y2=ey2)
+                label="endcap", confidence=0.9, content=None, bbox=BoundingBox(x1=ex1, y1=ey1, x2=ex2, y2=ey2)
             )
         else:
             endcap_det.bbox.x1 = ex1
@@ -993,9 +970,7 @@ class ProductOnShelves(AbstractPlanogramType):
 
         return endcap_det, panel_det, brand_det, text_det, dets
 
-    def _canonical_expected_key(
-        self, sp: Any, brand: str, patterns: Optional[List[str]] = None
-    ) -> Tuple[str, str]:
+    def _canonical_expected_key(self, sp: Any, brand: str, patterns: Optional[List[str]] = None) -> Tuple[str, str]:
         """Compute canonical key for an expected product from planogram config."""
         ptype = (getattr(sp, "product_type", "") or "").strip().lower()
         type_mappings = {
@@ -1003,16 +978,14 @@ class ProductOnShelves(AbstractPlanogramType):
             "promotional_graphic": "promotional_graphic",
             "product_box": "product_box",
             "printer": "printer",
-            "promotional_materials": "promotional_materials"
+            "promotional_materials": "promotional_materials",
         }
         ptype = type_mappings.get(ptype, ptype)
         model_str = getattr(sp, "name", "") or getattr(sp, "product_model", "") or ""
         base = self._base_model_from_str(model_str, brand=brand, patterns=patterns)
         return ptype or "unknown", base or ""
 
-    def _canonical_found_key(
-        self, p: Any, brand: str, patterns: Optional[List[str]] = None
-    ) -> Tuple[str, str, float]:
+    def _canonical_found_key(self, p: Any, brand: str, patterns: Optional[List[str]] = None) -> Tuple[str, str, float]:
         """Compute canonical key for a detected/found product."""
         ptype = (getattr(p, "product_type", "") or "").strip().lower()
         type_mappings = {
@@ -1021,7 +994,7 @@ class ProductOnShelves(AbstractPlanogramType):
             "product_box": "product_box",
             "printer": "printer",
             "promotional_material": "promotional_material",
-            "promotional_display": "promotional_display"
+            "promotional_display": "promotional_display",
         }
         ptype = type_mappings.get(ptype, ptype)
         model_str = getattr(p, "product_model", "") or getattr(p, "product_type", "") or ""
@@ -1029,9 +1002,18 @@ class ProductOnShelves(AbstractPlanogramType):
         conf = float(getattr(p, "confidence", 0.0) or 0.0)
 
         # Only reclassify as product_box for generic types; never override promotional types
-        _no_reclassify = {"promotional_graphic", "graphic", "banner", "backlit_graphic", "backlit",
-                          "advertisement", "advertisement_graphic", "promotional_display",
-                          "promotional_material", "promotional_materials"}
+        _no_reclassify = {
+            "promotional_graphic",
+            "graphic",
+            "banner",
+            "backlit_graphic",
+            "backlit",
+            "advertisement",
+            "advertisement_graphic",
+            "promotional_display",
+            "promotional_material",
+            "promotional_materials",
+        }
         if ptype not in _no_reclassify and self._looks_like_box(getattr(p, "visual_features", None)):
             if ptype != "product_box":
                 ptype = "product_box"
@@ -1048,7 +1030,7 @@ class ProductOnShelves(AbstractPlanogramType):
         if any(k in norm for k in whole_word_keywords):
             return True
         # "box" only as whole word (not part of "lightbox", "mailbox", etc.)
-        if re.search(r'\bbox\b', norm):
+        if re.search(r"\bbox\b", norm):
             return True
         return False
 
@@ -1058,7 +1040,11 @@ class ProductOnShelves(AbstractPlanogramType):
             return ""
         s = unicodedata.normalize("NFKC", s)
         s = "".join(ch for ch in unicodedata.normalize("NFKD", s) if not unicodedata.combining(ch))
-        s = re.sub(r"[\u2014\u2013\u2010-\u2012\u2e3a\u2026\u201c\u201d\"'\u00b7\u2022\u2219\u00b7\u2022\u2014\u2013/\\|_=+^°™®©§]", " ", s)
+        s = re.sub(
+            r"[\u2014\u2013\u2010-\u2012\u2e3a\u2026\u201c\u201d\"'\u00b7\u2022\u2219\u00b7\u2022\u2014\u2013/\\|_=+^°™®©§]",
+            " ",
+            s,
+        )
         s = re.sub(r"[^A-Za-z0-9 ]+", " ", s)
         s = re.sub(r"\s+", " ", s).strip().lower()
         return s
@@ -1077,20 +1063,33 @@ class ProductOnShelves(AbstractPlanogramType):
         def extract_keywords(text):
             text = text.lower().strip()
             stop_words = {
-                'a', 'an', 'the', 'is', 'are', 'on', 'of', 'in', 'at',
-                'to', 'for', 'with', 'visible', 'displayed', 'showing'
+                "a",
+                "an",
+                "the",
+                "is",
+                "are",
+                "on",
+                "of",
+                "in",
+                "at",
+                "to",
+                "for",
+                "with",
+                "visible",
+                "displayed",
+                "showing",
             }
             words = [w for w in text.split() if w not in stop_words and len(w) > 1]
             return set(words)
 
         semantic_mappings = {
-            'active': ['active', 'on', 'powered', 'illuminated', 'lit'],
-            'display': ['display', 'screen', 'tv', 'television', 'monitor'],
-            'illuminated': ['illuminated', 'backlit', 'lit', 'bright', 'glowing'],
-            'logo': ['logo', 'text', 'branding', 'brand'],
-            'dynamic': ['dynamic', 'colorful', 'graphics', 'content'],
-            'official': ['official', 'partner'],
-            'white': ['white', 'large']
+            "active": ["active", "on", "powered", "illuminated", "lit"],
+            "display": ["display", "screen", "tv", "television", "monitor"],
+            "illuminated": ["illuminated", "backlit", "lit", "bright", "glowing"],
+            "logo": ["logo", "text", "branding", "brand"],
+            "dynamic": ["dynamic", "colorful", "graphics", "content"],
+            "official": ["official", "partner"],
+            "white": ["white", "large"],
         }
 
         def semantic_match(expected_word, detected_keywords):
@@ -1158,7 +1157,11 @@ class ProductOnShelves(AbstractPlanogramType):
         if hasattr(self.config, "endcap_geometry"):
             shelf_padding_ratio = float(getattr(self.config.endcap_geometry, "inter_shelf_padding", 0.0) or 0.0)
         allow_overlap = getattr(planogram, "allow_overlap", False)
-        if not allow_overlap and hasattr(planogram, "planogram_config") and isinstance(planogram.planogram_config, dict):
+        if (
+            not allow_overlap
+            and hasattr(planogram, "planogram_config")
+            and isinstance(planogram.planogram_config, dict)
+        ):
             allow_overlap = planogram.planogram_config.get("allow_overlap", False)
             if not allow_overlap:
                 # Also check nested under 'aisle' key (common config pattern)
@@ -1196,18 +1199,14 @@ class ProductOnShelves(AbstractPlanogramType):
             else:
                 is_background = getattr(cfg, "is_background", False)
 
-            shelves.append(ShelfRegion(
-                shelf_id=f"virtual_{level}",
-                level=level,
-                bbox=DetectionBox(
-                    x1=int(r_x1),
-                    y1=int(s_y1),
-                    x2=int(r_x2),
-                    y2=int(s_y2),
-                    confidence=1.0
-                ),
-                is_background=is_background
-            ))
+            shelves.append(
+                ShelfRegion(
+                    shelf_id=f"virtual_{level}",
+                    level=level,
+                    bbox=DetectionBox(x1=int(r_x1), y1=int(s_y1), x2=int(r_x2), y2=int(s_y2), confidence=1.0),
+                    is_background=is_background,
+                )
+            )
 
             # Always advance current_y so stacking fallback works for
             # shelves that lack an explicit y_start_ratio.
@@ -1244,7 +1243,7 @@ class ProductOnShelves(AbstractPlanogramType):
         # Build a hint list of known models from the planogram config
         known_models: List[str] = []
         try:
-            for shelf in (planogram_description.shelves or []):
+            for shelf in planogram_description.shelves or []:
                 for sp in shelf.products:
                     m = getattr(sp, "name", "") or getattr(sp, "product_model", "") or ""
                     if m and m not in known_models:
@@ -1263,16 +1262,12 @@ class ProductOnShelves(AbstractPlanogramType):
         # Group any detected fact tags by shelf level (used for y-refinement)
         detected_by_shelf: Dict[str, List[Any]] = defaultdict(list)
         for p in identified_products:
-            if (
-                p.product_type == "fact_tag"
-                and p.detection_box is not None
-                and p.shelf_location
-            ):
+            if p.product_type == "fact_tag" and p.detection_box is not None and p.shelf_location:
                 detected_by_shelf[p.shelf_location].append(p)
 
         # Build a lookup of non-background shelf_regions by level
         shelf_reg_by_level: Dict[str, Any] = {}
-        for sr in (shelf_regions or []):
+        for sr in shelf_regions or []:
             if not getattr(sr, "is_background", False):
                 shelf_reg_by_level[sr.level] = sr
 
@@ -1290,7 +1285,8 @@ class ProductOnShelves(AbstractPlanogramType):
         # the store background shelves (which have their own price tags).
         # Only count items with a real bbox (area > 4px^2).
         _real_boxes = [
-            p.detection_box for p in identified_products
+            p.detection_box
+            for p in identified_products
             if p.detection_box is not None
             and (p.detection_box.x2 - p.detection_box.x1) > 2
             and (p.detection_box.y2 - p.detection_box.y1) > 2
@@ -1300,9 +1296,7 @@ class ProductOnShelves(AbstractPlanogramType):
             _enc_x2 = min(img_w, max(int(b.x2) for b in _real_boxes) + 30)
         else:
             _enc_x1, _enc_x2 = 0, img_w
-        self.logger.info(
-            f"Fact-tag OCR endcap x-span: [{_enc_x1}, {_enc_x2}]"
-        )
+        self.logger.info(f"Fact-tag OCR endcap x-span: [{_enc_x1}, {_enc_x2}]")
 
         for shelf_level, sr in shelf_reg_by_level.items():
             try:
@@ -1364,14 +1358,12 @@ class ProductOnShelves(AbstractPlanogramType):
                     msg = await client.ask_to_image(
                         image=row_img,
                         prompt=prompt,
-                        model=GoogleModel.GEMINI_3_FLASH_PREVIEW,
+                        model="gemini-3.5-flash",
                         no_memory=True,
                         max_tokens=128,
                     )
                 raw = (msg.output or "").strip() if msg else ""
-                self.logger.info(
-                    f"Fact-tag row OCR shelf='{shelf_level}' -> '{raw}'"
-                )
+                self.logger.info(f"Fact-tag row OCR shelf='{shelf_level}' -> '{raw}'")
                 # Store raw text on detected tags for traceability
                 for t in tags:
                     t.ocr_text = raw
@@ -1386,9 +1378,7 @@ class ProductOnShelves(AbstractPlanogramType):
                         shelf_map[shelf_level].append(model_text)
 
             except Exception as e:
-                self.logger.warning(
-                    f"Fact-tag row OCR failed for shelf='{shelf_level}': {e}"
-                )
+                self.logger.warning(f"Fact-tag row OCR failed for shelf='{shelf_level}': {e}")
 
         return dict(shelf_map)
 
@@ -1414,16 +1404,15 @@ class ProductOnShelves(AbstractPlanogramType):
             # Collect normalized keys for products already on this shelf
             existing_norms: set = set()
             for p in identified_products:
-                if (
-                    p.shelf_location == shelf_level
-                    and p.product_type not in (
-                        "fact_tag", "price_tag", "slot",
-                        "brand_logo", "gap", "shelf",
-                    )
+                if p.shelf_location == shelf_level and p.product_type not in (
+                    "fact_tag",
+                    "price_tag",
+                    "slot",
+                    "brand_logo",
+                    "gap",
+                    "shelf",
                 ):
-                    norm = self._base_model_from_str(
-                        p.product_model or "", brand=brand, patterns=norm_patterns
-                    )
+                    norm = self._base_model_from_str(p.product_model or "", brand=brand, patterns=norm_patterns)
                     if norm:
                         existing_norms.add(norm)
 
@@ -1434,12 +1423,12 @@ class ProductOnShelves(AbstractPlanogramType):
             shelves_cfg = getattr(planogram_description, "shelves", []) or []
             for sh_cfg in shelves_cfg:
                 sh_level = sh_cfg.get("level") if isinstance(sh_cfg, dict) else getattr(sh_cfg, "level", None)
-                sh_products = sh_cfg.get("products", []) if isinstance(sh_cfg, dict) else getattr(sh_cfg, "products", [])
-                for prod_cfg in (sh_products or []):
+                sh_products = (
+                    sh_cfg.get("products", []) if isinstance(sh_cfg, dict) else getattr(sh_cfg, "products", [])
+                )
+                for prod_cfg in sh_products or []:
                     pname = prod_cfg.get("name", "") if isinstance(prod_cfg, dict) else getattr(prod_cfg, "name", "")
-                    pnorm = self._base_model_from_str(
-                        pname, brand=brand, patterns=norm_patterns
-                    )
+                    pnorm = self._base_model_from_str(pname, brand=brand, patterns=norm_patterns)
                     if pnorm:
                         if sh_level == shelf_level:
                             expected_norms.add(pnorm)
@@ -1447,13 +1436,10 @@ class ProductOnShelves(AbstractPlanogramType):
                             all_other_shelf_norms.add(pnorm)
 
             for ocr_model in ocr_models:
-                ocr_norm = self._base_model_from_str(
-                    ocr_model, brand=brand, patterns=norm_patterns
-                )
+                ocr_norm = self._base_model_from_str(ocr_model, brand=brand, patterns=norm_patterns)
                 if ocr_norm and ocr_norm in existing_norms:
                     self.logger.info(
-                        f"Fact-tag corroboration \u2713 shelf='{shelf_level}' "
-                        f"model='{ocr_model}' already detected"
+                        f"Fact-tag corroboration \u2713 shelf='{shelf_level}' " f"model='{ocr_model}' already detected"
                     )
                     continue
 
@@ -1493,9 +1479,7 @@ class ProductOnShelves(AbstractPlanogramType):
                     f"on shelf='{shelf_level}' (not found in LLM detections)"
                 )
                 synthetic = IdentifiedProduct(
-                    detection_box=DetectionBox(
-                        x1=0, y1=0, x2=1, y2=1, confidence=0.85
-                    ),
+                    detection_box=DetectionBox(x1=0, y1=0, x2=1, y2=1, confidence=0.85),
                     product_type="product",
                     product_model=ocr_model,
                     confidence=0.85,
@@ -1531,12 +1515,20 @@ class ProductOnShelves(AbstractPlanogramType):
         shelves.sort(key=lambda s: s.bbox.y1)
 
         # Identify background shelves for promotional graphics
-        background_shelves = [s for s in shelves if getattr(s, 'is_background', False)]
+        background_shelves = [s for s in shelves if getattr(s, "is_background", False)]
 
         _promo_types_assign = {
-            "promotional_graphic", "graphic", "banner", "backlit_graphic", "backlit",
-            "advertisement", "advertisement_graphic", "display_graphic",
-            "promotional_display", "promotional_material", "promotional_materials"
+            "promotional_graphic",
+            "graphic",
+            "banner",
+            "backlit_graphic",
+            "backlit",
+            "advertisement",
+            "advertisement_graphic",
+            "display_graphic",
+            "promotional_display",
+            "promotional_material",
+            "promotional_materials",
         }
         _structural_types = {"gap", "shelf"}
         for p in products:
@@ -1549,7 +1541,7 @@ class ProductOnShelves(AbstractPlanogramType):
             # Check various fields for promotional indicators
             model_lower = (p.product_model or "").lower()
             type_lower = (p.product_type or "").lower()
-            brand_lower = (getattr(p, 'brand', '') or "").lower()
+            brand_lower = (getattr(p, "brand", "") or "").lower()
 
             # Items with explicit promotional names like "Logo Ad" should always go to background
             is_explicit_ad = ("logo" in model_lower and "ad" in model_lower) or "backlit" in model_lower
@@ -1557,24 +1549,18 @@ class ProductOnShelves(AbstractPlanogramType):
             # Regular products should NOT go to background (unless explicitly an ad)
             is_regular_product = p.product_type in ("product", "printer", "speaker", "pa_system") and not is_explicit_ad
 
-            is_promotional = (
-                is_explicit_ad or
-                (not is_regular_product and (
-                    p.product_type in (
-                        "promotional_graphic",
-                        "advertisement",
-                        "graphic",
-                        "logo",
-                        "banner",
-                        "backlit_graphic"
-                    ) or
-                    "logo" in model_lower or
-                    " ad" in model_lower or
-                    "advertisement" in model_lower or
-                    "graphic" in type_lower or
-                    "banner" in type_lower or
-                    "logo" in brand_lower
-                ))
+            is_promotional = is_explicit_ad or (
+                not is_regular_product
+                and (
+                    p.product_type
+                    in ("promotional_graphic", "advertisement", "graphic", "logo", "banner", "backlit_graphic")
+                    or "logo" in model_lower
+                    or " ad" in model_lower
+                    or "advertisement" in model_lower
+                    or "graphic" in type_lower
+                    or "banner" in type_lower
+                    or "logo" in brand_lower
+                )
             )
 
             # For promotional items, prefer background shelves over foreground —
@@ -1600,7 +1586,7 @@ class ProductOnShelves(AbstractPlanogramType):
 
             # For regular products, prefer foreground shelves (non-background)
             # Only fall back to background shelves if no foreground shelf matches
-            foreground_shelves = [s for s in shelves if not getattr(s, 'is_background', False)]
+            foreground_shelves = [s for s in shelves if not getattr(s, "is_background", False)]
             search_shelves = foreground_shelves if foreground_shelves else shelves
 
             # If no detection_box (LLM-identified products without bbox), fall back
@@ -1654,7 +1640,7 @@ class ProductOnShelves(AbstractPlanogramType):
 
             best_shelf = None
             max_iou = 0.0
-            min_dist = float('inf')
+            min_dist = float("inf")
 
             # Use Vertical Intersection -- pick the shelf with MAXIMUM overlap
             for s in search_shelves:

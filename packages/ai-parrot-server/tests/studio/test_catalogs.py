@@ -127,10 +127,13 @@ class TestStudioCatalogs:
         def _boom():
             raise ImportError("boto3 extra not installed")
 
+        # FEAT-523 (TASK-2847): SUPPORTED_CLIENTS is no longer imported by
+        # name into this module — `_build_llm_clients_catalog()` resolves
+        # it via `LLMFactory.supported_clients()` (discover-then-return).
         monkeypatch.setattr(
-            catalog_module,
-            "SUPPORTED_CLIENTS",
-            {"broken": _boom, "openai": _real_openai()},
+            catalog_module.LLMFactory,
+            "supported_clients",
+            staticmethod(lambda: {"broken": _boom, "openai": _real_openai()}),
         )
         handler = _make_handler(app, kind="llm-clients")
 
@@ -189,7 +192,7 @@ class TestStudioCatalogs:
 
 
 def _real_openai():
-    from parrot.clients.gpt import OpenAIClient
+    from parrot.clients.openai import OpenAIClient
 
     return OpenAIClient
 

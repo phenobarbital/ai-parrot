@@ -67,7 +67,9 @@ INFOGRAPHIC_INSTRUCTIONS = (
     "optional `subtitle`/`theme`, and ordered `sections`. Each section has a "
     "`heading`, optional `text`, and a `components` list nesting other catalog "
     "components (KPICard, Chart, InfoCard, ...). Sections render in the order given "
-    "(as Tabs when there is more than one). Display-only."
+    "(as Tabs when there is more than one). Consecutive nested components whose "
+    '`properties.layout` is `"half"` render side-by-side in pairs (FEAT-527). '
+    "Display-only."
 )
 
 
@@ -106,15 +108,70 @@ def _lower_child(descriptor: dict[str, Any], data_model: dict[str, Any], child_i
             return BasicNode(id=child_id, component=name, tabs=tab_specs, **props)
         children_prop = props.get("children")
         if isinstance(children_prop, list) and children_prop and isinstance(children_prop[0], dict):
-            props["children"] = [
-                _lower_child(nested, data_model, f"{child_id}-c{i}") for i, nested in enumerate(props.pop("children"))
-            ]
+            # Code-review fix (FEAT-527): half-layout pairing used to only
+            # apply to a section's own direct children (`_lower_section`
+            # below) — a `layout: "half"` chart nested inside an
+            # accordion/tab_view pane (adapter's `_tabs()` wraps each pane's
+            # blocks in a `Column{children: [...]}` descriptor, lowered
+            # through THIS branch) never got paired into a `Row`. Reuse the
+            # same pairing helper here.
+            props["children"] = _lower_children_with_half_pairing(props.pop("children"), data_model, child_id)
         if isinstance(props.get("child"), dict):
             props["child"] = _lower_child(props.pop("child"), data_model, f"{child_id}-child")
         return BasicNode(id=child_id, component=name, **props)
 
     child = Component(id=child_id, component=name, **props)
     return entry.component_cls().lower(child, data_model)
+
+
+def _is_half_layout(descriptor: dict[str, Any]) -> bool:
+    """True when a nested component descriptor declares ``layout: "half"``."""
+    return (descriptor.get("properties") or {}).get("layout") == "half"
+
+
+def _lower_children_with_half_pairing(
+    descriptors: list[dict[str, Any]], data_model: dict[str, Any], id_prefix: str
+) -> list[BasicNode]:
+    """Lower sibling descriptors, pairing consecutive ``layout: "half"`` ones.
+
+    FEAT-527: consecutive children whose ``properties.layout == "half"``
+    lower pairwise into a ``Row`` (``metadata.extensions.parrot_layout ==
+    "half"``) so they render side-by-side; an odd trailing half-width child
+    stays in its own single-child ``Row``. Any other child (including a
+    ``"full"``/omitted layout) lowers unchanged as a direct sibling.
+
+    Shared (code-review fix) between a section's own direct children
+    (:func:`_lower_section`) and any other nested sibling list (e.g. a
+    ``Column{children: [...]}`` descriptor — the adapter's ``_tabs()`` wraps
+    each accordion/tab_view pane's blocks this way, so without sharing this
+    helper a half-width chart inside a pane never paired into a ``Row``).
+    """
+    children: list[BasicNode] = []
+    ci = 0
+    i = 0
+    while i < len(descriptors):
+        descriptor = descriptors[i]
+        if _is_half_layout(descriptor):
+            pair = [descriptor]
+            if i + 1 < len(descriptors) and _is_half_layout(descriptors[i + 1]):
+                pair.append(descriptors[i + 1])
+                i += 1
+            row_children = []
+            for d in pair:
+                row_children.append(_lower_child(d, data_model, f"{id_prefix}-c{ci}"))
+                ci += 1
+            children.append(
+                BasicNode(
+                    component="Row",
+                    children=row_children,
+                    metadata={"extensions": {"parrot_layout": "half"}},
+                )
+            )
+        else:
+            children.append(_lower_child(descriptor, data_model, f"{id_prefix}-c{ci}"))
+            ci += 1
+        i += 1
+    return children
 
 
 def _lower_section(section: dict[str, Any], data_model: dict[str, Any], section_id: str) -> BasicNode:
@@ -136,8 +193,10 @@ def _lower_section(section: dict[str, Any], data_model: dict[str, Any], section_
                 metadata={"extensions": {"parrot_role": "body"}},
             )
         )
-    for ci, descriptor in enumerate(section.get("components") or []):
-        section_children.append(_lower_child(descriptor, data_model, f"{section_id}-c{ci}"))
+
+    descriptors = section.get("components") or []
+    section_children.extend(_lower_children_with_half_pairing(descriptors, data_model, section_id))
+
     return BasicNode(component="Column", children=section_children)
 
 

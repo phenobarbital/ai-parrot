@@ -1,6 +1,6 @@
 """Tests for GoogleModel enum entries."""
 
-from parrot.models.google import GoogleModel
+from parrot.clients.google.models import GoogleModel  # FEAT-523 (TASK-2841): relocated
 
 
 def test_google_model_enum_has_gemini_3_5_flash():

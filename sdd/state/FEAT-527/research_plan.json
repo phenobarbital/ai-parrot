@@ -1,0 +1,28 @@
+{
+  "feature_id": "FEAT-527",
+  "mode_detected": "investigation",
+  "mode_rationale": "Source asks a factual question about current state ('we need to check if ... is A2UI or ... html-based') before deciding a migration; hypothesis-driven.",
+  "wiki_available": true,
+  "budget": {"profile": "default", "files_read": 40, "grep_calls": 25, "git_calls": 10, "max_depth": 2, "max_wall_seconds": 300},
+  "queries": [
+    {"id": "Q001", "type": "wiki_query", "intent": "orient: infographic renderer / themes / templates", "params": {"question": "infographic renderer themes templates"}, "priority": 1},
+    {"id": "Q002", "type": "wiki_query", "intent": "orient: A2UI infographic surface work", "params": {"question": "A2UI surface infographic"}, "priority": 1},
+    {"id": "Q003", "type": "wiki_query", "intent": "orient: AgentTalk infographic handling", "params": {"question": "AgentTalk infographic"}, "priority": 1},
+    {"id": "Q004", "type": "wiki_query", "intent": "orient: infographic block definitions and registry", "params": {"question": "infographic blocks block registry"}, "priority": 1},
+    {"id": "Q005", "type": "tree", "intent": "locate the infographic output package and its templates/themes/blocks modules", "params": {"path": "packages/ai-parrot/src/parrot/outputs", "maxdepth": 3}, "priority": 1},
+    {"id": "Q006", "type": "grep", "intent": "are templates Jinja/HTML or Pydantic models?", "params": {"pattern": "jinja|Environment\\(|Template\\(|render_template|\\.html", "path": "packages/ai-parrot/src/parrot/outputs/infographic"}, "priority": 1},
+    {"id": "Q007", "type": "read", "intent": "template + theme registry facade", "params": {"path": "packages/ai-parrot/src/parrot/helpers/infographics.py"}, "priority": 2},
+    {"id": "Q008", "type": "read", "intent": "infographic template/theme/block model definitions", "params": {"path": "packages/ai-parrot/src/parrot/outputs/infographic/<models>"}, "priority": 1},
+    {"id": "Q009", "type": "read", "intent": "A2UI adapters from legacy output models (infographic adapter)", "params": {"path": "packages/ai-parrot/src/parrot/outputs/a2ui/adapters/"}, "priority": 1},
+    {"id": "Q010", "type": "read", "intent": "AgentTalk infographic response path (_format_infographic_response, output mode selection)", "params": {"path": "packages/ai-parrot-server/src/parrot/handlers/agent.py", "symbols": ["_format_infographic_response", "_extract_infographic_explanation"]}, "priority": 1},
+    {"id": "Q011", "type": "grep", "intent": "how AgentTalk/handlers pick INFOGRAPHIC vs A2UI output modes", "params": {"pattern": "OutputMode\\.(INFOGRAPHIC|A2UI)", "path": "packages/"}, "priority": 1},
+    {"id": "Q012", "type": "read", "intent": "InfographicToolkit render path and A2UI wiring (FEAT-273 M11)", "params": {"path": "packages/ai-parrot-tools/src/parrot_tools/infographic*"}, "priority": 1},
+    {"id": "Q013", "type": "tree", "intent": "Svelte frontend: legacy infographic block components vs A2UI renderer", "params": {"path": "packages/ai-parrot-server/ui/src/lib/components/agents/canvas", "maxdepth": 3}, "priority": 2},
+    {"id": "Q014", "type": "read", "intent": "persisted A2UI surface kinds (does infographic exist as a surface kind?)", "params": {"path": "packages/ai-parrot-server/src/parrot/handlers/models/ui_surfaces.py"}, "priority": 2},
+    {"id": "Q015", "type": "git_log", "intent": "recent activity on infographic package, adapters, and frontend infographic components", "params": {"paths": ["packages/ai-parrot/src/parrot/outputs/infographic", "packages/ai-parrot/src/parrot/outputs/a2ui/adapters", "packages/ai-parrot-server/ui/src/lib/components/agents/canvas/infographic"], "since": "120 days"}, "priority": 2},
+    {"id": "Q016", "type": "read", "intent": "frontend contract docs: infographic handler API vs A2UI dashboard reference", "params": {"paths": ["docs/infographic_handler_api.md", "docs/frontend/agentdashboard-a2ui-reference.md"]}, "priority": 2},
+    {"id": "Q017", "type": "read", "intent": "prior brainstorm: infographic HTML output via content negotiation", "params": {"path": "sdd/proposals/infographic-html-output.brainstorm.md"}, "priority": 3},
+    {"id": "Q018", "type": "grep", "intent": "which frontend renderer consumes the infographic envelope (legacy registry vs a2ui)", "params": {"pattern": "infographic", "path": "packages/ai-parrot-server/ui/src", "glob": "*.svelte,*.ts"}, "priority": 2},
+    {"id": "Q019", "type": "grep", "intent": "does any A2UI catalog/component set define infographic-specific components?", "params": {"pattern": "infographic|Infographic", "path": "packages/ai-parrot/src/parrot/outputs/a2ui"}, "priority": 1}
+  ]
+}

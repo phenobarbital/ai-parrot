@@ -149,7 +149,9 @@ def _install_mcp(root: Path) -> str:
 
     toolkit_block = assets.toolkit_mcp_block(root, sections)
     after = _upsert_marker_block(
-        without_existing,
+        # Replace an existing block in place: removing and appending it would
+        # reorder adjacent managed integrations (such as Bookstore) on rerun.
+        before if assets.MCP_BEGIN in before else without_existing,
         assets.mcp_block(root, toolkit_block),
         assets.MCP_BEGIN,
         assets.MCP_END,
@@ -203,6 +205,7 @@ def install_codex_integration(
     root: Path,
     config: Optional[WikiProjectConfig] = None,
     gitignore: bool = True,
+    bookstore: bool = True,
 ) -> list[str]:
     """Install project-scoped Codex instructions, skill, MCP, and rules."""
     root = root.resolve()
@@ -222,6 +225,10 @@ def install_codex_integration(
     ]
     if gitignore:
         actions.append(_install_gitignore(root))
+    if bookstore:
+        from .bookstore import install_bookstore
+
+        actions.extend(install_bookstore(root))
     return actions
 
 
@@ -229,6 +236,9 @@ def uninstall_codex_integration(root: Path) -> list[str]:
     """Remove only Codex artifacts managed by this installer."""
     root = root.resolve()
     actions: list[str] = []
+    from .bookstore import uninstall_bookstore
+
+    actions.extend(uninstall_bookstore(root))
 
     agents_path = root / "AGENTS.md"
     if agents_path.exists():
@@ -287,7 +297,10 @@ def integration_status(root: Path) -> dict[str, Any]:
             block = rest.partition(assets.MCP_END)[0]
             toolkit_count = len(re.findall(r"^\[mcp_servers\.parrot-", block, flags=re.MULTILINE))
 
+    from .bookstore import bookstore_status
+
     return {
+        **bookstore_status(root),
         "root": str(root),
         "config": config_path(root).exists(),
         "wiki_built": config.is_built(root),

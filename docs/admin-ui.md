@@ -315,6 +315,7 @@ Every flag defaults to **on**; set any `PUBLIC_AGENTCHAT_*` env var to
 | `PUBLIC_AGENTCHAT_INFOGRAPHIC` | `true` | Infographic canvas + editor |
 | `PUBLIC_AGENTCHAT_DATASETS` | `true` | Dataset management modals |
 | `PUBLIC_AGENTCHAT_RICH_EDITOR` | `true` | The `@tiptap`-backed rich HTML editor (`InfographicEditor`, `AppTextEditor`'s rich mode) |
+| `PUBLIC_AGENTCHAT_A2UI` | `true` | **FEAT-527**: the bundled A2UI `Infographic` renderer (`canvas/a2ui/*`, opens the infographic canvas in `mode: "a2ui"` for a chat turn carrying an `Infographic`/`Report`-rooted `a2ui_envelope`); off falls back to today's HTML iframe view |
 
 These map 1:1 to `ui/vite.config.ts`'s `agentchatDefines()` (compiled into
 `__AGENTCHAT_<NAME>__` constants) and `ui/src/lib/features.ts`'s

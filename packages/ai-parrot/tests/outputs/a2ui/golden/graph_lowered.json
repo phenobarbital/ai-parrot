@@ -1,0 +1,60 @@
+{
+  "child": {
+    "children": [
+      {
+        "component": "Text",
+        "metadata": {
+          "extensions": {
+            "parrot_role": "description"
+          }
+        },
+        "text": "A tiny two-node graph."
+      },
+      {
+        "component": "Text",
+        "metadata": {
+          "extensions": {
+            "parrot_role": "caption"
+          }
+        },
+        "text": "Graph (flowchart, TB)"
+      },
+      {
+        "children": [
+          {
+            "component": "Text",
+            "metadata": {
+              "extensions": {
+                "parrot_role": "edge"
+              }
+            },
+            "text": "a \u2192 b (go)"
+          }
+        ],
+        "component": "Column",
+        "metadata": {
+          "extensions": {
+            "parrot_role": "edge-list"
+          }
+        }
+      },
+      {
+        "component": "Text",
+        "metadata": {
+          "extensions": {
+            "parrot_role": "graph-source"
+          }
+        },
+        "text": "flowchart TB\na[Start]\nb[End]\na -->|go| b\n"
+      }
+    ],
+    "component": "Column"
+  },
+  "component": "Card",
+  "id": "blk-000",
+  "metadata": {
+    "extensions": {
+      "parrot_variant": "graph"
+    }
+  }
+}

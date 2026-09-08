@@ -42,19 +42,27 @@ from typing import Any
 # registered so lowering/dispatch can resolve every component name.
 import parrot.outputs.a2ui.catalog.basic
 import parrot.outputs.a2ui.catalog.parrot  # noqa: F401 — ensure registration
+import parrot.outputs.a2ui.catalog.viz_core  # noqa: F401 — ensure Graph registration (FEAT-529)
 from parrot.outputs.a2ui.artifacts import DeepLink, RenderedArtifact
 from parrot.outputs.a2ui.baking import bake_envelope
 from parrot.outputs.a2ui.catalog import get_component
-from parrot.outputs.a2ui.catalog.base import BasicNode, TabSpec, to_components
+from parrot.outputs.a2ui.catalog.base import BasicNode, DEFAULT_CATALOG_ID, TabSpec, to_components
+from parrot.outputs.a2ui.catalog.basic import BASIC_CATALOG_ID
+from parrot.outputs.a2ui.catalog.viz_core import VIZ_CORE_CATALOG_ID
+from parrot.outputs.a2ui.catalog.viz_core.graph import GraphComponent
+from parrot.outputs.a2ui.graph import MAX_STATIC_NODES, GraphTooLargeError
 from parrot.outputs.a2ui.models import Component, ComponentMetadata, CreateSurface
 from parrot.outputs.a2ui.renderers import (
     AbstractA2UIRenderer,
     RendererCapabilities,
     register_a2ui_renderer,
 )
+from parrot.outputs.a2ui.catalog.parrot.htmldocument import parse_html_document_placeholder_title
 from parrot.outputs.a2ui.renderers.degrade import degradation_record, degrade
 from parrot.outputs.formats.assets.design_system import DesignSystem
 
+from ._graph_svg import render_graph_svg
+from ._intercept import intercepts
 from ._semantics import (
     is_kpi_row,
     kpi_unit_html,
@@ -73,6 +81,32 @@ _SURFACE_NAME = "ssr_html"
 #: Basic Catalog composite/container primitives whose children render
 #: recursively (the CSS class used for the wrapping ``<div>``).
 _CONTAINER_COMPONENTS = {"Column": "a2ui-col", "Row": "a2ui-row"}
+
+#: Chart types with no native visual on this static renderer — ALL chart
+#: types already lower to the same generic text summary
+#: (``ChartComponent.lower()``, which prints the type in its caption), but
+#: these 5 (FEAT-527) are additionally recorded as a degradation: before
+#: FEAT-527 the adapter collapsed them to a supported type, so this static
+#: renderer never saw the literal type before.
+_UNSUPPORTED_CHART_TYPES = frozenset({"gauge", "funnel", "waterfall", "heatmap", "treemap"})
+
+#: The one (catalog_id, name) pair intercepted as a native Graph — used
+#: with the shared catalog-aware `intercepts()` helper (FEAT-529).
+_GRAPH_INTERCEPT_TABLE = frozenset({(VIZ_CORE_CATALOG_ID, "Graph")})
+
+
+def _truncate_graph_edge_list(tree: BasicNode) -> None:
+    """Truncate a lowered ``Graph``'s edge-list ``Column`` children to
+    :data:`~parrot.outputs.a2ui.graph.MAX_STATIC_NODES` rows, in place
+    (FEAT-529 oversize-graph fallback)."""
+    column = tree.child
+    if column is None or not isinstance(column.children, list):
+        return
+    for child in column.children:
+        if isinstance(child, BasicNode) and node_extensions(child).get("parrot_role") == "edge-list":
+            if isinstance(child.children, list) and len(child.children) > MAX_STATIC_NODES:
+                child.children = child.children[:MAX_STATIC_NODES]
+            break
 
 
 def _propagate_extensions(parent: Component, lowered: list[Component]) -> list[Component]:
@@ -117,6 +151,7 @@ def _esc(value: Any) -> str:
         supports_actions=False,
         supports_updates=False,
         output="text/html",
+        supported_catalog_ids=[BASIC_CATALOG_ID, DEFAULT_CATALOG_ID, VIZ_CORE_CATALOG_ID],
         supported_components={
             "AudioPlayer",
             "Button",
@@ -136,6 +171,7 @@ def _esc(value: Any) -> str:
             "Text",
             "TextField",
             "Video",
+            "Graph",
         },
     ),
 )
@@ -198,17 +234,17 @@ class SSRHTMLRenderer(AbstractA2UIRenderer):
         # here so cell rendering can re-derive it later (TASK-2711).
         table_columns_by_id = self._collect_table_columns(envelope)
 
+        degradations: list[dict[str, Any]] = []
         # Lower every composite BEFORE baking — a composite (e.g. DataTable)
         # may lower to a row `ChildTemplate`, and template/binding expansion
         # is exclusively `bake_envelope`'s job, which must see the fully
         # flattened wire graph (never a still-composite one).
-        lowered_envelope = self._lower_composites(envelope)
+        lowered_envelope = self._lower_composites(envelope, degradations)
         # Static renderer: always bake so the document has zero live bindings.
         baked_components = bake_envelope(lowered_envelope)
         by_id = {bc["id"]: bc for bc in baked_components}
 
         self._table_cell_columns = {}
-        degradations: list[dict[str, Any]] = []
         body_parts: list[str] = []
         if "root" in by_id:
             root = self._reconstruct(by_id["root"]["id"], by_id)
@@ -244,7 +280,7 @@ class SSRHTMLRenderer(AbstractA2UIRenderer):
 
     # -- lowering (composites -> flat primitives, BEFORE baking) -------------
 
-    def _lower_composites(self, envelope: CreateSurface) -> CreateSurface:
+    def _lower_composites(self, envelope: CreateSurface, degradations: list[dict[str, Any]]) -> CreateSurface:
         """Replace every non-primitive (Parrot composite) component with its
         lowered + flattened primitive equivalents, in place, in the envelope's
         own flat component list.
@@ -254,9 +290,29 @@ class SSRHTMLRenderer(AbstractA2UIRenderer):
         ``catalog/parrot/datatable.py``), so any OTHER component's
         ``child``/``children`` reference into that id remains valid after
         lowering — no cross-reference rewriting is needed.
+
+        FEAT-527: a ``Chart`` whose ``type`` has no native visual on this
+        static renderer (:data:`_UNSUPPORTED_CHART_TYPES`) still lowers to
+        the same generic text-summary tree (``ChartComponent.lower()``
+        already prints the original type in its caption) — but is
+        additionally recorded into ``degradations`` here, before lowering
+        discards the original (not-yet-lowered) component.
         """
         new_components: list[Component] = []
         for comp in envelope.components:
+            if comp.component == "Graph" and intercepts(_GRAPH_INTERCEPT_TABLE, comp, envelope.catalog_id):
+                new_components.extend(self._lower_graph_component(comp, envelope.data_model, degradations))
+                continue
+            if comp.component == "Chart":
+                chart_type = (comp.model_extra or {}).get("type")
+                if chart_type in _UNSUPPORTED_CHART_TYPES:
+                    degradations.append(
+                        degradation_record(
+                            BasicNode(id=comp.id, component="Chart"),
+                            f"{_SURFACE_NAME} has no native visual for chart type "
+                            f"'{chart_type}'; rendered as a text data summary",
+                        )
+                    )
             try:
                 entry = get_component(comp.component)
             except KeyError:
@@ -268,6 +324,52 @@ class SSRHTMLRenderer(AbstractA2UIRenderer):
             else:
                 new_components.append(comp)
         return envelope.model_copy(update={"components": new_components})
+
+    def _lower_graph_component(
+        self, comp: Component, data_model: dict[str, Any], degradations: list[dict[str, Any]]
+    ) -> list[Component]:
+        """Replace an intercepted viz-core ``Graph`` with an inline-SVG
+        ``Text`` marker (FEAT-529), or — if it exceeds the static node cap —
+        ``GraphComponent``'s own lowered edge list, truncated.
+
+        ``layout.engine == "force"`` degrades to the deterministic layered
+        layout (spec: force is an interactive-renderer-only hint; every
+        static lane, this one included, has no force-directed drawing).
+        """
+        props = comp.model_dump(by_alias=True, mode="json", exclude_none=True)
+        working_props = dict(props)
+        layout = working_props.get("layout") or {}
+        if layout.get("engine") == "force":
+            degradations.append(
+                degradation_record(
+                    BasicNode(id=comp.id, component="Graph"),
+                    f"{_SURFACE_NAME} has no force layout; rendered with the deterministic layered layout instead",
+                )
+            )
+            working_props = {key: value for key, value in working_props.items() if key != "layout"}
+
+        try:
+            svg = render_graph_svg(working_props)
+        except GraphTooLargeError:
+            degradations.append(
+                degradation_record(
+                    BasicNode(id=comp.id, component="Graph"),
+                    f"{_SURFACE_NAME}: graph exceeds the static node cap ({MAX_STATIC_NODES}); "
+                    "rendered as a truncated edge list",
+                )
+            )
+            tree = GraphComponent().lower(comp, data_model)
+            _truncate_graph_edge_list(tree)
+            lowered = to_components(tree, id_prefix=f"{comp.id}-lc")
+            return _propagate_extensions(comp, lowered)
+
+        svg_component = Component(
+            id=comp.id,
+            component="Text",
+            text=svg,
+            metadata={"extensions": {"parrot_role": "graph-svg"}},
+        )
+        return [svg_component]
 
     # -- DataTable column type/format re-derivation (TASK-2711) -------------
     # DataTableComponent.lower() cannot carry per-column type/format on its
@@ -402,8 +504,35 @@ class SSRHTMLRenderer(AbstractA2UIRenderer):
     def _render_Text(self, node: BasicNode, degradations: list[dict[str, Any]]) -> str:
         props = node.model_extra or {}
         role = None
+        extensions: dict[str, Any] = {}
         if node.metadata is not None and node.metadata.extensions is not None:
-            role = node.metadata.extensions.root.get("parrot_role")
+            extensions = node.metadata.extensions.root
+            role = extensions.get("parrot_role")
+
+        if role == "graph-svg":
+            # FEAT-529: `_lower_graph_component` stamps this role on a
+            # Text node whose `text` is ALREADY a rendered <svg>...</svg>
+            # string (`_graph_svg.render_graph_svg`'s own output escapes
+            # every data value it embeds) — return it raw, never re-escaped
+            # like an ordinary Text value.
+            return str(props.get("text") or "")
+
+        if role == "html_document":
+            # FEAT-527: HtmlDocumentComponent.lower() never carries the raw
+            # HTML — this static renderer cannot embed it either way, so it
+            # ALWAYS degrades: a titled link to the signed artifact URL when
+            # one exists, else the placeholder text. Always recorded.
+            degradations.append(degradation_record(node, "ssr-html cannot embed HtmlDocument"))
+            placeholder = str(props.get("text") or "")
+            title = parse_html_document_placeholder_title(placeholder)
+            src_url = extensions.get("parrot_src_url")
+            if src_url:
+                return (
+                    '<p class="a2ui-html-document-link">'
+                    f'<a href="{html.escape(str(src_url), quote=True)}">{html.escape(title)}</a></p>'
+                )
+            return f'<p class="a2ui-html-document-link">{html.escape(placeholder)}</p>'
+
         if "text" not in props and role != "cell":
             # FEAT-499: baking drops the "text" key entirely (never an
             # empty string) when an OPTIONAL binding failed to resolve —

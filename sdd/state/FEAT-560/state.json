@@ -1,0 +1,79 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-560",
+  "feature_slug": "voicebot-liveavatar-implementation",
+  "started_at": "2026-09-07T05:30:54.420496+00:00",
+  "updated_at": "2026-09-07T05:40:15.236810+00:00",
+  "source": {
+    "kind": "inline",
+    "raw_path": "sdd/state/FEAT-560/source.md",
+    "fetched_at": "2026-09-07T05:30:54.420496+00:00",
+    "summary_oneline": "Nova 2 Audio como proveedor intercambiable de VoiceBot con tools y audio + salida estructurada"
+  },
+  "mode": "enrichment",
+  "phase": "committed",
+  "phases": {
+    "source": {
+      "status": "completed"
+    },
+    "plan": {
+      "status": "completed",
+      "approved_by_user": false,
+      "edited_by_user": false,
+      "plan_path": "sdd/state/FEAT-560/research_plan.json"
+    },
+    "research": {
+      "status": "completed",
+      "files_read": 17,
+      "grep_calls": 17,
+      "git_calls": 3,
+      "depth_reached": 2,
+      "truncated": true,
+      "truncation_reason": "Límite temporal; wall_seconds incluye preparación de evidencias y espera de aprobación del test.",
+      "completed_at": "2026-09-07T05:39:14.792114+00:00"
+    },
+    "synthesis": {
+      "status": "completed",
+      "synthesis_path": "sdd/state/FEAT-560/synthesis.json",
+      "overall_confidence": "medium",
+      "claims_total": 8,
+      "claims_high_conf": 6,
+      "claims_medium_conf": 2,
+      "claims_low_conf": 0,
+      "unknowns_count": 0,
+      "lint_passed": true,
+      "lint_iterations": 1
+    },
+    "qa": {
+      "status": "completed",
+      "questions_total": 2,
+      "questions_answered": 2,
+      "completed_at": "2026-09-07T05:40:15.236810+00:00"
+    },
+    "output": {
+      "status": "completed",
+      "proposal_path": "sdd/proposals/voicebot-liveavatar-implementation.proposal.md",
+      "commit_sha": null,
+      "next_command_recommended": "sdd-spec",
+      "next_command_rationale": "Usuario aceptó paridad de ToolResult y validación WebSocket/LiveAvatar existentes; la spec concretará la extensión optativa de herramientas y sus pruebas. No saltar a tareas."
+    }
+  },
+  "budget": {
+    "profile": "default",
+    "max_files_read": 40,
+    "max_grep_calls": 25,
+    "max_git_calls": 10,
+    "max_depth": 2,
+    "max_wall_seconds": 300
+  },
+  "consumed": {
+    "files_read": 17,
+    "grep_calls": 17,
+    "git_calls": 3,
+    "wall_seconds": 500.4
+  },
+  "resume_hint": {
+    "next_phase": "committed",
+    "next_action": "Generar spec desde la propuesta aceptada; reservar ID formal en sdd-spec."
+  }
+}

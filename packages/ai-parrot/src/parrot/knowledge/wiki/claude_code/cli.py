@@ -72,11 +72,18 @@ def claude() -> None:
     show_default=True,
     help="Build the wiki plane now if it does not exist yet.",
 )
+@click.option(
+    "--bookstore/--no-bookstore",
+    default=True,
+    show_default=True,
+    help="Install Bookstore MCP and skill when an indexed library exists (no indexing).",
+)
 def install(
     path_: Optional[str],
     git_hook: bool,
     gitignore: bool,
     build_now: bool,
+    bookstore: bool,
 ) -> None:
     """Install the wiki toolkit as Claude Code infrastructure.
 
@@ -88,7 +95,9 @@ def install(
     root = _resolve_root(path_)
     try:
         config = load_effective_config(root).config
-        actions = install_claude_integration(root, config, git_hook=git_hook, gitignore=gitignore)
+        actions = install_claude_integration(
+            root, config, git_hook=git_hook, gitignore=gitignore, bookstore=bookstore
+        )
     except (RuntimeError, WikiConfigError) as exc:
         raise click.ClickException(str(exc)) from exc
 
@@ -136,6 +145,8 @@ def status(path_: Optional[str], as_json: bool) -> None:
         "permissions": "wikitoolkit permissions (settings.local.json)",
         "slash_command": "/parrotwiki command",
         "git_post_commit_hook": "git post-commit auto-upsert",
+        "bookstore_mcp": "bookstore MCP (.mcp.json)",
+        "bookstore_skill": "bookstore research skill",
     }
     for key, label in labels.items():
         mark = "✓" if info.get(key) else "✗"

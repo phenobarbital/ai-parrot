@@ -23,6 +23,7 @@ tool's side effect / `tool_calls` rather than exact output text (the
 sub-agent may treat a "reply with exactly X" instruction embedded in
 tool output as untrusted input and refuse it — observed 2026-08-20).
 """
+
 from __future__ import annotations
 
 import shutil
@@ -43,7 +44,7 @@ from parrot.bots.guardrails import (
     GuardrailResult,
     GuardrailStage,
 )
-from parrot.clients.claude_agent import ClaudeAgentClient, ClaudeAgentRunOptions
+from parrot.clients.anthropic.claude_agent import ClaudeAgentClient, ClaudeAgentRunOptions
 from parrot.tools.abstract import AbstractTool, ToolResult
 from parrot.tools.manager import ToolManager
 
@@ -73,8 +74,7 @@ class _InventoryTool(AbstractTool):
     def __init__(self, **kwargs):
         super().__init__(
             description=(
-                "Returns the current inventory level for a SKU. Call this "
-                "whenever asked about stock levels."
+                "Returns the current inventory level for a SKU. Call this " "whenever asked about stock levels."
             ),
             **kwargs,
         )
@@ -154,16 +154,13 @@ class TestEndToEnd:
 
         try:
             result = await client.ask(
-                "Call the inventory_level tool for SKU ABC-123 and report "
-                "the result in one short sentence."
+                "Call the inventory_level tool for SKU ABC-123 and report " "the result in one short sentence."
             )
         except Exception as exc:  # noqa: BLE001 - pragma: no cover - environment-dependent
             pytest.skip(f"Live claude-agent call failed (likely auth): {exc}")
 
         assert tool.calls, "the bridged tool's side effect never ran"
-        tool_call_names = [
-            getattr(call, "name", None) for call in (result.tool_calls or [])
-        ]
+        tool_call_names = [getattr(call, "name", None) for call in (result.tool_calls or [])]
         assert any(
             name and name.startswith("mcp__parrot__") for name in tool_call_names
         ), f"no mcp__parrot__* tool call recorded: {tool_call_names}"
@@ -180,8 +177,7 @@ class TestEndToEnd:
 
         try:
             result = await client.ask(
-                "Call the inventory_level tool for SKU ABC-123 and tell me "
-                "what happened, even if it failed."
+                "Call the inventory_level tool for SKU ABC-123 and tell me " "what happened, even if it failed."
             )
         except Exception as exc:  # noqa: BLE001 - pragma: no cover - environment-dependent
             pytest.skip(f"Live claude-agent call failed (likely auth): {exc}")

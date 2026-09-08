@@ -4,14 +4,23 @@ No real AWS credentials or network access required — ``NovaClient``
 construction does not require them (lazy ``aioboto3``/Pre-Alpha SDK
 imports).
 """
+
 from parrot.clients.factory import LLMFactory, SUPPORTED_CLIENTS
-from parrot.clients.nova import NovaClient
+from parrot.clients.amazon.nova import NovaClient
 
 
 def test_nova_key_registered_lazy():
+    """FEAT-523 (TASK-2850): "nova" is discovered via a real
+    ``parrot.clients`` entry point (ai-parrot-client-amazon) — the
+    registered value is the entry point's zero-arg loader, resolved to
+    the real class the same way ``LLMFactory.create()`` does.
+    """
     assert "nova" in SUPPORTED_CLIENTS
-    assert callable(SUPPORTED_CLIENTS["nova"])
-    assert not isinstance(SUPPORTED_CLIENTS["nova"], type)
+    registered = SUPPORTED_CLIENTS["nova"]
+    if callable(registered) and not isinstance(registered, type):
+        registered = registered()
+    assert registered is NovaClient
+    assert isinstance(registered, type)
 
 
 def test_create_default():
@@ -27,4 +36,5 @@ def test_create_with_model():
 
 def test_nova_not_in_provider_backend():
     from parrot.clients.factory import PROVIDER_BACKEND
+
     assert "nova" not in PROVIDER_BACKEND

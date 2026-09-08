@@ -1,8 +1,10 @@
 from unittest.mock import AsyncMock, MagicMock
 
+import json
 import pytest
 from parrot.clients.base import AbstractClient
 from parrot.memory.abstract import ConversationHistory, ConversationTurn
+from parrot.memory.render import render_history
 
 
 class _ConcreteClient(AbstractClient):
@@ -117,119 +119,100 @@ class TestShouldUseFallback:
         assert client._should_use_fallback("primary-model", error) is False
 
 
-class TestPrepareConversationContext:
-    """Code-review regression tests (FEAT-302): _prepare_conversation_context()
-    previously built the current-turn message twice and, when a
-    conversation history was present, replayed every historical turn
-    twice too — with the current turn placed *before* the historical
-    replay instead of after it. These tests pin down the corrected,
-    non-duplicated, correctly-ordered behavior. This is shared
-    AbstractClient infrastructure used by every provider (Anthropic,
-    OpenAI, Google, Groq, Bedrock, ...), not Bedrock-specific.
+class TestBuildMessages:
+    """Regression tests for ``AbstractClient._build_messages`` (FEAT-302, FEAT-524).
+
+    FEAT-302 fixed a bug in the old ``_prepare_conversation_context()``: it built
+    the current-turn message twice and, when a conversation history was present,
+    replayed every historical turn twice too — with the current turn placed
+    *before* the historical replay instead of after it. FEAT-524 removed that
+    method (clients no longer load history at all), so these tests now pin the
+    same non-duplication and ordering guarantees on its replacement,
+    ``_build_messages(prompt, files, history)``. This is shared AbstractClient
+    infrastructure used by every provider, not Bedrock-specific.
     """
 
-    def _client_with_memory(self, history: "ConversationHistory | None"):
-        client = _make_client(logger=MagicMock())
-        client.conversation_memory = MagicMock()
-        client.conversation_memory.get_history = AsyncMock(return_value=history)
-        client.conversation_memory.create_history = AsyncMock(return_value=history)
-        return client
-
-    @pytest.mark.asyncio
-    async def test_no_history_single_current_message_no_duplication(self):
-        """Without user_id/session_id, exactly one message is produced —
-        not two identical ones."""
-        client = self._client_with_memory(None)
-        messages, history, system_prompt = await client._prepare_conversation_context(
-            "Hello", None, None, None, None
-        )
-        assert len(messages) == 1
-        assert messages[0]["role"] == "user"
-        assert history is None
-
-    @pytest.mark.asyncio
-    async def test_with_history_no_duplication_and_correct_order(self):
-        """With a conversation history, historical turns come first, the
-        current turn comes last — each appearing exactly once."""
+    @staticmethod
+    def _rendered(*pairs):
+        """Render ``(user, assistant)`` pairs the way the bot would."""
         history = ConversationHistory(
             session_id="s1",
             user_id="u1",
             turns=[
                 ConversationTurn(
-                    turn_id="t1", user_id="u1",
-                    user_message="What's 2+2?", assistant_response="4",
-                ),
+                    turn_id=f"t{i}",
+                    user_id="u1",
+                    user_message=user,
+                    assistant_response=assistant,
+                )
+                for i, (user, assistant) in enumerate(pairs)
             ],
         )
-        client = self._client_with_memory(history)
-        messages, returned_history, system_prompt = await client._prepare_conversation_context(
-            "And 3+3?", None, "u1", "s1", None
-        )
+        return render_history(history)
 
-        # Exactly 3 messages: [history_user, history_assistant, current_user]
-        # — not 5 (the old bug duplicated both the history turn and the
-        # current message).
-        assert len(messages) == 3
+    def test_no_history_single_current_message_no_duplication(self):
+        """Without history, exactly one message is produced — not two identical."""
+        client = _make_client(logger=MagicMock())
+
+        messages = client._build_messages("Hello", None, None)
+
+        assert len(messages) == 1
         assert messages[0]["role"] == "user"
-        assert messages[1]["role"] == "assistant"
-        assert messages[2]["role"] == "user"
 
-        # The LAST message must be the *current* turn, not a repeat of history.
+    def test_with_history_no_duplication_and_correct_order(self):
+        """Historical turns come first, the current turn last, each exactly once."""
+        client = _make_client(logger=MagicMock())
+
+        messages = client._build_messages("And 3+3?", None, self._rendered(("What's 2+2?", "4")))
+
+        # Exactly 3 messages: [history_user, history_assistant, current_user] —
+        # not 5, which is what the pre-FEAT-302 duplication produced.
+        assert [m["role"] for m in messages] == ["user", "assistant", "user"]
+
         current_text = messages[2]["content"]
         if isinstance(current_text, list):
-            current_text = "".join(
-                b.get("text", "") for b in current_text if isinstance(b, dict)
-            )
+            current_text = "".join(b.get("text", "") for b in current_text if isinstance(b, dict))
         assert "3+3" in current_text
-        assert returned_history is history
+        # And the history text appears exactly once across the whole payload.
+        assert json.dumps(messages).count("2+2") == 1
 
-    @pytest.mark.asyncio
-    async def test_system_prompt_generated_from_history_when_not_stateless(self):
-        history = ConversationHistory(
-            session_id="s1",
-            user_id="u1",
-            turns=[
-                ConversationTurn(
-                    turn_id="t1", user_id="u1",
-                    user_message="hi", assistant_response="hello",
-                ),
-            ],
-        )
-        client = self._client_with_memory(history)
-        _messages, _history, system_prompt = await client._prepare_conversation_context(
-            "next question", None, "u1", "s1", None, stateless=False
-        )
-        assert system_prompt is not None
-        assert "hi" in system_prompt and "hello" in system_prompt
+    def test_multi_turn_history_order_is_chronological(self):
+        """Several turns keep their order, with the current turn appended last."""
+        client = _make_client(logger=MagicMock())
 
-    @pytest.mark.asyncio
-    async def test_stateless_skips_system_prompt_generation(self):
-        history = ConversationHistory(
-            session_id="s1",
-            user_id="u1",
-            turns=[
-                ConversationTurn(
-                    turn_id="t1", user_id="u1",
-                    user_message="hi", assistant_response="hello",
-                ),
-            ],
-        )
-        client = self._client_with_memory(history)
-        messages, _history, system_prompt = await client._prepare_conversation_context(
-            "next question", None, "u1", "s1", None, stateless=True
-        )
-        # History is still included in messages (stateless only skips the
-        # system-prompt-from-history generation), current turn still last.
-        assert len(messages) == 3
-        assert system_prompt is None
+        messages = client._build_messages("third", None, self._rendered(("first", "a1"), ("second", "a2")))
 
-    @pytest.mark.asyncio
-    async def test_missing_file_logs_and_skips_instead_of_raising(self):
-        client = self._client_with_memory(None)
-        messages, _history, _system_prompt = await client._prepare_conversation_context(
-            "Hello", ["/nonexistent/path/does-not-exist.txt"], None, None, None
-        )
-        # No exception raised; the missing file was skipped (no attachment
-        # block appended, message content is text-only).
+        texts = ["".join(b["text"] for b in m["content"]) for m in messages]
+        assert texts == ["first", "a1", "second", "a2", "third"]
+
+    def test_empty_history_behaves_like_none(self):
+        """An empty rendered history is not an empty leading message."""
+        client = _make_client(logger=MagicMock())
+
+        assert client._build_messages("Hello", None, []) == client._build_messages("Hello", None, None)
+
+    def test_no_system_prompt_is_synthesized_from_history(self):
+        """FEAT-524: history never becomes system-prompt prose any more.
+
+        The removed helper used to return a synthesized
+        "You have access to the following conversation history..." system
+        prompt. ``_build_messages`` returns messages only — the caller's system
+        prompt passes through untouched.
+        """
+        client = _make_client(logger=MagicMock())
+
+        result = client._build_messages("next", None, self._rendered(("hi", "hello")))
+
+        assert isinstance(result, list)
+        assert all(set(m) == {"role", "content"} for m in result)
+
+    def test_missing_file_logs_and_skips_instead_of_raising(self):
+        """A nonexistent attachment is logged and skipped, never raised."""
+        client = _make_client(logger=MagicMock())
+
+        messages = client._build_messages("Hello", ["/nonexistent/path/does-not-exist.txt"], None)
+
+        # No exception; the missing file was skipped, leaving a text-only message.
         assert len(messages) == 1
+        assert messages[0]["content"] == [{"type": "text", "text": "Hello"}]
         client.logger.error.assert_called()

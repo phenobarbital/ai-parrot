@@ -25,8 +25,9 @@ from __future__ import annotations
 from datetime import datetime
 from enum import Enum
 from typing import Any, Literal
+from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from parrot.outputs.a2ui.models import ErrorMessage
 from parrot.outputs.a2ui.serialization import serialize
@@ -65,7 +66,8 @@ class A2UICallContext(BaseModel):
 
     Attributes:
         agent_id: The id of the agent handling this call.
-        user_id: The authenticated user id, if any.
+        user_id: The authenticated user id, if any. Integer/UUID ids from
+            an auth backend are coerced to their string form.
         session_id: The conversation session id.
         surface_id: The surface this call is scoped to, if known.
         permission_context: Opaque ``parrot.auth.permission.PermissionContext``,
@@ -83,6 +85,31 @@ class A2UICallContext(BaseModel):
     permission_context: Any = None
     transport: Literal["http", "a2a", "deeplink"]
     streaming: bool = False
+
+    @field_validator("agent_id", "user_id", "session_id", "surface_id", mode="before")
+    @classmethod
+    def _coerce_identifier(cls, value: Any) -> Any:
+        """Normalize integer/UUID identifiers to their string form.
+
+        Auth backends hand identities back in whatever type their store uses —
+        ``navigator_auth`` yields an ``int`` primary key for ``user_id``, and
+        session ids are frequently ``UUID`` objects. Those are legitimate
+        identities, so the runtime coerces them instead of rejecting the whole
+        envelope with a ``string_type`` validation error. Anything else (dicts,
+        lists, ...) still fails validation as before.
+
+        Args:
+            value: The raw field value supplied by the transport.
+
+        Returns:
+            The value as ``str`` when it is an ``int`` (but not ``bool``) or a
+            ``UUID``; otherwise the value unchanged.
+        """
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, UUID)):
+            return str(value)
+        return value
 
 
 class FunctionCallRecord(BaseModel):

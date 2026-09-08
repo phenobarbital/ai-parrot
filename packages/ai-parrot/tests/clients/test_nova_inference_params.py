@@ -9,15 +9,16 @@ sibling Nova test lives flat under ``tests/clients/`` as
 ``test_nova_tool_configuration.py``, etc.). This file follows that
 existing convention instead of introducing a new subdirectory.
 """
+
 import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from parrot.clients.nova import NovaClient
+from parrot.clients.amazon.nova import NovaClient
 
 
 def _client():
-    with patch.dict(sys.modules, {'aws_sdk_bedrock_runtime': MagicMock()}):
+    with patch.dict(sys.modules, {"aws_sdk_bedrock_runtime": MagicMock()}):
         return NovaClient(model="nova-2-sonic", region="us-east-1", voice_id="matthew")
 
 
@@ -40,11 +41,13 @@ async def _capture_opening_frames(client, **stream_voice_kwargs):
         return
         yield  # pragma: no cover — makes this an async generator
 
-    with patch.dict(sys.modules, {'aws_sdk_bedrock_runtime': MagicMock()}), \
-         patch.object(client, "_open_stream", return_value=AsyncMock()), \
-         patch.object(client, "_send_event", new=capture), \
-         patch.object(client, "_iter_events", new=no_events), \
-         patch.object(client, "_close_stream", new=AsyncMock()):
+    with (
+        patch.dict(sys.modules, {"aws_sdk_bedrock_runtime": MagicMock()}),
+        patch.object(client, "_open_stream", return_value=AsyncMock()),
+        patch.object(client, "_send_event", new=capture),
+        patch.object(client, "_iter_events", new=no_events),
+        patch.object(client, "_close_stream", new=AsyncMock()),
+    ):
         async for _ in client.stream_voice(audio(), **stream_voice_kwargs):
             pass
     return sent
@@ -59,7 +62,10 @@ class TestNovaInferenceParams:
     async def test_custom_inference_params_in_session_start(self):
         """stream_voice() sends custom maxTokens/topP/temperature."""
         sent = await _capture_opening_frames(
-            _client(), temperature=0.5, max_tokens=2048, top_p=0.95,
+            _client(),
+            temperature=0.5,
+            max_tokens=2048,
+            top_p=0.95,
         )
         inference_config = _session_start(sent)["inferenceConfiguration"]
         assert inference_config["maxTokens"] == 2048

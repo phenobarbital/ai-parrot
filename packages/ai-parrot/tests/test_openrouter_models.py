@@ -1,10 +1,7 @@
 """Unit tests for OpenRouter data models."""
+
 import pytest
-from parrot.models.openrouter import (
-    OpenRouterModel,
-    ProviderPreferences,
-    OpenRouterUsage
-)
+from parrot.clients.openrouter.models import OpenRouterModel, ProviderPreferences, OpenRouterUsage
 
 
 class TestOpenRouterModel:
@@ -36,10 +33,7 @@ class TestProviderPreferences:
 
     def test_serialization_excludes_none(self):
         """model_dump(exclude_none=True) produces clean dict."""
-        prefs = ProviderPreferences(
-            allow_fallbacks=True,
-            order=["DeepInfra", "Together"]
-        )
+        prefs = ProviderPreferences(allow_fallbacks=True, order=["DeepInfra", "Together"])
         dumped = prefs.model_dump(exclude_none=True)
         assert "order" in dumped
         assert "ignore" not in dumped
@@ -53,7 +47,7 @@ class TestProviderPreferences:
             data_collection="deny",
             order=["DeepInfra"],
             ignore=["Azure"],
-            quantizations=["bf16", "fp8"]
+            quantizations=["bf16", "fp8"],
         )
         dumped = prefs.model_dump()
         assert dumped["quantizations"] == ["bf16", "fp8"]
@@ -65,10 +59,7 @@ class TestProviderPreferences:
         """Default-only instance serializes with only default fields."""
         prefs = ProviderPreferences()
         dumped = prefs.model_dump(exclude_none=True)
-        assert dumped == {
-            "allow_fallbacks": True,
-            "require_parameters": False
-        }
+        assert dumped == {"allow_fallbacks": True, "require_parameters": False}
 
 
 class TestOpenRouterUsage:
@@ -86,7 +77,7 @@ class TestOpenRouterUsage:
             "total_cost": 0.0042,
             "prompt_tokens": 150,
             "completion_tokens": 300,
-            "provider_name": "DeepInfra"
+            "provider_name": "DeepInfra",
         }
         usage = OpenRouterUsage(**data)
         assert usage.total_cost == 0.0042

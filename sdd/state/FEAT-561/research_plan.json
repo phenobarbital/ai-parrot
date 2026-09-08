@@ -1,0 +1,206 @@
+{
+  "schema_version": "1.0",
+  "mode_hint": "enrichment",
+  "rationale": "Complete the custom-audio RTC avatar capability by locating existing voice abstractions and transport gaps before specification.",
+  "queries": [
+    {
+      "id": "Q001",
+      "type": "glob",
+      "intent": "Locate voice and avatar implementations and tests",
+      "priority": 1,
+      "params": {
+        "pattern": "**/*voice*",
+        "max_results": 500
+      },
+      "depth": 0
+    },
+    {
+      "id": "Q002",
+      "type": "read",
+      "intent": "Trace VoiceBot provider and transport composition",
+      "priority": 1,
+      "params": {
+        "path": "packages/ai-parrot/src/parrot/bots/voice.py",
+        "lines": null
+      },
+      "depth": 0
+    },
+    {
+      "id": "Q003",
+      "type": "read",
+      "intent": "Trace LiveAvatar custom audio session lifecycle",
+      "priority": 1,
+      "params": {
+        "path": "packages/ai-parrot-integrations/src/parrot/integrations/liveavatar/voice_session.py",
+        "lines": null
+      },
+      "depth": 0
+    },
+    {
+      "id": "Q004",
+      "type": "grep",
+      "intent": "Locate room subscription and microphone publication paths",
+      "priority": 1,
+      "params": {
+        "pattern": "AudioStream|track_subscribed|can_publish|rtc.Room",
+        "path": "packages"
+      },
+      "depth": 0
+    },
+    {
+      "id": "Q005",
+      "type": "read",
+      "intent": "Verify Nova audio formats and interruption events",
+      "priority": 1,
+      "params": {
+        "path": "packages/ai-parrot-client-amazon/src/parrot/clients/amazon/nova/audio.py",
+        "lines": null
+      },
+      "depth": 0
+    },
+    {
+      "id": "Q006",
+      "type": "git_log",
+      "intent": "Check recent changes to voice and avatar integration",
+      "priority": 1,
+      "params": {
+        "path": "packages/ai-parrot-integrations",
+        "since": "30.days.ago",
+        "max_results": 8
+      },
+      "depth": 0
+    },
+    {
+      "id": "Q008",
+      "type": "read",
+      "intent": "VoiceBot already selects Nova 2 Sonic and owns voice memory",
+      "priority": 1,
+      "params": {
+        "path": "packages/ai-parrot/src/parrot/bots/voice.py",
+        "lines": null
+      },
+      "depth": 1
+    },
+    {
+      "id": "Q009",
+      "type": "read",
+      "intent": "Nova and LiveAvatar have matching output formats",
+      "priority": 1,
+      "params": {
+        "path": "packages/ai-parrot-client-amazon/src/parrot/clients/amazon/nova/audio.py",
+        "lines": null
+      },
+      "depth": 1
+    },
+    {
+      "id": "Q010",
+      "type": "read",
+      "intent": "VoiceChat already forwards generated audio to a LITE avatar",
+      "priority": 1,
+      "params": {
+        "path": "packages/ai-parrot-integrations/src/parrot/voice/handler.py",
+        "lines": null
+      },
+      "depth": 1
+    },
+    {
+      "id": "Q011",
+      "type": "read",
+      "intent": "Existing LITE session and audio transport can be reused",
+      "priority": 1,
+      "params": {
+        "path": "packages/ai-parrot-integrations/src/parrot/integrations/liveavatar/voice_session.py",
+        "lines": null
+      },
+      "depth": 1
+    },
+    {
+      "id": "Q012",
+      "type": "read",
+      "intent": "Multi-viewer token issuance exists but targets REST session state",
+      "priority": 1,
+      "params": {
+        "path": "packages/ai-parrot-server/src/parrot/handlers/avatar.py",
+        "lines": null
+      },
+      "depth": 1
+    },
+    {
+      "id": "Q013",
+      "type": "read",
+      "intent": "Existing UI helpers need an observer-only lifecycle",
+      "priority": 1,
+      "params": {
+        "path": "packages/ai-parrot-server/ui/src/lib/api/avatar.ts",
+        "lines": null
+      },
+      "depth": 1
+    },
+    {
+      "id": "Q014",
+      "type": "read",
+      "intent": "Mock coverage and dependencies exist; combined live validation does not follow from them",
+      "priority": 1,
+      "params": {
+        "path": "packages/ai-parrot-integrations/tests/voice/test_voicechat_avatar_integration.py",
+        "lines": null
+      },
+      "depth": 1
+    },
+    {
+      "id": "Q015",
+      "type": "read",
+      "intent": "The old RTC worker was intentionally removed",
+      "priority": 1,
+      "params": {
+        "path": "sdd/specs/liveavatar-voice-consolidation.spec.md",
+        "lines": null
+      },
+      "depth": 1
+    },
+    {
+      "id": "Q016",
+      "type": "read",
+      "intent": "Direct audio fallback exists in another session path",
+      "priority": 1,
+      "params": {
+        "path": "packages/ai-parrot-server/src/parrot/handlers/avatar.py",
+        "lines": null
+      },
+      "depth": 1
+    },
+    {
+      "id": "Q017",
+      "type": "read",
+      "intent": "Server mounting and process ownership need deliberate integration",
+      "priority": 1,
+      "params": {
+        "path": "packages/ai-parrot-server/src/parrot/manager/manager.py",
+        "lines": null
+      },
+      "depth": 1
+    }
+  ],
+  "expected_findings": [
+    "Existing custom audio path",
+    "RTC microphone and multi-agent routing gaps",
+    "Nova format and lifecycle contracts"
+  ],
+  "meta": {
+    "wiki_preflight": "status blocked by sandbox socket; escalated query and page succeeded",
+    "wiki_queries": [
+      "VoiceBot multi-agent RTC room LiveAvatar custom audio Nova Sonic"
+    ],
+    "external_research": "Official LiveAvatar CUSTOM mode and AWS Nova Sonic 2 contracts; record separately from repository evidence",
+    "budget_clock_start": "2026-09-07T05:37:12.639239+00:00",
+    "external_queries": [
+      {
+        "id": "Q007",
+        "intent": "Verify official LiveAvatar LITE, AWS Nova and LiveKit multi-viewer contracts",
+        "type": "web"
+      }
+    ],
+    "scope_revision": "User clarified output broadcast and required a complete multi-browser HTML test example; RTC microphone ingress is excluded.",
+    "schema_note": "Explicit lines:null and glob max_results:500 disambiguate overlapping oneOf parameter variants in the repository schema."
+  }
+}

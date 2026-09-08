@@ -8,10 +8,11 @@ params those models reject with a 400:
 
 The guards mirror ``GoogleGenAIClient._requires_thinking``.
 """
+
 import pytest
 
-from parrot.clients.claude import AnthropicClient
-from parrot.models.claude import ClaudeModel
+from parrot.clients.anthropic import AnthropicClient
+from parrot.clients.anthropic.models import ClaudeModel
 
 
 @pytest.fixture(scope="module")
@@ -22,6 +23,7 @@ def client():
 
 # ── ClaudeModel enum membership ──────────────────────────────────────────────
 
+
 def test_claude_model_exposes_new_models():
     """Fable 5 and the current Opus tiers are present in the enum."""
     assert ClaudeModel.FABLE_5.value == "claude-fable-5"
@@ -31,42 +33,54 @@ def test_claude_model_exposes_new_models():
 
 # ── _model_str ───────────────────────────────────────────────────────────────
 
-@pytest.mark.parametrize("value,expected", [
-    (ClaudeModel.FABLE_5, "claude-fable-5"),
-    ("claude-opus-4-8", "claude-opus-4-8"),
-    (None, ""),
-    ("", ""),
-])
+
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        (ClaudeModel.FABLE_5, "claude-fable-5"),
+        ("claude-opus-4-8", "claude-opus-4-8"),
+        (None, ""),
+        ("", ""),
+    ],
+)
 def test_model_str_normalisation(value, expected):
     assert AnthropicClient._model_str(value) == expected
 
 
 # ── _rejects_sampling_params ─────────────────────────────────────────────────
 
-@pytest.mark.parametrize("model", [
-    "claude-fable-5",
-    "claude-opus-4-8",
-    "claude-opus-4-7",
-    ClaudeModel.FABLE_5,
-    ClaudeModel.OPUS_4_8,
-])
+
+@pytest.mark.parametrize(
+    "model",
+    [
+        "claude-fable-5",
+        "claude-opus-4-8",
+        "claude-opus-4-7",
+        ClaudeModel.FABLE_5,
+        ClaudeModel.OPUS_4_8,
+    ],
+)
 def test_adaptive_only_models_reject_sampling(model):
     assert AnthropicClient._rejects_sampling_params(model) is True
 
 
-@pytest.mark.parametrize("model", [
-    "claude-sonnet-4-6",
-    "claude-opus-4-6",
-    "claude-haiku-4-5-20251001",
-    "claude-3-5-sonnet-20241022",
-    None,
-    "",
-])
+@pytest.mark.parametrize(
+    "model",
+    [
+        "claude-sonnet-4-6",
+        "claude-opus-4-6",
+        "claude-haiku-4-5-20251001",
+        "claude-3-5-sonnet-20241022",
+        None,
+        "",
+    ],
+)
 def test_other_models_accept_sampling(model):
     assert AnthropicClient._rejects_sampling_params(model) is False
 
 
 # ── _rejects_explicit_thinking_disabled ──────────────────────────────────────
+
 
 def test_only_fable5_rejects_thinking_disabled():
     # Fable 5 is the only model that 400s on thinking={type:disabled}
@@ -79,6 +93,7 @@ def test_only_fable5_rejects_thinking_disabled():
 
 
 # ── _sanitize_payload_for_model ──────────────────────────────────────────────
+
 
 def test_sanitize_fable5_drops_sampling_and_thinking_disabled(client):
     payload = {

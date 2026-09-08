@@ -1,4 +1,4 @@
-"""Unit tests for parrot.models.bedrock_models.translate (TASK-1514).
+"""Unit tests for parrot.clients.amazon.models.translate (TASK-1514).
 
 Tests cover the three translation branches:
 - Map: public ID → Bedrock base ID
@@ -6,11 +6,12 @@ Tests cover the three translation branches:
 - Pass-through: already-Bedrock IDs / ARNs returned verbatim
 - Unknown fallback: unknown public ID returned unchanged + warning logged
 """
+
 import logging
 
 import pytest
 
-from parrot.models.bedrock_models import translate
+from parrot.clients.amazon.models import translate
 
 
 def test_map_public_to_bedrock():
@@ -64,7 +65,7 @@ def test_passthrough_eu_prefix():
 
 def test_unknown_passthrough(caplog):
     """An unknown public ID is returned unchanged and a warning is logged."""
-    with caplog.at_level(logging.WARNING, logger="parrot.models.bedrock_models"):
+    with caplog.at_level(logging.WARNING, logger="parrot.clients.amazon.models"):
         result = translate("claude-made-up-99")
     assert result == "claude-made-up-99"
     assert "unknown public model ID" in caplog.text.lower() or "claude-made-up-99" in caplog.text
@@ -72,7 +73,7 @@ def test_unknown_passthrough(caplog):
 
 def test_unknown_with_region_prefix_passthrough(caplog):
     """Unknown ID with a region_prefix requested is still returned unchanged."""
-    with caplog.at_level(logging.WARNING, logger="parrot.models.bedrock_models"):
+    with caplog.at_level(logging.WARNING, logger="parrot.clients.amazon.models"):
         result = translate("claude-nonexistent-99", region_prefix="us")
     # The unknown ID is not in the map — returned as-is (no prefix applied).
     assert result == "claude-nonexistent-99"

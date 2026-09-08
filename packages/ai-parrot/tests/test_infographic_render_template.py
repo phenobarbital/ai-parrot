@@ -101,6 +101,26 @@ async def test_render_template_autoescapes_data(toolkit):
     assert "<script>alert(1)</script>" not in result.html_inline
 
 
+async def test_render_template_autoescapes_data_for_bare_template_name(fake_store):
+    # Code-review regression guard: "echo.html.j2" ends with ".j2", which is
+    # ALSO in JinjaConfig's own pre-FEAT-527 default
+    # (`select_autoescape(["html", "xml", "j2", "jinja", "jinja2"])`) — so
+    # the test above would have passed even without FEAT-527's forced
+    # `autoescape=True`. The fix's actual target case is a template
+    # registered under a bare name with no recognized extension at all
+    # (the toolkit's own convention elsewhere, e.g. `templates={"big": ...}`),
+    # which `select_autoescape` would treat as `False` and NOT escape.
+    tk = InfographicToolkit(
+        artifact_store=fake_store,
+        templates={"echo_bare": "<p>{{ data.x }}</p>"},
+    )
+    result = await tk.render_template(
+        template_name="echo_bare", data={"x": "<script>alert(1)</script>"},
+    )
+    assert "&lt;script&gt;" in result.html_inline
+    assert "<script>alert(1)</script>" not in result.html_inline
+
+
 async def test_render_template_message_autoinjected(fake_store):
     tk = InfographicToolkit(artifact_store=fake_store, templates=_TEMPLATES)
     last = SimpleNamespace(output="from previous turn", metadata={})
