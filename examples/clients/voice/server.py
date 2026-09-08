@@ -303,7 +303,17 @@ def make_nova_bot() -> VoiceBot:
         name=BOT_NAME,
         system_prompt=SYSTEM_PROMPT,
         tools=[VoiceDemoWeatherTool()],
-        voice_config=VoiceConfig(provider=VoiceProvider.NOVA, voice_name="matthew"),
+        # FEAT-537: every field the broadcast path depends on is explicit
+        # rather than defaulted, so a change to VoiceConfig's defaults cannot
+        # silently alter the wire format the LiveAvatar bridge assumes
+        # (input 16 kHz mic PCM, output 24 kHz mono PCM16 — spec §2).
+        voice_config=VoiceConfig(
+            provider=VoiceProvider.NOVA,
+            model="nova-2-sonic",
+            voice_name="matthew",
+            input_sample_rate=16_000,
+            output_sample_rate=24_000,
+        ),
     )
 
 
@@ -359,6 +369,249 @@ def build_capabilities() -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# FEAT-537 — moderated multi-browser broadcast (demo wiring)
+#
+# The broadcast producer is deliberately independent of any browser socket: the
+# provider toggle in the UI switches which single-user handler a *page* talks
+# to, and cannot affect a running broadcast, which is fixed to Nova for its
+# lifetime (spec §2).
+#
+# Demo authentication maps server-configured participant tokens to fixed scoped
+# principals. It is explicitly localhost-only: `main()` refuses a non-loopback
+# bind while demo participants are configured, because these tokens are shared
+# secrets in a config file, not real credentials.
+# ---------------------------------------------------------------------------
+
+BROADCAST_AGENT_ID = "voice-assistant"
+#: Route TEMPLATE registered on the router — the `{agent_id}` placeholder must
+#: survive, because the handlers read the agent from `match_info` exactly as
+#: they do in production (`manager.py`). Registering the concrete path instead
+#: would leave `match_info["agent_id"]` missing and 500 every request.
+BROADCAST_ROUTE_PREFIX = "/api/v1/agents/{agent_id}/voice-broadcasts"
+#: Concrete path the browser calls.
+BROADCAST_API_PREFIX = f"/api/v1/agents/{BROADCAST_AGENT_ID}/voice-broadcasts"
+BROADCAST_WS_PATH = f"/ws/voice/broadcast/{BROADCAST_AGENT_ID}/{{broadcast_id}}"
+BROADCAST_TENANT_ID = "demo"
+
+_LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+
+
+def _demo_participants() -> dict[str, str]:
+    """Parse ``VOICEBOT_DEMO_PARTICIPANTS`` into ``{token: name}``.
+
+    Format: ``alice:tokA,bob:tokB``.  Keyed by *token* so lookup is a single
+    dict hit and a name can never be used as a credential.
+
+    Returns:
+        Mapping of token to participant name; empty when unset.
+    """
+    raw = os.environ.get("VOICEBOT_DEMO_PARTICIPANTS", "").strip()
+    table: dict[str, str] = {}
+    for entry in raw.split(","):
+        entry = entry.strip()
+        if not entry or ":" not in entry:
+            continue
+        name, _, token = entry.partition(":")
+        name, token = name.strip(), token.strip()
+        if name and token:
+            table[token] = name
+    return table
+
+
+def _principal_for(name: str, agent_id: str):
+    """Build the fixed scoped principal for a demo participant.
+
+    Moderator and speaker authority still come **only** from admission and
+    grants — this decides identity, never role.
+    """
+    from parrot.integrations.liveavatar.broadcast.models import ParticipantPrincipal
+
+    return ParticipantPrincipal(
+        user_id=name,
+        tenant_id=BROADCAST_TENANT_ID,
+        agent_id=agent_id,
+        display_name=name.title(),
+    )
+
+
+def make_demo_token_validator(table: dict[str, str]):
+    """Build a ``TokenValidator`` over the demo participant table.
+
+    Shared with the WebSocket route so one table authenticates both transports;
+    two tables would be two places to get authorization wrong.
+
+    Args:
+        table: ``{token: name}``.
+
+    Returns:
+        A ``TokenValidator``.
+    """
+    from parrot.core.ws_auth import TokenValidator
+
+    def _validate(token: str):
+        name = table.get(token)
+        if not name:
+            return None
+        return {"user_id": name, "username": name.title()}
+
+    return TokenValidator(validator_func=_validate)
+
+
+def make_demo_principal_resolver(table: dict[str, str]):
+    """Build the HTTP principal resolver for the demo participant table.
+
+    Args:
+        table: ``{token: name}``.
+
+    Returns:
+        An ``async (request, agent_id) -> ParticipantPrincipal`` resolver.
+    """
+
+    async def _resolve(request: web.Request, agent_id: str):
+        header = request.headers.get("Authorization", "")
+        token = header[7:].strip() if header.lower().startswith("bearer ") else ""
+        name = table.get(token)
+        if not name:
+            raise web.HTTPUnauthorized(reason="demo participant token required")
+        return _principal_for(name, agent_id)
+
+    return _resolve
+
+
+def build_broadcast_service(app: web.Application):
+    """Build the demo's ``BroadcastService``, or ``None`` when unavailable.
+
+    Broadcast mode needs Redis (cross-worker state), LiveKit (the output room)
+    and — for avatar mode — LiveAvatar.  Any of them missing disables broadcast
+    mode with an actionable reason surfaced in ``__CONFIG__`` instead of
+    breaking the single-user demo.
+
+    Args:
+        app: The aiohttp application, for startup/cleanup hooks.
+
+    Returns:
+        ``(service, reason)`` — exactly one of which is ``None``.
+    """
+    redis_url = os.environ.get("VOICEBOT_BROADCAST_REDIS_URL", "").strip()
+    if not redis_url:
+        return None, (
+            "Set VOICEBOT_BROADCAST_REDIS_URL (and LIVEKIT_URL/LIVEKIT_API_KEY/"
+            "LIVEKIT_API_SECRET) to enable moderated broadcast mode."
+        )
+    if not NOVA_AVAILABLE:
+        return None, f"Broadcast mode requires Nova: {NOVA_UNAVAILABLE_REASON}"
+
+    try:
+        from parrot.integrations.liveavatar.broadcast.redis_registry import (
+            RedisBroadcastRegistry,
+        )
+        from parrot.integrations.liveavatar.broadcast.service import BroadcastService
+        from parrot.integrations.liveavatar.room_manager import LiveKitRoomManager
+    except ImportError as exc:
+        return None, (
+            f"Broadcast dependencies missing ({exc}); install "
+            "'ai-parrot-integrations[broadcast]'."
+        )
+
+    try:
+        room_manager = LiveKitRoomManager()
+    except KeyError as exc:
+        return None, f"Missing LiveKit environment variable: {exc}"
+
+    registry = RedisBroadcastRegistry.from_url(redis_url)
+    service = BroadcastService(
+        registry,
+        room_manager,
+        nova_bot_factory=make_nova_bot,
+        worker_id=os.environ.get(
+            "VOICEBOT_BROADCAST_WORKER_ID", f"demo-{os.getpid()}"
+        ),
+        principal_resolver=lambda user, agent_id: _principal_for(
+            getattr(user, "user_id", None) or user["user_id"], agent_id
+        ),
+    )
+
+    async def _start(_app: web.Application) -> None:
+        service.start_reconciler()
+
+    async def _stop(_app: web.Application) -> None:
+        await service.aclose()
+        # Guarded: the in-memory registry used by tests has no client to close.
+        closer = getattr(registry, "aclose", None)
+        if closer is not None:
+            await closer()
+
+    app.on_startup.append(_start)
+    app.on_cleanup.append(_stop)
+    return service, None
+
+
+def register_failure_injection(app: web.Application, service) -> bool:
+    """Mount the demo failure-injection hook, only when explicitly enabled.
+
+    Disabled by default and never registered by the production
+    ``manager.py`` — this exists so the operations runbook can demonstrate
+    avatar failure and owner death without unplugging real infrastructure.
+
+    Args:
+        app: The aiohttp application.
+        service: The broadcast service.
+
+    Returns:
+        ``True`` when the route was mounted.
+    """
+    if os.environ.get("VOICEBOT_BROADCAST_FAILURE_HOOK") != "1":
+        return False
+
+    async def _inject(request: web.Request) -> web.Response:
+        broadcast_id = request.match_info["broadcast_id"]
+        payload = await request.json()
+        kind = str(payload.get("kind", ""))
+        session = service.media_session(BROADCAST_TENANT_ID, broadcast_id)
+        if session is None:
+            raise web.HTTPNotFound(reason="no local producer for that broadcast")
+        if kind == "avatar_control_close":
+            await session._on_avatar_close("injected")  # noqa: SLF001
+        elif kind == "avatar_track_lost":
+            await session.on_participant_disconnected(session.avatar_identity)
+        elif kind == "owner_death":
+            await session.aclose()
+        else:
+            raise web.HTTPBadRequest(reason=f"unknown failure kind {kind!r}")
+        return web.json_response({"injected": kind})
+
+    app.router.add_post("/__demo__/broadcasts/{broadcast_id}/inject", _inject)
+    logger.warning(
+        "Demo failure-injection hook ENABLED at "
+        "/__demo__/broadcasts/{broadcast_id}/inject — never enable this "
+        "outside a local demo."
+    )
+    return True
+
+
+def broadcast_config(app: web.Application) -> dict[str, Any]:
+    """Browser-facing broadcast configuration block.
+
+    Carries participant **names** for the demo picker and never their tokens.
+
+    Args:
+        app: The aiohttp application.
+
+    Returns:
+        A JSON-serialisable, credential-free config block.
+    """
+    return {
+        "available": app.get("broadcast_service") is not None,
+        "unavailableReason": app.get("broadcast_unavailable_reason"),
+        "agentId": BROADCAST_AGENT_ID,
+        "apiPrefix": BROADCAST_API_PREFIX,
+        "wsPath": BROADCAST_WS_PATH,
+        "demoParticipants": sorted(app.get("demo_participants", {}).values()),
+        "maxViewers": 10,
+    }
+
+
 async def index_handler(request: web.Request) -> web.Response:
     """Serve the provider-switch UI, templated with provider/capability data."""
     import json
@@ -388,6 +641,9 @@ async def index_handler(request: web.Request) -> web.Response:
             "sdkUrl": _LIVEKIT_UMD_ROUTE,
             "available": _resolve_livekit_umd_path() is not None,
         },
+        # FEAT-537: names and paths only. Demo participant TOKENS are never
+        # templated into the page — a test walks this dict to prove it.
+        "broadcast": broadcast_config(request.app),
     }
     # Anchored to the exact bootstrap statement (`window.__CONFIG__ =
     # __CONFIG__;`), count=1 — a bare token-wide str.replace() would ALSO
@@ -426,6 +682,62 @@ def build_app() -> web.Application:
     gemini_handler.setup_routes(app, include_static=False)
     nova_handler.setup_routes(app, include_static=False)
 
+    # ── FEAT-537: broadcast mode ───────────────────────────────────────
+    # A THIRD handler instance, so the two single-user routes above keep
+    # exactly their pre-FEAT-537 behaviour (AC15: no second example, and no
+    # regression in the ordinary Gemini/Nova path).
+    participants = _demo_participants()
+    app["demo_participants"] = participants
+    service, reason = build_broadcast_service(app)
+    app["broadcast_service"] = service
+    app["broadcast_unavailable_reason"] = reason
+
+    if service is not None:
+        broadcast_handler = VoiceChatHandler(
+            bot_factory=make_nova_bot,
+            nova_bot_factory=make_nova_bot,
+            broadcast_service=service,
+            require_auth=bool(participants),
+            token_validator=make_demo_token_validator(participants)
+            if participants
+            else None,
+            ws_route="/ws/nova-broadcast",
+            health_route="/health/broadcast",
+        )
+        broadcast_handler.setup_routes(app, include_static=False)
+
+        try:
+            from parrot.handlers.voice_broadcast import (
+                register_voice_broadcast_routes,
+            )
+        except ImportError as exc:  # pragma: no cover — workspace sibling
+            logger.warning(
+                "Broadcast HTTP routes unavailable (%s); install "
+                "'ai-parrot-server' from this workspace.",
+                exc,
+            )
+            app["broadcast_unavailable_reason"] = (
+                f"ai-parrot-server is not importable: {exc}"
+            )
+            app["broadcast_service"] = None
+        else:
+            register_voice_broadcast_routes(
+                app,
+                service,
+                prefix=BROADCAST_ROUTE_PREFIX,
+                principal_resolver=make_demo_principal_resolver(participants)
+                if participants
+                else None,
+            )
+            register_failure_injection(app, service)
+            logger.info(
+                "Broadcast mode enabled: %s + %s",
+                BROADCAST_API_PREFIX,
+                BROADCAST_WS_PATH,
+            )
+    else:
+        logger.info("Broadcast mode disabled: %s", reason)
+
     app.router.add_get("/", index_handler)
     app.router.add_static("/static/", path=STATIC_DIR, name="static")
     # FEAT-536 TASK-2943: single, exact, narrowly-scoped route — never a
@@ -450,8 +762,23 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
-    """Run the aiohttp provider-switch demo server."""
+    """Run the aiohttp provider-switch demo server.
+
+    Raises:
+        SystemExit: When demo participant tokens are configured and the bind
+            host is not loopback.  Those tokens are shared secrets in a config
+            file, not credentials — exposing them on a routable interface would
+            hand anyone who can reach the port a seat and a microphone
+            (spec §2: "Refuse non-loopback binding in demo mode").
+    """
     args = parse_args()
+    if _demo_participants() and args.host not in _LOOPBACK_HOSTS:
+        raise SystemExit(
+            f"Refusing to bind demo mode to {args.host!r}: "
+            "VOICEBOT_DEMO_PARTICIPANTS maps shared tokens to fixed principals "
+            "and is localhost-only. Bind to localhost/127.0.0.1/::1, or unset "
+            "VOICEBOT_DEMO_PARTICIPANTS and put real authentication in front."
+        )
     app = build_app()
     logger.info(
         "Provider-switch voice demo on http://%s:%d  (nova_available=%s)",
