@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-537 — Nova VoiceBot avatar broadcast for multiple browsers
 **Spec**: `sdd/specs/voicebot-multiroom-heygen-avatar.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2962
@@ -103,7 +103,65 @@ def test_nova_voice_config_explicit(): ...
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
+**Completed by**: `sdd-worker` (autonomous session)
+**Date**: 2026-09-08
+**Status**: done
+
 **Notes**:
-**Deviations from spec**:
+
+- Extended `examples/clients/voice/server.py` (never forked): explicit Nova
+  `VoiceConfig`, `_demo_participants`, `make_demo_token_validator`,
+  `make_demo_principal_resolver`, `build_broadcast_service`,
+  `register_failure_injection`, `broadcast_config`, a third `VoiceChatHandler`, the
+  `__CONFIG__.broadcast` block and the loopback guard in `main()`.
+- Tests: `test_voice_demo_broadcast_backend.py` → **18 passed**. Whole
+  `tests/voice/` → **452 passed, 11 failed, 27 errors** — byte-identical failure/error
+  counts to the pre-FEAT-537 baseline. `ruff check` clean on both files.
+- **Getting these tests to actually run took three corrections worth recording**, because
+  the easy option each time was to land code that never executes:
+  1. `server.py` imports `GeminiLiveClient`/`NovaClient` at module level, and those
+     satellites are not installed here — the reason `test_voice_demo_assets.py` and
+     `test_voice_demo_avatar_browser.py` already fail to collect. Rather than adding a
+     third un-runnable module, the fixture installs minimal capability-only stubs.
+  2. Those stubs were first installed **process-globally**, which made the previously
+     erroring demo modules import and changed the whole suite's results (27 errors → 0,
+     11 failures → 9, plus a new order-dependent failure of my own). That is textbook
+     cross-test pollution; they are now installed with `monkeypatch.setitem` and revert
+     per test.
+  3. `parrot.handlers.voice_broadcast` resolves through the editable install to the
+     **main checkout**, so once any earlier module has imported `parrot.handlers` the
+     package `__path__` is fixed and the worktree's new module is invisible.
+     `_ensure_server_handler` extends `__path__` under `monkeypatch`, making the tests
+     order-independent. Worktree artifact, not a product concern.
+- **A real bug the tests caught**: the first wiring passed the *concrete*
+  `/api/v1/agents/voice-assistant/voice-broadcasts` as the route prefix, so
+  `match_info["agent_id"]` was missing and every request 500'd. The router now gets the
+  `{agent_id}` **template** (`BROADCAST_ROUTE_PREFIX`) exactly as production does, while
+  the browser config carries the concrete `apiPrefix`.
+- Also fixed: the cleanup hook called `registry.aclose()` unconditionally, which the
+  in-memory registry does not have; it is now guarded.
+- **Demo auth is one table, two transports.** `{token: name}` (keyed by token, so a
+  participant *name* can never be used as a credential) backs both the HTTP resolver and
+  the WS `TokenValidator`. Two tables would be two places to get authorization wrong.
+  Identity only — moderator/speaker authority still comes solely from admission and
+  grants, which `test_first_admitted_participant_becomes_moderator` pins by having
+  **bob** join first and become moderator while **alice**, who created the broadcast,
+  becomes a viewer.
+- **No token reaches the page.** `test_config_broadcast_block_has_no_tokens` flattens
+  every scalar in `__CONFIG__` *and* greps the raw HTML for both configured secrets.
+- The loopback guard raises `SystemExit` with an actionable message when demo
+  participants are configured and `--host` is not loopback; three parametrised hosts
+  prove loopback still starts, and a fourth test proves the restriction does **not**
+  apply when no demo participants are configured (real auth in front is the operator's
+  call).
+- The failure-injection route is absent by default and mounted only with
+  `VOICEBOT_BROADCAST_FAILURE_HOOK=1`; both states are tested, and it is never registered
+  by `manager.py`.
+- The two single-user handlers are untouched; `test_broadcast_unavailable_without_redis`
+  asserts `/ws/gemini` and `/ws/nova` still work and that the page is told *why*
+  broadcast mode is unavailable.
+
+**Deviations from spec**: none. One naming note: the task's `BROADCAST_API_PREFIX` is
+split into `BROADCAST_ROUTE_PREFIX` (the `{agent_id}` template given to the router) and
+`BROADCAST_API_PREFIX` (the concrete path given to the browser), because a single value
+cannot serve both roles.
