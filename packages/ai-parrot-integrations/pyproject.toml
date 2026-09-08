@@ -95,6 +95,14 @@ liveavatar = [
     "livekit-api>=1.0",
     "livekit~=1.1",
 ]
+# FEAT-537 — moderated multi-browser broadcast. Adds the cross-worker Redis
+# registry on top of the LiveKit/LiveAvatar transport. `redis` is otherwise
+# only reachable through the `msteams` extra, and a broadcast deployment must
+# not have to install a Teams bot stack to get it.
+broadcast = [
+    "ai-parrot-integrations[liveavatar]",
+    "redis>=5.0",
+]
 voice = [
     "ai-parrot-integrations[voice-local]",
     "ai-parrot-integrations[voice-openai]",

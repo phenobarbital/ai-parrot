@@ -7,8 +7,16 @@ to another participant.
 
 Public re-exports for ``parrot.integrations.liveavatar.broadcast``.
 Implementation lives in the individual submodules.
+
+``RedisBroadcastRegistry`` is exported **lazily** through ``__getattr__``: the
+``redis`` driver is an optional dependency (the ``broadcast`` extra), and
+importing this package must keep working — for the models, the in-memory
+registry and every deterministic unit test — on an installation that has no
+``redis`` at all.
 """
 from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
 
 from .models import (
     AVATAR_STARTUP_DEADLINE_S,
@@ -102,6 +110,29 @@ __all__ = [
     "ViewerJoinResponse",
     "ViewerLease",
     "ViewerLimitReached",
+    "RedisBroadcastRegistry",
     "public_payload",
     "validate_audio_authority",
 ]
+
+if TYPE_CHECKING:  # pragma: no cover — import-time typing only
+    from .redis_registry import RedisBroadcastRegistry
+
+
+def __getattr__(name: str) -> Any:
+    """Resolve the optional Redis-backed registry on first access.
+
+    Args:
+        name: Attribute being looked up.
+
+    Returns:
+        The requested attribute.
+
+    Raises:
+        AttributeError: For any name this package does not export.
+    """
+    if name == "RedisBroadcastRegistry":
+        from .redis_registry import RedisBroadcastRegistry as _RedisBroadcastRegistry
+
+        return _RedisBroadcastRegistry
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
