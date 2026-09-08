@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-538 - Recoverable Task Memory for WorkingMemoryToolkit
 **Spec**: `sdd/specs/workingmemory-toolkit.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2972, TASK-2974
@@ -133,4 +133,68 @@ New test modules should use local fixtures unless the shared fixture task is alr
 
 ## Completion Note
 
-Not completed. The implementing agent records completed-by, date, verification evidence, notes, and any approved deviations here when acceptance passes.
+**Completed by**: Claude Opus 5 (sdd-worker, delegated fork) — session `01WeeSf3QmPq58bBxturogRX`
+**Date**: 2026-09-08
+**Status**: done
+
+### Evidence
+- `test_task_store_memory.py` → **33 passed**, including the inherited
+  `TaskMemoryStoreConformance` cases.
+- Whole `task_memory` suite: **561 passed, 6 skipped** (the skips are
+  another task's PostgreSQL-gated cases, explicitly labelled).
+- `ruff`/`black`/`isort` clean. Log:
+  `artifacts/logs/task-2978-tm-task-memory-store.log`.
+
+### Two defects fixed in TASK-2972's conformance suite
+This was the first **reducer-backed** store to run against the suite, and
+it exposed two fixture bugs that had passed only because the reference
+double runs no reducer:
+
+1. `make_event` built a `task_started` with **no goal**. The real reducer
+   refuses it — and rightly: a goal-less start cannot be replayed, so a
+   reducer-version migration or a restart rebuild would fail on it.
+2. `test_conformance_sequences_are_contiguous` used a second
+   `task_started` on a **live** task as its "genuinely new" event. Any
+   reducer-backed store refuses that. The case is about sequence
+   contiguity, not lifecycle, so it now uses `task_resumed`.
+
+A conformance fixture that only a placeholder can satisfy is worse than
+none, so the fixture was corrected rather than the store bent around it.
+Every assertion the affected case makes is preserved.
+
+### Design decisions
+1. **Stage-then-publish is the atomicity mechanism** — classify → check
+   revision → check capacity → reduce into a **local** variable → only
+   then mutate the record. "A rejected command changes nothing" is true by
+   construction, not by cleanup. A test places a malformed event *after* a
+   valid one to prove no partial prefix lands.
+2. **Two locks, deliberately**: a per-task `asyncio.Lock` for appends and
+   a short registry lock for dict operations only, never held across a
+   reduction, so it cannot degenerate into the global lock the design
+   avoids.
+3. **Creation reduces before the record exists**, so a malformed batch
+   leaves no empty task behind. Creation is idempotent: five concurrent
+   identical creates yield one task and one event.
+4. **A batch counts as reserved only if EVERY event is reserved.** A batch
+   carrying any ordinary work is ordinary work — otherwise one degraded
+   event would smuggle foreground work into the recovery headroom.
+5. **Lazy migration replays; it does not renumber.** The test corrupts the
+   stale projection's `goal` as well as its version, so a store that
+   merely bumped the version number would still fail.
+6. **Keyset pagination on `(updated_at, task_id)` descending.** The id
+   tiebreak makes the order *total*; without it two tasks sharing a
+   timestamp could swap places between pages and keyset paging would skip
+   or repeat one.
+7. **`create_task` validates goal agreement** between the command and the
+   `task_started` event rather than silently stamping one over the other.
+   The journal is the source of truth, so a disagreement is a caller bug.
+8. **`conftest.py` is fixtures-only**, all `tm_`-prefixed, with no hooks
+   and no `autouse`. Verified additive: the suite passed identically
+   before and after adding it. `SideEffectCounter` records each invocation
+   rather than counting, so a later test can distinguish "ran once, result
+   lost" from "ran twice" — which a mock's `call_count` cannot.
+
+### Note
+The task file is `TASK-2978-tm-task-memory-store.md`; the dispatch brief
+said `-task-store-memory`. Logs were written under both names, with the
+task file's spelling treated as authoritative.

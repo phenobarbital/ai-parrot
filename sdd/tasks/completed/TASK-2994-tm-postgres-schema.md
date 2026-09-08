@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-538 - Recoverable Task Memory for WorkingMemoryToolkit
 **Spec**: `sdd/specs/workingmemory-toolkit.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2972
@@ -144,4 +144,61 @@ New test modules should use local fixtures unless the shared fixture task is alr
 
 ## Completion Note
 
-Not completed. The implementing agent records completed-by, date, verification evidence, notes, and any approved deviations here when acceptance passes.
+**Completed by**: Claude Opus 5 (sdd-worker, delegated fork) — session `01WeeSf3QmPq58bBxturogRX`
+**Date**: 2026-09-08
+**Status**: done (Delivery B)
+
+### Evidence and its limits — read this before trusting the numbers
+- In the **reviewing** environment no `TASK_MEMORY_TEST_DSN` is set, so
+  the 6 live cases **SKIP**, with messages that read verbatim: *"This is
+  an ENVIRONMENTAL SKIP, not a pass — the migration was not applied
+  here."* Result here: **24 passed, 6 skipped**.
+- The implementing agent reported running them against a **real
+  PostgreSQL 17.3** (30 passed; unique `wm_test_<hex>` schemas created and
+  dropped in a `finally`; zero left behind afterwards). **That run could
+  not be reproduced during review** — a server is listening on
+  `localhost:5432` but with different credentials, and hunting for working
+  credentials was out of scope. It is recorded as the agent's claim, not
+  as verified evidence.
+- Everything checkable **without** a server was verified directly during
+  review: all six tables present; `task_ns TEXT NOT NULL DEFAULT ''` and
+  part of the primary key; no `pinned` column anywhere; the down migration
+  present; no module-level `import asyncpg`; no real credentials in any
+  committed file (the only DSNs are obviously fake — `postgresql://unused/db`,
+  `nonexistent.invalid`).
+- `ruff`/`black`/`isort` clean. Contract re-verified; **no stale anchors**.
+
+### Design decisions
+1. **`artifact_aliases.task_ns` is `TEXT NOT NULL DEFAULT ''`**, not a
+   nullable `task_id`. In SQL `NULL <> NULL`, so a unique constraint over
+   a nullable column permits unlimited duplicate rows in the unassociated
+   namespace, and two concurrent writers would each allocate version 1 for
+   the same key. It is part of the PK, which is stronger still.
+2. **Pinning is derived, never stored.** A test asserts no
+   `pinned BOOLEAN` column exists. A single flag cannot express "two tasks
+   reference this, one has finished", and consulting only the producing
+   task would let a cross-task reference be swept out from under its
+   holder.
+3. **Constraints live in the database, not only in Pydantic.**
+   `artifacts_verifiable_needs_fingerprint` mirrors `ArtifactDescriptor`'s
+   validator, so a direct SQL writer cannot claim verifiable evidence
+   without a fingerprint. `tasks_terminal_consistent` stops a live task
+   carrying a terminal timestamp, which a retention sweep would otherwise
+   expire.
+4. **`PostgresTransaction.connection` raises after completion** rather
+   than returning a connection that would silently run *outside* the
+   transaction — the exact failure the coordinator exists to prevent.
+5. **CRUD raises `NotImplementedError` naming TASK-2995**, rather than
+   returning a plausible empty result. A store that accepted an append and
+   persisted nothing is worse than one that refuses.
+6. **The optional-import test measures a delta, not an absolute.**
+   Importing anything under `parrot.tools.working_memory` already loads
+   `asyncpg` via that package's eager `__init__` — the same baseline
+   TASK-2972 recorded. The delta probe is paired with an AST check for a
+   module-level import and a companion test that fails deliberately if M5
+   later makes that import lazy.
+
+### FOLLOW-UP for whoever owns `store/__init__.py`
+It documents a `postgres` backend but exports nothing from it. Left
+untouched deliberately: a plain import there would defeat the lazy-driver
+guarantee, so the owner should decide on a lazy `__getattr__` export.

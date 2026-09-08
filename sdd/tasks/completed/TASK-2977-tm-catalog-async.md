@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-538 - Recoverable Task Memory for WorkingMemoryToolkit
 **Spec**: `sdd/specs/workingmemory-toolkit.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2976
@@ -117,4 +117,74 @@ New test modules should use local fixtures unless the shared fixture task is alr
 
 ## Completion Note
 
-Not completed. The implementing agent records completed-by, date, verification evidence, notes, and any approved deviations here when acceptance passes.
+**Completed by**: Claude Opus 5 (sdd-worker, delegated fork) — session `01WeeSf3QmPq58bBxturogRX`
+**Date**: 2026-09-08
+**Status**: done
+
+### Evidence
+- `test_catalog_async.py` → **30 passed**. Whole `task_memory` suite: **561 passed, 6 skipped**.
+- Downstream regressions after touching `internals.py`:
+  `tools/execution_plan` **71 passed**, `bots/flows/plan` **62 passed**,
+  `tools/compression` 152 passed / 6 skipped / 1 pre-existing failure.
+  All three together: 284 passed with **exactly the two known
+  pre-existing failures and nothing beyond**.
+- `ruff`/`black --check`/`isort` clean. The 5 ruff findings under
+  `working_memory/` are in `tests.py` and `tool.py`, untouched by this
+  task, and are identical on unmodified `dev`.
+- Contract re-verified (`internals.py` 70/175/189/468/473/499/542/548) —
+  **no stale anchors**.
+
+### AC13 verified directly
+With task memory disabled the legacy path is unchanged: sync `put`,
+`put_generic`, `get`, `drop`, `in` and `list_entries` all behave exactly
+as before. Confirmed by direct execution, not only by the suite.
+
+### Design decisions
+1. **Sync writes are refused; sync READS are not.** `PlanToolNode` reads
+   the catalog synchronously at `node.py:392` (`_read_key`) and `:407`
+   (`_has_key`); refusing reads would break execution plans. `drop` *is*
+   refused, because dropping an enabled alias must reach the backend to
+   record the tombstone that stops a later re-registration reusing a
+   version some completed step cites.
+2. **The lock spans the backend call.** The spec forbids holding it across
+   *tool execution*, which the catalog never does. Releasing it around the
+   backend write would let two racing `aput`s on one alias publish out of
+   order, leaving the local dict on v1 while the backend alias points at
+   v2. A test races 8 writes and asserts the published ref equals the
+   backend's current.
+3. **`captured_shape` is a separate field**, not a shadow of the existing
+   computed `CatalogEntry.shape`. The property reads the *live* frame; the
+   captured value records what the fingerprint covered. A test swaps in a
+   99-row frame and asserts `shape == (99, 2)` while
+   `to_descriptor().shape == (3, 2)`.
+4. **"Never touches the payload" is enforced by armed traps.**
+   `_ExplodingFrame.describe`/`memory_usage` and `_ExplodingValue.__repr__`
+   raise if called, and the agent verified all three actually fire when
+   invoked directly — otherwise those tests would have been vacuous.
+5. **`VersionMetadata` is shared by both entry types.** Plan-node results
+   and compression-tee payloads are `GenericEntry`; versioning only
+   `CatalogEntry` would leave most of the catalog unversioned.
+6. **`pin_for`/`attribution` are omitted when unset**, not passed as
+   `None`. `pin_for` is TASK-2976's extension *beyond* the `ArtifactStore`
+   protocol, so forwarding it unconditionally would break a
+   protocol-conformant backend that does not accept it.
+7. **Lazy `task_memory.models` import.** The agent tested the eager
+   alternative and found it does **not** currently cycle (restoring the
+   file md5-identical afterwards), but kept the lazy form for a narrower
+   reason: `parrot/interfaces/artifact_store.py` already imports
+   `task_memory.models`, so an eager edge here creates a latent ordering
+   constraint a future import could turn into a real cycle. The legacy
+   path never builds a descriptor, so it never pays for the import.
+
+### Process incident (not a code defect)
+The `SubagentStop` hook `.claude/hooks/sdd-worker-format.sh` fired when
+this fork stopped and committed the then-current `internals.py` as
+`4c932740e "style: apply black formatting (post sdd-worker)" — Style only,
+no behavioral change`. That message was **false**: the commit contained
+732 lines of this task's implementation, captured mid-flight.
+
+The hook is correct for the workflow it was written for (an `sdd-worker`
+that commits after each task, leaving only style churn). It is wrong for
+the delegate-then-verify pattern used here, where forks deliberately leave
+work uncommitted for review. The commit was unpushed and was unwound with
+`git reset --mixed`; the work is committed properly under this task.
