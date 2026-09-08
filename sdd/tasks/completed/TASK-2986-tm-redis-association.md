@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-538 - Recoverable Task Memory for WorkingMemoryToolkit
 **Spec**: `sdd/specs/workingmemory-toolkit.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2979
@@ -130,4 +130,84 @@ New test modules should use local fixtures unless the shared fixture task is alr
 
 ## Completion Note
 
-Not completed. The implementing agent records completed-by, date, verification evidence, notes, and any approved deviations here when acceptance passes.
+**Completed by**: Claude Opus 5 (sdd-worker, delegated fork) — session `01WeeSf3QmPq58bBxturogRX`
+**Date**: 2026-09-08
+**Status**: done
+
+### Evidence — LIVE against real Redis
+- **13 passed, 0 skipped.** Redis was reachable at `localhost:6379` (db
+  15), so all three required cases (`test_race_hash`, `test_race_full`,
+  `test_selection`) plus the lease and TTL cases **ran live**. Isolated
+  `tmassoc_<hex>` prefix per test, deleted in a `finally`. Reachability
+  re-confirmed independently during review.
+- Regressions: memory suite **158 passed**; `test_legacy_rekey.py`
+  **24 passed**. `ruff`/`black`/`isort` clean.
+
+### The defect fixed
+`RedisConversation._store_turn` did `hget("metadata")` → mutate in Python
+→ `hset` — a non-atomic read-modify-write. A concurrent task-association
+write and a compaction write lose one of the two. A task-only lock cannot
+fix it **because the compaction writer never takes one**: correctness
+cannot depend on every writer cooperating, only on all of them going
+through Redis. Replaced with server-side `WATCH`/`MULTI`/`EXEC`.
+
+### The race test is discriminating — and that was verified
+A passing live race is weak evidence, because real Redis only *sometimes*
+interleaves. `_InterleavingRedis` injects the competing write
+deterministically between the watched read and the write. Run against the
+naive read-modify-write it **silently erased** the competing writer's
+`compaction` block; the CAS retains it after one abort. Without that
+check the test could have passed against the bug.
+
+### A regression this task introduced and fixed
+The first CAS version broke `tests/unit/memory/test_legacy_rekey.py`
+(24 passed → 19 failed): its `_FakeRedis` has no `pipeline()`. Confirmed
+by swapping the committed `redis.py` back in (baseline 24) and restoring
+md5-identically. Fixed in `redis.py` rather than in the test (which this
+task does not own): `_supports_cas()` probes for `pipeline` and falls back
+to the pre-FEAT-538 direct write. A single-process double has no competing
+writer for a CAS to protect against, so the fallback costs nothing there —
+and crashing on such clients is a behaviour regression the atomicity work
+is not entitled to cause.
+
+### Backoff was necessary, not cosmetic
+With 20 concurrent writers the first version exhausted its retry budget
+and raised: every loser re-read at the same instant and collided again.
+Jittered exponential backoff (2 ms base, 100 ms cap, 16 attempts)
+converges — which is why the budget is not simply "8 retries".
+
+### PRE-EXISTING PRODUCTION BUG found, deliberately NOT fixed
+`RedisConversation.create_history` in **hash mode** builds its `mapping`
+and **never calls `hset`**. The record is not persisted at all: metadata
+passed at creation is silently discarded and the key does not exist until
+the first turn is saved.
+
+Verified independently during review against committed `HEAD`:
+- the `if self.use_hash_storage:` branch ends after building `mapping`,
+  with no write, while the `else` branch does `await self.redis.set(...)`;
+- **`use_hash_storage` defaults to `True`** and is documented as
+  "RECOMMENDED", so this is the default path;
+- reached from 7 production call sites, including all four `bots/base.py`
+  entry points, `bots/abstract.py:1907`, `storage/chat.py:203` and
+  `outputs/a2ui/runtime/adapters.py:185`.
+
+Out of scope for this task and left alone. **It warrants its own task.**
+The association path is unaffected, because `merge_metadata` performs its
+own write; these tests seed via `update_history` instead.
+
+### Other decisions
+- `mutate` is documented as a **pure** function, since a CAS abort re-runs
+  it.
+- Association writes report `degraded` rather than raising, so a Redis
+  failure can never tempt a caller into creating a **second** task for
+  work already committed to PostgreSQL.
+- Closing the selected task **clears** the selection rather than guessing
+  a replacement.
+- Lease renew/release use Lua so read-and-act is atomic: a separate
+  `GET` + `PEXPIRE` could extend someone else's lease.
+
+### Environment gaps reported, not silently patched
+`hypothesis` is missing from the pruned venv, so `test_compact.py` and
+`test_normalize.py` could not be collected. `test_chat_storage.py` also
+fails to import (`CONVERSATIONS_COLLECTION` missing from
+`parrot.storage.chat`), unrelated to this change.

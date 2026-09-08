@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-538 - Recoverable Task Memory for WorkingMemoryToolkit
 **Spec**: `sdd/specs/workingmemory-toolkit.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2979
@@ -131,4 +131,52 @@ New test modules should use local fixtures unless the shared fixture task is alr
 
 ## Completion Note
 
-Not completed. The implementing agent records completed-by, date, verification evidence, notes, and any approved deviations here when acceptance passes.
+**Completed by**: Claude Opus 5 (sdd-worker) — session `01WeeSf3QmPq58bBxturogRX`
+**Date**: 2026-09-08
+**Status**: done
+
+### Evidence
+- `test_completion_validators.py` → **19 passed**; with the service suite,
+  **42 passed**. Log: `artifacts/logs/task-2980-tm-completion-validators.log`.
+- `ruff`/`black`/`isort` clean.
+
+### Two findings my own tests forced — both fixed in the implementation
+1. **`assert_unchanged` compared only fingerprints.** A version
+   *invalidated* between validation and commit keeps its fingerprint, so
+   the comparison passed and a completion could commit against evidence
+   that had just been invalidated. Invalidation is now checked separately
+   and explicitly.
+2. **The test conflated two different situations.** Evidence already
+   invalid when validation *begins* is simply invalid evidence
+   (`artifact_exists` refuses it); evidence invalidated *during* the
+   window is a **mutation** (`EvidenceMutated`, which additionally implies
+   reopening anything completed against it). They now assert their own
+   accurate error instead of sharing one.
+
+### Design decisions
+1. **Overwrite vs mutation is tested from BOTH directions.** An overwrite
+   must *not* invalidate (else every alias rewrite would spuriously reopen
+   sound work); a mutation *must*. Testing one direction only would let
+   the opposite bug through.
+2. **An unknown validator RAISES; never a vacuous pass.** Treating an
+   unregistered name as "nothing to check" would silently downgrade a
+   `validated` completion to an unchecked one.
+3. **`artifact_fingerprint_matches` requires `evidence_verifiable`**, so a
+   nested-object frame can never satisfy it — pandas will happily compute
+   a repr-based fingerprint for one (TASK-2970's finding), and that is not
+   integrity proof.
+4. **`artifact_non_empty` judges by CAPTURED SHAPE**, never by loading the
+   payload. A validator that loaded data to check emptiness would make
+   completion arbitrarily expensive and defeat the byte ceilings.
+5. **Aliases are resolved ONCE and pinned.** Resolving twice would open a
+   window in which an overwrite between the two reads silently changed
+   what was validated; a test asserts a post-resolution overwrite does not
+   move the pin.
+6. **`agent_asserted` needs at least one ACCESSIBLE reference plus the
+   note**, and is labelled the weaker source everywhere. An assertion
+   backed by nothing reachable is a guess, not an assertion.
+7. **Validation runs OUTSIDE the store lock**, proven by a re-entrant
+   validator that reads the same task from inside validation — it would
+   deadlock if the lock were held.
+8. **Without an artifact store, `complete_step` REFUSES** rather than
+   completing unvalidated. Refusing is the safe default.
