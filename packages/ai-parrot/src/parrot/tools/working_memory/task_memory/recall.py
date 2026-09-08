@@ -38,8 +38,11 @@ truncation account says exactly what was dropped.
 
 from __future__ import annotations
 
+import hashlib
+import logging
+import re
 from enum import Enum
-from typing import Any, Dict, List, Mapping, Optional, Protocol, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Protocol, Sequence, Tuple
 
 import orjson
 from pydantic import BaseModel, ConfigDict, Field
@@ -70,6 +73,16 @@ __all__ = (
     "RecallResult",
     "select_recall",
     "needs_task_selection",
+    "build_cache_key_parts",
+    "cache_digest",
+    "RECALL_EVENT_WINDOW",
+    "RECALL_ARTIFACT_LIMIT",
+    "NEEDS_SELECTION_PAGE",
+    "RecallCache",
+    "InMemoryRecallCache",
+    "RedisRecallCache",
+    "RecallReader",
+    "collect_omission_ids",
 )
 
 #: Version of the recall output shape. Part of the cache key: a recall
@@ -611,6 +624,73 @@ def _account(
     )
 
 
+def build_cache_key_parts(
+    *,
+    scope_key: str,
+    task_id: str,
+    as_of_seq: int,
+    availability_generation: int,
+    tokenizer: str,
+    calibration: float,
+    max_tokens: int,
+    recent_calls_limit: int,
+) -> Tuple[Tuple[str, str], ...]:
+    """Return every input a recall cache key must cover.
+
+    Extracted so the *reader* can compute the key **before** running a
+    selection — a cache that could only be keyed after doing the work it
+    is meant to avoid would be useless — while keeping exactly one
+    definition of what the key contains. A part omitted here is a part a
+    stale entry could be served across.
+
+    ``availability_generation`` is the subtle one: it moves when an
+    artifact is evicted, an omission expires or a worker restarts, none
+    of which appends a task event. Without it, "deterministic" would
+    decay into "expired content stays available forever at the same task
+    sequence".
+
+    Args:
+        scope_key: Collision-safe encoding of the trusted scope.
+        task_id: The task recalled.
+        as_of_seq: Journal fence the pages were read at.
+        availability_generation: Availability marker at read time.
+        tokenizer: Token counter identity.
+        calibration: Captured compaction calibration.
+        max_tokens: Requested budget.
+        recent_calls_limit: Requested recent-call count.
+
+    Returns:
+        Ordered ``(name, value)`` pairs.
+    """
+    return (
+        ("scope", scope_key),
+        ("task", task_id),
+        ("seq", str(as_of_seq)),
+        ("availability_generation", str(availability_generation)),
+        ("tokenizer", tokenizer),
+        ("calibration", f"{calibration:.6f}"),
+        ("max_tokens", str(max_tokens)),
+        ("recent_calls_limit", str(recent_calls_limit)),
+        ("recall_schema", str(RECALL_SCHEMA_VERSION)),
+    )
+
+
+def cache_digest(parts: Sequence[Tuple[str, str]]) -> str:
+    """Digest cache-key parts into one opaque, collision-safe token.
+
+    Args:
+        parts: The parts from :func:`build_cache_key_parts`.
+
+    Returns:
+        A hex digest. Derived from the canonical serialization of the
+        parts, so two different part sets cannot collide by concatenation
+        (the failure a naive ``":".join`` invites when a value contains
+        the separator).
+    """
+    material = _canonical([list(pair) for pair in parts])
+    return hashlib.blake2b(material, digest_size=16).hexdigest()
+
+
 def select_recall(
     inputs: RecallInputs,
     *,
@@ -652,16 +732,15 @@ def select_recall(
     estimated = _is_heuristic(counter)
     byte_ceiling = max_tokens * HEURISTIC_BYTES_PER_TOKEN if estimated else None
 
-    cache_key_parts: Tuple[Tuple[str, str], ...] = (
-        ("scope", inputs.state.scope.cache_key()),
-        ("task", inputs.state.task_id),
-        ("seq", str(inputs.as_of_seq)),
-        ("availability_generation", str(inputs.availability.generation)),
-        ("tokenizer", getattr(counter, "name", "unknown")),
-        ("calibration", f"{calibration:.6f}"),
-        ("max_tokens", str(max_tokens)),
-        ("recent_calls_limit", str(recent_calls_limit)),
-        ("recall_schema", str(RECALL_SCHEMA_VERSION)),
+    cache_key_parts = build_cache_key_parts(
+        scope_key=inputs.state.scope.cache_key(),
+        task_id=inputs.state.task_id,
+        as_of_seq=inputs.as_of_seq,
+        availability_generation=inputs.availability.generation,
+        tokenizer=getattr(counter, "name", "unknown"),
+        calibration=calibration,
+        max_tokens=max_tokens,
+        recent_calls_limit=recent_calls_limit,
     )
 
     unresolved = _unresolved_calls(inputs.events)
@@ -774,3 +853,548 @@ def needs_task_selection(open_task_ids: Sequence[str], selected: Optional[str]) 
         ``True`` when selection is required.
     """
     return selected is None and len(open_task_ids) > 1
+
+
+# ─────────────────────────────────────────────────────────────
+# Bounded reads, caching and availability probes
+# ─────────────────────────────────────────────────────────────
+
+#: How many recent journal events one recall may read. Bounded so a long
+#: journal costs the same as a short one: recall reads the TAIL, never a
+#: full scan (AC10).
+RECALL_EVENT_WINDOW: int = 120
+
+#: How many artifact descriptors one recall may read.
+RECALL_ARTIFACT_LIMIT: int = 50
+
+#: Bound on the task list returned with ``needs_task_selection``.
+NEEDS_SELECTION_PAGE: int = 20
+
+#: Matches the omission ids the compaction layer mints. The single ``om_``
+#: prefix is deliberate — the existing store already includes it, and
+#: adding a second would break every recorded reference.
+_OMISSION_ID_RE = re.compile(r"\bom_[0-9a-f]{16}\b")
+
+
+class RecallCache(Protocol):
+    """A TTL cache for serialized recall results."""
+
+    async def get(self, key: str) -> Optional[bytes]:
+        """Return the cached payload for ``key``, or ``None``."""
+        ...
+
+    async def set(self, key: str, payload: bytes, ttl_seconds: int) -> None:
+        """Store ``payload`` under ``key`` for ``ttl_seconds``."""
+        ...
+
+
+class InMemoryRecallCache:
+    """Process-local recall cache with a monotonic-clock TTL.
+
+    The clock is injectable so expiry can be tested without sleeping —
+    a test that slept would be slow and, worse, flaky under load.
+    """
+
+    def __init__(self, clock: Callable[[], float]) -> None:
+        """Initialize an empty cache.
+
+        Args:
+            clock: Monotonic time source, in seconds. **Required, not
+                defaulted.** This module is held to a purity guard that
+                forbids importing a clock anywhere in it — precisely so
+                that hidden time dependencies cannot creep into recall —
+                so the time source is supplied by the caller instead.
+                Production wiring passes ``time.monotonic``; tests pass a
+                controllable fake, which is also how TTL expiry is tested
+                without sleeping.
+        """
+        self._clock = clock
+        self._entries: Dict[str, Tuple[float, bytes]] = {}
+
+    async def get(self, key: str) -> Optional[bytes]:
+        """Return a live entry, dropping it when its TTL has passed.
+
+        Args:
+            key: The cache key.
+
+        Returns:
+            The payload, or ``None`` when absent or expired.
+        """
+        entry = self._entries.get(key)
+        if entry is None:
+            return None
+        expires_at, payload = entry
+        if self._clock() >= expires_at:
+            self._entries.pop(key, None)
+            return None
+        return payload
+
+    async def set(self, key: str, payload: bytes, ttl_seconds: int) -> None:
+        """Store a payload with a TTL.
+
+        Args:
+            key: The cache key.
+            payload: Serialized recall result.
+            ttl_seconds: Lifetime. ``0`` or less stores nothing.
+        """
+        if ttl_seconds <= 0:
+            return
+        self._entries[key] = (self._clock() + ttl_seconds, payload)
+
+    def clear(self) -> None:
+        """Drop every entry."""
+        self._entries.clear()
+
+
+class RedisRecallCache:
+    """Recall cache over an existing async Redis client.
+
+    Never opens its own connection: it borrows the one the conversation
+    memory already owns, exactly as :class:`RedisOmissionStore` does.
+    """
+
+    def __init__(self, redis_client: Any) -> None:
+        """Initialize the cache.
+
+        Args:
+            redis_client: An already-constructed async Redis client.
+        """
+        self._redis = redis_client
+
+    async def get(self, key: str) -> Optional[bytes]:
+        """Return the cached payload, or ``None``.
+
+        Args:
+            key: The cache key.
+
+        Returns:
+            The payload as bytes, or ``None``.
+        """
+        raw = await self._redis.get(key)
+        if raw is None:
+            return None
+        return raw.encode("utf-8") if isinstance(raw, str) else bytes(raw)
+
+    async def set(self, key: str, payload: bytes, ttl_seconds: int) -> None:
+        """Store a payload with a Redis TTL.
+
+        Args:
+            key: The cache key.
+            payload: Serialized recall result.
+            ttl_seconds: Lifetime in seconds. ``0`` or less stores
+                nothing, rather than storing something that never
+                expires.
+        """
+        if ttl_seconds <= 0:
+            return
+        await self._redis.set(key, payload, ex=ttl_seconds)
+
+
+def collect_omission_ids(events: Sequence[JournalEvent]) -> Tuple[str, ...]:
+    """Return the omission ids referenced by a bounded page of events.
+
+    Scans the serialized payloads rather than reaching for a specific
+    field, because omission references can appear anywhere redaction put
+    one. The scan is bounded twice over: the event page is bounded, and
+    each payload is capped at 8 KiB.
+
+    Args:
+        events: The bounded event page.
+
+    Returns:
+        The distinct ids, in first-seen order so the result is stable.
+    """
+    seen: Dict[str, None] = {}
+    for event in events:
+        text = _canonical(event.payload.model_dump(mode="json")).decode("utf-8")
+        for match in _OMISSION_ID_RE.findall(text):
+            seen.setdefault(match, None)
+    return tuple(seen)
+
+
+class RecallReader:
+    """Builds bounded recall inputs, caches results, and never loads payloads.
+
+    This is the I/O half of recall; :func:`select_recall` remains a pure
+    function and does the choosing. The split matters: everything that
+    could make recall expensive or non-deterministic lives here, where it
+    is bounded and observable, and the selector cannot reach past what it
+    is handed.
+
+    Three properties this class exists to guarantee (AC10):
+
+    - **One fence.** The projection, the event page and the descriptor
+      page are all read at a single ``as_of_seq``, so they describe one
+      instant rather than three nearby ones.
+    - **No payload reads.** It calls ``list``/``load_snapshot``/
+      ``list_events`` and the omission *probe*. It never calls
+      ``load_payload``, never calls ``OmissionStore.get``, and never asks
+      a descriptor to summarize itself.
+    - **Bounded everything.** Page sizes are constants, not caller input.
+
+    Args:
+        store: The task-memory store.
+        artifacts: The artifact store, read for descriptors only.
+        config: Capacity and TTL configuration.
+        cache: Optional recall cache.
+        association: Optional association store, used to resolve an
+            omitted task id and to build the cache key.
+        omission_store: Optional omission store to probe.
+        counter: Token counter; defaults to the compaction default.
+    """
+
+    def __init__(
+        self,
+        store: Any,
+        artifacts: Any,
+        *,
+        config: Optional[Any] = None,
+        cache: Optional[RecallCache] = None,
+        association: Optional[Any] = None,
+        omission_store: Optional[Any] = None,
+        counter: Optional[TokenCounterLike] = None,
+    ) -> None:
+        """Initialize the reader (see class docstring)."""
+        from .config import TaskMemoryConfig
+
+        self._store = store
+        self._artifacts = artifacts
+        self._config = config or TaskMemoryConfig()
+        self._cache = cache
+        self._association = association
+        self._omissions = omission_store
+        self._counter = counter
+        self.logger = logging.getLogger(__name__)
+
+    def _resolve_counter(self) -> TokenCounterLike:
+        """Return the token counter to measure with.
+
+        Returns:
+            The injected counter, or the compaction layer's default.
+        """
+        if self._counter is not None:
+            return self._counter
+        from parrot.memory.compaction.tokens import get_default_counter
+
+        self._counter = get_default_counter()
+        return self._counter
+
+    @staticmethod
+    def omission_key(scope: Any) -> str:
+        """Compose the omission-store scoping key for a task scope.
+
+        Mirrors ``ConversationMemory.omission_key`` exactly — that method
+        documents the composition as ``"{chatbot_id}:{user_id}:{session_id}"``,
+        so this is a restatement rather than a guess.
+
+        Args:
+            scope: The trusted scope.
+
+        Returns:
+            The omission-store session key.
+        """
+        return f"{scope.chatbot_id or '_default'}:{scope.user_id}:{scope.session_id}"
+
+    async def _probe_omissions(self, scope: Any, events: Sequence[JournalEvent]) -> Dict[str, Optional[bool]]:
+        """Probe every omission id the event page references.
+
+        Args:
+            scope: The trusted scope.
+            events: The bounded event page.
+
+        Returns:
+            A mapping of id to three-valued availability. Every id maps to
+            ``None`` when no store is configured — unknown, never
+            optimistically present.
+        """
+        ids = collect_omission_ids(events)
+        if not ids:
+            return {}
+        if self._omissions is None:
+            return {cid: None for cid in ids}
+        try:
+            return await self._omissions.probe_many(self.omission_key(scope), ids)
+        except Exception as exc:  # noqa: BLE001 — a probe failure is "unknown", not fatal
+            self.logger.warning("omission availability probe failed (%s); reporting unknown", exc)
+            return {cid: None for cid in ids}
+
+    async def _read_fence(self, scope: Any, task_id: str) -> Optional[Tuple[Any, Any]]:
+        """Read the two things a cache key needs, and nothing more.
+
+        A cache entry cannot be trusted without knowing the fence it was
+        taken at, so these two reads happen on every recall — including a
+        hit. They are deliberately the *cheap* ones: the projection and a
+        bounded descriptor page. The expensive work a hit actually avoids
+        is the journal page, the omission probes and the whole selection
+        loop.
+
+        Args:
+            scope: The trusted scope.
+            task_id: The task to read.
+
+        Returns:
+            A ``(snapshot, artifact_page)`` pair, or ``None`` when the
+            task does not exist in this scope.
+        """
+        snapshot = await self._store.load_snapshot(scope, task_id)
+        if snapshot is None:
+            return None
+        artifact_page = await self._artifacts.list(
+            scope, task_id=task_id, limit=RECALL_ARTIFACT_LIMIT, as_of_seq=snapshot.as_of_seq
+        )
+        return snapshot, artifact_page
+
+    async def _complete_inputs(
+        self,
+        scope: Any,
+        task_id: str,
+        snapshot: Any,
+        artifact_page: Any,
+        *,
+        worker_generation: Optional[str],
+    ) -> RecallInputs:
+        """Finish building inputs — reached on a cache miss only.
+
+        Args:
+            scope: The trusted scope.
+            task_id: The task to read.
+            snapshot: The projection already read for the fence.
+            artifact_page: The descriptor page already read for the fence.
+            worker_generation: Live REPL worker generation.
+
+        Returns:
+            The complete recall inputs.
+        """
+        as_of = snapshot.as_of_seq
+        # Read the TAIL of the journal, fenced at the same sequence the
+        # projection reflects. A full scan would make recall's cost grow
+        # with the task's age.
+        after = max(0, as_of - RECALL_EVENT_WINDOW)
+        event_page = await self._store.list_events(
+            scope, task_id, after_seq=after, limit=RECALL_EVENT_WINDOW, as_of_seq=as_of
+        )
+        availability = AvailabilitySnapshot(
+            artifacts={str(d.ref): d.availability for d in artifact_page.items},
+            omissions=await self._probe_omissions(scope, event_page.events),
+            worker_generation=worker_generation,
+            generation=artifact_page.availability_generation,
+        )
+        return RecallInputs(
+            state=snapshot.state,
+            as_of_seq=as_of,
+            events=tuple(event_page.events),
+            artifacts=tuple(artifact_page.items),
+            availability=availability,
+        )
+
+    async def build_inputs(
+        self,
+        scope: Any,
+        task_id: str,
+        *,
+        worker_generation: Optional[str] = None,
+    ) -> Optional[RecallInputs]:
+        """Read one consistent, bounded set of recall inputs.
+
+        Every page is fenced at the projection's ``as_of_seq``, so the
+        projection, the journal page and the descriptor page describe one
+        instant rather than three nearby ones.
+
+        Args:
+            scope: The trusted scope.
+            task_id: The task to read.
+            worker_generation: Identity of the live REPL worker
+                generation, so stale bindings can be labelled.
+
+        Returns:
+            The inputs, or ``None`` when the task does not exist in this
+            scope.
+        """
+        fence = await self._read_fence(scope, task_id)
+        if fence is None:
+            return None
+        snapshot, artifact_page = fence
+        return await self._complete_inputs(scope, task_id, snapshot, artifact_page, worker_generation=worker_generation)
+
+    async def recall(
+        self,
+        scope: Any,
+        task_id: Optional[str] = None,
+        *,
+        max_tokens: Optional[int] = None,
+        recent_calls_limit: Optional[int] = None,
+        calibration: float = 1.0,
+        worker_generation: Optional[str] = None,
+        use_cache: bool = True,
+    ) -> RecallResult:
+        """Produce one bounded recall, serving a cached result when valid.
+
+        Args:
+            scope: The trusted scope.
+            task_id: The task to recall. When ``None``, resolved from the
+                authoritative selected association — never by similarity.
+            max_tokens: Budget; defaults to the configured value.
+            recent_calls_limit: Recent-call count; defaults to configured.
+            calibration: Captured compaction calibration.
+            worker_generation: Live REPL worker generation.
+            use_cache: Whether to consult and populate the cache.
+
+        Returns:
+            The recall result. ``needs_task_selection`` carries a bounded
+            list of open tasks to choose from.
+        """
+        budget = self._config.recall_max_tokens if max_tokens is None else max_tokens
+        calls = self._config.recall_recent_calls_limit if recent_calls_limit is None else recent_calls_limit
+
+        resolved = await self._resolve_task(scope, task_id)
+        if resolved is None:
+            return await self._needs_selection(scope)
+
+        fence = await self._read_fence(scope, resolved)
+        if fence is None:
+            return await self._needs_selection(scope)
+        snapshot, artifact_page = fence
+
+        counter = self._resolve_counter()
+        parts = build_cache_key_parts(
+            scope_key=scope.cache_key(),
+            task_id=snapshot.state.task_id,
+            as_of_seq=snapshot.as_of_seq,
+            availability_generation=artifact_page.availability_generation,
+            tokenizer=getattr(counter, "name", "unknown"),
+            calibration=calibration,
+            max_tokens=budget,
+            recent_calls_limit=calls,
+        )
+        key = self._cache_key(scope, parts)
+
+        # Checked BEFORE the journal page and the omission probes, so a
+        # hit actually avoids work rather than merely avoiding the final
+        # serialization. The fence reads above cannot be skipped: an entry
+        # cannot be known fresh without them.
+        if use_cache and self._cache is not None:
+            cached = await self._cache_get(key)
+            if cached is not None:
+                return cached
+
+        inputs = await self._complete_inputs(
+            scope, resolved, snapshot, artifact_page, worker_generation=worker_generation
+        )
+        result = select_recall(
+            inputs,
+            counter=counter,
+            calibration=calibration,
+            max_tokens=budget,
+            recent_calls_limit=calls,
+        )
+        if use_cache and self._cache is not None:
+            await self._cache_set(key, result)
+        return result
+
+    def _cache_key(self, scope: Any, parts: Sequence[Tuple[str, str]]) -> str:
+        """Build the cache key for one recall shape.
+
+        Uses the association store's key family when one is available, so
+        recall entries live under the same scoped, TTL'd namespace as the
+        other hot keys rather than in a parallel scheme.
+
+        Args:
+            scope: The trusted scope.
+            parts: The cache-key parts.
+
+        Returns:
+            The key.
+        """
+        digest = cache_digest(parts)
+        if self._association is not None:
+            return self._association.recall_key(scope, digest)
+        return f"_task_recall:{scope.cache_key()}:{digest}"
+
+    async def _cache_get(self, key: str) -> Optional[RecallResult]:
+        """Read a cached result, tolerating a cache outage.
+
+        A cache failure must never change task truth, so it degrades to a
+        miss rather than propagating.
+
+        Args:
+            key: The cache key.
+
+        Returns:
+            The cached result, or ``None``.
+        """
+        try:
+            raw = await self._cache.get(key)  # type: ignore[union-attr]
+        except Exception as exc:  # noqa: BLE001 — cache outage degrades to a miss
+            self.logger.warning("recall cache read failed (%s); recomputing", exc)
+            return None
+        if raw is None:
+            return None
+        try:
+            return RecallResult.model_validate_json(raw)
+        except Exception as exc:  # noqa: BLE001 — a corrupt entry is a miss
+            self.logger.warning("discarding unreadable recall cache entry (%s)", exc)
+            return None
+
+    async def _cache_set(self, key: str, result: RecallResult) -> None:
+        """Store a result, tolerating a cache outage.
+
+        Args:
+            key: The cache key.
+            result: The result to cache.
+        """
+        try:
+            await self._cache.set(  # type: ignore[union-attr]
+                key, result.model_dump_json().encode("utf-8"), self._config.recall_cache_ttl_seconds
+            )
+        except Exception as exc:  # noqa: BLE001 — cache outage must not fail a recall
+            self.logger.warning("recall cache write failed (%s); continuing uncached", exc)
+
+    async def _resolve_task(self, scope: Any, task_id: Optional[str]) -> Optional[str]:
+        """Resolve which task to recall.
+
+        Args:
+            scope: The trusted scope.
+            task_id: Explicit task id, when the caller supplied one.
+
+        Returns:
+            The task id, or ``None`` when the caller must choose.
+        """
+        if task_id is not None:
+            return task_id
+        if self._association is None:
+            return None
+        selection = await self._association.resolve(scope)
+        return getattr(selection, "task_id", None)
+
+    async def _needs_selection(self, scope: Any) -> RecallResult:
+        """Return the bounded "choose a task" answer.
+
+        Args:
+            scope: The trusted scope.
+
+        Returns:
+            A ``needs_task_selection`` result carrying a bounded page of
+            open tasks. Never a similarity guess.
+        """
+        page = await self._store.list_tasks(scope, limit=NEEDS_SELECTION_PAGE)
+        snapshot = {
+            "schema_version": RECALL_SCHEMA_VERSION,
+            "status": RecallStatus.NEEDS_TASK_SELECTION.value,
+            "open_tasks": [
+                {
+                    "task_id": item.task_id,
+                    "goal": item.goal_preview,
+                    "status": item.status.value,
+                    "updated_at": item.updated_at.isoformat(),
+                }
+                for item in page.items
+            ],
+        }
+        encoded = _canonical(snapshot)
+        return RecallResult(
+            status=RecallStatus.NEEDS_TASK_SELECTION,
+            snapshot=snapshot,
+            payload_bytes=len(encoded),
+            estimated_tokens=0,
+            truncation=TruncationAccount(),
+        )
