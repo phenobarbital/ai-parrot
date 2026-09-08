@@ -40,7 +40,8 @@ import asyncio
 import contextlib
 import logging
 import os
-from typing import Any
+import time
+from typing import Any, Awaitable, Callable, Dict, Optional, Union
 
 from parrot.integrations.liveavatar.avatar_ws import AvatarWebSocket
 from parrot.integrations.liveavatar.client import LiveAvatarClient
@@ -50,6 +51,20 @@ from parrot.integrations.liveavatar.models import (
     LiveKitRoomTokens,
 )
 from parrot.integrations.liveavatar.room_manager import LiveKitRoomManager
+
+#: Callbacks accepted by the broadcast path; both sync and async are fine.
+EventCallback = Callable[[Dict[str, Any]], Union[Awaitable[None], None]]
+CloseCallback = Callable[[str], Union[Awaitable[None], None]]
+
+
+class AvatarStartupTimeout(RuntimeError):
+    """The avatar did not become ready within the startup deadline.
+
+    Distinct from a generic failure so the broadcast can record
+    ``avatar_startup_timeout`` and fall back to audio-only rather than treating
+    a slow vendor as a fatal error (spec §2: "the startup deadline selects
+    ``audio_only``").
+    """
 
 
 class VoiceAvatarSession:
@@ -77,11 +92,15 @@ class VoiceAvatarSession:
         client: LiveAvatarClient,
         handle: AvatarSessionHandle,
         ws: AvatarWebSocket,
+        avatar_identity: Optional[str] = None,
+        injected_credentials: bool = False,
     ) -> None:
         self._tokens = tokens
         self._client = client
         self._handle = handle
         self._ws = ws
+        self._avatar_identity = avatar_identity
+        self._injected_credentials = injected_credentials
         self._closed: bool = False
         self.logger = logging.getLogger(__name__)
 
@@ -95,6 +114,17 @@ class VoiceAvatarSession:
         session_id: str,
         tenant_id: str | None,
         avatar_id: str | None = None,
+        livekit_url: str | None = None,
+        room_name: str | None = None,
+        avatar_publisher_token: str | None = None,
+        viewer_token: str | None = None,
+        avatar_identity: str | None = None,
+        broadcast: bool = False,
+        on_event: Optional[EventCallback] = None,
+        on_close: Optional[CloseCallback] = None,
+        send_timeout_s: float | None = None,
+        startup_deadline_s: float | None = None,
+        max_session_duration_s: int | None = None,
     ) -> "VoiceAvatarSession":
         """Bring up a full LiveAvatar LITE session for realtime PCM delivery.
 
@@ -123,12 +153,36 @@ class VoiceAvatarSession:
                 future opt-in / billing use).
             avatar_id: Optional avatar ID override.  Falls back to the
                 ``LIVEAVATAR_AVATAR_ID`` environment variable.
+            livekit_url: Pre-allocated room URL (broadcast path).
+            room_name: Pre-allocated room name (broadcast path).
+            avatar_publisher_token: The **avatar's own** publish-capable token
+                for that room.  Supplying all three skips step 2 entirely: in a
+                broadcast the room and both publisher identities are allocated
+                *before* the avatar starts, and the avatar must not mint a
+                second room or reuse the fixed ``avatar-agent`` identity.
+            viewer_token: Optional subscribe-only token, only so
+                :attr:`viewer_credentials` stays well-formed.  Broadcast
+                participants get their own per-lease tokens instead.
+            avatar_identity: The LiveKit identity the avatar publishes under,
+                recorded for the public descriptor.
+            broadcast: Configure the control socket for broadcast semantics —
+                no silent reconnect, cross-call frame aggregation, and the
+                caller's event/close callbacks.
+            on_event: Forwarded to :class:`AvatarWebSocket` (broadcast only).
+            on_close: Forwarded to :class:`AvatarWebSocket` (broadcast only).
+            send_timeout_s: Per-send vendor deadline (broadcast only).
+            startup_deadline_s: Bound on steps 3–6.  On expiry the partial
+                resources are cleaned up and :class:`AvatarStartupTimeout` is
+                raised so the caller can select audio-only.
+            max_session_duration_s: Vendor session cap (spec §7: ≤ 600).
 
         Returns:
             A fully-initialised :class:`VoiceAvatarSession`.
 
         Raises:
             RuntimeError: If required env vars are missing.
+            ValueError: If the injected-credential arguments are incomplete.
+            AvatarStartupTimeout: If ``startup_deadline_s`` elapses.
             Any exception from the LiveAvatar / LiveKit client calls.
         """
         # 1. Build config from env
@@ -146,61 +200,134 @@ class VoiceAvatarSession:
                 "LIVEAVATAR_BASE_URL", "https://api.liveavatar.com"
             ),
             is_sandbox=os.environ.get("LIVEAVATAR_SANDBOX", "true").lower() != "false",
+            max_session_duration=max_session_duration_s,
         )
 
-        # 2. Mint room tokens (sync CPU work — JWT signing via PyJWT, both
-        # datetime.utcnow() and PyJWT are thread-safe; offload to avoid
-        # blocking the event loop on key-derivation).
-        room_manager = LiveKitRoomManager()
-        tokens: LiveKitRoomTokens = await asyncio.to_thread(
-            room_manager.mint_room_tokens, session_id, agent_id
-        )
+        # 2. Room credentials — injected (broadcast) or minted here (legacy).
+        injected = (livekit_url, room_name, avatar_publisher_token)
+        if any(value is not None for value in injected):
+            if not all(value is not None for value in injected):
+                raise ValueError(
+                    "livekit_url, room_name and avatar_publisher_token must be "
+                    "supplied together"
+                )
+            # ``agent_token`` here is the AVATAR publisher token for the shared
+            # room — never the direct publisher's. The two must stay distinct
+            # or they evict each other in LiveKit (spec §6).
+            tokens = LiveKitRoomTokens(
+                livekit_url=str(livekit_url),
+                room=str(room_name),
+                client_token=viewer_token or "",
+                agent_token=str(avatar_publisher_token),
+            )
+            credentials_injected = True
+        else:
+            # Mint room tokens (sync CPU work — JWT signing via PyJWT, both
+            # datetime.utcnow() and PyJWT are thread-safe; offload to avoid
+            # blocking the event loop on key-derivation).
+            room_manager = LiveKitRoomManager()
+            tokens = await asyncio.to_thread(
+                room_manager.mint_room_tokens, session_id, agent_id
+            )
+            credentials_injected = False
 
         # LiveKit config passed to the avatar so it joins our room as a publisher.
-        # Field names follow LiveAvatar's LiveKitConfigSchema (snake_case).
+        # Field names follow LiveAvatar's LiveKitConfigSchema (snake_case) and
+        # are verified against the OpenAPI document — do not rename them to the
+        # configuration guide's shorthand (spec §2).
         livekit_config: dict[str, Any] = {
             "livekit_url": tokens.livekit_url,
             "livekit_room": tokens.room,
             "livekit_client_token": tokens.agent_token,  # avatar publishes → agent_token
         }
 
-        # 3. Open the HTTP client (keep-alive; NOT async-with — would stop session early)
-        client = LiveAvatarClient(cfg)
-        await client.aopen()
+        started_at = time.monotonic()
 
-        ws: AvatarWebSocket | None = None
-        handle: AvatarSessionHandle | None = None
-        try:
-            # 4. Create session token with livekit_config
-            handle = await client.create_session_token(cfg, livekit_config=livekit_config)
-            # Populate the ai-parrot session id and tenant (create_session_token
-            # cannot know these — it is the HTTP-layer's responsibility).
-            handle.session_id = session_id
-            handle.tenant_id = tenant_id
+        async def _bring_up() -> tuple[LiveAvatarClient, AvatarSessionHandle, AvatarWebSocket]:
+            """Steps 3–6, as one cancellable unit for the startup deadline."""
+            # 3. Open the HTTP client (keep-alive; NOT async-with — would stop
+            # the session early).
+            local_client = LiveAvatarClient(cfg)
+            await local_client.aopen()
 
-            # 5. Start the session (also populates handle.ws_url)
-            await client.start_session(handle)
+            local_ws: AvatarWebSocket | None = None
+            local_handle: AvatarSessionHandle | None = None
+            try:
+                # 4. Create session token with livekit_config
+                local_handle = await local_client.create_session_token(
+                    cfg, livekit_config=livekit_config
+                )
+                # Populate the ai-parrot session id and tenant
+                # (create_session_token cannot know these — it is the
+                # HTTP-layer's responsibility).
+                local_handle.session_id = session_id
+                local_handle.tenant_id = tenant_id
 
-            # 6. Open the AvatarWebSocket and await the connected gate.
-            # We enter the context manager manually (not via async-with) so the
-            # WebSocket stays open for the lifetime of this session object.
-            ws = AvatarWebSocket(handle)
-            await ws.__aenter__()
-            await ws.start_speaking()
+                # 5. Start the session (also populates handle.ws_url)
+                await local_client.start_session(local_handle)
 
-        except Exception:
-            # Clean up any partially-opened resources before re-raising.
-            if ws is not None:
+                # 6. Open the AvatarWebSocket and await the connected gate.
+                # We enter the context manager manually (not via async-with) so
+                # the WebSocket stays open for the lifetime of this session.
+                if broadcast:
+                    # A broadcast must SEE a control-socket drop (it is a
+                    # fallback trigger), and must coalesce Nova's small chunks
+                    # into vendor-sized frames.
+                    local_ws = AvatarWebSocket(
+                        local_handle,
+                        on_event=on_event,
+                        on_close=on_close,
+                        auto_reconnect=False,
+                        aggregate=True,
+                        send_timeout_s=send_timeout_s,
+                    )
+                else:
+                    local_ws = AvatarWebSocket(local_handle)
+                await local_ws.__aenter__()
+                await local_ws.start_speaking()
+                return local_client, local_handle, local_ws
+            except BaseException:
+                # Clean up any partially-opened resources before re-raising.
+                # BaseException, not Exception: a startup-deadline cancellation
+                # arrives as CancelledError and must not leak a live vendor
+                # session (which would keep billing and hold the room).
+                if local_ws is not None:
+                    with contextlib.suppress(Exception):
+                        await local_ws.__aexit__(None, None, None)
+                if local_handle is not None:
+                    with contextlib.suppress(Exception):
+                        await local_client.stop_session(local_handle)
                 with contextlib.suppress(Exception):
-                    await ws.__aexit__(None, None, None)
-            if handle is not None:
-                with contextlib.suppress(Exception):
-                    await client.stop_session(handle)
-            with contextlib.suppress(Exception):
-                await client.aclose()
-            raise
+                    await local_client.aclose()
+                raise
 
-        return cls(tokens=tokens, client=client, handle=handle, ws=ws)
+        if startup_deadline_s is None:
+            client, handle, ws = await _bring_up()
+        else:
+            try:
+                client, handle, ws = await asyncio.wait_for(
+                    _bring_up(), timeout=startup_deadline_s
+                )
+            except asyncio.TimeoutError as exc:
+                raise AvatarStartupTimeout(
+                    "VoiceAvatarSession: avatar did not become ready within "
+                    f"{startup_deadline_s}s"
+                ) from exc
+
+        logging.getLogger(__name__).info(
+            "VoiceAvatarSession: ready for session %s in %.3fs (broadcast=%s)",
+            session_id,
+            time.monotonic() - started_at,
+            broadcast,
+        )
+        return cls(
+            tokens=tokens,
+            client=client,
+            handle=handle,
+            ws=ws,
+            avatar_identity=avatar_identity,
+            injected_credentials=credentials_injected,
+        )
 
     # ── Public interface ───────────────────────────────────────────────
 
@@ -211,6 +338,11 @@ class VoiceAvatarSession:
         Returns ONLY the subscribe-only ``client_token`` (+ URL + room name).
         The ``agent_token`` / ``ws_url`` / ``session_token`` are NEVER exposed.
 
+        On the broadcast path the ``client_token`` is whatever ``viewer_token``
+        the caller passed (often empty): broadcast participants receive their
+        own per-lease subscribe-only credentials from the admission API, never
+        a shared one from here.
+
         Returns:
             Dict with keys ``livekit_url``, ``client_token``, and ``room``.
         """
@@ -219,6 +351,26 @@ class VoiceAvatarSession:
             "client_token": self._tokens.client_token,
             "room": self._tokens.room,
         }
+
+    @property
+    def liveavatar_session_id(self) -> str:
+        """The vendor's session id — audit only, never an access token."""
+        return self._handle.liveavatar_session_id
+
+    @property
+    def room_name(self) -> str:
+        """The LiveKit room this avatar publishes into."""
+        return self._tokens.room
+
+    @property
+    def avatar_identity(self) -> Optional[str]:
+        """The LiveKit identity the avatar publishes under, when known."""
+        return self._avatar_identity
+
+    @property
+    def closed(self) -> bool:
+        """Whether :meth:`aclose` has already run."""
+        return self._closed
 
     async def speak(self, pcm: bytes) -> None:
         """Push one PCM chunk into the avatar's mouth.
