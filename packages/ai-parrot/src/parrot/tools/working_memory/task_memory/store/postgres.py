@@ -63,8 +63,10 @@ from __future__ import annotations
 import logging
 import uuid
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, AsyncIterator, Optional, Sequence, Tuple
+from typing import TYPE_CHECKING, Any, AsyncIterator, Awaitable, Callable, Optional, Sequence, Tuple
 
 from parrot.interfaces.artifact_store import ArtifactPage, PayloadRefusal, PayloadResult
 from parrot.interfaces.task_memory import (
@@ -79,6 +81,7 @@ from parrot.interfaces.task_memory import (
 from ..config import TaskMemoryConfig
 from ..models import (
     Actor,
+    CallOutcome,
     ArtifactAvailability,
     ArtifactDescriptor,
     ArtifactKind,
@@ -121,7 +124,93 @@ __all__ = (
     "PostgresTransactionCoordinator",
     "PostgresTaskMemoryStore",
     "PostgresArtifactStore",
+    "TERMINAL_CALL_EVENTS",
+    "UnresolvedCall",
+    "ReconcileReport",
 )
+
+#: The event types that settle a call. A ``tool_started`` with none of
+#: these is an *unresolved* call — which is not the same as a dead one.
+TERMINAL_CALL_EVENTS: Tuple[str, ...] = (
+    EventType.TOOL_SUCCEEDED.value,
+    EventType.TOOL_FAILED.value,
+    EventType.TOOL_CANCELLED.value,
+    EventType.TOOL_OUTCOME_UNKNOWN.value,
+)
+
+
+@dataclass(frozen=True)
+class UnresolvedCall:
+    """A call the journal shows starting but never finishing.
+
+    Being unresolved says nothing about whether the call is alive. It is
+    the *question* recovery asks, not the answer.
+
+    Attributes:
+        call_id: The physical attempt.
+        tool_name: The tool it dispatched, as recorded at start.
+        started_at: When ``tool_started`` was persisted.
+        started_seq: Its journal sequence.
+        step_id: The step it was attributed to, if any.
+        turn_id: The turn it belonged to.
+        parent_call_id: Its parent aggregate, if any.
+        attempt: The attempt number recorded at start.
+        is_aggregate: Whether other calls name it as their parent. An
+            aggregate is not a physical attempt and must not be counted
+            as one.
+    """
+
+    call_id: str
+    tool_name: str
+    started_at: datetime
+    started_seq: int
+    step_id: Optional[str] = None
+    turn_id: Optional[str] = None
+    parent_call_id: Optional[str] = None
+    attempt: int = 1
+    is_aggregate: bool = False
+
+
+@dataclass(frozen=True)
+class ReconcileReport:
+    """What one reconciliation pass actually did.
+
+    Every bucket is reported separately, because "did nothing" has three
+    very different meanings and collapsing them would hide the case this
+    task exists to protect.
+
+    Attributes:
+        scanned: Unresolved calls considered.
+        reconciled: Calls newly recorded as ``tool_outcome_unknown``.
+        alive: Calls skipped because their owner still holds them.
+        unknown_liveness: Calls skipped because liveness could not be
+            determined. **Not** reconciled — an unreachable cache is not
+            evidence of death.
+        too_young: Calls skipped as inside the grace period.
+
+    There is deliberately no ``already_resolved`` bucket. The unresolved
+    set is read *inside* the task lock, so a call another reconciler has
+    already settled is simply not in it — ``scanned`` drops instead. A
+    field that could never be populated would imply a distinction this
+    design does not make.
+    """
+
+    scanned: int = 0
+    reconciled: Tuple[str, ...] = ()
+    alive: Tuple[str, ...] = ()
+    unknown_liveness: Tuple[str, ...] = ()
+    too_young: Tuple[str, ...] = ()
+
+    @property
+    def changed(self) -> bool:
+        """Whether this pass appended anything."""
+        return bool(self.reconciled)
+
+
+#: Answers "is this call's owner still live?" — tri-state on purpose.
+#: ``True`` alive, ``False`` provably gone, ``None`` unknown. Only
+#: ``False`` may be reconciled.
+LivenessProbe = Callable[[UnresolvedCall], Awaitable[Optional[bool]]]
 
 #: The one schema this feature owns. Everything is qualified by it, so a
 #: deployment can grant/revoke task memory independently of the rest of
@@ -1337,6 +1426,300 @@ class PostgresTaskMemoryStore(BaseTaskMemoryStore):
             next_seq=window[-1].seq if window else after_seq,
             has_more=has_more,
         )
+
+    # ── contract: crash reconciliation (spec §2 Recovery) ────────────
+
+    _UNRESOLVED_SQL = """
+        SELECT
+            j.call_id,
+            j.seq            AS started_seq,
+            j.occurred_at    AS started_at,
+            j.step_id        AS step_id,
+            j.turn_id        AS turn_id,
+            j.parent_call_id AS parent_call_id,
+            j.payload        AS payload,
+            EXISTS (
+                SELECT 1 FROM {journal} c
+                WHERE c.task_id = j.task_id AND c.parent_call_id = j.call_id
+            ) AS is_aggregate
+        FROM {journal} j
+        WHERE j.task_id = $1
+          AND j.call_id IS NOT NULL
+          AND j.event_type = $2
+          AND NOT EXISTS (
+              SELECT 1 FROM {journal} t
+              WHERE t.task_id = j.task_id
+                AND t.call_id = j.call_id
+                AND t.event_type = ANY($3::text[])
+          )
+        ORDER BY j.seq
+    """
+
+    async def _read_unresolved(self, connection: Any, task_id: str) -> Tuple[UnresolvedCall, ...]:
+        """Read every started-but-unsettled call for a task.
+
+        Uses one anti-join rather than paging the journal in Python: the
+        journal of a long-lived task is unbounded, and recovery must not
+        become the thing that runs out of memory.
+
+        Args:
+            connection: A connection, ideally already holding the task lock.
+            task_id: The task to scan.
+
+        Returns:
+            The unresolved calls, in start order.
+        """
+        rows = await connection.fetch(
+            self._UNRESOLVED_SQL.format(journal=self._t("task_journal")),
+            task_id,
+            EventType.TOOL_STARTED.value,
+            list(TERMINAL_CALL_EVENTS),
+        )
+        calls = []
+        for row in rows:
+            payload = self._loads_payload(row["payload"])
+            calls.append(
+                UnresolvedCall(
+                    call_id=row["call_id"],
+                    tool_name=str(payload.get("tool_name") or "unknown"),
+                    started_at=row["started_at"],
+                    started_seq=int(row["started_seq"]),
+                    step_id=row["step_id"],
+                    turn_id=row["turn_id"],
+                    parent_call_id=row["parent_call_id"],
+                    attempt=int(payload.get("attempt") or 1),
+                    is_aggregate=bool(row["is_aggregate"]),
+                )
+            )
+        return tuple(calls)
+
+    @staticmethod
+    def _loads_payload(value: Any) -> dict:
+        """Decode a stored event row's JSONB payload.
+
+        Args:
+            value: The raw column value.
+
+        Returns:
+            The nested ``payload`` mapping, or an empty dict.
+        """
+        import json
+
+        data = value
+        if isinstance(data, (str, bytes, bytearray)):
+            try:
+                data = json.loads(data)
+            except Exception:  # noqa: BLE001 — a malformed row must not stop recovery
+                return {}
+        if not isinstance(data, dict):
+            return {}
+        payload = data.get("payload")
+        return payload if isinstance(payload, dict) else {}
+
+    async def unresolved_calls(self, scope: TaskScope, task_id: str) -> Tuple[UnresolvedCall, ...]:
+        """List calls this task started but never settled.
+
+        Read-only and appends nothing. An unresolved call is a question,
+        not a verdict: a ten-minute tool call is unresolved for ten
+        minutes and is perfectly healthy throughout.
+
+        Args:
+            scope: Trusted runtime scope.
+            task_id: The task to scan.
+
+        Returns:
+            The unresolved calls, in start order.
+
+        Raises:
+            ScopeViolation: If the task does not exist in this scope.
+        """
+        pool = await self._acquire_pool()
+        async with pool.acquire() as connection:
+            row = await connection.fetchrow(
+                f"SELECT * FROM {self._t('tasks')} WHERE task_id = $1", task_id
+            )
+            if row is None:
+                raise ScopeViolation(f"task {task_id!r} does not exist in this scope")
+            self._ensure_scope(scope, self._scope_of(row), subject="task")
+            return await self._read_unresolved(connection, task_id)
+
+    async def has_terminal_event(self, scope: TaskScope, task_id: str, call_id: str) -> bool:
+        """Whether a call already has a settled outcome.
+
+        This is the durable half of fencing. A late result from an old
+        owner is rejected on the strength of *this*, not on Redis: the
+        journal is the record, and a decision already written there
+        cannot be overwritten by a slower owner that has just woken up.
+
+        Args:
+            scope: Trusted runtime scope.
+            task_id: The owning task.
+            call_id: The attempt.
+
+        Returns:
+            ``True`` when a terminal event exists for the call.
+
+        Raises:
+            ScopeViolation: If the task does not exist in this scope.
+        """
+        pool = await self._acquire_pool()
+        async with pool.acquire() as connection:
+            row = await connection.fetchrow(
+                f"SELECT * FROM {self._t('tasks')} WHERE task_id = $1", task_id
+            )
+            if row is None:
+                raise ScopeViolation(f"task {task_id!r} does not exist in this scope")
+            self._ensure_scope(scope, self._scope_of(row), subject="task")
+            found = await connection.fetchval(
+                f"SELECT 1 FROM {self._t('task_journal')} "
+                "WHERE task_id = $1 AND call_id = $2 AND event_type = ANY($3::text[]) LIMIT 1",
+                task_id,
+                call_id,
+                list(TERMINAL_CALL_EVENTS),
+            )
+            return found is not None
+
+    def _unknown_event(self, task_id: str, call: UnresolvedCall, reason: str) -> JournalEvent:
+        """Build the ``tool_outcome_unknown`` event for a dead call.
+
+        Args:
+            task_id: The owning task.
+            call: The unresolved call.
+            reason: Why it was reconciled.
+
+        Returns:
+            The event.
+        """
+        from ..models import ToolCallPayload
+
+        return JournalEvent(
+            task_id=task_id,
+            occurred_at=utc_now(),
+            event_type=EventType.TOOL_OUTCOME_UNKNOWN,
+            actor=Actor.RUNTIME,
+            turn_id=call.turn_id,
+            step_id=call.step_id,
+            call_id=call.call_id,
+            parent_call_id=call.parent_call_id,
+            payload=ToolCallPayload(
+                call_id=call.call_id,
+                tool_name=call.tool_name,
+                attempt=call.attempt,
+                # The call really did start, so a body may well have run.
+                # Claiming otherwise would understate the risk that its
+                # external effect happened.
+                executed=True,
+                outcome=CallOutcome.UNKNOWN,
+                error=reason[: Limits.MAX_REASON],
+                # An aggregate is not a physical attempt, exactly as at
+                # first-hand terminal time.
+                counted=not call.is_aggregate,
+            ),
+        )
+
+    async def reconcile_calls(
+        self,
+        scope: TaskScope,
+        task_id: str,
+        *,
+        is_live: Optional[LivenessProbe] = None,
+        min_age_seconds: float = 0.0,
+        now: Optional[datetime] = None,
+        reason: str = (
+            "the owner of this call is no longer live and its outcome was never recorded; "
+            "the tool may or may not have run, so this is UNKNOWN and must not be retried automatically"
+        ),
+    ) -> ReconcileReport:
+        """Settle provably-dead calls as ``tool_outcome_unknown``, once.
+
+        Three properties this method exists to guarantee:
+
+        - **A live call is never touched.** ``is_live`` must return
+          ``False`` — *provably* gone — before anything is appended.
+          ``True`` and ``None`` are both left alone, so neither a slow
+          call nor an unreachable cache can be mistaken for a crash. An
+          expired append lease is not consulted at all: it says nothing
+          about whether a call is running.
+        - **At most one unknown per call, ever.** The whole pass runs
+          under the task row's ``SELECT ... FOR UPDATE``, and the
+          unresolved set is read *inside* that lock. A second reconciler
+          blocks, then re-reads and finds the call already settled. Two
+          concurrent reconcilers therefore append one event between them,
+          not two — and a repeated scan appends none.
+        - **Nothing is retried.** This records that an outcome is
+          unknown. It never re-dispatches: the effect may already have
+          happened, and repeating it is the one unrecoverable mistake.
+
+        Args:
+            scope: Trusted runtime scope.
+            task_id: The task to reconcile.
+            is_live: Tri-state liveness probe. ``None`` means no probe is
+                available, in which case nothing is reconciled — refusing
+                to guess is the point.
+            min_age_seconds: Grace period. A call younger than this is
+                left alone even if it looks dead, so a claim that has not
+                yet been written cannot be raced.
+            now: Injected clock, for deterministic tests.
+            reason: Text recorded on the event.
+
+        Returns:
+            A :class:`ReconcileReport` distinguishing every skip reason.
+
+        Raises:
+            ScopeViolation: If the task does not exist in this scope.
+        """
+        moment = now or utc_now()
+        cutoff = moment - timedelta(seconds=max(0.0, min_age_seconds))
+
+        async with self._unit_of_work(None) as connection:
+            # The lock is taken FIRST and held across the read, the probe
+            # and the append. Reading the unresolved set before the lock
+            # would let two reconcilers both see the same open call.
+            row = await self._lock_task(connection, task_id)
+            if row is None:
+                raise ScopeViolation(f"task {task_id!r} does not exist in this scope")
+            self._ensure_scope(scope, self._scope_of(row), subject="task")
+
+            calls = await self._read_unresolved(connection, task_id)
+            reconciled: list = []
+            alive: list = []
+            unknown: list = []
+            young: list = []
+            events: list = []
+
+            for call in calls:
+                started = call.started_at
+                if started.tzinfo is None:  # pragma: no cover - column is timestamptz
+                    started = started.replace(tzinfo=timezone.utc)
+                if started > cutoff:
+                    young.append(call.call_id)
+                    continue
+                verdict = await is_live(call) if is_live is not None else None
+                if verdict is None:
+                    # Could not establish liveness. Leaving it unresolved
+                    # is the honest answer; inventing a death here is how
+                    # a healthy call gets its effect retried.
+                    unknown.append(call.call_id)
+                    continue
+                if verdict:
+                    alive.append(call.call_id)
+                    continue
+                reconciled.append(call.call_id)
+                events.append(self._unknown_event(task_id, call, reason))
+
+            if events:
+                # expected_revision is None: this is runtime-authored
+                # recovery, which cannot meaningfully conflict with an
+                # agent's optimistic view of the plan.
+                await self._apply(connection, row, scope, events, None)
+
+            return ReconcileReport(
+                scanned=len(calls),
+                reconciled=tuple(reconciled),
+                alive=tuple(alive),
+                unknown_liveness=tuple(unknown),
+                too_young=tuple(young),
+            )
 
     async def count_events(self, scope: TaskScope, task_id: str) -> int:
         """Return how many events a task's journal holds.

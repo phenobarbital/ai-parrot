@@ -47,6 +47,29 @@ family               TTL    purpose
 
 The context cache is a convenience. Task state comes from the store; a
 cached context that disagrees is stale, not a second opinion.
+
+Call ownership vs. the append lease
+-----------------------------------
+
+``_task_lease`` carries **two different things**, and conflating them is
+the specific bug this design exists to prevent:
+
+``<prefix>_task_lease:<scope>:<task>``
+    The *append* lease. Short, contended, and expected to expire
+    constantly — it serialises journal appends, nothing more.
+
+``<prefix>_task_lease:<scope>:<task>:call:<call_id>``
+    *Per-call ownership*, heartbeated for as long as the call is actually
+    running. A ten-minute tool call renews this for ten minutes.
+
+An expired **append lease is not evidence that a call died** — a healthy
+long-running call lets it lapse constantly, because it only needs it
+while appending. Only expired *call ownership* is evidence, and even then
+only when Redis was reachable enough to say so. :meth:`is_call_alive`
+therefore returns a **tri-state**: ``True`` alive, ``False`` provably
+gone, ``None`` unknown. Recovery must treat ``None`` as "leave it alone".
+Reading "not alive" out of an unreachable cache is how a healthy call
+gets declared dead and its external effect retried.
 """
 
 from __future__ import annotations
@@ -356,6 +379,27 @@ class TaskAssociationStore:
         """
         return self.key_for(LEASE_FAMILY, scope, suffix=task_id)
 
+    def call_lease_key(self, scope: TaskScope, task_id: str, call_id: str) -> str:
+        """Return the per-call ownership key for one in-flight call.
+
+        Deliberately a *sub-key* of the task's append lease rather than a
+        fourth key family: the spec names three families, and ownership
+        is a lease. Both components are percent-encoded, so the literal
+        ``:call:`` separator cannot be forged by a task id or call id
+        that happens to contain it.
+
+        Args:
+            scope: The trusted scope.
+            task_id: The owning task.
+            call_id: The physical attempt.
+
+        Returns:
+            The key.
+        """
+        from urllib.parse import quote
+
+        return f"{self.lease_key(scope, task_id)}:call:{quote(str(call_id), safe='')}"
+
     def recall_key(self, scope: TaskScope, cache_digest: str) -> str:
         """Return the recall-cache key for one recall shape.
 
@@ -446,6 +490,161 @@ class TaskAssociationStore:
             return False
         result = await client.eval(_RELEASE_SCRIPT, 1, self.lease_key(scope, task_id), owner)
         return bool(result)
+
+    # ── per-call ownership (heartbeated) ─────────────────────────────
+
+    def _call_ttl_ms(self, ttl_seconds: Optional[int]) -> int:
+        """Resolve the call-ownership TTL in milliseconds.
+
+        Args:
+            ttl_seconds: Explicit override, or ``None`` for configured.
+
+        Returns:
+            The TTL in milliseconds.
+        """
+        seconds = self._config.lease_ttl_seconds if ttl_seconds is None else ttl_seconds
+        return max(1, int(seconds * 1000))
+
+    async def acquire_call(
+        self, scope: TaskScope, task_id: str, call_id: str, owner: str, *, ttl_seconds: Optional[int] = None
+    ) -> bool:
+        """Claim ownership of one in-flight call.
+
+        Args:
+            scope: The trusted scope.
+            task_id: The owning task.
+            call_id: The physical attempt.
+            owner: Opaque identity of this worker.
+            ttl_seconds: TTL override; defaults to the configured lease
+                TTL. Ownership must be heartbeated to outlive it.
+
+        Returns:
+            ``True`` when ownership was taken. ``False`` when someone
+            else already holds it, or when there is no Redis to hold it
+            in — the caller must not treat ``False`` as "the call is
+            dead".
+        """
+        client = self._redis
+        if client is None:
+            return False
+        taken = await client.set(
+            self.call_lease_key(scope, task_id, call_id),
+            owner,
+            nx=True,
+            px=self._call_ttl_ms(ttl_seconds),
+        )
+        return bool(taken)
+
+    async def heartbeat_call(
+        self, scope: TaskScope, task_id: str, call_id: str, owner: str, *, ttl_seconds: Optional[int] = None
+    ) -> bool:
+        """Extend ownership we still hold, by compare-owner semantics.
+
+        This is what keeps a legitimately long call alive. It extends
+        only our own ownership: between a separate GET and PEXPIRE the
+        key could expire and be reclaimed, and we would then be renewing
+        somebody else's claim.
+
+        Args:
+            scope: The trusted scope.
+            task_id: The owning task.
+            call_id: The physical attempt.
+            owner: The identity that claimed it.
+            ttl_seconds: TTL override.
+
+        Returns:
+            ``True`` when ownership was still ours and was extended.
+            ``False`` means we have been fenced out — our terminal
+            result is no longer authoritative.
+        """
+        client = self._redis
+        if client is None:
+            return False
+        result = await client.eval(
+            _RENEW_SCRIPT,
+            1,
+            self.call_lease_key(scope, task_id, call_id),
+            owner,
+            self._call_ttl_ms(ttl_seconds),
+        )
+        return bool(result)
+
+    async def release_call(self, scope: TaskScope, task_id: str, call_id: str, owner: str) -> bool:
+        """Release ownership we still hold, and only ours.
+
+        Args:
+            scope: The trusted scope.
+            task_id: The owning task.
+            call_id: The physical attempt.
+            owner: The identity that claimed it.
+
+        Returns:
+            ``True`` when our ownership was released.
+        """
+        client = self._redis
+        if client is None:
+            return False
+        result = await client.eval(
+            _RELEASE_SCRIPT, 1, self.call_lease_key(scope, task_id, call_id), owner
+        )
+        return bool(result)
+
+    async def call_owner(self, scope: TaskScope, task_id: str, call_id: str) -> Optional[str]:
+        """Return the current owner of a call, if any.
+
+        Args:
+            scope: The trusted scope.
+            task_id: The owning task.
+            call_id: The physical attempt.
+
+        Returns:
+            The owner identity, or ``None`` when unowned or unreadable.
+        """
+        client = self._redis
+        if client is None:
+            return None
+        try:
+            value = await client.get(self.call_lease_key(scope, task_id, call_id))
+        except Exception:  # noqa: BLE001 — unreadable is not unowned
+            return None
+        if value is None:
+            return None
+        return value.decode() if isinstance(value, bytes) else str(value)
+
+    async def is_call_alive(self, scope: TaskScope, task_id: str, call_id: str) -> Optional[bool]:
+        """Report whether a call's owner still holds it — **tri-state**.
+
+        The three answers are genuinely different and recovery depends on
+        the distinction:
+
+        ``True``
+            Ownership is held and heartbeated. The call is running. Leave
+            it alone however long it has been going.
+        ``False``
+            Redis answered, and nobody holds this call. Its owner is
+            provably gone: ownership outlives a healthy call by design,
+            so an absent key means the heartbeat stopped.
+        ``None``
+            We could not ask. **Not** evidence of anything. Treating this
+            as ``False`` is how an unreachable cache gets a healthy call
+            declared dead and its external effect retried.
+
+        Args:
+            scope: The trusted scope.
+            task_id: The owning task.
+            call_id: The physical attempt.
+
+        Returns:
+            The tri-state liveness.
+        """
+        client = self._redis
+        if client is None:
+            return None
+        try:
+            existing = await client.exists(self.call_lease_key(scope, task_id, call_id))
+        except Exception:  # noqa: BLE001 — an unreachable cache knows nothing
+            return None
+        return bool(existing)
 
     # ── association ──────────────────────────────────────────────────
 

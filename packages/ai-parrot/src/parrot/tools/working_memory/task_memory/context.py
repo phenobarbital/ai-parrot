@@ -248,6 +248,7 @@ class TurnTaskSession:
     __slots__ = (
         "scope",
         "turn_id",
+        "owner",
         "_task_id",
         "_plan_revision",
         "_declared",
@@ -265,6 +266,7 @@ class TurnTaskSession:
         turn_id: Optional[str] = None,
         task_id: Optional[str] = None,
         plan_revision: int = 0,
+        owner: Optional[str] = None,
     ) -> None:
         """Initialize a turn session.
 
@@ -275,9 +277,14 @@ class TurnTaskSession:
                 omitted.
             task_id: The initially selected task, if any.
             plan_revision: Plan revision in force at the turn's start.
+            owner: Opaque identity of the worker running this turn, used
+                to claim and heartbeat per-call ownership. Generated when
+                omitted, which is what makes two processes — or two turns
+                in one process — distinguishable to a fencing check.
         """
         self.scope = scope
         self.turn_id = turn_id or new_id()
+        self.owner = owner or new_id()
         self._task_id = task_id
         self._plan_revision = plan_revision
         self._declared: Dict[str, int] = {}
@@ -761,6 +768,7 @@ def turn_session(
     turn_id: Optional[str] = None,
     task_id: Optional[str] = None,
     plan_revision: int = 0,
+    owner: Optional[str] = None,
     session: Optional[TurnTaskSession] = None,
 ) -> Iterator[TurnTaskSession]:
     """Bind a turn session to :data:`TASK_CONTEXT` for the block.
@@ -778,12 +786,15 @@ def turn_session(
         turn_id: The conversation turn's identity.
         task_id: Initially selected task, if any.
         plan_revision: Plan revision in force at the turn's start.
+        owner: Opaque worker identity for per-call ownership.
         session: An existing session to rebind instead of creating one.
 
     Yields:
         The bound :class:`TurnTaskSession`.
     """
-    active = session or TurnTaskSession(scope, turn_id=turn_id, task_id=task_id, plan_revision=plan_revision)
+    active = session or TurnTaskSession(
+        scope, turn_id=turn_id, task_id=task_id, plan_revision=plan_revision, owner=owner
+    )
     token = TASK_CONTEXT.set(active)
     try:
         yield active
@@ -798,6 +809,7 @@ async def async_turn_session(
     turn_id: Optional[str] = None,
     task_id: Optional[str] = None,
     plan_revision: int = 0,
+    owner: Optional[str] = None,
     session: Optional[TurnTaskSession] = None,
 ):
     """``async with`` form of :func:`turn_session`.
@@ -807,12 +819,15 @@ async def async_turn_session(
         turn_id: The conversation turn's identity.
         task_id: Initially selected task, if any.
         plan_revision: Plan revision in force at the turn's start.
+        owner: Opaque worker identity for per-call ownership.
         session: An existing session to rebind instead of creating one.
 
     Yields:
         The bound :class:`TurnTaskSession`.
     """
-    with turn_session(scope, turn_id=turn_id, task_id=task_id, plan_revision=plan_revision, session=session) as active:
+    with turn_session(
+        scope, turn_id=turn_id, task_id=task_id, plan_revision=plan_revision, owner=owner, session=session
+    ) as active:
         yield active
 
 
