@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import asyncio
 import base64
+
+import aiohttp
 from typing import Any, Dict, List, Optional
 from unittest.mock import AsyncMock, MagicMock
 
@@ -345,7 +347,7 @@ async def test_fanout_can_be_attached_after_construction(
 
 def _handler_session() -> Any:
     """Build a ``_HandlerVoiceSession`` over mocks, as the FEAT-536 tests do."""
-    from parrot.voice.handler import _HandlerVoiceSession
+    from parrot.voice.handler import WS_CLOSE_UNAUTHENTICATED, _HandlerVoiceSession
 
     handler = MagicMock()
     handler._send_message = AsyncMock()
@@ -441,6 +443,7 @@ from parrot.integrations.liveavatar.broadcast.floor import (  # noqa: E402
 from parrot.voice.handler import (  # noqa: E402
     BROADCAST_MAX_AUDIO_B64_BYTES,
     WS_CLOSE_FORBIDDEN,
+    WS_CLOSE_UNAUTHENTICATED,
     VoiceChatHandler,
 )
 
@@ -605,7 +608,16 @@ async def broadcast_app(aiohttp_client):
 
 
 async def _connect(client: Any, user: str) -> Any:
-    return await client.ws_connect(f"/ws/voice/broadcast/{AGENT}/{BROADCAST_ID}?token={user}")
+    """Connect the way a browser does: credentials in the subprotocol.
+
+    Not ``?token=``: the broadcast route deliberately refuses query-string
+    credentials, because they are written to access, proxy and history logs
+    (spec §2, "Keep credentials out of URL query strings").
+    """
+    return await client.ws_connect(
+        f"/ws/voice/broadcast/{AGENT}/{BROADCAST_ID}",
+        protocols=("jwt", user),
+    )
 
 
 async def _drain_until(ws: Any, wanted: str, limit: int = 12) -> Dict[str, Any]:
@@ -951,3 +963,22 @@ def test_public_broadcast_message_falls_back_for_reasonless_errors() -> None:
     # would defeat the point of the 403.
     assert _public_broadcast_message(exc) == "request rejected"
     assert "alice" not in _public_broadcast_message(exc)
+
+
+async def test_ws_refuses_query_string_credentials(broadcast_app) -> None:
+    """Credentials must not be accepted from the URL (spec §2).
+
+    Query strings are written to access logs, proxy logs and browser history.
+    The route used to accept `?token=` "for parity" with the legacy voice
+    route, which handed every participant an easy way to leak their own
+    credential. The shipped browser client has always used the subprotocol.
+    """
+    client, service, _handler = broadcast_app
+    await service.seed("moderator")
+
+    ws = await client.ws_connect(
+        f"/ws/voice/broadcast/{AGENT}/{BROADCAST_ID}?token=moderator"
+    )
+    msg = await ws.receive()
+    assert msg.type is aiohttp.WSMsgType.CLOSE
+    assert msg.data == WS_CLOSE_UNAUTHENTICATED

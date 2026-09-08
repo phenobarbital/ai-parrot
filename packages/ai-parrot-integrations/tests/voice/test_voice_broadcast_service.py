@@ -784,3 +784,61 @@ async def test_aclose_stops_every_local_producer(service: BroadcastService) -> N
     await service.aclose()
     assert service.media_session(TENANT, broadcast_id) is None
     assert FakeMediaSession.instances[0].closed_with
+
+
+# ── Cross-worker projection ────────────────────────────────────────────────
+
+
+async def test_publisher_identities_are_visible_from_another_worker(
+    service: BroadcastService, clock: FakeClock, room_manager: FakeRoomManager
+) -> None:
+    """A second worker must know which publisher its viewers should play.
+
+    The room and publisher identities are only known to the process running
+    the producer. Until they were persisted, every other worker projected
+    `selected_identity=None`, so its viewers had no track to attach — the
+    descriptor carried the fields but nothing ever filled them in.
+    """
+    descriptor, broadcast_id = await _create(service)
+    principal = await _principal(service, "creator")
+    await service.join(principal, AGENT, broadcast_id)
+
+    # A peer worker sharing the same registry, owning no producer.
+    peer = BroadcastService(
+        service.registry,
+        room_manager,  # type: ignore[arg-type]
+        nova_bot_factory=lambda: None,
+        worker_id="worker-b",
+        clock=clock,
+        session_factory=FakeMediaSession,
+        voice_session_factory=FakeVoiceSession,
+    )
+    owner_state = await service.get_public_state(principal, AGENT, broadcast_id)
+    peer_state = await peer.get_public_state(principal, AGENT, broadcast_id)
+
+    assert owner_state.selected_identity is not None
+    assert peer_state.selected_identity == owner_state.selected_identity
+    # room_name is deliberately absent from the public projection, so check it
+    # on the durable descriptor the peer would serve viewer credentials from.
+    stored = await service.registry.get(TENANT, broadcast_id)
+    assert stored is not None and stored.room_name
+
+
+async def test_media_state_is_only_ever_filled_in_never_erased(
+    service: BroadcastService,
+) -> None:
+    """An absent fact must not wipe one another worker already published."""
+    descriptor, broadcast_id = await _create(service)
+    principal = await _principal(service, "creator")
+    await service.join(principal, AGENT, broadcast_id)
+
+    before = await service.registry.get(TENANT, broadcast_id)
+    assert before is not None and before.avatar_identity
+
+    # A caller that knows only the room must not blank the identities.
+    await service.registry.set_media_state(TENANT, broadcast_id, room_name="room-x")
+    after = await service.registry.get(TENANT, broadcast_id)
+    assert after is not None
+    assert after.room_name == "room-x"
+    assert after.avatar_identity == before.avatar_identity
+    assert after.direct_identity == before.direct_identity

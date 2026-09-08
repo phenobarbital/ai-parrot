@@ -1222,13 +1222,13 @@ class VoiceChatHandler:
         agent_id = request.match_info.get("agent_id", "")
         broadcast_id = request.match_info.get("broadcast_id", "")
 
-        # Same authentication as the legacy route. The query-token form is
-        # accepted only for parity with /ws/voice; browsers should prefer the
-        # Sec-WebSocket-Protocol form, which keeps the token out of URLs and
-        # access logs (spec §2: "Keep credentials out of URL query strings").
+        # Subprotocol authentication ONLY.  The legacy /ws/voice route also
+        # accepts `?token=`, but a query string is written to access logs,
+        # proxy logs and browser history, and spec §2 is explicit: "Keep
+        # credentials out of URL query strings".  Accepting it here purely for
+        # parity would have handed every broadcast participant an easy way to
+        # leak their own credential, so this route does not offer it.
         selected_protocol, user = await self._authenticate_from_protocol(request)
-        if not user:
-            user = await self._authenticate_from_query(request)
 
         ws = web.WebSocketResponse(
             heartbeat=30.0,

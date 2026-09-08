@@ -389,8 +389,13 @@ if not env then
 end
 redis.call('HDEL', K_LEASES, lease_id)
 
+-- Tombstone at least a full credential TTL past this departure: viewer
+-- tokens are minted at connection() time, so one issued moments ago is valid
+-- for another TTL and must not outlive the tombstone (mirrors the in-memory
+-- registry).
 local cred = env.t.cred
-if cred == nil or cred == cjson.null or cred < NOW then cred = NOW + tonumber(ARGV[5]) end
+local floor_ts = NOW + tonumber(ARGV[5])
+if cred == nil or cred == cjson.null or cred < floor_ts then cred = floor_ts end
 redis.call('ZADD', K_TOMB, cred, env.lease.livekit_identity)
 
 drop_hand(d, lease_id)
@@ -432,6 +437,29 @@ else
 end
 save_desc(d)
 return { 0, floor_returned_to, new_moderator }
+"""
+
+# set_media_state(room, avatar, direct, session) -> descriptor_json | nil
+_SCRIPTS["set_media_state"] = """
+local d = load_desc()
+if not d then return nil end
+local function fill(field, value)
+  if value ~= nil and value ~= '' and d[field] ~= value then
+    d[field] = value
+    return true
+  end
+  return false
+end
+local dirty = false
+-- Only ever fill in: an empty argument means 'unchanged', so a worker that
+-- does not know a fact cannot erase one another worker published.
+if fill('room_name', ARGV[4]) then dirty = true end
+if fill('avatar_identity', ARGV[5]) then dirty = true end
+if fill('direct_identity', ARGV[6]) then dirty = true end
+if fill('liveavatar_session_id', ARGV[7]) then dirty = true end
+if dirty then touch(d, true) end
+save_desc(d)
+return cjson.encode(d)
 """
 
 # list_leases() -> array of lease JSON
@@ -1229,6 +1257,30 @@ class RedisBroadcastRegistry(BroadcastRegistry):
     async def stop_requested(self, tenant_id: str, broadcast_id: str) -> bool:
         now = await self._now(None)
         return bool(await self._run("stop_requested", tenant_id, broadcast_id, now))
+
+    async def set_media_state(
+        self,
+        tenant_id: str,
+        broadcast_id: str,
+        *,
+        room_name: Optional[str] = None,
+        avatar_identity: Optional[str] = None,
+        direct_identity: Optional[str] = None,
+        liveavatar_session_id: Optional[str] = None,
+    ) -> Optional[BroadcastDescriptor]:
+        raw = await self._run(
+            "set_media_state",
+            tenant_id,
+            broadcast_id,
+            await self._now(None),
+            room_name or "",
+            avatar_identity or "",
+            direct_identity or "",
+            liveavatar_session_id or "",
+        )
+        if not raw:
+            return None
+        return BroadcastDescriptor.model_validate(self._normalise(json.loads(raw)))
 
     async def list_broadcasts(self) -> List[Tuple[str, str]]:
         """Every live broadcast across every tenant this registry has seen.

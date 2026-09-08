@@ -426,8 +426,39 @@ class BroadcastService:
                 self.logger.exception("broadcast %s: producer startup failed", broadcast_id)
                 self._producers.pop(key, None)
                 raise
+            await self._persist_media_state(tenant_id, broadcast_id, session)
             await self._publish_state(tenant_id, broadcast_id)
             return session
+
+    async def _persist_media_state(self, tenant_id: str, broadcast_id: str, session: Any) -> None:
+        """Push the producer's media facts to the store for other workers.
+
+        Only the owning process knows the room and publisher identities, and
+        those identities are what a browser uses to decide which track to
+        play. Left unpublished, every other worker projected
+        ``selected_identity=None`` and its viewers had nothing to attach.
+
+        Args:
+            tenant_id: Tenant scope.
+            broadcast_id: Broadcast concerned.
+            session: The local producer session.
+        """
+        state = session.media_state() if hasattr(session, "media_state") else None
+        if not state:
+            return
+        try:
+            await self.registry.set_media_state(
+                tenant_id,
+                broadcast_id,
+                room_name=state.get("room_name"),
+                avatar_identity=state.get("avatar_identity"),
+                direct_identity=state.get("direct_identity"),
+                liveavatar_session_id=state.get("liveavatar_session_id"),
+            )
+        except Exception:  # noqa: BLE001 — the local projection still works
+            self.logger.warning(
+                "broadcast %s: could not persist media state", broadcast_id, exc_info=True
+            )
 
     def _build_voice_session(self, descriptor: BroadcastDescriptor, session: Any, bot: Any) -> Any:
         """Construct the broadcast-owned voice session.

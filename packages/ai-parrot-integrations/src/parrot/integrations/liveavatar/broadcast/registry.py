@@ -498,6 +498,37 @@ class BroadcastRegistry(abc.ABC):
 
     @abc.abstractmethod
     @abc.abstractmethod
+    async def set_media_state(
+        self,
+        tenant_id: str,
+        broadcast_id: str,
+        *,
+        room_name: Optional[str] = None,
+        avatar_identity: Optional[str] = None,
+        direct_identity: Optional[str] = None,
+        liveavatar_session_id: Optional[str] = None,
+    ) -> Optional[BroadcastDescriptor]:
+        """Persist producer-owned media facts onto the durable descriptor.
+
+        The publisher identities decide which track a browser plays. They were
+        previously known only to the process running the producer, so any other
+        worker projected ``selected_identity=None`` and its viewers could not
+        tell which publisher to attach — the descriptor had the fields, nothing
+        ever filled them in.
+
+        Args:
+            tenant_id: Tenant scope.
+            broadcast_id: Broadcast concerned.
+            room_name: LiveKit room backing the broadcast.
+            avatar_identity: Avatar publisher identity.
+            direct_identity: Direct audio publisher identity.
+            liveavatar_session_id: Vendor session id, when one exists.
+
+        Returns:
+            The updated descriptor, or ``None`` when it is gone.
+        """
+
+    @abc.abstractmethod
     async def list_broadcasts(self) -> List[Tuple[str, str]]:
         """Every live broadcast in the store, as ``(tenant_id, broadcast_id)``.
 
@@ -958,12 +989,21 @@ class InMemoryBroadcastRegistry(BroadcastRegistry):
                 return ReleaseOutcome(audience_empty=not record.leases)
 
             # Identity tombstone through token validity (spec §2).
+            #
+            # The floor is `now + VIEWER_CREDENTIAL_TTL_S`, not `now`: viewer
+            # credentials are minted at connection() time, which can be long
+            # after admission, so a token issued a moment before this departure
+            # stays valid for a further full TTL. Tombstoning only until the
+            # admission-time `credential_expires_at` let that identity be
+            # re-admitted while a working token for it was still in a browser.
             expiry = (
                 lease.credential_expires_at.timestamp()
                 if lease.credential_expires_at is not None
                 else stamp + VIEWER_CREDENTIAL_TTL_S
             )
-            record.tombstones[lease.livekit_identity] = max(expiry, stamp)
+            record.tombstones[lease.livekit_identity] = max(
+                expiry, stamp + VIEWER_CREDENTIAL_TTL_S
+            )
 
             self._drop_hand(record, lease_id)
             was_speaker = descriptor.speaker_lease_id == lease_id
@@ -1217,6 +1257,38 @@ class InMemoryBroadcastRegistry(BroadcastRegistry):
             return True
         async with record.lock:
             return record.stop_requested_by is not None
+
+    async def set_media_state(
+        self,
+        tenant_id: str,
+        broadcast_id: str,
+        *,
+        room_name: Optional[str] = None,
+        avatar_identity: Optional[str] = None,
+        direct_identity: Optional[str] = None,
+        liveavatar_session_id: Optional[str] = None,
+    ) -> Optional[BroadcastDescriptor]:
+        record = self._records.get((tenant_id, broadcast_id))
+        if record is None:
+            return None
+        async with record.lock:
+            now = self._now(None)
+            updates = {
+                "room_name": room_name,
+                "avatar_identity": avatar_identity,
+                "direct_identity": direct_identity,
+                "liveavatar_session_id": liveavatar_session_id,
+            }
+            changed = False
+            for field, value in updates.items():
+                # Only ever fill in; a None means "unchanged", so a worker
+                # without the fact cannot erase one another worker published.
+                if value is not None and getattr(record.descriptor, field, None) != value:
+                    setattr(record.descriptor, field, value)
+                    changed = True
+            if changed:
+                self._touch(record, now)
+            return record.descriptor.model_copy(deep=True)
 
     async def list_broadcasts(self) -> List[Tuple[str, str]]:
         return list(self._records.keys())

@@ -153,6 +153,7 @@ class _RateLimiter:
         self._limit = limit
         self._window_s = window_s
         self._hits: Dict[str, Deque[float]] = {}
+        self._last_sweep: float = time.monotonic()
 
     def allow(self, key: str) -> bool:
         """Whether ``key`` may make one more request now.
@@ -164,6 +165,7 @@ class _RateLimiter:
             ``False`` once the window's budget is exhausted.
         """
         now = time.monotonic()
+        self._evict(now)
         hits = self._hits.setdefault(key, deque())
         while hits and now - hits[0] > self._window_s:
             hits.popleft()
@@ -171,6 +173,29 @@ class _RateLimiter:
             return False
         hits.append(now)
         return True
+
+    def _evict(self, now: float) -> None:
+        """Drop principals that have gone quiet.
+
+        Without this the map keeps one deque per distinct ``tenant:user`` for
+        the lifetime of the process, so a long-running server accumulates an
+        entry for every principal that ever called — a slow leak proportional
+        to distinct callers rather than to concurrent ones. Sweeping is
+        amortised: it runs at most once per window, not on every request.
+
+        Args:
+            now: Current monotonic time.
+        """
+        if now - self._last_sweep < self._window_s:
+            return
+        self._last_sweep = now
+        stale = [
+            key
+            for key, hits in self._hits.items()
+            if not hits or (now - hits[-1]) > self._window_s
+        ]
+        for key in stale:
+            del self._hits[key]
 
 
 def _allowed_origins() -> Optional[frozenset[str]]:

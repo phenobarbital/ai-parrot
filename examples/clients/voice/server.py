@@ -828,18 +828,33 @@ def main() -> None:
     """Run the aiohttp provider-switch demo server.
 
     Raises:
-        SystemExit: When demo participant tokens are configured and the bind
-            host is not loopback.  Those tokens are shared secrets in a config
-            file, not credentials — exposing them on a routable interface would
-            hand anyone who can reach the port a seat and a microphone
+        SystemExit: When broadcast demo mode would be reachable off-host.
+            Both configurations are refused, because the *weaker* one was the
+            one previously left open: with ``VOICEBOT_DEMO_PARTICIPANTS`` set,
+            the tokens are shared secrets in a config file rather than real
+            credentials; with it unset, ``require_auth`` is ``False`` and the
+            broadcast socket accepts anyone at all. Either way, anyone who can
+            reach the port gets a seat and a microphone
             (spec §2: "Refuse non-loopback binding in demo mode").
     """
     args = parse_args()
-    if _demo_participants() and args.host not in _LOOPBACK_HOSTS:
+    off_host = args.host not in _LOOPBACK_HOSTS
+    if _demo_participants() and off_host:
         raise SystemExit(
             f"Refusing to bind demo mode to {args.host!r}: "
             "VOICEBOT_DEMO_PARTICIPANTS maps shared tokens to fixed principals "
             "and is localhost-only. Bind to localhost/127.0.0.1/::1, or unset "
+            "VOICEBOT_DEMO_PARTICIPANTS and put real authentication in front."
+        )
+    if off_host and os.environ.get("PARROT_BROADCAST_REDIS_URL"):
+        # No participants configured means require_auth is False, so the
+        # broadcast socket would accept anyone. This is the weaker of the two
+        # configurations and was the one left open.
+        raise SystemExit(
+            f"Refusing to bind broadcast demo mode to {args.host!r} with "
+            "authentication disabled: VOICEBOT_DEMO_PARTICIPANTS is unset, so "
+            "the broadcast socket would accept any caller that can reach the "
+            "port. Bind to localhost/127.0.0.1/::1, or set "
             "VOICEBOT_DEMO_PARTICIPANTS and put real authentication in front."
         )
     app = build_app()

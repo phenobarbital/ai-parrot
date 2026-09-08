@@ -596,3 +596,33 @@ async def test_no_secret_keys_in_any_response(client) -> None:
     for payload in payloads:
         _assert_no_secrets(payload)
     assert moderator["role"] == "moderator"
+
+
+def test_rate_limiter_does_not_grow_without_bound() -> None:
+    """Quiet principals must be forgotten, not accumulated forever.
+
+    The map kept one deque per distinct `tenant:user` for the lifetime of the
+    process, so a long-running server leaked an entry for every principal that
+    ever called.
+    """
+    from parrot.handlers.voice_broadcast import _RateLimiter
+
+    limiter = _RateLimiter(limit=5, window_s=1.0)
+    for index in range(500):
+        assert limiter.allow(f"tenant:user-{index}") is True
+    assert len(limiter._hits) == 500  # noqa: SLF001
+
+    # After a window with no traffic from them, they are swept.
+    limiter._last_sweep -= 10.0  # noqa: SLF001
+    for hits in limiter._hits.values():  # noqa: SLF001
+        hits[-1] -= 10.0
+    assert limiter.allow("tenant:someone-new") is True
+    assert len(limiter._hits) == 1  # noqa: SLF001
+
+
+def test_rate_limiter_still_limits_an_active_principal() -> None:
+    """Eviction must not hand a busy caller a fresh budget."""
+    from parrot.handlers.voice_broadcast import _RateLimiter
+
+    limiter = _RateLimiter(limit=3, window_s=60.0)
+    assert [limiter.allow("tenant:ada") for _ in range(4)] == [True, True, True, False]

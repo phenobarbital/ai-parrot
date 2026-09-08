@@ -539,3 +539,19 @@ async def test_failure_hook_present_only_with_the_flag(server_module, monkeypatc
     assert server_module.register_failure_injection(app2, object()) is True
     paths = {getattr(route.resource, "canonical", "") for route in app2.router.routes()}
     assert "/__demo__/broadcasts/{broadcast_id}/inject" in paths
+
+
+def test_refuses_non_loopback_broadcast_without_authentication(
+    server_module, monkeypatch
+) -> None:
+    """The open-by-default case was the one previously left unguarded.
+
+    With VOICEBOT_DEMO_PARTICIPANTS unset, `require_auth` is False, so the
+    broadcast socket accepts any caller. That is weaker than the token case the
+    guard already refused, yet it was allowed to bind anywhere.
+    """
+    monkeypatch.delenv("VOICEBOT_DEMO_PARTICIPANTS", raising=False)
+    monkeypatch.setenv("PARROT_BROADCAST_REDIS_URL", "redis://localhost:6379/0")
+    monkeypatch.setattr(server_module, "parse_args", lambda: _Args(host="0.0.0.0", port=8080))
+    with pytest.raises(SystemExit, match="authentication disabled"):
+        server_module.main()

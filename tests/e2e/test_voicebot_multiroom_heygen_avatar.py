@@ -50,6 +50,13 @@ from parrot.integrations.liveavatar.broadcast.redis_registry import (
     RedisBroadcastRegistry,
 )
 from parrot.integrations.liveavatar.broadcast.service import BroadcastService
+from parrot.integrations.liveavatar.broadcast.worker_transport import (
+    WorkerAddressRegistry,
+    WorkerRelayServer,
+)
+
+#: Shared service token for the in-test relays.
+RELAY_TOKEN = "e2e-relay-token"
 
 REDIS_URL = os.environ.get("PARROT_TEST_REDIS_URL", "redis://localhost:6379/3")
 AGENT = "agent-1"
@@ -311,12 +318,20 @@ def clock() -> FakeClock:
 
 
 @pytest.fixture
-async def workers(aiohttp_client, clock: FakeClock):
+async def workers(aiohttp_client, clock: FakeClock, monkeypatch):
     """Two workers over one Redis key space, plus a shared room manager."""
+    # Both ends of the relay read the shared service token from the
+    # environment, exactly as a deployment does.
+    monkeypatch.setenv("PARROT_BROADCAST_WORKER_TOKEN", RELAY_TOKEN)
     prefix = f"t537e2e:{uuid.uuid4().hex[:10]}"
     room_manager = FakeRoomManager()
     built: List[Worker] = []
     registries: List[Any] = []
+    # One shared address book, as in a real deployment: a handoff decided on
+    # the worker that does not own the producer has to reach the owner to
+    # fence it, and an unreachable owner must fail the grant rather than
+    # commit it unfenced.
+    worker_registry = WorkerAddressRegistry()
 
     for worker_id in ("worker-a", "worker-b"):
         registry = RedisBroadcastRegistry.from_url(REDIS_URL, key_prefix=prefix, clock=clock)
@@ -329,10 +344,14 @@ async def workers(aiohttp_client, clock: FakeClock):
             clock=clock,
             session_factory=FakeMediaSession,
             voice_session_factory=FakeVoiceSession,
+            worker_registry=worker_registry,
         )
         app = web.Application()
         register_voice_broadcast_routes(app, service, principal_resolver=_StubResolver())
+        # Each worker serves its own relay, exactly as the server wiring does.
+        WorkerRelayServer(service, token=RELAY_TOKEN, require_tls=False).setup_routes(app)
         client = await aiohttp_client(app)
+        await worker_registry.register(worker_id, f"ws://127.0.0.1:{client.server.port}")
         built.append(Worker(worker_id, service, registry, client))
 
     yield built[0], built[1], room_manager
@@ -778,3 +797,37 @@ async def test_redis_never_holds_a_publisher_token(workers) -> None:
         lowered = f"{key}{blob}".lower().replace("credential_expires_at", "cred_exp")
         for fragment in forbidden:
             assert fragment not in lowered, f"{key} contains {fragment}"
+
+
+async def test_cross_worker_grant_fails_closed_when_the_producer_is_unreachable(
+    workers,
+) -> None:
+    """An unreachable producer must abort the handoff, not commit it.
+
+    A grant decided on a worker that does not own the producer used to skip
+    the barrier entirely, so the floor moved while the producer never fenced
+    its output. Failing closed here is what makes the barrier meaningful: the
+    floor is left idle and the moderator can retry.
+    """
+    worker_a, worker_b, _rooms = workers
+    bid = await _create(worker_a)
+    await _join(worker_a, bid, "moderator")
+    guest = await _join(worker_b, bid, "guest")
+    await _confirm(worker_a, bid, guest["lease_id"])
+
+    # The owner becomes unreachable: its address is withdrawn from the shared
+    # address book, as it would be if the worker died.
+    await worker_b.service.worker_registry.unregister(worker_a.worker_id)
+
+    version = (await _state(worker_b, bid))["version"]
+    response = await worker_b.client.post(
+        f"{BASE}/{bid}/floor",
+        headers=worker_b.headers("moderator"),
+        json={"lease_id": guest["lease_id"], "expected_version": version},
+    )
+    assert response.status >= 400
+
+    # The floor is idle and nobody was installed as speaker.
+    state = await _state(worker_a, bid)
+    assert state["speaker_display_id"] is None
+    assert state["floor_state"] in ("idle", "switching")
