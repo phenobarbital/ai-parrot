@@ -15,6 +15,7 @@ import pytest
 
 from parrot.integrations.liveavatar.broadcast import (
     MAX_VIEWERS,
+    BroadcastDescriptor,
     BroadcastReason,
     BroadcastState,
     InMemoryBroadcastRegistry,
@@ -842,3 +843,51 @@ async def test_media_state_is_only_ever_filled_in_never_erased(
     assert after.room_name == "room-x"
     assert after.avatar_identity == before.avatar_identity
     assert after.direct_identity == before.direct_identity
+
+
+# ── Producer startup with a realistic bot (live-run regression) ────────────
+
+
+async def test_producer_configures_the_bots_llm_before_building_the_session(
+    service: BroadcastService,
+) -> None:
+    """A real ``VoiceBot`` arrives with ``_llm`` unset and must be configured.
+
+    Found only by running the demo against real vendors: every producer
+    startup died with ``AttributeError: 'NoneType' object has no attribute
+    'voice_capabilities'`` because ``_AskStreamVoiceClient`` dereferenced the
+    bot's lazily-built client. The whole suite missed it — the fixtures inject
+    either a fake voice-session factory or a ``None`` bot, so nothing ever
+    exercised the real construction path. ``VoiceChatHandler`` performs this
+    same lazy build for the single-user path.
+    """
+    built: List[str] = []
+
+    class _Llm:
+        voice_capabilities = object()
+
+    class _RealisticBot:
+        """Mirrors VoiceBot's contract: `_llm` is None until asked for."""
+
+        system_prompt = "hi"
+        voice_config = None
+
+        def __init__(self) -> None:
+            self._llm = None
+
+        def _resolve_llm_config(self):
+            built.append("resolve")
+            return {"provider": "nova"}
+
+        def _create_llm_client(self, config):
+            built.append("create")
+            return _Llm()
+
+    bot = _RealisticBot()
+    descriptor = BroadcastDescriptor(broadcast_id="bc-1", tenant_id=TENANT, agent_id=AGENT, creator_user_id="u")
+
+    # Exercise the exact path start_producer uses.
+    service._build_voice_session(descriptor, None, bot)  # noqa: SLF001
+
+    assert built == ["resolve", "create"], "the bot's client must be built exactly once"
+    assert bot._llm is not None

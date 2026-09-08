@@ -282,3 +282,54 @@ feature. The comparison now reads: `dev` **189 passed / 0 failed**, this branch 
 passed / 0 failed**, on the same environment.
 
 ---
+
+---
+
+## 8. Running the shipped UI sample against real vendors — 2026-09-09
+
+The example was booted with real LiveKit + LiveAvatar credentials and Redis, and driven
+through its own HTTP API. This is the first time the *service* (as opposed to the vendor
+probe in §7) had been exercised against live infrastructure, and it found **two defects
+that every one of the 543 automated tests missed**, because the fixtures inject a fake
+media session or a `None` bot and so never construct the real objects:
+
+1. **Producer startup crashed on any real bot.** `_build_voice_session` handed the bot to
+   `_AskStreamVoiceClient` without building the bot's lazily-constructed `_llm`, so
+   `voice_capabilities` dereferenced `None`:
+   `AttributeError: 'NoneType' object has no attribute 'voice_capabilities'`. The
+   single-user path in `VoiceChatHandler` already did this construction; the broadcast
+   path simply omitted it. **The moderated broadcast could never start in production.**
+
+2. **The avatar could never start.** The LiveAvatar vendor rejects the publisher token we
+   mint: `422 Bad LiveKit configuration. Input Livekit token needs to grant
+   canPublishData permission.` Because avatar startup *degrades* rather than raises, this
+   surfaced only as every broadcast silently running in `audio_only` with
+   `avatar_control_lost` — the fallback working perfectly and masking a total avatar
+   outage. `mint_publisher_token` now takes `can_publish_data`, granted for the avatar
+   token only; viewer tokens remain subscribe-only (AC3) and the direct publisher keeps
+   least privilege.
+
+Both are covered by regression tests, and the `_llm` one was verified to fail without the
+fix before being committed.
+
+### Result after the fixes — three participants, real vendors
+
+```
+state                avatar
+media_ready          True
+selected_identity    avatar-bc-49c28
+viewer_count         3
+moderator_display_id lease-a7000d7ac5ce4498
+speaker_display_id   lease-a7000d7ac5ce4498
+reason               None
+```
+
+One producer, one LiveKit room, three admitted participants, avatar mode active. This is
+**AC1's backend half** demonstrated end to end. It is still not AC1: no browser rendered
+the media and no human confirmed audible speech or lip-sync.
+
+A third, smaller issue was fixed alongside: a LiveKit `404 room does not exist` during the
+normal window between admission and room creation was logged as "LiveKit unreachable" with
+a full traceback on every reconciler pass, burying the genuine failures above. It is now
+distinguished from an outage and logged at DEBUG.
+

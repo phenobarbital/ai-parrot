@@ -163,6 +163,28 @@ def default_principal_resolver(user: Any, agent_id: str, *, tenant_id: str = "de
     )
 
 
+def _is_room_not_found(exc: BaseException) -> bool:
+    """Whether a LiveKit error means "this room does not exist (yet)".
+
+    Distinguished from a genuine outage because the two demand opposite
+    reactions: a missing room during startup is expected and should be quiet,
+    while an unreachable LiveKit must stay loud and fail closed.
+
+    Args:
+        exc: The exception raised by a room-manager call.
+
+    Returns:
+        ``True`` for a not-found/404 response.
+    """
+    code = getattr(exc, "code", None)
+    if code is not None and str(code).lower().endswith("not_found"):
+        return True
+    status = getattr(exc, "status", None)
+    if status == 404:
+        return True
+    return "does not exist" in str(exc).lower()
+
+
 class BroadcastService:
     """Authority, lifecycle and cross-worker routing for moderated broadcasts.
 
@@ -464,8 +486,27 @@ class BroadcastService:
         The conversation key is the broadcast's stable ``voice_session_id`` —
         never the current speaker's — so the floor can move without the agent
         losing the conversation (spec §2).
+
+        Args:
+            descriptor: The broadcast being produced.
+            session: The media session the voice session drives.
+            bot: The broadcast's Nova ``VoiceBot``, or ``None`` in tests.
+
+        Returns:
+            The constructed broadcast voice session.
         """
         from parrot.voice.handler import _AskStreamVoiceClient
+
+        if bot is not None and getattr(bot, "_llm", None) is None:
+            # VoiceBot builds its client lazily, exactly as ask()/ask_stream()
+            # do, and the single-user path in VoiceChatHandler performs this
+            # same construction before building its session. Skipping it here
+            # meant `_AskStreamVoiceClient.voice_capabilities` dereferenced a
+            # None `_llm` and every producer startup with a REAL bot died with
+            # `AttributeError: 'NoneType' object has no attribute
+            # 'voice_capabilities'` — invisible to the tests, which inject a
+            # fake session factory or a None bot.
+            bot._llm = bot._create_llm_client(bot._resolve_llm_config())
 
         client = _AskStreamVoiceClient(bot) if bot is not None else None
         return self._voice_session_factory(
@@ -1067,12 +1108,23 @@ class BroadcastService:
             return 0
         try:
             identities = set(await self.room_manager.list_participant_identities(descriptor.room_name))
-        except Exception:  # noqa: BLE001 — LiveKit unreachable: confirm nothing
-            self.logger.warning(
-                "broadcast %s: could not read the room roster — leaving seats unconfirmed",
-                broadcast_id,
-                exc_info=True,
-            )
+        except Exception as exc:  # noqa: BLE001 — LiveKit unreachable: confirm nothing
+            # A room that does not exist yet is the normal state between
+            # admission and the producer creating it, not an outage. Logging it
+            # at WARNING with a full traceback on every reconciler pass buried
+            # the real failures in this exact scenario, so it is reported once
+            # per pass at DEBUG instead.
+            if _is_room_not_found(exc):
+                self.logger.debug(
+                    "broadcast %s: room not created yet — leaving seats unconfirmed",
+                    broadcast_id,
+                )
+            else:
+                self.logger.warning(
+                    "broadcast %s: could not read the room roster — leaving seats unconfirmed",
+                    broadcast_id,
+                    exc_info=True,
+                )
             return 0
 
         confirmed = 0
