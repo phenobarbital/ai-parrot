@@ -324,6 +324,20 @@ class _AskStreamVoiceClient:
         self._bot = bot
         self._user_id = user_id
 
+    def set_user_id(self, user_id: Optional[str]) -> None:
+        """Re-bind the principal every subsequent turn runs as (FEAT-537).
+
+        A broadcast keeps one bot and one conversation while the speaking floor
+        moves between participants, so the identity the bot resolves tool
+        permissions and context from must be settable per turn.  Without this
+        the whole broadcast would run as whoever happened to start it, silently
+        lending that user's privileges to every later speaker (spec §2).
+
+        Args:
+            user_id: The current speaker's authenticated user id, or ``None``.
+        """
+        self._user_id = user_id
+
     @property
     def voice_capabilities(self):
         """Delegates to the underlying raw client's descriptor — required
@@ -361,6 +375,196 @@ class _AskStreamVoiceClient:
             yield response
 
 
+@dataclass
+class ToolCallDedupState:
+    """Per-turn ``tool_call`` de-duplication bookkeeping.
+
+    A streamed delta and the final completion snapshot carry the SAME
+    :class:`LiveToolCall` objects (FEAT-536 TASK-2940/2941 arrival-order
+    accumulation), so without this every already-relayed id would be emitted
+    again on ``is_complete``.  Keyed by ``turn_no`` so ids may legitimately be
+    reused in a LATER turn.
+
+    Extracted from ``_HandlerVoiceSession`` (FEAT-537 TASK-2959) so the
+    broadcast relay shares one implementation with the single-user path
+    instead of growing a near-copy that can drift.
+
+    Attributes:
+        turn_no: The turn the current ``sent_ids`` belong to.
+        sent_ids: Tool-call ids already emitted this turn.
+    """
+
+    turn_no: Optional[int] = None
+    sent_ids: set = field(default_factory=set)
+
+    def reset_if_new_turn(self, turn_no: int) -> None:
+        """Clear the id set when the turn number changes.
+
+        Args:
+            turn_no: The turn being relayed.
+        """
+        if turn_no != self.turn_no:
+            self.turn_no = turn_no
+            self.sent_ids = set()
+
+
+def build_voice_frames(
+    resp: Any,
+    turn_no: int,
+    *,
+    stt_only: bool,
+    dedup_state: ToolCallDedupState,
+) -> list:
+    """Translate one ``LiveVoiceResponse`` into VoiceChatHandler wire frames.
+
+    This is the single, pure implementation of the handler's rich frame
+    protocol (FEAT-418 TASK-2174): ``response_chunk`` / ``transcription`` /
+    ``display_data`` / ``tool_call`` / ``response_complete`` / ``ready_to_speak``,
+    plus the ``go_away`` → ``session_warning`` mapping, with STT-only gating and
+    "thought" text filtering.
+
+    Both :class:`_HandlerVoiceSession` (single user) and the broadcast relay
+    call it, so the two paths cannot drift apart in what a browser receives.
+    The broadcast relay strips ``audio_base64`` from the result afterwards —
+    its PCM goes to the shared room, not down each participant's socket.
+
+    Must stay **sync**: the base ``VoiceSession._relay()`` calls
+    ``build_frames()`` without awaiting.
+
+    Args:
+        resp: The provider response to translate.
+        turn_no: Current turn number.
+        stt_only: Whether the session is transcription-only.
+        dedup_state: Mutable per-turn tool-call dedup bookkeeping.
+
+    Returns:
+        JSON-serializable frame dicts, in send order.
+    """
+    dedup_state.reset_if_new_turn(turn_no)
+
+    frames: list = []
+
+    if not stt_only:
+        is_thought = bool(resp.text and _THOUGHT_FILTER_PATTERN.match(resp.text))
+        text_to_send = "" if is_thought else resp.text
+        if (resp.audio_data or text_to_send) and not resp.is_complete:
+            frames.append(
+                {
+                    "type": "response_chunk",
+                    "text": text_to_send or "",
+                    "audio_base64": base64.b64encode(resp.audio_data).decode() if resp.audio_data else "",
+                    "audio_format": "audio/pcm;rate=24000" if resp.audio_data else "",
+                    "is_interrupted": resp.is_interrupted,
+                }
+            )
+
+    # User transcription is always forwarded (both modes) — canonical
+    # role replaces the removed metadata["user_transcription"] key.
+    if resp.role == "user" and resp.text:
+        frames.append(
+            {
+                "type": "transcription",
+                "text": resp.text,
+                "is_user": True,
+            }
+        )
+
+    # Everything below this point is model-response output — skip in
+    # STT-only mode (matches _send_voice_response()'s early return).
+    if not stt_only:
+        # Forward the assistant's spoken text as the display bubble.
+        # canonical role="assistant" replaces the removed
+        # metadata["assistant_transcription"] key; turn_metadata's own
+        # output_transcription remains as a fallback for a frame that
+        # carries no text of its own (e.g. an audio-only chunk).
+        assistant_text = resp.text if resp.role == "assistant" else None
+        if not assistant_text and resp.turn_metadata:
+            assistant_text = resp.turn_metadata.output_transcription
+        if assistant_text:
+            frames.append(
+                {
+                    "type": "transcription",
+                    "text": assistant_text,
+                    "is_user": False,
+                }
+            )
+
+        if resp.metadata.get("display_data"):
+            frames.append(
+                {
+                    "type": "display_data",
+                    "data": resp.metadata["display_data"],
+                }
+            )
+
+        for tc in resp.tool_calls:
+            if tc.id in dedup_state.sent_ids:
+                continue
+            dedup_state.sent_ids.add(tc.id)
+            frames.append(
+                {
+                    "type": "tool_call",
+                    "name": tc.name,
+                    "arguments": tc.arguments,
+                    "result": tc.result,
+                    "execution_time_ms": tc.execution_time_ms,
+                }
+            )
+
+        if resp.is_complete:
+            final_text = resp.text
+            if final_text and _THOUGHT_FILTER_PATTERN.match(final_text):
+                final_text = ""
+            response_complete_frame = {
+                "type": "response_complete",
+                "text": final_text or "",
+                "is_interrupted": resp.is_interrupted,
+            }
+            # FEAT-418 (TASK-2178): surface per-turn token/latency
+            # counters on the streaming path — mirrors the shape
+            # _send_complete_voice_response() already sends on the
+            # non-streaming path (input_tokens/output_tokens/
+            # total_tokens), plus the timing fields LiveCompletionUsage
+            # already computes (response_time_ms/first_token_time_ms),
+            # so the dual-provider example can render a live counter
+            # per provider without fabricating data client-side.
+            if resp.usage:
+                response_complete_frame["usage"] = {
+                    "input_tokens": resp.usage.prompt_tokens,
+                    "output_tokens": resp.usage.completion_tokens,
+                    "total_tokens": resp.usage.total_tokens,
+                    "response_time_ms": resp.usage.response_time_ms,
+                    "first_token_time_ms": resp.usage.first_token_time_ms,
+                }
+            frames.append(response_complete_frame)
+            frames.append(
+                {
+                    "type": "ready_to_speak",
+                    "message": "Ready for new question",
+                }
+            )
+
+    # Gemini's GoAway signal is distinct from reconnect_required and,
+    # by itself, is not understood by VoiceSession's (inherited,
+    # unmodified) reconnection loop. Mutating resp.metadata here is
+    # safe: build_frames() runs (via _relay()) BEFORE _run_turn()
+    # checks resp.metadata.get("reconnect_required") (spec §7 relay-
+    # before-reconnect ordering). As of TASK-2168, Gemini's own
+    # producer already sets reconnect_required alongside go_away — this
+    # mutation is now a defensive no-op for Gemini and a safety net for
+    # any future provider that emits go_away without it.
+    if resp.metadata.get("go_away"):
+        frames.append(
+            {
+                "type": "session_warning",
+                "message": "Session reconnecting...",
+            }
+        )
+        resp.metadata["reconnect_required"] = True
+
+    return frames
+
+
 class _HandlerVoiceSession(VoiceSession):
     """VoiceSession that relays through VoiceChatHandler's existing,
     richer WebSocket frame protocol instead of VoiceSession's own."""
@@ -381,6 +585,7 @@ class _HandlerVoiceSession(VoiceSession):
         # satisfied by this being a fresh instance per session (a new
         # _HandlerVoiceSession is constructed per voice session, never
         # reused across sessions).
+        self._dedup_state = ToolCallDedupState()
         self._tool_dedup_turn_no: Optional[int] = None
         self._sent_tool_call_ids: set = set()
 
@@ -393,157 +598,32 @@ class _HandlerVoiceSession(VoiceSession):
         await self._handler._send_message(self._connection.ws, payload)
 
     def build_frames(self, resp, turn_no: int) -> list:
-        """Reproduce VoiceChatHandler's real WebSocket frame protocol
-        (FEAT-418, TASK-2174).
+        """Reproduce VoiceChatHandler's real WebSocket frame protocol.
 
-        Mirrors ``_send_voice_response()``'s frame construction (STT-only
-        gating, "thought" text filtering, ``response_chunk``/
-        ``transcription``/``display_data``/``tool_call``/
-        ``response_complete``/``ready_to_speak``) plus the ``go_away`` ->
-        ``session_warning`` mapping the old ``_relay()`` override did.
-        Duplicated rather than delegating to the async
-        ``_send_voice_response()`` — this method must stay sync (the base
-        ``VoiceSession._relay()`` calls it without awaiting, per the
-        ``build_frames()`` contract from TASK-2171) — the LiveAvatar audio
-        tee (the one genuinely async side effect) is handled by the
-        ``_relay()`` override below instead.
+        Thin wrapper over the module-level :func:`build_voice_frames` (the
+        pure implementation, extracted by FEAT-537 TASK-2959 so the broadcast
+        relay shares it). Dedup state stays on the instance because a fresh
+        ``_HandlerVoiceSession`` is constructed per voice session and must
+        never carry ids across sessions.
 
-        Transcription frames now come from canonical ``role`` (FEAT-418)
-        instead of the removed ``metadata["user_transcription"]``/
-        ``metadata["assistant_transcription"]`` keys.
+        Args:
+            resp: The provider response to translate.
+            turn_no: The current turn number.
 
-        FEAT-536 TASK-2942: ``tool_call`` frames are deduped per
-        ``turn_no`` — a streamed delta and the final completion snapshot
-        both carry the SAME ``LiveToolCall`` objects (arrival-order
-        accumulation, TASK-2940/2941); without this, every already-
-        relayed id would be sent again on ``is_complete``. Deduped by
-        id only — never by tool name or payload (spec §2).
+        Returns:
+            A list of JSON-serializable frame dicts, in send order.
         """
-        if turn_no != self._tool_dedup_turn_no:
-            self._tool_dedup_turn_no = turn_no
-            self._sent_tool_call_ids = set()
-
-        frames: list = []
-        connection = self._connection
-
-        if not connection.stt_only:
-            is_thought = bool(resp.text and _THOUGHT_FILTER_PATTERN.match(resp.text))
-            text_to_send = "" if is_thought else resp.text
-            if (resp.audio_data or text_to_send) and not resp.is_complete:
-                frames.append(
-                    {
-                        "type": "response_chunk",
-                        "text": text_to_send or "",
-                        "audio_base64": base64.b64encode(resp.audio_data).decode() if resp.audio_data else "",
-                        "audio_format": "audio/pcm;rate=24000" if resp.audio_data else "",
-                        "is_interrupted": resp.is_interrupted,
-                    }
-                )
-
-        # User transcription is always forwarded (both modes) — canonical
-        # role replaces the removed metadata["user_transcription"] key.
-        if resp.role == "user" and resp.text:
-            frames.append(
-                {
-                    "type": "transcription",
-                    "text": resp.text,
-                    "is_user": True,
-                }
-            )
-
-        # Everything below this point is model-response output — skip in
-        # STT-only mode (matches _send_voice_response()'s early return).
-        if not connection.stt_only:
-            # Forward the assistant's spoken text as the display bubble.
-            # canonical role="assistant" replaces the removed
-            # metadata["assistant_transcription"] key; turn_metadata's own
-            # output_transcription remains as a fallback for a frame that
-            # carries no text of its own (e.g. an audio-only chunk).
-            assistant_text = resp.text if resp.role == "assistant" else None
-            if not assistant_text and resp.turn_metadata:
-                assistant_text = resp.turn_metadata.output_transcription
-            if assistant_text:
-                frames.append(
-                    {
-                        "type": "transcription",
-                        "text": assistant_text,
-                        "is_user": False,
-                    }
-                )
-
-            if resp.metadata.get("display_data"):
-                frames.append(
-                    {
-                        "type": "display_data",
-                        "data": resp.metadata["display_data"],
-                    }
-                )
-
-            for tc in resp.tool_calls:
-                if tc.id in self._sent_tool_call_ids:
-                    continue
-                self._sent_tool_call_ids.add(tc.id)
-                frames.append(
-                    {
-                        "type": "tool_call",
-                        "name": tc.name,
-                        "arguments": tc.arguments,
-                        "result": tc.result,
-                        "execution_time_ms": tc.execution_time_ms,
-                    }
-                )
-
-            if resp.is_complete:
-                final_text = resp.text
-                if final_text and _THOUGHT_FILTER_PATTERN.match(final_text):
-                    final_text = ""
-                response_complete_frame = {
-                    "type": "response_complete",
-                    "text": final_text or "",
-                    "is_interrupted": resp.is_interrupted,
-                }
-                # FEAT-418 (TASK-2178): surface per-turn token/latency
-                # counters on the streaming path — mirrors the shape
-                # _send_complete_voice_response() already sends on the
-                # non-streaming path (input_tokens/output_tokens/
-                # total_tokens), plus the timing fields LiveCompletionUsage
-                # already computes (response_time_ms/first_token_time_ms),
-                # so the dual-provider example can render a live counter
-                # per provider without fabricating data client-side.
-                if resp.usage:
-                    response_complete_frame["usage"] = {
-                        "input_tokens": resp.usage.prompt_tokens,
-                        "output_tokens": resp.usage.completion_tokens,
-                        "total_tokens": resp.usage.total_tokens,
-                        "response_time_ms": resp.usage.response_time_ms,
-                        "first_token_time_ms": resp.usage.first_token_time_ms,
-                    }
-                frames.append(response_complete_frame)
-                frames.append(
-                    {
-                        "type": "ready_to_speak",
-                        "message": "Ready for new question",
-                    }
-                )
-
-        # Gemini's GoAway signal is distinct from reconnect_required and,
-        # by itself, is not understood by VoiceSession's (inherited,
-        # unmodified) reconnection loop. Mutating resp.metadata here is
-        # safe: build_frames() runs (via _relay()) BEFORE _run_turn()
-        # checks resp.metadata.get("reconnect_required") (spec §7 relay-
-        # before-reconnect ordering). As of TASK-2168, Gemini's own
-        # producer already sets reconnect_required alongside go_away — this
-        # mutation is now a defensive no-op for Gemini and a safety net for
-        # any future provider that emits go_away without it.
-        if resp.metadata.get("go_away"):
-            frames.append(
-                {
-                    "type": "session_warning",
-                    "message": "Session reconnecting...",
-                }
-            )
-            resp.metadata["reconnect_required"] = True
-
+        frames = build_voice_frames(
+            resp,
+            turn_no,
+            stt_only=self._connection.stt_only,
+            dedup_state=self._dedup_state,
+        )
+        # Kept in sync for backwards compatibility: these two attributes were
+        # public-ish instance state before the extraction and are read by
+        # existing tests and by _send_voice_response()'s own dedup path.
+        self._tool_dedup_turn_no = self._dedup_state.turn_no
+        self._sent_tool_call_ids = self._dedup_state.sent_ids
         return frames
 
     async def _relay(self, resp, turn_no: int) -> None:
@@ -635,6 +715,9 @@ class VoiceChatHandler:
         # Route options
         ws_route: str = "/ws/voice",
         health_route: str = "/health",
+        # FEAT-537 — moderated multi-browser broadcast
+        broadcast_service: Optional[Any] = None,
+        nova_bot_factory: Optional[Callable[[], "VoiceBot"]] = None,
     ):
         """
         Initialize handler.
@@ -648,6 +731,15 @@ class VoiceChatHandler:
             auth_timeout: Timeout for post-connection auth (seconds)
             ws_route: WebSocket route path
             health_route: Health check route path
+            broadcast_service: FEAT-537 broadcast facade (``BroadcastService``,
+                TASK-2961).  Typed loosely on purpose: the handler must not
+                hard-import the broadcast package, which pulls in the optional
+                LiveKit/Redis stack.  ``None`` disables broadcast mode entirely
+                and leaves every existing code path untouched.
+            nova_bot_factory: Factory used **only** for broadcasts.  A
+                broadcast fixes the provider to Nova for its lifetime (spec
+                §2), so it must not reuse ``bot_factory``, which the shared
+                example rebinds when the user switches provider in the UI.
         """
         self.bot_factory = bot_factory or self._default_bot_factory
 
@@ -673,7 +765,16 @@ class VoiceChatHandler:
         self.ws_route = ws_route
         self.health_route = health_route
 
+        # FEAT-537 — broadcast mode (inactive unless a service is injected).
+        self.broadcast_service = broadcast_service
+        self.nova_bot_factory = nova_bot_factory
+
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
+
+    @property
+    def broadcast_enabled(self) -> bool:
+        """Whether a broadcast service was injected (FEAT-537)."""
+        return self.broadcast_service is not None
 
     def _default_bot_factory(self) -> VoiceBot:
         """Default factory for bots."""
