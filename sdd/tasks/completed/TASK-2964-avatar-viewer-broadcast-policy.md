@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-537 — Nova VoiceBot avatar broadcast for multiple browsers
 **Spec**: `sdd/specs/voicebot-multiroom-heygen-avatar.spec.md`
-**Status**: done-with-issues
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2951
@@ -156,3 +156,20 @@ TASK-2968 (browser harness) is the natural place for that to happen.
 method the page drives from its poll timer, rather than the controller owning a timer —
 keeping the module free of `setInterval` leaves it importable and deterministic under a
 test runner, which is why the existing suite can import it at all.
+
+---
+
+## Verification caveat retired — 2026-09-09
+
+The suite this task could not execute has now been run. `vitest` was not absent, only
+uninstalled: `pnpm` was available the whole time and the lockfile was committed, so
+
+```bash
+pnpm --dir packages/ai-parrot-server/ui install --frozen-lockfile
+pnpm --dir packages/ai-parrot-server/ui test
+```
+
+gives **46 files / 316 tests passed**, including this task's own
+`src/lib/utils/voice-demo-avatar.test.ts` at **22/22**. The Node-harness verification
+recorded above was a stand-in for exactly this run and is now superseded by it, so the
+task is `done` rather than `done-with-issues`.

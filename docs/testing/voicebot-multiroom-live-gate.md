@@ -46,7 +46,13 @@ PARROT_LIVE_MAX_SESSION_DURATION=60 \
 # 3 passed in 29.18s
 ```
 
-### Measured results (artifact `artifacts/logs/feat-537-live-gate-*.json`)
+### Measured results
+
+Committed evidence: [`artifacts/logs/feat-537-live-gate-EVIDENCE.json`](../../artifacts/logs/feat-537-live-gate-EVIDENCE.json) — one representative passing run,
+force-added because `artifacts/` is gitignored (`.gitignore:283`). Without it the numbers
+below would be unverifiable by anyone but the machine that produced them. The gate's
+scrubber redacts credentials; the committed file was checked to contain no key, token,
+JWT or `wss://` URL.
 
 | Measurement | Value | Target |
 |---|---|---|

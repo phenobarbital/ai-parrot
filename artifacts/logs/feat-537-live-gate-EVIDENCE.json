@@ -1,0 +1,141 @@
+{
+  "feature": "FEAT-537",
+  "task": "TASK-2950",
+  "started_at": "2026-09-08T21:35:14.056819+00:00",
+  "finished_at": "2026-09-08T21:35:43.069699+00:00",
+  "versions": {
+    "livekit": "1.1.14",
+    "livekit-api": "1.2.0",
+    "ai-parrot-integrations": "0.2.1",
+    "aiohttp": "3.14.3",
+    "aws_sdk_bedrock_runtime": "0.11.0",
+    "python": "3.12.3"
+  },
+  "scenarios": {
+    "two_subscribers": {
+      "room": "<probe-room>",
+      "max_session_duration_requested": 60,
+      "max_session_duration_accepted": true,
+      "first_audio_latency_seconds": {
+        "probe-viewer-1": 0.603,
+        "probe-viewer-2": 0.603
+      },
+      "subscribers": [
+        {
+          "identity": "probe-viewer-1",
+          "audio_frames": 845,
+          "audible_frames": 301,
+          "video_frames": 192,
+          "peak_amplitude": 13417,
+          "tracks": [
+            {
+              "publisher_identity": "avatar-agent",
+              "kind": "video",
+              "name": "avatar",
+              "sid": "TR_VCA4afVw8eZHM6",
+              "source": "1",
+              "mime_type": "video/H264"
+            },
+            {
+              "publisher_identity": "avatar-agent",
+              "kind": "audio",
+              "name": "avatar-audio",
+              "sid": "TR_AMsDNrvLqWYC2F",
+              "source": "2",
+              "mime_type": "audio/opus"
+            }
+          ]
+        },
+        {
+          "identity": "probe-viewer-2",
+          "audio_frames": 845,
+          "audible_frames": 301,
+          "video_frames": 192,
+          "peak_amplitude": 13417,
+          "tracks": [
+            {
+              "publisher_identity": "avatar-agent",
+              "kind": "video",
+              "name": "avatar",
+              "sid": "TR_VCA4afVw8eZHM6",
+              "source": "1",
+              "mime_type": "video/H264"
+            },
+            {
+              "publisher_identity": "avatar-agent",
+              "kind": "audio",
+              "name": "avatar-audio",
+              "sid": "TR_AMsDNrvLqWYC2F",
+              "source": "2",
+              "mime_type": "audio/opus"
+            }
+          ]
+        }
+      ]
+    },
+    "interrupt": {
+      "time_to_silence_seconds": 0.415,
+      "budget_seconds": 1.0,
+      "within_budget": true,
+      "second_utterance_audible_frames": 301,
+      "subscriber": {
+        "identity": "probe-viewer-1",
+        "audio_frames": 806,
+        "audible_frames": 301,
+        "video_frames": 225,
+        "peak_amplitude": 32768,
+        "tracks": [
+          {
+            "publisher_identity": "avatar-agent",
+            "kind": "video",
+            "name": "avatar",
+            "sid": "TR_VCisG2Tc83zn9z",
+            "source": "1",
+            "mime_type": "video/H264"
+          },
+          {
+            "publisher_identity": "avatar-agent",
+            "kind": "audio",
+            "name": "avatar-audio",
+            "sid": "TR_AMDSmDtAvQAmi8",
+            "source": "2",
+            "mime_type": "audio/opus"
+          }
+        ]
+      }
+    },
+    "clear_queue": {
+      "audible_frames_before_clear": 164,
+      "time_to_silence_seconds": 0.101,
+      "budget_seconds": 1.0,
+      "within_budget": true,
+      "subscriber": {
+        "identity": "probe-viewer-1",
+        "audio_frames": 210,
+        "audible_frames": 175,
+        "video_frames": 0,
+        "peak_amplitude": 12493,
+        "tracks": [
+          {
+            "publisher_identity": "avatar-agent",
+            "kind": "audio",
+            "name": "agent-voice",
+            "sid": "TR_AMm2kVKoX8sgEv",
+            "source": "2",
+            "mime_type": "audio/red"
+          }
+        ]
+      }
+    }
+  },
+  "server_event_types": [
+    "agent.audio_buffer_appended",
+    "agent.audio_buffer_cleared",
+    "agent.audio_buffer_committed",
+    "agent.speak_ended",
+    "agent.speak_interrupted",
+    "agent.speak_started",
+    "agent.state_updated",
+    "session.state_updated"
+  ]
+}

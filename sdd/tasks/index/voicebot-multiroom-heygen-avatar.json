@@ -393,7 +393,7 @@
       "feature_id": "FEAT-537",
       "feature": "voicebot-multiroom-heygen-avatar",
       "spec": "sdd/specs/voicebot-multiroom-heygen-avatar.spec.md",
-      "status": "done-with-issues",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -412,7 +412,7 @@
         "AC8"
       ],
       "verification": "verified",
-      "note": "vitest has no runner installed; verified via a Node harness instead"
+      "note": "vitest blocker retired: pnpm install --frozen-lockfile then pnpm test \u2192 46 files / 316 tests pass, incl. voice-demo-avatar.test.ts 22/22"
     },
     {
       "id": "TASK-2965",
