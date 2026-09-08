@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-537 — Nova VoiceBot avatar broadcast for multiple browsers
 **Spec**: `sdd/specs/voicebot-multiroom-heygen-avatar.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2965
@@ -79,7 +79,49 @@ EOF
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
+**Completed by**: `sdd-worker` (autonomous session)
+**Date**: 2026-09-08
+**Status**: done
+
 **Notes**:
-**Deviations from spec**:
+
+- Added `### Broadcast mode (FEAT-537)` to `examples/clients/voice/README.md` (env table,
+  install/run commands, ten-browser walkthrough, failure-injection table, expected
+  cleanup timings) and updated its `## Files` and `## Related` sections.
+- Created `docs/voice/voicebot-multiroom-heygen-avatar.md`: architecture + the spec's
+  mermaid diagram, a component table, the four design rules, the role/floor state
+  machine, the full HTTP and WebSocket API references, the Redis key layout, a
+  limits/timeouts table, the security model, operations (env matrix, worker registry,
+  reconciliation, the orphaned-vendor caveat) and the test/evidence sections.
+- **The `broadcast` extra already existed** — TASK-2953 added it — so
+  `pyproject.toml` was not touched. Verified it resolves:
+  `uv pip install -e "packages/ai-parrot-integrations[broadcast]" --dry-run` succeeds.
+- **Every command and env name in the docs was verified, not transcribed:**
+  - All nine environment variables were grepped back to source
+    (`VOICEBOT_BROADCAST_REDIS_URL`, `VOICEBOT_DEMO_PARTICIPANTS`,
+    `VOICEBOT_BROADCAST_WORKER_ID`, `VOICEBOT_BROADCAST_FAILURE_HOOK`,
+    `PARROT_BROADCAST_WORKER_TOKEN`, `PARROT_BROADCAST_REDIS_URL`,
+    `PARROT_BROADCAST_ALLOWED_ORIGINS`, `PARROT_TEST_REDIS_URL`,
+    `PARROT_LIVE_BROADCAST_GATE`) — each appears in at least one source file.
+  - Every relative link in both documents resolves (scripted check, 0 broken).
+  - The documented pytest commands were **executed**: integrations suite → **284
+    passed** (with local Redis), server suite → **27 passed**, browser suite →
+    **14 passed**.
+  - *A correction the verification caught*: my first version put the integrations and
+    server test paths in one `pytest` invocation. That produces **no summary at all** —
+    each package has its own conftest prepending its own sources, and spanning both
+    breaks collection. The guide now splits them and says why, with the expected counts.
+- **The verification status is stated up front, not buried.** Both documents open with a
+  warning that the real-vendor gate is **0 of 12** and FEAT-536's is **0 of 8**, and the
+  limits table marks each timeout ✅ tested or ❌ unverified individually. The six
+  vendor-dependent timings are explicitly flagged as spec defaults that have never been
+  measured — which is also why they are constructor knobs.
+- Recorded the tested dependency versions: `livekit` 1.1.14, `livekit-api` 1.2.0,
+  `livekit-client` UMD 2.22.1, Redis server 8.4.0, `redis` 5.2.1, `playwright` 1.52.0,
+  `aws_sdk_bedrock_runtime` **not installed**, Python 3.12.3.
+- Setup shared with FEAT-536 is **linked, not duplicated** (the `livekit-client` install
+  step, the LiveAvatar opt-in, its acceptance report).
+
+**Deviations from spec**: none. `packages/ai-parrot-integrations/pyproject.toml` was left
+untouched because the task made that edit conditional on TASK-2953 not having made it —
+and it had.
