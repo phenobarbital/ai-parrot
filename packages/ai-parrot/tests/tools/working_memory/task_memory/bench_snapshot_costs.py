@@ -86,17 +86,22 @@ class CallSite:
 #: rather than silently shrinking the inventory.
 INVENTORY: Tuple[CallSite, ...] = (
     # ── direct catalog writes/reads (no universal hook exists) ──
+    # TASK-2985 collapsed the nine direct `self._catalog.put*(` call sites
+    # into two routing helpers, so counting the direct calls now finds 2
+    # and says nothing useful. What this inventory is actually for is
+    # proving the enabled path reaches EVERY write site, so it counts the
+    # routed call sites instead — the number that must not silently drop.
     CallSite(
         "catalog_write",
         "packages/ai-parrot/src/parrot/tools/working_memory/tool.py",
-        r"self\._catalog\.put\(",
-        "DataFrame registrations: store/import/operate/compute paths write synchronously.",
+        r"await self\._put\(",
+        "DataFrame registrations: store/import/operate/compute paths route through _put.",
     ),
     CallSite(
         "catalog_write",
         "packages/ai-parrot/src/parrot/tools/working_memory/tool.py",
-        r"self\._catalog\.put_generic\(",
-        "Generic registrations: store_result and the tee land here.",
+        r"await self\._put_generic\(",
+        "Generic registrations: store_result and the tee route through _put_generic.",
     ),
     CallSite(
         "catalog_read",
