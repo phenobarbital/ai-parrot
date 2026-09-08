@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-537 — Nova VoiceBot avatar broadcast for multiple browsers
 **Spec**: `sdd/specs/voicebot-multiroom-heygen-avatar.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -101,7 +101,61 @@ async def test_send_timeout_raises(fake_ws_factory): ...
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
+**Completed by**: `sdd-worker` (autonomous session)
+**Date**: 2026-09-08
+**Status**: done
+
 **Notes**:
-**Deviations from spec**:
+
+- Added to `AvatarWebSocket`: `on_event`, `on_close`, `auto_reconnect`,
+  `send_timeout_s`, `aggregate` constructor kwargs; the `speaking_state` attribute;
+  the `closed` event; the `pending_bytes` property; `_emit_chunk`, `_drain_buffer`,
+  `_notify_closed`; and the module-level `AvatarSendTimeout` plus the `_invoke`
+  callback helper.
+- Tests: `pytest .../test_avatar_ws.py -q` → **27 passed** (12 pre-existing + 15 new).
+  Wider regression: the whole `tests/integrations/liveavatar/` plus
+  `test_voice_avatar_session.py`, `test_voicechat_avatar_integration.py` and
+  `test_voice_handler_avatar.py` → **209 passed**. `ruff check` clean.
+- **Every default preserves current behaviour**, which is the point of the task:
+  `auto_reconnect=True`, `aggregate=False`, `send_timeout_s=None`, no callbacks. The
+  pre-existing `test_avatar_ws_chunking` and `test_avatar_ws_reconnect_no_handshake`
+  pass unmodified, and `test_aggregation_is_off_by_default` /
+  `test_auto_reconnect_still_reconnects_by_default` / `test_no_deadline_by_default` pin
+  each default explicitly so a later change cannot silently alter the single-user path.
+- **`speaking_state` stores the vendor's event `type` verbatim.** The task's
+  Does-NOT-Exist list is right that the real LITE speaking-event names are unknown until
+  TASK-2950's live gate runs — which it did **not** (0/12 scenarios). So nothing here
+  hard-codes `agent.speaking_started`; the substring test is `"speak" in type.lower()`
+  and the name is recorded as received. `on_event` forwards **every** parsed message,
+  including ones the transport handles itself, so the broadcast session — not the
+  transport — decides what an event means.
+- **Ordering details that matter and are individually tested:**
+  - `finish_speaking` flushes the aggregation tail *before* `agent.speak_end`.
+    The other order silently truncates the last fraction of every utterance.
+  - `interrupt` clears the buffer *before* sending `agent.interrupt`, so a concurrent
+    drain cannot push stale audio in behind the interrupt.
+  - `_drain_buffer` emits exact buffer prefixes and truncates by exactly what it sent —
+    `test_aggregate_emits_one_second_frames_and_flushes_tail` asserts
+    `b"".join(frames) == b"".join(inputs)`, i.e. nothing reordered, duplicated or lost.
+  - The first-frame state resets per utterance, so every turn opens with the shorter
+    400 ms frame (`test_aggregate_starts_a_fresh_opener_per_utterance`).
+- **Fail-fast on permanent close.** `_notify_closed` sets `closed`, fires `on_close`
+  exactly once, and *also* sets `_connected` — otherwise a caller already blocked on the
+  connect gate would sit out the full 5 s `LIVEAVATAR_WS_CONNECT_TIMEOUT` before finding
+  out the socket is dead. `_await_connected` and `_send_json` both check `closed` first
+  and raise `RuntimeError("AvatarWebSocket: closed (<reason>)")`. The test asserts the
+  raise happens in under 100 ms.
+- `AvatarSendTimeout` subclasses `RuntimeError` (asserted) so existing
+  `except RuntimeError` callers keep working, while the broadcast session can catch the
+  specific type as the spec §2 "send timeout" fallback trigger rather than guessing from
+  a message string.
+- Callback failures are logged and swallowed by `_invoke`; a buggy observer cannot kill
+  the reader loop (`test_an_exploding_callback_cannot_break_the_transport`). `_invoke`
+  accepts sync and async callbacks. `asyncio.CancelledError` is now re-raised from the
+  reader loop rather than being caught by the blanket `except Exception` — it was
+  already excluded in practice, but the explicit clause makes cancellation-safety local
+  and obvious.
+- `auto_reconnect=False` also reports a clean end-of-iteration as `eof` and a reader
+  exception as `error`, so no close path leaves the caller without a notification.
+
+**Deviations from spec**: none.
