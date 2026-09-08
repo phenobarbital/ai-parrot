@@ -30,6 +30,7 @@ from .models import (
     StoreResultInput,
     SummarizeStoredInput,
 )
+from .task_memory.tools import TASK_TOOL_METHODS, TaskMemoryToolsMixin
 from .internals import (
     CatalogEntry,
     GenericEntry,
@@ -43,7 +44,7 @@ if TYPE_CHECKING:
     from parrot.memory import AnswerMemory
 
 
-class WorkingMemoryToolkit(AbstractToolkit):
+class WorkingMemoryToolkit(TaskMemoryToolsMixin, AbstractToolkit):
     """
     Intermediate result store for long-running analytical operations.
 
@@ -141,6 +142,16 @@ class WorkingMemoryToolkit(AbstractToolkit):
         # leaves every path below on the legacy synchronous catalog, with
         # the legacy schemas and the legacy raw-read behaviour — AC13.
         self._task_memory: Optional[Any] = task_memory
+        if task_memory is None:
+            # AC13: the ten wm_* task tools are hidden ENTIRELY when task
+            # memory is off, so a disabled deployment publishes exactly
+            # the tool set it always did. Excluding by name is what makes
+            # this a guarantee rather than a convention: the methods are
+            # inherited unconditionally (they must be, to be discovered
+            # at all), and `_generate_tools` already honours this tuple.
+            # Set on the INSTANCE so one disabled toolkit cannot hide the
+            # tools of an enabled one sharing the class.
+            self.exclude_tools = (*type(self).exclude_tools, *TASK_TOOL_METHODS)
         self._catalog = WorkingMemoryCatalog(
             session_id=session_id,
             backend=getattr(task_memory, "artifacts", None),
@@ -232,8 +243,9 @@ class WorkingMemoryToolkit(AbstractToolkit):
 
     #: Fallback raw-read ceiling used when task memory is enabled but no
     #: configuration object was supplied. Mirrors
-    #: ``TaskMemoryConfig.max_rehydrate_bytes``; defined here rather than
-    #: imported so the DISABLED path never pulls in task_memory at all.
+    #: ``TaskMemoryConfig.max_rehydrate_bytes``. Restated here rather than
+    #: read off the config class because the fallback exists precisely for
+    #: the case where there is no config object to read it from.
     DEFAULT_MAX_REHYDRATE_BYTES: int = 2_000_000
 
     def _resolve_raw_budget(self, requested: Optional[int]) -> int:
