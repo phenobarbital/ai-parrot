@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-538 - Recoverable Task Memory for WorkingMemoryToolkit
 **Spec**: `sdd/specs/workingmemory-toolkit.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2971
@@ -173,4 +173,61 @@ New test modules should use local fixtures unless the shared fixture task is alr
 
 ## Completion Note
 
-Not completed. The implementing agent records completed-by, date, verification evidence, notes, and any approved deviations here when acceptance passes.
+**Completed by**: Claude Opus 5 (sdd-worker, delegated fork) — session `01WeeSf3QmPq58bBxturogRX`
+**Date**: 2026-09-08
+**Status**: done
+
+### Evidence
+- **127 passed** (49 adapters + 78 redaction), all three required cases
+  present (`test_typed_results`, `test_secrets`, `test_payload_bytes`).
+- Whole suite: **448 passed**. Log: `artifacts/logs/task-2982-tm-result-redaction.log`.
+- `ruff`/`black`/`isort` clean.
+
+### Independently verified (not taken on trust)
+- ReDoS fix: a 5,000-character scan now takes **2.1 ms** (was 774 ms).
+- `Authorization: Bearer sk-...` no longer leaks the credential.
+- `api_key`, `API_KEY`, `x-api-key`, `password`, `Token`, `authorization`
+  all redacted; nested structures redacted; a credential inside a
+  traceback redacted.
+- `fp_`/`om_` digests survive intact — they are 16 chars, below the
+  32-char long-hex floor. Redacting them would break evidence refs and
+  omission lookups.
+
+### CONTRACT CORRECTION
+The task's "Does NOT Exist" section said no secret redactor exists in
+`normalize_invocation`. Narrowly true but **misleading by omission**:
+`packages/ai-parrot/src/parrot/security/redaction.py` already ships a
+hardened one (`redact_text`, `redact_secrets`, `looks_sensitive_key`,
+`OutputScrubber`; FEAT-252) — confirmed present.
+
+Neither subsumes the other: it has JWT / AWS-key / DSN / long-hex
+*value-shape* detection this one lacked; this one has configurable denied
+keys, depth/byte caps, the 8 KiB journal ceiling and Stage-0 ordering. Its
+four value-shape patterns were **adopted rather than imported**, because
+importing `parrot.security` pulls numpy + asyncpg + redis (~1 s) onto the
+journal write path.
+
+**Follow-up for a maintainer**: consolidating the two redactors is
+worthwhile but is a cross-cutting decision beyond this task's ownership,
+so it is flagged here rather than made.
+
+### Other decisions
+1. **Structural typing, not `isinstance`** — avoids coupling task memory
+   to `parrot.tools.abstract` and `parrot.bots.flows.plan.models`. The
+   tests exercise the **real** `ToolResult`/`ArtifactRef`/
+   `ExecutionManifest` so the shapes cannot drift apart silently.
+2. **`looks_like_tool_result` excludes plain mappings.** A dict with
+   `success`/`status`/`result` keys is business data; only a mapping whose
+   `status` is a *recognised failure* is an error envelope
+   (`{"status": "shipped"}` is a success).
+3. **`timeout`/`pending` → `UNKNOWN`, not `ERROR`.** Both may already have
+   produced an external effect; calling them failures invites the
+   automatic retry of an uncertain effect the spec forbids.
+4. **An unrecognised status never becomes a guessed failure** — it falls
+   back to the `success` boolean, else success. Free text is never parsed.
+5. **A documented limit is asserted, not hidden.** Free-form prose
+   narration ("the api key was set to: X") is *not* caught, because
+   matching a denied name across arbitrary whitespace would redact
+   unrelated prose. The structured path is unaffected
+   (`{"api key": ...}` *is* redacted). A test asserts the gap so it stays
+   visible rather than being assumed closed.

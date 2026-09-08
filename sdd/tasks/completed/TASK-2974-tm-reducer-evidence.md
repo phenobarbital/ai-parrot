@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-538 - Recoverable Task Memory for WorkingMemoryToolkit
 **Spec**: `sdd/specs/workingmemory-toolkit.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2973
@@ -132,4 +132,64 @@ New test modules should use local fixtures unless the shared fixture task is alr
 
 ## Completion Note
 
-Not completed. The implementing agent records completed-by, date, verification evidence, notes, and any approved deviations here when acceptance passes.
+**Completed by**: Claude Opus 5 (sdd-worker, delegated fork) — session `01WeeSf3QmPq58bBxturogRX`
+**Date**: 2026-09-08
+**Status**: done
+
+### Evidence
+- `test_reducer_evidence.py` → **36 passed**. Whole suite: **448 passed**.
+- Log: `artifacts/logs/task-2974-tm-reducer-evidence.log`. `ruff`/`black`/`isort` clean.
+- Codebase Contract re-verified; **no stale anchors**.
+
+### Resolved conflict with TASK-2973
+`test_reducer_plan.py::test_replay_rejects_unhandled_event_families`
+asserted that `TOOL_SUCCEEDED` had **no** handler — true only while this
+task was outstanding, and this task's whole job is to register it. The
+test was rewritten (by the same author, who owns that file) to assert the
+**guarantee** rather than a transient gap: pop a handler, confirm the
+reducer refuses, restore it. A new
+`test_replay_every_event_type_has_a_handler` covers registry totality.
+Not a regression — the original test's own docstring anticipated this.
+
+### Behaviour extension to `reduce()` — review this
+Handled-but-**immaterial** events (`tool_started`, `tool_succeeded`,
+`artifact_registered`, `tracking_degraded`, `retention_scheduled`) return
+the state object **by identity**; `reduce()` reads that as "no material
+change" and advances `last_event_seq` and `updated_at` but **not**
+`revision`.
+
+Without this, every observed tool call would bump the revision, so any
+`wm_update_step(expected_revision=N)` issued around a tool call would fail
+with `RevisionConflict` through no fault of the caller — the
+optimistic-concurrency API would be unusable. Revision tracks *material*
+state, which is what an expected-revision check is about.
+
+Backwards-compatible: no pre-existing handler returns by identity.
+Verified independently: revision `1 → 1` across a successful tool call
+while `last_event_seq` advances `1 → 2`.
+
+### Other decisions
+1. **Attribution needs both signals** — `event.step_id is not None` AND
+   attribution in `{DECLARED, PLAN}`. An unmapped plan call carries `PLAN`
+   with no step id and stays task-level.
+2. **`counted AND executed` gates attempt counting.** `counted=False`
+   excludes the plan-node aggregate parent; `executed=False` excludes
+   denials / unknown tool / authorization-required. Since `DENIED` and
+   `NOT_EXECUTED` both map to `TOOL_FAILED`, without the `executed` gate a
+   guard denial would have counted toward the block ceiling.
+3. **The ceiling blocks, never fails, and only on failures.** Successes
+   count but never block; `cancelled`/`unknown` count but never block,
+   because their disposition is not established and treating them as
+   failures would invent a fact.
+4. **A late call against a superseded step is a no-op, not an error.**
+   Raising would make a plausible real-world ordering permanently
+   unreplayable and wedge the journal. An unknown step id still raises.
+5. **Evidence invalidation blocks transitively.** Steps completed against
+   the *exact* invalidated version get `evidence_invalidated`; their
+   completed dependents get `upstream_reopened`. `evidence_refs` are
+   retained so the task knows what to revalidate. **Judgement call** — the
+   spec says such steps are "reopened/blocked" without settling
+   transitivity.
+6. **No new `models.py` fields were needed.** Unresolved outcomes are
+   journal-derived; the reducer's contribution is the *negative*
+   guarantee that an unrelated success cannot clear them.

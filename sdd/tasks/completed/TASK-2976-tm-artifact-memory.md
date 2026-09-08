@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-538 - Recoverable Task Memory for WorkingMemoryToolkit
 **Spec**: `sdd/specs/workingmemory-toolkit.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2972, TASK-2975
@@ -132,4 +132,59 @@ New test modules should use local fixtures unless the shared fixture task is alr
 
 ## Completion Note
 
-Not completed. The implementing agent records completed-by, date, verification evidence, notes, and any approved deviations here when acceptance passes.
+**Completed by**: Claude Opus 5 (sdd-worker, delegated fork) — session `01WeeSf3QmPq58bBxturogRX`
+**Date**: 2026-09-08
+**Status**: done
+
+### Evidence
+- `test_artifact_memory.py` → **42 passed**, including all 9 inherited
+  `ArtifactStoreConformance` cases and the three required cases
+  (`test_alias_race`, `test_scope_pins`, `test_lru`).
+- Whole suite: **448 passed**. Log: `artifacts/logs/task-2976-tm-artifact-memory.log`.
+- `ruff` (incl. F401/F811/E501) clean; `black`/`isort` applied.
+- Contract re-verified; **no stale anchors**. Verified independently:
+  `isinstance(store, ArtifactStore)` is `True`.
+
+### A design hole found and closed — REVIEW THIS
+The spec requires an invalidation receipt when pinned evidence cannot be
+retained. As first written that path was **unreachable dead code**:
+capacity is enforced at the end of `put`, and the version being registered
+is not pinned yet, so the newcomer is always the eviction victim and
+evicting it always restores an already-within-budget state. Pinned
+evidence could never be reached.
+
+Fixed with `put(..., pin_for=task_id)`, which registers and pins
+atomically so a new version competes for retention on equal terms with
+existing pinned evidence.
+`test_scope_pins_a_late_pin_cannot_protect_an_evicted_newcomer` pins the
+hazard explicitly so the atomic form cannot later be dropped as
+"redundant". This adds one keyword-only optional parameter beyond the
+protocol signature; conformance is unaffected.
+
+### Other decisions
+1. **Drop/recreate continues the version counter.** The tombstone keeps
+   `latest_version`, so a re-`put` after `drop_alias` yields `@3`, never
+   `@1` again — a fresh value cannot shadow still-pinned evidence at the
+   same coordinates.
+2. **Three snapshot outcomes, three treatments.** `CAPTURED` → independent
+   accounted copy, may be verifiable. `SPILL_REQUIRED` → `persisted` with
+   a durable tier, else `missing` + unverifiable (Delivery A cannot
+   promise retained bytes). `UNVERIFIABLE` → retained as a **live
+   reference**, not a copy: usable as working memory, never as evidence.
+3. **Live references are byte-accounted** — holding one keeps the object
+   alive, so reporting zero would understate residency.
+4. **Explicit `evict` does not invalidate; capacity-driven eviction of
+   *pinned* evidence does.** A caller asking for bytes back is not the
+   same event as evidence being sacrificed.
+5. **Tabular paging measures the page, not the table.** A 5,000-row frame
+   over the ceiling still yields a 5-row page; an over-ceiling *page* is
+   refused rather than trimmed.
+6. **`get_version(..., task_id=X)` refuses same-scope cross-task
+   versions.** Scope alone authorizes only when no task filter is given.
+7. **Receipts are drained via `drain_receipts()`**, not pushed through a
+   callback — this module owns no journal and must not acquire one.
+
+It deliberately imports none of `CatalogEntry`/`GenericEntry`/
+`WorkingMemoryCatalog` despite their presence in the task's contract: it
+sits *behind* the catalog (D1) and takes payloads as `Any`, so coupling it
+to the legacy entry classes would invert the dependency.

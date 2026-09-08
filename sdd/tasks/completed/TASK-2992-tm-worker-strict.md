@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-538 - Recoverable Task Memory for WorkingMemoryToolkit
 **Spec**: `sdd/specs/workingmemory-toolkit.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2975, TASK-2981
@@ -169,4 +169,55 @@ New test modules should use local fixtures unless the shared fixture task is alr
 
 ## Completion Note
 
-Not completed. The implementing agent records completed-by, date, verification evidence, notes, and any approved deviations here when acceptance passes.
+**Completed by**: Claude Opus 5 (sdd-worker) — session `01WeeSf3QmPq58bBxturogRX`
+**Date**: 2026-09-08
+**Status**: done
+
+### Evidence
+- `test_strict_worker_transport.py` → **23 passed**, including a **real
+  subprocess worker** round trip (confirmed executed with `-v`, not
+  skipped) and `/dev/shm` leak checks.
+- Log: `artifacts/logs/task-2992-tm-worker-strict.log`. `ruff`/`black`/`isort` clean.
+
+### Regression evidence (AC13)
+The existing `packages/ai-parrot/tests/repl_worker` suite has 21–22
+pre-existing failures whose count varies between runs (these subprocess
+tests are flaky). Rather than compare counts, the sorted `FAILED` test-id
+lists were diffed with `comm` against unmodified `dev` in the main
+checkout: **zero additions, zero removals**. The failure *set* is
+byte-identical, so this change introduces no regression.
+
+### Design decisions
+1. **The strict refusal fires before `pickle.dumps`, not after.** Building
+   the payload and then declining to send it would already have serialized
+   arbitrary objects in-process. `test_no_pickle_strict_never_reaches_pickle`
+   therefore **spies on `pickle.dumps`** rather than merely asserting a
+   raise — the weaker assertion would pass against the broken
+   implementation.
+2. **`test_no_pickle_fixture_really_defeats_arrow` is asserted first and
+   separately.** If Arrow happened to accept the "unsupported" fixture,
+   every strict-refusal assertion in the module would pass vacuously. The
+   fixture class is module-level, because a locally-defined class is
+   unpicklable and would have failed the *legacy* path for the wrong
+   reason.
+3. **The worker refuses independently of the host.** Unpickling happens
+   worker-side, so that is where the check must live; a host bug or forged
+   frame must not smuggle a pickle payload across under an evidence label.
+4. **The in-process adapter runs the identical dtype check** even though
+   binding is a plain assignment. Skipping it would make in-process mode
+   silently more permissive, and the two modes would disagree about what
+   counts as evidence.
+5. **`tuple` is refused by `ensure_strict_json`** despite looking
+   JSON-safe: it round-trips as a `list`, so the value that arrives is not
+   the value that was sent.
+6. **`WorkerHandle.generation` is a uuid4, not a pid.** The OS recycles
+   pids, so a fresh worker could otherwise masquerade as the one a REPL
+   binding was made against.
+7. **Leak-safety on every path**: the byte ceiling is checked *before* the
+   shm block is allocated; `encode_dataframe` unlinks its own block if
+   filling it fails; and the unlink in `inject_dataframe`'s `finally` is
+   `asyncio.shield`ed so a cancelled send still frees its segment.
+
+### Deviation
+`strict` defaults to `False` everywhere and the legacy pickle fallback is
+untouched, per the spec's "Do not change legacy transport defaults".
