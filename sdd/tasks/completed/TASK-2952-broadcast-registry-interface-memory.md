@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-537 — Nova VoiceBot avatar broadcast for multiple browsers
 **Spec**: `sdd/specs/voicebot-multiroom-heygen-avatar.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-2951
@@ -102,7 +102,78 @@ async def test_tombstone_blocks_identity_reuse(registry, clock): ...
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
+**Completed by**: `sdd-worker` (autonomous session)
+**Date**: 2026-09-08
+**Status**: done
+
 **Notes**:
-**Deviations from spec**:
+
+- Created `broadcast/errors.py` (typed exceptions) and `broadcast/registry.py`
+  (`BroadcastRegistry` ABC + `InMemoryBroadcastRegistry` + the pure
+  `validate_audio_authority()` helper), and re-exported both from the package
+  `__init__`. Every method name from spec §2 "New Public Interfaces" and this task's
+  Scope is present on the ABC.
+- Tests: `pytest .../test_voice_broadcast_registry.py -q` → **52 passed**;
+  combined with TASK-2951's suite, **80 passed**. `ruff check` clean.
+- **Every AC verified by a named test:**
+  - 10 concurrent `reserve_viewer` → exactly 10 leases, exactly one `is_first`,
+    sequences 1..10, one moderator, 11th `ViewerLimitReached`
+    (`test_first_admission_elects_single_moderator_under_race`,
+    `test_eleventh_viewer_rejected`,
+    `test_concurrent_eleventh_admission_never_over_admits` — 15 concurrent, 10 admitted,
+    5 rejected).
+  - Two concurrent `grant_floor` with the same `expected_version` → exactly one
+    `StaleVersion`, and crucially `speaker_lease_id is None` throughout the switch, so
+    two speakers are not merely unlikely but structurally impossible
+    (`test_conflicting_grants_install_one_speaker`).
+  - `grant → switching` (+epoch), `commit → granted`, `abort → idle`, stale-epoch audio
+    rejected via `validate_audio_authority` (`test_stale_epoch_audio_rejected`,
+    `test_no_audio_is_accepted_while_switching`).
+  - Moderator departure elects the earliest *eligible* lease; last departure → `ended` /
+    `audience_empty` (`test_moderator_departure_elects_earliest`,
+    `test_election_skips_unconfirmed_and_stale_participants`,
+    `test_last_departure_ends_the_broadcast`).
+  - Owner lease expires after 15 s with a fake clock and the fenced owner can no longer
+    renew or transition; pending broadcast expires after 60 s
+    (`test_owner_lease_expires`, `test_pending_broadcast_expires`).
+- **Design decisions worth a reviewer's attention:**
+  - `reserve_viewer` returns `Admission(lease, is_first)` — a `NamedTuple`, so it *is*
+    the `(lease, is_first)` tuple the Implementation Notes sanction, with named access.
+    The alternative the note offered (a `claim_needed` attribute on the lease) is not
+    available: `ViewerLease` is `extra="forbid"` and has no such field.
+  - `_open_barrier()` is the single place the floor barrier is opened, so grant, revoke,
+    Finish Speaking, speaker departure and moderator election all fence identically
+    (clear speaker → `floor_epoch += 1` → `switching` → drop the target's hand → unbind
+    the old capture socket). Duplicating that sequence per call site is exactly how a
+    two-speaker window gets introduced.
+  - `expire()` is deliberately **conservative** for stale control connections: it marks
+    the lease `LEAVING` and reports a `CONTROL_HEARTBEAT` event but does **not** release
+    the seat. Spec §2 requires removing the participant from the room *before* releasing
+    its seat; releasing here would let an over-admitted joiner take a seat still held by
+    an unreachable-but-connected browser. The caller does the LiveKit removal then calls
+    `release_viewer`.
+  - Tombstones count toward capacity. Spec §2: "retain the reservation until reuse
+    cannot over-admit the room" — so `_occupied()` = live leases + live tombstones, and a
+    departed seat is not re-lettable until the 60 s credential TTL lapses
+    (`test_tombstoned_seat_is_retained_against_over_admission`). This is intentionally
+    conservative and will look like a bug if read as "seat leaked".
+  - `create()` stamps `created_at`/`updated_at` from the **registry's** clock rather than
+    trusting the caller's wall clock, so the pending TTL is measured against the clock
+    that expires it. (Found by a failing test: a `default_factory=datetime.now`
+    descriptor is not on the injected fake clock.)
+  - `stop_requested()` returns `True` for an unknown broadcast — fail closed, so an owner
+    whose record vanished stops publishing rather than continuing.
+  - Errors carry both a sanitized `reason` and the spec §2 `status`. `NotModerator` /
+    `NotSpeaker` deliberately carry **no** public reason: they map to a bare 403 and must
+    not reveal who the moderator or speaker is.
+
+**Deviations from spec**: one addition, no substitutions. The task's error list has no
+entry for "this LiveKit identity is tombstoned", which the tombstone invariant it also
+mandates needs. Added `IdentityTombstoned(BroadcastError)` whose **public** reason is
+`viewer_limit_reached` and whose status is 409 — publicly indistinguishable from
+`ViewerLimitReached` on purpose (both mean "no seat for you", neither reveals room
+membership), but a distinct type for tests and operator logs. No new `BroadcastReason`
+code was invented. `validate_audio_authority` keeps the four positional parameters the AC
+specifies and adds a keyword-only `bound_socket_id` — the socket binding lives on the
+lease, not the descriptor, so the four-argument form alone cannot perform the
+duplicate-socket check the same AC asks for.
