@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-538 - Recoverable Task Memory for WorkingMemoryToolkit
 **Spec**: `sdd/specs/workingmemory-toolkit.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2988, TASK-2990
@@ -157,4 +157,62 @@ New test modules should use local fixtures unless the shared fixture task is alr
 
 ## Completion Note
 
-Not completed. The implementing agent records completed-by, date, verification evidence, notes, and any approved deviations here when acceptance passes.
+**Completed by**: sdd-worker (Claude Opus 5) — 2026-09-09
+**Commit**: `d19097673`
+
+### What was built
+
+`render_context_history` now prepends one bounded, deterministic recall
+snapshot when `CompactionResult.stage2_needed` is set and a task is
+selected. The snapshot competes with history for a single
+`ContextBudget.available`, with framing and calibration inside the
+measurement; when it does not fit as compacted, it is charged to the
+budget's fixed reserve and history is re-compacted against the reduced
+allowance, flushing the extra omissions before they are relied on.
+
+### Two bugs my own mutation testing found
+
+1. **The first decline condition was dead code.** It compared the
+   verbatim TURN COUNT after re-compaction — but `compact_history`
+   guarantees `min_verbatim_turns` unconditionally, so the check could
+   never fire. What actually happens when the floor binds is that history
+   cannot shrink further and the *combined* total stays over budget. That
+   is now the condition, and the diagnostic names the floor as the reason.
+2. **The no-double-inject marker was recorded on only one path**, so a
+   snapshot that fit directly could be injected twice in one turn.
+
+Both were found by deliberately breaking the code and discovering the
+tests still passed — not by reading it.
+
+### Verification evidence
+
+- 7/7 in `test_stage2_task_recall.py`.
+- **7 mutations, each caught by the intended test**, including
+  calibration dropped and framing excluded from the measurement. Those
+  two are invisible whenever the budget has slack, so they are pinned
+  against the decline diagnostic's own reported token count rather than
+  against a downstream consequence.
+- `tests/bots`: FAILED-set **identical** to the dev baseline (84
+  pre-existing) — the load-bearing check, since all four entry points
+  call this method.
+- `tests/memory` plus both task-context suites: 171 passed, 0 failed.
+- Lint unchanged: 12 pre-existing E402 in `bots/abstract.py`, 0 new.
+- Log: `artifacts/logs/task-3001-tm-stage2-recall.log`.
+
+### Notes for the reviewer
+
+- The framing never instructs the model to call recall as well — injecting
+  a snapshot *and* asking for one spends a round trip re-fetching what is
+  already in context — and states plainly that it is a deterministic
+  projection, not an LLM summary.
+- The injected message carries **no turn_id**: transient context for one
+  provider call, never a persisted turn. `save_conversation_turn` remains
+  the only writer and builds its own turn.
+- An early decline was added for the case where the snapshot alone exceeds
+  `available`: charging it to the reserve would produce a budget
+  `ContextBudget` rightly refuses to construct, which previously surfaced
+  as a swallowed construction error rather than a decision.
+
+### Approved deviations
+
+None.

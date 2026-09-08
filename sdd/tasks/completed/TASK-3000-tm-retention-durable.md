@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-538 - Recoverable Task Memory for WorkingMemoryToolkit
 **Spec**: `sdd/specs/workingmemory-toolkit.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2997, TASK-2998, TASK-2999
@@ -145,4 +145,62 @@ New test modules should use local fixtures unless the shared fixture task is alr
 
 ## Completion Note
 
-Not completed. The implementing agent records completed-by, date, verification evidence, notes, and any approved deviations here when acceptance passes.
+**Completed by**: sdd-worker via delegated agent (Claude Opus 5) — 2026-09-09
+**Commit**: `944865181`
+
+### What was built
+
+`JsonlArchiveWriter`, `ArchiveVerificationError` and `HotKeyCleaner` in
+`retention.py`; `DurableBlobSweeper` and `list_stored` in `blob.py`;
+`purge_task` (implementing `JournalPurge`) and `live_storage_refs` in
+`store/postgres.py`.
+
+### The ordering that makes it crash-safe
+
+Retention intent is appended **first**, so the archive contains the very
+event recording its own deletion. The archive is then read back and
+**verified before anything is deleted**. The archive key is deterministic
+and re-archiving byte-identical content is a no-op — that is what makes
+crash-then-retry converge on one archive rather than accumulating copies.
+`purge_task` re-checks terminality under `FOR UPDATE`, so a task resumed
+between selection and purge is not deleted from a stale view.
+
+Every orphan uncertainty resolves to "not an orphan": an unreadable index
+sweeps nothing, and a failed publish-lease probe counts as leased. A blob
+wrongly kept is swept next pass; one wrongly deleted is gone.
+
+### Verification evidence (figures independently reproduced)
+
+- 9/9 against **live PostgreSQL 17.3** (throwaway schema per test) and the
+  real `LocalFileManager` on a real filesystem. The archive is genuinely
+  written and read back, the purge genuinely deletes rows, the sweep
+  genuinely unlinks files. **No durability or crash-safety claim rests on
+  a double** — the doubles exist only to inject the failure.
+- `tests/tools/working_memory`: **914 passed / 0 failed** with services;
+  **836 passed / 78 skipped / 0 failed** without. Both reproduced.
+- `ruff` clean on all four files; 5 mutations each killed exactly the
+  intended test.
+- Log: `artifacts/logs/task-3000-tm-retention-durable.log`.
+
+### Defect reported, not fixed (outside ownership)
+
+The root `packages/ai-parrot/tests/conftest.py` stubs
+`parrot.interfaces.file` with a `LocalFileManager` whose `exists()`
+returns truthy for **any** key. Under it a deletion test could pass
+without deleting anything. The fixture imports the real manager and
+documents why. This is the same stub already flagged for
+`bench_snapshot_costs.py`; any other suite doing real file I/O is
+silently exercising it.
+
+### Three wrong-API guesses caught against source
+
+`PostgresArtifactStore.register` does not exist (it is `put`); `pin` does
+not exist (it is `pin_evidence`); and `_row_to_state` treats the
+projection JSONB as the sole authority, so backdating only the
+`terminal_at` column left the sweeper reading the original timestamp.
+Also: `list_files` is non-recursive, so using it for orphan enumeration
+would have reported every blob as sweepable.
+
+### Approved deviations
+
+None.

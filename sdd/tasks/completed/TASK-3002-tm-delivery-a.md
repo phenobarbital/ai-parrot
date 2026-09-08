@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-538 - Recoverable Task Memory for WorkingMemoryToolkit
 **Spec**: `sdd/specs/workingmemory-toolkit.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2990, TASK-2991, TASK-2993, TASK-2999
@@ -155,4 +155,70 @@ New test modules should use local fixtures unless the shared fixture task is alr
 
 ## Completion Note
 
-Not completed. The implementing agent records completed-by, date, verification evidence, notes, and any approved deviations here when acceptance passes.
+**Completed by**: sdd-worker via delegated agent (Claude Opus 5) — 2026-09-09
+**Commit**: `f298a78a5`
+
+### What was built
+
+The Delivery A acceptance gate: `test_delivery_a.py` (7 tests) covering
+the four-step primary scenario, and `test_disabled_compatibility.py`
+(4 tests) covering byte/schema parity with task memory disabled.
+
+### The assertion that carries it
+
+A side-effect **counter** on a fake tool:
+`tool.calls == ["load", "clean", "verify", "report"]`, each exactly once
+**across the context loss**. That counts real executions rather than
+inspecting a status field, which is the only way to actually demonstrate
+that recovery does not repeat physical work — the property the whole
+feature exists for.
+
+Also pinned: exact version refs surviving recall; `validated` versus
+`agent_asserted` completion sources; recall never selecting a task;
+overwrite allocating `version+1` while the bound version stays valid; and
+the disabled tool surface diffed against a real `git archive dev` tree
+imported in a subprocess.
+
+### Verification evidence
+
+- 11 passed, `ruff` clean. Full `tests/tools/working_memory`: 836 passed
+  / 78 skipped / 0 failed.
+- 8 mutations, all caught.
+- **Independently re-verified here**: the dev-tree diff test genuinely
+  RUNS rather than skipping (confirmed `PASSED`, not `SKIPPED`), and an
+  injected AC10 violation — making recall implicitly select the task —
+  is caught by `test_primary_continuity`. The mutated file was confirmed
+  clean afterwards.
+- Log: `artifacts/logs/task-3002-tm-delivery-a.log`.
+
+### AC coverage, stated plainly
+
+- **Fully covered**: AC1, AC3 (evidence side), AC5, AC7, AC10, AC11, AC13.
+- **Partial**: AC4 (per-step provenance yes; concurrent declared-step
+  ambiguity and post-dispatch correlation live in TASK-2991's suite);
+  AC6 (flags yes, byte-ceiling and pagination no); AC14 (context-leak is
+  covered by TASK-2990's suite).
+- **Not covered**: AC8, AC9, AC12 — Delivery B durability, deliberately
+  out of scope for this task.
+
+### Two behaviours confirmed as correct design, not bugs
+
+1. `status="pending"` maps to `step_reopened` and blocks every transitive
+   dependent with `upstream_reopened`, including already-completed ones.
+   The non-destructive recovery for a blocked step is `status="running"`.
+2. Invalidated evidence is guarded in three independent places; disabling
+   any one still refuses the completion, with a different typed error.
+   Honest caveat recorded by the agent: mutating only ONE guard is not
+   caught, because the assertion accepts either typed refusal — that is
+   tolerance of mechanism, not of outcome, and with all three disabled
+   the test does fail.
+
+### Delivery A is non-durable
+
+`test_primary_continuity_is_in_process_only_not_durable` shows a fresh
+store loses the task, so no test here can be misread as a durability
+claim. This task does NOT complete the feature; Delivery B must land too.
+
+### Approved deviations
+
+None.
