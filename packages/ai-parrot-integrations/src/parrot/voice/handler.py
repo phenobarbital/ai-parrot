@@ -15,10 +15,12 @@ is encapsulated in VoiceBot/GeminiLiveClient.
 from __future__ import annotations
 import asyncio
 import base64
+import binascii
 import contextlib
 import json
 import re
 import uuid
+import time
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from typing import (
@@ -62,6 +64,50 @@ except ImportError:
 # _send_voice_response() and _HandlerVoiceSession.build_frames() so both
 # frame-construction paths filter identically (FEAT-418, TASK-2174).
 _THOUGHT_FILTER_PATTERN = re.compile(r"^\s*(?:(\*\*|##)?\s*[A-Z][a-z]+ing\b|(\*\*|##)\s*Show\s+[A-Z])")
+
+# ── FEAT-537: moderated broadcast control socket ────────────────────────────
+
+
+#: Participant control/input route.  Credentials never appear in the path —
+#: only the agent and broadcast ids, which are not secrets (a share link
+#: carries the broadcast id and nothing else, spec §2).
+def _public_broadcast_message(exc: BaseException) -> str:
+    """Return the only failure text that may cross the client boundary.
+
+    ``BroadcastError.message`` is explicitly operator-facing
+    (``broadcast/errors.py``: "Never returned to a client verbatim — the client
+    sees ``reason`` and ``status``"), and it embeds internals such as version
+    numbers and epoch values.  The HTTP surface already emits only
+    ``reason.value``; this keeps the WebSocket surface identical rather than
+    letting the same failure be more revealing over one transport than the
+    other.
+
+    Args:
+        exc: The exception being reported.
+
+    Returns:
+        The sanitized reason code, or a generic string when the exception
+        carries no public reason at all.
+    """
+    reason = getattr(exc, "reason", None)
+    value = getattr(reason, "value", None)
+    return value if isinstance(value, str) and value else "request rejected"
+
+
+BROADCAST_WS_ROUTE: str = "/ws/voice/broadcast/{agent_id}/{broadcast_id}"
+
+#: Close codes for the broadcast socket.
+WS_CLOSE_UNAUTHENTICATED: int = 4401
+WS_CLOSE_FORBIDDEN: int = 4403
+
+#: How long a socket may stay unattached before it is closed.
+BROADCAST_ATTACH_TIMEOUT_S: float = 10.0
+
+#: Largest accepted base64 audio payload per message.
+BROADCAST_MAX_AUDIO_B64_BYTES: int = 64 * 1024
+
+#: Per-socket message rate ceiling.
+BROADCAST_MAX_MSGS_PER_SECOND: int = 50
 
 
 # =============================================================================
@@ -327,6 +373,20 @@ class _AskStreamVoiceClient:
         self._bot = bot
         self._user_id = user_id
 
+    def set_user_id(self, user_id: Optional[str]) -> None:
+        """Re-bind the principal every subsequent turn runs as (FEAT-537).
+
+        A broadcast keeps one bot and one conversation while the speaking floor
+        moves between participants, so the identity the bot resolves tool
+        permissions and context from must be settable per turn.  Without this
+        the whole broadcast would run as whoever happened to start it, silently
+        lending that user's privileges to every later speaker (spec §2).
+
+        Args:
+            user_id: The current speaker's authenticated user id, or ``None``.
+        """
+        self._user_id = user_id
+
     @property
     def voice_capabilities(self):
         """Delegates to the underlying raw client's descriptor — required
@@ -364,6 +424,285 @@ class _AskStreamVoiceClient:
             yield response
 
 
+@dataclass
+class _BroadcastSocketState:
+    """Per-socket state for one broadcast participant (FEAT-537).
+
+    Deliberately separate from :class:`WebSocketConnection`: a broadcast socket
+    owns no bot, no conversation and no avatar session — those belong to the
+    broadcast — so reusing the single-user connection's fields would invite
+    exactly the connection-owns-the-producer coupling spec §2 removes.
+
+    Attributes:
+        socket_id: Unique id of this socket; also the microphone-binding key.
+        agent_id: Agent from the route.
+        broadcast_id: Broadcast from the route.
+        ws: The WebSocket response.
+        connection: A minimal ``WebSocketConnection`` kept in
+            ``handler.connections`` so shutdown cleanup still sees this socket.
+        principal: The scoped principal resolved from the authenticated user.
+        lease_id: The admitted lease this socket speaks for, once attached.
+        attached: Whether the mandatory ``attach`` handshake completed.
+        bound: Whether this socket currently holds the microphone binding.
+        rejected_frames: Count of unauthorized/stale input frames dropped.
+        speaker_input: The local or relayed sink this socket feeds, once it has
+            started recording.
+    """
+
+    socket_id: str
+    agent_id: str
+    broadcast_id: str
+    ws: Any
+    connection: Any
+    principal: Any = None
+    lease_id: Optional[str] = None
+    attached: bool = False
+    bound: bool = False
+    rejected_frames: int = 0
+    speaker_input: Any = None
+    _message_times: List[float] = field(default_factory=list)
+
+    def allow_message(self) -> bool:
+        """Sliding-window rate limit for this socket.
+
+        Returns:
+            ``False`` when the socket exceeded
+            :data:`BROADCAST_MAX_MSGS_PER_SECOND` in the last second.
+        """
+        now = time.monotonic()
+        self._message_times = [t for t in self._message_times if now - t < 1.0]
+        if len(self._message_times) >= BROADCAST_MAX_MSGS_PER_SECOND:
+            return False
+        self._message_times.append(now)
+        return True
+
+    async def push(self, frame: Dict[str, Any]) -> None:
+        """Send one server-initiated frame to this participant.
+
+        Failures are swallowed: a control notification is advisory and the
+        durable state remains authoritative (spec §2).
+
+        Args:
+            frame: The frame to send.
+        """
+        if self.ws.closed:
+            return
+        with contextlib.suppress(Exception):
+            await self.ws.send_json(frame)
+
+
+@dataclass
+class ToolCallDedupState:
+    """Per-turn ``tool_call`` de-duplication bookkeeping.
+
+    A streamed delta and the final completion snapshot carry the SAME
+    :class:`LiveToolCall` objects (FEAT-536 TASK-2940/2941 arrival-order
+    accumulation), so without this every already-relayed id would be emitted
+    again on ``is_complete``.  Keyed by ``turn_no`` so ids may legitimately be
+    reused in a LATER turn.
+
+    Extracted from ``_HandlerVoiceSession`` (FEAT-537 TASK-2959) so the
+    broadcast relay shares one implementation with the single-user path
+    instead of growing a near-copy that can drift.
+
+    Attributes:
+        turn_no: The turn the current ``sent_ids`` belong to.
+        sent_ids: Tool-call ids already emitted this turn.
+        assistant_text_sent: Assistant transcript already relayed this turn,
+            so a closing frame's full-turn recap is not appended on top of the
+            deltas already streamed (see :func:`_novel_assistant_text`).
+    """
+
+    turn_no: Optional[int] = None
+    sent_ids: set = field(default_factory=set)
+    assistant_text_sent: str = ""
+
+    def reset_if_new_turn(self, turn_no: int) -> None:
+        """Clear the per-turn bookkeeping when the turn number changes.
+
+        Args:
+            turn_no: The turn being relayed.
+        """
+        if turn_no != self.turn_no:
+            self.turn_no = turn_no
+            self.sent_ids = set()
+            self.assistant_text_sent = ""
+
+
+def build_voice_frames(
+    resp: Any,
+    turn_no: int,
+    *,
+    stt_only: bool,
+    dedup_state: ToolCallDedupState,
+) -> list:
+    """Translate one ``LiveVoiceResponse`` into VoiceChatHandler wire frames.
+
+    This is the single, pure implementation of the handler's rich frame
+    protocol (FEAT-418 TASK-2174): ``response_chunk`` / ``transcription`` /
+    ``display_data`` / ``tool_call`` / ``response_complete`` / ``ready_to_speak``,
+    plus the ``go_away`` → ``session_warning`` mapping, with STT-only gating and
+    "thought" text filtering.
+
+    Both :class:`_HandlerVoiceSession` (single user) and the broadcast relay
+    call it, so the two paths cannot drift apart in what a browser receives.
+    The broadcast relay strips ``audio_base64`` from the result afterwards —
+    its PCM goes to the shared room, not down each participant's socket.
+
+    Must stay **sync**: the base ``VoiceSession._relay()`` calls
+    ``build_frames()`` without awaiting.
+
+    Args:
+        resp: The provider response to translate.
+        turn_no: Current turn number.
+        stt_only: Whether the session is transcription-only.
+        dedup_state: Mutable per-turn tool-call dedup bookkeeping.
+
+    Returns:
+        JSON-serializable frame dicts, in send order.
+    """
+    dedup_state.reset_if_new_turn(turn_no)
+
+    frames: list = []
+
+    if "error" in resp.metadata:
+        return [{"type": "error", "message": resp.metadata["error"] or "Unknown voice provider error"}]
+
+    if not stt_only:
+        # `response_chunk` is audio-only on the wire (see the assistant
+        # `transcription` frame below, the sole source of bubble text —
+        # a7f0c5fa5's contract). Echoing resp.text here duplicated every
+        # assistant delta (once via response_chunk, once via transcription)
+        # and, for a role="user" input-transcription frame, leaked the
+        # caller's own speech into the assistant bubble — this branch never
+        # checked resp.role.
+        if resp.audio_data and not resp.is_complete:
+            frames.append(
+                {
+                    "type": "response_chunk",
+                    "text": "",
+                    "audio_base64": base64.b64encode(resp.audio_data).decode(),
+                    "audio_format": "audio/pcm;rate=24000",
+                    "is_interrupted": resp.is_interrupted,
+                }
+            )
+
+    # User transcription is always forwarded (both modes) — canonical
+    # role replaces the removed metadata["user_transcription"] key.
+    if resp.role == "user" and resp.text:
+        frames.append(
+            {
+                "type": "transcription",
+                "text": resp.text,
+                "is_user": True,
+            }
+        )
+
+    # Everything below this point is model-response output — skip in
+    # STT-only mode (matches _send_voice_response()'s early return).
+    if not stt_only:
+        # Forward the assistant's spoken text as the display bubble.
+        # canonical role="assistant" replaces the removed
+        # metadata["assistant_transcription"] key; turn_metadata's own
+        # output_transcription remains as a fallback for a frame that
+        # carries no text of its own (e.g. an audio-only chunk).
+        assistant_text = resp.text if resp.role == "assistant" else None
+        if not assistant_text and resp.turn_metadata:
+            assistant_text = resp.turn_metadata.output_transcription
+        if assistant_text:
+            # A closing frame's full-turn recap must not be appended on top of
+            # the deltas already streamed to the bubble.
+            assistant_text = _novel_assistant_text(
+                assistant_text,
+                dedup_state.assistant_text_sent,
+                resp.is_complete or resp.is_interrupted,
+            )
+        if assistant_text:
+            dedup_state.assistant_text_sent += assistant_text
+            frames.append(
+                {
+                    "type": "transcription",
+                    "text": assistant_text,
+                    "is_user": False,
+                }
+            )
+
+        if resp.metadata.get("display_data"):
+            frames.append(
+                {
+                    "type": "display_data",
+                    "data": resp.metadata["display_data"],
+                }
+            )
+
+        for tc in resp.tool_calls:
+            if tc.id in dedup_state.sent_ids:
+                continue
+            dedup_state.sent_ids.add(tc.id)
+            frames.append(
+                {
+                    "type": "tool_call",
+                    "name": tc.name,
+                    "arguments": tc.arguments,
+                    "result": tc.result,
+                    "execution_time_ms": tc.execution_time_ms,
+                }
+            )
+
+        if resp.is_complete:
+            final_text = resp.text
+            if final_text and _THOUGHT_FILTER_PATTERN.match(final_text):
+                final_text = ""
+            response_complete_frame = {
+                "type": "response_complete",
+                "text": final_text or "",
+                "is_interrupted": resp.is_interrupted,
+            }
+            # FEAT-418 (TASK-2178): surface per-turn token/latency
+            # counters on the streaming path — mirrors the shape
+            # _send_complete_voice_response() already sends on the
+            # non-streaming path (input_tokens/output_tokens/
+            # total_tokens), plus the timing fields LiveCompletionUsage
+            # already computes (response_time_ms/first_token_time_ms),
+            # so the dual-provider example can render a live counter
+            # per provider without fabricating data client-side.
+            if resp.usage:
+                response_complete_frame["usage"] = {
+                    "input_tokens": resp.usage.prompt_tokens,
+                    "output_tokens": resp.usage.completion_tokens,
+                    "total_tokens": resp.usage.total_tokens,
+                    "response_time_ms": resp.usage.response_time_ms,
+                    "first_token_time_ms": resp.usage.first_token_time_ms,
+                }
+            frames.append(response_complete_frame)
+            frames.append(
+                {
+                    "type": "ready_to_speak",
+                    "message": "Ready for new question",
+                }
+            )
+
+    # Gemini's GoAway signal is distinct from reconnect_required and,
+    # by itself, is not understood by VoiceSession's (inherited,
+    # unmodified) reconnection loop. Mutating resp.metadata here is
+    # safe: build_frames() runs (via _relay()) BEFORE _run_turn()
+    # checks resp.metadata.get("reconnect_required") (spec §7 relay-
+    # before-reconnect ordering). As of TASK-2168, Gemini's own
+    # producer already sets reconnect_required alongside go_away — this
+    # mutation is now a defensive no-op for Gemini and a safety net for
+    # any future provider that emits go_away without it.
+    if resp.metadata.get("go_away"):
+        frames.append(
+            {
+                "type": "session_warning",
+                "message": "Session reconnecting...",
+            }
+        )
+        resp.metadata["reconnect_required"] = True
+
+    return frames
+
+
 def _novel_assistant_text(candidate: str, already_sent: str, is_final: bool) -> str:
     """Return the part of ``candidate`` not yet shown in the assistant bubble.
 
@@ -386,7 +725,7 @@ def _novel_assistant_text(candidate: str, already_sent: str, is_final: bool) -> 
     if not is_final or not already_sent:
         return candidate
     if candidate.startswith(already_sent):
-        return candidate[len(already_sent):]
+        return candidate[len(already_sent) :]
     stripped = candidate.strip()
     if stripped and stripped in already_sent:
         return ""
@@ -413,6 +752,7 @@ class _HandlerVoiceSession(VoiceSession):
         # satisfied by this being a fresh instance per session (a new
         # _HandlerVoiceSession is constructed per voice session, never
         # reused across sessions).
+        self._dedup_state = ToolCallDedupState()
         self._tool_dedup_turn_no: Optional[int] = None
         self._sent_tool_call_ids: set = set()
         # Assistant transcript already relayed this turn — see
@@ -428,175 +768,32 @@ class _HandlerVoiceSession(VoiceSession):
         await self._handler._send_message(self._connection.ws, payload)
 
     def build_frames(self, resp, turn_no: int) -> list:
-        """Reproduce VoiceChatHandler's real WebSocket frame protocol
-        (FEAT-418, TASK-2174).
+        """Reproduce VoiceChatHandler's real WebSocket frame protocol.
 
-        Mirrors ``_send_voice_response()``'s frame construction (STT-only
-        gating, "thought" text filtering, ``response_chunk``/
-        ``transcription``/``display_data``/``tool_call``/
-        ``response_complete``/``ready_to_speak``) plus the ``go_away`` ->
-        ``session_warning`` mapping the old ``_relay()`` override did.
-        Duplicated rather than delegating to the async
-        ``_send_voice_response()`` — this method must stay sync (the base
-        ``VoiceSession._relay()`` calls it without awaiting, per the
-        ``build_frames()`` contract from TASK-2171) — the LiveAvatar audio
-        tee (the one genuinely async side effect) is handled by the
-        ``_relay()`` override below instead.
+        Thin wrapper over the module-level :func:`build_voice_frames` (the
+        pure implementation, extracted by FEAT-537 TASK-2959 so the broadcast
+        relay shares it). Dedup state stays on the instance because a fresh
+        ``_HandlerVoiceSession`` is constructed per voice session and must
+        never carry ids across sessions.
 
-        Transcription frames now come from canonical ``role`` (FEAT-418)
-        instead of the removed ``metadata["user_transcription"]``/
-        ``metadata["assistant_transcription"]`` keys.
+        Args:
+            resp: The provider response to translate.
+            turn_no: The current turn number.
 
-        FEAT-536 TASK-2942: ``tool_call`` frames are deduped per
-        ``turn_no`` — a streamed delta and the final completion snapshot
-        both carry the SAME ``LiveToolCall`` objects (arrival-order
-        accumulation, TASK-2940/2941); without this, every already-
-        relayed id would be sent again on ``is_complete``. Deduped by
-        id only — never by tool name or payload (spec §2).
+        Returns:
+            A list of JSON-serializable frame dicts, in send order.
         """
-        if turn_no != self._tool_dedup_turn_no:
-            self._tool_dedup_turn_no = turn_no
-            self._sent_tool_call_ids = set()
-            self._assistant_text_sent = ""
-
-        frames: list = []
-        connection = self._connection
-
-        if "error" in resp.metadata:
-            return [{"type": "error", "message": resp.metadata["error"] or "Unknown voice provider error"}]
-
-        if not connection.stt_only:
-            # `response_chunk` is audio-only on the wire (see the assistant
-            # `transcription` frame below, the sole source of bubble text —
-            # a7f0c5fa5's contract). Echoing resp.text here duplicated every
-            # assistant delta (once via response_chunk, once via
-            # transcription) and, for a role="user" input-transcription
-            # frame, leaked the caller's own speech into the assistant
-            # bubble — this branch never checked resp.role.
-            if resp.audio_data and not resp.is_complete:
-                frames.append(
-                    {
-                        "type": "response_chunk",
-                        "text": "",
-                        "audio_base64": base64.b64encode(resp.audio_data).decode(),
-                        "audio_format": "audio/pcm;rate=24000",
-                        "is_interrupted": resp.is_interrupted,
-                    }
-                )
-
-        # User transcription is always forwarded (both modes) — canonical
-        # role replaces the removed metadata["user_transcription"] key.
-        if resp.role == "user" and resp.text:
-            frames.append(
-                {
-                    "type": "transcription",
-                    "text": resp.text,
-                    "is_user": True,
-                }
-            )
-
-        # Everything below this point is model-response output — skip in
-        # STT-only mode (matches _send_voice_response()'s early return).
-        if not connection.stt_only:
-            # Forward the assistant's spoken text as the display bubble.
-            # canonical role="assistant" replaces the removed
-            # metadata["assistant_transcription"] key; turn_metadata's own
-            # output_transcription remains as a fallback for a frame that
-            # carries no text of its own (e.g. an audio-only chunk).
-            assistant_text = resp.text if resp.role == "assistant" else None
-            if not assistant_text and resp.turn_metadata:
-                assistant_text = resp.turn_metadata.output_transcription
-            if assistant_text:
-                # A closing frame's full-turn recap must not be appended on
-                # top of the deltas already streamed to the bubble.
-                assistant_text = _novel_assistant_text(
-                    assistant_text,
-                    self._assistant_text_sent,
-                    resp.is_complete or resp.is_interrupted,
-                )
-            if assistant_text:
-                self._assistant_text_sent += assistant_text
-                frames.append(
-                    {
-                        "type": "transcription",
-                        "text": assistant_text,
-                        "is_user": False,
-                    }
-                )
-
-            if resp.metadata.get("display_data"):
-                frames.append(
-                    {
-                        "type": "display_data",
-                        "data": resp.metadata["display_data"],
-                    }
-                )
-
-            for tc in resp.tool_calls:
-                if tc.id in self._sent_tool_call_ids:
-                    continue
-                self._sent_tool_call_ids.add(tc.id)
-                frames.append(
-                    {
-                        "type": "tool_call",
-                        "name": tc.name,
-                        "arguments": tc.arguments,
-                        "result": tc.result,
-                        "execution_time_ms": tc.execution_time_ms,
-                    }
-                )
-
-            if resp.is_complete:
-                final_text = resp.text
-                if final_text and _THOUGHT_FILTER_PATTERN.match(final_text):
-                    final_text = ""
-                response_complete_frame = {
-                    "type": "response_complete",
-                    "text": final_text or "",
-                    "is_interrupted": resp.is_interrupted,
-                }
-                # FEAT-418 (TASK-2178): surface per-turn token/latency
-                # counters on the streaming path — mirrors the shape
-                # _send_complete_voice_response() already sends on the
-                # non-streaming path (input_tokens/output_tokens/
-                # total_tokens), plus the timing fields LiveCompletionUsage
-                # already computes (response_time_ms/first_token_time_ms),
-                # so the dual-provider example can render a live counter
-                # per provider without fabricating data client-side.
-                if resp.usage:
-                    response_complete_frame["usage"] = {
-                        "input_tokens": resp.usage.prompt_tokens,
-                        "output_tokens": resp.usage.completion_tokens,
-                        "total_tokens": resp.usage.total_tokens,
-                        "response_time_ms": resp.usage.response_time_ms,
-                        "first_token_time_ms": resp.usage.first_token_time_ms,
-                    }
-                frames.append(response_complete_frame)
-                frames.append(
-                    {
-                        "type": "ready_to_speak",
-                        "message": "Ready for new question",
-                    }
-                )
-
-        # Gemini's GoAway signal is distinct from reconnect_required and,
-        # by itself, is not understood by VoiceSession's (inherited,
-        # unmodified) reconnection loop. Mutating resp.metadata here is
-        # safe: build_frames() runs (via _relay()) BEFORE _run_turn()
-        # checks resp.metadata.get("reconnect_required") (spec §7 relay-
-        # before-reconnect ordering). As of TASK-2168, Gemini's own
-        # producer already sets reconnect_required alongside go_away — this
-        # mutation is now a defensive no-op for Gemini and a safety net for
-        # any future provider that emits go_away without it.
-        if resp.metadata.get("go_away"):
-            frames.append(
-                {
-                    "type": "session_warning",
-                    "message": "Session reconnecting...",
-                }
-            )
-            resp.metadata["reconnect_required"] = True
-
+        frames = build_voice_frames(
+            resp,
+            turn_no,
+            stt_only=self._connection.stt_only,
+            dedup_state=self._dedup_state,
+        )
+        # Kept in sync for backwards compatibility: these two attributes were
+        # public-ish instance state before the extraction and are read by
+        # existing tests and by _send_voice_response()'s own dedup path.
+        self._tool_dedup_turn_no = self._dedup_state.turn_no
+        self._sent_tool_call_ids = self._dedup_state.sent_ids
         return frames
 
     async def _relay(self, resp, turn_no: int) -> None:
@@ -688,6 +885,9 @@ class VoiceChatHandler:
         # Route options
         ws_route: str = "/ws/voice",
         health_route: str = "/health",
+        # FEAT-537 — moderated multi-browser broadcast
+        broadcast_service: Optional[Any] = None,
+        nova_bot_factory: Optional[Callable[[], "VoiceBot"]] = None,
     ):
         """
         Initialize handler.
@@ -701,6 +901,15 @@ class VoiceChatHandler:
             auth_timeout: Timeout for post-connection auth (seconds)
             ws_route: WebSocket route path
             health_route: Health check route path
+            broadcast_service: FEAT-537 broadcast facade (``BroadcastService``,
+                TASK-2961).  Typed loosely on purpose: the handler must not
+                hard-import the broadcast package, which pulls in the optional
+                LiveKit/Redis stack.  ``None`` disables broadcast mode entirely
+                and leaves every existing code path untouched.
+            nova_bot_factory: Factory used **only** for broadcasts.  A
+                broadcast fixes the provider to Nova for its lifetime (spec
+                §2), so it must not reuse ``bot_factory``, which the shared
+                example rebinds when the user switches provider in the UI.
         """
         self.bot_factory = bot_factory or self._default_bot_factory
 
@@ -726,7 +935,17 @@ class VoiceChatHandler:
         self.ws_route = ws_route
         self.health_route = health_route
 
+        # FEAT-537 — broadcast mode (inactive unless a service is injected).
+        self.broadcast_service = broadcast_service
+        self.nova_bot_factory = nova_bot_factory
+        self.ws_broadcast_route = BROADCAST_WS_ROUTE
+
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
+
+    @property
+    def broadcast_enabled(self) -> bool:
+        """Whether a broadcast service was injected (FEAT-537)."""
+        return self.broadcast_service is not None
 
     def _default_bot_factory(self) -> VoiceBot:
         """Default factory for bots."""
@@ -776,6 +995,14 @@ class VoiceChatHandler:
         ws_path = f"{prefix}{self.ws_route}"
         app.router.add_get(ws_path, self.handle_websocket)
         self.logger.info("WebSocket route registered: %s", ws_path)
+
+        # FEAT-537: the moderated broadcast control/input socket. Mounted ONLY
+        # when a broadcast service was injected, so an ordinary voice
+        # deployment exposes exactly the routes it did before.
+        if self.broadcast_enabled:
+            broadcast_ws_path = f"{prefix}{self.ws_broadcast_route}"
+            app.router.add_get(broadcast_ws_path, self.handle_broadcast_websocket)
+            self.logger.info("Broadcast WebSocket route registered: %s", broadcast_ws_path)
 
         # Health check
         if include_health:
@@ -1003,6 +1230,439 @@ class VoiceChatHandler:
             self.logger.info("Connection closed: %s", session_id)
 
         return ws
+
+    # =========================================================================
+    # FEAT-537 — Broadcast control / input socket
+    # =========================================================================
+
+    async def handle_broadcast_websocket(self, request: web.Request) -> web.WebSocketResponse:
+        """Participant control and microphone socket for one broadcast.
+
+        Route: ``/ws/voice/broadcast/{agent_id}/{broadcast_id}``.
+
+        Every admitted participant opens one of these to *receive* state.  Only
+        the participant currently holding the floor may also *send* microphone
+        audio, and every such message is re-validated against the live floor
+        state before it reaches a provider.  Authentication alone, socket
+        possession, being the moderator, or holding a LiveKit viewer token are
+        each insufficient (spec §2).
+
+        Client → Server:
+            - ``{"type": "attach", "lease_id": "..."}`` — required first message
+            - ``{"type": "ping"}`` — control heartbeat, every 5 s
+            - ``{"type": "start_session"}`` — attach to the *existing* broadcast
+              voice session; never creates a bot
+            - ``{"type": "start_recording", "floor_epoch": N}``
+            - ``{"type": "audio_data"|"audio_chunk", "data": "<b64>", "floor_epoch": N}``
+            - ``{"type": "stop_recording", "floor_epoch": N}``
+            - ``{"type": "finish_speaking"}`` — hand the floor back
+            - ``{"type": "end_session"}`` — release only this speaking binding
+
+        Server → Client:
+            - ``{"type": "attached", "lease_id": ..., "role": ...}``
+            - ``{"type": "broadcast_state", "state": {...}}``
+            - ``{"type": "floor_state", "granted": bool, "floor_epoch": N}``
+            - ``{"type": "floor_revoked", "floor_epoch": N}``
+            - ``{"type": "error", "code": "...", "message": "..."}``
+            - plus the shared voice frames fanned out by the relay
+
+        Args:
+            request: The aiohttp request.
+
+        Returns:
+            The prepared WebSocket response.
+        """
+        service = self.broadcast_service
+        if service is None:  # pragma: no cover — route is not mounted then
+            raise web.HTTPNotFound()
+
+        agent_id = request.match_info.get("agent_id", "")
+        broadcast_id = request.match_info.get("broadcast_id", "")
+
+        # Subprotocol authentication ONLY.  The legacy /ws/voice route also
+        # accepts `?token=`, but a query string is written to access logs,
+        # proxy logs and browser history, and spec §2 is explicit: "Keep
+        # credentials out of URL query strings".  Accepting it here purely for
+        # parity would have handed every broadcast participant an easy way to
+        # leak their own credential, so this route does not offer it.
+        selected_protocol, user = await self._authenticate_from_protocol(request)
+
+        ws = web.WebSocketResponse(
+            heartbeat=30.0,
+            max_msg_size=10 * 1024 * 1024,
+            protocols=[selected_protocol] if selected_protocol else None,
+        )
+        await ws.prepare(request)
+
+        if self.require_auth and user is None:
+            await ws.close(code=WS_CLOSE_UNAUTHENTICATED, message=b"authentication required")
+            return ws
+
+        socket_id = str(uuid.uuid4())
+        connection = WebSocketConnection(
+            ws=ws,
+            session_id=socket_id,
+            authenticated=user is not None,
+            user=user,
+        )
+        self.connections[socket_id] = connection
+
+        state = _BroadcastSocketState(
+            socket_id=socket_id,
+            agent_id=agent_id,
+            broadcast_id=broadcast_id,
+            ws=ws,
+            connection=connection,
+        )
+        try:
+            state.principal = await service.resolve_principal(user, agent_id)
+        except Exception as exc:  # noqa: BLE001 — no scope, no socket
+            self.logger.warning("broadcast socket %s: principal resolution failed: %s", socket_id, exc)
+            await ws.close(code=WS_CLOSE_FORBIDDEN, message=b"not authorized")
+            self.connections.pop(socket_id, None)
+            return ws
+
+        try:
+            await self._run_broadcast_socket(service, state)
+        except asyncio.CancelledError:
+            self.logger.info("broadcast socket %s cancelled", socket_id)
+        finally:
+            await self._teardown_broadcast_socket(service, state)
+            self.connections.pop(socket_id, None)
+        return ws
+
+    async def _run_broadcast_socket(self, service: Any, state: "_BroadcastSocketState") -> None:
+        """Attach the socket to a lease, then serve its message loop."""
+        if not await self._attach_broadcast_socket(service, state):
+            return
+
+        async for msg in state.ws:
+            if msg.type != WSMsgType.TEXT:
+                if msg.type == WSMsgType.ERROR:
+                    self.logger.error(
+                        "broadcast socket %s error: %s",
+                        state.socket_id,
+                        state.ws.exception(),
+                    )
+                # Raw binary audio is deliberately NOT accepted here: it cannot
+                # carry a floor_epoch, so it could not be fenced.
+                continue
+            try:
+                message = json.loads(msg.data)
+            except json.JSONDecodeError:
+                await self._send_broadcast_error(state.ws, "invalid_json", "Invalid JSON")
+                continue
+            if not state.allow_message():
+                await self._send_broadcast_error(state.ws, "rate_limited", "too many messages")
+                continue
+            try:
+                await self._handle_broadcast_message(service, state, message)
+            except Exception as exc:  # noqa: BLE001 — one bad message, not the socket
+                await self._report_broadcast_error(state, exc)
+
+    async def _attach_broadcast_socket(self, service: Any, state: "_BroadcastSocketState") -> bool:
+        """Consume the mandatory ``attach`` message and verify lease ownership.
+
+        Returns:
+            ``True`` when the socket is attached and may proceed.
+        """
+        try:
+            msg = await asyncio.wait_for(state.ws.receive(), timeout=BROADCAST_ATTACH_TIMEOUT_S)
+        except asyncio.TimeoutError:
+            await state.ws.close(code=WS_CLOSE_FORBIDDEN, message=b"attach timeout")
+            return False
+        if msg.type != WSMsgType.TEXT:
+            await state.ws.close(code=WS_CLOSE_FORBIDDEN, message=b"attach required")
+            return False
+        try:
+            payload = json.loads(msg.data)
+        except json.JSONDecodeError:
+            await state.ws.close(code=WS_CLOSE_FORBIDDEN, message=b"attach required")
+            return False
+        if payload.get("type") != "attach" or not payload.get("lease_id"):
+            await state.ws.close(code=WS_CLOSE_FORBIDDEN, message=b"attach required")
+            return False
+
+        lease_id = str(payload["lease_id"])
+        tenant_id = state.principal.tenant_id
+        lease = await service.get_lease(tenant_id, state.broadcast_id, lease_id)
+        # A lease id is not a bearer token: it must belong to the authenticated
+        # principal. Otherwise anyone who saw a lease id in a log could attach
+        # as that participant.
+        if lease is None or lease.principal.user_id != state.principal.user_id:
+            self.logger.warning(
+                "broadcast socket %s: lease %s not owned by %s",
+                state.socket_id,
+                lease_id,
+                state.principal.user_id,
+            )
+            await state.ws.close(code=WS_CLOSE_FORBIDDEN, message=b"lease not owned")
+            return False
+
+        state.lease_id = lease_id
+        state.attached = True
+        await service.attach_control(tenant_id, state.broadcast_id, lease_id, state.push)
+        await service.heartbeat(tenant_id, state.broadcast_id, lease_id)
+
+        descriptor = await service.get_descriptor(tenant_id, state.broadcast_id)
+        await self._send_message(
+            state.ws,
+            {
+                "type": "attached",
+                "lease_id": lease_id,
+                "broadcast_id": state.broadcast_id,
+                "is_moderator": bool(descriptor and descriptor.moderator_lease_id == lease_id),
+            },
+        )
+        await self._push_broadcast_state(service, state)
+        return True
+
+    async def _push_broadcast_state(self, service: Any, state: "_BroadcastSocketState") -> None:
+        """Send the public projection plus this socket's own floor permission."""
+        tenant_id = state.principal.tenant_id
+        public = await service.public_state(tenant_id, state.broadcast_id)
+        await self._send_message(state.ws, {"type": "broadcast_state", "state": public})
+        descriptor = await service.get_descriptor(tenant_id, state.broadcast_id)
+        if descriptor is None:
+            return
+        granted = descriptor.speaker_lease_id == state.lease_id and descriptor.floor_state.value == "granted"
+        # Sent explicitly so the browser gates its microphone on the SERVER's
+        # answer, never on a generic ready_to_speak frame (spec §2).
+        await self._send_message(
+            state.ws,
+            {
+                "type": "floor_state",
+                "granted": granted,
+                "floor_epoch": descriptor.floor_epoch,
+            },
+        )
+
+    async def _handle_broadcast_message(
+        self, service: Any, state: "_BroadcastSocketState", message: Dict[str, Any]
+    ) -> None:
+        """Dispatch one message from an attached broadcast socket."""
+        tenant_id = state.principal.tenant_id
+        msg_type = message.get("type", "")
+
+        if msg_type == "ping":
+            await service.heartbeat(tenant_id, state.broadcast_id, state.lease_id)
+            await self._send_message(
+                state.ws,
+                {"type": "pong", "timestamp": datetime.now().isoformat()},
+            )
+            return
+
+        if msg_type == "get_state":
+            await self._push_broadcast_state(service, state)
+            return
+
+        if msg_type == "start_session":
+            # Attaches to the EXISTING broadcast voice session. A participant
+            # socket never creates a bot or a conversation.
+            session = service.voice_session(tenant_id, state.broadcast_id)
+            await self._send_message(
+                state.ws,
+                {
+                    "type": "session_started",
+                    "broadcast_id": state.broadcast_id,
+                    "producer_local": session is not None,
+                },
+            )
+            return
+
+        if msg_type in ("start_recording", "audio_data", "audio_chunk", "stop_recording"):
+            await self._handle_broadcast_audio(service, state, msg_type, message)
+            return
+
+        if msg_type == "finish_speaking":
+            await service.release_floor(tenant_id, state.broadcast_id, state.lease_id)
+            await self._push_broadcast_state(service, state)
+            return
+
+        if msg_type == "end_session":
+            # Releases only THIS participant's speaking binding. Stopping the
+            # broadcast for everyone is the moderator's explicit HTTP stop.
+            await self._release_speaking(service, state)
+            await self._send_message(state.ws, {"type": "session_ended"})
+            return
+
+        self.logger.warning("broadcast socket %s: unknown message type %r", state.socket_id, msg_type)
+
+    async def _handle_broadcast_audio(
+        self,
+        service: Any,
+        state: "_BroadcastSocketState",
+        msg_type: str,
+        message: Dict[str, Any],
+    ) -> None:
+        """Validate floor authority, then feed the broadcast's voice session.
+
+        Every rejection is counted and dropped locally; a rejected frame is
+        never forwarded to a provider and never fanned out to other browsers.
+        """
+        from parrot.integrations.liveavatar.broadcast.errors import BroadcastError
+        from parrot.integrations.liveavatar.broadcast.floor import (
+            validate_audio_authority,
+        )
+
+        tenant_id = state.principal.tenant_id
+        floor_epoch = message.get("floor_epoch")
+        descriptor = await service.get_descriptor(tenant_id, state.broadcast_id)
+        lease = await service.get_lease(tenant_id, state.broadcast_id, state.lease_id)
+        if descriptor is None:
+            await self._send_broadcast_error(state.ws, "not_found", "broadcast is gone")
+            return
+
+        try:
+            validate_audio_authority(
+                descriptor,
+                lease,
+                floor_epoch=floor_epoch if isinstance(floor_epoch, int) else None,
+                socket_id=state.socket_id,
+            )
+        except BroadcastError as exc:
+            state.rejected_frames += 1
+            await self._send_broadcast_error(
+                state.ws,
+                exc.reason.value if exc.reason else "forbidden",
+                _public_broadcast_message(exc),
+            )
+            return
+
+        if msg_type == "start_recording":
+            try:
+                await service.bind_speaker_socket(
+                    tenant_id,
+                    state.broadcast_id,
+                    state.lease_id,
+                    state.socket_id,
+                    descriptor.floor_epoch,
+                )
+            except BroadcastError as exc:
+                state.rejected_frames += 1
+                await self._send_broadcast_error(
+                    state.ws,
+                    exc.reason.value if exc.reason else "forbidden",
+                    _public_broadcast_message(exc),
+                )
+                return
+            state.bound = True
+            # Release any previous input first. Replacing it in place leaked an
+            # aiohttp ClientSession per remote turn and, worse, let two inputs
+            # call start_turn() concurrently — two provider streams for one
+            # speaker.
+            if state.speaker_input is not None:
+                with contextlib.suppress(Exception):
+                    await state.speaker_input.aclose()
+                state.speaker_input = None
+            try:
+                state.speaker_input = await service.attach_speaker_input(
+                    tenant_id,
+                    state.broadcast_id,
+                    state.lease_id,
+                    state.principal,
+                    descriptor.floor_epoch,
+                )
+                await state.speaker_input.start_turn()
+            except BroadcastError as exc:
+                state.rejected_frames += 1
+                await self._send_broadcast_error(
+                    state.ws,
+                    exc.reason.value if exc.reason else "forbidden",
+                    _public_broadcast_message(exc),
+                )
+                return
+            await self._send_message(
+                state.ws,
+                {"type": "recording_started", "floor_epoch": descriptor.floor_epoch},
+            )
+            return
+
+        if msg_type == "stop_recording":
+            if state.speaker_input is not None:
+                await state.speaker_input.end_turn()
+            await self._send_message(state.ws, {"type": "recording_stopped"})
+            return
+
+        raw = message.get("data", "")
+        if not isinstance(raw, str) or not raw:
+            state.rejected_frames += 1
+            return
+        if len(raw) > BROADCAST_MAX_AUDIO_B64_BYTES:
+            state.rejected_frames += 1
+            await self._send_broadcast_error(state.ws, "payload_too_large", "audio payload exceeds the limit")
+            return
+        try:
+            pcm = base64.b64decode(raw)
+        except (ValueError, binascii.Error):
+            state.rejected_frames += 1
+            await self._send_broadcast_error(state.ws, "invalid_audio", "audio payload is not valid base64")
+            return
+        # Cheap, caller-independent validation happens above; only the actual
+        # hand-off to the producer needs an established recording turn.
+        if state.speaker_input is None:
+            state.rejected_frames += 1
+            await self._send_broadcast_error(state.ws, "floor_not_granted", "send start_recording first")
+            return
+        await state.speaker_input.push_audio(pcm)
+
+    async def _release_speaking(self, service: Any, state: "_BroadcastSocketState") -> None:
+        """Unbind this socket and, if it held the floor, hand it back."""
+        if not state.attached or state.lease_id is None:
+            return
+        tenant_id = state.principal.tenant_id
+        if state.speaker_input is not None:
+            with contextlib.suppress(Exception):
+                await state.speaker_input.aclose()
+            state.speaker_input = None
+        with contextlib.suppress(Exception):
+            await service.unbind_speaker_socket(tenant_id, state.broadcast_id, state.lease_id, state.socket_id)
+        state.bound = False
+        descriptor = await self._safe_descriptor(service, state)
+        if descriptor is not None and descriptor.speaker_lease_id == state.lease_id:
+            with contextlib.suppress(Exception):
+                await service.release_floor(tenant_id, state.broadcast_id, state.lease_id)
+
+    async def _safe_descriptor(self, service: Any, state: "_BroadcastSocketState") -> Any:
+        """Fetch the descriptor without letting a store blip break teardown."""
+        try:
+            return await service.get_descriptor(state.principal.tenant_id, state.broadcast_id)
+        except Exception:  # noqa: BLE001
+            return None
+
+    async def _teardown_broadcast_socket(self, service: Any, state: "_BroadcastSocketState") -> None:
+        """Release the socket's bindings and deregister it.  Never raises."""
+        if not state.attached or state.lease_id is None:
+            return
+        await self._release_speaking(service, state)
+        with contextlib.suppress(Exception):
+            await service.detach_control(state.principal.tenant_id, state.broadcast_id, state.lease_id)
+        self.logger.info(
+            "broadcast socket %s closed (lease=%s, rejected_frames=%d)",
+            state.socket_id,
+            state.lease_id,
+            state.rejected_frames,
+        )
+
+    async def _send_broadcast_error(self, ws: web.WebSocketResponse, code: str, message: str) -> None:
+        """Send a coded error frame.
+
+        Broadcast clients branch on ``code`` (``floor_not_granted``,
+        ``stale_floor_epoch``, ``speaker_connection_exists``, …); the legacy
+        ``_send_error`` sends only a human message.
+        """
+        await self._send_message(ws, {"type": "error", "code": code, "message": message})
+
+    async def _report_broadcast_error(self, state: "_BroadcastSocketState", exc: BaseException) -> None:
+        """Translate an exception into a coded error frame."""
+        reason = getattr(exc, "reason", None)
+        code = getattr(reason, "value", None) or "internal_error"
+        if code == "internal_error":
+            # The detail stays server-side: an unhandled exception's text can
+            # embed connection strings or internal hosts (aiohttp/redis errors
+            # routinely do), and the peer is only a lease holder.
+            self.logger.exception("broadcast socket %s: unhandled error", state.socket_id)
+        await self._send_broadcast_error(state.ws, code, _public_broadcast_message(exc))
 
     # =========================================================================
     # Message Handlers

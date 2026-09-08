@@ -8,6 +8,7 @@ from typing import Any, Dict, Type, Optional, Tuple, List, TYPE_CHECKING
 from importlib import import_module
 from pathlib import Path
 import contextlib
+import os
 import time
 import asyncio
 import copy
@@ -1836,9 +1837,259 @@ class BotManager:
             )
             return False
 
-        handler = VoiceChatHandler()
+        broadcast_service, nova_bot_factory = self._build_broadcast_service(app)
+        handler = VoiceChatHandler(
+            broadcast_service=broadcast_service,
+            nova_bot_factory=nova_bot_factory,
+        )
         handler.setup_routes(app, include_health=False, include_static=False)
         self.logger.info("VoiceChatHandler registered at /ws/voice (Mode D).")
+        if broadcast_service is not None:
+            self._register_voice_broadcast_routes(app, broadcast_service)
+        return True
+
+    def _build_broadcast_service(self, app: web.Application):
+        """Build the FEAT-537 broadcast service, or ``(None, None)``.
+
+        Guarded exactly like every other optional integration: a server without
+        ``PARROT_BROADCAST_REDIS_URL``, without the LiveKit/Redis extras, or
+        without LiveKit credentials still boots — broadcast mode is simply not
+        offered.  Returning ``None`` also leaves ``/ws/voice`` byte-identical to
+        its pre-FEAT-537 behaviour.
+
+        Args:
+            app: The aiohttp Application (used for startup/cleanup hooks).
+
+        Returns:
+            ``(service, nova_bot_factory)``, or ``(None, None)`` when disabled.
+        """
+        redis_url = os.environ.get("PARROT_BROADCAST_REDIS_URL")
+        if not redis_url:
+            self.logger.info(
+                "Voice broadcast (FEAT-537) disabled: set "
+                "PARROT_BROADCAST_REDIS_URL to enable moderated multi-browser "
+                "broadcasts."
+            )
+            return None, None
+
+        try:
+            from parrot.bots.voice import create_voice_bot
+            from parrot.integrations.liveavatar.broadcast.redis_registry import (
+                RedisBroadcastRegistry,
+            )
+            from parrot.integrations.liveavatar.broadcast.service import (
+                BroadcastService,
+            )
+            from parrot.integrations.liveavatar.broadcast.worker_transport import (
+                WorkerAddressRegistry,
+            )
+            from parrot.integrations.liveavatar.room_manager import LiveKitRoomManager
+            from parrot.models.voice import VoiceConfig, VoiceProvider
+        except ImportError as exc:
+            self.logger.warning(
+                "Voice broadcast (FEAT-537) disabled (%s); install " "'ai-parrot-integrations[broadcast]'.",
+                exc,
+            )
+            return None, None
+
+        try:
+            room_manager = LiveKitRoomManager()
+        except KeyError as exc:
+            self.logger.warning(
+                "Voice broadcast (FEAT-537) disabled: missing LiveKit env var %s.",
+                exc,
+            )
+            return None, None
+
+        def _nova_bot_factory():
+            """Build the single Nova VoiceBot one broadcast uses.
+
+            A broadcast fixes the provider for its lifetime (spec §2), so this
+            is deliberately separate from the handler's general bot factory,
+            which the UI may rebind when a user switches provider.
+            """
+            return create_voice_bot(
+                name="BroadcastAgent",
+                voice_config=VoiceConfig(
+                    provider=VoiceProvider.NOVA,
+                    model="nova-2-sonic",
+                    voice_name="matthew",
+                ),
+            )
+
+        registry = RedisBroadcastRegistry.from_url(redis_url)
+        worker_registry = WorkerAddressRegistry(getattr(registry, "_redis", None))
+        service = BroadcastService(
+            registry,
+            room_manager,
+            nova_bot_factory=_nova_bot_factory,
+            worker_registry=worker_registry,
+        )
+
+        async def _start_reconciler(_app: web.Application) -> None:
+            service.start_reconciler()
+
+        async def _close_service(_app: web.Application) -> None:
+            await service.aclose()
+            await registry.aclose()
+
+        app.on_startup.append(_start_reconciler)
+        app.on_cleanup.append(_close_service)
+        self._register_worker_relay(app, service, worker_registry)
+        app["voice_broadcast_service"] = service
+        self.logger.info("Voice broadcast (FEAT-537) enabled on worker %s.", service.worker_id)
+        return service, _nova_bot_factory
+
+    def _register_worker_relay(self, app: web.Application, service, worker_registry) -> bool:
+        """Serve this worker's cross-worker speaker relay on an internal port.
+
+        Without this, a speaker admitted on a worker that does not own the
+        producer cannot be heard at all: ``attach_speaker_input`` resolves the
+        owner's address, finds nothing registered, and fails closed with
+        ``owner_lost``. The relay module exists precisely for that hop.
+
+        The relay is **not** mounted on the public application — it accepts
+        audio that the agent is about to speak to the whole audience, so it
+        gets its own listener on an operator-chosen internal interface. It is
+        therefore opt-in: set ``PARROT_BROADCAST_WORKER_URL`` to the address
+        peers should dial (``ws://`` or ``wss://``), optionally
+        ``PARROT_BROADCAST_WORKER_BIND`` as ``host:port`` when the bind
+        address differs from the advertised one, and
+        ``PARROT_BROADCAST_WORKER_TOKEN`` to the shared service token.
+
+        Single-worker deployments need none of this: the speaker and the
+        producer are the same process and the local path is used.
+
+        Args:
+            app: The public aiohttp Application (used only for lifecycle hooks).
+            service: The built ``BroadcastService``.
+            worker_registry: Registry this worker advertises itself in.
+
+        Returns:
+            ``True`` when the relay will be started.
+        """
+        from parrot.integrations.liveavatar.broadcast.worker_transport import (
+            WorkerAddressRegistry,
+            WorkerRelayServer,
+            resolve_worker_token,
+        )
+
+        advertised = os.environ.get("PARROT_BROADCAST_WORKER_URL")
+        if not advertised:
+            self.logger.info(
+                "Voice broadcast cross-worker relay disabled: set "
+                "PARROT_BROADCAST_WORKER_URL to enable multi-worker "
+                "deployments (single-worker setups do not need it)."
+            )
+            return False
+        if not resolve_worker_token(None):
+            self.logger.warning(
+                "Voice broadcast cross-worker relay disabled: "
+                "PARROT_BROADCAST_WORKER_URL is set but "
+                "PARROT_BROADCAST_WORKER_TOKEN is not. Refusing to serve an "
+                "unauthenticated relay."
+            )
+            return False
+
+        try:
+            url = WorkerAddressRegistry.validate_url(advertised)
+        except Exception as exc:  # noqa: BLE001 — bad config, not a crash
+            self.logger.warning("Voice broadcast relay disabled: %s", exc)
+            return False
+
+        host, port = self._relay_bind_target(url)
+        state: dict = {}
+
+        async def _start_relay(_app: web.Application) -> None:
+            relay_app = web.Application()
+            WorkerRelayServer(service).setup_routes(relay_app)
+            runner = web.AppRunner(relay_app)
+            await runner.setup()
+            site = web.TCPSite(runner, host, port)
+            await site.start()
+            state["runner"] = runner
+            await worker_registry.register(service.worker_id, url)
+            state["task"] = asyncio.create_task(_refresh())
+            self.logger.info(
+                "Voice broadcast worker relay listening on %s:%s, advertised as %s",
+                host,
+                port,
+                url,
+            )
+
+        async def _refresh() -> None:
+            """Keep the registration alive; it is deliberately TTL'd."""
+            while True:
+                await asyncio.sleep(10)
+                try:
+                    await worker_registry.register(service.worker_id, url)
+                except asyncio.CancelledError:
+                    raise
+                except Exception:  # noqa: BLE001 — a refresh loop must not die
+                    self.logger.warning("Voice broadcast relay re-registration failed", exc_info=True)
+
+        async def _stop_relay(_app: web.Application) -> None:
+            task = state.pop("task", None)
+            if task is not None:
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
+            with contextlib.suppress(Exception):
+                await worker_registry.unregister(service.worker_id)
+            runner = state.pop("runner", None)
+            if runner is not None:
+                await runner.cleanup()
+
+        app.on_startup.append(_start_relay)
+        app.on_cleanup.append(_stop_relay)
+        return True
+
+    @staticmethod
+    def _relay_bind_target(url: str) -> tuple:
+        """Resolve the ``(host, port)`` the relay listener binds to.
+
+        Defaults to the advertised URL's own host and port, which is right
+        when the worker is reachable at the address it advertises. Deployments
+        behind a proxy or on a different interface override it with
+        ``PARROT_BROADCAST_WORKER_BIND``.
+
+        Args:
+            url: The validated advertised URL.
+
+        Returns:
+            ``(host, port)``.
+        """
+        from urllib.parse import urlparse
+
+        override = os.environ.get("PARROT_BROADCAST_WORKER_BIND")
+        if override:
+            host, _, raw_port = override.rpartition(":")
+            return (host or "0.0.0.0", int(raw_port))
+        parsed = urlparse(url)
+        default_port = 443 if parsed.scheme == "wss" else 80
+        return (parsed.hostname or "0.0.0.0", parsed.port or default_port)
+
+    def _register_voice_broadcast_routes(self, app: web.Application, service) -> bool:
+        """Mount the broadcast HTTP API under the optional-integration guard.
+
+        Args:
+            app: The aiohttp Application.
+            service: The built ``BroadcastService``.
+
+        Returns:
+            ``True`` if the routes were registered.
+        """
+        try:
+            from parrot.handlers.voice_broadcast import (
+                register_voice_broadcast_routes,
+            )
+        except ImportError as exc:
+            self.logger.warning("Voice broadcast HTTP routes disabled (%s).", exc)
+            return False
+        register_voice_broadcast_routes(app, service)
+        self.logger.info(
+            "Voice broadcast routes registered at " "/api/v1/agents/{agent_id}/voice-broadcasts (FEAT-537)."
+        )
         return True
 
     def _register_avatar_routes(self, router) -> bool:

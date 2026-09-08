@@ -916,6 +916,42 @@
         <!-- Input Area -->
         <footer class="input-area">
             <div class="usage-strip" id="usageStrip"></div>
+
+            <!-- FEAT-537 — moderated broadcast panel. Roles, the hand queue and
+                 microphone permission are rendered from SERVER state only; no
+                 control here grants anything by itself. -->
+            <section class="broadcast-panel" id="broadcastPanel"
+                     style="padding:8px 12px;border-top:1px solid rgba(255,255,255,.08);font-size:13px;">
+                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                    <strong>Broadcast</strong>
+                    <span id="broadcastStateBadge"></span>
+                    <span id="broadcastRoleBadge"></span>
+                    <span id="broadcastUnavailable" style="display:none;opacity:.7;"></span>
+                </div>
+                <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:6px;">
+                    <select id="broadcastParticipant" title="Demo participant (names only)">
+                        <option value="">— participant —</option>
+                    </select>
+                    <input id="broadcastTokenInput" type="password" placeholder="demo token"
+                           autocomplete="off" title="Held in memory only; never stored or shared" />
+                    <input id="broadcastJoinId" type="text" placeholder="broadcast id" />
+                    <button id="broadcastCreateBtn" type="button">Create</button>
+                    <button id="broadcastJoinBtn" type="button">Join</button>
+                    <button id="broadcastLeaveBtn" type="button" style="display:none;">Leave</button>
+                </div>
+                <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:6px;">
+                    <button id="broadcastRaiseHandBtn" type="button" style="display:none;">Raise hand</button>
+                    <button id="broadcastCancelHandBtn" type="button" style="display:none;">Cancel hand</button>
+                    <button id="broadcastRevokeBtn" type="button" style="display:none;">Revoke floor</button>
+                    <button id="broadcastReclaimBtn" type="button" style="display:none;">Reclaim floor</button>
+                    <button id="broadcastFinishBtn" type="button" style="display:none;">Finish speaking</button>
+                    <button id="broadcastStopBtn" type="button" style="display:none;">Stop broadcast</button>
+                </div>
+                <div style="margin-top:6px;">
+                    Share: <a id="broadcastShareLink" href="#" rel="noopener"></a>
+                </div>
+                <ul id="broadcastHands" style="margin:6px 0 0;padding-left:18px;"></ul>
+            </section>
             <div class="status-bar" id="statusBar">Press to speak</div>
 
             <div class="voice-controls">
@@ -1061,6 +1097,30 @@
                 this.chatContainer = document.getElementById('chatContainer');
                 this.emptyState = document.getElementById('emptyState');
                 this.recordBtn = document.getElementById('recordBtn');
+                // ── FEAT-537 broadcast panel ──────────────────────────────
+                this.broadcastPanel = document.getElementById('broadcastPanel');
+                this.broadcastStateBadge = document.getElementById('broadcastStateBadge');
+                this.broadcastRoleBadge = document.getElementById('broadcastRoleBadge');
+                this.broadcastShareLink = document.getElementById('broadcastShareLink');
+                this.broadcastHands = document.getElementById('broadcastHands');
+                this.broadcastCreateBtn = document.getElementById('broadcastCreateBtn');
+                this.broadcastJoinBtn = document.getElementById('broadcastJoinBtn');
+                this.broadcastJoinId = document.getElementById('broadcastJoinId');
+                this.broadcastTokenInput = document.getElementById('broadcastTokenInput');
+                this.broadcastParticipantSelect = document.getElementById('broadcastParticipant');
+                this.broadcastRaiseHandBtn = document.getElementById('broadcastRaiseHandBtn');
+                this.broadcastCancelHandBtn = document.getElementById('broadcastCancelHandBtn');
+                this.broadcastRevokeBtn = document.getElementById('broadcastRevokeBtn');
+                this.broadcastReclaimBtn = document.getElementById('broadcastReclaimBtn');
+                this.broadcastFinishBtn = document.getElementById('broadcastFinishBtn');
+                this.broadcastStopBtn = document.getElementById('broadcastStopBtn');
+                this.broadcastLeaveBtn = document.getElementById('broadcastLeaveBtn');
+                this.broadcastUnavailable = document.getElementById('broadcastUnavailable');
+                this.broadcastMode = false;
+                this.broadcastClient = null;
+                this._broadcastModule = null;
+                // In-memory ONLY: never localStorage, never a URL the user shares.
+                this.demoToken = null;
                 this.statusBar = document.getElementById('statusBar');
                 this.statusDot = document.getElementById('statusDot');
                 this.statusText = document.getElementById('statusText');
@@ -1143,12 +1203,82 @@
                 this.renderProviderButtons();
                 this.renderCapabilityPanel();
                 this.renderUsageStrip();
+                this.initBroadcastUI();
 
                 // Page teardown invalidates the avatar viewer's generation
                 // and disconnects its room (spec "Lifecycle/races").
                 window.addEventListener('beforeunload', () => {
                     this.teardownAvatarViewer();
                 });
+            }
+
+            /**
+             * Wire the broadcast panel (FEAT-537).
+             *
+             * Auto-joins when the page was opened from a share link
+             * (`?broadcast=<id>`) — that link carries only the id, so joining
+             * still requires authentication and a seat.
+             */
+            initBroadcastUI() {
+                const cfg = (window.__CONFIG__ && window.__CONFIG__.broadcast) || {};
+                if (!this.broadcastPanel) return;
+
+                if (!cfg.available) {
+                    if (this.broadcastUnavailable) {
+                        this.broadcastUnavailable.textContent =
+                            cfg.unavailableReason || 'Broadcast mode is not configured.';
+                        this.broadcastUnavailable.style.display = '';
+                    }
+                    for (const el of [this.broadcastCreateBtn, this.broadcastJoinBtn]) {
+                        if (el) el.disabled = true;
+                    }
+                    return;
+                }
+
+                if (this.broadcastParticipantSelect) {
+                    for (const name of cfg.demoParticipants || []) {
+                        const option = document.createElement('option');
+                        option.value = name;
+                        option.textContent = name;
+                        this.broadcastParticipantSelect.appendChild(option);
+                    }
+                }
+                // Token sources, in order: URL fragment (consumed and stripped),
+                // then whatever the operator types. Never persisted.
+                this.demoToken = this.consumeDemoTokenFromFragment();
+                if (this.demoToken && this.broadcastTokenInput) {
+                    this.broadcastTokenInput.value = this.demoToken;
+                }
+                if (this.broadcastTokenInput) {
+                    this.broadcastTokenInput.addEventListener('input', () => {
+                        this.demoToken = this.broadcastTokenInput.value.trim() || null;
+                    });
+                }
+
+                const on = (el, fn) => { if (el) el.addEventListener('click', fn); };
+                on(this.broadcastCreateBtn, () => this.enterBroadcast({}));
+                on(this.broadcastJoinBtn, () =>
+                    this.enterBroadcast({ broadcastId: (this.broadcastJoinId?.value || '').trim() || null }));
+                on(this.broadcastRaiseHandBtn, () =>
+                    this.broadcastAction(() => this.broadcastClient.raiseHand()));
+                on(this.broadcastCancelHandBtn, () =>
+                    this.broadcastAction(() => this.broadcastClient.cancelHand()));
+                on(this.broadcastRevokeBtn, () =>
+                    this.broadcastAction(() => this.broadcastClient.setFloor(null)));
+                on(this.broadcastReclaimBtn, () =>
+                    this.broadcastAction(() => this.broadcastClient.setFloor(this.broadcastClient.leaseId)));
+                on(this.broadcastFinishBtn, () =>
+                    this.broadcastAction(() => this.broadcastClient.finishSpeaking()));
+                on(this.broadcastStopBtn, () =>
+                    this.broadcastAction(() => this.broadcastClient.stop()));
+                on(this.broadcastLeaveBtn, () => this.leaveBroadcast());
+
+                const shared = new URLSearchParams(window.location.search).get('broadcast');
+                if (shared) {
+                    if (this.broadcastJoinId) this.broadcastJoinId.value = shared;
+                    if (this.demoToken) this.enterBroadcast({ broadcastId: shared });
+                    else this.updateStatusBar('Pick a demo participant token, then Join.');
+                }
             }
 
             createVisualizerBars() {
@@ -1405,8 +1535,11 @@
 
                     case 'ready_to_speak':
                         this.canSpeak = true;
-                        this.recordBtn.disabled = false;
-                        this.recordBtn.classList.remove('disabled');
+                        // FEAT-537: a generic transport frame must NEVER be able to
+                        // enable an ungranted microphone. `ready_to_speak` means the
+                        // provider finished a turn, not that this participant holds
+                        // the floor (spec §2).
+                        this.updateTalkAvailability();
                         this.updateStatusBar('Click to speak.');
                         this.setInterruptEnabled(false);
                         break;
@@ -1415,8 +1548,7 @@
                         console.error('Server error:', message.message);
                         this.updateStatusBar(`Error: ${message.message}`);
                         this.canSpeak = true;
-                        this.recordBtn.disabled = false;
-                        this.recordBtn.classList.remove('disabled');
+                        this.updateTalkAvailability();
                         this.setInterruptEnabled(false);
                         break;
 
@@ -1475,6 +1607,13 @@
             async startRecording() {
                 if (this.isRecording) return;
                 if (!this.canSpeak) return;
+                // FEAT-537: the microphone is opened ONLY after a server grant and
+                // this user gesture. Checked before getUserMedia so an ungranted
+                // participant never even sees a permission prompt (AC8).
+                if (this.broadcastMode && !this.broadcastClient?.permissions.canTalk) {
+                    this.updateStatusBar('You do not have the floor yet.');
+                    return;
+                }
 
                 if (!this.isConnected) {
                     await this.connect();
@@ -1515,9 +1654,14 @@
 
             async setupAudioProcessing() {
                 const source = this.audioContext.createMediaStreamSource(this.mediaStream);
+                // FEAT-537: the ACTUAL context rate, logged — getUserMedia's
+                // `sampleRate` is a hint browsers routinely ignore, and
+                // relabelling 48 kHz samples as 16 kHz is exactly the bug the
+                // spec calls out ("never merely relabel 48 kHz samples").
                 const nativeSampleRate = this.audioContext.sampleRate;
-                const targetSampleRate = 16000;
-                const resampleRatio = nativeSampleRate / targetSampleRate;
+                console.info('[voice] capture sample rate:', nativeSampleRate, '-> 16000');
+                const bc = await this.loadBroadcastModule();
+                const resampleState = bc.createResamplerState();
 
                 this.analyser = this.audioContext.createAnalyser();
                 this.analyser.fftSize = 64;
@@ -1530,28 +1674,13 @@
                     if (!this.isRecording) return;
 
                     const inputData = e.inputBuffer.getChannelData(0);
-
-                    let outputData;
-                    if (Math.abs(resampleRatio - 1) < 0.01) {
-                        outputData = inputData;
-                    } else {
-                        const outputLength = Math.floor(inputData.length / resampleRatio);
-                        outputData = new Float32Array(outputLength);
-                        for (let i = 0; i < outputLength; i++) {
-                            const srcIndex = i * resampleRatio;
-                            const srcIndexFloor = Math.floor(srcIndex);
-                            const srcIndexCeil = Math.min(srcIndexFloor + 1, inputData.length - 1);
-                            const t = srcIndex - srcIndexFloor;
-                            outputData[i] = inputData[srcIndexFloor] * (1 - t) + inputData[srcIndexCeil] * t;
-                        }
-                    }
-
-                    const pcmData = new Int16Array(outputData.length);
-                    for (let i = 0; i < outputData.length; i++) {
-                        pcmData[i] = Math.max(-32768, Math.min(32767, Math.round(outputData[i] * 32768)));
-                    }
-
-                    this.sendAudioChunk(pcmData.buffer);
+                    // STATEFUL: the phase and the previous buffer's last sample
+                    // carry across callbacks. The old per-buffer resampler
+                    // restarted the read phase at 0 every 4096 frames, dropping
+                    // a fraction of a sample each time — an audible click roughly
+                    // every 85 ms plus a slow drift against real time.
+                    const outputData = bc.resampleTo16k(resampleState, inputData, nativeSampleRate);
+                    this.sendAudioChunk(bc.floatToPcm16(outputData));
                 };
 
                 source.connect(processor);
@@ -1561,11 +1690,16 @@
             sendAudioChunk(buffer) {
                 if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
 
+                // FEAT-537: refuse to emit audio the server would reject anyway —
+                // a revoke that lands mid-buffer must stop capture here, not just
+                // be dropped server-side.
+                if (this.broadcastMode && !this.broadcastClient?.permissions.canTalk) return;
+
                 const base64 = this.arrayBufferToBase64(buffer);
-                this.ws.send(JSON.stringify({
+                this.ws.send(JSON.stringify(this.withFloorEpoch({
                     type: 'audio_chunk',
                     data: base64
-                }));
+                })));
             }
 
             stopRecordingUI() {
@@ -1608,7 +1742,7 @@
                 }
 
                 if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-                    this.ws.send(JSON.stringify({ type: 'stop_recording' }));
+                    this.ws.send(JSON.stringify(this.withFloorEpoch({ type: 'stop_recording' })));
                 }
 
                 this.canSpeak = false;
@@ -1636,17 +1770,240 @@
                 this.stopLocalPlayback();
 
                 if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-                    this.ws.send(JSON.stringify({ type: 'start_recording' }));
+                    this.ws.send(JSON.stringify(this.withFloorEpoch({ type: 'start_recording' })));
                 }
 
                 // Bypass the "await response" gate — an explicit interrupt
-                // may fire even while a response is still in flight.
+                // may fire even while a response is still in flight. It does
+                // NOT bypass the floor gate: in broadcast mode a participant
+                // without a grant stays unable to talk.
                 this.canSpeak = true;
-                this.recordBtn.disabled = false;
-                this.recordBtn.classList.remove('disabled');
+                this.updateTalkAvailability();
                 this.setInterruptEnabled(false);
 
                 await this.startRecording();
+            }
+
+            // =====================================
+            // FEAT-537 — Broadcast mode
+            //
+            // Roles, the speaking floor and microphone permission come from
+            // the SERVER only. Nothing below infers a role from the URL, a
+            // selector or a transport frame.
+            // =====================================
+
+            /** Lazily import the broadcast module (shared with the resampler). */
+            async loadBroadcastModule() {
+                if (!this._broadcastModule) {
+                    this._broadcastModule = await import('/static/broadcast-ui.js');
+                    // Exposed for tests; carries no state and no credentials.
+                    window.__voiceDemo = Object.assign(window.__voiceDemo || {}, {
+                        resampleTo16k: this._broadcastModule.resampleTo16k,
+                        createResamplerState: this._broadcastModule.createResamplerState,
+                        floatToPcm16: this._broadcastModule.floatToPcm16,
+                        derivePermissions: this._broadcastModule.derivePermissions,
+                    });
+                }
+                return this._broadcastModule;
+            }
+
+            /** Stamp the current floor epoch onto an outgoing wire message. */
+            withFloorEpoch(message) {
+                if (!this.broadcastMode || !this.broadcastClient) return message;
+                return { ...message, floor_epoch: this.broadcastClient.permissions.floorEpoch };
+            }
+
+            /**
+             * The single place Talk availability is decided.
+             *
+             * Every former `recordBtn.disabled = false` site now calls this, so a
+             * generic `ready_to_speak`/`error` frame can no longer re-enable an
+             * ungranted microphone (spec §2, AC8).
+             */
+            updateTalkAvailability() {
+                const allowed = this.broadcastMode
+                    ? Boolean(this.canSpeak && this.broadcastClient?.permissions.canTalk)
+                    : Boolean(this.canSpeak);
+                this.recordBtn.disabled = !allowed;
+                this.recordBtn.classList.toggle('disabled', !allowed);
+                if (this.broadcastMode && !allowed && this.isRecording) {
+                    // A revoke landed while we were capturing: stop immediately and
+                    // send nothing further.
+                    this.stopRecording();
+                }
+            }
+
+            /** Read the demo bearer token from the URL fragment, then forget it. */
+            consumeDemoTokenFromFragment() {
+                if (!window.location.hash) return null;
+                const params = new URLSearchParams(window.location.hash.slice(1));
+                const token = params.get('demo_token');
+                if (!token) return null;
+                // Held in memory only — never localStorage, never the share link,
+                // and stripped from the address bar immediately.
+                params.delete('demo_token');
+                const rest = params.toString();
+                history.replaceState(null, '', window.location.pathname + window.location.search + (rest ? `#${rest}` : ''));
+                return token;
+            }
+
+            /** Enter broadcast mode, creating or joining as requested. */
+            async enterBroadcast({ broadcastId = null } = {}) {
+                const cfg = (window.__CONFIG__ && window.__CONFIG__.broadcast) || {};
+                if (!cfg.available) {
+                    this.updateStatusBar(cfg.unavailableReason || 'Broadcast mode unavailable');
+                    return;
+                }
+                const bc = await this.loadBroadcastModule();
+                this.broadcastMode = true;
+                this.broadcastClient = new bc.BroadcastClient({
+                    config: cfg,
+                    getToken: () => this.demoToken,
+                    onState: (state) => this.renderBroadcastState(state),
+                    onPermissions: () => this.updateTalkAvailability(),
+                    onFrame: (frame) => this.handleBroadcastFrame(frame),
+                    onStale: (stale) => {
+                        if (stale) this.updateStatusBar('Lost contact with the server — microphone disabled.');
+                        this.updateTalkAvailability();
+                    },
+                    onError: (err) => this.updateStatusBar(`Broadcast error: ${err.message}`),
+                });
+
+                try {
+                    const id = broadcastId || await this.broadcastClient.create();
+                    const { connection } = await this.broadcastClient.join(id);
+                    await this.broadcastClient.openControlSocket();
+                    await this.joinBroadcastRoom(connection);
+                    this.renderBroadcastState(this.broadcastClient.state);
+                } catch (err) {
+                    this.handleBroadcastApiError(err);
+                }
+            }
+
+            /** Attach the viewer to the broadcast's room in broadcast policy mode. */
+            async joinBroadcastRoom(connection) {
+                await this.ensureAvatarController({ mode: 'broadcast' });
+                if (!this.avatarController) return;
+                await this.avatarController.joinBroadcast(
+                    {
+                        livekit_url: connection.livekit_url,
+                        client_token: connection.client_token,
+                        room: connection.room,
+                    },
+                    connection.public_state,
+                );
+            }
+
+            /** Handle a control frame the client did not consume itself. */
+            handleBroadcastFrame(frame) {
+                if (frame.type === 'floor_revoked') {
+                    // Stop capture on the spot; the server has already stopped
+                    // accepting our audio.
+                    if (this.isRecording) this.stopRecording();
+                    this.updateStatusBar('The moderator took the floor.');
+                    this.updateTalkAvailability();
+                } else if (frame.type === 'floor_state') {
+                    this.updateTalkAvailability();
+                } else if (frame.type === 'error') {
+                    this.updateStatusBar(`Broadcast: ${frame.code || frame.message}`);
+                }
+            }
+
+            /** Turn an API failure into something the operator can act on. */
+            handleBroadcastApiError(err) {
+                const byCode = {
+                    viewer_limit_reached: 'This broadcast is full (10 participants).',
+                    floor_not_granted: 'You do not have the floor.',
+                    stale_floor_epoch: 'The floor moved — try again.',
+                    stale_version: 'Someone else just changed the floor — refreshing.',
+                    speaker_connection_exists: 'Another tab of yours already holds the microphone.',
+                };
+                const status = err && err.status;
+                let text = (err && byCode[err.code]) || (err && err.message) || 'Broadcast error';
+                if (status === 401) text = 'Sign in: pick a demo participant token first.';
+                else if (status === 403) text = 'Not allowed — only the moderator can do that.';
+                else if (status === 404) text = 'That broadcast does not exist.';
+                else if (status === 410) text = 'This broadcast has ended.';
+                else if (status === 429) text = 'Slow down — too many requests.';
+                this.updateStatusBar(text);
+                if (err && err.state) this.renderBroadcastState(err.state);
+            }
+
+            /** Render roles, the hand queue and the state badge. Server data only. */
+            renderBroadcastState(state) {
+                if (!state || !this.broadcastPanel) return;
+                const client = this.broadcastClient;
+                const perms = client ? client.permissions : { isModerator: false, isSpeaker: false, handRaised: false };
+                if (this.avatarController && this.avatarController.applyBroadcastState) {
+                    this.avatarController.applyBroadcastState(state);
+                    this.avatarController.markStateFresh();
+                }
+
+                if (this.broadcastStateBadge) {
+                    this.broadcastStateBadge.textContent =
+                        `${state.state} · ${state.viewer_count}/${state.max_viewers}` +
+                        (state.reason ? ` · ${state.reason}` : '');
+                }
+                if (this.broadcastRoleBadge) {
+                    this.broadcastRoleBadge.textContent = perms.isModerator
+                        ? 'Moderator'
+                        : (perms.isSpeaker ? 'Speaker' : 'Viewer');
+                }
+                if (this.broadcastShareLink && client) {
+                    const link = client.shareLink();
+                    this.broadcastShareLink.textContent = link || '';
+                    this.broadcastShareLink.href = link || '#';
+                }
+                if (this.broadcastHands) {
+                    this.broadcastHands.innerHTML = '';
+                    for (const hand of state.hand_requests || []) {
+                        const row = document.createElement('li');
+                        row.textContent = `${hand.display_name} (#${hand.sequence})`;
+                        if (perms.isModerator) {
+                            const grant = document.createElement('button');
+                            grant.textContent = 'Grant';
+                            grant.onclick = () => this.broadcastAction(() => client.setFloor(hand.lease_id));
+                            const dismiss = document.createElement('button');
+                            dismiss.textContent = 'Dismiss';
+                            dismiss.onclick = () => this.broadcastAction(() => client.dismissHand(hand.lease_id));
+                            row.append(' ', grant, ' ', dismiss);
+                        }
+                        this.broadcastHands.appendChild(row);
+                    }
+                }
+                this.toggleBroadcastControls(perms, state);
+            }
+
+            /** Show only the controls this participant's server role allows. */
+            toggleBroadcastControls(perms, state) {
+                const show = (el, visible) => { if (el) el.style.display = visible ? '' : 'none'; };
+                show(this.broadcastRaiseHandBtn, !perms.isSpeaker && !perms.handRaised);
+                show(this.broadcastCancelHandBtn, !perms.isSpeaker && perms.handRaised);
+                show(this.broadcastRevokeBtn, perms.isModerator && !!state.speaker_display_id && !perms.isSpeaker);
+                show(this.broadcastReclaimBtn, perms.isModerator && !perms.isSpeaker);
+                show(this.broadcastStopBtn, perms.isModerator);
+                show(this.broadcastFinishBtn, perms.isSpeaker);
+                show(this.broadcastLeaveBtn, true);
+            }
+
+            /** Run one broadcast action, surfacing failures in the status bar. */
+            async broadcastAction(fn) {
+                try {
+                    await fn();
+                } catch (err) {
+                    this.handleBroadcastApiError(err);
+                }
+            }
+
+            /** Leave the broadcast; it keeps running for everyone else. */
+            async leaveBroadcast() {
+                if (!this.broadcastClient) return;
+                await this.broadcastAction(() => this.broadcastClient.leave());
+                if (this.avatarController) await this.avatarController.teardown();
+                this.broadcastMode = false;
+                this.broadcastClient = null;
+                this.updateTalkAvailability();
+                this.updateStatusBar('Left the broadcast.');
             }
 
             stopLocalPlayback() {
@@ -2053,19 +2410,25 @@
                 }
             }
 
-            async ensureAvatarController() {
+            async ensureAvatarController({ mode = 'single' } = {}) {
                 if (this.avatarController) return this.avatarController;
                 const sdk = await this.loadAvatarSdk();
                 if (!sdk) return null;
                 const { AvatarViewerController } = await import('/static/avatar-viewer.js');
                 this.avatarController = new AvatarViewerController({
                     sdk,
+                    // FEAT-537: broadcast policy disables the WebSocket-PCM
+                    // fallback and the session-restart reconnect; `single`
+                    // keeps the FEAT-536 behaviour exactly.
+                    mode,
                     videoEl: this.avatarVideo,
                     audioEl: this.avatarAudio,
                     onStatusChange: (status) => this.setAvatarStatus(status),
                     onAudioSourceChange: (source) => this.setAvatarAudioSource(source),
                     onStopLocalPlayback: () => this.stopLocalPlayback(),
                     onAudioPlaybackBlocked: () => this.showAvatarEnableAudioButton(),
+                    onStale: (stale) => { if (stale) this.updateTalkAvailability(); },
+                    onDisconnected: () => this.updateStatusBar('Broadcast media disconnected — rejoin to continue.'),
                     onError: (err) => console.error('AvatarViewerController error:', err),
                 });
                 if (this.avatarUserMuted) this.avatarController.setMuted(true);
@@ -2251,6 +2614,9 @@
 
         // Initialize client
         const voiceChat = new VoiceChatClient();
+        // FEAT-537: a stable handle for the browser test harness. Carries no
+        // credential — the demo token lives only on the instance, in memory.
+        window.voiceChatClient = voiceChat;
 
         // Auto-connect on load
         window.addEventListener('load', () => {
