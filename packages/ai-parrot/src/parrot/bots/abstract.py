@@ -46,7 +46,7 @@ from ..memory import (
     HistoryMessage,
     render_history,
 )
-from ..memory.compaction.models import ContextBudget, CompactionCommit, CompactionResult, FALLBACK_WINDOW
+from ..memory.compaction.models import ContextBudget, CompactionCommit, CompactionResult, FALLBACK_WINDOW, ToolInvocation
 from ..memory.compaction.budget import build_default_budget, compaction_disabled_by_env, resolve_window
 from ..memory.compaction.compact import compact_history
 from ..memory.compaction.tokens import get_default_counter
@@ -1887,6 +1887,173 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
         if getattr(self, "_chatbot_id_explicit", False) and self.chatbot_id:
             return str(self.chatbot_id)
         return str(self.name)
+
+    # ── FEAT-538: per-turn task-memory context ───────────────────────
+    #
+    # Opt-in and inert by default. `task_memory` stays None unless an
+    # enabled lifecycle path (BasicAgent.configure) wires it, and every
+    # helper below returns immediately in that case — so a deployment
+    # without task memory does no extra work, imports nothing extra, and
+    # produces byte-identical history (AC13).
+
+    #: The shared task-memory composition root, when enabled.
+    task_memory: Optional[Any] = None
+
+    def _task_scope(self, user_id: str, session_id: str) -> Optional[Any]:
+        """Build the trusted scope for a turn.
+
+        The scope is derived from the bot's own stable identity and the
+        runtime ids — never from anything a model supplied. `memory_key_id`
+        is deliberately the same value that keys conversation history, so
+        a task and the conversation it belongs to cannot drift apart.
+
+        Args:
+            user_id: Resolved user id for this turn.
+            session_id: Resolved session id for this turn.
+
+        Returns:
+            The scope, or ``None`` when task memory is disabled.
+        """
+        if self.task_memory is None:
+            return None
+        from parrot.tools.working_memory.task_memory.models import TaskScope
+
+        return TaskScope(
+            chatbot_id=self.memory_key_id,
+            user_id=str(user_id),
+            session_id=str(session_id),
+        )
+
+    def _enter_task_turn(
+        self, user_id: str, session_id: str, *, turn_id: Optional[str] = None
+    ) -> Optional[Tuple[Any, Any, Any]]:
+        """Bind a turn session and install the invocation observer.
+
+        Returns an opaque token rather than acting as a context manager on
+        purpose: the four entry points already own a top-level
+        ``try/finally``, and hooking those is a two-line change per method
+        instead of re-indenting several hundred lines of working code.
+
+        Args:
+            user_id: Resolved user id for this turn.
+            session_id: Resolved session id for this turn.
+            turn_id: The turn's identity, when already minted.
+
+        Returns:
+            A token to hand to :meth:`_exit_task_turn`, or ``None`` when
+            task memory is disabled.
+        """
+        scope = self._task_scope(user_id, session_id)
+        if scope is None:
+            return None
+        try:
+            from parrot.tools.working_memory.task_memory.context import TASK_CONTEXT, TurnTaskSession
+            from parrot.tools.working_memory.task_memory.observer import InvocationObserver
+
+            session = TurnTaskSession(
+                scope,
+                turn_id=turn_id,
+                task_id=self.task_memory.task_id,
+            )
+            ctx_token = TASK_CONTEXT.set(session)
+            observer = InvocationObserver(session, append=self._task_append_events())
+            manager = getattr(self, "tool_manager", None)
+            previous = None
+            if manager is not None and hasattr(manager, "set_invocation_observer"):
+                previous = manager.invocation_observer
+                manager.set_invocation_observer(observer)
+            return (ctx_token, manager, previous)
+        except Exception:  # noqa: BLE001 - task memory must never break a turn
+            self.logger.warning("task-memory turn context could not be established", exc_info=True)
+            return None
+
+    def _task_append_events(self) -> Optional[Any]:
+        """Return the journal append callable, when a store is wired.
+
+        Returns:
+            An ``AppendEvents`` callable, or ``None`` — in which case the
+            observer still captures every dispatch but journals nothing,
+            which is exactly the behaviour with no task selected.
+        """
+        store = getattr(self.task_memory, "store", None)
+        scope = getattr(self.task_memory, "scope", None)
+        if store is None or scope is None:
+            return None
+
+        async def _append(task_id: str, events: Any) -> Any:
+            """Append events for the bound scope.
+
+            Args:
+                task_id: The task the events belong to.
+                events: The events to append.
+
+            Returns:
+                Whatever the store returned.
+            """
+            return await store.append(scope, task_id, events)
+
+        return _append
+
+    def _exit_task_turn(self, token: Optional[Tuple[Any, Any, Any]]) -> None:
+        """Unbind the turn session and remove the observer.
+
+        Must not raise: it runs from a ``finally``, where an exception
+        would mask whatever actually failed in the turn.
+
+        Args:
+            token: The value :meth:`_enter_task_turn` returned.
+        """
+        if token is None:
+            return
+        ctx_token, manager, previous = token
+        try:
+            if manager is not None and hasattr(manager, "set_invocation_observer"):
+                manager.set_invocation_observer(previous)
+        except Exception:  # noqa: BLE001 - see docstring
+            self.logger.debug("could not restore the previous invocation observer", exc_info=True)
+        try:
+            from parrot.tools.working_memory.task_memory.context import TASK_CONTEXT
+
+            TASK_CONTEXT.reset(ctx_token)
+        except ValueError:
+            # A streaming generator can be finalized in a different
+            # Context than the one that set the token, which makes reset()
+            # refuse. Clearing outright still prevents the leak the reset
+            # exists to prevent.
+            try:
+                from parrot.tools.working_memory.task_memory.context import TASK_CONTEXT
+
+                TASK_CONTEXT.set(None)
+            except Exception:  # noqa: BLE001 - see docstring
+                self.logger.debug("could not clear the task context", exc_info=True)
+        except Exception:  # noqa: BLE001 - see docstring
+            self.logger.debug("could not reset the task context", exc_info=True)
+
+    def observed_tool_invocations(self) -> Optional[List[ToolInvocation]]:
+        """Return this turn's captured invocations, if it was observed.
+
+        The observer is the single source for
+        ``ConversationTurn.tool_invocations`` on an enabled turn: what it
+        returns *replaces* the ``AIMessage.tool_calls`` conversion instead
+        of adding to it, so no call is ever listed twice.
+
+        Returns:
+            The captured invocations in dispatch order, or ``None`` when
+            the turn was not observed — in which case the caller keeps the
+            legacy derivation.
+        """
+        if self.task_memory is None:
+            return None
+        try:
+            from parrot.tools.working_memory.task_memory.context import current_session
+
+            session = current_session()
+        except Exception:  # noqa: BLE001 - never break a save
+            return None
+        if session is None:
+            return None
+        captured = [r.invocation for r in session.records if r.invocation is not None]
+        return captured or None
 
     async def get_conversation_history(
         self, user_id: str, session_id: str, chatbot_id: Optional[str] = None

@@ -156,6 +156,51 @@ class BasicAgent(Chatbot, NotificationMixin):
         if self._llm is not None:
             self.client = self._llm
         await self._wire_tool_namespaces_into_working_memory()
+        self._adopt_task_memory_from_toolkits()
+
+    def _adopt_task_memory_from_toolkits(self) -> None:
+        """Adopt the task memory of a registered WorkingMemoryToolkit.
+
+        Task memory is configured on the toolkit (``task_memory=``), which
+        is where the stores and scope already live. Rather than have the
+        bot build a second one — two composition roots over the same
+        stores is exactly how a selection and a journal drift apart — the
+        bot simply points at the toolkit's.
+
+        Inert when no toolkit is registered or none has task memory
+        enabled: ``self.task_memory`` stays ``None`` and every turn-context
+        helper short-circuits (AC13). Mirrors the discovery pattern of
+        :meth:`_inject_answer_memory_into_toolkits`, including its lazy
+        import, so working_memory stays an optional dependency.
+        """
+        tool_manager = getattr(self, "tool_manager", None)
+        if tool_manager is None:
+            return
+        try:
+            from parrot.tools.working_memory import WorkingMemoryToolkit
+        except ImportError:
+            return
+
+        if hasattr(tool_manager, "get_tools"):
+            tools = tool_manager.get_tools()
+            tool_iter = tools.values() if isinstance(tools, dict) else tools
+        elif hasattr(tool_manager, "all_tools"):
+            tool_iter = tool_manager.all_tools()
+        else:
+            tool_iter = getattr(tool_manager, "_tools", {}).values()
+
+        for tool in tool_iter:
+            if not isinstance(tool, WorkingMemoryToolkit):
+                continue
+            task_memory = getattr(tool, "_task_memory", None)
+            if task_memory is None:
+                continue
+            self.task_memory = task_memory
+            self.logger.debug(
+                "Adopted task memory from WorkingMemoryToolkit '%s'",
+                getattr(tool, "name", tool),
+            )
+            return
 
     def _inject_answer_memory_into_toolkits(self) -> None:
         """Auto-inject self.answer_memory into any registered WorkingMemoryToolkit.
