@@ -186,8 +186,7 @@ async def test_restart_primary(pg: Tuple[str, str, Any]) -> None:
         small_before = await pod.artifacts.get_version(scope, small_ref, task_id=task_id)
         big_before = await pod.artifacts.get_version(scope, big_ref, task_id=task_id)
         assert big_before.availability is ArtifactAvailability.PERSISTED, (
-            "sanity: a payload above the snapshot cap must be persisted to a blob, "
-            f"got {big_before.availability}"
+            "sanity: a payload above the snapshot cap must be persisted to a blob, " f"got {big_before.availability}"
         )
 
         # Bind the BIG version as evidence, then overwrite the alias. The
@@ -335,9 +334,7 @@ async def test_multi_pod(pg: Tuple[str, str, Any]) -> None:
         # ── concurrent alias writes: distinct versions, one winner ────
         refs = await asyncio.gather(
             *(
-                (pod_a if i % 2 == 0 else pod_b).artifacts.put(
-                    scope, "contended", {"i": i}, task_id=task_id
-                )
+                (pod_a if i % 2 == 0 else pod_b).artifacts.put(scope, "contended", {"i": i}, task_id=task_id)
                 for i in range(8)
             )
         )
@@ -359,7 +356,9 @@ async def test_multi_pod(pg: Tuple[str, str, Any]) -> None:
         assert final.status is TaskStatus.CANCELLED
         # Exactly one terminal event, not two.
         events = await pod_a.store.list_events(scope, task_id, after_seq=0, limit=500)
-        terminal = [e for e in events.events if e.event_type.value in {"task_cancelled", "task_completed", "task_failed"}]
+        terminal = [
+            e for e in events.events if e.event_type.value in {"task_cancelled", "task_completed", "task_failed"}
+        ]
         assert len(terminal) == 1, [e.event_type.value for e in terminal]
 
         # ── scope isolation: the other scope simply cannot see it ─────

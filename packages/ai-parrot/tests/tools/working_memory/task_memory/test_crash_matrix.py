@@ -191,9 +191,9 @@ async def test_crash_boundaries(stack: _Stack) -> None:
         # the row must say the bytes are MISSING instead of claiming them.
         descriptor = await stack.artifacts.put(scope, "pre_blob", big, task_id=task_id)
         assert _blob_files(stack.root) == before_files, "bytes were written despite the crash"
-        assert descriptor.availability is not ArtifactAvailability.PERSISTED, (
-            "a version whose bytes were never written must not claim to be persisted"
-        )
+        assert (
+            descriptor.availability is not ArtifactAvailability.PERSISTED
+        ), "a version whose bytes were never written must not claim to be persisted"
         # And the truth survives a reload — this is not just an in-memory flag.
         reloaded = await stack.artifacts.get_version(scope, descriptor.ref, task_id=task_id)
         assert reloaded.availability is not ArtifactAvailability.PERSISTED
@@ -267,9 +267,7 @@ async def test_crash_boundaries(stack: _Stack) -> None:
 
     events = await stack.store.list_events(scope, task_id, after_seq=0, limit=500)
     terminal_for_call = [
-        e
-        for e in events.events
-        if e.call_id == call.call_id and e.event_type is not EventType.TOOL_STARTED
+        e for e in events.events if e.call_id == call.call_id and e.event_type is not EventType.TOOL_STARTED
     ]
     assert not terminal_for_call, "sanity: this call is deliberately unresolved"
 
@@ -277,27 +275,21 @@ async def test_crash_boundaries(stack: _Stack) -> None:
     # re-run the effect. An unresolved external call is exactly the thing
     # that must never be retried automatically.
     unresolved = await stack.store.unresolved_calls(scope, task_id)
-    assert any(u.call_id == call.call_id for u in unresolved), (
-        f"the interrupted call was not reported as unresolved: {unresolved}"
-    )
+    assert any(
+        u.call_id == call.call_id for u in unresolved
+    ), f"the interrupted call was not reported as unresolved: {unresolved}"
 
-    report = await stack.store.reconcile_calls(
-        scope, task_id, is_live=lambda _c: _dead(), reason="pod lost"
-    )
+    report = await stack.store.reconcile_calls(scope, task_id, is_live=lambda _c: _dead(), reason="pod lost")
     assert call.call_id in report.reconciled, report
 
     after_events = await stack.store.list_events(scope, task_id, after_seq=0, limit=500)
     unknowns = [
-        e
-        for e in after_events.events
-        if e.call_id == call.call_id and e.event_type is EventType.TOOL_OUTCOME_UNKNOWN
+        e for e in after_events.events if e.call_id == call.call_id and e.event_type is EventType.TOOL_OUTCOME_UNKNOWN
     ]
     assert len(unknowns) == 1, f"expected exactly one unknown outcome, got {len(unknowns)}"
 
     # ── 5. reconciling twice must not append a second unknown ────────
-    again = await stack.store.reconcile_calls(
-        scope, task_id, is_live=lambda _c: _dead(), reason="pod lost"
-    )
+    again = await stack.store.reconcile_calls(scope, task_id, is_live=lambda _c: _dead(), reason="pod lost")
     assert call.call_id not in again.reconciled
     final_events = await stack.store.list_events(scope, task_id, after_seq=0, limit=500)
     assert (
