@@ -392,7 +392,7 @@
       "feature_id": "FEAT-537",
       "feature": "voicebot-multiroom-heygen-avatar",
       "spec": "sdd/specs/voicebot-multiroom-heygen-avatar.spec.md",
-      "status": "in-progress",
+      "status": "done-with-issues",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -403,8 +403,8 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": "2026-09-08T11:03:02+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2964-avatar-viewer-broadcast-policy.md",
+      "completed_at": "2026-09-08T13:51:03+00:00",
+      "file": "sdd/tasks/completed/TASK-2964-avatar-viewer-broadcast-policy.md",
       "acceptance_criteria": [
         "AC4",
         "AC5",
