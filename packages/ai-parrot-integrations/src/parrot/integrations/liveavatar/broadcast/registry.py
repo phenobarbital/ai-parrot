@@ -30,7 +30,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Callable, Dict, List, NamedTuple, Optional, Sequence
+from typing import Callable, Dict, List, NamedTuple, Optional, Sequence, Tuple
 
 from parrot.integrations.liveavatar.broadcast.errors import (
     BroadcastError,
@@ -497,6 +497,21 @@ class BroadcastRegistry(abc.ABC):
         """Whether a stop has been requested.  Polled by the owner every second."""
 
     @abc.abstractmethod
+    @abc.abstractmethod
+    async def list_broadcasts(self) -> List[Tuple[str, str]]:
+        """Every live broadcast in the store, as ``(tenant_id, broadcast_id)``.
+
+        Reconciliation needs this to be **store-wide**, not process-local: the
+        whole point of fencing a dead owner is that some *other* worker — one
+        that may never have served this broadcast — notices it and takes over.
+        A reconciler that only walks what its own process happened to serve
+        cannot, by construction, recover a broadcast whose only worker died.
+
+        Returns:
+            Live broadcasts, in unspecified order.
+        """
+
+    @abc.abstractmethod
     async def expire(self, tenant_id: str, broadcast_id: str, *, now: Optional[float] = None) -> List[ExpiryEvent]:
         """Run one reconciliation pass and report what expired.
 
@@ -643,6 +658,24 @@ class InMemoryBroadcastRegistry(BroadcastRegistry):
             and (now - lease.last_control_heartbeat.timestamp()) <= CONTROL_EXPIRY_S
         ]
         return sorted(eligible, key=lambda lease: lease.admission_sequence)
+
+    def _any_live_lease(self, record: _Record, now: float) -> bool:
+        """Whether any seat is still held by a participant who may come back.
+
+        A ``leaving`` lease does not count: it has already been scheduled for
+        eviction, so a broadcast whose every remaining seat is ``leaving`` is
+        genuinely empty.
+
+        Args:
+            record: The broadcast record.
+            now: Current registry time.
+
+        Returns:
+            ``True`` when at least one non-departing lease remains.
+        """
+        return any(
+            lease.state is not LeaseState.LEAVING for lease in record.leases.values()
+        )
 
     def _elect_locked(self, record: _Record, now: float) -> Optional[str]:
         """Elect the earliest eligible participant and hand it the floor."""
@@ -882,6 +915,12 @@ class InMemoryBroadcastRegistry(BroadcastRegistry):
             lease.confirmed = True
             if lease.last_control_heartbeat is None:
                 lease.last_control_heartbeat = _utc(now)
+            if record.descriptor.moderator_lease_id is None and not record.descriptor.is_terminal:
+                # The role can be vacant after a moderator left with nobody
+                # eligible yet.  This newly-confirmed participant may be that
+                # successor, so fill it here rather than waiting for another
+                # departure to trigger an election.
+                self._elect_locked(record, now)
             self._touch(record, now)
             return lease.model_copy(deep=True)
 
@@ -940,11 +979,25 @@ class InMemoryBroadcastRegistry(BroadcastRegistry):
                 descriptor.moderator_lease_id = None
                 new_moderator = self._elect_locked(record, stamp)
                 floor_returned_to = new_moderator
-                if new_moderator is None:
+                if new_moderator is None and not self._any_live_lease(record, stamp):
                     # Nobody healthy remains to hold authority — end rather
                     # than leave an unresponsive participant in control.
                     self._end_locked(record, BroadcastReason.AUDIENCE_EMPTY, stamp)
                     return ReleaseOutcome(audience_empty=True)
+                if new_moderator is None:
+                    # Participants remain, but none is eligible *yet* (a seat
+                    # awaiting presence confirmation, say).  Spec §105 is
+                    # explicit — "do not stop the broadcast while others
+                    # remain" — so the role goes vacant and is filled by the
+                    # next confirmation or heartbeat.  Ending here reported
+                    # `audience_empty` to an audience that was still watching,
+                    # which also made the reason code lie during triage.
+                    self.logger.warning(
+                        "broadcast %s: moderator left with no eligible successor "
+                        "yet; role vacant, %d lease(s) still present",
+                        broadcast_id,
+                        len(record.leases),
+                    )
             elif was_speaker:
                 # Speaker departure returns the floor to the moderator.
                 floor_returned_to = descriptor.moderator_lease_id
@@ -1165,6 +1218,9 @@ class InMemoryBroadcastRegistry(BroadcastRegistry):
         async with record.lock:
             return record.stop_requested_by is not None
 
+    async def list_broadcasts(self) -> List[Tuple[str, str]]:
+        return list(self._records.keys())
+
     async def expire(self, tenant_id: str, broadcast_id: str, *, now: Optional[float] = None) -> List[ExpiryEvent]:
         record = self._records.get((tenant_id, broadcast_id))
         if record is None:
@@ -1225,12 +1281,19 @@ class InMemoryBroadcastRegistry(BroadcastRegistry):
                 )
 
             # Unconfirmed seats past their admission deadline.
+            #
+            # A lease already marked ``leaving`` is re-reported on every pass
+            # rather than skipped.  Marking is not releasing: the caller must
+            # first remove the participant from the room, and that call can
+            # fail transiently.  Reporting the work only once meant a single
+            # LiveKit blip stranded the seat forever — it stayed `leaving`,
+            # kept occupying one of the ten slots, and no later pass ever
+            # retried it.  Re-emitting makes eviction idempotent and retried.
             for lease in list(record.leases.values()):
                 if (
                     not lease.confirmed
                     and lease.admission_deadline is not None
                     and lease.admission_deadline.timestamp() <= stamp
-                    and lease.state is not LeaseState.LEAVING
                 ):
                     lease.state = LeaseState.LEAVING
                     events.append(
@@ -1244,10 +1307,12 @@ class InMemoryBroadcastRegistry(BroadcastRegistry):
             # Stale control connections.  Marked leaving, NOT released: the
             # caller must remove the participant from the room first.
             for lease in list(record.leases.values()):
-                if lease.state is LeaseState.LEAVING or not lease.confirmed:
+                if not lease.confirmed:
                     continue
                 last = lease.last_control_heartbeat
                 if last is not None and (stamp - last.timestamp()) > CONTROL_EXPIRY_S:
+                    # Re-reported while still `leaving` — see the note above:
+                    # an unreleased seat must keep asking to be evicted.
                     lease.state = LeaseState.LEAVING
                     events.append(
                         ExpiryEvent(

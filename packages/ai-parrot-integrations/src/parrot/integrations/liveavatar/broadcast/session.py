@@ -123,6 +123,10 @@ class BroadcastSession:
 
         self._avatar_factory = avatar_session_factory or VoiceAvatarSession.start
         self._publisher_factory = publisher_factory or RoomAudioPublisher.start
+
+        #: Set by :class:`BroadcastService` to observe server-verified room
+        #: presence.  ``(identity, present)``.
+        self.on_presence: Optional[Callable[[str, bool], Awaitable[None]]] = None
         self._clock = clock or time.monotonic
 
         self._avatar_startup_deadline_s = avatar_startup_deadline_s
@@ -282,6 +286,7 @@ class BroadcastSession:
                 token=direct_token,
                 track_name=DIRECT_TRACK_NAME,
                 on_failure=self._on_publisher_failure,
+                on_presence=self._on_room_presence,
             )
         except Exception as exc:  # noqa: BLE001 — fatal, not a fallback
             self.logger.exception(
@@ -706,6 +711,31 @@ class BroadcastSession:
             reason,
         )
         await self._cutover(BroadcastReason.AVATAR_CONTROL_LOST)
+
+    async def _on_room_presence(self, identity: str, present: bool) -> None:
+        """Route a LiveKit participant join/leave to the service.
+
+        This is the producer's own room connection reporting what the LiveKit
+        server observed, which is why it — and not a client-sent "I am ready"
+        message — is what may confirm a lease.
+
+        Args:
+            identity: The participant's LiveKit identity.
+            present: ``True`` on join, ``False`` on leave.
+        """
+        if not present:
+            await self.on_participant_disconnected(identity)
+        observer = self.on_presence
+        if observer is None:
+            return
+        try:
+            await observer(identity, present)
+        except Exception:  # noqa: BLE001 — presence must not disturb media
+            self.logger.exception(
+                "broadcast %s: presence observer raised for %s",
+                self.descriptor.broadcast_id,
+                identity,
+            )
 
     async def on_participant_disconnected(self, identity: str) -> None:
         """Hook for room-level participant loss.

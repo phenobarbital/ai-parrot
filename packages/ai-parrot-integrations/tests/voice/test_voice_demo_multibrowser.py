@@ -199,9 +199,18 @@ class FakeVoiceSession:
 
 
 class FakeRoomManager:
+    """Stands in for LiveKit, including its participant roster.
+
+    The roster matters: a lease is confirmed only when the LiveKit server says
+    the browser is actually in the room, so a fake that always reported just
+    the two publishers could never confirm anybody. Issuing viewer credentials
+    is the demo's equivalent of that browser joining the room.
+    """
+
     def __init__(self) -> None:
         self.url = "wss://fake.livekit.cloud"
         self.removed: List[str] = []
+        self.joined: List[str] = []
 
     async def create_room(self, room: str, *, max_participants: int = 12) -> None:
         return None
@@ -210,13 +219,17 @@ class FakeRoomManager:
         return f"pub-{identity}"
 
     def mint_viewer_token(self, room: str, identity: str, *, ttl_s: int = 60) -> str:
+        if identity not in self.joined:
+            self.joined.append(identity)
         return f"viewer-jwt-{identity}"
 
     async def list_participant_identities(self, room: str) -> List[str]:
-        return ["avatar-pub", "direct-pub"]
+        return ["avatar-pub", "direct-pub", *self.joined]
 
     async def remove_participant(self, room: str, identity: str) -> None:
         self.removed.append(identity)
+        if identity in self.joined:
+            self.joined.remove(identity)
 
     async def delete_room(self, room: str) -> None:
         return None
@@ -401,32 +414,30 @@ async def _state_settles(tab: Any, predicate: Callable[[Dict[str, Any]], bool], 
 
 
 async def confirm_all_leases(demo_server: Any) -> None:
-    """Mark every admitted lease as an *active, confirmed* participant.
+    """Drive the production presence-confirmation path for every broadcast.
 
-    ⚠️ **Product gap this compensates for (TASK-2968 finding, NOT fixed here).**
-    `BroadcastRegistry.confirm_viewer` has **no production caller**: nothing in
-    `BroadcastService`, the HTTP handlers or the control socket ever transitions
-    a lease from `pending` to `active`. But `grant_floor` requires the target to
-    be `active`, so **no floor grant can ever succeed in production** — the
-    moderator's Grant button would always return `403 floor_not_granted`.
+    A lease is only grantable once it is *confirmed*, and confirmation means
+    the LiveKit server reported that browser as present in the room — never a
+    client claiming to be ready, since ``confirmed`` is the flag that gates
+    holding the floor.
 
-    Spec §2 says a lease becomes confirmed when presence is confirmed against
-    LiveKit (participant events or reconciliation), so the fix belongs in
-    `BroadcastService` — outside this task's scope, which explicitly says found
-    product bugs are noted rather than fixed. Recorded in the completion note as
-    a blocking follow-up.
-
-    Until then the browser scenarios establish the precondition server-side, so
-    they exercise the real handoff machinery rather than being blocked by it.
+    In production this happens two ways: the producer's own room connection
+    receives ``participant_connected``, and the reconciler re-checks the roster
+    every pass. The demo has no real LiveKit, so the roster is faked
+    (:class:`FakeRoomManager`) — but the code under test here is the real
+    :meth:`BroadcastService.confirm_present_participants`, not a registry poke.
+    This function only stands in for the reconciler's timer.
 
     Args:
         demo_server: The running test server.
     """
     service = demo_server.app["broadcast_service"]
-    for tenant_id, broadcast_id in list(service._known):  # noqa: SLF001
+    for tenant_id, broadcast_id in await service.registry.list_broadcasts():
+        await service.confirm_present_participants(tenant_id, broadcast_id)
         for lease in await service.registry.list_leases(tenant_id, broadcast_id):
-            await service.registry.confirm_viewer(tenant_id, broadcast_id, lease.lease_id)
-            await service.registry.heartbeat_control(tenant_id, broadcast_id, lease.lease_id)
+            await service.registry.heartbeat_control(
+                tenant_id, broadcast_id, lease.lease_id
+            )
 
 
 # ── Scenario 1: combined path across three browsers ────────────────────────
@@ -508,8 +519,8 @@ async def test_scenario2_moderated_handoff(tabs, demo_server) -> None:
     a = await alice.enter(bid)
     b = await bob.enter(bid)
 
-    # See confirm_all_leases(): a product gap means nothing marks a lease
-    # active, and grant_floor requires it.
+    # Stand in for the reconciler's timer: grant_floor requires a lease the
+    # LiveKit roster has confirmed (see confirm_all_leases()).
     await confirm_all_leases(demo_server)
 
     # Both raise hands; neither gains any permission by doing so.

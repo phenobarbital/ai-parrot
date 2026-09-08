@@ -413,6 +413,7 @@ class BroadcastService:
             bot = self.nova_bot_factory() if self.nova_bot_factory else None
             voice = self._build_voice_session(descriptor, session, bot)
             voice.set_fanout(self._make_fanout(tenant_id, broadcast_id))
+            session.on_presence = self._make_presence_observer(tenant_id, broadcast_id)
             self._producers[key] = _Producer(session=session, voice=voice, owner_epoch=owner_epoch, bot=bot)
             self._known.add(key)
 
@@ -895,6 +896,138 @@ class BroadcastService:
         if self._reconciler is None or self._reconciler.done():
             self._reconciler = asyncio.create_task(self.run_reconciler(), name=f"broadcast-reconciler-{self.worker_id}")
 
+    # ── Presence-driven confirmation ───────────────────────────────────
+
+    def _make_presence_observer(self, tenant_id: str, broadcast_id: str) -> Any:
+        """Bind a presence callback to one broadcast.
+
+        Args:
+            tenant_id: Tenant scope.
+            broadcast_id: The broadcast the producer serves.
+
+        Returns:
+            A coroutine function taking ``(identity, present)``.
+        """
+
+        async def _observe(identity: str, present: bool) -> None:
+            await self._on_room_presence(tenant_id, broadcast_id, identity, present)
+
+        return _observe
+
+    async def _on_room_presence(
+        self, tenant_id: str, broadcast_id: str, identity: str, present: bool
+    ) -> None:
+        """Confirm (or drop) the lease behind a LiveKit presence transition.
+
+        This is the **only** thing that confirms a lease.  It is driven by the
+        producer's own room connection — i.e. by what the LiveKit server
+        observed — never by a client asserting that it is ready, because
+        ``confirmed`` is exactly the flag that gates being granted the floor
+        (spec §2).
+
+        Args:
+            tenant_id: Tenant scope.
+            broadcast_id: Broadcast concerned.
+            identity: The participant's LiveKit identity.
+            present: ``True`` on join, ``False`` on leave.
+        """
+        if not present:
+            return  # Departure is handled by leave()/reconciliation.
+        lease = await self._lease_for_identity(tenant_id, broadcast_id, identity)
+        if lease is None or lease.confirmed:
+            return
+        try:
+            await self.registry.confirm_viewer(tenant_id, broadcast_id, lease.lease_id)
+        except BroadcastError:
+            self.logger.warning(
+                "broadcast %s: could not confirm lease %s on presence",
+                broadcast_id,
+                lease.lease_id,
+                exc_info=True,
+            )
+            return
+        self.logger.info(
+            "broadcast %s: lease %s confirmed by LiveKit presence",
+            broadcast_id,
+            lease.lease_id,
+        )
+        await self._publish_state(tenant_id, broadcast_id)
+
+    async def _lease_for_identity(
+        self, tenant_id: str, broadcast_id: str, identity: str
+    ) -> Optional[ViewerLease]:
+        """Find the lease holding a LiveKit identity, if any.
+
+        Args:
+            tenant_id: Tenant scope.
+            broadcast_id: Broadcast concerned.
+            identity: The LiveKit identity to resolve.
+
+        Returns:
+            The matching lease, or ``None`` for identities that are not
+            participants (the avatar and direct publishers, notably).
+        """
+        try:
+            leases = await self.registry.list_leases(tenant_id, broadcast_id)
+        except Exception:  # noqa: BLE001 — presence is best-effort
+            self.logger.warning(
+                "broadcast %s: could not list leases for presence", broadcast_id, exc_info=True
+            )
+            return None
+        for lease in leases:
+            if lease.livekit_identity == identity:
+                return lease
+        return None
+
+    async def confirm_present_participants(self, tenant_id: str, broadcast_id: str) -> int:
+        """Reconcile pending seats against the room's actual roster.
+
+        The backstop to the event path: LiveKit participant events can be
+        missed (a producer that took ownership after the join, a dropped event
+        during a reconnect), and an unconfirmed lease can never be granted the
+        floor.  Spec §2 sanctions both mechanisms — "participant events or
+        periodic reconciliation" — so this runs on every reconciler pass.
+
+        Args:
+            tenant_id: Tenant scope.
+            broadcast_id: Broadcast to reconcile.
+
+        Returns:
+            How many leases this pass confirmed.
+        """
+        descriptor = await self.registry.get(tenant_id, broadcast_id)
+        if descriptor is None or descriptor.is_terminal or not descriptor.room_name:
+            return 0
+        leases = await self.registry.list_leases(tenant_id, broadcast_id)
+        pending = [lease for lease in leases if not lease.confirmed]
+        if not pending:
+            return 0
+        try:
+            identities = set(await self.room_manager.list_participant_identities(descriptor.room_name))
+        except Exception:  # noqa: BLE001 — LiveKit unreachable: confirm nothing
+            self.logger.warning(
+                "broadcast %s: could not read the room roster — leaving seats unconfirmed",
+                broadcast_id,
+                exc_info=True,
+            )
+            return 0
+
+        confirmed = 0
+        for lease in pending:
+            if lease.livekit_identity not in identities:
+                continue
+            with contextlib.suppress(BroadcastError):
+                await self.registry.confirm_viewer(tenant_id, broadcast_id, lease.lease_id)
+                confirmed += 1
+                self.logger.info(
+                    "broadcast %s: lease %s confirmed by roster reconciliation",
+                    broadcast_id,
+                    lease.lease_id,
+                )
+        if confirmed:
+            await self._publish_state(tenant_id, broadcast_id)
+        return confirmed
+
     async def run_reconciler(self) -> None:
         """Run :meth:`reconcile_once` on a fixed period until closed."""
         while not self._closed:
@@ -915,7 +1048,13 @@ class BroadcastService:
             What the pass observed and did.
         """
         report = ReconcileReport()
-        for tenant_id, broadcast_id in list(self._known):
+        for tenant_id, broadcast_id in await self._reconcile_scope():
+            try:
+                await self.confirm_present_participants(tenant_id, broadcast_id)
+            except Exception:  # noqa: BLE001 — confirmation is best-effort
+                self.logger.warning(
+                    "broadcast %s: presence reconciliation failed", broadcast_id, exc_info=True
+                )
             try:
                 events = await self.registry.expire(tenant_id, broadcast_id)
             except Exception:  # noqa: BLE001 — store unreachable: fail closed
@@ -938,6 +1077,31 @@ class BroadcastService:
                 elif event.kind is ExpiryKind.TERMINAL_RETENTION:
                     self._known.discard((tenant_id, broadcast_id))
         return report
+
+    async def _reconcile_scope(self) -> List[Tuple[str, str]]:
+        """Which broadcasts this pass should examine.
+
+        Store-wide when the registry can enumerate itself, because a dead
+        owner is by definition invisible to its own process — only another
+        worker can fence it, and that worker may never have served the
+        broadcast.  Falls back to this process's own set if enumeration
+        fails, so a Redis hiccup degrades to the old behaviour instead of
+        skipping reconciliation entirely.
+
+        Returns:
+            ``(tenant_id, broadcast_id)`` pairs to reconcile.
+        """
+        try:
+            scope = await self.registry.list_broadcasts()
+        except Exception:  # noqa: BLE001 — degrade, never skip the pass
+            self.logger.warning(
+                "broadcast reconciler: store enumeration failed — "
+                "falling back to process-local scope",
+                exc_info=True,
+            )
+            return list(self._known)
+        merged = set(scope) | set(self._known)
+        return sorted(merged)
 
     async def _fence_dead_owner(self, tenant_id: str, broadcast_id: str, report: ReconcileReport) -> None:
         """Take ownership of an abandoned broadcast and clean it up.

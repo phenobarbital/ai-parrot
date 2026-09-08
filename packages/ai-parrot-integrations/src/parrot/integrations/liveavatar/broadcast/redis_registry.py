@@ -245,6 +245,15 @@ local function elect(d)
   return elected
 end
 
+-- Whether any seat is still held by a participant who may yet come back.
+-- A 'leaving' lease is already scheduled for eviction and does not count.
+local function any_live_lease()
+  for _, env in ipairs(all_leases()) do
+    if env.lease.state ~= 'leaving' then return true end
+  end
+  return false
+end
+
 local function end_bcast(d, reason)
   if is_terminal(d) then return end
   d.state = 'ended'
@@ -270,6 +279,9 @@ d.updated_at = NOW_ISO
 save_desc(d)
 redis.call('HSET', K_META, 'created_at', NOW, 'hand_sequence', 0)
 redis.call('SADD', K_INDEX, ARGV[5])
+-- Tenant roll-call, so reconciliation can enumerate every live broadcast
+-- without a keyspace SCAN (see RedisBroadcastRegistry.list_broadcasts).
+redis.call('SADD', ARGV[6], ARGV[7])
 return cjson.encode(d)
 """
 
@@ -338,6 +350,12 @@ if env.t.hb == nil or env.t.hb == cjson.null then
   env.lease.last_control_heartbeat = NOW_ISO
 end
 save_lease(env)
+-- The role can be vacant after a moderator left with nobody eligible yet.
+-- This newly-confirmed participant may be that successor, so fill it now
+-- rather than waiting for another departure to trigger an election.
+if nz(d.moderator_lease_id) == nil and not is_terminal(d) then
+  elect(d)
+end
 touch(d, true)
 save_desc(d)
 return cjson.encode(env.lease)
@@ -390,9 +408,18 @@ if was_moderator then
   d.moderator_lease_id = cjson.null
   local elected = elect(d)
   if elected == nil then
-    end_bcast(d, 'audience_empty')
+    -- Spec §105: "do not stop the broadcast while others remain".  End only
+    -- when every remaining seat is already departing; otherwise leave the
+    -- role vacant for the next confirmation to fill.  Ending here reported
+    -- `audience_empty` to an audience that was still watching.
+    if not any_live_lease() then
+      end_bcast(d, 'audience_empty')
+      save_desc(d)
+      return { 1, '', '' }
+    end
+    touch(d, true)
     save_desc(d)
-    return { 1, '', '' }
+    return { 0, '', '' }
   end
   new_moderator = elected
   floor_returned_to = elected
@@ -703,24 +730,26 @@ if owner ~= nil and meta_num('owner_expires_at', 0) <= NOW then
   emit('owner_lease', '', 'fenced expired owner ' .. owner)
 end
 
+-- A lease already marked 'leaving' is re-reported, not skipped: marking is
+-- not releasing, the caller must remove the participant from the room first,
+-- and that call can fail transiently.  Emitting the work only once meant one
+-- LiveKit blip stranded the seat forever.  Mirrors InMemoryBroadcastRegistry.
 for _, env in ipairs(all_leases()) do
   local lease = env.lease
-  if lease.state ~= 'leaving' then
-    local deadline = env.t.deadline
-    if (not lease.confirmed) and deadline ~= nil and deadline ~= cjson.null
-       and deadline <= NOW then
-      lease.state = 'leaving'
-      save_lease(env)
-      dirty = true
-      emit('admission_deadline', lease.lease_id, 'pending seat never confirmed')
-    elseif lease.confirmed and env.t.hb ~= nil and env.t.hb ~= cjson.null
-           and (NOW - env.t.hb) > tonumber(ARGV[6]) then
-      lease.state = 'leaving'
-      save_lease(env)
-      dirty = true
-      emit('control_heartbeat', lease.lease_id,
-           'control heartbeat expired; remove from room first')
-    end
+  local deadline = env.t.deadline
+  if (not lease.confirmed) and deadline ~= nil and deadline ~= cjson.null
+     and deadline <= NOW then
+    lease.state = 'leaving'
+    save_lease(env)
+    dirty = true
+    emit('admission_deadline', lease.lease_id, 'pending seat never confirmed')
+  elseif lease.confirmed and env.t.hb ~= nil and env.t.hb ~= cjson.null
+         and (NOW - env.t.hb) > tonumber(ARGV[6]) then
+    lease.state = 'leaving'
+    save_lease(env)
+    dirty = true
+    emit('control_heartbeat', lease.lease_id,
+         'control heartbeat expired; remove from room first')
   end
 end
 
@@ -916,6 +945,8 @@ class RedisBroadcastRegistry(BroadcastRegistry):
             now,
             descriptor.model_dump_json(),
             descriptor.broadcast_id,
+            self._tenants_key(),
+            descriptor.tenant_id,
         )
         self.logger.info(
             "broadcast %s created for agent %s",
@@ -1198,6 +1229,27 @@ class RedisBroadcastRegistry(BroadcastRegistry):
     async def stop_requested(self, tenant_id: str, broadcast_id: str) -> bool:
         now = await self._now(None)
         return bool(await self._run("stop_requested", tenant_id, broadcast_id, now))
+
+    async def list_broadcasts(self) -> List[Tuple[str, str]]:
+        """Every live broadcast across every tenant this registry has seen.
+
+        Reads the tenant roll-call and each tenant's index set rather than
+        scanning the keyspace, so the cost is proportional to live broadcasts
+        instead of to total Redis keys.
+
+        Returns:
+            ``(tenant_id, broadcast_id)`` pairs.
+        """
+        tenants = await self._redis.smembers(self._tenants_key())
+        pairs: List[Tuple[str, str]] = []
+        for tenant_id in sorted(tenants or []):
+            ids = await self._redis.smembers(f"{self._prefix}:{tenant_id}:index")
+            pairs.extend((tenant_id, broadcast_id) for broadcast_id in sorted(ids or []))
+        return pairs
+
+    def _tenants_key(self) -> str:
+        """Key of the set naming every tenant with at least one broadcast."""
+        return f"{self._prefix}:tenants"
 
     async def expire(self, tenant_id: str, broadcast_id: str, *, now: Optional[float] = None) -> List[ExpiryEvent]:
         stamp = await self._now(now)

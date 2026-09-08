@@ -44,6 +44,7 @@ from parrot.integrations.liveavatar.models import LiveKitRoomTokens
 
 #: Failure callback: receives a short, non-sensitive reason code.
 FailureCallback = Callable[[str], Union[Awaitable[None], None]]
+PresenceCallback = Callable[[str, bool], Union[Awaitable[None], None]]
 
 #: Reason codes this publisher can report.  Deliberately a closed set — they
 #: are surfaced to the broadcast session as fallback/abort triggers.
@@ -144,6 +145,7 @@ class RoomAudioPublisher:
         identity: Optional[str] = None,
         track_sid: Optional[str] = None,
         on_failure: Optional[FailureCallback] = None,
+        on_presence: Optional["PresenceCallback"] = None,
     ) -> None:
         """Initialise the publisher (internal — use :meth:`start`).
 
@@ -158,6 +160,11 @@ class RoomAudioPublisher:
             identity: This publisher's LiveKit participant identity.
             track_sid: SID of the published track, when the SDK returned one.
             on_failure: Called once with a reason code when publication fails.
+            on_presence: Called with ``(identity, present)`` on every remote
+                participant join/leave.  This connection is the only real
+                LiveKit room handle the producer holds, so it is also the only
+                place server-verified presence can be observed — which is what
+                a lease's ``confirmed`` flag is required to mean.
         """
         self.room = room
         self.source = source
@@ -172,6 +179,7 @@ class RoomAudioPublisher:
         self._sample_rate = sample_rate
         self._num_channels = num_channels
         self._on_failure = on_failure
+        self._on_presence = on_presence
         self._failure_notified = False
         self._closed = False
         self._flushing = False
@@ -191,6 +199,7 @@ class RoomAudioPublisher:
         track_name: str = "agent-voice",
         queue_size_ms: int = 1000,
         on_failure: Optional[FailureCallback] = None,
+        on_presence: Optional[PresenceCallback] = None,
     ) -> "RoomAudioPublisher":
         """Connect to the LiveKit room and publish an audio track.
 
@@ -215,6 +224,8 @@ class RoomAudioPublisher:
             queue_size_ms: Native audio-source queue depth.
             on_failure: Called once with a reason code when publication fails
                 or the room disconnects.
+            on_presence: Called with ``(identity, present)`` as remote
+                participants join and leave the room.
 
         Returns:
             A ready :class:`RoomAudioPublisher` instance.
@@ -258,8 +269,10 @@ class RoomAudioPublisher:
             identity=identity,
             track_sid=getattr(publication, "sid", None),
             on_failure=on_failure,
+            on_presence=on_presence,
         )
         publisher._watch_disconnect()
+        publisher._watch_presence()
         _logger.info(
             "RoomAudioPublisher: connected to room %s as identity=%s track=%s",
             room_name,
@@ -289,6 +302,55 @@ class RoomAudioPublisher:
             self.logger.debug(
                 "RoomAudioPublisher: could not subscribe to room disconnect",
                 exc_info=True,
+            )
+
+    def _watch_presence(self) -> None:
+        """Route LiveKit participant join/leave events to :attr:`_on_presence`.
+
+        Guarded exactly like :meth:`_watch_disconnect`: the fake rooms used by
+        unit tests need not implement ``on``, and a room SDK that does not
+        emit these events must not break publication.
+        """
+        if self._on_presence is None:
+            return
+        register = getattr(self.room, "on", None)
+        if register is None:
+            return
+
+        def _emit(identity: Optional[str], present: bool) -> None:
+            if not identity:
+                return
+            asyncio.ensure_future(self._report_presence(identity, present))
+
+        def _on_connected(participant: Any = None, *_args: Any) -> None:
+            _emit(getattr(participant, "identity", None), True)
+
+        def _on_disconnected(participant: Any = None, *_args: Any) -> None:
+            _emit(getattr(participant, "identity", None), False)
+
+        try:
+            register("participant_connected", _on_connected)
+            register("participant_disconnected", _on_disconnected)
+        except Exception:  # noqa: BLE001 — event wiring is best-effort
+            self.logger.debug(
+                "RoomAudioPublisher: could not subscribe to participant events",
+                exc_info=True,
+            )
+
+    async def _report_presence(self, identity: str, present: bool) -> None:
+        """Deliver one presence transition, never letting it break the room.
+
+        Args:
+            identity: The remote participant's LiveKit identity.
+            present: ``True`` on join, ``False`` on leave.
+        """
+        if self._on_presence is None:
+            return
+        try:
+            await self._on_presence(identity, present)
+        except Exception:  # noqa: BLE001 — an observer must not kill the room
+            self.logger.exception(
+                "RoomAudioPublisher: presence observer raised for %s", identity
             )
 
     async def _report_failure(self, reason: str) -> None:
