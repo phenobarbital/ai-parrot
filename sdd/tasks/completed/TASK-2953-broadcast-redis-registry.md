@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-537 — Nova VoiceBot avatar broadcast for multiple browsers
 **Spec**: `sdd/specs/voicebot-multiroom-heygen-avatar.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-2952
@@ -105,7 +105,80 @@ async def test_no_secret_like_values_in_redis(redis_registry): ...
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
+**Completed by**: `sdd-worker` (autonomous session)
+**Date**: 2026-09-08
+**Status**: done
+
 **Notes**:
-**Deviations from spec**:
+
+- Created `broadcast/redis_registry.py` (`RedisBroadcastRegistry`), the lazy package
+  export, the Redis-gated test module, and the `broadcast` extra in the integrations
+  `pyproject.toml`.
+- **Redis WAS reachable for this run** (local Redis 8.4.0 at `redis://localhost:6379/3`),
+  so unlike TASK-2950 this is a real, executed verification — not a NOT RUN.
+  `pytest .../test_voice_broadcast_redis_registry.py -q` → **58 passed** (0.94 s).
+  Whole broadcast suite: **138 passed**. `ruff check` clean.
+- **The whole TASK-2952 contract suite runs against Redis.** Rather than writing a
+  parallel set of "similar" Redis tests, this module reflects over
+  `test_voice_broadcast_registry`, re-binds all 52 `async def test_*` functions to a
+  Redis `registry` fixture, and runs them as `test_redis_contract_*`. All 52 pass. That
+  is the divergence detector TASK-2952's fixture-parametrised design existed for: any
+  behaviour where the Lua drifts from the Python reference fails a *named* contract test.
+- Six Redis-only cross-instance tests on top: 12 admissions raced across two separate
+  connections → exactly 10 leases and exactly one `is_first`; 6 racing `claim_owner`
+  calls → exactly one winner and both instances agree on the epoch; stop on A visible on
+  B; a floor barrier opened on A and committed on B (the producer may be the other
+  worker); conflicting grants across instances → one `StaleVersion` and
+  `speaker_lease_id is None`; plus a whitebox scan asserting no key or value under the
+  prefix contains `token|secret|ws_url|api_key|password|credential`.
+- Verified the skip path too: with `PARROT_TEST_REDIS_URL=redis://127.0.0.1:6399/0` all
+  58 report `SKIPPED … Redis not reachable — NOT VERIFIED: Connection refused`.
+- **Atomicity**: every compound operation is one Lua script over the specified key
+  layout — 20 scripts sharing a `_PRELUDE` of helpers (`load_desc`, `open_barrier`,
+  `elect`, `drop_hand`, `occupied`, `end_bcast`, …). No read-modify-write from Python,
+  no `WATCH`. The helpers exist so the barrier/election sequences are written once, the
+  same reason the in-memory implementation has `_open_barrier`/`_elect_locked`.
+- **Two Lua landmines worth recording** (both cost a real debugging cycle and are
+  commented in the source):
+  1. `cjson` decodes JSON `null` to `cjson.null`, which is **truthy** in Lua. A naked
+     `if d.moderator_lease_id then` would treat "no moderator" as "some moderator" and
+     `require_moderator` would compare a userdata against a string. Every optional read
+     goes through `nz()`.
+  2. `cjson` encodes an **empty Lua table as `{}`**, not `[]`. A `hand_requests` list
+     that Lua emptied comes back as a JSON object and Pydantic rejects it. `_normalise()`
+     repairs `hand_requests` and `principal.roles` on the way in.
+- Leases are stored as an **envelope** `{"lease": {...}, "t": {"hb", "cred",
+  "deadline"}}`. The model's timestamps are ISO strings, which Lua cannot compare
+  numerically; the `t` mirror gives the election and expiry scripts numeric times without
+  adding a field to `ViewerLease` (which is `extra="forbid"`).
+- The `…:hands` zset is the atomic sequence allocator and ordering index; the full
+  `HandRequest` list stays in the descriptor because that is where `to_public_state()`
+  reads it. Both are written in the same script, so they cannot drift.
+- `_LEGAL_SOURCES` is derived from `registry._ALLOWED_TRANSITIONS`, so the state graph
+  has exactly one definition. Lua receives the CSV of states from which the target is
+  reachable and checks the *current* state against it — the graph is never re-encoded in
+  Lua where it could silently diverge.
+
+**Deviations from spec**: two, both forced and both documented in the source.
+
+1. **Ownership expiry is an explicit timestamp (`meta.owner_expires_at`), not the
+   `SET … NX PX` key TTL the Implementation Notes describe.** The `owner` key is still
+   written (with a 4× PX safety net) but no logic reads its TTL. Reason: this task also
+   requires reusing the TASK-2952 contract suite, which drives TTL behaviour from an
+   injected fake clock (`test_owner_lease_expires` advances 16 s instantly). A real PX
+   TTL cannot be advanced by a fake clock, and having *two* authorities for "is the owner
+   still alive" — key TTL and stored timestamp — is precisely how a fenced owner keeps
+   publishing. One authority, driven by the same `now` every script uses. Correctness
+   does not depend on the TTL: `claim_owner` itself takes over once
+   `now > owner_expires_at`, so no watchdog is required to free a dead owner. Terminal
+   retention still deletes the whole key family as specified.
+2. **`now` precedence is `explicit → injected clock → Redis TIME`.** Production leaves
+   `clock=None`, so every script stamps from Redis `TIME` exactly as the task requires
+   ("uses Redis server time, not client clock"); the injected clock exists only so the
+   contract suite can run. Both are passed as ARGV[1]/ARGV[2] so a script never mixes
+   two clocks within one operation.
+
+Not deviations, but flagged for the reviewer: `_KEY_COUNT` was removed as dead; a
+`…:meta` hash was added to the specified key layout for registry-internal scalars
+(`created_at`, `terminal_at`, `owner_expires_at`, `pending_floor_target`,
+`hand_sequence`) that have nowhere else to live — none of them is secret.
