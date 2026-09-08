@@ -387,11 +387,19 @@ def test_replay_rejects_a_payload_contradicting_its_event_type() -> None:
 def test_replay_rejects_unhandled_event_families() -> None:
     """An unhandled event raises rather than silently changing nothing.
 
-    The tool-call and artifact families are registered by TASK-2974. Until
-    then they must fail loudly: an event that quietly leaves the
-    projection unchanged is how a projection drifts from its journal.
+    Originally this asserted that ``TOOL_SUCCEEDED`` had no handler, which
+    was true only while TASK-2974 was outstanding. That handler now exists
+    — and every other one does too — so the test was rewritten to assert
+    the *guarantee* rather than a transient gap in the registry: remove a
+    handler and the reducer must refuse the event, not quietly leave the
+    projection unchanged. An event that silently changes nothing is how a
+    projection drifts away from its journal.
+
+    Totality of the registry is asserted separately by
+    ``test_replay_every_event_type_has_a_handler``.
     """
     from parrot.tools.working_memory.task_memory.models import CallOutcome, ToolCallPayload
+    from parrot.tools.working_memory.task_memory.reducer import _HANDLERS
 
     state = _Journal().start().build()
     tool_event = JournalEvent(
@@ -401,8 +409,29 @@ def test_replay_rejects_unhandled_event_families() -> None:
         event_type=EventType.TOOL_SUCCEEDED,
         payload=ToolCallPayload(call_id="c1", tool_name="wm_store", outcome=CallOutcome.SUCCESS),
     )
-    with pytest.raises(ReducerError, match="no reducer handler"):
-        reduce(state, tool_event)
+
+    removed = _HANDLERS.pop(EventType.TOOL_SUCCEEDED)
+    try:
+        with pytest.raises(ReducerError, match="no reducer handler"):
+            reduce(state, tool_event)
+    finally:
+        _HANDLERS[EventType.TOOL_SUCCEEDED] = removed
+
+    # Restored: the same event is now handled rather than refused.
+    reduce(state, tool_event)
+
+
+def test_replay_every_event_type_has_a_handler() -> None:
+    """Every declared event type is reducible.
+
+    A member of :class:`EventType` with no handler would be appendable to
+    the journal but unreducible, so any replay reaching it would fail
+    permanently — the task would be wedged.
+    """
+    from parrot.tools.working_memory.task_memory.reducer import _HANDLERS
+
+    missing = set(EventType) - set(_HANDLERS)
+    assert missing == set(), f"event types with no reducer handler: {sorted(e.value for e in missing)}"
 
 
 def test_replay_advances_revision_and_sequence_monotonically() -> None:
@@ -437,6 +466,7 @@ def test_replay() -> None:
     test_replay_rejects_a_foreign_task_id()
     test_replay_rejects_a_payload_contradicting_its_event_type()
     test_replay_rejects_unhandled_event_families()
+    test_replay_every_event_type_has_a_handler()
     test_replay_advances_revision_and_sequence_monotonically()
     test_replay_of_empty_journal_is_none()
 

@@ -31,19 +31,37 @@ Consequences that follow from that, and that this module enforces:
 Handler registry
 ----------------
 
-:data:`_HANDLERS` maps an :class:`EventType` to its handler. The tool-call,
-artifact, degradation and retention families are registered by the
-evidence reducer (TASK-2974), which extends this same module. Until they
-are, those event types raise :class:`ReducerError` rather than silently
-no-op — an unhandled event that quietly changes nothing is exactly the
-bug that makes a projection drift from its journal.
+:data:`_HANDLERS` maps an :class:`EventType` to its handler. Every member
+of :class:`EventType` is registered; an event type with no handler raises
+:class:`ReducerError` rather than silently no-op'ing, because an
+unhandled event that quietly changes nothing is exactly the bug that
+makes a projection drift from its journal.
+
+Handled-but-immaterial events
+-----------------------------
+
+Several event families are *recorded* in the journal but change nothing
+in the projection: a started call, a successful call, an artifact
+registration, a degradation marker, a retention intent. These are not
+"unhandled" — each has an explicit handler with a documented reason, and
+each returns the state object **by identity** to say so.
+
+:func:`reduce` treats that identity return as "no material change" and
+does not advance ``revision`` (it still advances ``last_event_seq`` and
+``updated_at``, because the event *was* applied and the task *was*
+active). This matters practically: the agent's optimistic-concurrency
+API takes an ``expected_revision``, and if every observed tool call bumped
+the revision, then every ``wm_update_step`` issued around a tool call
+would fail with a :class:`RevisionConflict` through no fault of the
+caller. Revision tracks *material* state, which is what an expected-revision
+check is actually about.
 """
 
 from __future__ import annotations
 
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
-from .models import Constraint
+from .models import ArtifactPayload, Attribution, CallOutcome, Constraint
 from .models import Decision as DecisionModel
 from .models import (
     DecisionPayload,
@@ -61,12 +79,16 @@ from .models import (
     TaskState,
     TaskStatus,
     TaskStep,
+    ToolCallPayload,
 )
 
 __all__ = (
     "REDUCER_VERSION",
     "UPSTREAM_REOPENED",
     "PLAN_INCOMPLETE",
+    "MAX_ATTEMPTS",
+    "MAX_ATTEMPTS_EXHAUSTED",
+    "EVIDENCE_INVALIDATED",
     "reduce",
     "replay",
     "validate_plan_graph",
@@ -82,6 +104,47 @@ UPSTREAM_REOPENED: str = "upstream_reopened"
 
 #: Reason a task with an unfinished plan cannot complete.
 PLAN_INCOMPLETE: str = "plan_incomplete"
+
+#: Default number of attributed physical attempts after which a step is
+#: blocked for review. Reaching it never *fails* a step or its task — it
+#: stops the agent from grinding, and a human or a replan decides.
+MAX_ATTEMPTS: int = 3
+
+#: Reason stamped on a step blocked for exhausting :data:`MAX_ATTEMPTS`.
+MAX_ATTEMPTS_EXHAUSTED: str = "max_attempts_exhausted"
+
+#: Reason stamped on a completed step whose bound evidence was invalidated.
+EVIDENCE_INVALIDATED: str = "evidence_invalidated"
+
+#: Which terminal event each typed outcome must arrive on. Recording the
+#: mapping explicitly means a payload whose outcome disagrees with its
+#: event type is rejected rather than quietly winning.
+_TOOL_OUTCOME_EVENT: Dict[CallOutcome, EventType] = {
+    CallOutcome.SUCCESS: EventType.TOOL_SUCCEEDED,
+    CallOutcome.ERROR: EventType.TOOL_FAILED,
+    CallOutcome.DENIED: EventType.TOOL_FAILED,
+    CallOutcome.NOT_EXECUTED: EventType.TOOL_FAILED,
+    CallOutcome.CANCELLED: EventType.TOOL_CANCELLED,
+    CallOutcome.UNKNOWN: EventType.TOOL_OUTCOME_UNKNOWN,
+}
+
+#: Attributions that name exactly one step and mean it. ``NONE`` and
+#: ``AMBIGUOUS`` are task-level by construction (D3), and an unmapped
+#: plan call carries ``PLAN`` with no ``step_id`` — so the step id must be
+#: present *as well*, never inferred from the attribution alone.
+_UNAMBIGUOUS_ATTRIBUTIONS = frozenset({Attribution.DECLARED, Attribution.PLAN})
+
+#: Step statuses that a max-attempts block must not overwrite. A step that
+#: is already finished, retired or blocked is not made "more blocked" by
+#: another failed attempt.
+_UNBLOCKABLE_STATUSES = frozenset(
+    {
+        StepStatus.COMPLETED,
+        StepStatus.CANCELLED,
+        StepStatus.SUPERSEDED,
+        StepStatus.BLOCKED,
+    }
+)
 
 #: Task statuses that accept no ordinary mutation. Create a new task for
 #: further work; do not resurrect a terminal one.
@@ -601,8 +664,257 @@ def _reduce_resume_hint(state: TaskState, event: JournalEvent, revision: int) ->
     )
 
 
-#: Event type to handler. TASK-2974 registers the tool-call, artifact,
-#: degradation and retention families into this same mapping.
+def _attributed_step_id(event: JournalEvent) -> Optional[str]:
+    """Return the step an event is *unambiguously* attributed to.
+
+    Attribution never completes a step and never guesses one. Both
+    conditions must hold: the attribution kind names a single step, and a
+    ``step_id`` is actually present. An unmapped plan call carries
+    ``PLAN`` with no step id and is therefore task-level, exactly as D3
+    requires.
+
+    Args:
+        event: The event to inspect.
+
+    Returns:
+        The step id, or ``None`` when the event is task-level.
+    """
+    if event.step_id is None:
+        return None
+    if event.attribution not in _UNAMBIGUOUS_ATTRIBUTIONS:
+        return None
+    return event.step_id
+
+
+def _reduce_tool_call(state: TaskState, event: JournalEvent, revision: int) -> TaskState:
+    """Apply a tool-call lifecycle event.
+
+    The governing rule (AC3): **a tool result is never evidence and never
+    completes a step.** This handler only ever counts attempts and, at the
+    attempt ceiling, blocks a step for review. Nothing here can move a
+    step to ``completed``.
+
+    Counting rules:
+
+    - Exactly one terminal event per *physical* attempt carries
+      ``counted=True``. A plan node's aggregate result carries
+      ``counted=False``, so a parent is never counted as a second
+      execution of each child.
+    - A dispatch that never ran a tool body (``executed=False`` — unknown
+      tool, guard denial, authorization required) is not a physical
+      attempt and is not counted.
+    - A duplicate delivery cannot double-count, because :func:`reduce`
+      returns early for an already-folded sequence.
+
+    Blocking rules:
+
+    - Only an **executed, unambiguously attributed failure** that reaches
+      :data:`MAX_ATTEMPTS` blocks its step, and it blocks (for review)
+      rather than failing it — "failure does not auto-fail the step or
+      the task".
+    - ``cancelled`` and ``outcome_unknown`` never block. Their disposition
+      is not established, so treating them as failures would be inventing
+      a fact.
+
+    Args:
+        state: The current projection.
+        event: The tool-call event.
+        revision: The revision this event would produce.
+
+    Returns:
+        The new projection, or ``state`` itself when nothing material
+        changed.
+
+    Raises:
+        ReducerError: If a terminal event carries no outcome, an outcome
+            disagrees with its event type, ``tool_started`` carries an
+            outcome, or the event names a step the plan never had.
+    """
+    payload = event.payload
+    assert isinstance(payload, ToolCallPayload)  # guaranteed by JournalEvent validation
+
+    if event.event_type is EventType.TOOL_STARTED:
+        if payload.outcome is not None:
+            raise ReducerError("tool_started must not carry a terminal outcome")
+        # A started call is recorded for recovery — it is not evidence of
+        # anything and changes nothing about the plan.
+        return state
+
+    if payload.outcome is None:
+        raise ReducerError(f"{event.event_type.value} must carry a typed outcome")
+
+    expected_event = _TOOL_OUTCOME_EVENT[payload.outcome]
+    if expected_event is not event.event_type:
+        raise ReducerError(
+            f"outcome {payload.outcome.value!r} must arrive on {expected_event.value!r}, "
+            f"got {event.event_type.value!r}"
+        )
+
+    step_id = _attributed_step_id(event)
+    if step_id is None:
+        # Task-level. A failure nobody can attribute stays visible in the
+        # journal without being pinned on a guessed step.
+        return state
+
+    step = _require_step(state, step_id)
+    if step.status is StepStatus.SUPERSEDED:
+        # A late result for a retired step. Counting attempts on it would
+        # be meaningless, and raising would make a plausible real-world
+        # ordering permanently unreplayable.
+        return state
+
+    if not (payload.counted and payload.executed):
+        # Either an aggregate/duplicate terminal event, or a dispatch that
+        # never ran a tool body. Neither is a physical attempt.
+        return state
+
+    attempts = step.attempt_count + 1
+    update: Dict[str, object] = {"attempt_count": attempts, "updated_revision": revision}
+
+    if (
+        event.event_type is EventType.TOOL_FAILED
+        and attempts >= MAX_ATTEMPTS
+        and step.status not in _UNBLOCKABLE_STATUSES
+    ):
+        update["status"] = StepStatus.BLOCKED
+        update["blocked_reason"] = MAX_ATTEMPTS_EXHAUSTED
+
+    steps = _replace_step(state, step.model_copy(update=update))
+    new_state = state.model_copy(update={"steps": steps})
+
+    hint = _mark_hint_stale(state.resume_hint, touched_step_ids=(step_id,), steps=steps)
+    if hint is not state.resume_hint:
+        new_state = new_state.model_copy(update={"resume_hint": hint})
+    return new_state
+
+
+def _reduce_artifact(state: TaskState, event: JournalEvent, revision: int) -> TaskState:
+    """Apply an artifact registration or invalidation.
+
+    Registration changes nothing: publishing an artifact does not bind it
+    as evidence, and **overwriting an alias creates a new version rather
+    than mutating the old one** — so a step bound to ``artifact@1`` is
+    untouched when ``artifact@2`` is registered. That asymmetry is the
+    whole point of versioned evidence (AC5).
+
+    Invalidation is different. It says a specific bound version's content
+    is no longer trustworthy, so every completed step resting on that
+    exact version stops counting as complete, and its completed
+    downstream steps are blocked too. Leaving a step labelled valid while
+    the evidence under it is gone is precisely what the specification
+    forbids.
+
+    Evidence references are **retained** on the blocked steps: the task
+    needs to know what it once relied on in order to revalidate it.
+
+    Args:
+        state: The current projection.
+        event: The artifact event.
+        revision: The revision this event would produce.
+
+    Returns:
+        The new projection, or ``state`` itself when nothing material
+        changed.
+    """
+    payload = event.payload
+    assert isinstance(payload, ArtifactPayload)
+
+    if event.event_type is EventType.ARTIFACT_REGISTERED:
+        return state
+
+    ref = payload.ref
+    directly_affected = [
+        step.step_id for step in state.steps if step.status is StepStatus.COMPLETED and ref in step.evidence_refs
+    ]
+    if not directly_affected:
+        # Invalidating a version nothing was completed against is a
+        # bookkeeping fact, not a plan change.
+        return state
+
+    invalidated = set(directly_affected)
+    downstream: set = set()
+    for step_id in directly_affected:
+        downstream.update(_dependents_of(state.steps, step_id))
+    downstream -= invalidated
+
+    steps: List[TaskStep] = []
+    touched: List[str] = []
+    for step in state.steps:
+        if step.step_id in invalidated:
+            steps.append(
+                step.model_copy(
+                    update={
+                        "status": StepStatus.BLOCKED,
+                        "blocked_reason": EVIDENCE_INVALIDATED,
+                        "completion_source": None,
+                        "updated_revision": revision,
+                    }
+                )
+            )
+            touched.append(step.step_id)
+        elif step.step_id in downstream and step.status is StepStatus.COMPLETED:
+            steps.append(
+                step.model_copy(
+                    update={
+                        "status": StepStatus.BLOCKED,
+                        "blocked_reason": UPSTREAM_REOPENED,
+                        "completion_source": None,
+                        "updated_revision": revision,
+                    }
+                )
+            )
+            touched.append(step.step_id)
+        else:
+            steps.append(step)
+
+    plan = tuple(steps)
+    new_state = state.model_copy(update={"steps": plan})
+    hint = _mark_hint_stale(state.resume_hint, touched_step_ids=tuple(touched), steps=plan)
+    if hint is not state.resume_hint:
+        new_state = new_state.model_copy(update={"resume_hint": hint})
+    return new_state
+
+
+def _reduce_degraded(state: TaskState, event: JournalEvent, revision: int) -> TaskState:
+    """Record that tracking degraded.
+
+    A ``tracking_degraded`` event is a truthful gap marker: it says the
+    runtime could not persist something it should have. It deliberately
+    invents nothing about the plan, so the projection is unchanged and
+    the honest record lives in the journal, where recall and the
+    operator can see it.
+
+    Args:
+        state: The current projection.
+        event: The degradation event.
+        revision: The revision this event would produce.
+
+    Returns:
+        ``state`` itself — nothing material changed.
+    """
+    return state
+
+
+def _reduce_retention(state: TaskState, event: JournalEvent, revision: int) -> TaskState:
+    """Record a retention intent.
+
+    Retention appends its intent *before* doing destructive work, so the
+    intent is auditable. The intent alone changes no plan state; the
+    events retention subsequently appends (a pause, a cancellation, an
+    invalidation) are what actually move the projection.
+
+    Args:
+        state: The current projection.
+        event: The retention event.
+        revision: The revision this event would produce.
+
+    Returns:
+        ``state`` itself — nothing material changed.
+    """
+    return state
+
+
+#: Event type to handler. Every :class:`EventType` member is registered.
 _HANDLERS: Dict[EventType, Callable[[TaskState, JournalEvent, int], TaskState]] = {
     EventType.TASK_PAUSED: _reduce_task_lifecycle,
     EventType.TASK_RESUMED: _reduce_task_lifecycle,
@@ -620,6 +932,15 @@ _HANDLERS: Dict[EventType, Callable[[TaskState, JournalEvent, int], TaskState]] 
     EventType.STEP_FAILED: _reduce_step,
     EventType.STEP_REOPENED: _reduce_step,
     EventType.STEP_CANCELLED: _reduce_step,
+    EventType.TOOL_STARTED: _reduce_tool_call,
+    EventType.TOOL_SUCCEEDED: _reduce_tool_call,
+    EventType.TOOL_FAILED: _reduce_tool_call,
+    EventType.TOOL_CANCELLED: _reduce_tool_call,
+    EventType.TOOL_OUTCOME_UNKNOWN: _reduce_tool_call,
+    EventType.ARTIFACT_REGISTERED: _reduce_artifact,
+    EventType.ARTIFACT_INVALIDATED: _reduce_artifact,
+    EventType.TRACKING_DEGRADED: _reduce_degraded,
+    EventType.RETENTION_SCHEDULED: _reduce_retention,
 }
 
 #: Event types that remain legal after a task reaches a terminal status.
@@ -664,7 +985,9 @@ def reduce(
 
     Returns:
         The new projection. When ``event`` was already applied, the
-        *same* state object is returned unchanged.
+        *same* state object is returned unchanged. When the event was
+        applied but changed nothing material, ``revision`` is left alone
+        while ``last_event_seq`` and ``updated_at`` advance.
 
     Raises:
         ReducerError: If the event is malformed for the current state:
@@ -714,6 +1037,23 @@ def reduce(
 
     revision = state.revision + 1
     new_state = handler(state, event, revision)
+
+    if new_state is state:
+        # The handler applied the event and deliberately changed nothing
+        # material (a started call, a successful call, an artifact
+        # registration, a degradation marker, a retention intent).
+        # Sequence and activity still advance — the event IS in the
+        # journal and the task WAS active — but the revision does not,
+        # because an expected-revision check is about material state.
+        # Bumping it here would make every wm_update_step issued around a
+        # tool call fail with a RevisionConflict through no fault of the
+        # caller.
+        return state.model_copy(
+            update={
+                "last_event_seq": event.seq or expected_seq,
+                "updated_at": event.occurred_at,
+            }
+        )
 
     return new_state.model_copy(
         update={
