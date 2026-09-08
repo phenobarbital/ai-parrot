@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-538 - Recoverable Task Memory for WorkingMemoryToolkit
 **Spec**: `sdd/specs/workingmemory-toolkit.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2971
@@ -133,4 +133,69 @@ New test modules should use local fixtures unless the shared fixture task is alr
 
 ## Completion Note
 
-Not completed. The implementing agent records completed-by, date, verification evidence, notes, and any approved deviations here when acceptance passes.
+**Completed by**: Claude Opus 5 (sdd-worker, delegated fork) — session `01WeeSf3QmPq58bBxturogRX`
+**Date**: 2026-09-08
+**Status**: done
+
+### Evidence
+
+- `uv run pytest .../test_task_context.py -q` → **39 passed**.
+  Log: `artifacts/logs/task-2981-tm-turn-context.log`.
+- Whole `task_memory` suite: **219 passed**.
+- `ruff check` clean; `black`/`isort` applied.
+- Codebase Contract re-verified: `compaction/models.py:46` (`ToolInvocation`),
+  `:24` (`ToolStatus`), `plan/node.py:347` (`_store`), `:414`
+  (`_call_with_retry`), `:431` (manager dispatch). **No stale anchors.**
+
+### Independent verification (not taken on trust)
+
+Re-checked directly before acceptance:
+
+- The session does **not** leak after `asyncio.CancelledError`, and does
+  not leak after an ordinary exception — the `finally` reset holds on both
+  paths.
+- A `declare()` made inside a **child asyncio task** is visible to the
+  parent, which is the whole reason the session is a shared mutable object
+  behind the ContextVar rather than a ContextVar value.
+- A snapshot taken **before** a second declaration stays `DECLARED` while
+  a snapshot taken after becomes `AMBIGUOUS` — attribution is frozen at
+  dispatch and never retroactively guessed.
+
+### Design decisions worth flagging downstream
+
+1. **`threading.RLock`, not `asyncio.Lock`.** The registry is mutated from
+   thread work as well as coroutines and an asyncio lock cannot protect
+   that. Every critical section is a few dict operations with no `await`,
+   so the lock never spans a suspension point.
+2. **Three ContextVars, deliberately.** `TASK_CONTEXT` holds a *reference*
+   to the mutable session — mutation publishes, rebinding does not, and a
+   test pins that so nobody "simplifies" it back to a bare ContextVar.
+   `CURRENT_CALL` is genuinely per-context so nesting works naturally.
+   `RETAINED_PRODUCER` exists solely for the plan-node hazard.
+3. **`retained_producer()` / `producer_call_id()` answer the Phase 0
+   correlation hazard**: `PlanToolNode._store` runs after the manager has
+   reset its invocation context. `producer_call_id()` prefers the retained
+   receipt and returns `None` honestly rather than guessing.
+4. **`MAX_DECLARED_STEPS_PER_TURN` reuses `Limits.MAX_STEP_DEPENDENCIES`
+   (100)** rather than adding a constant to `models.py`, which this task
+   does not own.
+5. **`StaleTurnContext`** is a new module-local `TaskMemoryError` subclass.
+   Scope mismatch raises `ScopeViolation` (hard boundary); task /
+   generation / fencing drift raises `StaleTurnContext`.
+6. **An unexplained exception maps to `CallOutcome.UNKNOWN`, not `ERROR`** —
+   only a typed error result should claim `ERROR`; a raw exception escaping
+   dispatch has not established its disposition.
+7. **`barrier()`** implements the spec's "explicit completion barriers"
+   clause literally: it waits for turn quiescence so attribution never has
+   to be guessed retroactively.
+
+### Verification note
+
+The implementing agent mutation-tested the module with five mutations.
+Four were caught immediately. One — removing the idempotency guard in
+`declare()` — initially **survived**, because the dict-backed registry meant
+a duplicate declaration only shifted an ordering index. That is a real
+(if narrow) determinism bug, so `test_child_publish_declaration_is_idempotent`
+was strengthened to assert position stability on re-declaration and the
+mutation is now caught. The implementation file was restored bit-identical
+(md5 verified) after each mutation.

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-538 - Recoverable Task Memory for WorkingMemoryToolkit
 **Spec**: `sdd/specs/workingmemory-toolkit.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2971
@@ -135,4 +135,75 @@ New test modules should use local fixtures unless the shared fixture task is alr
 
 ## Completion Note
 
-Not completed. The implementing agent records completed-by, date, verification evidence, notes, and any approved deviations here when acceptance passes.
+**Completed by**: Claude Opus 5 (sdd-worker) — session `01WeeSf3QmPq58bBxturogRX`
+**Date**: 2026-09-08
+**Status**: done
+
+### Evidence
+
+- `uv run pytest .../test_reducer_plan.py -q` → **40 passed**.
+  Log: `artifacts/logs/task-2973-tm-reducer-plan.log`.
+- Whole `task_memory` suite: **219 passed**.
+- `ruff check` clean; `black --line-length 120 --target-version py312` and `isort` applied.
+
+### Acceptance mapping
+
+| Criterion | Evidence |
+|---|---|
+| Identical sequences reproduce identical state without clock/random/I/O | `test_replay_is_deterministic`, `test_replay_uses_no_clock_or_randomness` |
+| Invalid plan batches fail; completed criteria cannot silently change; superseded dependencies never count complete | `test_plan_validation_rejects_cycles/missing_dependencies/duplicate_ids/unknown_targets`, `test_plan_validation_completed_criteria_cannot_change_in_place`, `test_plan_validation_supersession_retains_history` |
+| Partial exhausted plans remain active; transitive reopen/hint staleness; terminal rules | `test_completion_requires_plan_complete`, `test_completion_reopen_blocks_transitive_dependents`, `test_completion_hint_goes_stale_from_its_neighbourhood`, `test_completion_terminal_task_rejects_ordinary_mutation` |
+| AC2 | Reducer is pure, so both backends share it verbatim; storage parity is the TASK-2972 conformance suite |
+| AC7 | Completion guard + supersession + reopen propagation tests above |
+
+### CROSS-TASK CORRECTION to TASK-2971 (important)
+
+`PlanUpdatePayload` as delivered by TASK-2971 carried **only ids**
+(`added_step_ids`, `updated_step_ids`, ...). That is incompatible with D6:
+a reducer replaying from an empty projection cannot rebuild a step it has
+never seen *defined*, so the projection — not the journal — would have
+been the real source of truth. Exact replay after a restart would have
+been impossible.
+
+Fixed by adding `PlanStepSpec`, `PlanStepPatch` and `PlanConstraintSpec`
+and having `PlanUpdatePayload` carry definitions, with derived
+`added_step_ids` / `updated_step_ids` / `added_constraint_ids` /
+`touched_step_ids` / `is_empty` views for callers that only need
+identities. `test_models.py` gained
+`test_roundtrip_plan_payload_carries_definitions_not_just_ids`.
+
+This edits `models.py` and `__init__.py`, which are TASK-2971's ownership,
+not TASK-2973's. It is recorded as a deliberate, bounded correction of a
+defect in this task's own prerequisite rather than scope creep — the
+alternative was to implement a reducer that could not satisfy D6. Noted in
+TASK-2971's completion note as well.
+
+### Design decisions worth flagging downstream
+
+1. **`reduce()` takes a keyword-only `scope`**, required only when
+   `state is None`. Scope lives on the task row, not on every event; the
+   store owns it and has already checked it before the reducer runs. An
+   earlier draft used a `_unset` placeholder scope — rejected as
+   dishonest.
+2. **Revision advances per accepted state-changing *event***, so a batch
+   advances it by the number of such events. `plan_revision` advances only
+   on `plan_updated`.
+3. **An already-applied event returns the identical state object**, not a
+   copy, so "this changed nothing" is observable by identity.
+4. **Unhandled event families raise.** TASK-2974 registers the tool-call,
+   artifact, degradation and retention handlers into the same
+   `_HANDLERS` mapping. Until then those types fail loudly — an unhandled
+   event that quietly changes nothing is exactly how a projection drifts
+   from its journal.
+5. **`_TERMINAL_SAFE_EVENTS`** already lists the recovery/degradation/
+   retention/artifact-invalidation types as legal on a terminal task, so
+   TASK-2974 does not need to revisit the terminal guard.
+6. **Purity is tested structurally.** The first version monkeypatched
+   `models.utc_now`; that proves nothing, because Pydantic captures
+   `default_factory` callables at class-definition time and the patch
+   would never have been reached. Replaced with an AST scan of
+   `reducer.py` for forbidden calls and imports, plus value assertions
+   that timestamps come from events.
+7. **Cycle detection is an iterative three-colour DFS**, so plan depth is
+   bounded by `MAX_STEPS_PER_TASK` rather than by Python's recursion
+   limit.

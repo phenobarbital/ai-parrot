@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-538 - Recoverable Task Memory for WorkingMemoryToolkit
 **Spec**: `sdd/specs/workingmemory-toolkit.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2972
@@ -141,4 +141,67 @@ New test modules should use local fixtures unless the shared fixture task is alr
 
 ## Completion Note
 
-Not completed. The implementing agent records completed-by, date, verification evidence, notes, and any approved deviations here when acceptance passes.
+**Completed by**: Claude Opus 5 (sdd-worker, delegated fork) — session `01WeeSf3QmPq58bBxturogRX`
+**Date**: 2026-09-08
+**Status**: done
+
+### Evidence
+
+- `uv run pytest .../test_snapshots.py -q` → **49 passed**.
+  Log: `artifacts/logs/task-2975-tm-snapshots.log`.
+- Whole `task_memory` suite: **219 passed**.
+- `ruff check` clean; `black`/`isort` applied.
+- Codebase Contract re-verified anchor by anchor (internals.py
+  70/175/189/468/473/499/542/548, transport.py 55/81, pyproject
+  54/104/157/173). **No stale anchors.**
+
+### Independent verification (not taken on trust)
+
+The implementing agent's three load-bearing claims were re-checked
+directly before this task was accepted:
+
+- `orjson.dumps({1:"a"}, OPT_NON_STR_KEYS|OPT_SORT_KEYS)` and the same for
+  `{"1":"a"}` both produce `b'{"1":"a"}'` — **collision confirmed**.
+- Renaming a DataFrame column leaves `hash_pandas_object` output
+  **bit-identical** — confirmed on pandas 2.2.3.
+- `dict`, `set` and `tuple` object cells hash without raising (pandas
+  falls back to their string repr); only `list` raises — **confirmed**.
+- Functionally: a nested-object frame yields
+  `outcome=unverifiable, fingerprint=None, evidence_verifiable=False`; a
+  numeric/string frame is `captured` and verifiable; both mutation and
+  column rename change the fingerprint.
+
+### Acceptance mapping
+
+| Criterion | Evidence |
+|---|---|
+| Deterministic reproducible fingerprints | `fingerprint_dataframe` / `fingerprint_bytes` + reproducibility tests |
+| 64 MiB boundary and byte accounting | `ByteAccount`, `SizeMethod`, over-cap refusal before copy |
+| Nested mutable values never falsely verified | `unsafe_object_columns`, `UNVERIFIABLE` outcome |
+| AC5 / AC6 | mutation detection, unverifiable fallback, three-way outcome |
+
+### Design decisions worth flagging downstream
+
+1. **`OPT_NON_STR_KEYS` is deliberately absent** from canonical JSON. It
+   would make `{1:"a"}` and `{"1":"a"}` fingerprint-identical. Non-string
+   keys are refused as unverifiable instead.
+2. **The fingerprint header is load-bearing, not decorative** — without
+   it a column rename is invisible to the row hashes.
+3. **Nested-mutable detection is structural, not exception-driven.**
+   Because dict/set/tuple cells hash fine, "did hashing throw" is not a
+   safety signal. `unsafe_object_columns` scans distinct types per object
+   column in one pass, with no sampling (so no false all-clear).
+4. **`tuple` and `frozenset` are conservatively refused** despite being
+   immutable: a tuple can contain a dict, and frozenset iteration order is
+   not guaranteed stable across processes.
+5. **Three-way `SnapshotOutcome`** (`CAPTURED` / `SPILL_REQUIRED` /
+   `UNVERIFIABLE`) rather than a boolean — an over-cap *supported* value
+   is materially different from an unsupported one, and only the caller
+   knows whether a durable tier exists. **This module never writes bytes.**
+6. **Honest size accounting** — `PANDAS_DEEP_ESTIMATE` (exact=False) for
+   frames, `CANONICAL_UTF8` (exact=True) for JSON/text, `UNKNOWN` with
+   `live_bytes=None` for arbitrary objects rather than a `sys.getsizeof`
+   guess.
+7. **`blob_checksum` uses a `ck_` prefix and its own algorithm version**,
+   so a Parquet-byte hash can never be silently compared against a
+   pandas-content hash.
