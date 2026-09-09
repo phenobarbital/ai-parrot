@@ -21,7 +21,7 @@ import logging
 import re
 from datetime import date, datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Optional, Protocol, Sequence
+from typing import Any, Callable, Mapping, Optional, Protocol, Sequence
 
 from pydantic import BaseModel, Field
 
@@ -31,15 +31,25 @@ from ..pageindex.content_store import NodeContentStore
 from .carding import (
     DEFAULT_MAX_OBLIGATION_SECTIONS,
     assemble_card,
+    derive_next_renewal_date,
+    derive_notice_deadline,
+    derive_status,
     draft_contract,
+    load_bodies,
     slugify,
     unique_slug,
 )
-from .catalog import CatalogError, ContractCatalogStore, DuplicateSourceError
+from .catalog import (
+    CatalogError,
+    ContractCatalogStore,
+    DuplicateSourceError,
+    UnknownContractError,
+)
 from .evidence import EvidenceArchive, EvidenceError, EvidenceRef, StagingArea
 from .models import (
     ContractCard,
     ContractVersion,
+    FieldProvenance,
     IngestItemReport,
     IngestReport,
     IngestResult,
@@ -49,11 +59,16 @@ from .models import (
 
 __all__ = (
     "SUPPORTED_FORMATS",
+    "VERIFIABLE_PATHS",
     "TreeIndexer",
     "OwnerRule",
+    "VerificationResult",
     "ContractLibrary",
     "deterministic_sections",
     "pdf_markdown",
+    "merge_verified_fields",
+    "get_card_field",
+    "set_card_field",
 )
 
 logger = logging.getLogger(__name__)
@@ -71,6 +86,9 @@ SUPPORTED_FORMATS: dict[str, SourceFormat] = {
 _HEADING_RE = re.compile(r"^#{1,6}\s+\S", re.MULTILINE)
 _PAGE_TITLE_RE = re.compile(r"^page\s+(\d+)$", re.IGNORECASE)
 _DEFAULT_SECTION_CHARS = 2_000
+
+#: Unverified fields below this confidence block whole-card verification.
+LOW_CONFIDENCE = 0.6
 
 
 class TreeIndexer(Protocol):
@@ -172,6 +190,226 @@ def pdf_markdown(pages: Sequence[str]) -> str:
         if (text or "").strip()
     ]
     return "\n\n".join(chunks)
+
+
+#: Card fields a human may confirm or correct through ``verify_card``.
+#: Everything else is derived in code or belongs to another operation.
+VERIFIABLE_PATHS: tuple[str, ...] = (
+    "title",
+    "contract_type",
+    "governing_law",
+    "language",
+    "summary",
+    "owner_employee_id",
+    "department",
+    "parent_contract_id",
+    "supersedes_contract_id",
+    "termination_confirmed",
+    "terminated_on",
+    "term.effective_date",
+    "term.expiration_date",
+    "term.initial_term_months",
+    "term.auto_renew",
+    "term.renewal_period_months",
+    "term.notice_days",
+)
+
+#: Derived values recomputed after any correction; never set directly.
+DERIVED_PATHS: tuple[str, ...] = (
+    "status",
+    "term.notice_deadline",
+    "term.next_renewal_date",
+)
+
+
+def get_card_field(card: ContractCard, path: str) -> Any:
+    """Read one card field by its provenance path.
+
+    Args:
+        card: The card to read.
+        path: A dotted path such as ``"term.notice_days"`` or
+            ``"parties.<party_id>.name"``.
+
+    Returns:
+        The current value.
+
+    Raises:
+        KeyError: When the path does not address a known field.
+    """
+    parts = path.split(".")
+    if parts[0] == "term" and len(parts) == 2:
+        return getattr(card.term, parts[1])
+    if parts[0] == "parties" and len(parts) == 3:
+        for party in card.parties:
+            if party.party_id == parts[1]:
+                return getattr(party, parts[2])
+        raise KeyError(path)
+    if parts[0] == "obligations" and len(parts) == 3:
+        for obligation in card.obligations:
+            if obligation.obligation_id == parts[1]:
+                return getattr(obligation, parts[2])
+        raise KeyError(path)
+    if len(parts) == 1 and hasattr(card, parts[0]):
+        return getattr(card, parts[0])
+    raise KeyError(path)
+
+
+def set_card_field(card: ContractCard, path: str, value: Any) -> ContractCard:
+    """Return a copy of ``card`` with one field corrected.
+
+    Args:
+        card: The card to correct.
+        path: A verifiable provenance path.
+        value: The corrected value.
+
+    Returns:
+        The updated card.
+
+    Raises:
+        KeyError: When the path is not correctable.
+    """
+    parts = path.split(".")
+    if parts[0] == "term" and len(parts) == 2:
+        return card.model_copy(update={"term": card.term.model_copy(update={parts[1]: value})})
+    if parts[0] == "parties" and len(parts) == 3:
+        if not any(party.party_id == parts[1] for party in card.parties):
+            raise KeyError(path)
+        parties = [
+            party.model_copy(update={parts[2]: value}) if party.party_id == parts[1] else party
+            for party in card.parties
+        ]
+        return card.model_copy(update={"parties": parties})
+    if parts[0] == "obligations" and len(parts) == 3:
+        if not any(item.obligation_id == parts[1] for item in card.obligations):
+            raise KeyError(path)
+        obligations = [
+            obligation.model_copy(update={parts[2]: value})
+            if obligation.obligation_id == parts[1]
+            else obligation
+            for obligation in card.obligations
+        ]
+        return card.model_copy(update={"obligations": obligations})
+    if len(parts) == 1 and hasattr(card, parts[0]):
+        return card.model_copy(update={parts[0]: value})
+    raise KeyError(path)
+
+
+def _recompute_derivations(card: ContractCard, *, today: date) -> ContractCard:
+    """Recompute notice/renewal dates and the status after a correction."""
+    term = card.term.model_copy(
+        update={
+            "notice_deadline": derive_notice_deadline(
+                card.term.expiration_date, card.term.notice_days
+            ),
+            "next_renewal_date": derive_next_renewal_date(
+                card.term.expiration_date, card.term.auto_renew
+            ),
+        }
+    )
+    status = derive_status(
+        term=term,
+        today=today,
+        signed=bool(card.signatories),
+        superseded=card.status == "superseded",
+        termination_confirmed=card.termination_confirmed,
+        terminated_on=card.terminated_on,
+    )
+    return card.model_copy(update={"term": term, "status": status})
+
+
+def merge_verified_fields(
+    previous: ContractCard,
+    incoming: ContractCard,
+    bodies: Mapping[str, str],
+) -> ContractCard:
+    """Carry human decisions across a refresh.
+
+    For every field a human verified on ``previous``:
+
+    * a **nonempty** quote found verbatim in the refreshed bodies proves the
+      evidence is unchanged — the verified value and its verification are
+      preserved and the evidence is rebound to the node that now holds it;
+    * changed or missing evidence (and an empty quote, which never proves
+      anything) keeps the **previous** value, records the incoming value as
+      a separate ``candidate`` and marks the field stale for review.
+
+    Args:
+        previous: The currently published card.
+        incoming: The freshly carded card.
+        bodies: ``node_id -> markdown`` of the refreshed tree.
+
+    Returns:
+        The merged card.
+    """
+    merged = incoming
+    provenance = dict(incoming.field_provenance)
+    stale = list(incoming.stale_fields)
+
+    quotes = {
+        path: (prov.quote or "")
+        for path, prov in previous.field_provenance.items()
+        if prov.verification == "verified"
+    }
+    mapping = EvidenceArchive.map_evidence(quotes, bodies)
+
+    for path, prov in previous.field_provenance.items():
+        if prov.verification != "verified":
+            continue
+        try:
+            previous_value = get_card_field(previous, path)
+        except KeyError:
+            continue
+        try:
+            incoming_value = get_card_field(incoming, path)
+        except KeyError:
+            incoming_value = None
+
+        node_id = mapping.get(path)
+        if node_id is not None:
+            merged = set_card_field(merged, path, previous_value)
+            provenance[path] = prov.model_copy(update={"node_id": node_id, "candidate": None})
+            if path in stale:
+                stale.remove(path)
+            continue
+
+        merged = set_card_field(merged, path, previous_value)
+        provenance[path] = prov.model_copy(
+            update={
+                "verification": "stale",
+                "candidate": incoming_value,
+            }
+        )
+        if path not in stale:
+            stale.append(path)
+
+    verification = previous.verification if previous.verification == "verified" else "extracted"
+    if stale:
+        verification = "stale"
+    return merged.model_copy(
+        update={
+            "field_provenance": provenance,
+            "stale_fields": sorted(set(stale)),
+            "verification": verification,
+            "verified_by": previous.verified_by if verification == "verified" else None,
+            "verified_at": previous.verified_at if verification == "verified" else None,
+            "termination_confirmed": previous.termination_confirmed,
+            "terminated_on": previous.terminated_on,
+        }
+    )
+
+
+class VerificationResult(BaseModel):
+    """What one ``verify_card`` call confirmed, corrected or blocked."""
+
+    card: ContractCard
+    verified: list[str] = Field(default_factory=list)
+    corrected: list[str] = Field(default_factory=list)
+    blockers: list[str] = Field(default_factory=list)
+
+    @property
+    def card_verified(self) -> bool:
+        """Whether the whole card is now verified."""
+        return self.card.verification == "verified"
 
 
 def _utcnow() -> datetime:
@@ -367,6 +605,235 @@ class ContractLibrary:
             items.append(IngestItemReport.from_result(result))
         return IngestReport(items=items)
 
+    async def verify_card(
+        self,
+        contract_id: str,
+        fields: Optional[Mapping[str, Any]] = None,
+        *,
+        user: str,
+        expected_revision: Optional[int] = None,
+    ) -> VerificationResult:
+        """Confirm or correct card fields on behalf of an authenticated human.
+
+        ``fields=None`` verifies the *whole current card* and refuses while
+        required evidence gaps, unresolved low-confidence fields or stale
+        fields remain. A mapping verifies only the paths it names: a value
+        equal to the current one (or ``None``) is a **confirmation** — the
+        origin is untouched — while a different value is a **correction**,
+        which additionally moves the origin to ``manual``.
+
+        Args:
+            contract_id: The card to verify.
+            fields: ``path -> value`` to confirm/correct, or ``None``.
+            user: Authenticated actor stamped on every touched field.
+            expected_revision: Revision the caller read; a concurrent write
+                raises :class:`CatalogConflictError`.
+
+        Returns:
+            A :class:`VerificationResult`.
+
+        Raises:
+            UnknownContractError: When the contract does not exist.
+            KeyError: When a requested path is not correctable.
+            CatalogConflictError: On a stale ``expected_revision``.
+        """
+        card = await self.catalog.get(contract_id)
+        if card is None:
+            raise UnknownContractError(contract_id)
+
+        now = self._now()
+        provenance = dict(card.field_provenance)
+        stale = list(card.stale_fields)
+        verified: list[str] = []
+        corrected: list[str] = []
+
+        targets = dict(fields) if fields is not None else {}
+        if fields is not None:
+            for path in targets:
+                if path not in VERIFIABLE_PATHS and not path.startswith(
+                    ("parties.", "obligations.")
+                ):
+                    raise KeyError(f"{path!r} is not a verifiable field")
+
+        for path, value in targets.items():
+            current = get_card_field(card, path)
+            existing_provenance = provenance.get(path) or FieldProvenance(origin="llm")
+            if value is None or value == current:
+                provenance[path] = existing_provenance.model_copy(
+                    update={
+                        "verification": "verified",
+                        "verified_by": user,
+                        "verified_at": now,
+                        "candidate": None,
+                    }
+                )
+                verified.append(path)
+            else:
+                card = set_card_field(card, path, value)
+                provenance[path] = existing_provenance.model_copy(
+                    update={
+                        "origin": "manual",
+                        "verification": "verified",
+                        "verified_by": user,
+                        "verified_at": now,
+                        "candidate": None,
+                        "confidence": 1.0,
+                        "derived_from": [],
+                    }
+                )
+                corrected.append(path)
+            if path in stale:
+                stale.remove(path)
+
+        if fields is None:
+            for path, prov in provenance.items():
+                if prov.origin == "rule" or prov.verification == "verified":
+                    continue
+                provenance[path] = prov.model_copy(
+                    update={
+                        "verification": "verified",
+                        "verified_by": user,
+                        "verified_at": now,
+                        "candidate": None,
+                    }
+                )
+                verified.append(path)
+
+        card = card.model_copy(
+            update={"field_provenance": provenance, "stale_fields": sorted(set(stale))}
+        )
+        card = _recompute_derivations(card, today=self._today())
+
+        blockers = self._verification_blockers(card)
+        if not blockers:
+            card = card.model_copy(
+                update={
+                    "verification": "verified",
+                    "verified_by": user,
+                    "verified_at": now,
+                }
+            )
+        elif card.verification == "verified":
+            card = card.model_copy(
+                update={"verification": "extracted", "verified_by": None, "verified_at": None}
+            )
+
+        await self.catalog.upsert(
+            card,
+            expected_revision=expected_revision
+            if expected_revision is not None
+            else card.revision,
+        )
+        stored = await self.catalog.get(contract_id) or card
+        return VerificationResult(
+            card=stored,
+            verified=sorted(set(verified)),
+            corrected=sorted(set(corrected)),
+            blockers=blockers,
+        )
+
+    def _verification_blockers(self, card: ContractCard) -> list[str]:
+        """List what still blocks marking the whole card verified."""
+        blockers: list[str] = []
+        for path, prov in sorted(card.field_provenance.items()):
+            if prov.origin == "rule" or prov.verification == "verified":
+                continue
+            if not prov.substantiates:
+                blockers.append(f"{path}: missing evidence")
+            elif (prov.confidence or 0.0) < LOW_CONFIDENCE:
+                blockers.append(f"{path}: unresolved low confidence")
+            else:
+                blockers.append(f"{path}: unverified")
+        blockers.extend(f"{path}: stale" for path in sorted(card.stale_fields))
+        return blockers
+
+    async def refresh_card(
+        self,
+        contract_id: str,
+        *,
+        source: Optional[str | Path] = None,
+    ) -> IngestResult:
+        """Re-card a contract while preserving every human decision.
+
+        Verified values survive: unchanged nonempty evidence is rebound to
+        its new node, and changed or missing evidence keeps the prior value,
+        records the new one as a candidate and marks the field stale.
+
+        Args:
+            contract_id: The contract to refresh.
+            source: Path to the new bytes; defaults to the recorded
+                ``source_path`` and then the canonical ``source_uri``.
+
+        Returns:
+            An :class:`IngestResult` (``skipped`` when nothing changed).
+
+        Raises:
+            UnknownContractError: When the contract does not exist.
+        """
+        card = await self.catalog.get(contract_id)
+        if card is None:
+            raise UnknownContractError(contract_id)
+
+        candidate = source or card.source_path or card.source_uri
+        path = Path(str(candidate).replace("file://", "", 1))
+        return await self.add_contract(path, source_uri=card.source_uri)
+
+    async def apply_amendment_history(
+        self,
+        amendment_id: str,
+        *,
+        user: str,
+    ) -> Optional[ContractVersion]:
+        """Record a verified amendment on its base contract's history.
+
+        Only a *verified* effective date and a resolved parent may create a
+        new contractual interval: an unknown effective date stays
+        unresolved instead of becoming today.
+
+        Args:
+            amendment_id: The amendment's contract id.
+            user: Authenticated actor recorded on the base card's write.
+
+        Returns:
+            The version appended to the base contract, or ``None`` when the
+            preconditions are not met.
+        """
+        amendment = await self.catalog.get(amendment_id)
+        if amendment is None:
+            raise UnknownContractError(amendment_id)
+        if amendment.contract_type != "amendment" or not amendment.parent_contract_id:
+            return None
+        provenance = amendment.field_provenance.get("term.effective_date")
+        effective = amendment.term.effective_date
+        if effective is None or provenance is None or provenance.verification != "verified":
+            return None
+
+        base = await self.catalog.get(amendment.parent_contract_id)
+        if base is None:
+            return None
+        history = await self.catalog.versions(base.contract_id)
+        if any(version.amended_by == amendment_id for version in history):
+            return None
+
+        version = ContractVersion(
+            n=(max((item.n for item in history), default=1)) + 1,
+            valid_from=effective,
+            kind="amendment",
+            amended_by=amendment_id,
+            source_sha256=base.source_sha256,
+            card_snapshot=card_snapshot_payload(base),
+            recorded_at=self._now(),
+        )
+        await self.catalog.upsert(base, expected_revision=base.revision, version=version)
+        logger.info(
+            "Amendment %s recorded on %s effective %s (actor=%s)",
+            amendment_id,
+            base.contract_id,
+            effective,
+            user,
+        )
+        return version
+
     # -- ingestion internals ----------------------------------------------
 
     async def _allocate_slug(self, path: Path) -> str:
@@ -521,6 +988,10 @@ class ContractLibrary:
             for obligation in card.obligations:
                 if obligation.page is None and obligation.node_id in pages:
                     obligation.page = pages[obligation.node_id]
+
+            if existing is not None:
+                bodies = await load_bodies(loader, [entry.node_id for entry in toc])
+                card = merge_verified_fields(existing, card, bodies)
 
             version_n = 1
             if existing is not None:
