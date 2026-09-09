@@ -11,7 +11,7 @@ base_branch: dev
 **Date**: 2026-09-09
 **Author**: Jesus Lara (design inputs) / Claude (codebase research)
 **Status**: exploration
-**Recommended Option**: A
+**Recommended Option**: A (data plane) + D (answer layer for scheduled/API answers) — hybrid, resolved 2026-09-09
 
 > **Inputs.** This brainstorm consolidates two committed design documents and
 > verifies every codebase claim they make against `dev` (commit `9f26dccc4`):
@@ -457,9 +457,70 @@ class, not by the model.
   - *Graph loader*: designed above (`ContractCardDataSource` +
     `ContractGraphLoader` over `OntologyRefreshPipeline`), so the
     "no direct ancestor" gap is closed by reusing the legal domain's shape.
-- Phase the delivery exactly as the design doc's §7: v1 = models →
-  carding → SQLite catalog → library → ontology + graph loader → toolkit +
-  agent; phase 2 = Postgres backend + SharePoint delta loop.
+- **Open-questions round (2026-09-09, all resolved with the user)** — the
+  final shape deviates from Option A as first written in these points:
+  - *Location*: **split**. Core `parrot/knowledge/contracts/` holds models,
+    carding, catalog (protocol + Postgres backend), library,
+    `ContractCardDataSource`, `ContractGraphLoader`, `standards.py`.
+    `parrot_tools/contracts/` holds `ContractsToolkit`, the ReAct
+    `ContractsAgent`, the fail-closed answer crew, and the watcher job
+    functions (legal precedent; CLAUDE.md toolkit rule).
+  - *Answer layer*: **both shapes**. The fail-closed crew (Option D port:
+    deterministic retrieval nodes → stateless structured draft → citation
+    verifier) serves scheduled reports and the API/A2A path; the ReAct
+    `ContractsAgent` with the `contracts_*` toolkit serves chat/MCP. Both
+    emit `ContractAnswer` and share the citation check.
+  - *Watchers*: **standalone async job functions** (`renewals_report`,
+    `obligations_digest`, `ingest_delta`) in `parrot_tools/contracts/jobs.py`,
+    scheduler-free like `sync_boe`; the deploying agent wires them with
+    `@schedule` / `schedule_daily_report`. No `parrot.scheduler` import in
+    the package.
+  - *Persistence*: **Postgres from day 1**. No SQLite backend is built; the
+    `ContractCatalogStore` protocol becomes **async** (asyncpg pool, same
+    idioms as `graphindex/persist_postgres.py`). Tests follow the
+    `GRAPHINDEX_PG_DSN` skip-if-absent convention of the graphindex suite.
+  - *Obligations*: one per clause, closed `kind`.
+  - *ComplianceStandard seed*: full list (`soc2, iso27001, gdpr, ccpa,
+    hipaa, pci_dss, nist_800_53, cyber_insurance`) hand-written with
+    aliases; SOC 2 / HIPAA / PCI aliases cross-checked against
+    `parrot_tools/security/reports/mappings/`.
+  - *Party aliases*: a `party_aliases` table in the catalog plus a
+    party-merge operation exposed through the confirming `verify_card` tool
+    and the CLI; the datasource unions aliases into the `Party` vertex.
+  - *Owner / department*: configurable folder-path → owner/department rule
+    applied at ingest, manual override in `verify_card`.
+  - *LLM-judged relations*: **in v1**, bookstore-style — a `relations.py`
+    stage with judgement log and `--force`, adding `conflicts_with`
+    (`Contract → Contract`, symmetric) and `references_obligation`
+    (`Obligation → Obligation`, cross-contract) as two new edge collections
+    with `origin="llm"` on the edge. The YAML gains two relations (no
+    `discovery:` block — written by the relations stage) and must be
+    re-validated. Retrieval stays LLM-free; the judgement runs at
+    ingest/relate time only.
+  - *Delta detection*: **add a Microsoft Graph `/delta` tool** to
+    `parrot_tools.o365` first (`DeltaSharePointFilesTool` /
+    `DeltaOneDriveFilesTool` on `O365Tool._execute_graph_operation`, delta
+    token persisted in the catalog), then `ingest_delta` consumes it.
+  - *Scanned PDFs*: **excluded** from the pilot; no-text PDFs are logged as
+    skipped with a reason and surfaced in the ingest report.
+  - *Language*: English only (`text_en` + `identity`, YAML unchanged).
+  - *Audit + retirement*: a `contract_answers` table in the Postgres
+    catalog (question, user, `answer_kind`, `pattern`, citations,
+    authorization outcome, `retired_by/at`); retired answers suppress their
+    citations from future lookups.
+  - *Verification UI*: separate spec (`contracts-verification-ui`); this
+    spec ships the API/tool surface only.
+  - *Temporal*: **dual-write** each card version to the GraphIndex Postgres
+    plane as a `GraphUpdate` commit (`PostgresPersistence.apply_update`),
+    so `graph_as_of` / `graph_concept_history` / `graph_diff` answer
+    contract history, while `versions[]` stays embedded for
+    `contract_in_force`. Requires the `graphindex-postgres` extra — the same
+    Postgres the catalog already needs.
+- Phase the delivery: v1 = models → carding → Postgres catalog (+ aliases,
+  answers, delta-token tables) → library → standards + datasource + loader
+  (+ GraphIndex dual-write) → o365 delta tool → relations stage → toolkit
+  → crew + ReAct agent → watcher jobs. Phase 2 = verification UI (own
+  spec), OCR for scans, bilingual analyzers.
 
 ---
 
@@ -481,11 +542,14 @@ no obligations). The operator sees `(card, "added" | "updated" | "skipped")`.
 **Sources.** Files are fetched, never moved: SharePoint/OneDrive documents
 and mail attachments come through the existing `parrot_tools.o365`
 download tools into a temporary `source_path`; `source_uri` keeps the
-canonical location. Scanned PDFs go through the `parrot_loaders` OCR
-backend before PageIndex import (path to be wired; see open questions).
+canonical location. Change detection uses a new Microsoft Graph `/delta`
+tool in `parrot_tools.o365` (delta token kept in the catalog). Scanned
+PDFs are excluded from the pilot: a PDF with no extractable text is
+skipped with a reason in the ingest report.
 
-**Scheduled watchers.** Three agent methods registered with the server
-scheduler: `renewals_report` (daily) lists contracts whose
+**Scheduled watchers.** Three scheduler-free async job functions in
+`parrot_tools/contracts/jobs.py`, wired by the deploying agent with
+`@schedule` / `schedule_daily_report`: `renewals_report` (daily) lists contracts whose
 `notice_deadline` (fallback `expiration_date`) falls in 30/60/90-day
 windows; `obligations_digest` (weekly) lists obligations with a
 `due_date` or `recurrence` hitting the coming period; `ingest_delta`
@@ -506,6 +570,16 @@ draft, keeps every verified field whose `hash(quote)` is unchanged, marks
 the rest `stale`, snapshots the previous card into a new `ContractVersion`
 (`amendment` or `restatement`) and never discards a verified value.
 
+**Relations stage.** After carding, `relate_contracts()` runs the
+bookstore-style two-stage relation pass: deterministic candidates (same
+counterparty, same family, overlapping obligation kinds) then one
+structured LLM judgement per contract over its candidates, producing
+`conflicts_with` (contract ↔ contract) and `references_obligation`
+(obligation → obligation across contracts) edges with `origin="llm"`,
+a judgement log so pairs are never re-judged without `--force`, and no
+effect on retrieval (the edges are traversed, never re-judged, at answer
+time).
+
 **Graph publish.** `ContractGraphLoader.publish(card)` writes
 `Contract`/`Party`/`Person`/`Obligation` vertices and the property-carrying
 edges (`party_to.role`, `signed_by.signed_on/on_behalf_of`, `amends`,
@@ -513,9 +587,15 @@ edges (`party_to.role`, `signed_by.signed_on/on_behalf_of`, `amends`,
 `represents`, `is_employee`, `owned_by`, `managed_by`) are produced by the
 ontology's `field_match` discovery. `ComplianceStandard` is a static seed.
 
-**Agent surface.** A read-only `contracts_*` toolkit (`catalog_search`,
-`get_card`, `get_toc`, `read_section`, `obligations`, `expiring`,
-`verification_queue`) plus a confirming `verify_card`. The agent answers
+**Agent surface.** Two answer shapes over one data plane. For chat and
+MCP, a ReAct `ContractsAgent` with the read-only `contracts_*` toolkit
+(`catalog_search`, `get_card`, `get_toc`, `read_section`, `obligations`,
+`expiring`, `verification_queue`, `related_contracts`) plus the confirming
+`verify_card` (field verification, party merge, owner override). For
+scheduled reports and the API/A2A path, a fail-closed crew: deterministic
+retrieval nodes build an enumerated dossier, one stateless structured
+draft produces the answer, and a citation verifier checks every quote
+against the PageIndex node text before release. Both answer
 with a `ContractAnswer`: `lookup` (answer + ≥ 1 citation, each with
 `contract_id`, `node_id`, `page`, verbatim `quote` and its verification
 state), `interpretation_required` (a `HandoffBrief` with the located
@@ -685,12 +765,17 @@ node sync and the loader only adds what that machinery cannot do:
   (`add_contract/add_folder/verify_card/refresh_card`);
   `contracts.ontology.yaml` in `ontology/defaults/domains/` +
   `ContractGraphLoader`; `ContractsToolkit` (read-only + confirming
-  `verify_card`); `ContractsAgent` emitting `ContractAnswer` with citation
-  check and hand-off triage; the three scheduled watchers
-  (`renewals_report`, `obligations_digest`, `ingest_delta`) over the
-  catalog SQL; answer audit record + answer retirement. Phase 2 (same
-  spec, later tasks): Postgres catalog backend, SharePoint/OneDrive delta
-  loop, OCR wiring for scanned PDFs.
+  `verify_card` with party merge and owner override); ReAct
+  `ContractsAgent` **and** a fail-closed answer crew, both emitting
+  `ContractAnswer` with the citation check and hand-off triage; the
+  LLM-judged relations stage (`conflicts_with`, `references_obligation`);
+  the three scheduler-free watcher jobs (`renewals_report`,
+  `obligations_digest`, `ingest_delta`) over the catalog SQL; Postgres
+  catalog from day 1 (cards, obligations, versions, `party_aliases`,
+  `contract_answers`, delta tokens); GraphIndex dual-write of card
+  versions; a Microsoft Graph `/delta` tool in `parrot_tools.o365`.
+  Phase 2 (later spec/tasks): OCR wiring for scanned PDFs, bilingual
+  analyzers.
 - `contracts-verification-ui` (proposed, **separate spec**): Bob's
   verification-queue page in the Svelte 5 admin UI
   (`ai-parrot-server/ui`, currently Home/Login/Dashboard/Agents only),
@@ -727,7 +812,12 @@ node sync and the loader only adds what that machinery cannot do:
 | `ai-parrot-server/src/parrot/scheduler/manager.py` | depends on | `@schedule`, `schedule_daily_report`, `schedule_weekly_report`, `register_bot_schedules`; rows in `navigator.agents_scheduler` |
 | `ai-parrot-server/ui` (Svelte 5) | separate spec | verification-queue page does not exist |
 | `parrot/interfaces/sharepoint.py`, `parrot/core/hooks/sharepoint.py` | not used | upload-oriented `SharepointClient`; superseded by `parrot_tools.o365` for reads |
-| `packages/ai-parrot/pyproject.toml` | new optional dep | `rapidfuzz>=3.0` added to the `graphindex` extra (decided) |
+| `packages/ai-parrot/pyproject.toml` | new optional dep | `rapidfuzz>=3.0` added to the `graphindex` extra (decided); contracts also requires the existing `graphindex-postgres` extra (asyncpg, pgvector) |
+| `parrot_tools/o365/{sharepoint,onedrive}.py` | extends | new `Delta*FilesTool` classes on `O365Tool._execute_graph_operation` (Graph `driveItem/delta`) |
+| `parrot/knowledge/graphindex/persist_postgres.py`, `schema.py` | depends on | dual-write of card versions as `GraphUpdate` commits via `PostgresPersistence.apply_update` |
+| `parrot/knowledge/bookstore/relations.py`, `catalog.py` | pattern reuse | `deterministic_relations` / `judge_relations` / `record_judgements` shape for the contracts relations stage (no edits) |
+| `parrot_tools/contracts/` (new) | new package | toolkit, ReAct agent, answer crew, `jobs.py` watchers |
+| tests | infra | Postgres-backed suites skip without `GRAPHINDEX_PG_DSN` (graphindex convention); CI needs a Postgres service for full coverage |
 | `packages/ai-parrot/tests/knowledge/contracts/` (new) | tests | synthetic MSA + SOW markdown fixtures, fake adapter, no-LLM fallback path |
 | CI / deployment | none | additive; no migration of existing stores |
 
@@ -1131,6 +1221,31 @@ async def sync_boe(tenant_id: str, since: date | None = None) -> RefreshReport: 
 async def _sync_provenance_edges(ctx, graph_store, boe_source) -> tuple[dict[str, DiscoveryStats], list[str]]:   # line 106 — property edges via create_edges
 # From parrot_tools/legal/boe/datasource.py
     def _target_entity(self, fields: list[str] | None) -> str:   # line 170 — infer entity from requested fields
+
+# From parrot/knowledge/graphindex/schema.py (dual-write)
+class UniversalNode(BaseModel):                             # line 149
+class UniversalEdge(BaseModel):                             # line 184
+class GraphUpdate(BaseModel):                               # line 233 — one transactional batch, recorded as a commit
+class CommitReceipt(BaseModel):                             # line 269
+# From parrot/knowledge/graphindex/persist_postgres.py
+    async def apply_update(self, ctx: TenantContext, update: GraphUpdate) -> CommitReceipt:   # line 834
+    async def revert_commit(self, ctx: TenantContext, commit_id: str) -> dict[str, Any]:      # line 1046
+# Tests convention: packages/ai-parrot/tests/knowledge/graphindex/test_temporal_postgres.py:17-18
+#   PG_DSN = os.environ.get("GRAPHINDEX_PG_DSN") or default_dsn; pytestmark = skipif(not PG_DSN, "needs live Postgres")
+
+# From parrot_tools/o365/base.py
+class O365Tool:
+    async def _get_client(...)                              # line 111
+    async def _execute_graph_operation(self, client: O365Client, **kwargs) -> Any:   # line 200 — hook the Delta* tools implement
+    async def _execute(self, **kwargs) -> ToolResult:       # line 219
+
+# From parrot/knowledge/bookstore/models.py / catalog.py (relations-stage precedent)
+class RelationJudgement(BaseModel):                         # models.py line 255
+class RelationDraft(BaseModel):                             # models.py line 278
+    def record_judgements(...)                              # catalog.py line 597
+    def judged_pairs(self, src: str) -> set[str]:           # catalog.py line 630
+def deterministic_relations(cards, *, now, topic_jaccard_min=0.2, era_window_years=50) -> list[BookRelation]:   # relations.py line 141
+async def judge_relations(adapter, card, candidates, *, model_name="") -> RelationDraft:   # relations.py line 372
 ```
 
 #### Verified Imports
@@ -1200,53 +1315,60 @@ from parrot_tools.legal.librarian.models import SpanRef, LegalAnswer            
 
 ## Parallelism Assessment
 
-- **Internal parallelism**: moderate. The dependency chain is `models` →
-  {`carding`, `catalog`} → `library` → `toolkit`/`agent`. The
-  ontology YAML + `ContractGraphLoader` + merge test only need `models` and
-  can run in a second lane while `carding`/`catalog`/`library` proceed.
-  Phase-2 tasks (Postgres backend, SharePoint delta) depend on `catalog`
-  and `library` respectively and can be separate worktrees later.
+- **Internal parallelism**: good, now that the feature spans two packages.
+  Three lanes: (1) **core** `parrot/knowledge/contracts/` — models →
+  carding → Postgres catalog → library → standards/datasource/loader (+
+  GraphIndex dual-write) → relations stage; (2) **o365 delta tool** in
+  `parrot_tools/o365/` — independent of everything else, can start on day
+  one; (3) **tools** `parrot_tools/contracts/` — toolkit → crew + ReAct
+  agent → watcher jobs, which depend on lane 1's library and catalog API
+  (can start against the protocol once models + protocol land).
 - **Cross-feature independence**: no in-flight feature touches
-  `parrot/knowledge/bookstore/`, `parrot/knowledge/ontology/` or
+  `parrot/knowledge/bookstore/`, `parrot/knowledge/ontology/`,
+  `parrot/knowledge/graphindex/persist_postgres.py`, `parrot_tools/o365/` or
   `parrot/tools/toolkit.py` (open features on 2026-09-09: FEAT-481
   fireflies-wiki-knowledgebase-agent, FEAT-526 meta-llm-client, plus
-  done-with-issues voice/avatar features). The only shared surface is the
-  new file under `ontology/defaults/domains/`, which nothing else edits.
-  This feature does not modify any existing module.
-- **Recommended isolation**: `per-spec` — one worktree
-  `feat-<id>-contracts-card-ontology` from `dev`, tasks in dependency order;
-  optionally `mixed` for the ontology+loader lane if two workers are
-  available.
-- **Rationale**: the feature is additive and self-contained, so a single
-  worktree carries no merge risk with `dev`; splitting into many worktrees
-  would only pay off for the one independent lane (YAML + loader).
+  done-with-issues voice/avatar features). The only edits to existing
+  files are the bookstore `docx_to_markdown` extraction, two new o365 tool
+  classes, one pyproject extra line, and the new domain YAML.
+- **Recommended isolation**: `mixed` — one worktree for lane 1 (sequential),
+  a second short-lived worktree for the o365 delta tool, and lane 3 in the
+  lane-1 worktree once the library API is committed (or its own worktree if
+  a second worker is available). `/sdd-spec` may reasonably split the o365
+  delta tool into its own small spec.
+- **Rationale**: the delta tool is fully independent and touches a
+  different package; the tools lane depends on the core lane's API, so it
+  benefits from sharing a worktree; everything else is additive.
 
 ---
 
 ## Open Questions
 
-- [ ] **Module location**: everything in core `parrot/knowledge/contracts/`
-  (bookstore precedent, and it imports bookstore/pageindex helpers), or the
-  toolkit + agent + graph loader in `parrot_tools/contracts/` per the
-  CLAUDE.md "concrete toolkits live in ai-parrot-tools" rule (legal
-  precedent)? — *Owner: Jesus Lara*
-- [ ] **Answer layer shape**: ReAct `ContractsAgent(OntologyRAGMixin, Agent)`
-  with the `contracts_*` toolkit (Option A) or a fixed fail-closed crew
-  (Option D)? The citation check is adopted either way. — *Owner: Jesus Lara*
-- [ ] **Obligation granularity**: one `Obligation` per clause (proposed) or
-  one per `kind` per contract? — *Owner: Jesus Lara*
-- [ ] **`ComplianceStandard` seed list and aliases**: proposed
-  `soc2, iso27001, gdpr, ccpa, hipaa, pci_dss, nist_800_53, cyber_insurance`;
-  only SOC 2 / HIPAA / PCI DSS have mapping files in
-  `parrot_tools/security/reports/mappings/`. Hand-write the rest? — *Owner: Jesus Lara*
-- [ ] **Party identity**: suffix normalisation list
-  (`Inc|Corp|Corporation|Ltd|LLC|S.L.|S.A.`) plus a curable alias table —
-  where does Bob edit aliases (CLI, `verify_card`, catalog table)? — *Owner: Jesus Lara*
-- [ ] **Owner / department source**: SharePoint folder rule, library metadata
-  (`Author`, custom columns), or manual assignment in the verification
-  queue? Neither is in the document text. — *Owner: Jesus Lara*
-- [ ] **Postgres from the pilot or after**: D8 says Postgres from day 1 if the
-  pilot has ≥ 3 concurrent users with roles. How many pilot users? — *Owner: Jesus Lara*
+All questions were resolved with the user on 2026-09-09 (four rounds);
+one implementer spike remains.
+
+- [x] **Module location** — *Owner: Jesus Lara*: split — core
+  `parrot/knowledge/contracts/` (models, carding, catalog, library,
+  datasource, loader, standards); `parrot_tools/contracts/` (toolkit,
+  ReAct agent, answer crew, watcher jobs).
+- [x] **Answer layer shape** — *Owner: Jesus Lara*: both — fail-closed crew
+  for scheduled/API answers, ReAct `ContractsAgent` + toolkit for chat/MCP;
+  shared `ContractAnswer` and citation check.
+- [x] **Obligation granularity** — *Owner: Jesus Lara*: one `Obligation` per
+  clause with closed `kind`; aggregation is a query.
+- [x] **`ComplianceStandard` seed** — *Owner: Jesus Lara*: full list
+  `soc2, iso27001, gdpr, ccpa, hipaa, pci_dss, nist_800_53,
+  cyber_insurance`, hand-written with aliases; SOC 2/HIPAA/PCI aliases
+  cross-checked against `parrot_tools/security/reports/mappings/`.
+- [x] **Party identity / aliases** — *Owner: Jesus Lara*: `party_aliases`
+  table in the catalog + party-merge through the confirming `verify_card`
+  tool and the CLI; suffix normalisation at carding; datasource unions
+  aliases into the `Party` vertex.
+- [x] **Owner / department source** — *Owner: Jesus Lara*: configurable
+  folder-path rule applied at ingest, manual override in `verify_card`.
+- [x] **Postgres from the pilot or after** — *Owner: Jesus Lara*: Postgres
+  from day 1; no SQLite backend; async `ContractCatalogStore`; tests skip
+  without `GRAPHINDEX_PG_DSN`.
 - [x] **`rapidfuzz` dependency** — *Owner: Jesus Lara*: add `rapidfuzz>=3.0`
   to the `graphindex` extra of `packages/ai-parrot/pyproject.toml`
   (also covers the undeclared lazy import in `ontology/discovery.py`);
@@ -1256,35 +1378,31 @@ from parrot_tools.legal.librarian.models import SpanRef, LegalAnswer            
   the bookstore package; the private method delegates to it.
 - [ ] **`same_department` on a `Contract` target**: verify whether
   `AuthorizationChecker._check_same_department` reads `Contract.department`
-  as-is or needs a target-entity hook before the rule is used in phase 2. — *Owner: implementer (spike in TASK for ontology)*
-- [ ] **Bilingual corpus**: add `text_es` analyzers to `contracts_view` as in
-  `legal_articulos_view`, or English-only for the pilot? — *Owner: Jesus Lara*
+  as-is or needs a target-entity hook before the rule is used. — *Owner:
+  implementer (spike inside the ontology task)*
+- [x] **Bilingual corpus** — *Owner: Jesus Lara*: English only; YAML
+  analyzers unchanged.
 - [x] **Missing product doc** — *Owner: Jesus Lara*: it exists at
   `sdd/proposals/contracts-agent-definition.md` (the design doc's
   `claude/…` path is stale); reconciled into this brainstorm on 2026-09-09.
-- [ ] **LLM-judged relations** (`conflicts_with`, `references_obligation`
-  from the product definition): in scope for v1 as bookstore-style
-  `relations.py` judgements written as extra edges, or dropped in favour
-  of the deterministic graph only? — *Owner: Jesus Lara*
-- [ ] **Watchers' home**: `@schedule` methods on `ContractsAgent` (needs
-  `ai-parrot-server` at runtime) or a standalone scheduled job class?
-  Where should `renewals_report` deliver by default (`send_result` email /
-  Teams)? — *Owner: Jesus Lara*
-- [ ] **Delta detection for "new & changed"**: poll `List*/Search*` + sha
-  compare for the pilot, or add a Microsoft Graph `/delta` tool to
-  `parrot_tools.o365` first? — *Owner: Jesus Lara*
-- [ ] **Scanned PDFs in the pilot**: wire `parrot_loaders.ocr` into the PDF
-  path in this spec, or exclude scans from the 50–100 pilot set? — *Owner: Jesus Lara*
-- [ ] **Answer audit + retirement**: new `contract_answers` table in the
-  catalog (question, user, `answer_kind`, `pattern`, citations,
-  authorization outcome, `retired_by`) — in this spec or a shared
-  answer-audit facility? — *Owner: Jesus Lara*
-- [ ] **Verification UI**: confirm it is a separate spec
-  (`contracts-verification-ui`) against the Svelte admin UI, with this spec
-  exposing only the API/tool surface. — *Owner: Jesus Lara*
-- [ ] **Temporal plane**: keep D6 (embedded `versions[]`) for the pilot and
-  revisit FEAT-520 `graph_as_of` once the ontology graph and GraphIndex
-  plane converge? — *Owner: Jesus Lara*
-- [x] **Flow type / base branch** — *Owner: Claude*: defaulted to
-  `type: feature`, `base_branch: dev` (no hotfix semantics; additive
-  feature work).
+- [x] **LLM-judged relations** — *Owner: Jesus Lara*: in v1 as
+  bookstore-style judgements (`relations.py` stage, judgement log,
+  `--force`) writing `conflicts_with` and `references_obligation` edges;
+  YAML gains the two relations and is re-validated.
+- [x] **Watchers' home** — *Owner: Jesus Lara*: standalone async job
+  functions in `parrot_tools/contracts/jobs.py`; the deploying agent wires
+  `@schedule`; no `parrot.scheduler` import in the package. Default
+  delivery channel is the deployer's `send_result`.
+- [x] **Delta detection** — *Owner: Jesus Lara*: add a Microsoft Graph
+  `/delta` tool to `parrot_tools.o365` first; `ingest_delta` consumes it;
+  delta token stored in the catalog.
+- [x] **Scanned PDFs** — *Owner: Jesus Lara*: excluded from the pilot;
+  no-text PDFs skipped with a logged reason.
+- [x] **Answer audit + retirement** — *Owner: Jesus Lara*: `contract_answers`
+  table in the Postgres catalog, in this spec; retired answers suppress
+  their citations.
+- [x] **Verification UI** — *Owner: Jesus Lara*: separate spec
+  (`contracts-verification-ui`); this spec ships the API/tool surface only.
+- [x] **Temporal plane** — *Owner: Jesus Lara*: dual-write each card version
+  to the GraphIndex Postgres plane as a `GraphUpdate` commit now, keeping
+  embedded `versions[]` for `contract_in_force`.
