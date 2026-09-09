@@ -478,7 +478,6 @@ class LLMWikiToolkit(AbstractToolkit):
         # returns `self._store` unchanged when nothing is federated.
         read_store = self._store_for(wiki_name)
         cross_ref_issues: list[dict[str, Any]] = [
-            {"kind": "broken_edge", **edge} for edge in await self._store.broken_edges()
             {"kind": "broken_edge", **edge} for edge in await read_store.broken_edges()
         ]
         cross_ref_issues.extend(
