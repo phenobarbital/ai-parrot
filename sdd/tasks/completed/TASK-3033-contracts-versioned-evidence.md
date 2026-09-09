@@ -110,7 +110,7 @@ empty quotes map to `None` so the field stays stale. All filesystem work is offl
 with `asyncio.to_thread` and every path segment is validated against traversal.
 
 **Validation**: `pytest .../test_evidence.py -q` -> 30 passed (whole contracts suite
-299 passed, `artifacts/logs/task-3033.log`); ruff clean. Tests cover: two tenants
+301 passed, `artifacts/logs/task-3033.log`); ruff clean. Tests cover: two tenants
 reusing the same slug and node ids cannot cross-read (a foreign reference raises),
 traversal/separator rejection on read and write, wrong version/hash/node/page/contract
 lookups failing with distinct reasons, a historical citation still resolving after the
