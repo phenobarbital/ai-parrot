@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-539 - Contracts Card & Ontology
 **Spec**: `sdd/specs/contracts-card-ontology.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2–4h)
 **Depends-on**: TASK-3025
@@ -97,4 +97,34 @@ Store execution logs in `artifacts/logs/task-3026.log`. Use frozen dates, synthe
 
 ## Completion Note
 
-Pending execution. Record executor, completion date, implementation summary, validation evidence and deviations when this task is completed.
+Completed 2026-09-09 by sdd-worker (Claude Opus 5).
+
+**Implementation**: created `parrot/knowledge/contracts/catalog.py` — the abstract
+async `ContractCatalogStore`, tenant/schema/principal bound at construction
+(`validate_sql_identifier` rejects anything that is not a plain lowercase SQL name;
+no method accepts a tenant argument). 40 abstract coroutines cover cards
+(upsert/get/find_by_sha/find_by_source_uri/list_cards/search/expiring/
+verification_queue/taken_slugs/remove), obligations + versions, parties and aliases
+(merge_parties/party_aliases/all_party_aliases/add_party_alias/resolve_party/
+list_parties), the answer audit (record_answer/get_answer/retire_answer/
+retired_citations), source cursors and item identity, relation judgements
+(record/history/replace/active/invalidate) and the durable outbox
+(enqueue/pending/claim/complete/fail), plus setup/close. Typed inputs/results:
+`UpsertResult`, `SearchHit`, `VerificationQueueEntry` (priority
+missing_evidence < low_confidence < stale), `ObligationWindow`, `PartyMergeResult`,
+`ExpiringKey`. Errors: `CatalogConflictError`, `DuplicateSourceError`,
+`AliasConflictError`, `UnknownContract/Party/AnswerError`,
+`PublicationUnavailableError`. The module docstring documents the transaction and
+revision preconditions later consumers rely on (one transaction per upsert;
+publication is never atomic with the catalog write; remove is a retraction).
+
+**Validation**: `pytest .../test_catalog_contract.py -q` -> 33 passed
+(log: `artifacts/logs/task-3026.log`); whole contracts suite 108 passed;
+`ruff check` clean. The test module defines `InMemoryContractCatalog`, a complete
+in-memory double (reused by later suites) that exercises conflict, duplicate-source
+and unavailable-publication outcomes; a guard test asserts no sqlite3/asyncpg
+backend leaked into the protocol module.
+
+**Deviations**: none. `upsert` takes `expected_revision`/`version`/`targets`
+keyword-only extensions beyond the spec's bare `upsert(card)` because spec §2
+requires optimistic revision checks and one-transaction publication enqueue.
