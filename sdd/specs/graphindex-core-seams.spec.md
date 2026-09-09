@@ -36,46 +36,73 @@ server for Claude Code / Codex. Tools in the same space — `graphify`,
 `zvec-grep` — install in one `pip install` and work in seconds.
 
 Today that use case is impossible without installing the whole framework.
-`ai-parrot` core declares 55 runtime dependencies (navigator-api,
-navigator-auth, pandas, pyarrow, faiss-cpu, sqlglot, …) and a `parrot.conf`
+`ai-parrot` core declares **56** runtime dependencies and a `parrot.conf`
 settings module with import-time side effects (Navigator startup banner,
-settings directory resolution, Google model import).
+settings directory resolution).
 
-The measured cause is **not** the wiki/graphindex code itself. It is a small
-number of eager package roots and framework imports that the graph code
-crosses to fetch a Pydantic model, a dataclass, or a tool base class:
+**The 2026-09 provider-client split did not fix this.** Fifteen
+`ai-parrot-client-*` satellites now own the provider SDKs (anthropic,
+google-genai, groq, …), but the weight that blocks a standalone install was
+never in those SDKs: it is `navigator-api`/`navigator-auth`/
+`navigator-eventbus`, `pandas`, `pyarrow`, `faiss-cpu`, `asyncdb`, `redis`
+and `openai==3.3.1`, all still core runtime dependencies. Core's own
+`parrot/clients/` still holds `base.py`, `factory.py`, `detection.py`,
+`models.py`, `protocols.py`, `openai_base.py` plus `google/` and `nova/`.
 
-| Gateway | Trigger | Drags in |
-|---|---|---|
-| `parrot/knowledge/ontology/__init__.py` | `from parrot.knowledge.ontology.schema import TenantContext` — **9** call sites in `graphindex/` | `.mixin` → bots → clients → `parrot.conf` → navconfig, navigator_eventbus, aiohttp, pandas, faiss |
-| `parrot/stores/__init__.py` | `from parrot.stores.models import Document` (`graphindex/extractors/loader.py:38`, `graphindex/loader.py:32`) | `.abstract` → `AbstractStore` → `parrot.conf` |
-| `wiki/documents.py:26` | top-level `import aiohttp` for one fetch path | aiohttp |
-| `wiki/tools.py:21`, `wiki/toolkit.py:31`, `wiki/structural/*` | `parrot.tools.abstract` / `parrot.tools.toolkit` | the tool machinery and everything it imports |
+The cause is **not** the wiki/graphindex code. It is a handful of eager
+package roots that the graph code crosses to fetch a Pydantic model, a
+dataclass, or an exception class. Measured on `dev` @ `24ff50f03`
+(2026-09-10, this venv), by tracing which module first pulls each heavy
+package:
 
-Measured on `dev` at `81e087bd8` (2026-09-09, this venv):
+| # | Gateway | Trigger | Cost | Drags in |
+|---|---|---|---:|---|
+| 1 | `parrot/auth/__init__.py` | `ontology/mixin.py:65` → `from parrot.auth.exceptions import AuthorizationRequired` | **1186** | the package root eagerly imports `.permission`, `.resolver`, `.pbac`, `.eval_context`, `.userinfo`, `.dataset_guard`; `pbac.py:27` → `parrot.conf:6` → navconfig, redis; plus aiohttp, asyncdb, asyncpg, and via `parrot.tools.abstract` faiss + navigator_eventbus |
+| 2 | `parrot/tools/__init__.py` | `parrot.tools.abstract` (1130) / `parrot.tools.manager` | — | faiss, navigator_eventbus; `manager` adds pandas + pyarrow |
+| 3 | `parrot/stores/__init__.py` | `from parrot.stores.models import Document` (`graphindex/extractors/loader.py:38`, `graphindex/loader.py:32`) | **826** | `.abstract:7` → `from navconfig.logging import logging` → navconfig, asyncpg, redis |
+| 4 | `wiki/documents.py:26` | top-level `import aiohttp` for one fetch path | — | aiohttp |
 
-| Import | modules today | heavy packages loaded |
-|---|---:|---|
-| `parrot.knowledge.ontology.schema` | 1607 | navconfig, parrot.conf, navigator_eventbus, asyncdb, pandas, faiss, aiohttp, redis, asyncpg, pyarrow |
-| `parrot.knowledge.graphindex` | 1959 | same |
-| `parrot.knowledge.graphindex.builder` | 2511 | same |
-| `parrot.knowledge.wiki.cli` | 1995 | same |
+**Gateway 1 is the headline finding and the cheapest fix.**
+`parrot/auth/exceptions.py` imports nothing but `typing` — the 1186 modules
+are paid entirely by its package root. Every `graphindex` module that
+imports `ontology.schema` (nine of them, including FEAT-520's
+`persist_sqlite.py` and `persist_postgres.py`) pays it, because
+`ontology/__init__.py:5` eagerly imports `.mixin`.
 
-The measurement methodology and the earlier per-seam attribution come from
+Entry-point costs today, and the floors that bound what is achievable:
+
+| Import | modules today | floor | heavy packages loaded |
+|---|---:|---:|---|
+| `import parrot` | **94** | — | none — the root is already clean |
+| `parrot.knowledge.ontology.schema` | 1607 | **124** (`parrot`+`re`+`pydantic`) | navconfig, asyncdb, asyncpg, aiohttp, faiss, navigator_eventbus, pandas, pyarrow, redis |
+| `parrot.stores.models` | 826 | — | navconfig, asyncpg, redis |
+| `parrot.knowledge.graphindex` | 1959 | — | same nine |
+| `parrot.knowledge.graphindex.builder` | 2511 | — | same nine |
+| `parrot.knowledge.wiki.cli` | 1995 | **698** (`parrot` + the 9 base packages) | same nine |
+
+That `import parrot` costs 94 modules with nothing heavy is what makes this
+feature tractable: the framework root is not the problem, four package roots
+are.
+
+The earlier per-seam attribution is in
 `artifacts/logs/lazy-ontology-import-measurement.md` on the throwaway branch
-`exp-lazy-ontology` (commit `c4555d7d1`). That branch is discarded; the
-evidence log is what carries forward. With PEP 562 lazy roots for the two
-packages plus a lazy `aiohttp` import, the same measurement dropped
-`parrot.knowledge.wiki.cli` from 1930 to **813** modules and loaded none of
-the framework surfaces above.
+`exp-lazy-ontology` (commit `c4555d7d1`). That branch is discarded and its
+gateway table is superseded by the measurements above — it predates both the
+provider-client split and FEAT-520, and it attributed the cost to a
+`.mixin → bots → clients → parrot.conf` chain that no longer exists.
+`ontology/mixin.py` imports exactly one framework symbol today, from
+`parrot.auth.exceptions`.
 
 ### Goals
 
 - G1 — `import parrot.knowledge.wiki.cli` loads **≤ 850** modules and loads
   none of: `navconfig`, `parrot.conf`, `navigator_eventbus`, `asyncdb`,
   `pandas`, `faiss`, `pyarrow`, `redis`, `asyncpg`.
-- G2 — `import parrot.knowledge.ontology.schema` loads **≤ 260** modules
-  (it imports only `re` and `pydantic`; the cost today is its package root).
+- G2 — `import parrot.knowledge.ontology.schema` loads **≤ 240** modules
+  (it imports only `re` and `pydantic`; measured floor 124, today 1607 — the
+  entire excess is package roots).
+- G2b — `from parrot.auth.exceptions import AuthorizationRequired` loads
+  **≤ 150** modules (today 1186, for a module whose only import is `typing`).
 - G3 — Nothing under `parrot/knowledge/wiki/` or
   `parrot/knowledge/graphindex/` imports `parrot.tools.*`,
   `parrot.clients.*`, `parrot.loaders.*`, `parrot.stores.*` or
@@ -96,7 +123,7 @@ the framework surfaces above.
 - Changing `ai-parrot`'s dependency list or extras. FEAT-541.
 - Rebuilding or migrating existing planes under `~/.parrot/wikis/*/wiki.db`.
   No schema change is in scope.
-- Slimming core's 55 dependencies in place (brainstorm Option C, rejected —
+- Slimming core's 56 dependencies in place (brainstorm Option C, rejected —
   see `proposals/parrot-graphindex-standalone.brainstorm.md`), and
   publishing from a separate repository by vendoring (Option D, rejected).
 - Moving `parrot/interfaces/obsidian/` or `parrot/interfaces/jira/`.
@@ -262,14 +289,21 @@ def resolve_setting(key: str, *, default: Any = None, explicit: Any = None) -> A
 ## 3. Module Breakdown
 
 ### Module 1: Lazy package roots + import-ceiling test
-- **Path**: `parrot/knowledge/ontology/__init__.py`, `parrot/stores/__init__.py`,
-  `parrot/knowledge/wiki/documents.py`,
+- **Path**: `parrot/auth/__init__.py`, `parrot/knowledge/ontology/__init__.py`,
+  `parrot/stores/__init__.py`, `parrot/knowledge/wiki/documents.py`,
   `packages/ai-parrot/tests/knowledge/test_import_ceilings.py` (new)
-- **Responsibility**: PEP 562 `__getattr__` roots for the two eager packages;
+- **Responsibility**: PEP 562 `__getattr__` roots for the **three** eager
+  packages — `parrot/auth/__init__.py` first (gateway #1: 1186 modules to
+  reach an exception class whose only import is `typing`), then
+  `parrot/knowledge/ontology/__init__.py` and `parrot/stores/__init__.py`;
   move `import aiohttp` (`documents.py:26`) inside the one fetch function that
   uses it (`documents.py:568-595`). Add the parametrized ceiling test that runs
   each import in a **subprocess** (module counts are not resettable in-process)
   and asserts both `len(sys.modules)` and the forbidden-package list.
+  Order matters: `parrot/auth` alone is more than half the excess on every
+  graph entry point — land it first and re-measure before touching the other
+  two. `parrot/stores/__init__.py`'s 826-module cost is one line,
+  `.abstract:7 from navconfig.logging import logging`, not the store classes.
 - **Depends on**: nothing — start here; it is the objective gate every other
   module is measured against.
 
@@ -360,6 +394,7 @@ def resolve_setting(key: str, *, default: Any = None, explicit: Any = None) -> A
 
 | Test | Module | Description |
 |---|---|---|
+| `test_auth_root_lazy` | 1 | `parrot.auth.exceptions` imports without `.pbac` / `parrot.conf` entering `sys.modules`; `from parrot.auth import setup_pbac` still resolves |
 | `test_ontology_root_lazy` | 1 | `from parrot.knowledge.ontology import OntologyRAGMixin` still resolves; `parrot.knowledge.ontology.mixin` absent from `sys.modules` after importing only `schema` |
 | `test_stores_root_lazy` | 1 | `from parrot.stores import AbstractStore` resolves; `supported_stores` unchanged |
 | `test_documents_aiohttp_lazy` | 1 | importing `wiki.documents` leaves `aiohttp` out of `sys.modules`; the fetch path still works |
@@ -409,9 +444,11 @@ def stub_embedder():
 ## 5. Acceptance Criteria
 
 - [ ] `import parrot.knowledge.wiki.cli` loads **≤ 850** modules in a clean
-      subprocess (baseline on `dev` @ `81e087bd8`: 1995)
-- [ ] `import parrot.knowledge.ontology.schema` loads **≤ 260** modules
-      (baseline: 1607)
+      subprocess (baseline on `dev` @ `24ff50f03`: 1995; measured floor 698)
+- [ ] `import parrot.knowledge.ontology.schema` loads **≤ 240** modules
+      (baseline: 1607; measured floor 124)
+- [ ] `from parrot.auth.exceptions import AuthorizationRequired` loads
+      **≤ 150** modules (baseline: 1186)
 - [ ] `import parrot.knowledge.graphindex` loads **≤ 800** modules
       (baseline: 1959)
 - [ ] `import parrot.knowledge.graphindex.builder` loads **≤ 1200** modules
@@ -526,10 +563,34 @@ from .mixin import OntologyRAGMixin          # ← the expensive one
 from .schema import EnrichedContext, MergedOntology, ResolvedIntent, TenantContext
 from .tenant import TenantOntologyManager
 
+# packages/ai-parrot/src/parrot/auth/__init__.py  — EAGER today, GATEWAY #1
+from .permission import PermissionContext, UserSession           # line 30
+from .resolver import (...)                                      # line 31
+from .pbac import setup_pbac                                     # line 38  ← the expensive one
+from .eval_context import build_eval_context                     # line 41
+from .userinfo import EmployeeProfile, UserInfoService           # line 45
+from .dataset_guard import DatasetPolicyGuard                    # line 46
+#   pbac.py:27  from parrot.conf import PARROT_SAAS_MODE
+#   conf.py:6   from navconfig import BASE_DIR, config
+#   cost: 1186 modules
+
+# packages/ai-parrot/src/parrot/auth/exceptions.py  — imports ONLY typing
+from __future__ import annotations                               # line 7
+from typing import List, Optional                                # line 9
+#   the sole symbol ontology/mixin.py:65 needs (AuthorizationRequired)
+
+# packages/ai-parrot/src/parrot/knowledge/ontology/mixin.py
+from parrot.auth.exceptions import AuthorizationRequired         # line 65
+#   ← the ONLY framework import in mixin.py today
+
 # packages/ai-parrot/src/parrot/stores/__init__.py  — EAGER today
 __path__ = extend_path(__path__, __name__)                       # line 2
 from .abstract import AbstractStore                              # line 4  ← the expensive one
 supported_stores = {...}                                         # lines 6-13
+# packages/ai-parrot/src/parrot/stores/abstract.py
+from navconfig.logging import logging                            # line 7  ← the whole 826-module cost
+# packages/ai-parrot/src/parrot/stores/models.py imports: typing, enum, pydantic,
+#   ..models.stores (SearchResult, StoreConfig) — nothing heavy of its own
 
 # packages/ai-parrot/src/parrot/stores/models.py
 class Document(BaseModel):                                       # line 19
@@ -694,6 +755,12 @@ class GraphIndexToolkit(AbstractToolkit): ...                    # line 110  ←
 - **Both old and new tool import paths will exist during the transition.**
   Tests referencing `parrot.knowledge.wiki.tools` (three files, listed in
   Module 3) must be repointed in the same task, not left for FEAT-541.
+- **`parrot/auth/__init__.py` is on the request path of the whole server.**
+  It is not a graph-only concern: `.pbac`, `.eval_context`, `.userinfo` and
+  `.dataset_guard` are wired into handlers and PBAC evaluation. A lazy root
+  must keep every one of those names resolvable and must not change *what*
+  callers get — only when they pay for it. Land it first and run the full
+  suite, not just the graph tests.
 - **`ontology/__init__.py` is imported by non-graph code too**
   (`OntologyRAGMixin`, `TenantOntologyManager` consumers). Laziness must not
   change what those callers get, only when they pay for it.
@@ -796,3 +863,4 @@ L2 and L4 both edit `graphindex/loader.py` — L2 the ontology imports
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-09-09 | Jesus Lara (with Claude) | Initial draft from `parrot-graphindex-standalone.brainstorm.md` (Option B, phase 1 of 2) |
+| 0.2 | 2026-09-10 | Jesus Lara (with Claude) | Re-verified against `dev` @ `24ff50f03` after the provider-client split: `parrot/auth/__init__.py` identified as gateway #1 (1186 modules for a `typing`-only exception module) and added to Module 1; gateway table, ceilings and floors re-measured; the stale `.mixin → bots → clients` chain removed |

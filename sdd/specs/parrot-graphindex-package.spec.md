@@ -86,10 +86,21 @@ click.
 
 A new uv workspace member `packages/parrot-graphindex/` provides the
 top-level package `parrot_graphindex`. `ai-parrot` core declares it as a
-runtime dependency — **the first time in this workspace that core depends on
-one of its own packages rather than the reverse** (`ai-parrot-tools` and
-`ai-parrot-loaders` are top-level packages, but both declare
-`dependencies = ["ai-parrot", …]`).
+runtime dependency.
+
+**This is less novel than the brainstorm assumed.** The workspace now holds
+**27** packages, and core already depends on its own satellites: the 15
+`ai-parrot-client-*` distributions are named in core's extras (e.g.
+`packages/ai-parrot/pyproject.toml:522, 546, 550`) with `[tool.uv.sources]
+… = { workspace = true }` entries at lines 868-882 — and each declares
+`dependencies = ["ai-parrot>=1.0.0", …]` back, so core↔satellite cycles
+already exist and uv already resolves them. `ai-parrot-openlit-bridge` is
+already a true leaf (`dependencies = ["aiohttp>=3.9"]`).
+
+What is genuinely new here is narrower: a **runtime** (non-extra) dependency
+from core onto a package that does **not** depend back on core. The build
+ordering and workspace-source machinery this needs is already exercised
+15 times over.
 
 Layout:
 
@@ -150,7 +161,7 @@ values are **module path strings, not objects**, so that
 
 | Existing Component | Integration Type | Notes |
 |---|---|---|
-| `packages/parrot-graphindex/` | new | workspace member; `members = ["packages/*"]` already matches it (`pyproject.toml:58`) |
+| `packages/parrot-graphindex/` | new | workspace member #28; `members = ["packages/*"]` already matches it (`pyproject.toml:58`) |
 | `packages/ai-parrot/pyproject.toml` | modifies | adds `parrot-graphindex` runtime dep + `[tool.uv.sources]` workspace entry; drops rustworkx/networkx/pathspec/aiosqlite/orjson (lines 169-173, now transitive); `[project.scripts]` loses `parrot-graphindex` and `wikitoolkit` (lines 179, 181) |
 | `parrot/tools/__init__.py` | extends | second redirector, or generalise `_ParrotToolsRedirector` (line 50) |
 | `parrot/knowledge/{graphindex,wiki,okf}/` | moves | to `parrot_graphindex/{graph,wiki,okf}/` |
@@ -292,7 +303,11 @@ wiki_pg     = "parrot.knowledge.wiki_backends:postgres_factory"
 - **Responsibility**: move the graph/wiki tests with the code; add
   `Package("parrot-graphindex", …)` to `PACKAGES` (`scripts/release.py:116`)
   **before** `ai-parrot`, keeping `CORE = PACKAGES[0]` (line 189) pointing at
-  `ai-parrot`, and mirror the `*_VERSION_FILE` variable in the `Makefile`;
+  `ai-parrot`, and mirror the `*_VERSION_FILE` variable in the `Makefile`.
+  `PACKAGES` currently lists **13** of the workspace's **27** packages (the
+  15 `ai-parrot-client-*` are absent; `parrot-codec` is listed with no
+  directory) — verify the new entry with `scripts/release.py status`, which
+  the file's own comment says fails loudly on a missing path.
   add a clean-venv install job that asserts G1; update install instructions.
 - **Depends on**: Module 7
 
@@ -487,11 +502,20 @@ class PageIndexToolkit(AbstractToolkit): ...                     # line 50 — s
 
 ### Known Risks / Gotchas
 
-- **The dependency arrow inverts for the first time.** CI and `uv sync` must
-  build `parrot-graphindex` before `ai-parrot`. Whether
-  `uv build --all-packages` resolves this from `[tool.uv.sources]` or needs an
-  explicit matrix order is an open question (§8) — settle it early, it gates
-  Module 8.
+- **The dependency-arrow inversion is a smaller risk than the brainstorm
+  thought.** 15 `ai-parrot-client-*` satellites already sit in core's extras
+  with workspace sources and depend back on core; uv resolves that today.
+  Confirm `uv build --all-packages` handles the leaf case too (§8), but treat
+  it as verification, not as an unknown.
+- **`scripts/release.py` `PACKAGES` is already out of sync with the
+  workspace, and that is the real release risk.** It lists **13** packages
+  while the workspace has **27**: all 15 `ai-parrot-client-*` distributions
+  are missing from it, and `parrot-codec` is listed but has no workspace
+  directory. A package missing from `PACKAGES` strands at its initial
+  version — the documented `parrot-codec` failure. The precedent Module 8
+  would copy is therefore currently *broken*: add `parrot-graphindex`
+  correctly rather than inheriting the gap, and flag the 15 missing clients
+  to the maintainer (fixing them is out of scope here, but same mechanism).
 - **~54 000 lines move.** Any long-lived branch touching `knowledge/wiki` or
   `knowledge/graphindex` must merge before this feature starts or rebase
   across a rename. FEAT-481 `fireflies-wiki-knowledgebase-agent` (16 tasks
@@ -606,7 +630,14 @@ providers → core inversion → release/CI/docs).
 - [ ] CI: does the GitHub build matrix need an explicit order (build
       `parrot-graphindex` before `ai-parrot`) or does `uv build --all-packages`
       resolve it from `[tool.uv.sources]`? — *Owner: FEAT-541 implementer*
-      **(blocks Module 8; settle it early)**
+      *(Downgraded from "blocks Module 8" after re-checking `dev` on
+      2026-09-10: 15 `ai-parrot-client-*` satellites already build in this
+      workspace with workspace sources and a core↔satellite cycle, so this is
+      verification rather than an unknown.)*
+- [ ] Out-of-scope but adjacent: the 15 `ai-parrot-client-*` packages are
+      missing from `scripts/release.py` `PACKAGES` and are therefore stranded
+      at their initial version (the `parrot-codec` failure mode). Separate
+      change, or fold into Module 8? — *Owner: Jesus Lara*
 - [ ] Jira v2: once `LLMCaller` exists, should `interfaces/jira` (aiohttp +
       pydantic) also move behind a `[jira]` extra so `ingest-jira` works
       standalone with a registered caller? — *Owner: Jesus Lara*
@@ -619,3 +650,4 @@ providers → core inversion → release/CI/docs).
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-09-09 | Jesus Lara (with Claude) | Initial draft from `parrot-graphindex-standalone.brainstorm.md` (Option B, phase 2 of 2) |
+| 0.2 | 2026-09-10 | Jesus Lara (with Claude) | Re-verified against `dev` @ `24ff50f03`: dropped the "first inverted arrow" claim (15 `ai-parrot-client-*` satellites already cycle with core via extras + workspace sources); downgraded the CI-ordering question to verification; recorded that `release.py` `PACKAGES` covers 13 of 27 workspace packages |
