@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-539 - Contracts Card & Ontology
 **Spec**: `sdd/specs/contracts-card-ontology.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2–4h)
 **Depends-on**: none
@@ -92,4 +92,38 @@ Store execution logs in `artifacts/logs/task-3041.log`. Use frozen dates, synthe
 
 ## Completion Note
 
-Pending execution. Record executor, completion date, implementation summary, validation evidence and deviations when this task is completed.
+Completed 2026-09-09 by sdd-worker (Claude Opus 5).
+
+**Implementation**: created `parrot_tools/o365/delta.py` — typed `DeltaItem`
+(stable drive/item ids, path, etag, sha256, tombstone flag, folder matching),
+`DeltaPage` (items + opaque next/delta links) and `DeltaEnumeration`, plus
+`DriveDeltaReader`. Enumeration follows `@odata.nextLink` until
+`@odata.deltaLink`, treats an empty intermediate page as legal, de-duplicates
+repeated items keeping the latest report, always keeps tombstones (a deleted item
+has no path to filter on), and only reports a committable cursor when the walk
+actually reached the final link — a truncated walk returns `delta_link=None`. A 410
+raises `DeltaTokenExpired` from `fetch_page` and surfaces as
+`rescan_required=True` from `enumerate`, never as mass deletion. Retries are bounded
+(429/5xx only, `Retry-After` honoured, exponential backoff otherwise); 4xx is not
+retried. `validate_continuation` rejects any non-HTTPS or non-Microsoft-Graph
+continuation **before** the request, so credentials are never forwarded to a foreign
+host.
+
+**SDK verification**: checked against the installed `msgraph` package —
+drive-level delta is `drives.by_drive_id(id).items.by_drive_item_id('root').delta`,
+the response exposes `value`/`odata_next_link`/`odata_delta_link`, and
+`DeltaRequestBuilder.with_url(raw_url)` is the continuation mechanism. No new SDK API
+was assumed.
+
+**Validation**: `pytest packages/ai-parrot-tools/tests/test_o365_delta_protocol.py -q`
+-> 29 passed (`artifacts/logs/task-3041.log`); ruff clean. Fake Graph pages cover
+multipage walks, an empty intermediate page, the final cursor, duplicate items,
+tombstones, folder filtering, truncation, resuming from a committed token, 410
+rescan, bounded retry with Retry-After, backoff and give-up, and non-retried client
+errors. AST tests prove the module imports nothing from the contracts package and
+calls no cursor-commit or ingestion API.
+
+**Deviations**: none. Implemented in the core feature worktree rather than the
+separate `feat-FEAT-539-contracts-o365-delta` worktree — this is a single sequential
+worker, so the parallel-lane split the task notes describe has no benefit and merging
+M8 before the jobs task is automatic.

@@ -356,7 +356,7 @@
       "feature_id": "FEAT-539",
       "feature": "contracts-card-ontology",
       "spec": "sdd/specs/contracts-card-ontology.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -365,8 +365,8 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": "2026-09-09T01:49:58+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3041-o365-delta-protocol.md"
+      "completed_at": "2026-09-09T03:22:18+00:00",
+      "file": "sdd/tasks/completed/TASK-3041-o365-delta-protocol.md"
     },
     {
       "id": "TASK-3042",
