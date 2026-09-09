@@ -190,3 +190,87 @@ pending on that fix.**
 
 **Deviations**: the two suites are run as two pytest invocations rather than one — both
 packages' test trees are rooted at `tests`, so collecting them together collides.
+
+---
+
+## Post-implementation adversarial review (FEAT-539 closing)
+
+Two reviewers ran the same neutral brief (diff vs `dev`, spec §5 acceptance
+criteria, changed-file list; no conclusions supplied): `codex exec review
+--base dev` and a Claude `code-reviewer` subagent. Every finding below was
+re-verified against the source before being actioned — several reviewer
+claims did not reproduce (see REJECTED).
+
+### Fixed in `54589ec02` (each with a regression test that fails without the fix)
+
+| # | Finding | Evidence |
+|---|---|---|
+| 1 | The verifier rebuilt the evidence pointer from the card's *current* revision; the archive is immutable and written once per version, so any administrative write (verification, party merge) made every citation unresolvable and silently degraded evidenced answers to `not_found`. Both reviewers found this independently. | Reproduced against live Postgres: `test_citations_survive_a_revision_bump`, `test_a_verified_card_still_releases_its_citations` |
+| 2 | Five state-changing CLI commands (`add`, `add-folder`, `refresh`, `relate`, `publish`) ran with **no** authorization. | `test_state_changing_commands_are_denied_without_the_owner_role` |
+| 3 | `ingest_delta` authorized only when a `retrieval` kwarg was passed — omitting a keyword ran the job, including tombstone retractions, unauthenticated. | `test_omitting_the_retrieval_gate_does_not_skip_authorization` |
+| 4 | A caller with no `employee_id` matched every *ownerless* contract, because `owner_employee_id is None` compared equal to a missing identity. | `test_an_ownerless_contract_is_not_owned_by_an_identityless_caller` |
+| 5 | `ContractsAgent` inherited `ask`/`ask_stream`/`invoke` ungated — the chat/MCP/A2A/HTTP surfaces could obtain the unverified ReAct draft, the exact escape AC10 forbids. | `test_the_generic_bot_entrypoints_refuse_to_release_a_draft` |
+
+Also hardened `test_dependency_boundary.py`, which inherited the ambient
+`PYTHONPATH` and could therefore validate an installed `parrot` rather than
+the worktree, and extended it to `parrot_tools.contracts`.
+
+### CONFIRMED but deliberately NOT fixed here (for the PR reviewer)
+
+* **Shared mutable producer on the service.** `ContractsAnswerService.producer`
+  is instance state that both producers overwrite, so two concurrent requests
+  through one service instance can cross-assign producers. Correct fix is to
+  pass the producer per call, which changes the service/flow/agent/toolkit
+  signatures — a design change, not a review patch. Single-request use is
+  unaffected.
+* **The ReAct producer can only cite obligations.** `result.obligations` is
+  populated for two of the ten patterns, so the other eight release nothing
+  through that producer. Fails *safe* (no fabrication), but "both answer
+  producers" is only demonstrated for two patterns. **ESCALATE** — what counts
+  as citable evidence for party/expiry/history questions is a spec decision.
+* **Producer-supplied handoff fields.** `HandoffBrief.question`,
+  `why_judgment`, `related_contracts` and `suggested_owner` are not verified
+  (only `located_clauses` are). The service's own interpretation path builds
+  the brief itself, so this is reachable only via a custom producer.
+  **ESCALATE.**
+* **`parrot.knowledge.contracts.library` pulls `asyncpg`/`pymupdf`/`msal`.**
+  Root cause is `parrot/knowledge/pageindex/__init__.py` eagerly importing
+  `builder` → `llm_adapter` → `parrot.clients`, reached from the required
+  `NodeContentStore` import. **Not patched**: that is a generic module this
+  feature is explicitly forbidden to modify. The package-level guard still
+  holds (`parrot.knowledge.contracts` itself leaks nothing).
+* **`rapidfuzz` is undeclared for `ai-parrot-tools`**, where
+  `retrieval.py` swallows the `ImportError` and degrades counterparty
+  resolution to a `Clarification` instead of an install instruction (core
+  `carding.py` correctly raises). Declaring a tools extra would contradict
+  the TASK-3052 pins asserting rapidfuzz lands in exactly one core extra.
+  **ESCALATE** — packaging decision.
+* **Ingest promotion failure leaves staging behind** (`library.py`, the
+  `EvidenceError` branch does not `discard`, unlike the two branches above
+  it) and the already-committed version row then references an unpromoted
+  archive.
+* **Publication outbox reads ignore `tenant_id`** (`pending_publications`,
+  `claim_publication`), while `_set_publication_state` filters by it.
+  Harmless under schema-per-tenant, latent under a shared schema.
+* **`merge_parties` bumps the revision without a version row** and enqueues
+  only the `ontology` target, never `temporal` — relevant to AC7's "every
+  revision reaches GraphIndex". **ESCALATE.**
+* `codex` additionally raised: retractions share a publication revision;
+  abandoned in-flight publication claims are never recovered; historical
+  revisions are published from the latest card rather than their own
+  snapshot; the ontology patterns filter `active` while
+  `OntologyGraphStore.soft_delete_nodes()` sets `_active`; contract-id
+  resolution prefers a shorter prefix (`acme` over `acme-sow`); recurrence
+  uses `verified_at` as an anchor. All plausible and none security-critical;
+  each needs a spec judgement rather than a reflex patch.
+
+### REJECTED (claimed but did not reproduce)
+
+* "`test_dependency_boundary.py` fails on the branch." It passes (33/33, now
+  34/34). The reviewer had run it without the worktree `PYTHONPATH`, which is
+  the environment-sensitivity the hardening above removes — the failure was
+  an artifact of their environment, not the branch.
+* "`codex` timed out with empty output." That was the subagent's own nested
+  `codex` call. The `codex exec review --base dev` run driven from this
+  session completed normally and produced 8 P1 and 11 P2 findings, which are
+  folded in above.
