@@ -43,9 +43,7 @@ def evidence(node_id: str = "0001", quote: str = "quoted text") -> Evidence:
 def header(**overrides) -> ContractHeaderDraft:
     """An evidenced header draft with sensible defaults."""
     payload = {
-        "title": Extracted[str](
-            value="ACME Master Services Agreement", evidence=evidence(), confidence=0.9
-        ),
+        "title": Extracted[str](value="ACME Master Services Agreement", evidence=evidence(), confidence=0.9),
         "contract_type": Extracted[str](value="msa", evidence=evidence(), confidence=0.9),
         "parties": [
             PartyDraft(name="Troc Global Inc.", role="us", is_us=True, evidence=evidence(), confidence=0.9),
@@ -129,9 +127,7 @@ def test_next_renewal_date_only_when_auto_renewing():
 
 def test_status_supersession_wins_over_everything():
     term = TermSpec(effective_date=date(2026, 1, 1), expiration_date=date(2026, 12, 31))
-    assert (
-        derive_status(term=term, today=TODAY, signed=True, superseded=True) == "superseded"
-    )
+    assert derive_status(term=term, today=TODAY, signed=True, superseded=True) == "superseded"
     assert (
         derive_status(
             term=term,
@@ -150,10 +146,7 @@ def test_status_termination_requires_human_confirmation_and_an_elapsed_date():
     # A termination *clause* alone never terminates a contract.
     assert derive_status(term=term, today=TODAY, signed=True) == "active"
     assert (
-        derive_status(
-            term=term, today=TODAY, signed=True, termination_confirmed=True
-        )
-        == "active"
+        derive_status(term=term, today=TODAY, signed=True, termination_confirmed=True) == "active"
     ), "confirmed termination without a date does not terminate"
     assert (
         derive_status(
@@ -395,14 +388,10 @@ def test_assembly_numbers_obligations_and_resolves_standards():
 def test_derived_fields_declare_their_input_paths():
     carding = draft(
         header=header(
-            expiration_date=Extracted[date](
-                value=date(2026, 12, 31), evidence=evidence("0003"), confidence=0.9
-            ),
+            expiration_date=Extracted[date](value=date(2026, 12, 31), evidence=evidence("0003"), confidence=0.9),
             notice_days=Extracted[int](value=60, evidence=evidence("0004"), confidence=0.9),
             auto_renew=Extracted[bool](value=True, evidence=evidence("0004"), confidence=0.9),
-            effective_date=Extracted[date](
-                value=date(2026, 1, 1), evidence=evidence("0003"), confidence=0.9
-            ),
+            effective_date=Extracted[date](value=date(2026, 1, 1), evidence=evidence("0003"), confidence=0.9),
         )
     )
     card = assemble(carding)
@@ -540,12 +529,8 @@ def test_superseded_flag_reaches_the_status_precedence():
 def test_today_is_injected_not_read_from_the_clock():
     carding = draft(
         header=header(
-            effective_date=Extracted[date](
-                value=date(2020, 1, 1), evidence=evidence(), confidence=0.9
-            ),
-            expiration_date=Extracted[date](
-                value=date(2021, 1, 1), evidence=evidence(), confidence=0.9
-            ),
+            effective_date=Extracted[date](value=date(2020, 1, 1), evidence=evidence(), confidence=0.9),
+            expiration_date=Extracted[date](value=date(2021, 1, 1), evidence=evidence(), confidence=0.9),
         )
     )
     assert assemble(carding, today=date(2020, 6, 1)).status == "active"

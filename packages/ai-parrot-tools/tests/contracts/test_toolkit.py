@@ -63,9 +63,7 @@ async def toolkit(tmp_path) -> ContractsToolkit:
     catalog = FakeCatalog()
     card = make_card()
     await catalog.upsert(card)
-    await catalog.upsert(
-        make_card("acme-sow-1", contract_type="sow", parent_contract_id="acme-msa")
-    )
+    await catalog.upsert(make_card("acme-sow-1", contract_type="sow", parent_contract_id="acme-msa"))
 
     archive = EvidenceArchive(tmp_path / "evidence", tenant_id="troc")
     await archive.archive(
@@ -80,17 +78,13 @@ async def toolkit(tmp_path) -> ContractsToolkit:
         verifier=CitationVerifier(catalog=catalog, evidence=archive),
         library=library,
     )
-    return ContractsToolkit(
-        service=service, request_context=reader_context(), library=library
-    )
+    return ContractsToolkit(service=service, request_context=reader_context(), library=library)
 
 
 def owner_toolkit(toolkit: ContractsToolkit, **overrides) -> ContractsToolkit:
     """A toolkit bound to an owner context."""
     context = reader_context(roles=("contract_owner",), confirmed=True, **overrides)
-    return ContractsToolkit(
-        service=toolkit.service, request_context=context, library=toolkit.library
-    )
+    return ContractsToolkit(service=toolkit.service, request_context=context, library=toolkit.library)
 
 
 # --------------------------------------------------------------------------
@@ -300,9 +294,7 @@ async def test_metadata_alone_does_not_authorise_a_write(toolkit):
 @pytest.mark.asyncio
 async def test_an_owner_can_verify_correct_and_override_ownership(toolkit):
     owner = owner_toolkit(toolkit)
-    result = await owner.verify_card(
-        "acme-msa", {"title": "ACME MSA"}, owner_employee_id="emp-2"
-    )
+    result = await owner.verify_card("acme-msa", {"title": "ACME MSA"}, owner_employee_id="emp-2")
     assert result["card_verified"] is True
     contract_id, fields, user = toolkit.library.verify_calls[-1]
     assert contract_id == "acme-msa"
@@ -320,9 +312,7 @@ async def test_an_owner_can_merge_parties(toolkit):
 
     toolkit.catalog.merge_parties = merge_parties  # type: ignore[method-assign]
     owner = owner_toolkit(toolkit)
-    result = await owner.verify_card(
-        "acme-msa", merge_party_id="party-old", keep_party_id="party-acme"
-    )
+    result = await owner.verify_card("acme-msa", merge_party_id="party-old", keep_party_id="party-acme")
 
     assert result["merged"] == {"ok": True}
     assert merged == [("party-acme", "party-old", "bob@troc")]

@@ -66,10 +66,7 @@ def validate_path_segment(value: str, *, what: str = "segment") -> str:
             (``..``, ``/``, absolute paths, NUL bytes).
     """
     if not _SEGMENT_RE.match(value or ""):
-        raise EvidenceError(
-            f"invalid {what} {value!r}: expected 1-128 characters matching "
-            "^[A-Za-z0-9_-]+$"
-        )
+        raise EvidenceError(f"invalid {what} {value!r}: expected 1-128 characters matching " "^[A-Za-z0-9_-]+$")
     return value
 
 
@@ -346,8 +343,7 @@ class EvidenceArchive:
         def _write() -> None:
             if directory.exists() and not overwrite:
                 raise EvidenceError(
-                    f"evidence for {ref.as_string()} already archived; archived "
-                    "evidence is immutable"
+                    f"evidence for {ref.as_string()} already archived; archived " "evidence is immutable"
                 )
             directory.mkdir(parents=True, exist_ok=True)
             for node_id, body in bodies.items():
@@ -361,9 +357,7 @@ class EvidenceArchive:
                 "nodes": sorted(bodies),
                 "pages": {node: page_map[node] for node in sorted(page_map)},
             }
-            (directory / _MANIFEST_NAME).write_text(
-                json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8"
-            )
+            (directory / _MANIFEST_NAME).write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
 
         await asyncio.to_thread(_write)
         logger.debug("Archived %d evidence nodes at %s", len(bodies), ref.as_string())

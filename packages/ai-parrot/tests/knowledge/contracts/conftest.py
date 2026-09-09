@@ -32,9 +32,7 @@ ARANGO_URL: Optional[str] = os.environ.get("CONTRACTS_ARANGO_URL")
 ARANGO_USER = os.environ.get("CONTRACTS_ARANGO_USER", "root")
 ARANGO_PASSWORD = os.environ.get("CONTRACTS_ARANGO_PASSWORD", "")
 
-requires_pg = pytest.mark.skipif(
-    not PG_DSN, reason="live Postgres suites require an explicit GRAPHINDEX_PG_DSN"
-)
+requires_pg = pytest.mark.skipif(not PG_DSN, reason="live Postgres suites require an explicit GRAPHINDEX_PG_DSN")
 requires_arango = pytest.mark.skipif(
     not ARANGO_URL,
     reason="live ArangoDB suites require an explicit CONTRACTS_ARANGO_URL",
@@ -148,8 +146,7 @@ Vendor shall maintain ISO 27001 certification.
 """
 
 HEADINGLESS_TEXT = "\n\n".join(
-    f"Paragraph {index}: the parties agree to the terms set out herein."
-    for index in range(1, 8)
+    f"Paragraph {index}: the parties agree to the terms set out herein." for index in range(1, 8)
 )
 
 
@@ -183,10 +180,7 @@ def docx_document(tmp_path: Path) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     document = docx.Document()
     document.add_heading("ACME Master Services Agreement", level=1)
-    document.add_paragraph(
-        "This Master Services Agreement is entered into between Troc Global "
-        "Inc. and ACME, Inc."
-    )
+    document.add_paragraph("This Master Services Agreement is entered into between Troc Global " "Inc. and ACME, Inc.")
     document.add_heading("Compliance", level=2)
     document.add_paragraph("Vendor shall maintain SOC 2 Type II certification.")
     document.save(str(path))

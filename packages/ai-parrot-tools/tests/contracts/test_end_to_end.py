@@ -126,9 +126,7 @@ async def test_the_full_vertical_slice(live_catalog, tmp_path, pg_pool):
     contract_id = ingested.report.items[0].contract_id
 
     # 2. A human verifies the title.
-    verification = await library.verify_card(
-        contract_id, {"title": "ACME Master Services Agreement"}, user="bob@troc"
-    )
+    verification = await library.verify_card(contract_id, {"title": "ACME Master Services Agreement"}, user="bob@troc")
     assert verification.corrected == ["title"]
 
     # 3. Temporal publication.
@@ -147,9 +145,7 @@ async def test_the_full_vertical_slice(live_catalog, tmp_path, pg_pool):
         retrieval = ContractRetrieval(catalog=live_catalog, today=lambda: TODAY)
         verifier = CitationVerifier(catalog=live_catalog, evidence=library.evidence)
         service = ContractsAnswerService(retrieval=retrieval, verifier=verifier)
-        flow = ContractsAnswerFlow(
-            service=service, producer=ContractsDraftProducer(adapter=None)
-        )
+        flow = ContractsAnswerFlow(service=service, producer=ContractsDraftProducer(adapter=None))
 
         question = "What obligations does the acme-msa carry?"
         fixed = await flow.answer(question, request_context=reader())
@@ -166,9 +162,7 @@ async def test_the_full_vertical_slice(live_catalog, tmp_path, pg_pool):
         assert await live_catalog.get_answer(react.answer_id) is not None
 
         # 5. The toolkit reads the same data behind the same gate.
-        toolkit = ContractsToolkit(
-            service=service, request_context=reader(), library=library
-        )
+        toolkit = ContractsToolkit(service=service, request_context=reader(), library=library)
         card = await toolkit.get_card(contract_id)
         assert card["title"] == "ACME Master Services Agreement"
         toc = await toolkit.get_toc(contract_id)
@@ -177,9 +171,7 @@ async def test_the_full_vertical_slice(live_catalog, tmp_path, pg_pool):
         # 6. Retirement suppresses whatever the released answer cited.
         released = fixed if fixed.answer.citations else react
         if released.answer.citations:
-            await service.retire_answer(
-                released.answer_id, request_context=owner(), reason="pilot review"
-            )
+            await service.retire_answer(released.answer_id, request_context=owner(), reason="pilot review")
             suppressed = await live_catalog.retired_citations()
             assert suppressed
             node_id = released.answer.citations[0].node_id
@@ -211,19 +203,13 @@ async def test_the_full_vertical_slice(live_catalog, tmp_path, pg_pool):
             version_n=first_version.n,
             source_sha256=first_version.source_sha256,
         )
-        lookup = await library.evidence.resolve(
-            citation, EvidenceRef.parse(first_version.evidence_ref)
-        )
+        lookup = await library.evidence.resolve(citation, EvidenceRef.parse(first_version.evidence_ref))
         assert lookup.found is True, "historical evidence survives the refresh"
 
         # 8. The watcher jobs report deterministically over the same catalog.
-        renewals = await renewals_report(
-            retrieval=retrieval, principal=principal(), today=TODAY
-        )
+        renewals = await renewals_report(retrieval=retrieval, principal=principal(), today=TODAY)
         assert [bucket.label for bucket in renewals.buckets] == ["0-30", "31-60", "61-90"]
-        digest = await obligations_digest(
-            retrieval=retrieval, principal=principal(), today=TODAY, days=30
-        )
+        digest = await obligations_digest(retrieval=retrieval, principal=principal(), today=TODAY, days=30)
         assert digest.prose is None, "nothing is drafted or delivered implicitly"
     finally:
         pool = await persistence._ensure_pool()
@@ -248,12 +234,18 @@ async def test_a_second_delta_run_is_idempotent(live_catalog, tmp_path):
     config = SourceConfig(source="sharepoint://legal", drive_id="drive-1")
 
     first = await ingest_delta(
-        library=library, delta_tool=tool, source=config,
-        principal=principal(), downloader=downloader,
+        library=library,
+        delta_tool=tool,
+        source=config,
+        principal=principal(),
+        downloader=downloader,
     )
     second = await ingest_delta(
-        library=library, delta_tool=tool, source=config,
-        principal=principal(), downloader=downloader,
+        library=library,
+        delta_tool=tool,
+        source=config,
+        principal=principal(),
+        downloader=downloader,
     )
 
     assert first.report.added == 1
@@ -282,9 +274,7 @@ async def test_an_unauthorized_reader_gets_nothing_end_to_end(live_catalog, tmp_
     )
     stranger = RequestContext(user_id="mallory@example", roles=(), tenant_id="troc")
 
-    outcome = await service.answer(
-        "What obligations does the acme-msa carry?", request_context=stranger
-    )
+    outcome = await service.answer("What obligations does the acme-msa carry?", request_context=stranger)
     assert outcome.answer.answer_kind == "denied"
     assert outcome.answer.citations == []
     record = await live_catalog.get_answer(outcome.answer_id)
@@ -297,7 +287,10 @@ CLAUSE = "Vendor shall maintain SOC 2 Type II certification."
 def carded_contract(contract_id: str = "acme-msa"):
     """A card carrying one citable obligation, as an LLM carding produces."""
     from parrot.knowledge.contracts.models import (
-        ContractCard, Obligation, Party, TermSpec,
+        ContractCard,
+        Obligation,
+        Party,
+        TermSpec,
     )
 
     return ContractCard(
@@ -336,9 +329,7 @@ async def seed_carded_contract(catalog, library, contract_id: str = "acme-msa"):
     from parrot.knowledge.contracts.models import ContractVersion, card_snapshot_payload
 
     card = carded_contract(contract_id)
-    ref = library.evidence.reference(
-        contract_id, version_n=1, revision=1, source_sha256=card.source_sha256
-    )
+    ref = library.evidence.reference(contract_id, version_n=1, revision=1, source_sha256=card.source_sha256)
     await library.evidence.archive(ref, {"0002": CLAUSE}, pages={"0002": 3}, overwrite=True)
     version = ContractVersion(
         n=1,
@@ -414,9 +405,7 @@ async def test_a_verified_card_still_releases_its_citations(live_catalog, tmp_pa
 
     assert (await service.answer(question, request_context=reader())).answer.citations
 
-    verification = await library.verify_card(
-        card.contract_id, {"title": "ACME MSA (verified)"}, user="bob@troc"
-    )
+    verification = await library.verify_card(card.contract_id, {"title": "ACME MSA (verified)"}, user="bob@troc")
     assert verification.corrected == ["title"]
 
     after = await service.answer(question, request_context=reader())

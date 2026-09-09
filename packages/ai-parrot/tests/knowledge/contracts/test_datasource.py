@@ -125,10 +125,7 @@ def test_routing_order_resolves_the_documented_overlaps():
     # Contract on contract_id. The marker order settles both.
     assert ContractCardDataSource.infer_entity(["party_id", "name"]) == "Party"
     assert ContractCardDataSource.infer_entity(["person_id", "party_id", "name"]) == "Person"
-    assert (
-        ContractCardDataSource.infer_entity(["obligation_id", "contract_id", "kind"])
-        == "Obligation"
-    )
+    assert ContractCardDataSource.infer_entity(["obligation_id", "contract_id", "kind"]) == "Obligation"
     assert ContractCardDataSource.infer_entity(["contract_id", "title"]) == "Contract"
     assert ContractCardDataSource.infer_entity(None) == "Contract"
 
@@ -248,9 +245,7 @@ async def test_retracted_contracts_are_excluded_unless_requested(source):
     await source.catalog.remove("acme-msa")
     assert await source.records_for("Contract") == []
 
-    inclusive = ContractCardDataSource(
-        SOURCE_NAME, {"catalog": source.catalog, "include_inactive": True}
-    )
+    inclusive = ContractCardDataSource(SOURCE_NAME, {"catalog": source.catalog, "include_inactive": True})
     records = await inclusive.records_for("Contract")
     assert records[0]["active"] is False
     assert (await inclusive.records_for("Obligation"))[0]["active"] is False
@@ -282,17 +277,13 @@ async def test_standalone_filters_narrow_a_projection(source):
     await source.catalog.upsert(card("zeta-nda", contract_type="nda", status="expired"))
 
     assert len(await source.records_for("Contract")) == 2
+    assert [record["contract_id"] for record in await source.records_for("Contract", filters={"status": "active"})] == [
+        "acme-msa"
+    ]
     assert [
-        record["contract_id"]
-        for record in await source.records_for("Contract", filters={"status": "active"})
-    ] == ["acme-msa"]
-    assert [
-        record["contract_id"]
-        for record in await source.records_for("Contract", filters={"contract_id": "zeta-nda"})
+        record["contract_id"] for record in await source.records_for("Contract", filters={"contract_id": "zeta-nda"})
     ] == ["zeta-nda"]
-    assert (
-        len(await source.records_for("Obligation", filters={"contract_id": "acme-msa"})) == 1
-    )
+    assert len(await source.records_for("Obligation", filters={"contract_id": "acme-msa"})) == 1
 
 
 @pytest.mark.asyncio

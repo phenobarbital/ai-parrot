@@ -90,9 +90,7 @@ def make_answer(answer_id: str = "ans-1", **overrides) -> AnswerRecord:
                 verification="verified",
             )
         ],
-        "authorization": AuthorizationOutcome(
-            allowed=True, principal="bob@troc", matched_rule="contract_reader"
-        ),
+        "authorization": AuthorizationOutcome(allowed=True, principal="bob@troc", matched_rule="contract_reader"),
     }
     payload.update(overrides)
     return AnswerRecord(**payload)
@@ -105,9 +103,7 @@ async def live_catalog() -> AsyncIterator[PostgresContractCatalog]:
 
     schema = f"contracts_a_{uuid.uuid4().hex[:8]}"
     pool = await asyncpg.create_pool(dsn=PG_DSN, min_size=1, max_size=4)
-    catalog = PostgresContractCatalog(
-        pool=pool, tenant_id="troc", schema=schema, now=frozen_clock
-    )
+    catalog = PostgresContractCatalog(pool=pool, tenant_id="troc", schema=schema, now=frozen_clock)
     await catalog.setup()
     try:
         yield catalog
@@ -151,9 +147,7 @@ async def test_live_party_merge_moves_cards_signatories_aliases_and_projection(l
             signatories=[Signatory(person_id="p1", name="Jane Doe", party_id="acme-old")],
         )
     )
-    await live_catalog.upsert(
-        make_card("zeta-sow", parties=[Party(party_id="acme-new", name="ACME Inc.")])
-    )
+    await live_catalog.upsert(make_card("zeta-sow", parties=[Party(party_id="acme-new", name="ACME Inc.")]))
     await live_catalog.add_party_alias("acme incorporated", "acme-old", user="bob@troc")
     snapshot_before = (await live_catalog.versions("acme-msa"))[0].card_snapshot
 
@@ -173,9 +167,7 @@ async def test_live_party_merge_moves_cards_signatories_aliases_and_projection(l
     # Historical snapshots keep the identity they were signed under.
     snapshot_after = (await live_catalog.versions("acme-msa"))[0].card_snapshot
     assert snapshot_after == snapshot_before
-    assert any(
-        party["party_id"] == "acme-old" for party in snapshot_after["parties"]
-    )
+    assert any(party["party_id"] == "acme-old" for party in snapshot_after["parties"])
 
 
 @requires_pg
@@ -224,15 +216,9 @@ async def test_live_alias_conflicts_are_surfaced_for_review(live_catalog):
 @requires_pg
 @pytest.mark.asyncio
 async def test_live_list_parties_is_distinct_and_skips_retracted(live_catalog):
-    await live_catalog.upsert(
-        make_card("a", parties=[Party(party_id="acme", name="ACME Inc.", role="customer")])
-    )
-    await live_catalog.upsert(
-        make_card("b", parties=[Party(party_id="acme", name="ACME Inc.", role="customer")])
-    )
-    await live_catalog.upsert(
-        make_card("c", parties=[Party(party_id="zeta", name="Zeta LLC")])
-    )
+    await live_catalog.upsert(make_card("a", parties=[Party(party_id="acme", name="ACME Inc.", role="customer")]))
+    await live_catalog.upsert(make_card("b", parties=[Party(party_id="acme", name="ACME Inc.", role="customer")]))
+    await live_catalog.upsert(make_card("c", parties=[Party(party_id="zeta", name="Zeta LLC")]))
     await live_catalog.remove("c")
 
     assert [party.party_id for party in await live_catalog.list_parties()] == ["acme"]
@@ -257,9 +243,7 @@ async def test_live_answer_audit_round_trip_including_denied_and_empty(live_cata
             authorization=AuthorizationOutcome(allowed=False, reason="no contract_reader role"),
         )
     )
-    await live_catalog.record_answer(
-        make_answer("ans-empty", answer_kind="not_found", answer=None, citations=[])
-    )
+    await live_catalog.record_answer(make_answer("ans-empty", answer_kind="not_found", answer=None, citations=[]))
 
     stored = await live_catalog.get_answer("ans-1")
     assert stored.answer_kind == "lookup"
@@ -332,9 +316,7 @@ async def test_live_delta_cursor_survives_reconnect(live_catalog):
     import asyncpg
 
     pool = await asyncpg.create_pool(dsn=PG_DSN, min_size=1, max_size=2)
-    reconnected = PostgresContractCatalog(
-        pool=pool, tenant_id="troc", schema=live_catalog.schema, now=frozen_clock
-    )
+    reconnected = PostgresContractCatalog(pool=pool, tenant_id="troc", schema=live_catalog.schema, now=frozen_clock)
     try:
         assert await reconnected.get_delta_token("sharepoint://legal") == "token-2"
     finally:
@@ -397,9 +379,7 @@ async def test_live_judgement_history_including_none_and_force(live_catalog):
     await live_catalog.record_judgement(first)
     # --force records a NEW judgement instead of rewriting the old row.
     await live_catalog.record_judgement(
-        first.model_copy(
-            update={"judgement_id": "j2", "outcome": "conflicts_with", "confidence": 0.8}
-        )
+        first.model_copy(update={"judgement_id": "j2", "outcome": "conflicts_with", "confidence": 0.8})
     )
 
     history = await live_catalog.judgements_for("acme-msa")
@@ -525,9 +505,7 @@ async def test_live_outbox_receipts_survive_reconnect(live_catalog):
     import asyncpg
 
     pool = await asyncpg.create_pool(dsn=PG_DSN, min_size=1, max_size=2)
-    reconnected = PostgresContractCatalog(
-        pool=pool, tenant_id="troc", schema=live_catalog.schema, now=frozen_clock
-    )
+    reconnected = PostgresContractCatalog(pool=pool, tenant_id="troc", schema=live_catalog.schema, now=frozen_clock)
     try:
         assert await reconnected.pending_publications(target="ontology") == []
         assert await reconnected.claim_publication(target="ontology") == []

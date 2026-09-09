@@ -190,9 +190,7 @@ class ContractsDraftProducer:
             + f"] {entry.quote}"
             for entry in entries
         )
-        lines.append(
-            "\nCite evidence_id values from this list only. Any other id is invalid."
-        )
+        lines.append("\nCite evidence_id values from this list only. Any other id is invalid.")
         return "\n".join(lines)
 
     async def draft(
@@ -215,10 +213,7 @@ class ContractsDraftProducer:
 
         if self.adapter is None:
             return AnswerDraft(
-                claims=[
-                    Claim(text=entry.quote, citations=[entry.citation()])
-                    for entry in entries
-                ],
+                claims=[Claim(text=entry.quote, citations=[entry.citation()]) for entry in entries],
                 pattern=result.pattern,
             )
 
@@ -301,9 +296,7 @@ class ContractsAnswerFlow:
         run.draft_calls = self.producer.calls - before
         run.dossier_size = len(self.producer.last_dossier)
         run.outcome = outcome
-        logger.info(
-            "Contracts flow ran %s with %d draft call(s)", run.stages, run.draft_calls
-        )
+        logger.info("Contracts flow ran %s with %d draft call(s)", run.stages, run.draft_calls)
         return run
 
     async def answer(

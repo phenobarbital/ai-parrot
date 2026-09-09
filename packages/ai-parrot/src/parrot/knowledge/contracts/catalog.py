@@ -101,8 +101,7 @@ class CatalogConflictError(CatalogError):
 
     def __init__(self, contract_id: str, expected: Optional[int], actual: Optional[int]) -> None:
         super().__init__(
-            f"contract {contract_id!r} was modified concurrently "
-            f"(expected revision {expected}, found {actual})"
+            f"contract {contract_id!r} was modified concurrently " f"(expected revision {expected}, found {actual})"
         )
         self.contract_id = contract_id
         self.expected = expected
@@ -281,10 +280,7 @@ def validate_sql_identifier(value: str, *, what: str = "identifier") -> str:
         ValueError: When the identifier is not a plain lowercase SQL name.
     """
     if not SQL_IDENTIFIER_RE.match(value or ""):
-        raise ValueError(
-            f"invalid {what} {value!r}: expected a lowercase SQL name "
-            "matching ^[a-z_][a-z0-9_]{0,62}$"
-        )
+        raise ValueError(f"invalid {what} {value!r}: expected a lowercase SQL name " "matching ^[a-z_][a-z0-9_]{0,62}$")
     return value
 
 

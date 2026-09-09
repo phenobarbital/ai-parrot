@@ -17,9 +17,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[5]
 CORE_PYPROJECT = REPO_ROOT / "packages" / "ai-parrot" / "pyproject.toml"
 TOOLS_PYPROJECT = REPO_ROOT / "packages" / "ai-parrot-tools" / "pyproject.toml"
-CONTRACTS_SRC = (
-    REPO_ROOT / "packages" / "ai-parrot" / "src" / "parrot" / "knowledge" / "contracts"
-)
+CONTRACTS_SRC = REPO_ROOT / "packages" / "ai-parrot" / "src" / "parrot" / "knowledge" / "contracts"
 
 
 def _load(path: Path) -> dict:
@@ -40,9 +38,7 @@ def test_repo_layout_anchor_is_correct():
 def test_rapidfuzz_is_declared_in_the_graphindex_extra(core_project):
     extras = core_project["project"]["optional-dependencies"]
     graphindex = extras["graphindex"]
-    assert any(
-        item.replace(" ", "").startswith("rapidfuzz>=3.0") for item in graphindex
-    ), graphindex
+    assert any(item.replace(" ", "").startswith("rapidfuzz>=3.0") for item in graphindex), graphindex
 
 
 def test_rapidfuzz_is_not_a_core_runtime_dependency(core_project):
@@ -52,11 +48,7 @@ def test_rapidfuzz_is_not_a_core_runtime_dependency(core_project):
 
 def test_rapidfuzz_is_added_to_exactly_one_core_extra(core_project):
     extras = core_project["project"]["optional-dependencies"]
-    holders = [
-        name
-        for name, items in extras.items()
-        if any("rapidfuzz" in item for item in items)
-    ]
+    holders = [name for name, items in extras.items() if any("rapidfuzz" in item for item in items)]
     assert holders == ["graphindex"], holders
 
 
@@ -93,9 +85,7 @@ def test_scheduler_dependency_stays_in_its_pre_existing_extra(core_project):
     so it must not appear in the extras the catalog installs.
     """
     extras = core_project["project"]["optional-dependencies"]
-    holders = [
-        name for name, items in extras.items() if any("apscheduler" in i for i in items)
-    ]
+    holders = [name for name, items in extras.items() if any("apscheduler" in i for i in items)]
     assert holders == ["scheduler"], holders
     assert not any("apscheduler" in item for item in core_project["project"]["dependencies"])
 

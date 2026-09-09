@@ -20,9 +20,7 @@ TODAY = date(2026, 9, 9)
 
 PG_DSN: Optional[str] = os.environ.get("GRAPHINDEX_PG_DSN")
 
-requires_pg = pytest.mark.skipif(
-    not PG_DSN, reason="live end-to-end tests require an explicit GRAPHINDEX_PG_DSN"
-)
+requires_pg = pytest.mark.skipif(not PG_DSN, reason="live end-to-end tests require an explicit GRAPHINDEX_PG_DSN")
 
 
 @pytest.fixture()
@@ -45,9 +43,7 @@ async def live_catalog(pg_pool) -> AsyncIterator[Any]:
     from parrot.knowledge.contracts.catalog_postgres import PostgresContractCatalog
 
     schema = f"contracts_e2e_{uuid.uuid4().hex[:8]}"
-    catalog = PostgresContractCatalog(
-        pool=pg_pool, tenant_id="troc", schema=schema, now=lambda: FROZEN_NOW
-    )
+    catalog = PostgresContractCatalog(pool=pg_pool, tenant_id="troc", schema=schema, now=lambda: FROZEN_NOW)
     await catalog.setup()
     try:
         yield catalog

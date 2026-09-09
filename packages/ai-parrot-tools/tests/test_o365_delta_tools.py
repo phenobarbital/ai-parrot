@@ -93,12 +93,8 @@ async def test_both_tools_produce_equivalent_typed_outcomes(tool):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("tool", tool_pair(), ids=lambda tool: tool.name)
 async def test_both_tools_resume_from_a_committed_cursor(tool):
-    graph = FakeGraph(
-        {f"{GRAPH}/previous": FakeResponse([item("a")], delta_link=f"{GRAPH}/final")}
-    )
-    result = await tool._execute_graph_operation(
-        FakeClient(graph), drive_id="drive-1", delta_token=f"{GRAPH}/previous"
-    )
+    graph = FakeGraph({f"{GRAPH}/previous": FakeResponse([item("a")], delta_link=f"{GRAPH}/final")})
+    result = await tool._execute_graph_operation(FakeClient(graph), drive_id="drive-1", delta_token=f"{GRAPH}/previous")
     assert graph.requested == [f"{GRAPH}/previous"]
     assert result["delta_link"] == f"{GRAPH}/final"
 
@@ -107,9 +103,7 @@ async def test_both_tools_resume_from_a_committed_cursor(tool):
 @pytest.mark.parametrize("tool", tool_pair(), ids=lambda tool: tool.name)
 async def test_both_tools_report_a_required_rescan_rather_than_deletions(tool):
     graph = FakeGraph({f"{GRAPH}/expired": GraphError(410)})
-    result = await tool._execute_graph_operation(
-        FakeClient(graph), drive_id="drive-1", delta_token=f"{GRAPH}/expired"
-    )
+    result = await tool._execute_graph_operation(FakeClient(graph), drive_id="drive-1", delta_token=f"{GRAPH}/expired")
     assert result["rescan_required"] is True
     assert result["items"] == []
     assert result["tombstones"] == []
@@ -175,9 +169,7 @@ def test_bundles_register_the_delta_tools_alongside_the_existing_ones():
     source = inspect.getsource(bundle)
     tree = ast.parse(source)
     constructed = {
-        node.func.id
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+        node.func.id for node in ast.walk(tree) if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
     }
     for name in (
         "ListSharePointFilesTool",
@@ -213,9 +205,7 @@ def test_argument_schemas_are_distinct_and_documented():
     assert DeltaSharePointFilesArgs is not DeltaOneDriveFilesArgs
     for schema in (DeltaSharePointFilesArgs, DeltaOneDriveFilesArgs):
         assert schema.model_fields["drive_id"].description
-        assert "never expanded from model-supplied" in (
-            schema.model_fields["drive_id"].description
-        )
+        assert "never expanded from model-supplied" in (schema.model_fields["drive_id"].description)
 
 
 @pytest.mark.parametrize("module", ["sharepoint.py", "onedrive.py", "bundle.py", "delta.py"])

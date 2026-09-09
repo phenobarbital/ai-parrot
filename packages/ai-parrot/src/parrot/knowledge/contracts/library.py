@@ -101,8 +101,7 @@ class TreeIndexer(Protocol):
     and by test doubles.
     """
 
-    async def create_tree(self, tree_name: str, doc_name: Optional[str] = None) -> dict[str, Any]:
-        ...
+    async def create_tree(self, tree_name: str, doc_name: Optional[str] = None) -> dict[str, Any]: ...
 
     async def insert_markdown(
         self,
@@ -110,14 +109,11 @@ class TreeIndexer(Protocol):
         markdown: str,
         parent_node_id: Optional[str] = None,
         doc_name: Optional[str] = None,
-    ) -> dict[str, Any]:
-        ...
+    ) -> dict[str, Any]: ...
 
-    async def get_tree(self, tree_name: str) -> dict[str, Any]:
-        ...
+    async def get_tree(self, tree_name: str) -> dict[str, Any]: ...
 
-    async def delete_tree(self, tree_name: str) -> dict[str, Any]:
-        ...
+    async def delete_tree(self, tree_name: str) -> dict[str, Any]: ...
 
 
 class OwnerRule(BaseModel):
@@ -169,9 +165,7 @@ def deterministic_sections(
         sections[-1].append(paragraph)
         size += len(paragraph)
     return "\n\n".join(
-        f"## {title_prefix} {index + 1}\n\n" + "\n\n".join(block)
-        for index, block in enumerate(sections)
-        if block
+        f"## {title_prefix} {index + 1}\n\n" + "\n\n".join(block) for index, block in enumerate(sections) if block
     )
 
 
@@ -188,9 +182,7 @@ def pdf_markdown(pages: Sequence[str]) -> str:
         Page-anchored markdown (empty when no page carried text).
     """
     chunks = [
-        f"## Page {number}\n\n{text.strip()}"
-        for number, text in enumerate(pages, start=1)
-        if (text or "").strip()
+        f"## Page {number}\n\n{text.strip()}" for number, text in enumerate(pages, start=1) if (text or "").strip()
     ]
     return "\n\n".join(chunks)
 
@@ -286,9 +278,7 @@ def set_card_field(card: ContractCard, path: str, value: Any) -> ContractCard:
         if not any(item.obligation_id == parts[1] for item in card.obligations):
             raise KeyError(path)
         obligations = [
-            obligation.model_copy(update={parts[2]: value})
-            if obligation.obligation_id == parts[1]
-            else obligation
+            obligation.model_copy(update={parts[2]: value}) if obligation.obligation_id == parts[1] else obligation
             for obligation in card.obligations
         ]
         return card.model_copy(update={"obligations": obligations})
@@ -301,12 +291,8 @@ def _recompute_derivations(card: ContractCard, *, today: date) -> ContractCard:
     """Recompute notice/renewal dates and the status after a correction."""
     term = card.term.model_copy(
         update={
-            "notice_deadline": derive_notice_deadline(
-                card.term.expiration_date, card.term.notice_days
-            ),
-            "next_renewal_date": derive_next_renewal_date(
-                card.term.expiration_date, card.term.auto_renew
-            ),
+            "notice_deadline": derive_notice_deadline(card.term.expiration_date, card.term.notice_days),
+            "next_renewal_date": derive_next_renewal_date(card.term.expiration_date, card.term.auto_renew),
         }
     )
     status = derive_status(
@@ -349,9 +335,7 @@ def merge_verified_fields(
     stale = list(incoming.stale_fields)
 
     quotes = {
-        path: (prov.quote or "")
-        for path, prov in previous.field_provenance.items()
-        if prov.verification == "verified"
+        path: (prov.quote or "") for path, prov in previous.field_provenance.items() if prov.verification == "verified"
     }
     mapping = EvidenceArchive.map_evidence(quotes, bodies)
 
@@ -512,16 +496,12 @@ class ContractLibrary:
                 source_uri=uri,
             )
         if not path.is_file():
-            return IngestResult(
-                outcome="error", reason=f"source not found: {path}", source_uri=uri
-            )
+            return IngestResult(outcome="error", reason=f"source not found: {path}", source_uri=uri)
 
         try:
             payload = await asyncio.to_thread(path.read_bytes)
         except OSError as exc:
-            return IngestResult(
-                outcome="error", reason=f"unreadable source: {exc}", source_uri=uri
-            )
+            return IngestResult(outcome="error", reason=f"unreadable source: {exc}", source_uri=uri)
         sha256 = hashlib.sha256(payload).hexdigest()
 
         existing = await self.catalog.find_by_source_uri(uri)
@@ -664,9 +644,7 @@ class ContractLibrary:
         targets = dict(fields) if fields is not None else {}
         if fields is not None:
             for path in targets:
-                if path not in VERIFIABLE_PATHS and not path.startswith(
-                    ("parties.", "obligations.")
-                ):
+                if path not in VERIFIABLE_PATHS and not path.startswith(("parties.", "obligations.")):
                     raise KeyError(f"{path!r} is not a verifiable field")
 
         for path, value in targets.items():
@@ -713,9 +691,7 @@ class ContractLibrary:
                 )
                 verified.append(path)
 
-        card = card.model_copy(
-            update={"field_provenance": provenance, "stale_fields": sorted(set(stale))}
-        )
+        card = card.model_copy(update={"field_provenance": provenance, "stale_fields": sorted(set(stale))})
         card = _recompute_derivations(card, today=self._today())
 
         blockers = self._verification_blockers(card)
@@ -728,15 +704,11 @@ class ContractLibrary:
                 }
             )
         elif card.verification == "verified":
-            card = card.model_copy(
-                update={"verification": "extracted", "verified_by": None, "verified_at": None}
-            )
+            card = card.model_copy(update={"verification": "extracted", "verified_by": None, "verified_at": None})
 
         await self.catalog.upsert(
             card,
-            expected_revision=expected_revision
-            if expected_revision is not None
-            else card.revision,
+            expected_revision=expected_revision if expected_revision is not None else card.revision,
         )
         stored = await self.catalog.get(contract_id) or card
         return VerificationResult(
@@ -989,9 +961,7 @@ class ContractLibrary:
         except Exception as exc:  # noqa: BLE001 - staging failures are reported
             logger.warning("Staging failed for %s: %s", contract_id, exc)
             await self.staging.discard(contract_id)
-            return IngestResult(
-                outcome="error", reason=f"indexing failed: {exc}", source_uri=uri
-            )
+            return IngestResult(outcome="error", reason=f"indexing failed: {exc}", source_uri=uri)
 
         toc, toc_digest = derive_toc(tree)
         loader = content_store.loader_for(contract_id)
@@ -1007,9 +977,7 @@ class ContractLibrary:
                 max_obligation_sections=self.max_obligation_sections,
             )
             owner, department = self._resolve_owner(uri, existing, path=path)
-            candidates = [
-                card for card in await self.catalog.list_cards() if card.contract_id != contract_id
-            ]
+            candidates = [card for card in await self.catalog.list_cards() if card.contract_id != contract_id]
             now = self._now()
             card = assemble_card(
                 draft,
@@ -1073,26 +1041,20 @@ class ContractLibrary:
         except Exception as exc:  # noqa: BLE001 - never leave staging behind
             logger.exception("Ingestion failed for %s", contract_id)
             await self.staging.discard(contract_id)
-            return IngestResult(
-                outcome="error", reason=f"ingestion failed: {exc}", source_uri=uri
-            )
+            return IngestResult(outcome="error", reason=f"ingestion failed: {exc}", source_uri=uri)
 
         try:
             await self.staging.promote(contract_id)
         except EvidenceError as exc:  # pragma: no cover - filesystem failure
             logger.error("Promotion failed for %s: %s", contract_id, exc)
-            return IngestResult(
-                outcome="error", reason=f"promotion failed: {exc}", source_uri=uri
-            )
+            return IngestResult(outcome="error", reason=f"promotion failed: {exc}", source_uri=uri)
 
         stored = await self.catalog.get(contract_id) or card
         if self.relate_on_ingest:
             # Judgement at explicit ingest time only — never at retrieval.
             relate_report = await self.relate_contracts([contract_id])
             if relate_report.errors:
-                logger.warning(
-                    "Relation judgement issues for %s: %s", contract_id, relate_report.errors
-                )
+                logger.warning("Relation judgement issues for %s: %s", contract_id, relate_report.errors)
         return IngestResult(
             card=stored,
             outcome="added" if result.created else "updated",
@@ -1118,9 +1080,7 @@ class ContractLibrary:
     async def _alias_map(self) -> dict[str, str]:
         """Build ``normalized alias -> canonical party_id`` from the catalog."""
         aliases = await self.catalog.all_party_aliases()
-        return {
-            alias: party_id for party_id, values in aliases.items() for alias in values
-        }
+        return {alias: party_id for party_id, values in aliases.items() for alias in values}
 
     def published_loader(self, contract_id: str) -> Callable[[str], Optional[str]]:
         """Return a node-body loader over the *published* tree."""

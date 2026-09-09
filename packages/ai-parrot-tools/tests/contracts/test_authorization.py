@@ -240,6 +240,4 @@ async def test_an_ownerless_contract_is_not_owned_by_an_identityless_caller():
 
     retrieval.authorize(context, pattern="my_contracts")
     cards = await retrieval._authorized_cards(context)
-    assert [card.contract_id for card in cards] == [], (
-        "a caller with no employee id owns nothing"
-    )
+    assert [card.contract_id for card in cards] == [], "a caller with no employee id owns nothing"

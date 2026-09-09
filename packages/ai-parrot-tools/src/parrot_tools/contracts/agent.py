@@ -75,10 +75,7 @@ class ContractsAgentProducer:
     def _dossier_prompt(question: str, dossier: Sequence[ContractCard]) -> str:
         """Render the authorized dossier the agent may reason over."""
         lines = [f"Question: {question}", "", "Authorized contracts for this request:"]
-        lines.extend(
-            f"- {card.contract_id}: {card.title} ({card.contract_type}, {card.status})"
-            for card in dossier
-        )
+        lines.extend(f"- {card.contract_id}: {card.title} ({card.contract_type}, {card.status})" for card in dossier)
         lines.append(
             "\nUse the contracts_* tools to read the clauses you need, then "
             "answer with one sentence per supported statement."
@@ -137,31 +134,23 @@ class ContractsAgentProducer:
                     "quote": obligation.text[:300],
                     "page": obligation.page,
                     "version_n": version.n if version else 1,
-                    "source_sha256": version.source_sha256
-                    if version
-                    else card.source_sha256,
+                    "source_sha256": version.source_sha256 if version else card.source_sha256,
                 }
             )
 
         from parrot.knowledge.contracts.models import Citation  # noqa: PLC0415
 
         supported = [Citation(**payload) for payload in citations]
-        sentences = [
-            sentence.strip()
-            for sentence in reply.replace("\n", " ").split(". ")
-            if sentence.strip()
-        ][: self.max_claims]
+        sentences = [sentence.strip() for sentence in reply.replace("\n", " ").split(". ") if sentence.strip()][
+            : self.max_claims
+        ]
         claims: list[Claim] = []
         for sentence in sentences:
             text = sentence if sentence.endswith(".") else f"{sentence}."
             # A claim is supported only by evidence it actually quotes.
             # Attaching every retrieved citation to every sentence would let
             # invented prose ride along on unrelated evidence.
-            citations = [
-                citation
-                for citation in supported
-                if self._supports(text, citation.quote)
-            ]
+            citations = [citation for citation in supported if self._supports(text, citation.quote)]
             claims.append(Claim(text=text, citations=citations))
         return AnswerDraft(claims=claims, pattern=result.pattern)
 
@@ -223,9 +212,7 @@ class ContractsAgent(Agent):
         super().__init__(*args, **kwargs)
         self.service = service
         self.request_context = request_context
-        self.toolkit = ContractsToolkit(
-            service=service, request_context=request_context, library=library
-        )
+        self.toolkit = ContractsToolkit(service=service, request_context=request_context, library=library)
         # The agent drafts; the service releases.
         self.producer = ContractsAgentProducer(self)
         self.service.producer = self.producer

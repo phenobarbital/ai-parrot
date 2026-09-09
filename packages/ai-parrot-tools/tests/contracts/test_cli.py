@@ -57,8 +57,7 @@ class RecordingLibrary:
         return type(
             "Report",
             (),
-            {"summary": lambda self: {"added": 1, "updated": 0, "skipped": 0, "errors": 0},
-             "items": [], "errors": 0},
+            {"summary": lambda self: {"added": 1, "updated": 0, "skipped": 0, "errors": 0}, "items": [], "errors": 0},
         )()
 
     async def refresh_card(self, contract_id, *, source=None):
@@ -192,8 +191,7 @@ async def test_add_and_add_folder_preserve_force(services):
     )
 
     code, payload = await run_command(
-        parse("--user", "bob", "--role", "contract_owner", "add-folder", "/tmp",
-              "--recursive"),
+        parse("--user", "bob", "--role", "contract_owner", "add-folder", "/tmp", "--recursive"),
         **services,
     )
     assert code == 0
@@ -203,8 +201,7 @@ async def test_add_and_add_folder_preserve_force(services):
 @pytest.mark.asyncio
 async def test_relate_preserves_force_and_ids(services):
     code, payload = await run_command(
-        parse("--user", "bob", "--role", "contract_owner", "relate", "acme-msa",
-              "--force"),
+        parse("--user", "bob", "--role", "contract_owner", "relate", "acme-msa", "--force"),
         **services,
     )
     assert code == 0
@@ -219,12 +216,21 @@ async def test_relate_preserves_force_and_ids(services):
 async def test_verify_preserves_the_expected_revision_and_corrections(services):
     code, payload = await run_command(
         parse(
-            "--user", "bob", "--role", "contract_owner", "--confirm",
-            "verify", "acme-msa",
-            "--set", "title=ACME MSA",
-            "--set", "term.notice_days=60",
-            "--set", "governing_law=",
-            "--expected-revision", "3",
+            "--user",
+            "bob",
+            "--role",
+            "contract_owner",
+            "--confirm",
+            "verify",
+            "acme-msa",
+            "--set",
+            "title=ACME MSA",
+            "--set",
+            "term.notice_days=60",
+            "--set",
+            "governing_law=",
+            "--expected-revision",
+            "3",
         ),
         **services,
     )
@@ -244,9 +250,7 @@ async def test_verify_preserves_the_expected_revision_and_corrections(services):
 
 @pytest.mark.asyncio
 async def test_queue_and_search_use_the_catalog_behind_the_gate(services):
-    code, payload = await run_command(
-        parse("--user", "bob", "--role", "contract_reader", "queue"), **services
-    )
+    code, payload = await run_command(parse("--user", "bob", "--role", "contract_reader", "queue"), **services)
     assert code == 0
     assert payload["queue"][0]["contract_id"] == "acme-msa"
 
@@ -281,8 +285,7 @@ async def test_administrative_commands_refuse_without_confirm(services, command)
 @pytest.mark.asyncio
 async def test_an_unauthorized_operator_exits_nonzero(services):
     code, payload = await run_command(
-        parse("--user", "mallory", "--role", "contract_reader", "--confirm",
-              "verify", "acme-msa"),
+        parse("--user", "mallory", "--role", "contract_reader", "--confirm", "verify", "acme-msa"),
         **services,
     )
     assert code == 3
@@ -301,8 +304,7 @@ async def test_confirmation_cannot_be_forged_through_an_argument(services):
     """``--confirm`` is a terminal flag; no command argument sets it."""
     parser = build_parser()
     args = parser.parse_args(
-        ["--user", "bob", "--role", "contract_owner", "verify", "acme-msa",
-         "--set", "confirmed=true"]
+        ["--user", "bob", "--role", "contract_owner", "verify", "acme-msa", "--set", "confirmed=true"]
     )
     assert args.confirm is False
 
@@ -334,8 +336,17 @@ async def test_retire_answer_uses_the_shared_gate(services):
         )
     )
     code, payload = await run_command(
-        parse("--user", "bob", "--role", "contract_owner", "--confirm",
-              "retire-answer", "ans-1", "--reason", "wrong clause"),
+        parse(
+            "--user",
+            "bob",
+            "--role",
+            "contract_owner",
+            "--confirm",
+            "retire-answer",
+            "ans-1",
+            "--reason",
+            "wrong clause",
+        ),
         **services,
     )
 
@@ -347,8 +358,7 @@ async def test_retire_answer_uses_the_shared_gate(services):
 @pytest.mark.asyncio
 async def test_merge_parties_uses_the_shared_gate(services):
     code, payload = await run_command(
-        parse("--user", "bob", "--role", "contract_owner", "--confirm",
-              "merge-parties", "party-acme", "party-old"),
+        parse("--user", "bob", "--role", "contract_owner", "--confirm", "merge-parties", "party-acme", "party-old"),
         **services,
     )
     assert code == 0 and payload["merged"] == {"ok": True}
@@ -411,8 +421,7 @@ async def test_publish_reports_a_successful_run(services):
 @pytest.mark.asyncio
 async def test_an_invalid_field_assignment_is_an_actionable_error(services):
     code, payload = await run_command(
-        parse("--user", "bob", "--role", "contract_owner", "--confirm",
-              "verify", "acme-msa", "--set", "=novalue"),
+        parse("--user", "bob", "--role", "contract_owner", "--confirm", "verify", "acme-msa", "--set", "=novalue"),
         **services,
     )
     assert code == 2
@@ -459,10 +468,7 @@ def test_the_cli_imports_no_scheduler_or_transport_and_deletes_nothing():
             elif isinstance(node, ast.ImportFrom) and node.module:
                 imported.add(node.module)
         assert not any("scheduler" in item for item in imported), imported
-        assert not any(
-            item.startswith(("aiohttp", "smtplib", "requests", "parrot.server"))
-            for item in imported
-        )
+        assert not any(item.startswith(("aiohttp", "smtplib", "requests", "parrot.server")) for item in imported)
         called = {
             node.func.attr
             for node in ast.walk(tree)
@@ -473,12 +479,8 @@ def test_the_cli_imports_no_scheduler_or_transport_and_deletes_nothing():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "command", sorted({"add", "add-folder", "refresh", "relate", "publish"})
-)
-async def test_state_changing_commands_are_denied_without_the_owner_role(
-    services, command
-):
+@pytest.mark.parametrize("command", sorted({"add", "add-folder", "refresh", "relate", "publish"}))
+async def test_state_changing_commands_are_denied_without_the_owner_role(services, command):
     """The CLI is a transport, not an exemption from the gate.
 
     Every one of these commands mutates the catalog, the graph projection
@@ -487,8 +489,7 @@ async def test_state_changing_commands_are_denied_without_the_owner_role(
     on the chat and API surfaces.
     """
     code, payload = await run_command(
-        parse("--user", "mallory", "--role", "contract_reader", command,
-              *_stub_args(command)),
+        parse("--user", "mallory", "--role", "contract_reader", command, *_stub_args(command)),
         **services,
     )
     assert code == 3, payload

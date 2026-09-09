@@ -88,12 +88,8 @@ async def test_two_tenants_reusing_slugs_and_node_ids_cannot_cross_read(tmp_path
     troc = EvidenceArchive(root, tenant_id="troc")
     zeta = EvidenceArchive(root, tenant_id="zeta")
 
-    troc_ref = await troc.archive(
-        troc.reference("acme-msa", source_sha256="sha-troc"), {"0005": "troc secret clause"}
-    )
-    zeta_ref = await zeta.archive(
-        zeta.reference("acme-msa", source_sha256="sha-zeta"), {"0005": "zeta secret clause"}
-    )
+    troc_ref = await troc.archive(troc.reference("acme-msa", source_sha256="sha-troc"), {"0005": "troc secret clause"})
+    zeta_ref = await zeta.archive(zeta.reference("acme-msa", source_sha256="sha-zeta"), {"0005": "zeta secret clause"})
 
     assert await troc.load_body(troc_ref, "0005") == "troc secret clause"
     assert await zeta.load_body(zeta_ref, "0005") == "zeta secret clause"
@@ -104,15 +100,11 @@ async def test_two_tenants_reusing_slugs_and_node_ids_cannot_cross_read(tmp_path
     with pytest.raises(EvidenceError):
         await zeta.load_body(troc_ref, "0005")
 
-    assert [ref.as_string() for ref in await troc.versions("acme-msa")] == [
-        troc_ref.as_string()
-    ]
+    assert [ref.as_string() for ref in await troc.versions("acme-msa")] == [troc_ref.as_string()]
 
 
 def test_reference_round_trip_and_malformed_references():
-    ref = EvidenceRef(
-        tenant_id="troc", contract_id="acme-msa", version_n=2, revision=3, source_sha256="abc123"
-    )
+    ref = EvidenceRef(tenant_id="troc", contract_id="acme-msa", version_n=2, revision=3, source_sha256="abc123")
     assert ref.as_string() == "troc/acme-msa/v2-r3-abc123"
     assert EvidenceRef.parse(ref.as_string()) == ref
 
@@ -219,24 +211,16 @@ async def test_wrong_version_hash_node_page_and_contract_all_fail(archive):
         pages={"0005": 12},
     )
 
-    assert (await archive.resolve(citation(version_n=2), ref)).reason.startswith(
-        "citation version"
-    )
+    assert (await archive.resolve(citation(version_n=2), ref)).reason.startswith("citation version")
     assert "source hash" in (await archive.resolve(citation(source_sha256="other"), ref)).reason
     assert "not in this version" in (await archive.resolve(citation(node_id="0009"), ref)).reason
-    assert "page does not match" in (
-        await archive.resolve(citation(page=99), ref)
-    ).reason
-    assert "another contract" in (
-        await archive.resolve(citation(contract_id="zeta-nda"), ref)
-    ).reason
+    assert "page does not match" in (await archive.resolve(citation(page=99), ref)).reason
+    assert "another contract" in (await archive.resolve(citation(contract_id="zeta-nda"), ref)).reason
 
 
 @pytest.mark.asyncio
 async def test_a_quote_that_is_not_verbatim_is_refused(archive):
-    ref = await archive.archive(
-        archive.reference("acme-msa", source_sha256="sha-v1"), BODIES_V1
-    )
+    ref = await archive.archive(archive.reference("acme-msa", source_sha256="sha-v1"), BODIES_V1)
     lookup = await archive.resolve(citation(quote="Vendor shall donate a pony."), ref)
     assert lookup.found is False
     assert "not verbatim" in lookup.reason
@@ -314,13 +298,9 @@ async def test_promote_replaces_the_published_tree_and_content(staging):
 
 
 @pytest.mark.asyncio
-async def test_a_failed_staging_write_preserves_the_current_tree_and_evidence(
-    staging, archive
-):
+async def test_a_failed_staging_write_preserves_the_current_tree_and_evidence(staging, archive):
     published = await _publish(staging, "acme-msa", "old body")
-    ref = await archive.archive(
-        archive.reference("acme-msa", source_sha256="sha-v1"), BODIES_V1
-    )
+    ref = await archive.archive(archive.reference("acme-msa", source_sha256="sha-v1"), BODIES_V1)
 
     await staging.begin("acme-msa")
     # The refresh fails before anything is staged: discard must not touch

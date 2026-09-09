@@ -67,9 +67,7 @@ async def live_catalog() -> AsyncIterator[PostgresContractCatalog]:
 
     schema = f"contracts_q_{uuid.uuid4().hex[:8]}"
     pool = await asyncpg.create_pool(dsn=PG_DSN, min_size=1, max_size=4)
-    catalog = PostgresContractCatalog(
-        pool=pool, tenant_id="troc", schema=schema, now=frozen_clock
-    )
+    catalog = PostgresContractCatalog(pool=pool, tenant_id="troc", schema=schema, now=frozen_clock)
     await catalog.setup()
     try:
         yield catalog
@@ -132,18 +130,14 @@ async def test_live_english_search_ranks_and_bounds(live_catalog):
             topics=["security", "compliance"],
         )
     )
-    await live_catalog.upsert(
-        make_card("zeta-nda", title="Zeta mutual NDA", summary="Confidentiality only.")
-    )
+    await live_catalog.upsert(make_card("zeta-nda", title="Zeta mutual NDA", summary="Confidentiality only."))
 
     hits = await live_catalog.search("security")
     assert [hit.card.contract_id for hit in hits] == ["acme-msa"]
     assert hits[0].rank > 0
 
     # English stemming: "obligation" matches "obligations".
-    assert [hit.card.contract_id for hit in await live_catalog.search("obligation")] == [
-        "acme-msa"
-    ]
+    assert [hit.card.contract_id for hit in await live_catalog.search("obligation")] == ["acme-msa"]
 
     assert len(await live_catalog.search("agreement OR NDA", top_k=1)) <= 1
 
@@ -152,9 +146,7 @@ async def test_live_english_search_ranks_and_bounds(live_catalog):
 @pytest.mark.asyncio
 async def test_live_search_top_k_is_bounded_and_positive(live_catalog):
     for index in range(3):
-        await live_catalog.upsert(
-            make_card(f"contract-{index}", summary="shared security language")
-        )
+        await live_catalog.upsert(make_card(f"contract-{index}", summary="shared security language"))
 
     assert len(await live_catalog.search("security", top_k=0)) == 1
     assert len(await live_catalog.search("security", top_k=10_000)) == 3
@@ -170,9 +162,7 @@ async def test_live_search_treats_injection_payloads_as_terms(live_catalog):
     assert await live_catalog.search(payload) == []
     # The catalog is intact.
     assert await live_catalog.get("acme-msa") is not None
-    assert [hit.card.contract_id for hit in await live_catalog.search("security")] == [
-        "acme-msa"
-    ]
+    assert [hit.card.contract_id for hit in await live_catalog.search("security")] == ["acme-msa"]
 
 
 @requires_pg
@@ -206,20 +196,14 @@ async def test_live_list_cards_filter_combinations(live_catalog):
         "active-extracted",
         "expired-verified",
     ]
-    assert [card.contract_id for card in await live_catalog.list_cards(status="expired")] == [
-        "expired-verified"
+    assert [card.contract_id for card in await live_catalog.list_cards(status="expired")] == ["expired-verified"]
+    assert [card.contract_id for card in await live_catalog.list_cards(verification="extracted")] == [
+        "active-extracted"
     ]
-    assert [
-        card.contract_id for card in await live_catalog.list_cards(verification="extracted")
-    ] == ["active-extracted"]
-    assert (
-        await live_catalog.list_cards(status="active", verification="verified") == []
-    )
+    assert await live_catalog.list_cards(status="active", verification="verified") == []
 
     await live_catalog.remove("active-extracted")
-    assert [card.contract_id for card in await live_catalog.list_cards()] == [
-        "expired-verified"
-    ]
+    assert [card.contract_id for card in await live_catalog.list_cards()] == ["expired-verified"]
     assert len(await live_catalog.list_cards(active_only=False)) == 2
 
 
@@ -236,9 +220,7 @@ async def test_live_expiring_boundaries_null_dates_and_fallback(live_catalog):
             ),
         )
     )
-    await live_catalog.upsert(
-        make_card("no-notice", term=TermSpec(expiration_date=date(2026, 11, 1)))
-    )
+    await live_catalog.upsert(make_card("no-notice", term=TermSpec(expiration_date=date(2026, 11, 1))))
     await live_catalog.upsert(make_card("no-dates", term=TermSpec()))
 
     # Exact boundary is inclusive on both ends.
@@ -247,21 +229,14 @@ async def test_live_expiring_boundaries_null_dates_and_fallback(live_catalog):
 
     assert await live_catalog.expiring(until=date(2026, 10, 31)) == []
     assert [
-        card.contract_id
-        for card in await live_catalog.expiring(
-            until=date(2026, 11, 1), since=date(2026, 11, 1)
-        )
+        card.contract_id for card in await live_catalog.expiring(until=date(2026, 11, 1), since=date(2026, 11, 1))
     ] == ["no-notice", "with-notice"]
 
     # expiration_date key ignores the notice deadline.
-    by_expiration = await live_catalog.expiring(
-        until=date(2026, 11, 1), key="expiration_date"
-    )
+    by_expiration = await live_catalog.expiring(until=date(2026, 11, 1), key="expiration_date")
     assert [card.contract_id for card in by_expiration] == ["no-notice"]
 
-    assert "no-dates" not in {
-        card.contract_id for card in await live_catalog.expiring(until=date(2099, 1, 1))
-    }
+    assert "no-dates" not in {card.contract_id for card in await live_catalog.expiring(until=date(2099, 1, 1))}
 
 
 @requires_pg
@@ -274,9 +249,7 @@ async def test_live_expiring_skips_inactive_and_non_active_status(live_catalog):
             term=TermSpec(expiration_date=date(2026, 11, 1)),
         )
     )
-    await live_catalog.upsert(
-        make_card("retracted", term=TermSpec(expiration_date=date(2026, 11, 1)))
-    )
+    await live_catalog.upsert(make_card("retracted", term=TermSpec(expiration_date=date(2026, 11, 1))))
     await live_catalog.remove("retracted")
 
     assert await live_catalog.expiring(until=date(2026, 12, 31)) == []
@@ -299,24 +272,16 @@ async def test_live_verification_queue_priority_and_stable_ties(live_catalog):
     await live_catalog.upsert(
         make_card(
             "a-missing",
-            field_provenance={
-                "term.effective_date": FieldProvenance(origin="llm", node_id="0002", quote="  ")
-            },
+            field_provenance={"term.effective_date": FieldProvenance(origin="llm", node_id="0002", quote="  ")},
         )
     )
     await live_catalog.upsert(
         make_card(
             "m-low",
-            field_provenance={
-                "title": FieldProvenance(
-                    origin="llm", node_id="0001", quote="ACME", confidence=0.4
-                )
-            },
+            field_provenance={"title": FieldProvenance(origin="llm", node_id="0001", quote="ACME", confidence=0.4)},
         )
     )
-    await live_catalog.upsert(
-        make_card("s-stale", stale_fields=["term.expiration_date"])
-    )
+    await live_catalog.upsert(make_card("s-stale", stale_fields=["term.expiration_date"]))
     await live_catalog.upsert(
         make_card(
             "clean-verified",
@@ -420,16 +385,12 @@ async def test_live_obligation_window_filters_and_ordering(live_catalog):
 
     assert [
         ob.obligation_id
-        for ob in await live_catalog.obligations_due(
-            ObligationWindow(until=date(2026, 12, 31), kinds=["reporting"])
-        )
+        for ob in await live_catalog.obligations_due(ObligationWindow(until=date(2026, 12, 31), kinds=["reporting"]))
     ] == ["ob-soon"]
 
     assert [
         ob.obligation_id
-        for ob in await live_catalog.obligations_due(
-            ObligationWindow(until=date(2026, 12, 31), standard_id="soc2")
-        )
+        for ob in await live_catalog.obligations_due(ObligationWindow(until=date(2026, 12, 31), standard_id="soc2"))
     ] == ["ob-standard"]
 
     assert [
@@ -446,14 +407,7 @@ async def test_live_obligation_window_filters_and_ordering(live_catalog):
         )
     ] == ["ob-standard", "ob-recurring"]
 
-    assert (
-        len(
-            await live_catalog.obligations_due(
-                ObligationWindow(until=date(2026, 12, 31), limit=1)
-            )
-        )
-        == 1
-    )
+    assert len(await live_catalog.obligations_due(ObligationWindow(until=date(2026, 12, 31), limit=1))) == 1
 
 
 @requires_pg

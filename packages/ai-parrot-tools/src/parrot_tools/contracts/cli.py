@@ -47,16 +47,12 @@ COMMANDS: tuple[str, ...] = (
 )
 
 #: Commands that change state and therefore require ``--confirm``.
-CONFIRMING_COMMANDS: frozenset[str] = frozenset(
-    {"verify", "merge-parties", "retire-answer"}
-)
+CONFIRMING_COMMANDS: frozenset[str] = frozenset({"verify", "merge-parties", "retire-answer"})
 
 #: Commands that change catalog, graph or relation state. Each is
 #: authorized as an owner action before it runs — the CLI is a transport
 #: like any other, not an exemption from the gate.
-WRITE_COMMANDS: frozenset[str] = frozenset(
-    {"add", "add-folder", "refresh", "relate", "publish"}
-)
+WRITE_COMMANDS: frozenset[str] = frozenset({"add", "add-folder", "refresh", "relate", "publish"})
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -203,9 +199,7 @@ async def run_command(
     command = args.command
 
     if command in CONFIRMING_COMMANDS and not context.confirmed:
-        return 2, {
-            "error": f"{command} is an administrative action; pass --confirm to proceed"
-        }
+        return 2, {"error": f"{command} is an administrative action; pass --confirm to proceed"}
 
     try:
         # Default deny, on the same gate every other surface uses. The
@@ -217,9 +211,7 @@ async def run_command(
             service.retrieval.authorize(context, pattern=command, owner_only=True)
 
         if command == "add":
-            result = await library.add_contract(
-                args.source, source_uri=args.source_uri, force=args.force
-            )
+            result = await library.add_contract(args.source, source_uri=args.source_uri, force=args.force)
             return (0 if result.outcome != "error" else 1), {
                 "outcome": result.outcome,
                 "contract_id": result.card.contract_id if result.card else None,
@@ -228,9 +220,7 @@ async def run_command(
             }
 
         if command == "add-folder":
-            report = await library.add_folder(
-                args.folder, recursive=args.recursive, force=args.force
-            )
+            report = await library.add_folder(args.folder, recursive=args.recursive, force=args.force)
             return (0 if report.errors == 0 else 1), {
                 "summary": report.summary(),
                 "items": [item.model_dump(mode="json") for item in report.items][:200],
@@ -260,9 +250,7 @@ async def run_command(
             }
 
         if command == "merge-parties":
-            merged = await service.merge_parties(
-                args.keep_party_id, args.merge_party_id, request_context=context
-            )
+            merged = await service.merge_parties(args.keep_party_id, args.merge_party_id, request_context=context)
             return 0, {"merged": merged.model_dump(mode="json")}
 
         if command == "queue":
@@ -285,15 +273,12 @@ async def run_command(
             hits = await library.catalog.search(args.query, top_k=args.top_k)
             return 0, {
                 "results": [
-                    {"contract_id": hit.card.contract_id, "title": hit.card.title, "rank": hit.rank}
-                    for hit in hits
+                    {"contract_id": hit.card.contract_id, "title": hit.card.title, "rank": hit.rank} for hit in hits
                 ]
             }
 
         if command == "relate":
-            report = await library.relate_contracts(
-                args.contract_ids or None, force=args.force
-            )
+            report = await library.relate_contracts(args.contract_ids or None, force=args.force)
             return (0 if not report.errors else 1), {
                 "calls": report.calls,
                 "judged": report.judged,
@@ -339,9 +324,7 @@ async def run_command(
             return code, payload
 
         if command == "retire-answer":
-            record = await service.retire_answer(
-                args.answer_id, request_context=context, reason=args.reason
-            )
+            record = await service.retire_answer(args.answer_id, request_context=context, reason=args.reason)
             return 0, {
                 "answer_id": record.answer_id,
                 "retired_by": record.retired_by,
@@ -398,8 +381,7 @@ def main(
     out = stream or sys.stdout
     if factory is None:
         print(
-            "No service factory configured. Wire parrot_tools.contracts.cli.main("
-            "factory=...) in your deployment.",
+            "No service factory configured. Wire parrot_tools.contracts.cli.main(" "factory=...) in your deployment.",
             file=out,
         )
         return 2

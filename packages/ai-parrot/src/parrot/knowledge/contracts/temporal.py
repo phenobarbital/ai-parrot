@@ -94,9 +94,7 @@ def build_graph_update(
         The ``GraphUpdate`` to apply.
     """
     recorded_revision = revision if revision is not None else card.revision
-    version_n = version.n if version is not None else (
-        card.versions[-1].n if card.versions else 1
-    )
+    version_n = version.n if version is not None else (card.versions[-1].n if card.versions else 1)
     valid_from = version.valid_from if version is not None else card.term.effective_date
     valid_to = version.valid_to if version is not None else None
     snapshot = version.card_snapshot if version is not None else {}
@@ -204,18 +202,14 @@ class ContractTemporalPublisher:
                 try:
                     receipt, recovered = await self._publish_record(ctx, record)
                 except Exception as exc:  # noqa: BLE001 - failures must stay retryable
-                    logger.warning(
-                        "Temporal publication failed for %s: %s", record.run_id, exc
-                    )
+                    logger.warning("Temporal publication failed for %s: %s", record.run_id, exc)
                     await self.catalog.fail_publication(record, error=str(exc))
                     report.failed.append(record.contract_id)
                     report.errors.append(f"{record.contract_id}: {exc}")
                     continue
                 await self.catalog.complete_publication(record, receipt=receipt)
                 report.receipts[record.contract_id] = receipt
-                (report.recovered if recovered else report.published).append(
-                    record.contract_id
-                )
+                (report.recovered if recovered else report.published).append(record.contract_id)
         return report
 
     async def _publish_record(
@@ -237,11 +231,7 @@ class ContractTemporalPublisher:
             raise RuntimeError(f"unknown contract {record.contract_id!r}")
         versions = await self.catalog.versions(record.contract_id)
         version = next(
-            (
-                item
-                for item in versions
-                if item.n == record.version_n and item.revision == record.revision
-            ),
+            (item for item in versions if item.n == record.version_n and item.revision == record.revision),
             None,
         )
         tombstone = bool(record.payload.get("tombstone"))

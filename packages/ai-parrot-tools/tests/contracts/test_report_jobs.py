@@ -57,9 +57,7 @@ async def retrieval() -> ContractRetrieval:
     """A catalog spanning every renewal bucket plus edge cases."""
     catalog = FakeCatalog()
     # Bucket boundaries measured from 2026-09-09.
-    await catalog.upsert(
-        make_card("day-0", term=term(expiration_date=TODAY, notice_deadline=TODAY))
-    )
+    await catalog.upsert(make_card("day-0", term=term(expiration_date=TODAY, notice_deadline=TODAY)))
     await catalog.upsert(
         make_card(
             "day-30",
@@ -87,13 +85,9 @@ async def retrieval() -> ContractRetrieval:
             ),
         )
     )
-    await catalog.upsert(
-        make_card("day-91", term=term(notice_deadline=TODAY + timedelta(days=91)))
-    )
+    await catalog.upsert(make_card("day-91", term=term(notice_deadline=TODAY + timedelta(days=91))))
     # No notice period: the expiration date is the fallback.
-    await catalog.upsert(
-        make_card("fallback", term=term(expiration_date=TODAY + timedelta(days=45)))
-    )
+    await catalog.upsert(make_card("fallback", term=term(expiration_date=TODAY + timedelta(days=45))))
     # No dates at all: omitted entirely.
     await catalog.upsert(make_card("undated", term=term()))
     return ContractRetrieval(catalog=catalog, today=lambda: TODAY)
@@ -110,9 +104,7 @@ def test_the_buckets_are_the_documented_windows():
 
 @pytest.mark.asyncio
 async def test_buckets_are_inclusive_non_overlapping_and_deterministic(retrieval):
-    report = await renewals_report(
-        retrieval=retrieval, principal=principal(), today=TODAY
-    )
+    report = await renewals_report(retrieval=retrieval, principal=principal(), today=TODAY)
 
     by_label = {bucket.label: bucket for bucket in report.buckets}
     assert [bucket.label for bucket in report.buckets] == ["0-30", "31-60", "61-90"]
@@ -135,9 +127,7 @@ async def test_buckets_are_inclusive_non_overlapping_and_deterministic(retrieval
 
 @pytest.mark.asyncio
 async def test_the_expiration_key_ignores_notice_deadlines(retrieval):
-    report = await renewals_report(
-        retrieval=retrieval, principal=principal(), today=TODAY, key="expiration_date"
-    )
+    report = await renewals_report(retrieval=retrieval, principal=principal(), today=TODAY, key="expiration_date")
     first = {row["contract_id"] for row in report.buckets[0].contracts}
     assert "day-0" in first
     assert "day-30" not in first, "its expiration is 90 days out"
@@ -161,9 +151,7 @@ async def test_recipient_scope_excludes_unauthorized_contracts(retrieval):
         employee_graph_id="employees/emp-1",
     )
     report = await renewals_report(retrieval=retrieval, principal=scoped, today=TODAY)
-    covered = {
-        row["contract_id"] for bucket in report.buckets for row in bucket.contracts
-    }
+    covered = {row["contract_id"] for bucket in report.buckets for row in bucket.contracts}
     assert "someone-elses" not in covered
     assert "day-0" in covered, "its own contracts are still covered"
 
@@ -171,9 +159,7 @@ async def test_recipient_scope_excludes_unauthorized_contracts(retrieval):
 @pytest.mark.asyncio
 async def test_an_unauthenticated_principal_is_refused(retrieval):
     with pytest.raises(AuthorizationDenied):
-        await renewals_report(
-            retrieval=retrieval, principal=RequestContext(), today=TODAY
-        )
+        await renewals_report(retrieval=retrieval, principal=RequestContext(), today=TODAY)
 
 
 @pytest.mark.asyncio
@@ -250,9 +236,7 @@ async def obligations_retrieval() -> ContractRetrieval:
 
 @pytest.mark.asyncio
 async def test_fixed_dates_recurrences_and_review_cases_are_separated(obligations_retrieval):
-    digest = await obligations_digest(
-        retrieval=obligations_retrieval, principal=principal(), today=TODAY, days=7
-    )
+    digest = await obligations_digest(retrieval=obligations_retrieval, principal=principal(), today=TODAY, days=7)
 
     assert [row["obligation_id"] for row in digest.due] == ["ob-due"]
     assert [row["obligation_id"] for row in digest.recurring] == ["ob-anchored"]
@@ -272,9 +256,7 @@ def test_the_recognised_recurrences_are_a_closed_set():
 
 @pytest.mark.asyncio
 async def test_the_digest_window_and_kind_filters_are_deterministic(obligations_retrieval):
-    wide = await obligations_digest(
-        retrieval=obligations_retrieval, principal=principal(), today=TODAY, days=90
-    )
+    wide = await obligations_digest(retrieval=obligations_retrieval, principal=principal(), today=TODAY, days=90)
     assert {row["obligation_id"] for row in wide.due} == {"ob-due", "ob-later"}
 
     audits = await obligations_digest(
@@ -288,9 +270,7 @@ async def test_the_digest_window_and_kind_filters_are_deterministic(obligations_
     assert [row["obligation_id"] for row in audits.recurring] == ["ob-anchored"]
 
     assert (
-        await obligations_digest(
-            retrieval=obligations_retrieval, principal=principal(), today=TODAY, days=90
-        )
+        await obligations_digest(retrieval=obligations_retrieval, principal=principal(), today=TODAY, days=90)
     ).model_dump() == wide.model_dump()
 
 
@@ -319,9 +299,7 @@ async def test_the_digest_respects_recipient_scope(obligations_retrieval):
         employee_id="emp-1",
         employee_graph_id="employees/emp-1",
     )
-    digest = await obligations_digest(
-        retrieval=obligations_retrieval, principal=scoped, today=TODAY, days=30
-    )
+    digest = await obligations_digest(retrieval=obligations_retrieval, principal=scoped, today=TODAY, days=30)
     assert "hidden-ob" not in {row["obligation_id"] for row in digest.due}
 
 
@@ -368,25 +346,15 @@ async def test_optional_prose_goes_through_the_shared_gate(tmp_path, obligations
 
 @pytest.mark.asyncio
 async def test_reports_never_deliver_anything(obligations_retrieval):
-    digest = await obligations_digest(
-        retrieval=obligations_retrieval, principal=principal(), today=TODAY
-    )
-    renewals = await renewals_report(
-        retrieval=obligations_retrieval, principal=principal(), today=TODAY
-    )
+    digest = await obligations_digest(retrieval=obligations_retrieval, principal=principal(), today=TODAY)
+    renewals = await renewals_report(retrieval=obligations_retrieval, principal=principal(), today=TODAY)
     # The jobs return data; the deploying agent decides what to do with it.
     assert hasattr(digest, "due") and hasattr(renewals, "buckets")
     assert digest.prose is None and renewals.prose is None
 
 
 def test_neither_job_imports_a_scheduler_or_a_transport():
-    source = (
-        Path(__file__).resolve().parents[2]
-        / "src"
-        / "parrot_tools"
-        / "contracts"
-        / "jobs.py"
-    ).read_text()
+    source = (Path(__file__).resolve().parents[2] / "src" / "parrot_tools" / "contracts" / "jobs.py").read_text()
     tree = ast.parse(source)
     imported: set[str] = set()
     for node in ast.walk(tree):
@@ -395,10 +363,7 @@ def test_neither_job_imports_a_scheduler_or_a_transport():
         elif isinstance(node, ast.ImportFrom) and node.module:
             imported.add(node.module)
     assert not any("scheduler" in name for name in imported)
-    assert not any(
-        name.startswith(("aiohttp", "smtplib", "requests", "parrot.server"))
-        for name in imported
-    )
+    assert not any(name.startswith(("aiohttp", "smtplib", "requests", "parrot.server")) for name in imported)
     decorators = {
         ast.unparse(decorator)
         for node in ast.walk(tree)

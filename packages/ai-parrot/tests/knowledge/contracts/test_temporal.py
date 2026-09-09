@@ -34,9 +34,7 @@ from parrot.knowledge.graphindex.schema import NodeKind
 from .test_catalog_contract import InMemoryContractCatalog
 
 PG_DSN: Optional[str] = os.environ.get("GRAPHINDEX_PG_DSN")
-requires_pg = pytest.mark.skipif(
-    not PG_DSN, reason="live GraphIndex tests require an explicit GRAPHINDEX_PG_DSN"
-)
+requires_pg = pytest.mark.skipif(not PG_DSN, reason="live GraphIndex tests require an explicit GRAPHINDEX_PG_DSN")
 
 FROZEN_NOW = datetime(2026, 9, 9, 12, 0, 0, tzinfo=timezone.utc)
 
@@ -92,9 +90,7 @@ class FakePersistence:
                 "commit_id": commit_id,
                 "run_id": update.run_id,
                 "agent_id": update.agent_id,
-                "payload": {
-                    "nodes": [node.model_dump(mode="json") for node in update.nodes]
-                },
+                "payload": {"nodes": [node.model_dump(mode="json") for node in update.nodes]},
             }
         )
         if self.swallow_receipt:
@@ -164,8 +160,7 @@ def test_update_uses_existing_enum_values_and_embeds_history():
     assert tags["effective_to"] is None
     assert tags["source_sha256"] == "sha-v2"
     assert tags["card_snapshot"] == {"title": "historical title"}, (
-        "historical values live in versioned node content, not only in an "
-        "external mutable reference"
+        "historical values live in versioned node content, not only in an " "external mutable reference"
     )
     assert tags["tombstone"] is False
 
@@ -274,9 +269,7 @@ async def test_a_mismatched_payload_is_refused_rather_than_accepted(publisher):
 async def test_successive_revisions_publish_distinct_runs(publisher):
     await publisher.drain(make_ctx())
     stored = await publisher.catalog.get("acme-msa")
-    await publisher.catalog.upsert(
-        stored.model_copy(update={"summary": "revised"}), expected_revision=1
-    )
+    await publisher.catalog.upsert(stored.model_copy(update={"summary": "revised"}), expected_revision=1)
 
     report = await publisher.drain(make_ctx())
     assert report.published == ["acme-msa"]
@@ -377,9 +370,7 @@ async def test_live_successive_revisions_and_recorded_history(live_plane):
     assert first.published == ["acme-msa"]
 
     stored = await catalog.get("acme-msa")
-    await catalog.upsert(
-        stored.model_copy(update={"title": "ACME MSA (restated)"}), expected_revision=1
-    )
+    await catalog.upsert(stored.model_copy(update={"title": "ACME MSA (restated)"}), expected_revision=1)
     second = await publisher.drain(ctx)
     assert second.published == ["acme-msa"]
     assert second.receipts["acme-msa"] != first.receipts["acme-msa"]

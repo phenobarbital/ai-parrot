@@ -208,9 +208,7 @@ class ContractGraphLoader:
         self.graph_store = graph_store
         self.domain = domain
         self._tenant_manager = tenant_manager or self._default_tenant_manager(ontology_dir)
-        self.datasource = datasource or ContractCardDataSource(
-            "contractcard", {"catalog": catalog}
-        )
+        self.datasource = datasource or ContractCardDataSource("contractcard", {"catalog": catalog})
         self._lock = asyncio.Lock()
         self._ctx: Any = None
 
@@ -412,10 +410,7 @@ class ContractGraphLoader:
     async def _snapshot(self) -> dict[str, list[dict[str, Any]]]:
         """Build the prevalidated snapshot, enriched for edge derivation."""
         snapshot = await self.datasource.snapshot()
-        cards = {
-            card.contract_id: card
-            for card in await self.catalog.list_cards(active_only=False)
-        }
+        cards = {card.contract_id: card for card in await self.catalog.list_cards(active_only=False)}
         for record in snapshot["Contract"]:
             card = cards.get(record["contract_id"])
             if card is None:  # pragma: no cover - snapshot comes from the same catalog
@@ -468,15 +463,11 @@ class ContractGraphLoader:
                 records = [self._node_payload(record) for record in snapshot.get(entity, [])]
                 collection = ENTITY_COLLECTIONS[entity]
                 try:
-                    result = await self.graph_store.upsert_nodes(
-                        ctx, collection, records, ENTITY_KEYS[entity]
-                    )
+                    result = await self.graph_store.upsert_nodes(ctx, collection, records, ENTITY_KEYS[entity])
                 except Exception as exc:  # noqa: BLE001 - partial writes stay retryable
                     report.errors.append(f"{collection}: node upsert failed: {exc}")
                     return report
-                report.nodes_upserted[collection] = getattr(result, "inserted", 0) + getattr(
-                    result, "updated", 0
-                )
+                report.nodes_upserted[collection] = getattr(result, "inserted", 0) + getattr(result, "updated", 0)
 
             # 2. Soft-delete only feature-owned vertices absent from the
             #    snapshot. Party/Person/ComplianceStandard are shared
@@ -541,10 +532,7 @@ class ContractGraphLoader:
                     )
                     removed += 1
                     continue
-                stale_properties = any(
-                    edge.get(name) != value
-                    for name, value in wanted_edge.properties.items()
-                )
+                stale_properties = any(edge.get(name) != value for name, value in wanted_edge.properties.items())
                 if stale_properties or not edge.get("source_id"):
                     # create_edges never updates properties and discovery
                     # writes bare _from/_to edges: remove, then rewrite.
@@ -556,9 +544,7 @@ class ContractGraphLoader:
                 report.edges_removed[collection] = removed
 
             if wanted:
-                created = await self.graph_store.create_edges(
-                    ctx, collection, [edge.document() for edge in wanted]
-                )
+                created = await self.graph_store.create_edges(ctx, collection, [edge.document() for edge in wanted])
                 report.edges_created[collection] = created
 
     async def _verify(
@@ -584,9 +570,7 @@ class ContractGraphLoader:
                 report.errors.append(f"{collection}: read-back failed: {exc}")
                 continue
             present = {node.get(key_field) or node.get("_key") for node in nodes}
-            report.missing_nodes.extend(
-                f"{collection}/{key}" for key in sorted(intended - present)
-            )
+            report.missing_nodes.extend(f"{collection}/{key}" for key in sorted(intended - present))
 
         by_collection: dict[str, list[EdgeSpec]] = {}
         for edge in desired:
@@ -621,9 +605,7 @@ class ContractGraphLoader:
         Returns:
             The full-catalog publication report.
         """
-        logger.info(
-            "Publishing contract %s via a full-catalog reconciliation", card.contract_id
-        )
+        logger.info("Publishing contract %s via a full-catalog reconciliation", card.contract_id)
         return await self.publish_all()
 
     async def retract(self, contract_id: str) -> GraphPublicationReport:
@@ -670,9 +652,7 @@ class ContractGraphLoader:
             for collection in FEATURE_EDGE_COLLECTIONS:
                 for node_id in node_ids:
                     try:
-                        incident = await self.graph_store.edges_incident(
-                            ctx, collection, node_id
-                        )
+                        incident = await self.graph_store.edges_incident(ctx, collection, node_id)
                     except Exception as exc:  # noqa: BLE001
                         report.errors.append(f"{collection}: incident read failed: {exc}")
                         continue

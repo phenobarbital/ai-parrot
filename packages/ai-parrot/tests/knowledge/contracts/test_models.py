@@ -198,11 +198,7 @@ def test_blank_quote_caps_confidence_and_never_substantiates():
 
 def test_signatory_must_reference_a_card_party():
     with pytest.raises(ValidationError, match="unknown party"):
-        _card(
-            signatories=[
-                Signatory(person_id="p-9", name="Ghost", party_id="party-unknown")
-            ]
-        )
+        _card(signatories=[Signatory(person_id="p-9", name="Ghost", party_id="party-unknown")])
 
 
 def test_multiple_us_parties_are_rejected():
@@ -257,9 +253,7 @@ def test_recursive_version_snapshot_is_rejected():
 
 
 def test_card_snapshot_payload_drops_versions():
-    card = _card(
-        versions=[ContractVersion(n=1, source_sha256="a" * 64, recorded_at=FROZEN_NOW)]
-    )
+    card = _card(versions=[ContractVersion(n=1, source_sha256="a" * 64, recorded_at=FROZEN_NOW)])
     snapshot = card_snapshot_payload(card)
     assert "versions" not in snapshot
     version = ContractVersion(n=2, card_snapshot=snapshot, recorded_at=FROZEN_NOW)

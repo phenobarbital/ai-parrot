@@ -60,9 +60,7 @@ def card_with(**overrides) -> ContractCard:
         "parties": [Party(party_id="party-acme", name="ACME Inc.", role="customer")],
         "term": TermSpec(effective_date=date(2026, 1, 1), expiration_date=date(2026, 12, 31)),
         "field_provenance": {
-            "title": FieldProvenance(
-                origin="llm", node_id="0001", quote="ACME MSA", confidence=0.9
-            ),
+            "title": FieldProvenance(origin="llm", node_id="0001", quote="ACME MSA", confidence=0.9),
             "term.effective_date": FieldProvenance(
                 origin="llm",
                 node_id="0002",
@@ -103,9 +101,7 @@ def test_paths_address_top_level_term_party_and_obligation_fields():
 
     updated = set_card_field(card, "term.notice_days", 60)
     assert updated.term.notice_days == 60
-    assert set_card_field(card, "parties.party-acme.name", "ACME, Inc.").parties[0].name == (
-        "ACME, Inc."
-    )
+    assert set_card_field(card, "parties.party-acme.name", "ACME, Inc.").parties[0].name == ("ACME, Inc.")
     with pytest.raises(KeyError):
         get_card_field(card, "nonexistent")
     with pytest.raises(KeyError):
@@ -134,9 +130,7 @@ async def test_confirming_a_field_keeps_its_origin_and_stamps_the_actor(library)
 @pytest.mark.asyncio
 async def test_correcting_a_field_moves_the_origin_to_manual(library):
     await library.catalog.upsert(card_with())
-    result = await library.verify_card(
-        "acme-msa", {"title": "ACME Master Services Agreement"}, user="bob@troc"
-    )
+    result = await library.verify_card("acme-msa", {"title": "ACME Master Services Agreement"}, user="bob@troc")
 
     assert result.corrected == ["title"]
     assert result.card.title == "ACME Master Services Agreement"
@@ -162,18 +156,14 @@ async def test_whole_card_verification_requires_every_gap_to_be_resolved(library
         card_with(
             field_provenance={
                 "title": FieldProvenance(origin="llm", node_id="0001"),  # no quote
-                "governing_law": FieldProvenance(
-                    origin="llm", node_id="0006", quote="Delaware law", confidence=0.4
-                ),
+                "governing_law": FieldProvenance(origin="llm", node_id="0006", quote="Delaware law", confidence=0.4),
             },
             stale_fields=["term.expiration_date"],
         )
     )
     blocked = await library.verify_card("acme-msa", user="bob@troc")
     assert blocked.card_verified is False
-    assert blocked.blockers == ["term.expiration_date: stale"] or "stale" in " ".join(
-        blocked.blockers
-    )
+    assert blocked.blockers == ["term.expiration_date: stale"] or "stale" in " ".join(blocked.blockers)
 
 
 @pytest.mark.asyncio
@@ -182,9 +172,7 @@ async def test_missing_evidence_and_low_confidence_are_reported_as_blockers(libr
         card_with(
             field_provenance={
                 "title": FieldProvenance(origin="llm", node_id="0001"),
-                "governing_law": FieldProvenance(
-                    origin="llm", node_id="0006", quote="Delaware law", confidence=0.4
-                ),
+                "governing_law": FieldProvenance(origin="llm", node_id="0006", quote="Delaware law", confidence=0.4),
             }
         )
     )
@@ -198,11 +186,7 @@ async def test_missing_evidence_and_low_confidence_are_reported_as_blockers(libr
 async def test_verifying_everything_marks_the_card_verified(library):
     await library.catalog.upsert(
         card_with(
-            field_provenance={
-                "title": FieldProvenance(
-                    origin="llm", node_id="0001", quote="ACME MSA", confidence=0.9
-                )
-            }
+            field_provenance={"title": FieldProvenance(origin="llm", node_id="0001", quote="ACME MSA", confidence=0.9)}
         )
     )
     result = await library.verify_card("acme-msa", user="bob@troc")
@@ -219,9 +203,7 @@ async def test_rule_derived_fields_are_not_human_verified(library):
         card_with(
             field_provenance={
                 "status": FieldProvenance(origin="rule", derived_from=["term.effective_date"]),
-                "title": FieldProvenance(
-                    origin="llm", node_id="0001", quote="ACME MSA", confidence=0.9
-                ),
+                "title": FieldProvenance(origin="llm", node_id="0001", quote="ACME MSA", confidence=0.9),
             }
         )
     )
@@ -234,9 +216,7 @@ async def test_rule_derived_fields_are_not_human_verified(library):
 @pytest.mark.asyncio
 async def test_correcting_a_term_field_recomputes_derived_values(library):
     await library.catalog.upsert(card_with())
-    result = await library.verify_card(
-        "acme-msa", {"term.notice_days": 60, "term.auto_renew": True}, user="bob@troc"
-    )
+    result = await library.verify_card("acme-msa", {"term.notice_days": 60, "term.auto_renew": True}, user="bob@troc")
     assert result.card.term.notice_deadline == date(2026, 11, 1)
     assert result.card.term.next_renewal_date == date(2026, 12, 31)
 
@@ -268,9 +248,7 @@ async def test_concurrent_verification_rejects_a_stale_revision(library):
     await library.verify_card("acme-msa", {"title": None}, user="bob@troc", expected_revision=1)
 
     with pytest.raises(CatalogConflictError):
-        await library.verify_card(
-            "acme-msa", {"title": "Second writer"}, user="alice@troc", expected_revision=1
-        )
+        await library.verify_card("acme-msa", {"title": "Second writer"}, user="alice@troc", expected_revision=1)
     stored = await library.catalog.get("acme-msa")
     assert stored.title == "ACME MSA"
     assert stored.field_provenance["title"].verified_by == "bob@troc"
@@ -339,7 +317,7 @@ def test_an_empty_quote_never_proves_unchanged_evidence():
     incoming = card_with(title="Model Guess")
     merged = merge_verified_fields(previous, incoming, {"0001": "ACME MSA"})
 
-    assert merged.title == "ACME MSA " .strip() or merged.title == "ACME MSA"
+    assert merged.title == "ACME MSA ".strip() or merged.title == "ACME MSA"
     assert merged.field_provenance["title"].verification == "stale"
     assert "title" in merged.stale_fields
 
@@ -347,14 +325,10 @@ def test_an_empty_quote_never_proves_unchanged_evidence():
 def test_changed_value_with_unchanged_evidence_keeps_the_human_decision():
     previous = card_with(
         term=TermSpec(effective_date=date(2026, 1, 1)),
-        field_provenance={
-            "term.effective_date": verified("effective as of January 1, 2026", node_id="0002")
-        },
+        field_provenance={"term.effective_date": verified("effective as of January 1, 2026", node_id="0002")},
     )
     incoming = card_with(term=TermSpec(effective_date=date(2027, 5, 5)))
-    merged = merge_verified_fields(
-        previous, incoming, {"0002": "The Agreement is effective as of January 1, 2026."}
-    )
+    merged = merge_verified_fields(previous, incoming, {"0002": "The Agreement is effective as of January 1, 2026."})
     assert merged.term.effective_date == date(2026, 1, 1)
     assert merged.field_provenance["term.effective_date"].verification == "verified"
 
@@ -383,9 +357,7 @@ def test_manual_termination_confirmation_survives_a_refresh():
 async def test_refresh_preserves_verified_values_and_historical_citations(library, tmp_path):
     path = write(tmp_path, "acme-msa.md")
     added = await library.add_contract(path)
-    await library.verify_card(
-        "acme-msa", {"title": "ACME Master Services Agreement"}, user="bob@troc"
-    )
+    await library.verify_card("acme-msa", {"title": "ACME Master Services Agreement"}, user="bob@troc")
     version_one = (await library.catalog.versions("acme-msa"))[0]
 
     path.write_text(MSA_MARKDOWN.replace("twelve (12) months", "twenty-four (24) months"))
@@ -440,9 +412,7 @@ async def test_verified_amendment_records_an_interval_on_its_base(library):
             source_uri="sharepoint://legal/acme-amd-1.pdf",
             source_sha256="sha-amd",
             term=TermSpec(effective_date=date(2026, 7, 1)),
-            field_provenance={
-                "term.effective_date": verified("effective July 1, 2026", node_id="0002")
-            },
+            field_provenance={"term.effective_date": verified("effective July 1, 2026", node_id="0002")},
         )
     )
 

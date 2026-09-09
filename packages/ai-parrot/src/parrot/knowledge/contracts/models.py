@@ -426,10 +426,7 @@ class ContractVersion(BaseModel):
     @classmethod
     def _no_recursive_snapshot(cls, value: dict[str, Any]) -> dict[str, Any]:
         if value.get("versions"):
-            raise ValueError(
-                "card_snapshot must omit its own 'versions' list "
-                "(use card_snapshot_payload())"
-            )
+            raise ValueError("card_snapshot must omit its own 'versions' list " "(use card_snapshot_payload())")
         return value
 
     @model_validator(mode="after")
@@ -526,15 +523,13 @@ class ContractCard(BaseModel):
         for signatory in self.signatories:
             if signatory.party_id not in known:
                 raise ValueError(
-                    f"signatory {signatory.person_id!r} references unknown "
-                    f"party {signatory.party_id!r}"
+                    f"signatory {signatory.person_id!r} references unknown " f"party {signatory.party_id!r}"
                 )
 
         for obligation in self.obligations:
             if obligation.contract_id != self.contract_id:
                 raise ValueError(
-                    f"obligation {obligation.obligation_id!r} belongs to "
-                    f"contract {obligation.contract_id!r}"
+                    f"obligation {obligation.obligation_id!r} belongs to " f"contract {obligation.contract_id!r}"
                 )
 
         if self.verification == "verified" and not (self.verified_by and self.verified_at):
@@ -564,12 +559,8 @@ class ContractCard(BaseModel):
             "contract_type": self.contract_type,
             "status": self.status,
             "counterparties": [party.name for party in self.counterparties],
-            "effective_date": self.term.effective_date.isoformat()
-            if self.term.effective_date
-            else None,
-            "expiration_date": self.term.expiration_date.isoformat()
-            if self.term.expiration_date
-            else None,
+            "effective_date": self.term.effective_date.isoformat() if self.term.effective_date else None,
+            "expiration_date": self.term.expiration_date.isoformat() if self.term.expiration_date else None,
             "verification": self.verification,
             "owner_employee_id": self.owner_employee_id,
             "department": self.department,

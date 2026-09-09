@@ -193,9 +193,7 @@ async def ingest_delta(
     # Authorization is not optional on a path that carries retractions.
     # An omitted `retrieval` means "build the gate from this catalog", not
     # "skip the gate" — a missing argument must never widen access.
-    gate = retrieval if retrieval is not None else ContractRetrieval(
-        catalog=library.catalog
-    )
+    gate = retrieval if retrieval is not None else ContractRetrieval(catalog=library.catalog)
     gate.authorize(principal, pattern="ingest_delta")
 
     catalog = library.catalog
@@ -259,11 +257,7 @@ async def ingest_delta(
             continue
 
         if item.get("is_folder"):
-            rows.append(
-                IngestItemReport(
-                    source_uri=current_uri, outcome="skipped", reason="folder"
-                )
-            )
+            rows.append(IngestItemReport(source_uri=current_uri, outcome="skipped", reason="folder"))
             continue
 
         path = None
@@ -315,9 +309,7 @@ async def ingest_delta(
                 item_id=item_id,
                 current_uri=current_uri,
                 name=item.get("name"),
-                contract_id=ingest.card.contract_id
-                if ingest.card
-                else (known.contract_id if known else None),
+                contract_id=ingest.card.contract_id if ingest.card else (known.contract_id if known else None),
                 sha256=item.get("sha256"),
                 last_seen_at=clock(),
             )
@@ -407,9 +399,7 @@ async def renewals_report(
                 label=label,
                 start=start,
                 end=end,
-                contracts=[
-                    card.brief() for card in cards if card.contract_id in allowed
-                ],
+                contracts=[card.brief() for card in cards if card.contract_id in allowed],
             )
         )
 

@@ -57,9 +57,7 @@ class ScriptedProducer:
             )
             for card in dossier
         ]
-        return AnswerDraft(
-            claims=[Claim(text="ACME must hold SOC 2.", citations=citations)]
-        )
+        return AnswerDraft(claims=[Claim(text="ACME must hold SOC 2.", citations=citations)])
 
 
 @pytest.fixture()
@@ -96,9 +94,7 @@ async def service(tmp_path) -> ContractsAnswerService:
 
 @pytest.mark.asyncio
 async def test_a_lookup_is_released_with_citations_and_audited(service):
-    outcome = await service.answer(
-        "Which contracts require SOC 2?", request_context=reader_context()
-    )
+    outcome = await service.answer("Which contracts require SOC 2?", request_context=reader_context())
 
     assert isinstance(outcome, AnswerOutcome)
     assert outcome.answer.answer_kind == "lookup"
@@ -115,9 +111,7 @@ async def test_a_lookup_is_released_with_citations_and_audited(service):
 
 @pytest.mark.asyncio
 async def test_an_evaluative_question_returns_a_handoff_without_judgment(service):
-    outcome = await service.answer(
-        "Should we accept the redline on acme-msa?", request_context=reader_context()
-    )
+    outcome = await service.answer("Should we accept the redline on acme-msa?", request_context=reader_context())
 
     assert outcome.answer.answer_kind == "interpretation_required"
     assert outcome.answer.answer is None, "no legal judgment text is ever produced"
@@ -128,9 +122,7 @@ async def test_an_evaluative_question_returns_a_handoff_without_judgment(service
     # Clauses are LOCATED (not adjudicated) and each still passed the gate.
     assert [clause.node_id for clause in handoff.located_clauses] == ["0005", "0008"]
     assert handoff.located_clauses[0].quote == CLAUSE
-    assert (await service.catalog.get_answer(outcome.answer_id)).answer_kind == (
-        "interpretation_required"
-    )
+    assert (await service.catalog.get_answer(outcome.answer_id)).answer_kind == ("interpretation_required")
 
 
 @pytest.mark.asyncio
@@ -150,9 +142,7 @@ async def test_pre_triage_runs_before_retrieval(service):
 
 @pytest.mark.asyncio
 async def test_an_unsupported_question_returns_a_typed_clarification(service):
-    result = await service.answer(
-        "what is the weather in madrid", request_context=reader_context()
-    )
+    result = await service.answer("what is the weather in madrid", request_context=reader_context())
     assert isinstance(result, Clarification)
     assert result.reason
     assert not hasattr(result, "answer_kind"), "no invented answer kind"
@@ -163,9 +153,7 @@ async def test_an_ambiguous_entity_returns_a_clarification(service):
     await service.catalog.upsert(make_card("alpha", title="master agreement with globex"))
     await service.catalog.upsert(make_card("beta", title="master agreement with globex"))
 
-    result = await service.answer(
-        "Who signed the master agreement with globex?", request_context=reader_context()
-    )
+    result = await service.answer("Who signed the master agreement with globex?", request_context=reader_context())
     assert isinstance(result, Clarification)
     assert result.candidates == ["alpha", "beta"]
 
@@ -190,9 +178,7 @@ async def test_an_unverifiable_draft_becomes_not_found(service):
             ]
         )
     )
-    outcome = await service.answer(
-        "Which contracts require SOC 2?", request_context=reader_context()
-    )
+    outcome = await service.answer("Which contracts require SOC 2?", request_context=reader_context())
 
     assert outcome.answer.answer_kind == "not_found"
     assert outcome.answer.answer is None
@@ -208,9 +194,7 @@ async def test_an_unverifiable_draft_becomes_not_found(service):
 @pytest.mark.asyncio
 async def test_a_denied_request_is_released_as_denied_and_audited(service):
     stranger = reader_context(roles=())
-    outcome = await service.answer(
-        "Which contracts require SOC 2?", request_context=stranger
-    )
+    outcome = await service.answer("Which contracts require SOC 2?", request_context=stranger)
 
     assert outcome.answer.answer_kind == "denied"
     assert outcome.answer.answer is None
@@ -226,9 +210,7 @@ async def test_a_forged_tenant_or_missing_principal_is_denied(service):
         reader_context(tenant_id="other-tenant"),
         RequestContext(roles=("contract_reader",)),
     ):
-        outcome = await service.answer(
-            "Which contracts require SOC 2?", request_context=context
-        )
+        outcome = await service.answer("Which contracts require SOC 2?", request_context=context)
         assert outcome.answer.answer_kind == "denied"
 
 
@@ -236,18 +218,14 @@ async def test_a_forged_tenant_or_missing_principal_is_denied(service):
 async def test_an_audit_outage_fails_the_request_instead_of_answering(service):
     service.catalog.audit_fails = True
     with pytest.raises(ServiceUnavailable, match="could not be audited"):
-        await service.answer(
-            "Which contracts require SOC 2?", request_context=reader_context()
-        )
+        await service.answer("Which contracts require SOC 2?", request_context=reader_context())
 
 
 @pytest.mark.asyncio
 async def test_even_a_denial_is_not_released_without_an_audit(service):
     service.catalog.audit_fails = True
     with pytest.raises(ServiceUnavailable):
-        await service.answer(
-            "Which contracts require SOC 2?", request_context=reader_context(roles=())
-        )
+        await service.answer("Which contracts require SOC 2?", request_context=reader_context(roles=()))
 
 
 @pytest.mark.asyncio
@@ -264,7 +242,9 @@ async def test_owner_operations_require_the_owner_role_and_a_confirmation(servic
 @pytest.mark.asyncio
 async def test_a_forged_actor_cannot_grant_itself_the_owner_role(service):
     forged = RequestContext(
-        user_id="mallory@example", roles=("contract_owner",), tenant_id="other-tenant",
+        user_id="mallory@example",
+        roles=("contract_owner",),
+        tenant_id="other-tenant",
         confirmed=True,
     )
     with pytest.raises(AuthorizationDenied, match="does not match this catalog"):
@@ -285,54 +265,47 @@ async def test_write_operations_need_a_configured_library(service):
 
 @pytest.mark.asyncio
 async def test_retirement_suppresses_evidence_from_later_answers(service):
-    first = await service.answer(
-        "Which contracts require SOC 2?", request_context=reader_context()
-    )
+    first = await service.answer("Which contracts require SOC 2?", request_context=reader_context())
     assert first.answer.answer_kind == "lookup"
 
     owner = reader_context(roles=("contract_owner",), confirmed=True)
-    retired = await service.retire_answer(
-        first.answer_id, request_context=owner, reason="wrong clause"
-    )
+    retired = await service.retire_answer(first.answer_id, request_context=owner, reason="wrong clause")
     assert retired.retired is True
     assert first.answer_id in service.invalidated
 
-    second = await service.answer(
-        "Which contracts require SOC 2?", request_context=reader_context()
-    )
+    second = await service.answer("Which contracts require SOC 2?", request_context=reader_context())
     assert second.answer.answer_kind == "not_found", "retired evidence cannot come back"
 
 
 @pytest.mark.asyncio
 async def test_retired_evidence_cannot_reach_a_handoff_either(service):
-    first = await service.answer(
-        "Which contracts require SOC 2?", request_context=reader_context()
-    )
+    first = await service.answer("Which contracts require SOC 2?", request_context=reader_context())
     owner = reader_context(roles=("contract_owner",), confirmed=True)
     await service.retire_answer(first.answer_id, request_context=owner, reason="wrong")
 
     handoff_outcome = await service.answer(
         "Should we accept the redline on acme-msa?", request_context=reader_context()
     )
-    quotes = [
-        citation.quote
-        for citation in handoff_outcome.answer.handoff.located_clauses
-    ]
+    quotes = [citation.quote for citation in handoff_outcome.answer.handoff.located_clauses]
     assert quotes, "the handoff still locates other clauses"
     assert CLAUSE not in quotes, "the retired clause is suppressed"
 
 
 @pytest.mark.asyncio
 async def test_streaming_buffers_until_the_whole_gate_has_passed(service):
-    chunks = [chunk async for chunk in service.stream_answer(
-        "Which contracts require SOC 2?", request_context=reader_context()
-    )]
+    chunks = [
+        chunk
+        async for chunk in service.stream_answer("Which contracts require SOC 2?", request_context=reader_context())
+    ]
     assert chunks == ["ACME must hold SOC 2."]
 
     # A denied request streams no substantive text.
-    denied = [chunk async for chunk in service.stream_answer(
-        "Which contracts require SOC 2?", request_context=reader_context(roles=())
-    )]
+    denied = [
+        chunk
+        async for chunk in service.stream_answer(
+            "Which contracts require SOC 2?", request_context=reader_context(roles=())
+        )
+    ]
     assert denied == []
 
 
@@ -356,9 +329,10 @@ async def test_streaming_never_emits_a_raw_draft(service):
             ]
         )
     )
-    chunks = [chunk async for chunk in service.stream_answer(
-        "Which contracts require SOC 2?", request_context=reader_context()
-    )]
+    chunks = [
+        chunk
+        async for chunk in service.stream_answer("Which contracts require SOC 2?", request_context=reader_context())
+    ]
     assert chunks == [], "an unverified draft is never streamed"
 
 
@@ -378,9 +352,7 @@ async def test_the_dossier_handed_to_a_producer_is_bounded(service):
 async def test_a_missing_producer_is_a_service_failure(service):
     service.producer = None
     with pytest.raises(ServiceUnavailable, match="no answer producer"):
-        await service.answer(
-            "Which contracts require SOC 2?", request_context=reader_context()
-        )
+        await service.answer("Which contracts require SOC 2?", request_context=reader_context())
 
 
 @pytest.mark.asyncio
@@ -393,9 +365,7 @@ async def test_an_optional_triage_adapter_sees_only_the_question(service):
             return type("Verdict", (), {"interpretation_required": True})()
 
     service.triage = Triage()
-    outcome = await service.answer(
-        "Which contracts require SOC 2?", request_context=reader_context()
-    )
+    outcome = await service.answer("Which contracts require SOC 2?", request_context=reader_context())
 
     assert seen == ["Which contracts require SOC 2?"], "no dossier, no roles, no AQL"
     assert outcome.answer.answer_kind == "interpretation_required"

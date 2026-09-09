@@ -84,9 +84,7 @@ async def stage() -> ContractRelationStage:
     catalog = InMemoryContractCatalog(now=FROZEN_NOW)
     await catalog.upsert(card("acme-msa"))
     await catalog.upsert(card("acme-sow", contract_type="sow", parent_contract_id="acme-msa"))
-    return ContractRelationStage(
-        catalog=catalog, adapter=FakeAdapter(), now=lambda: FROZEN_NOW
-    )
+    return ContractRelationStage(catalog=catalog, adapter=FakeAdapter(), now=lambda: FROZEN_NOW)
 
 
 # --------------------------------------------------------------------------
@@ -258,9 +256,7 @@ async def test_references_obligation_with_bad_obligations_degrades_to_none(stage
 @pytest.mark.asyncio
 async def test_an_unknown_outcome_is_recorded_as_none(stage):
     stage.adapter.batches["acme-msa"] = RelationBatchDraft(
-        judgements=[
-            RelationJudgementDraft(target_contract_id="acme-sow", outcome="supersedes")
-        ]
+        judgements=[RelationJudgementDraft(target_contract_id="acme-sow", outcome="supersedes")]
     )
     report = await stage.relate(["acme-msa"])
     assert report.none_outcomes == 1
@@ -306,11 +302,7 @@ async def test_replay_without_force_reuses_the_stored_outcome(stage):
 async def test_force_appends_history_and_replaces_the_active_result(stage):
     await stage.relate(["acme-msa"])
     stage.adapter.batches["acme-msa"] = RelationBatchDraft(
-        judgements=[
-            RelationJudgementDraft(
-                target_contract_id="acme-sow", outcome="conflicts_with", confidence=0.7
-            )
-        ]
+        judgements=[RelationJudgementDraft(target_contract_id="acme-sow", outcome="conflicts_with", confidence=0.7)]
     )
     forced = await stage.relate(["acme-msa"], force=True)
 
@@ -323,17 +315,13 @@ async def test_force_appends_history_and_replaces_the_active_result(stage):
 @pytest.mark.asyncio
 async def test_a_changed_source_hash_invalidates_stale_edges(stage):
     stage.adapter.batches["acme-sow"] = RelationBatchDraft(
-        judgements=[
-            RelationJudgementDraft(target_contract_id="acme-msa", outcome="conflicts_with")
-        ]
+        judgements=[RelationJudgementDraft(target_contract_id="acme-msa", outcome="conflicts_with")]
     )
     await stage.relate(["acme-sow"])
     assert len(await stage.catalog.active_relations("acme-sow")) == 1
 
     stored = await stage.catalog.get("acme-sow")
-    await stage.catalog.upsert(
-        stored.model_copy(update={"source_sha256": "sha-refreshed"}), expected_revision=1
-    )
+    await stage.catalog.upsert(stored.model_copy(update={"source_sha256": "sha-refreshed"}), expected_revision=1)
     report = await stage.relate(["acme-sow"])
 
     assert report.invalidated >= 1
@@ -344,9 +332,7 @@ async def test_a_changed_source_hash_invalidates_stale_edges(stage):
 @pytest.mark.asyncio
 async def test_a_none_verdict_removes_a_previously_active_relation(stage):
     stage.adapter.batches["acme-sow"] = RelationBatchDraft(
-        judgements=[
-            RelationJudgementDraft(target_contract_id="acme-msa", outcome="conflicts_with")
-        ]
+        judgements=[RelationJudgementDraft(target_contract_id="acme-msa", outcome="conflicts_with")]
     )
     await stage.relate(["acme-sow"])
     assert len(await stage.catalog.active_relations("acme-sow")) == 1
@@ -407,9 +393,7 @@ async def test_ingestion_does_not_judge_relations_by_default(library, tmp_path, 
 async def test_relate_on_ingest_wires_the_stage_at_ingest_time(library, tmp_path):
     """With the flag on, ingestion drives the judgement stage explicitly."""
     judge = FakeAdapter()
-    stage = ContractRelationStage(
-        catalog=library.catalog, adapter=judge, now=lambda: FROZEN_NOW
-    )
+    stage = ContractRelationStage(catalog=library.catalog, adapter=judge, now=lambda: FROZEN_NOW)
     seen: list[Any] = []
     original = stage.relate
 
@@ -422,9 +406,7 @@ async def test_relate_on_ingest_wires_the_stage_at_ingest_time(library, tmp_path
     library.relate_on_ingest = True
 
     await library.add_contract(write(tmp_path, "acme-msa.md"))
-    await library.add_contract(
-        write(tmp_path, "acme-sow.md", MSA_MARKDOWN + "\n\nStatement of work.\n")
-    )
+    await library.add_contract(write(tmp_path, "acme-sow.md", MSA_MARKDOWN + "\n\nStatement of work.\n"))
 
     assert seen == [["acme-msa"], ["acme-sow"]]
 

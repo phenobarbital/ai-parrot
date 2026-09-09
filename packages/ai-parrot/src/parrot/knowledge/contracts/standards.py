@@ -200,11 +200,7 @@ STANDARD_IDS: tuple[str, ...] = tuple(STANDARDS)
 #: "soc 2" when scanning free text.
 _ALIAS_INDEX: tuple[tuple[str, str], ...] = tuple(
     sorted(
-        (
-            (alias, standard.standard_id)
-            for standard in STANDARDS.values()
-            for alias in standard.aliases
-        ),
+        ((alias, standard.standard_id) for standard in STANDARDS.values() for alias in standard.aliases),
         key=lambda item: (-len(item[0]), item[0]),
     )
 )

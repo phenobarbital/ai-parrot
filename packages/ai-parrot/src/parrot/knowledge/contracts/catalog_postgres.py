@@ -109,21 +109,15 @@ CONTRACTS_DDL: tuple[str, ...] = (
         ) STORED
     )
     """,
-    "CREATE UNIQUE INDEX IF NOT EXISTS contracts_source_uri_key "
-    "ON {schema}.contracts (source_uri)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS contracts_source_uri_key " "ON {schema}.contracts (source_uri)",
     "CREATE UNIQUE INDEX IF NOT EXISTS contracts_source_sha_key "
     "ON {schema}.contracts (source_sha256) WHERE source_sha256 <> ''",
-    "CREATE INDEX IF NOT EXISTS contracts_search_idx "
-    "ON {schema}.contracts USING GIN (search_vector)",
+    "CREATE INDEX IF NOT EXISTS contracts_search_idx " "ON {schema}.contracts USING GIN (search_vector)",
     "CREATE INDEX IF NOT EXISTS contracts_status_idx ON {schema}.contracts (status)",
-    "CREATE INDEX IF NOT EXISTS contracts_verification_idx "
-    "ON {schema}.contracts (verification)",
-    "CREATE INDEX IF NOT EXISTS contracts_expiration_idx "
-    "ON {schema}.contracts (expiration_date)",
-    "CREATE INDEX IF NOT EXISTS contracts_notice_idx "
-    "ON {schema}.contracts (notice_deadline)",
-    "CREATE INDEX IF NOT EXISTS contracts_owner_idx "
-    "ON {schema}.contracts (owner_employee_id)",
+    "CREATE INDEX IF NOT EXISTS contracts_verification_idx " "ON {schema}.contracts (verification)",
+    "CREATE INDEX IF NOT EXISTS contracts_expiration_idx " "ON {schema}.contracts (expiration_date)",
+    "CREATE INDEX IF NOT EXISTS contracts_notice_idx " "ON {schema}.contracts (notice_deadline)",
+    "CREATE INDEX IF NOT EXISTS contracts_owner_idx " "ON {schema}.contracts (owner_employee_id)",
     """
     CREATE TABLE IF NOT EXISTS {schema}.obligations (
         obligation_id text PRIMARY KEY,
@@ -142,11 +136,9 @@ CONTRACTS_DDL: tuple[str, ...] = (
         active        boolean NOT NULL DEFAULT true
     )
     """,
-    "CREATE INDEX IF NOT EXISTS obligations_contract_idx "
-    "ON {schema}.obligations (contract_id)",
+    "CREATE INDEX IF NOT EXISTS obligations_contract_idx " "ON {schema}.obligations (contract_id)",
     "CREATE INDEX IF NOT EXISTS obligations_kind_idx ON {schema}.obligations (kind)",
-    "CREATE INDEX IF NOT EXISTS obligations_standard_idx "
-    "ON {schema}.obligations (standard_id)",
+    "CREATE INDEX IF NOT EXISTS obligations_standard_idx " "ON {schema}.obligations (standard_id)",
     "CREATE INDEX IF NOT EXISTS obligations_due_idx ON {schema}.obligations (due_date)",
     """
     CREATE TABLE IF NOT EXISTS {schema}.contract_versions (
@@ -174,8 +166,7 @@ CONTRACTS_DDL: tuple[str, ...] = (
         created_at timestamptz NOT NULL
     )
     """,
-    "CREATE INDEX IF NOT EXISTS party_aliases_party_idx "
-    "ON {schema}.party_aliases (party_id)",
+    "CREATE INDEX IF NOT EXISTS party_aliases_party_idx " "ON {schema}.party_aliases (party_id)",
     """
     CREATE TABLE IF NOT EXISTS {schema}.contract_answers (
         answer_id         text PRIMARY KEY,
@@ -192,8 +183,7 @@ CONTRACTS_DDL: tuple[str, ...] = (
         retirement_reason text
     )
     """,
-    "CREATE INDEX IF NOT EXISTS contract_answers_retired_idx "
-    "ON {schema}.contract_answers (retired_at)",
+    "CREATE INDEX IF NOT EXISTS contract_answers_retired_idx " "ON {schema}.contract_answers (retired_at)",
     """
     CREATE TABLE IF NOT EXISTS {schema}.source_delta_tokens (
         source_uri text PRIMARY KEY,
@@ -215,8 +205,7 @@ CONTRACTS_DDL: tuple[str, ...] = (
         PRIMARY KEY (drive_id, item_id)
     )
     """,
-    "CREATE INDEX IF NOT EXISTS source_items_source_idx "
-    "ON {schema}.source_items (source)",
+    "CREATE INDEX IF NOT EXISTS source_items_source_idx " "ON {schema}.source_items (source)",
     """
     CREATE TABLE IF NOT EXISTS {schema}.relation_judgements (
         judgement_id          text PRIMARY KEY,
@@ -235,10 +224,8 @@ CONTRACTS_DDL: tuple[str, ...] = (
         judged_at             timestamptz NOT NULL
     )
     """,
-    "CREATE INDEX IF NOT EXISTS relation_judgements_source_idx "
-    "ON {schema}.relation_judgements (source_contract_id)",
-    "CREATE INDEX IF NOT EXISTS relation_judgements_target_idx "
-    "ON {schema}.relation_judgements (target_contract_id)",
+    "CREATE INDEX IF NOT EXISTS relation_judgements_source_idx " "ON {schema}.relation_judgements (source_contract_id)",
+    "CREATE INDEX IF NOT EXISTS relation_judgements_target_idx " "ON {schema}.relation_judgements (target_contract_id)",
     """
     CREATE TABLE IF NOT EXISTS {schema}.contract_relations (
         source_contract_id   text NOT NULL,
@@ -462,8 +449,7 @@ class PostgresContractCatalog(ContractCatalogStore):
         async with await self._connection() as conn:
             async with conn.transaction():
                 current = await conn.fetchrow(
-                    f"SELECT revision FROM {self.schema}.contracts "
-                    "WHERE contract_id = $1 FOR UPDATE",
+                    f"SELECT revision FROM {self.schema}.contracts " "WHERE contract_id = $1 FOR UPDATE",
                     card.contract_id,
                 )
                 actual = current["revision"] if current else None
@@ -485,34 +471,25 @@ class PostgresContractCatalog(ContractCatalogStore):
                 if clash is not None:
                     raise DuplicateSourceError(
                         clash["contract_id"],
-                        source_sha256=card.source_sha256
-                        if clash["source_sha256"] == card.source_sha256
-                        else "",
-                        source_uri=card.source_uri
-                        if clash["source_uri"] == card.source_uri
-                        else "",
+                        source_sha256=card.source_sha256 if clash["source_sha256"] == card.source_sha256 else "",
+                        source_uri=card.source_uri if clash["source_uri"] == card.source_uri else "",
                     )
 
                 created = current is None
                 revision = 1 if created else int(actual) + 1
                 previous = await conn.fetchval(
-                    f"SELECT max(version_n) FROM {self.schema}.contract_versions "
-                    "WHERE contract_id = $1",
+                    f"SELECT max(version_n) FROM {self.schema}.contract_versions " "WHERE contract_id = $1",
                     card.contract_id,
                 )
                 version_n = version.n if version is not None else int(previous or 1)
 
-                stored = card.model_copy(
-                    update={"revision": revision, "updated_at": now, "versions": []}
-                )
+                stored = card.model_copy(update={"revision": revision, "updated_at": now, "versions": []})
                 recorded = (version or ContractVersion(n=version_n)).model_copy(
                     update={
                         "revision": revision,
                         "recorded_at": now,
-                        "source_sha256": (version.source_sha256 if version else "")
-                        or card.source_sha256,
-                        "card_snapshot": (version.card_snapshot if version else {})
-                        or card_snapshot_payload(stored),
+                        "source_sha256": (version.source_sha256 if version else "") or card.source_sha256,
+                        "card_snapshot": (version.card_snapshot if version else {}) or card_snapshot_payload(stored),
                     }
                 )
 
@@ -666,8 +643,7 @@ class PostgresContractCatalog(ContractCatalogStore):
         async with await self._connection() as conn:
             async with conn.transaction():
                 row = await conn.fetchrow(
-                    f"SELECT revision FROM {self.schema}.contracts "
-                    "WHERE contract_id = $1 FOR UPDATE",
+                    f"SELECT revision FROM {self.schema}.contracts " "WHERE contract_id = $1 FOR UPDATE",
                     contract_id,
                 )
                 if row is None:
@@ -684,14 +660,12 @@ class PostgresContractCatalog(ContractCatalogStore):
                     now,
                 )
                 await conn.execute(
-                    f"UPDATE {self.schema}.obligations SET active = false "
-                    "WHERE contract_id = $1",
+                    f"UPDATE {self.schema}.obligations SET active = false " "WHERE contract_id = $1",
                     contract_id,
                 )
                 version_n = int(
                     await conn.fetchval(
-                        f"SELECT max(version_n) FROM {self.schema}.contract_versions "
-                        "WHERE contract_id = $1",
+                        f"SELECT max(version_n) FROM {self.schema}.contract_versions " "WHERE contract_id = $1",
                         contract_id,
                     )
                     or 1
@@ -752,8 +726,7 @@ class PostgresContractCatalog(ContractCatalogStore):
         """Return one contract's obligation set in stable id order."""
         async with await self._connection() as conn:
             rows = await conn.fetch(
-                f"SELECT * FROM {self.schema}.obligations "
-                "WHERE contract_id = $1 ORDER BY obligation_id",
+                f"SELECT * FROM {self.schema}.obligations " "WHERE contract_id = $1 ORDER BY obligation_id",
                 contract_id,
             )
         return [self._row_to_obligation(row) for row in rows]
@@ -762,8 +735,7 @@ class PostgresContractCatalog(ContractCatalogStore):
         """Return the retained version/revision history, oldest first."""
         async with await self._connection() as conn:
             rows = await conn.fetch(
-                f"SELECT * FROM {self.schema}.contract_versions "
-                "WHERE contract_id = $1 ORDER BY version_n, revision",
+                f"SELECT * FROM {self.schema}.contract_versions " "WHERE contract_id = $1 ORDER BY version_n, revision",
                 contract_id,
             )
         return [self._row_to_version(row) for row in rows]
@@ -984,9 +956,7 @@ class PostgresContractCatalog(ContractCatalogStore):
                 reason, fields = "low_confidence", list(row["low_fields"])
             else:
                 reason, fields = "stale", sorted(card.stale_fields)
-            entries.append(
-                VerificationQueueEntry(card=card, reason=reason, fields=fields)  # type: ignore[arg-type]
-            )
+            entries.append(VerificationQueueEntry(card=card, reason=reason, fields=fields))  # type: ignore[arg-type]
         return entries
 
     async def obligations_due(self, window: ObligationWindow) -> list[Obligation]:
@@ -1055,23 +1025,16 @@ class PostgresContractCatalog(ContractCatalogStore):
 
         async with await self._connection() as conn:
             async with conn.transaction():
-                known = {
-                    row["party_id"]
-                    for row in await conn.fetch(
-                        f"""
+                known = {row["party_id"] for row in await conn.fetch(f"""
                         SELECT DISTINCT p ->> 'party_id' AS party_id
                         FROM {self.schema}.contracts c,
                              jsonb_array_elements(
                                  coalesce(c.card_json -> 'parties', '[]'::jsonb)
                              ) AS p
-                        """
-                    )
-                }
+                        """)}
                 known |= {
                     row["party_id"]
-                    for row in await conn.fetch(
-                        f"SELECT DISTINCT party_id FROM {self.schema}.party_aliases"
-                    )
+                    for row in await conn.fetch(f"SELECT DISTINCT party_id FROM {self.schema}.party_aliases")
                 }
                 for party_id in (keep_party_id, merge_party_id):
                     if party_id not in known:
@@ -1089,9 +1052,7 @@ class PostgresContractCatalog(ContractCatalogStore):
                 )
                 for row in rows:
                     card = self._row_to_card(row)
-                    keeps = [
-                        party for party in card.parties if party.party_id == keep_party_id
-                    ]
+                    keeps = [party for party in card.parties if party.party_id == keep_party_id]
                     parties: list[Party] = []
                     for party in card.parties:
                         if party.party_id != merge_party_id:
@@ -1099,9 +1060,11 @@ class PostgresContractCatalog(ContractCatalogStore):
                         elif not keeps:
                             parties.append(party.model_copy(update={"party_id": keep_party_id}))
                     signatories = [
-                        signatory.model_copy(update={"party_id": keep_party_id})
-                        if signatory.party_id == merge_party_id
-                        else signatory
+                        (
+                            signatory.model_copy(update={"party_id": keep_party_id})
+                            if signatory.party_id == merge_party_id
+                            else signatory
+                        )
                         for signatory in card.signatories
                     ]
                     revision = card.revision + 1
@@ -1128,8 +1091,7 @@ class PostgresContractCatalog(ContractCatalogStore):
                     updated.append(card.contract_id)
                     version_n = int(
                         await conn.fetchval(
-                            f"SELECT max(version_n) FROM {self.schema}.contract_versions "
-                            "WHERE contract_id = $1",
+                            f"SELECT max(version_n) FROM {self.schema}.contract_versions " "WHERE contract_id = $1",
                             card.contract_id,
                         )
                         or 1
@@ -1179,8 +1141,7 @@ class PostgresContractCatalog(ContractCatalogStore):
         """Return every alias mapped onto one canonical party."""
         async with await self._connection() as conn:
             rows = await conn.fetch(
-                f"SELECT * FROM {self.schema}.party_aliases "
-                "WHERE party_id = $1 ORDER BY alias",
+                f"SELECT * FROM {self.schema}.party_aliases " "WHERE party_id = $1 ORDER BY alias",
                 party_id,
             )
         return [
@@ -1197,8 +1158,7 @@ class PostgresContractCatalog(ContractCatalogStore):
         """Return catalog-wide aliases keyed by canonical ``party_id``."""
         async with await self._connection() as conn:
             rows = await conn.fetch(
-                f"SELECT party_id, alias FROM {self.schema}.party_aliases "
-                "ORDER BY party_id, alias"
+                f"SELECT party_id, alias FROM {self.schema}.party_aliases " "ORDER BY party_id, alias"
             )
         mapping: dict[str, list[str]] = {}
         for row in rows:
@@ -1217,8 +1177,7 @@ class PostgresContractCatalog(ContractCatalogStore):
         async with await self._connection() as conn:
             async with conn.transaction():
                 existing = await conn.fetchval(
-                    f"SELECT party_id FROM {self.schema}.party_aliases "
-                    "WHERE alias = $1 FOR UPDATE",
+                    f"SELECT party_id FROM {self.schema}.party_aliases " "WHERE alias = $1 FOR UPDATE",
                     alias,
                 )
                 if existing is not None and existing != party_id:
@@ -1248,8 +1207,7 @@ class PostgresContractCatalog(ContractCatalogStore):
     async def list_parties(self) -> list[Party]:
         """Return every distinct party across active cards, id-ordered."""
         async with await self._connection() as conn:
-            rows = await conn.fetch(
-                f"""
+            rows = await conn.fetch(f"""
                 SELECT DISTINCT ON (p ->> 'party_id')
                        p ->> 'party_id' AS party_id,
                        p ->> 'name'     AS name,
@@ -1261,8 +1219,7 @@ class PostgresContractCatalog(ContractCatalogStore):
                      ) AS p
                 WHERE c.active
                 ORDER BY p ->> 'party_id', p ->> 'name'
-                """
-            )
+                """)
         return [
             Party(
                 party_id=row["party_id"],
@@ -1358,16 +1315,14 @@ class PostgresContractCatalog(ContractCatalogStore):
         refresh cannot evade it by renumbering an unchanged excerpt.
         """
         async with await self._connection() as conn:
-            rows = await conn.fetch(
-                f"""
+            rows = await conn.fetch(f"""
                 SELECT DISTINCT
                     citation ->> 'contract_id' AS contract_id,
                     citation ->> 'node_id'     AS node_id
                 FROM {self.schema}.contract_answers a,
                      jsonb_array_elements(coalesce(a.citations, '[]'::jsonb)) AS citation
                 WHERE a.retired_at IS NOT NULL
-                """
-            )
+                """)
         return {(row["contract_id"], row["node_id"]) for row in rows}
 
     # -- source identity and cursors --------------------------------------
@@ -1429,8 +1384,7 @@ class PostgresContractCatalog(ContractCatalogStore):
         """Return one recorded source item by its stable identity."""
         async with await self._connection() as conn:
             row = await conn.fetchrow(
-                f"SELECT * FROM {self.schema}.source_items "
-                "WHERE drive_id = $1 AND item_id = $2",
+                f"SELECT * FROM {self.schema}.source_items " "WHERE drive_id = $1 AND item_id = $2",
                 drive_id,
                 item_id,
             )
@@ -1440,8 +1394,7 @@ class PostgresContractCatalog(ContractCatalogStore):
         """Return every recorded item for one configured source."""
         async with await self._connection() as conn:
             rows = await conn.fetch(
-                f"SELECT * FROM {self.schema}.source_items "
-                "WHERE source = $1 ORDER BY drive_id, item_id",
+                f"SELECT * FROM {self.schema}.source_items " "WHERE source = $1 ORDER BY drive_id, item_id",
                 source,
             )
         return [self._row_to_source_item(row) for row in rows]
@@ -1532,8 +1485,7 @@ class PostgresContractCatalog(ContractCatalogStore):
         async with await self._connection() as conn:
             async with conn.transaction():
                 await conn.execute(
-                    f"DELETE FROM {self.schema}.contract_relations "
-                    "WHERE source_contract_id = $1",
+                    f"DELETE FROM {self.schema}.contract_relations " "WHERE source_contract_id = $1",
                     contract_id,
                 )
                 for relation in relations:
@@ -1697,9 +1649,7 @@ class PostgresContractCatalog(ContractCatalogStore):
         receipt: str,
     ) -> PublicationRecord:
         """Record a verified receipt and mark the row published."""
-        return await self._set_publication_state(
-            record, state="published", receipt=receipt, error=None
-        )
+        return await self._set_publication_state(record, state="published", receipt=receipt, error=None)
 
     async def fail_publication(
         self,
@@ -1708,9 +1658,7 @@ class PostgresContractCatalog(ContractCatalogStore):
         error: str,
     ) -> PublicationRecord:
         """Record a retryable failure without losing the queued payload."""
-        return await self._set_publication_state(
-            record, state="failed", receipt=None, error=error
-        )
+        return await self._set_publication_state(record, state="failed", receipt=None, error=error)
 
     async def _set_publication_state(
         self,

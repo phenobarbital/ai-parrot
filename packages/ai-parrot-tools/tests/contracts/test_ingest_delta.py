@@ -57,9 +57,7 @@ class FakeIndexer:
     async def insert_markdown(self, tree_name, markdown, parent_node_id=None, doc_name=None):
         tree = self.store.load(tree_name)
         nodes = []
-        for index, block in enumerate(
-            [block for block in markdown.split("\n#") if block.strip()]
-        ):
+        for index, block in enumerate([block for block in markdown.split("\n#") if block.strip()]):
             node_id = f"{index:04d}"
             title = block.lstrip("#").splitlines()[0].strip()
             nodes.append({"node_id": node_id, "title": title, "nodes": []})
@@ -170,9 +168,7 @@ async def test_a_complete_batch_ingests_and_commits_the_cursor(workspace):
     assert result.report.added == 2
     assert result.durable is True
     assert result.cursor_committed == "https://graph.microsoft.com/final"
-    assert await library.catalog.get_delta_token("sharepoint://legal") == (
-        "https://graph.microsoft.com/final"
-    )
+    assert await library.catalog.get_delta_token("sharepoint://legal") == ("https://graph.microsoft.com/final")
     assert tool.calls[0]["delta_token"] is None
     assert tool.calls[0]["folder_path"] == "legal"
 
@@ -202,12 +198,18 @@ async def test_an_unchanged_sha_creates_no_new_revision(workspace):
     tool = FakeDeltaTool([page([item("a")]), page([item("a")])])
 
     first = await ingest_delta(
-        library=library, delta_tool=tool, source=SOURCE,
-        principal=principal_context(), downloader=downloader,
+        library=library,
+        delta_tool=tool,
+        source=SOURCE,
+        principal=principal_context(),
+        downloader=downloader,
     )
     second = await ingest_delta(
-        library=library, delta_tool=tool, source=SOURCE,
-        principal=principal_context(), downloader=downloader,
+        library=library,
+        delta_tool=tool,
+        source=SOURCE,
+        principal=principal_context(),
+        downloader=downloader,
     )
 
     assert first.report.added == 1
@@ -223,8 +225,11 @@ async def test_a_duplicate_item_in_one_batch_is_carded_once(workspace):
     tool = FakeDeltaTool([page([item("a"), item("a")])])
 
     result = await ingest_delta(
-        library=library, delta_tool=tool, source=SOURCE,
-        principal=principal_context(), downloader=downloader,
+        library=library,
+        delta_tool=tool,
+        source=SOURCE,
+        principal=principal_context(),
+        downloader=downloader,
     )
     assert result.report.added == 1
     assert result.report.skipped == 1
@@ -242,14 +247,20 @@ async def test_a_rename_keeps_the_same_contract(workspace):
     )
 
     await ingest_delta(
-        library=library, delta_tool=tool, source=SOURCE,
-        principal=principal_context(), downloader=downloader,
+        library=library,
+        delta_tool=tool,
+        source=SOURCE,
+        principal=principal_context(),
+        downloader=downloader,
     )
     # The file changes on disk but keeps its stable item id.
     (documents / "a.md").write_text(MSA + "\n\nRenamed and edited.\n")
     second = await ingest_delta(
-        library=library, delta_tool=tool, source=SOURCE,
-        principal=principal_context(), downloader=downloader,
+        library=library,
+        delta_tool=tool,
+        source=SOURCE,
+        principal=principal_context(),
+        downloader=downloader,
     )
 
     assert second.report.updated == 1, "a rename is not a new contract"
@@ -270,12 +281,18 @@ async def test_a_tombstone_retracts_the_contract_but_keeps_history(workspace):
 
     tool = FakeDeltaTool([page([item("a")]), page([item("a", deleted=True)])])
     await ingest_delta(
-        library=library, delta_tool=tool, source=SOURCE,
-        principal=principal_context(), downloader=downloader,
+        library=library,
+        delta_tool=tool,
+        source=SOURCE,
+        principal=principal_context(),
+        downloader=downloader,
     )
     result = await ingest_delta(
-        library=library, delta_tool=tool, source=SOURCE,
-        principal=principal_context(), downloader=downloader,
+        library=library,
+        delta_tool=tool,
+        source=SOURCE,
+        principal=principal_context(),
+        downloader=downloader,
         graph_loader=Loader(),
     )
 
@@ -294,8 +311,11 @@ async def test_folders_and_undownloadable_items_are_skipped_with_reasons(workspa
     tool = FakeDeltaTool([page([item("f", is_folder=True), item("a")])])
 
     result = await ingest_delta(
-        library=library, delta_tool=tool, source=SOURCE,
-        principal=principal_context(), downloader=None,
+        library=library,
+        delta_tool=tool,
+        source=SOURCE,
+        principal=principal_context(),
+        downloader=None,
     )
     reasons = {row.reason for row in result.report.items}
     assert "folder" in reasons
@@ -320,8 +340,11 @@ async def test_an_interrupted_batch_retains_the_old_cursor_and_replays(workspace
 
     tool = FakeDeltaTool([page([item("a"), item("b")])])
     result = await ingest_delta(
-        library=library, delta_tool=tool, source=SOURCE,
-        principal=principal_context(), downloader=failing_downloader,
+        library=library,
+        delta_tool=tool,
+        source=SOURCE,
+        principal=principal_context(),
+        downloader=failing_downloader,
     )
 
     assert result.durable is False
@@ -332,8 +355,11 @@ async def test_an_interrupted_batch_retains_the_old_cursor_and_replays(workspace
 
     # Replay: the same batch is safe to re-run.
     replay = await ingest_delta(
-        library=library, delta_tool=tool, source=SOURCE,
-        principal=principal_context(), downloader=downloader,
+        library=library,
+        delta_tool=tool,
+        source=SOURCE,
+        principal=principal_context(),
+        downloader=downloader,
     )
     assert replay.durable is True
     assert replay.cursor_committed == "https://graph.microsoft.com/final"
@@ -345,8 +371,11 @@ async def test_a_truncated_enumeration_does_not_commit_a_cursor(workspace):
     tool = FakeDeltaTool([page([item("a")], delta_link=None, complete=False, truncated=True)])
 
     result = await ingest_delta(
-        library=library, delta_tool=tool, source=SOURCE,
-        principal=principal_context(), downloader=downloader,
+        library=library,
+        delta_tool=tool,
+        source=SOURCE,
+        principal=principal_context(),
+        downloader=downloader,
     )
     assert result.cursor_committed is None
     assert await library.catalog.get_delta_token("sharepoint://legal") is None
@@ -357,16 +386,20 @@ async def test_a_410_requests_a_rescan_and_retracts_nothing(workspace):
     library, downloader, _ = workspace
     tool = FakeDeltaTool([page([item("a")])])
     await ingest_delta(
-        library=library, delta_tool=tool, source=SOURCE,
-        principal=principal_context(), downloader=downloader,
+        library=library,
+        delta_tool=tool,
+        source=SOURCE,
+        principal=principal_context(),
+        downloader=downloader,
     )
 
-    expired = FakeDeltaTool(
-        [{"items": [], "tombstones": [], "delta_link": None, "rescan_required": True}]
-    )
+    expired = FakeDeltaTool([{"items": [], "tombstones": [], "delta_link": None, "rescan_required": True}])
     result = await ingest_delta(
-        library=library, delta_tool=expired, source=SOURCE,
-        principal=principal_context(), downloader=downloader,
+        library=library,
+        delta_tool=expired,
+        source=SOURCE,
+        principal=principal_context(),
+        downloader=downloader,
     )
 
     assert result.rescan_required is True
@@ -424,13 +457,7 @@ async def test_the_temporal_publisher_is_drained_when_supplied(workspace):
 
 
 def test_the_jobs_module_imports_no_scheduler_and_sends_nothing():
-    source = (
-        Path(__file__).resolve().parents[2]
-        / "src"
-        / "parrot_tools"
-        / "contracts"
-        / "jobs.py"
-    ).read_text()
+    source = (Path(__file__).resolve().parents[2] / "src" / "parrot_tools" / "contracts" / "jobs.py").read_text()
     tree = ast.parse(source)
     imported: set[str] = set()
     for node in ast.walk(tree):
@@ -450,9 +477,7 @@ def test_the_jobs_module_imports_no_scheduler_and_sends_nothing():
     }
     assert not any("schedule" in decorator for decorator in decorators), decorators
     called = {
-        node.func.attr
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+        node.func.attr for node in ast.walk(tree) if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
     }
     for forbidden in ("send_result", "send", "notify", "post"):
         assert forbidden not in called, forbidden

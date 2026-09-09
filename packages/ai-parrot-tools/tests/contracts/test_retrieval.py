@@ -92,9 +92,7 @@ class FakeCatalog(ContractCatalogStore):
             update={"revision": revision, "recorded_at": FROZEN_NOW}
         )
         history.append(recorded)
-        self.cards[card.contract_id] = card.model_copy(
-            update={"revision": revision, "versions": list(history)}
-        )
+        self.cards[card.contract_id] = card.model_copy(update={"revision": revision, "versions": list(history)})
         return UpsertResult(
             contract_id=card.contract_id,
             revision=revision,
@@ -189,11 +187,7 @@ class FakeCatalog(ContractCatalogStore):
         raise NotImplementedError
 
     async def party_aliases(self, party_id):
-        return [
-            PartyAlias(alias=alias, party_id=value)
-            for alias, value in self.aliases.items()
-            if value == party_id
-        ]
+        return [PartyAlias(alias=alias, party_id=value) for alias, value in self.aliases.items() if value == party_id]
 
     async def all_party_aliases(self):
         mapping: dict[str, list[str]] = {}
@@ -225,9 +219,7 @@ class FakeCatalog(ContractCatalogStore):
 
     async def retire_answer(self, answer_id, *, user, reason):
         record = self.answers[answer_id]
-        retired = record.model_copy(
-            update={"retired_by": user, "retired_at": FROZEN_NOW, "retirement_reason": reason}
-        )
+        retired = record.model_copy(update={"retired_by": user, "retired_at": FROZEN_NOW, "retirement_reason": reason})
         self.answers[answer_id] = retired
         self.suppressed.update(citation.key for citation in record.citations)
         return retired
@@ -261,19 +253,16 @@ class FakeCatalog(ContractCatalogStore):
         ]
 
     async def replace_relations(self, contract_id, relations):
-        self.relations = [
-            relation for relation in self.relations if relation.source_contract_id != contract_id
-        ] + list(relations)
+        self.relations = [relation for relation in self.relations if relation.source_contract_id != contract_id] + list(
+            relations
+        )
 
     async def active_relations(self, contract_id=None):
         return [
             relation
             for relation in self.relations
             if relation.active
-            and (
-                contract_id is None
-                or contract_id in (relation.source_contract_id, relation.target_contract_id)
-            )
+            and (contract_id is None or contract_id in (relation.source_contract_id, relation.target_contract_id))
         ]
 
     async def invalidate_relations(self, contract_id, *, source_sha256):
@@ -452,10 +441,7 @@ def test_the_most_specific_trigger_wins():
     # "notice" is more specific than the generic renewal window.
     assert classify("By when must we give notice before renewal?") == "notice_deadlines_within"
     # A standard requirement beats a plain search.
-    assert (
-        classify("Which contracts require SOC 2 and mention audits?")
-        == "contracts_requiring_standard"
-    )
+    assert classify("Which contracts require SOC 2 and mention audits?") == "contracts_requiring_standard"
 
 
 def test_an_unclassifiable_question_fails_closed():
@@ -493,9 +479,7 @@ async def test_an_unnamed_or_ambiguous_standard_asks_for_clarification(retrieval
     unnamed = await retrieval.plan("Which contracts require certification?", reader_context())
     assert isinstance(unnamed, Clarification)
 
-    several = await retrieval.plan(
-        "Which contracts require SOC 2 and ISO 27001?", reader_context()
-    )
+    several = await retrieval.plan("Which contracts require SOC 2 and ISO 27001?", reader_context())
     assert isinstance(several, Clarification)
     assert several.candidates == ["soc2", "iso27001"]
 
@@ -512,9 +496,7 @@ async def test_date_windows_are_injected_never_derived_in_the_query(retrieval):
 
 @pytest.mark.asyncio
 async def test_obligation_kind_is_nullable_but_always_bound(retrieval):
-    typed = await retrieval.plan(
-        "What insurance obligations does acme-msa carry?", reader_context()
-    )
+    typed = await retrieval.plan("What insurance obligations does acme-msa carry?", reader_context())
     assert typed.binds["kind"] == "insurance"
 
     untyped = await retrieval.plan("What obligations does acme-msa carry?", reader_context())
@@ -524,9 +506,7 @@ async def test_obligation_kind_is_nullable_but_always_bound(retrieval):
 
 @pytest.mark.asyncio
 async def test_as_of_uses_an_explicit_date_or_the_injected_today(retrieval):
-    explicit = await retrieval.plan(
-        "Which version of acme-msa was in force on 2026-03-01?", reader_context()
-    )
+    explicit = await retrieval.plan("Which version of acme-msa was in force on 2026-03-01?", reader_context())
     assert explicit.binds["as_of"] == date(2026, 3, 1)
 
     implicit = await retrieval.plan("Which version of acme-msa is in force?", reader_context())
@@ -572,16 +552,10 @@ async def test_parties_resolve_by_name_and_by_catalog_alias(retrieval):
 async def test_an_ambiguous_contract_match_returns_a_clarification(retrieval):
     # Two cards whose *titles* are identical and whose ids the question
     # never names: only fuzzy matching can apply, and it ties.
-    await retrieval.catalog.upsert(
-        make_card("alpha-2024", title="master agreement with globex")
-    )
-    await retrieval.catalog.upsert(
-        make_card("beta-2026", title="master agreement with globex")
-    )
+    await retrieval.catalog.upsert(make_card("alpha-2024", title="master agreement with globex"))
+    await retrieval.catalog.upsert(make_card("beta-2026", title="master agreement with globex"))
 
-    resolved = await retrieval.resolve_contract(
-        "who signed the master agreement with globex", reader_context()
-    )
+    resolved = await retrieval.resolve_contract("who signed the master agreement with globex", reader_context())
     assert isinstance(resolved, Clarification)
     assert resolved.candidates == ["alpha-2024", "beta-2026"]
 
@@ -603,9 +577,7 @@ async def test_an_unmatched_entity_returns_a_clarification(retrieval):
 async def test_standard_lookup_returns_cards_and_their_obligations(retrieval):
     result = await retrieval.retrieve("Which contracts require SOC 2?", reader_context())
     assert [card.contract_id for card in result.cards] == ["acme-msa"]
-    assert [obligation.obligation_id for obligation in result.obligations] == [
-        "acme-msa-ob-001"
-    ]
+    assert [obligation.obligation_id for obligation in result.obligations] == ["acme-msa-ob-001"]
     assert result.used_graph is False
 
 
@@ -616,52 +588,36 @@ async def test_windows_queue_and_search_work_without_a_graph_store(retrieval):
     expiring = await retrieval.retrieve("What is expiring in the next 200 days?", reader_context())
     assert [card.contract_id for card in expiring.cards] == ["acme-msa"]
 
-    notice = await retrieval.retrieve(
-        "By when must we give notice in the next 120 days?", reader_context()
-    )
+    notice = await retrieval.retrieve("By when must we give notice in the next 120 days?", reader_context())
     assert [card.contract_id for card in notice.cards] == ["acme-msa"]
 
-    search = await retrieval.retrieve(
-        "Find the contract about security for the ACME account", reader_context()
-    )
+    search = await retrieval.retrieve("Find the contract about security for the ACME account", reader_context())
     assert [card.contract_id for card in search.cards] == ["acme-msa"]
     assert search.rows[0]["rank"] > 0
 
 
 @pytest.mark.asyncio
 async def test_obligations_are_filtered_by_the_bound_kind(retrieval):
-    everything = await retrieval.retrieve(
-        "What obligations does acme-msa carry?", reader_context()
-    )
+    everything = await retrieval.retrieve("What obligations does acme-msa carry?", reader_context())
     assert len(everything.obligations) == 2
 
-    insurance = await retrieval.retrieve(
-        "What insurance obligations does acme-msa carry?", reader_context()
-    )
+    insurance = await retrieval.retrieve("What insurance obligations does acme-msa carry?", reader_context())
     assert [item.kind for item in insurance.obligations] == ["insurance"]
 
 
 @pytest.mark.asyncio
 async def test_contract_in_force_selects_the_effective_version(retrieval):
-    result = await retrieval.retrieve(
-        "Which version of acme-msa was in force on 2026-03-01?", reader_context()
-    )
+    result = await retrieval.retrieve("Which version of acme-msa was in force on 2026-03-01?", reader_context())
     assert [row["n"] for row in result.rows] == [1]
 
-    later = await retrieval.retrieve(
-        "Which version of acme-msa was in force on 2026-08-01?", reader_context()
-    )
+    later = await retrieval.retrieve("Which version of acme-msa was in force on 2026-08-01?", reader_context())
     assert [row["n"] for row in later.rows] == [2]
 
 
 @pytest.mark.asyncio
 async def test_contract_family_deduplicates_by_identity(retrieval):
-    await retrieval.catalog.upsert(
-        make_card("acme-sow-1", contract_type="sow", parent_contract_id="acme-msa")
-    )
-    await retrieval.catalog.upsert(
-        make_card("acme-sow-2", contract_type="sow", parent_contract_id="acme-msa")
-    )
+    await retrieval.catalog.upsert(make_card("acme-sow-1", contract_type="sow", parent_contract_id="acme-msa"))
+    await retrieval.catalog.upsert(make_card("acme-sow-2", contract_type="sow", parent_contract_id="acme-msa"))
     result = await retrieval.retrieve("Show the contract family of acme-msa", reader_context())
     ids = [card.contract_id for card in result.cards]
     assert ids == ["acme-msa", "acme-sow-1", "acme-sow-2"]
@@ -689,8 +645,7 @@ async def test_an_evaluative_question_is_routed_to_interpretation(retrieval):
 class FakeOntology:
     def __init__(self) -> None:
         self.traversal_patterns = {
-            name: type("Pattern", (), {"query_template": f"FOR c IN @@contract // {name}"})()
-            for name in PATTERNS
+            name: type("Pattern", (), {"query_template": f"FOR c IN @@contract // {name}"})() for name in PATTERNS
         }
 
 
@@ -745,9 +700,7 @@ async def test_an_inactive_or_incomplete_projection_fails_closed(retrieval):
 @pytest.mark.asyncio
 async def test_a_current_projection_is_accepted_with_bound_values(retrieval):
     retrieval.ontology = FakeOntology()
-    store = FakeGraphStore(
-        [{"contract": {"contract_id": "acme-msa", "card_revision": 1, "active": True}}]
-    )
+    store = FakeGraphStore([{"contract": {"contract_id": "acme-msa", "card_revision": 1, "active": True}}])
     retrieval.graph_store = store
     plan = await retrieval.plan("Who signed acme-msa?", reader_context())
     rows = await retrieval.execute_graph(plan, reader_context())
@@ -767,14 +720,10 @@ def test_retrieval_accepts_no_llm_client():
     signature = inspect.signature(ContractRetrieval.__init__)
     assert not {"adapter", "client", "llm", "model"} & set(signature.parameters)
 
-    source = Path(
-        inspect.getfile(ContractRetrieval)
-    ).read_text()
+    source = Path(inspect.getfile(ContractRetrieval)).read_text()
     tree = ast.parse(source)
     called = {
-        node.func.attr
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+        node.func.attr for node in ast.walk(tree) if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
     }
     for forbidden in ("ask", "ask_structured", "invoke", "completion", "generate"):
         assert forbidden not in called, forbidden

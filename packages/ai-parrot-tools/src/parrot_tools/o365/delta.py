@@ -195,8 +195,7 @@ def validate_continuation(
     origin = f"{parsed.scheme}://{parsed.netloc}".lower()
     if origin not in {value.lower() for value in allowed_origins}:
         raise UntrustedContinuation(
-            f"continuation link points at {origin!r}, which is not a configured "
-            "Microsoft Graph endpoint"
+            f"continuation link points at {origin!r}, which is not a configured " "Microsoft Graph endpoint"
         )
     return link
 
@@ -261,11 +260,7 @@ class DriveDeltaReader:
         Verified against the installed ``msgraph`` SDK: drive-level delta
         is the delta of the drive's ``root`` item.
         """
-        return (
-            self.graph_client.drives.by_drive_id(drive_id)
-            .items.by_drive_item_id("root")
-            .delta
-        )
+        return self.graph_client.drives.by_drive_id(drive_id).items.by_drive_item_id("root").delta
 
     def _builder_for(self, drive_id: str, link: Optional[str]) -> Any:
         """Return the builder for a first page or a validated continuation."""
@@ -285,9 +280,7 @@ class DriveDeltaReader:
         parent_drive = None
         if parent is not None:
             parent_get = (
-                parent.get
-                if isinstance(parent, dict)
-                else lambda name, default=None: getattr(parent, name, default)
+                parent.get if isinstance(parent, dict) else lambda name, default=None: getattr(parent, name, default)
             )
             parent_path = parent_get("path", None)
             parent_drive = parent_get("drive_id", None) or parent_get("driveId", None)
@@ -318,8 +311,7 @@ class DriveDeltaReader:
             size=get("size", None),
             etag=get("e_tag", None) or get("eTag", None),
             sha256=sha256,
-            last_modified=get("last_modified_date_time", None)
-            or get("lastModifiedDateTime", None),
+            last_modified=get("last_modified_date_time", None) or get("lastModifiedDateTime", None),
             is_folder=get("folder", None) is not None,
             deleted=deleted,
         )
@@ -328,9 +320,7 @@ class DriveDeltaReader:
     def parse_page(cls, response: Any, drive_id: str) -> DeltaPage:
         """Map an SDK delta response onto :class:`DeltaPage`."""
         get = (
-            response.get
-            if isinstance(response, dict)
-            else lambda name, default=None: getattr(response, name, default)
+            response.get if isinstance(response, dict) else lambda name, default=None: getattr(response, name, default)
         )
         values = get("value", None) or []
         return DeltaPage(
@@ -364,9 +354,7 @@ class DriveDeltaReader:
             except Exception as exc:  # noqa: BLE001 - status drives the decision
                 status = _status_of(exc)
                 if status == 410:
-                    raise DeltaTokenExpired(
-                        "delta token expired (410 Gone); a full rescan is required"
-                    ) from exc
+                    raise DeltaTokenExpired("delta token expired (410 Gone); a full rescan is required") from exc
                 if status is not None and status != 429 and status < 500:
                     raise DeltaError(f"drive delta request failed ({status}): {exc}") from exc
                 last_error = exc
@@ -378,9 +366,7 @@ class DriveDeltaReader:
             if response is None:
                 return DeltaPage()
             return self.parse_page(response, drive_id)
-        raise DeltaError(
-            f"drive delta request failed after {self.max_retries} attempts: {last_error}"
-        ) from last_error
+        raise DeltaError(f"drive delta request failed after {self.max_retries} attempts: {last_error}") from last_error
 
     async def enumerate(
         self,

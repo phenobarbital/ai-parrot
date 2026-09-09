@@ -249,9 +249,7 @@ async def test_docx_uses_the_shared_bookstore_helper(library, tmp_path, monkeypa
         calls.append(path)
         return MSA_MARKDOWN
 
-    monkeypatch.setattr(
-        "parrot.knowledge.contracts.library.docx_to_markdown", fake_docx
-    )
+    monkeypatch.setattr("parrot.knowledge.contracts.library.docx_to_markdown", fake_docx)
     result = await library.add_contract(write(tmp_path, "acme-msa.docx", "binary"))
 
     assert result.outcome == "added"
@@ -301,9 +299,7 @@ async def test_changed_content_at_the_same_uri_updates_the_card(library, tmp_pat
 
 
 @pytest.mark.asyncio
-async def test_duplicate_content_at_another_uri_resolves_to_the_existing_card(
-    library, tmp_path
-):
+async def test_duplicate_content_at_another_uri_resolves_to_the_existing_card(library, tmp_path):
     original = write(tmp_path / "legal", "acme-msa.md")
     await library.add_contract(original)
     copy = write(tmp_path / "backup", "acme-msa-copy.md")
@@ -319,9 +315,7 @@ async def test_duplicate_content_at_another_uri_resolves_to_the_existing_card(
 @pytest.mark.asyncio
 async def test_slug_collisions_get_a_suffix(library, tmp_path):
     first = await library.add_contract(write(tmp_path / "a", "acme-msa.md"))
-    second = await library.add_contract(
-        write(tmp_path / "b", "acme-msa.md", MSA_MARKDOWN + "\n\nDifferent body.\n")
-    )
+    second = await library.add_contract(write(tmp_path / "b", "acme-msa.md", MSA_MARKDOWN + "\n\nDifferent body.\n"))
     assert first.card.contract_id == "acme-msa"
     assert second.card.contract_id == "acme-msa-2"
 
@@ -360,9 +354,7 @@ async def test_folder_that_does_not_exist_is_reported(library, tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_most_specific_owner_rule_wins_and_unmatched_stays_unassigned(
-    tmp_path, indexers
-):
+async def test_most_specific_owner_rule_wins_and_unmatched_stays_unassigned(tmp_path, indexers):
     catalog = InMemoryContractCatalog(now=FROZEN_NOW)
     library = ContractLibrary(
         catalog=catalog,
@@ -388,9 +380,7 @@ async def test_most_specific_owner_rule_wins_and_unmatched_stays_unassigned(
     specific = await library.add_contract(
         write(tmp_path / "legal" / "emea", "b-msa.md", MSA_MARKDOWN + "\n\nEMEA body.\n")
     )
-    unmatched = await library.add_contract(
-        write(tmp_path / "other", "c-msa.md", MSA_MARKDOWN + "\n\nOther body.\n")
-    )
+    unmatched = await library.add_contract(write(tmp_path / "other", "c-msa.md", MSA_MARKDOWN + "\n\nOther body.\n"))
 
     assert (generic.card.owner_employee_id, generic.card.department) == ("emp-1", "legal")
     assert (specific.card.owner_employee_id, specific.card.department) == (
@@ -471,9 +461,7 @@ async def test_each_revision_archives_its_own_evidence(library, tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_indexing_failure_preserves_the_previous_card_and_evidence(
-    library, tmp_path, indexers
-):
+async def test_indexing_failure_preserves_the_previous_card_and_evidence(library, tmp_path, indexers):
     path = write(tmp_path, "acme-msa.md")
     first = await library.add_contract(path)
     published_before = library.staging.published_tree("acme-msa").read_text()
@@ -494,9 +482,7 @@ async def test_indexing_failure_preserves_the_previous_card_and_evidence(
 
 
 @pytest.mark.asyncio
-async def test_catalog_failure_between_staging_and_publication_rolls_back(
-    library, tmp_path, monkeypatch
-):
+async def test_catalog_failure_between_staging_and_publication_rolls_back(library, tmp_path, monkeypatch):
     path = write(tmp_path, "acme-msa.md")
     first = await library.add_contract(path)
     published_before = library.staging.published_tree("acme-msa").read_text()

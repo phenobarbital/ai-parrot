@@ -118,7 +118,9 @@ def synthetic_card(index: int) -> ContractCard:
         ],
         field_provenance={
             "title": FieldProvenance(
-                origin="llm", node_id="0001", quote=f"{contract_id} agreement",
+                origin="llm",
+                node_id="0001",
+                quote=f"{contract_id} agreement",
                 confidence=0.4 if index % 4 == 0 else 0.9,
             ),
             "term.expiration_date": FieldProvenance(origin="llm", node_id="0002"),
@@ -162,9 +164,7 @@ async def measure(name: str, operation: Callable[[], Any]) -> dict[str, Any]:
 @requires_pg
 async def test_catalog_operations_meet_the_warm_p95_budget(pg_pool, temp_schema):
     """Measure warm p95 for search, queue and both date windows."""
-    catalog = PostgresContractCatalog(
-        pool=pg_pool, tenant_id="troc", schema=temp_schema, now=lambda: FROZEN_NOW
-    )
+    catalog = PostgresContractCatalog(pool=pg_pool, tenant_id="troc", schema=temp_schema, now=lambda: FROZEN_NOW)
     await catalog.setup()
 
     load_started = time.perf_counter()
@@ -220,8 +220,7 @@ async def test_catalog_operations_meet_the_warm_p95_budget(pg_pool, temp_schema)
 
     breaches = [record for record in measurements if record["p95_s"] >= P95_BUDGET_SECONDS]
     assert not breaches, (
-        "warm p95 budget exceeded; diagnose the query plan rather than relaxing "
-        f"the threshold: {breaches}"
+        "warm p95 budget exceeded; diagnose the query plan rather than relaxing " f"the threshold: {breaches}"
     )
 
 
@@ -236,17 +235,9 @@ def test_the_fixture_is_deterministic_and_covers_the_query_mix():
     assert {card.status for card in first} >= {"active", "expired", "draft"}
     assert {card.contract_type for card in first} >= {"msa", "sow", "nda"}
     assert any(card.stale_fields for card in first)
-    assert any(
-        (provenance.confidence or 1.0) < 0.6
-        for card in first
-        for provenance in card.field_provenance.values()
-    )
+    assert any((provenance.confidence or 1.0) < 0.6 for card in first for provenance in card.field_provenance.values())
     assert sum(len(card.obligations) for card in first) == CARD_COUNT * 3
-    assert any(
-        obligation.standard_id == "soc2"
-        for card in first
-        for obligation in card.obligations
-    )
+    assert any(obligation.standard_id == "soc2" for card in first for obligation in card.obligations)
     # Dates span both sides of today, so the windows are non-trivial.
     expirations = [card.term.expiration_date for card in first]
     assert min(expirations) < TODAY < max(expirations)

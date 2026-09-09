@@ -307,9 +307,7 @@ class ContractRetrieval:
             )
         if owner_only:
             if OWNER_ROLE not in context.roles:
-                raise AuthorizationDenied(
-                    f"{OWNER_ROLE} is required for this operation", pattern=pattern
-                )
+                raise AuthorizationDenied(f"{OWNER_ROLE} is required for this operation", pattern=pattern)
             return
         if pattern == "my_contracts":
             if not (context.employee_graph_id or context.employee_id):
@@ -319,9 +317,7 @@ class ContractRetrieval:
                 )
             return
         if not context.has_any_role(READ_ROLES):
-            raise AuthorizationDenied(
-                f"none of {list(READ_ROLES)} granted", pattern=pattern
-            )
+            raise AuthorizationDenied(f"none of {list(READ_ROLES)} granted", pattern=pattern)
 
     # -- entity resolution against the authorized catalog ------------------
 
@@ -341,11 +337,7 @@ class ContractRetrieval:
         for card in cards:
             if _normalize(card.contract_id) in normalized:
                 return card.contract_id
-        titled = [
-            card.contract_id
-            for card in cards
-            if _normalize(card.title) and _normalize(card.title) in normalized
-        ]
+        titled = [card.contract_id for card in cards if _normalize(card.title) and _normalize(card.title) in normalized]
         if len(titled) == 1:
             return titled[0]
         if len(titled) > 1:
@@ -384,11 +376,7 @@ class ContractRetrieval:
         """
         normalized = _normalize(question)
         parties = await self.catalog.list_parties()
-        named = [
-            party.party_id
-            for party in parties
-            if _normalize(party.name) and _normalize(party.name) in normalized
-        ]
+        named = [party.party_id for party in parties if _normalize(party.name) and _normalize(party.name) in normalized]
         if len(named) == 1:
             return named[0]
         if len(named) > 1:
@@ -460,9 +448,7 @@ class ContractRetrieval:
             # not erase the entity ("which contracts require SOC 2?").
             standards = find_standards(question)
             if not standards:
-                return Clarification(
-                    reason="no known compliance standard was named", pattern=pattern
-                )
+                return Clarification(reason="no known compliance standard was named", pattern=pattern)
             if len(standards) > 1:
                 return Clarification(
                     reason="several compliance standards were named",
@@ -496,10 +482,7 @@ class ContractRetrieval:
             entities["party"] = resolved
             binds = {"party_id": resolved}
         elif pattern == "my_contracts":
-            binds = {
-                "user_id": context.employee_graph_id
-                or f"employees/{context.employee_id}"
-            }
+            binds = {"user_id": context.employee_graph_id or f"employees/{context.employee_id}"}
         elif pattern == "search_contracts":
             binds = {"query": question, "top_k": DEFAULT_TOP_K}
 
@@ -579,8 +562,7 @@ class ContractRetrieval:
             cards = [
                 card
                 for card in await self.catalog.list_cards()
-                if card.contract_id in contract_ids
-                and card.status in plan.binds.get("statuses", ["active"])
+                if card.contract_id in contract_ids and card.status in plan.binds.get("statuses", ["active"])
             ]
             result.cards = cards
             result.obligations = [
@@ -610,11 +592,7 @@ class ContractRetrieval:
                 result.cards.extend(await self._family(card))
             if plan.pattern == "contract_in_force":
                 as_of = plan.binds["as_of"]
-                result.rows = [
-                    version.model_dump(mode="json")
-                    for version in card.versions
-                    if version.in_force(as_of)
-                ]
+                result.rows = [version.model_dump(mode="json") for version in card.versions if version.in_force(as_of)]
         elif plan.pattern == "obligations_of_contract":
             card = await self._authorized_card(plan.binds["contract_id"], context)
             kind = plan.binds.get("kind")
@@ -628,9 +606,7 @@ class ContractRetrieval:
         elif plan.pattern == "my_contracts":
             result.cards = await self._authorized_cards(context)
         elif plan.pattern == "search_contracts":
-            hits = await self.catalog.search(
-                plan.binds["query"], top_k=min(plan.binds["top_k"], MAX_TOP_K)
-            )
+            hits = await self.catalog.search(plan.binds["query"], top_k=min(plan.binds["top_k"], MAX_TOP_K))
             allowed = {card.contract_id for card in await self._authorized_cards(context)}
             result.cards = [hit.card for hit in hits if hit.card.contract_id in allowed]
             result.rows = [
@@ -648,14 +624,10 @@ class ContractRetrieval:
             if other.contract_id == card.contract_id:
                 continue
             if other.parent_contract_id == card.contract_id or (
-                card.parent_contract_id
-                and other.contract_id == card.parent_contract_id
+                card.parent_contract_id and other.contract_id == card.parent_contract_id
             ):
                 family[other.contract_id] = other
-            elif (
-                card.parent_contract_id
-                and other.parent_contract_id == card.parent_contract_id
-            ):
+            elif card.parent_contract_id and other.parent_contract_id == card.parent_contract_id:
                 family[other.contract_id] = other
         return [family[key] for key in sorted(family)]
 
@@ -673,17 +645,11 @@ class ContractRetrieval:
         # an absent owner, or every ownerless contract in the catalog
         # becomes readable by a caller who holds no roles at all.
         owned = {
-            identity
-            for identity in ({context.employee_id} | set(getattr(context, "manages", ()) or ()))
-            if identity
+            identity for identity in ({context.employee_id} | set(getattr(context, "manages", ()) or ())) if identity
         }
         if not owned:
             return []
-        return [
-            card
-            for card in cards
-            if card.owner_employee_id and card.owner_employee_id in owned
-        ]
+        return [card for card in cards if card.owner_employee_id and card.owner_employee_id in owned]
 
     async def _authorized_card(self, contract_id: str, context: RequestContext) -> ContractCard:
         """Load one card, refusing anything outside the authorized set.
@@ -695,9 +661,7 @@ class ContractRetrieval:
         cards = {card.contract_id: card for card in await self._authorized_cards(context)}
         card = cards.get(contract_id)
         if card is None:
-            raise AuthorizationDenied(
-                f"contract {contract_id!r} is not in this principal's authorized set"
-            )
+            raise AuthorizationDenied(f"contract {contract_id!r} is not in this principal's authorized set")
         return card
 
     # -- graph execution (allowlisted YAML patterns only) ------------------
@@ -755,9 +719,7 @@ class ContractRetrieval:
             if not isinstance(contract, dict):
                 continue
             if contract.get("active") is False:
-                raise AuthorizationDenied(
-                    f"graph row for {contract.get('contract_id')!r} is inactive"
-                )
+                raise AuthorizationDenied(f"graph row for {contract.get('contract_id')!r} is inactive")
             contract_id = contract.get("contract_id")
             revision = contract.get("card_revision")
             if contract_id is None or revision is None:

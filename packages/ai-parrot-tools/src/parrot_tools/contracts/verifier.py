@@ -133,9 +133,7 @@ class CitationVerifier:
         kind = draft.answer_kind
         if kind in ("denied", "out_of_scope"):
             return VerificationOutcome(
-                answer=ContractAnswer(
-                    answer_kind=kind, pattern=pattern or draft.pattern, reason=draft.reason
-                )
+                answer=ContractAnswer(answer_kind=kind, pattern=pattern or draft.pattern, reason=draft.reason)
             )
         if kind == "interpretation_required":
             handoff, rejected = await self._verify_handoff(draft.handoff, dossier)
@@ -161,9 +159,7 @@ class CitationVerifier:
         for claim in draft.claims:
             claim_citations: list[Citation] = []
             for citation in claim.citations:
-                verified, reason = await self._verify_citation(
-                    citation, allowed, retired, versions
-                )
+                verified, reason = await self._verify_citation(citation, allowed, retired, versions)
                 if verified is None:
                     rejected.append(
                         RejectedCitation(
@@ -223,9 +219,7 @@ class CitationVerifier:
         surviving: list[Citation] = []
         rejected: list[RejectedCitation] = []
         for citation in handoff.located_clauses:
-            verified, reason = await self._verify_citation(
-                citation, allowed, retired, versions
-            )
+            verified, reason = await self._verify_citation(citation, allowed, retired, versions)
             if verified is None:
                 rejected.append(
                     RejectedCitation(
@@ -269,9 +263,7 @@ class CitationVerifier:
             try:
                 history = await self.catalog.versions(card.contract_id)
             except Exception:  # noqa: BLE001 - fall back to the card below
-                logger.exception(
-                    "Could not load version history for %s", card.contract_id
-                )
+                logger.exception("Could not load version history for %s", card.contract_id)
                 history = []
             # A version accumulates one row per recorded revision, but its
             # evidence is archived exactly once, at the revision that first
@@ -283,13 +275,10 @@ class CitationVerifier:
                 if current is None:
                     chosen[item.n] = item
                     continue
-                if getattr(item, "evidence_ref", None) and not getattr(
-                    current, "evidence_ref", None
-                ):
+                if getattr(item, "evidence_ref", None) and not getattr(current, "evidence_ref", None):
                     chosen[item.n] = item
                 elif (
-                    bool(getattr(item, "evidence_ref", None))
-                    == bool(getattr(current, "evidence_ref", None))
+                    bool(getattr(item, "evidence_ref", None)) == bool(getattr(current, "evidence_ref", None))
                     and item.revision < current.revision
                 ):
                     chosen[item.n] = item
@@ -308,10 +297,7 @@ class CitationVerifier:
                     stored_ref,
                 )
             else:
-                if (
-                    ref.tenant_id == self.evidence.tenant_id
-                    and ref.contract_id == card.contract_id
-                ):
+                if ref.tenant_id == self.evidence.tenant_id and ref.contract_id == card.contract_id:
                     return ref
                 logger.warning(
                     "Rejecting cross-tenant evidence reference on %s: %r",
@@ -324,9 +310,7 @@ class CitationVerifier:
             contract_id=card.contract_id,
             version_n=citation.version_n,
             revision=version.revision if version else card.revision,
-            source_sha256=(
-                version.source_sha256 if version else card.source_sha256
-            ),
+            source_sha256=(version.source_sha256 if version else card.source_sha256),
         )
 
     async def _verify_citation(
@@ -361,8 +345,7 @@ class CitationVerifier:
             (
                 item
                 for item in card.obligations
-                if item.node_id == citation.node_id
-                and normalize_quote(item.text) == normalize_quote(citation.quote)
+                if item.node_id == citation.node_id and normalize_quote(item.text) == normalize_quote(citation.quote)
             ),
             None,
         )

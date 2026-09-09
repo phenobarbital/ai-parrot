@@ -87,9 +87,7 @@ def agent_producer(service) -> ContractsAgentProducer:
 
 @pytest.mark.asyncio
 async def test_the_shared_service_is_what_releases_the_answer(service, agent_producer):
-    outcome = await service.answer(
-        "Which contracts require SOC 2?", request_context=reader_context()
-    )
+    outcome = await service.answer("Which contracts require SOC 2?", request_context=reader_context())
 
     assert isinstance(outcome, AnswerOutcome)
     assert outcome.answer.answer_kind == "lookup"
@@ -105,9 +103,7 @@ async def test_react_and_fixed_flow_agree_on_the_same_case(tmp_path):
     react_service.producer = ContractsAgentProducer(FakeReActAgent(CLAUSE))
 
     flow_service = await build_service(tmp_path / "flow")
-    flow = ContractsAnswerFlow(
-        service=flow_service, producer=ContractsDraftProducer(adapter=None)
-    )
+    flow = ContractsAnswerFlow(service=flow_service, producer=ContractsDraftProducer(adapter=None))
 
     question = "Which contracts require SOC 2?"
     react = await react_service.answer(question, request_context=reader_context())
@@ -123,11 +119,7 @@ async def test_react_and_fixed_flow_agree_on_the_same_case(tmp_path):
     evaluative = "Should we accept the redline on acme-msa?"
     react_handoff = await react_service.answer(evaluative, request_context=reader_context())
     fixed_handoff = await flow.answer(evaluative, request_context=reader_context())
-    assert (
-        react_handoff.answer.answer_kind
-        == fixed_handoff.answer.answer_kind
-        == "interpretation_required"
-    )
+    assert react_handoff.answer.answer_kind == fixed_handoff.answer.answer_kind == "interpretation_required"
     assert react_handoff.answer.answer is fixed_handoff.answer.answer is None
 
 
@@ -138,12 +130,8 @@ async def test_react_and_fixed_flow_agree_on_the_same_case(tmp_path):
 
 @pytest.mark.asyncio
 async def test_an_invented_model_answer_cannot_escape(service):
-    service.producer = ContractsAgentProducer(
-        FakeReActAgent("ACME agreed to unlimited liability and free ponies.")
-    )
-    outcome = await service.answer(
-        "Which contracts require SOC 2?", request_context=reader_context()
-    )
+    service.producer = ContractsAgentProducer(FakeReActAgent("ACME agreed to unlimited liability and free ponies."))
+    outcome = await service.answer("Which contracts require SOC 2?", request_context=reader_context())
 
     assert "ponies" not in (outcome.answer.answer or "")
     # Every released sentence is backed by an archived clause.
@@ -155,9 +143,7 @@ async def test_an_invented_model_answer_cannot_escape(service):
 @pytest.mark.asyncio
 async def test_a_provider_failure_degrades_to_a_refusal_not_raw_text(service):
     service.producer = ContractsAgentProducer(FakeReActAgent(CLAUSE, fail=True))
-    outcome = await service.answer(
-        "Which contracts require SOC 2?", request_context=reader_context()
-    )
+    outcome = await service.answer("Which contracts require SOC 2?", request_context=reader_context())
 
     assert outcome.answer.answer_kind == "not_found"
     assert outcome.answer.answer is None
@@ -166,24 +152,18 @@ async def test_a_provider_failure_degrades_to_a_refusal_not_raw_text(service):
 
 @pytest.mark.asyncio
 async def test_retired_citations_cannot_come_back_through_chat(service, agent_producer):
-    first = await service.answer(
-        "Which contracts require SOC 2?", request_context=reader_context()
-    )
+    first = await service.answer("Which contracts require SOC 2?", request_context=reader_context())
     owner = reader_context(roles=("contract_owner",), confirmed=True)
     await service.retire_answer(first.answer_id, request_context=owner, reason="wrong")
 
-    second = await service.answer(
-        "Which contracts require SOC 2?", request_context=reader_context()
-    )
+    second = await service.answer("Which contracts require SOC 2?", request_context=reader_context())
     assert second.answer.answer_kind == "not_found"
 
 
 @pytest.mark.asyncio
 async def test_a_forged_context_is_denied(service, agent_producer):
     forged = reader_context(roles=("contract_owner",), tenant_id="other-tenant")
-    outcome = await service.answer(
-        "Which contracts require SOC 2?", request_context=forged
-    )
+    outcome = await service.answer("Which contracts require SOC 2?", request_context=forged)
     assert outcome.answer.answer_kind == "denied"
     assert agent_producer.calls == 0, "a denied request never reaches the model"
 
@@ -192,21 +172,15 @@ async def test_a_forged_context_is_denied(service, agent_producer):
 async def test_an_audit_failure_fails_the_chat_turn(service, agent_producer):
     service.catalog.audit_fails = True
     with pytest.raises(ServiceUnavailable):
-        await service.answer(
-            "Which contracts require SOC 2?", request_context=reader_context()
-        )
+        await service.answer("Which contracts require SOC 2?", request_context=reader_context())
 
 
 @pytest.mark.asyncio
 async def test_streaming_emits_only_verified_text(service):
-    service.producer = ContractsAgentProducer(
-        FakeReActAgent("ACME agreed to free ponies forever.")
-    )
+    service.producer = ContractsAgentProducer(FakeReActAgent("ACME agreed to free ponies forever."))
     chunks = [
         chunk
-        async for chunk in service.stream_answer(
-            "Which contracts require SOC 2?", request_context=reader_context()
-        )
+        async for chunk in service.stream_answer("Which contracts require SOC 2?", request_context=reader_context())
     ]
     assert not any("ponies" in chunk for chunk in chunks)
 
@@ -220,9 +194,7 @@ def test_the_agent_mounts_the_contracts_toolkit_and_delegates_release():
     source = Path(inspect.getfile(ContractsAgent)).read_text()
     tree = ast.parse(source)
     called = {
-        node.func.attr
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+        node.func.attr for node in ast.walk(tree) if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
     }
     # The agent calls the shared service; it does not re-implement policy.
     assert "answer" in called
@@ -270,9 +242,7 @@ async def test_the_producer_reads_only_the_authorized_dossier(service, agent_pro
 
 @pytest.mark.asyncio
 async def test_a_clarification_never_reaches_the_model(service, agent_producer):
-    result = await service.answer(
-        "what is the weather in madrid", request_context=reader_context()
-    )
+    result = await service.answer("what is the weather in madrid", request_context=reader_context())
     assert isinstance(result, Clarification)
     assert agent_producer.calls == 0
 
@@ -290,8 +260,7 @@ async def test_the_generic_bot_entrypoints_refuse_to_release_a_draft():
 
     for entrypoint in ("ask", "ask_stream", "invoke"):
         assert entrypoint in vars(ContractsAgent), (
-            f"{entrypoint}() is inherited ungated from Agent; it would "
-            "release an unverified draft"
+            f"{entrypoint}() is inherited ungated from Agent; it would " "release an unverified draft"
         )
 
     error = UngatedAnswerRefused("ask")

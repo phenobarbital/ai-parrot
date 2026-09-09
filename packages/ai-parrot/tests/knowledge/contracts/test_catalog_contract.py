@@ -132,9 +132,7 @@ class InMemoryContractCatalog(ContractCatalogStore):
         history = self.version_history.setdefault(card.contract_id, [])
         revision = 1 if created else stored.revision + 1
         version_n = version.n if version else (history[-1].n if history else 1)
-        written = card.model_copy(
-            update={"revision": revision, "updated_at": self._now, "versions": []}
-        )
+        written = card.model_copy(update={"revision": revision, "updated_at": self._now, "versions": []})
         recorded = version or ContractVersion(
             n=version_n,
             revision=revision,
@@ -210,9 +208,7 @@ class InMemoryContractCatalog(ContractCatalogStore):
         for card in self.cards.values():
             if not card.active:
                 continue
-            haystack = " ".join(
-                [card.title, card.summary, card.toc_digest, " ".join(card.topics)]
-            ).lower()
+            haystack = " ".join([card.title, card.summary, card.toc_digest, " ".join(card.topics)]).lower()
             rank = sum(haystack.count(term) for term in terms) / max(len(terms), 1)
             if rank:
                 hits.append(SearchHit(card=card, rank=float(rank)))
@@ -254,24 +250,14 @@ class InMemoryContractCatalog(ContractCatalogStore):
             low = sorted(
                 path
                 for path, prov in card.field_provenance.items()
-                if prov.verification != "verified"
-                and prov.substantiates
-                and (prov.confidence or 0.0) < 0.6
+                if prov.verification != "verified" and prov.substantiates and (prov.confidence or 0.0) < 0.6
             )
             if missing:
-                entries.append(
-                    VerificationQueueEntry(card=card, reason="missing_evidence", fields=missing)
-                )
+                entries.append(VerificationQueueEntry(card=card, reason="missing_evidence", fields=missing))
             elif low:
-                entries.append(
-                    VerificationQueueEntry(card=card, reason="low_confidence", fields=low)
-                )
+                entries.append(VerificationQueueEntry(card=card, reason="low_confidence", fields=low))
             elif card.stale_fields:
-                entries.append(
-                    VerificationQueueEntry(
-                        card=card, reason="stale", fields=sorted(card.stale_fields)
-                    )
-                )
+                entries.append(VerificationQueueEntry(card=card, reason="stale", fields=sorted(card.stale_fields)))
         entries.sort(key=lambda entry: (entry.priority, entry.card.contract_id))
         return entries[:limit]
 
@@ -285,16 +271,12 @@ class InMemoryContractCatalog(ContractCatalogStore):
         self.cards[contract_id] = card.model_copy(
             update={
                 "active": False,
-                "obligations": [
-                    obligation.model_copy(update={"active": False})
-                    for obligation in card.obligations
-                ],
+                "obligations": [obligation.model_copy(update={"active": False}) for obligation in card.obligations],
                 "updated_at": self._now,
             }
         )
         self.obligations[contract_id] = [
-            obligation.model_copy(update={"active": False})
-            for obligation in self.obligations.get(contract_id, [])
+            obligation.model_copy(update={"active": False}) for obligation in self.obligations.get(contract_id, [])
         ]
         for target in ("ontology", "temporal"):
             await self.enqueue_publication(
@@ -367,20 +349,20 @@ class InMemoryContractCatalog(ContractCatalogStore):
             parties = [
                 party
                 for party in card.parties
-                if not (party.party_id == merge_party_id and any(
-                    other.party_id == keep_party_id for other in card.parties
-                ))
+                if not (
+                    party.party_id == merge_party_id and any(other.party_id == keep_party_id for other in card.parties)
+                )
             ]
             parties = [
-                party.model_copy(update={"party_id": keep_party_id})
-                if party.party_id == merge_party_id
-                else party
+                party.model_copy(update={"party_id": keep_party_id}) if party.party_id == merge_party_id else party
                 for party in parties
             ]
             signatories = [
-                signatory.model_copy(update={"party_id": keep_party_id})
-                if signatory.party_id == merge_party_id
-                else signatory
+                (
+                    signatory.model_copy(update={"party_id": keep_party_id})
+                    if signatory.party_id == merge_party_id
+                    else signatory
+                )
                 for signatory in card.signatories
             ]
             self.cards[contract_id] = card.model_copy(
@@ -465,9 +447,7 @@ class InMemoryContractCatalog(ContractCatalogStore):
         record = self.answers.get(answer_id)
         if record is None:
             raise UnknownAnswerError(answer_id)
-        retired = record.model_copy(
-            update={"retired_by": user, "retired_at": self._now, "retirement_reason": reason}
-        )
+        retired = record.model_copy(update={"retired_by": user, "retired_at": self._now, "retirement_reason": reason})
         self.answers[answer_id] = retired
         self.suppressed.update(citation.key for citation in record.citations)
         return retired
@@ -514,11 +494,7 @@ class InMemoryContractCatalog(ContractCatalogStore):
         contract_id: str,
         relations: list[ContractRelation],
     ) -> None:
-        self.relations = [
-            relation
-            for relation in self.relations
-            if relation.source_contract_id != contract_id
-        ]
+        self.relations = [relation for relation in self.relations if relation.source_contract_id != contract_id]
         self.relations.extend(relations)
 
     async def active_relations(
@@ -529,11 +505,7 @@ class InMemoryContractCatalog(ContractCatalogStore):
             relation
             for relation in self.relations
             if relation.active
-            and (
-                contract_id is None
-                or contract_id
-                in (relation.source_contract_id, relation.target_contract_id)
-            )
+            and (contract_id is None or contract_id in (relation.source_contract_id, relation.target_contract_id))
         ]
 
     async def invalidate_relations(self, contract_id: str, *, source_sha256: str) -> int:
@@ -624,9 +596,7 @@ class InMemoryContractCatalog(ContractCatalogStore):
         *,
         error: str,
     ) -> PublicationRecord:
-        updated = record.model_copy(
-            update={"state": "failed", "last_error": error, "updated_at": self._now}
-        )
+        updated = record.model_copy(update={"state": "failed", "last_error": error, "updated_at": self._now})
         self.outbox[record.key] = updated
         return updated
 
@@ -816,9 +786,7 @@ async def test_stale_expected_revision_raises_conflict(catalog):
     await catalog.upsert(stored.model_copy(update={"title": "first writer"}), expected_revision=1)
 
     with pytest.raises(CatalogConflictError) as excinfo:
-        await catalog.upsert(
-            stored.model_copy(update={"title": "second writer"}), expected_revision=1
-        )
+        await catalog.upsert(stored.model_copy(update={"title": "second writer"}), expected_revision=1)
     assert excinfo.value.expected == 1
     assert excinfo.value.actual == 2
     assert (await catalog.get("acme-msa")).title == "first writer"
@@ -896,13 +864,9 @@ async def test_search_ranks_and_bounds_results(catalog):
 @pytest.mark.asyncio
 async def test_expiring_window_is_inclusive_and_skips_null_dates(catalog):
     await catalog.upsert(make_card("acme-msa"))  # notice_deadline 2026-11-01
-    await catalog.upsert(
-        make_card("no-dates", term=TermSpec(), source_uri="x://no-dates")
-    )
+    await catalog.upsert(make_card("no-dates", term=TermSpec(), source_uri="x://no-dates"))
 
-    assert [card.contract_id for card in await catalog.expiring(until=date(2026, 11, 1))] == [
-        "acme-msa"
-    ]
+    assert [card.contract_id for card in await catalog.expiring(until=date(2026, 11, 1))] == ["acme-msa"]
     assert await catalog.expiring(until=date(2026, 10, 31)) == []
 
 
@@ -928,9 +892,7 @@ async def test_verification_queue_priority_and_tie_breaks(catalog):
     )
     low = make_card(
         "a-low",
-        field_provenance={
-            "title": FieldProvenance(origin="llm", node_id="0001", quote="ACME", confidence=0.4)
-        },
+        field_provenance={"title": FieldProvenance(origin="llm", node_id="0001", quote="ACME", confidence=0.4)},
     )
     stale = make_card("c-stale", stale_fields=["term.expiration_date"])
     for card in (missing, low, stale):
@@ -982,9 +944,7 @@ async def test_obligation_window_is_typed_and_bounded(catalog):
     all_due = await catalog.obligations_due(ObligationWindow(until=date(2026, 12, 31)))
     assert {ob.obligation_id for ob in all_due} == {"ob-due", "ob-recurring"}
 
-    no_recurrence = await catalog.obligations_due(
-        ObligationWindow(until=date(2026, 12, 31), include_recurring=False)
-    )
+    no_recurrence = await catalog.obligations_due(ObligationWindow(until=date(2026, 12, 31), include_recurring=False))
     assert [ob.obligation_id for ob in no_recurrence] == ["ob-due"]
 
 
@@ -1125,9 +1085,7 @@ async def test_judgement_history_is_preserved_and_invalidated_on_hash_change(cat
         judged_at=FROZEN_NOW,
     )
     await catalog.record_judgement(judgement)
-    await catalog.record_judgement(
-        judgement.model_copy(update={"judgement_id": "j2", "outcome": "none"})
-    )
+    await catalog.record_judgement(judgement.model_copy(update={"judgement_id": "j2", "outcome": "none"}))
     await catalog.replace_relations(
         "acme-msa",
         [
@@ -1213,10 +1171,7 @@ def test_no_sqlite_or_postgres_backend_is_introduced_here():
     source = inspect.getsource(catalog_module)
     assert "sqlite3" not in source
     assert "import asyncpg" not in source
-    assert not any(
-        line.strip().startswith(("import ", "from ")) and "asyncpg" in line
-        for line in source.splitlines()
-    )
+    assert not any(line.strip().startswith(("import ", "from ")) and "asyncpg" in line for line in source.splitlines())
 
 
 def test_expiry_window_helper_dates_are_deterministic():

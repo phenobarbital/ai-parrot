@@ -92,9 +92,7 @@ async def test_a_valid_citation_is_released_with_derived_metadata(verifier):
 
 @pytest.mark.asyncio
 async def test_a_citation_outside_the_authorized_dossier_is_rejected(verifier):
-    draft = AnswerDraft(
-        claims=[Claim(text="Foreign contract says so.", citations=[citation(contract_id="zeta-nda")])]
-    )
+    draft = AnswerDraft(claims=[Claim(text="Foreign contract says so.", citations=[citation(contract_id="zeta-nda")])])
     outcome = await verifier.verify(draft, dossier=await dossier_of(verifier))
 
     assert outcome.answer.answer_kind == "not_found"
@@ -138,9 +136,7 @@ async def test_empty_and_mismatched_quotes_are_rejected(verifier):
         citation(quote="   ")  # the model cannot even construct it
 
     mismatched = await verifier.verify(
-        AnswerDraft(
-            claims=[Claim(text="c", citations=[citation(quote="Vendor shall donate a pony.")])]
-        ),
+        AnswerDraft(claims=[Claim(text="c", citations=[citation(quote="Vendor shall donate a pony.")])]),
         dossier=await dossier_of(verifier),
     )
     assert "not verbatim" in mismatched.rejected[0].reason
@@ -235,9 +231,7 @@ async def test_unrelated_surviving_evidence_cannot_rescue_free_prose(verifier):
 
 @pytest.mark.asyncio
 async def test_zero_surviving_citations_becomes_not_found(verifier):
-    draft = AnswerDraft(
-        claims=[Claim(text="Everything is fine.", citations=[citation(node_id="9999")])]
-    )
+    draft = AnswerDraft(claims=[Claim(text="Everything is fine.", citations=[citation(node_id="9999")])])
     outcome = await verifier.verify(draft, dossier=await dossier_of(verifier))
 
     assert outcome.answer.answer_kind == "not_found"
@@ -269,9 +263,11 @@ async def test_provenance_is_derived_from_surviving_citations(verifier, tmp_path
     card = (await verifier.catalog.get("acme-msa")).model_copy(
         update={
             "obligations": [
-                obligation.model_copy(update={"verification": "verified"})
-                if obligation.node_id == "0005"
-                else obligation.model_copy(update={"verification": "stale"})
+                (
+                    obligation.model_copy(update={"verification": "verified"})
+                    if obligation.node_id == "0005"
+                    else obligation.model_copy(update={"verification": "stale"})
+                )
                 for obligation in (await verifier.catalog.get("acme-msa")).obligations
             ]
         }
@@ -347,9 +343,7 @@ def test_the_verifier_never_calls_a_model():
     source = Path(inspect.getfile(CitationVerifier)).read_text()
     tree = ast.parse(source)
     called = {
-        node.func.attr
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+        node.func.attr for node in ast.walk(tree) if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
     }
     for forbidden in ("ask", "ask_structured", "invoke", "completion"):
         assert forbidden not in called, forbidden

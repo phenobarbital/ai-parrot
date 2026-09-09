@@ -121,9 +121,10 @@ def test_ddl_creates_every_table_from_the_spec():
         "t.contract_relations",
         "t.publication_outbox",
     ):
-        assert f"CREATE TABLE IF NOT EXISTS {table} " in rendered.replace("\n", " ").replace(
-            "  ", " "
-        ) or f"CREATE TABLE IF NOT EXISTS {table}" in rendered
+        assert (
+            f"CREATE TABLE IF NOT EXISTS {table} " in rendered.replace("\n", " ").replace("  ", " ")
+            or f"CREATE TABLE IF NOT EXISTS {table}" in rendered
+        )
 
 
 def test_ddl_is_idempotent_by_construction():
@@ -149,9 +150,7 @@ def test_ddl_declares_english_fts_and_typed_indexes():
 
 
 def test_outbox_and_version_keys_are_durable():
-    rendered = " ".join(
-        " ".join(statement.split()) for statement in (s.format(schema="t") for s in CONTRACTS_DDL)
-    )
+    rendered = " ".join(" ".join(statement.split()) for statement in (s.format(schema="t") for s in CONTRACTS_DDL))
     assert "PRIMARY KEY (tenant_id, contract_id, version_n, revision, target)" in rendered
     assert "PRIMARY KEY (contract_id, version_n, revision)" in rendered
 
@@ -168,9 +167,7 @@ def test_invalid_schema_configuration_is_rejected(schema):
 
 
 def test_tenant_binding_is_construction_only():
-    catalog = PostgresContractCatalog(
-        dsn="postgresql://x/y", tenant_id="troc", schema="contracts_troc"
-    )
+    catalog = PostgresContractCatalog(dsn="postgresql://x/y", tenant_id="troc", schema="contracts_troc")
     assert catalog.tenant_id == "troc"
     assert catalog.schema == "contracts_troc"
 
@@ -194,17 +191,11 @@ def test_sql_never_interpolates_anything_but_the_validated_schema():
     for node in ast.walk(tree):
         if not isinstance(node, ast.JoinedStr):
             continue
-        literal = " ".join(
-            part.value for part in node.values if isinstance(part, ast.Constant)
-        ).upper()
+        literal = " ".join(part.value for part in node.values if isinstance(part, ast.Constant)).upper()
         if not any(keyword in literal for keyword in keywords):
             continue
         sql_strings += 1
-        substitutions.update(
-            ast.unparse(part.value)
-            for part in node.values
-            if isinstance(part, ast.FormattedValue)
-        )
+        substitutions.update(ast.unparse(part.value) for part in node.values if isinstance(part, ast.FormattedValue))
     assert sql_strings > 10, "expected the backend to build SQL with f-strings"
     assert substitutions == {"self.schema"}, substitutions
 
@@ -259,9 +250,7 @@ async def live_catalog() -> AsyncIterator[PostgresContractCatalog]:
 
     schema = f"contracts_t_{uuid.uuid4().hex[:8]}"
     pool = await asyncpg.create_pool(dsn=PG_DSN, min_size=1, max_size=4)
-    catalog = PostgresContractCatalog(
-        pool=pool, tenant_id="troc", schema=schema, now=frozen_clock
-    )
+    catalog = PostgresContractCatalog(pool=pool, tenant_id="troc", schema=schema, now=frozen_clock)
     await catalog.setup()
     try:
         yield catalog
@@ -328,13 +317,9 @@ async def test_live_stale_revision_is_rejected(live_catalog):
     await live_catalog.upsert(make_card())
     stored = await live_catalog.get("acme-msa")
 
-    await live_catalog.upsert(
-        stored.model_copy(update={"summary": "verified by bob"}), expected_revision=1
-    )
+    await live_catalog.upsert(stored.model_copy(update={"summary": "verified by bob"}), expected_revision=1)
     with pytest.raises(CatalogConflictError):
-        await live_catalog.upsert(
-            stored.model_copy(update={"summary": "refresh overwrote"}), expected_revision=1
-        )
+        await live_catalog.upsert(stored.model_copy(update={"summary": "refresh overwrote"}), expected_revision=1)
     assert (await live_catalog.get("acme-msa")).summary == "verified by bob"
 
 
@@ -390,9 +375,7 @@ async def test_live_history_keeps_effective_intervals_and_admin_revisions(live_c
     )
     stored = await live_catalog.get("acme-msa")
     # Administrative correction: new recorded revision, no new effective interval.
-    await live_catalog.upsert(
-        stored.model_copy(update={"department": "legal"}), expected_revision=1
-    )
+    await live_catalog.upsert(stored.model_copy(update={"department": "legal"}), expected_revision=1)
 
     history = await live_catalog.versions("acme-msa")
     assert [(version.n, version.revision) for version in history] == [(1, 1), (1, 2)]

@@ -78,8 +78,7 @@ class AnswerProducer(Protocol):
         question: str,
         result: RetrievalResult,
         dossier: Sequence[ContractCard],
-    ) -> AnswerDraft:
-        ...
+    ) -> AnswerDraft: ...
 
 
 class ServiceUnavailable(RuntimeError):
@@ -262,9 +261,7 @@ class ContractsAnswerService:
             card = await self.retrieval._authorized_card(resolved, context)
             dossier = [card]
             version_n = card.versions[-1].n if card.versions else 1
-            source_sha256 = (
-                card.versions[-1].source_sha256 if card.versions else card.source_sha256
-            )
+            source_sha256 = card.versions[-1].source_sha256 if card.versions else card.source_sha256
             located = [
                 Citation(
                     contract_id=card.contract_id,
@@ -330,9 +327,7 @@ class ContractsAnswerService:
             authorization=AuthorizationOutcome(
                 allowed=allowed,
                 principal=context.user_id,
-                matched_rule=next(
-                    (role for role in context.roles if role.startswith("contract_")), None
-                ),
+                matched_rule=next((role for role in context.roles if role.startswith("contract_")), None),
                 reason=reason,
             ),
         )
@@ -340,9 +335,7 @@ class ContractsAnswerService:
             await self.catalog.record_answer(record)
         except Exception as exc:  # noqa: BLE001 - never release unaudited
             logger.error("Answer audit failed; refusing to release: %s", exc)
-            raise ServiceUnavailable(
-                f"the answer could not be audited and was not released: {exc}"
-            ) from exc
+            raise ServiceUnavailable(f"the answer could not be audited and was not released: {exc}") from exc
 
         return AnswerOutcome(
             answer=answer,
@@ -362,9 +355,7 @@ class ContractsAnswerService:
         """
         self.retrieval.authorize(context, owner_only=True)
         if not context.confirmed:
-            raise ConfirmationRequired(
-                f"{operation} requires an explicit confirmation from the transport"
-            )
+            raise ConfirmationRequired(f"{operation} requires an explicit confirmation from the transport")
 
     async def retire_answer(
         self,
@@ -388,9 +379,7 @@ class ContractsAnswerService:
             ConfirmationRequired: Without transport confirmation.
         """
         self._require_owner(request_context, operation="retire_answer")
-        record = await self.catalog.retire_answer(
-            answer_id, user=request_context.user_id, reason=reason
-        )
+        record = await self.catalog.retire_answer(answer_id, user=request_context.user_id, reason=reason)
         # Any cached answer citing suppressed evidence is now invalid.
         self.invalidated.add(answer_id)
         logger.info("Answer %s retired by %s", answer_id, request_context.user_id)
@@ -429,6 +418,4 @@ class ContractsAnswerService:
     ) -> Any:
         """Merge two party identities on behalf of an authenticated owner."""
         self._require_owner(request_context, operation="merge_parties")
-        return await self.catalog.merge_parties(
-            keep_party_id, merge_party_id, user=request_context.user_id
-        )
+        return await self.catalog.merge_parties(keep_party_id, merge_party_id, user=request_context.user_id)

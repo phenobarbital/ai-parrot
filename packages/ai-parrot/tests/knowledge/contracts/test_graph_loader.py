@@ -69,11 +69,7 @@ class FakeGraphStore:
     async def get_all_nodes(self, ctx, collection):
         if collection in self.fail_on:
             raise RuntimeError(f"{collection} unavailable")
-        return [
-            node
-            for node in self.nodes.get(collection, {}).values()
-            if node.get("_active") is not False
-        ]
+        return [node for node in self.nodes.get(collection, {}).values() if node.get("_active") is not False]
 
     async def soft_delete_nodes(self, ctx, collection, keys):
         bucket = self.nodes.setdefault(collection, {})
@@ -87,10 +83,7 @@ class FakeGraphStore:
         for edge in edges:
             # Upsert on (_from, _to) — properties of an existing edge are
             # deliberately NOT updated, exactly like the real store.
-            if any(
-                item["_from"] == edge["_from"] and item["_to"] == edge["_to"]
-                for item in bucket
-            ):
+            if any(item["_from"] == edge["_from"] and item["_to"] == edge["_to"] for item in bucket):
                 continue
             bucket.append(dict(edge))
             created += 1
@@ -103,9 +96,7 @@ class FakeGraphStore:
 
     async def edges_incident(self, ctx, collection, node_id):
         return [
-            edge
-            for edge in self.edges.get(collection, [])
-            if node_id in (edge.get("source_id"), edge.get("target_id"))
+            edge for edge in self.edges.get(collection, []) if node_id in (edge.get("source_id"), edge.get("target_id"))
         ]
 
     async def remove_edge_by_triple(self, ctx, collection, source_id, target_id, kind):
@@ -124,16 +115,10 @@ class FakeGraphStore:
     # -- helpers for assertions -------------------------------------------
 
     def edge_pairs(self, collection: str) -> set[tuple[str, str]]:
-        return {
-            (edge["source_id"], edge["target_id"]) for edge in self.edges.get(collection, [])
-        }
+        return {(edge["source_id"], edge["target_id"]) for edge in self.edges.get(collection, [])}
 
     def active_keys(self, collection: str) -> set[str]:
-        return {
-            key
-            for key, node in self.nodes.get(collection, {}).items()
-            if node.get("_active") is not False
-        }
+        return {key for key, node in self.nodes.get(collection, {}).items() if node.get("_active") is not False}
 
 
 class FakeTenantManager:
@@ -259,18 +244,10 @@ async def test_first_publish_creates_every_scalar_and_property_edge(loader):
         ("contract/acme-msa", "party/party-us"),
         ("contract/acme-msa", "party/party-acme"),
     }
-    assert store.edge_pairs("signed_by") == {
-        ("contract/acme-msa", "person/acme-msa-person-jane")
-    }
-    assert store.edge_pairs("represents") == {
-        ("person/acme-msa-person-jane", "party/party-acme")
-    }
-    assert store.edge_pairs("imposed_by") == {
-        ("obligation/acme-msa-ob-001", "contract/acme-msa")
-    }
-    assert store.edge_pairs("requires") == {
-        ("obligation/acme-msa-ob-001", "compliance_standard/soc2")
-    }
+    assert store.edge_pairs("signed_by") == {("contract/acme-msa", "person/acme-msa-person-jane")}
+    assert store.edge_pairs("represents") == {("person/acme-msa-person-jane", "party/party-acme")}
+    assert store.edge_pairs("imposed_by") == {("obligation/acme-msa-ob-001", "contract/acme-msa")}
+    assert store.edge_pairs("requires") == {("obligation/acme-msa-ob-001", "compliance_standard/soc2")}
     assert store.edge_pairs("owned_by") == {("contract/acme-msa", "employees/emp-1")}
     assert store.edge_pairs("managed_by") == {("contract/acme-msa", "departments/legal")}
 
@@ -356,9 +333,7 @@ async def test_owner_change_removes_the_old_edge_before_creating_the_new_one(loa
     assert store.edge_pairs("owned_by") == {("contract/acme-msa", "employees/emp-1")}
 
     stored = await loader.catalog.get("acme-msa")
-    await loader.catalog.upsert(
-        stored.model_copy(update={"owner_employee_id": "emp-2"}), expected_revision=1
-    )
+    await loader.catalog.upsert(stored.model_copy(update={"owner_employee_id": "emp-2"}), expected_revision=1)
     report = await loader.publish_all()
 
     assert store.edge_pairs("owned_by") == {("contract/acme-msa", "employees/emp-2")}
@@ -394,9 +369,7 @@ async def test_changed_edge_properties_are_rewritten_not_left_stale(loader):
 async def test_bare_discovery_edges_are_normalized_on_reconciliation(loader):
     store = loader.graph_store
     # A discovery pass writes edges with only _from/_to.
-    store.edges["owned_by"] = [
-        {"_from": "contract/acme-msa", "_to": "employees/emp-1"}
-    ]
+    store.edges["owned_by"] = [{"_from": "contract/acme-msa", "_to": "employees/emp-1"}]
     await loader.publish_all()
 
     edge = store.edges["owned_by"][0]
@@ -629,9 +602,7 @@ def test_inactive_records_produce_no_edges():
         ],
         "Party": [{"party_id": "party-acme"}],
         "Person": [],
-        "Obligation": [
-            {"obligation_id": "ob-1", "contract_id": "acme-msa", "active": False}
-        ],
+        "Obligation": [{"obligation_id": "ob-1", "contract_id": "acme-msa", "active": False}],
         "ComplianceStandard": [],
     }
     assert ContractGraphLoader.desired_edges(snapshot) == []

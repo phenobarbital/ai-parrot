@@ -99,17 +99,10 @@ class ContractsToolkit(AbstractToolkit):
         self._gate()
         bounded = max(1, min(int(top_k), MAX_TOP_K))
         hits = await self.catalog.search(query, top_k=bounded)
-        allowed = {
-            card.contract_id
-            for card in await self.retrieval._authorized_cards(self.request_context)
-        }
+        allowed = {card.contract_id for card in await self.retrieval._authorized_cards(self.request_context)}
         return {
             "query": query,
-            "results": [
-                {**hit.card.brief(), "rank": hit.rank}
-                for hit in hits
-                if hit.card.contract_id in allowed
-            ],
+            "results": [{**hit.card.brief(), "rank": hit.rank} for hit in hits if hit.card.contract_id in allowed],
         }
 
     async def get_card(self, contract_id: str) -> dict[str, Any]:
@@ -227,18 +220,9 @@ class ContractsToolkit(AbstractToolkit):
                 standard_id=standard_id,
                 limit=MAX_ROWS,
             )
-            allowed = {
-                card.contract_id
-                for card in await self.retrieval._authorized_cards(self.request_context)
-            }
-            rows = [
-                item
-                for item in await self.catalog.obligations_due(window)
-                if item.contract_id in allowed
-            ]
-        return {
-            "obligations": [item.model_dump(mode="json") for item in rows[:MAX_ROWS]]
-        }
+            allowed = {card.contract_id for card in await self.retrieval._authorized_cards(self.request_context)}
+            rows = [item for item in await self.catalog.obligations_due(window) if item.contract_id in allowed]
+        return {"obligations": [item.model_dump(mode="json") for item in rows[:MAX_ROWS]]}
 
     async def expiring(self, days: int = 90, by_notice: bool = True) -> dict[str, Any]:
         """List contracts expiring (or whose notice deadline falls) soon.
@@ -258,15 +242,10 @@ class ContractsToolkit(AbstractToolkit):
             key="notice_deadline" if by_notice else "expiration_date",
             since=today,
         )
-        allowed = {
-            card.contract_id
-            for card in await self.retrieval._authorized_cards(self.request_context)
-        }
+        allowed = {card.contract_id for card in await self.retrieval._authorized_cards(self.request_context)}
         return {
             "window_days": days,
-            "contracts": [
-                card.brief() for card in cards if card.contract_id in allowed
-            ][:MAX_ROWS],
+            "contracts": [card.brief() for card in cards if card.contract_id in allowed][:MAX_ROWS],
         }
 
     async def verification_queue(self, limit: int = 20) -> dict[str, Any]:
@@ -280,10 +259,7 @@ class ContractsToolkit(AbstractToolkit):
         """
         self._gate()
         entries = await self.catalog.verification_queue(limit=max(1, min(int(limit), MAX_ROWS)))
-        allowed = {
-            card.contract_id
-            for card in await self.retrieval._authorized_cards(self.request_context)
-        }
+        allowed = {card.contract_id for card in await self.retrieval._authorized_cards(self.request_context)}
         return {
             "queue": [
                 {
@@ -382,16 +358,13 @@ class ContractsToolkit(AbstractToolkit):
         Returns:
             The retirement record summary.
         """
-        record = await self.service.retire_answer(
-            answer_id, request_context=self.request_context, reason=reason
-        )
+        record = await self.service.retire_answer(answer_id, request_context=self.request_context, reason=reason)
         return {
             "answer_id": record.answer_id,
             "retired_by": record.retired_by,
             "retired_at": record.retired_at.isoformat() if record.retired_at else None,
             "reason": record.retirement_reason,
             "suppressed": sorted(
-                f"{contract_id}:{node_id}"
-                for contract_id, node_id in await self.catalog.retired_citations()
+                f"{contract_id}:{node_id}" for contract_id, node_id in await self.catalog.retired_citations()
             ),
         }

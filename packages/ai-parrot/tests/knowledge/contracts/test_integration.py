@@ -56,9 +56,7 @@ def make_library(catalog: Any, tmp_path: Path, name: str = "wt") -> ContractLibr
 
 async def make_catalog(pg_pool, schema: str, tenant_id: str = "troc") -> PostgresContractCatalog:
     """A real Postgres catalog on a temporary schema."""
-    catalog = PostgresContractCatalog(
-        pool=pg_pool, tenant_id=tenant_id, schema=schema, now=lambda: FROZEN_NOW
-    )
+    catalog = PostgresContractCatalog(pool=pg_pool, tenant_id=tenant_id, schema=schema, now=lambda: FROZEN_NOW)
     await catalog.setup()
     return catalog
 
@@ -84,20 +82,14 @@ async def test_ingest_verify_refresh_against_a_real_catalog(pg_pool, temp_schema
     assert await catalog.pending_publications(), "publication work was queued"
 
     # A human verifies the title, then the source changes.
-    result = await library.verify_card(
-        contract_id, {"title": "ACME Master Services Agreement"}, user="bob@troc"
-    )
+    result = await library.verify_card(contract_id, {"title": "ACME Master Services Agreement"}, user="bob@troc")
     assert result.corrected == ["title"]
 
-    corpus["msa"].write_text(
-        corpus["msa"].read_text().replace("twelve (12) months", "twenty-four (24) months")
-    )
+    corpus["msa"].write_text(corpus["msa"].read_text().replace("twelve (12) months", "twenty-four (24) months"))
     refreshed = await library.refresh_card(contract_id)
 
     assert refreshed.outcome == "updated"
-    assert refreshed.card.title == "ACME Master Services Agreement", (
-        "the human decision survived the refresh"
-    )
+    assert refreshed.card.title == "ACME Master Services Agreement", "the human decision survived the refresh"
     history = await catalog.versions(contract_id)
     assert len(history) >= 3, "each write recorded a revision"
 
@@ -170,12 +162,8 @@ async def test_two_tenants_reusing_slugs_and_nodes_cannot_leak(pg_pool, corpus, 
         manifest_b = await library_b.evidence.manifest(ref_b)
         assert manifest_a["nodes"] == manifest_b["nodes"], "the node ids collide by design"
 
-        bodies_a = [
-            await library_a.evidence.load_body(ref_a, node) for node in manifest_a["nodes"]
-        ]
-        bodies_b = [
-            await library_b.evidence.load_body(ref_b, node) for node in manifest_b["nodes"]
-        ]
+        bodies_a = [await library_a.evidence.load_body(ref_a, node) for node in manifest_a["nodes"]]
+        bodies_b = [await library_b.evidence.load_body(ref_b, node) for node in manifest_b["nodes"]]
         assert bodies_a != bodies_b
         assert not any("Tenant B only" in (body or "") for body in bodies_a)
         assert any("Tenant B only" in (body or "") for body in bodies_b)
@@ -184,9 +172,7 @@ async def test_two_tenants_reusing_slugs_and_nodes_cannot_leak(pg_pool, corpus, 
         from parrot.knowledge.contracts.evidence import EvidenceError
 
         with pytest.raises(EvidenceError):
-            await library_a.evidence.load_body(
-                (await library_b.evidence.versions("acme-msa"))[0], "0001"
-            )
+            await library_a.evidence.load_body((await library_b.evidence.versions("acme-msa"))[0], "0001")
     finally:
         async with pg_pool.acquire() as conn:
             await conn.execute(f"DROP SCHEMA IF EXISTS {schema_a} CASCADE")
@@ -239,9 +225,7 @@ async def test_sql_reports_work_without_arango(pg_pool, temp_schema, corpus, tmp
 
 
 @requires_pg
-async def test_temporal_publication_and_recovery_through_the_library(
-    pg_pool, temp_schema, corpus, tmp_path
-):
+async def test_temporal_publication_and_recovery_through_the_library(pg_pool, temp_schema, corpus, tmp_path):
     from parrot.knowledge.graphindex.persist_postgres import PostgresPersistence
 
     schema = f"gi_it_{uuid.uuid4().hex[:8]}"
@@ -353,9 +337,7 @@ async def arango_store(arango_params):
         finally:
             try:
                 await connection.use("_system")
-                await connection.query(
-                    "RETURN 1"
-                )  # keep the session alive before dropping
+                await connection.query("RETURN 1")  # keep the session alive before dropping
                 await connection.execute(f"RETURN DROP_DATABASE('{database}')")
             except Exception:  # pragma: no cover - best-effort cleanup
                 pass
@@ -364,9 +346,7 @@ async def arango_store(arango_params):
 def contracts_context(database: str) -> TenantContext:
     """A tenant context carrying the merged contracts ontology."""
     defaults = OntologyParser.get_defaults_dir()
-    merged = OntologyMerger().merge(
-        [defaults / "base.ontology.yaml", defaults / "domains" / "contracts.ontology.yaml"]
-    )
+    merged = OntologyMerger().merge([defaults / "base.ontology.yaml", defaults / "domains" / "contracts.ontology.yaml"])
     return TenantContext(
         tenant_id="troc",
         arango_db=database,
@@ -415,9 +395,7 @@ async def test_the_generic_node_upsert_is_broken_against_a_real_graph(arango_sto
     ctx = contracts_context(database)
     await store.initialize_tenant(ctx)
 
-    result = await store.upsert_nodes(
-        ctx, "contract", [{"contract_id": "probe", "title": "Probe"}], "contract_id"
-    )
+    result = await store.upsert_nodes(ctx, "contract", [{"contract_id": "probe", "title": "Probe"}], "contract_id")
     rows = await store.get_all_nodes(ctx, "contract")
 
     assert result.inserted == 0 and result.updated == 0, UPSERT_NODES_DEFECT
@@ -506,53 +484,93 @@ async def test_all_ten_patterns_execute_against_a_real_graph(arango_store):
         "compliance_standard",
         [{"_key": "soc2", "standard_id": "soc2", "name": "SOC 2"}],
     )
-    await write_documents(
-        adapter, "employees", [{"_key": "emp-1", "employee_id": "emp-1", "name": "Bob"}]
-    )
+    await write_documents(adapter, "employees", [{"_key": "emp-1", "employee_id": "emp-1", "name": "Bob"}])
     await write_documents(
         adapter,
         "requires",
-        [{"_from": "obligation/acme-msa-ob-001", "_to": "compliance_standard/soc2",
-          "source_id": "obligation/acme-msa-ob-001", "target_id": "compliance_standard/soc2",
-          "kind": "requires"}],
+        [
+            {
+                "_from": "obligation/acme-msa-ob-001",
+                "_to": "compliance_standard/soc2",
+                "source_id": "obligation/acme-msa-ob-001",
+                "target_id": "compliance_standard/soc2",
+                "kind": "requires",
+            }
+        ],
     )
     await write_documents(
         adapter,
         "imposed_by",
-        [{"_from": "obligation/acme-msa-ob-001", "_to": "contract/acme-msa",
-          "source_id": "obligation/acme-msa-ob-001", "target_id": "contract/acme-msa",
-          "kind": "imposed_by"}],
+        [
+            {
+                "_from": "obligation/acme-msa-ob-001",
+                "_to": "contract/acme-msa",
+                "source_id": "obligation/acme-msa-ob-001",
+                "target_id": "contract/acme-msa",
+                "kind": "imposed_by",
+            }
+        ],
     )
     await write_documents(
         adapter,
         "party_to",
-        [{"_from": "contract/acme-msa", "_to": "party/party-acme", "role": "customer",
-          "source_id": "contract/acme-msa", "target_id": "party/party-acme", "kind": "party_to"}],
+        [
+            {
+                "_from": "contract/acme-msa",
+                "_to": "party/party-acme",
+                "role": "customer",
+                "source_id": "contract/acme-msa",
+                "target_id": "party/party-acme",
+                "kind": "party_to",
+            }
+        ],
     )
     await write_documents(
         adapter,
         "signed_by",
-        [{"_from": "contract/acme-msa", "_to": "person/jane", "signed_on": "2025-12-20",
-          "on_behalf_of": "party-acme", "source_id": "contract/acme-msa",
-          "target_id": "person/jane", "kind": "signed_by"}],
+        [
+            {
+                "_from": "contract/acme-msa",
+                "_to": "person/jane",
+                "signed_on": "2025-12-20",
+                "on_behalf_of": "party-acme",
+                "source_id": "contract/acme-msa",
+                "target_id": "person/jane",
+                "kind": "signed_by",
+            }
+        ],
     )
     await write_documents(
         adapter,
         "governed_by",
-        [{"_from": "contract/acme-sow-1", "_to": "contract/acme-msa",
-          "source_id": "contract/acme-sow-1", "target_id": "contract/acme-msa",
-          "kind": "governed_by"}],
+        [
+            {
+                "_from": "contract/acme-sow-1",
+                "_to": "contract/acme-msa",
+                "source_id": "contract/acme-sow-1",
+                "target_id": "contract/acme-msa",
+                "kind": "governed_by",
+            }
+        ],
     )
     await write_documents(
         adapter,
         "owned_by",
         [
-            {"_from": "contract/acme-msa", "_to": "employees/emp-1",
-             "source_id": "contract/acme-msa", "target_id": "employees/emp-1",
-             "kind": "owned_by"},
-            {"_from": "contract/acme-sow-1", "_to": "employees/emp-1",
-             "source_id": "contract/acme-sow-1", "target_id": "employees/emp-1",
-             "kind": "owned_by"},
+            {
+                "_from": "contract/acme-msa",
+                "_to": "employees/emp-1",
+                "source_id": "contract/acme-msa",
+                "target_id": "employees/emp-1",
+                "kind": "owned_by",
+            },
+            {
+                "_from": "contract/acme-sow-1",
+                "_to": "employees/emp-1",
+                "source_id": "contract/acme-sow-1",
+                "target_id": "employees/emp-1",
+                "kind": "owned_by",
+            },
         ],
     )
 
@@ -595,28 +613,18 @@ async def test_all_ten_patterns_execute_against_a_real_graph(arango_store):
     async def run_pattern(name: str, values: dict[str, Any]) -> list[Any]:
         template = ctx.ontology.traversal_patterns[name].query_template
         needed = {
-            token.strip("@,()").rstrip(",")
-            for token in template.replace(",", " ").split()
-            if token.startswith("@@")
+            token.strip("@,()").rstrip(",") for token in template.replace(",", " ").split() if token.startswith("@@")
         }
-        collection_binds = {
-            f"@{key}": collections[key] for key in needed if key in collections
-        }
-        return await store.execute_traversal(
-            ctx, template, bind_vars=values, collection_binds=collection_binds
-        )
+        collection_binds = {f"@{key}": collections[key] for key in needed if key in collections}
+        return await store.execute_traversal(ctx, template, bind_vars=values, collection_binds=collection_binds)
 
     executed: dict[str, list[Any]] = {}
     for name, values in binds.items():
         template = ctx.ontology.traversal_patterns[name].query_template
         needed = {
-            token.strip("@,()").rstrip(",")
-            for token in template.replace(",", " ").split()
-            if token.startswith("@@")
+            token.strip("@,()").rstrip(",") for token in template.replace(",", " ").split() if token.startswith("@@")
         }
-        collection_binds = {
-            f"@{key}": collections[key] for key in needed if key in collections
-        }
+        collection_binds = {f"@{key}": collections[key] for key in needed if key in collections}
         executed[name] = await store.execute_traversal(
             ctx, template, bind_vars=values, collection_binds=collection_binds
         )
@@ -628,9 +636,7 @@ async def test_all_ten_patterns_execute_against_a_real_graph(arango_store):
 
         for _ in range(20):
             await _asyncio.sleep(0.25)
-            executed["search_contracts"] = await run_pattern(
-                "search_contracts", binds["search_contracts"]
-            )
+            executed["search_contracts"] = await run_pattern("search_contracts", binds["search_contracts"])
             if executed["search_contracts"]:
                 break
 
@@ -682,15 +688,19 @@ async def test_inactive_endpoints_are_filtered_by_every_pattern(arango_store):
             }
         ],
     )
-    await write_documents(
-        adapter, "employees", [{"_key": "emp-1", "employee_id": "emp-1"}]
-    )
+    await write_documents(adapter, "employees", [{"_key": "emp-1", "employee_id": "emp-1"}])
     await write_documents(
         adapter,
         "owned_by",
-        [{"_from": "contract/retracted", "_to": "employees/emp-1",
-          "source_id": "contract/retracted", "target_id": "employees/emp-1",
-          "kind": "owned_by"}],
+        [
+            {
+                "_from": "contract/retracted",
+                "_to": "employees/emp-1",
+                "source_id": "contract/retracted",
+                "target_id": "employees/emp-1",
+                "kind": "owned_by",
+            }
+        ],
     )
 
     for name, values, binds_map in (

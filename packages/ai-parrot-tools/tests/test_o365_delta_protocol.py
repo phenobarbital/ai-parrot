@@ -210,9 +210,7 @@ async def test_duplicate_items_across_pages_keep_the_latest_report():
     delta = reader(
         {
             None: FakeResponse([item("a", name="old.pdf")], next_link=f"{GRAPH}/page2"),
-            f"{GRAPH}/page2": FakeResponse(
-                [item("a", name="new.pdf")], delta_link=f"{GRAPH}/final"
-            ),
+            f"{GRAPH}/page2": FakeResponse([item("a", name="new.pdf")], delta_link=f"{GRAPH}/final"),
         }
     )
     result = await delta.enumerate("drive-1")
@@ -286,9 +284,7 @@ async def test_a_truncated_walk_reports_no_cursor():
 
 @pytest.mark.asyncio
 async def test_a_committed_token_is_used_as_the_starting_link():
-    graph = FakeGraph(
-        {f"{GRAPH}/previous": FakeResponse([item("a")], delta_link=f"{GRAPH}/final")}
-    )
+    graph = FakeGraph({f"{GRAPH}/previous": FakeResponse([item("a")], delta_link=f"{GRAPH}/final")})
     delta = DriveDeltaReader(graph, sleep=no_sleep)
     result = await delta.enumerate("drive-1", token=f"{GRAPH}/previous")
 
@@ -395,9 +391,7 @@ def test_folders_are_recognised():
 
 
 def test_pages_expose_the_opaque_links_verbatim():
-    page = DriveDeltaReader.parse_page(
-        FakeResponse([item("a")], next_link=f"{GRAPH}/n", delta_link=None), "drive-1"
-    )
+    page = DriveDeltaReader.parse_page(FakeResponse([item("a")], next_link=f"{GRAPH}/n", delta_link=None), "drive-1")
     assert page.next_link == f"{GRAPH}/n"
     assert page.is_final is False
     assert DeltaPage(delta_link=f"{GRAPH}/final").is_final is True
@@ -417,9 +411,7 @@ def test_item_folder_matching():
 
 
 def test_the_helper_is_independent_of_the_contracts_package():
-    source = Path(
-        __file__
-    ).resolve().parents[1] / "src" / "parrot_tools" / "o365" / "delta.py"
+    source = Path(__file__).resolve().parents[1] / "src" / "parrot_tools" / "o365" / "delta.py"
     tree = ast.parse(source.read_text())
     imported: set[str] = set()
     for node in ast.walk(tree):
@@ -438,24 +430,14 @@ def test_the_helper_neither_commits_cursors_nor_ingests_documents():
     Checked on executable code only — the module docstring says the word
     "catalog" precisely to state that it does not touch one.
     """
-    source = (
-        Path(__file__).resolve().parents[1]
-        / "src"
-        / "parrot_tools"
-        / "o365"
-        / "delta.py"
-    ).read_text()
+    source = (Path(__file__).resolve().parents[1] / "src" / "parrot_tools" / "o365" / "delta.py").read_text()
     tree = ast.parse(source)
     called = {
-        node.func.attr
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+        node.func.attr for node in ast.walk(tree) if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
     }
     for forbidden in ("set_delta_token", "add_contract", "upsert", "record_answer"):
         assert forbidden not in called, forbidden
 
     names = {node.id for node in ast.walk(tree) if isinstance(node, ast.Name)}
-    attributes = {
-        node.attr for node in ast.walk(tree) if isinstance(node, ast.Attribute)
-    }
+    attributes = {node.attr for node in ast.walk(tree) if isinstance(node, ast.Attribute)}
     assert "catalog" not in names | attributes

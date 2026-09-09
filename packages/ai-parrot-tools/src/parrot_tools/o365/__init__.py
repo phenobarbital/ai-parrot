@@ -21,16 +21,15 @@ from .onedrive import (
     SearchOneDriveFilesTool,
     DownloadOneDriveFileTool,
     UploadOneDriveFileTool,
-    DeltaOneDriveFilesTool
+    DeltaOneDriveFilesTool,
 )
 from .sharepoint import (
     ListSharePointFilesTool,
     SearchSharePointFilesTool,
     DownloadSharePointFileTool,
     UploadSharePointFileTool,
-    DeltaSharePointFilesTool
+    DeltaSharePointFilesTool,
 )
-
 
 __all__ = (
     "CreateDraftMessageTool",

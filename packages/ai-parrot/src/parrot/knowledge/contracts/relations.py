@@ -124,9 +124,7 @@ def candidate_contracts(
     Returns:
         At most ``max_candidates`` candidate pairs.
     """
-    counterparties = {
-        normalize_party_name(party.name) for party in card.counterparties
-    } - {""}
+    counterparties = {normalize_party_name(party.name) for party in card.counterparties} - {""}
     family = {card.parent_contract_id} - {None}
     kinds = {obligation.kind for obligation in card.obligations}
 
@@ -134,17 +132,12 @@ def candidate_contracts(
     for other in catalog_cards:
         if other.contract_id == card.contract_id or not other.active:
             continue
-        other_parties = {
-            normalize_party_name(party.name) for party in other.counterparties
-        } - {""}
+        other_parties = {normalize_party_name(party.name) for party in other.counterparties} - {""}
         shared_party = bool(counterparties & other_parties)
         same_family = (
             other.contract_id in family
             or other.parent_contract_id == card.contract_id
-            or (
-                other.parent_contract_id is not None
-                and other.parent_contract_id == card.parent_contract_id
-            )
+            or (other.parent_contract_id is not None and other.parent_contract_id == card.parent_contract_id)
         )
         shared_kind = bool(kinds & {obligation.kind for obligation in other.obligations})
         if shared_party:
@@ -221,18 +214,13 @@ class ContractRelationStage:
             if other is None:  # pragma: no cover - candidates come from the catalog
                 continue
             lines.append(
-                f"- id: {other.contract_id} ({pair.reason}) title: {other.title} "
-                f"type: {other.contract_type}"
+                f"- id: {other.contract_id} ({pair.reason}) title: {other.title} " f"type: {other.contract_type}"
             )
             lines.extend(
-                f"    - {obligation.obligation_id} [{obligation.kind}] "
-                f"{obligation.text[:200]}"
+                f"    - {obligation.obligation_id} [{obligation.kind}] " f"{obligation.text[:200]}"
                 for obligation in other.obligations
             )
-        lines.append(
-            "\nFor EVERY candidate return one judgement. Use 'none' unless the "
-            "evidence is clear."
-        )
+        lines.append("\nFor EVERY candidate return one judgement. Use 'none' unless the " "evidence is clear.")
         return "\n".join(lines)
 
     # -- judgement ---------------------------------------------------------
@@ -257,14 +245,10 @@ class ContractRelationStage:
         report = RelationStageReport()
         cards = {card.contract_id: card for card in await self.catalog.list_cards()}
         targets = (
-            [cards[key] for key in contract_ids if key in cards]
-            if contract_ids is not None
-            else list(cards.values())
+            [cards[key] for key in contract_ids if key in cards] if contract_ids is not None else list(cards.values())
         )
         if contract_ids is not None:
-            report.rejected.extend(
-                sorted(key for key in contract_ids if key not in cards)
-            )
+            report.rejected.extend(sorted(key for key in contract_ids if key not in cards))
         if self.adapter is None:
             report.errors.append("no LLM adapter configured; relations were not judged")
             return report
@@ -275,9 +259,7 @@ class ContractRelationStage:
                 card.contract_id, source_sha256=card.source_sha256
             )
 
-            candidates = candidate_contracts(
-                card, list(cards.values()), max_candidates=self.max_candidates
-            )
+            candidates = candidate_contracts(card, list(cards.values()), max_candidates=self.max_candidates)
             if not force:
                 already = {
                     judgement.target_contract_id
@@ -285,12 +267,8 @@ class ContractRelationStage:
                     if judgement.active and judgement.source_contract_id == card.contract_id
                 }
                 skipped = [pair for pair in candidates if pair.target_contract_id in already]
-                report.skipped.extend(
-                    f"{card.contract_id}->{pair.target_contract_id}" for pair in skipped
-                )
-                candidates = [
-                    pair for pair in candidates if pair.target_contract_id not in already
-                ]
+                report.skipped.extend(f"{card.contract_id}->{pair.target_contract_id}" for pair in skipped)
+                candidates = [pair for pair in candidates if pair.target_contract_id not in already]
             if not candidates:
                 continue
 
@@ -326,12 +304,8 @@ class ContractRelationStage:
         offered = {pair.target_contract_id for pair in candidates}
         answered: set[str] = set()
         now = self._now()
-        relations: list[ContractRelation] = list(
-            await self.catalog.active_relations(card.contract_id)
-        )
-        relations = [
-            relation for relation in relations if relation.source_contract_id == card.contract_id
-        ]
+        relations: list[ContractRelation] = list(await self.catalog.active_relations(card.contract_id))
+        relations = [relation for relation in relations if relation.source_contract_id == card.contract_id]
 
         for index, verdict in enumerate(draft.judgements):
             target_id = verdict.target_contract_id
@@ -341,25 +315,25 @@ class ContractRelationStage:
             if target_id not in offered:
                 # Unknown or cross-tenant endpoint: the model may only judge
                 # candidates this tenant's catalog offered it.
-                report.rejected.append(
-                    f"{card.contract_id}->{target_id}: endpoint was not a candidate"
-                )
+                report.rejected.append(f"{card.contract_id}->{target_id}: endpoint was not a candidate")
                 continue
             answered.add(target_id)
             target = cards[target_id]
-            outcome = verdict.outcome if verdict.outcome in (
-                "conflicts_with",
-                "references_obligation",
-                "none",
-            ) else "none"
+            outcome = (
+                verdict.outcome
+                if verdict.outcome
+                in (
+                    "conflicts_with",
+                    "references_obligation",
+                    "none",
+                )
+                else "none"
+            )
 
             if outcome == "references_obligation":
                 source_ids = {ob.obligation_id for ob in card.obligations}
                 target_ids = {ob.obligation_id for ob in target.obligations}
-                valid = (
-                    verdict.source_obligation_id in source_ids
-                    and verdict.target_obligation_id in target_ids
-                )
+                valid = verdict.source_obligation_id in source_ids and verdict.target_obligation_id in target_ids
                 if not valid:
                     report.rejected.append(
                         f"{card.contract_id}->{target_id}: references_obligation needs two "
@@ -374,12 +348,8 @@ class ContractRelationStage:
                 outcome=outcome,  # type: ignore[arg-type]
                 source_sha256=card.source_sha256,
                 target_sha256=target.source_sha256,
-                source_obligation_id=verdict.source_obligation_id
-                if outcome == "references_obligation"
-                else None,
-                target_obligation_id=verdict.target_obligation_id
-                if outcome == "references_obligation"
-                else None,
+                source_obligation_id=verdict.source_obligation_id if outcome == "references_obligation" else None,
+                target_obligation_id=verdict.target_obligation_id if outcome == "references_obligation" else None,
                 confidence=verdict.confidence,
                 rationale=verdict.rationale,
                 model=self.model_name,
@@ -391,11 +361,7 @@ class ContractRelationStage:
 
             if outcome == "none":
                 report.none_outcomes += 1
-                relations = [
-                    relation
-                    for relation in relations
-                    if relation.target_contract_id != target_id
-                ]
+                relations = [relation for relation in relations if relation.target_contract_id != target_id]
                 continue
 
             source_id, canonical_target = (
@@ -417,10 +383,7 @@ class ContractRelationStage:
             relations = [
                 item
                 for item in relations
-                if not (
-                    item.target_contract_id == relation.target_contract_id
-                    and item.kind == relation.kind
-                )
+                if not (item.target_contract_id == relation.target_contract_id and item.kind == relation.kind)
             ]
             relations.append(relation)
             report.relations.append(relation)
@@ -433,10 +396,7 @@ class ContractRelationStage:
             target = cards[pair.target_contract_id]
             await self.catalog.record_judgement(
                 RelationJudgement(
-                    judgement_id=(
-                        f"{card.contract_id}:{target.contract_id}:{now.isoformat()}:"
-                        f"unanswered-{index}"
-                    ),
+                    judgement_id=(f"{card.contract_id}:{target.contract_id}:{now.isoformat()}:" f"unanswered-{index}"),
                     source_contract_id=card.contract_id,
                     target_contract_id=target.contract_id,
                     outcome="none",
@@ -450,11 +410,7 @@ class ContractRelationStage:
             )
             report.judged.append(f"{card.contract_id}->{target.contract_id}=none")
             report.none_outcomes += 1
-            relations = [
-                relation
-                for relation in relations
-                if relation.target_contract_id != target.contract_id
-            ]
+            relations = [relation for relation in relations if relation.target_contract_id != target.contract_id]
 
         await self.catalog.replace_relations(card.contract_id, relations)
 

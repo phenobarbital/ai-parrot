@@ -144,8 +144,7 @@ class ContractCardDataSource(ExtractDataSource):  # type: ignore[misc]
     def __init__(self, name: str = SOURCE_NAME, config: Optional[dict[str, Any]] = None) -> None:
         if not _LOADERS_AVAILABLE:  # pragma: no cover - depends on install extras
             raise RuntimeError(
-                "The contracts ontology datasource requires ai-parrot-loaders "
-                "(pip install ai-parrot-loaders)."
+                "The contracts ontology datasource requires ai-parrot-loaders " "(pip install ai-parrot-loaders)."
             )
         super().__init__(name=name, config=config or {})
         catalog = self.config.get("catalog")
@@ -209,11 +208,7 @@ class ContractCardDataSource(ExtractDataSource):  # type: ignore[misc]
             cards = [card for card in cards if card.verification == verification]
         party_id = selectors.pop("party_id", None)
         if party_id is not None:
-            cards = [
-                card
-                for card in cards
-                if any(party.party_id == party_id for party in card.parties)
-            ]
+            cards = [card for card in cards if any(party.party_id == party_id for party in card.parties)]
         if selectors:
             raise UnknownFieldRequest(f"unsupported filters: {sorted(selectors)}")
         return sorted(cards, key=lambda card: card.contract_id)
@@ -432,14 +427,12 @@ class ContractCardDataSource(ExtractDataSource):  # type: ignore[misc]
         records = await self.records_for(entity, filters=filters)
         requested = set(fields or [])
         payloads = [
-            {key: value for key, value in record.items() if not requested or key in requested}
-            for record in records
+            {key: value for key, value in record.items() if not requested or key in requested} for record in records
         ]
         logger.debug("Projected %d %s records for %s", len(payloads), entity, self.name)
         return ExtractionResult(
             records=[
-                ExtractedRecord(data=payload, metadata={"entity": entity, "source": self.name})
-                for payload in payloads
+                ExtractedRecord(data=payload, metadata={"entity": entity, "source": self.name}) for payload in payloads
             ],
             total=len(payloads),
             source_name=self.name,

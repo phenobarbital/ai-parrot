@@ -305,15 +305,11 @@ def select_obligation_nodes(
     excluded = set(exclude)
     order = {entry.node_id: index for index, entry in enumerate(toc)}
     candidates = [
-        entry.node_id
-        for entry in toc
-        if entry.node_id not in excluded and bodies.get(entry.node_id, "").strip()
+        entry.node_id for entry in toc if entry.node_id not in excluded and bodies.get(entry.node_id, "").strip()
     ]
     if not candidates:
         candidates = [
-            node_id
-            for node_id in sorted(bodies)
-            if node_id not in excluded and bodies.get(node_id, "").strip()
+            node_id for node_id in sorted(bodies) if node_id not in excluded and bodies.get(node_id, "").strip()
         ]
 
     obligation_titles = (
@@ -559,10 +555,7 @@ def validate_obligation_clauses(
     notes: list[str] = []
     for index, clause in enumerate(clauses):
         if node_id is not None and clause.node_id != node_id:
-            notes.append(
-                f"obligation {index} dropped: cites node {clause.node_id!r}, "
-                f"section {node_id!r} was read"
-            )
+            notes.append(f"obligation {index} dropped: cites node {clause.node_id!r}, " f"section {node_id!r} was read")
             continue
         evidence = Evidence(node_id=clause.node_id, quote=clause.excerpt, page=clause.page)
         if not _quote_supported(evidence, bodies):
@@ -630,12 +623,8 @@ def fallback_header_draft(source: str | Path, toc: Sequence[TocEntry] = ()) -> C
     effective = guess_effective_date(path.name)
     return ContractHeaderDraft(
         title=Extracted[str](value=title, confidence=FALLBACK_CONFIDENCE),
-        contract_type=Extracted[ContractType](
-            value=guess_contract_type(path.name), confidence=FALLBACK_CONFIDENCE
-        ),
-        effective_date=Extracted[date](
-            value=effective, confidence=FALLBACK_CONFIDENCE if effective else 0.0
-        ),
+        contract_type=Extracted[ContractType](value=guess_contract_type(path.name), confidence=FALLBACK_CONFIDENCE),
+        effective_date=Extracted[date](value=effective, confidence=FALLBACK_CONFIDENCE if effective else 0.0),
         summary="",
         topics=[],
         language="en",
@@ -716,9 +705,7 @@ async def draft_contract(
     header, evidence_notes = validate_header_evidence(header, bodies)
     notes.extend(evidence_notes)
 
-    sections = select_obligation_nodes(
-        toc, bodies, limit=max_obligation_sections, exclude=header_nodes
-    )
+    sections = select_obligation_nodes(toc, bodies, limit=max_obligation_sections, exclude=header_nodes)
     titles = {entry.node_id: entry.title for entry in toc}
     clauses: list[ObligationClauseDraft] = []
     read_sections: list[str] = []
@@ -740,9 +727,7 @@ async def draft_contract(
         read_sections.append(node_id)
         if not isinstance(result, ObligationsDraft):
             result = ObligationsDraft.model_validate(result)
-        kept, clause_notes = validate_obligation_clauses(
-            result.clauses, bodies, node_id=node_id
-        )
+        kept, clause_notes = validate_obligation_clauses(result.clauses, bodies, node_id=node_id)
         clauses.extend(kept)
         notes.extend(clause_notes)
 
@@ -858,8 +843,7 @@ def similarity(left: str, right: str) -> float:
         from rapidfuzz import fuzz  # noqa: PLC0415 - optional dependency
     except ImportError as exc:  # pragma: no cover - depends on install extras
         raise RuntimeError(
-            "Contract parent resolution requires rapidfuzz. Install it with "
-            "`pip install 'ai-parrot[graphindex]'`."
+            "Contract parent resolution requires rapidfuzz. Install it with " "`pip install 'ai-parrot[graphindex]'`."
         ) from exc
     return float(fuzz.token_sort_ratio(left, right)) / 100.0
 
@@ -973,16 +957,10 @@ def resolve_parent(
     for candidate in candidates:
         if candidate.contract_type not in allowed:
             continue
-        candidate_parties = {
-            normalize_party_name(party.name)
-            for party in candidate.parties
-            if not party.is_us
-        }
+        candidate_parties = {normalize_party_name(party.name) for party in candidate.parties if not party.is_us}
         if child_parties and not (child_parties & candidate_parties):
             continue
-        normalized_candidate = (
-            normalize_party_name(candidate.title) or candidate.title.lower()
-        )
+        normalized_candidate = normalize_party_name(candidate.title) or candidate.title.lower()
         score = max(
             similarity(normalized_parent, normalized_candidate),
             similarity((parent_title or "").lower(), candidate.title.lower()),
@@ -1166,19 +1144,13 @@ def assemble_card(
     term = term.model_copy(
         update={
             "notice_deadline": derive_notice_deadline(term.expiration_date, term.notice_days),
-            "next_renewal_date": derive_next_renewal_date(
-                term.expiration_date, term.auto_renew
-            ),
+            "next_renewal_date": derive_next_renewal_date(term.expiration_date, term.auto_renew),
         }
     )
     if term.notice_deadline is not None:
-        provenance["term.notice_deadline"] = _rule_provenance(
-            ["term.expiration_date", "term.notice_days"]
-        )
+        provenance["term.notice_deadline"] = _rule_provenance(["term.expiration_date", "term.notice_days"])
     if term.next_renewal_date is not None:
-        provenance["term.next_renewal_date"] = _rule_provenance(
-            ["term.expiration_date", "term.auto_renew"]
-        )
+        provenance["term.next_renewal_date"] = _rule_provenance(["term.expiration_date", "term.auto_renew"])
 
     obligations: list[Obligation] = []
     for index, clause in enumerate(draft.obligations.clauses):
@@ -1205,9 +1177,7 @@ def assemble_card(
             )
         )
 
-    counterparties = [
-        normalize_party_name(party.name) for party in parties if not party.is_us
-    ]
+    counterparties = [normalize_party_name(party.name) for party in parties if not party.is_us]
     resolution = resolve_parent(
         contract_type=contract_type,
         counterparties=counterparties,
@@ -1217,9 +1187,7 @@ def assemble_card(
     if resolution.ambiguous:
         stale.append("parent_contract_id")
     if resolution.parent_contract_id:
-        provenance["parent_contract_id"] = _rule_provenance(
-            ["parent_contract_title", "parties", "contract_type"]
-        )
+        provenance["parent_contract_id"] = _rule_provenance(["parent_contract_title", "parties", "contract_type"])
 
     status = derive_status(
         term=term,

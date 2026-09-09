@@ -142,12 +142,7 @@ def test_english_search_view_links_the_searchable_entities(definition):
     view = definition.search_views["contracts_view"]
     linked = {link.entity for link in view.links}
     assert linked == {"Contract", "Obligation", "Party"}
-    analyzers = {
-        analyzer
-        for link in view.links
-        for field in link.fields
-        for analyzer in field.analyzers
-    }
+    analyzers = {analyzer for link in view.links for field in link.fields for analyzer in field.analyzers}
     assert analyzers <= {"text_en", "identity"}, "the pilot is English-only"
 
 
@@ -155,9 +150,7 @@ def test_every_seeded_standard_is_representable(definition):
     standard = definition.entities["ComplianceStandard"]
     assert standard.key_field == "standard_id"
     described = " ".join(
-        entry["standard_id"].description or ""
-        for entry in standard.properties
-        if "standard_id" in entry
+        entry["standard_id"].description or "" for entry in standard.properties if "standard_id" in entry
     )
     assert "soc2" in described
     assert len(STANDARD_IDS) == 8
@@ -215,9 +208,7 @@ def test_pattern_bind_sets_match_the_spec_table(definition):
 def test_nullable_kind_is_always_bound(definition):
     query = definition.traversal_patterns["obligations_of_contract"].query_template
     assert "@kind == null OR ob.kind == @kind" in query
-    assert "ALWAYS bound" in definition.traversal_patterns[
-        "obligations_of_contract"
-    ].description
+    assert "ALWAYS bound" in definition.traversal_patterns["obligations_of_contract"].description
 
 
 def test_my_contracts_uses_a_full_employee_graph_id(definition):
@@ -287,11 +278,7 @@ def test_my_contracts_is_self_service_and_still_default_deny(definition):
 
 
 def test_v1_yaml_declares_no_same_department_rule(definition):
-    rules = {
-        rule.rule
-        for pattern in definition.traversal_patterns.values()
-        for rule in pattern.authorization.rules
-    }
+    rules = {rule.rule for pattern in definition.traversal_patterns.values() for rule in pattern.authorization.rules}
     assert "same_department" not in rules, "v1 stays role-based plus my_contracts"
 
 
@@ -335,9 +322,7 @@ async def test_spike_same_department_reads_a_contract_department_generically():
     """
     store = _RecordingGraphStore(department="legal")
     checker = AuthorizationChecker(graph_store=store)
-    spec = AuthorizationSpec(
-        rules=[AuthorizationRule(rule="same_department")], default_deny=True
-    )
+    spec = AuthorizationSpec(rules=[AuthorizationRule(rule="same_department")], default_deny=True)
 
     allowed, reason = await checker.check(
         spec,

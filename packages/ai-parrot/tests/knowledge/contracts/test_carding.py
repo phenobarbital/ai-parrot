@@ -147,9 +147,7 @@ def evidenced_header() -> ContractHeaderDraft:
         ),
         effective_date=Extracted[date](
             value=date(2026, 1, 1),
-            evidence=Evidence(
-                node_id="0003", quote="effective as of January 1, 2026", page=3
-            ),
+            evidence=Evidence(node_id="0003", quote="effective as of January 1, 2026", page=3),
             confidence=0.9,
         ),
         notice_days=Extracted[int](
@@ -307,9 +305,7 @@ def test_obligation_selection_prefers_flavoured_titles_then_density():
     # Compliance carries three deontic markers, Insurance two; both have
     # obligation-flavoured titles, so density breaks the tie.
     assert selected[:2] == ["0005", "0008"]
-    assert selected == select_obligation_nodes(
-        TOC, BODIES, limit=4, exclude=["0001", "0003"]
-    )
+    assert selected == select_obligation_nodes(TOC, BODIES, limit=4, exclude=["0001", "0003"])
 
 
 def test_obligation_selection_respects_the_limit_and_exclusions():
@@ -433,9 +429,7 @@ def test_obligation_clauses_without_verbatim_excerpts_are_dropped():
         ),
     ]
     kept, notes = validate_obligation_clauses(clauses, BODIES, node_id="0005")
-    assert [clause.excerpt for clause in kept] == [
-        "Vendor shall maintain SOC 2 Type II certification"
-    ]
+    assert [clause.excerpt for clause in kept] == ["Vendor shall maintain SOC 2 Type II certification"]
     assert len(notes) == 2
     assert any("not verbatim" in note for note in notes)
     assert any("cites node '0008'" in note for note in notes)
@@ -563,12 +557,16 @@ def test_prompts_never_request_derived_facts():
     assert "next_renewal_date" not in combined
     assert "parent_contract_id" not in combined
     assert "contract status" in SYSTEM_PROMPT.lower()  # explicitly forbidden
-    assert set(ContractHeaderDraft.model_fields) & {
-        "status",
-        "notice_deadline",
-        "next_renewal_date",
-        "parent_contract_id",
-    } == set()
+    assert (
+        set(ContractHeaderDraft.model_fields)
+        & {
+            "status",
+            "notice_deadline",
+            "next_renewal_date",
+            "parent_contract_id",
+        }
+        == set()
+    )
 
 
 def test_document_material_is_fenced_as_untrusted_data():
