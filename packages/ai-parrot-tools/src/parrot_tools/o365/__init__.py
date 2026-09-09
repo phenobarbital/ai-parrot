@@ -20,7 +20,20 @@ from .onedrive import (
     ListOneDriveFilesTool,
     SearchOneDriveFilesTool,
     DownloadOneDriveFileTool,
-    UploadOneDriveFileTool
+    UploadOneDriveFileTool,
+    DeltaOneDriveFilesTool,
+)
+from .sharepoint import (
+    DeltaSharePointFilesTool,
+)
+from .delta import (
+    DeltaEnumeration,
+    DeltaItem,
+    DeltaLinkValidationError,
+    DeltaPage,
+    DeltaResetRequiredError,
+    DeltaRetryExhaustedError,
+    DriveDeltaHelper,
 )
 
 
@@ -39,4 +52,13 @@ __all__ = (
     "SearchOneDriveFilesTool",
     "DownloadOneDriveFileTool",
     "UploadOneDriveFileTool",
+    "DeltaOneDriveFilesTool",
+    "DeltaSharePointFilesTool",
+    "DeltaEnumeration",
+    "DeltaItem",
+    "DeltaLinkValidationError",
+    "DeltaPage",
+    "DeltaResetRequiredError",
+    "DeltaRetryExhaustedError",
+    "DriveDeltaHelper",
 )

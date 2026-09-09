@@ -10,13 +10,15 @@ from .sharepoint import (
     ListSharePointFilesTool,
     SearchSharePointFilesTool,
     DownloadSharePointFileTool,
-    UploadSharePointFileTool
+    UploadSharePointFileTool,
+    DeltaSharePointFilesTool
 )
 from .onedrive import (
     ListOneDriveFilesTool,
     SearchOneDriveFilesTool,
     DownloadOneDriveFileTool,
-    UploadOneDriveFileTool
+    UploadOneDriveFileTool,
+    DeltaOneDriveFilesTool
 )
 from .base import O365AuthMode
 
@@ -30,6 +32,7 @@ class SharePointToolkit:
     - Search for files
     - Download files
     - Upload files
+    - Track library changes since a delta cursor
 
     Usage:
         toolkit = SharePointToolkit(
@@ -104,7 +107,8 @@ class SharePointToolkit:
             ListSharePointFilesTool(**common_params),
             SearchSharePointFilesTool(**common_params),
             DownloadSharePointFileTool(**common_params),
-            UploadSharePointFileTool(**common_params)
+            UploadSharePointFileTool(**common_params),
+            DeltaSharePointFilesTool(**common_params)
         ]
 
         self.logger.debug("Registered SharePoint tools")
@@ -142,6 +146,7 @@ class OneDriveToolkit:
     - Search for files
     - Download files
     - Upload files
+    - Track drive changes since a delta cursor
 
     Usage:
         toolkit = OneDriveToolkit(
@@ -216,7 +221,8 @@ class OneDriveToolkit:
             ListOneDriveFilesTool(**common_params),
             SearchOneDriveFilesTool(**common_params),
             DownloadOneDriveFileTool(**common_params),
-            UploadOneDriveFileTool(**common_params)
+            UploadOneDriveFileTool(**common_params),
+            DeltaOneDriveFilesTool(**common_params)
         ]
 
         self.logger.debug("Registered OneDrive tools")
@@ -349,7 +355,8 @@ class Office365FileManagementToolkit:
                 ListSharePointFilesTool,
                 SearchSharePointFilesTool,
                 DownloadSharePointFileTool,
-                UploadSharePointFileTool
+                UploadSharePointFileTool,
+                DeltaSharePointFilesTool
             ))
         ]
 
@@ -361,7 +368,8 @@ class Office365FileManagementToolkit:
                 ListOneDriveFilesTool,
                 SearchOneDriveFilesTool,
                 DownloadOneDriveFileTool,
-                UploadOneDriveFileTool
+                UploadOneDriveFileTool,
+                DeltaOneDriveFilesTool
             ))
         ]
 
