@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-539 - Contracts Card & Ontology
 **Spec**: `sdd/specs/contracts-card-ontology.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2–4h)
 **Depends-on**: none
@@ -89,4 +89,29 @@ Store execution logs in `artifacts/logs/task-3025.log`. Use frozen dates, synthe
 
 ## Completion Note
 
-Pending execution. Record executor, completion date, implementation summary, validation evidence and deviations when this task is completed.
+Completed 2026-09-09 by sdd-worker (Claude Opus 5).
+
+**Implementation**: created `parrot/knowledge/contracts/{__init__,models,standards}.py`.
+`models.py` implements every normative model from spec §2 — closed taxonomies,
+`Evidence`/`Extracted[T]` generics with the 0.5 unsubstantiated-confidence cap,
+`FieldProvenance` with independent origin/verification axes, `Party`/`Signatory`/
+`TermSpec`/`Obligation`, `ContractVersion` (nonrecursive snapshots, half-open
+effective interval), `ContractCard` (sibling of BookCard; contract_id == tree_name,
+one is_us party, resolvable signatory parties, explicit `termination_confirmed`/
+`terminated_on`), the extraction drafts, `Citation` (version_n + source_sha256),
+`ContractAnswer` with per-kind invariants and derived provenance, `AnswerRecord`,
+`PublicationRecord`, `SourceItem`, `SourceDeltaToken`, `PartyAlias`,
+`RelationJudgement`, `ContractRelation` (symmetric canonicalization) and the
+ingest reporting models. `standards.py` seeds the eight standard IDs with
+normalized, collision-free aliases plus `resolve_standard`/`find_standards`
+(longest-alias-first scan over a full question). `__init__.py` exports models and
+standards eagerly and the heavier services lazily.
+
+**Validation**: `pytest packages/ai-parrot/tests/knowledge/contracts/ -q` -> 75 passed
+(log: `artifacts/logs/task-3025.log`); `ruff check` clean on all owned files.
+
+**Deviations**: added `packages/ai-parrot/tests/knowledge/contracts/__init__.py`
+(one docstring line) because every sibling test directory in this package is a
+package — without it `test_models.py` collides with the other `test_models.py`
+modules in the suite. `DeltaPage` is deliberately NOT defined here: spec §3 M8
+assigns it to `parrot_tools/o365/delta.py` (TASK-3041).
