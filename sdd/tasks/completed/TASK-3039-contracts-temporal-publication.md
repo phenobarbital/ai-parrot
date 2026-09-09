@@ -124,7 +124,7 @@ recorded vs effective time, crash-after-commit recovery reusing the same commit 
 with `list_commits` proving exactly one commit for the run, and two tenants reusing
 the slug `acme-msa` in separate schemas without leaking. Offline tests additionally
 pin the mapping, tombstones, failure/retry, unavailable target and mismatched-payload
-refusal. Whole contracts suite 446 passed (`artifacts/logs/task-3039.log`); ruff
+refusal. Whole contracts suite 448 passed (`artifacts/logs/task-3039.log`); ruff
 clean.
 
 **Deviations**: none.
