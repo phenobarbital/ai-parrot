@@ -25,6 +25,7 @@ from parrot.integrations.liveavatar.broadcast import (
 from parrot.integrations.liveavatar.broadcast.service import (
     BroadcastNotReady,
     BroadcastService,
+    ReconcileReport,
     default_principal_resolver,
 )
 
@@ -891,3 +892,71 @@ async def test_producer_configures_the_bots_llm_before_building_the_session(
 
     assert built == ["resolve", "create"], "the bot's client must be built exactly once"
     assert bot._llm is not None
+
+
+# ── Eviction vs a participant that already left (live-run regression) ──────
+
+
+class _GoneError(Exception):
+    """LiveKit's `404 participant does not exist`."""
+
+    code = "not_found"
+    status = 404
+
+    def __str__(self) -> str:  # pragma: no cover - trivial
+        return "participant does not exist"
+
+
+async def test_eviction_releases_the_seat_when_the_participant_already_left(
+    service: BroadcastService, room_manager: FakeRoomManager, clock: FakeClock
+) -> None:
+    """`404 participant does not exist` is the outcome we wanted, not an outage.
+
+    Reported from real use: disconnecting and re-joining raised
+    `ServerError(code=not_found, message=participant does not exist, 404)` and
+    the reconciler logged "retaining its seat". Because that participant can
+    never come back to be removed, no later pass could release it either — the
+    broadcast leaked one of its ten seats on every such disconnect.
+    """
+    descriptor, broadcast_id = await _create(service)
+    principal = await _principal(service, "creator")
+    admission = await service.join(principal, AGENT, broadcast_id)
+    lease_id = admission.lease.lease_id
+
+    async def _gone(room: str, identity: str) -> None:
+        raise _GoneError()
+
+    room_manager.remove_participant = _gone  # type: ignore[assignment]
+
+    report = ReconcileReport()
+    await service._evict_expired_lease(  # noqa: SLF001
+        TENANT, broadcast_id, lease_id, report
+    )
+
+    leases = await service.registry.list_leases(TENANT, broadcast_id)
+    assert all(lease.lease_id != lease_id for lease in leases), "the seat must be freed"
+    assert broadcast_id not in report.uncertain
+
+
+async def test_eviction_retains_the_seat_when_livekit_is_unreachable(
+    service: BroadcastService, room_manager: FakeRoomManager
+) -> None:
+    """A genuine outage must still fail closed (spec §7)."""
+    descriptor, broadcast_id = await _create(service)
+    principal = await _principal(service, "creator")
+    admission = await service.join(principal, AGENT, broadcast_id)
+    lease_id = admission.lease.lease_id
+
+    async def _down(room: str, identity: str) -> None:
+        raise ConnectionError("livekit unreachable")
+
+    room_manager.remove_participant = _down  # type: ignore[assignment]
+
+    report = ReconcileReport()
+    await service._evict_expired_lease(  # noqa: SLF001
+        TENANT, broadcast_id, lease_id, report
+    )
+
+    leases = await service.registry.list_leases(TENANT, broadcast_id)
+    assert any(lease.lease_id == lease_id for lease in leases), "seat must be retained"
+    assert broadcast_id in report.uncertain

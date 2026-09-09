@@ -163,6 +163,29 @@ def default_principal_resolver(user: Any, agent_id: str, *, tenant_id: str = "de
     )
 
 
+def _is_not_found(exc: BaseException) -> bool:
+    """Whether a LiveKit error means "the thing is not there".
+
+    Covers both a room that does not exist yet and a participant that has
+    already left. Both are *expected* states, not outages, and conflating them
+    with an unreachable LiveKit has opposite consequences: an outage must fail
+    closed and retain the seat, whereas an already-departed participant must
+    let the seat be released.
+
+    Args:
+        exc: The exception raised by a room-manager call.
+
+    Returns:
+        ``True`` for a not-found/404 response.
+    """
+    code = getattr(exc, "code", None)
+    if code is not None and str(code).lower().endswith("not_found"):
+        return True
+    if getattr(exc, "status", None) == 404:
+        return True
+    return "does not exist" in str(exc).lower()
+
+
 def _is_room_not_found(exc: BaseException) -> bool:
     """Whether a LiveKit error means "this room does not exist (yet)".
 
@@ -1303,15 +1326,28 @@ class BroadcastService:
             try:
                 await self.room_manager.remove_participant(room, lease.livekit_identity)
                 report.removed_participants.append((room, lease.livekit_identity))
-            except Exception:  # noqa: BLE001 — retain the seat, retry next pass
-                report.uncertain.append(broadcast_id)
-                self.logger.warning(
-                    "broadcast %s: could not remove %s — retaining its seat",
-                    broadcast_id,
-                    lease_id,
-                    exc_info=True,
-                )
-                return
+            except Exception as exc:  # noqa: BLE001
+                if _is_not_found(exc):
+                    # Already gone — which is the outcome we wanted. Treating
+                    # `404 participant does not exist` as an outage retained
+                    # the seat forever: the participant can never come back to
+                    # be removed, so no later pass could ever release it, and
+                    # the broadcast leaked a seat out of its ten every time
+                    # somebody disconnected before the reconciler noticed.
+                    self.logger.debug(
+                        "broadcast %s: %s already left the room — releasing its seat",
+                        broadcast_id,
+                        lease_id,
+                    )
+                else:
+                    report.uncertain.append(broadcast_id)
+                    self.logger.warning(
+                        "broadcast %s: could not remove %s — retaining its seat",
+                        broadcast_id,
+                        lease_id,
+                        exc_info=True,
+                    )
+                    return
 
         outcome = await self.registry.release_viewer(tenant_id, broadcast_id, lease_id)
         report.released_leases.append(lease_id)
