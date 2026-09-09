@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-539 - Contracts Card & Ontology
 **Spec**: `sdd/specs/contracts-card-ontology.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2–4h)
 **Depends-on**: TASK-3039, TASK-3040, TASK-3046, TASK-3048, TASK-3050
@@ -101,4 +101,30 @@ Store execution logs in `artifacts/logs/task-3051.log`. Use frozen dates, synthe
 
 ## Completion Note
 
-Pending execution. Record executor, completion date, implementation summary, validation evidence and deviations when this task is completed.
+Completed 2026-09-09 by sdd-worker (Claude Opus 5).
+
+**Implementation**: created `parrot_tools/contracts/cli.py` and `__main__.py` —
+`python -m parrot_tools.contracts` with all ten commands: add, add-folder, refresh,
+verify, merge-parties, queue, search, relate (with --force), publish and
+retire-answer. Deployment configuration and tenant-bound services arrive through an
+injected `factory`; the operator identity, roles and the `--confirm` flag build the
+trusted `RequestContext`, so every command reuses the existing library/service
+policies rather than re-implementing them. Administrative commands refuse without
+`--confirm` (exit 2) and the service still re-checks the owner role; `verify`
+forwards `--set PATH=VALUE` corrections and `--expected-revision`. Output is bounded
+and printable (or JSON), and exit codes distinguish refusal (2), denial (3), audit
+outage (4) and failure (1) from success. `publish` reports each target separately and
+returns nonzero when either the ontology or the temporal target failed — a partial
+target failure is not success. No source is deleted, nothing is sent, no scheduler.
+
+**Validation**: `pytest .../test_cli.py -q` -> 21 passed (whole contracts tools suite
+185 passed, `artifacts/logs/task-3051.log`); ruff clean; `python -m
+parrot_tools.contracts --help` renders all ten commands. Tests cover dispatch to the
+real services with force/revision preserved, the queue/search read gate, all three
+administrative commands refusing without --confirm, an unauthorized operator exiting
+3, a `--set confirmed=true` field assignment **not** confirming the action, retirement
+and party merge going through the shared gate, partial vs complete publication exit
+codes, an actionable parse error, the factory-less entrypoint message, and an AST
+regression proving no scheduler/transport import and no delete/send call site.
+
+**Deviations**: none.
