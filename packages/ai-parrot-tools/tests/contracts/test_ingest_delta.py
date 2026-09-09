@@ -645,9 +645,7 @@ async def test_a_real_o365_delta_tool_can_actually_be_driven(workspace):
     assert result.errors == [], result.errors
     assert result.cursor_committed is not None
     # ...and the item actually made it through, not just the plumbing.
-    assert [row.source_uri for row in result.report.items] == [
-        "https://graph.microsoft.com/legal/a.md"
-    ]
+    assert [row.source_uri for row in result.report.items] == ["https://graph.microsoft.com/legal/a.md"]
     stored = await library.catalog.list_source_items("sharepoint://legal")
     assert [entry.item_id for entry in stored] == ["a"]
 
@@ -1256,9 +1254,7 @@ async def test_a_contract_backed_by_a_live_file_in_another_source_survives(works
 
     assert result.reconciled == []
     assert result.tombstoned == []
-    assert (
-        await library.catalog.get(shared)
-    ).active is True, "still backed by a live file in sharepoint://archive"
+    assert (await library.catalog.get(shared)).active is True, "still backed by a live file in sharepoint://archive"
 
 
 @pytest.mark.asyncio
