@@ -7,6 +7,7 @@ Tools for interacting with SharePoint document libraries:
 - Download files
 - Upload files
 """
+
 from typing import Dict, Any, Optional, List, Type
 from pathlib import Path
 from pydantic import BaseModel, Field
@@ -14,28 +15,20 @@ from pydantic import BaseModel, Field
 from .base import O365Tool, O365ToolArgsSchema
 from parrot.interfaces.sharepoint import SharepointClient
 
-
 # ============================================================================
 # LIST SHAREPOINT FILES TOOL
 # ============================================================================
 
+
 class ListSharePointFilesArgs(O365ToolArgsSchema):
     """Arguments for listing SharePoint files."""
-    site: str = Field(
-        description="SharePoint site name (e.g., 'TeamSite', 'ProjectSite')"
-    )
-    library: Optional[str] = Field(
-        default="Documents",
-        description="Document library name (default: 'Documents')"
-    )
+
+    site: str = Field(description="SharePoint site name (e.g., 'TeamSite', 'ProjectSite')")
+    library: Optional[str] = Field(default="Documents", description="Document library name (default: 'Documents')")
     folder_path: Optional[str] = Field(
-        default="",
-        description="Folder path within the library (e.g., 'Project/Reports'). Empty for library root."
+        default="", description="Folder path within the library (e.g., 'Project/Reports'). Empty for library root."
     )
-    recursive: bool = Field(
-        default=False,
-        description="Whether to list files recursively in subfolders"
-    )
+    recursive: bool = Field(default=False, description="Whether to list files recursively in subfolders")
 
 
 class ListSharePointFilesTool(O365Tool):
@@ -74,11 +67,7 @@ class ListSharePointFilesTool(O365Tool):
     )
     args_schema: Type[BaseModel] = ListSharePointFilesArgs
 
-    async def _execute_graph_operation(
-        self,
-        client: SharepointClient,
-        **kwargs
-    ) -> Dict[str, Any]:
+    async def _execute_graph_operation(self, client: SharepointClient, **kwargs) -> Dict[str, Any]:
         """
         List SharePoint files using the SharepointClient.
 
@@ -89,18 +78,18 @@ class ListSharePointFilesTool(O365Tool):
         Returns:
             Dict with file listing
         """
-        site = kwargs.get('site')
-        library = kwargs.get('library', 'Documents')
-        folder_path = kwargs.get('folder_path', '')
-        recursive = kwargs.get('recursive', False)
+        site = kwargs.get("site")
+        library = kwargs.get("library", "Documents")
+        folder_path = kwargs.get("folder_path", "")
+        recursive = kwargs.get("recursive", False)
 
         try:
             # Configure client
             client.site = site
-            client.credentials['tenant'] = site
+            client.credentials["tenant"] = site
 
             # Build full path
-            full_path = f"{library}/{folder_path}".strip('/') if folder_path else library
+            full_path = f"{library}/{folder_path}".strip("/") if folder_path else library
 
             self.logger.info(f"Listing files in: {site}/{full_path}")
 
@@ -110,8 +99,11 @@ class ListSharePointFilesTool(O365Tool):
 
             # Get folder contents
             if folder_path:
-                folder_item = await client.graph_client.drives.by_drive_id(drive_info.id)\
-                    .items.by_drive_item_id(f"root:/{folder_path}:").get()
+                folder_item = (
+                    await client.graph_client.drives.by_drive_id(drive_info.id)
+                    .items.by_drive_item_id(f"root:/{folder_path}:")
+                    .get()
+                )
             else:
                 folder_item = await client.graph_client.drives.by_drive_id(drive_info.id).root.get()
 
@@ -119,27 +111,27 @@ class ListSharePointFilesTool(O365Tool):
 
             if recursive:
                 # Recursive listing
-                files = await self._list_recursive(
-                    client,
-                    drive_info.id,
-                    folder_item.id,
-                    folder_path
-                )
+                files = await self._list_recursive(client, drive_info.id, folder_item.id, folder_path)
             else:
                 # Single level listing
-                children = await client.graph_client.drives.by_drive_id(drive_info.id)\
-                    .items.by_drive_item_id(folder_item.id).children.get()
+                children = (
+                    await client.graph_client.drives.by_drive_id(drive_info.id)
+                    .items.by_drive_item_id(folder_item.id)
+                    .children.get()
+                )
 
                 if children and children.value:
                     for item in children.value:
                         file_info = {
                             "name": item.name,
-                            "path": f"{folder_path}/{item.name}".strip('/'),
+                            "path": f"{folder_path}/{item.name}".strip("/"),
                             "is_folder": item.folder is not None,
                             "size": item.size or 0,
-                            "modified": item.last_modified_date_time.isoformat() if item.last_modified_date_time else None,
+                            "modified": (
+                                item.last_modified_date_time.isoformat() if item.last_modified_date_time else None
+                            ),
                             "web_url": item.web_url,
-                            "id": item.id
+                            "id": item.id,
                         }
                         files.append(file_info)
 
@@ -151,7 +143,7 @@ class ListSharePointFilesTool(O365Tool):
                 "folder_path": folder_path,
                 "total_items": len(files),
                 "files": files,
-                "recursive": recursive
+                "recursive": recursive,
             }
 
         except Exception as e:
@@ -159,21 +151,18 @@ class ListSharePointFilesTool(O365Tool):
             raise
 
     async def _list_recursive(
-        self,
-        client: SharepointClient,
-        drive_id: str,
-        folder_id: str,
-        base_path: str
+        self, client: SharepointClient, drive_id: str, folder_id: str, base_path: str
     ) -> List[Dict[str, Any]]:
         """Recursively list all files in a folder."""
         files = []
 
-        children = await client.graph_client.drives.by_drive_id(drive_id)\
-            .items.by_drive_item_id(folder_id).children.get()
+        children = (
+            await client.graph_client.drives.by_drive_id(drive_id).items.by_drive_item_id(folder_id).children.get()
+        )
 
         if children and children.value:
             for item in children.value:
-                item_path = f"{base_path}/{item.name}".strip('/')
+                item_path = f"{base_path}/{item.name}".strip("/")
 
                 file_info = {
                     "name": item.name,
@@ -182,18 +171,13 @@ class ListSharePointFilesTool(O365Tool):
                     "size": item.size or 0,
                     "modified": item.last_modified_date_time.isoformat() if item.last_modified_date_time else None,
                     "web_url": item.web_url,
-                    "id": item.id
+                    "id": item.id,
                 }
                 files.append(file_info)
 
                 # Recurse into folders
                 if item.folder:
-                    subfolder_files = await self._list_recursive(
-                        client,
-                        drive_id,
-                        item.id,
-                        item_path
-                    )
+                    subfolder_files = await self._list_recursive(client, drive_id, item.id, item_path)
                     files.extend(subfolder_files)
 
         return files
@@ -203,30 +187,16 @@ class ListSharePointFilesTool(O365Tool):
 # SEARCH SHAREPOINT FILES TOOL
 # ============================================================================
 
+
 class SearchSharePointFilesArgs(O365ToolArgsSchema):
     """Arguments for searching SharePoint files."""
-    site: str = Field(
-        description="SharePoint site name"
-    )
-    query: str = Field(
-        description="Search query (filename or content search)"
-    )
-    library: Optional[str] = Field(
-        default="Documents",
-        description="Document library to search in"
-    )
-    folder_path: Optional[str] = Field(
-        default="",
-        description="Limit search to specific folder path"
-    )
-    file_extension: Optional[str] = Field(
-        default=None,
-        description="Filter by file extension (e.g., 'pdf', 'docx')"
-    )
-    max_results: int = Field(
-        default=20,
-        description="Maximum number of results to return (1-100)"
-    )
+
+    site: str = Field(description="SharePoint site name")
+    query: str = Field(description="Search query (filename or content search)")
+    library: Optional[str] = Field(default="Documents", description="Document library to search in")
+    folder_path: Optional[str] = Field(default="", description="Limit search to specific folder path")
+    file_extension: Optional[str] = Field(default=None, description="Filter by file extension (e.g., 'pdf', 'docx')")
+    max_results: int = Field(default=20, description="Maximum number of results to return (1-100)")
 
 
 class SearchSharePointFilesTool(O365Tool):
@@ -260,16 +230,11 @@ class SearchSharePointFilesTool(O365Tool):
 
     name: str = "search_sharepoint_files"
     description: str = (
-        "Search for files in SharePoint by name or content. "
-        "Supports filtering by file type and location."
+        "Search for files in SharePoint by name or content. " "Supports filtering by file type and location."
     )
     args_schema: Type[BaseModel] = SearchSharePointFilesArgs
 
-    async def _execute_graph_operation(
-        self,
-        client: SharepointClient,
-        **kwargs
-    ) -> Dict[str, Any]:
+    async def _execute_graph_operation(self, client: SharepointClient, **kwargs) -> Dict[str, Any]:
         """
         Search SharePoint files using the SharepointClient.
 
@@ -280,26 +245,24 @@ class SearchSharePointFilesTool(O365Tool):
         Returns:
             Dict with search results
         """
-        site = kwargs.get('site')
-        query = kwargs.get('query')
-        library = kwargs.get('library', 'Documents')
-        folder_path = kwargs.get('folder_path', '')
-        file_extension = kwargs.get('file_extension')
-        max_results = min(kwargs.get('max_results', 20), 100)
+        site = kwargs.get("site")
+        query = kwargs.get("query")
+        library = kwargs.get("library", "Documents")
+        folder_path = kwargs.get("folder_path", "")
+        file_extension = kwargs.get("file_extension")
+        max_results = min(kwargs.get("max_results", 20), 100)
 
         try:
             # Configure client
             client.site = site
-            client.credentials['tenant'] = site
+            client.credentials["tenant"] = site
 
             self.logger.info(f"Searching SharePoint for: {query}")
 
             # Configure search spec
-            client._srcfiles = [{
-                'directory': f"{library}/{folder_path}".strip('/'),
-                'pattern': query,
-                'extension': file_extension
-            }]
+            client._srcfiles = [
+                {"directory": f"{library}/{folder_path}".strip("/"), "pattern": query, "extension": file_extension}
+            ]
 
             # Verify access and perform search
             await client.verify_sharepoint_access()
@@ -312,14 +275,14 @@ class SearchSharePointFilesTool(O365Tool):
             # Format results
             files = []
             for result in search_results:
-                if item := result.get('item'):
+                if item := result.get("item"):
                     file_info = {
                         "name": item.name,
-                        "path": result.get('path', ''),
+                        "path": result.get("path", ""),
                         "size": item.size or 0,
                         "modified": item.last_modified_date_time.isoformat() if item.last_modified_date_time else None,
                         "web_url": item.web_url,
-                        "id": item.id
+                        "id": item.id,
                     }
                     files.append(file_info)
 
@@ -332,7 +295,7 @@ class SearchSharePointFilesTool(O365Tool):
                 "folder_path": folder_path,
                 "file_extension": file_extension,
                 "total_results": len(files),
-                "files": files
+                "files": files,
             }
 
         except Exception as e:
@@ -344,26 +307,17 @@ class SearchSharePointFilesTool(O365Tool):
 # DOWNLOAD SHAREPOINT FILE TOOL
 # ============================================================================
 
+
 class DownloadSharePointFileArgs(O365ToolArgsSchema):
     """Arguments for downloading SharePoint files."""
-    site: str = Field(
-        description="SharePoint site name"
-    )
-    library: str = Field(
-        default="Documents",
-        description="Document library name"
-    )
-    file_path: str = Field(
-        description="Path to file within library (e.g., 'Reports/Q4_Report.pdf')"
-    )
+
+    site: str = Field(description="SharePoint site name")
+    library: str = Field(default="Documents", description="Document library name")
+    file_path: str = Field(description="Path to file within library (e.g., 'Reports/Q4_Report.pdf')")
     local_destination: Optional[str] = Field(
-        default=None,
-        description="Local path to save file. If not provided, saves to current directory."
+        default=None, description="Local path to save file. If not provided, saves to current directory."
     )
-    rename_as: Optional[str] = Field(
-        default=None,
-        description="Rename file when downloading"
-    )
+    rename_as: Optional[str] = Field(default=None, description="Rename file when downloading")
 
 
 class DownloadSharePointFileTool(O365Tool):
@@ -397,16 +351,11 @@ class DownloadSharePointFileTool(O365Tool):
 
     name: str = "download_sharepoint_file"
     description: str = (
-        "Download a file from SharePoint to local storage. "
-        "Supports renaming and custom destination paths."
+        "Download a file from SharePoint to local storage. " "Supports renaming and custom destination paths."
     )
     args_schema: Type[BaseModel] = DownloadSharePointFileArgs
 
-    async def _execute_graph_operation(
-        self,
-        client: SharepointClient,
-        **kwargs
-    ) -> Dict[str, Any]:
+    async def _execute_graph_operation(self, client: SharepointClient, **kwargs) -> Dict[str, Any]:
         """
         Download SharePoint file using the SharepointClient.
 
@@ -417,26 +366,26 @@ class DownloadSharePointFileTool(O365Tool):
         Returns:
             Dict with download details
         """
-        site = kwargs.get('site')
-        library = kwargs.get('library', 'Documents')
-        file_path = kwargs.get('file_path')
-        local_destination = kwargs.get('local_destination')
-        rename_as = kwargs.get('rename_as')
+        site = kwargs.get("site")
+        library = kwargs.get("library", "Documents")
+        file_path = kwargs.get("file_path")
+        local_destination = kwargs.get("local_destination")
+        rename_as = kwargs.get("rename_as")
 
         try:
             # Configure client
             client.site = site
-            client.credentials['tenant'] = site
+            client.credentials["tenant"] = site
 
             # Parse file path
-            path_parts = file_path.rsplit('/', 1)
+            path_parts = file_path.rsplit("/", 1)
             if len(path_parts) == 2:
                 folder_path, filename = path_parts
             else:
                 folder_path = ""
                 filename = file_path
 
-            full_directory = f"{library}/{folder_path}".strip('/')
+            full_directory = f"{library}/{folder_path}".strip("/")
 
             self.logger.info(f"Downloading: {site}/{full_directory}/{filename}")
 
@@ -447,10 +396,7 @@ class DownloadSharePointFileTool(O365Tool):
             client.directory = str(dest_dir)
 
             # Configure file lookup
-            client._srcfiles = [{
-                'directory': full_directory,
-                'filename': filename
-            }]
+            client._srcfiles = [{"directory": full_directory, "filename": filename}]
 
             # Set rename if requested
             if rename_as:
@@ -472,7 +418,7 @@ class DownloadSharePointFileTool(O365Tool):
                 raise RuntimeError("Download failed")
 
             download_info = downloaded[0]
-            local_path = download_info['filename']
+            local_path = download_info["filename"]
 
             self.logger.info(f"Downloaded to: {local_path}")
 
@@ -481,8 +427,8 @@ class DownloadSharePointFileTool(O365Tool):
                 "library": library,
                 "file_path": file_path,
                 "local_path": local_path,
-                "download_url": download_info.get('download_url', ''),
-                "size": Path(local_path).stat().st_size if Path(local_path).exists() else 0
+                "download_url": download_info.get("download_url", ""),
+                "size": Path(local_path).stat().st_size if Path(local_path).exists() else 0,
             }
 
         except Exception as e:
@@ -494,30 +440,18 @@ class DownloadSharePointFileTool(O365Tool):
 # UPLOAD SHAREPOINT FILE TOOL
 # ============================================================================
 
+
 class UploadSharePointFileArgs(O365ToolArgsSchema):
     """Arguments for uploading files to SharePoint."""
-    site: str = Field(
-        description="SharePoint site name"
-    )
-    local_file_path: str = Field(
-        description="Local file path to upload"
-    )
-    library: str = Field(
-        default="Documents",
-        description="Target document library"
-    )
+
+    site: str = Field(description="SharePoint site name")
+    local_file_path: str = Field(description="Local file path to upload")
+    library: str = Field(default="Documents", description="Target document library")
     folder_path: Optional[str] = Field(
-        default="",
-        description="Target folder path within library (e.g., 'Reports/2025')"
+        default="", description="Target folder path within library (e.g., 'Reports/2025')"
     )
-    rename_as: Optional[str] = Field(
-        default=None,
-        description="Rename file when uploading"
-    )
-    overwrite: bool = Field(
-        default=True,
-        description="Whether to overwrite existing files"
-    )
+    rename_as: Optional[str] = Field(default=None, description="Rename file when uploading")
+    overwrite: bool = Field(default=True, description="Whether to overwrite existing files")
 
 
 class UploadSharePointFileTool(O365Tool):
@@ -552,16 +486,11 @@ class UploadSharePointFileTool(O365Tool):
 
     name: str = "upload_sharepoint_file"
     description: str = (
-        "Upload a file to SharePoint document library. "
-        "Creates folders as needed and supports file renaming."
+        "Upload a file to SharePoint document library. " "Creates folders as needed and supports file renaming."
     )
     args_schema: Type[BaseModel] = UploadSharePointFileArgs
 
-    async def _execute_graph_operation(
-        self,
-        client: SharepointClient,
-        **kwargs
-    ) -> Dict[str, Any]:
+    async def _execute_graph_operation(self, client: SharepointClient, **kwargs) -> Dict[str, Any]:
         """
         Upload file to SharePoint using the SharepointClient.
 
@@ -572,12 +501,12 @@ class UploadSharePointFileTool(O365Tool):
         Returns:
             Dict with upload details
         """
-        site = kwargs.get('site')
-        local_file_path = kwargs.get('local_file_path')
-        library = kwargs.get('library', 'Documents')
-        folder_path = kwargs.get('folder_path', '')
-        rename_as = kwargs.get('rename_as')
-        overwrite = kwargs.get('overwrite', True)
+        site = kwargs.get("site")
+        local_file_path = kwargs.get("local_file_path")
+        library = kwargs.get("library", "Documents")
+        folder_path = kwargs.get("folder_path", "")
+        rename_as = kwargs.get("rename_as")
+        overwrite = kwargs.get("overwrite", True)
 
         try:
             # Validate local file
@@ -587,10 +516,10 @@ class UploadSharePointFileTool(O365Tool):
 
             # Configure client
             client.site = site
-            client.credentials['tenant'] = site
+            client.credentials["tenant"] = site
 
             # Build destination path
-            destination = f"{library}/{folder_path}".strip('/')
+            destination = f"{library}/{folder_path}".strip("/")
 
             self.logger.info(f"Uploading {local_path.name} to {site}/{destination}")
 
@@ -602,15 +531,13 @@ class UploadSharePointFileTool(O365Tool):
             destination_filenames = [rename_as] if rename_as else None
 
             upload_results = await client.upload_files(
-                filenames=filenames,
-                destination=destination,
-                destination_filenames=destination_filenames
+                filenames=filenames, destination=destination, destination_filenames=destination_filenames
             )
 
             if not upload_results:
                 raise RuntimeError("Upload failed")
 
-            result = upload_results[0]['filename']
+            result = upload_results[0]["filename"]
 
             self.logger.info(f"Uploaded successfully: {result['name']}")
 
@@ -618,10 +545,10 @@ class UploadSharePointFileTool(O365Tool):
                 "site": site,
                 "library": library,
                 "folder_path": folder_path,
-                "uploaded_file": result['name'],
-                "size": result['size'],
-                "web_url": result.get('web_url', ''),
-                "server_relative_url": result.get('serverRelativeUrl', '')
+                "uploaded_file": result["name"],
+                "size": result["size"],
+                "web_url": result.get("web_url", ""),
+                "server_relative_url": result.get("serverRelativeUrl", ""),
             }
 
         except Exception as e:
@@ -634,8 +561,92 @@ class UploadSharePointFileTool(O365Tool):
 # ============================================================================
 
 __all__ = [
-    'ListSharePointFilesTool',
-    'SearchSharePointFilesTool',
-    'DownloadSharePointFileTool',
-    'UploadSharePointFileTool'
+    "ListSharePointFilesTool",
+    "SearchSharePointFilesTool",
+    "DownloadSharePointFileTool",
+    "UploadSharePointFileTool",
 ]
+
+
+# ============================================================================
+# SHAREPOINT DRIVE DELTA TOOL (FEAT-539 M8)
+# ============================================================================
+
+
+class DeltaSharePointFilesArgs(O365ToolArgsSchema):
+    """Arguments for enumerating SharePoint drive changes."""
+
+    drive_id: str = Field(
+        description=(
+            "Identifier of the SharePoint document library drive to enumerate. "
+            "Resolved from configuration by the caller — never expanded from "
+            "model-supplied endpoints."
+        )
+    )
+    delta_token: Optional[str] = Field(
+        default=None,
+        description=("Opaque delta link committed by a previous run. Omit for a full " "enumeration."),
+    )
+    folder_path: Optional[str] = Field(
+        default=None,
+        description="Keep only items whose folder path contains this fragment.",
+    )
+    max_pages: Optional[int] = Field(
+        default=None,
+        description="Upper bound on delta pages followed in this call.",
+    )
+
+
+class DeltaSharePointFilesTool(O365Tool):
+    """List SharePoint drive changes since a delta token.
+
+    Wraps the shared :class:`~parrot_tools.o365.delta.DriveDeltaReader`, so
+    paging, tombstones, 410 rescan and bounded retries behave identically to
+    the OneDrive tool. The tool reports what changed; it never commits a
+    cursor or ingests a document — that is the consumer's decision.
+    """
+
+    name: str = "delta_sharepoint_files"
+    description: str = (
+        "Enumerate changes (added, modified, deleted) in a SharePoint drive "
+        "since a delta token. Returns typed items, deletion tombstones and an "
+        "opaque cursor to resume from."
+    )
+    args_schema: Type[BaseModel] = DeltaSharePointFilesArgs
+
+    async def _execute_graph_operation(self, client: SharepointClient, **kwargs) -> Dict[str, Any]:
+        """Enumerate drive changes through the authenticated Graph client.
+
+        Args:
+            client: Authenticated client exposing ``graph_client``.
+            **kwargs: Tool parameters.
+
+        Returns:
+            Dict with typed items, tombstones and cursor state.
+        """
+        from .delta import DriveDeltaReader
+
+        drive_id = kwargs.get("drive_id")
+        reader = DriveDeltaReader(client.graph_client)
+        result = await reader.enumerate(
+            drive_id,
+            token=kwargs.get("delta_token"),
+            folder_prefix=kwargs.get("folder_path"),
+            max_pages=kwargs.get("max_pages"),
+        )
+        self.logger.info(
+            "SharePoint delta for drive %s: %d items over %d pages",
+            drive_id,
+            len(result.items),
+            result.pages,
+        )
+        return {
+            "drive_id": drive_id,
+            "items": [item.model_dump(mode="json") for item in result.items],
+            "tombstones": [item.item_id for item in result.tombstones],
+            "delta_link": result.delta_link,
+            "pages": result.pages,
+            "complete": result.complete,
+            "truncated": result.truncated,
+            "rescan_required": result.rescan_required,
+        }
