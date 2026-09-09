@@ -9,8 +9,21 @@ scope — is injected.
 ``ingest_delta`` is the one with teeth. Its cursor rule is the whole point:
 the committed delta link only advances once **every** item in the batch is
 durably processed or explicitly recorded as skipped, so an interrupted run
-replays idempotently instead of losing changes. A 410 triggers a full
-rescan; a partial listing is never interpreted as mass deletion.
+replays idempotently instead of losing changes.
+
+A 410 means the cursor is dead, never that everything was deleted. The job
+recovers by re-enumerating the drive in full — retaining the dead cursor
+would stall the source forever, since every later run would hit the same
+410. Because a deletion that happened while the cursor was expired appears
+in no page, a recovered rescan is then reconciled against local state.
+
+That reconciliation is the one destructive path here, so it is deliberately
+timid. It withdraws a contract only when absence really is evidence: a
+complete whole-drive rescan of the same drive, with its final cursor, no
+item errors, and no other live file still backing the card. A folder-scoped
+rescan cannot prove absence at all — it only ever sees part of the drive —
+so its missing items are reported in ``suspected_deletions`` for an
+operator rather than acted on.
 """
 
 from __future__ import annotations
@@ -34,6 +47,7 @@ __all__ = (
     "RECOGNISED_RECURRENCE",
     "SourceConfig",
     "DeltaIngestResult",
+    "DeltaEnumerationError",
     "RenewalBucket",
     "RenewalsReport",
     "ObligationsDigest",
@@ -72,23 +86,44 @@ class SourceConfig(BaseModel):
         source: Stable source name (also the cursor key).
         drive_id: Graph drive id to enumerate.
         folder_path: Optional folder filter within the drive.
+        folder_id: Optional stable item id of that folder. Graph's delta feed
+            omits ``parentReference.path`` but reports ``parentReference.id``,
+            so an id is the exact filter; a path has to be resolved to one.
+            Supply it when it is known, to save the tool a lookup.
         download: Whether the job may download changed items.
     """
 
     source: str
     drive_id: str
     folder_path: Optional[str] = None
+    folder_id: Optional[str] = None
     download: bool = True
 
 
 class DeltaIngestResult(BaseModel):
-    """What one ``ingest_delta`` run did."""
+    """What one ``ingest_delta`` run did.
+
+    ``rescan_required`` means the committed cursor is dead **and** could not
+    be recovered — nothing was processed and the cursor is retained.
+    ``rescan_performed`` means a cursor expiry *was* recovered by
+    re-enumerating the drive in full, so the batch is a complete listing and
+    was reconciled against local state; ``reconciled`` lists the contracts
+    retracted because they were absent from that listing.
+
+    ``suspected_deletions`` lists source items missing from a rescan that
+    were **not** retracted because absence did not prove deletion — a
+    folder-scoped rescan only ever sees part of the drive. Those need an
+    operator's eye, not an automatic withdrawal.
+    """
 
     source: str
     report: IngestReport = Field(default_factory=IngestReport)
     cursor_committed: Optional[str] = None
     cursor_retained: Optional[str] = None
     rescan_required: bool = False
+    rescan_performed: bool = False
+    reconciled: list[str] = Field(default_factory=list)
+    suspected_deletions: list[str] = Field(default_factory=list)
     tombstoned: list[str] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)
 
@@ -199,18 +234,143 @@ async def ingest_delta(
     catalog = library.catalog
     result = DeltaIngestResult(source=source.source)
     committed = await catalog.get_delta_token(source.source)
+    enumeration_started = clock()
 
-    page = await _enumerate(delta_tool, source, token=committed)
-    if page.get("rescan_required"):
-        # A 410 means "re-enumerate", never "everything was deleted".
-        result.rescan_required = True
+    try:
+        page = await _enumerate(delta_tool, source, token=committed)
+        if page.get("rescan_required"):
+            # A 410 means "re-enumerate", never "everything was deleted".
+            # Recover here rather than returning: a tool that only *signals*
+            # the expiry would otherwise stall this source forever, because
+            # the same dead cursor is retained and replayed on every run.
+            logger.info(
+                "Delta token expired for %s; re-enumerating the drive in full",
+                source.source,
+            )
+            page = await _enumerate(delta_tool, source, token=None, full=True)
+            result.rescan_performed = True
+    except DeltaEnumerationError as exc:
+        # A failed enumeration is not an empty one: keep the cursor so the
+        # next run replays instead of advancing over unseen changes.
+        result.errors.append(f"delta enumeration failed: {exc}")
         result.cursor_retained = committed
-        logger.info("Delta token expired for %s; a full rescan is required", source.source)
+        logger.warning("Delta enumeration failed for %s: %s", source.source, exc)
         return result
+
+    if page.get("rescan_required"):
+        # Still unusable after a full re-enumeration. Touch nothing.
+        result.rescan_required = True
+        result.rescan_performed = False
+        result.cursor_retained = committed
+        logger.warning(
+            "Delta enumeration for %s still reports a required rescan; "
+            "cursor retained and nothing processed",
+            source.source,
+        )
+        return result
+
+    # The tool may have recovered the expiry internally and handed us the
+    # full rescan already; that is equally a rescan for reconciliation.
+    if page.get("reset_performed"):
+        result.rescan_performed = True
 
     items: list[dict[str, Any]] = list(page.get("items") or [])
     tombstones = set(page.get("tombstones") or [])
     rows: list[IngestItemReport] = []
+
+    async def _still_referenced(contract_id: str, drive_id: str, item_id: str) -> bool:
+        """Whether another live source item still backs this contract.
+
+        Identical files deduplicate onto one card, so the disappearance of
+        one source file does not mean the contract is gone.
+        """
+        for other in await catalog.list_source_items(source.source):
+            if other.deleted or other.contract_id != contract_id:
+                continue
+            if (other.drive_id, other.item_id) != (drive_id, item_id):
+                return True
+        return False
+
+    async def retract(
+        *,
+        drive_id: str,
+        item_id: str,
+        current_uri: str,
+        contract_id: Optional[str],
+        reason: str,
+    ) -> None:
+        """Record a source item as gone and retract its projection.
+
+        The catalog history, the archived evidence and the original document
+        all survive; only the indexed projection is withdrawn.
+
+        The projection is withdrawn **before** the source item is marked
+        deleted. A failure part-way therefore leaves the item un-deleted and
+        so eligible for the next run, instead of stranding a contract that
+        is flagged gone but still indexed.
+        """
+        retracted = False
+        if contract_id:
+            if await _still_referenced(contract_id, drive_id, item_id):
+                rows.append(
+                    IngestItemReport(
+                        source_uri=current_uri,
+                        outcome="skipped",
+                        contract_id=contract_id,
+                        reason="source item gone, but another live file still backs this contract",
+                    )
+                )
+            else:
+                try:
+                    await catalog.remove(contract_id)
+                    if graph_loader is not None:
+                        await graph_loader.retract(contract_id)
+                except Exception as exc:  # noqa: BLE001 - retryable next run
+                    # Leave the source item un-deleted below so the next run
+                    # retries, and make the run non-durable so the cursor is
+                    # retained rather than advancing past an unfinished
+                    # retraction.
+                    result.errors.append(f"{item_id}: retraction failed: {exc}")
+                    rows.append(
+                        IngestItemReport(
+                            source_uri=current_uri,
+                            outcome="error",
+                            contract_id=contract_id,
+                            reason=f"retraction failed: {exc}",
+                        )
+                    )
+                    return False
+                result.tombstoned.append(contract_id)
+                retracted = True
+                rows.append(
+                    IngestItemReport(
+                        source_uri=current_uri,
+                        outcome="skipped",
+                        contract_id=contract_id,
+                        reason=reason,
+                    )
+                )
+        else:
+            rows.append(
+                IngestItemReport(
+                    source_uri=current_uri,
+                    outcome="skipped",
+                    reason="tombstone for an item that was never carded",
+                )
+            )
+
+        await catalog.upsert_source_item(
+            SourceItem(
+                source=source.source,
+                drive_id=drive_id,
+                item_id=item_id,
+                current_uri=current_uri,
+                contract_id=contract_id,
+                deleted=True,
+                last_seen_at=clock(),
+            )
+        )
+        return retracted
 
     for item in items:
         item_id = item.get("item_id")
@@ -219,41 +379,13 @@ async def ingest_delta(
         current_uri = item.get("web_url") or item.get("path") or item_id
 
         if item_id in tombstones or item.get("deleted"):
-            # A tombstone retracts the projection; catalog history, the
-            # archived evidence and the original document all survive.
-            contract_id = known.contract_id if known else None
-            await catalog.upsert_source_item(
-                SourceItem(
-                    source=source.source,
-                    drive_id=drive_id,
-                    item_id=item_id,
-                    current_uri=current_uri,
-                    contract_id=contract_id,
-                    deleted=True,
-                    last_seen_at=clock(),
-                )
+            await retract(
+                drive_id=drive_id,
+                item_id=item_id,
+                current_uri=current_uri,
+                contract_id=known.contract_id if known else None,
+                reason="source item was deleted; contract retracted",
             )
-            if contract_id:
-                await catalog.remove(contract_id)
-                if graph_loader is not None:
-                    await graph_loader.retract(contract_id)
-                result.tombstoned.append(contract_id)
-                rows.append(
-                    IngestItemReport(
-                        source_uri=current_uri,
-                        outcome="skipped",
-                        contract_id=contract_id,
-                        reason="source item was deleted; contract retracted",
-                    )
-                )
-            else:
-                rows.append(
-                    IngestItemReport(
-                        source_uri=current_uri,
-                        outcome="skipped",
-                        reason="tombstone for an item that was never carded",
-                    )
-                )
             continue
 
         if item.get("is_folder"):
@@ -315,6 +447,90 @@ async def ingest_delta(
             )
         )
 
+    # ----------------------------------------------------------------
+    # Post-reset reconciliation
+    #
+    # Microsoft's resynchronisation guidance says to compare a rescan
+    # against local state. The danger is the inverse error: treating a
+    # listing that is merely *narrower* than local state as proof of
+    # deletion, and silently withdrawing real contracts. Absence is only
+    # evidence when the listing genuinely covers everything we hold.
+    # ----------------------------------------------------------------
+    reconcilable = (
+        result.rescan_performed
+        # A first run has no local state to reconcile against.
+        and committed
+        # No item errored, so a gap is not just a failure.
+        and result.durable
+        # The walk actually reached the end...
+        and page.get("complete")
+        # ...and produced the cursor that proves it.
+        and page.get("delta_link")
+        # The tool reported an explicit item list rather than omitting it.
+        and isinstance(page.get("items"), list)
+    )
+    if result.rescan_performed and not reconcilable:
+        logger.info(
+            "Rescan of %s not reconciled (durable=%s complete=%s cursor=%s)",
+            source.source,
+            result.durable,
+            bool(page.get("complete")),
+            bool(page.get("delta_link")),
+        )
+
+    if reconcilable:
+        # A folder-scoped rescan only ever sees part of the drive, so an
+        # item outside the folder — or one the filter could not place — is
+        # absent for reasons that have nothing to do with deletion. Report
+        # those instead of acting on them.
+        scoped = bool(source.folder_path or source.folder_id)
+        seen = {(item.get("drive_id") or source.drive_id, item.get("item_id")) for item in items}
+
+        for known_item in await catalog.list_source_items(source.source):
+            if known_item.deleted:
+                continue
+            # Reconcile only the drive we actually enumerated: one source
+            # name may span drives, and a rescan of one says nothing about
+            # the others.
+            if known_item.drive_id != source.drive_id:
+                continue
+            if (known_item.drive_id, known_item.item_id) in seen:
+                continue
+            # Mitigation against a concurrent run having just written this
+            # item: anything touched after our enumeration began was not in
+            # the snapshot we are reasoning about. (Serialising runs per
+            # source is the real fix; this only narrows the window.)
+            if known_item.last_seen_at is not None and known_item.last_seen_at > enumeration_started:
+                continue
+
+            if scoped:
+                result.suspected_deletions.append(known_item.item_id)
+                continue
+
+            if await retract(
+                drive_id=known_item.drive_id,
+                item_id=known_item.item_id,
+                current_uri=known_item.current_uri or known_item.item_id,
+                contract_id=known_item.contract_id,
+                reason="absent from a complete rescan; contract retracted",
+            ):
+                result.reconciled.append(known_item.contract_id)
+
+        if result.reconciled:
+            logger.info(
+                "Rescan of %s retracted %d contract(s) missed while the cursor was expired",
+                source.source,
+                len(result.reconciled),
+            )
+        if result.suspected_deletions:
+            logger.warning(
+                "Rescan of %s is folder-scoped, so %d missing item(s) were "
+                "reported rather than retracted: %s",
+                source.source,
+                len(result.suspected_deletions),
+                ", ".join(sorted(result.suspected_deletions)),
+            )
+
     result.report = IngestReport(items=rows)
 
     delta_link = page.get("delta_link")
@@ -340,17 +556,94 @@ async def ingest_delta(
     return result
 
 
-async def _enumerate(delta_tool: Any, source: SourceConfig, *, token: Optional[str]) -> dict[str, Any]:
-    """Call whichever delta surface the injected tool exposes."""
-    kwargs = {
+class DeltaEnumerationError(RuntimeError):
+    """The delta tool could not be driven, or reported a failure."""
+
+
+def _delta_payload(outcome: Any) -> dict[str, Any]:
+    """Normalise a delta call's return value into a plain payload dict.
+
+    An ``O365Tool`` answers with a ``ToolResult``; a plain helper or a test
+    double answers with the payload directly. Both are accepted, but an
+    error result is raised rather than being mistaken for an empty page —
+    treating a failed enumeration as "no changes" would let the cursor
+    advance over unseen work.
+
+    Args:
+        outcome: Whatever the delta surface returned.
+
+    Returns:
+        The payload dict.
+
+    Raises:
+        DeltaEnumerationError: If the tool reported an error, or returned
+            something that is not a payload.
+    """
+    if isinstance(outcome, dict):
+        status = outcome.get("status")
+        if outcome.get("error") or (status is not None and status != "success"):
+            raise DeltaEnumerationError(outcome.get("error") or f"delta tool returned status={status!r}")
+        return outcome
+    status = getattr(outcome, "status", None)
+    if status is not None:
+        if status != "success" or getattr(outcome, "error", None):
+            raise DeltaEnumerationError(getattr(outcome, "error", None) or f"delta tool returned status={status!r}")
+        payload = getattr(outcome, "result", None)
+        if isinstance(payload, dict):
+            return payload
+        raise DeltaEnumerationError(f"delta tool returned a non-dict result: {type(payload).__name__}")
+    raise DeltaEnumerationError(f"delta tool returned an unusable value: {type(outcome).__name__}")
+
+
+async def _enumerate(
+    delta_tool: Any,
+    source: SourceConfig,
+    *,
+    token: Optional[str],
+    full: bool = False,
+) -> dict[str, Any]:
+    """Call whichever delta surface the injected tool exposes.
+
+    Args:
+        delta_tool: Either an ``O365Tool``-shaped delta tool or a plain
+            helper exposing ``enumerate(**kwargs)``.
+        source: The configured source scope.
+        token: The committed cursor to resume from.
+        full: Ignore ``token`` and enumerate the drive from scratch.
+
+    Returns:
+        The delta payload dict.
+
+    Raises:
+        DeltaEnumerationError: If the tool exposes no usable surface, or
+            reported a failure.
+    """
+    kwargs: dict[str, Any] = {
         "drive_id": source.drive_id,
-        "delta_token": token,
+        "delta_token": None if full else token,
         "folder_path": source.folder_path,
     }
-    if hasattr(delta_tool, "_execute_graph_operation"):
-        client = getattr(delta_tool, "client", None)
-        return await delta_tool._execute_graph_operation(client, **kwargs)
-    return await delta_tool.enumerate(**kwargs)
+    if source.folder_id:
+        # The exact filter, when the deployment knows it. Only sent when set,
+        # so a tool without that argument is unaffected.
+        kwargs["folder_id"] = source.folder_id
+
+    enumerate_surface = getattr(delta_tool, "enumerate", None)
+    if callable(enumerate_surface):
+        return _delta_payload(await enumerate_surface(**kwargs))
+
+    # An O365Tool must be driven through its public `run()`, which acquires
+    # the authenticated Graph client via `_get_client()` and wraps failures.
+    # Calling `_execute_graph_operation` directly skips authentication and
+    # has no client to pass — `O365Tool` exposes `_client`, never `.client`.
+    run_surface = getattr(delta_tool, "run", None)
+    if callable(run_surface):
+        return _delta_payload(await run_surface(**kwargs))
+
+    raise DeltaEnumerationError(
+        f"{type(delta_tool).__name__} exposes neither enumerate() nor run(); "
+        f"it cannot be used as a delta tool"
+    )
 
 
 # --------------------------------------------------------------------------
