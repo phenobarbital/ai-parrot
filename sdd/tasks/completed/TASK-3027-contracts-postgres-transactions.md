@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-539 - Contracts Card & Ontology
 **Spec**: `sdd/specs/contracts-card-ontology.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2–4h)
 **Depends-on**: TASK-3026
@@ -99,4 +99,38 @@ Store execution logs in `artifacts/logs/task-3027.log`. Use frozen dates, synthe
 
 ## Completion Note
 
-Pending execution. Record executor, completion date, implementation summary, validation evidence and deviations when this task is completed.
+Completed 2026-09-09 by sdd-worker (Claude Opus 5).
+
+**Implementation**: created `parrot/knowledge/contracts/catalog_postgres.py` —
+`PostgresContractCatalog` with lazy asyncpg import (actionable
+`ai-parrot[graphindex-postgres]` error), owned-or-injected pool (`close()` never
+closes an injected pool), and `CONTRACTS_DDL`: 30 idempotent statements creating all
+ten spec §2 tables in the validated per-tenant schema — contracts (generated English
+`search_vector` + GIN, unique source_uri/source_sha256, typed status/verification/
+date/owner indexes), obligations, contract_versions, party_aliases, contract_answers,
+source_delta_tokens, source_items, relation_judgements, contract_relations and
+publication_outbox. Write path: `upsert()` runs one transaction — `SELECT ... FOR
+UPDATE` revision check (`CatalogConflictError`), duplicate sha/URI detection
+(`DuplicateSourceError`, plus a `UniqueViolationError` translation for races), card
+row, full obligation-set replacement, appended version/revision row and idempotent
+outbox enqueue. `remove()` is a retraction (card + obligations inactive, tombstones
+queued, history kept). Point reads: get/find_by_sha/find_by_source_uri/taken_slugs/
+obligations_for/versions/enqueue_publication. Query and administration methods raise
+an explicit NotImplementedError naming their owning tasks (TASK-3028 / TASK-3029).
+
+**Validation**: `pytest .../test_catalog_transactions.py -q` -> **23 passed** against
+a real Postgres 16 (disposable container, explicit `GRAPHINDEX_PG_DSN`, temporary
+schemas dropped per test). Live coverage: repeated DDL, atomic write, injected
+mid-transaction failure rolls back card+obligations+versions+outbox, stale-revision
+rejection, concurrent verify/refresh (exactly one winner), duplicate sha and URI
+without data loss, effective interval preserved while an administrative correction
+records a new revision without fabricating a date, retraction, and two temporary
+schemas that cannot leak (both tenants reuse the same slug). Offline: DDL shape/
+idempotency/indexes, no-default-DSN rule, schema identifier rejection, injected pool
+not closed, missing-asyncpg error, and an AST guard proving `self.schema` is the only
+value ever interpolated into SQL. Full contracts suite 131 passed
+(`artifacts/logs/task-3027.log`); ruff clean.
+
+**Deviations**: the `contract_answers` authorization column is named
+`authorization_json` — `authorization` is a reserved word in Postgres and the DDL
+failed against the live server with it.
