@@ -24,7 +24,8 @@
       "assigned_at": null,
       "started_at": "2026-09-09T01:49:58+00:00",
       "completed_at": "2026-09-09T02:01:06+00:00",
-      "file": "sdd/tasks/completed/TASK-3025-contracts-models-standards.md"
+      "file": "sdd/tasks/completed/TASK-3025-contracts-models-standards.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3026",
@@ -45,7 +46,8 @@
       "assigned_at": null,
       "started_at": "2026-09-09T01:49:58+00:00",
       "completed_at": "2026-09-09T02:06:47+00:00",
-      "file": "sdd/tasks/completed/TASK-3026-contracts-catalog-protocol.md"
+      "file": "sdd/tasks/completed/TASK-3026-contracts-catalog-protocol.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3027",
@@ -66,7 +68,8 @@
       "assigned_at": null,
       "started_at": "2026-09-09T01:49:58+00:00",
       "completed_at": "2026-09-09T02:14:14+00:00",
-      "file": "sdd/tasks/completed/TASK-3027-contracts-postgres-transactions.md"
+      "file": "sdd/tasks/completed/TASK-3027-contracts-postgres-transactions.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3028",
@@ -87,7 +90,8 @@
       "assigned_at": null,
       "started_at": "2026-09-09T01:49:58+00:00",
       "completed_at": "2026-09-09T02:17:32+00:00",
-      "file": "sdd/tasks/completed/TASK-3028-contracts-postgres-queries.md"
+      "file": "sdd/tasks/completed/TASK-3028-contracts-postgres-queries.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3029",
@@ -108,7 +112,8 @@
       "assigned_at": null,
       "started_at": "2026-09-09T01:49:58+00:00",
       "completed_at": "2026-09-09T02:21:17+00:00",
-      "file": "sdd/tasks/completed/TASK-3029-contracts-postgres-administration.md"
+      "file": "sdd/tasks/completed/TASK-3029-contracts-postgres-administration.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3030",
@@ -130,7 +135,8 @@
       "assigned_at": null,
       "started_at": "2026-09-09T01:49:58+00:00",
       "completed_at": "2026-09-09T02:32:05+00:00",
-      "file": "sdd/tasks/completed/TASK-3030-contracts-carding-extraction.md"
+      "file": "sdd/tasks/completed/TASK-3030-contracts-carding-extraction.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3031",
@@ -152,7 +158,8 @@
       "assigned_at": null,
       "started_at": "2026-09-09T01:49:58+00:00",
       "completed_at": "2026-09-09T02:36:26+00:00",
-      "file": "sdd/tasks/completed/TASK-3031-contracts-carding-derivations.md"
+      "file": "sdd/tasks/completed/TASK-3031-contracts-carding-derivations.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3032",
@@ -171,7 +178,8 @@
       "assigned_at": null,
       "started_at": "2026-09-09T01:49:58+00:00",
       "completed_at": "2026-09-09T02:23:50+00:00",
-      "file": "sdd/tasks/completed/TASK-3032-contracts-public-docx-helper.md"
+      "file": "sdd/tasks/completed/TASK-3032-contracts-public-docx-helper.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3033",
@@ -192,7 +200,8 @@
       "assigned_at": null,
       "started_at": "2026-09-09T01:49:58+00:00",
       "completed_at": "2026-09-09T02:40:01+00:00",
-      "file": "sdd/tasks/completed/TASK-3033-contracts-versioned-evidence.md"
+      "file": "sdd/tasks/completed/TASK-3033-contracts-versioned-evidence.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3034",
@@ -216,7 +225,8 @@
       "assigned_at": null,
       "started_at": "2026-09-09T01:49:58+00:00",
       "completed_at": "2026-09-09T02:47:37+00:00",
-      "file": "sdd/tasks/completed/TASK-3034-contracts-library-ingestion.md"
+      "file": "sdd/tasks/completed/TASK-3034-contracts-library-ingestion.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3035",
@@ -237,7 +247,8 @@
       "assigned_at": null,
       "started_at": "2026-09-09T01:49:58+00:00",
       "completed_at": "2026-09-09T02:52:22+00:00",
-      "file": "sdd/tasks/completed/TASK-3035-contracts-library-verification.md"
+      "file": "sdd/tasks/completed/TASK-3035-contracts-library-verification.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3036",
@@ -258,7 +269,8 @@
       "assigned_at": null,
       "started_at": "2026-09-09T01:49:58+00:00",
       "completed_at": "2026-09-09T02:58:24+00:00",
-      "file": "sdd/tasks/completed/TASK-3036-contracts-ontology-domain.md"
+      "file": "sdd/tasks/completed/TASK-3036-contracts-ontology-domain.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3037",
@@ -281,7 +293,8 @@
       "assigned_at": null,
       "started_at": "2026-09-09T01:49:58+00:00",
       "completed_at": "2026-09-09T03:02:29+00:00",
-      "file": "sdd/tasks/completed/TASK-3037-contracts-card-datasource.md"
+      "file": "sdd/tasks/completed/TASK-3037-contracts-card-datasource.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3038",
@@ -302,7 +315,8 @@
       "assigned_at": null,
       "started_at": "2026-09-09T01:49:58+00:00",
       "completed_at": "2026-09-09T03:07:20+00:00",
-      "file": "sdd/tasks/completed/TASK-3038-contracts-graph-publication.md"
+      "file": "sdd/tasks/completed/TASK-3038-contracts-graph-publication.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3039",
@@ -324,7 +338,8 @@
       "assigned_at": null,
       "started_at": "2026-09-09T01:49:58+00:00",
       "completed_at": "2026-09-09T03:13:12+00:00",
-      "file": "sdd/tasks/completed/TASK-3039-contracts-temporal-publication.md"
+      "file": "sdd/tasks/completed/TASK-3039-contracts-temporal-publication.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3040",
@@ -347,7 +362,8 @@
       "assigned_at": null,
       "started_at": "2026-09-09T01:49:58+00:00",
       "completed_at": "2026-09-09T03:17:58+00:00",
-      "file": "sdd/tasks/completed/TASK-3040-contracts-judged-relations.md"
+      "file": "sdd/tasks/completed/TASK-3040-contracts-judged-relations.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3041",
@@ -366,7 +382,8 @@
       "assigned_at": null,
       "started_at": "2026-09-09T01:49:58+00:00",
       "completed_at": "2026-09-09T03:22:18+00:00",
-      "file": "sdd/tasks/completed/TASK-3041-o365-delta-protocol.md"
+      "file": "sdd/tasks/completed/TASK-3041-o365-delta-protocol.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3042",
@@ -387,7 +404,8 @@
       "assigned_at": null,
       "started_at": "2026-09-09T01:49:58+00:00",
       "completed_at": "2026-09-09T03:25:41+00:00",
-      "file": "sdd/tasks/completed/TASK-3042-o365-delta-tools.md"
+      "file": "sdd/tasks/completed/TASK-3042-o365-delta-tools.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3043",
@@ -411,7 +429,8 @@
       "assigned_at": null,
       "started_at": "2026-09-09T01:49:58+00:00",
       "completed_at": "2026-09-09T03:31:54+00:00",
-      "file": "sdd/tasks/completed/TASK-3043-contracts-authorized-retrieval.md"
+      "file": "sdd/tasks/completed/TASK-3043-contracts-authorized-retrieval.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3044",
@@ -434,7 +453,8 @@
       "assigned_at": null,
       "started_at": "2026-09-09T01:49:58+00:00",
       "completed_at": "2026-09-09T03:34:21+00:00",
-      "file": "sdd/tasks/completed/TASK-3044-contracts-citation-verifier.md"
+      "file": "sdd/tasks/completed/TASK-3044-contracts-citation-verifier.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3045",
@@ -458,7 +478,8 @@
       "assigned_at": null,
       "started_at": "2026-09-09T01:49:58+00:00",
       "completed_at": "2026-09-09T03:36:46+00:00",
-      "file": "sdd/tasks/completed/TASK-3045-contracts-answer-service.md"
+      "file": "sdd/tasks/completed/TASK-3045-contracts-answer-service.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3046",
@@ -480,7 +501,8 @@
       "assigned_at": null,
       "started_at": "2026-09-09T01:49:58+00:00",
       "completed_at": "2026-09-09T03:41:40+00:00",
-      "file": "sdd/tasks/completed/TASK-3046-contracts-toolkit.md"
+      "file": "sdd/tasks/completed/TASK-3046-contracts-toolkit.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3047",
@@ -501,7 +523,8 @@
       "assigned_at": null,
       "started_at": "2026-09-09T01:49:58+00:00",
       "completed_at": "2026-09-09T03:44:01+00:00",
-      "file": "sdd/tasks/completed/TASK-3047-contracts-fixed-answer-flow.md"
+      "file": "sdd/tasks/completed/TASK-3047-contracts-fixed-answer-flow.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3048",
@@ -523,7 +546,8 @@
       "assigned_at": null,
       "started_at": "2026-09-09T01:49:58+00:00",
       "completed_at": "2026-09-09T03:47:35+00:00",
-      "file": "sdd/tasks/completed/TASK-3048-contracts-react-agent.md"
+      "file": "sdd/tasks/completed/TASK-3048-contracts-react-agent.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3049",
@@ -547,7 +571,8 @@
       "assigned_at": null,
       "started_at": "2026-09-09T01:49:58+00:00",
       "completed_at": "2026-09-09T03:51:22+00:00",
-      "file": "sdd/tasks/completed/TASK-3049-contracts-delta-ingest-job.md"
+      "file": "sdd/tasks/completed/TASK-3049-contracts-delta-ingest-job.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3050",
@@ -569,7 +594,8 @@
       "assigned_at": null,
       "started_at": "2026-09-09T01:49:58+00:00",
       "completed_at": "2026-09-09T03:53:16+00:00",
-      "file": "sdd/tasks/completed/TASK-3050-contracts-report-jobs.md"
+      "file": "sdd/tasks/completed/TASK-3050-contracts-report-jobs.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3051",
@@ -594,7 +620,8 @@
       "assigned_at": null,
       "started_at": "2026-09-09T01:49:58+00:00",
       "completed_at": "2026-09-09T03:56:13+00:00",
-      "file": "sdd/tasks/completed/TASK-3051-contracts-operator-cli.md"
+      "file": "sdd/tasks/completed/TASK-3051-contracts-operator-cli.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3052",
@@ -613,7 +640,8 @@
       "assigned_at": null,
       "started_at": "2026-09-09T01:49:58+00:00",
       "completed_at": "2026-09-09T02:27:04+00:00",
-      "file": "sdd/tasks/completed/TASK-3052-contracts-optional-dependency.md"
+      "file": "sdd/tasks/completed/TASK-3052-contracts-optional-dependency.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3053",
@@ -635,7 +663,8 @@
       "assigned_at": null,
       "started_at": "2026-09-09T01:49:58+00:00",
       "completed_at": "2026-09-09T04:20:31+00:00",
-      "file": "sdd/tasks/completed/TASK-3053-contracts-deployment-documentation.md"
+      "file": "sdd/tasks/completed/TASK-3053-contracts-deployment-documentation.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3054",
@@ -683,7 +712,8 @@
       "assigned_at": null,
       "started_at": "2026-09-09T01:49:58+00:00",
       "completed_at": "2026-09-09T04:14:27+00:00",
-      "file": "sdd/tasks/completed/TASK-3054-contracts-live-integration.md"
+      "file": "sdd/tasks/completed/TASK-3054-contracts-live-integration.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3055",
@@ -704,7 +734,8 @@
       "assigned_at": null,
       "started_at": "2026-09-09T01:49:58+00:00",
       "completed_at": "2026-09-09T04:18:12+00:00",
-      "file": "sdd/tasks/completed/TASK-3055-contracts-catalog-performance.md"
+      "file": "sdd/tasks/completed/TASK-3055-contracts-catalog-performance.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3056",
