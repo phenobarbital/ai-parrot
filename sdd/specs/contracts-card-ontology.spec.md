@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-539
 **Date**: 2026-09-09
 **Author**: Jesus Lara / Codex
-**Status**: draft
+**Status**: approved
 **Target version**: Pilot v1 on ai-parrot 1.0.0
 
 Author and target are draft defaults pending review; they do not select a release date.
