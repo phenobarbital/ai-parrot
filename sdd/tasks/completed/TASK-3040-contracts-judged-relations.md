@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-539 - Contracts Card & Ontology
 **Spec**: `sdd/specs/contracts-card-ontology.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2–4h)
 **Depends-on**: TASK-3029, TASK-3035, TASK-3038
@@ -105,4 +105,35 @@ Store execution logs in `artifacts/logs/task-3040.log`. Use frozen dates, synthe
 
 ## Completion Note
 
-Pending execution. Record executor, completion date, implementation summary, validation evidence and deviations when this task is completed.
+Completed 2026-09-09 by sdd-worker (Claude Opus 5).
+
+**Implementation**: created `parrot/knowledge/contracts/relations.py` and wired
+`ContractLibrary.relate_contracts`. `candidate_contracts` builds a deterministic,
+bounded candidate set (shared counterparty, then contract family, then overlapping
+obligation kinds, then contract id; `max_candidates` default 8).
+`ContractRelationStage.relate` spends exactly **one** structured call per source
+contract per batch, records every outcome including `none` — and explicitly records
+`none` for candidates the judge did not answer, so replay does not re-ask — with
+model, rationale, confidence and both endpoint source hashes. It rejects
+self-judgements and any endpoint that was not one of the offered candidates (which is
+also what blocks unknown/cross-tenant endpoints), and constrains
+`references_obligation` to two obligations of *different* contracts, degrading an
+invalid one to `none`. `conflicts_with` pairs are canonicalised so the symmetric
+relation is stored once and traverses from either endpoint. Every run first calls
+`invalidate_relations` for the source hash, so a refreshed document deactivates
+judgements made against the old text (history is preserved, not deleted). Without
+`force` an active judgement is skipped; with `force` a new judgement is appended and
+the active result replaced. The library gained `relate_contracts(contract_ids,
+force=False)` plus an opt-in `relate_on_ingest` flag — judgement is explicit and
+never happens at retrieval time.
+
+**Validation**: `pytest .../test_relations.py -q` -> 23 passed (whole contracts suite
+473 passed, `artifacts/logs/task-3040.log`); ruff clean. A counting fake adapter pins
+one call per source contract, candidate membership/ordering/bounding, self and
+non-candidate endpoint rejection, the canonical symmetric pair traversable both ways,
+cross-contract obligation validation, unknown outcomes degrading to `none`, batch
+failure isolation, replay reuse vs `--force` history, source-hash invalidation, a
+`none` verdict removing a previously active relation, the ingest wiring, and that
+deterministic reads never invoke the judge.
+
+**Deviations**: none.
