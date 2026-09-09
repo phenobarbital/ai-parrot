@@ -349,3 +349,38 @@ were mutation-checked to confirm their tests fail without them. A
 folder-scoped rescan cannot prove absence at all, so its missing items are
 reported in `suspected_deletions` rather than acted on. `SourceConfig` also
 gains `folder_id`, the only exact folder filter Graph's delta feed supports.
+
+### Final round — cross-source dedup hole closed
+
+Review of the `contracts/jobs.py` fixes confirmed the reconciliation guards
+hold and found one genuine remaining gap, fixed in `77a6ddde2`:
+
+- The "another live file still backs this card" guard searched only the
+  source being processed. Dedup crosses source boundaries, so a card still
+  backed by a live file under a *different* `SourceConfig.source` could be
+  withdrawn. `AbstractContractCatalog.list_source_items()` now takes an
+  **optional** source (omit it for every source) — a widening, not a
+  breaking change — and the guard searches across all sources.
+- A failed recovery attempt now reports `rescan_required=True`; the flag was
+  previously set after the retry call, so a raising retry left both flags
+  False despite a dead cursor.
+- Docstrings corrected (`rescan_performed` = *attempted*; reconciliation is
+  separately gated) and `_enumerate` documents what a plain-dict tool must
+  guarantee for the keys that gate the destructive path.
+- Four tests were pinning less than they claimed — the dedup guard now
+  builds its shared-card state directly instead of self-skipping when the
+  library's dedup heuristics do not fire, the first-run guard seeds a
+  pre-existing absent row, and the real-tool test asserts the document was
+  carded rather than only that the plumbing ran.
+
+Lane finished: both delta tools are now registered in `TOOL_REGISTRY`, and
+`docs/knowledge/contracts.md` is in line with the implementation (it still
+described origin-only link validation, a 410 surfacing as `rescan_required`,
+and said nothing about folder-id scoping, reconciliation or
+`suspected_deletions`).
+
+**Status: this lane is complete and ready for `/sdd-done`.** Full validation:
+377 passed / 5 skipped across the tools contracts + both delta suites, and
+435 passed / 50 skipped across core `knowledge/contracts` (which includes
+the catalog protocol-conformance test). The only ruff findings in the
+touched packages are the eight that pre-date this work on `dev`.
