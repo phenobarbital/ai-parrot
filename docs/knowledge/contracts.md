@@ -288,10 +288,18 @@ narrowed to its own contracts exactly like `my_contracts`.
 ```bash
 python -m parrot_tools.contracts --user bob@troc --role contract_reader queue
 python -m parrot_tools.contracts --user bob@troc --role contract_reader search "SOC 2"
-python -m parrot_tools.contracts --user bob@troc add /mnt/legal/acme-msa.pdf
-python -m parrot_tools.contracts --user bob@troc add-folder /mnt/legal --recursive
-python -m parrot_tools.contracts --user bob@troc refresh acme-msa --source /mnt/legal/acme-msa.pdf
-python -m parrot_tools.contracts --user bob@troc relate acme-msa --force
+
+# State-changing commands require the owner role (default deny), and are
+# authorized before the write happens — the CLI is a transport like any
+# other, not an exemption from the gate:
+python -m parrot_tools.contracts --user bob@troc --role contract_owner \
+  add /mnt/legal/acme-msa.pdf
+python -m parrot_tools.contracts --user bob@troc --role contract_owner \
+  add-folder /mnt/legal --recursive
+python -m parrot_tools.contracts --user bob@troc --role contract_owner \
+  refresh acme-msa --source /mnt/legal/acme-msa.pdf
+python -m parrot_tools.contracts --user bob@troc --role contract_owner \
+  relate acme-msa --force
 python -m parrot_tools.contracts --user bob@troc --role contract_owner publish
 
 # Administrative actions need --confirm AND the owner role:
