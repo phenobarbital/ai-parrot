@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-539 - Contracts Card & Ontology
 **Spec**: `sdd/specs/contracts-card-ontology.spec.md`
-**Status**: pending
+**Status**: done-with-issues
 **Priority**: high
 **Estimated effort**: M (2–4h)
 **Depends-on**: TASK-3025, TASK-3026, TASK-3027, TASK-3028, TASK-3029, TASK-3030, TASK-3031, TASK-3032, TASK-3033, TASK-3034, TASK-3035, TASK-3036, TASK-3037, TASK-3038, TASK-3039, TASK-3040, TASK-3041, TASK-3042, TASK-3043, TASK-3044, TASK-3045, TASK-3046, TASK-3047, TASK-3048, TASK-3049, TASK-3050, TASK-3051, TASK-3052
@@ -134,4 +134,59 @@ Store execution logs in `artifacts/logs/task-3054.log`. Use frozen dates, synthe
 
 ## Completion Note
 
-Pending execution. Record executor, completion date, implementation summary, validation evidence and deviations when this task is completed.
+Completed 2026-09-09 by sdd-worker (Claude Opus 5), **done-with-issues** — see the upstream defect below.
+
+**Implementation**: created the shared fixtures
+(`packages/ai-parrot/tests/knowledge/contracts/conftest.py`,
+`packages/ai-parrot-tools/tests/contracts/conftest.py`) — synthetic English MSA/SOW/
+amendment/NDA/contradictory-clause corpus, generated DOCX, two-page text PDF and
+image-only PDF, heading-less TXT, frozen clocks, and explicit live-service gates
+(`GRAPHINDEX_PG_DSN`, `CONTRACTS_ARANGO_URL`) — plus
+`test_integration.py` (cross-store) and `test_end_to_end.py` (vertical slice).
+
+**Services actually exercised** (not skipped): PostgreSQL 16 with pgvector
+(disposable container, temporary schemas per test) and ArangoDB 3.11.14 (disposable
+container, throwaway database per test).
+
+**Validation** (`artifacts/logs/task-3054.log`):
+- core contracts suite: **482 passed**
+- tools contracts suite: **188 passed**
+- regressions: bookstore **150 passed**, ontology **206 passed**, O365 delta
+  **51 passed**
+- graphindex: 783 passed, 4 failed — **pre-existing on dev**, reproduced in the
+  untouched main checkout (`test_schema.py::TestEdgeKind::test_all_values`,
+  `test_projection.py::TestMappingTables::test_all_edge_kinds_mapped`, two
+  `test_meta_ontology.py::TestEnumCompleteness` cases). Untouched by this feature.
+
+Live coverage includes: ingest -> verify -> refresh against a real catalog with the
+human correction surviving and the v1 citation still resolving; an injected failure
+rolling back card/versions/outbox; two tenants reusing the same slug and node ids with
+no evidence leak and a cross-tenant reference refused; md/txt/docx/text-PDF ingestion
+with page anchors and an explicit image-only-PDF skip; SQL reports with no Arango;
+temporal successive revisions, recorded history and a faithful crash-after-commit
+recovery (outbox reset) reusing the same commit with `list_commits` proving no
+duplicate; **all ten AQL patterns executed against real ArangoDB with real bind
+values** (first-publish standard link, party role, family de-duplication, signatories,
+obligations, effective-version selection, my_contracts, search hits mapping back to
+contracts) plus a test that inactive endpoints are filtered; and the full vertical
+slice (fake Graph delta -> ingest -> verify -> temporal publish -> fixed flow AND
+ReAct producer -> toolkit reads -> retire -> suppressed section -> refresh ->
+watcher reports) with every outcome audited, plus idempotent re-runs and an
+end-to-end denial for an unauthorized principal.
+
+**BLOCKING UPSTREAM DEFECT (reported, not patched)**:
+`OntologyGraphStore.upsert_nodes` builds `UPSERT { @key_field: doc[@key_field] }`;
+ArangoDB rejects a bind parameter as an UPSERT example attribute name (ERR 1501,
+'expecting object literal with literal attribute names in example'). The individual
+fallback path uses the same construct and fails identically, so **no node reaches a
+real ArangoDB through that API** — reproduced standalone against 3.11.14 (a literal
+attribute name works). It lives in `parrot/knowledge/ontology/graph_store.py`, a
+generic module this feature is explicitly forbidden to modify, so it is pinned by
+`test_the_generic_node_upsert_is_broken_against_a_real_graph` and reported instead of
+patched. Consequence: `ContractGraphLoader.publish_all` cannot be verified end to end
+against a live graph until it is fixed; the ten patterns were therefore verified
+against documents written with literal-attribute AQL. **AC5/AC6 remain partially
+pending on that fix.**
+
+**Deviations**: the two suites are run as two pytest invocations rather than one — both
+packages' test trees are rooted at `tests`, so collecting them together collides.

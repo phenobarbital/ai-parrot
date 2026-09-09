@@ -644,7 +644,7 @@
       "feature_id": "FEAT-539",
       "feature": "contracts-card-ontology",
       "spec": "sdd/specs/contracts-card-ontology.spec.md",
-      "status": "in-progress",
+      "status": "done-with-issues",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -682,8 +682,8 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": "2026-09-09T01:49:58+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3054-contracts-live-integration.md"
+      "completed_at": "2026-09-09T04:14:27+00:00",
+      "file": "sdd/tasks/completed/TASK-3054-contracts-live-integration.md"
     },
     {
       "id": "TASK-3055",
