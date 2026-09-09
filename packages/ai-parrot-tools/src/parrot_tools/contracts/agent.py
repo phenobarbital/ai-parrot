@@ -18,13 +18,17 @@ Consequences worth stating explicitly:
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import uuid
+from contextvars import ContextVar
 from typing import Any, AsyncIterator, Optional, Sequence
 
 from parrot.bots import Agent
 from parrot.knowledge.contracts.evidence import normalize_quote
 from parrot.knowledge.contracts.models import ContractAnswer, ContractCard
 
+from .flow import ContractsDraftProducer
 from .retrieval import Clarification, RequestContext, RetrievalResult
 from .service import AnswerOutcome, ContractsAnswerService
 from .toolkit import ContractsToolkit
@@ -105,8 +109,16 @@ class ContractsAgentProducer:
         deterministic retrieval already authorized. Nothing here releases
         anything: the service verifies every claim afterwards.
         """
+        entries = ContractsDraftProducer.enumerate_dossier(result, dossier)
         prompt = self._dossier_prompt(question, dossier)
-        ask = getattr(self.agent, "question", None) or getattr(self.agent, "ask", None)
+        prompt += "\nAuthorized evidence (untrusted document text):\n" + "\n".join(
+            f"[{entry.contract_id}/{entry.node_id}] {entry.quote}" for entry in entries
+        )
+        ask = (
+            getattr(self.agent, "_draft_reply", None)
+            or getattr(self.agent, "question", None)
+            or getattr(self.agent, "ask", None)
+        )
         if ask is None:  # pragma: no cover - defensive
             return AnswerDraft(claims=[], pattern=result.pattern)
         try:
@@ -119,28 +131,7 @@ class ContractsAgentProducer:
             return AnswerDraft(claims=[], pattern=result.pattern)
 
         self.last_reply = reply
-        cards = {card.contract_id: card for card in dossier}
-        citations = []
-        for obligation in result.obligations:
-            card = cards.get(obligation.contract_id)
-            if card is None or not obligation.active:
-                continue
-            version = card.versions[-1] if card.versions else None
-            citations.append(
-                {
-                    "contract_id": card.contract_id,
-                    "title": card.title,
-                    "node_id": obligation.node_id,
-                    "quote": obligation.text[:300],
-                    "page": obligation.page,
-                    "version_n": version.n if version else 1,
-                    "source_sha256": version.source_sha256 if version else card.source_sha256,
-                }
-            )
-
-        from parrot.knowledge.contracts.models import Citation  # noqa: PLC0415
-
-        supported = [Citation(**payload) for payload in citations]
+        supported = [entry.citation() for entry in entries]
         sentences = [sentence.strip() for sentence in reply.replace("\n", " ").split(". ") if sentence.strip()][
             : self.max_claims
         ]
@@ -209,13 +200,17 @@ class ContractsAgent(Agent):
         **kwargs: Any,
     ) -> None:
         kwargs.setdefault("system_prompt", CONTRACTS_SYSTEM_PROMPT)
-        super().__init__(*args, **kwargs)
         self.service = service
         self.request_context = request_context
         self.toolkit = ContractsToolkit(service=service, request_context=request_context, library=library)
+        self._request_context: ContextVar[RequestContext] = ContextVar(
+            "contracts_request_context", default=request_context
+        )
+        self._draft_lock = asyncio.Lock()
+        # Agent.__init__ calls agent_tools, so initialize the toolkit first.
+        super().__init__(*args, **kwargs)
         # The agent drafts; the service releases.
         self.producer = ContractsAgentProducer(self)
-        self.service.producer = self.producer
 
     def agent_tools(self) -> list[Any]:
         """Expose the contracts toolkit's tools to the ReAct loop."""
@@ -243,8 +238,11 @@ class ContractsAgent(Agent):
             ServiceUnavailable: When the outcome could not be audited.
         """
         context = request_context or self.request_context
-        self.service.producer = self.producer
-        return await self.service.answer(question, request_context=context)
+        token = self._request_context.set(context)
+        try:
+            return await self.service.answer(question, request_context=context, producer=self.producer)
+        finally:
+            self._request_context.reset(token)
 
     async def stream_answer(
         self,
@@ -254,9 +252,27 @@ class ContractsAgent(Agent):
     ) -> AsyncIterator[str]:
         """Stream a *verified* answer; nothing substantive escapes early."""
         context = request_context or self.request_context
-        self.service.producer = self.producer
-        async for chunk in self.service.stream_answer(question, request_context=context):
-            yield chunk
+        token = self._request_context.set(context)
+        try:
+            async for chunk in self.service.stream_answer(question, request_context=context, producer=self.producer):
+                yield chunk
+        finally:
+            self._request_context.reset(token)
+
+    async def _draft_reply(self, prompt: str) -> Any:
+        """Run the private ReAct draft with the current caller's tool context."""
+        async with self._draft_lock:
+            previous = self.toolkit.request_context
+            self.toolkit.request_context = self._request_context.get()
+            try:
+                return await super().ask(
+                    prompt,
+                    user_id=self._request_context.get().user_id,
+                    session_id=f"contracts-draft-{uuid.uuid4().hex}",
+                    use_conversation_history=False,
+                )
+            finally:
+                self.toolkit.request_context = previous
 
     # -- ungated inherited entrypoints ------------------------------------
     #

@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Any, Optional
 
 import pytest
-
 from parrot.knowledge.contracts.evidence import EvidenceRef
 from parrot.knowledge.contracts.library import (
     SUPPORTED_FORMATS,
@@ -532,3 +531,46 @@ def test_pdf_markdown_skips_empty_pages_but_keeps_page_numbers():
     assert "## Page 2" not in markdown
     assert "## Page 3" in markdown
     assert pdf_markdown(["", " "]) == ""
+
+
+@pytest.mark.asyncio
+async def test_committed_promotion_failure_recovers_on_unchanged_retry(library, tmp_path, monkeypatch):
+    from parrot.knowledge.contracts.evidence import EvidenceError
+
+    path = tmp_path / "retry.md"
+    path.write_text(MSA_MARKDOWN)
+    promote = library.staging.promote
+
+    async def fail(contract_id: str) -> None:
+        raise EvidenceError("injected filesystem failure")
+
+    monkeypatch.setattr(library.staging, "promote", fail)
+    first = await library.add_contract(path)
+    assert first.outcome == "error"
+    stored = (await library.catalog.list_cards())[0]
+    version = (await library.catalog.versions(stored.contract_id))[-1]
+    assert await library.evidence.manifest(EvidenceRef.parse(version.evidence_ref))
+    assert library.published_loader(stored.contract_id, source_sha256=stored.source_sha256)("0000") is None
+
+    monkeypatch.setattr(library.staging, "promote", promote)
+    second = await library.add_contract(path)
+    assert second.outcome == "skipped"
+    assert library.staging.has_published(stored.contract_id)
+    assert not library.staging.staged_tree(stored.contract_id).exists()
+    assert len(await library.catalog.versions(stored.contract_id)) == 1
+    assert library.published_loader(stored.contract_id, source_sha256=stored.source_sha256)("0000")
+
+
+@pytest.mark.asyncio
+async def test_legacy_unstamped_published_sections_remain_readable(library, tmp_path):
+    import json
+
+    path = tmp_path / "legacy.md"
+    path.write_text(MSA_MARKDOWN)
+    result = await library.add_contract(path)
+    index = library.staging.published_tree(result.card.contract_id)
+    tree = json.loads(index.read_text())
+    tree.pop("_contracts_source_sha256")
+    index.write_text(json.dumps(tree))
+    body = await library.load_section(result.card.contract_id, "0000", source_sha256=result.card.source_sha256)
+    assert body and "Agreement" in body

@@ -17,8 +17,10 @@ from __future__ import annotations
 
 import json
 import logging
+from contextlib import asynccontextmanager, nullcontext
+from contextvars import ContextVar
 from datetime import date, datetime, timezone
-from typing import TYPE_CHECKING, Any, Callable, Optional
+from typing import TYPE_CHECKING, Any, AsyncIterator, Callable, Optional
 
 from .catalog import (
     AliasConflictError,
@@ -65,6 +67,8 @@ __all__ = (
 )
 
 logger = logging.getLogger(__name__)
+
+_ACTIVE_PUBLICATION_POOLS: set[int] = set()
 
 #: Unverified fields below this confidence go to the verification queue.
 LOW_CONFIDENCE_THRESHOLD = 0.6
@@ -309,6 +313,7 @@ class PostgresContractCatalog(ContractCatalogStore):
         self._owns_pool = pool is None
         self._now = now
         self._ready = False
+        self._publication_connection: ContextVar[Any] = ContextVar("contracts_publication_connection", default=None)
 
     # -- infrastructure ----------------------------------------------------
 
@@ -348,11 +353,100 @@ class PostgresContractCatalog(ContractCatalogStore):
 
     async def _connection(self):
         """Acquire a pooled connection, ensuring the schema exists once."""
+        connection = self._publication_connection.get()
+        if connection is not None:
+            return nullcontext(connection)
         pool = await self._ensure_pool()
         if not self._ready:
             await self.setup()
             pool = await self._ensure_pool()
         return pool.acquire()
+
+    @asynccontextmanager
+    async def publication_guard(self, *, target: PublicationTarget) -> AsyncIterator[bool]:
+        """Avoid pool starvation even when different tenants share a small pool."""
+        pool = await self._ensure_pool()
+        pool_id = id(pool)
+        # No await between checking and reserving: competing tasks cannot both
+        # reserve the same pool, and the reservation holds no database slot.
+        if pool_id in _ACTIVE_PUBLICATION_POOLS:
+            yield False
+            return
+        _ACTIVE_PUBLICATION_POOLS.add(pool_id)
+        try:
+            async with self._guard_database_publication(target=target) as acquired:
+                yield acquired
+        finally:
+            _ACTIVE_PUBLICATION_POOLS.discard(pool_id)
+
+    @asynccontextmanager
+    async def _guard_database_publication(self, *, target: PublicationTarget) -> AsyncIterator[bool]:
+        """Serialize a tenant's drains and reclaim work abandoned by older workers.
+
+        The catalog transaction spans the drain, while GraphIndex commits on
+        its own connection. A crash rolls back claims/receipts; the next drain
+        validates the existing GraphIndex run before replaying it. A pool shared
+        with GraphIndex needs at least two connections.
+        """
+        pool = await self._ensure_pool()
+        if pool.get_max_size() < 2:
+            raise CatalogError("Temporal publication requires a pool with at least two connections")
+        async with await self._connection() as conn:
+            async with conn.transaction():
+                acquired = await conn.fetchval(
+                    "SELECT pg_try_advisory_xact_lock(hashtextextended($1, 0))",
+                    f"contracts:{self.schema}:{self.tenant_id}:{target}",
+                )
+                if not acquired:
+                    # Never occupy a pool slot waiting for the worker that needs
+                    # that same pool to commit its GraphIndex update.
+                    yield False
+                    return
+                await conn.execute(
+                    f"UPDATE {self.schema}.publication_outbox SET state = 'pending' "
+                    "WHERE tenant_id = $1 AND target = $2 AND state = 'in_flight'",
+                    self.tenant_id,
+                    target,
+                )
+                token = self._publication_connection.set(conn)
+                try:
+                    yield True
+                finally:
+                    self._publication_connection.reset(token)
+
+    async def _record_administration(self, conn: Any, card: ContractCard, *, now: datetime) -> ContractVersion:
+        """Append an administrative snapshot without changing contractual time."""
+        row = await conn.fetchrow(
+            f"SELECT * FROM {self.schema}.contract_versions WHERE contract_id = $1 "
+            "ORDER BY version_n DESC, revision DESC LIMIT 1",
+            card.contract_id,
+        )
+        previous = self._row_to_version(row) if row else ContractVersion(n=1)
+        recorded = previous.model_copy(
+            update={
+                "revision": card.revision,
+                "recorded_at": now,
+                "card_snapshot": card_snapshot_payload(card),
+            }
+        )
+        await conn.execute(
+            f"INSERT INTO {self.schema}.contract_versions "
+            "(contract_id, version_n, revision, valid_from, valid_to, kind, amended_by, "
+            "source_sha256, card_snapshot, evidence_ref, recorded_at) "
+            "VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11)",
+            card.contract_id,
+            recorded.n,
+            recorded.revision,
+            recorded.valid_from,
+            recorded.valid_to,
+            recorded.kind,
+            recorded.amended_by,
+            recorded.source_sha256,
+            self._dumps(recorded.card_snapshot),
+            recorded.evidence_ref,
+            now,
+        )
+        return recorded
 
     # -- serialization -----------------------------------------------------
 
@@ -477,18 +571,22 @@ class PostgresContractCatalog(ContractCatalogStore):
 
                 created = current is None
                 revision = 1 if created else int(actual) + 1
-                previous = await conn.fetchval(
-                    f"SELECT max(version_n) FROM {self.schema}.contract_versions " "WHERE contract_id = $1",
+                previous_row = await conn.fetchrow(
+                    f"SELECT * FROM {self.schema}.contract_versions WHERE contract_id = $1 "
+                    "ORDER BY version_n DESC, revision DESC LIMIT 1",
                     card.contract_id,
                 )
-                version_n = version.n if version is not None else int(previous or 1)
-
+                basis = version or (
+                    self._row_to_version(previous_row)
+                    if previous_row
+                    else ContractVersion(n=1, valid_from=card.term.effective_date)
+                )
                 stored = card.model_copy(update={"revision": revision, "updated_at": now, "versions": []})
-                recorded = (version or ContractVersion(n=version_n)).model_copy(
+                recorded = basis.model_copy(
                     update={
                         "revision": revision,
                         "recorded_at": now,
-                        "source_sha256": (version.source_sha256 if version else "") or card.source_sha256,
+                        "source_sha256": basis.source_sha256 or card.source_sha256,
                         "card_snapshot": (version.card_snapshot if version else {}) or card_snapshot_payload(stored),
                     }
                 )
@@ -638,48 +736,48 @@ class PostgresContractCatalog(ContractCatalogStore):
         )
 
     async def remove(self, contract_id: str) -> None:
-        """Retract a contract, keeping every historical row."""
+        """Record a new retraction revision, retaining all historical evidence."""
         now = self._now()
         async with await self._connection() as conn:
             async with conn.transaction():
                 row = await conn.fetchrow(
-                    f"SELECT revision FROM {self.schema}.contracts " "WHERE contract_id = $1 FOR UPDATE",
-                    contract_id,
+                    f"SELECT * FROM {self.schema}.contracts WHERE contract_id = $1 FOR UPDATE", contract_id
                 )
                 if row is None:
                     raise UnknownContractError(contract_id)
+                card = self._row_to_card(row)
+                if not card.active:
+                    return
+                card = card.model_copy(
+                    update={
+                        "active": False,
+                        "revision": card.revision + 1,
+                        "updated_at": now,
+                        "obligations": [ob.model_copy(update={"active": False}) for ob in card.obligations],
+                    }
+                )
                 await conn.execute(
-                    f"""
-                    UPDATE {self.schema}.contracts
-                    SET active = false,
-                        card_json = jsonb_set(card_json, '{{active}}', 'false'::jsonb),
-                        updated_at = $2
-                    WHERE contract_id = $1
-                    """,
+                    f"UPDATE {self.schema}.contracts SET active = false, card_json = $2::jsonb, "
+                    "revision = $3, updated_at = $4 WHERE contract_id = $1",
                     contract_id,
+                    self._dumps(card.model_dump(mode="json")),
+                    card.revision,
                     now,
                 )
                 await conn.execute(
-                    f"UPDATE {self.schema}.obligations SET active = false " "WHERE contract_id = $1",
-                    contract_id,
+                    f"UPDATE {self.schema}.obligations SET active = false WHERE contract_id = $1", contract_id
                 )
-                version_n = int(
-                    await conn.fetchval(
-                        f"SELECT max(version_n) FROM {self.schema}.contract_versions " "WHERE contract_id = $1",
-                        contract_id,
-                    )
-                    or 1
-                )
+                recorded = await self._record_administration(conn, card, now=now)
                 for target in ("ontology", "temporal"):
                     await self._enqueue(
                         conn,
                         PublicationRecord(
                             tenant_id=self.tenant_id,
                             contract_id=contract_id,
-                            version_n=version_n,
-                            revision=int(row["revision"]),
-                            target=target,  # type: ignore[arg-type]
-                            run_id=f"{contract_id}:retract:{row['revision']}",
+                            version_n=recorded.n,
+                            revision=card.revision,
+                            target=target,
+                            run_id=f"{contract_id}:{recorded.n}:{card.revision}",
                             payload={"contract_id": contract_id, "tombstone": True},
                             created_at=now,
                         ),
@@ -744,6 +842,8 @@ class PostgresContractCatalog(ContractCatalogStore):
 
     async def _enqueue(self, conn: Any, record: PublicationRecord) -> PublicationRecord:
         """Insert one outbox row idempotently inside the caller's transaction."""
+        if record.tenant_id != self.tenant_id:
+            raise CatalogError("publication record belongs to another tenant")
         row = await conn.fetchrow(
             f"""
             INSERT INTO {self.schema}.publication_outbox (
@@ -1089,31 +1189,23 @@ class PostgresContractCatalog(ContractCatalogStore):
                         now,
                     )
                     updated.append(card.contract_id)
-                    version_n = int(
-                        await conn.fetchval(
-                            f"SELECT max(version_n) FROM {self.schema}.contract_versions " "WHERE contract_id = $1",
-                            card.contract_id,
+                    recorded = await self._record_administration(conn, merged, now=now)
+                    for target in ("ontology", "temporal"):
+                        queued.append(
+                            await self._enqueue(
+                                conn,
+                                PublicationRecord(
+                                    tenant_id=self.tenant_id,
+                                    contract_id=card.contract_id,
+                                    version_n=recorded.n,
+                                    revision=revision,
+                                    target=target,
+                                    run_id=f"{card.contract_id}:{recorded.n}:{revision}",
+                                    payload={"party_merge": [merge_party_id, keep_party_id], "actor": user},
+                                    created_at=now,
+                                ),
+                            )
                         )
-                        or 1
-                    )
-                    queued.append(
-                        await self._enqueue(
-                            conn,
-                            PublicationRecord(
-                                tenant_id=self.tenant_id,
-                                contract_id=card.contract_id,
-                                version_n=version_n,
-                                revision=revision,
-                                target="ontology",
-                                run_id=f"{card.contract_id}:merge:{revision}",
-                                payload={
-                                    "party_merge": [merge_party_id, keep_party_id],
-                                    "actor": user,
-                                },
-                                created_at=now,
-                            ),
-                        )
-                    )
 
                 alias_rows = await conn.fetch(
                     f"""
@@ -1593,13 +1685,14 @@ class PostgresContractCatalog(ContractCatalogStore):
             rows = await conn.fetch(
                 f"""
                 SELECT * FROM {self.schema}.publication_outbox
-                WHERE state IN ('pending', 'failed')
+                WHERE tenant_id = $3 AND state IN ('pending', 'failed')
                   AND ($1::text IS NULL OR target = $1)
                 ORDER BY created_at, contract_id, version_n, revision, target
                 LIMIT $2
                 """,
                 target,
                 max(1, int(limit)),
+                self.tenant_id,
             )
         return [self._row_to_publication(row) for row in rows]
 
@@ -1624,7 +1717,7 @@ class PostgresContractCatalog(ContractCatalogStore):
                     FROM (
                         SELECT tenant_id, contract_id, version_n, revision, target
                         FROM {self.schema}.publication_outbox
-                        WHERE state IN ('pending', 'failed') AND target = $1
+                        WHERE tenant_id = $4 AND state IN ('pending', 'failed') AND target = $1
                         ORDER BY created_at, contract_id, version_n, revision
                         LIMIT $2
                         FOR UPDATE SKIP LOCKED
@@ -1639,6 +1732,7 @@ class PostgresContractCatalog(ContractCatalogStore):
                     target,
                     max(1, int(limit)),
                     self._now(),
+                    self.tenant_id,
                 )
         return [self._row_to_publication(row) for row in rows]
 
@@ -1669,6 +1763,8 @@ class PostgresContractCatalog(ContractCatalogStore):
         error: Optional[str],
     ) -> PublicationRecord:
         """Update one outbox row's terminal state, keeping its payload."""
+        if record.tenant_id != self.tenant_id:
+            raise CatalogError("publication record belongs to another tenant")
         async with await self._connection() as conn:
             row = await conn.fetchrow(
                 f"""
