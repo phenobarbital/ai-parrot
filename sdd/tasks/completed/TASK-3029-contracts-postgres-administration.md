@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-539 - Contracts Card & Ontology
 **Spec**: `sdd/specs/contracts-card-ontology.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2–4h)
 **Depends-on**: TASK-3028
@@ -100,4 +100,37 @@ Store execution logs in `artifacts/logs/task-3029.log`. Use frozen dates, synthe
 
 ## Completion Note
 
-Pending execution. Record executor, completion date, implementation summary, validation evidence and deviations when this task is completed.
+Completed 2026-09-09 by sdd-worker (Claude Opus 5).
+
+**Implementation**: completed the administration surface of `catalog_postgres.py`;
+`PostgresContractCatalog.__abstractmethods__` is now empty. `merge_parties` runs one
+transaction: validates both identities exist (`UnknownPartyError`), rejects
+self-merge, locks matching cards via JSONB containment, rewrites parties
+(de-duplicating when both identities sit on one card) and signatories, bumps the
+revision, remaps alias rows and enqueues one ontology publication per touched card —
+historical version snapshots are untouched. Aliases: `add_party_alias` is idempotent
+but raises `AliasConflictError` on a remap, plus `party_aliases`/`all_party_aliases`/
+`resolve_party`/`list_parties` (distinct, active-only). Audit: `record_answer`
+persists every outcome including denied/empty; `retire_answer` stamps actor/time/
+reason; `retired_citations` derives suppressed `(contract_id, node_id)` pairs from
+retired answers' citations JSONB, so it is version- and hash-independent. Sources:
+delta cursor get/set and `upsert_source_item` preserving the card link across renames
+plus tombstones. Judgements: append-only history (force records a new row),
+`replace_relations`, `active_relations` and `invalidate_relations` (deactivates
+judgements whose endpoint hash moved and their relations). Outbox:
+`pending_publications`, `claim_publication` (`FOR UPDATE SKIP LOCKED`, attempts
+counter), `complete_publication` (receipt) and `fail_publication` (retryable error);
+payloads are immutable once queued.
+
+**Validation**: `pytest .../test_catalog_administration.py -q` -> **18 passed**
+against real Postgres 16. Covers merge with signatories/aliases/queued projection and
+unchanged snapshots, merge de-duplication, unknown-identity rollback, alias conflict,
+audit round trip for lookup/denied/not_found, retirement actor/reason plus
+version-independent suppression, cursor and receipt survival across a reconnect,
+rename/tombstone identity, judgement history including `none` and force, relation
+invalidation, outbox claim/fail/retry/receipt and cross-schema isolation of answers,
+aliases and cursors. Whole contracts suite 164 passed
+(`artifacts/logs/task-3029.log`); ruff clean.
+
+**Deviations**: none. Suppression is derived from `contract_answers` rather than a
+separate table, matching the spec §2 table list.
