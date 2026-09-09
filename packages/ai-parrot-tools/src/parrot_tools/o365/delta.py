@@ -45,6 +45,7 @@ the consumer's responsibility.
 
 Reference: https://learn.microsoft.com/en-us/graph/api/driveitem-delta?view=graph-rest-1.0
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -121,6 +122,7 @@ logger = logging.getLogger("Parrot.Tools.O365.Delta")
 # ERRORS
 # ============================================================================
 
+
 class DeltaLinkValidationError(ValueError):
     """Raised when a continuation link does not point at the Graph origin.
 
@@ -170,8 +172,7 @@ class DeltaRetryExhaustedError(RuntimeError):
                 rather than treat as a failure.
         """
         super().__init__(
-            f"Microsoft Graph delta request failed after {attempts} "
-            f"attempt(s) ({reason}): {last_error}"
+            f"Microsoft Graph delta request failed after {attempts} " f"attempt(s) ({reason}): {last_error}"
         )
         self.attempts = attempts
         self.last_error = last_error
@@ -181,6 +182,7 @@ class DeltaRetryExhaustedError(RuntimeError):
 # ============================================================================
 # MODELS
 # ============================================================================
+
 
 class DeltaItem(BaseModel):
     """A single drive item reported by a Microsoft Graph delta page.
@@ -194,19 +196,13 @@ class DeltaItem(BaseModel):
 
     drive_id: str = Field(description="Stable Graph drive identifier.")
     item_id: str = Field(description="Stable Graph driveItem identifier.")
-    name: Optional[str] = Field(
-        default=None, description="Item name at the time of this change."
-    )
+    name: Optional[str] = Field(default=None, description="Item name at the time of this change.")
     deleted: bool = Field(
         default=False,
         description="True when Graph reported the item with the deleted facet.",
     )
-    is_folder: bool = Field(
-        default=False, description="True when the item is a folder, not a file."
-    )
-    parent_id: Optional[str] = Field(
-        default=None, description="Identifier of the containing folder."
-    )
+    is_folder: bool = Field(default=False, description="True when the item is a folder, not a file.")
+    parent_id: Optional[str] = Field(default=None, description="Identifier of the containing folder.")
     parent_path: Optional[str] = Field(
         default=None,
         description=(
@@ -219,9 +215,7 @@ class DeltaItem(BaseModel):
     etag: Optional[str] = Field(default=None, description="Graph eTag, if reported.")
     ctag: Optional[str] = Field(default=None, description="Graph cTag, if reported.")
     web_url: Optional[str] = Field(default=None, description="Browser URL, if reported.")
-    last_modified: Optional[datetime] = Field(
-        default=None, description="Last modification timestamp, if reported."
-    )
+    last_modified: Optional[datetime] = Field(default=None, description="Last modification timestamp, if reported.")
     content_hashes: Dict[str, str] = Field(
         default_factory=dict,
         description="File content hashes reported by Graph (quickXor, sha256, ...).",
@@ -243,9 +237,7 @@ class DeltaPage(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     drive_id: str = Field(description="Drive the page was enumerated from.")
-    items: List[DeltaItem] = Field(
-        default_factory=list, description="Items reported on this page."
-    )
+    items: List[DeltaItem] = Field(default_factory=list, description="Items reported on this page.")
     next_link: Optional[str] = Field(
         default=None,
         description="Opaque '@odata.nextLink' continuation, when more pages follow.",
@@ -276,19 +268,12 @@ class DeltaEnumeration(BaseModel):
     items: List[DeltaItem] = Field(
         default_factory=list,
         description=(
-            "Changed items, de-duplicated by item_id with the latest occurrence "
-            "winning, in first-seen order."
+            "Changed items, de-duplicated by item_id with the latest occurrence " "winning, in first-seen order."
         ),
     )
-    delta_link: Optional[str] = Field(
-        default=None, description="Final cursor, or None if enumeration was truncated."
-    )
-    pages_fetched: int = Field(
-        default=0, description="Number of delta pages retrieved."
-    )
-    complete: bool = Field(
-        default=False, description="True when the final delta link was reached."
-    )
+    delta_link: Optional[str] = Field(default=None, description="Final cursor, or None if enumeration was truncated.")
+    pages_fetched: int = Field(default=0, description="Number of delta pages retrieved.")
+    complete: bool = Field(default=False, description="True when the final delta link was reached.")
     reset_performed: bool = Field(
         default=False,
         description=(
@@ -312,8 +297,7 @@ class DeltaEnumeration(BaseModel):
     folder_id: Optional[str] = Field(
         default=None,
         description=(
-            "Stable folder item id filter applied locally, if any. Exact, but "
-            "matches direct children only."
+            "Stable folder item id filter applied locally, if any. Exact, but " "matches direct children only."
         ),
     )
     filtered_out: int = Field(
@@ -354,6 +338,7 @@ class DeltaEnumeration(BaseModel):
 # HELPERS
 # ============================================================================
 
+
 def normalize_drive_path(raw_path: Optional[str]) -> Optional[str]:
     """Convert a Graph ``parentReference.path`` into a drive-relative path.
 
@@ -373,7 +358,7 @@ def normalize_drive_path(raw_path: Optional[str]) -> Optional[str]:
     marker = "root:"
     idx = path.find(marker)
     if idx != -1:
-        path = path[idx + len(marker):]
+        path = path[idx + len(marker) :]
     return path.strip("/")
 
 
@@ -414,22 +399,17 @@ def validate_continuation_link(
             address the ``drive_id`` delta endpoint.
     """
     if not drive_id:
-        raise DeltaLinkValidationError(
-            "A drive_id is required to validate a delta continuation link."
-        )
+        raise DeltaLinkValidationError("A drive_id is required to validate a delta continuation link.")
     if not link or not str(link).strip():
         raise DeltaLinkValidationError("Delta continuation link is empty.")
 
     parts = urlsplit(str(link).strip())
     if parts.scheme.lower() != "https":
         raise DeltaLinkValidationError(
-            f"Delta continuation link must use https, got scheme "
-            f"{parts.scheme or '(none)'!r}."
+            f"Delta continuation link must use https, got scheme " f"{parts.scheme or '(none)'!r}."
         )
     if not parts.hostname:
-        raise DeltaLinkValidationError(
-            "Delta continuation link has no host component."
-        )
+        raise DeltaLinkValidationError("Delta continuation link has no host component.")
 
     origin = f"https://{parts.hostname.lower()}"
     if parts.port is not None and parts.port != 443:
@@ -451,29 +431,20 @@ def validate_continuation_link(
 
     if any(seg in ("..", ".") for seg in segments):
         raise DeltaLinkValidationError(
-            f"Delta continuation link must not contain relative path "
-            f"segments: {parts.path!r}."
+            f"Delta continuation link must not contain relative path " f"segments: {parts.path!r}."
         )
 
     last = segments[-1] if segments else ""
     if not (last == "delta" or last.startswith("delta(")):
-        raise DeltaLinkValidationError(
-            f"Delta continuation link is not a delta endpoint: "
-            f"{parts.path!r}."
-        )
+        raise DeltaLinkValidationError(f"Delta continuation link is not a delta endpoint: " f"{parts.path!r}.")
 
     try:
         drives_at = segments.index("drives")
     except ValueError:
         drives_at = -1
-    if (
-        drives_at < 0
-        or drives_at + 1 >= len(segments)
-        or segments[drives_at + 1] != str(drive_id)
-    ):
+    if drives_at < 0 or drives_at + 1 >= len(segments) or segments[drives_at + 1] != str(drive_id):
         raise DeltaLinkValidationError(
-            f"Delta continuation link does not address drive "
-            f"{drive_id!r}: {parts.path!r}."
+            f"Delta continuation link does not address drive " f"{drive_id!r}: {parts.path!r}."
         )
 
     return str(link)
@@ -588,16 +559,12 @@ def drive_item_to_delta_item(drive_item: Any, drive_id: str) -> Optional[DeltaIt
         deleted=getattr(drive_item, "deleted", None) is not None,
         is_folder=getattr(drive_item, "folder", None) is not None,
         parent_id=getattr(parent, "id", None) if parent is not None else None,
-        parent_path=normalize_drive_path(
-            getattr(parent, "path", None) if parent is not None else None
-        ),
+        parent_path=normalize_drive_path(getattr(parent, "path", None) if parent is not None else None),
         size=getattr(drive_item, "size", None),
         etag=getattr(drive_item, "e_tag", None),
         ctag=getattr(drive_item, "c_tag", None),
         web_url=getattr(drive_item, "web_url", None),
-        last_modified=_coerce_datetime(
-            getattr(drive_item, "last_modified_date_time", None)
-        ),
+        last_modified=_coerce_datetime(getattr(drive_item, "last_modified_date_time", None)),
         content_hashes=_extract_hashes(drive_item),
     )
 
@@ -694,6 +661,7 @@ def item_in_folder(
 # DRIVE DELTA HELPER
 # ============================================================================
 
+
 class DriveDeltaHelper:
     """Authenticated, drive-level Microsoft Graph delta enumeration helper.
 
@@ -785,12 +753,7 @@ class DriveDeltaHelper:
 
     def _delta_builder(self, client: Any, drive_id: str) -> Any:
         """Build the drive-root delta request builder for ``drive_id``."""
-        return (
-            client.graph_client
-            .drives.by_drive_id(drive_id)
-            .items.by_drive_item_id("root")
-            .delta
-        )
+        return client.graph_client.drives.by_drive_id(drive_id).items.by_drive_item_id("root").delta
 
     async def fetch_page(
         self,
@@ -842,10 +805,8 @@ class DriveDeltaHelper:
                 status = _status_code_of(exc)
                 if status == RESET_STATUS_CODE:
                     raise DeltaResetRequiredError(drive_id) from exc
-                retryable = (
-                    status in RETRYABLE_STATUS_CODES
-                    or (status is None
-                        and isinstance(exc, TRANSIENT_EXCEPTION_TYPES))
+                retryable = status in RETRYABLE_STATUS_CODES or (
+                    status is None and isinstance(exc, TRANSIENT_EXCEPTION_TYPES)
                 )
                 if not retryable:
                     raise
@@ -862,9 +823,10 @@ class DriveDeltaHelper:
                     # surfacing the throttle rather than hammering Graph.
                     if retry_after > self.max_retry_after:
                         self.logger.warning(
-                            "Graph asked drive %s to wait %.0fs (> "
-                            "max_retry_after=%.0fs); abandoning this round.",
-                            drive_id, retry_after, self.max_retry_after,
+                            "Graph asked drive %s to wait %.0fs (> " "max_retry_after=%.0fs); abandoning this round.",
+                            drive_id,
+                            retry_after,
+                            self.max_retry_after,
                         )
                         reason = (
                             f"server asked for a {retry_after:.0f}s wait, "
@@ -876,18 +838,18 @@ class DriveDeltaHelper:
                     delay = min(backoff, self.max_backoff)
 
                 self.logger.warning(
-                    "Graph delta request for drive %s returned %s; "
-                    "retry %s/%s in %.2fs",
-                    drive_id, status, attempt, self.max_retries, delay,
+                    "Graph delta request for drive %s returned %s; " "retry %s/%s in %.2fs",
+                    drive_id,
+                    status,
+                    attempt,
+                    self.max_retries,
+                    delay,
                 )
                 if delay > 0:
                     await self._sleep(delay)
-                backoff = min(backoff * 2 if backoff else self.initial_backoff,
-                              self.max_backoff)
+                backoff = min(backoff * 2 if backoff else self.initial_backoff, self.max_backoff)
 
-        raise DeltaRetryExhaustedError(
-            attempt, last_error or RuntimeError("unknown"), reason
-        )
+        raise DeltaRetryExhaustedError(attempt, last_error or RuntimeError("unknown"), reason)
 
     def _build_page(self, response: Any, drive_id: str) -> DeltaPage:
         """Project a Graph delta response onto :class:`DeltaPage`."""
@@ -968,8 +930,7 @@ class DriveDeltaHelper:
             )
         except DeltaResetRequiredError:
             self.logger.warning(
-                "Delta cursor for drive %s expired (410 Gone); "
-                "restarting a full rescan.",
+                "Delta cursor for drive %s expired (410 Gone); " "restarting a full rescan.",
                 drive_id,
             )
             return await self._enumerate_once(
@@ -1013,9 +974,7 @@ class DriveDeltaHelper:
             pages += 1
 
             for item in page.items:
-                membership = classify_folder_membership(
-                    item, folder_path, folder_id
-                )
+                membership = classify_folder_membership(item, folder_path, folder_id)
                 if membership == FOLDER_MISS:
                     # Counted per distinct item, like every other counter on
                     # DeltaEnumeration — an item reported outside the folder
@@ -1051,15 +1010,16 @@ class DriveDeltaHelper:
                 self.logger.warning(
                     "Delta page %s for drive %s carried neither nextLink nor "
                     "deltaLink; stopping without a committable cursor.",
-                    pages, drive_id,
+                    pages,
+                    drive_id,
                 )
                 break
             link = page.next_link
         else:
             self.logger.warning(
-                "Delta enumeration for drive %s hit the %s page bound; "
-                "no cursor is committable.",
-                drive_id, page_bound,
+                "Delta enumeration for drive %s hit the %s page bound; " "no cursor is committable.",
+                drive_id,
+                page_bound,
             )
 
         return DeltaEnumeration(

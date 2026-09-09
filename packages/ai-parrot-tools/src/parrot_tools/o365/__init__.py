@@ -36,7 +36,6 @@ from .delta import (
     DriveDeltaHelper,
 )
 
-
 __all__ = (
     "CreateDraftMessageTool",
     "SearchEmailTool",
