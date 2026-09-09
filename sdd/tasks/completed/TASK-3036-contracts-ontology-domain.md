@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-539 - Contracts Card & Ontology
 **Spec**: `sdd/specs/contracts-card-ontology.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2–4h)
 **Depends-on**: TASK-3025
@@ -94,4 +94,40 @@ Store execution logs in `artifacts/logs/task-3036.log`. Use frozen dates, synthe
 
 ## Completion Note
 
-Pending execution. Record executor, completion date, implementation summary, validation evidence and deviations when this task is completed.
+Completed 2026-09-09 by sdd-worker (Claude Opus 5).
+
+**Implementation**: installed the proposal YAML at
+`ontology/defaults/domains/contracts.ontology.yaml` (v1.0) with the spec §2
+corrections: added the two LLM-judged relations `conflicts_with` (Contract-Contract,
+canonicalised pair traversed with ANY) and `references_obligation`
+(Obligation-Obligation, cross-contract), both carrying `origin` (llm|manual, default
+llm), confidence, rationale, judged_at and both endpoint source hashes, and both with
+**no discovery rules** so the generic field-match pass can never write them; added
+`active` to Contract and Obligation plus `card_revision` to Contract; added
+`active != false` guards to all ten patterns (including obligation endpoints);
+rewrote `contract_family` to de-duplicate by contract `_key` instead of by the whole
+{contract, rel, depth} object; documented the exact bind set of every pattern in its
+description (nullable `@kind` always bound, `@user_id` a full `employees/<id>`
+graph _id from the trusted context); documented the search-hit -> contract mapping;
+and replaced `hybrid_concept_match`/`fuzzy_name_match` with `exact_id_match` because
+the contracts adapter resolves ids against the authorized catalog itself.
+
+**Validation**: `pytest .../test_ontology_domain.py -q` -> 28 passed; the real
+`OntologyParser`/`OntologyMerger` merge base+contracts into exactly **8 entities,
+16 relations, 13 patterns**. Whole contracts suite 381 passed
+(`artifacts/logs/task-3036.log`); the existing ontology suite still passes
+(206 passed); ruff clean.
+
+**same_department spike (spec §8 open question)**: RESOLVED by test against a
+Contract fixture — `AuthorizationChecker._check_same_department` executes
+`RETURN DOCUMENT(@target_id).department` (a generic field read, so a Contract
+supplies `department` exactly like an Employee), constructs the conventional
+`<tenant>_ontology` database, and matches ANY resolved entity (it stops at the first
+match). The rule is therefore usable but is deliberately **not** enabled: v1 YAML
+stays role-based (contract_reader OR contract_owner, default deny) plus the
+authenticated `my_contracts` restriction, and a test asserts no pattern declares
+`same_department`.
+
+**Deviations**: none. Real AQL execution against ArangoDB with live bind values
+remains an integration gate (TASK-3054) — parsing is explicitly not evidence that the
+queries run.
