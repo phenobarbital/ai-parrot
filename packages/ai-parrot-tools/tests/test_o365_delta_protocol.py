@@ -601,6 +601,25 @@ class TestFolderFiltering:
         assert result.items == []
         assert result.filtered_out == 1
 
+    async def test_filtered_out_counts_distinct_items_not_occurrences(
+        self, helper: DriveDeltaHelper
+    ) -> None:
+        """Every other counter is per distinct item; this one must match."""
+        page2 = f"{DELTA}?token=p2"
+        final = f"{DELTA}?token=final"
+        outside = FakeDriveItem(id="out", name="o.docx",
+                                parent_path="/drive/root:/Archive")
+        graph = FakeGraph({
+            None: FakeDeltaResponse([outside], next_link=page2),
+            page2: FakeDeltaResponse([outside], delta_link=final),
+        })
+        result = await helper.enumerate(
+            FakeO365Client(graph), DRIVE_ID, folder_path="Contracts"
+        )
+
+        assert result.items == []
+        assert result.filtered_out == 1
+
     async def test_item_moved_into_the_folder_is_picked_up(
         self, helper: DriveDeltaHelper
     ) -> None:
@@ -821,11 +840,14 @@ class TestBoundedRetry:
         graph = FakeGraph({None: [FakeGraphError(429, retry_after="600")
                                   for _ in range(5)]})
 
-        with pytest.raises(DeltaRetryExhaustedError):
+        with pytest.raises(DeltaRetryExhaustedError) as excinfo:
             await helper.enumerate(FakeO365Client(graph), DRIVE_ID)
 
         assert sleeps == []
         assert len(graph.requested_urls) == 1
+        # The caller can tell "still throttled, defer" from "gave up trying".
+        assert "beyond the" in excinfo.value.reason
+        assert excinfo.value.reason != "retries exhausted"
 
     async def test_self_computed_backoff_is_capped_by_max_backoff(
         self, sleeps: List[float]
@@ -855,6 +877,7 @@ class TestBoundedRetry:
 
         # max_retries=2 -> 3 attempts total, 2 backoffs, exponential.
         assert excinfo.value.attempts == 3
+        assert excinfo.value.reason == "retries exhausted"
         assert len(graph.requested_urls) == 3
         assert sleeps == [1.0, 2.0]
 
@@ -1044,7 +1067,7 @@ class TestContinuationHostValidation:
     )
     def test_rejected_links(self, link: str) -> None:
         with pytest.raises(DeltaLinkValidationError):
-            validate_continuation_link(link)
+            validate_continuation_link(link, DRIVE_ID)
 
     async def test_cursor_pointing_at_another_drive_is_rejected(
         self, helper: DriveDeltaHelper
@@ -1115,7 +1138,7 @@ class TestContinuationHostValidation:
     )
     def test_confinement_cannot_be_bypassed(self, link: str) -> None:
         with pytest.raises(DeltaLinkValidationError):
-            validate_continuation_link(link, drive_id=DRIVE_ID)
+            validate_continuation_link(link, DRIVE_ID)
 
     @pytest.mark.parametrize(
         "shape",
@@ -1129,36 +1152,43 @@ class TestContinuationHostValidation:
         self, shape: str
     ) -> None:
         link = shape.format(graph=GRAPH, drive=DRIVE_ID)
-        assert validate_continuation_link(link, drive_id=DRIVE_ID) == link
+        assert validate_continuation_link(link, DRIVE_ID) == link
 
     def test_percent_encoded_drive_id_is_accepted(self) -> None:
         from urllib.parse import quote
 
         encoded = quote(DRIVE_ID, safe="")
         link = f"{GRAPH}/drives/{encoded}/items/root/delta?token=abc"
-        assert validate_continuation_link(link, drive_id=DRIVE_ID) == link
-
-    def test_drive_confinement_is_opt_in(self) -> None:
-        """Without a drive_id only the origin is checked (helper always passes one)."""
-        link = f"{GRAPH}/drives/anything/items/x/content"
-        assert validate_continuation_link(link) == link
+        assert validate_continuation_link(link, DRIVE_ID) == link
 
     @pytest.mark.parametrize("origin", DEFAULT_GRAPH_ORIGINS)
     def test_all_sovereign_graph_origins_accepted(self, origin: str) -> None:
-        link = f"{origin}/v1.0/drives/x/items/root/delta?token=abc"
-        assert validate_continuation_link(link) == link
+        link = f"{origin}/v1.0/drives/{DRIVE_ID}/items/root/delta?token=abc"
+        assert validate_continuation_link(link, DRIVE_ID) == link
 
     def test_explicit_port_443_accepted(self) -> None:
-        link = "https://graph.microsoft.com:443/v1.0/delta?token=a"
-        assert validate_continuation_link(link) == link
+        link = (
+            f"https://graph.microsoft.com:443/v1.0/drives/{DRIVE_ID}"
+            "/items/root/delta?token=a"
+        )
+        assert validate_continuation_link(link, DRIVE_ID) == link
 
     def test_custom_allowed_origin(self) -> None:
-        link = "https://graph.internal.test/delta"
+        link = f"https://graph.internal.test/v1.0/drives/{DRIVE_ID}/root/delta"
         assert validate_continuation_link(
-            link, allowed_origins=("https://graph.internal.test",)
+            link, DRIVE_ID, allowed_origins=("https://graph.internal.test",)
         ) == link
         with pytest.raises(DeltaLinkValidationError):
-            validate_continuation_link(link)
+            validate_continuation_link(link, DRIVE_ID)
+
+    def test_drive_confinement_cannot_be_skipped(self) -> None:
+        """Origin-only checking is the weakness this closes: no opt-out."""
+        link = f"{GRAPH}/drives/{DRIVE_ID}/items/x/content"
+
+        with pytest.raises(TypeError):
+            validate_continuation_link(link)  # type: ignore[call-arg]
+        with pytest.raises(DeltaLinkValidationError):
+            validate_continuation_link(link, "")
 
 
 # ============================================================================

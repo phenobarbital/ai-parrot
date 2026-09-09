@@ -887,6 +887,9 @@ class DeltaSharePointFilesTool(O365Tool):
         payload = enumeration.model_dump(mode="json")
         payload.update({
             "source": "sharepoint",
+            # A @property, so model_dump() would otherwise drop it — tool
+            # consumers need it to know whether the folder filter applied.
+            "folder_filter_reliable": enumeration.folder_filter_reliable,
             "site_id": site_id,
             "library": library,
             "total_items": len(enumeration.items),

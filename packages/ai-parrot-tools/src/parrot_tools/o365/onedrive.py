@@ -700,6 +700,9 @@ class DeltaOneDriveFilesTool(O365Tool):
         payload = enumeration.model_dump(mode="json")
         payload.update({
             "source": "onedrive",
+            # A @property, so model_dump() would otherwise drop it — tool
+            # consumers need it to know whether the folder filter applied.
+            "folder_filter_reliable": enumeration.folder_filter_reliable,
             "user_id": user_id,
             "total_items": len(enumeration.items),
             "changed_count": len(enumeration.changed_items),

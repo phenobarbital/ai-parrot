@@ -496,9 +496,9 @@ class TestEquivalentDeltaOutcomes:
 
         shared = {
             "drive_id", "items", "delta_link", "pages_fetched", "complete",
-            "reset_performed", "full_enumeration", "folder_path",
-            "filtered_out", "total_items", "changed_count", "deleted_count",
-            "source",
+            "reset_performed", "full_enumeration", "folder_path", "folder_id",
+            "filtered_out", "unresolved_parent", "folder_filter_reliable",
+            "total_items", "changed_count", "deleted_count", "source",
         }
         assert shared <= set(sp)
         assert shared <= set(od)
@@ -610,6 +610,7 @@ class TestEquivalentDeltaOutcomes:
         assert payload["folder_id"] == "folder-x"
         assert payload["filtered_out"] == 1
         assert payload["unresolved_parent"] == 0
+        assert payload["folder_filter_reliable"] is True
 
     async def test_path_filter_reports_itself_unreliable_on_real_graph_shape(
         self, onedrive_tool: DeltaOneDriveFilesTool
@@ -635,6 +636,9 @@ class TestEquivalentDeltaOutcomes:
         assert payload["total_items"] == 2
         assert payload["filtered_out"] == 0
         assert payload["unresolved_parent"] == 2
+        # The payload admits the filter did not apply, rather than implying
+        # these two items are the folder's contents.
+        assert payload["folder_filter_reliable"] is False
 
     async def test_max_pages_bound_yields_no_committable_cursor(
         self, onedrive_tool: DeltaOneDriveFilesTool

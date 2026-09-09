@@ -153,19 +153,29 @@ class DeltaResetRequiredError(RuntimeError):
 class DeltaRetryExhaustedError(RuntimeError):
     """Raised when throttling/transient retries hit their bound."""
 
-    def __init__(self, attempts: int, last_error: BaseException) -> None:
+    def __init__(
+        self,
+        attempts: int,
+        last_error: BaseException,
+        reason: str = "retries exhausted",
+    ) -> None:
         """Initialize the error.
 
         Args:
             attempts: Number of attempts performed before giving up.
             last_error: The final underlying error.
+            reason: Why the helper stopped — distinguishes a genuinely
+                exhausted retry budget from a throttle longer than
+                ``max_retry_after``, which a caller may want to defer on
+                rather than treat as a failure.
         """
         super().__init__(
-            f"Microsoft Graph delta request failed after {attempts} attempt(s): "
-            f"{last_error}"
+            f"Microsoft Graph delta request failed after {attempts} "
+            f"attempt(s) ({reason}): {last_error}"
         )
         self.attempts = attempts
         self.last_error = last_error
+        self.reason = reason
 
 
 # ============================================================================
@@ -369,9 +379,8 @@ def normalize_drive_path(raw_path: Optional[str]) -> Optional[str]:
 
 def validate_continuation_link(
     link: str,
+    drive_id: str,
     allowed_origins: Sequence[str] = DEFAULT_GRAPH_ORIGINS,
-    *,
-    drive_id: Optional[str] = None,
 ) -> str:
     """Validate an opaque delta continuation link before using it.
 
@@ -390,9 +399,11 @@ def validate_continuation_link(
 
     Args:
         link: The opaque ``@odata.nextLink`` / ``@odata.deltaLink`` value.
+        drive_id: Drive the enumeration is confined to. The link's path must
+            name this drive and a ``delta`` operation. It is deliberately a
+            required argument: an origin-only check is the very weakness this
+            function exists to close, so it must not be reachable by omission.
         allowed_origins: Origins credentials may be forwarded to.
-        drive_id: Drive the enumeration is confined to. When given, the
-            link's path must name this drive and a ``delta`` operation.
 
     Returns:
         The validated link, unchanged.
@@ -402,6 +413,10 @@ def validate_continuation_link(
             HTTPS, its origin is not in ``allowed_origins``, or it does not
             address the ``drive_id`` delta endpoint.
     """
+    if not drive_id:
+        raise DeltaLinkValidationError(
+            "A drive_id is required to validate a delta continuation link."
+        )
     if not link or not str(link).strip():
         raise DeltaLinkValidationError("Delta continuation link is empty.")
 
@@ -427,40 +442,39 @@ def validate_continuation_link(
             f"{origin!r}; allowed origins: {sorted(permitted)}."
         )
 
-    if drive_id:
-        # Graph returns e.g. /v1.0/drives/{drive-id}/root/delta?token=...
-        # or /v1.0/drives/{drive-id}/items/{item-id}/delta()?token=...
-        # The match must be STRUCTURAL: merely containing the drive id and a
-        # "delta" segment somewhere would accept
-        # /v1.0/delta/drives/{drive-id}/items/x/content.
-        segments = [unquote(seg) for seg in parts.path.split("/") if seg]
+    # Graph returns e.g. /v1.0/drives/{drive-id}/root/delta?token=...
+    # or /v1.0/drives/{drive-id}/items/{item-id}/delta()?token=...
+    # The match must be STRUCTURAL: merely containing the drive id and a
+    # "delta" segment somewhere would accept
+    # /v1.0/delta/drives/{drive-id}/items/x/content.
+    segments = [unquote(seg) for seg in parts.path.split("/") if seg]
 
-        if any(seg in ("..", ".") for seg in segments):
-            raise DeltaLinkValidationError(
-                f"Delta continuation link must not contain relative path "
-                f"segments: {parts.path!r}."
-            )
+    if any(seg in ("..", ".") for seg in segments):
+        raise DeltaLinkValidationError(
+            f"Delta continuation link must not contain relative path "
+            f"segments: {parts.path!r}."
+        )
 
-        last = segments[-1] if segments else ""
-        if not (last == "delta" or last.startswith("delta(")):
-            raise DeltaLinkValidationError(
-                f"Delta continuation link is not a delta endpoint: "
-                f"{parts.path!r}."
-            )
+    last = segments[-1] if segments else ""
+    if not (last == "delta" or last.startswith("delta(")):
+        raise DeltaLinkValidationError(
+            f"Delta continuation link is not a delta endpoint: "
+            f"{parts.path!r}."
+        )
 
-        try:
-            drives_at = segments.index("drives")
-        except ValueError:
-            drives_at = -1
-        if (
-            drives_at < 0
-            or drives_at + 1 >= len(segments)
-            or segments[drives_at + 1] != str(drive_id)
-        ):
-            raise DeltaLinkValidationError(
-                f"Delta continuation link does not address drive "
-                f"{drive_id!r}: {parts.path!r}."
-            )
+    try:
+        drives_at = segments.index("drives")
+    except ValueError:
+        drives_at = -1
+    if (
+        drives_at < 0
+        or drives_at + 1 >= len(segments)
+        or segments[drives_at + 1] != str(drive_id)
+    ):
+        raise DeltaLinkValidationError(
+            f"Delta continuation link does not address drive "
+            f"{drive_id!r}: {parts.path!r}."
+        )
 
     return str(link)
 
@@ -749,14 +763,14 @@ class DriveDeltaHelper:
 
     # -- link validation ---------------------------------------------------
 
-    def validate_link(self, link: str, drive_id: Optional[str] = None) -> str:
+    def validate_link(self, link: str, drive_id: str) -> str:
         """Validate a continuation link before it is dereferenced.
 
         Args:
             link: Opaque nextLink/deltaLink value.
-            drive_id: Drive the enumeration is confined to. When given, the
-                link must address that drive's delta endpoint, not merely a
-                trusted Graph origin.
+            drive_id: Drive the enumeration is confined to. The link must
+                address that drive's delta endpoint, not merely a trusted
+                Graph origin.
 
         Returns:
             The validated link.
@@ -765,9 +779,7 @@ class DriveDeltaHelper:
             DeltaLinkValidationError: If the link is not a trusted Graph
                 delta URL for ``drive_id``.
         """
-        return validate_continuation_link(
-            link, self.allowed_origins, drive_id=drive_id
-        )
+        return validate_continuation_link(link, drive_id, self.allowed_origins)
 
     # -- single page -------------------------------------------------------
 
@@ -820,6 +832,7 @@ class DriveDeltaHelper:
         attempt = 0
         backoff = self.initial_backoff
         last_error: Optional[BaseException] = None
+        reason = "retries exhausted"
 
         while attempt <= self.max_retries:
             attempt += 1
@@ -853,6 +866,10 @@ class DriveDeltaHelper:
                             "max_retry_after=%.0fs); abandoning this round.",
                             drive_id, retry_after, self.max_retry_after,
                         )
+                        reason = (
+                            f"server asked for a {retry_after:.0f}s wait, "
+                            f"beyond the {self.max_retry_after:.0f}s budget"
+                        )
                         break
                     delay = retry_after
                 else:
@@ -868,7 +885,9 @@ class DriveDeltaHelper:
                 backoff = min(backoff * 2 if backoff else self.initial_backoff,
                               self.max_backoff)
 
-        raise DeltaRetryExhaustedError(attempt, last_error or RuntimeError("unknown"))
+        raise DeltaRetryExhaustedError(
+            attempt, last_error or RuntimeError("unknown"), reason
+        )
 
     def _build_page(self, response: Any, drive_id: str) -> DeltaPage:
         """Project a Graph delta response onto :class:`DeltaPage`."""
@@ -984,7 +1003,7 @@ class DriveDeltaHelper:
         collected: Dict[str, DeltaItem] = {}
         order: List[str] = []
         unresolved: set[str] = set()
-        filtered_out = 0
+        excluded: set[str] = set()
         pages = 0
         final_link: Optional[str] = None
         link = delta_link
@@ -998,7 +1017,10 @@ class DriveDeltaHelper:
                     item, folder_path, folder_id
                 )
                 if membership == FOLDER_MISS:
-                    filtered_out += 1
+                    # Counted per distinct item, like every other counter on
+                    # DeltaEnumeration — an item reported outside the folder
+                    # on two pages is one exclusion, not two.
+                    excluded.add(item.item_id)
                     unresolved.discard(item.item_id)
                     # Graph: "the same item may appear more than once... use
                     # the last occurrence". If an earlier page placed this
@@ -1009,6 +1031,7 @@ class DriveDeltaHelper:
                         del collected[item.item_id]
                         order.remove(item.item_id)
                     continue
+                excluded.discard(item.item_id)
                 if membership == FOLDER_UNKNOWN:
                     unresolved.add(item.item_id)
                 else:
@@ -1049,7 +1072,7 @@ class DriveDeltaHelper:
             full_enumeration=delta_link is None,
             folder_path=(folder_path or None),
             folder_id=(folder_id or None),
-            filtered_out=filtered_out,
+            filtered_out=len(excluded),
             unresolved_parent=len(unresolved),
         )
 
