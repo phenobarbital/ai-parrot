@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-539 - Contracts Card & Ontology
 **Spec**: `sdd/specs/contracts-card-ontology.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (1–2h)
 **Depends-on**: none
@@ -87,4 +87,22 @@ Store execution logs in `artifacts/logs/task-3032.log`. Use frozen dates, synthe
 
 ## Completion Note
 
-Pending execution. Record executor, completion date, implementation summary, validation evidence and deviations when this task is completed.
+Completed 2026-09-09 by sdd-worker (Claude Opus 5).
+
+**Implementation**: extracted `Bookstore._docx_to_markdown` into a public
+module-level `async def docx_to_markdown(path: Path) -> str` in
+`parrot/knowledge/bookstore/library.py`; the private method is now a one-line
+delegation. Behaviour is byte-identical: lazy `parrot_loaders.docx.MSWordLoader`
+import raising `BookstoreError` with the same actionable
+`pip install ai-parrot-loaders` message, `asyncio.to_thread` offload, and the
+same empty-content guard. This task alone touched `bookstore/library.py`.
+
+**Validation**: `pytest .../test_docx_helper.py -q` -> 8 passed; bookstore
+regression suite `pytest packages/ai-parrot/tests/knowledge/bookstore/ -q` ->
+**150 passed** (combined log: `artifacts/logs/task-3032.log`); ruff clean. Tests pin
+that the public helper and the private method return identical markdown, raise the
+identical missing-loaders error (with the ImportError cause preserved), raise the
+identical empty-content error for blank/whitespace output, propagate conversion
+exceptions unchanged, and that conversion runs off the event-loop thread.
+
+**Deviations**: none.
