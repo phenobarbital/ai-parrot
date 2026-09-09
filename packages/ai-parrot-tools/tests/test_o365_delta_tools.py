@@ -592,14 +592,90 @@ class TestEquivalentDeltaOutcomes:
         assert payload["unresolved_parent"] == 0
         assert payload["folder_filter_reliable"] is True
 
+    async def test_undecidable_folder_scope_is_refused_not_widened(
+        self, onedrive_tool: DeltaOneDriveFilesTool
+    ) -> None:
+        """Real Graph omits the parent path, so a path filter cannot decide.
+
+        Returning the whole drive under a folder-scoped request would let
+        unrelated documents into the caller's corpus. The tool must refuse.
+        """
+        graph = FakeGraph(
+            {
+                None: FakeDeltaResponse(
+                    [
+                        FakeDriveItem(id="a", name="a.docx", parent_path=None),
+                        FakeDriveItem(id="b", name="b.docx", parent_path=None),
+                    ],
+                    delta_link=FINAL_OD,
+                )
+            }
+        )
+        bind_client(onedrive_tool, graph)
+
+        result = await onedrive_tool._execute(
+            drive_id=DRIVE_ID, folder_path="Contracts"
+        )
+
+        assert result.status == "error"
+        assert "could not be applied" in result.error
+        assert "folder_id" in result.error
+
+    async def test_decidable_folder_scope_is_not_refused(
+        self, onedrive_tool: DeltaOneDriveFilesTool
+    ) -> None:
+        """A filter that CAN be decided still works normally."""
+        graph = FakeGraph(
+            {
+                None: FakeDeltaResponse(
+                    [
+                        FakeDriveItem(id="in", name="a.docx",
+                                      parent_id="folder-x", parent_path=None),
+                        FakeDriveItem(id="out", name="b.docx",
+                                      parent_id="folder-y", parent_path=None),
+                    ],
+                    delta_link=FINAL_OD,
+                )
+            }
+        )
+        bind_client(onedrive_tool, graph)
+
+        result = await onedrive_tool._execute(
+            drive_id=DRIVE_ID, folder_id="folder-x"
+        )
+
+        assert result.status == "success", result.error
+        assert [i["item_id"] for i in result.result["items"]] == ["in"]
+
+    async def test_strict_scope_can_be_disabled_deliberately(self) -> None:
+        tool = DeltaOneDriveFilesTool(
+            credentials=dict(CREDENTIALS), strict_folder_scope=False
+        )
+        graph = FakeGraph(
+            {
+                None: FakeDeltaResponse(
+                    [FakeDriveItem(id="a", name="a.docx", parent_path=None)],
+                    delta_link=FINAL_OD,
+                )
+            }
+        )
+        bind_client(tool, graph)
+
+        result = await tool._execute(drive_id=DRIVE_ID, folder_path="Contracts")
+
+        assert result.status == "success", result.error
+        assert result.result["folder_filter_reliable"] is False
+
     async def test_path_filter_reports_itself_unreliable_on_real_graph_shape(
         self, onedrive_tool: DeltaOneDriveFilesTool
     ) -> None:
         """Graph omits parentReference.path from delta responses.
 
-        The payload must therefore admit the path filter could not be
-        applied, rather than returning the whole drive as if it had been.
+        With the strict guard deliberately disabled, the payload must still
+        admit the path filter could not be applied, rather than implying the
+        returned items are the folder's contents.
         """
+        onedrive_tool.strict_folder_scope = False
         graph = FakeGraph(
             {
                 None: FakeDeltaResponse(
@@ -993,10 +1069,15 @@ class TestBundleRegistration:
             "SearchOneDriveFilesTool",
             "DownloadOneDriveFileTool",
             "UploadOneDriveFileTool",
+            "ListSharePointFilesTool",
+            "SearchSharePointFilesTool",
+            "DownloadSharePointFileTool",
+            "UploadSharePointFileTool",
             "SendEmailTool",
             "ListEventsTool",
         ):
-            assert symbol in pkg.__all__
+            assert symbol in pkg.__all__, f"{symbol} was dropped from the package"
+            assert hasattr(pkg, symbol), f"{symbol} is no longer importable"
 
     def test_tool_args_schemas_hide_no_auth_surface_but_expose_delta_inputs(
         self,
@@ -1107,6 +1188,38 @@ class TestIngestJobPayloadContract:
         assert payload["rescan_required"] is False
         assert {i["item_id"] for i in payload["items"]} == {"live", "gone"}
         assert any(i["deleted"] for i in payload["items"])
+        # Per-item keys the job reads: `path` is a derived property and
+        # `sha256` lives inside content_hashes, so both must be projected
+        # explicitly or the job silently loses its URI fallback and stores
+        # a null content hash.
+        for entry in payload["items"]:
+            assert "path" in entry
+            assert "sha256" in entry
+
+    @pytest.mark.parametrize("kind", ["sharepoint", "onedrive"])
+    async def test_per_item_path_and_sha256_carry_real_values(
+        self,
+        kind: str,
+        sharepoint_tool: DeltaSharePointFilesTool,
+        onedrive_tool: DeltaOneDriveFilesTool,
+    ) -> None:
+        tool = sharepoint_tool if kind == "sharepoint" else onedrive_tool
+        final = FINAL_SP if kind == "sharepoint" else FINAL_OD
+        raw = FakeDriveItem(id="doc", name="a.docx",
+                            parent_path="/drive/root:/Contracts")
+        raw.file = type("F", (), {"hashes": type("H", (), {
+            "quick_xor_hash": None, "sha1_hash": None,
+            "sha256_hash": "ABC123", "crc32_hash": None})()})()
+        graph = FakeGraph({None: FakeDeltaResponse([raw], delta_link=final)})
+
+        payload = await tool._execute_graph_operation(
+            FakeO365Client(graph), drive_id=DRIVE_ID, delta_token=None,
+            folder_path=None,
+        )
+
+        entry = payload["items"][0]
+        assert entry["path"] == "Contracts/a.docx"
+        assert entry["sha256"] == "ABC123"
 
     @pytest.mark.parametrize("kind", ["sharepoint", "onedrive"])
     async def test_delta_token_alias_actually_resumes(

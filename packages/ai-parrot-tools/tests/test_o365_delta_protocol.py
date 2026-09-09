@@ -371,6 +371,31 @@ class TestPageEnumeration:
         result = await helper.enumerate(FakeO365Client(graph), DRIVE_ID)
         assert [i.item_id for i in result.items] == ["real"]
 
+    async def test_unreconcilable_entries_block_the_cursor(
+        self, helper: DriveDeltaHelper
+    ) -> None:
+        """An entry with no item id means the picture is incomplete.
+
+        Committing a cursor after silently dropping it would permanently
+        lose that change, so completeness is withheld.
+        """
+        final = f"{DELTA}?token=final"
+        graph = FakeGraph(
+            {
+                None: FakeDeltaResponse(
+                    [FakeDriveItem(id=None, name="ghost.docx"),
+                     FakeDriveItem(id="real", name="real.docx")],
+                    delta_link=final,
+                )
+            }
+        )
+        result = await helper.enumerate(FakeO365Client(graph), DRIVE_ID)
+
+        assert [i.item_id for i in result.items] == ["real"]
+        assert result.skipped_entries == 1
+        assert result.complete is False
+        assert result.delta_link == final  # reported, but not committable
+
     async def test_page_bound_truncates_without_committable_cursor(self, helper: DriveDeltaHelper) -> None:
         """Hitting the page bound yields no cursor, forcing idempotent replay."""
         loop_link = f"{DELTA}?token=loop"
@@ -442,9 +467,57 @@ class TestFolderFiltering:
         )
         result = await helper.enumerate(FakeO365Client(graph), DRIVE_ID, folder_path="Contracts")
         assert [i.item_id for i in result.items] == ["gone"]
-        # ...but the caller is told the filter could not be applied to it.
-        assert result.unresolved_parent == 1
-        assert result.folder_filter_reliable is False
+        # Retention is deliberate policy, not uncertainty, so it does not
+        # make the filter "unreliable".
+        assert result.unresolved_parent == 0
+        assert result.folder_filter_reliable is True
+
+    @pytest.mark.parametrize(
+        "kwargs",
+        [
+            {"folder_path": "Contracts"},
+            {"folder_id": "folder-x"},
+            {"folder_path": "Contracts", "folder_id": "folder-x"},
+        ],
+    )
+    async def test_tombstones_are_never_excluded_by_a_folder_filter(
+        self, helper: DriveDeltaHelper, kwargs: Dict[str, str]
+    ) -> None:
+        """A tombstone survives the filter even when it points elsewhere.
+
+        An item is often tombstoned *because* it left the folder. Excluding
+        it would strand the projection the consumer already indexed —
+        dropping a retraction is corruption, whereas retracting something
+        nobody indexed is a no-op.
+        """
+        final = f"{DELTA}?token=final"
+        graph = FakeGraph(
+            {
+                None: FakeDeltaResponse(
+                    [
+                        FakeDriveItem(
+                            id="gone",
+                            name="removed.docx",
+                            deleted=object(),
+                            parent_path="/drive/root:/SomewhereElse",
+                            parent_id="another-folder",
+                        ),
+                        FakeDriveItem(
+                            id="live-outside",
+                            name="other.docx",
+                            parent_path="/drive/root:/SomewhereElse",
+                            parent_id="another-folder",
+                        ),
+                    ],
+                    delta_link=final,
+                )
+            }
+        )
+        result = await helper.enumerate(FakeO365Client(graph), DRIVE_ID, **kwargs)
+
+        # The tombstone is kept; the live file outside the folder is not.
+        assert [i.item_id for i in result.items] == ["gone"]
+        assert result.filtered_out == 1
 
     async def test_real_graph_shape_reports_the_filter_as_unreliable(self, helper: DriveDeltaHelper) -> None:
         """Graph omits parentReference.path in delta responses.
@@ -599,6 +672,9 @@ class TestFolderFiltering:
         unknown = DeltaItem(drive_id=DRIVE_ID, item_id="i")
 
         assert item_in_folder(inside, "Contracts") is True
+        # SharePoint/OneDrive paths are case-insensitive.
+        assert item_in_folder(inside, "contracts") is True
+        assert item_in_folder(deeper, "CONTRACTS/2026") is True
         assert item_in_folder(deeper, "/Contracts/") is True
         assert item_in_folder(sibling, "Contracts") is False
         assert item_in_folder(unknown, "Contracts") is True
@@ -644,6 +720,42 @@ class TestItemProjection:
         assert item.is_folder is True
         assert item.parent_path == ""
         assert item.path == "Contracts"
+
+    def test_dict_and_camel_case_payloads_are_parsed(self) -> None:
+        """Feeds also arrive as raw JSON dicts, not only as SDK objects."""
+        raw = {
+            "id": "item-1",
+            "name": "contract.docx",
+            "webUrl": "https://contoso.sharepoint.com/x",
+            "eTag": "etag-1",
+            "cTag": "ctag-1",
+            "size": 99,
+            "lastModifiedDateTime": "2026-09-09T10:00:00Z",
+            "parentReference": {
+                "id": "parent-1",
+                "driveId": "b!other",
+                "path": "/drive/root:/Contracts",
+            },
+            "file": {"hashes": {"sha256Hash": "ABC"}},
+        }
+        item = drive_item_to_delta_item(raw, DRIVE_ID)
+
+        assert item is not None
+        assert item.item_id == "item-1"
+        assert item.drive_id == "b!other"
+        assert item.parent_id == "parent-1"
+        assert item.parent_path == "Contracts"
+        assert item.web_url.endswith("/x")
+        assert item.etag == "etag-1" and item.ctag == "ctag-1"
+        assert item.content_hashes == {"sha256Hash": "ABC"}
+        assert item.last_modified is not None
+
+    def test_tombstone_reported_only_in_additional_data(self) -> None:
+        """Some feeds carry the deleted facet under additional_data."""
+        raw = {"id": "gone", "additionalData": {"deleted": {"state": "deleted"}}}
+        item = drive_item_to_delta_item(raw, DRIVE_ID)
+
+        assert item is not None and item.deleted is True
 
     def test_missing_id_returns_none(self) -> None:
         assert drive_item_to_delta_item(FakeDriveItem(id=None), DRIVE_ID) is None

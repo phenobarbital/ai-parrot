@@ -24,6 +24,10 @@ from .onedrive import (
     DeltaOneDriveFilesTool,
 )
 from .sharepoint import (
+    ListSharePointFilesTool,
+    SearchSharePointFilesTool,
+    DownloadSharePointFileTool,
+    UploadSharePointFileTool,
     DeltaSharePointFilesTool,
 )
 from .delta import (
@@ -52,6 +56,10 @@ __all__ = (
     "DownloadOneDriveFileTool",
     "UploadOneDriveFileTool",
     "DeltaOneDriveFilesTool",
+    "ListSharePointFilesTool",
+    "SearchSharePointFilesTool",
+    "DownloadSharePointFileTool",
+    "UploadSharePointFileTool",
     "DeltaSharePointFilesTool",
     "DeltaEnumeration",
     "DeltaItem",

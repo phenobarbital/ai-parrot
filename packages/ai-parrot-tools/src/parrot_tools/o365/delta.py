@@ -246,6 +246,13 @@ class DeltaPage(BaseModel):
         default=None,
         description="Opaque '@odata.deltaLink' final cursor, when enumeration ended.",
     )
+    skipped_entries: int = Field(
+        default=0,
+        description=(
+            "Entries on this page that carried no stable item id and could "
+            "not be reconciled, so were dropped."
+        ),
+    )
 
     @property
     def is_final(self) -> bool:
@@ -303,6 +310,14 @@ class DeltaEnumeration(BaseModel):
     filtered_out: int = Field(
         default=0,
         description="Items positively excluded by the local folder filter.",
+    )
+    skipped_entries: int = Field(
+        default=0,
+        description=(
+            "Entries dropped because Graph reported no stable item id. "
+            "Non-zero means this enumeration is incomplete: the cursor "
+            "should not be committed without investigating."
+        ),
     )
     unresolved_parent: int = Field(
         default=0,
@@ -427,11 +442,17 @@ def validate_continuation_link(
     # The match must be STRUCTURAL: merely containing the drive id and a
     # "delta" segment somewhere would accept
     # /v1.0/delta/drives/{drive-id}/items/x/content.
-    segments = [unquote(seg) for seg in parts.path.split("/") if seg]
+    # Decode BEFORE splitting: splitting first lets an encoded separator
+    # such as %2e%2e%2f smuggle a traversal past a per-segment ".." check
+    # and re-anchor the request on another drive once the server decodes it.
+    # Backslash is treated as a separator too, for the same reason.
+    decoded_path = unquote(parts.path).replace("\\", "/")
+    segments = [seg for seg in decoded_path.split("/") if seg]
 
     if any(seg in ("..", ".") for seg in segments):
         raise DeltaLinkValidationError(
-            f"Delta continuation link must not contain relative path " f"segments: {parts.path!r}."
+            f"Delta continuation link must not contain relative path "
+            f"segments: {parts.path!r}."
         )
 
     last = segments[-1] if segments else ""
@@ -444,7 +465,8 @@ def validate_continuation_link(
         drives_at = -1
     if drives_at < 0 or drives_at + 1 >= len(segments) or segments[drives_at + 1] != str(drive_id):
         raise DeltaLinkValidationError(
-            f"Delta continuation link does not address drive " f"{drive_id!r}: {parts.path!r}."
+            f"Delta continuation link does not address drive "
+            f"{drive_id!r}: {parts.path!r}."
         )
 
     return str(link)
@@ -512,20 +534,44 @@ def _coerce_datetime(value: Any) -> Optional[datetime]:
         return None
 
 
+def _field(source: Any, *names: str) -> Any:
+    """Read the first present field from an SDK object *or* a plain dict.
+
+    Graph payloads reach this module either as ``msgraph`` model objects
+    (snake_case attributes) or, in tests and cached/serialized feeds, as raw
+    JSON dicts (camelCase keys). Accepting both keeps one parser instead of
+    two subtly different ones.
+
+    Args:
+        source: The object or mapping to read from.
+        *names: Candidate field names, tried in order.
+
+    Returns:
+        The first non-None value found, else None.
+    """
+    if source is None:
+        return None
+    for name in names:
+        value = source.get(name) if isinstance(source, dict) else getattr(source, name, None)
+        if value is not None:
+            return value
+    return None
+
+
 def _extract_hashes(drive_item: Any) -> Dict[str, str]:
     """Collect the content hashes Graph reported for a file item."""
-    file_facet = getattr(drive_item, "file", None)
-    hashes = getattr(file_facet, "hashes", None) if file_facet is not None else None
+    file_facet = _field(drive_item, "file")
+    hashes = _field(file_facet, "hashes") if file_facet is not None else None
     if hashes is None:
         return {}
     collected: Dict[str, str] = {}
-    for attr, key in (
-        ("quick_xor_hash", "quickXorHash"),
-        ("sha1_hash", "sha1Hash"),
-        ("sha256_hash", "sha256Hash"),
-        ("crc32_hash", "crc32Hash"),
+    for attr, camel, key in (
+        ("quick_xor_hash", "quickXorHash", "quickXorHash"),
+        ("sha1_hash", "sha1Hash", "sha1Hash"),
+        ("sha256_hash", "sha256Hash", "sha256Hash"),
+        ("crc32_hash", "crc32Hash", "crc32Hash"),
     ):
-        value = getattr(hashes, attr, None)
+        value = _field(hashes, attr, camel)
         if value:
             collected[key] = str(value)
     return collected
@@ -544,27 +590,35 @@ def drive_item_to_delta_item(drive_item: Any, drive_id: str) -> Optional[DeltaIt
         The typed item, or None when Graph reported no stable item id (such
         an entry cannot be reconciled and is skipped).
     """
-    item_id = getattr(drive_item, "id", None)
+    item_id = _field(drive_item, "id")
     if not item_id:
         logger.warning("Skipping delta entry without a stable item id.")
         return None
 
-    parent = getattr(drive_item, "parent_reference", None)
-    parent_drive_id = getattr(parent, "drive_id", None) if parent is not None else None
+    parent = _field(drive_item, "parent_reference", "parentReference")
+    parent_drive_id = _field(parent, "drive_id", "driveId")
+
+    additional = _field(drive_item, "additional_data", "additionalData") or {}
+    deleted = (
+        _field(drive_item, "deleted") is not None
+        or (isinstance(additional, dict) and "deleted" in additional)
+    )
 
     return DeltaItem(
         drive_id=str(parent_drive_id or drive_id),
         item_id=str(item_id),
-        name=getattr(drive_item, "name", None),
-        deleted=getattr(drive_item, "deleted", None) is not None,
-        is_folder=getattr(drive_item, "folder", None) is not None,
-        parent_id=getattr(parent, "id", None) if parent is not None else None,
-        parent_path=normalize_drive_path(getattr(parent, "path", None) if parent is not None else None),
-        size=getattr(drive_item, "size", None),
-        etag=getattr(drive_item, "e_tag", None),
-        ctag=getattr(drive_item, "c_tag", None),
-        web_url=getattr(drive_item, "web_url", None),
-        last_modified=_coerce_datetime(getattr(drive_item, "last_modified_date_time", None)),
+        name=_field(drive_item, "name"),
+        deleted=deleted,
+        is_folder=_field(drive_item, "folder") is not None,
+        parent_id=_field(parent, "id"),
+        parent_path=normalize_drive_path(_field(parent, "path")),
+        size=_field(drive_item, "size"),
+        etag=_field(drive_item, "e_tag", "eTag"),
+        ctag=_field(drive_item, "c_tag", "cTag"),
+        web_url=_field(drive_item, "web_url", "webUrl"),
+        last_modified=_coerce_datetime(
+            _field(drive_item, "last_modified_date_time", "lastModifiedDateTime")
+        ),
         content_hashes=_extract_hashes(drive_item),
     )
 
@@ -611,6 +665,14 @@ def classify_folder_membership(
     if not normalized_path and not folder_id:
         return FOLDER_MATCH
 
+    if item.deleted:
+        # A tombstone is retained whatever the filter says. Graph reports a
+        # deletion with little metadata, and an item may be tombstoned
+        # precisely because it left the folder — excluding it would strand
+        # the projection the consumer already indexed. Dropping a retraction
+        # is corruption; keeping one for an item nobody indexed is a no-op.
+        return FOLDER_MATCH
+
     decidable = False
 
     if folder_id:
@@ -622,8 +684,13 @@ def classify_folder_membership(
     if normalized_path:
         if item.parent_path is not None:
             decidable = True
-            parent = item.parent_path
-            if parent == normalized_path or parent.startswith(f"{normalized_path}/"):
+            # SharePoint/OneDrive paths are case-insensitive, so the filter
+            # must be too — otherwise "legal" misses "/Legal/Contracts".
+            # Matching stays on segment boundaries: "Contracts" must not
+            # match "ContractsArchive".
+            parent = item.parent_path.casefold()
+            wanted = normalized_path.casefold()
+            if parent == wanted or parent.startswith(f"{wanted}/"):
                 return FOLDER_MATCH
 
     return FOLDER_MISS if decidable else FOLDER_UNKNOWN
@@ -856,18 +923,21 @@ class DriveDeltaHelper:
         if response is None:
             return DeltaPage(drive_id=drive_id)
 
-        raw_items: Iterable[Any] = getattr(response, "value", None) or []
+        raw_items: Iterable[Any] = _field(response, "value") or []
         items: List[DeltaItem] = []
+        skipped = 0
         for raw in raw_items:
             item = drive_item_to_delta_item(raw, drive_id)
-            if item is not None:
-                items.append(item)
+            if item is None:
+                skipped += 1
+                continue
+            items.append(item)
 
         # Validate here rather than only at follow-time, so a DeltaPage
         # obtained through the public fetch_page() never carries a link a
         # caller could dereference unchecked.
-        next_link = getattr(response, "odata_next_link", None)
-        delta_link = getattr(response, "odata_delta_link", None)
+        next_link = _field(response, "odata_next_link", "@odata.nextLink")
+        delta_link = _field(response, "odata_delta_link", "@odata.deltaLink")
         if next_link is not None:
             next_link = self.validate_link(next_link, drive_id)
         if delta_link is not None:
@@ -878,6 +948,7 @@ class DriveDeltaHelper:
             items=items,
             next_link=next_link,
             delta_link=delta_link,
+            skipped_entries=skipped,
         )
 
     # -- full enumeration --------------------------------------------------
@@ -965,6 +1036,7 @@ class DriveDeltaHelper:
         order: List[str] = []
         unresolved: set[str] = set()
         excluded: set[str] = set()
+        skipped = 0
         pages = 0
         final_link: Optional[str] = None
         link = delta_link
@@ -972,6 +1044,7 @@ class DriveDeltaHelper:
         while pages < page_bound:
             page = await self.fetch_page(client, drive_id, link=link)
             pages += 1
+            skipped += page.skipped_entries
 
             for item in page.items:
                 membership = classify_folder_membership(item, folder_path, folder_id)
@@ -1027,12 +1100,15 @@ class DriveDeltaHelper:
             items=[collected[item_id] for item_id in order],
             delta_link=final_link,
             pages_fetched=pages,
-            complete=final_link is not None,
+            # An enumeration that dropped unreconcilable entries is not a
+            # complete picture, so it must not authorise a cursor commit.
+            complete=final_link is not None and skipped == 0,
             reset_performed=reset_performed,
             full_enumeration=delta_link is None,
             folder_path=(folder_path or None),
             folder_id=(folder_id or None),
             filtered_out=len(excluded),
+            skipped_entries=skipped,
             unresolved_parent=len(unresolved),
         )
 

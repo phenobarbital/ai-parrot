@@ -556,17 +556,28 @@ class DeltaOneDriveFilesTool(O365Tool):
     )
     args_schema: Type[BaseModel] = DeltaOneDriveFilesArgs
 
-    def __init__(self, *args, delta_helper: Optional[DriveDeltaHelper] = None, **kwargs):
+    def __init__(
+        self,
+        *args,
+        delta_helper: Optional[DriveDeltaHelper] = None,
+        strict_folder_scope: bool = True,
+        **kwargs,
+    ):
         """Initialize the OneDrive delta tool.
 
         Args:
             *args: Positional arguments forwarded to :class:`O365Tool`.
             delta_helper: Optional pre-configured drive delta helper, useful
                 for tuning retry/backoff bounds or the trusted Graph origins.
+            strict_folder_scope: When True (default), refuse to return
+                results whose folder membership could not be decided under a
+                folder-scoped request, rather than silently widening the
+                scope to the whole drive.
             **kwargs: Keyword arguments forwarded to :class:`O365Tool`.
         """
         super().__init__(*args, **kwargs)
         self._delta_helper = delta_helper or DriveDeltaHelper()
+        self.strict_folder_scope = strict_folder_scope
 
     async def _resolve_drive_id(self, client: O365Client, user_id: Optional[str]) -> str:
         """Resolve the drive identifier for the target OneDrive.
@@ -642,7 +653,31 @@ class DeltaOneDriveFilesTool(O365Tool):
             max_pages=max_pages,
         )
 
+        if self.strict_folder_scope and not enumeration.folder_filter_reliable:
+            # Graph omits parentReference.path from delta responses, so a
+            # path-only filter usually cannot decide membership. Returning
+            # the unfiltered drive under a folder-scoped request would let
+            # unrelated documents into the caller's corpus, and the caller
+            # cannot be relied on to inspect folder_filter_reliable. Fail
+            # loudly and tell the operator how to make it decidable.
+            raise ValueError(
+                f"Folder scope {folder_path!r} could not be applied to "
+                f"{enumeration.unresolved_parent} of "
+                f"{len(enumeration.items)} item(s): the Microsoft Graph "
+                f"delta feed does not report a parent path. Pass folder_id "
+                f"(the folder's stable item id) instead, or drop the folder "
+                f"filter and scope the results in the caller. Set "
+                f"strict_folder_scope=False to accept the unfiltered set."
+            )
+
         payload = enumeration.model_dump(mode="json")
+        # `path` is a derived property and `sha256` lives inside
+        # content_hashes, so model_dump() omits both — yet the contracts
+        # ingest job reads them per item (as a source-URI fallback and as
+        # the content hash it persists). Project them explicitly.
+        for serialized, item in zip(payload["items"], enumeration.items):
+            serialized["path"] = item.path
+            serialized["sha256"] = item.content_hashes.get("sha256Hash")
         payload.update(
             {
                 "source": "onedrive",
