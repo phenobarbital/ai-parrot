@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-539 - Contracts Card & Ontology
 **Spec**: `sdd/specs/contracts-card-ontology.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2–4h)
 **Depends-on**: TASK-3029, TASK-3031, TASK-3032, TASK-3033
@@ -106,4 +106,36 @@ Store execution logs in `artifacts/logs/task-3034.log`. Use frozen dates, synthe
 
 ## Completion Note
 
-Pending execution. Record executor, completion date, implementation summary, validation evidence and deviations when this task is completed.
+Completed 2026-09-09 by sdd-worker (Claude Opus 5).
+
+**Implementation**: created `parrot/knowledge/contracts/library.py` with
+`ContractLibrary.add_contract`/`add_folder`. Identity resolution is URI-first, then
+content hash: an unchanged sha is `skipped` (no revision), the same bytes at another
+URI resolve to the existing card and keep its canonical URI, and slugs are allocated
+with `unique_slug` over `taken_slugs()` (SQL uniqueness remains the real guard).
+Conversion: markdown as-is, heading-less markdown/TXT through
+`deterministic_sections`, DOCX through the shared bookstore `docx_to_markdown`, text
+PDFs through `pdf_markdown` page anchors (`## Page N`); a no-text PDF is skipped with
+an explicit "OCR is out of scope" reason. Ingestion builds the tree in the staging
+root, derives the ToC, runs the bounded carding pass, assembles the card with folder
+owner rules (longest matching prefix; manual overrides survive), archives the
+version's evidence immutably, then persists card+obligations+version+outbox in one
+`catalog.upsert` and only then promotes the staged tree. Every failure path
+(`indexing`, conversion, catalog) discards staging and returns an `error` result, so
+the previously published card/evidence pair stays usable.
+
+**Validation**: `pytest .../test_ingestion.py -q` -> 25 passed; whole contracts suite
+**328 passed** (`artifacts/logs/task-3034.log`); ruff clean. Coverage includes
+heading-less TXT sectioning, recursive/non-recursive folder walks with deterministic
+ordering, no-text PDF skip, page-anchored text PDF, DOCX delegation, duplicate URI and
+duplicate hash, slug collision suffixes, force re-carding, owner-rule specificity and
+manual-override survival, per-revision evidence archives that historical citations
+still resolve against, and both staged-failure paths leaving the published tree,
+catalog revision and archived evidence untouched.
+
+**Deviations**: also fixed `test_dependency_boundary.py` (TASK-3052) — its
+import-without-extras test purged `parrot.knowledge.contracts.*` from `sys.modules`
+in-process, leaving other suites holding classes from a stale module object (it made
+this task's DOCX monkeypatches silently ineffective in a full-suite run). It now runs
+the same assertion in a subprocess, which additionally proves asyncpg/rapidfuzz are
+never imported.
