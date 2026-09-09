@@ -18,6 +18,9 @@ import pytest
 from parrot_tools.o365 import delta as delta_mod
 from parrot_tools.o365.delta import (
     DEFAULT_GRAPH_ORIGINS,
+    FOLDER_MATCH,
+    FOLDER_MISS,
+    FOLDER_UNKNOWN,
     DeltaEnumeration,
     DeltaItem,
     DeltaLinkValidationError,
@@ -25,6 +28,7 @@ from parrot_tools.o365.delta import (
     DeltaResetRequiredError,
     DeltaRetryExhaustedError,
     DriveDeltaHelper,
+    classify_folder_membership,
     drive_item_to_delta_item,
     item_in_folder,
     normalize_drive_path,
@@ -33,6 +37,8 @@ from parrot_tools.o365.delta import (
 
 GRAPH = "https://graph.microsoft.com/v1.0"
 DRIVE_ID = "b!fake-drive-id"
+#: Shape Microsoft Graph actually returns for drive delta continuations.
+DELTA = f"{GRAPH}/drives/{DRIVE_ID}/items/root/delta"
 
 
 # ============================================================================
@@ -268,9 +274,9 @@ class TestPageEnumeration:
         self, helper: DriveDeltaHelper
     ) -> None:
         """A three-page feed ends on the delta link and keeps page order."""
-        page2 = f"{GRAPH}/drives/{DRIVE_ID}/items/root/delta?token=p2"
-        page3 = f"{GRAPH}/drives/{DRIVE_ID}/items/root/delta?token=p3"
-        final = f"{GRAPH}/drives/{DRIVE_ID}/items/root/delta?token=final"
+        page2 = f"{DELTA}?token=p2"
+        page3 = f"{DELTA}?token=p3"
+        final = f"{DELTA}?token=final"
 
         graph = FakeGraph({
             None: FakeDeltaResponse(
@@ -304,8 +310,8 @@ class TestPageEnumeration:
         self, helper: DriveDeltaHelper
     ) -> None:
         """The same item on two pages collapses; the later state wins."""
-        page2 = f"{GRAPH}/delta?token=p2"
-        final = f"{GRAPH}/delta?token=final"
+        page2 = f"{DELTA}?token=p2"
+        final = f"{DELTA}?token=final"
 
         graph = FakeGraph({
             None: FakeDeltaResponse(
@@ -329,7 +335,7 @@ class TestPageEnumeration:
         self, helper: DriveDeltaHelper
     ) -> None:
         """Items carrying the deleted facet become tombstones, not drops."""
-        final = f"{GRAPH}/delta?token=final"
+        final = f"{DELTA}?token=final"
         graph = FakeGraph({
             None: FakeDeltaResponse(
                 [
@@ -351,8 +357,8 @@ class TestPageEnumeration:
         self, helper: DriveDeltaHelper
     ) -> None:
         """Passing a stored delta link resumes rather than rescans."""
-        stored = f"{GRAPH}/delta?token=stored"
-        final = f"{GRAPH}/delta?token=final"
+        stored = f"{DELTA}?token=stored"
+        final = f"{DELTA}?token=final"
         graph = FakeGraph({stored: FakeDeltaResponse([], delta_link=final)})
 
         result = await helper.enumerate(
@@ -367,7 +373,7 @@ class TestPageEnumeration:
         self, helper: DriveDeltaHelper
     ) -> None:
         """An entry Graph reported without an id cannot be reconciled."""
-        final = f"{GRAPH}/delta?token=final"
+        final = f"{DELTA}?token=final"
         graph = FakeGraph({
             None: FakeDeltaResponse(
                 [FakeDriveItem(id=None, name="ghost.docx"),
@@ -382,7 +388,7 @@ class TestPageEnumeration:
         self, helper: DriveDeltaHelper
     ) -> None:
         """Hitting the page bound yields no cursor, forcing idempotent replay."""
-        loop_link = f"{GRAPH}/delta?token=loop"
+        loop_link = f"{DELTA}?token=loop"
         graph = FakeGraph({
             None: FakeDeltaResponse([FakeDriveItem(id="x")], next_link=loop_link),
             loop_link: FakeDeltaResponse(
@@ -426,7 +432,7 @@ class TestFolderFiltering:
     async def test_folder_filter_keeps_subtree_and_counts_drops(
         self, helper: DriveDeltaHelper
     ) -> None:
-        final = f"{GRAPH}/delta?token=final"
+        final = f"{DELTA}?token=final"
         graph = FakeGraph({
             None: FakeDeltaResponse(
                 [
@@ -452,11 +458,11 @@ class TestFolderFiltering:
         assert result.filtered_out == 2
         assert result.folder_path == "Contracts"
 
-    async def test_tombstone_without_parent_path_is_retained(
+    async def test_tombstone_without_parent_path_is_retained_and_counted(
         self, helper: DriveDeltaHelper
     ) -> None:
         """An unlocatable tombstone is kept so a retraction is never lost."""
-        final = f"{GRAPH}/delta?token=final"
+        final = f"{DELTA}?token=final"
         graph = FakeGraph({
             None: FakeDeltaResponse(
                 [FakeDriveItem(id="gone", deleted=object())],
@@ -467,6 +473,158 @@ class TestFolderFiltering:
             FakeO365Client(graph), DRIVE_ID, folder_path="Contracts"
         )
         assert [i.item_id for i in result.items] == ["gone"]
+        # ...but the caller is told the filter could not be applied to it.
+        assert result.unresolved_parent == 1
+        assert result.folder_filter_reliable is False
+
+    async def test_real_graph_shape_reports_the_filter_as_unreliable(
+        self, helper: DriveDeltaHelper
+    ) -> None:
+        """Graph omits parentReference.path in delta responses.
+
+        Per the v1.0 docs: "The parentReference property on items won't
+        include a value for path... When using delta you should always track
+        items by id." A path filter therefore cannot decide membership, and
+        the enumeration must SAY so rather than silently returning the whole
+        drive as if it had been filtered.
+        """
+        final = f"{DELTA}?token=final"
+        graph = FakeGraph({
+            None: FakeDeltaResponse(
+                [
+                    FakeDriveItem(id="a", name="a.docx", parent_id="folder-x"),
+                    FakeDriveItem(id="b", name="b.docx", parent_id="folder-y"),
+                ],
+                delta_link=final,
+            ),
+        })
+        result = await helper.enumerate(
+            FakeO365Client(graph), DRIVE_ID, folder_path="Contracts"
+        )
+
+        assert [i.item_id for i in result.items] == ["a", "b"]
+        assert result.filtered_out == 0
+        assert result.unresolved_parent == 2
+        assert result.folder_filter_reliable is False
+
+    async def test_folder_id_filter_is_exact_and_reliable(
+        self, helper: DriveDeltaHelper
+    ) -> None:
+        """parentReference.id IS reported by delta, so id filtering decides."""
+        final = f"{DELTA}?token=final"
+        graph = FakeGraph({
+            None: FakeDeltaResponse(
+                [
+                    FakeDriveItem(id="in", name="a.docx", parent_id="folder-x"),
+                    FakeDriveItem(id="out", name="b.docx", parent_id="folder-y"),
+                    FakeDriveItem(id="folder-x", name="Contracts",
+                                  folder=object(), parent_id="root-id"),
+                ],
+                delta_link=final,
+            ),
+        })
+        result = await helper.enumerate(
+            FakeO365Client(graph), DRIVE_ID, folder_id="folder-x"
+        )
+
+        # Direct children plus the folder itself; the sibling is excluded.
+        assert {i.item_id for i in result.items} == {"in", "folder-x"}
+        assert result.filtered_out == 1
+        assert result.unresolved_parent == 0
+        assert result.folder_filter_reliable is True
+        assert result.folder_id == "folder-x"
+
+    async def test_no_filter_is_always_reliable(
+        self, helper: DriveDeltaHelper
+    ) -> None:
+        final = f"{DELTA}?token=final"
+        graph = FakeGraph({
+            None: FakeDeltaResponse(
+                [FakeDriveItem(id="a"), FakeDriveItem(id="b")],
+                delta_link=final,
+            ),
+        })
+        result = await helper.enumerate(FakeO365Client(graph), DRIVE_ID)
+
+        assert result.unresolved_parent == 0
+        assert result.folder_filter_reliable is True
+        assert result.folder_path is None and result.folder_id is None
+
+    def test_classify_folder_membership(self) -> None:
+        pathed = DeltaItem(drive_id=DRIVE_ID, item_id="i",
+                           parent_path="Contracts")
+        outside = DeltaItem(drive_id=DRIVE_ID, item_id="i",
+                            parent_path="ContractsArchive")
+        by_id = DeltaItem(drive_id=DRIVE_ID, item_id="i", parent_id="folder-x")
+        bare = DeltaItem(drive_id=DRIVE_ID, item_id="i")
+
+        assert classify_folder_membership(bare) == FOLDER_MATCH
+        assert classify_folder_membership(pathed, "Contracts") == FOLDER_MATCH
+        assert classify_folder_membership(outside, "Contracts") == FOLDER_MISS
+        assert classify_folder_membership(bare, "Contracts") == FOLDER_UNKNOWN
+        assert classify_folder_membership(
+            by_id, folder_id="folder-x") == FOLDER_MATCH
+        assert classify_folder_membership(
+            by_id, folder_id="other") == FOLDER_MISS
+        assert classify_folder_membership(
+            bare, folder_id="folder-x") == FOLDER_UNKNOWN
+        # Either signal matching is enough.
+        assert classify_folder_membership(
+            pathed, "Contracts", "other") == FOLDER_MATCH
+
+    async def test_item_moved_out_of_the_folder_does_not_keep_stale_state(
+        self, helper: DriveDeltaHelper
+    ) -> None:
+        """Graph: "use the last occurrence you see".
+
+        An item that page 1 placed inside the folder and page 2 moved out
+        must not be retained with its stale in-folder state.
+        """
+        page2 = f"{DELTA}?token=p2"
+        final = f"{DELTA}?token=final"
+        graph = FakeGraph({
+            None: FakeDeltaResponse(
+                [FakeDriveItem(id="mover", name="m.docx",
+                               parent_path="/drive/root:/Contracts")],
+                next_link=page2,
+            ),
+            page2: FakeDeltaResponse(
+                [FakeDriveItem(id="mover", name="m.docx",
+                               parent_path="/drive/root:/Archive")],
+                delta_link=final,
+            ),
+        })
+        result = await helper.enumerate(
+            FakeO365Client(graph), DRIVE_ID, folder_path="Contracts"
+        )
+
+        assert result.items == []
+        assert result.filtered_out == 1
+
+    async def test_item_moved_into_the_folder_is_picked_up(
+        self, helper: DriveDeltaHelper
+    ) -> None:
+        """The mirror case: a later in-folder occurrence wins over a miss."""
+        page2 = f"{DELTA}?token=p2"
+        final = f"{DELTA}?token=final"
+        graph = FakeGraph({
+            None: FakeDeltaResponse(
+                [FakeDriveItem(id="mover", name="m.docx",
+                               parent_path="/drive/root:/Archive")],
+                next_link=page2,
+            ),
+            page2: FakeDeltaResponse(
+                [FakeDriveItem(id="mover", name="m.docx",
+                               parent_path="/drive/root:/Contracts")],
+                delta_link=final,
+            ),
+        })
+        result = await helper.enumerate(
+            FakeO365Client(graph), DRIVE_ID, folder_path="Contracts"
+        )
+
+        assert [i.item_id for i in result.items] == ["mover"]
+        assert result.items[0].parent_path == "Contracts"
 
     def test_item_in_folder_semantics(self) -> None:
         inside = DeltaItem(drive_id=DRIVE_ID, item_id="i", parent_path="Contracts")
@@ -558,8 +716,8 @@ class TestResetOn410:
     async def test_410_restarts_enumeration_and_flags_rescan(
         self, helper: DriveDeltaHelper
     ) -> None:
-        stored = f"{GRAPH}/delta?token=expired"
-        final = f"{GRAPH}/delta?token=fresh"
+        stored = f"{DELTA}?token=expired"
+        final = f"{DELTA}?token=fresh"
         graph = FakeGraph({
             stored: FakeGraphError(410),
             None: FakeDeltaResponse(
@@ -583,10 +741,10 @@ class TestResetOn410:
     async def test_410_is_not_retried_as_a_transient_failure(
         self, helper: DriveDeltaHelper, sleeps: List[float]
     ) -> None:
-        stored = f"{GRAPH}/delta?token=expired"
+        stored = f"{DELTA}?token=expired"
         graph = FakeGraph({
             stored: FakeGraphError(410),
-            None: FakeDeltaResponse([], delta_link=f"{GRAPH}/delta?token=f"),
+            None: FakeDeltaResponse([], delta_link=f"{DELTA}?token=f"),
         })
         await helper.enumerate(FakeO365Client(graph), DRIVE_ID, delta_link=stored)
 
@@ -595,7 +753,7 @@ class TestResetOn410:
     async def test_fetch_page_propagates_reset_to_caller(
         self, helper: DriveDeltaHelper
     ) -> None:
-        stored = f"{GRAPH}/delta?token=expired"
+        stored = f"{DELTA}?token=expired"
         graph = FakeGraph({stored: FakeGraphError(410)})
 
         with pytest.raises(DeltaResetRequiredError) as excinfo:
@@ -611,7 +769,7 @@ class TestBoundedRetry:
     async def test_throttling_honours_retry_after_then_succeeds(
         self, helper: DriveDeltaHelper, sleeps: List[float]
     ) -> None:
-        final = f"{GRAPH}/delta?token=final"
+        final = f"{DELTA}?token=final"
         graph = FakeGraph({
             None: [
                 FakeGraphError(429, retry_after="5"),
@@ -623,25 +781,68 @@ class TestBoundedRetry:
         assert sleeps == [5.0]  # Retry-After respected, not the default backoff
         assert result.complete is True
 
-    async def test_retry_after_is_capped_by_max_backoff(
+    async def test_retry_after_is_honoured_in_full_not_truncated(
         self, sleeps: List[float]
     ) -> None:
+        """max_backoff bounds our own backoff, never a server-set interval.
+
+        Truncating Retry-After would retry while the throttle is still in
+        force, which is exactly what Microsoft tells clients not to do.
+        """
         async def _sleep(seconds: float) -> None:
             sleeps.append(seconds)
 
-        capped = DriveDeltaHelper(
-            max_retries=1, initial_backoff=1.0, max_backoff=3.0, sleep=_sleep
+        helper = DriveDeltaHelper(
+            max_retries=1, initial_backoff=1.0, max_backoff=3.0,
+            max_retry_after=300.0, sleep=_sleep,
         )
-        final = f"{GRAPH}/delta?token=final"
+        final = f"{DELTA}?token=final"
         graph = FakeGraph({
             None: [
-                FakeGraphError(503, retry_after="600"),
+                FakeGraphError(503, retry_after="120"),
                 FakeDeltaResponse([], delta_link=final),
             ],
         })
-        await capped.enumerate(FakeO365Client(graph), DRIVE_ID)
+        result = await helper.enumerate(FakeO365Client(graph), DRIVE_ID)
 
-        assert sleeps == [3.0]
+        assert sleeps == [120.0]
+        assert result.complete is True
+
+    async def test_retry_after_beyond_budget_abandons_the_round(
+        self, sleeps: List[float]
+    ) -> None:
+        """A throttle longer than max_retry_after is surfaced, not slept off."""
+        async def _sleep(seconds: float) -> None:  # pragma: no cover
+            sleeps.append(seconds)
+
+        helper = DriveDeltaHelper(
+            max_retries=3, max_retry_after=60.0, sleep=_sleep
+        )
+        graph = FakeGraph({None: [FakeGraphError(429, retry_after="600")
+                                  for _ in range(5)]})
+
+        with pytest.raises(DeltaRetryExhaustedError):
+            await helper.enumerate(FakeO365Client(graph), DRIVE_ID)
+
+        assert sleeps == []
+        assert len(graph.requested_urls) == 1
+
+    async def test_self_computed_backoff_is_capped_by_max_backoff(
+        self, sleeps: List[float]
+    ) -> None:
+        """Without a Retry-After header our own backoff respects the cap."""
+        async def _sleep(seconds: float) -> None:
+            sleeps.append(seconds)
+
+        helper = DriveDeltaHelper(
+            max_retries=3, initial_backoff=4.0, max_backoff=5.0, sleep=_sleep
+        )
+        graph = FakeGraph({None: [FakeGraphError(500) for _ in range(6)]})
+
+        with pytest.raises(DeltaRetryExhaustedError):
+            await helper.enumerate(FakeO365Client(graph), DRIVE_ID)
+
+        assert sleeps == [4.0, 5.0, 5.0]
 
     async def test_retries_are_bounded_and_then_raise(
         self, helper: DriveDeltaHelper, sleeps: List[float]
@@ -656,6 +857,94 @@ class TestBoundedRetry:
         assert excinfo.value.attempts == 3
         assert len(graph.requested_urls) == 3
         assert sleeps == [1.0, 2.0]
+
+    @pytest.mark.parametrize(
+        "exc",
+        [
+            TimeoutError("read timed out"),
+            ConnectionResetError("peer reset"),
+            OSError("network unreachable"),
+        ],
+    )
+    async def test_status_less_transient_failures_are_retried(
+        self, helper: DriveDeltaHelper, sleeps: List[float], exc: Exception
+    ) -> None:
+        """A dropped connection carries no HTTP status but is still transient."""
+        final = f"{DELTA}?token=final"
+        graph = FakeGraph({
+            None: [exc, FakeDeltaResponse([], delta_link=final)],
+        })
+        result = await helper.enumerate(FakeO365Client(graph), DRIVE_ID)
+
+        assert result.complete is True
+        assert len(graph.requested_urls) == 2
+        assert sleeps == [1.0]
+
+    async def test_httpx_transport_errors_are_retried(
+        self, helper: DriveDeltaHelper
+    ) -> None:
+        """The SDK's transport failures reach us without a status code."""
+        import httpx
+
+        final = f"{DELTA}?token=final"
+        graph = FakeGraph({
+            None: [httpx.ConnectError("connection refused"),
+                   FakeDeltaResponse([], delta_link=final)],
+        })
+        result = await helper.enumerate(FakeO365Client(graph), DRIVE_ID)
+
+        assert result.complete is True
+        assert len(graph.requested_urls) == 2
+
+    async def test_transient_failures_stay_bounded(
+        self, helper: DriveDeltaHelper
+    ) -> None:
+        graph = FakeGraph({None: [TimeoutError("nope") for _ in range(10)]})
+
+        with pytest.raises(DeltaRetryExhaustedError) as excinfo:
+            await helper.enumerate(FakeO365Client(graph), DRIVE_ID)
+
+        assert excinfo.value.attempts == 3
+        assert len(graph.requested_urls) == 3
+
+    async def test_retry_after_http_date_is_understood(
+        self, sleeps: List[float]
+    ) -> None:
+        """RFC 7231 allows an HTTP-date instead of delta-seconds."""
+        from datetime import datetime, timedelta, timezone
+        from email.utils import format_datetime
+
+        async def _sleep(seconds: float) -> None:
+            sleeps.append(seconds)
+
+        when = datetime.now(timezone.utc) + timedelta(seconds=45)
+        helper = DriveDeltaHelper(max_retries=1, sleep=_sleep)
+        final = f"{DELTA}?token=final"
+        graph = FakeGraph({
+            None: [
+                FakeGraphError(429, retry_after=format_datetime(when)),
+                FakeDeltaResponse([], delta_link=final),
+            ],
+        })
+        await helper.enumerate(FakeO365Client(graph), DRIVE_ID)
+
+        assert len(sleeps) == 1
+        # ~45s, allowing for the clock moving during the test.
+        assert 40 <= sleeps[0] <= 46
+
+    async def test_unparseable_retry_after_falls_back_to_backoff(
+        self, helper: DriveDeltaHelper, sleeps: List[float]
+    ) -> None:
+        final = f"{DELTA}?token=final"
+        graph = FakeGraph({
+            None: [
+                FakeGraphError(429, retry_after="soon-ish"),
+                FakeDeltaResponse([], delta_link=final),
+            ],
+        })
+        await helper.enumerate(FakeO365Client(graph), DRIVE_ID)
+
+        assert sleeps == [1.0]
 
     async def test_non_retryable_error_propagates_immediately(
         self, helper: DriveDeltaHelper, sleeps: List[float]
@@ -687,6 +976,7 @@ class TestBoundedRetry:
             {"max_retries": -1},
             {"initial_backoff": -1.0},
             {"max_backoff": -1.0},
+            {"max_retry_after": -1.0},
             {"max_pages": 0},
         ],
     )
@@ -723,6 +1013,8 @@ class TestContinuationHostValidation:
         with pytest.raises(DeltaLinkValidationError):
             await helper.enumerate(FakeO365Client(graph), DRIVE_ID)
 
+        assert graph.requested_urls == [None]
+
     async def test_untrusted_stored_cursor_rejected_before_request(
         self, helper: DriveDeltaHelper
     ) -> None:
@@ -753,6 +1045,103 @@ class TestContinuationHostValidation:
     def test_rejected_links(self, link: str) -> None:
         with pytest.raises(DeltaLinkValidationError):
             validate_continuation_link(link)
+
+    async def test_cursor_pointing_at_another_drive_is_rejected(
+        self, helper: DriveDeltaHelper
+    ) -> None:
+        """with_url() replaces the whole URL, so the path must be confined.
+
+        Origin validation alone would happily send the access token to a
+        different resource on the same trusted host.
+        """
+        graph = FakeGraph({})
+        other = f"{GRAPH}/drives/b!someone-elses-drive/items/root/delta?token=x"
+
+        with pytest.raises(DeltaLinkValidationError) as excinfo:
+            await helper.fetch_page(FakeO365Client(graph), DRIVE_ID, link=other)
+
+        assert "does not address drive" in str(excinfo.value)
+        assert graph.requested_urls == []
+
+    async def test_cursor_pointing_at_a_non_delta_endpoint_is_rejected(
+        self, helper: DriveDeltaHelper
+    ) -> None:
+        """A trusted-origin, right-drive URL still must be a delta endpoint."""
+        graph = FakeGraph({})
+        content = f"{GRAPH}/drives/{DRIVE_ID}/items/secret-item/content"
+
+        with pytest.raises(DeltaLinkValidationError) as excinfo:
+            await helper.fetch_page(
+                FakeO365Client(graph), DRIVE_ID, link=content
+            )
+
+        assert "not a delta endpoint" in str(excinfo.value)
+        assert graph.requested_urls == []
+
+    async def test_poisoned_final_cursor_for_another_drive_is_rejected(
+        self, helper: DriveDeltaHelper
+    ) -> None:
+        """The cursor handed back to the caller is confined too."""
+        evil = f"{GRAPH}/drives/b!other/items/root/delta?token=x"
+        graph = FakeGraph({None: FakeDeltaResponse([], delta_link=evil)})
+
+        with pytest.raises(DeltaLinkValidationError):
+            await helper.enumerate(FakeO365Client(graph), DRIVE_ID)
+
+        assert graph.requested_urls == [None]
+
+    @pytest.mark.parametrize(
+        "link",
+        [
+            # Traversal out of the delta endpoint.
+            f"{GRAPH}/drives/{DRIVE_ID}/items/root/delta/../../../users",
+            f"{GRAPH}/drives/{DRIVE_ID}/items/root/delta/%2e%2e/users",
+            # "delta" present, but the endpoint is /content.
+            f"{GRAPH}/delta/drives/{DRIVE_ID}/items/x/content",
+            f"{GRAPH}/drives/{DRIVE_ID}/items/x/content",
+            # Drive id present, but not as the drives/ segment's target.
+            f"{GRAPH}/{DRIVE_ID}/delta",
+            f"{GRAPH}/drives/other/drives/{DRIVE_ID}/delta",
+            # Sibling drive, and a prefix-extended drive id.
+            f"{GRAPH}/drives/b!other/items/root/delta",
+            f"{GRAPH}/drives/{DRIVE_ID}XX/items/root/delta",
+            # Trusted host smuggled into userinfo.
+            f"https://graph.microsoft.com@evil.example.com/v1.0/drives/"
+            f"{DRIVE_ID}/items/root/delta",
+            # A different-drive path smuggled through the query string.
+            f"{GRAPH}/drives/b!other/items/x/content"
+            f"?p=/drives/{DRIVE_ID}/items/root/delta",
+        ],
+    )
+    def test_confinement_cannot_be_bypassed(self, link: str) -> None:
+        with pytest.raises(DeltaLinkValidationError):
+            validate_continuation_link(link, drive_id=DRIVE_ID)
+
+    @pytest.mark.parametrize(
+        "shape",
+        [
+            "{graph}/drives/{drive}/root/delta?token=abc",
+            "{graph}/drives/{drive}/items/root/delta?token=abc",
+            "{graph}/drives/{drive}/items/01ABC/delta()?token=abc",
+        ],
+    )
+    def test_real_graph_continuation_shapes_are_accepted(
+        self, shape: str
+    ) -> None:
+        link = shape.format(graph=GRAPH, drive=DRIVE_ID)
+        assert validate_continuation_link(link, drive_id=DRIVE_ID) == link
+
+    def test_percent_encoded_drive_id_is_accepted(self) -> None:
+        from urllib.parse import quote
+
+        encoded = quote(DRIVE_ID, safe="")
+        link = f"{GRAPH}/drives/{encoded}/items/root/delta?token=abc"
+        assert validate_continuation_link(link, drive_id=DRIVE_ID) == link
+
+    def test_drive_confinement_is_opt_in(self) -> None:
+        """Without a drive_id only the origin is checked (helper always passes one)."""
+        link = f"{GRAPH}/drives/anything/items/x/content"
+        assert validate_continuation_link(link) == link
 
     @pytest.mark.parametrize("origin", DEFAULT_GRAPH_ORIGINS)
     def test_all_sovereign_graph_origins_accepted(self, origin: str) -> None:
@@ -834,7 +1223,7 @@ class TestHelperBoundaries:
     async def test_enumeration_never_downloads_content(
         self, helper: DriveDeltaHelper
     ) -> None:
-        final = f"{GRAPH}/delta?token=final"
+        final = f"{DELTA}?token=final"
         graph = FakeGraph({
             None: FakeDeltaResponse(
                 [FakeDriveItem(id="a", name="a.docx", quick_xor_hash="H")],
@@ -850,7 +1239,7 @@ class TestHelperBoundaries:
         self, helper: DriveDeltaHelper
     ) -> None:
         """The final cursor is returned to the caller, never stored here."""
-        final = f"{GRAPH}/delta?token=final"
+        final = f"{DELTA}?token=final"
         graph = FakeGraph({None: FakeDeltaResponse([], delta_link=final)})
 
         first = await helper.enumerate(FakeO365Client(graph), DRIVE_ID)

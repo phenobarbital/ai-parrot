@@ -63,9 +63,14 @@ class FakeDeleted:
 
 
 class FakeParentReference:
-    def __init__(self, path: Optional[str] = None, drive_id: Optional[str] = None):
+    def __init__(
+        self,
+        path: Optional[str] = None,
+        drive_id: Optional[str] = None,
+        id: str = "parent-id",
+    ):
         self.path = path
-        self.id = "parent-id"
+        self.id = id
         self.drive_id = drive_id
 
 
@@ -77,13 +82,14 @@ class FakeDriveItem:
         name: Optional[str] = None,
         deleted: Any = None,
         parent_path: Optional[str] = "/drive/root:",
+        parent_id: str = "parent-id",
     ) -> None:
         self.id = id
         self.name = name
         self.deleted = deleted
         self.folder = None
         self.file = None
-        self.parent_reference = FakeParentReference(parent_path)
+        self.parent_reference = FakeParentReference(parent_path, id=parent_id)
         self.size = 10
         self.e_tag = f"etag-{id}"
         self.c_tag = f"ctag-{id}"
@@ -110,8 +116,13 @@ class FakeDrive:
 
 
 class FakeDrivesPage:
-    def __init__(self, drives: Sequence[FakeDrive]) -> None:
+    def __init__(
+        self,
+        drives: Sequence[FakeDrive],
+        next_link: Optional[str] = None,
+    ) -> None:
         self.value = list(drives)
+        self.odata_next_link = next_link
 
 
 class FakeDeltaRequestBuilder:
@@ -176,7 +187,9 @@ class _FakeSiteDrives:
         self._graph = graph
 
     async def get(self) -> FakeDrivesPage:
-        return FakeDrivesPage(self._graph.site_drives)
+        return FakeDrivesPage(
+            self._graph.site_drives, self._graph.site_drives_next_link
+        )
 
 
 class _FakeSitesCollection:
@@ -232,12 +245,14 @@ class FakeGraph:
         delta_responses: Dict[Optional[str], Any],
         site_drives: Optional[Sequence[FakeDrive]] = None,
         owner_drive: Optional[FakeDrive] = None,
+        site_drives_next_link: Optional[str] = None,
     ) -> None:
         self.delta_responses = {
             k: list(v) if isinstance(v, list) else [v]
             for k, v in delta_responses.items()
         }
         self.site_drives = list(site_drives or [])
+        self.site_drives_next_link = site_drives_next_link
         self.owner_drive = owner_drive
         self.requested_urls: List[Optional[str]] = []
         self.requested_drive_ids: List[str] = []
@@ -274,31 +289,67 @@ class FakeGraph:
 
 
 class FakeO365Client:
-    """Fake authenticated O365 client exposing only ``graph_client``."""
+    """Fake authenticated O365 client mirroring the bits the tools use.
 
-    def __init__(self, graph: FakeGraph) -> None:
+    ``get_user_context`` reproduces the real ``O365Client`` behaviour
+    (parrot/interfaces/o365.py): per-call user wins, then a configured
+    default, then ``/me`` — and app-only with no identity is an error.
+    """
+
+    def __init__(
+        self,
+        graph: FakeGraph,
+        credentials: Optional[Dict[str, str]] = None,
+        is_app_only: bool = False,
+    ) -> None:
         self._graph = graph
+        self.credentials = credentials or {}
+        self.is_app_only = is_app_only
 
     @property
     def graph_client(self) -> FakeGraph:
         return self._graph
 
+    def get_user_context(self, user_id: Optional[str] = None) -> Any:
+        effective = (
+            user_id
+            or self.credentials.get("user_id")
+            or self.credentials.get("user_principal_name")
+            or self.credentials.get("mailbox")
+            or self.credentials.get("username")
+        )
+        if effective:
+            return self._graph.users.by_user_id(effective)
+        if self.is_app_only:
+            raise ValueError(
+                "App-only authentication requires a target user_id (UPN or "
+                "GUID) either in the tool arguments or credentials."
+            )
+        return self._graph.me
 
-def bind_client(tool: Any, graph: FakeGraph) -> AsyncMock:
+
+def bind_client(
+    tool: Any,
+    graph: FakeGraph,
+    credentials: Optional[Dict[str, str]] = None,
+    is_app_only: bool = False,
+) -> AsyncMock:
     """Replace the tool's authentication step with a fake client.
 
     Everything else in :meth:`O365Tool._execute` — auth-mode selection, the
     ToolResult wrapper, error capture and metadata — is left untouched.
     """
-    mock = AsyncMock(return_value=FakeO365Client(graph))
+    mock = AsyncMock(
+        return_value=FakeO365Client(graph, credentials, is_app_only)
+    )
     tool._get_client = mock  # type: ignore[method-assign]
     return mock
 
 
 def two_page_feed(prefix: str) -> Dict[Optional[str], Any]:
     """A two-page delta feed with a rename, a tombstone and a duplicate."""
-    page2 = f"{GRAPH}/{prefix}/delta?token=p2"
-    final = f"{GRAPH}/{prefix}/delta?token=final"
+    page2 = f"{DELTA}?token={prefix}-p2"
+    final = f"{DELTA}?token={prefix}-final"
     return {
         None: FakeDeltaResponse(
             [
@@ -322,8 +373,9 @@ def two_page_feed(prefix: str) -> Dict[Optional[str], Any]:
     }
 
 
-FINAL_SP = f"{GRAPH}/sp/delta?token=final"
-FINAL_OD = f"{GRAPH}/od/delta?token=final"
+DELTA = f"{GRAPH}/drives/{DRIVE_ID}/items/root/delta"
+FINAL_SP = f"{DELTA}?token=final-sp"
+FINAL_OD = f"{DELTA}?token=final-od"
 
 
 @pytest.fixture
@@ -467,7 +519,7 @@ class TestEquivalentDeltaOutcomes:
 
         assert payload["pages_fetched"] == 2
         assert payload["complete"] is True
-        assert payload["delta_link"] == f"{GRAPH}/sp/delta?token=final"
+        assert payload["delta_link"] == f"{DELTA}?token=sp-final"
         assert payload["full_enumeration"] is True
         assert payload["reset_performed"] is False
 
@@ -484,7 +536,7 @@ class TestEquivalentDeltaOutcomes:
     async def test_incremental_round_uses_stored_cursor(
         self, onedrive_tool: DeltaOneDriveFilesTool
     ) -> None:
-        stored = f"{GRAPH}/od/delta?token=stored"
+        stored = f"{DELTA}?token=stored"
         graph = FakeGraph({stored: FakeDeltaResponse([], delta_link=FINAL_OD)})
         bind_client(onedrive_tool, graph)
 
@@ -503,7 +555,7 @@ class TestEquivalentDeltaOutcomes:
             response_status_code = 410
             response_headers: Dict[str, str] = {}
 
-        stored = f"{GRAPH}/sp/delta?token=expired"
+        stored = f"{DELTA}?token=expired"
         graph = FakeGraph({
             stored: Gone("cursor expired"),
             None: FakeDeltaResponse([FakeDriveItem(id="a", name="a.docx")],
@@ -533,10 +585,61 @@ class TestEquivalentDeltaOutcomes:
         assert {i["item_id"] for i in payload["items"]} == {"doc-1", "doc-2"}
         assert payload["filtered_out"] == 1
 
+    async def test_folder_id_filter_is_passed_through_and_is_reliable(
+        self, onedrive_tool: DeltaOneDriveFilesTool
+    ) -> None:
+        """folder_id filters on parentReference.id, which delta does report."""
+        graph = FakeGraph({
+            None: FakeDeltaResponse(
+                [
+                    FakeDriveItem(id="in", name="a.docx", parent_path=None,
+                                  parent_id="folder-x"),
+                    FakeDriveItem(id="out", name="b.docx", parent_path=None,
+                                  parent_id="folder-y"),
+                ],
+                delta_link=FINAL_OD,
+            ),
+        })
+        bind_client(onedrive_tool, graph)
+
+        payload = (await onedrive_tool._execute(
+            drive_id=DRIVE_ID, folder_id="folder-x"
+        )).result
+
+        assert [i["item_id"] for i in payload["items"]] == ["in"]
+        assert payload["folder_id"] == "folder-x"
+        assert payload["filtered_out"] == 1
+        assert payload["unresolved_parent"] == 0
+
+    async def test_path_filter_reports_itself_unreliable_on_real_graph_shape(
+        self, onedrive_tool: DeltaOneDriveFilesTool
+    ) -> None:
+        """Graph omits parentReference.path from delta responses.
+
+        The payload must therefore admit the path filter could not be
+        applied, rather than returning the whole drive as if it had been.
+        """
+        graph = FakeGraph({
+            None: FakeDeltaResponse(
+                [FakeDriveItem(id="a", name="a.docx", parent_path=None),
+                 FakeDriveItem(id="b", name="b.docx", parent_path=None)],
+                delta_link=FINAL_OD,
+            ),
+        })
+        bind_client(onedrive_tool, graph)
+
+        payload = (await onedrive_tool._execute(
+            drive_id=DRIVE_ID, folder_path="Contracts"
+        )).result
+
+        assert payload["total_items"] == 2
+        assert payload["filtered_out"] == 0
+        assert payload["unresolved_parent"] == 2
+
     async def test_max_pages_bound_yields_no_committable_cursor(
         self, onedrive_tool: DeltaOneDriveFilesTool
     ) -> None:
-        loop = f"{GRAPH}/od/delta?token=loop"
+        loop = f"{DELTA}?token=loop"
         graph = FakeGraph({
             None: FakeDeltaResponse([FakeDriveItem(id="a")], next_link=loop),
             loop: FakeDeltaResponse([FakeDriveItem(id="a")], next_link=loop),
@@ -638,6 +741,38 @@ class TestDriveIdentityResolution:
         assert graph.requested_user_ids == ["jane@contoso.com"]
         assert graph.me_drive_lookups == 0
 
+    async def test_onedrive_honours_credential_configured_target_user(
+        self, onedrive_tool: DeltaOneDriveFilesTool
+    ) -> None:
+        """A default target user in the credentials is used, not /me."""
+        graph = FakeGraph(
+            {None: FakeDeltaResponse([], delta_link=FINAL_OD)},
+            owner_drive=FakeDrive(DRIVE_ID, "OneDrive"),
+        )
+        bind_client(
+            onedrive_tool, graph,
+            credentials={"user_principal_name": "svc@contoso.com"},
+        )
+
+        result = await onedrive_tool._execute()
+
+        assert result.status == "success", result.error
+        assert graph.requested_user_ids == ["svc@contoso.com"]
+        assert graph.me_drive_lookups == 0
+
+    async def test_onedrive_app_only_without_identity_is_actionable(
+        self, onedrive_tool: DeltaOneDriveFilesTool
+    ) -> None:
+        """App-only with no target user gets the clear O365Client error."""
+        graph = FakeGraph({}, owner_drive=FakeDrive(DRIVE_ID, "OneDrive"))
+        bind_client(onedrive_tool, graph, is_app_only=True)
+
+        result = await onedrive_tool._execute()
+
+        assert result.status == "error"
+        assert "App-only authentication requires a target user_id" in result.error
+        assert graph.requested_urls == []
+
     async def test_onedrive_unresolvable_drive_is_an_error(
         self, onedrive_tool: DeltaOneDriveFilesTool
     ) -> None:
@@ -656,26 +791,40 @@ class TestDriveIdentityResolution:
             "//evil.example.com/drives/x",
             "drive id with spaces",
             "drive\nid",
-            "",
             "   ",
         ],
     )
     async def test_model_supplied_endpoint_expansion_is_rejected(
         self, onedrive_tool: DeltaOneDriveFilesTool, bad_id: str
     ) -> None:
-        graph = FakeGraph({}, owner_drive=FakeDrive(DRIVE_ID, "OneDrive"))
+        graph = FakeGraph(
+            {None: FakeDeltaResponse([], delta_link=FINAL_OD)},
+            owner_drive=FakeDrive(DRIVE_ID, "OneDrive"),
+        )
         bind_client(onedrive_tool, graph)
 
         result = await onedrive_tool._execute(drive_id=bad_id)
 
-        if bad_id == "":
-            # An absent drive_id falls through to normal drive resolution.
-            assert graph.requested_drive_ids == [DRIVE_ID]
-        else:
-            # Anything present but not a plain Graph id is refused, and no
-            # delta request is issued.
-            assert result.status == "error"
-            assert graph.requested_urls == []
+        assert result.status == "error"
+        assert graph.requested_urls == []
+        assert graph.requested_drive_ids == []
+
+    async def test_empty_drive_id_falls_through_to_resolution(
+        self, onedrive_tool: DeltaOneDriveFilesTool
+    ) -> None:
+        """An absent drive_id resolves normally and the call SUCCEEDS."""
+        graph = FakeGraph(
+            {None: FakeDeltaResponse([FakeDriveItem(id="a", name="a.docx")],
+                                     delta_link=FINAL_OD)},
+            owner_drive=FakeDrive(DRIVE_ID, "OneDrive"),
+        )
+        bind_client(onedrive_tool, graph)
+
+        result = await onedrive_tool._execute(drive_id="")
+
+        assert result.status == "success", result.error
+        assert graph.requested_drive_ids == [DRIVE_ID]
+        assert result.result["delta_link"] == FINAL_OD
 
     async def test_sharepoint_site_id_url_is_rejected(
         self, sharepoint_tool: DeltaSharePointFilesTool
@@ -690,6 +839,86 @@ class TestDriveIdentityResolution:
         assert result.status == "error"
         assert "not a URL" in result.error
         assert graph.requested_site_ids == []
+
+    async def test_paginated_library_list_never_infers_absence(
+        self, sharepoint_tool: DeltaSharePointFilesTool
+    ) -> None:
+        """A library missing from page 1 is not proof that it is absent."""
+        graph = FakeGraph(
+            {},
+            site_drives=[FakeDrive(DRIVE_ID, "Documents")],
+            site_drives_next_link=f"{GRAPH}/sites/x/drives?$skiptoken=abc",
+        )
+        bind_client(sharepoint_tool, graph)
+
+        result = await sharepoint_tool._execute(site_id=SITE_ID, library="Legal")
+
+        assert result.status == "error"
+        assert "first page" in result.error
+        assert "drive_id" in result.error
+
+    async def test_paginated_library_list_never_infers_uniqueness(
+        self, sharepoint_tool: DeltaSharePointFilesTool
+    ) -> None:
+        """One drive on page 1 is not proof that the site has only one."""
+        graph = FakeGraph(
+            {},
+            site_drives=[FakeDrive(DRIVE_ID, "Documents")],
+            site_drives_next_link=f"{GRAPH}/sites/x/drives?$skiptoken=abc",
+        )
+        bind_client(sharepoint_tool, graph)
+
+        result = await sharepoint_tool._execute(site_id=SITE_ID, library=None)
+
+        assert result.status == "error"
+        assert "truncated" in result.error
+        assert graph.requested_urls == []
+
+    async def test_single_unpaginated_library_is_used_without_a_name(
+        self, sharepoint_tool: DeltaSharePointFilesTool
+    ) -> None:
+        graph = FakeGraph(
+            {None: FakeDeltaResponse([], delta_link=FINAL_SP)},
+            site_drives=[FakeDrive(DRIVE_ID, "Documents")],
+        )
+        bind_client(sharepoint_tool, graph)
+
+        result = await sharepoint_tool._execute(site_id=SITE_ID, library=None)
+
+        assert result.status == "success", result.error
+        assert graph.requested_drive_ids == [DRIVE_ID]
+
+    async def test_cursor_for_another_drive_is_rejected_before_request(
+        self, sharepoint_tool: DeltaSharePointFilesTool
+    ) -> None:
+        """The cursor cannot redirect the authenticated call to another drive."""
+        graph = FakeGraph({})
+        bind_client(sharepoint_tool, graph)
+
+        result = await sharepoint_tool._execute(
+            drive_id=DRIVE_ID,
+            delta_link=f"{GRAPH}/drives/b!someone-else/items/root/delta?token=x",
+        )
+
+        assert result.status == "error"
+        assert "does not address drive" in result.error
+        assert graph.requested_urls == []
+
+    async def test_cursor_for_a_content_endpoint_is_rejected(
+        self, sharepoint_tool: DeltaSharePointFilesTool
+    ) -> None:
+        """A same-drive, trusted-origin URL must still be a delta endpoint."""
+        graph = FakeGraph({})
+        bind_client(sharepoint_tool, graph)
+
+        result = await sharepoint_tool._execute(
+            drive_id=DRIVE_ID,
+            delta_link=f"{GRAPH}/drives/{DRIVE_ID}/items/private/content",
+        )
+
+        assert result.status == "error"
+        assert "not a delta endpoint" in result.error
+        assert graph.requested_urls == []
 
     async def test_untrusted_delta_cursor_is_rejected_before_request(
         self, sharepoint_tool: DeltaSharePointFilesTool
@@ -727,7 +956,10 @@ class TestHelperInjection:
         )
         assert tool._delta_helper is custom
 
-        internal_final = "https://graph.internal.test/delta?token=final"
+        internal_final = (
+            f"https://graph.internal.test/v1.0/drives/{DRIVE_ID}"
+            "/items/root/delta?token=final"
+        )
         graph = FakeGraph({None: FakeDeltaResponse([], delta_link=internal_final)})
         bind_client(tool, graph)
 
@@ -814,9 +1046,9 @@ class TestBundleRegistration:
         sp_fields = set(DeltaSharePointFilesTool.args_schema.model_fields)
         od_fields = set(DeltaOneDriveFilesTool.args_schema.model_fields)
 
-        assert {"site_id", "library", "drive_id", "folder_path",
+        assert {"site_id", "library", "drive_id", "folder_path", "folder_id",
                 "delta_link", "max_pages"} <= sp_fields
-        assert {"drive_id", "folder_path", "delta_link",
+        assert {"drive_id", "folder_path", "folder_id", "delta_link",
                 "max_pages"} <= od_fields
         # Inherited O365 auth arguments are still available.
         assert {"auth_mode", "user_assertion", "user_id"} <= sp_fields

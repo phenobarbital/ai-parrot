@@ -534,12 +534,22 @@ class DeltaOneDriveFilesArgs(O365ToolArgsSchema):
             "target user (or of the signed-in user) is resolved."
         )
     )
+    folder_id: Optional[str] = Field(
+        default=None,
+        description=(
+            "Stable Graph item id of the folder to restrict results to. This "
+            "is the reliable folder filter (Graph delta reports "
+            "parentReference.id but omits its path), though it matches direct "
+            "children only."
+        )
+    )
     folder_path: Optional[str] = Field(
         default=None,
         description=(
-            "Drive-relative folder to restrict results to (e.g. "
-            "'Documents/Contracts'). Graph delta is drive-level, so this "
-            "filter is applied locally. Empty/None tracks the whole drive."
+            "Drive-relative folder path to restrict results to (e.g. "
+            "'Documents/Contracts'). Best-effort only: the Graph v1.0 delta API omits "
+            "parentReference.path, so prefer folder_id. Items whose membership "
+            "cannot be decided are kept and counted in unresolved_parent."
         )
     )
     delta_link: Optional[str] = Field(
@@ -616,23 +626,29 @@ class DeltaOneDriveFilesTool(O365Tool):
     ) -> str:
         """Resolve the drive identifier for the target OneDrive.
 
+        Delegates identity selection to :meth:`O365Client.get_user_context`,
+        the same convention the mail and calendar tools use. That resolver
+        also honours a default target user configured in the credentials
+        (``user_id`` / ``user_principal_name`` / ``mailbox`` / ``username``)
+        and raises an actionable error for app-only auth with no identity,
+        instead of falling back to ``/me`` and failing obscurely.
+
         Args:
             client: Authenticated O365 client.
-            user_id: Target user principal name / id for app-only access, or
-                None to use the signed-in user's drive.
+            user_id: Per-call target user principal name / id, if any. It
+                takes precedence over the configured default.
 
         Returns:
             The stable drive identifier.
 
         Raises:
-            ValueError: If Graph returned no usable drive.
+            ValueError: If no target identity can be resolved, or Graph
+                returned no usable drive.
         """
-        if user_id:
-            owner = client.graph_client.users.by_user_id(
-                _validate_graph_identifier(user_id, "user_id")
-            )
-        else:
-            owner = client.graph_client.me
+        validated_user = (
+            _validate_graph_identifier(user_id, "user_id") if user_id else None
+        )
+        owner = client.get_user_context(user_id=validated_user)
 
         drive = await owner.drive.get()
         drive_id = getattr(drive, "id", None)
@@ -657,6 +673,7 @@ class DeltaOneDriveFilesTool(O365Tool):
         drive_id = kwargs.get('drive_id')
         user_id = kwargs.get('user_id')
         folder_path = kwargs.get('folder_path') or None
+        folder_id = kwargs.get('folder_id') or None
         delta_link = kwargs.get('delta_link') or None
         max_pages = kwargs.get('max_pages')
 
@@ -676,6 +693,7 @@ class DeltaOneDriveFilesTool(O365Tool):
             resolved_drive_id,
             delta_link=delta_link,
             folder_path=folder_path,
+            folder_id=folder_id,
             max_pages=max_pages,
         )
 

@@ -21,12 +21,23 @@ Microsoft Graph v1.0 semantics implemented here:
   enumeration from scratch (a *rescan*). A rescan is explicitly flagged so a
   consumer never mistakes a partial listing for mass deletion.
 - ``429`` / ``5xx`` responses are retried with bounded backoff that honours
-  the ``Retry-After`` header.
+  the ``Retry-After`` header in full.
+
+Retry layering: the installed ``msgraph``/Kiota stack ships its own
+``RetryHandler`` middleware (3 retries by default, also honouring
+``Retry-After``). The bound configured here therefore counts *this* layer's
+attempts, not raw HTTP requests — the two multiply. Set the SDK's
+``RetryHandlerOption`` if a single owner of retry policy is required.
 
 Security: continuation links are opaque, but they are still URLs that this
-process would send an access token to. Every ``nextLink`` / ``deltaLink`` is
-validated against the configured Microsoft Graph origin *before* the request
-is issued, so a poisoned feed cannot exfiltrate credentials to a foreign host.
+process would send an access token to, and
+``DeltaRequestBuilder.with_url()`` replaces the *entire* URL rather than just
+its query string. Every ``nextLink`` / ``deltaLink`` — including a
+caller-supplied stored cursor — is therefore validated *before* the request
+is issued: it must sit on a configured Microsoft Graph origin **and** address
+the delta endpoint of the drive being enumerated. A poisoned feed can neither
+exfiltrate credentials to a foreign host nor redirect the authenticated
+request at another resource.
 
 Scope: this helper is deliberately transport-only. It never commits a delta
 cursor, never downloads file content and never ingests documents — those are
@@ -37,9 +48,10 @@ Reference: https://learn.microsoft.com/en-us/graph/api/driveitem-delta?view=grap
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from typing import Any, Awaitable, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 
 from navconfig.logging import logging
 from pydantic import BaseModel, ConfigDict, Field
@@ -63,12 +75,41 @@ RESET_STATUS_CODE: int = 410
 #: HTTP statuses worth a bounded retry (throttling / transient failures).
 RETRYABLE_STATUS_CODES: frozenset[int] = frozenset({429, 500, 502, 503, 504})
 
+
+def _transient_exception_types() -> Tuple[type, ...]:
+    """Exception types that mean "the request never got an answer".
+
+    A dropped connection or a timeout carries no HTTP status, so it would
+    otherwise skip the retry budget entirely and fail on the first blip.
+    ``httpx.TransportError`` (connect/read/write/pool failures) is included
+    when available — this is a type lookup for classification only, not an
+    HTTP client choice; the transport belongs to the msgraph SDK.
+    """
+    types: List[type] = [TimeoutError, OSError]
+    try:  # pragma: no cover - depends on the installed SDK stack
+        import httpx
+
+        types.append(httpx.TransportError)
+    except Exception:  # pragma: no cover - httpx is a msgraph dependency
+        pass
+    return tuple(types)
+
+
+#: Exception types retried even though they carry no HTTP status code.
+TRANSIENT_EXCEPTION_TYPES: Tuple[type, ...] = _transient_exception_types()
+
 #: Default bound on retry attempts per page request.
 DEFAULT_MAX_RETRIES: int = 3
 
 #: Default backoff schedule bounds, in seconds.
 DEFAULT_INITIAL_BACKOFF: float = 1.0
 DEFAULT_MAX_BACKOFF: float = 30.0
+
+#: Longest server-requested ``Retry-After`` this helper will wait out before
+#: abandoning the round. A `Retry-After` is honoured in full up to this bound
+#: (truncating it would retry while still throttled); beyond it, the throttle
+#: is surfaced to the caller instead.
+DEFAULT_MAX_RETRY_AFTER: float = 300.0
 
 #: Hard bound on the number of pages a single enumeration will follow.
 DEFAULT_MAX_PAGES: int = 1000
@@ -160,7 +201,8 @@ class DeltaItem(BaseModel):
         default=None,
         description=(
             "Drive-relative parent path (Graph's '/drive/root:' prefix removed). "
-            "None when Graph did not report it, which is common for tombstones."
+            "Usually None: the Graph v1.0 delta API documents that "
+            "parentReference omits 'path'. Track items by item_id/parent_id."
         ),
     )
     size: Optional[int] = Field(default=None, description="Item size in bytes.")
@@ -251,10 +293,30 @@ class DeltaEnumeration(BaseModel):
     )
     folder_path: Optional[str] = Field(
         default=None,
-        description="Drive-relative folder filter applied locally, if any.",
+        description=(
+            "Drive-relative folder path filter applied locally, if any. Graph "
+            "omits parentReference.path from delta responses, so this filter "
+            "is best-effort — see unresolved_parent / folder_filter_reliable."
+        ),
+    )
+    folder_id: Optional[str] = Field(
+        default=None,
+        description=(
+            "Stable folder item id filter applied locally, if any. Exact, but "
+            "matches direct children only."
+        ),
     )
     filtered_out: int = Field(
-        default=0, description="Items dropped by the local folder filter."
+        default=0,
+        description="Items positively excluded by the local folder filter.",
+    )
+    unresolved_parent: int = Field(
+        default=0,
+        description=(
+            "Items KEPT because their folder membership could not be decided "
+            "(Graph reported neither a usable parent path nor a parent id). "
+            "Non-zero means the folder filter did not fully apply."
+        ),
     )
 
     @property
@@ -266,6 +328,16 @@ class DeltaEnumeration(BaseModel):
     def changed_items(self) -> List[DeltaItem]:
         """Non-deleted items present in this enumeration."""
         return [item for item in self.items if not item.deleted]
+
+    @property
+    def folder_filter_reliable(self) -> bool:
+        """True when every returned item's folder membership was decidable.
+
+        False means at least one item was kept without being able to confirm
+        it belongs to the requested folder, so the caller must re-check
+        membership by item id before treating the result as folder-scoped.
+        """
+        return self.unresolved_parent == 0
 
 
 # ============================================================================
@@ -298,23 +370,37 @@ def normalize_drive_path(raw_path: Optional[str]) -> Optional[str]:
 def validate_continuation_link(
     link: str,
     allowed_origins: Sequence[str] = DEFAULT_GRAPH_ORIGINS,
+    *,
+    drive_id: Optional[str] = None,
 ) -> str:
     """Validate an opaque delta continuation link before using it.
 
-    Continuation links come from the remote feed. Because the request carries
-    an access token, the link must be proven to point at a configured
-    Microsoft Graph origin before it is ever dereferenced.
+    Continuation links come from the remote feed (or, for a stored cursor,
+    from the caller). Because the request carries an access token, and
+    because ``DeltaRequestBuilder.with_url()`` replaces the *entire* URL —
+    not just its query string — the link must be proven to be a delta
+    endpoint on the intended drive at a configured Microsoft Graph origin
+    before it is ever dereferenced.
+
+    Origin validation alone is not enough: a link such as
+    ``https://graph.microsoft.com/v1.0/drives/<other>/items/<x>/content``
+    passes an origin check yet points the authenticated request at an
+    entirely different resource. When ``drive_id`` is supplied the path is
+    therefore confined to that drive's delta operation as well.
 
     Args:
         link: The opaque ``@odata.nextLink`` / ``@odata.deltaLink`` value.
         allowed_origins: Origins credentials may be forwarded to.
+        drive_id: Drive the enumeration is confined to. When given, the
+            link's path must name this drive and a ``delta`` operation.
 
     Returns:
         The validated link, unchanged.
 
     Raises:
-        DeltaLinkValidationError: If the link is empty, is not absolute HTTPS,
-            or its origin is not in ``allowed_origins``.
+        DeltaLinkValidationError: If the link is empty, is not absolute
+            HTTPS, its origin is not in ``allowed_origins``, or it does not
+            address the ``drive_id`` delta endpoint.
     """
     if not link or not str(link).strip():
         raise DeltaLinkValidationError("Delta continuation link is empty.")
@@ -340,6 +426,42 @@ def validate_continuation_link(
             f"Refusing to send Graph credentials to untrusted delta host "
             f"{origin!r}; allowed origins: {sorted(permitted)}."
         )
+
+    if drive_id:
+        # Graph returns e.g. /v1.0/drives/{drive-id}/root/delta?token=...
+        # or /v1.0/drives/{drive-id}/items/{item-id}/delta()?token=...
+        # The match must be STRUCTURAL: merely containing the drive id and a
+        # "delta" segment somewhere would accept
+        # /v1.0/delta/drives/{drive-id}/items/x/content.
+        segments = [unquote(seg) for seg in parts.path.split("/") if seg]
+
+        if any(seg in ("..", ".") for seg in segments):
+            raise DeltaLinkValidationError(
+                f"Delta continuation link must not contain relative path "
+                f"segments: {parts.path!r}."
+            )
+
+        last = segments[-1] if segments else ""
+        if not (last == "delta" or last.startswith("delta(")):
+            raise DeltaLinkValidationError(
+                f"Delta continuation link is not a delta endpoint: "
+                f"{parts.path!r}."
+            )
+
+        try:
+            drives_at = segments.index("drives")
+        except ValueError:
+            drives_at = -1
+        if (
+            drives_at < 0
+            or drives_at + 1 >= len(segments)
+            or segments[drives_at + 1] != str(drive_id)
+        ):
+            raise DeltaLinkValidationError(
+                f"Delta continuation link does not address drive "
+                f"{drive_id!r}: {parts.path!r}."
+            )
+
     return str(link)
 
 
@@ -377,10 +499,21 @@ def _retry_after_seconds(error: BaseException) -> Optional[float]:
         raw = next(iter(sorted(str(v) for v in raw)), None)
     if raw is None:
         return None
+
+    text = str(raw).strip()
     try:
-        value = float(str(raw).strip())
+        value = float(text)
     except (TypeError, ValueError):
-        return None
+        # RFC 7231 also allows an HTTP-date instead of a delta-seconds value.
+        try:
+            when = parsedate_to_datetime(text)
+        except (TypeError, ValueError):
+            return None
+        if when is None:
+            return None
+        if when.tzinfo is None:
+            when = when.replace(tzinfo=timezone.utc)
+        value = (when - datetime.now(timezone.utc)).total_seconds()
     return value if value >= 0 else None
 
 
@@ -455,28 +588,92 @@ def drive_item_to_delta_item(drive_item: Any, drive_id: str) -> Optional[DeltaIt
     )
 
 
-def item_in_folder(item: DeltaItem, folder_path: Optional[str]) -> bool:
-    """Decide whether an item falls inside a drive-relative folder filter.
+#: Classification returned by :func:`classify_folder_membership`.
+FOLDER_MATCH: str = "match"
+FOLDER_MISS: str = "miss"
+FOLDER_UNKNOWN: str = "unknown"
 
-    Graph delta is drive-level, so folder scoping is applied locally.
+
+def classify_folder_membership(
+    item: DeltaItem,
+    folder_path: Optional[str] = None,
+    folder_id: Optional[str] = None,
+) -> str:
+    """Classify an item against a folder filter as match / miss / unknown.
+
+    Graph delta is drive-level, so folder scoping has to be applied locally —
+    but the two available signals are not equally trustworthy:
+
+    - ``folder_id`` compares against ``parentReference.id``, which delta does
+      report. It is exact, but only identifies **direct children** of that
+      folder; deeper descendants must be reconciled by the consumer, which
+      Microsoft's guidance ("always track items by id") expects anyway.
+    - ``folder_path`` compares against ``parentReference.path``, which the
+      Graph v1.0 delta API documents as **omitted**: *"The parentReference
+      property on items won't include a value for path."* Against real Graph
+      this therefore usually classifies as ``unknown``, not as a match. It
+      remains useful for feeds that do carry a path (and for tests), but it
+      must never be relied on alone.
 
     Args:
         item: The typed delta item.
-        folder_path: Drive-relative folder, or None/"" for the whole drive.
+        folder_path: Drive-relative folder path filter, if any.
+        folder_id: Stable folder item id filter, if any.
 
     Returns:
-        True when the item is inside the folder subtree. Items whose parent
-        path Graph did not report (common for tombstones) return True so that
-        a retraction is never silently lost; reconciling an unknown id is a
-        no-op for the consumer.
+        ``FOLDER_MATCH`` when the item is known to be inside the folder,
+        ``FOLDER_MISS`` when it is known to be outside, and
+        ``FOLDER_UNKNOWN`` when Graph reported nothing to decide with.
+        With no filter configured every item is a match.
     """
-    normalized = (folder_path or "").strip("/")
-    if not normalized:
-        return True
-    if item.parent_path is None:
-        return True
-    parent = item.parent_path
-    return parent == normalized or parent.startswith(f"{normalized}/")
+    normalized_path = (folder_path or "").strip("/")
+    if not normalized_path and not folder_id:
+        return FOLDER_MATCH
+
+    decidable = False
+
+    if folder_id:
+        if item.parent_id is not None:
+            decidable = True
+            if item.parent_id == folder_id or item.item_id == folder_id:
+                return FOLDER_MATCH
+
+    if normalized_path:
+        if item.parent_path is not None:
+            decidable = True
+            parent = item.parent_path
+            if parent == normalized_path or parent.startswith(f"{normalized_path}/"):
+                return FOLDER_MATCH
+
+    return FOLDER_MISS if decidable else FOLDER_UNKNOWN
+
+
+def item_in_folder(
+    item: DeltaItem,
+    folder_path: Optional[str] = None,
+    folder_id: Optional[str] = None,
+) -> bool:
+    """Decide whether an item should be kept under a folder filter.
+
+    Undecidable items are **kept**, not dropped: Graph omits
+    ``parentReference.path`` from delta responses and may report a tombstone
+    with no locatable parent, so dropping them would silently lose a
+    retraction. Reconciling an item the consumer never indexed is a no-op,
+    whereas losing one is data corruption.
+
+    Use :func:`classify_folder_membership` when the distinction between a
+    genuine match and an undecidable item matters —
+    :attr:`DeltaEnumeration.unresolved_parent` reports exactly that count.
+
+    Args:
+        item: The typed delta item.
+        folder_path: Drive-relative folder path filter, if any.
+        folder_id: Stable folder item id filter, if any.
+
+    Returns:
+        True when the item is inside the folder or its membership is unknown.
+    """
+    return classify_folder_membership(item, folder_path, folder_id) != FOLDER_MISS
 
 
 # ============================================================================
@@ -509,6 +706,7 @@ class DriveDeltaHelper:
         max_retries: int = DEFAULT_MAX_RETRIES,
         initial_backoff: float = DEFAULT_INITIAL_BACKOFF,
         max_backoff: float = DEFAULT_MAX_BACKOFF,
+        max_retry_after: float = DEFAULT_MAX_RETRY_AFTER,
         max_pages: int = DEFAULT_MAX_PAGES,
         sleep: Optional[Callable[[float], Awaitable[None]]] = None,
         logger_instance: Optional[Any] = None,
@@ -520,7 +718,11 @@ class DriveDeltaHelper:
             max_retries: Bound on retries per page for throttling/transient
                 failures. ``0`` disables retrying.
             initial_backoff: First backoff delay, in seconds.
-            max_backoff: Upper bound for any single backoff delay, in seconds.
+            max_backoff: Upper bound for a *self-computed* backoff delay, in
+                seconds. It never truncates a server-supplied ``Retry-After``.
+            max_retry_after: Longest server-requested ``Retry-After`` to wait
+                out. A larger interval abandons the round instead of retrying
+                early.
             max_pages: Hard bound on pages followed in one enumeration.
             sleep: Awaitable sleep function; injectable for deterministic
                 tests. Defaults to :func:`asyncio.sleep`.
@@ -531,7 +733,7 @@ class DriveDeltaHelper:
         """
         if max_retries < 0:
             raise ValueError("max_retries must be >= 0")
-        if initial_backoff < 0 or max_backoff < 0:
+        if initial_backoff < 0 or max_backoff < 0 or max_retry_after < 0:
             raise ValueError("backoff values must be >= 0")
         if max_pages <= 0:
             raise ValueError("max_pages must be > 0")
@@ -540,25 +742,32 @@ class DriveDeltaHelper:
         self.max_retries = max_retries
         self.initial_backoff = initial_backoff
         self.max_backoff = max_backoff
+        self.max_retry_after = max_retry_after
         self.max_pages = max_pages
         self._sleep = sleep or asyncio.sleep
         self.logger = logger_instance or logger
 
     # -- link validation ---------------------------------------------------
 
-    def validate_link(self, link: str) -> str:
-        """Validate a continuation link against the configured Graph origins.
+    def validate_link(self, link: str, drive_id: Optional[str] = None) -> str:
+        """Validate a continuation link before it is dereferenced.
 
         Args:
             link: Opaque nextLink/deltaLink value.
+            drive_id: Drive the enumeration is confined to. When given, the
+                link must address that drive's delta endpoint, not merely a
+                trusted Graph origin.
 
         Returns:
             The validated link.
 
         Raises:
-            DeltaLinkValidationError: If the link is not a trusted Graph URL.
+            DeltaLinkValidationError: If the link is not a trusted Graph
+                delta URL for ``drive_id``.
         """
-        return validate_continuation_link(link, self.allowed_origins)
+        return validate_continuation_link(
+            link, self.allowed_origins, drive_id=drive_id
+        )
 
     # -- single page -------------------------------------------------------
 
@@ -590,15 +799,17 @@ class DriveDeltaHelper:
             The typed delta page.
 
         Raises:
-            DeltaLinkValidationError: If ``link`` is not a trusted Graph URL.
-                Raised before any request is issued.
+            DeltaLinkValidationError: If ``link`` is not this drive's delta
+                endpoint on a trusted Graph origin. Raised before any
+                request is issued.
             DeltaResetRequiredError: If Graph answered 410 Gone.
             DeltaRetryExhaustedError: If retries hit their bound.
         """
         builder = self._delta_builder(client, drive_id)
         if link is not None:
-            # Validate BEFORE the token is ever attached to a request.
-            validated = self.validate_link(link)
+            # ``with_url`` replaces the whole URL, so validate the path — not
+            # just the origin — BEFORE the token is attached to a request.
+            validated = self.validate_link(link, drive_id)
             builder = builder.with_url(validated)
 
         response = await self._get_with_retry(builder, drive_id)
@@ -618,14 +829,35 @@ class DriveDeltaHelper:
                 status = _status_code_of(exc)
                 if status == RESET_STATUS_CODE:
                     raise DeltaResetRequiredError(drive_id) from exc
-                if status not in RETRYABLE_STATUS_CODES:
+                retryable = (
+                    status in RETRYABLE_STATUS_CODES
+                    or (status is None
+                        and isinstance(exc, TRANSIENT_EXCEPTION_TYPES))
+                )
+                if not retryable:
                     raise
                 last_error = exc
                 if attempt > self.max_retries:
                     break
+
                 retry_after = _retry_after_seconds(exc)
-                delay = retry_after if retry_after is not None else backoff
-                delay = min(delay, self.max_backoff)
+                if retry_after is not None:
+                    # Microsoft requires clients to wait the full interval the
+                    # service asked for. Truncating it to our own backoff cap
+                    # would retry while still throttled, so instead we honour
+                    # it up to `max_retry_after` and give up beyond that —
+                    # surfacing the throttle rather than hammering Graph.
+                    if retry_after > self.max_retry_after:
+                        self.logger.warning(
+                            "Graph asked drive %s to wait %.0fs (> "
+                            "max_retry_after=%.0fs); abandoning this round.",
+                            drive_id, retry_after, self.max_retry_after,
+                        )
+                        break
+                    delay = retry_after
+                else:
+                    delay = min(backoff, self.max_backoff)
+
                 self.logger.warning(
                     "Graph delta request for drive %s returned %s; "
                     "retry %s/%s in %.2fs",
@@ -650,11 +882,21 @@ class DriveDeltaHelper:
             if item is not None:
                 items.append(item)
 
+        # Validate here rather than only at follow-time, so a DeltaPage
+        # obtained through the public fetch_page() never carries a link a
+        # caller could dereference unchecked.
+        next_link = getattr(response, "odata_next_link", None)
+        delta_link = getattr(response, "odata_delta_link", None)
+        if next_link is not None:
+            next_link = self.validate_link(next_link, drive_id)
+        if delta_link is not None:
+            delta_link = self.validate_link(delta_link, drive_id)
+
         return DeltaPage(
             drive_id=drive_id,
             items=items,
-            next_link=getattr(response, "odata_next_link", None),
-            delta_link=getattr(response, "odata_delta_link", None),
+            next_link=next_link,
+            delta_link=delta_link,
         )
 
     # -- full enumeration --------------------------------------------------
@@ -666,6 +908,7 @@ class DriveDeltaHelper:
         *,
         delta_link: Optional[str] = None,
         folder_path: Optional[str] = None,
+        folder_id: Optional[str] = None,
         max_pages: Optional[int] = None,
     ) -> DeltaEnumeration:
         """Follow a drive's delta feed until the final cursor is reached.
@@ -679,8 +922,12 @@ class DriveDeltaHelper:
             client: Authenticated client exposing ``graph_client``.
             drive_id: Target drive identifier.
             delta_link: Previously committed cursor to resume from, if any.
-            folder_path: Drive-relative folder to filter items to, applied
-                locally because Graph delta is drive-level.
+            folder_path: Drive-relative folder path to filter items to,
+                applied locally because Graph delta is drive-level. Graph
+                omits parentReference.path from delta responses, so prefer
+                ``folder_id``; see :attr:`DeltaEnumeration.unresolved_parent`.
+            folder_id: Stable folder item id to filter items to. Exact, but
+                matches direct children only.
             max_pages: Per-call override of the page bound.
 
         Returns:
@@ -696,6 +943,7 @@ class DriveDeltaHelper:
                 drive_id,
                 delta_link=delta_link,
                 folder_path=folder_path,
+                folder_id=folder_id,
                 max_pages=max_pages,
                 reset_performed=False,
             )
@@ -710,6 +958,7 @@ class DriveDeltaHelper:
                 drive_id,
                 delta_link=None,
                 folder_path=folder_path,
+                folder_id=folder_id,
                 max_pages=max_pages,
                 reset_performed=True,
             )
@@ -721,6 +970,7 @@ class DriveDeltaHelper:
         *,
         delta_link: Optional[str],
         folder_path: Optional[str],
+        folder_id: Optional[str],
         max_pages: Optional[int],
         reset_performed: bool,
     ) -> DeltaEnumeration:
@@ -733,6 +983,7 @@ class DriveDeltaHelper:
         # several pages, and the latest occurrence is authoritative.
         collected: Dict[str, DeltaItem] = {}
         order: List[str] = []
+        unresolved: set[str] = set()
         filtered_out = 0
         pages = 0
         final_link: Optional[str] = None
@@ -743,9 +994,25 @@ class DriveDeltaHelper:
             pages += 1
 
             for item in page.items:
-                if not item_in_folder(item, folder_path):
+                membership = classify_folder_membership(
+                    item, folder_path, folder_id
+                )
+                if membership == FOLDER_MISS:
                     filtered_out += 1
+                    unresolved.discard(item.item_id)
+                    # Graph: "the same item may appear more than once... use
+                    # the last occurrence". If an earlier page placed this
+                    # item inside the folder and a later one moved it out,
+                    # the later state wins — keeping the stale in-folder copy
+                    # would report a location the item no longer has.
+                    if item.item_id in collected:
+                        del collected[item.item_id]
+                        order.remove(item.item_id)
                     continue
+                if membership == FOLDER_UNKNOWN:
+                    unresolved.add(item.item_id)
+                else:
+                    unresolved.discard(item.item_id)
                 if item.item_id not in collected:
                     order.append(item.item_id)
                 collected[item.item_id] = item
@@ -753,7 +1020,7 @@ class DriveDeltaHelper:
             if page.delta_link is not None:
                 # Validate the cursor we hand back so a poisoned final link is
                 # rejected here rather than on the consumer's next round.
-                final_link = self.validate_link(page.delta_link)
+                final_link = self.validate_link(page.delta_link, drive_id)
                 break
             if page.next_link is None:
                 # No continuation and no cursor: the feed ended without giving
@@ -781,7 +1048,9 @@ class DriveDeltaHelper:
             reset_performed=reset_performed,
             full_enumeration=delta_link is None,
             folder_path=(folder_path or None),
+            folder_id=(folder_id or None),
             filtered_out=filtered_out,
+            unresolved_parent=len(unresolved),
         )
 
 
@@ -797,7 +1066,12 @@ __all__ = (
     "DeltaPage",
     "DeltaResetRequiredError",
     "DeltaRetryExhaustedError",
+    "DEFAULT_MAX_RETRY_AFTER",
+    "FOLDER_MATCH",
+    "FOLDER_MISS",
+    "FOLDER_UNKNOWN",
     "DriveDeltaHelper",
+    "classify_folder_membership",
     "drive_item_to_delta_item",
     "item_in_folder",
     "normalize_drive_path",

@@ -691,12 +691,22 @@ class DeltaSharePointFilesArgs(O365ToolArgsSchema):
             "is skipped and this drive is tracked directly."
         )
     )
+    folder_id: Optional[str] = Field(
+        default=None,
+        description=(
+            "Stable Graph item id of the folder to restrict results to. This "
+            "is the reliable folder filter (Graph delta reports "
+            "parentReference.id but omits its path), though it matches direct "
+            "children only."
+        )
+    )
     folder_path: Optional[str] = Field(
         default=None,
         description=(
-            "Library-relative folder to restrict results to (e.g. "
-            "'Contracts/2026'). Graph delta is drive-level, so this filter is "
-            "applied locally. Empty/None tracks the whole library."
+            "Library-relative folder path to restrict results to (e.g. "
+            "'Contracts/2026'). Best-effort only: the Graph v1.0 delta API omits "
+            "parentReference.path, so prefer folder_id. Items whose membership "
+            "cannot be decided are kept and counted in unresolved_parent."
         )
     )
     delta_link: Optional[str] = Field(
@@ -792,6 +802,11 @@ class DeltaSharePointFilesTool(O365Tool):
         """
         drives = await client.graph_client.sites.by_site_id(site_id).drives.get()
         available = list(getattr(drives, "value", None) or [])
+        # The drives collection is pageable. This lookup deliberately reads
+        # only the first page, so it must never conclude "absent" or "unique"
+        # from a truncated listing — it asks for an explicit drive_id instead.
+        truncated = bool(getattr(drives, "odata_next_link", None))
+
         if not available:
             raise ValueError(f"SharePoint site {site_id!r} exposes no drives")
 
@@ -800,15 +815,22 @@ class DeltaSharePointFilesTool(O365Tool):
             for drive in available:
                 if (drive.name or "").strip().lower() == wanted:
                     return str(drive.id)
+            if truncated:
+                raise ValueError(
+                    f"Document library {library!r} was not on the first page of "
+                    f"libraries for site {site_id!r}; supply an explicit "
+                    f"drive_id. First page: {[d.name for d in available]}"
+                )
             raise ValueError(
                 f"Document library {library!r} not found on site {site_id!r}. "
                 f"Available: {[d.name for d in available]}"
             )
 
-        if len(available) > 1:
+        if truncated or len(available) > 1:
             raise ValueError(
                 f"Site {site_id!r} exposes multiple libraries; specify one of "
                 f"{[d.name for d in available]}"
+                + (" (list truncated — more pages exist)" if truncated else "")
             )
         return str(available[0].id)
 
@@ -830,6 +852,7 @@ class DeltaSharePointFilesTool(O365Tool):
         library = kwargs.get('library', 'Documents')
         drive_id = kwargs.get('drive_id')
         folder_path = kwargs.get('folder_path') or None
+        folder_id = kwargs.get('folder_id') or None
         delta_link = kwargs.get('delta_link') or None
         max_pages = kwargs.get('max_pages')
 
@@ -857,6 +880,7 @@ class DeltaSharePointFilesTool(O365Tool):
             resolved_drive_id,
             delta_link=delta_link,
             folder_path=folder_path,
+            folder_id=folder_id,
             max_pages=max_pages,
         )
 
