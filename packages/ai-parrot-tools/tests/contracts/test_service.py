@@ -27,6 +27,7 @@ from parrot_tools.contracts.verifier import AnswerDraft, CitationVerifier, Claim
 from .test_retrieval import TODAY, FakeCatalog, make_card, reader_context
 
 CLAUSE = "Vendor shall maintain SOC 2 Type II certification."
+INSURANCE = "Vendor shall carry cyber liability insurance."
 
 
 class ScriptedProducer:
@@ -76,7 +77,7 @@ async def service(tmp_path) -> ContractsAnswerService:
                 revision=version.revision,
                 source_sha256=version.source_sha256,
             ),
-            {"0005": f"4. Compliance. {CLAUSE}", "0008": "7. Insurance."},
+            {"0005": f"4. Compliance. {CLAUSE}", "0008": f"7. Insurance. {INSURANCE}"},
             pages={"0005": 12},
         )
 
@@ -124,6 +125,9 @@ async def test_an_evaluative_question_returns_a_handoff_without_judgment(service
     assert handoff.why_judgment
     assert "acme-msa" in handoff.related_contracts
     assert handoff.suggested_owner == "emp-1"
+    # Clauses are LOCATED (not adjudicated) and each still passed the gate.
+    assert [clause.node_id for clause in handoff.located_clauses] == ["0005", "0008"]
+    assert handoff.located_clauses[0].quote == CLAUSE
     assert (await service.catalog.get_answer(outcome.answer_id)).answer_kind == (
         "interpretation_required"
     )
@@ -314,7 +318,8 @@ async def test_retired_evidence_cannot_reach_a_handoff_either(service):
         citation.quote
         for citation in handoff_outcome.answer.handoff.located_clauses
     ]
-    assert CLAUSE not in quotes
+    assert quotes, "the handoff still locates other clauses"
+    assert CLAUSE not in quotes, "the retired clause is suppressed"
 
 
 @pytest.mark.asyncio

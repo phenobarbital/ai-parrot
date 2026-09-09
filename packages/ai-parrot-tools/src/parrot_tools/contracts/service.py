@@ -31,6 +31,7 @@ from pydantic import BaseModel, Field
 from parrot.knowledge.contracts.models import (
     AnswerRecord,
     AuthorizationOutcome,
+    Citation,
     ContractAnswer,
     ContractCard,
     HandoffBrief,
@@ -48,6 +49,7 @@ from .verifier import AnswerDraft, CitationVerifier, VerificationOutcome
 
 __all__ = (
     "MAX_DOSSIER_CARDS",
+    "MAX_HANDOFF_CLAUSES",
     "AnswerProducer",
     "ServiceUnavailable",
     "ConfirmationRequired",
@@ -59,6 +61,9 @@ logger = logging.getLogger(__name__)
 
 #: Hard bound on the dossier handed to a producer.
 MAX_DOSSIER_CARDS = 20
+
+#: Hard bound on clauses located for a handoff brief.
+MAX_HANDOFF_CLAUSES = 5
 
 
 class AnswerProducer(Protocol):
@@ -247,15 +252,33 @@ class ContractsAnswerService:
                 reason=exc.reason,
             )
 
-        located: list[Any] = []
+        located: list[Citation] = []
         dossier: list[ContractCard] = []
         resolved = await self.retrieval.resolve_contract(question, context)
         if isinstance(resolved, str):
+            # Clauses may be LOCATED after authorization to populate the
+            # handoff — locating is not adjudicating, and each one still
+            # has to survive the citation gate below.
             card = await self.retrieval._authorized_card(resolved, context)
             dossier = [card]
+            version_n = card.versions[-1].n if card.versions else 1
+            source_sha256 = (
+                card.versions[-1].source_sha256 if card.versions else card.source_sha256
+            )
             located = [
-                obligation for obligation in card.obligations if obligation.active
-            ][:5]
+                Citation(
+                    contract_id=card.contract_id,
+                    title=card.title,
+                    node_id=obligation.node_id,
+                    quote=obligation.text[:300],
+                    page=obligation.page,
+                    verification=obligation.verification,
+                    version_n=version_n,
+                    source_sha256=source_sha256,
+                )
+                for obligation in card.obligations
+                if obligation.active and obligation.text.strip()
+            ][:MAX_HANDOFF_CLAUSES]
 
         handoff = HandoffBrief(
             question=question,
@@ -263,7 +286,7 @@ class ContractsAnswerService:
                 "the question asks for a judgement about what we should do; "
                 "the contracts layer locates clauses but never adjudicates"
             ),
-            located_clauses=[],
+            located_clauses=located,
             related_contracts=[card.contract_id for card in dossier],
             suggested_owner=dossier[0].owner_employee_id if dossier else None,
         )
