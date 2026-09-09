@@ -20,7 +20,15 @@ from .onedrive import (
     ListOneDriveFilesTool,
     SearchOneDriveFilesTool,
     DownloadOneDriveFileTool,
-    UploadOneDriveFileTool
+    UploadOneDriveFileTool,
+    DeltaOneDriveFilesTool
+)
+from .sharepoint import (
+    ListSharePointFilesTool,
+    SearchSharePointFilesTool,
+    DownloadSharePointFileTool,
+    UploadSharePointFileTool,
+    DeltaSharePointFilesTool
 )
 
 
@@ -39,4 +47,10 @@ __all__ = (
     "SearchOneDriveFilesTool",
     "DownloadOneDriveFileTool",
     "UploadOneDriveFileTool",
+    "DeltaOneDriveFilesTool",
+    "ListSharePointFilesTool",
+    "SearchSharePointFilesTool",
+    "DownloadSharePointFileTool",
+    "UploadSharePointFileTool",
+    "DeltaSharePointFilesTool",
 )

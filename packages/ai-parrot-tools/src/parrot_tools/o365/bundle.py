@@ -10,13 +10,15 @@ from .sharepoint import (
     ListSharePointFilesTool,
     SearchSharePointFilesTool,
     DownloadSharePointFileTool,
-    UploadSharePointFileTool
+    UploadSharePointFileTool,
+    DeltaSharePointFilesTool
 )
 from .onedrive import (
     ListOneDriveFilesTool,
     SearchOneDriveFilesTool,
     DownloadOneDriveFileTool,
-    UploadOneDriveFileTool
+    UploadOneDriveFileTool,
+    DeltaOneDriveFilesTool
 )
 from .base import O365AuthMode
 
@@ -104,7 +106,9 @@ class SharePointToolkit:
             ListSharePointFilesTool(**common_params),
             SearchSharePointFilesTool(**common_params),
             DownloadSharePointFileTool(**common_params),
-            UploadSharePointFileTool(**common_params)
+            UploadSharePointFileTool(**common_params),
+            # FEAT-539: incremental change enumeration for watcher jobs.
+            DeltaSharePointFilesTool(**common_params)
         ]
 
         self.logger.debug("Registered SharePoint tools")
@@ -216,7 +220,9 @@ class OneDriveToolkit:
             ListOneDriveFilesTool(**common_params),
             SearchOneDriveFilesTool(**common_params),
             DownloadOneDriveFileTool(**common_params),
-            UploadOneDriveFileTool(**common_params)
+            UploadOneDriveFileTool(**common_params),
+            # FEAT-539: incremental change enumeration for watcher jobs.
+            DeltaOneDriveFilesTool(**common_params)
         ]
 
         self.logger.debug("Registered OneDrive tools")

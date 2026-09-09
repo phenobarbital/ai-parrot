@@ -495,3 +495,92 @@ __all__ = [
     'DownloadOneDriveFileTool',
     'UploadOneDriveFileTool'
 ]
+
+
+# ============================================================================
+# ONEDRIVE DRIVE DELTA TOOL (FEAT-539 M8)
+# ============================================================================
+
+class DeltaOneDriveFilesArgs(O365ToolArgsSchema):
+    """Arguments for enumerating OneDrive drive changes."""
+
+    drive_id: str = Field(
+        description=(
+            "Identifier of the OneDrive drive to enumerate. Resolved from "
+            "configuration by the caller — never expanded from model-supplied "
+            "endpoints."
+        )
+    )
+    delta_token: Optional[str] = Field(
+        default=None,
+        description=(
+            "Opaque delta link committed by a previous run. Omit for a full "
+            "enumeration."
+        ),
+    )
+    folder_path: Optional[str] = Field(
+        default=None,
+        description="Keep only items whose folder path contains this fragment.",
+    )
+    max_pages: Optional[int] = Field(
+        default=None,
+        description="Upper bound on delta pages followed in this call.",
+    )
+
+
+class DeltaOneDriveFilesTool(O365Tool):
+    """List OneDrive drive changes since a delta token.
+
+    Shares :class:`~parrot_tools.o365.delta.DriveDeltaReader` with the
+    SharePoint tool, so both produce equivalent typed continuation and
+    deletion outcomes.
+    """
+
+    name: str = "delta_onedrive_files"
+    description: str = (
+        "Enumerate changes (added, modified, deleted) in a OneDrive drive "
+        "since a delta token. Returns typed items, deletion tombstones and an "
+        "opaque cursor to resume from."
+    )
+    args_schema: Type[BaseModel] = DeltaOneDriveFilesArgs
+
+    async def _execute_graph_operation(
+        self,
+        client: OneDriveClient,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """Enumerate drive changes through the authenticated Graph client.
+
+        Args:
+            client: Authenticated client exposing ``graph_client``.
+            **kwargs: Tool parameters.
+
+        Returns:
+            Dict with typed items, tombstones and cursor state.
+        """
+        from .delta import DriveDeltaReader
+
+        drive_id = kwargs.get("drive_id")
+        reader = DriveDeltaReader(client.graph_client)
+        result = await reader.enumerate(
+            drive_id,
+            token=kwargs.get("delta_token"),
+            folder_prefix=kwargs.get("folder_path"),
+            max_pages=kwargs.get("max_pages"),
+        )
+        self.logger.info(
+            "OneDrive delta for drive %s: %d items over %d pages",
+            drive_id,
+            len(result.items),
+            result.pages,
+        )
+        return {
+            "drive_id": drive_id,
+            "items": [item.model_dump(mode="json") for item in result.items],
+            "tombstones": [item.item_id for item in result.tombstones],
+            "delta_link": result.delta_link,
+            "pages": result.pages,
+            "complete": result.complete,
+            "truncated": result.truncated,
+            "rescan_required": result.rescan_required,
+        }
