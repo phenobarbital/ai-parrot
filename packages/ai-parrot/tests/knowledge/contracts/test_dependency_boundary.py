@@ -141,14 +141,23 @@ def test_optional_dependencies_are_imported_lazily(module_path: Path):
 
 
 def test_contracts_package_imports_without_optional_extras():
-    """Importing the package must not require asyncpg to be installed."""
-    import importlib
+    """Importing the package must not pull in asyncpg or rapidfuzz.
+
+    Runs in a subprocess: purging ``sys.modules`` in-process would leave
+    other suites holding classes from a stale module object.
+    """
+    import subprocess
     import sys
 
-    for name in [n for n in sys.modules if n.startswith("parrot.knowledge.contracts")]:
-        del sys.modules[name]
-    module = importlib.import_module("parrot.knowledge.contracts")
-    assert module.ContractCard is not None
-    assert "asyncpg" not in {
-        name for name in dir(module) if not name.startswith("_")
-    }
+    code = (
+        "import sys;"
+        "import parrot.knowledge.contracts as contracts;"
+        "assert contracts.ContractCard is not None;"
+        "leaked = [name for name in ('asyncpg', 'rapidfuzz') if name in sys.modules];"
+        "print('LEAKED=' + ','.join(leaked))"
+    )
+    completed = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, check=False
+    )
+    assert completed.returncode == 0, completed.stderr[-2000:]
+    assert "LEAKED=\n" in completed.stdout or completed.stdout.strip().endswith("LEAKED=")
