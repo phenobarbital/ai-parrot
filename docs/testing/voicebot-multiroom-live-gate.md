@@ -40,11 +40,21 @@ exists to surface:
 Run command:
 
 ```bash
+# Credentials are read from env/.env via navconfig — no manual exports.
+# PARROT_LIVEAVATAR_MAX_SESSION_DURATION_S / PARROT_LIVE_MAX_SESSION_DURATION are
+# needed only on an account whose session cap is below the spec's 600 s.
 PARROT_LIVE_BROADCAST_GATE=1 PARROT_LIVEAVATAR_MAX_SESSION_DURATION_S=60 \
 PARROT_LIVE_MAX_SESSION_DURATION=60 \
   pytest packages/ai-parrot-integrations/tests/voice/test_voice_broadcast_live_gate.py
 # 3 passed in 29.18s
 ```
+
+> **Fixed after this report was first written.** The gate used to require the caller to
+> hand-export the five credential variables, because it read `os.environ` at import time
+> and nothing in its import graph loaded `env/.env`. It now imports `navconfig` first, so
+> the command above works as written on any machine that has credentials configured the
+> normal way. The old "export them yourself" instruction was a workaround for a defect in
+> the gate, and it was wrong to document it as the procedure.
 
 ### Measured results
 
@@ -106,8 +116,8 @@ Module 1 probe.
 
 | # | Origin | Scenario | Status | Reason |
 |---|---|---|---|---|
-| 1 | FEAT-536 #2 | Nova, voice-only — spoken + text reply, tool call visible | **NOT RUN** | SDK blocker removed (0.11.0 installed, a real Nova `VoiceBot` constructs). Remaining blocker is different in kind: this is a FEAT-536 *human-observed* browser scenario — "spoken reply audible" is a perceptual judgement, not an assertion this probe can make |
-| 2 | FEAT-536 #4 | Nova + Avatar — lip-synced video, exactly one audio source | **NOT RUN** | Vendors are now reachable and the A/V path is verified (rows 5–11); **lip-sync itself** remains a subjective judgement requiring a human observer |
+| 1 | FEAT-536 #2 | Nova, voice-only — spoken + text reply, tool call visible | ✅ **OBSERVED** | Human session 2026-09-09: voice clean through the real chain. Not a scripted assertion — a perceptual judgement, which is what this row always required |
+| 2 | FEAT-536 #4 | Nova + Avatar — lip-synced video, exactly one audio source | ✅ **OBSERVED** | Human session 2026-09-09: **avatar visible and lip-sync working**. This also retires the suspected 'video never subscribed' defect — that was Playwright Chromium lacking an H264 decoder, not the product |
 | 3 | FEAT-536 #5 | Second turn — clean new turn, no leftover state | **NOT RUN** | A real Bedrock session is now possible; the *analogue* is covered by row 10 (session survives interrupt and re-speaks). A Nova-driven second turn still needs a driven browser session |
 | 4 | FEAT-536 #8 | Avatar failure fallback — voice-only keeps working | ⚠️ **OBSERVED INCIDENTALLY** | Not run as a scripted scenario, but the 600 s rejection (row 12) produced exactly this: a genuine LiveAvatar startup failure that degraded to `audio_only` rather than breaking the broadcast. The degradation path is real, not just unit-tested |
 | 5 | FEAT-537 | LITE session accepts `livekit_config` with `livekit_url` / `livekit_room` / `livekit_client_token` (OpenAPI SHA `8f589bc4…`) | ✅ **RUN — PASS** | Session opened; avatar joined the room as `avatar-agent` |

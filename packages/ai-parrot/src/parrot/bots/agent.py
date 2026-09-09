@@ -1,3 +1,4 @@
+import asyncio
 import textwrap
 from typing import Dict, List, Tuple, Any, Optional, Union, Callable
 from datetime import datetime
@@ -41,6 +42,13 @@ class BasicAgent(Chatbot, NotificationMixin):
     - Compatible with all existing agent functionality
     - Notification capabilities through various channels (e.g., email, Slack, Teams)
     """
+
+    #: FEAT-538: optional durable task-memory runtime. ``None`` keeps the
+    #: agent exactly as it was — nothing is connected, scheduled or
+    #: imported. A host sets this to a
+    #: :class:`~parrot.tools.working_memory.task_memory.config.TaskMemoryRuntime`
+    #: before ``configure()`` to opt in.
+    task_memory_runtime: Optional[Any] = None
 
     agent_id: Optional[str] = None
     agent_name: Optional[str] = None
@@ -156,6 +164,72 @@ class BasicAgent(Chatbot, NotificationMixin):
         if self._llm is not None:
             self.client = self._llm
         await self._wire_tool_namespaces_into_working_memory()
+        await self._start_task_memory_runtime()
+        self._adopt_task_memory_from_toolkits()
+
+    async def _start_task_memory_runtime(self) -> None:
+        """Start the durable task-memory runtime, when one is configured.
+
+        Inert unless the host set ``task_memory_runtime``. Startup is
+        deliberately allowed to FAIL the configure call: a durable
+        deployment whose database or migration is missing must not come
+        up pretending to be durable — that is the failure mode the whole
+        feature exists to prevent, and it stays invisible until a restart.
+
+        Note that this does not invent a scope. A scope is per
+        user/session and is not known at configure time, so wiring a
+        toolkit to the runtime is the host's call, via
+        ``WorkingMemoryToolkit.from_runtime(runtime, scope)``.
+        """
+        runtime = getattr(self, "task_memory_runtime", None)
+        if runtime is None or getattr(runtime, "is_running", False):
+            return
+        await runtime.start()
+        self.logger.debug("Started task-memory runtime (durable=%s)", getattr(runtime.config, "durable", False))
+
+    def _adopt_task_memory_from_toolkits(self) -> None:
+        """Adopt the task memory of a registered WorkingMemoryToolkit.
+
+        Task memory is configured on the toolkit (``task_memory=``), which
+        is where the stores and scope already live. Rather than have the
+        bot build a second one — two composition roots over the same
+        stores is exactly how a selection and a journal drift apart — the
+        bot simply points at the toolkit's.
+
+        Inert when no toolkit is registered or none has task memory
+        enabled: ``self.task_memory`` stays ``None`` and every turn-context
+        helper short-circuits (AC13). Mirrors the discovery pattern of
+        :meth:`_inject_answer_memory_into_toolkits`, including its lazy
+        import, so working_memory stays an optional dependency.
+        """
+        tool_manager = getattr(self, "tool_manager", None)
+        if tool_manager is None:
+            return
+        try:
+            from parrot.tools.working_memory import WorkingMemoryToolkit
+        except ImportError:
+            return
+
+        if hasattr(tool_manager, "get_tools"):
+            tools = tool_manager.get_tools()
+            tool_iter = tools.values() if isinstance(tools, dict) else tools
+        elif hasattr(tool_manager, "all_tools"):
+            tool_iter = tool_manager.all_tools()
+        else:
+            tool_iter = getattr(tool_manager, "_tools", {}).values()
+
+        for tool in tool_iter:
+            if not isinstance(tool, WorkingMemoryToolkit):
+                continue
+            task_memory = getattr(tool, "_task_memory", None)
+            if task_memory is None:
+                continue
+            self.task_memory = task_memory
+            self.logger.debug(
+                "Adopted task memory from WorkingMemoryToolkit '%s'",
+                getattr(tool, "name", tool),
+            )
+            return
 
     def _inject_answer_memory_into_toolkits(self) -> None:
         """Auto-inject self.answer_memory into any registered WorkingMemoryToolkit.
@@ -955,6 +1029,20 @@ class BasicAgent(Chatbot, NotificationMixin):
         if hasattr(self, "tool_manager"):
             await self.tool_manager.disconnect_all_mcp()
             self.logger.info("Disconnected all MCP servers")
+
+        # FEAT-538: stop scheduling and close only what the runtime owns.
+        # Shielded because shutdown is frequently reached via cancellation,
+        # and a cancelled stop would leave the retention loop running and
+        # the pool open — the exact leak this call exists to prevent.
+        runtime = getattr(self, "task_memory_runtime", None)
+        if runtime is not None and getattr(runtime, "is_running", False):
+            try:
+                await asyncio.shield(runtime.stop())
+            except asyncio.CancelledError:
+                self.logger.warning("Task-memory shutdown was cancelled; the runtime stop was shielded")
+                raise
+            except Exception:  # noqa: BLE001 - shutdown must not mask the original failure
+                self.logger.warning("Task-memory runtime did not stop cleanly", exc_info=True)
 
         if hasattr(super(), "shutdown"):
             await super().shutdown(**kwargs)

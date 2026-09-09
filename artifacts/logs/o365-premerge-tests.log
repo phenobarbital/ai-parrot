@@ -1,0 +1,20 @@
+............................................................sssss....... [ 18%]
+........................................................................ [ 37%]
+........................................................................ [ 56%]
+........................................................................ [ 75%]
+........................................................................ [ 94%]
+......................                                                   [100%]
+=============================== warnings summary ===============================
+packages/ai-parrot-tools/tests/contracts/test_end_to_end.py::test_the_full_vertical_slice
+packages/ai-parrot-tools/tests/contracts/test_end_to_end.py::test_a_second_delta_run_is_idempotent
+packages/ai-parrot-tools/tests/contracts/test_end_to_end.py::test_an_unauthorized_reader_gets_nothing_end_to_end
+packages/ai-parrot-tools/tests/contracts/test_end_to_end.py::test_citations_survive_a_revision_bump
+packages/ai-parrot-tools/tests/contracts/test_end_to_end.py::test_a_verified_card_still_releases_its_citations
+  /home/jesuslara/proyectos/ai-parrot/.venv/lib/python3.12/site-packages/_pytest/runner.py:250: PluggyTeardownRaisedWarning: A plugin raised an exception during an old-style hookwrapper teardown.
+  Plugin: /home/jesuslara/proyectos/ai-parrot/.claude/worktrees/feat-FEAT-539-contracts-o365-delta/conftest.py, Hook: pytest_runtest_setup
+  Skipped: live end-to-end tests require an explicit GRAPHINDEX_PG_DSN
+  For more information see https://pluggy.readthedocs.io/en/stable/api_reference.html#pluggy.PluggyTeardownRaisedWarning
+    lambda: runtest_hook(item=item, **kwds),
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+377 passed, 5 skipped, 5 warnings in 20.10s

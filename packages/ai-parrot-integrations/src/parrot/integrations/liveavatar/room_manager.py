@@ -200,6 +200,7 @@ class LiveKitRoomManager:
         *,
         ttl_s: int = DEFAULT_PUBLISHER_TOKEN_TTL_S,
         name: Optional[str] = None,
+        can_publish_data: bool = False,
     ) -> str:
         """Mint a server-side publisher token for a caller-chosen identity.
 
@@ -236,7 +237,13 @@ class LiveKitRoomManager:
             room=room,
             can_publish=True,
             can_subscribe=True,
-            can_publish_data=False,
+            # Off by default (least privilege). The LiveAvatar vendor requires
+            # it on the token it is handed and refuses the session outright
+            # without it: `422 Bad LiveKit configuration. Input Livekit token
+            # needs to grant canPublishData permission.` Because avatar startup
+            # degrades instead of raising, that 422 turned every broadcast into
+            # a silent audio_only fallback.
+            can_publish_data=can_publish_data,
         )
         builder = (
             livekit_api.AccessToken(self._key, self._secret)

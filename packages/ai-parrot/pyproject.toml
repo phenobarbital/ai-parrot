@@ -250,6 +250,10 @@ flowtask = [
 graphindex = [
     "tree-sitter>=0.23",
     "tree-sitter-languages>=1.10",
+    # FEAT-539: deterministic fuzzy matching for contract parent resolution
+    # and party/title reconciliation. Also covers the previously undeclared
+    # lazy import in `knowledge/ontology/discovery.py`.
+    "rapidfuzz>=3.0",
 ]
 
 # GraphIndex Postgres backend (FEAT-520) — bitemporal graph + wiki plane over

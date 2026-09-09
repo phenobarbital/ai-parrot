@@ -1,7 +1,10 @@
-from typing import List, Dict, Any, Optional, TYPE_CHECKING
+from typing import List, Dict, Any, Callable, Optional, TYPE_CHECKING
 from datetime import datetime
+import asyncio
 import json
+import random
 from redis.asyncio import Redis
+from redis.exceptions import WatchError
 from datamodel.parsers.json import json_encoder, json_decoder  # pylint: disable=E0611 # noqa
 from .abstract import ConversationMemory, ConversationHistory, ConversationTurn
 from .compaction.omission import OmissionStore, RedisOmissionStore
@@ -9,6 +12,31 @@ from ..conf import REDIS_HISTORY_URL
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from .compaction.tokens import TokenCounter
+
+#: How many times a compare-and-merge retries before giving up (FEAT-538).
+#: Bounded on purpose: an unbounded retry under sustained contention would
+#: turn a lost update into a hang, which is harder to diagnose and worse
+#: to operate.
+_MERGE_MAX_ATTEMPTS: int = 16
+
+#: Base backoff between compare-and-swap retries, in seconds.
+#: Retrying immediately is what turns contention into a thundering herd:
+#: every loser re-reads at the same instant and collides again. Jittered
+#: exponential backoff spreads them out, which is the difference between
+#: "converges" and "exhausts the budget" once more than a couple of
+#: writers are involved.
+_MERGE_BACKOFF_BASE: float = 0.002
+_MERGE_BACKOFF_CAP: float = 0.100
+
+
+async def _merge_backoff(attempt: int) -> None:
+    """Sleep for a jittered exponential interval before retrying a CAS.
+
+    Args:
+        attempt: Zero-based retry number.
+    """
+    delay = min(_MERGE_BACKOFF_BASE * (2**attempt), _MERGE_BACKOFF_CAP)
+    await asyncio.sleep(random.uniform(0, delay))
 
 
 class RedisConversation(ConversationMemory):
@@ -61,6 +89,23 @@ class RedisConversation(ConversationMemory):
             or RedisOmissionStore(self.redis, key_prefix=self.key_prefix, ttl=omission_ttl),
             normalize=normalize,
         )
+
+    def _supports_cas(self) -> bool:
+        """Whether the client can do ``WATCH``/``MULTI``/``EXEC`` (FEAT-538).
+
+        Real Redis can. Lightweight test doubles and Redis-compatible
+        clients without transaction support cannot, and calling
+        ``pipeline()`` on them raises. Those clients fall back to the
+        pre-FEAT-538 direct write: a single-process double has no
+        competing writer for a compare-and-swap to protect against, so
+        the fallback costs nothing there — and crashing on them would be
+        a regression in behaviour that the atomicity work is not entitled
+        to cause.
+
+        Returns:
+            ``True`` when the compare-and-swap path is usable.
+        """
+        return callable(getattr(self.redis, "pipeline", None))
 
     def _get_key(self, user_id: str, session_id: str, chatbot_id: Optional[str] = None) -> str:
         """Generate Redis key for conversation history."""
@@ -258,6 +303,166 @@ class RedisConversation(ConversationMemory):
             serialized_data = self._serialize_data(history.to_dict())
             await self.redis.set(key, serialized_data)
 
+    async def read_metadata(
+        self, user_id: str, session_id: str, chatbot_id: Optional[str] = None
+    ) -> Optional[Dict[str, Any]]:
+        """Read a conversation's whole ``metadata`` blob (FEAT-538).
+
+        In hash mode this is a single targeted ``hget``, avoiding the
+        FEAT-524 lazy legacy re-key that a full :meth:`get_history` may
+        perform as a side effect.
+
+        Args:
+            user_id: Owner of the conversation.
+            session_id: Conversation session.
+            chatbot_id: Agent key segment.
+
+        Returns:
+            The metadata dict, or ``None`` when the conversation has none.
+        """
+        if self.use_hash_storage:
+            raw = await self.redis.hget(self._get_key(user_id, session_id, chatbot_id), "metadata")
+            if not raw:
+                return None
+            meta = self._deserialize_data(raw)
+            return meta if isinstance(meta, dict) else None
+        history = await self.get_history(user_id, session_id, chatbot_id)
+        return dict(history.metadata) if history is not None else None
+
+    async def merge_metadata(
+        self,
+        user_id: str,
+        session_id: str,
+        chatbot_id: Optional[str] = None,
+        *,
+        mutate: Callable[[Dict[str, Any]], Dict[str, Any]],
+        ttl: Optional[int] = None,
+        max_attempts: int = _MERGE_MAX_ATTEMPTS,
+    ) -> Dict[str, Any]:
+        """Atomically compare-and-merge a conversation's ``metadata`` (FEAT-538).
+
+        ``metadata`` is shared by writers that know nothing about each
+        other: the compaction layer owns ``metadata["compaction"]`` and
+        task memory owns ``metadata["task_memory"]``. The previous
+        read-modify-write lost whichever update landed second.
+
+        A task-scoped lock cannot fix that, because **the other writer
+        would not take it**. So this uses Redis' own
+        ``WATCH``/``MULTI``/``EXEC``: the transaction aborts if *anyone*
+        touches the key in between, and ``mutate`` is re-run against the
+        freshly read value. Correctness therefore does not depend on every
+        writer cooperating — only on them going through Redis.
+
+        ``mutate`` must be a **pure** function of the metadata it is
+        given: it may be called several times, and it must merge into the
+        dict it receives rather than into one captured earlier.
+
+        Args:
+            user_id: Owner of the conversation.
+            session_id: Conversation session.
+            chatbot_id: Agent key segment.
+            mutate: Pure function from current metadata to new metadata.
+            ttl: Optional expiry in seconds applied to the conversation
+                key. Task-memory mode requires an explicit finite hot-key
+                retention when the underlying history has no TTL.
+            max_attempts: Bound on compare-and-swap retries.
+
+        Returns:
+            The metadata that was written.
+
+        Raises:
+            RuntimeError: If the merge still conflicts after
+                ``max_attempts``. Callers that must not fail a user
+                action should treat this as a degraded cache write, not
+                as a lost record.
+        """
+        key = self._get_key(user_id, session_id, chatbot_id)
+
+        if not self._supports_cas():
+            return await self._merge_metadata_unguarded(key, mutate, ttl)
+
+        for attempt in range(max_attempts):
+            async with self.redis.pipeline() as pipe:
+                try:
+                    await pipe.watch(key)
+                    if self.use_hash_storage:
+                        raw = await pipe.hget(key, "metadata")
+                        current = self._deserialize_data(raw) if raw else {}
+                        if not isinstance(current, dict):
+                            current = {}
+                        merged = mutate(dict(current))
+                        pipe.multi()
+                        pipe.hset(key, "metadata", self._serialize_data(merged))
+                        if ttl:
+                            pipe.expire(key, ttl)
+                        await pipe.execute()
+                    else:
+                        raw = await pipe.get(key)
+                        payload = self._deserialize_data(raw) if raw else None
+                        if not isinstance(payload, dict):
+                            payload = {}
+                        current = payload.get("metadata")
+                        if not isinstance(current, dict):
+                            current = {}
+                        merged = mutate(dict(current))
+                        payload["metadata"] = merged
+                        pipe.multi()
+                        pipe.set(key, self._serialize_data(payload))
+                        if ttl:
+                            pipe.expire(key, ttl)
+                        await pipe.execute()
+                    return merged
+                except WatchError:
+                    # Somebody else wrote the key between our read and our
+                    # write. Re-read and re-merge; do NOT reuse the stale
+                    # value, which is exactly how the update was lost.
+                    pass
+            await _merge_backoff(attempt)
+
+        raise RuntimeError(f"metadata merge for {key} still conflicting after {max_attempts} attempts")
+
+    async def _merge_metadata_unguarded(
+        self, key: str, mutate: Callable[[Dict[str, Any]], Dict[str, Any]], ttl: Optional[int]
+    ) -> Dict[str, Any]:
+        """Merge metadata WITHOUT a compare-and-swap.
+
+        Only used for clients that cannot do transactions. This is the
+        pre-FEAT-538 read-modify-write and is **not** protected against a
+        concurrent writer; it exists so a non-transactional client keeps
+        working rather than crashing.
+
+        Args:
+            key: The conversation key.
+            mutate: The merge function.
+            ttl: Optional expiry in seconds.
+
+        Returns:
+            The metadata that was written.
+        """
+        if self.use_hash_storage:
+            raw = await self.redis.hget(key, "metadata")
+            current = self._deserialize_data(raw) if raw else {}
+            if not isinstance(current, dict):
+                current = {}
+            merged = mutate(dict(current))
+            await self.redis.hset(key, mapping={"metadata": self._serialize_data(merged)})
+        else:
+            raw = await self.redis.get(key)
+            payload = self._deserialize_data(raw) if raw else None
+            if not isinstance(payload, dict):
+                payload = {}
+            current = payload.get("metadata")
+            if not isinstance(current, dict):
+                current = {}
+            merged = mutate(dict(current))
+            payload["metadata"] = merged
+            await self.redis.set(key, self._serialize_data(payload))
+        if ttl:
+            expire = getattr(self.redis, "expire", None)
+            if callable(expire):
+                await expire(key, ttl)
+        return merged
+
     async def _store_turn(
         self,
         user_id: str,
@@ -271,17 +476,61 @@ class RedisConversation(ConversationMemory):
 
         Hash mode issues exactly one ``hset`` whose mapping carries
         ``turns``/``updated_at``[/``chatbot_id``] and, when a compaction
-        state is given, ``metadata`` (read-modify-write on the existing
-        metadata blob so other keys already there survive).
+        state is given, ``metadata``.
+
+        FEAT-538: the read-modify-write is now wrapped in
+        ``WATCH``/``MULTI``/``EXEC``. Previously a concurrent writer
+        touching ``metadata`` (task association) or ``turns`` between this
+        method's read and its write was silently overwritten. The visible
+        behaviour is unchanged — one write, same fields — but a losing
+        writer now retries against fresh data instead of clobbering.
         """
         if self.use_hash_storage:
             key = self._get_key(user_id, session_id, chatbot_id)
 
+            for attempt in range(_MERGE_MAX_ATTEMPTS if self._supports_cas() else 0):
+                async with self.redis.pipeline() as pipe:
+                    try:
+                        await pipe.watch(key)
+                        current_turns_data = await pipe.hget(key, "turns")
+                        turns = self._deserialize_data(current_turns_data) if current_turns_data else []
+                        turns.append(turn.to_dict())
+
+                        mapping: Dict[str, Any] = {
+                            "turns": self._serialize_data(turns),
+                            "updated_at": datetime.now().isoformat(),
+                        }
+                        if chatbot_id is not None:
+                            mapping["chatbot_id"] = str(chatbot_id)
+                        if compaction_state is not None:
+                            raw_meta = await pipe.hget(key, "metadata")
+                            meta = self._deserialize_data(raw_meta) if raw_meta else {}
+                            if not isinstance(meta, dict):
+                                meta = {}
+                            meta["compaction"] = compaction_state
+                            mapping["metadata"] = self._serialize_data(meta)
+
+                        pipe.multi()
+                        pipe.hset(key, mapping=mapping)
+                        await pipe.execute()
+                        return
+                    except WatchError:
+                        pass
+                await _merge_backoff(attempt)
+
+            # Contention did not clear. Fall back to the pre-FEAT-538
+            # single write rather than dropping the user's turn: losing a
+            # conversation turn is worse than losing a metadata race.
+            if self._supports_cas():
+                self.logger.warning(
+                    "Turn append for %s contended past %d attempts; writing without CAS",
+                    key,
+                    _MERGE_MAX_ATTEMPTS,
+                )
             current_turns_data = await self.redis.hget(key, "turns")
             turns = self._deserialize_data(current_turns_data) if current_turns_data else []
             turns.append(turn.to_dict())
-
-            mapping: Dict[str, Any] = {
+            mapping = {
                 "turns": self._serialize_data(turns),
                 "updated_at": datetime.now().isoformat(),
             }
@@ -296,7 +545,34 @@ class RedisConversation(ConversationMemory):
                 mapping["metadata"] = self._serialize_data(meta)
             await self.redis.hset(key, mapping=mapping)
         else:
-            # Fallback to full history update — still one write.
+            # Full-history mode. The old path was get_history -> mutate ->
+            # update_history, which replaces the ENTIRE record and so loses
+            # any concurrent metadata write outright. Same CAS treatment.
+            key = self._get_key(user_id, session_id, chatbot_id)
+            for attempt in range(_MERGE_MAX_ATTEMPTS if self._supports_cas() else 0):
+                async with self.redis.pipeline() as pipe:
+                    try:
+                        await pipe.watch(key)
+                        raw = await pipe.get(key)
+                        if not raw:
+                            break
+                        payload = self._deserialize_data(raw)
+                        if not isinstance(payload, dict):
+                            break
+                        history = ConversationHistory.from_dict(payload)
+                        if chatbot_id and not history.chatbot_id:
+                            history.chatbot_id = chatbot_id
+                        history.add_turn(turn)
+                        if compaction_state is not None:
+                            history.metadata["compaction"] = compaction_state
+                        pipe.multi()
+                        pipe.set(key, self._serialize_data(history.to_dict()))
+                        await pipe.execute()
+                        return
+                    except WatchError:
+                        pass
+                await _merge_backoff(attempt)
+
             history = await self.get_history(user_id, session_id, chatbot_id)
             if history:
                 history.add_turn(turn)

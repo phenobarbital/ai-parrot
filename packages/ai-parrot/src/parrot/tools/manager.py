@@ -246,6 +246,22 @@ class ToolSchemaAdapter:
 _INTERNAL_TOOL_NAMES: frozenset[str] = frozenset({"search_tools", "read_omitted_content"})
 
 
+class _Observation:
+    """Per-dispatch marker: did a tool body actually run? (FEAT-538)
+
+    Deliberately a local object passed down a single call, never manager
+    state. Two concurrent dispatches on one manager — or on a clone that
+    shares tool instances — must not be able to see each other's
+    observation, and instance state would let exactly that happen.
+    """
+
+    __slots__ = ("executed",)
+
+    def __init__(self) -> None:
+        """Start with no body having run."""
+        self.executed = False
+
+
 class ToolManager(MCPToolManagerMixin):
     """
     Unified tool manager for handling tools across AbstractBot and AbstractClient.
@@ -282,6 +298,12 @@ class ToolManager(MCPToolManagerMixin):
                 with an explicit ``executor=`` are never overridden.
         """
         self._shared: Dict[str, Any] = {"dataframes": {}}  # name -> (df, meta)
+        #: Optional FEAT-538 invocation observer. ``None`` (the default)
+        #: means dispatch behaves exactly as it did before task memory
+        #: existed — the observer is opt-in and adds no cost when absent.
+        #: Per-manager, so `clone()` starts unobserved and cannot inherit
+        #: another manager's turn capture even though it shares tools.
+        self._invocation_observer: Optional[Any] = None
         self._registered_agents: Dict[str, RegisteredAgent] = {}
         self._result_hooks: List[Callable[[str, Any, Dict[str, Any]], None]] = []
         self.logger = logger or logging.getLogger(self.__class__.__name__)
@@ -1511,6 +1533,78 @@ class ToolManager(MCPToolManagerMixin):
 
         return {"count": len(self._tools), "tools": tools_info}
 
+    def set_invocation_observer(self, observer: Optional[Any]) -> None:
+        """Install (or remove) the FEAT-538 invocation observer.
+
+        Opt-in and per-manager. A :meth:`clone` deliberately does NOT
+        inherit it: clones share tool *instances* but own their mutable
+        state, and a shared observer would let one clone's turn capture
+        collect another clone's calls.
+
+        Args:
+            observer: An observer exposing ``begin``/``finish``/
+                ``cancelled``/``not_executed``, or ``None`` to detach.
+        """
+        self._invocation_observer = observer
+
+    @property
+    def invocation_observer(self) -> Optional[Any]:
+        """The installed invocation observer, or ``None``."""
+        return self._invocation_observer
+
+    async def _observed(
+        self,
+        observation: Optional["_Observation"],
+        tool_name: str,
+        call: Any,
+        *,
+        sync: bool = False,
+    ) -> Any:
+        """Run one execution attempt, observed when an observer is installed.
+
+        This is the ONLY place a tool body is invoked, and it sits after
+        every guard — which is exactly where FEAT-538 requires
+        ``tool_started`` to be persisted: late enough that a doomed call
+        never records a start, early enough that no external effect can
+        happen without one.
+
+        With no observer (the default) this is a plain call, so the
+        disabled path keeps its original behaviour and cost.
+
+        Args:
+            observation: Per-dispatch box marking that a body ran, or
+                ``None`` when unobserved.
+            tool_name: The tool being dispatched.
+            call: Zero-argument callable performing the attempt.
+            sync: When ``True``, ``call`` returns a plain value rather
+                than an awaitable — the legacy inline synchronous path,
+                preserved exactly.
+
+        Returns:
+            Whatever the attempt returned.
+
+        Raises:
+            BaseException: Whatever the attempt raised, unchanged.
+                ``CancelledError`` is recorded and re-raised, never
+                swallowed.
+        """
+        observer = self._invocation_observer
+        if observer is None or observation is None:
+            return call() if sync else await call()
+
+        observed = await observer.begin(tool_name)
+        observation.executed = True
+        try:
+            result = call() if sync else await call()
+        except asyncio.CancelledError:
+            await observer.cancelled(observed)
+            raise
+        except BaseException as exc:  # noqa: BLE001 — classified, then re-raised
+            await observer.finish(observed, exception=exc)
+            raise
+        await observer.finish(observed, value=result)
+        return result
+
     async def execute_tool(
         self,
         tool_name: str,
@@ -1520,6 +1614,75 @@ class ToolManager(MCPToolManagerMixin):
         return_tool_result: bool = False,
     ) -> Any:
         """Execute a registered tool function.
+
+        Public entry point. Behaviour is defined by
+        :meth:`_execute_tool_impl`; this wrapper only adds the optional
+        FEAT-538 observer, and is a direct pass-through when none is
+        installed.
+
+        The split exists so that dispatches which never reach a tool body
+        — an unknown tool, a guardrail or grant denial, an authorization
+        requirement — can be classified as unsuccessful **dispatch**
+        outcomes with ``executed=False``. They must never receive a
+        fictitious ``tool_started``: recording a start for a call that did
+        not run would claim an execution that never happened and corrupt
+        the journal's attempt counts.
+
+        Args:
+            tool_name: Name of the tool to execute.
+            parameters: Tool parameters/arguments.
+            permission_context: Optional permission context (see
+                :meth:`_execute_tool_impl`).
+            return_tool_result: Opt-in full-result mode (FEAT-536).
+
+        Returns:
+            Exactly what :meth:`_execute_tool_impl` returns.
+        """
+        observer = self._invocation_observer
+        if observer is None:
+            return await self._execute_tool_impl(
+                tool_name, parameters, permission_context, return_tool_result=return_tool_result
+            )
+
+        # Per-dispatch, never instance state: two concurrent dispatches on
+        # one manager (or on a clone sharing tool instances) must not see
+        # each other's observation.
+        observation = _Observation()
+        try:
+            result = await self._execute_tool_impl(
+                tool_name,
+                parameters,
+                permission_context,
+                return_tool_result=return_tool_result,
+                observation=observation,
+            )
+        except asyncio.CancelledError:
+            raise
+        except BaseException as exc:  # noqa: BLE001 — classify, then re-raise
+            if not observation.executed:
+                await observer.not_executed(tool_name, exception=exc)
+            raise
+        if not observation.executed:
+            await observer.not_executed(tool_name, value=result)
+        return result
+
+    async def _execute_tool_impl(
+        self,
+        tool_name: str,
+        parameters: Dict[str, Any],
+        permission_context: Optional["PermissionContext"] = None,
+        *,
+        return_tool_result: bool = False,
+        observation: Optional["_Observation"] = None,
+    ) -> Any:
+        """Execute a registered tool function.
+
+        The unchanged body of :meth:`execute_tool`. It is split out so the
+        observer (FEAT-538) can classify *early returns* — an unknown tool
+        or a guard denial — without any ``return`` inside this method
+        needing to know the observer exists. Guard ordering, compression,
+        envelopes and every early return here are byte-for-byte as they
+        were before the observer was introduced.
 
         Args:
             tool_name: Name of the tool to execute.
@@ -1715,9 +1878,11 @@ class ToolManager(MCPToolManagerMixin):
                     # it cannot block the event loop; default mode below
                     # remains unchanged (inline synchronous call).
                     if asyncio.iscoroutinefunction(tool.function):
-                        full_result = await tool.function(**parameters)
+                        full_result = await self._observed(observation, tool_name, lambda: tool.function(**parameters))
                     else:
-                        full_result = await asyncio.to_thread(tool.function, **parameters)
+                        full_result = await self._observed(
+                            observation, tool_name, lambda: asyncio.to_thread(tool.function, **parameters)
+                        )
 
                     self.logger.debug("Executed tool %r with parameters: %s", tool_name, parameters)
                     if isinstance(full_result, ToolResult):
@@ -1754,9 +1919,11 @@ class ToolManager(MCPToolManagerMixin):
                     return ToolResult(status="success", result=full_result)
 
                 if asyncio.iscoroutinefunction(tool.function):
-                    result = await tool.function(**parameters)
+                    result = await self._observed(observation, tool_name, lambda: tool.function(**parameters))
                 else:
-                    result = tool.function(**parameters)
+                    result = await self._observed(
+                        observation, tool_name, lambda: tool.function(**parameters), sync=True
+                    )
 
                 self.logger.debug("Executed tool %r with parameters: %s", tool_name, parameters)
                 return result
@@ -1867,7 +2034,7 @@ class ToolManager(MCPToolManagerMixin):
                         exec_kwargs.setdefault("_cred_channel", getattr(permission_context, "channel", "unknown"))
                         exec_kwargs.setdefault("_cred_user_id", getattr(permission_context, "user_id", None))
 
-                result = await tool.execute(**exec_kwargs)
+                result = await self._observed(observation, tool_name, lambda: tool.execute(**exec_kwargs))
 
                 if return_tool_result:
                     # Opt-in complete-result mode (TASK-2937): use the same

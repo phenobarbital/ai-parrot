@@ -1,0 +1,827 @@
+name: contracts
+version: "1.0"
+extends: base
+description: >
+  Contract Intelligence domain. Declares the vocabulary the ContractCard
+  is projected into: Contract, Party, Person (signatories), Obligation and
+  ComplianceStandard, plus the edges written deterministically by the
+  ContractGraphLoader from verified/extracted cards (party_to, signed_by,
+  governed_by, amends, supersedes, imposed_by, requires) and the two
+  field_match relations to the base layer (owned_by, managed_by). Every
+  traversal pattern is a metadata query — dates, parties, standards — so
+  lookups never depend on an LLM. Versions on Contract follow the legal
+  domain's bitemporal convention (valid_from inclusive, valid_to exclusive,
+  null valid_to = currently in force).
+
+  FEAT-539 corrections to the proposal draft:
+    * conflicts_with and references_obligation are the two LLM-judged
+      relations. They carry origin=llm edge properties and declare NO
+      discovery rules: they are written only by an explicit ingest/relate
+      judgement, never by the generic field-match discovery pass.
+    * Contract and Obligation carry an `active` flag; retraction flips it
+      instead of deleting rows, so EVERY traversal pattern filters
+      inactive contracts, obligations and endpoints.
+    * contract_family de-duplicates by contract identity (the _key), not by
+      the whole {contract, rel, depth} object, which would return the same
+      contract once per path.
+    * card_revision is projected so a query can reject a stale graph
+      projection against the authoritative Postgres catalog.
+    * Contract/Party entity extraction declares exact_id_match: the
+      contracts adapter resolves ids against the authorized catalog and
+      supplies every bind itself. It deliberately does NOT use the generic
+      hybrid_concept_match resolver (Concept-oriented, may call an LLM).
+    * Each pattern documents its exact bind set; the contracts layer binds
+      all of them explicitly (a nullable @kind is bound to an explicit
+      null, and my_contracts takes a full Employee graph _id).
+  Merged with base this domain yields 8 entities, 16 relations and 13
+  traversal patterns.
+
+entities:
+  Contract:
+    collection: contract
+    source: contractcard
+    key_field: contract_id
+    properties:
+      - contract_id:
+          type: string
+          required: true
+          unique: true
+          description: Catalog slug; equals the PageIndex tree_name of the source document
+      - title:
+          type: string
+          required: true
+          description: Contract title as carded (verified when card is verified)
+      - contract_type:
+          type: string
+          required: true
+          enum: [msa, sow, nda, dpa, amendment, order_form, license, sla, other]
+          description: Closed contract taxonomy (ContractType)
+      - status:
+          type: string
+          required: true
+          enum: [draft, active, expired, terminated, superseded, unknown]
+          description: Derived deterministically from dates and supersedes edges, never by the LLM
+      - effective_date:
+          type: date
+          description: Date the contract enters into force
+      - expiration_date:
+          type: date
+          description: End of the current term (null for evergreen/undated)
+      - auto_renew:
+          type: boolean
+          default: false
+          description: Whether the contract renews automatically at expiration
+      - notice_days:
+          type: int
+          description: Days before expiration by which non-renewal notice must be given
+      - notice_deadline:
+          type: date
+          description: expiration_date - notice_days, derived; the date renewal alerts key on
+      - renewal_period_months:
+          type: int
+          description: Length of each automatic renewal period
+      - governing_law:
+          type: string
+          description: Governing law / jurisdiction as written
+      - parent_contract_id:
+          type: string
+          description: contract_id of the governing contract (SOW -> MSA, amendment -> base) for governed_by/amends discovery
+      - owner_employee_id:
+          type: string
+          description: employee_id of the internal business owner (for owned_by discovery)
+      - department:
+          type: string
+          description: Department identifier of the owning team (enables the same_department authorization rule)
+      - counterparty_names:
+          type: list
+          description: Display names of the external parties, denormalised for search and listings
+      - verification:
+          type: string
+          required: true
+          enum: [extracted, verified, stale]
+          default: extracted
+          description: Card-level verification state (see ContractCard.verification)
+      - verified_by:
+          type: string
+          description: User id of the verifier (Bob) when verification == verified
+      - source_uri:
+          type: string
+          required: true
+          description: Where the document lives (SharePoint/OneDrive/drive/mail URI); never a copy
+      - source_sha256:
+          type: string
+          required: true
+          description: Content hash of the carded document; refresh trigger
+      - versions:
+          type: list
+          description: >
+            Ordered ContractVersion entries (n, valid_from, valid_to, kind,
+            amended_by, source_sha256, card_snapshot). Shape enforced in
+            Python by ContractGraphLoader, as legal.Articulo.versions.
+      - summary:
+          type: string
+          description: One-paragraph librarian summary of what the contract covers
+      - card_revision:
+          type: int
+          description: >
+            Catalog revision this projection was built from. Queries compare
+            it against the authoritative catalog and reject stale or
+            incomplete projections instead of answering from them.
+      - active:
+          type: boolean
+          default: true
+          description: >
+            False once the contract is retracted. Retraction never deletes
+            catalog history, evidence or audit rows, so every traversal
+            pattern filters on this flag.
+    vectorize:
+      - summary
+      - title
+
+  Party:
+    collection: party
+    source: contractcard
+    key_field: party_id
+    properties:
+      - party_id:
+          type: string
+          required: true
+          unique: true
+          description: Slug of the normalised legal name (entity resolution key)
+      - name:
+          type: string
+          required: true
+          description: Legal name as it appears on the contract
+      - aliases:
+          type: list
+          description: Other spellings / trade names seen across contracts
+      - kind:
+          type: string
+          enum: [customer, vendor, partner, affiliate, us, other]
+          description: Default role of this party from our perspective
+      - is_us:
+          type: boolean
+          default: false
+          description: True for our own legal entities
+    vectorize:
+      - name
+
+  Person:
+    collection: person
+    source: contractcard
+    key_field: person_id
+    properties:
+      - person_id:
+          type: string
+          required: true
+          unique: true
+          description: Slug of the normalised full name plus party (signatory identity)
+      - name:
+          type: string
+          required: true
+          description: Full name as signed
+      - title:
+          type: string
+          description: Job title printed under the signature
+      - party_id:
+          type: string
+          description: Party this person signed on behalf of (for represents discovery)
+      - employee_id:
+          type: string
+          description: Base-layer employee_id when the signatory is one of ours (for is_employee discovery)
+
+  Obligation:
+    collection: obligation
+    source: contractcard
+    key_field: obligation_id
+    properties:
+      - obligation_id:
+          type: string
+          required: true
+          unique: true
+          description: Composite '{contract_id}:{seq}'
+      - contract_id:
+          type: string
+          required: true
+          description: Owning contract (for imposed_by discovery)
+      - kind:
+          type: string
+          required: true
+          enum: [compliance, insurance, data_protection, security, sla, audit_right, reporting, payment, confidentiality, termination, notice, deliverable, other]
+          description: Closed ObligationKind taxonomy
+      - standard_id:
+          type: string
+          description: ComplianceStandard id when kind == compliance/security (for requires discovery)
+      - obligor:
+          type: string
+          enum: [us, counterparty, both]
+          description: Who carries the obligation
+      - text:
+          type: string
+          required: true
+          description: Verbatim clause excerpt (the citation payload)
+      - node_id:
+          type: string
+          required: true
+          description: PageIndex node the excerpt was read from
+      - page:
+          type: int
+          description: Physical page (PDF sources)
+      - due_date:
+          type: date
+          description: Fixed date when the obligation carries one (audit, certificate renewal, deliverable)
+      - recurrence:
+          type: string
+          description: Human-readable recurrence ('annually', 'quarterly') when the obligation repeats
+      - verification:
+          type: string
+          enum: [extracted, verified, stale]
+          default: extracted
+          description: Per-obligation verification state
+      - active:
+          type: boolean
+          default: true
+          description: False once the owning contract is retracted
+    vectorize:
+      - text
+
+  ComplianceStandard:
+    collection: compliance_standard
+    key_field: standard_id
+    properties:
+      - standard_id:
+          type: string
+          required: true
+          unique: true
+          description: Static taxonomy id (soc2, iso27001, gdpr, hipaa, pci_dss, ccpa, nist_800_53, ...)
+      - name:
+          type: string
+          required: true
+          description: Display name
+      - aliases:
+          type: list
+          description: Spellings the carding step maps to this id ('SOC 2 Type II', 'SOC2')
+
+relations:
+  party_to:
+    from: Contract
+    to: Party
+    edge_collection: party_to
+    properties:
+      - role:
+          type: string
+          enum: [customer, vendor, partner, affiliate, us, other]
+          description: Role of the party in this specific contract
+
+  signed_by:
+    from: Contract
+    to: Person
+    edge_collection: signed_by
+    properties:
+      - signed_on:
+          type: date
+          description: Signature date for this signatory
+      - on_behalf_of:
+          type: string
+          description: party_id represented at signature
+
+  represents:
+    from: Person
+    to: Party
+    edge_collection: represents
+    discovery:
+      strategy: field_match
+      rules:
+        - source_field: party_id
+          target_field: party_id
+          match_type: exact
+          description: Signatory acts for the party recorded on the card
+
+  is_employee:
+    from: Person
+    to: Employee
+    edge_collection: is_employee
+    discovery:
+      strategy: field_match
+      rules:
+        - source_field: employee_id
+          target_field: employee_id
+          match_type: exact
+          description: Internal signatory linked to the base-layer Employee
+
+  governed_by:
+    from: Contract
+    to: Contract
+    edge_collection: governed_by
+    discovery:
+      strategy: field_match
+      rules:
+        - source_field: parent_contract_id
+          target_field: contract_id
+          match_type: exact
+          description: SOW / order form governed by its MSA (parent_contract_id)
+
+  amends:
+    from: Contract
+    to: Contract
+    edge_collection: amends
+    properties:
+      - effective_date:
+          type: date
+          description: Date the amendment takes effect
+
+  supersedes:
+    from: Contract
+    to: Contract
+    edge_collection: supersedes
+
+  imposed_by:
+    from: Obligation
+    to: Contract
+    edge_collection: imposed_by
+    discovery:
+      strategy: field_match
+      rules:
+        - source_field: contract_id
+          target_field: contract_id
+          match_type: exact
+          description: Obligation belongs to its contract
+
+  requires:
+    from: Obligation
+    to: ComplianceStandard
+    edge_collection: requires
+    discovery:
+      strategy: field_match
+      rules:
+        - source_field: standard_id
+          target_field: standard_id
+          match_type: exact
+          description: Compliance/security obligation names a standard
+
+  owned_by:
+    from: Contract
+    to: Employee
+    edge_collection: owned_by
+    discovery:
+      strategy: field_match
+      rules:
+        - source_field: owner_employee_id
+          target_field: employee_id
+          match_type: exact
+          description: Internal business owner of the contract
+
+  managed_by:
+    from: Contract
+    to: Department
+    edge_collection: managed_by
+    discovery:
+      strategy: field_match
+      rules:
+        - source_field: department
+          target_field: department_id
+          match_type: exact
+          description: Owning department (also the same_department authorization anchor)
+
+  conflicts_with:
+    from: Contract
+    to: Contract
+    edge_collection: conflicts_with
+    properties:
+      - origin:
+          type: string
+          enum: [llm, manual]
+          default: llm
+          description: How the judgement was produced; always llm in v1
+      - confidence:
+          type: float
+          description: Judgement confidence in [0, 1]
+      - rationale:
+          type: string
+          description: Short justification recorded with the judgement
+      - judged_at:
+          type: string
+          description: ISO-8601 timestamp of the judgement
+      - source_sha256:
+          type: string
+          description: Source hash of the judged contract; a change invalidates the edge
+      - target_sha256:
+          type: string
+          description: Source hash of the target contract
+    # No discovery rules on purpose: conflicts are judged only during an
+    # explicit ingest/relate call. The pair is canonicalised
+    # (source_contract_id < target_contract_id) and traversed with ANY, so
+    # a symmetric interpretation needs exactly one stored edge.
+
+  references_obligation:
+    from: Obligation
+    to: Obligation
+    edge_collection: references_obligation
+    properties:
+      - origin:
+          type: string
+          enum: [llm, manual]
+          default: llm
+          description: How the judgement was produced; always llm in v1
+      - confidence:
+          type: float
+          description: Judgement confidence in [0, 1]
+      - rationale:
+          type: string
+          description: Short justification recorded with the judgement
+      - judged_at:
+          type: string
+          description: ISO-8601 timestamp of the judgement
+      - source_sha256:
+          type: string
+          description: Source hash of the contract owning the source obligation
+      - target_sha256:
+          type: string
+          description: Source hash of the contract owning the target obligation
+    # Directed and cross-contract (an SOW clause referring to an MSA
+    # clause). No discovery rules: judged only at explicit relate time.
+
+search_views:
+  contracts_view:
+    links:
+      - entity: Contract
+        fields:
+          - path: "title"
+            analyzers: ["text_en"]
+          - path: "summary"
+            analyzers: ["text_en"]
+          - path: "counterparty_names"
+            analyzers: ["text_en", "identity"]
+      - entity: Obligation
+        fields:
+          - path: "text"
+            analyzers: ["text_en"]
+      - entity: Party
+        fields:
+          - path: "name"
+            analyzers: ["text_en", "identity"]
+          - path: "aliases"
+            analyzers: ["text_en", "identity"]
+
+traversal_patterns:
+  contracts_requiring_standard:
+    description: >
+      Every active contract carrying at least one obligation that names a
+      compliance standard (SOC 2, ISO 27001, GDPR ...). Pure graph walk:
+      standard <- requires <- obligation -> imposed_by -> contract. Returns
+      the obligation excerpt with each contract so the answer is citable.
+      Binds: @@compliance_standard, @@requires, @@imposed_by, @standard_id,
+      @statuses (defaults to ["active"], always bound explicitly).
+    trigger_intents:
+      - which agreements require
+      - which contracts require
+      - require soc 2
+      - require soc2
+      - compliance requirements
+      - contracts with gdpr
+      - iso 27001 obligations
+    query_template: >
+      FOR std IN @@compliance_standard
+        FILTER std._key == @standard_id
+        FOR ob IN 1..1 INBOUND std @@requires
+          FILTER ob.active != false AND ob._active != false
+          FOR c IN 1..1 OUTBOUND ob @@imposed_by
+            FILTER c.active != false AND c._active != false
+            FILTER c.status IN @statuses
+            SORT c.title
+            RETURN { contract: c, obligation: ob }
+    post_action: none
+    entity_extraction:
+      standard:
+        type: ComplianceStandard
+        resolver: exact_id_match
+        scope: same_tenant
+        ambiguity_strategy: ask_user
+        required: true
+        description: The compliance standard mentioned in the question
+    authorization:
+      rules:
+        - rule: has_role
+          role: contract_reader
+        - rule: has_role
+          role: contract_owner
+      default_deny: true
+
+  expiring_within:
+    description: >
+      Contracts whose expiration_date falls inside a window from today.
+      Companion of notice_deadlines_within; the renewal radar runs both.
+      Binds: @@contract, @today, @until (inclusive window, both bound by
+      the contracts layer — never derived inside AQL).
+    trigger_intents:
+      - approaching renewal
+      - expiring soon
+      - contracts expiring
+      - which contracts renew
+      - up for renewal
+      - renewals in the next
+    query_template: >
+      FOR c IN @@contract
+        FILTER c.active != false AND c._active != false
+        FILTER c.status == "active"
+        FILTER c.expiration_date != null
+        FILTER c.expiration_date >= @today AND c.expiration_date <= @until
+        SORT c.expiration_date ASC
+        RETURN c
+    post_action: none
+    authorization:
+      rules:
+        - rule: has_role
+          role: contract_reader
+        - rule: has_role
+          role: contract_owner
+      default_deny: true
+
+  notice_deadlines_within:
+    description: >
+      Auto-renewing contracts whose non-renewal notice deadline falls inside
+      the window — the date that actually matters for renewals. Contracts
+      with no notice period fall back to expiration_date.
+      Binds: @@contract, @today, @until.
+    trigger_intents:
+      - notice deadline
+      - by when must we act
+      - auto-renew
+      - auto renewal deadline
+      - when do we have to give notice
+    query_template: >
+      FOR c IN @@contract
+        FILTER c.active != false AND c._active != false
+        FILTER c.status == "active"
+        LET key_date = c.auto_renew AND c.notice_deadline != null ? c.notice_deadline : c.expiration_date
+        FILTER key_date != null AND key_date >= @today AND key_date <= @until
+        SORT key_date ASC
+        RETURN MERGE(c, { key_date: key_date })
+    post_action: none
+    authorization:
+      rules:
+        - rule: has_role
+          role: contract_reader
+        - rule: has_role
+          role: contract_owner
+      default_deny: true
+
+  contracts_with_party:
+    description: >
+      All contracts (any status) with a given counterparty, with each
+      contract's role edge, ordered newest first.
+      Binds: @@party, @@party_to, @party_id (a catalog party_id resolved by
+      the contracts layer, mapped to the party collection _key).
+    trigger_intents:
+      - contracts with
+      - agreements with
+      - what do we have signed with
+      - our contract with
+    query_template: >
+      FOR p IN @@party
+        FILTER p._key == @party_id
+        FOR c, e IN 1..1 INBOUND p @@party_to
+          FILTER c.active != false AND c._active != false
+          SORT c.effective_date DESC
+          RETURN { contract: c, role: e.role }
+    post_action: none
+    entity_extraction:
+      party:
+        type: Party
+        resolver: exact_id_match
+        scope: same_tenant
+        ambiguity_strategy: ask_user
+        required: true
+        description: Counterparty named in the question
+    authorization:
+      rules:
+        - rule: has_role
+          role: contract_reader
+        - rule: has_role
+          role: contract_owner
+      default_deny: true
+
+  contract_family:
+    description: >
+      The governing contract of a document plus every SOW, order form and
+      amendment hanging off it (depth 3 along governed_by/amends, both
+      directions), so "what SOWs sit under the Acme MSA" and "which MSA
+      governs this SOW" are the same query. De-duplication is by contract
+      identity (_key), not by the whole {contract, rel, depth} object —
+      otherwise the same contract is returned once per path.
+      Binds: @@contract, @@governed_by, @@amends, @contract_id.
+    trigger_intents:
+      - which sows
+      - under the msa
+      - which msa governs
+      - related agreements
+      - amendments to
+      - contract family
+    query_template: >
+      FOR c IN @@contract
+        FILTER c._key == @contract_id
+        FILTER c.active != false AND c._active != false
+        LET family = (
+          FOR key IN UNIQUE(
+            FOR v, e, p IN 1..3 ANY c @@governed_by, @@amends
+              FILTER v.active != false AND v._active != false
+              RETURN v._key
+          )
+            LET hit = FIRST(
+              FOR v, e, p IN 1..3 ANY c @@governed_by, @@amends
+                FILTER v._key == key AND v.active != false AND v._active != false
+                SORT LENGTH(p.edges)
+                LIMIT 1
+                RETURN { contract: v, rel: PARSE_IDENTIFIER(e._id).collection,
+                         depth: LENGTH(p.edges) }
+            )
+            RETURN hit
+        )
+        RETURN { root: c, family: family }
+    post_action: none
+    entity_extraction:
+      contract:
+        type: Contract
+        resolver: exact_id_match
+        scope: same_tenant
+        ambiguity_strategy: ask_user
+        required: true
+        description: The contract named or described in the question
+    authorization:
+      rules:
+        - rule: has_role
+          role: contract_reader
+        - rule: has_role
+          role: contract_owner
+      default_deny: true
+
+  signatories_of:
+    description: >
+      Who signed a contract, for which party, and on what date.
+      Binds: @@contract, @@signed_by, @contract_id.
+    trigger_intents:
+      - who signed
+      - signatories
+      - signed on behalf of
+      - who executed
+    query_template: >
+      FOR c IN @@contract
+        FILTER c._key == @contract_id
+        FILTER c.active != false AND c._active != false
+        FOR person, e IN 1..1 OUTBOUND c @@signed_by
+          RETURN { person: person, signed_on: e.signed_on, on_behalf_of: e.on_behalf_of }
+    post_action: none
+    entity_extraction:
+      contract:
+        type: Contract
+        resolver: exact_id_match
+        scope: same_tenant
+        ambiguity_strategy: ask_user
+        required: true
+    authorization:
+      rules:
+        - rule: has_role
+          role: contract_reader
+        - rule: has_role
+          role: contract_owner
+      default_deny: true
+
+  obligations_of_contract:
+    description: >
+      Every obligation carded for a contract, optionally filtered by kind,
+      each with its verbatim excerpt and page for citation.
+      Binds: @@contract, @@imposed_by, @contract_id, @kind. @kind is
+      nullable and is ALWAYS bound — the contracts layer binds an explicit
+      null when the question names no kind.
+    trigger_intents:
+      - what does the contract require
+      - obligations under
+      - what are we obliged
+      - notice period
+      - insurance requirement
+      - termination clause
+    query_template: >
+      FOR c IN @@contract
+        FILTER c._key == @contract_id
+        FILTER c.active != false AND c._active != false
+        FOR ob IN 1..1 INBOUND c @@imposed_by
+          FILTER ob.active != false AND ob._active != false
+          FILTER @kind == null OR ob.kind == @kind
+          SORT ob.kind, ob.page
+          RETURN ob
+    post_action: none
+    entity_extraction:
+      contract:
+        type: Contract
+        resolver: exact_id_match
+        scope: same_tenant
+        ambiguity_strategy: ask_user
+        required: true
+    authorization:
+      rules:
+        - rule: has_role
+          role: contract_reader
+        - rule: has_role
+          role: contract_owner
+      default_deny: true
+
+  contract_in_force:
+    description: >
+      Which version of a contract was in force on a given date, from the
+      embedded versions[] array (amendments create versions). valid_from
+      inclusive, valid_to exclusive, null valid_to = current. A date before
+      the first version returns nothing. This is CONTRACTUAL (effective)
+      time; recorded graph history lives in the GraphIndex temporal plane.
+      Binds: @@contract, @contract_id, @as_of.
+    trigger_intents:
+      - in force on
+      - as of
+      - what did the contract say on
+      - before the amendment
+      - version in force
+    query_template: >
+      FOR c IN @@contract
+        FILTER c._key == @contract_id
+        FILTER c.active != false AND c._active != false
+        LIMIT 1
+        FOR v IN c.versions
+          FILTER v.valid_from <= @as_of
+          FILTER v.valid_to == null OR v.valid_to > @as_of
+          RETURN v
+    post_action: none
+    entity_extraction:
+      contract:
+        type: Contract
+        resolver: exact_id_match
+        scope: same_tenant
+        ambiguity_strategy: ask_user
+        required: true
+    authorization:
+      rules:
+        - rule: has_role
+          role: contract_reader
+        - rule: has_role
+          role: contract_owner
+      default_deny: true
+
+  my_contracts:
+    description: >
+      Contracts owned by the requesting user or by someone in their
+      management chain (owner -> reports_to* -> user). Self-service view
+      for owners and their managers, and it additionally requires an
+      authenticated identity: @user_id is the full Employee graph _id
+      ("employees/<employee_id>") of the requesting user, taken from the
+      trusted request context and never from the question.
+      Binds: @@contract, @@owned_by, @@reports_to, @user_id.
+    trigger_intents:
+      - my contracts
+      - contracts i own
+      - my team's contracts
+      - contracts owned by my team
+    query_template: >
+      LET reports = (FOR v IN 0..10 INBOUND @user_id @@reports_to RETURN v._id)
+      FOR c IN @@contract
+        FILTER c.active != false AND c._active != false
+        FOR owner IN 1..1 OUTBOUND c @@owned_by
+          FILTER owner._id IN reports
+          SORT c.expiration_date ASC
+          RETURN { contract: c, owner: owner }
+    post_action: none
+    authorization:
+      rules:
+        - rule: always
+      default_deny: true
+
+  search_contracts:
+    description: >
+      Lexical candidate search over titles, summaries, counterparty names
+      and obligation excerpts (contracts_view), scored, capped — the entry
+      point for questions that name no known entity. Hits are mapped back
+      to their contract by the contracts layer: an Obligation hit resolves
+      through its contract_id, a Party hit through its party_to edges.
+      Binds: @query, @top_k (bounded by the contracts layer). The view name
+      and analyzer names are literals — AQL forbids binding either.
+    trigger_intents:
+      - which contract mentions
+      - find the contract about
+      - search contracts for
+      - clause about
+    query_template: >
+      FOR d IN contracts_view
+        SEARCH ANALYZER(d.title IN TOKENS(@query, "text_en")
+                     OR d.summary IN TOKENS(@query, "text_en")
+                     OR d.text IN TOKENS(@query, "text_en")
+                     OR d.counterparty_names IN TOKENS(@query, "text_en"), "text_en")
+        FILTER d.active != false AND d._active != false
+        SORT BM25(d) DESC
+        LIMIT @top_k
+        RETURN { doc: d, score: BM25(d), collection: PARSE_IDENTIFIER(d._id).collection }
+    post_action: vector_search
+    post_query: query
+    authorization:
+      rules:
+        - rule: has_role
+          role: contract_reader
+        - rule: has_role
+          role: contract_owner
+      default_deny: true

@@ -325,7 +325,13 @@ class BaseBot(AbstractBot):
         routing_decision = kwargs.pop("routing_decision", None)
         routing_trace = kwargs.pop("routing_trace", None)
 
+        _task_turn = None  # FEAT-538: safe for the `finally` even if the try raises early
         try:
+            # FEAT-538: bracket the whole turn. Inert (returns None) when
+            # task memory is disabled; the matching reset lives in this
+            # method's existing `finally`, so scope cannot survive an
+            # exception or a cancelled stream.
+            _task_turn = self._enter_task_turn(user_id, session_id)
             # Get conversation history using unified memory
             conversation_history = None
             rendered_history = []
@@ -544,6 +550,11 @@ class BaseBot(AbstractBot):
                             user_id=user_id,
                             chatbot_id=self.memory_key_id,
                             context_used=vector_context if use_vector_context else None,
+                            # FEAT-538: when the turn was observed these
+                            # REPLACE the tool_calls conversion, so a call
+                            # is never listed twice. None keeps the legacy
+                            # derivation for an unobserved turn.
+                            tool_invocations=self.observed_tool_invocations(),
                         )
                         commit = None
                         if compaction_result is not None:
@@ -605,6 +616,7 @@ class BaseBot(AbstractBot):
             )
             raise
         finally:
+            self._exit_task_turn(_task_turn)
             self._current_trace_context = None
 
     # Alias for conversation method
@@ -643,12 +655,18 @@ class BaseBot(AbstractBot):
         # raised before the ContextVars are bound (they are bound AFTER the
         # id defaults, per the FEAT-525 binding-order fix, spec §7).
         _user_token = _session_token = _memkey_token = None
+        _task_turn = None  # FEAT-538: safe for the `finally` even if the try raises early
         try:
             if ctx is None:
                 ctx = _current_ctx.get()
             # Generate session ID if not provided
             session_id = session_id or str(uuid.uuid4())
             user_id = user_id or "anonymous"
+            # FEAT-538: bracket the whole turn. Inert (returns None) when
+            # task memory is disabled; the matching reset lives in this
+            # method's existing `finally`, so scope cannot survive an
+            # exception or a cancelled stream.
+            _task_turn = self._enter_task_turn(user_id, session_id)
             turn_id = str(uuid.uuid4())
             # FEAT-525: bind AFTER defaulting (binding-order hazard, spec §7) —
             # user_id/session_id ContextVars: per-user usage attribution in OTEL spans.
@@ -773,6 +791,8 @@ class BaseBot(AbstractBot):
                         user_id=user_id,
                         chatbot_id=self.memory_key_id,
                         context_used=None,  # invoke does not use vector context,
+                        # FEAT-538: see the note at the ordinary save site.
+                        tool_invocations=self.observed_tool_invocations(),
                     )
                     commit = None
                     if compaction_result is not None:
@@ -799,6 +819,7 @@ class BaseBot(AbstractBot):
             self._trigger_event(self.EVENT_TASK_FAILED, agent_name=self.name, error=str(e), session_id=session_id)
             raise
         finally:
+            self._exit_task_turn(_task_turn)
             self.status = AgentStatus.IDLE
             if _memkey_token is not None:
                 current_memory_key_id.reset(_memkey_token)
@@ -1027,6 +1048,7 @@ class BaseBot(AbstractBot):
         # replace the real exception with a misleading one.
         _trace_ctx = trace_context or TraceContext.new_root()
         _ask_started_ms = time.perf_counter()
+        _task_turn = None  # FEAT-538: safe for the `finally` even if the try raises early
         try:
             if ctx is None:
                 ctx = _current_ctx.get()
@@ -1046,6 +1068,11 @@ class BaseBot(AbstractBot):
             # Generate session ID if not provided
             session_id = session_id or str(uuid.uuid4())
             user_id = user_id or "anonymous"
+            # FEAT-538: bracket the whole turn. Inert (returns None) when
+            # task memory is disabled; the matching reset lives in this
+            # method's existing `finally`, so scope cannot survive an
+            # exception or a cancelled stream.
+            _task_turn = self._enter_task_turn(user_id, session_id)
             turn_id = str(uuid.uuid4())
             # FEAT-525: bind AFTER defaulting (binding-order hazard, spec §7) —
             # user_id/session_id ContextVars: per-user usage attribution in OTEL spans.
@@ -1380,6 +1407,8 @@ class BaseBot(AbstractBot):
                         user_id=user_id,
                         chatbot_id=self.memory_key_id,
                         context_used=vector_context if use_vector_context else None,
+                        # FEAT-538: see the note at the ordinary save site.
+                        tool_invocations=self.observed_tool_invocations(),
                     )
                     commit = None
                     if compaction_result is not None:
@@ -1664,6 +1693,7 @@ class BaseBot(AbstractBot):
             self._trigger_event(self.EVENT_TASK_FAILED, agent_name=self.name, error=str(e), session_id=session_id)
             raise
         finally:
+            self._exit_task_turn(_task_turn)
             self.status = AgentStatus.IDLE
             self._current_trace_context = None
             if _memkey_token is not None:
@@ -1702,6 +1732,7 @@ class BaseBot(AbstractBot):
         # raised before the ContextVars are bound (they are bound AFTER the
         # id defaults, per the FEAT-525 binding-order fix, spec §7).
         _user_token = _session_token = _memkey_token = None
+        _task_turn = None  # FEAT-538: safe for the `finally` even if the try raises early
         try:
             if ctx is None:
                 ctx = _current_ctx.get()
@@ -1711,6 +1742,11 @@ class BaseBot(AbstractBot):
             output_mode = self._apply_default_output_mode(output_mode)
             session_id = session_id or str(uuid.uuid4())
             user_id = user_id or "anonymous"
+            # FEAT-538: bracket the whole turn. Inert (returns None) when
+            # task memory is disabled; the matching reset lives in this
+            # method's existing `finally`, so scope cannot survive an
+            # exception or a cancelled stream.
+            _task_turn = self._enter_task_turn(user_id, session_id)
             # FEAT-525: bind AFTER defaulting (binding-order hazard, spec §7) —
             # user_id/session_id ContextVars: per-user usage attribution in OTEL spans.
             _user_token = current_user_id.set(user_id)
@@ -1947,6 +1983,11 @@ class BaseBot(AbstractBot):
                         tools_used=[],
                         metadata={"model": kwargs.get("model", self._llm_model)},
                         chatbot_id=self.memory_key_id,
+                        # FEAT-538: this path builds the turn by hand, so
+                        # without this an observed stream would persist no
+                        # invocations at all. `or []` keeps the unobserved
+                        # shape exactly as it was.
+                        tool_invocations=self.observed_tool_invocations() or [],
                     )
                     await self.save_conversation_turn(user_id, session_id, turn)
 
@@ -2048,6 +2089,7 @@ class BaseBot(AbstractBot):
             )
             raise
         finally:
+            self._exit_task_turn(_task_turn)
             self._current_trace_context = None
             if _memkey_token is not None:
                 current_memory_key_id.reset(_memkey_token)

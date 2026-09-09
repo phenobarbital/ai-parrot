@@ -330,7 +330,10 @@ class BroadcastSession:
         self._start_tasks()
 
         try:
-            avatar_token = self.room_manager.mint_publisher_token(self.room_name, self.avatar_identity)
+            # The vendor requires canPublishData on the token it is given.
+            avatar_token = self.room_manager.mint_publisher_token(
+                self.room_name, self.avatar_identity, can_publish_data=True
+            )
             self._avatar = await self._avatar_factory(
                 agent_id=self.descriptor.agent_id,
                 session_id=self.descriptor.voice_session_id or self.descriptor.broadcast_id,

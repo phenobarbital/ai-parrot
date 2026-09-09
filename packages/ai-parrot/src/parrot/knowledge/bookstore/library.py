@@ -101,6 +101,40 @@ class BookstoreError(RuntimeError):
     """User-facing bookstore failure (bad input, missing book, no LLM…)."""
 
 
+async def docx_to_markdown(path: Path) -> str:
+    """Convert a Word document to markdown via ``parrot_loaders``.
+
+    Reuses ``MSWordLoader.docx_to_markdown`` (heading styles → markdown
+    headings, tables → markdown tables). The import is lazy —
+    ``ai-parrot-loaders`` is a separate distribution and core must not
+    hard-depend on it — and the synchronous conversion is offloaded with
+    :func:`asyncio.to_thread`. A document with no Word heading styles
+    yields heading-less markdown and therefore a 0-chapter tree (the same
+    accepted behaviour as the markdown route).
+
+    Args:
+        path: Path to the ``.docx`` file.
+
+    Returns:
+        The converted markdown.
+
+    Raises:
+        BookstoreError: When ``ai-parrot-loaders`` is not installed, or the
+            document has no readable content.
+    """
+    try:
+        from parrot_loaders.docx import MSWordLoader
+    except ImportError as exc:
+        raise BookstoreError(
+            "DOCX support requires the ai-parrot-loaders package " "(pip install ai-parrot-loaders)"
+        ) from exc
+    loader = MSWordLoader(str(path))
+    markdown = await asyncio.to_thread(loader.docx_to_markdown, path)
+    if not (markdown or "").strip():
+        raise BookstoreError(f"No readable content found in {path.name}")
+    return markdown
+
+
 class _NullAdapter:
     """Adapter stand-in when no LLM is configured.
 
@@ -1071,26 +1105,23 @@ class Bookstore:
             return fallback_card_fields(path, toc_entries)
 
     async def _docx_to_markdown(self, path: Path) -> str:
-        """Convert a Word document to markdown via parrot_loaders.
+        """Convert a Word document to markdown.
 
-        Reuses ``MSWordLoader.docx_to_markdown`` (heading styles →
-        markdown headings, tables → markdown tables). Lazy import —
-        ``ai-parrot-loaders`` is a separate distribution and core must
-        not hard-depend on it. A document with no Word heading styles
-        yields heading-less markdown and therefore a 0-chapter tree
-        (same accepted behavior as the markdown route).
+        Thin delegation to the module-level :func:`docx_to_markdown` helper
+        so other card families (contracts, FEAT-539) can reuse the exact
+        same conversion, lazy import and error behaviour.
+
+        Args:
+            path: Path to the ``.docx`` file.
+
+        Returns:
+            The converted markdown.
+
+        Raises:
+            BookstoreError: When ``ai-parrot-loaders`` is missing or the
+                document has no readable content.
         """
-        try:
-            from parrot_loaders.docx import MSWordLoader
-        except ImportError as exc:
-            raise BookstoreError(
-                "DOCX support requires the ai-parrot-loaders package " "(pip install ai-parrot-loaders)"
-            ) from exc
-        loader = MSWordLoader(str(path))
-        markdown = await asyncio.to_thread(loader.docx_to_markdown, path)
-        if not (markdown or "").strip():
-            raise BookstoreError(f"No readable content found in {path.name}")
-        return markdown
+        return await docx_to_markdown(path)
 
     async def _epub_to_markdown(self, path: Path) -> str:
         """Render EPUB sections as Markdown for callers needing a text export."""
