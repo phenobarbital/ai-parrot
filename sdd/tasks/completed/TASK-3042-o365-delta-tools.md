@@ -325,3 +325,27 @@ Still open, both in TASK-3049's `contracts/jobs.py` and unchanged by this
 lane: `_enumerate` cannot drive a real `O365Tool` (`getattr(tool, "client")`
 is always None → `AttributeError` on `None.graph_client`), and a recovered
 410 commits a new cursor without reconciling deletions against local state.
+
+### Update — both open findings are now fixed in `contracts/jobs.py`
+
+Fixed at the user's request in commit `f3ae505e5` (TASK-3049's module, so
+recorded here for traceability rather than reopening that task):
+
+1. `_enumerate` now drives an `O365Tool` through its public `run()`, which
+   acquires the authenticated client; `_delta_payload` unwraps the
+   `ToolResult` and refuses to read an error as an empty page. A test drives
+   a real `DeltaOneDriveFilesTool` and asserts authentication happened.
+2. A 410 is recovered by re-enumerating the drive in full once — retaining
+   the dead cursor stalled the source permanently — and the recovered
+   rescan is reconciled against local state so a deletion that happened
+   while the cursor was expired is not left indexed.
+
+An adversarial review of that reconciliation reproduced **six** ways a
+looser version silently retracted valid contracts: folder-scope narrowing,
+sibling drives sharing one source name, deduplicated cards, error-shaped
+payloads, concurrent writes, and non-retryable partial retractions. Each now
+has a guard and a regression test, and the two most consequential guards
+were mutation-checked to confirm their tests fail without them. A
+folder-scoped rescan cannot prove absence at all, so its missing items are
+reported in `suspected_deletions` rather than acted on. `SourceConfig` also
+gains `folder_id`, the only exact folder filter Graph's delta feed supports.
