@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-
 from parrot.knowledge.contracts.evidence import EvidenceArchive
 from parrot.knowledge.contracts.models import (
     FieldProvenance,
@@ -239,8 +238,8 @@ async def test_fixed_dates_recurrences_and_review_cases_are_separated(obligation
     digest = await obligations_digest(retrieval=obligations_retrieval, principal=principal(), today=TODAY, days=7)
 
     assert [row["obligation_id"] for row in digest.due] == ["ob-due"]
-    assert [row["obligation_id"] for row in digest.recurring] == ["ob-anchored"]
-    assert digest.recurring[0]["next_due"] == FROZEN_NOW.date().isoformat()
+    assert digest.recurring == []
+    assert "ob-anchored" in {row["obligation_id"] for row in digest.needs_review}
 
     review = {row["obligation_id"]: row["review_reason"] for row in digest.needs_review}
     assert "ob-unanchored" in review and "anchor" in review["ob-unanchored"]
@@ -267,7 +266,8 @@ async def test_the_digest_window_and_kind_filters_are_deterministic(obligations_
         kinds=["audit_right"],
     )
     assert audits.due == []
-    assert [row["obligation_id"] for row in audits.recurring] == ["ob-anchored"]
+    assert audits.recurring == []
+    assert [row["obligation_id"] for row in audits.needs_review] == ["ob-anchored"]
 
     assert (
         await obligations_digest(retrieval=obligations_retrieval, principal=principal(), today=TODAY, days=90)

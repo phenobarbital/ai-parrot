@@ -26,8 +26,6 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, AsyncIterator, Optional, Protocol, Sequence
 
-from pydantic import BaseModel, Field
-
 from parrot.knowledge.contracts.models import (
     AnswerRecord,
     AuthorizationOutcome,
@@ -36,6 +34,7 @@ from parrot.knowledge.contracts.models import (
     ContractCard,
     HandoffBrief,
 )
+from pydantic import BaseModel, Field
 
 from .retrieval import (
     AuthorizationDenied,
@@ -149,6 +148,7 @@ class ContractsAnswerService:
         *,
         request_context: RequestContext,
         parameters: Optional[dict[str, Any]] = None,
+        producer: Optional[AnswerProducer] = None,
     ) -> AnswerOutcome | Clarification:
         """Answer a question, or explain why it cannot be answered.
 
@@ -163,6 +163,7 @@ class ContractsAnswerService:
         Raises:
             ServiceUnavailable: When the outcome could not be audited.
         """
+        selected_producer = producer if producer is not None else self.producer
         asked_at = self._now()
 
         # 1. Closed-set pre-triage on the question alone.
@@ -189,13 +190,18 @@ class ContractsAnswerService:
             return await self._interpretation(question, request_context, asked_at)
 
         # 3. Enumerate a bounded dossier and draft from it.
-        dossier = list(result.cards)[:MAX_DOSSIER_CARDS]
-        if self.producer is None:
+        dossier = [
+            card.model_copy(update={"versions": await self.catalog.versions(card.contract_id)})
+            for card in list(result.cards)[:MAX_DOSSIER_CARDS]
+        ]
+        if selected_producer is None:
             raise ServiceUnavailable("no answer producer configured")
-        draft = await self.producer.draft(question, result, dossier)
+        draft = await selected_producer.draft(question, result, dossier)
+        if draft.answer_kind == "interpretation_required":
+            return await self._interpretation(question, request_context, asked_at)
 
         # 4. Verify, then 5. audit and release.
-        outcome = await self.verifier.verify(draft, dossier=dossier, pattern=result.pattern)
+        outcome = await self.verifier.verify(draft, dossier=dossier, pattern=result.pattern, question=question)
         return await self._release(
             outcome.answer,
             question=question,
@@ -210,13 +216,14 @@ class ContractsAnswerService:
         question: str,
         *,
         request_context: RequestContext,
+        producer: Optional[AnswerProducer] = None,
     ) -> AsyncIterator[str]:
         """Stream an answer, buffering everything substantive.
 
         Nothing is yielded until authorization, verification and audit have
         all succeeded — a raw model draft can never reach a transport.
         """
-        outcome = await self.answer(question, request_context=request_context)
+        outcome = await self.answer(question, request_context=request_context, producer=producer)
         if isinstance(outcome, Clarification):
             yield outcome.reason
             return
@@ -259,6 +266,7 @@ class ContractsAnswerService:
             # handoff — locating is not adjudicating, and each one still
             # has to survive the citation gate below.
             card = await self.retrieval._authorized_card(resolved, context)
+            card = card.model_copy(update={"versions": await self.catalog.versions(card.contract_id)})
             dossier = [card]
             version_n = card.versions[-1].n if card.versions else 1
             source_sha256 = card.versions[-1].source_sha256 if card.versions else card.source_sha256
@@ -288,7 +296,7 @@ class ContractsAnswerService:
             suggested_owner=dossier[0].owner_employee_id if dossier else None,
         )
         draft = AnswerDraft(answer_kind="interpretation_required", handoff=handoff)
-        outcome = await self.verifier.verify(draft, dossier=dossier, pattern="interpretation")
+        outcome = await self.verifier.verify(draft, dossier=dossier, pattern="interpretation", question=question)
         return await self._release(
             outcome.answer,
             question=question,

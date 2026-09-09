@@ -14,6 +14,7 @@ uses. Two rules matter here:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import date, timedelta
 from typing import Any, Optional
@@ -175,11 +176,16 @@ class ContractsToolkit(AbstractToolkit):
                 "body": None,
                 "reason": "no contract library configured for section reads",
             }
-        loader = self.library.published_loader(card.contract_id)
-        from parrot.knowledge.contracts.carding import load_bodies  # noqa: PLC0415
+        if callable(getattr(self.library, "load_section", None)):
+            body = await self.library.load_section(card.contract_id, node_id, source_sha256=card.source_sha256)
+        else:
+            loader = await asyncio.to_thread(
+                self.library.published_loader, card.contract_id, source_sha256=card.source_sha256
+            )
+            from parrot.knowledge.contracts.carding import load_bodies
 
-        bodies = await load_bodies(loader, [node_id])
-        body = bodies.get(node_id)
+            bodies = await load_bodies(loader, [node_id])
+            body = bodies.get(node_id)
         return {
             "contract_id": card.contract_id,
             "node_id": node_id,

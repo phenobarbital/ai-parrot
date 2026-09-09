@@ -61,6 +61,14 @@ catalog = PostgresContractCatalog(
 await catalog.setup()                     # idempotent DDL
 ```
 
+Temporal drains require a catalog pool with at least two connections. They
+reserve a pool before acquiring a connection and take a nonblocking database
+advisory lock. A busy drain returns no claimed work for the next scheduled run.
+Claims and receipts share a catalog transaction; GraphIndex commits separately.
+If a worker dies after the graph commit, the next drain validates that commit
+and records its receipt without producing another logical revision. Party merges
+and retractions append snapshots and queue both projection targets.
+
 `close()` closes only a pool this object created; an injected pool is left
 alone.
 
@@ -219,6 +227,13 @@ itself — including an explicitly-null obligation `kind`, injected dates, a
 bounded `top_k`, and the full `employees/<id>` graph id for `my_contracts`.
 Uncertainty fails closed: an unsupported question or an ambiguous entity
 returns a typed clarification, never a guess.
+
+Flows and agents pass their producer to the service per request; constructing
+another producer does not change an existing flow. Direct service callers can
+configure a default producer or pass `producer=` to `answer()`/`stream_answer()`.
+The shared dossier includes field provenance as well as obligations, and uses
+the selected version's snapshot for historical questions. Handoff metadata is
+built from the authenticated request and authorized cards.
 
 **Drafting never releases.** Whatever a model returns is a draft. A claim
 whose citations do not survive verification is deleted, and unrelated
@@ -435,3 +450,11 @@ cannot be exercised end to end until that generic module is fixed — which is
 outside this feature's owned files. The catalog, evidence, temporal plane and
 both answer paths are unaffected: SQL search, windows, queues and reports all
 work with no ArangoDB at all.
+
+### Recovery and evidence compatibility
+
+An unchanged-content ingestion retry finishes a committed tree promotion before
+reporting the source as unchanged. Section tools read the source-hash-bound
+immutable archive, including for trees created before promotion hash markers.
+A verification timestamp is not a contractual recurrence anchor: recurring
+obligations without evidenced schedule anchors remain in `needs_review`.

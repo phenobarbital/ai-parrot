@@ -25,11 +25,10 @@ import re
 from datetime import date, datetime, timezone
 from typing import Any, Optional, Sequence
 
-from pydantic import BaseModel, Field
-
 from parrot.knowledge.contracts.catalog import ContractCatalogStore, ObligationWindow
 from parrot.knowledge.contracts.models import ContractCard, Obligation
 from parrot.knowledge.contracts.standards import find_standards
+from pydantic import BaseModel, Field
 
 __all__ = (
     "PATTERNS",
@@ -334,9 +333,15 @@ class ContractRetrieval:
         """
         cards = await self._authorized_cards(context)
         normalized = _normalize(question)
-        for card in cards:
-            if _normalize(card.contract_id) in normalized:
-                return card.contract_id
+        matches = [
+            card.contract_id
+            for card in cards
+            if re.search(r"(?<![\w-])" + re.escape(card.contract_id) + r"(?![\w-])", question, re.IGNORECASE)
+        ]
+        if len(matches) == 1:
+            return matches[0]
+        if len(matches) > 1:
+            return Clarification(reason="several contract IDs occur in the question", candidates=sorted(matches))
         titled = [card.contract_id for card in cards if _normalize(card.title) and _normalize(card.title) in normalized]
         if len(titled) == 1:
             return titled[0]
@@ -417,8 +422,8 @@ class ContractRetrieval:
             return float(self.ranker(needle, haystack))
         try:
             from rapidfuzz import fuzz  # noqa: PLC0415 - optional dependency
-        except ImportError:  # pragma: no cover - depends on install extras
-            return 0.0
+        except ImportError as exc:
+            raise RuntimeError("Contract matching requires rapidfuzz; install ai-parrot[graphindex].") from exc
         return float(fuzz.partial_ratio(needle, haystack)) / 100.0
 
     # -- planning ----------------------------------------------------------
@@ -592,6 +597,8 @@ class ContractRetrieval:
                 result.cards.extend(await self._family(card))
             if plan.pattern == "contract_in_force":
                 as_of = plan.binds["as_of"]
+                card = card.model_copy(update={"versions": await self.catalog.versions(card.contract_id)})
+                result.cards = [card]
                 result.rows = [version.model_dump(mode="json") for version in card.versions if version.in_force(as_of)]
         elif plan.pattern == "obligations_of_contract":
             card = await self._authorized_card(plan.binds["contract_id"], context)

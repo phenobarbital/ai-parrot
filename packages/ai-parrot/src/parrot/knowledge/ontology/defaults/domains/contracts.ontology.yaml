@@ -484,9 +484,9 @@ traversal_patterns:
       FOR std IN @@compliance_standard
         FILTER std._key == @standard_id
         FOR ob IN 1..1 INBOUND std @@requires
-          FILTER ob.active != false
+          FILTER ob.active != false AND ob._active != false
           FOR c IN 1..1 OUTBOUND ob @@imposed_by
-            FILTER c.active != false
+            FILTER c.active != false AND c._active != false
             FILTER c.status IN @statuses
             SORT c.title
             RETURN { contract: c, obligation: ob }
@@ -522,7 +522,7 @@ traversal_patterns:
       - renewals in the next
     query_template: >
       FOR c IN @@contract
-        FILTER c.active != false
+        FILTER c.active != false AND c._active != false
         FILTER c.status == "active"
         FILTER c.expiration_date != null
         FILTER c.expiration_date >= @today AND c.expiration_date <= @until
@@ -551,7 +551,7 @@ traversal_patterns:
       - when do we have to give notice
     query_template: >
       FOR c IN @@contract
-        FILTER c.active != false
+        FILTER c.active != false AND c._active != false
         FILTER c.status == "active"
         LET key_date = c.auto_renew AND c.notice_deadline != null ? c.notice_deadline : c.expiration_date
         FILTER key_date != null AND key_date >= @today AND key_date <= @until
@@ -581,7 +581,7 @@ traversal_patterns:
       FOR p IN @@party
         FILTER p._key == @party_id
         FOR c, e IN 1..1 INBOUND p @@party_to
-          FILTER c.active != false
+          FILTER c.active != false AND c._active != false
           SORT c.effective_date DESC
           RETURN { contract: c, role: e.role }
     post_action: none
@@ -620,16 +620,16 @@ traversal_patterns:
     query_template: >
       FOR c IN @@contract
         FILTER c._key == @contract_id
-        FILTER c.active != false
+        FILTER c.active != false AND c._active != false
         LET family = (
           FOR key IN UNIQUE(
             FOR v, e, p IN 1..3 ANY c @@governed_by, @@amends
-              FILTER v.active != false
+              FILTER v.active != false AND v._active != false
               RETURN v._key
           )
             LET hit = FIRST(
               FOR v, e, p IN 1..3 ANY c @@governed_by, @@amends
-                FILTER v._key == key AND v.active != false
+                FILTER v._key == key AND v.active != false AND v._active != false
                 SORT LENGTH(p.edges)
                 LIMIT 1
                 RETURN { contract: v, rel: PARSE_IDENTIFIER(e._id).collection,
@@ -667,7 +667,7 @@ traversal_patterns:
     query_template: >
       FOR c IN @@contract
         FILTER c._key == @contract_id
-        FILTER c.active != false
+        FILTER c.active != false AND c._active != false
         FOR person, e IN 1..1 OUTBOUND c @@signed_by
           RETURN { person: person, signed_on: e.signed_on, on_behalf_of: e.on_behalf_of }
     post_action: none
@@ -703,9 +703,9 @@ traversal_patterns:
     query_template: >
       FOR c IN @@contract
         FILTER c._key == @contract_id
-        FILTER c.active != false
+        FILTER c.active != false AND c._active != false
         FOR ob IN 1..1 INBOUND c @@imposed_by
-          FILTER ob.active != false
+          FILTER ob.active != false AND ob._active != false
           FILTER @kind == null OR ob.kind == @kind
           SORT ob.kind, ob.page
           RETURN ob
@@ -742,7 +742,7 @@ traversal_patterns:
     query_template: >
       FOR c IN @@contract
         FILTER c._key == @contract_id
-        FILTER c.active != false
+        FILTER c.active != false AND c._active != false
         LIMIT 1
         FOR v IN c.versions
           FILTER v.valid_from <= @as_of
@@ -781,7 +781,7 @@ traversal_patterns:
     query_template: >
       LET reports = (FOR v IN 0..10 INBOUND @user_id @@reports_to RETURN v._id)
       FOR c IN @@contract
-        FILTER c.active != false
+        FILTER c.active != false AND c._active != false
         FOR owner IN 1..1 OUTBOUND c @@owned_by
           FILTER owner._id IN reports
           SORT c.expiration_date ASC
@@ -812,7 +812,7 @@ traversal_patterns:
                      OR d.summary IN TOKENS(@query, "text_en")
                      OR d.text IN TOKENS(@query, "text_en")
                      OR d.counterparty_names IN TOKENS(@query, "text_en"), "text_en")
-        FILTER d.active != false
+        FILTER d.active != false AND d._active != false
         SORT BM25(d) DESC
         LIMIT @top_k
         RETURN { doc: d, score: BM25(d), collection: PARSE_IDENTIFIER(d._id).collection }

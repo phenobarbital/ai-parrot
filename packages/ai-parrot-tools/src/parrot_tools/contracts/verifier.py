@@ -24,8 +24,6 @@ from __future__ import annotations
 import logging
 from typing import Any, Optional, Sequence
 
-from pydantic import BaseModel, Field
-
 from parrot.knowledge.contracts.evidence import EvidenceArchive, EvidenceRef, normalize_quote
 from parrot.knowledge.contracts.models import (
     Citation,
@@ -34,6 +32,7 @@ from parrot.knowledge.contracts.models import (
     HandoffBrief,
     derive_provenance,
 )
+from pydantic import BaseModel, Field
 
 __all__ = (
     "Claim",
@@ -118,6 +117,7 @@ class CitationVerifier:
         *,
         dossier: Sequence[ContractCard],
         pattern: Optional[str] = None,
+        question: Optional[str] = None,
     ) -> VerificationOutcome:
         """Verify a draft and build the answer that may be released.
 
@@ -136,7 +136,7 @@ class CitationVerifier:
                 answer=ContractAnswer(answer_kind=kind, pattern=pattern or draft.pattern, reason=draft.reason)
             )
         if kind == "interpretation_required":
-            handoff, rejected = await self._verify_handoff(draft.handoff, dossier)
+            handoff, rejected = await self._verify_handoff(draft.handoff, dossier, question=question)
             return VerificationOutcome(
                 answer=ContractAnswer(
                     answer_kind="interpretation_required",
@@ -209,6 +209,8 @@ class CitationVerifier:
         self,
         handoff: Optional[HandoffBrief],
         dossier: Sequence[ContractCard],
+        *,
+        question: Optional[str] = None,
     ) -> tuple[HandoffBrief, list[RejectedCitation]]:
         """Apply the same evidence checks to a handoff's located clauses."""
         if handoff is None:
@@ -230,7 +232,16 @@ class CitationVerifier:
                 )
                 continue
             surviving.append(verified)
-        return handoff.model_copy(update={"located_clauses": surviving}), rejected
+        return (
+            HandoffBrief(
+                question=question or "Question unavailable; consult the authenticated request.",
+                why_judgment="Human judgment is required; this system only locates contractual evidence.",
+                located_clauses=surviving,
+                related_contracts=sorted(allowed),
+                suggested_owner=dossier[0].owner_employee_id if dossier else None,
+            ),
+            rejected,
+        )
 
     async def _archive_ref(
         self,
@@ -341,6 +352,11 @@ class CitationVerifier:
         if not lookup.found:
             return None, lookup.reason or "evidence could not be resolved"
 
+        historical = [version for version in card.versions if version.n == citation.version_n]
+        if historical and citation.version_n < max(version.n for version in card.versions):
+            snapshot = max(historical, key=lambda version: version.revision).card_snapshot
+            if snapshot:
+                card = ContractCard.model_validate(snapshot)
         obligation = next(
             (
                 item
@@ -349,7 +365,18 @@ class CitationVerifier:
             ),
             None,
         )
-        verification = obligation.verification if obligation else card.verification
+        field_states = [
+            provenance.verification
+            for provenance in card.field_provenance.values()
+            if provenance.node_id == citation.node_id
+            and normalize_quote(provenance.quote or "") == normalize_quote(citation.quote)
+        ]
+        if obligation:
+            verification = obligation.verification
+        elif field_states:
+            verification = next(state for state in ("stale", "extracted", "verified") if state in field_states)
+        else:
+            verification = card.verification
         return (
             citation.model_copy(
                 update={

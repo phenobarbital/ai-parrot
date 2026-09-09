@@ -14,7 +14,6 @@ from datetime import date, datetime, timezone
 from typing import AsyncIterator, Optional
 
 import pytest
-
 from parrot.knowledge.contracts.catalog import (
     AliasConflictError,
     UnknownAnswerError,
@@ -155,7 +154,10 @@ async def test_live_party_merge_moves_cards_signatories_aliases_and_projection(l
 
     assert result.cards_updated == ["acme-msa"]
     assert result.aliases_remapped == ["acme incorporated"]
-    assert [record.target for record in result.queued] == ["ontology"]
+    assert [record.target for record in result.queued] == ["ontology", "temporal"]
+    history = await live_catalog.versions("acme-msa")
+    assert [version.revision for version in history] == [1, 2]
+    assert history[-1].card_snapshot["parties"][-1]["party_id"] == "acme-new"
 
     merged = await live_catalog.get("acme-msa")
     assert {party.party_id for party in merged.parties} == {"party-us", "acme-new"}
@@ -541,3 +543,46 @@ async def test_live_administration_is_tenant_isolated():
             await conn.execute(f"DROP SCHEMA IF EXISTS {schema_a} CASCADE")
             await conn.execute(f"DROP SCHEMA IF EXISTS {schema_b} CASCADE")
         await pool.close()
+
+
+@requires_pg
+@pytest.mark.asyncio
+async def test_retraction_has_a_new_snapshot_and_tombstone_outbox(live_catalog):
+    await live_catalog.upsert(make_card("retracted"))
+    for record in await live_catalog.claim_publication(target="temporal", limit=10):
+        await live_catalog.complete_publication(record, receipt="initial")
+    await live_catalog.remove("retracted")
+    history = await live_catalog.versions("retracted")
+    assert [version.revision for version in history] == [1, 2]
+    assert history[0].card_snapshot["active"] is True
+    assert history[1].card_snapshot["active"] is False
+    pending = await live_catalog.pending_publications(target="temporal")
+    assert len(pending) == 1
+    assert pending[0].revision == 2 and pending[0].payload["tombstone"] is True
+    await live_catalog.remove("retracted")
+    assert len(await live_catalog.versions("retracted")) == 2
+
+
+@requires_pg
+@pytest.mark.asyncio
+async def test_outbox_reads_and_claims_are_bound_to_catalog_tenant(live_catalog):
+    from parrot.knowledge.contracts.catalog import CatalogError
+
+    await live_catalog.upsert(make_card("local"))
+    own = (await live_catalog.pending_publications(target="temporal"))[0]
+    foreign = own.model_copy(update={"tenant_id": "other"})
+    with pytest.raises(CatalogError, match="tenant"):
+        await live_catalog.enqueue_publication(foreign)
+    with pytest.raises(CatalogError, match="tenant"):
+        await live_catalog.complete_publication(foreign, receipt="bad")
+    # Seed a foreign row directly, bypassing the public tenant guard.
+    async with await live_catalog._connection() as conn:
+        await conn.execute(
+            f"INSERT INTO {live_catalog.schema}.publication_outbox "
+            "(tenant_id, contract_id, version_n, revision, target, run_id, payload, state, created_at) "
+            "VALUES ('other', 'foreign', 1, 1, 'temporal', 'foreign', '{}'::jsonb, 'pending', now())"
+        )
+    assert {record.tenant_id for record in await live_catalog.pending_publications()} == {"troc"}
+    assert {record.tenant_id for record in await live_catalog.claim_publication(target="temporal", limit=10)} == {
+        "troc"
+    }

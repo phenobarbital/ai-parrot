@@ -6,7 +6,6 @@ from datetime import date
 from typing import Any, Optional
 
 import pytest
-
 from parrot.knowledge.contracts.evidence import EvidenceArchive
 from parrot.knowledge.contracts.models import (
     AnswerRecord,
@@ -38,7 +37,7 @@ class FakeLibrary:
         self.bodies = bodies
         self.verify_calls: list[tuple[str, Any, str]] = []
 
-    def published_loader(self, contract_id: str):
+    def published_loader(self, contract_id: str, *, source_sha256: Optional[str] = None):
         def _loader(node_id: str) -> Optional[str]:
             return self.bodies.get(node_id)
 

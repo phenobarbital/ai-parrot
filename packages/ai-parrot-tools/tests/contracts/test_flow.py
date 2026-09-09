@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import Any, Optional
 
 import pytest
-
 from parrot.knowledge.contracts.evidence import EvidenceArchive
 from parrot_tools.contracts.flow import (
     DRAFT_SYSTEM_PROMPT,
@@ -191,8 +190,12 @@ async def test_an_audit_failure_matches_the_shared_service_behaviour(flow):
 
 
 @pytest.mark.asyncio
-async def test_the_flow_and_the_service_share_one_producer(flow):
-    assert flow.service.producer is flow.producer
+async def test_flows_keep_their_producer_when_the_service_is_shared(flow):
+    other = ContractsAnswerFlow(service=flow.service, adapter=FakeAdapter())
+    assert flow.service.producer is None
+    await flow.answer("Which contracts require SOC 2?", request_context=reader_context())
+    assert flow.producer.calls == 1
+    assert other.producer.calls == 0
 
 
 # --------------------------------------------------------------------------
@@ -208,7 +211,7 @@ async def test_the_dossier_is_enumerated_bounded_and_deterministic(flow):
 
     first = producer.enumerate_dossier(result, dossier, max_entries=5)
     second = producer.enumerate_dossier(result, dossier, max_entries=5)
-    assert [entry.evidence_id for entry in first] == ["E1", "E2"]
+    assert [entry.evidence_id for entry in first] == ["E1"]
     assert first == second
     assert first[0].node_id == "0005", "retrieved obligations come first"
     assert len(producer.enumerate_dossier(result, dossier, max_entries=1)) == 1

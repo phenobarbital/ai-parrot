@@ -14,7 +14,6 @@ from typing import Any, AsyncIterator, Optional
 from unittest.mock import MagicMock
 
 import pytest
-
 from parrot.knowledge.contracts.models import (
     ContractCard,
     ContractVersion,
@@ -138,7 +137,7 @@ def test_update_uses_existing_enum_values_and_embeds_history():
         valid_to=None,
         kind="amendment",
         source_sha256="sha-v2",
-        card_snapshot={"title": "historical title"},
+        card_snapshot=card(title="historical title").model_dump(mode="json", exclude={"versions"}),
         recorded_at=FROZEN_NOW,
     )
     update = build_graph_update(card(), version, tenant_id="troc", revision=3)
@@ -159,7 +158,8 @@ def test_update_uses_existing_enum_values_and_embeds_history():
     assert tags["effective_from"] == "2026-07-01"
     assert tags["effective_to"] is None
     assert tags["source_sha256"] == "sha-v2"
-    assert tags["card_snapshot"] == {"title": "historical title"}, (
+    assert node.title == "historical title"
+    assert tags["card_snapshot"]["title"] == "historical title", (
         "historical values live in versioned node content, not only in an " "external mutable reference"
     )
     assert tags["tombstone"] is False
@@ -477,3 +477,142 @@ async def test_live_identical_slugs_in_separate_schemas_cannot_leak():
             async with pool.acquire() as conn:
                 await conn.execute(f"DROP SCHEMA IF EXISTS {schema} CASCADE")
             await plane.close()
+
+
+@requires_pg
+@pytest.mark.asyncio
+async def test_process_death_after_graph_commit_is_recovered_without_duplicate(live_plane):
+    """Kill a worker without unwinding its claim transaction or recording a receipt."""
+    import asyncio
+    import os
+    import sys
+
+    from parrot.knowledge.contracts.catalog_postgres import PostgresContractCatalog
+
+    persistence, graph_schema = live_plane
+    schema = f"contracts_crash_{uuid.uuid4().hex[:8]}"
+    catalog = PostgresContractCatalog(dsn=PG_DSN, tenant_id="troc", schema=schema)
+    await catalog.setup()
+    try:
+        await catalog.upsert(card())
+        from pathlib import Path
+
+        source_root = Path(__file__).resolve().parents[3] / "src"
+        env = dict(
+            os.environ,
+            CONTRACTS_CRASH_SCHEMA=schema,
+            CONTRACTS_CRASH_GRAPH_SCHEMA=graph_schema,
+            PYTHONPATH=str(source_root),
+        )
+        script = """
+import asyncio, os
+from types import SimpleNamespace
+from parrot.knowledge.contracts.catalog_postgres import PostgresContractCatalog
+from parrot.knowledge.contracts.temporal import ContractTemporalPublisher
+from parrot.knowledge.graphindex.persist_postgres import PostgresPersistence
+async def main():
+    catalog = PostgresContractCatalog(dsn=os.environ['GRAPHINDEX_PG_DSN'], tenant_id='troc', schema=os.environ['CONTRACTS_CRASH_SCHEMA'])
+    persistence = PostgresPersistence(dsn=os.environ['GRAPHINDEX_PG_DSN'], schema=os.environ['CONTRACTS_CRASH_GRAPH_SCHEMA'])
+    original = persistence.apply_update
+    async def crash(ctx, update):
+        await original(ctx, update)
+        os._exit(97)
+    persistence.apply_update = crash
+    await ContractTemporalPublisher(catalog=catalog, persistence=persistence).drain(SimpleNamespace(tenant_id='troc'))
+asyncio.run(main())
+"""
+        child = await asyncio.create_subprocess_exec(
+            sys.executable, "-c", script, env=env, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE
+        )
+        _, stderr = await asyncio.wait_for(child.communicate(), timeout=30)
+        assert child.returncode == 97, stderr.decode()
+        pending = await catalog.pending_publications(target="temporal")
+        assert len(pending) == 1 and pending[0].state == "pending"
+        publisher = ContractTemporalPublisher(catalog=catalog, persistence=persistence)
+        report = await publisher.drain(make_ctx())
+        assert report.recovered == ["acme-msa"]
+        assert len(await persistence.list_commits(make_ctx(), run_id=revision_run_id("acme-msa", 1, 1))) == 1
+        assert await catalog.pending_publications(target="temporal") == []
+    finally:
+        async with await catalog._connection() as conn:
+            await conn.execute(f"DROP SCHEMA IF EXISTS {schema} CASCADE")
+        await catalog.close()
+
+
+@requires_pg
+@pytest.mark.asyncio
+async def test_new_worker_reclaims_a_legacy_in_flight_claim(live_plane):
+    from parrot.knowledge.contracts.catalog_postgres import PostgresContractCatalog
+
+    persistence, _ = live_plane
+    schema = f"contracts_claim_{uuid.uuid4().hex[:8]}"
+    catalog = PostgresContractCatalog(dsn=PG_DSN, tenant_id="troc", schema=schema)
+    await catalog.setup()
+    try:
+        await catalog.upsert(card())
+        assert len(await catalog.claim_publication(target="temporal")) == 1
+        assert await catalog.pending_publications(target="temporal") == []
+        report = await ContractTemporalPublisher(catalog=catalog, persistence=persistence).drain(make_ctx())
+        assert report.published == ["acme-msa"]
+        assert await catalog.pending_publications(target="temporal") == []
+    finally:
+        async with await catalog._connection() as conn:
+            await conn.execute(f"DROP SCHEMA IF EXISTS {schema} CASCADE")
+        await catalog.close()
+
+
+@requires_pg
+@pytest.mark.asyncio
+@pytest.mark.parametrize("same_tenant", [True, False])
+async def test_concurrent_publishers_do_not_starve_a_shared_two_connection_pool(same_tenant):
+    import asyncio
+
+    import asyncpg
+    from parrot.knowledge.contracts.catalog_postgres import PostgresContractCatalog
+    from parrot.knowledge.graphindex.persist_postgres import PostgresPersistence
+
+    pool = await asyncpg.create_pool(dsn=PG_DSN, min_size=2, max_size=2)
+    schema = f"contracts_parallel_{uuid.uuid4().hex[:8]}"
+    graph_schema = f"gi_parallel_{uuid.uuid4().hex[:8]}"
+    first = PostgresContractCatalog(pool=pool, tenant_id="troc", schema=schema)
+    second_schema = schema if same_tenant else f"contracts_other_{uuid.uuid4().hex[:8]}"
+    second = PostgresContractCatalog(pool=pool, tenant_id="troc" if same_tenant else "other", schema=second_schema)
+    persistence = PostgresPersistence(pool=pool, schema=graph_schema)
+    entered, release = asyncio.Event(), asyncio.Event()
+    task = None
+    try:
+        await first.setup()
+        await second.setup()
+        await persistence.list_commits(make_ctx())
+        await first.upsert(card())
+        if not same_tenant:
+            await second.upsert(card())
+        apply = persistence.apply_update
+
+        async def paused(ctx, update):
+            entered.set()
+            await release.wait()
+            return await apply(ctx, update)
+
+        persistence.apply_update = paused
+        task = asyncio.create_task(ContractTemporalPublisher(catalog=first, persistence=persistence).drain(make_ctx()))
+        await asyncio.wait_for(entered.wait(), timeout=5)
+        competing = await asyncio.wait_for(
+            ContractTemporalPublisher(catalog=second, persistence=persistence).drain(make_ctx()), timeout=5
+        )
+        assert competing.claimed == 0
+        release.set()
+        report = await asyncio.wait_for(task, timeout=5)
+        assert report.published == ["acme-msa"]
+        assert len(await persistence.list_commits(make_ctx())) == 1
+    finally:
+        release.set()
+        if task is not None and not task.done():
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+        async with pool.acquire() as conn:
+            await conn.execute(f"DROP SCHEMA IF EXISTS {schema} CASCADE")
+            await conn.execute(f"DROP SCHEMA IF EXISTS {graph_schema} CASCADE")
+            if not same_tenant:
+                await conn.execute(f"DROP SCHEMA IF EXISTS {second_schema} CASCADE")
+        await pool.close()
