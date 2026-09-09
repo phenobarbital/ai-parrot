@@ -114,7 +114,7 @@ promote a bare year to a date. Prompts fence document text as untrusted DATA, bi
 only the two approved output models, and never mention derived facts.
 
 **Validation**: `pytest .../test_carding.py -q` -> 42 passed (whole contracts suite
-233 passed, `artifacts/logs/task-3030.log`); ruff clean. A counting fake adapter
+235 passed, `artifacts/logs/task-3030.log`); ruff clean. A counting fake adapter
 proves the 1+N bound (including the zero-N and "upper bound, not a quota" cases and
 that a failed section still counts but does not abort), selection/truncation
 determinism, dropped unsupported evidence, invented obligations never reaching the
