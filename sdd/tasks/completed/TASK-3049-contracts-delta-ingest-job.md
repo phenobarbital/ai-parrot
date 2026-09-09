@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-539 - Contracts Card & Ontology
 **Spec**: `sdd/specs/contracts-card-ontology.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2–4h)
 **Depends-on**: TASK-3039, TASK-3040, TASK-3042, TASK-3048
@@ -102,4 +102,33 @@ Store execution logs in `artifacts/logs/task-3049.log`. Use frozen dates, synthe
 
 ## Completion Note
 
-Pending execution. Record executor, completion date, implementation summary, validation evidence and deviations when this task is completed.
+Completed 2026-09-09 by sdd-worker (Claude Opus 5).
+
+**Implementation**: created `parrot_tools/contracts/jobs.py` with `ingest_delta` —
+a plain async callable with every dependency injected (library, delta tool, source
+scope, trusted service principal, optional retrieval/graph loader/temporal publisher/
+downloader/clock). It authorizes the principal **before** enumerating, maps O365 delta
+items onto core `SourceItem`/`IngestReport` records (core never imports parrot_tools),
+records stable drive/item identity so a rename keeps the same contract, retracts
+tombstoned contracts through the graph loader while keeping catalog history, archived
+evidence and the original document, and skips folders and undownloadable items with
+explicit reasons. **Cursor discipline**: the final delta link is committed only when
+the enumeration completed *and* every item was durably processed or explicitly
+skipped; otherwise the old cursor is retained so the batch replays idempotently. A 410
+sets `rescan_required` and retracts nothing — a partial listing is never mass
+deletion.
+
+**Validation**: `pytest .../test_ingest_delta.py -q` -> 13 passed (whole contracts
+tools suite 151 passed, `artifacts/logs/task-3049.log`); ruff clean. Coverage: full
+batch + cursor commit, source-item identity, unchanged SHA creating no revision,
+duplicate item in one batch, rename keeping one contract, tombstone retraction with
+surviving history/evidence, folder/undownloadable skips, interrupted batch retaining
+the cursor and replaying cleanly, truncated enumeration committing nothing, 410 rescan
+leaving every card active, unauthorized principal blocking enumeration entirely,
+temporal drain wiring, and an AST proof that the module imports no scheduler, carries
+no schedule decorator and calls no send/notify API.
+
+**Deviations**: deepened the shared `FakeCatalog` test double (owned by TASK-3043) so
+`upsert` tracks revisions and version history — the shallow version reported every
+write as `created`, which would have made this task's rename and tombstone assertions
+pass vacuously.
