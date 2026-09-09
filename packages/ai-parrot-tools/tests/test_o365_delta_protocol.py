@@ -97,7 +97,9 @@ class FakeDriveItem:
         web_url: Optional[str] = None,
         last_modified_date_time: Optional[str] = None,
         quick_xor_hash: Optional[str] = None,
+        root: Any = None,
     ) -> None:
+        self.root = root
         self.id = id
         self.name = name
         self.deleted = deleted
@@ -672,6 +674,53 @@ class TestFolderFiltering:
         assert [i.item_id for i in result.items] == ["a"]
         assert result.unresolved_parent == 1
         assert result.folder_filter_reliable is False
+
+    async def test_the_drive_root_does_not_poison_a_scoped_feed(
+        self, helper: DriveDeltaHelper
+    ) -> None:
+        """Delta feeds include the parentless drive root.
+
+        Classifying it UNKNOWN makes every folder-scoped run look
+        undecidable, which a strict caller then rejects outright. The root
+        is simply not inside a folder below it.
+        """
+        final = f"{DELTA}?token=final"
+        graph = FakeGraph(
+            {
+                None: FakeDeltaResponse(
+                    [
+                        FakeDriveItem(id="root-id", name="root", folder=object(),
+                                      root=object()),
+                        FakeDriveItem(id="child", name="a.docx",
+                                      parent_id="folder-x"),
+                    ],
+                    delta_link=final,
+                )
+            }
+        )
+        result = await helper.enumerate(
+            FakeO365Client(graph), DRIVE_ID, folder_id="folder-x"
+        )
+
+        assert [i.item_id for i in result.items] == ["child"]
+        assert result.filtered_out == 1
+        assert result.unresolved_parent == 0
+        assert result.folder_filter_reliable is True
+
+    def test_the_root_facet_is_parsed(self) -> None:
+        item = drive_item_to_delta_item(
+            FakeDriveItem(id="root-id", name="root", folder=object(), root=object()),
+            DRIVE_ID,
+        )
+        assert item is not None and item.is_root is True
+        assert (
+            drive_item_to_delta_item(FakeDriveItem(id="x"), DRIVE_ID).is_root is False
+        )
+
+    def test_the_scope_folder_itself_matches_even_when_parentless(self) -> None:
+        """Graph need not report the scope folder's own parent."""
+        folder = DeltaItem(drive_id=DRIVE_ID, item_id="folder-x", is_folder=True)
+        assert classify_folder_membership(folder, None, "folder-x") == FOLDER_MATCH
 
     def test_classify_folder_membership(self) -> None:
         pathed = DeltaItem(drive_id=DRIVE_ID, item_id="i", parent_path="Contracts")

@@ -334,7 +334,20 @@ async def ingest_delta(
                 try:
                     await catalog.remove(contract_id)
                     if graph_loader is not None:
-                        await graph_loader.retract(contract_id)
+                        report = await graph_loader.retract(contract_id)
+                        # The loader reports graph failures instead of
+                        # raising — `published` is only true once the
+                        # withdrawal read back clean. Ignoring the report
+                        # would mark the item deleted and advance the
+                        # cursor over a retraction that never happened,
+                        # and the next rescan skips deleted items, so it
+                        # would never be retried.
+                        failures = list(getattr(report, "errors", None) or [])
+                        if report is not None and (failures or not getattr(report, "published", True)):
+                            raise RuntimeError(
+                                "graph retraction did not complete: "
+                                + ("; ".join(failures) or "publication not confirmed")
+                            )
                 except Exception as exc:  # noqa: BLE001 - retryable next run
                     # Leave the source item un-deleted below so the next run
                     # retries, and make the run non-durable so the cursor is
@@ -517,14 +530,33 @@ async def ingest_delta(
                 result.suspected_deletions.append(known_item.item_id)
                 continue
 
+            # Re-read immediately before acting. The listing above is a
+            # snapshot, and a concurrent run may have refreshed this item
+            # since it was taken — retracting on a stale row would withdraw
+            # a live contract. This narrows the window to the gap between
+            # this read and the write below; closing it entirely needs the
+            # runs for one source to be serialised, which is the deploying
+            # agent's call.
+            current = await catalog.get_source_item(known_item.drive_id, known_item.item_id)
+            if current is None or current.deleted:
+                continue
+            if current.last_seen_at is not None and current.last_seen_at > enumeration_started:
+                logger.info(
+                    "Skipping reconciliation of %s/%s: refreshed at %s, after this run began",
+                    current.drive_id,
+                    current.item_id,
+                    current.last_seen_at.isoformat(),
+                )
+                continue
+
             if await retract(
-                drive_id=known_item.drive_id,
-                item_id=known_item.item_id,
-                current_uri=known_item.current_uri or known_item.item_id,
-                contract_id=known_item.contract_id,
+                drive_id=current.drive_id,
+                item_id=current.item_id,
+                current_uri=current.current_uri or current.item_id,
+                contract_id=current.contract_id,
                 reason="absent from a complete rescan; contract retracted",
             ):
-                result.reconciled.append(known_item.contract_id)
+                result.reconciled.append(current.contract_id)
 
         if result.reconciled:
             logger.info(

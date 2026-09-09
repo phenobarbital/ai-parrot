@@ -1292,3 +1292,153 @@ async def test_a_failed_recovery_reports_the_expiry_as_unrecovered(workspace):
     assert result.rescan_performed is False
     assert result.cursor_retained == "dead-cursor"
     assert any("Graph refused the rescan" in err for err in result.errors)
+
+
+# --------------------------------------------------------------------------
+# Pre-merge review P1s: a failed withdrawal, and a concurrent refresh
+# --------------------------------------------------------------------------
+
+
+class ReportingGraphLoader:
+    """A graph loader that *reports* failure instead of raising, like the real one."""
+
+    def __init__(self, published: bool = True, errors: Optional[list[str]] = None) -> None:
+        from parrot.knowledge.contracts.graph_loader import GraphPublicationReport
+
+        self._report = GraphPublicationReport(published=published, errors=list(errors or []))
+        self.calls: list[str] = []
+
+    async def retract(self, contract_id: str):
+        self.calls.append(contract_id)
+        return self._report
+
+
+@pytest.mark.asyncio
+async def test_a_reported_graph_failure_blocks_the_cursor_and_stays_retryable(workspace):
+    """`graph_loader.retract` returns a report; it does not raise.
+
+    Ignoring it marks the source item deleted and commits the cursor over a
+    withdrawal that never happened — and because later rescans skip deleted
+    items, it would never be retried.
+    """
+    library, downloader, _ = workspace
+
+    first = ScriptedDeltaTool([page([item("a")])])
+    await ingest_delta(
+        library=library,
+        delta_tool=first,
+        source=UNSCOPED,
+        principal=principal_context(),
+        downloader=downloader,
+    )
+    known = await library.catalog.list_source_items("sharepoint://drive")
+    contract_id = next(e.contract_id for e in known if e.item_id == "a")
+
+    broken_graph = ReportingGraphLoader(published=False, errors=["Arango unavailable"])
+    rescan = ScriptedDeltaTool([page([], reset_performed=True)])
+    result = await ingest_delta(
+        library=library,
+        delta_tool=rescan,
+        source=UNSCOPED,
+        principal=principal_context(),
+        downloader=downloader,
+        graph_loader=broken_graph,
+    )
+
+    assert broken_graph.calls == [contract_id]
+    assert any("Arango unavailable" in err for err in result.errors)
+    assert result.durable is False
+    assert result.cursor_committed is None, "must not advance over a failed withdrawal"
+    assert result.reconciled == []
+
+    still_there = await library.catalog.get_source_item("drive-1", "a")
+    assert still_there.deleted is False, "must stay retryable on the next run"
+
+
+@pytest.mark.asyncio
+async def test_a_successful_graph_report_completes_the_retraction(workspace):
+    """The mirror case: a clean report must not be read as a failure."""
+    library, downloader, _ = workspace
+
+    first = ScriptedDeltaTool([page([item("a")])])
+    await ingest_delta(
+        library=library,
+        delta_tool=first,
+        source=UNSCOPED,
+        principal=principal_context(),
+        downloader=downloader,
+    )
+    known = await library.catalog.list_source_items("sharepoint://drive")
+    contract_id = next(e.contract_id for e in known if e.item_id == "a")
+
+    good_graph = ReportingGraphLoader(published=True)
+    rescan = ScriptedDeltaTool([page([], reset_performed=True)])
+    result = await ingest_delta(
+        library=library,
+        delta_tool=rescan,
+        source=UNSCOPED,
+        principal=principal_context(),
+        downloader=downloader,
+        graph_loader=good_graph,
+    )
+
+    assert result.errors == []
+    assert result.reconciled == [contract_id]
+    assert (await library.catalog.get_source_item("drive-1", "a")).deleted is True
+
+
+@pytest.mark.asyncio
+async def test_an_item_refreshed_after_the_snapshot_is_re_read_before_retraction(workspace):
+    """A concurrent refresh landing after the listing must not be retracted.
+
+    The candidate list is a snapshot; the row is re-read immediately before
+    the destructive step so a contract another run just refreshed survives.
+    """
+    library, downloader, _ = workspace
+    from datetime import timedelta
+
+    from parrot.knowledge.contracts.models import SourceItem
+
+    first = ScriptedDeltaTool([page([item("a")])])
+    await ingest_delta(
+        library=library,
+        delta_tool=first,
+        source=UNSCOPED,
+        principal=principal_context(),
+        downloader=downloader,
+    )
+    known = await library.catalog.list_source_items("sharepoint://drive")
+    row = next(e for e in known if e.item_id == "a")
+
+    catalog = library.catalog
+    original_list = catalog.list_source_items
+    interleaved: list[str] = []
+
+    async def list_then_refresh(source=None):
+        rows = await original_list(source)
+        if source is not None and not interleaved:
+            # Another run refreshes the item *after* this snapshot is taken.
+            newer = row.model_copy(
+                update={"last_seen_at": datetime.now(timezone.utc) + timedelta(hours=1)}
+            )
+            await catalog.upsert_source_item(newer)
+            interleaved.append("refreshed")
+        return rows
+
+    catalog.list_source_items = list_then_refresh
+    try:
+        rescan = ScriptedDeltaTool([page([], reset_performed=True)])
+        result = await ingest_delta(
+            library=library,
+            delta_tool=rescan,
+            source=UNSCOPED,
+            principal=principal_context(),
+            downloader=downloader,
+        )
+    finally:
+        catalog.list_source_items = original_list
+
+    assert interleaved == ["refreshed"], "the interleaving must actually have happened"
+    assert result.reconciled == []
+    assert result.tombstoned == []
+    assert (await library.catalog.get(row.contract_id)).active is True

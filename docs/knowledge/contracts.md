@@ -324,7 +324,18 @@ evidence:
 
 Retraction withdraws the projection before marking the source item deleted,
 so a partial failure is retried rather than stranding a contract that is
-flagged gone but still indexed. As everywhere else, catalog history, the
+flagged gone but still indexed. That covers a reported failure as well as a
+raised one: `graph_loader.retract` returns a `GraphPublicationReport` rather
+than raising, and a report that is not `published` — or that carries errors —
+is treated as a failed withdrawal, which records an error, leaves the source
+item live and holds the cursor back.
+
+One residual race is worth knowing about. The reconciliation candidates come
+from a listing, and each row is re-read immediately before it is acted on, so
+an item another run refreshed in between is left alone. That narrows the
+window but does not close it: the catalog offers no conditional update, so
+two runs over the same source can still interleave. Serialise runs per source
+if that matters to you. As everywhere else, catalog history, the
 archived evidence and the original document survive; only the indexed
 projection is withdrawn.
 

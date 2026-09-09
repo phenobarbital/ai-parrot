@@ -202,6 +202,14 @@ class DeltaItem(BaseModel):
         description="True when Graph reported the item with the deleted facet.",
     )
     is_folder: bool = Field(default=False, description="True when the item is a folder, not a file.")
+    is_root: bool = Field(
+        default=False,
+        description=(
+            "True when Graph reported the drive root facet. The root has no "
+            "parent, so it must not be mistaken for an item whose membership "
+            "could not be resolved."
+        ),
+    )
     parent_id: Optional[str] = Field(default=None, description="Identifier of the containing folder.")
     parent_path: Optional[str] = Field(
         default=None,
@@ -612,6 +620,7 @@ def drive_item_to_delta_item(drive_item: Any, drive_id: str) -> Optional[DeltaIt
         name=_field(drive_item, "name"),
         deleted=deleted,
         is_folder=_field(drive_item, "folder") is not None,
+        is_root=_field(drive_item, "root") is not None,
         parent_id=_field(parent, "id"),
         parent_path=normalize_drive_path(_field(parent, "path")),
         size=_field(drive_item, "size"),
@@ -673,12 +682,23 @@ def classify_folder_membership(
         # is corruption; keeping one for an item nobody indexed is a no-op.
         return FOLDER_MATCH
 
+    if folder_id and item.item_id == folder_id:
+        # The scope folder itself, whether or not Graph reported its parent.
+        return FOLDER_MATCH
+
+    if item.is_root:
+        # Delta feeds include the drive root, and the root is parentless by
+        # definition. Without this it classifies as UNKNOWN and — under a
+        # strict folder scope — poisons the whole feed. A scope below the
+        # root simply does not contain the root.
+        return FOLDER_MISS
+
     decidable = False
 
     if folder_id:
         if item.parent_id is not None:
             decidable = True
-            if item.parent_id == folder_id or item.item_id == folder_id:
+            if item.parent_id == folder_id:
                 return FOLDER_MATCH
 
     if normalized_path:
@@ -1163,9 +1183,18 @@ class DriveDeltaHelper:
 
             for item in page.items:
                 membership = classify_folder_membership(item, folder_path, folder_id)
-                if membership != FOLDER_MATCH and ancestry is not None:
+                if (
+                    membership != FOLDER_MATCH
+                    and ancestry is not None
+                    and item.parent_id is not None
+                ):
                     # A direct-parent mismatch does not mean "outside": the
                     # item may sit deeper in the subtree. Ask Graph.
+                    #
+                    # Items with no parent at all (the drive root) are
+                    # skipped: there is nothing to walk, and classification
+                    # already decided them. Overriding that with UNKNOWN
+                    # would poison a strict-scoped feed.
                     within = await ancestry.is_within(item.parent_id)
                     if within is True:
                         membership = FOLDER_MATCH
