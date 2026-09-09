@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-539 - Contracts Card & Ontology
 **Spec**: `sdd/specs/contracts-card-ontology.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2–4h)
 **Depends-on**: TASK-3041
@@ -93,4 +93,30 @@ Store execution logs in `artifacts/logs/task-3042.log`. Use frozen dates, synthe
 
 ## Completion Note
 
-Pending execution. Record executor, completion date, implementation summary, validation evidence and deviations when this task is completed.
+Completed 2026-09-09 by sdd-worker (Claude Opus 5).
+
+**Implementation**: added `DeltaSharePointFilesTool` and `DeltaOneDriveFilesTool`,
+both plain `O365Tool` subclasses implementing only `_execute_graph_operation` — so
+authentication, error handling and `ToolResult` wrapping stay in the inherited
+`O365Tool._execute` lifecycle. Each takes a configured `drive_id` (documented as
+resolved from configuration, never expanded from model-supplied endpoints), an
+optional committed `delta_token`, a `folder_path` filter and a `max_pages` bound,
+and delegates to the shared `DriveDeltaReader` over `client.graph_client`. Both
+return the same typed payload: items, tombstone ids, the opaque `delta_link`, page
+count and the `complete`/`truncated`/`rescan_required` flags. Registered in
+`SharePointToolkit`/`OneDriveToolkit` alongside the existing list/search/download/
+upload tools and exported from `parrot_tools.o365` (which now also re-exports the
+previously unexported SharePoint tools).
+
+**Validation**: `pytest .../test_o365_delta_tools.py -q` -> 22 passed; with the
+protocol suite 51 passed (`artifacts/logs/task-3042.log`). Tests run both tools
+through the same parametrised assertions (typed outcomes, cursor resume, 410 rescan,
+folder filter + page bound, error propagation), verify the drive-level root delta
+endpoint is used, assert both bundles still construct all four pre-existing tools plus
+the new one, and prove by AST that no contracts or scheduler import reaches
+`sharepoint.py`/`onedrive.py`/`bundle.py`/`delta.py`. `ruff check` reports only 8
+pre-existing findings in this package (base.py, bundle.py, events.py, oauth_toolkit.py
+and sharepoint.py:580) — all outside the lines this task added, which start at
+sharepoint.py:642 and onedrive.py:640.
+
+**Deviations**: none.
