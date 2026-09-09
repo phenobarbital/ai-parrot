@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-539 - Contracts Card & Ontology
 **Spec**: `sdd/specs/contracts-card-ontology.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2–4h)
 **Depends-on**: TASK-3029, TASK-3035
@@ -95,4 +95,36 @@ Store execution logs in `artifacts/logs/task-3039.log`. Use frozen dates, synthe
 
 ## Completion Note
 
-Pending execution. Record executor, completion date, implementation summary, validation evidence and deviations when this task is completed.
+Completed 2026-09-09 by sdd-worker (Claude Opus 5).
+
+**Implementation**: created `parrot/knowledge/contracts/temporal.py`.
+`build_graph_update` maps a card revision to a `GraphUpdate` using the existing
+`NodeKind.DOCUMENT` (no new enum member), the stable node id
+`contracts:contract:<id>`, the canonical `source_uri`, and domain_tags carrying the
+contract identity, version/revision, effective interval, source hash and the
+**card snapshot** — historical values live in versioned node content, not only in a
+mutable external reference. `revision_run_id` gives every revision a stable
+`contracts:<id>:<n>:<r>` run id. `ContractTemporalPublisher.drain` claims temporal
+outbox rows under a per-tenant lock, recovers first via
+`list_commits(run_id=...)` + `get_commit` **payload validation** (node id, version,
+revision and source hash must match; a mismatch raises instead of being accepted),
+otherwise applies the update, then records the receipt. Failures call
+`fail_publication` so the row stays queued, retryable and observable, and an
+unavailable target is reported rather than swallowed. `publish_retraction` records a
+tombstone as a new recorded version (the node is never removed). Recorded-time reads
+(`graph_as_of`, `contract_history`, `contract_diff`) are scoped to the contract node
+and kept separate from the contractual `contract_in_force` selector over the embedded
+`versions[]`. No global revert is exposed.
+
+**Validation**: `pytest .../test_temporal.py -q` -> **17 passed, 0 skipped**,
+including **4 live tests against a real GraphIndex Postgres plane** (pgvector image,
+temporary per-tenant schemas): successive revisions with recorded history, an
+amendment effective 2026-07-01 but recorded in September answering differently in
+recorded vs effective time, crash-after-commit recovery reusing the same commit id
+with `list_commits` proving exactly one commit for the run, and two tenants reusing
+the slug `acme-msa` in separate schemas without leaking. Offline tests additionally
+pin the mapping, tombstones, failure/retry, unavailable target and mismatched-payload
+refusal. Whole contracts suite 446 passed (`artifacts/logs/task-3039.log`); ruff
+clean.
+
+**Deviations**: none.
