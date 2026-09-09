@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-537 — Nova VoiceBot avatar broadcast for multiple browsers
 **Spec**: `sdd/specs/voicebot-multiroom-heygen-avatar.spec.md`
-**Status**: done-with-issues
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h; most of it is live-environment time)
 **Depends-on**: none (external gate: FEAT-536 merged in PR #1333, but its real-vendor acceptance matrix `docs/testing/voicebot-liveavatar-acceptance.md` records 0 of 8 scenarios RUN — see Context)
@@ -241,3 +241,25 @@ types observed.
 **Still `done-with-issues`**: rows 1-4 remain NOT RUN because `aws_sdk_bedrock_runtime`
 is not installed, so no real Nova/Bedrock turn has been exercised - the PCM used here is
 a synthesized tone. Lip-sync is unassessed (needs a human observer).
+
+---
+
+## Closed — 2026-09-09
+
+The remaining blocker was never tooling; it was that nobody had *watched* it. Jesús Lara
+ran `examples/clients/voice/server.py` against real Nova + LiveAvatar + LiveKit and
+reported: **"I saw the avatar, lips-sync working and voice with no issues."**
+
+That supplies precisely what the automated probe cannot: audible speech and correct
+lip-sync are perceptual judgements, not assertions. Combined with the 8 automated
+scenarios (858 audio / 195 H264 video frames to each of two subscribers, interrupt →
+silence in 0.399 s, `clear_queue` → 0.103 s), the vendor contract this task exists to
+verify is now established end to end.
+
+It also retires the last open technical question. The suspected "avatar video is never
+subscribed" defect was an artifact of the *test* browser: Playwright's Chromium 136 has no
+H264 decoder, so LiveKit declined a track it could not decode while opus audio subscribed
+normally. Real Chrome renders it. No product defect existed and the report of one is
+withdrawn.
+
+Promoted from `done-with-issues` to `done`.
