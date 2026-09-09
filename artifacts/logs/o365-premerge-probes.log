@@ -1,0 +1,9 @@
+[32m[DEBUG] 2026-09-09 13:33:57,570 root(conf.py:19) :: ::: STARTING APP: Navigator ::: [0m
+USE SSL::  False
+[32m[DEBUG] 2026-09-09 13:33:57,570 root(conf.py:301) :: :: Settings Directory: /home/jesuslara/proyectos/ai-parrot/settings[0m
+[32m[DEBUG] 2026-09-09 13:33:57,633 parrot.tools.compression.protocol(protocol.py:108) :: Registered compression codec 'columnar' -> <class 'parrot.tools.compression.codecs.columnar.ColumnarCodec'>[0m
+[32m[DEBUG] 2026-09-09 13:33:57,634 parrot.tools.compression.protocol(protocol.py:108) :: Registered compression codec 'json_compact' -> <class 'parrot.tools.compression.codecs.json_compact.JsonCompactCodec'>[0m
+[37m[INFO] 2026-09-09 13:33:58,105 parrot_tools.contracts.jobs(jobs.py:531) :: Rescan of sharepoint://legal retracted 1 contract(s) missed while the cursor was expired[0m
+graph_failure {'errors': [], 'cursor_committed': 'https://graph.microsoft.com/final', 'deleted': True}
+[37m[INFO] 2026-09-09 13:33:58,106 parrot_tools.contracts.jobs(jobs.py:531) :: Rescan of sharepoint://legal retracted 1 contract(s) missed while the cursor was expired[0m
+concurrent_update {'newer_observation': ['2026-09-09T12:00:02+00:00'], 'reconciled': ['acme-msa'], 'active': False, 'cursor_committed': 'https://graph.microsoft.com/final'}
