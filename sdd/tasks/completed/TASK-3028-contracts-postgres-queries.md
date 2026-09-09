@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-539 - Contracts Card & Ontology
 **Spec**: `sdd/specs/contracts-card-ontology.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2–4h)
 **Depends-on**: TASK-3027
@@ -97,4 +97,30 @@ Store execution logs in `artifacts/logs/task-3028.log`. Use frozen dates, synthe
 
 ## Completion Note
 
-Pending execution. Record executor, completion date, implementation summary, validation evidence and deviations when this task is completed.
+Completed 2026-09-09 by sdd-worker (Claude Opus 5).
+
+**Implementation**: filled the query surface of `catalog_postgres.py` —
+`list_cards` (status/verification/active filters, contract_id order),
+`search` (English `plainto_tsquery` + `ts_rank` over the generated GIN
+`search_vector`, blank query short-circuits, top_k clamped to
+`MAX_SEARCH_TOP_K`=50, retracted cards excluded), `expiring` (inclusive window,
+`notice_deadline` with `expiration_date` fallback, null driving dates omitted,
+active status only, inverted/unsupported windows rejected), `verification_queue`
+(single SQL CTE over `card_json->'field_provenance'` computing missing-evidence /
+low-confidence / stale priority with contract_id ties and the offending field
+names, limit clamped to `MAX_QUEUE_LIMIT`) and `obligations_due` (typed
+`ObligationWindow`: kinds, standard_id, inclusive since/until, optional
+uninterpreted recurrence, bounded limit, retracted contracts excluded).
+
+**Validation**: `pytest .../test_catalog_queries.py -q` -> **15 passed** against a
+real Postgres 16 (explicit `GRAPHINDEX_PG_DSN`, temporary schemas). Covers English
+stemming, ranking, bounded/zero/oversized top_k, an injection payload treated as
+plain terms (schema intact afterwards), filter combinations, exact boundary dates,
+null dates, notice fallback vs expiration key, retracted/non-active exclusion,
+queue priority with stable ties, and every obligation-window filter. Whole contracts
+suite 146 passed (`artifacts/logs/task-3028.log`); ruff clean.
+
+**Deviations**: `expiring` binds the window key as a parameter inside a LATERAL
+CASE instead of interpolating a column expression — the TASK-3027 AST guard proved
+the first draft interpolated a non-schema value into SQL, and this keeps
+`self.schema` the only interpolation anywhere in the backend.
