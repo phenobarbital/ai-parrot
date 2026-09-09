@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-539 - Contracts Card & Ontology
 **Spec**: `sdd/specs/contracts-card-ontology.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (1–2h)
 **Depends-on**: TASK-3051, TASK-3052
@@ -93,4 +93,29 @@ Store execution logs in `artifacts/logs/task-3053.log`. Use frozen dates, synthe
 
 ## Completion Note
 
-Pending execution. Record executor, completion date, implementation summary, validation evidence and deviations when this task is completed.
+Completed 2026-09-09 by sdd-worker (Claude Opus 5).
+
+**Implementation**: wrote `docs/knowledge/contracts.md` covering installation
+(`ai-parrot[graphindex,graphindex-postgres]`, `ai-parrot[pdf]`, `ai-parrot-loaders`,
+`ai-parrot-embeddings[arango]`, `ai-parrot-tools[office365]`, and why rapidfuzz comes
+with the graphindex extra), schema-per-tenant configuration, canonical source identity
+and folder owner rules with manual overrides, the 1+N carding bound with its fallback
+and the explicit scanned-PDF skip, verification/refresh semantics including the four
+evidence outcomes and stale candidates, **effective vs recorded time** with the
+late-recorded amendment example, publication (why `publish` delegates to
+`publish_all`, why a partial target failure is not success, outbox recovery without
+duplicate versions, retraction preserving history), the shared answer gate with
+deterministic retrieval separated from drafting, broad retirement suppression, the
+O365 delta tools and the three scheduler-free jobs with the cursor rule and
+deployer-owned `@schedule`/`send_result` wiring, the full CLI with exit codes and the
+`--confirm` rule, live-test opt-in, the benchmark pointer, pilot exclusions and the
+known ArangoDB upsert limitation.
+
+**Validation**: verified against the implementation rather than from memory — a script
+checked that every extra named exists in the three pyprojects, that every public
+symbol referenced imports, and that **all 10 documented CLI invocations parse with the
+real `build_parser()`**; the confirming-command list matches
+`CONFIRMING_COMMANDS`. The guide states plainly that automated tests are not pilot
+acceptance and points at the twelve-case signoff document.
+
+**Deviations**: none.
