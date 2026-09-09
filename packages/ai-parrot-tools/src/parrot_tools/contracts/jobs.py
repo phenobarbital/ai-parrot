@@ -27,7 +27,7 @@ from parrot.knowledge.contracts.models import (
     SourceItem,
 )
 
-from .retrieval import RequestContext
+from .retrieval import READ_ROLES, RequestContext
 
 __all__ = (
     "RENEWAL_BUCKETS",
@@ -137,8 +137,15 @@ def _utcnow() -> datetime:
 
 
 async def _authorized_cards(retrieval: Any, principal: RequestContext) -> list[Any]:
-    """Cards the configured service principal may see."""
-    retrieval.authorize(principal)
+    """Cards inside the configured recipient scope.
+
+    A principal with a read role covers the whole catalog; one with only an
+    authenticated employee identity is narrowed exactly like
+    ``my_contracts``, so a scoped digest never reports someone else's
+    contracts.
+    """
+    pattern = None if principal.has_any_role(READ_ROLES) else "my_contracts"
+    retrieval.authorize(principal, pattern=pattern)
     return await retrieval._authorized_cards(principal)
 
 
