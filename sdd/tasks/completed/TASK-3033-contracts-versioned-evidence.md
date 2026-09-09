@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-539 - Contracts Card & Ontology
 **Spec**: `sdd/specs/contracts-card-ontology.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2–4h)
 **Depends-on**: TASK-3025
@@ -92,4 +92,30 @@ Store execution logs in `artifacts/logs/task-3033.log`. Use frozen dates, synthe
 
 ## Completion Note
 
-Pending execution. Record executor, completion date, implementation summary, validation evidence and deviations when this task is completed.
+Completed 2026-09-09 by sdd-worker (Claude Opus 5).
+
+**Implementation**: created `parrot/knowledge/contracts/evidence.py` with two
+pieces. `StagingArea` splits a tenant's PageIndex storage into `published/` and
+`staging/` roots: `begin()` clears only staging, `promote()` swaps the tree JSON and
+content directory into place (restoring the previous pair if the swap fails), and
+`discard()` drops staged data while never touching published trees or archived
+evidence — deliberately not the bookstore's delete-before-reimport behaviour.
+`EvidenceArchive` writes immutable derived node text per
+`tenant/contract/vN-rM-<hash>` with a manifest carrying node ids and physical pages;
+re-archiving the same reference raises unless `overwrite=True`. `resolve()` checks
+contract, version, source hash, node existence, nonempty verbatim quote (whitespace-
+normalised) and page, returning an explicit failure reason. `map_evidence()` rebinds
+only nonempty exact quotes to their new node (lowest node id wins deterministically);
+empty quotes map to `None` so the field stays stale. All filesystem work is offloaded
+with `asyncio.to_thread` and every path segment is validated against traversal.
+
+**Validation**: `pytest .../test_evidence.py -q` -> 30 passed (whole contracts suite
+299 passed, `artifacts/logs/task-3033.log`); ruff clean. Tests cover: two tenants
+reusing the same slug and node ids cannot cross-read (a foreign reference raises),
+traversal/separator rejection on read and write, wrong version/hash/node/page/contract
+lookups failing with distinct reasons, a historical citation still resolving after the
+clause was renumbered by a refresh, immutability, only derived `.md`/`.json` reaching
+the archive while the original PDF is untouched, deterministic evidence remapping, and
+a failed staging write leaving the published tree and archived evidence intact.
+
+**Deviations**: none.
