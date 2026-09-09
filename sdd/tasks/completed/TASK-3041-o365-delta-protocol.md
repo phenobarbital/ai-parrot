@@ -166,3 +166,39 @@ no content and ingests no document.
   tighter set pass `allowed_origins`.
 - No packaging change was needed: `msgraph-sdk` already ships with the
   existing `office365` extra.
+
+### Adversarial review triage (post-completion)
+
+Both tasks were reviewed together after implementation by two independent
+reviewers given the same neutral brief (diff + requirements + question, no
+reasoning supplied): an external `codex` session and a Claude `code-reviewer`
+subagent. A separate agent verified the disputed Microsoft Graph semantics
+against Microsoft Learn. Findings and dispositions — fixes landed in commit
+`bdde521ea`:
+
+| # | Finding | Disposition |
+|---|---|---|
+| 1 | `with_url()` replaces the entire URL, so origin-only validation let a supplied cursor redirect the authenticated request at any Graph resource (e.g. another drive's `/content`) | **CONFIRM — fixed.** Links are now confined structurally to the enumerated drive's delta endpoint. My own follow-up probe then found two bypasses of the first fix (`.../delta/../../users` and `/delta/drives/<id>/items/x/content`); the check is now anchored on the last path segment and the segment following `drives`, with relative segments rejected. All are regression-tested. |
+| 2 | Graph omits `parentReference.path` from delta responses, so the `folder_path` filter was silently a no-op on real data while reporting `filtered_out=0` | **CONFIRM — fixed.** Verified verbatim against Microsoft Learn: *"The parentReference property on items won't include a value for path... When using delta you should always track items by id."* Added `folder_id` (matches `parentReference.id`, which delta does report) and match/miss/undecidable classification; undecidable items are kept but counted in `unresolved_parent` and surfaced via `folder_filter_reliable`. |
+| 3 | Filtering ran before de-duplication, so a later "moved out of the folder" occurrence lost to the stale earlier one | **CONFIRM — fixed.** Last occurrence now wins in both directions. |
+| 4 | `Retry-After` was truncated to `max_backoff`, retrying while still throttled | **CONFIRM — fixed.** Honoured in full up to a new `max_retry_after` budget; beyond it the round is abandoned. `max_backoff` still caps self-computed backoff. |
+| 5 | Status-less transient failures (dropped connection, timeout) skipped the retry budget entirely | **CONFIRM — fixed.** `TimeoutError`/`OSError`/`httpx.TransportError` retried within the same bound. |
+| 6 | SharePoint library lookup inferred "absent"/"only library" from a truncated first page of the drives collection | **CONFIRM — fixed.** A truncated listing now refuses to infer and asks for an explicit `drive_id`. |
+| 7 | OneDrive drive resolution bypassed the `O365Client.get_user_context()` convention, ignoring a credential-configured default user | **CONFIRM — fixed.** Now delegates to `get_user_context()`, so app-only auth without an identity gets its actionable error. |
+| 8 | The msgraph/Kiota stack runs its own `RetryHandler` (3 retries) beneath this helper, so the configured bound does not bound raw HTTP attempts — they multiply | **CONFIRM as documentation; code change REJECTED for now.** Verified (`kiota_client_factory` wires `RetryHandler` unconditionally). Total attempts stay finite and the SDK layer honours `Retry-After`, so the honest fix is to document the layering rather than pass an untested `RetryHandlerOption` through `get()` — that would change behaviour on a path the fakes cannot exercise, which is precisely how this class of bug got in. Recorded as a follow-up. |
+| 9 | `fetch_page()` returned unvalidated continuation links to a direct caller | **CONFIRM — fixed.** Validated in `_build_page`, not only at follow time. |
+| 10 | `Retry-After` parser handled only delta-seconds, not the RFC 7231 HTTP-date form | **CONFIRM — fixed.** |
+| 11 | A rejection test asserted only the exception type, not that no request followed | **CONFIRM — fixed** in both suites. |
+| 12 | The `drive_id=""` fallback test passed even when execution failed | **CONFIRM — fixed.** Split into a rejection case and a genuine success case. |
+| 13 | `DEFAULT_GRAPH_ORIGINS` trusts all five sovereign clouds rather than the client's own cloud | **NOTED, not changed.** All five are genuine Microsoft Graph origins, a commercial token would not authenticate against a sovereign endpoint, and finding 1's path confinement removes the practical concern. Deployments that want a single origin pass `allowed_origins` via `delta_helper=`. Flagged for the PR reviewer. |
+| 14 | `_validate_graph_identifier` is duplicated verbatim in `sharepoint.py` and `onedrive.py` | **NOTED, not changed.** The natural shared home is `delta.py`, which TASK-3042 does not own. Trivial follow-up. |
+
+Neither reviewer found a hallucinated API; both independently confirmed the
+410/rescan handling, the retry loop's attempt accounting, the additive bundle
+registration and the contracts/scheduler independence.
+
+**Residual limitation to carry into TASK-3049 (`ingest_delta`)**: exact folder
+scoping is not achievable from an incremental delta round alone — Graph omits
+the path, and `folder_id` matches direct children only. The delta job should
+either track the whole drive and scope by item id against the catalog, or
+treat `unresolved_parent > 0` as "membership must be re-checked locally".
