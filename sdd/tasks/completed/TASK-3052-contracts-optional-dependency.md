@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-539 - Contracts Card & Ontology
 **Spec**: `sdd/specs/contracts-card-ontology.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (1–2h)
 **Depends-on**: none
@@ -89,4 +89,28 @@ Store execution logs in `artifacts/logs/task-3052.log`. Use frozen dates, synthe
 
 ## Completion Note
 
-Pending execution. Record executor, completion date, implementation summary, validation evidence and deviations when this task is completed.
+Completed 2026-09-09 by sdd-worker (Claude Opus 5).
+
+**Implementation**: added `rapidfuzz>=3.0` to the core `graphindex` optional extra
+in `packages/ai-parrot/pyproject.toml` (with a comment recording that it also covers
+the previously undeclared lazy import in `knowledge/ontology/discovery.py`). No
+other dependency changed; `ai-parrot-tools[scraping]` keeps its own rapidfuzz pin.
+
+**Validation**: `uv lock` regenerated (926 packages) and `uv lock --check` succeeds;
+the lock now records `rapidfuzz` under `ai-parrot`'s `graphindex` extra with
+specifier `>=3.0`. `pytest .../test_dependency_boundary.py -q` -> 19 passed
+(`artifacts/logs/task-3052.log`, whole contracts suite 191 passed); ruff clean. The
+tests pin: rapidfuzz declared in exactly one core extra and not in core runtime deps,
+the tools scraping extra untouched, graphindex-postgres still carrying asyncpg/
+pgvector, no SQLite in the contracts extras, apscheduler confined to its pre-existing
+FEAT-453 extra, no core contracts module importing `parrot_tools`/`parrot.scheduler`/
+`sqlite3`, asyncpg and rapidfuzz never imported at module import time, and the
+contracts package importing cleanly without the optional extras.
+
+**Deviations**: `uv.lock` is listed as a task-owned file but is **gitignored** in
+this repo (`.gitignore:258`), so the regenerated lock cannot be committed — the
+regeneration is local and verified via `uv lock --check`. Two acceptance assertions
+were corrected against reality rather than the task text: `aiosqlite` and
+`apscheduler` are pre-existing core/extra dependencies (FEAT-471, FEAT-453), so the
+tests assert this feature does not spread them into the contracts extras instead of
+asserting their absolute absence.
