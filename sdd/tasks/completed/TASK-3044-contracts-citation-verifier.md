@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-539 - Contracts Card & Ontology
 **Spec**: `sdd/specs/contracts-card-ontology.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2–4h)
 **Depends-on**: TASK-3029, TASK-3033, TASK-3043
@@ -93,4 +93,30 @@ Store execution logs in `artifacts/logs/task-3044.log`. Use frozen dates, synthe
 
 ## Completion Note
 
-Pending execution. Record executor, completion date, implementation summary, validation evidence and deviations when this task is completed.
+Completed 2026-09-09 by sdd-worker (Claude Opus 5).
+
+**Implementation**: created `parrot_tools/contracts/verifier.py`. `AnswerDraft`
+carries explicit `Claim` objects, each with the citations that claim rests on, so
+support is representable rather than inferred. `CitationVerifier.verify` accepts a
+citation only when it belongs to **this request's authorized dossier**, its
+`(contract_id, node_id)` is not retired, the quote is nonempty and appears verbatim in
+the *archived body of that exact version* (hash and page checked through
+`EvidenceArchive.resolve`). Title, page, verification state and source hash on the
+released citation are derived from the card/archive, never trusted from the model. A
+claim whose citations were all rejected is dropped and cannot be rescued by another
+claim's surviving evidence; zero survivors turns the answer into `not_found` with no
+text and no citations. Provenance is derived (verified / mixed / extracted, stale
+staying visible). Handoff `located_clauses` pass the identical checks;
+`denied`/`out_of_scope` release no evidence at all. No LLM anywhere.
+
+**Validation**: `pytest .../test_verifier.py -q` -> 17 passed (whole contracts tools
+suite 74 passed, `artifacts/logs/task-3044.log`); ruff clean. Tests cover a valid
+citation with derived metadata, a foreign dossier, unknown node, wrong version, forged
+hash, wrong page, mismatched quote (and an empty quote that the model cannot even
+construct), retirement, retirement surviving a renumbered unchanged excerpt at a later
+version, orphan-claim removal while another citation passes, free prose with no
+citations, zero survivors becoming not_found, duplicate citations released once,
+verified/mixed provenance with stale visible, handoff verification, empty kinds
+carrying no evidence, and an AST proof that no model call site exists.
+
+**Deviations**: none.
