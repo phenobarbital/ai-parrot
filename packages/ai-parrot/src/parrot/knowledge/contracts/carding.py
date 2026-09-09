@@ -17,7 +17,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
-from datetime import date
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping, Optional, Sequence
 
@@ -27,14 +27,23 @@ from ..bookstore.carding import slugify, unique_slug  # noqa: F401 - re-exported
 from .models import (
     UNSUBSTANTIATED_CONFIDENCE_CAP,
     CardOrigin,
+    ContractCard,
     ContractHeaderDraft,
+    ContractStatus,
     ContractType,
     Evidence,
     Extracted,
+    FieldProvenance,
+    Obligation,
     ObligationClauseDraft,
     ObligationsDraft,
+    Party,
+    ProvenanceOrigin,
+    Signatory,
+    TermSpec,
     TocEntry,
 )
+from .standards import resolve_standard
 
 __all__ = (
     "HEADER_CHAR_CAP",
@@ -55,6 +64,17 @@ __all__ = (
     "validate_obligation_clauses",
     "fallback_header_draft",
     "draft_contract",
+    "PARTY_SUFFIXES",
+    "PARENT_SIMILARITY_THRESHOLD",
+    "PARENT_TYPE_RULES",
+    "ParentResolution",
+    "normalize_party_name",
+    "similarity",
+    "derive_notice_deadline",
+    "derive_next_renewal_date",
+    "derive_status",
+    "resolve_parent",
+    "assemble_card",
     "slugify",
     "unique_slug",
 )
@@ -734,4 +754,514 @@ async def draft_contract(
         header_nodes=header_nodes,
         obligation_nodes=read_sections,
         notes=notes,
+    )
+
+
+# --------------------------------------------------------------------------
+# Deterministic assembly, derivations and parent resolution (TASK-3031)
+# --------------------------------------------------------------------------
+
+#: Legal-entity suffixes stripped before party names are compared.
+PARTY_SUFFIXES: tuple[str, ...] = (
+    "incorporated",
+    "corporation",
+    "limited",
+    "company",
+    "holdings",
+    "group",
+    "inc",
+    "llc",
+    "llp",
+    "ltd",
+    "plc",
+    "corp",
+    "co",
+    "sa",
+    "sl",
+    "sas",
+    "bv",
+    "nv",
+    "gmbh",
+    "ag",
+    "ab",
+    "oy",
+    "pty",
+)
+
+#: Minimum normalized similarity for a parent link (spec §2 carding step 5).
+PARENT_SIMILARITY_THRESHOLD = 0.85
+
+#: Which child types may attach to which parent types in v1.
+PARENT_TYPE_RULES: dict[str, tuple[str, ...]] = {
+    "sow": ("msa",),
+    "order_form": ("msa",),
+    "amendment": ("msa", "sow", "nda", "dpa", "order_form", "license", "sla", "other"),
+}
+
+
+class ParentResolution(BaseModel):
+    """The outcome of deterministic parent-contract resolution.
+
+    Args:
+        parent_contract_id: The resolved parent, or ``None``.
+        ambiguous: True when several candidates qualified; the parent stays
+            null and ``parent_contract_id`` becomes a stale field.
+        candidates: Qualifying candidate ids, deterministically ordered.
+        score: Best normalized similarity in ``[0, 1]``.
+        reason: Why the resolution ended the way it did.
+    """
+
+    parent_contract_id: Optional[str] = None
+    ambiguous: bool = False
+    candidates: list[str] = Field(default_factory=list)
+    score: float = 0.0
+    reason: str = ""
+
+
+def normalize_party_name(name: str) -> str:
+    """Normalize a legal entity name for comparison.
+
+    Lowercases, drops punctuation and strips trailing legal-form suffixes so
+    ``"ACME, Inc."`` and ``"Acme Incorporated"`` compare equal.
+
+    Args:
+        name: Party name as written on a document.
+
+    Returns:
+        The normalized comparison key (possibly empty).
+    """
+    words = _WORD_RE.findall((name or "").lower())
+    while words and words[-1] in PARTY_SUFFIXES:
+        words.pop()
+    return " ".join(words)
+
+
+def similarity(left: str, right: str) -> float:
+    """Normalized fuzzy similarity in ``[0, 1]``.
+
+    Args:
+        left: First string.
+        right: Second string.
+
+    Returns:
+        ``rapidfuzz.fuzz.token_sort_ratio`` divided by 100. Identical
+        normalized strings score exactly ``1.0``; empty input scores ``0.0``.
+
+    Raises:
+        RuntimeError: When the approved ``rapidfuzz`` extra is missing.
+    """
+    if not (left or "").strip() or not (right or "").strip():
+        return 0.0
+    if left == right:
+        return 1.0
+    try:
+        from rapidfuzz import fuzz  # noqa: PLC0415 - optional dependency
+    except ImportError as exc:  # pragma: no cover - depends on install extras
+        raise RuntimeError(
+            "Contract parent resolution requires rapidfuzz. Install it with "
+            "`pip install 'ai-parrot[graphindex]'`."
+        ) from exc
+    return float(fuzz.token_sort_ratio(left, right)) / 100.0
+
+
+def derive_notice_deadline(
+    expiration_date: Optional[date],
+    notice_days: Optional[int],
+) -> Optional[date]:
+    """``expiration_date - notice_days``, when both are known.
+
+    Args:
+        expiration_date: Contractual end of the current term.
+        notice_days: Days of notice required before non-renewal.
+
+    Returns:
+        The deadline, or ``None`` when either input is missing.
+    """
+    if expiration_date is None or notice_days is None:
+        return None
+    return expiration_date - timedelta(days=notice_days)
+
+
+def derive_next_renewal_date(
+    expiration_date: Optional[date],
+    auto_renew: bool,
+) -> Optional[date]:
+    """``expiration_date`` when the term auto-renews, else ``None``."""
+    return expiration_date if (auto_renew and expiration_date) else None
+
+
+def derive_status(
+    *,
+    term: TermSpec,
+    today: date,
+    signed: bool,
+    superseded: bool = False,
+    termination_confirmed: bool = False,
+    terminated_on: Optional[date] = None,
+) -> ContractStatus:
+    """Apply the D3 status precedence deterministically.
+
+    Precedence: incoming supersession, human-confirmed termination whose
+    date has elapsed, an expired non-renewing term, an active effective
+    term, an unsigned draft, otherwise ``unknown``. Termination is **never**
+    inferred from the presence of a termination clause — only
+    ``termination_confirmed`` (a human decision) can produce it.
+
+    Args:
+        term: The derived term facts.
+        today: Injected current date (never ``date.today()`` internally).
+        signed: Whether the card has at least one signatory.
+        superseded: Whether another contract supersedes this one.
+        termination_confirmed: Human-confirmed termination.
+        terminated_on: The confirmed termination date.
+
+    Returns:
+        The derived :data:`ContractStatus`.
+    """
+    if superseded:
+        return "superseded"
+    if termination_confirmed and terminated_on is not None and terminated_on <= today:
+        return "terminated"
+    effective = term.effective_date
+    expiration = term.expiration_date
+    if expiration is not None and expiration < today and not term.auto_renew:
+        return "expired"
+    if effective is not None and effective <= today:
+        if expiration is None or today <= expiration or term.auto_renew:
+            return "active"
+    if not signed:
+        return "draft"
+    return "unknown"
+
+
+def resolve_parent(
+    *,
+    contract_type: ContractType,
+    counterparties: Sequence[str],
+    parent_title: Optional[str],
+    candidates: Sequence[Any],
+    threshold: float = PARENT_SIMILARITY_THRESHOLD,
+) -> ParentResolution:
+    """Resolve a parent contract deterministically, or refuse to guess.
+
+    A candidate qualifies when it has a compatible governing type
+    (SOW/order form to MSA; amendment to its referenced base), shares a
+    counterparty, and its title reaches ``threshold`` normalized similarity
+    with the referenced parent title. Several qualifying candidates leave
+    the parent null so a human resolves it.
+
+    Args:
+        contract_type: The child's type.
+        counterparties: Normalized counterparty names of the child.
+        parent_title: The parent title the document referenced.
+        candidates: Existing cards (anything exposing ``contract_id``,
+            ``contract_type``, ``title`` and ``parties``).
+        threshold: Minimum normalized similarity.
+
+    Returns:
+        A :class:`ParentResolution`; ``ambiguous`` marks the stale case.
+    """
+    allowed = PARENT_TYPE_RULES.get(contract_type)
+    if not allowed:
+        return ParentResolution(reason=f"{contract_type} has no v1 parent rule")
+    if not (parent_title or "").strip():
+        return ParentResolution(reason="no referenced parent title in the document")
+
+    normalized_parent = normalize_party_name(parent_title) or (parent_title or "").lower()
+    child_parties = {name for name in counterparties if name}
+    scored: list[tuple[float, str]] = []
+    for candidate in candidates:
+        if candidate.contract_type not in allowed:
+            continue
+        candidate_parties = {
+            normalize_party_name(party.name)
+            for party in candidate.parties
+            if not party.is_us
+        }
+        if child_parties and not (child_parties & candidate_parties):
+            continue
+        normalized_candidate = (
+            normalize_party_name(candidate.title) or candidate.title.lower()
+        )
+        score = max(
+            similarity(normalized_parent, normalized_candidate),
+            similarity((parent_title or "").lower(), candidate.title.lower()),
+        )
+        if score >= threshold:
+            scored.append((score, candidate.contract_id))
+
+    if not scored:
+        return ParentResolution(reason="no candidate reached the similarity threshold")
+    scored.sort(key=lambda item: (-item[0], item[1]))
+    best = scored[0][0]
+    qualifying = [contract_id for score, contract_id in scored]
+    if len(qualifying) > 1:
+        return ParentResolution(
+            ambiguous=True,
+            candidates=qualifying,
+            score=best,
+            reason=f"{len(qualifying)} candidates qualified; a human must choose",
+        )
+    return ParentResolution(
+        parent_contract_id=qualifying[0],
+        candidates=qualifying,
+        score=best,
+        reason="single qualifying candidate",
+    )
+
+
+def _provenance_from(
+    field: Extracted[Any],
+    *,
+    origin: ProvenanceOrigin = "llm",
+) -> FieldProvenance:
+    """Build field provenance from one extracted value."""
+    evidence = field.evidence
+    return FieldProvenance(
+        origin=origin,
+        node_id=evidence.node_id if evidence else None,
+        page=evidence.page if evidence else None,
+        quote=evidence.quote if evidence else None,
+        confidence=field.confidence,
+    )
+
+
+def _rule_provenance(paths: Sequence[str]) -> FieldProvenance:
+    """Build provenance for a value derived in code from other fields."""
+    return FieldProvenance(origin="rule", derived_from=list(paths), confidence=1.0)
+
+
+def assemble_card(
+    draft: CardingDraft,
+    *,
+    contract_id: str,
+    source_uri: str,
+    source_sha256: str,
+    source_format: str,
+    today: date,
+    toc: Sequence[TocEntry] = (),
+    toc_digest: str = "",
+    page_count: Optional[int] = None,
+    source_path: Optional[str] = None,
+    owner_employee_id: Optional[str] = None,
+    department: Optional[str] = None,
+    party_aliases: Optional[Mapping[str, str]] = None,
+    candidates: Sequence[Any] = (),
+    added_at: Optional[datetime] = None,
+    superseded: bool = False,
+) -> ContractCard:
+    """Assemble a validated draft into a :class:`ContractCard`.
+
+    Everything here is deterministic Python: stable ids, alias-resolved
+    party identity, standard resolution, provenance paths, the notice/
+    renewal derivations, the D3 status precedence and parent resolution.
+    ``today`` is injected, never read from the clock.
+
+    Args:
+        draft: The validated carding draft.
+        contract_id: Allocated slug (also the PageIndex tree name).
+        source_uri: Canonical source location.
+        source_sha256: SHA-256 of the source bytes.
+        source_format: One of ``pdf``/``docx``/``md``/``txt``.
+        today: Injected current date for the derivations.
+        toc: Table-of-contents entries.
+        toc_digest: Rendered ToC digest.
+        page_count: Physical page count, when known.
+        source_path: Temporary local path, when still staged.
+        owner_employee_id: Owner resolved by the folder rule or an override.
+        department: Owning department.
+        party_aliases: ``normalized alias -> canonical party_id`` from the
+            catalog, so per-card extraction cannot fork global identity.
+        candidates: Existing cards considered for parent resolution.
+        added_at: Creation timestamp.
+        superseded: Whether an incoming contract supersedes this one.
+
+    Returns:
+        The assembled card, with ``field_provenance`` for every extracted
+        and derived field and ``stale_fields`` for anything unresolved.
+    """
+    aliases = dict(party_aliases or {})
+    header = draft.header
+    provenance: dict[str, FieldProvenance] = {}
+    stale: list[str] = []
+
+    title = (header.title.value or contract_id).strip() or contract_id
+    provenance["title"] = _provenance_from(header.title)
+    contract_type: ContractType = header.contract_type.value or "other"
+    provenance["contract_type"] = _provenance_from(header.contract_type)
+
+    parties: list[Party] = []
+    seen_parties: set[str] = set()
+    for party_draft in header.parties:
+        normalized = normalize_party_name(party_draft.name)
+        party_id = aliases.get(normalized) or f"party-{slugify(normalized or party_draft.name)}"
+        if party_id in seen_parties:
+            continue
+        seen_parties.add(party_id)
+        is_us = party_draft.is_us or party_draft.role == "us"
+        if is_us and any(party.is_us for party in parties):
+            is_us = False
+        parties.append(
+            Party(
+                party_id=party_id,
+                name=party_draft.name.strip(),
+                role=party_draft.role,
+                is_us=is_us,
+            )
+        )
+        provenance[f"parties.{party_id}.name"] = FieldProvenance(
+            origin="llm",
+            node_id=party_draft.evidence.node_id if party_draft.evidence else None,
+            page=party_draft.evidence.page if party_draft.evidence else None,
+            quote=party_draft.evidence.quote if party_draft.evidence else None,
+            confidence=party_draft.confidence,
+        )
+
+    by_name = {normalize_party_name(party.name): party.party_id for party in parties}
+    signatories: list[Signatory] = []
+    for index, signatory_draft in enumerate(header.signatories):
+        party_id = by_name.get(normalize_party_name(signatory_draft.party_name or ""))
+        if party_id is None:
+            stale.append(f"signatories.{index}.party_id")
+            continue
+        person_id = f"{contract_id}-person-{slugify(signatory_draft.name) or index}"
+        signatories.append(
+            Signatory(
+                person_id=person_id,
+                name=signatory_draft.name.strip(),
+                party_id=party_id,
+                title=signatory_draft.title,
+                signed_on=signatory_draft.signed_on,
+                employee_id=signatory_draft.employee_id,
+            )
+        )
+        provenance[f"signatories.{person_id}.name"] = FieldProvenance(
+            origin="llm",
+            node_id=signatory_draft.evidence.node_id if signatory_draft.evidence else None,
+            page=signatory_draft.evidence.page if signatory_draft.evidence else None,
+            quote=signatory_draft.evidence.quote if signatory_draft.evidence else None,
+            confidence=signatory_draft.confidence,
+        )
+
+    for name, field in (
+        ("term.effective_date", header.effective_date),
+        ("term.expiration_date", header.expiration_date),
+        ("term.initial_term_months", header.initial_term_months),
+        ("term.auto_renew", header.auto_renew),
+        ("term.renewal_period_months", header.renewal_period_months),
+        ("term.notice_days", header.notice_days),
+        ("governing_law", header.governing_law),
+    ):
+        provenance[name] = _provenance_from(field)
+
+    renewal_months = header.renewal_period_months.value
+    term = TermSpec(
+        effective_date=header.effective_date.value,
+        expiration_date=header.expiration_date.value,
+        initial_term_months=header.initial_term_months.value,
+        auto_renew=bool(header.auto_renew.value),
+        renewal_period_months=renewal_months if (renewal_months or 0) > 0 else None,
+        notice_days=header.notice_days.value,
+    )
+    term = term.model_copy(
+        update={
+            "notice_deadline": derive_notice_deadline(term.expiration_date, term.notice_days),
+            "next_renewal_date": derive_next_renewal_date(
+                term.expiration_date, term.auto_renew
+            ),
+        }
+    )
+    if term.notice_deadline is not None:
+        provenance["term.notice_deadline"] = _rule_provenance(
+            ["term.expiration_date", "term.notice_days"]
+        )
+    if term.next_renewal_date is not None:
+        provenance["term.next_renewal_date"] = _rule_provenance(
+            ["term.expiration_date", "term.auto_renew"]
+        )
+
+    obligations: list[Obligation] = []
+    for index, clause in enumerate(draft.obligations.clauses):
+        obligation_id = f"{contract_id}-ob-{index + 1:03d}"
+        obligations.append(
+            Obligation(
+                obligation_id=obligation_id,
+                contract_id=contract_id,
+                kind=clause.kind,
+                obligor=clause.obligor,
+                text=clause.excerpt,
+                node_id=clause.node_id,
+                page=clause.page,
+                standard_id=resolve_standard(clause.standard_name),
+                due_date=clause.due_date,
+                recurrence=clause.recurrence,
+                provenance=FieldProvenance(
+                    origin="llm",
+                    node_id=clause.node_id,
+                    page=clause.page,
+                    quote=clause.excerpt,
+                    confidence=clause.confidence,
+                ),
+            )
+        )
+
+    counterparties = [
+        normalize_party_name(party.name) for party in parties if not party.is_us
+    ]
+    resolution = resolve_parent(
+        contract_type=contract_type,
+        counterparties=counterparties,
+        parent_title=header.parent_contract_title.value,
+        candidates=candidates,
+    )
+    if resolution.ambiguous:
+        stale.append("parent_contract_id")
+    if resolution.parent_contract_id:
+        provenance["parent_contract_id"] = _rule_provenance(
+            ["parent_contract_title", "parties", "contract_type"]
+        )
+
+    status = derive_status(
+        term=term,
+        today=today,
+        signed=bool(signatories),
+        superseded=superseded,
+    )
+    provenance["status"] = _rule_provenance(
+        ["term.effective_date", "term.expiration_date", "term.auto_renew", "signatories"]
+    )
+
+    for path, field_provenance in provenance.items():
+        if field_provenance.origin == "llm" and not field_provenance.substantiates:
+            if path not in stale:
+                stale.append(path)
+
+    return ContractCard(
+        contract_id=contract_id,
+        title=title,
+        contract_type=contract_type,
+        status=status,
+        parties=parties,
+        signatories=signatories,
+        term=term,
+        governing_law=header.governing_law.value,
+        parent_contract_id=resolution.parent_contract_id,
+        obligations=obligations,
+        summary=header.summary,
+        topics=list(header.topics),
+        owner_employee_id=owner_employee_id,
+        department=department,
+        language=header.language or "en",
+        source_uri=source_uri,
+        source_path=source_path,
+        source_sha256=source_sha256,
+        source_format=source_format,  # type: ignore[arg-type]
+        page_count=page_count,
+        toc=list(toc),
+        toc_digest=toc_digest,
+        field_provenance=provenance,
+        stale_fields=sorted(set(stale)),
+        card_origin=draft.origin,
+        added_at=added_at,
+        updated_at=added_at,
     )
