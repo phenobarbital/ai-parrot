@@ -13,7 +13,7 @@
 | D5 | El **grafo se escribe determinísticamente desde la ficha** (`ContractGraphLoader`), como `BOEDataSource` en el dominio legal. `discovery: field_match` sólo para las aristas de campo simple (`governed_by`, `imposed_by`, `requires`, `owned_by`, `managed_by`, `represents`, `is_employee`); `party_to` y `signed_by` (con propiedades de arista) las escribe el loader. | El módulo `ontology` valida `field_match` sobre campos escalares; las aristas con `role`/`signed_on` necesitan el loader. Cero LLM en retrieval, igual que `legal.ontology.yaml`. |
 | D6 | **Versiones bitemporales embebidas en `Contract.versions[]`**, copiando la convención probada de `Articulo.versions` (`valid_from` inclusivo, `valid_to` exclusivo, `null` = vigente). El plano temporal de graphindex (FEAT-520, Postgres) queda para después. | Reutiliza el patrón `article_in_force` tal cual; una enmienda = nueva versión. |
 | D7 | Autorización declarativa por patrón: roles `contract_reader` / `contract_owner` con `default_deny`, más `my_contracts` (siempre permitido, filtra por cadena de mando) y `department` en `Contract` para que `same_department` funcione si se quiere en fase 2. | Responde al punto "access" del cliente con reglas, no con prompt. `AuthorizationChecker` sólo soporta los 5 tipos de regla existentes; `Contract.department` es lo que hace utilizable `same_department` sobre un contrato. |
-| D8 | Persistencia del catálogo detrás de un **protocolo `ContractCatalogStore`** con dos backends: SQLite (piloto local / CLI, hereda el esquema de `catalog.py`) y Postgres (multiusuario, patrón `graphindex/persist_postgres.py`). | La ficha no puede esperar a Postgres, pero el piloto con varios usuarios y autorización no puede correr sobre `library.db`. Fijar la interfaz primero. |
+| D8 | Persistencia del catálogo detrás de un **protocolo async `ContractCatalogStore`** con **un único backend: Postgres desde el día 1** (`asyncpg`, patrón `graphindex/persist_postgres.py`). No se construye backend SQLite. | El piloto es multiusuario con roles y autorización, y `library.db` (SQLite, monousuario) no lo soporta. Además el catálogo comparte instancia con el plano temporal de graphindex (dual-write de versiones, FEAT-520) y aloja las tablas de auditoría (`contract_answers`), alias de partes y tokens delta — todo esto es Postgres de todos modos. Un solo backend elimina el coste de mantener dos esquemas. Los tests siguen la convención de graphindex: `skipif` sin `GRAPHINDEX_PG_DSN`. |
 
 ## 1. Modelo de datos — `parrot/knowledge/contracts/models.py`
 
@@ -231,23 +231,48 @@ Reutiliza el esqueleto de `Bookstore.add_book` (sha256 → skip/update → `crea
 5. **Verificación** (`verify_card(contract_id, fields: dict | None, user)`): sin campos = verificar toda la ficha; con campos = sólo esos. Marca `provenance.origin="manual"` cuando Bob corrige el valor, `verified_by/verified_at` en cada campo, y `verification="verified"` en la ficha cuando no queda ningún campo `extracted` con `confidence < threshold` ni `stale_fields`.
 6. **Refresh** (`refresh_card`): sha distinto → re-carding completa a un draft nuevo; por cada campo verificado se compara `hash(quote)` viejo vs. nuevo: igual → se conserva el valor y su verificación; distinto → el campo pasa a `stale_fields`, la ficha a `verification="stale"`, y se crea una `ContractVersion` nueva (`kind="amendment"` si el nuevo documento es una enmienda, `"restatement"` si es el mismo contrato re-firmado). Nunca se pierde el valor verificado anterior: queda en `versions[-1].card_snapshot`.
 
-## 3. Persistencia — `ContractCatalogStore`
+## 3. Persistencia — `ContractCatalogStore` (Postgres)
+
+El protocolo es **async** (el backend es `asyncpg`; no hay I/O bloqueante en contextos async) y tiene **un único backend, Postgres**. No existe backend SQLite: el patrón de `bookstore/catalog.py` se reutiliza sólo como forma (JSON completo de la ficha + columnas indexables + FTS), no como código.
 
 ```python
 class ContractCatalogStore(Protocol):
-    def upsert(self, card: ContractCard) -> None: ...
-    def get(self, contract_id: str) -> ContractCard | None: ...
-    def find_by_sha(self, sha256: str) -> ContractCard | None: ...
-    def find_by_source_uri(self, uri: str) -> ContractCard | None: ...
-    def list_cards(self, *, status: ContractStatus | None = None, verification: Verification | None = None) -> list[ContractCard]: ...
-    def search(self, query: str, top_k: int = 8) -> list[tuple[ContractCard, float]]: ...   # FTS
-    def expiring(self, *, until: date, key: Literal["expiration_date", "notice_deadline"]) -> list[ContractCard]: ...
-    def verification_queue(self, *, limit: int = 50) -> list[ContractCard]: ...
-    def taken_slugs(self) -> set[str]: ...
-    def remove(self, contract_id: str) -> bool: ...
+    async def upsert(self, card: ContractCard) -> None: ...
+    async def get(self, contract_id: str) -> ContractCard | None: ...
+    async def find_by_sha(self, sha256: str) -> ContractCard | None: ...
+    async def find_by_source_uri(self, uri: str) -> ContractCard | None: ...
+    async def list_cards(self, *, status: ContractStatus | None = None, verification: Verification | None = None) -> list[ContractCard]: ...
+    async def search(self, query: str, top_k: int = 8) -> list[tuple[ContractCard, float]]: ...   # FTS (tsvector)
+    async def expiring(self, *, until: date, key: Literal["expiration_date", "notice_deadline"]) -> list[ContractCard]: ...
+    async def verification_queue(self, *, limit: int = 50) -> list[ContractCard]: ...
+    async def taken_slugs(self) -> set[str]: ...
+    async def remove(self, contract_id: str) -> bool: ...
+    # alias de partes (curables por Bob)
+    async def merge_parties(self, keep_party_id: str, merge_party_id: str, *, user: str) -> int: ...
+    async def party_aliases(self, party_id: str) -> list[str]: ...
+    # auditoría de respuestas
+    async def record_answer(self, record: "AnswerRecord") -> str: ...
+    async def retire_answer(self, answer_id: str, *, user: str, reason: str) -> None: ...
+    async def retired_citations(self) -> set[tuple[str, str]]: ...   # (contract_id, node_id) suprimidos
+    # sincronización delta con las fuentes
+    async def get_delta_token(self, source_uri: str) -> str | None: ...
+    async def set_delta_token(self, source_uri: str, token: str) -> None: ...
 ```
 
-SQLite (`contracts`, `contracts_fts`, `obligations`, `contract_versions`) replica la forma de `catalog.py` — el JSON completo de la ficha en una columna `card_json` más las columnas indexables (`status`, `expiration_date`, `notice_deadline`, `verification`, `source_sha256`, `source_uri`); Postgres, la misma forma con `JSONB` + índices y `tsvector` para la FTS. `expiring()` y `verification_queue()` son consultas SQL, no recorridos del grafo: el scheduler no depende de ArangoDB para el renewal radar.
+**Esquema** (schema `contracts`, DDL idempotente al estilo `graphindex/persist_postgres.py`, pool `asyncpg` con `_ensure_pool()`/`close()`):
+
+| Tabla | Columnas clave | Uso |
+|---|---|---|
+| `contracts` | `contract_id PK`, `card_json JSONB`, `status`, `contract_type`, `effective_date`, `expiration_date`, `notice_deadline`, `verification`, `source_sha256 UNIQUE`, `source_uri UNIQUE`, `owner_employee_id`, `department`, `updated_at`, `search_vector tsvector` (generada de `title`, `summary`, `topics`, `counterparty_names`, `toc_digest`) | la ficha; índices B-tree en `status`, `expiration_date`, `notice_deadline`, `verification`; GIN en `search_vector` |
+| `obligations` | `obligation_id PK`, `contract_id FK`, `kind`, `standard_id`, `obligor`, `due_date`, `recurrence`, `verification`, `text`, `node_id`, `page`, `provenance JSONB` | consultas por `kind`/`standard_id`/`due_date` (obligations calendar) sin abrir `card_json` |
+| `contract_versions` | `(contract_id, n) PK`, `valid_from`, `valid_to`, `kind`, `amended_by`, `source_sha256`, `card_snapshot JSONB` | historial bitemporal; espejo de `Contract.versions[]` |
+| `party_aliases` | `alias PK`, `party_id`, `added_by`, `added_at` | tabla de alias curable; el datasource del grafo une los alias en el vértice `Party` |
+| `contract_answers` | `answer_id PK`, `asked_at`, `user_id`, `question`, `answer_kind`, `pattern`, `citations JSONB`, `authorization JSONB`, `retired_by`, `retired_at`, `retire_reason` | auditoría completa de respuestas; retirar una respuesta suprime sus citas en lookups futuros |
+| `source_delta_tokens` | `source_uri PK`, `token`, `updated_at` | token `/delta` de Microsoft Graph por biblioteca/carpeta para `ingest_delta` |
+
+`expiring()`, `verification_queue()` y el calendario de obligaciones son consultas SQL sobre estas columnas, no recorridos del grafo: los watchers no dependen de ArangoDB. `search()` usa `ts_rank` sobre `search_vector` con `plainto_tsquery('english', …)` (corpus del piloto en inglés). Las escrituras de `upsert()` son una transacción: fila de `contracts` + reemplazo del conjunto de `obligations` del contrato + `contract_versions` nuevas.
+
+**Tests**: `packages/ai-parrot/tests/knowledge/contracts/` con `pytestmark = pytest.mark.skipif(not PG_DSN, reason="needs live Postgres")` y `PG_DSN = os.environ.get("GRAPHINDEX_PG_DSN")`, igual que `tests/knowledge/graphindex/test_temporal_postgres.py`; cada test usa un schema temporal y lo elimina al terminar.
 
 ## 4. Ontología — `ontology/defaults/domains/contracts.ontology.yaml`
 
@@ -313,14 +338,14 @@ El triage `lookup` vs `interpretation_required` se decide con una clasificación
 2. **`ComplianceStandard` seed**: lista inicial (`soc2, iso27001, gdpr, ccpa, hipaa, pci_dss, nist_800_53, cyber_insurance`) — reutilizable del grafo de compliance del SecurityAdvisor.
 3. **Identidad de `Party`**: slug del nombre legal colapsa "Acme Corp" / "Acme Corporation" sólo si se normalizan sufijos (`Inc|Corp|Corporation|Ltd|LLC|S.L.|S.A.`). Hace falta una tabla de alias curable por Bob.
 4. **Owner / department**: no están en el documento. Fuentes candidatas: carpeta de SharePoint de origen (regla por ruta), metadata de la biblioteca de SharePoint (`Author`, columnas custom), o asignación manual en la cola de verificación.
-5. **Postgres desde el piloto o después**: si el piloto tiene ≥ 3 usuarios concurrentes con roles, Postgres desde el día 1 (D8).
+5. ~~**Postgres desde el piloto o después**~~ — resuelto 2026-09-09: Postgres desde el día 1, sin backend SQLite (D8 revisada).
 
 ## 7. Corte de tareas v1
 
 1. `contracts/models.py` (§1) + tests de validadores y de `brief()`.
 2. `contracts/carding.py`: `select_carding_nodes`, prompts de las dos pasadas, `assemble_card` con derivaciones y proveniencia, `fallback_card_fields`. Tests con un MSA y un SOW sintéticos (md) sin LLM (fallback) y con adapter fake.
-3. `contracts/catalog.py`: `ContractCatalogStore` + backend SQLite (esquema §3) + `expiring()`/`verification_queue()`.
+3. `contracts/catalog.py`: protocolo async `ContractCatalogStore` + backend Postgres (`asyncpg`, esquema §3: `contracts`, `obligations`, `contract_versions`, `party_aliases`, `contract_answers`, `source_delta_tokens`) + `expiring()`/`verification_queue()`/`search()`; tests con `GRAPHINDEX_PG_DSN`.
 4. `contracts/library.py`: `ContractLibrary.add_contract / verify_card / refresh_card / add_folder`, reutilizando `Bookstore._toolkit` (PageIndex) y `_docx_to_markdown`.
 5. `contracts.ontology.yaml` en `defaults/domains/` + `ContractGraphLoader` (ficha → vértices/aristas, `versions[]`) + test de merge con `base` (`OntologyMerger.merge` + `_validate_integrity`).
 6. `ContractsToolkit(AbstractToolkit, tool_prefix="contracts")`: `catalog_search`, `get_card`, `get_toc`, `read_section`, `obligations`, `expiring`, `verification_queue` (read-only) + `verify_card` (`confirming_tools`).
-7. Backend Postgres del catálogo (D8) y el loop de delta de SharePoint — después del primer corte end-to-end.
+7. Loop de delta de SharePoint/OneDrive (herramienta `/delta` de Microsoft Graph en `parrot_tools.o365` + `ingest_delta` sobre `source_delta_tokens`) — después del primer corte end-to-end.

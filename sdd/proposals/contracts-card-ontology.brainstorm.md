@@ -44,7 +44,7 @@ base_branch: dev
 > | bookstore-style relations `same_counterparty`, `same_type` | traversals over `party_to` / `Contract.contract_type` (no stored edge) |
 > | LLM-judged relations `conflicts_with`, `references_obligation` | **not in the YAML** — open question |
 > | temporal via graphindex Postgres plane (FEAT-520) | embedded `Contract.versions[]` (D6); the plane is deferred |
-> | Postgres catalog "decide before writing the card" | `ContractCatalogStore` protocol first, SQLite v1, Postgres phase 2 (D8) |
+> | Postgres catalog "decide before writing the card" | async `ContractCatalogStore` protocol, **Postgres from day 1**, no SQLite (D8 revised 2026-09-09) |
 >
 > **Discovery rounds.** The two interactive rounds were replaced by the
 > design documents (the user supplied them as the answers). Round 0
