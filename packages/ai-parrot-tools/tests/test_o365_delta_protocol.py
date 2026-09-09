@@ -159,16 +159,27 @@ class _FakeItemsCollection:
 
     def by_drive_item_id(self, item_id: str) -> "_FakeDriveItemBuilder":
         self._graph.requested_root_ids.append(item_id)
-        return _FakeDriveItemBuilder(self._graph)
+        return _FakeDriveItemBuilder(self._graph, item_id)
 
 
 class _FakeDriveItemBuilder:
-    def __init__(self, graph: "FakeGraph") -> None:
+    def __init__(self, graph: "FakeGraph", item_id: str = "root") -> None:
         self._graph = graph
+        self._item_id = item_id
 
     @property
     def delta(self) -> FakeDeltaRequestBuilder:
         return FakeDeltaRequestBuilder(self._graph)
+
+    async def get(self) -> Any:
+        """Item lookup, used by folder-ancestry resolution."""
+        self._graph.item_lookups.append(self._item_id)
+        if self._item_id not in self._graph.items_by_id:
+            raise AssertionError(f"Unscripted item lookup: {self._item_id!r}")
+        entry = self._graph.items_by_id[self._item_id]
+        if isinstance(entry, BaseException):
+            raise entry
+        return entry
 
 
 class _FakeDriveBuilder:
@@ -198,8 +209,14 @@ class FakeGraph:
     how throttling-then-success and 410-then-rescan are scripted.
     """
 
-    def __init__(self, responses: Dict[Optional[str], Any]) -> None:
+    def __init__(
+        self,
+        responses: Dict[Optional[str], Any],
+        items_by_id: Optional[Dict[str, Any]] = None,
+    ) -> None:
         self.responses = {k: list(v) if isinstance(v, list) else [v] for k, v in responses.items()}
+        self.items_by_id = dict(items_by_id or {})
+        self.item_lookups: List[str] = []
         self.requested_urls: List[Optional[str]] = []
         self.requested_drive_ids: List[str] = []
         self.requested_root_ids: List[str] = []
@@ -510,7 +527,9 @@ class TestFolderFiltering:
                 )
             }
         )
-        result = await helper.enumerate(FakeO365Client(graph), DRIVE_ID, **kwargs)
+        result = await helper.enumerate(
+            FakeO365Client(graph), DRIVE_ID, resolve_ancestry=False, **kwargs
+        )
 
         # The tombstone is kept; the live file outside the folder is not.
         assert [i.item_id for i in result.items] == ["gone"]
@@ -559,7 +578,10 @@ class TestFolderFiltering:
                 ),
             }
         )
-        result = await helper.enumerate(FakeO365Client(graph), DRIVE_ID, folder_id="folder-x")
+        result = await helper.enumerate(
+            FakeO365Client(graph), DRIVE_ID, folder_id="folder-x",
+            resolve_ancestry=False,
+        )
 
         # Direct children plus the folder itself; the sibling is excluded.
         assert {i.item_id for i in result.items} == {"in", "folder-x"}
@@ -583,6 +605,99 @@ class TestFolderFiltering:
         assert result.unresolved_parent == 0
         assert result.folder_filter_reliable is True
         assert result.folder_path is None and result.folder_id is None
+
+    async def test_ancestry_walk_includes_nested_descendants(
+        self, helper: DriveDeltaHelper
+    ) -> None:
+        """Graph omits the path, so a subtree is scoped by walking parent ids.
+
+        `nested` sits in Contracts/2026, whose parent is the target folder,
+        so a direct-parent comparison would wrongly exclude it.
+        """
+        final = f"{DELTA}?token=final"
+        graph = FakeGraph(
+            {
+                None: FakeDeltaResponse(
+                    [
+                        FakeDriveItem(id="direct", name="a.docx",
+                                      parent_id="folder-x"),
+                        FakeDriveItem(id="nested", name="b.docx",
+                                      parent_id="folder-2026"),
+                        FakeDriveItem(id="outside", name="c.docx",
+                                      parent_id="folder-other"),
+                    ],
+                    delta_link=final,
+                )
+            },
+            items_by_id={
+                "folder-2026": FakeDriveItem(id="folder-2026", name="2026",
+                                             folder=object(),
+                                             parent_id="folder-x"),
+                "folder-other": FakeDriveItem(id="folder-other", name="Other",
+                                              folder=object(),
+                                              parent_id=None),
+            },
+        )
+        result = await helper.enumerate(
+            FakeO365Client(graph), DRIVE_ID, folder_id="folder-x"
+        )
+
+        assert {i.item_id for i in result.items} == {"direct", "nested"}
+        assert result.filtered_out == 1
+        assert result.unresolved_parent == 0
+        assert result.folder_filter_reliable is True
+
+    async def test_ancestry_results_are_cached_per_enumeration(
+        self, helper: DriveDeltaHelper
+    ) -> None:
+        """Many files in one folder must cost one lookup, not one each."""
+        final = f"{DELTA}?token=final"
+        graph = FakeGraph(
+            {
+                None: FakeDeltaResponse(
+                    [
+                        FakeDriveItem(id=f"f{n}", name=f"{n}.docx",
+                                      parent_id="folder-2026")
+                        for n in range(5)
+                    ],
+                    delta_link=final,
+                )
+            },
+            items_by_id={
+                "folder-2026": FakeDriveItem(id="folder-2026", name="2026",
+                                             folder=object(),
+                                             parent_id="folder-x"),
+            },
+        )
+        result = await helper.enumerate(
+            FakeO365Client(graph), DRIVE_ID, folder_id="folder-x"
+        )
+
+        assert len(result.items) == 5
+        assert graph.item_lookups == ["folder-2026"]
+
+    async def test_unresolvable_ancestry_keeps_the_item_and_flags_it(
+        self, helper: DriveDeltaHelper
+    ) -> None:
+        """A parent we cannot read is undecidable, so the item is kept."""
+        final = f"{DELTA}?token=final"
+        graph = FakeGraph(
+            {
+                None: FakeDeltaResponse(
+                    [FakeDriveItem(id="a", name="a.docx",
+                                   parent_id="unreadable")],
+                    delta_link=final,
+                )
+            },
+            items_by_id={"unreadable": PermissionError("access denied")},
+        )
+        result = await helper.enumerate(
+            FakeO365Client(graph), DRIVE_ID, folder_id="folder-x"
+        )
+
+        assert [i.item_id for i in result.items] == ["a"]
+        assert result.unresolved_parent == 1
+        assert result.folder_filter_reliable is False
 
     def test_classify_folder_membership(self) -> None:
         pathed = DeltaItem(drive_id=DRIVE_ID, item_id="i", parent_path="Contracts")
@@ -1017,6 +1132,25 @@ class TestBoundedRetry:
         await helper.enumerate(FakeO365Client(graph), DRIVE_ID)
 
         assert sleeps == [1.0]
+
+    @pytest.mark.parametrize("attribute", ["response_status_code", "status_code", "status", "code"])
+    async def test_status_is_read_from_any_of_the_sdk_attribute_names(
+        self, helper: DriveDeltaHelper, attribute: str
+    ) -> None:
+        """Different SDK error types expose the status under different names."""
+
+        class OddError(Exception):
+            pass
+
+        exc = OddError("throttled")
+        setattr(exc, attribute, 429)
+        final = f"{DELTA}?token=final"
+        graph = FakeGraph({None: [exc, FakeDeltaResponse([], delta_link=final)]})
+
+        result = await helper.enumerate(FakeO365Client(graph), DRIVE_ID)
+
+        assert result.complete is True
+        assert len(graph.requested_urls) == 2
 
     async def test_non_retryable_error_propagates_immediately(
         self, helper: DriveDeltaHelper, sleeps: List[float]

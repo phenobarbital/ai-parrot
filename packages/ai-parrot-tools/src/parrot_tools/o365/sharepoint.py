@@ -69,6 +69,7 @@ class ListSharePointFilesTool(O365Tool):
     )
     args_schema: Type[BaseModel] = ListSharePointFilesArgs
 
+
     async def _execute_graph_operation(self, client: SharepointClient, **kwargs) -> Dict[str, Any]:
         """
         List SharePoint files using the SharepointClient.
@@ -764,6 +765,50 @@ class DeltaSharePointFilesTool(O365Tool):
             )
         return str(available[0].id)
 
+    async def _resolve_folder_id(
+        self, client: O365Client, drive_id: str, folder_path: str
+    ) -> Optional[str]:
+        """Resolve a drive-relative folder path to its stable item id.
+
+        Graph's delta feed omits ``parentReference.path`` but reports
+        ``parentReference.id``, so a path filter can only be applied exactly
+        once the path has been turned into an id. Doing that here — rather
+        than making every caller supply ``folder_id`` — is what keeps a
+        folder-scoped request both exact and usable.
+
+        Args:
+            client: Authenticated O365 client.
+            drive_id: Drive the folder lives in.
+            folder_path: Drive-relative folder path.
+
+        Returns:
+            The folder's item id, or None when it could not be resolved
+            (the caller then reports the scope as undecidable rather than
+            silently widening it).
+        """
+        cleaned = folder_path.strip("/")
+        if not cleaned:
+            return None
+        try:
+            item = await (
+                client.graph_client.drives.by_drive_id(drive_id)
+                .items.by_drive_item_id(f"root:/{cleaned}:")
+                .get()
+            )
+        except Exception as exc:  # noqa: BLE001 - undecidable, not fatal here
+            self.logger.warning(
+                "Could not resolve folder %r on drive %s: %s",
+                folder_path, drive_id, exc,
+            )
+            return None
+        resolved = getattr(item, "id", None)
+        if not resolved:
+            self.logger.warning(
+                "Folder %r on drive %s resolved to no item id", folder_path, drive_id
+            )
+            return None
+        return str(resolved)
+
     async def _execute_graph_operation(self, client: O365Client, **kwargs) -> Dict[str, Any]:
         """Enumerate the library's delta feed through the shared helper.
 
@@ -804,6 +849,13 @@ class DeltaSharePointFilesTool(O365Tool):
             delta_link is not None,
         )
 
+        if folder_path and not folder_id:
+            # Turn the path into an id so membership becomes decidable;
+            # otherwise the delta feed gives us nothing to filter on.
+            folder_id = await self._resolve_folder_id(
+                client, resolved_drive_id, folder_path
+            )
+
         enumeration = await self._delta_helper.enumerate(
             client,
             resolved_drive_id,
@@ -813,7 +865,12 @@ class DeltaSharePointFilesTool(O365Tool):
             max_pages=max_pages,
         )
 
-        if self.strict_folder_scope and not enumeration.folder_filter_reliable:
+        scope_requested = folder_path or folder_id
+        if (
+            scope_requested
+            and self.strict_folder_scope
+            and not enumeration.folder_filter_reliable
+        ):
             # Graph omits parentReference.path from delta responses, so a
             # path-only filter usually cannot decide membership. Returning
             # the unfiltered drive under a folder-scoped request would let
@@ -821,7 +878,7 @@ class DeltaSharePointFilesTool(O365Tool):
             # cannot be relied on to inspect folder_filter_reliable. Fail
             # loudly and tell the operator how to make it decidable.
             raise ValueError(
-                f"Folder scope {folder_path!r} could not be applied to "
+                f"Folder scope {scope_requested!r} could not be applied to "
                 f"{enumeration.unresolved_parent} of "
                 f"{len(enumeration.items)} item(s): the Microsoft Graph "
                 f"delta feed does not report a parent path. Pass folder_id "
@@ -844,6 +901,9 @@ class DeltaSharePointFilesTool(O365Tool):
                 # Keys the contracts ingest job (TASK-3049) reads.
                 "tombstones": [i.item_id for i in enumeration.deleted_items],
                 "pages": enumeration.pages_fetched,
+                # Inverse of `complete`, kept as an explicit key for parity
+                # with the payload the core lane's tool emitted.
+                "truncated": not enumeration.complete,
                 # False by design: a 410 is recovered here by re-enumerating,
                 # so the caller gets a completed full rescan rather than being
                 # told to retry. `reset_performed` records that it happened.

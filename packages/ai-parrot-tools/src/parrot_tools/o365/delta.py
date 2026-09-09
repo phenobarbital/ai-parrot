@@ -453,6 +453,15 @@ def validate_continuation_link(
             f"Delta continuation link must not contain relative path " f"segments: {parts.path!r}."
         )
 
+    if any(":" in seg for seg in segments):
+        # Colon segments are Graph's path-addressing syntax
+        # (`/drives/{id}/root:/Folder/file.docx`). A delta continuation never
+        # uses it, and allowing it would let `/drives/{id}/root:/delta` — the
+        # *item literally named "delta"* — pass the endpoint check below.
+        raise DeltaLinkValidationError(
+            f"Delta continuation link must not use path addressing: {parts.path!r}."
+        )
+
     last = segments[-1] if segments else ""
     if not (last == "delta" or last.startswith("delta(")):
         raise DeltaLinkValidationError(f"Delta continuation link is not a delta endpoint: " f"{parts.path!r}.")
@@ -474,9 +483,10 @@ def _status_code_of(error: BaseException) -> Optional[int]:
     code = getattr(error, "response_status_code", None)
     if isinstance(code, int) and code:
         return code
-    code = getattr(error, "status_code", None)
-    if isinstance(code, int) and code:
-        return code
+    for attribute in ("status_code", "status", "code"):
+        code = getattr(error, attribute, None)
+        if isinstance(code, int) and code:
+            return code
     return None
 
 
@@ -716,6 +726,109 @@ def item_in_folder(
     return classify_folder_membership(item, folder_path, folder_id) != FOLDER_MISS
 
 
+#: Bound on how far up the folder chain an ancestry walk will climb.
+DEFAULT_MAX_ANCESTRY_DEPTH: int = 32
+
+
+class FolderAncestryResolver:
+    """Decide subtree membership by walking ``parentReference.id`` upwards.
+
+    Graph's delta feed omits ``parentReference.path`` but *does* report
+    ``parentReference.id``, so the only exact way to scope a delta round to a
+    folder **subtree** is to follow each item's parent chain until the target
+    folder or the drive root is reached. Microsoft's own guidance for delta
+    is "always track items by id"; this is that, applied to folder scoping.
+
+    Results are cached per instance — one resolver per enumeration — so a
+    change set with many files in a handful of folders costs a handful of
+    lookups, not one per file.
+    """
+
+    def __init__(
+        self,
+        client: Any,
+        drive_id: str,
+        folder_id: str,
+        *,
+        max_depth: int = DEFAULT_MAX_ANCESTRY_DEPTH,
+        logger_instance: Optional[Any] = None,
+    ) -> None:
+        """Initialize the resolver.
+
+        Args:
+            client: Authenticated client exposing ``graph_client``.
+            drive_id: Drive the enumeration is confined to.
+            folder_id: Stable item id of the folder being scoped to.
+            max_depth: Bound on the upward walk, so a cycle or a pathological
+                hierarchy cannot loop forever.
+            logger_instance: Optional logger override.
+        """
+        self.client = client
+        self.drive_id = drive_id
+        self.folder_id = folder_id
+        self.max_depth = max_depth
+        self.logger = logger_instance or logger
+        self._cache: Dict[str, Optional[bool]] = {folder_id: True}
+
+    async def is_within(self, parent_id: Optional[str]) -> Optional[bool]:
+        """Whether ``parent_id`` sits at or beneath the target folder.
+
+        Args:
+            parent_id: The item's immediate parent id, if Graph reported one.
+
+        Returns:
+            True/False when the chain could be walked, or None when it could
+            not be decided (unknown parent, depth bound, or a failed lookup).
+            None is deliberately distinct from False: the caller keeps
+            undecidable items rather than dropping them.
+        """
+        if not parent_id:
+            return None
+        if parent_id in self._cache:
+            return self._cache[parent_id]
+
+        chain: List[str] = []
+        current: Optional[str] = parent_id
+        verdict: Optional[bool] = None
+
+        for _ in range(self.max_depth):
+            if current is None:
+                verdict = False  # walked off the top: not under the folder
+                break
+            if current in self._cache:
+                verdict = self._cache[current]
+                break
+            if current == self.folder_id:
+                verdict = True
+                break
+            chain.append(current)
+            try:
+                item = await (
+                    self.client.graph_client.drives.by_drive_id(self.drive_id)
+                    .items.by_drive_item_id(current)
+                    .get()
+                )
+            except Exception as exc:  # noqa: BLE001 - undecidable, not fatal
+                self.logger.warning(
+                    "Could not resolve ancestry of item %s on drive %s: %s",
+                    current, self.drive_id, exc,
+                )
+                verdict = None
+                break
+            parent = _field(item, "parent_reference", "parentReference")
+            current = _field(parent, "id")
+        else:
+            self.logger.warning(
+                "Ancestry walk for drive %s exceeded %s levels; membership "
+                "left undecided.",
+                self.drive_id, self.max_depth,
+            )
+
+        for seen in chain:
+            self._cache[seen] = verdict
+        return verdict
+
+
 # ============================================================================
 # DRIVE DELTA HELPER
 # ============================================================================
@@ -953,6 +1066,7 @@ class DriveDeltaHelper:
         delta_link: Optional[str] = None,
         folder_path: Optional[str] = None,
         folder_id: Optional[str] = None,
+        resolve_ancestry: bool = True,
         max_pages: Optional[int] = None,
     ) -> DeltaEnumeration:
         """Follow a drive's delta feed until the final cursor is reached.
@@ -970,8 +1084,12 @@ class DriveDeltaHelper:
                 applied locally because Graph delta is drive-level. Graph
                 omits parentReference.path from delta responses, so prefer
                 ``folder_id``; see :attr:`DeltaEnumeration.unresolved_parent`.
-            folder_id: Stable folder item id to filter items to. Exact, but
-                matches direct children only.
+            folder_id: Stable folder item id to filter items to. With
+                ``resolve_ancestry`` this scopes to the whole subtree.
+            resolve_ancestry: When a ``folder_id`` is given, walk each
+                unmatched item's parent chain through Graph (cached) so
+                nested descendants are included, not just direct children.
+                Disable to stay offline and match direct children only.
             max_pages: Per-call override of the page bound.
 
         Returns:
@@ -988,6 +1106,7 @@ class DriveDeltaHelper:
                 delta_link=delta_link,
                 folder_path=folder_path,
                 folder_id=folder_id,
+                resolve_ancestry=resolve_ancestry,
                 max_pages=max_pages,
                 reset_performed=False,
             )
@@ -1002,6 +1121,7 @@ class DriveDeltaHelper:
                 delta_link=None,
                 folder_path=folder_path,
                 folder_id=folder_id,
+                resolve_ancestry=resolve_ancestry,
                 max_pages=max_pages,
                 reset_performed=True,
             )
@@ -1014,6 +1134,7 @@ class DriveDeltaHelper:
         delta_link: Optional[str],
         folder_path: Optional[str],
         folder_id: Optional[str],
+        resolve_ancestry: bool,
         max_pages: Optional[int],
         reset_performed: bool,
     ) -> DeltaEnumeration:
@@ -1024,6 +1145,12 @@ class DriveDeltaHelper:
 
         # De-duplicate by item id: a delta feed may report the same item on
         # several pages, and the latest occurrence is authoritative.
+        ancestry: Optional[FolderAncestryResolver] = None
+        if folder_id and resolve_ancestry:
+            ancestry = FolderAncestryResolver(
+                client, drive_id, folder_id, logger_instance=self.logger
+            )
+
         collected: Dict[str, DeltaItem] = {}
         order: List[str] = []
         unresolved: set[str] = set()
@@ -1040,6 +1167,16 @@ class DriveDeltaHelper:
 
             for item in page.items:
                 membership = classify_folder_membership(item, folder_path, folder_id)
+                if membership != FOLDER_MATCH and ancestry is not None:
+                    # A direct-parent mismatch does not mean "outside": the
+                    # item may sit deeper in the subtree. Ask Graph.
+                    within = await ancestry.is_within(item.parent_id)
+                    if within is True:
+                        membership = FOLDER_MATCH
+                    elif within is False:
+                        membership = FOLDER_MISS
+                    else:
+                        membership = FOLDER_UNKNOWN
                 if membership == FOLDER_MISS:
                     # Counted per distinct item, like every other counter on
                     # DeltaEnumeration — an item reported outside the folder
@@ -1121,7 +1258,9 @@ __all__ = (
     "FOLDER_MATCH",
     "FOLDER_MISS",
     "FOLDER_UNKNOWN",
+    "DEFAULT_MAX_ANCESTRY_DEPTH",
     "DriveDeltaHelper",
+    "FolderAncestryResolver",
     "classify_folder_membership",
     "drive_item_to_delta_item",
     "item_in_folder",

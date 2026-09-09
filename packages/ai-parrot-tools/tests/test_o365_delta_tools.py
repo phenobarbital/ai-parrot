@@ -140,12 +140,23 @@ class FakeDeltaRequestBuilder:
 
 
 class _FakeDriveItemBuilder:
-    def __init__(self, graph: "FakeGraph") -> None:
+    def __init__(self, graph: "FakeGraph", item_id: str = "root") -> None:
         self._graph = graph
+        self._item_id = item_id
 
     @property
     def delta(self) -> FakeDeltaRequestBuilder:
         return FakeDeltaRequestBuilder(self._graph)
+
+    async def get(self) -> Any:
+        """Item lookup: folder-path resolution and ancestry walks."""
+        self._graph.item_lookups.append(self._item_id)
+        if self._item_id not in self._graph.items_by_id:
+            raise AssertionError(f"Unscripted item lookup: {self._item_id!r}")
+        entry = self._graph.items_by_id[self._item_id]
+        if isinstance(entry, BaseException):
+            raise entry
+        return entry
 
 
 class _FakeItemsCollection:
@@ -154,7 +165,7 @@ class _FakeItemsCollection:
 
     def by_drive_item_id(self, item_id: str) -> _FakeDriveItemBuilder:
         self._graph.requested_root_ids.append(item_id)
-        return _FakeDriveItemBuilder(self._graph)
+        return _FakeDriveItemBuilder(self._graph, item_id)
 
 
 class _FakeDriveBuilder:
@@ -246,6 +257,7 @@ class FakeGraph:
         site_drives: Optional[Sequence[FakeDrive]] = None,
         owner_drive: Optional[FakeDrive] = None,
         site_drives_next_link: Optional[str] = None,
+        items_by_id: Optional[Dict[str, Any]] = None,
     ) -> None:
         self.delta_responses = {k: list(v) if isinstance(v, list) else [v] for k, v in delta_responses.items()}
         self.site_drives = list(site_drives or [])
@@ -256,6 +268,8 @@ class FakeGraph:
         self.requested_root_ids: List[str] = []
         self.requested_site_ids: List[str] = []
         self.requested_user_ids: List[str] = []
+        self.items_by_id = dict(items_by_id or {})
+        self.item_lookups: List[str] = []
         self.me_drive_lookups = 0
 
     @property
@@ -558,12 +572,25 @@ class TestEquivalentDeltaOutcomes:
         assert payload["deleted_count"] == 0
 
     async def test_folder_filter_is_applied_locally(self, onedrive_tool: DeltaOneDriveFilesTool) -> None:
-        graph = FakeGraph(two_page_feed("od"))
+        """folder_path is resolved to a folder id, then applied exactly."""
+        graph = FakeGraph(
+            two_page_feed("od"),
+            items_by_id={
+                # The tool resolves the path to the folder's item id...
+                "root:/Contracts:": FakeDriveItem(id="folder-x", name="Contracts"),
+                # ...and every item in the feed hangs off "parent-id".
+                "parent-id": FakeDriveItem(id="parent-id", name="Contracts",
+                                           parent_id=None),
+            },
+        )
         bind_client(onedrive_tool, graph)
 
         payload = (await onedrive_tool._execute(drive_id=DRIVE_ID, folder_path="Contracts")).result
 
         assert payload["folder_path"] == "Contracts"
+        assert payload["folder_id"] == "folder-x"
+        # doc-1 matches on the reported path; doc-2 is a tombstone (always
+        # kept); doc-3 sits under a parent the ancestry walk places outside.
         assert {i["item_id"] for i in payload["items"]} == {"doc-1", "doc-2"}
         assert payload["filtered_out"] == 1
 
@@ -580,7 +607,12 @@ class TestEquivalentDeltaOutcomes:
                     ],
                     delta_link=FINAL_OD,
                 ),
-            }
+            },
+            # "folder-y" hangs off the drive root, so the ancestry walk can
+            # positively place "out" outside the scope.
+            items_by_id={
+                "folder-y": FakeDriveItem(id="folder-y", name="Other", parent_id=None),
+            },
         )
         bind_client(onedrive_tool, graph)
 
@@ -628,7 +660,10 @@ class TestEquivalentDeltaOutcomes:
                     ],
                     delta_link=FINAL_OD,
                 )
-            }
+            },
+            items_by_id={
+                "folder-y": FakeDriveItem(id="folder-y", name="Other", parent_id=None),
+            },
         )
         bind_client(onedrive_tool, graph)
 
@@ -636,6 +671,71 @@ class TestEquivalentDeltaOutcomes:
 
         assert result.status == "success", result.error
         assert [i["item_id"] for i in result.result["items"]] == ["in"]
+
+    async def test_folder_path_alone_works_on_a_real_graph_shaped_feed(
+        self, onedrive_tool: DeltaOneDriveFilesTool
+    ) -> None:
+        """The only knob the ingest job exposes must not dead-end.
+
+        Graph omits parentReference.path, so a path filter is undecidable on
+        its own — the tool resolves the path to a folder id first, which
+        makes membership exact and keeps `folder_path`-only sources working.
+        """
+        graph = FakeGraph(
+            {
+                None: FakeDeltaResponse(
+                    [
+                        FakeDriveItem(id="inside", name="a.docx",
+                                      parent_path=None, parent_id="folder-x"),
+                        FakeDriveItem(id="nested", name="b.docx",
+                                      parent_path=None, parent_id="folder-2026"),
+                        FakeDriveItem(id="outside", name="c.docx",
+                                      parent_path=None, parent_id="folder-z"),
+                    ],
+                    delta_link=FINAL_OD,
+                )
+            },
+            items_by_id={
+                "root:/Contracts:": FakeDriveItem(id="folder-x", name="Contracts"),
+                "folder-2026": FakeDriveItem(id="folder-2026", name="2026",
+                                             parent_id="folder-x"),
+                "folder-z": FakeDriveItem(id="folder-z", name="Invoices",
+                                          parent_id=None),
+            },
+        )
+        bind_client(onedrive_tool, graph)
+
+        result = await onedrive_tool._execute(
+            drive_id=DRIVE_ID, folder_path="Contracts"
+        )
+
+        assert result.status == "success", result.error
+        payload = result.result
+        assert payload["folder_id"] == "folder-x"
+        assert {i["item_id"] for i in payload["items"]} == {"inside", "nested"}
+        assert payload["filtered_out"] == 1
+        assert payload["folder_filter_reliable"] is True
+
+    async def test_unresolvable_folder_path_still_refuses(
+        self, onedrive_tool: DeltaOneDriveFilesTool
+    ) -> None:
+        """If the folder itself cannot be resolved, do not guess."""
+        graph = FakeGraph(
+            {
+                None: FakeDeltaResponse(
+                    [FakeDriveItem(id="a", name="a.docx", parent_path=None,
+                                   parent_id="folder-q")],
+                    delta_link=FINAL_OD,
+                )
+            },
+            items_by_id={"root:/Nope:": FileNotFoundError("itemNotFound")},
+        )
+        bind_client(onedrive_tool, graph)
+
+        result = await onedrive_tool._execute(drive_id=DRIVE_ID, folder_path="Nope")
+
+        assert result.status == "error"
+        assert "could not be applied" in result.error
 
     async def test_strict_scope_can_be_disabled_deliberately(self) -> None:
         tool = DeltaOneDriveFilesTool(credentials=dict(CREDENTIALS), strict_folder_scope=False)
@@ -1163,7 +1263,8 @@ class TestIngestJobPayloadContract:
 
         payload = await tool._execute_graph_operation(client, drive_id=DRIVE_ID, delta_token=None, folder_path=None)
 
-        for key in ("items", "tombstones", "delta_link", "complete", "rescan_required"):
+        for key in ("items", "tombstones", "delta_link", "complete",
+                    "rescan_required", "pages", "truncated"):
             assert key in payload, f"{kind} payload is missing {key!r}"
         assert payload["tombstones"] == ["gone"]
         assert payload["complete"] is True
