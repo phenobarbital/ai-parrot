@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-539 - Contracts Card & Ontology
 **Spec**: `sdd/specs/contracts-card-ontology.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2–4h)
 **Depends-on**: TASK-3037
@@ -108,4 +108,41 @@ Store execution logs in `artifacts/logs/task-3038.log`. Use frozen dates, synthe
 
 ## Completion Note
 
-Pending execution. Record executor, completion date, implementation summary, validation evidence and deviations when this task is completed.
+Completed 2026-09-09 by sdd-worker (Claude Opus 5).
+
+**Implementation**: created `parrot/knowledge/contracts/graph_loader.py`.
+`ContractGraphLoader` resolves a **dedicated** contracts `TenantOntologyManager`
+(the generic one caches by tenant, not tenant+domain) and fails startup with
+`ContractsDomainNotLoaded` when the resolved ontology lacks the contracts entities.
+`publish_all` runs under a per-tenant lock: pre-extract a complete prevalidated
+snapshot (an extraction failure aborts instead of presenting an empty snapshot the
+generic diff would read as "delete everything"), upsert nodes in seed order with
+ComplianceStandard first so `requires` links on the first publish, soft-delete only
+feature-owned vertices (contract/obligation) absent from the snapshot — shared
+Party/Person/Standard identity is never deactivated — then reconcile edges and
+finally **read back** the intended node and edge sets before setting
+`published=True`. `desired_edges` derives all eleven deterministic relations in
+Python from the snapshot, so edges to later-loaded targets exist immediately; every
+written edge carries `_from`/`_to` **plus** `source_id`/`target_id`/`kind` so the
+generic removal helpers can address it. Reconciliation removes obsolete endpoints,
+rewrites edges whose properties changed (`create_edges` never updates properties) and
+normalises bare discovery edges — all restricted to the eleven feature-owned edge
+collections. `publish(card)` deliberately delegates to `publish_all`. `retract`
+deactivates the contract and its obligations, removes only their incident
+feature-owned edges, and leaves shared parties/people, unrelated collections and
+catalog history/audit untouched.
+
+**Validation**: `pytest .../test_graph_loader.py -q` -> 22 passed (whole contracts
+suite 429 passed, `artifacts/logs/task-3038.log`); ruff clean. The fake graph store
+reproduces the two real behaviours that matter (endpoint-keyed `create_edges` that
+never updates properties; `get_all_nodes` hiding soft-deleted rows). Tests cover
+first-publish completeness of every edge kind, standards-before-requires, parent/
+amendment resolution on first publish, single-card publication not deactivating
+others, owner change removing the old edge, property rewrite, discovery-edge
+normalisation, cleanup never touching `reports_to`, retraction preserving shared
+nodes, and four failure shapes — extraction failure, partial write, a **false
+success** caught by read-back (no errors but nothing stored), and a read-back failure
+— all leaving the revision unpublished and retryable.
+
+**Deviations**: none. Real AQL/ArangoDB execution remains the integration gate
+(TASK-3054).
