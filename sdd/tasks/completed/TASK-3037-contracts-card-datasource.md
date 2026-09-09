@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-539 - Contracts Card & Ontology
 **Spec**: `sdd/specs/contracts-card-ontology.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2–4h)
 **Depends-on**: TASK-3029, TASK-3035, TASK-3036
@@ -97,4 +97,32 @@ Store execution logs in `artifacts/logs/task-3037.log`. Use frozen dates, synthe
 
 ## Completion Note
 
-Pending execution. Record executor, completion date, implementation summary, validation evidence and deviations when this task is completed.
+Completed 2026-09-09 by sdd-worker (Claude Opus 5).
+
+**Implementation**: created `parrot/knowledge/contracts/datasource.py`.
+`ContractCardDataSource` subclasses `ExtractDataSource` (lazy import of the
+ai-parrot-loaders satellite with an actionable error) and self-registers with
+`DataSourceFactory.register_api_source('contractcard', ...)`; the tenant-bound
+catalog is injected through the source config and validated at construction.
+`infer_entity` tests key markers in the documented order — obligation_id,
+person_id, party_id, contract_id, standard_id — because the requested field sets
+overlap, then rejects any request that is not a subset of the matched entity
+(`UnknownFieldRequest`). Projections emit ISO dates everywhere, plain version dicts
+without card snapshots, denormalized `counterparty_names`, `card_revision` and
+`active` for the graph's staleness/guard checks, catalog-wide unioned Party aliases,
+signatory Person rows, obligation rows carrying their contract's active flag, and the
+eight static ComplianceStandard seeds (independent of any card, so `requires` edges
+can be discovered after seeding). `snapshot()` returns all five prevalidated entity
+sets for the graph loader's preflight; standalone filters (contract_id/status/
+verification/party_id) are supported and unknown filters rejected.
+
+**Validation**: `pytest .../test_datasource.py -q` -> 22 passed (whole contracts
+suite 403 passed, `artifacts/logs/task-3037.log`); ruff clean. Tests cover
+registration through the real factory, every entity's own field set routing to
+itself, the three documented overlaps, ambiguous/unknown requests, ISO dates and
+plain versions, alias union across cards, static seeds, retracted-card exclusion,
+field narrowing, filters, the full snapshot, and — critically — that a catalog
+failure propagates instead of being returned as a successful empty snapshot (which
+the generic diff would read as "delete everything").
+
+**Deviations**: none.
