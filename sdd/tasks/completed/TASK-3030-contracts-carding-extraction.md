@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-539 - Contracts Card & Ontology
 **Spec**: `sdd/specs/contracts-card-ontology.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2–4h)
 **Depends-on**: TASK-3025, TASK-3026
@@ -93,4 +93,33 @@ Store execution logs in `artifacts/logs/task-3030.log`. Use frozen dates, synthe
 
 ## Completion Note
 
-Pending execution. Record executor, completion date, implementation summary, validation evidence and deviations when this task is completed.
+Completed 2026-09-09 by sdd-worker (Claude Opus 5).
+
+**Implementation**: created `parrot/knowledge/contracts/carding.py` (extraction
+half; TASK-3031 adds assembly/derivations). `select_header_nodes` picks one node per
+ordered category (cover, parties, definitions, scope, term, renewal, termination,
+notice, governing law, signature) and falls back to first + last + the three densest
+deontic sections; `select_obligation_nodes` ranks obligation-flavoured titles, then
+deontic density, then document order; `build_header_material` concatenates node-
+labelled bodies under the 12,000-character cap and records truncation notes.
+`draft_contract` spends exactly one `ContractHeaderDraft` call plus at most
+`max_obligation_sections` (default 12) `ObligationsDraft` calls — PageIndex indexing
+and relation judgement are outside this budget. Evidence is verified before it counts:
+`validate_header_evidence` drops any quote that is not verbatim in the cited node body
+(whitespace-normalised) and caps that field at 0.5; `validate_obligation_clauses`
+drops clauses whose excerpt is unverifiable or that cite a node the pass never read.
+No adapter or a failed header call yields `fallback_header_draft` at confidence 0.3
+with `card_origin=fallback` and zero obligations; `guess_effective_date` refuses to
+promote a bare year to a date. Prompts fence document text as untrusted DATA, bind
+only the two approved output models, and never mention derived facts.
+
+**Validation**: `pytest .../test_carding.py -q` -> 42 passed (whole contracts suite
+233 passed, `artifacts/logs/task-3030.log`); ruff clean. A counting fake adapter
+proves the 1+N bound (including the zero-N and "upper bound, not a quota" cases and
+that a failed section still counts but does not abort), selection/truncation
+determinism, dropped unsupported evidence, invented obligations never reaching the
+draft, filename type/date heuristics, and that an injected "ignore your instructions"
+clause changes neither the call budget, nor the bound output models, nor the
+immutable system prompt.
+
+**Deviations**: none.
