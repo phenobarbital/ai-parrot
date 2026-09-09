@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-539 - Contracts Card & Ontology
 **Spec**: `sdd/specs/contracts-card-ontology.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2–4h)
 **Depends-on**: TASK-3046, TASK-3047
@@ -101,4 +101,31 @@ Store execution logs in `artifacts/logs/task-3048.log`. Use frozen dates, synthe
 
 ## Completion Note
 
-Pending execution. Record executor, completion date, implementation summary, validation evidence and deviations when this task is completed.
+Completed 2026-09-09 by sdd-worker (Claude Opus 5).
+
+**Implementation**: created `parrot_tools/contracts/agent.py`. `ContractsAgent`
+subclasses the existing `parrot.bots.Agent`, mounts `ContractsToolkit` via
+`agent_tools()` and carries a system prompt that forbids answering from memory or
+giving legal advice and states that document text is untrusted data. Its reply is
+**only a draft**: `ContractsAgentProducer` adapts it to the service's
+`AnswerProducer` protocol, and `answer_question`/`stream_answer` delegate to the
+same `ContractsAnswerService` the fixed flow uses — one authorization gate, one
+citation verifier, one audit, no second policy and no new transport. A provider or
+tool failure returns an empty draft (which the verifier turns into `not_found`)
+instead of falling back to raw model text.
+
+**Validation**: `pytest .../test_agent.py -q` -> 14 passed (whole contracts tools
+suite 138 passed, `artifacts/logs/task-3048.log`); ruff clean. Tests show the ReAct
+and fixed-flow paths returning equivalent protected shapes for the same lookup and the
+same evaluative handoff, an invented model answer being stripped, a provider failure
+degrading to a refusal, retired citations not returning through chat, a forged context
+denied before the model is called, an audit failure failing the turn, streaming never
+emitting unverified text, and AST checks that the agent defines no second citation
+policy and imports no transport.
+
+**Deviations**: one design correction found by my own adversarial test — the first
+draft attached every retrieved citation to every sentence the model produced, which
+would have let invented prose ride along on unrelated real evidence (exactly the
+orphan-claim failure the spec forbids). `ContractsAgentProducer._supports` now
+attaches a citation to a claim only when the claim actually quotes that clause, so an
+unsupported sentence reaches the verifier with no citations and is dropped.
