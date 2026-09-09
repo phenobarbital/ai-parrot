@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-539 - Contracts Card & Ontology
 **Spec**: `sdd/specs/contracts-card-ontology.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2–4h)
 **Depends-on**: TASK-3030, TASK-3052
@@ -91,4 +91,35 @@ Store execution logs in `artifacts/logs/task-3031.log`. Use frozen dates, synthe
 
 ## Completion Note
 
-Pending execution. Record executor, completion date, implementation summary, validation evidence and deviations when this task is completed.
+Completed 2026-09-09 by sdd-worker (Claude Opus 5).
+
+**Implementation**: extended `contracts/carding.py` with the deterministic half.
+`normalize_party_name` strips punctuation and legal-form suffixes; `similarity`
+lazily imports rapidfuzz (actionable `ai-parrot[graphindex]` error) and returns
+`token_sort_ratio/100` in [0,1]. `derive_notice_deadline` =
+expiration - notice_days (both required), `derive_next_renewal_date` = expiration
+only when auto_renew. `derive_status` implements D3 precedence — supersession,
+human-confirmed termination whose date has elapsed, expired non-renewing term,
+active effective term (auto-renewal keeps a lapsed term active), unsigned draft,
+otherwise unknown — and never infers termination from a clause. `resolve_parent`
+requires a compatible type (SOW/order_form -> MSA, amendment -> referenced base), a
+shared counterparty and >= 0.85 normalized similarity; several qualifying candidates
+return `ambiguous` so the parent stays null. `assemble_card` builds stable
+party/person/obligation ids, resolves catalog aliases to canonical party ids, keeps
+at most one is_us party, resolves standard aliases, records provenance for every
+extracted field and `origin='rule'` + `derived_from` for each derived one, and
+populates `stale_fields` for unsubstantiated fields, unresolved signatory parties
+and ambiguous parents. `today` is always injected.
+
+**Validation**: `pytest .../test_derivations.py -q` -> 34 passed (whole contracts
+suite 269 passed, `artifacts/logs/task-3031.log`); ruff clean. Frozen-date tests
+cover the exact expiration boundary (expiring today is still active, the day after is
+expired), the effective-date boundary, missing dates, auto-renewal, confirmed vs
+clause-only termination, future termination dates and supersession precedence. Parent
+fixtures cover incompatible types, a different counterparty, below-threshold and
+exact-threshold similarity, ambiguity, a missing referenced title and types with no
+v1 parent rule. Assembly tests pin id stability/idempotence, alias resolution,
+standard resolution, rule provenance input paths, and that unsupported draft evidence
+is never elevated (capped at 0.5 and marked stale).
+
+**Deviations**: none.
