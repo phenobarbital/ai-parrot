@@ -117,7 +117,7 @@ sets for the graph loader's preflight; standalone filters (contract_id/status/
 verification/party_id) are supported and unknown filters rejected.
 
 **Validation**: `pytest .../test_datasource.py -q` -> 22 passed (whole contracts
-suite 403 passed, `artifacts/logs/task-3037.log`); ruff clean. Tests cover
+suite 405 passed, `artifacts/logs/task-3037.log`); ruff clean. Tests cover
 registration through the real factory, every entity's own field set routing to
 itself, the three documented overlaps, ambiguous/unknown requests, ISO dates and
 plain versions, alias union across cards, static seeds, retracted-card exclusion,
