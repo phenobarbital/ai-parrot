@@ -27,7 +27,7 @@ from parrot.knowledge.contracts.models import (
     SourceItem,
 )
 
-from .retrieval import READ_ROLES, RequestContext
+from .retrieval import READ_ROLES, ContractRetrieval, RequestContext
 
 __all__ = (
     "RENEWAL_BUCKETS",
@@ -176,7 +176,9 @@ async def ingest_delta(
             ``enumerate``-shaped helper.
         source: The configured source scope (drive/folder/cursor key).
         principal: The trusted service principal this job runs as.
-        retrieval: Optional retrieval used to authorize the principal.
+        retrieval: Retrieval supplying the authorization gate. When it is
+            omitted the gate is built from ``library.catalog`` — the
+            principal is **always** authorized, never implicitly trusted.
         graph_loader: Optional loader used to retract tombstoned contracts.
         temporal: Optional temporal publisher to drain afterwards.
         tenant_context: Tenant context for the temporal drain.
@@ -188,8 +190,13 @@ async def ingest_delta(
         every item was durably processed or explicitly skipped.
     """
     clock = now or _utcnow
-    if retrieval is not None:
-        retrieval.authorize(principal)
+    # Authorization is not optional on a path that carries retractions.
+    # An omitted `retrieval` means "build the gate from this catalog", not
+    # "skip the gate" — a missing argument must never widen access.
+    gate = retrieval if retrieval is not None else ContractRetrieval(
+        catalog=library.catalog
+    )
+    gate.authorize(principal, pattern="ingest_delta")
 
     catalog = library.catalog
     result = DeltaIngestResult(source=source.source)

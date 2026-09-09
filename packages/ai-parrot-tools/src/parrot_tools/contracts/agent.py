@@ -30,7 +30,12 @@ from .service import AnswerOutcome, ContractsAnswerService
 from .toolkit import ContractsToolkit
 from .verifier import AnswerDraft, Claim
 
-__all__ = ("CONTRACTS_SYSTEM_PROMPT", "ContractsAgentProducer", "ContractsAgent")
+__all__ = (
+    "CONTRACTS_SYSTEM_PROMPT",
+    "ContractsAgentProducer",
+    "ContractsAgent",
+    "UngatedAnswerRefused",
+)
 
 logger = logging.getLogger(__name__)
 
@@ -175,6 +180,24 @@ class ContractsAgentProducer:
         return evidence in claim or claim in evidence
 
 
+class UngatedAnswerRefused(PermissionError):
+    """An unverified answer was requested through an ungated entrypoint.
+
+    The contracts agent only ever *drafts*. Releasing a draft requires the
+    service gate (authorization, citation verification against archived
+    evidence, retirement suppression and an audit record), so the generic
+    bot entrypoints refuse rather than return unverified prose.
+    """
+
+    def __init__(self, entrypoint: str) -> None:
+        gated = "stream_answer" if "stream" in entrypoint else "answer_question"
+        super().__init__(
+            f"{entrypoint}() would release an unverified draft; "
+            f"call {gated}() so the answer passes the contracts gate"
+        )
+        self.entrypoint = entrypoint
+
+
 class ContractsAgent(Agent):
     """ReAct agent over the contracts toolkit, gated by the shared service.
 
@@ -247,6 +270,28 @@ class ContractsAgent(Agent):
         self.service.producer = self.producer
         async for chunk in self.service.stream_answer(question, request_context=context):
             yield chunk
+
+    # -- ungated inherited entrypoints ------------------------------------
+    #
+    # `Agent` exposes ask()/ask_stream()/invoke(), and the chat, MCP, A2A
+    # and HTTP surfaces all call them. They return the ReAct loop's raw
+    # output, which for this agent is an *unverified draft*: no citation
+    # verification, no retirement suppression, no audit row. Spec AC10
+    # requires that such prose cannot escape through any of those
+    # surfaces, so they fail closed and name the gated entrypoint instead
+    # of silently releasing.
+
+    async def ask(self, *args: Any, **kwargs: Any) -> Any:
+        """Refuse: use :meth:`answer_question`, which passes the gate."""
+        raise UngatedAnswerRefused("ask")
+
+    async def ask_stream(self, *args: Any, **kwargs: Any) -> Any:
+        """Refuse: use :meth:`stream_answer`, which passes the gate."""
+        raise UngatedAnswerRefused("ask_stream")
+
+    async def invoke(self, *args: Any, **kwargs: Any) -> Any:
+        """Refuse: use :meth:`answer_question`, which passes the gate."""
+        raise UngatedAnswerRefused("invoke")
 
     @staticmethod
     def released_answer(outcome: AnswerOutcome | Clarification) -> Optional[ContractAnswer]:

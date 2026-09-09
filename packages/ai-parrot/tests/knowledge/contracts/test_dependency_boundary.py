@@ -154,10 +154,64 @@ def test_contracts_package_imports_without_optional_extras():
         "import parrot.knowledge.contracts as contracts;"
         "assert contracts.ContractCard is not None;"
         "leaked = [name for name in ('asyncpg', 'rapidfuzz') if name in sys.modules];"
+        "print(contracts.__file__);"
         "print('LEAKED=' + ','.join(leaked))"
     )
+    # Pin the subprocess to *this* worktree. Inheriting the ambient
+    # PYTHONPATH would silently test whichever `parrot` happens to be
+    # installed, so the guard could pass while proving nothing about the
+    # branch under test — or fail for reasons unrelated to it.
+    import os
+
+    src_roots = [
+        str(REPO_ROOT / "packages" / "ai-parrot" / "src"),
+        str(REPO_ROOT / "packages" / "ai-parrot-tools" / "src"),
+    ]
+    env = dict(os.environ)
+    env["PYTHONPATH"] = os.pathsep.join(src_roots)
+
     completed = subprocess.run(
-        [sys.executable, "-c", code], capture_output=True, text=True, check=False
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
     )
     assert completed.returncode == 0, completed.stderr[-2000:]
     assert "LEAKED=\n" in completed.stdout or completed.stdout.strip().endswith("LEAKED=")
+    # The module actually under test must be the one in this worktree.
+    assert str(REPO_ROOT) in completed.stdout, completed.stdout
+
+
+def test_the_answering_layer_also_imports_without_optional_extras():
+    """``parrot_tools.contracts`` must not pull asyncpg/rapidfuzz either.
+
+    The core guard above covers only ``parrot.knowledge.contracts``; the
+    answering layer is a separate distribution with its own import graph.
+    """
+    import os
+    import subprocess
+    import sys
+
+    code = (
+        "import sys;"
+        "import parrot_tools.contracts as contracts;"
+        "leaked = [n for n in ('asyncpg', 'rapidfuzz') if n in sys.modules];"
+        "print('LEAKED=' + ','.join(leaked))"
+    )
+    env = dict(os.environ)
+    env["PYTHONPATH"] = os.pathsep.join(
+        [
+            str(REPO_ROOT / "packages" / "ai-parrot" / "src"),
+            str(REPO_ROOT / "packages" / "ai-parrot-tools" / "src"),
+        ]
+    )
+    completed = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+    assert completed.returncode == 0, completed.stderr[-2000:]
+    assert completed.stdout.strip().endswith("LEAKED="), completed.stdout

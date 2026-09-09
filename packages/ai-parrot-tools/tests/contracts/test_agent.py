@@ -275,3 +275,26 @@ async def test_a_clarification_never_reaches_the_model(service, agent_producer):
     )
     assert isinstance(result, Clarification)
     assert agent_producer.calls == 0
+
+
+@pytest.mark.asyncio
+async def test_the_generic_bot_entrypoints_refuse_to_release_a_draft():
+    """AC10: unverified prose must not escape through any surface.
+
+    ``Agent`` exposes ask/ask_stream/invoke, and the chat, MCP, A2A and
+    HTTP surfaces all call them. For this agent those return the ReAct
+    loop's *draft* — no citation verification, no retirement suppression,
+    no audit row — so they must fail closed rather than release.
+    """
+    from parrot_tools.contracts.agent import ContractsAgent, UngatedAnswerRefused
+
+    for entrypoint in ("ask", "ask_stream", "invoke"):
+        assert entrypoint in vars(ContractsAgent), (
+            f"{entrypoint}() is inherited ungated from Agent; it would "
+            "release an unverified draft"
+        )
+
+    error = UngatedAnswerRefused("ask")
+    assert "answer_question" in str(error)
+    assert "unverified" in str(error)
+    assert isinstance(error, PermissionError)

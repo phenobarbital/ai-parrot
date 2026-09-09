@@ -51,6 +51,13 @@ CONFIRMING_COMMANDS: frozenset[str] = frozenset(
     {"verify", "merge-parties", "retire-answer"}
 )
 
+#: Commands that change catalog, graph or relation state. Each is
+#: authorized as an owner action before it runs — the CLI is a transport
+#: like any other, not an exemption from the gate.
+WRITE_COMMANDS: frozenset[str] = frozenset(
+    {"add", "add-folder", "refresh", "relate", "publish"}
+)
+
 
 def build_parser() -> argparse.ArgumentParser:
     """Build the operator argument parser."""
@@ -201,6 +208,14 @@ async def run_command(
         }
 
     try:
+        # Default deny, on the same gate every other surface uses. The
+        # write commands mutate the catalog, the graph projection or the
+        # relation judgements, so they require the owner role. `verify`,
+        # `merge-parties` and `retire-answer` are authorized inside the
+        # service itself and are deliberately not gated twice here.
+        if command in WRITE_COMMANDS:
+            service.retrieval.authorize(context, pattern=command, owner_only=True)
+
         if command == "add":
             result = await library.add_contract(
                 args.source, source_uri=args.source_uri, force=args.force

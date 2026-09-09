@@ -182,7 +182,7 @@ def _stub_args(command: str) -> list[str]:
 @pytest.mark.asyncio
 async def test_add_and_add_folder_preserve_force(services):
     code, payload = await run_command(
-        parse("--user", "bob", "--role", "contract_reader", "add", "/tmp/a.md", "--force"),
+        parse("--user", "bob", "--role", "contract_owner", "add", "/tmp/a.md", "--force"),
         **services,
     )
     assert code == 0 and payload["outcome"] == "added"
@@ -192,7 +192,9 @@ async def test_add_and_add_folder_preserve_force(services):
     )
 
     code, payload = await run_command(
-        parse("--user", "bob", "add-folder", "/tmp", "--recursive"), **services
+        parse("--user", "bob", "--role", "contract_owner", "add-folder", "/tmp",
+              "--recursive"),
+        **services,
     )
     assert code == 0
     assert services["library"].calls[-1][1]["recursive"] is True
@@ -201,7 +203,9 @@ async def test_add_and_add_folder_preserve_force(services):
 @pytest.mark.asyncio
 async def test_relate_preserves_force_and_ids(services):
     code, payload = await run_command(
-        parse("--user", "bob", "relate", "acme-msa", "--force"), **services
+        parse("--user", "bob", "--role", "contract_owner", "relate", "acme-msa",
+              "--force"),
+        **services,
     )
     assert code == 0
     assert payload["calls"] == 1
@@ -466,3 +470,42 @@ def test_the_cli_imports_no_scheduler_or_transport_and_deletes_nothing():
         }
         for forbidden in ("unlink", "rmtree", "send", "send_result"):
             assert forbidden not in called, forbidden
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "command", sorted({"add", "add-folder", "refresh", "relate", "publish"})
+)
+async def test_state_changing_commands_are_denied_without_the_owner_role(
+    services, command
+):
+    """The CLI is a transport, not an exemption from the gate.
+
+    Every one of these commands mutates the catalog, the graph projection
+    or the relation judgements. A principal holding only a read role — or
+    none at all — must be refused *before* the write happens, exactly as
+    on the chat and API surfaces.
+    """
+    code, payload = await run_command(
+        parse("--user", "mallory", "--role", "contract_reader", command,
+              *_stub_args(command)),
+        **services,
+    )
+    assert code == 3, payload
+    assert "denied" in payload["error"]
+    # The refusal must precede the side effect.
+    assert not any(
+        call[0] in {"add_contract", "add_folder", "refresh_card", "relate_contracts"}
+        for call in services["library"].calls
+    ), services["library"].calls
+
+
+@pytest.mark.asyncio
+async def test_the_write_commands_are_the_state_changing_ones():
+    """WRITE_COMMANDS must track the commands that actually mutate state."""
+    from parrot_tools.contracts.cli import CONFIRMING_COMMANDS, WRITE_COMMANDS
+
+    assert WRITE_COMMANDS == {"add", "add-folder", "refresh", "relate", "publish"}
+    # The service-gated administrative commands are authorized inside the
+    # service and must not be double-gated here.
+    assert not (WRITE_COMMANDS & CONFIRMING_COMMANDS)

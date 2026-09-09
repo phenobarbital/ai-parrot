@@ -211,3 +211,35 @@ async def test_an_unclassified_question_never_reaches_the_catalog(retrieval):
     retrieval.catalog.list_cards = spy  # type: ignore[method-assign]
     await retrieval.plan("what is the weather in madrid", reader_context())
     assert probes == []
+
+
+@pytest.mark.asyncio
+async def test_an_ownerless_contract_is_not_owned_by_an_identityless_caller():
+    """A missing employee id must not match a missing owner.
+
+    A ``my_contracts`` caller is authorized on employee identity alone, and
+    may hold no read role. If that identity is carried only as a graph id,
+    ``employee_id`` is ``None`` — and an unowned contract also has
+    ``owner_employee_id is None``. Comparing the two directly makes every
+    ownerless contract in the catalog readable by anyone with no roles at
+    all, which is the opposite of the default-deny the gate promises.
+    """
+    catalog = FakeCatalog()
+    for card in (
+        make_card("owned-by-bob", owner_employee_id="emp-1"),
+        make_card("owned-by-nobody", owner_employee_id=None),
+    ):
+        await catalog.upsert(card)
+    retrieval = ContractRetrieval(catalog=catalog, today=lambda: TODAY)
+    context = RequestContext(
+        user_id="stranger@troc",
+        roles=(),
+        tenant_id="troc",
+        employee_graph_id="employees/emp-99",
+    )
+
+    retrieval.authorize(context, pattern="my_contracts")
+    cards = await retrieval._authorized_cards(context)
+    assert [card.contract_id for card in cards] == [], (
+        "a caller with no employee id owns nothing"
+    )

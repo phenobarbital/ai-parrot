@@ -456,3 +456,30 @@ def test_the_jobs_module_imports_no_scheduler_and_sends_nothing():
     }
     for forbidden in ("send_result", "send", "notify", "post"):
         assert forbidden not in called, forbidden
+
+
+@pytest.mark.asyncio
+async def test_omitting_the_retrieval_gate_does_not_skip_authorization(workspace):
+    """A missing argument must never widen access.
+
+    ``retrieval`` selects *which* gate authorizes the principal; it does
+    not decide *whether* one does. Omitting it previously ran the whole
+    job — including the tombstone retractions — with no authorization at
+    all, so a caller could bypass the gate by leaving out a keyword.
+    """
+    library, downloader, _ = workspace
+    tool = FakeDeltaTool([page([item("a")])])
+
+    from parrot_tools.contracts.retrieval import AuthorizationDenied
+
+    with pytest.raises(AuthorizationDenied):
+        await ingest_delta(
+            library=library,
+            delta_tool=tool,
+            source=SOURCE,
+            principal=RequestContext(user_id="svc", roles=(), tenant_id="troc"),
+            downloader=downloader,
+        )
+
+    # Nothing was ingested and the cursor did not move.
+    assert await library.catalog.get_delta_token("sharepoint://legal") is None

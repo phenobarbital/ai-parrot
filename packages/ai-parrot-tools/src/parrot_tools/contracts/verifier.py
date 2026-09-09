@@ -150,6 +150,8 @@ class CitationVerifier:
 
         allowed = {card.contract_id: card for card in dossier}
         retired = await self.catalog.retired_citations()
+        # One version-history read per contract, reused by every citation.
+        versions: dict[str, dict[int, Any]] = {}
 
         surviving: list[Citation] = []
         rejected: list[RejectedCitation] = []
@@ -159,7 +161,9 @@ class CitationVerifier:
         for claim in draft.claims:
             claim_citations: list[Citation] = []
             for citation in claim.citations:
-                verified, reason = await self._verify_citation(citation, allowed, retired)
+                verified, reason = await self._verify_citation(
+                    citation, allowed, retired, versions
+                )
                 if verified is None:
                     rejected.append(
                         RejectedCitation(
@@ -215,10 +219,13 @@ class CitationVerifier:
             raise ValueError("interpretation_required requires a handoff brief")
         allowed = {card.contract_id: card for card in dossier}
         retired = await self.catalog.retired_citations()
+        versions: dict[str, dict[int, Any]] = {}
         surviving: list[Citation] = []
         rejected: list[RejectedCitation] = []
         for citation in handoff.located_clauses:
-            verified, reason = await self._verify_citation(citation, allowed, retired)
+            verified, reason = await self._verify_citation(
+                citation, allowed, retired, versions
+            )
             if verified is None:
                 rejected.append(
                     RejectedCitation(
@@ -231,11 +238,103 @@ class CitationVerifier:
             surviving.append(verified)
         return handoff.model_copy(update={"located_clauses": surviving}), rejected
 
+    async def _archive_ref(
+        self,
+        card: ContractCard,
+        citation: Citation,
+        versions: dict[str, dict[int, Any]],
+    ) -> EvidenceRef:
+        """Resolve the archive pointer for ``citation``'s version.
+
+        The evidence archive is immutable and written once per version, so
+        the authoritative pointer is the one recorded on that version's row
+        (``ContractVersion.evidence_ref``). It must never be rebuilt from
+        the card's *current* revision or source hash: ordinary
+        administrative writes — a human verification, a party merge — bump
+        the card revision while the archive keeps the revision it was
+        written with, and a rebuilt pointer would then address a directory
+        that does not exist, silently rejecting every citation.
+
+        Args:
+            card: The authorized card the citation belongs to.
+            citation: The citation being verified.
+            versions: Per-contract version cache for this request.
+
+        Returns:
+            The stored reference when the version records one, else a
+            reference rebuilt from the card (cards written before evidence
+            references were recorded, and the in-memory test doubles).
+        """
+        if card.contract_id not in versions:
+            try:
+                history = await self.catalog.versions(card.contract_id)
+            except Exception:  # noqa: BLE001 - fall back to the card below
+                logger.exception(
+                    "Could not load version history for %s", card.contract_id
+                )
+                history = []
+            # A version accumulates one row per recorded revision, but its
+            # evidence is archived exactly once, at the revision that first
+            # recorded it. Later administrative revisions of the same
+            # version carry no reference and must not shadow it.
+            chosen: dict[int, Any] = {}
+            for item in history:
+                current = chosen.get(item.n)
+                if current is None:
+                    chosen[item.n] = item
+                    continue
+                if getattr(item, "evidence_ref", None) and not getattr(
+                    current, "evidence_ref", None
+                ):
+                    chosen[item.n] = item
+                elif (
+                    bool(getattr(item, "evidence_ref", None))
+                    == bool(getattr(current, "evidence_ref", None))
+                    and item.revision < current.revision
+                ):
+                    chosen[item.n] = item
+            versions[card.contract_id] = chosen
+
+        version = versions[card.contract_id].get(citation.version_n)
+        stored_ref = getattr(version, "evidence_ref", None) if version else None
+        if stored_ref:
+            try:
+                ref = EvidenceRef.parse(stored_ref)
+            except Exception:  # noqa: BLE001 - a malformed row must not leak
+                logger.warning(
+                    "Malformed evidence reference on %s v%s: %r",
+                    card.contract_id,
+                    citation.version_n,
+                    stored_ref,
+                )
+            else:
+                if (
+                    ref.tenant_id == self.evidence.tenant_id
+                    and ref.contract_id == card.contract_id
+                ):
+                    return ref
+                logger.warning(
+                    "Rejecting cross-tenant evidence reference on %s: %r",
+                    card.contract_id,
+                    stored_ref,
+                )
+
+        return EvidenceRef(
+            tenant_id=self.evidence.tenant_id,
+            contract_id=card.contract_id,
+            version_n=citation.version_n,
+            revision=version.revision if version else card.revision,
+            source_sha256=(
+                version.source_sha256 if version else card.source_sha256
+            ),
+        )
+
     async def _verify_citation(
         self,
         citation: Citation,
         allowed: dict[str, ContractCard],
         retired: set[tuple[str, str]],
+        versions: dict[str, dict[int, Any]],
     ) -> tuple[Optional[Citation], str]:
         """Verify one citation against the archive.
 
@@ -252,18 +351,8 @@ class CitationVerifier:
         if not normalize_quote(citation.quote):
             return None, "empty quotes never prove evidence"
 
-        version = next(
-            (item for item in card.versions if item.n == citation.version_n), None
-        )
-        source_sha256 = version.source_sha256 if version else card.source_sha256
-        revision = version.revision if version else card.revision
-        ref = EvidenceRef(
-            tenant_id=self.evidence.tenant_id,
-            contract_id=card.contract_id,
-            version_n=citation.version_n,
-            revision=revision,
-            source_sha256=source_sha256,
-        )
+        ref = await self._archive_ref(card, citation, versions)
+        source_sha256 = ref.source_sha256 or card.source_sha256
         lookup = await self.evidence.resolve(citation, ref)
         if not lookup.found:
             return None, lookup.reason or "evidence could not be resolved"

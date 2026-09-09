@@ -289,3 +289,136 @@ async def test_an_unauthorized_reader_gets_nothing_end_to_end(live_catalog, tmp_
     assert outcome.answer.citations == []
     record = await live_catalog.get_answer(outcome.answer_id)
     assert record.authorization.allowed is False, "the denial is audited"
+
+
+CLAUSE = "Vendor shall maintain SOC 2 Type II certification."
+
+
+def carded_contract(contract_id: str = "acme-msa"):
+    """A card carrying one citable obligation, as an LLM carding produces."""
+    from parrot.knowledge.contracts.models import (
+        ContractCard, Obligation, Party, TermSpec,
+    )
+
+    return ContractCard(
+        contract_id=contract_id,
+        title="ACME Master Services Agreement",
+        summary="Compliance obligations for ACME.",
+        contract_type="msa",
+        status="active",
+        source_uri=f"sharepoint://legal/{contract_id}.md",
+        source_sha256="a" * 64,
+        source_format="md",
+        owner_employee_id="emp-1",
+        parties=[
+            Party(party_id="party-us", name="Troc Global", role="us", is_us=True),
+            Party(party_id="party-acme", name="ACME, Inc.", role="vendor"),
+        ],
+        term=TermSpec(effective_date=date(2026, 1, 1), expiration_date=date(2026, 12, 31)),
+        obligations=[
+            Obligation(
+                obligation_id=f"{contract_id}-ob-001",
+                contract_id=contract_id,
+                kind="compliance",
+                text=CLAUSE,
+                node_id="0002",
+                page=3,
+                standard_id="soc2",
+            )
+        ],
+        added_at=FROZEN_NOW,
+        updated_at=FROZEN_NOW,
+    )
+
+
+async def seed_carded_contract(catalog, library, contract_id: str = "acme-msa"):
+    """Persist a citable card plus its immutable evidence archive."""
+    from parrot.knowledge.contracts.models import ContractVersion, card_snapshot_payload
+
+    card = carded_contract(contract_id)
+    ref = library.evidence.reference(
+        contract_id, version_n=1, revision=1, source_sha256=card.source_sha256
+    )
+    await library.evidence.archive(ref, {"0002": CLAUSE}, pages={"0002": 3}, overwrite=True)
+    version = ContractVersion(
+        n=1,
+        revision=1,
+        valid_from=card.term.effective_date,
+        kind="original",
+        source_sha256=card.source_sha256,
+        card_snapshot=card_snapshot_payload(card),
+        evidence_ref=ref.as_string(),
+        recorded_at=FROZEN_NOW,
+    )
+    await catalog.upsert(card, version=version)
+    return card
+
+
+@requires_pg
+async def test_citations_survive_a_revision_bump(live_catalog, tmp_path):
+    """An administrative revision must not sever a card from its evidence.
+
+    The evidence archive is immutable and is written once per *version*.
+    Card revisions, by contrast, are bumped by ordinary administrative
+    operations — Bob verifying a field (AC11), a party merge, a relation
+    update. If the release gate rebuilds the archive pointer from the card's
+    *current* revision instead of from the pointer stored on the version
+    row, every citation stops resolving after the first such operation and
+    a fully evidenced answer silently degrades to ``not_found``.
+
+    This is the AC4 promise ("historical citations still resolve to
+    immutable evidence") stated as an executable test.
+    """
+    library = build_library(live_catalog, tmp_path)
+    card = await seed_carded_contract(live_catalog, library)
+
+    retrieval = ContractRetrieval(catalog=live_catalog, today=lambda: TODAY)
+    service = ContractsAnswerService(
+        retrieval=retrieval,
+        verifier=CitationVerifier(catalog=live_catalog, evidence=library.evidence),
+        producer=ContractsDraftProducer(adapter=None),
+    )
+    question = f"What obligations does the {card.contract_id} carry?"
+
+    before = await service.answer(question, request_context=reader())
+    assert before.answer.answer_kind == "lookup", before.answer.reason
+    assert before.answer.citations, "a carded contract releases its evidence"
+
+    # Any administrative write bumps the revision without a new version.
+    stored = await live_catalog.get(card.contract_id)
+    await live_catalog.upsert(stored, expected_revision=stored.revision)
+    bumped = await live_catalog.get(card.contract_id)
+    assert bumped.revision > stored.revision
+
+    after = await service.answer(question, request_context=reader())
+    assert after.answer.answer_kind == "lookup", after.answer.reason
+    assert after.answer.citations, (
+        "the evidence archive is immutable and still holds this version; a "
+        "revision bump must not change where the gate reads it from"
+    )
+
+
+@requires_pg
+async def test_a_verified_card_still_releases_its_citations(live_catalog, tmp_path):
+    """The same guarantee through the real ``verify_card`` workflow (AC11)."""
+    library = build_library(live_catalog, tmp_path)
+    card = await seed_carded_contract(live_catalog, library, "acme-verified")
+
+    retrieval = ContractRetrieval(catalog=live_catalog, today=lambda: TODAY)
+    service = ContractsAnswerService(
+        retrieval=retrieval,
+        verifier=CitationVerifier(catalog=live_catalog, evidence=library.evidence),
+        producer=ContractsDraftProducer(adapter=None),
+    )
+    question = f"What obligations does the {card.contract_id} carry?"
+
+    assert (await service.answer(question, request_context=reader())).answer.citations
+
+    verification = await library.verify_card(
+        card.contract_id, {"title": "ACME MSA (verified)"}, user="bob@troc"
+    )
+    assert verification.corrected == ["title"]
+
+    after = await service.answer(question, request_context=reader())
+    assert after.answer.answer_kind == "lookup", after.answer.reason
+    assert after.answer.citations, "verifying a field must not silence the citations"

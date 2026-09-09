@@ -669,8 +669,21 @@ class ContractRetrieval:
         cards = await self.catalog.list_cards()
         if context.has_any_role(READ_ROLES):
             return cards
-        owned = {context.employee_id} | set(getattr(context, "manages", ()) or ())
-        return [card for card in cards if card.owner_employee_id in owned]
+        # Drop unknown identities: an absent employee id must never match
+        # an absent owner, or every ownerless contract in the catalog
+        # becomes readable by a caller who holds no roles at all.
+        owned = {
+            identity
+            for identity in ({context.employee_id} | set(getattr(context, "manages", ()) or ()))
+            if identity
+        }
+        if not owned:
+            return []
+        return [
+            card
+            for card in cards
+            if card.owner_employee_id and card.owner_employee_id in owned
+        ]
 
     async def _authorized_card(self, contract_id: str, context: RequestContext) -> ContractCard:
         """Load one card, refusing anything outside the authorized set.
