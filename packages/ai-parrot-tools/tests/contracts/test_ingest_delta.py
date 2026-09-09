@@ -1418,9 +1418,7 @@ async def test_an_item_refreshed_after_the_snapshot_is_re_read_before_retraction
         rows = await original_list(source)
         if source is not None and not interleaved:
             # Another run refreshes the item *after* this snapshot is taken.
-            newer = row.model_copy(
-                update={"last_seen_at": datetime.now(timezone.utc) + timedelta(hours=1)}
-            )
+            newer = row.model_copy(update={"last_seen_at": datetime.now(timezone.utc) + timedelta(hours=1)})
             await catalog.upsert_source_item(newer)
             interleaved.append("refreshed")
         return rows

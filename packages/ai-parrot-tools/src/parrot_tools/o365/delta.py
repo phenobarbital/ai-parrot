@@ -1183,11 +1183,7 @@ class DriveDeltaHelper:
 
             for item in page.items:
                 membership = classify_folder_membership(item, folder_path, folder_id)
-                if (
-                    membership != FOLDER_MATCH
-                    and ancestry is not None
-                    and item.parent_id is not None
-                ):
+                if membership != FOLDER_MATCH and ancestry is not None and item.parent_id is not None:
                     # A direct-parent mismatch does not mean "outside": the
                     # item may sit deeper in the subtree. Ask Graph.
                     #
