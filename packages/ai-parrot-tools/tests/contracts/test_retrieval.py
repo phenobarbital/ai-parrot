@@ -62,6 +62,7 @@ class FakeCatalog(ContractCatalogStore):
     def __init__(self, *, tenant_id: str = "troc") -> None:
         super().__init__(tenant_id=tenant_id)
         self.cards: dict[str, ContractCard] = {}
+        self.history: dict[str, list[ContractVersion]] = {}
         self.aliases: dict[str, str] = {}
         self.answers: dict[str, AnswerRecord] = {}
         self.suppressed: set[tuple[str, str]] = set()
@@ -73,8 +74,33 @@ class FakeCatalog(ContractCatalogStore):
         self.audit_fails = False
 
     async def upsert(self, card, *, expected_revision=None, version=None, targets=("ontology", "temporal")):
-        self.cards[card.contract_id] = card
-        return UpsertResult(contract_id=card.contract_id, revision=card.revision, created=True)
+        stored = self.cards.get(card.contract_id)
+        created = stored is None
+        revision = 1 if created else stored.revision + 1
+        history = self.history.setdefault(card.contract_id, [])
+        if created and not history and card.versions and version is None:
+            # A fixture card that arrives with its own history keeps it.
+            history.extend(card.versions)
+            self.cards[card.contract_id] = card.model_copy(update={"revision": revision})
+            return UpsertResult(
+                contract_id=card.contract_id,
+                revision=revision,
+                created=True,
+                version_n=history[-1].n,
+            )
+        recorded = (version or ContractVersion(n=history[-1].n if history else 1)).model_copy(
+            update={"revision": revision, "recorded_at": FROZEN_NOW}
+        )
+        history.append(recorded)
+        self.cards[card.contract_id] = card.model_copy(
+            update={"revision": revision, "versions": list(history)}
+        )
+        return UpsertResult(
+            contract_id=card.contract_id,
+            revision=revision,
+            created=created,
+            version_n=recorded.n,
+        )
 
     async def get(self, contract_id):
         return self.cards.get(contract_id)
@@ -157,8 +183,7 @@ class FakeCatalog(ContractCatalogStore):
         return sorted(rows, key=lambda item: item.obligation_id)[: window.limit]
 
     async def versions(self, contract_id):
-        card = self.cards.get(contract_id)
-        return list(card.versions) if card else []
+        return list(self.history.get(contract_id, []))
 
     async def merge_parties(self, keep_party_id, merge_party_id, *, user):
         raise NotImplementedError
