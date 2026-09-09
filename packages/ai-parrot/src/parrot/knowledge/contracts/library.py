@@ -21,7 +21,7 @@ import logging
 import re
 from datetime import date, datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Mapping, Optional, Protocol, Sequence
+from typing import TYPE_CHECKING, Any, Callable, Mapping, Optional, Protocol, Sequence
 
 from pydantic import BaseModel, Field
 
@@ -56,6 +56,9 @@ from .models import (
     SourceFormat,
     card_snapshot_payload,
 )
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from .relations import RelationStageReport
 
 __all__ = (
     "SUPPORTED_FORMATS",
@@ -437,6 +440,9 @@ class ContractLibrary:
         content_store_factory: ``storage_dir -> NodeContentStore``.
         owner_rules: Folder-path ownership rules.
         max_obligation_sections: The ``N`` of the ``1 + N`` carding budget.
+        max_candidates: Bound on relation candidates per source contract.
+        relation_stage: Pre-built ``ContractRelationStage`` (optional).
+        relate_on_ingest: Judge relations after each successful ingestion.
         now: Clock for recorded timestamps.
         today: Clock for contractual derivations.
     """
@@ -452,6 +458,9 @@ class ContractLibrary:
         content_store_factory: Optional[Callable[[Path], Any]] = None,
         owner_rules: Sequence[OwnerRule] = (),
         max_obligation_sections: int = DEFAULT_MAX_OBLIGATION_SECTIONS,
+        max_candidates: int = 8,
+        relation_stage: Any = None,
+        relate_on_ingest: bool = False,
         now: Callable[[], datetime] = _utcnow,
         today: Callable[[], date] = _today,
     ) -> None:
@@ -461,6 +470,11 @@ class ContractLibrary:
         self.evidence = EvidenceArchive(evidence_root, tenant_id=catalog.tenant_id)
         self.owner_rules = sorted(owner_rules, key=lambda rule: -len(rule.path_prefix))
         self.max_obligation_sections = max_obligation_sections
+        self.max_candidates = max_candidates
+        #: Judge relations right after a successful ingestion. Off by
+        #: default: judgement is an explicit, budgeted operation.
+        self.relate_on_ingest = relate_on_ingest
+        self._relation_stage = relation_stage
         self._indexer_factory = indexer_factory or _default_indexer_factory
         self._content_store_factory = content_store_factory or NodeContentStore
         self._now = now
@@ -834,6 +848,34 @@ class ContractLibrary:
         )
         return version
 
+    async def relate_contracts(
+        self,
+        contract_ids: Optional[Sequence[str]] = None,
+        *,
+        force: bool = False,
+    ) -> "RelationStageReport":
+        """Judge contract relations explicitly (never during retrieval).
+
+        Args:
+            contract_ids: Source contracts to judge; ``None`` means the
+                whole active catalog.
+            force: Re-judge pairs that already carry an active judgement,
+                appending a new record and replacing the active result.
+
+        Returns:
+            The relation stage's report.
+        """
+        from .relations import ContractRelationStage  # noqa: PLC0415 - avoid a cycle
+
+        stage = self._relation_stage or ContractRelationStage(
+            catalog=self.catalog,
+            adapter=self.adapter,
+            max_candidates=self.max_candidates,
+            now=self._now,
+        )
+        self._relation_stage = stage
+        return await stage.relate(contract_ids, force=force)
+
     # -- ingestion internals ----------------------------------------------
 
     async def _allocate_slug(self, path: Path) -> str:
@@ -1044,6 +1086,13 @@ class ContractLibrary:
             )
 
         stored = await self.catalog.get(contract_id) or card
+        if self.relate_on_ingest:
+            # Judgement at explicit ingest time only — never at retrieval.
+            relate_report = await self.relate_contracts([contract_id])
+            if relate_report.errors:
+                logger.warning(
+                    "Relation judgement issues for %s: %s", contract_id, relate_report.errors
+                )
         return IngestResult(
             card=stored,
             outcome="added" if result.created else "updated",
