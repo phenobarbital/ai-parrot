@@ -260,3 +260,36 @@ To keep the merged consumer working unchanged, the tools gained an additive
 compatibility surface for `parrot_tools.contracts.jobs.ingest_delta`
 (TASK-3049): the `delta_token` argument alias and the `tombstones` /
 `rescan_required` / `pages` payload keys it reads.
+
+### Post-merge review — two defects left open (they live in `contracts/jobs.py`)
+
+Reviewed again after merging `dev`. Everything the review found inside this
+lane's files is fixed (commit `67d10fa32`). Two findings are in TASK-3049's
+`parrot_tools/contracts/jobs.py`, which this lane does not own, and are
+reported rather than changed:
+
+1. **`ingest_delta` cannot call a real delta tool at all.** `_enumerate`
+   does `client = getattr(delta_tool, "client", None)` and then
+   `delta_tool._execute_graph_operation(client, ...)`, but `O365Tool` has
+   `_client`/`_client_cache` and acquires an authenticated client through
+   the async `_get_client()` — there is no `.client` property. Reproduced:
+   `AttributeError: 'NoneType' object has no attribute 'graph_client'`. This
+   pre-dates the merge and applies equally to the core lane's own tool, so
+   the job has never been run against a real tool; its suite injects a
+   hand-written fake with an `enumerate()` method, which takes the other
+   branch. Calling `_execute_graph_operation` directly also bypasses
+   authentication and the `ToolResult` error wrapping. Fix belongs in
+   `_enumerate`: await the tool's authenticated surface instead.
+
+2. **A recovered 410 commits a new cursor without reconciling deletions.**
+   This helper recovers an expired cursor by re-enumerating once and
+   reporting `reset_performed`; the tools therefore return
+   `rescan_required=False`, because the rescan already happened. The job
+   only understands `rescan_required`, so it processes the rescan and
+   commits the new cursor without comparing the full listing against its
+   existing source items — a deletion that occurred while the cursor was
+   expired stays indexed. (The core lane's alternative was not better: it
+   returned `rescan_required=True` and retained the old cursor, so every
+   subsequent run would 410 again and ingestion would stall permanently.)
+   Microsoft's resynchronisation guidance requires comparing against local
+   state after a reset. Fix belongs in the job.
