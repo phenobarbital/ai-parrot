@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-539 - Contracts Card & Ontology
 **Spec**: `sdd/specs/contracts-card-ontology.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2–4h)
 **Depends-on**: TASK-3045
@@ -100,4 +100,32 @@ Store execution logs in `artifacts/logs/task-3047.log`. Use frozen dates, synthe
 
 ## Completion Note
 
-Pending execution. Record executor, completion date, implementation summary, validation evidence and deviations when this task is completed.
+Completed 2026-09-09 by sdd-worker (Claude Opus 5).
+
+**Implementation**: created `parrot_tools/contracts/flow.py` — an **executable**
+runner, not an inspection artifact. `ContractsAnswerFlow.run` drives the fixed stage
+order (triage, retrieve, dossier, draft, verify, audit, release) through the shared
+`ContractsAnswerService`, so authorization, verification and audit are literally the
+same code the ReAct path uses; the flow and the service share ONE producer instance.
+`ContractsDraftProducer` enumerates a bounded, deterministic dossier (retrieved
+obligations first, then the rest, each with an `evidence_id`), renders it into a
+single stateless structured call, and maps the model's `evidence_ids` back to
+citations — an id that is not in the dossier cites nothing, so the claim is dropped by
+the verifier. Without an adapter the draft is deterministic and costs no call. The
+draft system prompt states that contract text is untrusted DATA and cannot grant
+tools, evidence or privileges. Clarifications, handoffs and denials short-circuit
+before drafting, so they spend no model call. `answer()` is the convenience
+entrypoint for API/A2A/report callers.
+
+**Validation**: `pytest .../test_flow.py -q` -> 14 passed (whole contracts tools suite
+124 passed, `artifacts/logs/task-3047.log`); ruff clean. Tests assert the stage order
+of one real invocation with exactly one draft call, statelessness across two runs,
+zero draft calls for clarification/handoff/denial, an invented evidence id dropping
+its claim, a citation-less claim degrading to not_found, a prompt-injected summary
+neither adding evidence ids nor privileges, audit failure matching the service, and
+the first vertical slice: answer -> retire -> the same evidence refused on reuse, with
+both outcomes audited.
+
+**Deviations**: none. No inspectable crew object is built — the spec explicitly says
+one must not substitute for tested execution, and the legal librarian's crew builder
+is documented as non-executable.
