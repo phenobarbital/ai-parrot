@@ -202,3 +202,27 @@ scoping is not achievable from an incremental delta round alone — Graph omits
 the path, and `folder_id` matches direct children only. The delta job should
 either track the whole drive and scope by item id against the catalog, or
 treat `unresolved_parent > 0` as "membership must be re-checked locally".
+
+### Second-pass review (fixes re-reviewed)
+
+The fixes above were re-reviewed independently. All four claims were
+confirmed to hold — the reviewer probed 22 crafted continuation URLs
+(cross-drive-as-item-id, `..`, `%2e%2e`, double-encoded `%252e%252e`,
+backslash traversal, `userinfo@` spoof, `delta` out of final position,
+`deltaX`, drive id in the query only, `/users/{id}/delta`) and every bypass
+attempt was rejected while all legitimate Graph shapes were accepted. It also
+confirmed no pre-existing test was weakened rather than fixed. Its four
+remaining points were adopted in commit `f738e5f84`:
+
+- `validate_continuation_link` now **requires** `drive_id` — the origin-only
+  mode is no longer reachable by omission from a future caller.
+- `filtered_out` now counts distinct items, matching every other counter.
+- `DeltaRetryExhaustedError` carries a `reason`, distinguishing "throttled
+  beyond our budget, defer" from "retries genuinely exhausted".
+- `folder_filter_reliable` is now in the tool payload (it is a `@property`,
+  so `model_dump()` had dropped it).
+
+Left alone deliberately, noted for the PR reviewer: the `drives` path segment
+is matched case-sensitively (Graph emits lowercase — conservative, not
+wrong), and a cursor may re-anchor enumeration to a different subtree of the
+*same* drive, which stays inside that drive's own permission boundary.
