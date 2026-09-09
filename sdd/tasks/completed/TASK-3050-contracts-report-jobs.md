@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-539 - Contracts Card & Ontology
 **Spec**: `sdd/specs/contracts-card-ontology.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2–4h)
 **Depends-on**: TASK-3049, TASK-3047
@@ -98,4 +98,31 @@ Store execution logs in `artifacts/logs/task-3050.log`. Use frozen dates, synthe
 
 ## Completion Note
 
-Pending execution. Record executor, completion date, implementation summary, validation evidence and deviations when this task is completed.
+Completed 2026-09-09 by sdd-worker (Claude Opus 5).
+
+**Implementation**: added `renewals_report` and `obligations_digest` to
+`parrot_tools/contracts/jobs.py`. `renewals_report` buckets contracts into the
+inclusive, non-overlapping 0-30 / 31-60 / 61-90 day windows measured from an injected
+`today`, driven by the notice deadline with an expiration fallback (or by
+`expiration_date` on request); null-dated contracts are omitted.
+`obligations_digest` separates fixed due dates (`due`) from recognised **anchored**
+recurrences (`recurring`, with the anchor date), and surfaces unrecognised or
+unanchored recurrence under `needs_review` rather than interpreting it. Both are pure
+SQL/Python — no ArangoDB, no LLM — and both narrow to the recipient scope: a principal
+with a read role covers the catalog, one with only an employee identity is narrowed
+exactly like `my_contracts`. Optional prose is produced by the fixed answer flow, so
+it passes the same draft/verify/audit gate and carries its own `answer_id`. Neither
+job schedules or sends anything.
+
+**Validation**: `pytest .../test_report_jobs.py -q` -> 13 passed (whole contracts
+tools suite 164 passed, `artifacts/logs/task-3050.log`); ruff clean. Frozen-date
+fixtures pin both bucket boundaries as inclusive, non-overlap, the notice fallback, a
+contract just outside the radar, null dates omitted, byte-identical repeat runs, the
+expiration key ignoring notice deadlines, recipient-scope exclusion for both jobs, an
+unauthenticated principal refused, known vs unanchored vs unrecognised recurrence,
+window/kind filters, audited optional prose, and an AST proof that no scheduler,
+transport or schedule decorator exists.
+
+**Deviations**: `_authorized_cards` authorizes with the `my_contracts` pattern when
+the principal carries no read role — otherwise a legitimately scoped self-service
+recipient would have been denied outright instead of narrowed.
