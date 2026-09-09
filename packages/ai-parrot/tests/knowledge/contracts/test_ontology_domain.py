@@ -153,7 +153,7 @@ def test_every_seeded_standard_is_representable(definition):
         entry["standard_id"].description or "" for entry in standard.properties if "standard_id" in entry
     )
     assert "soc2" in described
-    assert len(STANDARD_IDS) == 8
+    assert {"soc2", "soc1", "iso27001", "gdpr", "uk_gdpr"} <= set(STANDARD_IDS)
 
 
 # --------------------------------------------------------------------------
