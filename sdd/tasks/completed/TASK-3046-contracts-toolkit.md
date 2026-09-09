@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-539 - Contracts Card & Ontology
 **Spec**: `sdd/specs/contracts-card-ontology.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2–4h)
 **Depends-on**: TASK-3045, TASK-3040
@@ -100,4 +100,30 @@ Store execution logs in `artifacts/logs/task-3046.log`. Use frozen dates, synthe
 
 ## Completion Note
 
-Pending execution. Record executor, completion date, implementation summary, validation evidence and deviations when this task is completed.
+Completed 2026-09-09 by sdd-worker (Claude Opus 5).
+
+**Implementation**: created `parrot_tools/contracts/toolkit.py`. `ContractsToolkit`
+(`name='contracts'`, `tool_prefix='contracts'`) exposes the eight documented read
+tools — catalog_search, get_card, get_toc, read_section, obligations, expiring,
+verification_queue, related_contracts — plus the two confirming write tools declared
+in `confirming_tools = {'verify_card', 'retire_answer'}`, which the base toolkit turns
+into `routing_meta['requires_confirmation'] = True`. `verify_card` is the single
+typed operation for field verification/correction, party merge and owner override.
+Every read runs the shared `ContractRetrieval.authorize` gate and resolves cards
+through `_authorized_card`, so `my_contracts` narrowing also gates direct tool calls;
+every write goes through `ContractsAnswerService`, which re-checks the owner role and
+the trusted confirmation — the metadata flag alone never authorises anything. The
+actor and tenant come from the constructor-injected `RequestContext`; no tool takes a
+user/actor/roles/tenant argument. Outputs are bounded (briefs, capped rows, capped
+section bodies) and a retired section is unavailable with an explicit reason.
+
+**Validation**: `pytest .../test_toolkit.py -q` -> 16 passed (whole contracts tools
+suite 110 passed, `artifacts/logs/task-3046.log`); ruff clean. Tests pin the ten
+prefixed tool names, confirmation metadata on exactly the two write tools, bounded
+typed outputs, denial of all eight reads without a read role, the my_contracts
+narrowing refusing a direct `get_card` for someone else's contract, the absence of
+actor arguments on every signature, a retired section becoming unavailable, and that
+owner role + confirmation are both required for verify/merge/retire while the actor is
+taken from the trusted context.
+
+**Deviations**: none.
