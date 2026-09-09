@@ -119,6 +119,16 @@ Also required in the environment: **`FIREFLIES_API_KEY`** (the agent reaches
 Fireflies via its MCP tools) and the provider credential(s) for the tiers
 (e.g. `GOOGLE_API_KEY`). `FIREFLIES_SYNC_OVERLAP_DAYS` is reused from FEAT-472.
 
+**Provider client package.** The tiers use provider clients that ship as
+per-provider satellite distributions (PEP 420 namespace, like
+`ai-parrot-embeddings`). The default tiers are Google, so install its client:
+```bash
+pip install ai-parrot-client-google           # or, in this workspace:
+uv pip install -e packages/ai-parrot-client-google
+```
+Without it, agent construction fails with `ImportError: cannot import name
+'GoogleGenAIClient' from 'parrot.clients.google'`.
+
 ### Server-hosted retrieval plane (ArangoDB)
 
 By default the derived wiki/GraphIndex retrieval plane is a local SQLite file
@@ -170,6 +180,34 @@ Inside `parrot attach`, trigger intents with `/invoke <method> <json>`:
 ```bash
 claude mcp add fireflies-wiki-kb -- parrot mcp-serve fireflies-wiki-kb
 ```
+
+---
+
+## Retrieval plane & querying (derived GraphIndex)
+
+Every ingest ends by rebuilding a **derived** wiki/GraphIndex plane from the
+vault's Markdown pages (`graph.py`). It is **derived-only (D3)**: the Obsidian
+pages are the content authority and `MeetingRegistry` is the dedup gate, so a
+stale or missing plane never blocks ingest (a rebuild failure is logged, not
+fatal). It has three parts under `<vault>/.wiki_kb/graph/`:
+
+- **Retrieval plane** (`LLMWikiToolkit` WikiStore) — the pages + BM25 full-text
+  search. **Its backend is configurable** (Amendment A6): `sqlite` (default,
+  local `wiki.db`), `memory`, or **`arangodb`** (server-hosted — see
+  *Server-hosted retrieval plane (ArangoDB)* above).
+- **PageIndex** — page trees (authoring), always local.
+- **GraphIndex graph-memory** — typed nodes/edges, always local (a remote edge
+  store is a follow-up).
+
+### Query it
+Use the `query` intent (§28: GraphIndex retrieval → Obsidian verify):
+```
+/invoke query {"question": "what did we decide about the Acme SSO rollout?"}
+```
+`parrot ask fireflies-wiki-kb "…"` goes through the agent's *general chat loop*,
+not the §28 query workflow — use `/invoke query {…}` for the GraphIndex-backed
+retrieval. The retrieval backend (sqlite vs. ArangoDB) is transparent to
+querying: the same intent and results, whether local or server-hosted.
 
 ---
 
