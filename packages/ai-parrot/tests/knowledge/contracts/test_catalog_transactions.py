@@ -18,7 +18,6 @@ from datetime import date, datetime, timezone
 from typing import AsyncIterator, Optional
 
 import pytest
-
 from parrot.knowledge.contracts.catalog import (
     CatalogConflictError,
     DuplicateSourceError,
@@ -380,7 +379,7 @@ async def test_live_history_keeps_effective_intervals_and_admin_revisions(live_c
     history = await live_catalog.versions("acme-msa")
     assert [(version.n, version.revision) for version in history] == [(1, 1), (1, 2)]
     assert history[0].valid_from == date(2026, 1, 1)
-    assert history[1].valid_from is None, "corrections must not fabricate an effective date"
+    assert history[1].valid_from == history[0].valid_from, "corrections preserve the existing effective interval"
     assert all(not version.card_snapshot.get("versions") for version in history)
 
 

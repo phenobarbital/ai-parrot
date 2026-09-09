@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import logging
 import re
 from datetime import date, datetime, timezone
@@ -26,8 +27,6 @@ from typing import TYPE_CHECKING, Any, Callable, Mapping, Optional, Protocol, Se
 from pydantic import BaseModel, Field
 
 from ..bookstore.carding import derive_toc
-from ..bookstore.library import docx_to_markdown
-from ..pageindex.content_store import NodeContentStore
 from .carding import (
     DEFAULT_MAX_OBLIGATION_SECTIONS,
     assemble_card,
@@ -409,6 +408,20 @@ def _today() -> date:
     return datetime.now(tz=timezone.utc).date()
 
 
+async def docx_to_markdown(path: Path) -> str:
+    """Delegate DOCX conversion without importing optional readers eagerly."""
+    from ..bookstore.library import docx_to_markdown as convert
+
+    return await convert(path)
+
+
+def _default_content_store_factory(storage_dir: Path) -> Any:
+    """Load PageIndex only when a caller actually needs content storage."""
+    from ..pageindex.content_store import NodeContentStore
+
+    return NodeContentStore(storage_dir)
+
+
 class ContractLibrary:
     """Ingest, card and publish contracts for one tenant.
 
@@ -460,7 +473,7 @@ class ContractLibrary:
         self.relate_on_ingest = relate_on_ingest
         self._relation_stage = relation_stage
         self._indexer_factory = indexer_factory or _default_indexer_factory
-        self._content_store_factory = content_store_factory or NodeContentStore
+        self._content_store_factory = content_store_factory or _default_content_store_factory
         self._now = now
         self._today = today
 
@@ -520,6 +533,10 @@ class ContractLibrary:
                     source_uri=uri,
                 )
         elif existing.source_sha256 == sha256 and not force:
+            try:
+                await self._recover_promotion(existing)
+            except EvidenceError as exc:
+                return IngestResult(outcome="error", reason=f"promotion failed: {exc}", source_uri=uri)
             return IngestResult(
                 card=existing,
                 outcome="skipped",
@@ -1030,6 +1047,7 @@ class ContractLibrary:
                 evidence_ref=evidence_ref.as_string(),
                 recorded_at=now,
             )
+            await self._stamp_staging(contract_id, sha256)
             result = await self.catalog.upsert(
                 card,
                 expected_revision=existing.revision if existing else None,
@@ -1082,8 +1100,62 @@ class ContractLibrary:
         aliases = await self.catalog.all_party_aliases()
         return {alias: party_id for party_id, values in aliases.items() for alias in values}
 
-    def published_loader(self, contract_id: str) -> Callable[[str], Optional[str]]:
+    async def _stamp_staging(self, contract_id: str, sha256: str) -> None:
+        """Bind a staged tree to the catalog hash before committing the card."""
+
+        def stamp() -> None:
+            path = self.staging.staged_tree(contract_id)
+            tree = json.loads(path.read_text())
+            tree["_contracts_source_sha256"] = sha256
+            path.write_text(json.dumps(tree, ensure_ascii=False))
+
+        await asyncio.to_thread(stamp)
+
+    async def _recover_promotion(self, card: ContractCard) -> None:
+        """Retry a committed tree promotion, never an uncommitted candidate."""
+
+        def staged_hash() -> Optional[str]:
+            path = self.staging.staged_tree(card.contract_id)
+            if not path.exists():
+                return None
+            return json.loads(path.read_text()).get("_contracts_source_sha256")
+
+        if await asyncio.to_thread(staged_hash) == card.source_sha256:
+            await self.staging.promote(card.contract_id)
+
+    async def load_section(self, contract_id: str, node_id: str, *, source_sha256: str) -> Optional[str]:
+        """Read current source evidence, including trees published before hash markers.
+
+        The immutable archive also stays available if tree promotion failed.
+        Its catalog reference binds the body to the requested source version.
+        """
+        history = sorted(
+            await self.catalog.versions(contract_id), key=lambda version: (version.n, version.revision), reverse=True
+        )
+        for version in history:
+            if version.source_sha256 != source_sha256 or not version.evidence_ref:
+                continue
+            ref = EvidenceRef.parse(version.evidence_ref)
+            if (
+                ref.tenant_id != self.catalog.tenant_id
+                or ref.contract_id != contract_id
+                or not source_sha256.startswith(ref.source_sha256)
+            ):
+                raise EvidenceError("section archive reference does not match the requested source")
+            return await self.evidence.load_body(ref, node_id)
+        return None
+
+    def published_loader(
+        self, contract_id: str, *, source_sha256: Optional[str] = None
+    ) -> Callable[[str], Optional[str]]:
         """Return a node-body loader over the *published* tree."""
+        if source_sha256 is not None:
+            path = self.staging.published_tree(contract_id)
+            if not path.exists():
+                return lambda node_id: None
+            tree = json.loads(path.read_text())
+            if tree.get("_contracts_source_sha256") != source_sha256:
+                return lambda node_id: None
         store = self._content_store_factory(self.staging.published_root)
         return store.loader_for(contract_id)
 

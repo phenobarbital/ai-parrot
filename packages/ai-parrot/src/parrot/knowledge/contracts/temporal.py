@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from contextlib import nullcontext
 from datetime import datetime, timezone
 from typing import Any, Optional
 
@@ -93,6 +94,8 @@ def build_graph_update(
     Returns:
         The ``GraphUpdate`` to apply.
     """
+    if version is not None and version.card_snapshot:
+        card = ContractCard.model_validate(version.card_snapshot)
     recorded_revision = revision if revision is not None else card.revision
     version_n = version.n if version is not None else (card.versions[-1].n if card.versions else 1)
     valid_from = version.valid_from if version is not None else card.term.effective_date
@@ -189,7 +192,10 @@ class ContractTemporalPublisher:
             observable rather than being swallowed.
         """
         report = TemporalDrainReport()
-        async with self._lock:
+        guard = getattr(self.catalog, "publication_guard", None)
+        async with self._lock, guard(target="temporal") if guard else nullcontext(True) as acquired:
+            if not acquired:
+                return report
             try:
                 claimed = await self.catalog.claim_publication(target="temporal", limit=limit)
             except PublicationUnavailableError as exc:
@@ -234,6 +240,8 @@ class ContractTemporalPublisher:
             (item for item in versions if item.n == record.version_n and item.revision == record.revision),
             None,
         )
+        if version is None or not version.card_snapshot:
+            raise RuntimeError(f"missing immutable snapshot for {record.run_id}")
         tombstone = bool(record.payload.get("tombstone"))
         update = build_graph_update(
             card,
@@ -305,9 +313,10 @@ class ContractTemporalPublisher:
             if candidate.get("node_id") != node.node_id:
                 continue
             return (
-                tags.get("version_n") == node.domain_tags["version_n"]
-                and tags.get("revision") == node.domain_tags["revision"]
-                and tags.get("source_sha256") == node.domain_tags["source_sha256"]
+                tags == node.domain_tags
+                and candidate.get("title") == node.title
+                and candidate.get("source_uri") == node.source_uri
+                and candidate.get("summary") == node.summary
             )
         return False
 

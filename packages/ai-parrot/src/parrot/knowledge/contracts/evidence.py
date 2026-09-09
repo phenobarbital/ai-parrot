@@ -228,12 +228,30 @@ class StagingArea:
             staged_content = self.staging_root / contract_id
             previous_index = published_index.with_suffix(".json.previous")
             previous_content = published_content.with_name(f"{contract_id}.previous")
+            if (
+                not staged_content.exists()
+                and published_content.exists()
+                and published_index.exists()
+                and staged_index.read_bytes() == published_index.read_bytes()
+            ):
+                # A worker died after moving sidecars but before clearing staging.
+                # The published pair is already complete; never move it aside.
+                staged_index.unlink()
+                if previous_index.exists():
+                    previous_index.unlink()
+                if previous_content.exists():
+                    shutil.rmtree(previous_content)
+                return
             try:
                 if published_index.exists():
                     published_index.replace(previous_index)
                 if published_content.exists():
                     published_content.rename(previous_content)
-                staged_index.replace(published_index)
+                # Keep the staged index until the sidecars have moved. If the
+                # content rename fails, a retry still has the complete candidate.
+                promoting_index = published_index.with_suffix(".json.promoting")
+                shutil.copyfile(staged_index, promoting_index)
+                promoting_index.replace(published_index)
                 if staged_content.exists():
                     staged_content.rename(published_content)
             except OSError as exc:  # pragma: no cover - filesystem failure
@@ -242,6 +260,7 @@ class StagingArea:
                 if previous_content.exists():
                     previous_content.rename(published_content)
                 raise EvidenceError(f"failed to promote {contract_id!r}: {exc}") from exc
+            staged_index.unlink()
             if previous_index.exists():
                 previous_index.unlink()
             if previous_content.exists():

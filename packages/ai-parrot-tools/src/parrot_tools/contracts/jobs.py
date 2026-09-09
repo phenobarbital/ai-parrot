@@ -19,13 +19,12 @@ import logging
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Optional, Sequence
 
-from pydantic import BaseModel, Field
-
 from parrot.knowledge.contracts.models import (
     IngestItemReport,
     IngestReport,
     SourceItem,
 )
+from pydantic import BaseModel, Field
 
 from .retrieval import READ_ROLES, ContractRetrieval, RequestContext
 
@@ -490,10 +489,8 @@ def _recurrence_anchor(obligation: Any) -> Optional[date]:
     A recurrence with no anchor is ambiguous by definition, so it goes to
     review instead of being guessed at.
     """
-    provenance = getattr(obligation, "provenance", None)
-    verified_at = getattr(provenance, "verified_at", None) if provenance else None
-    if verified_at is not None:
-        return verified_at.date()
+    # Verification records when a human reviewed evidence, not when a
+    # contractual period starts. The current model has no recurrence anchor.
     return None
 
 

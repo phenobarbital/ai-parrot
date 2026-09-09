@@ -274,3 +274,60 @@ the worktree, and extended it to `parrot_tools.contracts`.
   `codex` call. The `codex exec review --base dev` run driven from this
   session completed normally and produced 8 P1 and 11 P2 findings, which are
   folded in above.
+
+## Deferred-review fixes — 2026-09-09
+
+Implemented the follow-up requested by the user after reviewing `fd2f48c28`, on
+`feat-FEAT-539-contracts-card-ontology` starting from `a985818e7`:
+
+- Producers are selected per request. The real ContractsAgent uses a private
+  ReAct entrypoint with caller-scoped tools and an isolated draft session; public
+  ungated entrypoints remain refused. Both producers share field/obligation
+  evidence enumeration and selected historical snapshots. Citation provenance
+  reflects the matching field's verification state. Handoff metadata is rebuilt
+  from the authenticated question and authorized cards.
+- Catalog merges and retractions append immutable administrative revisions and
+  enqueue ontology and temporal work. Administrative writes preserve the prior
+  contractual interval and evidence reference. Outbox reads, claims and writes
+  enforce their catalog tenant; separate schemas remain required.
+- Temporal drains reserve their connection pool and acquire a nonblocking
+  database advisory lock. Catalog claims/receipts share a transaction while
+  GraphIndex commits independently. A killed worker rolls back its claim;
+  recovery validates the committed payload instead of duplicating history.
+  Legacy abandoned in-flight rows are reclaimed under the lock. Historical
+  node fields come from their own snapshot, not the latest card.
+- Promotion retries preserve staged indexes until sidecars move and recognize
+  already-completed promotion after a crash. Unchanged-source retries recover
+  pending promotion. Section reads use hash-bound archived bodies, preserving
+  access for old unstamped trees and during promotion failures.
+- Concrete ContractLibrary imports no longer eagerly load optional database,
+  PDF or O365 modules. Missing rapidfuzz reports the documented installation
+  requirement. Graph patterns honor `_active`; explicit IDs cannot match a
+  shorter prefix; verification timestamps never fabricate recurrence anchors.
+
+Final validation on the user's existing `docker-postgres-1` (`ceaa9a23bcfb`),
+using temporary schemas only:
+
+- Core contracts: **492 passed, 3 skipped** (live ArangoDB unavailable).
+- Answering/tools contracts, including end-to-end: **222 passed**.
+- Bookstore and ontology regressions: **356 passed**.
+- O365 delta regressions: **51 passed**.
+- Shared two-connection pool tests repeated with pending work for both the same
+  tenant and different tenants: **2 passed**.
+- Black checks, Ruff checks and `git diff --check` pass.
+
+New regressions include actual agent dispatch, interleaved producers, all eight
+previously uncitable pattern dossiers for both producers, forged handoff metadata,
+field-level verification, tenant-bound outbox operations, merge/retraction history,
+legacy and interrupted tree reads, import boundaries, real process exit immediately
+after GraphIndex commit, and competing workers sharing a two-connection pool.
+
+Independent SDD adversarial review identified shared-pool starvation and two
+promotion/compatibility edge cases during implementation. All were fixed and
+covered by regressions; the follow-up review found no remaining issues in those
+adjustments. Logs are in `artifacts/logs/task-3054-fixes-*.log`; the last answering
+run is `task-3054-fixes-live.log`.
+
+The separately recorded generic Arango UPSERT defect and live Arango acceptance
+were not changed or claimed resolved by this follow-up. No new dependencies,
+service messages, or pilot-signoff claims were introduced.

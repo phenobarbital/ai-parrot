@@ -23,9 +23,8 @@ import logging
 from datetime import date
 from typing import Any, Optional, Sequence
 
+from parrot.knowledge.contracts.models import Citation, ContractCard, ContractVersion
 from pydantic import BaseModel, Field
-
-from parrot.knowledge.contracts.models import Citation, ContractCard
 
 from .retrieval import RequestContext, RetrievalResult
 from .service import AnswerOutcome, ContractsAnswerService
@@ -143,42 +142,79 @@ class ContractsDraftProducer:
     ) -> list[DossierEntry]:
         """Enumerate the ONLY evidence this turn may cite.
 
-        Obligations retrieved for the question come first, then the
-        remaining obligations of the dossier's cards, all bounded.
+        Obligation patterns use their retrieved clauses. Other patterns
+        prioritize relevant field provenance and may include card obligations;
+        historical questions use the selected immutable version snapshots.
         """
         entries: list[DossierEntry] = []
-        seen: set[tuple[str, str]] = set()
-        cards = {card.contract_id: card for card in dossier}
+        seen: set[tuple[str, int, str, str]] = set()
 
-        def _add(card: ContractCard, obligation: Any) -> None:
-            key = (card.contract_id, obligation.node_id)
-            if key in seen or not obligation.active or not obligation.text.strip():
+        def add(
+            card: ContractCard,
+            version: Optional[ContractVersion],
+            node_id: Optional[str],
+            quote: Optional[str],
+            page: Optional[int],
+        ) -> None:
+            if not node_id or not quote or not quote.strip() or len(entries) >= max_entries:
+                return
+            version_n = version.n if version else 1
+            key = (card.contract_id, version_n, node_id, quote)
+            if key in seen:
                 return
             seen.add(key)
-            version = card.versions[-1] if card.versions else None
             entries.append(
                 DossierEntry(
                     evidence_id=f"E{len(entries) + 1}",
                     contract_id=card.contract_id,
                     title=card.title,
-                    node_id=obligation.node_id,
-                    quote=obligation.text[:300],
-                    page=obligation.page,
-                    version_n=version.n if version else 1,
+                    node_id=node_id,
+                    quote=quote[:300],
+                    page=page,
+                    version_n=version_n,
                     source_sha256=version.source_sha256 if version else card.source_sha256,
                 )
             )
 
-        for obligation in result.obligations:
-            card = cards.get(obligation.contract_id)
-            if card is not None:
-                _add(card, obligation)
-        for card in dossier:
-            for obligation in card.obligations:
-                if len(entries) >= max_entries:
-                    break
-                _add(card, obligation)
-        return entries[:max_entries]
+        for current in dossier:
+            versions = sorted(current.versions, key=lambda item: (item.n, item.revision))
+            if result.pattern == "contract_in_force":
+                as_of = result.binds.get("as_of")
+                if isinstance(as_of, str):
+                    as_of = date.fromisoformat(as_of)
+                # The last recorded revision of each contractual version is authoritative.
+                latest = {version.n: version for version in versions}
+                selected = [version for version in latest.values() if as_of and version.in_force(as_of)]
+            else:
+                selected = [versions[-1] if versions else None]
+            for version in selected:
+                card = current
+                if result.pattern == "contract_in_force":
+                    if version is None or not version.card_snapshot:
+                        continue
+                    card = ContractCard.model_validate(version.card_snapshot)
+                prefixes = {
+                    "signatories_of": ("signatories",),
+                    "contracts_with_party": ("parties",),
+                    "expiring_within": ("term",),
+                    "notice_deadlines_within": ("term",),
+                    "contract_in_force": ("term",),
+                    "contract_family": ("parent_contract_id", "parties", "contract_type"),
+                }.get(result.pattern, ())
+                fields = sorted(
+                    card.field_provenance.items(),
+                    key=lambda item: (not item[0].startswith(prefixes) if prefixes else False, item[0]),
+                )
+                if result.pattern not in ("contracts_requiring_standard", "obligations_of_contract"):
+                    for _, provenance in fields:
+                        add(card, version, provenance.node_id, provenance.quote, provenance.page)
+                obligations = [ob for ob in result.obligations if ob.contract_id == card.contract_id]
+                if result.pattern not in ("contracts_requiring_standard", "obligations_of_contract"):
+                    obligations = card.obligations
+                for obligation in obligations:
+                    if obligation.active:
+                        add(card, version, obligation.node_id, obligation.text, obligation.page)
+        return entries
 
     @staticmethod
     def render(question: str, entries: Sequence[DossierEntry], as_of: date) -> str:
@@ -260,9 +296,6 @@ class ContractsAnswerFlow:
     ) -> None:
         self.service = service
         self.producer = producer or ContractsDraftProducer(adapter)
-        # The flow and the service share ONE producer, so the shared gate
-        # sees exactly the draft this flow produced.
-        self.service.producer = self.producer
 
     async def run(
         self,
@@ -286,7 +319,7 @@ class ContractsAnswerFlow:
         run.stages.append("triage")
         run.stages.append("retrieve")
 
-        outcome = await self.service.answer(question, request_context=request_context)
+        outcome = await self.service.answer(question, request_context=request_context, producer=self.producer)
 
         if isinstance(outcome, AnswerOutcome):
             run.stages.extend(["dossier", "draft", "verify", "audit", "release"])

@@ -205,3 +205,24 @@ def test_the_answering_layer_also_imports_without_optional_extras():
     )
     assert completed.returncode == 0, completed.stderr[-2000:]
     assert completed.stdout.strip().endswith("LEAKED="), completed.stdout
+
+
+def test_concrete_library_import_does_not_load_optional_database_pdf_or_o365_modules():
+    import os
+    import subprocess
+    import sys
+
+    code = """
+import sys
+class BlockOptional:
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname.split('.')[0] in {'asyncpg', 'rapidfuzz', 'pymupdf', 'fitz', 'msal'}:
+            raise ImportError('optional import attempted: ' + fullname)
+sys.meta_path.insert(0, BlockOptional())
+from parrot.knowledge.contracts.library import ContractLibrary
+print(ContractLibrary.__module__)
+"""
+    env = dict(os.environ, PYTHONPATH=str(REPO_ROOT / "packages/ai-parrot/src"))
+    result = subprocess.run([sys.executable, "-c", code], env=env, capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    assert "parrot.knowledge.contracts.library" in result.stdout

@@ -6,7 +6,6 @@ import json
 from pathlib import Path
 
 import pytest
-
 from parrot.knowledge.contracts.evidence import (
     EvidenceArchive,
     EvidenceError,
@@ -359,3 +358,21 @@ async def _stage(staging: StagingArea, contract_id: str, body: str) -> Path:
     node = content / "0005.md"
     node.write_text(body)
     return node
+
+
+@pytest.mark.asyncio
+async def test_retry_after_sidecars_moved_preserves_the_published_content(staging):
+    import shutil
+
+    await _publish(staging, "acme-msa", "old body")
+    await _stage(staging, "acme-msa", "new body")
+    staged_index = staging.staged_tree("acme-msa")
+    published_index = staging.published_tree("acme-msa")
+    # Simulate process death after the last rename, before staged-index cleanup.
+    published_index.replace(published_index.with_suffix(".json.previous"))
+    (staging.published_root / "acme-msa").rename(staging.published_root / "acme-msa.previous")
+    shutil.copyfile(staged_index, published_index)
+    (staging.staging_root / "acme-msa").rename(staging.published_root / "acme-msa")
+    await staging.promote("acme-msa")
+    assert (staging.published_root / "acme-msa" / "0005.md").read_text() == "new body"
+    assert not staged_index.exists()
