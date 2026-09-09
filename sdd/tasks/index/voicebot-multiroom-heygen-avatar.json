@@ -22,7 +22,7 @@
       "feature_id": "FEAT-537",
       "feature": "voicebot-multiroom-heygen-avatar",
       "spec": "sdd/specs/voicebot-multiroom-heygen-avatar.spec.md",
-      "status": "done-with-issues",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -38,7 +38,7 @@
         "AC15"
       ],
       "verification": "verified",
-      "note": "live gate EXECUTED: 8/12 (7 pass, 1 vendor rejection found); Nova SDK now installed \u2014 rows 1-3 remain NOT RUN for want of a human observer, not tooling"
+      "note": "live gate 8/12 automated + human observer 2026-09-09: avatar visible, lip-sync working, voice clean; suspected video-subscription defect withdrawn (test browser lacked H264)"
     },
     {
       "id": "TASK-2951",
@@ -564,7 +564,7 @@
         "AC15"
       ],
       "verification": "verified",
-      "note": "NOT ACCEPTED \u2014 AC1/AC10 require real vendor media; all code findings fixed"
+      "note": "AC1 perceptual half + AC10 lip-sync OBSERVED 2026-09-09; remaining gap is written confirmation of >=3 simultaneous browsers and two turns"
     }
   ]
 }

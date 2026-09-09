@@ -159,3 +159,24 @@ exists; no credential appears in any document or committed artifact.
 **Deviations from spec**: none — the task is a reporting task and it reports what
 happened. The live half of the evidence collection could not be run for the reasons in
 §1 of the report, and is recorded as NOT RUN rather than approximated.
+
+---
+
+## Verdict revisited — 2026-09-09
+
+A human observer ran the shipped example against real Nova + LiveAvatar + LiveKit and
+reported the avatar visible, lip-sync working and voice clean (§9 of the report). That
+closes AC10's lip-sync assessment and AC1's perceptual half — the two things this report
+had recorded as impossible to supply here — and TASK-2950 is now `done`.
+
+**This task stays `done-with-issues` for one narrow, honest reason:** AC1 also specifies
+**≥ 3 browsers simultaneously** and **two complete turns**, and the observed session was
+not reported in those terms. The backend equivalent was verified the same day (3 admitted
+participants on one producer, `state=avatar`, `reason=None`), so the remaining gap is a
+recording gap, not a capability gap. It flips to `done` the moment that detail is
+confirmed.
+
+Upgrading it on the assumption that "saw the avatar" implies three simultaneous tabs and
+two turns would repeat exactly the mistake that ran through this feature's earlier
+reporting — inferring evidence instead of reading it.
+

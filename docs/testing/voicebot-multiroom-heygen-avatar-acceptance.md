@@ -89,7 +89,7 @@ Measurement artifacts produced: 32 × `artifacts/logs/feat-537-browser-*.json`,
 
 | AC | Evidence type | Command / artifact | Result |
 |---|---|---|---|
-| **AC1** — two turns through real Nova → LITE → LiveKit, ≥ 3 browsers | live | — | **NOT RUN** — no LiveAvatar/LiveKit credentials, no Nova SDK |
+| **AC1** — two turns through real Nova → LITE → LiveKit, ≥ 3 browsers | live | Human observation, 2026-09-09 (Jesús Lara), running `examples/clients/voice/server.py` against real Nova + LiveAvatar + LiveKit: **avatar visible, lip-sync working, voice clean**. Backend half independently verified the same day: 3 admitted participants on one producer, `state=avatar`, `selected_identity=avatar-bc-49c28`, `reason=None` | **PARTIAL → see note** — the perceptual half (audible speech, correct lip-sync) is now **OBSERVED**, which no automated check could supply. Outstanding only: written confirmation that the session had **≥ 3 browsers simultaneously** and completed **two turns** |
 | **AC2** — 10 concurrent receivers; concurrent 11th rejected across workers without a second provider | automated | suites 1, 5, 7 · `feat-537-crossworker-*.json` (12 attempts → 10 admitted, 2 × `viewer_limit_reached`, 1 producer start) · `feat-537-browser-scenario4-*.json` (10 live pages, 11th refused, 1 avatar session) | **PASS** (vendors faked) |
 | **AC3** — unique subscribe-only credentials; tenant/agent/owner authz, floor/socket replay and lease-ownership tests; no vendor/publisher credentials in the browser | automated | suites 1, 3, 5, 6 · JWT grants decoded (`canPublish=false`, `canPublishData=false`, unique `sub`) · Redis scanned for `token|secret|ws_url|api_key` · browser scan of URL/localStorage/console | **PASS** |
 | **AC4** — late join, leave and reconnect without starting/stopping the producer; stale credentials cannot bypass admission | automated | suites 1, 5, 7 · tombstone + identity-reuse tests · scenario 1 late joiner | **PASS** |
@@ -98,7 +98,7 @@ Measurement artifacts produced: 32 × `artifacts/logs/feat-537-browser-*.json`,
 | **AC7** — cross-worker stop, owner fencing, rollback and shutdown; ≤ 30 s process-death cleanup; fatal failures not mislabelled as fallback | automated | suite 5 (`stop` on worker A ends the producer owned by B; owner death fenced, room emptied, `failed`/`owner_lost`, simulated ≤ 30 s) · `test_voice_broadcast_media.py` (LiveKit prerequisite failure → `failed`, never `audio_only`) | **PASS** (simulated clock) |
 | **AC8** — HTML roles, Raise Hand/Cancel, Grant/Revoke/Reclaim, Finish Speaking, real resampling, existing-track attachment, autoplay recovery; ungranted participants never capture | automated | suite 7 scenarios 2, 3, 8 · `test_voice_demo_broadcast_browser.py` (stateful 44.1 kHz→16 kHz resampler, `getUserMedia` spy = 0 calls) · scenario 1 late-join attachment | **PASS** — except **autoplay-blocked recovery**, which the harness forces off (`--autoplay-policy=no-user-gesture-required`) and is therefore **NOT VERIFIED** |
 | **AC9** — scoped pytest, real Redis and browser suites pass; existing voice/avatar regressions green; logs identify versions and skipped live cases | automated | suites 1–8; **`tests/voice/` 542 passed / 7 skipped / 0 failed / 0 errors**; **`pnpm test` 46 files / 316 tests passed** (incl. `voice-demo-avatar.test.ts` 22/22); versions in §1 | **PASS** — no remaining caveats; both the Python and the TypeScript suites now execute |
-| **AC10** — Module 1 and the 3-/10-browser real-vendor gates recorded, incl. media playback and lip-sync assessment | live | [`voicebot-multiroom-live-gate.md`](voicebot-multiroom-live-gate.md) — **8 of 12 executed** (7 PASS, 1 REJECTED-with-finding); real LiveAvatar + LiveKit, two subscribers, 858 audio / 195 video frames each | **PARTIAL** — Module 1 media contract is now **verified live**. Still NOT RUN: the four Nova/Bedrock rows (SDK not installed) and lip-sync, which needs a human observer |
+| **AC10** — Module 1 and the 3-/10-browser real-vendor gates recorded, incl. media playback and lip-sync assessment | live | [`voicebot-multiroom-live-gate.md`](voicebot-multiroom-live-gate.md) — **8 of 12 executed** (7 PASS, 1 REJECTED-with-finding); real LiveAvatar + LiveKit, two subscribers, 858 audio / 195 video frames each. **Media playback and lip-sync assessed by a human on 2026-09-09 and reported correct** | **PASS for the recorded gates and the lip-sync assessment.** The Nova/Bedrock rows remain NOT RUN as scripted scenarios (the probe's PCM is a synthesized tone), though the SDK is now installed and a real Nova turn ran in the observed session |
 | **AC11** — setup/authentication/environment/limits/failure-injection docs complete with exact tested commands; FULL/custom-LLM and non-broadcast interfaces still compatible | automated + review | `examples/clients/voice/README.md` §Broadcast mode, [`docs/voice/voicebot-multiroom-heygen-avatar.md`](../voice/voicebot-multiroom-heygen-avatar.md); env names grep-verified, links checked, commands executed; suites 2 & 4 prove the legacy avatar/voice paths unchanged | **PASS** |
 | **AC12** — concurrent first joins select exactly one moderator; a raised hand grants no microphone; only the moderator grants/revokes/reclaims; the moderator cannot transmit while another holds the floor | automated | suite 1 (`test_first_admission_elects_single_moderator_under_race`), suite 5, suite 7 scenarios 2 & 3 | **PASS** |
 | **AC13** — two different participants complete sequential voice turns through the same conversation; unauthorized, stale-epoch and duplicate-socket audio rejected, incl. concurrent handoffs and across workers; a failed handoff stays silent with a visible error | automated (rejection) + live (turns) | Rejection: suites 1, 5, 6, 7 (`floor_not_granted`, `stale_floor_epoch`, `speaker_connection_exists`, cross-worker binding, barrier-timeout → floor idle + retryable error). Turns: — | **PARTIAL** — the rejection half is PASS; **actual sequential voice turns are NOT RUN** (no vendor access). The §4 defect that previously blocked them is fixed, and the handoff is exercised end-to-end against faked vendors |
@@ -332,4 +332,39 @@ A third, smaller issue was fixed alongside: a LiveKit `404 room does not exist` 
 normal window between admission and room creation was logged as "LiveKit unreachable" with
 a full traceback on every reconciler pass, burying the genuine failures above. It is now
 distinguished from an outage and logged at DEBUG.
+
+---
+
+## 9. Human-observer session — 2026-09-09
+
+Reported by Jesús Lara after running `examples/clients/voice/server.py` against real
+Nova + LiveAvatar + LiveKit:
+
+> "I saw the avatar, lips-sync working and voice with no issues."
+
+This is the one piece of evidence the whole automated stack could not produce. Every
+suite in this repo can assert that *frames arrive*; none can assert that the speech is
+**audible** or that the mouth **matches** it. Those are perceptual judgements, and they
+are exactly what AC1 and AC10 ask for.
+
+### What this closes
+
+- **Lip-sync assessment (AC10)** — assessed and correct.
+- **Audible speech through the real chain (AC1's perceptual half)** — confirmed.
+- **The last open technical question**: whether the avatar's H264 video reaches a browser
+  at all. It does. The earlier "video track never subscribed" finding was an artifact of
+  the *test* browser — Playwright's Chromium 136 ships without an H264 decoder
+  (`RTCRtpReceiver.getCapabilities('video')` → VP8/VP9/AV1 only), so LiveKit correctly
+  declined a track it could not decode, while opus audio subscribed normally. Real Chrome
+  152 has H264. **No product defect existed**; the report of one has been withdrawn.
+
+### What is still not written down
+
+The session confirms the media path perceptually. AC1 additionally specifies **≥ 3
+browsers simultaneously** and **two complete turns**. The backend equivalent was verified
+the same day (3 admitted participants on one producer, `state=avatar`, `reason=None`), but
+whether the observed session itself had three live browser tabs and two turns is not
+recorded here. AC1 is therefore left **PARTIAL pending that one detail**, rather than
+being upgraded on an assumption — the entire history of this feature's reporting argues
+against inferring evidence that was not actually stated.
 
