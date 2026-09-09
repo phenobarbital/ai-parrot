@@ -263,8 +263,7 @@ async def ingest_delta(
         result.rescan_performed = False
         result.cursor_retained = committed
         logger.warning(
-            "Delta enumeration for %s still reports a required rescan; "
-            "cursor retained and nothing processed",
+            "Delta enumeration for %s still reports a required rescan; " "cursor retained and nothing processed",
             source.source,
         )
         return result
@@ -524,8 +523,7 @@ async def ingest_delta(
             )
         if result.suspected_deletions:
             logger.warning(
-                "Rescan of %s is folder-scoped, so %d missing item(s) were "
-                "reported rather than retracted: %s",
+                "Rescan of %s is folder-scoped, so %d missing item(s) were " "reported rather than retracted: %s",
                 source.source,
                 len(result.suspected_deletions),
                 ", ".join(sorted(result.suspected_deletions)),
@@ -641,8 +639,7 @@ async def _enumerate(
         return _delta_payload(await run_surface(**kwargs))
 
     raise DeltaEnumerationError(
-        f"{type(delta_tool).__name__} exposes neither enumerate() nor run(); "
-        f"it cannot be used as a delta tool"
+        f"{type(delta_tool).__name__} exposes neither enumerate() nor run(); " f"it cannot be used as a delta tool"
     )
 
 

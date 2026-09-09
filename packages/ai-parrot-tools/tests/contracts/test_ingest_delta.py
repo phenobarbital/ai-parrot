@@ -588,9 +588,7 @@ async def test_a_real_o365_delta_tool_can_actually_be_driven(workspace):
                         )()
                     ],
                     "odata_next_link": None,
-                    "odata_delta_link": (
-                        "https://graph.microsoft.com/v1.0/drives/drive-1/items/root/delta?token=z"
-                    ),
+                    "odata_delta_link": ("https://graph.microsoft.com/v1.0/drives/drive-1/items/root/delta?token=z"),
                 },
             )()
 
@@ -927,9 +925,7 @@ async def test_a_rescan_of_one_drive_never_retracts_another_drive(workspace):
     """One source name may span drives; a rescan of one says nothing about the rest."""
     library, downloader, _ = workspace
 
-    first = ScriptedDeltaTool(
-        [page([item("a"), item("b", drive_id="drive-2")])]
-    )
+    first = ScriptedDeltaTool([page([item("a"), item("b", drive_id="drive-2")])])
     await ingest_delta(
         library=library,
         delta_tool=first,
