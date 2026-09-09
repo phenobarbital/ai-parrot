@@ -573,8 +573,16 @@ class ContractCatalogStore(ABC):
         """Return one recorded source item by its stable drive/item identity."""
 
     @abstractmethod
-    async def list_source_items(self, source: str) -> list[SourceItem]:
-        """Return every recorded item for one configured source."""
+    async def list_source_items(self, source: Optional[str] = None) -> list[SourceItem]:
+        """Return recorded source items.
+
+        Args:
+            source: Restrict to one configured source, or None for every
+                source. The unrestricted form exists because a contract can
+                be backed by identical files ingested under *different*
+                sources — deciding whether a card is still referenced has to
+                look past the source currently being processed.
+        """
 
     # -- relation judgements ----------------------------------------------
 

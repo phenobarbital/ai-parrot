@@ -471,10 +471,10 @@ class InMemoryContractCatalog(ContractCatalogStore):
     async def get_source_item(self, drive_id: str, item_id: str) -> Optional[SourceItem]:
         return self.items.get((drive_id, item_id))
 
-    async def list_source_items(self, source: str) -> list[SourceItem]:
+    async def list_source_items(self, source: Optional[str] = None) -> list[SourceItem]:
         return sorted(
-            (item for item in self.items.values() if item.source == source),
-            key=lambda item: (item.drive_id, item.item_id),
+            (item for item in self.items.values() if source is None or item.source == source),
+            key=lambda item: (item.source, item.drive_id, item.item_id),
         )
 
     # -- relations ---------------------------------------------------------

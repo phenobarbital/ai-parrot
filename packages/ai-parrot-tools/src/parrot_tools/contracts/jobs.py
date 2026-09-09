@@ -105,10 +105,12 @@ class DeltaIngestResult(BaseModel):
 
     ``rescan_required`` means the committed cursor is dead **and** could not
     be recovered — nothing was processed and the cursor is retained.
-    ``rescan_performed`` means a cursor expiry *was* recovered by
-    re-enumerating the drive in full, so the batch is a complete listing and
-    was reconciled against local state; ``reconciled`` lists the contracts
-    retracted because they were absent from that listing.
+    ``rescan_performed`` means a full re-enumeration was *attempted* after a
+    cursor expiry. It does **not** by itself mean reconciliation ran — that
+    is separately gated on the rescan being complete, cursor-bearing,
+    error-free and whole-drive. Read ``reconciled`` (contracts retracted
+    because they were absent) and ``suspected_deletions`` to know what
+    actually happened.
 
     ``suspected_deletions`` lists source items missing from a rescan that
     were **not** retracted because absence did not prove deletion — a
@@ -236,6 +238,7 @@ async def ingest_delta(
     committed = await catalog.get_delta_token(source.source)
     enumeration_started = clock()
 
+    attempted_rescan = False
     try:
         page = await _enumerate(delta_tool, source, token=committed)
         if page.get("rescan_required"):
@@ -247,12 +250,18 @@ async def ingest_delta(
                 "Delta token expired for %s; re-enumerating the drive in full",
                 source.source,
             )
+            attempted_rescan = True
             page = await _enumerate(delta_tool, source, token=None, full=True)
             result.rescan_performed = True
     except DeltaEnumerationError as exc:
         # A failed enumeration is not an empty one: keep the cursor so the
         # next run replays instead of advancing over unseen changes.
         result.errors.append(f"delta enumeration failed: {exc}")
+        if attempted_rescan:
+            # The recovery attempt itself failed, so the cursor is dead and
+            # still unrecovered — which is exactly what rescan_required means.
+            result.rescan_required = True
+            result.rescan_performed = False
         result.cursor_retained = committed
         logger.warning("Delta enumeration failed for %s: %s", source.source, exc)
         return result
@@ -281,12 +290,15 @@ async def ingest_delta(
         """Whether another live source item still backs this contract.
 
         Identical files deduplicate onto one card, so the disappearance of
-        one source file does not mean the contract is gone.
+        one source file does not mean the contract is gone. The search spans
+        **every** source, not just the one being processed: the same bytes
+        ingested under a different `SourceConfig` share the card, and a
+        reference this job cannot see is still a reference.
         """
-        for other in await catalog.list_source_items(source.source):
+        for other in await catalog.list_source_items():
             if other.deleted or other.contract_id != contract_id:
                 continue
-            if (other.drive_id, other.item_id) != (drive_id, item_id):
+            if (other.source, other.drive_id, other.item_id) != (source.source, drive_id, item_id):
                 return True
         return False
 
@@ -601,6 +613,13 @@ async def _enumerate(
     full: bool = False,
 ) -> dict[str, Any]:
     """Call whichever delta surface the injected tool exposes.
+
+    A plain-dict tool is trusted for the keys that gate the destructive
+    reconciliation path — ``complete``, ``delta_link`` and
+    ``reset_performed``. A conforming tool must only set ``complete`` with
+    its final ``delta_link`` when the walk truly reached the end of an
+    enumeration covering the requested scope, and ``reset_performed`` only
+    when that enumeration replaced an expired cursor from scratch.
 
     Args:
         delta_tool: Either an ``O365Tool``-shaped delta tool or a plain

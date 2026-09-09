@@ -644,6 +644,12 @@ async def test_a_real_o365_delta_tool_can_actually_be_driven(workspace):
     assert graph.delta_calls == 1
     assert result.errors == [], result.errors
     assert result.cursor_committed is not None
+    # ...and the item actually made it through, not just the plumbing.
+    assert [row.source_uri for row in result.report.items] == [
+        "https://graph.microsoft.com/legal/a.md"
+    ]
+    stored = await library.catalog.list_source_items("sharepoint://legal")
+    assert [entry.item_id for entry in stored] == ["a"]
 
 
 @pytest.mark.asyncio
@@ -790,6 +796,21 @@ async def test_a_first_run_rescan_has_nothing_to_reconcile(workspace):
     """With no committed cursor there is no local state to compare against."""
     library, downloader, _ = workspace
 
+    from parrot.knowledge.contracts.models import SourceItem
+
+    # A row left behind by an interrupted earlier run: present locally, absent
+    # from the rescan, but with no committed cursor there is nothing to
+    # reconcile *against* — the guard must leave it alone.
+    await library.catalog.upsert_source_item(
+        SourceItem(
+            source="sharepoint://drive",
+            drive_id="drive-1",
+            item_id="orphan",
+            current_uri="https://graph.microsoft.com/legal/orphan.md",
+            contract_id="orphan-contract",
+        )
+    )
+
     tool = ScriptedDeltaTool(
         [
             {"items": [], "tombstones": [], "delta_link": None, "rescan_required": True},
@@ -799,12 +820,14 @@ async def test_a_first_run_rescan_has_nothing_to_reconcile(workspace):
     result = await ingest_delta(
         library=library,
         delta_tool=tool,
-        source=SOURCE,
+        source=UNSCOPED,
         principal=principal_context(),
         downloader=downloader,
     )
 
+    assert await library.catalog.get_delta_token("sharepoint://drive") is not None
     assert result.reconciled == []
+    assert result.tombstoned == []
     assert result.cursor_committed == "https://graph.microsoft.com/final"
 
 
@@ -961,28 +984,33 @@ async def test_a_contract_backed_by_another_live_file_is_not_retracted(workspace
 
     One of them disappearing does not mean the contract is gone.
     """
-    library, downloader, documents = workspace
+    library, downloader, _documents = workspace
+    from parrot.knowledge.contracts.models import SourceItem
 
-    # Two source items whose bytes are identical deduplicate onto one card.
-    async def same_bytes(entry):
-        path = documents / f"{entry['item_id']}.md"
-        path.write_text(MSA)
-        return path
-
-    first = ScriptedDeltaTool([page([item("a"), item("b")])])
+    first = ScriptedDeltaTool([page([item("a")])])
     await ingest_delta(
         library=library,
         delta_tool=first,
         source=UNSCOPED,
         principal=principal_context(),
-        downloader=same_bytes,
+        downloader=downloader,
     )
     known = await library.catalog.list_source_items("sharepoint://drive")
-    contract_ids = {e.item_id: e.contract_id for e in known}
-    if contract_ids.get("a") != contract_ids.get("b"):
-        pytest.skip("this library build did not deduplicate the two files")
+    shared = next(e.contract_id for e in known if e.item_id == "a")
 
-    shared = contract_ids["a"]
+    # A second file that deduplicated onto the same card. Built directly so
+    # the test pins THIS guard rather than the library's dedup heuristics.
+    await library.catalog.upsert_source_item(
+        SourceItem(
+            source="sharepoint://drive",
+            drive_id="drive-1",
+            item_id="b",
+            current_uri="https://graph.microsoft.com/legal/b.md",
+            contract_id=shared,
+        )
+    )
+
+    # "b" vanishes from the rescan; "a" still backs the card.
     rescan = ScriptedDeltaTool(
         [
             {"items": [], "tombstones": [], "delta_link": None, "rescan_required": True},
@@ -994,7 +1022,7 @@ async def test_a_contract_backed_by_another_live_file_is_not_retracted(workspace
         delta_tool=rescan,
         source=UNSCOPED,
         principal=principal_context(),
-        downloader=same_bytes,
+        downloader=downloader,
     )
 
     assert result.reconciled == []
@@ -1176,3 +1204,95 @@ async def test_a_rescan_with_item_errors_never_reconciles(workspace):
     assert result.cursor_committed is None
     for contract_id in contracts:
         assert (await library.catalog.get(contract_id)).active is True
+
+
+@pytest.mark.asyncio
+async def test_a_contract_backed_by_a_live_file_in_another_source_survives(workspace):
+    """Dedup crosses source boundaries, so the reference check must too.
+
+    Identical bytes ingested under a *different* `SourceConfig` share one
+    card. Reconciling this source must not withdraw a contract that another
+    source's still-live file backs.
+    """
+    library, downloader, _ = workspace
+    from parrot.knowledge.contracts.models import SourceItem
+
+    first = ScriptedDeltaTool([page([item("a")])])
+    await ingest_delta(
+        library=library,
+        delta_tool=first,
+        source=UNSCOPED,
+        principal=principal_context(),
+        downloader=downloader,
+    )
+    known = await library.catalog.list_source_items("sharepoint://drive")
+    shared = next(e.contract_id for e in known if e.item_id == "a")
+
+    # The same card, reached through a completely different configured source.
+    await library.catalog.upsert_source_item(
+        SourceItem(
+            source="sharepoint://archive",
+            drive_id="drive-9",
+            item_id="mirror",
+            current_uri="https://graph.microsoft.com/archive/a.md",
+            contract_id=shared,
+        )
+    )
+
+    # "a" disappears from this source's rescan.
+    rescan = ScriptedDeltaTool(
+        [
+            {"items": [], "tombstones": [], "delta_link": None, "rescan_required": True},
+            page([]),
+        ]
+    )
+    result = await ingest_delta(
+        library=library,
+        delta_tool=rescan,
+        source=UNSCOPED,
+        principal=principal_context(),
+        downloader=downloader,
+    )
+
+    assert result.reconciled == []
+    assert result.tombstoned == []
+    assert (
+        await library.catalog.get(shared)
+    ).active is True, "still backed by a live file in sharepoint://archive"
+
+
+@pytest.mark.asyncio
+async def test_a_failed_recovery_reports_the_expiry_as_unrecovered(workspace):
+    """If the re-enumeration itself fails, the cursor really is stuck."""
+    library, downloader, _ = workspace
+    await library.catalog.set_delta_token("sharepoint://drive", "dead-cursor")
+
+    class ExpiredThenBroken:
+        def __init__(self):
+            self.calls = 0
+
+        async def enumerate(self, **kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                return {
+                    "items": [],
+                    "tombstones": [],
+                    "delta_link": None,
+                    "rescan_required": True,
+                }
+            return {"status": "error", "error": "Graph refused the rescan"}
+
+    tool = ExpiredThenBroken()
+    result = await ingest_delta(
+        library=library,
+        delta_tool=tool,
+        source=UNSCOPED,
+        principal=principal_context(),
+        downloader=downloader,
+    )
+
+    assert tool.calls == 2
+    assert result.rescan_required is True, "the expiry was not recovered"
+    assert result.rescan_performed is False
+    assert result.cursor_retained == "dead-cursor"
+    assert any("Graph refused the rescan" in err for err in result.errors)
