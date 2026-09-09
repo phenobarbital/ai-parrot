@@ -13,6 +13,8 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 
 from .base import O365Tool, O365ToolArgsSchema
+from .delta import DEFAULT_MAX_PAGES, DriveDeltaHelper
+from parrot.interfaces.o365 import O365Client
 from parrot.interfaces.sharepoint import SharepointClient
 
 # ============================================================================
@@ -557,6 +559,358 @@ class UploadSharePointFileTool(O365Tool):
 
 
 # ============================================================================
+# DELTA SHAREPOINT FILES TOOL
+# ============================================================================
+
+
+def _validate_graph_identifier(value: str, field: str) -> str:
+    """Validate a configured Graph identifier before it becomes a URL segment.
+
+    Graph site/drive identifiers are opaque strings, but a model-supplied
+    value must never be allowed to expand into a different endpoint. Anything
+    that looks like a URL, carries whitespace/control characters or is
+    implausibly long is rejected outright.
+
+    Args:
+        value: The raw identifier.
+        field: Field name, used in the error message.
+
+    Returns:
+        The stripped, validated identifier.
+
+    Raises:
+        ValueError: If the identifier is empty or not a plain Graph id.
+    """
+    if not value or not str(value).strip():
+        raise ValueError(f"{field} must be a non-empty Microsoft Graph identifier")
+    candidate = str(value).strip()
+    if "://" in candidate or candidate.startswith("//"):
+        raise ValueError(f"{field} must be a Graph identifier, not a URL: {candidate!r}")
+    if any(ch.isspace() for ch in candidate) or any(ord(ch) < 32 for ch in candidate):
+        raise ValueError(f"{field} must not contain whitespace or control characters")
+    if len(candidate) > 512:
+        raise ValueError(f"{field} is implausibly long ({len(candidate)} chars)")
+    return candidate
+
+
+class DeltaSharePointFilesArgs(O365ToolArgsSchema):
+    """Arguments for tracking SharePoint document-library changes."""
+
+    site_id: Optional[str] = Field(
+        default=None,
+        description=(
+            "Microsoft Graph site identifier (e.g. "
+            "'contoso.sharepoint.com,<site-guid>,<web-guid>' or "
+            "'contoso.sharepoint.com:/sites/TeamSite'). Required unless "
+            "drive_id is supplied. Must be an identifier, never a URL."
+        ),
+    )
+    library: Optional[str] = Field(
+        default="Documents", description="Document library (drive) name to track. Default: 'Documents'."
+    )
+    drive_id: Optional[str] = Field(
+        default=None,
+        description=(
+            "Stable Graph drive identifier. When supplied, the library lookup "
+            "is skipped and this drive is tracked directly."
+        ),
+    )
+    folder_id: Optional[str] = Field(
+        default=None,
+        description=(
+            "Stable Graph item id of the folder to restrict results to. This "
+            "is the reliable folder filter (Graph delta reports "
+            "parentReference.id but omits its path), though it matches direct "
+            "children only."
+        ),
+    )
+    folder_path: Optional[str] = Field(
+        default=None,
+        description=(
+            "Library-relative folder path to restrict results to (e.g. "
+            "'Contracts/2026'). Best-effort only: the Graph v1.0 delta API omits "
+            "parentReference.path, so prefer folder_id. Items whose membership "
+            "cannot be decided are kept and counted in unresolved_parent."
+        ),
+    )
+    delta_link: Optional[str] = Field(
+        default=None,
+        description=(
+            "Opaque delta cursor returned by a previous call. Omit for a full "
+            "enumeration. The cursor is validated against the configured "
+            "Microsoft Graph origin — and confined to this drive's delta "
+            "endpoint — before any credential is forwarded."
+        ),
+    )
+    delta_token: Optional[str] = Field(
+        default=None,
+        description=(
+            "Alias of delta_link accepted for the contracts ingest job. " "delta_link wins when both are supplied."
+        ),
+    )
+    max_pages: Optional[int] = Field(
+        default=None, ge=1, le=DEFAULT_MAX_PAGES, description="Optional bound on delta pages followed in this call."
+    )
+
+
+class DeltaSharePointFilesTool(O365Tool):
+    """
+    Tool for tracking changes in a SharePoint document library.
+
+    Wraps the drive-level Microsoft Graph ``/delta`` feed: it returns the
+    items that were added, modified, renamed or moved since the supplied
+    cursor, plus tombstones for deleted items, and hands back a new opaque
+    cursor to use on the next round.
+
+    The tool is read-only and stateless: it never stores the returned cursor
+    and never downloads file content. Persisting the cursor is the caller's
+    responsibility, and it must only be persisted once every item has been
+    durably processed.
+
+    Examples:
+        # First round: full enumeration of a library subtree
+        result = await tool.run(
+            site_id="contoso.sharepoint.com:/sites/Legal",
+            library="Documents",
+            folder_path="Contracts"
+        )
+
+        # Later rounds: incremental, resuming from the stored cursor
+        result = await tool.run(
+            site_id="contoso.sharepoint.com:/sites/Legal",
+            library="Documents",
+            folder_path="Contracts",
+            delta_link=stored_cursor
+        )
+    """
+
+    name: str = "delta_sharepoint_files"
+    description: str = (
+        "Track changes (additions, edits, renames, moves and deletions) in a "
+        "SharePoint document library since a previous delta cursor. Returns "
+        "changed items, deleted-item tombstones and a new cursor."
+    )
+    args_schema: Type[BaseModel] = DeltaSharePointFilesArgs
+
+    def __init__(
+        self,
+        *args,
+        delta_helper: Optional[DriveDeltaHelper] = None,
+        strict_folder_scope: bool = True,
+        **kwargs,
+    ):
+        """Initialize the SharePoint delta tool.
+
+        Args:
+            *args: Positional arguments forwarded to :class:`O365Tool`.
+            delta_helper: Optional pre-configured drive delta helper, useful
+                for tuning retry/backoff bounds or the trusted Graph origins.
+            strict_folder_scope: When True (default), refuse to return
+                results whose folder membership could not be decided under a
+                folder-scoped request, rather than silently widening the
+                scope to the whole drive.
+            **kwargs: Keyword arguments forwarded to :class:`O365Tool`.
+        """
+        super().__init__(*args, **kwargs)
+        self._delta_helper = delta_helper or DriveDeltaHelper()
+        self.strict_folder_scope = strict_folder_scope
+
+    async def _resolve_library_drive_id(self, client: O365Client, site_id: str, library: Optional[str]) -> str:
+        """Resolve a document library name to its stable Graph drive id.
+
+        Args:
+            client: Authenticated O365 client.
+            site_id: Validated Graph site identifier.
+            library: Library (drive) display name, or None to accept the
+                site's only drive.
+
+        Returns:
+            The stable drive identifier.
+
+        Raises:
+            ValueError: If the site exposes no drives, or the named library
+                does not exist, or the site is ambiguous with no library name.
+        """
+        drives = await client.graph_client.sites.by_site_id(site_id).drives.get()
+        available = list(getattr(drives, "value", None) or [])
+        # The drives collection is pageable. This lookup deliberately reads
+        # only the first page, so it must never conclude "absent" or "unique"
+        # from a truncated listing — it asks for an explicit drive_id instead.
+        truncated = bool(getattr(drives, "odata_next_link", None))
+
+        if not available:
+            raise ValueError(f"SharePoint site {site_id!r} exposes no drives")
+
+        if library:
+            wanted = library.strip().lower()
+            for drive in available:
+                if (drive.name or "").strip().lower() == wanted:
+                    return str(drive.id)
+            if truncated:
+                raise ValueError(
+                    f"Document library {library!r} was not on the first page of "
+                    f"libraries for site {site_id!r}; supply an explicit "
+                    f"drive_id. First page: {[d.name for d in available]}"
+                )
+            raise ValueError(
+                f"Document library {library!r} not found on site {site_id!r}. "
+                f"Available: {[d.name for d in available]}"
+            )
+
+        if truncated or len(available) > 1:
+            raise ValueError(
+                f"Site {site_id!r} exposes multiple libraries; specify one of "
+                f"{[d.name for d in available]}" + (" (list truncated — more pages exist)" if truncated else "")
+            )
+        return str(available[0].id)
+
+    async def _resolve_folder_id(self, client: O365Client, drive_id: str, folder_path: str) -> Optional[str]:
+        """Resolve a drive-relative folder path to its stable item id.
+
+        Graph's delta feed omits ``parentReference.path`` but reports
+        ``parentReference.id``, so a path filter can only be applied exactly
+        once the path has been turned into an id. Doing that here — rather
+        than making every caller supply ``folder_id`` — is what keeps a
+        folder-scoped request both exact and usable.
+
+        Args:
+            client: Authenticated O365 client.
+            drive_id: Drive the folder lives in.
+            folder_path: Drive-relative folder path.
+
+        Returns:
+            The folder's item id, or None when it could not be resolved
+            (the caller then reports the scope as undecidable rather than
+            silently widening it).
+        """
+        cleaned = folder_path.strip("/")
+        if not cleaned:
+            return None
+        try:
+            item = await (
+                client.graph_client.drives.by_drive_id(drive_id).items.by_drive_item_id(f"root:/{cleaned}:").get()
+            )
+        except Exception as exc:  # noqa: BLE001 - undecidable, not fatal here
+            self.logger.warning(
+                "Could not resolve folder %r on drive %s: %s",
+                folder_path,
+                drive_id,
+                exc,
+            )
+            return None
+        resolved = getattr(item, "id", None)
+        if not resolved:
+            self.logger.warning("Folder %r on drive %s resolved to no item id", folder_path, drive_id)
+            return None
+        return str(resolved)
+
+    async def _execute_graph_operation(self, client: O365Client, **kwargs) -> Dict[str, Any]:
+        """Enumerate the library's delta feed through the shared helper.
+
+        Args:
+            client: Authenticated O365Client instance.
+            **kwargs: Tool parameters.
+
+        Returns:
+            Dict describing the changed items, tombstones and the new cursor.
+        """
+        site_id = kwargs.get("site_id")
+        library = kwargs.get("library", "Documents")
+        drive_id = kwargs.get("drive_id")
+        folder_path = kwargs.get("folder_path") or None
+        folder_id = kwargs.get("folder_id") or None
+        # `delta_token` is the name the contracts ingest job (TASK-3049)
+        # passes; accept it as an alias so that consumer resumes from its
+        # committed cursor instead of silently re-enumerating the whole
+        # drive on every run. This is a name, not a dependency: nothing in
+        # this lane imports that package.
+        delta_link = kwargs.get("delta_link") or kwargs.get("delta_token") or None
+        max_pages = kwargs.get("max_pages")
+
+        if drive_id:
+            resolved_drive_id = _validate_graph_identifier(drive_id, "drive_id")
+        else:
+            if not site_id:
+                raise ValueError("Either site_id or drive_id must be provided to track " "SharePoint changes")
+            resolved_drive_id = await self._resolve_library_drive_id(
+                client, _validate_graph_identifier(site_id, "site_id"), library
+            )
+
+        self.logger.info(
+            "Tracking SharePoint delta for drive %s (library=%s, folder=%s, " "incremental=%s)",
+            resolved_drive_id,
+            library,
+            folder_path or "(whole library)",
+            delta_link is not None,
+        )
+
+        if folder_path and not folder_id:
+            # Turn the path into an id so membership becomes decidable;
+            # otherwise the delta feed gives us nothing to filter on.
+            folder_id = await self._resolve_folder_id(client, resolved_drive_id, folder_path)
+
+        enumeration = await self._delta_helper.enumerate(
+            client,
+            resolved_drive_id,
+            delta_link=delta_link,
+            folder_path=folder_path,
+            folder_id=folder_id,
+            max_pages=max_pages,
+        )
+
+        scope_requested = folder_path or folder_id
+        if scope_requested and self.strict_folder_scope and not enumeration.folder_filter_reliable:
+            # Graph omits parentReference.path from delta responses, so a
+            # path-only filter usually cannot decide membership. Returning
+            # the unfiltered drive under a folder-scoped request would let
+            # unrelated documents into the caller's corpus, and the caller
+            # cannot be relied on to inspect folder_filter_reliable. Fail
+            # loudly and tell the operator how to make it decidable.
+            raise ValueError(
+                f"Folder scope {scope_requested!r} could not be applied to "
+                f"{enumeration.unresolved_parent} of "
+                f"{len(enumeration.items)} item(s): the Microsoft Graph "
+                f"delta feed does not report a parent path. Pass folder_id "
+                f"(the folder's stable item id) instead, or drop the folder "
+                f"filter and scope the results in the caller. Set "
+                f"strict_folder_scope=False to accept the unfiltered set."
+            )
+
+        payload = enumeration.model_dump(mode="json")
+        # `path` is a derived property and `sha256` lives inside
+        # content_hashes, so model_dump() omits both — yet the contracts
+        # ingest job reads them per item (as a source-URI fallback and as
+        # the content hash it persists). Project them explicitly.
+        for serialized, item in zip(payload["items"], enumeration.items):
+            serialized["path"] = item.path
+            serialized["sha256"] = item.content_hashes.get("sha256Hash")
+        payload.update(
+            {
+                "source": "sharepoint",
+                # Keys the contracts ingest job (TASK-3049) reads.
+                "tombstones": [i.item_id for i in enumeration.deleted_items],
+                "pages": enumeration.pages_fetched,
+                # Inverse of `complete`, kept as an explicit key for parity
+                # with the payload the core lane's tool emitted.
+                "truncated": not enumeration.complete,
+                # False by design: a 410 is recovered here by re-enumerating,
+                # so the caller gets a completed full rescan rather than being
+                # told to retry. `reset_performed` records that it happened.
+                "rescan_required": False,
+                # A @property, so model_dump() would otherwise drop it — tool
+                # consumers need it to know whether the folder filter applied.
+                "folder_filter_reliable": enumeration.folder_filter_reliable,
+                "site_id": site_id,
+                "library": library,
+                "total_items": len(enumeration.items),
+                "changed_count": len(enumeration.changed_items),
+                "deleted_count": len(enumeration.deleted_items),
+            }
+        )
+        return payload
+
+
+# ============================================================================
 # EXPORT ALL SHAREPOINT TOOLS
 # ============================================================================
 
@@ -565,88 +919,5 @@ __all__ = [
     "SearchSharePointFilesTool",
     "DownloadSharePointFileTool",
     "UploadSharePointFileTool",
+    "DeltaSharePointFilesTool",
 ]
-
-
-# ============================================================================
-# SHAREPOINT DRIVE DELTA TOOL (FEAT-539 M8)
-# ============================================================================
-
-
-class DeltaSharePointFilesArgs(O365ToolArgsSchema):
-    """Arguments for enumerating SharePoint drive changes."""
-
-    drive_id: str = Field(
-        description=(
-            "Identifier of the SharePoint document library drive to enumerate. "
-            "Resolved from configuration by the caller — never expanded from "
-            "model-supplied endpoints."
-        )
-    )
-    delta_token: Optional[str] = Field(
-        default=None,
-        description=("Opaque delta link committed by a previous run. Omit for a full " "enumeration."),
-    )
-    folder_path: Optional[str] = Field(
-        default=None,
-        description="Keep only items whose folder path contains this fragment.",
-    )
-    max_pages: Optional[int] = Field(
-        default=None,
-        description="Upper bound on delta pages followed in this call.",
-    )
-
-
-class DeltaSharePointFilesTool(O365Tool):
-    """List SharePoint drive changes since a delta token.
-
-    Wraps the shared :class:`~parrot_tools.o365.delta.DriveDeltaReader`, so
-    paging, tombstones, 410 rescan and bounded retries behave identically to
-    the OneDrive tool. The tool reports what changed; it never commits a
-    cursor or ingests a document — that is the consumer's decision.
-    """
-
-    name: str = "delta_sharepoint_files"
-    description: str = (
-        "Enumerate changes (added, modified, deleted) in a SharePoint drive "
-        "since a delta token. Returns typed items, deletion tombstones and an "
-        "opaque cursor to resume from."
-    )
-    args_schema: Type[BaseModel] = DeltaSharePointFilesArgs
-
-    async def _execute_graph_operation(self, client: SharepointClient, **kwargs) -> Dict[str, Any]:
-        """Enumerate drive changes through the authenticated Graph client.
-
-        Args:
-            client: Authenticated client exposing ``graph_client``.
-            **kwargs: Tool parameters.
-
-        Returns:
-            Dict with typed items, tombstones and cursor state.
-        """
-        from .delta import DriveDeltaReader
-
-        drive_id = kwargs.get("drive_id")
-        reader = DriveDeltaReader(client.graph_client)
-        result = await reader.enumerate(
-            drive_id,
-            token=kwargs.get("delta_token"),
-            folder_prefix=kwargs.get("folder_path"),
-            max_pages=kwargs.get("max_pages"),
-        )
-        self.logger.info(
-            "SharePoint delta for drive %s: %d items over %d pages",
-            drive_id,
-            len(result.items),
-            result.pages,
-        )
-        return {
-            "drive_id": drive_id,
-            "items": [item.model_dump(mode="json") for item in result.items],
-            "tombstones": [item.item_id for item in result.tombstones],
-            "delta_link": result.delta_link,
-            "pages": result.pages,
-            "complete": result.complete,
-            "truncated": result.truncated,
-            "rescan_required": result.rescan_required,
-        }

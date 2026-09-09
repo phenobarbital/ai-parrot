@@ -239,8 +239,8 @@ class FakeCatalog(ContractCatalogStore):
     async def get_source_item(self, drive_id, item_id):
         return self.items.get((drive_id, item_id))
 
-    async def list_source_items(self, source):
-        return [item for item in self.items.values() if item.source == source]
+    async def list_source_items(self, source=None):
+        return [item for item in self.items.values() if source is None or item.source == source]
 
     async def record_judgement(self, judgement):
         self.judgements.append(judgement)

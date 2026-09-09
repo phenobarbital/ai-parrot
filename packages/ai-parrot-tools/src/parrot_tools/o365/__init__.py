@@ -30,6 +30,15 @@ from .sharepoint import (
     UploadSharePointFileTool,
     DeltaSharePointFilesTool,
 )
+from .delta import (
+    DeltaEnumeration,
+    DeltaItem,
+    DeltaLinkValidationError,
+    DeltaPage,
+    DeltaResetRequiredError,
+    DeltaRetryExhaustedError,
+    DriveDeltaHelper,
+)
 
 __all__ = (
     "CreateDraftMessageTool",
@@ -52,4 +61,11 @@ __all__ = (
     "DownloadSharePointFileTool",
     "UploadSharePointFileTool",
     "DeltaSharePointFilesTool",
+    "DeltaEnumeration",
+    "DeltaItem",
+    "DeltaLinkValidationError",
+    "DeltaPage",
+    "DeltaResetRequiredError",
+    "DeltaRetryExhaustedError",
+    "DriveDeltaHelper",
 )

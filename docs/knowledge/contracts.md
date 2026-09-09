@@ -261,10 +261,31 @@ unchanged excerpt on refresh cannot evade it.
 
 Two tools ship in `parrot_tools.o365`: `DeltaSharePointFilesTool` and
 `DeltaOneDriveFilesTool`. They follow `@odata.nextLink` to the final
-`@odata.deltaLink`, expose tombstones, retry throttling/transient failures
-with bounded backoff, and reject any continuation link that is not a
-Microsoft Graph HTTPS URL **before** forwarding credentials. A 410 reports
-`rescan_required` — never mass deletion.
+`@odata.deltaLink`, expose tombstones, and retry throttling/transient
+failures with bounded backoff, honouring `Retry-After` in full.
+
+Continuation links are validated **before** any credential is forwarded:
+they must sit on a configured Microsoft Graph origin *and* address the delta
+endpoint of the drive being enumerated. Origin alone is not enough —
+`DeltaRequestBuilder.with_url()` replaces the whole URL, so a same-origin
+link could otherwise point the authenticated request at another drive, or at
+a file's `/content`.
+
+A 410 means the cursor is dead, never that everything was deleted. The tool
+re-enumerates the drive once and reports `reset_performed`.
+
+### Scoping a source to a folder
+
+Microsoft's delta feed **omits `parentReference.path`** and tells clients to
+"always track items by id". A path filter therefore cannot decide membership
+on its own, so the tools resolve `folder_path` to the folder's item id and
+then match by ancestry — walking each item's parent chain, cached per run.
+
+Prefer passing `folder_id` when you know it; it skips the lookup. If
+membership still cannot be decided (an unreadable parent, or a folder that
+will not resolve) the tools **refuse** rather than quietly returning the
+whole drive, and name `folder_id` in the error. `strict_folder_scope=False`
+opts out of that refusal deliberately.
 
 Three jobs live in `parrot_tools.contracts.jobs`. They import no scheduler
 and send nothing:
@@ -278,7 +299,49 @@ and send nothing:
 **Cursor rule**: `ingest_delta` commits the final delta link only when the
 enumeration completed *and* every item was durably processed or explicitly
 skipped. Otherwise the old cursor is retained and the batch replays
-idempotently.
+idempotently. A failed enumeration is not an empty one — it retains the
+cursor too, rather than advancing over changes nobody saw.
+
+**Expired cursors and reconciliation.** When a cursor expires the job
+re-enumerates the drive in full; simply retaining the dead cursor would
+stall that source forever, because every later run hits the same 410. A
+deletion that happened while the cursor was expired appears in no page, so
+the recovered rescan is reconciled against what the catalog already holds.
+
+That reconciliation is the only destructive path in these jobs, so it is
+deliberately timid. It withdraws a contract only when absence is genuinely
+evidence:
+
+- the rescan is **complete** and carries its final cursor;
+- it covers the **whole drive** — a folder-scoped rescan sees only part of
+  it, so its missing items are reported in `suspected_deletions` for a human
+  instead of being acted on;
+- the stored item belongs to the **drive that was scanned** (one source name
+  may span drives);
+- **no item errored** in the run;
+- **no other live file** still backs the same card (identical files
+  deduplicate onto one contract).
+
+Retraction withdraws the projection before marking the source item deleted,
+so a partial failure is retried rather than stranding a contract that is
+flagged gone but still indexed. That covers a reported failure as well as a
+raised one: `graph_loader.retract` returns a `GraphPublicationReport` rather
+than raising, and a report that is not `published` — or that carries errors —
+is treated as a failed withdrawal, which records an error, leaves the source
+item live and holds the cursor back.
+
+One residual race is worth knowing about. The reconciliation candidates come
+from a listing, and each row is re-read immediately before it is acted on, so
+an item another run refreshed in between is left alone. That narrows the
+window but does not close it: the catalog offers no conditional update, so
+two runs over the same source can still interleave. Serialise runs per source
+if that matters to you. As everywhere else, catalog history, the
+archived evidence and the original document survive; only the indexed
+projection is withdrawn.
+
+`SourceConfig` fields: `source` (also the cursor key), `drive_id`,
+`folder_path`, `folder_id` (the exact filter — forwarded only when set) and
+`download`.
 
 `obligations_digest` interprets only recognised, *anchored* recurrences;
 anything else is surfaced under `needs_review` rather than guessed.

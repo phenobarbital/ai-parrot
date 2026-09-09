@@ -1482,13 +1482,18 @@ class PostgresContractCatalog(ContractCatalogStore):
             )
         return self._row_to_source_item(row) if row else None
 
-    async def list_source_items(self, source: str) -> list[SourceItem]:
-        """Return every recorded item for one configured source."""
+    async def list_source_items(self, source: Optional[str] = None) -> list[SourceItem]:
+        """Return recorded source items, for one source or for all of them."""
         async with await self._connection() as conn:
-            rows = await conn.fetch(
-                f"SELECT * FROM {self.schema}.source_items " "WHERE source = $1 ORDER BY drive_id, item_id",
-                source,
-            )
+            if source is None:
+                rows = await conn.fetch(
+                    f"SELECT * FROM {self.schema}.source_items ORDER BY source, drive_id, item_id",
+                )
+            else:
+                rows = await conn.fetch(
+                    f"SELECT * FROM {self.schema}.source_items WHERE source = $1 ORDER BY drive_id, item_id",
+                    source,
+                )
         return [self._row_to_source_item(row) for row in rows]
 
     @staticmethod

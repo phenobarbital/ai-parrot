@@ -33,6 +33,7 @@ class SharePointToolkit:
     - Search for files
     - Download files
     - Upload files
+    - Track library changes since a delta cursor
 
     Usage:
         toolkit = SharePointToolkit(
@@ -98,7 +99,6 @@ class SharePointToolkit:
             SearchSharePointFilesTool(**common_params),
             DownloadSharePointFileTool(**common_params),
             UploadSharePointFileTool(**common_params),
-            # FEAT-539: incremental change enumeration for watcher jobs.
             DeltaSharePointFilesTool(**common_params),
         ]
 
@@ -137,6 +137,7 @@ class OneDriveToolkit:
     - Search for files
     - Download files
     - Upload files
+    - Track drive changes since a delta cursor
 
     Usage:
         toolkit = OneDriveToolkit(
@@ -202,7 +203,6 @@ class OneDriveToolkit:
             SearchOneDriveFilesTool(**common_params),
             DownloadOneDriveFileTool(**common_params),
             UploadOneDriveFileTool(**common_params),
-            # FEAT-539: incremental change enumeration for watcher jobs.
             DeltaOneDriveFilesTool(**common_params),
         ]
 
@@ -335,6 +335,7 @@ class Office365FileManagementToolkit:
                     SearchSharePointFilesTool,
                     DownloadSharePointFileTool,
                     UploadSharePointFileTool,
+                    DeltaSharePointFilesTool,
                 ),
             )
         ]
@@ -345,7 +346,14 @@ class Office365FileManagementToolkit:
             tool
             for tool in self._tools
             if isinstance(
-                tool, (ListOneDriveFilesTool, SearchOneDriveFilesTool, DownloadOneDriveFileTool, UploadOneDriveFileTool)
+                tool,
+                (
+                    ListOneDriveFilesTool,
+                    SearchOneDriveFilesTool,
+                    DownloadOneDriveFileTool,
+                    UploadOneDriveFileTool,
+                    DeltaOneDriveFilesTool,
+                ),
             )
         ]
 

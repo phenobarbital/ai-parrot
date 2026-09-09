@@ -6,7 +6,7 @@
 **Priority**: high
 **Estimated effort**: M (2–4h)
 **Depends-on**: TASK-3041
-**Assigned-to**: unassigned
+**Assigned-to**: sdd-worker (O365 lane, worktree feat-FEAT-539-contracts-o365-delta)
 **Parallel**: true
 **Parallelism notes**: Execute in O365 worktree feat-FEAT-539-contracts-o365-delta. May run alongside ready tasks with disjoint owned files after all dependencies complete. No concurrent edits to any file listed below. M8 commits must be integrated into the core lane before the delta job. Packaging task alone owns pyproject.toml/uv.lock; DOCX task alone owns bookstore/library.py.
 
@@ -69,9 +69,9 @@ Use strict type hints, Pydantic v2, async entrypoints, black/isort and lazy opti
 
 ## Acceptance Criteria
 
-- [ ] Both tools preserve O365 authentication/error wrapping and produce equivalent typed continuation/deletion outcomes.
-- [ ] Bundle regression retains prior tools and adds both delta tools; no contracts or scheduler import appears.
-- [ ] Changes stay within owned files, imports are verified and appropriate focused validation is recorded.
+- [x] Both tools preserve O365 authentication/error wrapping and produce equivalent typed continuation/deletion outcomes.
+- [x] Bundle regression retains prior tools and adds both delta tools; no contracts or scheduler import appears.
+- [x] Changes stay within owned files, imports are verified and appropriate focused validation is recorded.
 
 ## Test Specification
 
@@ -93,30 +93,294 @@ Store execution logs in `artifacts/logs/task-3042.log`. Use frozen dates, synthe
 
 ## Completion Note
 
-Completed 2026-09-09 by sdd-worker (Claude Opus 5).
+**Executor**: sdd-worker (Claude Opus 5) — worktree `feat-FEAT-539-contracts-o365-delta`
+**Completed**: 2026-09-09
+**Depends-on**: TASK-3041 (completed and committed in this worktree first — `668ccbf9a`)
 
-**Implementation**: added `DeltaSharePointFilesTool` and `DeltaOneDriveFilesTool`,
-both plain `O365Tool` subclasses implementing only `_execute_graph_operation` — so
-authentication, error handling and `ToolResult` wrapping stay in the inherited
-`O365Tool._execute` lifecycle. Each takes a configured `drive_id` (documented as
-resolved from configuration, never expanded from model-supplied endpoints), an
-optional committed `delta_token`, a `folder_path` filter and a `max_pages` bound,
-and delegates to the shared `DriveDeltaReader` over `client.graph_client`. Both
-return the same typed payload: items, tombstone ids, the opaque `delta_link`, page
-count and the `complete`/`truncated`/`rescan_required` flags. Registered in
-`SharePointToolkit`/`OneDriveToolkit` alongside the existing list/search/download/
-upload tools and exported from `parrot_tools.o365` (which now also re-exports the
-previously unexported SharePoint tools).
+### Implementation summary
 
-**Validation**: `pytest .../test_o365_delta_tools.py -q` -> 22 passed; with the
-protocol suite 51 passed (`artifacts/logs/task-3042.log`). Tests run both tools
-through the same parametrised assertions (typed outcomes, cursor resume, 410 rescan,
-folder filter + page bound, error propagation), verify the drive-level root delta
-endpoint is used, assert both bundles still construct all four pre-existing tools plus
-the new one, and prove by AST that no contracts or scheduler import reaches
-`sharepoint.py`/`onedrive.py`/`bundle.py`/`delta.py`. `ruff check` reports only 8
-pre-existing findings in this package (base.py, bundle.py, events.py, oauth_toolkit.py
-and sharepoint.py:580) — all outside the lines this task added, which start at
-sharepoint.py:642 and onedrive.py:640.
+- **`DeltaSharePointFilesTool`** (`sharepoint.py`) — `name="delta_sharepoint_files"`.
+  Resolves a document library to its stable drive id through
+  `graph_client.sites.by_site_id(site_id).drives`, matching `library`
+  case-insensitively and erroring with the available names when it does not
+  exist (or when the site is ambiguous and no library was named). An explicit
+  `drive_id` skips the lookup.
+- **`DeltaOneDriveFilesTool`** (`onedrive.py`) — `name="delta_onedrive_files"`.
+  Resolves `graph_client.me.drive` or, for app-only access,
+  `graph_client.users.by_user_id(user_id).drive`. An explicit `drive_id`
+  skips the lookup.
+- Both delegate the actual walk to `DriveDeltaHelper.enumerate()` from
+  TASK-3041 and return the same payload shape:
+  `enumeration.model_dump(mode="json")` (items with tombstones, `delta_link`,
+  `pages_fetched`, `complete`, `reset_performed`, `full_enumeration`,
+  `folder_path`, `filtered_out`) plus `source`, `total_items`,
+  `changed_count`, `deleted_count` and the source-specific identity keys.
+  A `delta_helper=` constructor argument allows tuning retry bounds or the
+  trusted Graph origins per deployment.
+- Both stay inside the standard `O365Tool` lifecycle: `_execute` performs
+  authentication (including the OBO bridge) and wraps success *and* failure
+  in a `ToolResult`; the tools only implement `_execute_graph_operation` and
+  only ever touch `O365Client.graph_client`.
+- **No model-supplied endpoint expansion**: `site_id` / `drive_id` /
+  `user_id` pass through `_validate_graph_identifier`, which rejects
+  URL-shaped values (`://`, leading `//`), whitespace/control characters and
+  implausibly long strings *before* any request is built. Delta cursors are
+  separately validated against the configured Graph origins by the helper.
+- **Registration is additive** (`bundle.py`): `SharePointToolkit`,
+  `OneDriveToolkit` and `Office365FileManagementToolkit` keep all four
+  pre-existing list/search/download/upload tools and gain the delta tool;
+  `get_sharepoint_tools()` / `get_onedrive_tools()` include it too.
+  `o365/__init__.py` exports both tool classes plus `DriveDeltaHelper`,
+  `DeltaItem`, `DeltaPage`, `DeltaEnumeration` and the delta error types.
 
-**Deviations**: none.
+### Validation evidence
+
+- `pytest packages/ai-parrot-tools/tests/test_o365_delta_tools.py -q`
+  → **42 passed**; both delta suites together → **97 passed**.
+- `ruff check` on the whole `o365/` package + the new test: 8 findings, all
+  pre-existing on `dev` (`base.py` unused `contextlib`, `bundle.py` unused
+  `Dict` and its `__main__` example locals, `events.py` unused `Importance`,
+  `oauth_toolkit.py` TYPE_CHECKING import, `sharepoint.py:582` unused
+  `overwrite` in the *upload* tool). Verified against the pre-change blobs;
+  **no new finding** comes from this task.
+- `pytest packages/ai-parrot-tools/tests/test_imports_integrity.py`
+  → 8 passed, 2 failed; both failures are pre-existing and unrelated to
+  O365 (`ydata_profiling` / `parrot_tools.nextstop` / `parrot.finance`
+  missing from the registry, and a stale `parrot.tools.*` import in
+  `parrot_tools/databasequery.py`).
+- Log: `artifacts/logs/task-3042.log`.
+
+### Deviations / notes for downstream tasks
+
+- **Stale Codebase Contract corrected.** The contract implied the tools
+  could follow the sibling SharePoint/OneDrive tools and call
+  `client.verify_sharepoint_access()` / `client._resolve_drive(...)`. Those
+  methods exist only on `SharepointClient` / `OneDriveClient`, while
+  `O365Tool._get_client()` always constructs a plain `O365Client`
+  (`base.py:148`) — so the existing list/search/download/upload tools would
+  raise `AttributeError` on that path. This is a **pre-existing defect in
+  `base.py`, which this task does not own**; it is reported here rather than
+  fixed. The delta tools therefore resolve drive identity through
+  `graph_client` only, which is exactly the surface the contract verified.
+- **`TOOL_REGISTRY` not updated.** The two delta tools are not registered in
+  `packages/ai-parrot-tools/src/parrot_tools/__init__.py`, because that file
+  is owned by neither this task nor spec §3 M8 (which scopes M8 to
+  `o365/{delta,sharepoint,onedrive,bundle,__init__}.py`). Follow-up if
+  name-based discovery is wanted: add
+  `"delta_share_point_files"` / `"delta_one_drive_files"` entries there.
+- Also noted while editing `o365/__init__.py`: it never exported the
+  SharePoint list/search/download/upload tools. Left as-is (out of scope);
+  only `DeltaSharePointFilesTool` was added from that module.
+- Downstream (TASK-3049 `ingest_delta`): commit the returned `delta_link`
+  **only** when `complete is True` and every item has been durably processed
+  or explicitly recorded as skipped; `reset_performed=True` means the
+  listing is a full rescan and must never be read as mass deletion.
+
+### Adversarial review triage (post-completion)
+
+Both tasks were reviewed together after implementation by two independent
+reviewers given the same neutral brief (diff + requirements + question, no
+reasoning supplied): an external `codex` session and a Claude `code-reviewer`
+subagent. A separate agent verified the disputed Microsoft Graph semantics
+against Microsoft Learn. Findings and dispositions — fixes landed in commit
+`bdde521ea`:
+
+| # | Finding | Disposition |
+|---|---|---|
+| 1 | `with_url()` replaces the entire URL, so origin-only validation let a supplied cursor redirect the authenticated request at any Graph resource (e.g. another drive's `/content`) | **CONFIRM — fixed.** Links are now confined structurally to the enumerated drive's delta endpoint. My own follow-up probe then found two bypasses of the first fix (`.../delta/../../users` and `/delta/drives/<id>/items/x/content`); the check is now anchored on the last path segment and the segment following `drives`, with relative segments rejected. All are regression-tested. |
+| 2 | Graph omits `parentReference.path` from delta responses, so the `folder_path` filter was silently a no-op on real data while reporting `filtered_out=0` | **CONFIRM — fixed.** Verified verbatim against Microsoft Learn: *"The parentReference property on items won't include a value for path... When using delta you should always track items by id."* Added `folder_id` (matches `parentReference.id`, which delta does report) and match/miss/undecidable classification; undecidable items are kept but counted in `unresolved_parent` and surfaced via `folder_filter_reliable`. |
+| 3 | Filtering ran before de-duplication, so a later "moved out of the folder" occurrence lost to the stale earlier one | **CONFIRM — fixed.** Last occurrence now wins in both directions. |
+| 4 | `Retry-After` was truncated to `max_backoff`, retrying while still throttled | **CONFIRM — fixed.** Honoured in full up to a new `max_retry_after` budget; beyond it the round is abandoned. `max_backoff` still caps self-computed backoff. |
+| 5 | Status-less transient failures (dropped connection, timeout) skipped the retry budget entirely | **CONFIRM — fixed.** `TimeoutError`/`OSError`/`httpx.TransportError` retried within the same bound. |
+| 6 | SharePoint library lookup inferred "absent"/"only library" from a truncated first page of the drives collection | **CONFIRM — fixed.** A truncated listing now refuses to infer and asks for an explicit `drive_id`. |
+| 7 | OneDrive drive resolution bypassed the `O365Client.get_user_context()` convention, ignoring a credential-configured default user | **CONFIRM — fixed.** Now delegates to `get_user_context()`, so app-only auth without an identity gets its actionable error. |
+| 8 | The msgraph/Kiota stack runs its own `RetryHandler` (3 retries) beneath this helper, so the configured bound does not bound raw HTTP attempts — they multiply | **CONFIRM as documentation; code change REJECTED for now.** Verified (`kiota_client_factory` wires `RetryHandler` unconditionally). Total attempts stay finite and the SDK layer honours `Retry-After`, so the honest fix is to document the layering rather than pass an untested `RetryHandlerOption` through `get()` — that would change behaviour on a path the fakes cannot exercise, which is precisely how this class of bug got in. Recorded as a follow-up. |
+| 9 | `fetch_page()` returned unvalidated continuation links to a direct caller | **CONFIRM — fixed.** Validated in `_build_page`, not only at follow time. |
+| 10 | `Retry-After` parser handled only delta-seconds, not the RFC 7231 HTTP-date form | **CONFIRM — fixed.** |
+| 11 | A rejection test asserted only the exception type, not that no request followed | **CONFIRM — fixed** in both suites. |
+| 12 | The `drive_id=""` fallback test passed even when execution failed | **CONFIRM — fixed.** Split into a rejection case and a genuine success case. |
+| 13 | `DEFAULT_GRAPH_ORIGINS` trusts all five sovereign clouds rather than the client's own cloud | **NOTED, not changed.** All five are genuine Microsoft Graph origins, a commercial token would not authenticate against a sovereign endpoint, and finding 1's path confinement removes the practical concern. Deployments that want a single origin pass `allowed_origins` via `delta_helper=`. Flagged for the PR reviewer. |
+| 14 | `_validate_graph_identifier` is duplicated verbatim in `sharepoint.py` and `onedrive.py` | **NOTED, not changed.** The natural shared home is `delta.py`, which TASK-3042 does not own. Trivial follow-up. |
+
+Neither reviewer found a hallucinated API; both independently confirmed the
+410/rescan handling, the retry loop's attempt accounting, the additive bundle
+registration and the contracts/scheduler independence.
+
+**Residual limitation to carry into TASK-3049 (`ingest_delta`)**: exact folder
+scoping is not achievable from an incremental delta round alone — Graph omits
+the path, and `folder_id` matches direct children only. The delta job should
+either track the whole drive and scope by item id against the catalog, or
+treat `unresolved_parent > 0` as "membership must be re-checked locally".
+
+### Second-pass review (fixes re-reviewed)
+
+The fixes above were re-reviewed independently. All four claims were
+confirmed to hold — the reviewer probed 22 crafted continuation URLs
+(cross-drive-as-item-id, `..`, `%2e%2e`, double-encoded `%252e%252e`,
+backslash traversal, `userinfo@` spoof, `delta` out of final position,
+`deltaX`, drive id in the query only, `/users/{id}/delta`) and every bypass
+attempt was rejected while all legitimate Graph shapes were accepted. It also
+confirmed no pre-existing test was weakened rather than fixed. Its four
+remaining points were adopted in commit `f738e5f84`:
+
+- `validate_continuation_link` now **requires** `drive_id` — the origin-only
+  mode is no longer reachable by omission from a future caller.
+- `filtered_out` now counts distinct items, matching every other counter.
+- `DeltaRetryExhaustedError` carries a `reason`, distinguishing "throttled
+  beyond our budget, defer" from "retries genuinely exhausted".
+- `folder_filter_reliable` is now in the tool payload (it is a `@property`,
+  so `model_dump()` had dropped it).
+
+Left alone deliberately, noted for the PR reviewer: the `drives` path segment
+is matched case-sensitively (Graph emits lowercase — conservative, not
+wrong), and a cursor may re-anchor enumeration to a different subtree of the
+*same* drive, which stays inside that drive's own permission boundary.
+
+### Duplicate-implementation collision with the core lane (merge of dev)
+
+`dev` (PR #1347) landed the core lane's own implementation of M8 —
+`o365/delta.py` with `DriveDeltaReader`/`validate_continuation`, its own
+`DeltaSharePointFilesTool`/`DeltaOneDriveFilesTool`, and same-named test
+modules — even though the spec's parallelism notes assign M8 to this
+worktree ("Execute in O365 worktree feat-FEAT-539-contracts-o365-delta.
+M8 commits must be integrated into the core lane before the delta job").
+Both lanes therefore built the same module twice, and the tool classes and
+tool `name` strings collide, so they cannot coexist.
+
+Merging `dev` here resolved every `o365/` file and both delta test modules
+to **this lane's** implementation, because it is the one that went through
+two adversarial review rounds and carries fixes for defects the core lane's
+copy still has (see the triage above): continuation links confined to the
+drive's delta endpoint rather than origin-only, folder-membership honesty,
+`Retry-After` respected in full, status-less transient retries, and the
+paginated library lookup. The core lane's copy is preserved in git history
+on `dev`.
+
+To keep the merged consumer working unchanged, the tools gained an additive
+compatibility surface for `parrot_tools.contracts.jobs.ingest_delta`
+(TASK-3049): the `delta_token` argument alias and the `tombstones` /
+`rescan_required` / `pages` payload keys it reads.
+
+### Post-merge review — two defects left open (they live in `contracts/jobs.py`)
+
+Reviewed again after merging `dev`. Everything the review found inside this
+lane's files is fixed (commit `67d10fa32`). Two findings are in TASK-3049's
+`parrot_tools/contracts/jobs.py`, which this lane does not own, and are
+reported rather than changed:
+
+1. **`ingest_delta` cannot call a real delta tool at all.** `_enumerate`
+   does `client = getattr(delta_tool, "client", None)` and then
+   `delta_tool._execute_graph_operation(client, ...)`, but `O365Tool` has
+   `_client`/`_client_cache` and acquires an authenticated client through
+   the async `_get_client()` — there is no `.client` property. Reproduced:
+   `AttributeError: 'NoneType' object has no attribute 'graph_client'`. This
+   pre-dates the merge and applies equally to the core lane's own tool, so
+   the job has never been run against a real tool; its suite injects a
+   hand-written fake with an `enumerate()` method, which takes the other
+   branch. Calling `_execute_graph_operation` directly also bypasses
+   authentication and the `ToolResult` error wrapping. Fix belongs in
+   `_enumerate`: await the tool's authenticated surface instead.
+
+2. **A recovered 410 commits a new cursor without reconciling deletions.**
+   This helper recovers an expired cursor by re-enumerating once and
+   reporting `reset_performed`; the tools therefore return
+   `rescan_required=False`, because the rescan already happened. The job
+   only understands `rescan_required`, so it processes the rescan and
+   commits the new cursor without comparing the full listing against its
+   existing source items — a deletion that occurred while the cursor was
+   expired stays indexed. (The core lane's alternative was not better: it
+   returned `rescan_required=True` and retained the old cursor, so every
+   subsequent run would 410 again and ingestion would stall permanently.)
+   Microsoft's resynchronisation guidance requires comparing against local
+   state after a reset. Fix belongs in the job.
+
+### Post-merge review, round 2
+
+A second review of the merge (and of the first round of post-merge fixes)
+confirmed the six merge regressions were repaired, and found two more —
+both now fixed in `da07a74dc`:
+
+- **The strict folder guard had made things worse for its own consumer.**
+  `SourceConfig` exposes only `folder_path`, and `_enumerate` forwards only
+  `drive_id`/`delta_token`/`folder_path`, so there was no way for the ingest
+  job to pass `folder_id` or opt out — every folder-scoped source would have
+  failed on every run. The tools now resolve `folder_path` to the folder's
+  item id themselves and `FolderAncestryResolver` walks each unmatched
+  item's parent chain (cached, depth-bounded) so nested descendants are
+  included. The guard only fires when a scope was requested and membership
+  is genuinely undecidable.
+- **Colon path-addressing bypassed the confinement check.**
+  `/drives/{id}/root:/delta` addresses an *item named "delta"*, not the
+  delta operation, and satisfied "last segment is delta". Rejected now.
+
+Restored for parity with the core lane's copy: status extraction inspects
+`status`/`code` as well as `response_status_code`/`status_code`, and the
+tool payload carries `truncated` again. The `DriveDeltaReader` /
+`DeltaError` / `DeltaTokenExpired` / `UntrustedContinuation` /
+`validate_continuation` names from the core lane's copy are deliberately
+**not** reintroduced — nothing in the repo references them, and they were
+only a day old.
+
+Still open, both in TASK-3049's `contracts/jobs.py` and unchanged by this
+lane: `_enumerate` cannot drive a real `O365Tool` (`getattr(tool, "client")`
+is always None → `AttributeError` on `None.graph_client`), and a recovered
+410 commits a new cursor without reconciling deletions against local state.
+
+### Update — both open findings are now fixed in `contracts/jobs.py`
+
+Fixed at the user's request in commit `f3ae505e5` (TASK-3049's module, so
+recorded here for traceability rather than reopening that task):
+
+1. `_enumerate` now drives an `O365Tool` through its public `run()`, which
+   acquires the authenticated client; `_delta_payload` unwraps the
+   `ToolResult` and refuses to read an error as an empty page. A test drives
+   a real `DeltaOneDriveFilesTool` and asserts authentication happened.
+2. A 410 is recovered by re-enumerating the drive in full once — retaining
+   the dead cursor stalled the source permanently — and the recovered
+   rescan is reconciled against local state so a deletion that happened
+   while the cursor was expired is not left indexed.
+
+An adversarial review of that reconciliation reproduced **six** ways a
+looser version silently retracted valid contracts: folder-scope narrowing,
+sibling drives sharing one source name, deduplicated cards, error-shaped
+payloads, concurrent writes, and non-retryable partial retractions. Each now
+has a guard and a regression test, and the two most consequential guards
+were mutation-checked to confirm their tests fail without them. A
+folder-scoped rescan cannot prove absence at all, so its missing items are
+reported in `suspected_deletions` rather than acted on. `SourceConfig` also
+gains `folder_id`, the only exact folder filter Graph's delta feed supports.
+
+### Final round — cross-source dedup hole closed
+
+Review of the `contracts/jobs.py` fixes confirmed the reconciliation guards
+hold and found one genuine remaining gap, fixed in `77a6ddde2`:
+
+- The "another live file still backs this card" guard searched only the
+  source being processed. Dedup crosses source boundaries, so a card still
+  backed by a live file under a *different* `SourceConfig.source` could be
+  withdrawn. `AbstractContractCatalog.list_source_items()` now takes an
+  **optional** source (omit it for every source) — a widening, not a
+  breaking change — and the guard searches across all sources.
+- A failed recovery attempt now reports `rescan_required=True`; the flag was
+  previously set after the retry call, so a raising retry left both flags
+  False despite a dead cursor.
+- Docstrings corrected (`rescan_performed` = *attempted*; reconciliation is
+  separately gated) and `_enumerate` documents what a plain-dict tool must
+  guarantee for the keys that gate the destructive path.
+- Four tests were pinning less than they claimed — the dedup guard now
+  builds its shared-card state directly instead of self-skipping when the
+  library's dedup heuristics do not fire, the first-run guard seeds a
+  pre-existing absent row, and the real-tool test asserts the document was
+  carded rather than only that the plumbing ran.
+
+Lane finished: both delta tools are now registered in `TOOL_REGISTRY`, and
+`docs/knowledge/contracts.md` is in line with the implementation (it still
+described origin-only link validation, a 410 surfacing as `rescan_required`,
+and said nothing about folder-id scoping, reconciliation or
+`suspected_deletions`).
+
+**Status: this lane is complete and ready for `/sdd-done`.** Full validation:
+377 passed / 5 skipped across the tools contracts + both delta suites, and
+435 passed / 50 skipped across core `knowledge/contracts` (which includes
+the catalog protocol-conformance test). The only ruff findings in the
+touched packages are the eight that pre-date this work on `dev`.
