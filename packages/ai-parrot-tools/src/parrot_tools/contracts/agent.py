@@ -162,9 +162,7 @@ class ContractsAgentProducer:
             # evidence. The citation itself carries the dossier quote, which
             # the verifier re-checks against archived evidence.
             citations = [
-                citation
-                for tag, citation in supported
-                if tag in sentence or self._supports(sentence, citation.quote)
+                citation for tag, citation in supported if tag in sentence or self._supports(sentence, citation.quote)
             ]
             text = self._strip_tags(sentence)
             if not text:

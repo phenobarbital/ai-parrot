@@ -731,7 +731,7 @@ def test_retrieval_accepts_no_llm_client():
 
 @pytest.mark.asyncio
 async def test_a_standing_requirement_without_dates_is_still_found_by_standard():
-    """"Shall maintain ISO 27001 throughout the term" has no due date and no
+    """ "Shall maintain ISO 27001 throughout the term" has no due date and no
     recurrence; the standard lookup must still return it (it used to go
     through the due-window query, which silently excluded it)."""
     from datetime import date

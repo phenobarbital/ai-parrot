@@ -587,7 +587,9 @@ def validate_obligation_clauses(
             # node and is dropped.
             rebound = Evidence(node_id=node_id, quote=clause.excerpt, page=clause.page)
             if _quote_supported(rebound, bodies):
-                notes.append(f"obligation {index} rebound: cited {clause.node_id!r}, excerpt is verbatim in {node_id!r}")
+                notes.append(
+                    f"obligation {index} rebound: cited {clause.node_id!r}, excerpt is verbatim in {node_id!r}"
+                )
                 clause = clause.model_copy(update={"node_id": node_id})
             else:
                 notes.append(

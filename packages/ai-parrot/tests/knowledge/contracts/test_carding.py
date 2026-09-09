@@ -651,7 +651,9 @@ def test_fallback_header_nodes_are_not_excluded_from_obligation_extraction():
     obligation extraction must still read them."""
     from parrot.knowledge.contracts.carding import header_nodes_matched_titles
 
-    bodies = {f"000{i}": f"Page {i + 1}. Vendor shall maintain SOC 2 and must notify within {i} days." for i in range(5)}
+    bodies = {
+        f"000{i}": f"Page {i + 1}. Vendor shall maintain SOC 2 and must notify within {i} days." for i in range(5)
+    }
     toc = [TocEntry(node_id=node_id, title=f"Page {index + 1}", level=1) for index, node_id in enumerate(bodies)]
     header = select_header_nodes(toc, bodies)
     assert set(header) == set(bodies), "the fallback consumed every page"
