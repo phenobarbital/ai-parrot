@@ -21,14 +21,18 @@ from datetime import date, datetime, timezone
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from .catalog import (
+    AliasConflictError,
     CatalogConflictError,
+    CatalogError,
     ContractCatalogStore,
     DuplicateSourceError,
     ExpiringKey,
     ObligationWindow,
     PartyMergeResult,
     SearchHit,
+    UnknownAnswerError,
     UnknownContractError,
+    UnknownPartyError,
     UpsertResult,
     VerificationQueueEntry,
 )
@@ -1021,7 +1025,7 @@ class PostgresContractCatalog(ContractCatalogStore):
         return [self._row_to_obligation(row) for row in rows]
 
     # ------------------------------------------------------------------
-    # Administration surface — implemented by TASK-3029
+    # Administration surface
     # ------------------------------------------------------------------
 
     async def merge_parties(
@@ -1031,91 +1035,600 @@ class PostgresContractCatalog(ContractCatalogStore):
         *,
         user: str,
     ) -> PartyMergeResult:
-        """Transactional party merge (TASK-3029)."""
-        raise NotImplementedError("catalog administration is implemented by TASK-3029")
+        """Merge two party identities inside one transaction.
+
+        Current cards, signatories, alias mappings and queued projections
+        move together; historical snapshots keep the name they were signed
+        under.
+
+        Raises:
+            ValueError: On an invalid self-merge.
+            UnknownPartyError: When either identity is unknown.
+        """
+        if keep_party_id == merge_party_id:
+            raise ValueError("cannot merge a party into itself")
+
+        now = self._now()
+        updated: list[str] = []
+        remapped: list[str] = []
+        queued: list[PublicationRecord] = []
+
+        async with await self._connection() as conn:
+            async with conn.transaction():
+                known = {
+                    row["party_id"]
+                    for row in await conn.fetch(
+                        f"""
+                        SELECT DISTINCT p ->> 'party_id' AS party_id
+                        FROM {self.schema}.contracts c,
+                             jsonb_array_elements(
+                                 coalesce(c.card_json -> 'parties', '[]'::jsonb)
+                             ) AS p
+                        """
+                    )
+                }
+                known |= {
+                    row["party_id"]
+                    for row in await conn.fetch(
+                        f"SELECT DISTINCT party_id FROM {self.schema}.party_aliases"
+                    )
+                }
+                for party_id in (keep_party_id, merge_party_id):
+                    if party_id not in known:
+                        raise UnknownPartyError(party_id)
+
+                rows = await conn.fetch(
+                    f"""
+                    SELECT * FROM {self.schema}.contracts
+                    WHERE card_json -> 'parties' @> $1::jsonb
+                       OR card_json -> 'signatories' @> $1::jsonb
+                    ORDER BY contract_id
+                    FOR UPDATE
+                    """,
+                    self._dumps([{"party_id": merge_party_id}]),
+                )
+                for row in rows:
+                    card = self._row_to_card(row)
+                    keeps = [
+                        party for party in card.parties if party.party_id == keep_party_id
+                    ]
+                    parties: list[Party] = []
+                    for party in card.parties:
+                        if party.party_id != merge_party_id:
+                            parties.append(party)
+                        elif not keeps:
+                            parties.append(party.model_copy(update={"party_id": keep_party_id}))
+                    signatories = [
+                        signatory.model_copy(update={"party_id": keep_party_id})
+                        if signatory.party_id == merge_party_id
+                        else signatory
+                        for signatory in card.signatories
+                    ]
+                    revision = card.revision + 1
+                    merged = card.model_copy(
+                        update={
+                            "parties": parties,
+                            "signatories": signatories,
+                            "revision": revision,
+                            "updated_at": now,
+                            "versions": [],
+                        }
+                    )
+                    await conn.execute(
+                        f"""
+                        UPDATE {self.schema}.contracts
+                        SET card_json = $2::jsonb, revision = $3, updated_at = $4
+                        WHERE contract_id = $1
+                        """,
+                        card.contract_id,
+                        self._dumps(merged.model_dump(mode="json")),
+                        revision,
+                        now,
+                    )
+                    updated.append(card.contract_id)
+                    version_n = int(
+                        await conn.fetchval(
+                            f"SELECT max(version_n) FROM {self.schema}.contract_versions "
+                            "WHERE contract_id = $1",
+                            card.contract_id,
+                        )
+                        or 1
+                    )
+                    queued.append(
+                        await self._enqueue(
+                            conn,
+                            PublicationRecord(
+                                tenant_id=self.tenant_id,
+                                contract_id=card.contract_id,
+                                version_n=version_n,
+                                revision=revision,
+                                target="ontology",
+                                run_id=f"{card.contract_id}:merge:{revision}",
+                                payload={
+                                    "party_merge": [merge_party_id, keep_party_id],
+                                    "actor": user,
+                                },
+                                created_at=now,
+                            ),
+                        )
+                    )
+
+                alias_rows = await conn.fetch(
+                    f"""
+                    UPDATE {self.schema}.party_aliases
+                    SET party_id = $1, actor = $3, created_at = $4
+                    WHERE party_id = $2
+                    RETURNING alias
+                    """,
+                    keep_party_id,
+                    merge_party_id,
+                    user,
+                    now,
+                )
+                remapped = sorted(row["alias"] for row in alias_rows)
+
+        return PartyMergeResult(
+            keep_party_id=keep_party_id,
+            merged_party_id=merge_party_id,
+            cards_updated=updated,
+            aliases_remapped=remapped,
+            queued=queued,
+        )
 
     async def party_aliases(self, party_id: str) -> list[PartyAlias]:
-        """Aliases of one canonical party (TASK-3029)."""
-        raise NotImplementedError("catalog administration is implemented by TASK-3029")
+        """Return every alias mapped onto one canonical party."""
+        async with await self._connection() as conn:
+            rows = await conn.fetch(
+                f"SELECT * FROM {self.schema}.party_aliases "
+                "WHERE party_id = $1 ORDER BY alias",
+                party_id,
+            )
+        return [
+            PartyAlias(
+                alias=row["alias"],
+                party_id=row["party_id"],
+                actor=row["actor"],
+                created_at=row["created_at"],
+            )
+            for row in rows
+        ]
 
     async def all_party_aliases(self) -> dict[str, list[str]]:
-        """Catalog-wide party aliases (TASK-3029)."""
-        raise NotImplementedError("catalog administration is implemented by TASK-3029")
+        """Return catalog-wide aliases keyed by canonical ``party_id``."""
+        async with await self._connection() as conn:
+            rows = await conn.fetch(
+                f"SELECT party_id, alias FROM {self.schema}.party_aliases "
+                "ORDER BY party_id, alias"
+            )
+        mapping: dict[str, list[str]] = {}
+        for row in rows:
+            mapping.setdefault(row["party_id"], []).append(row["alias"])
+        return mapping
 
     async def add_party_alias(self, alias: str, party_id: str, *, user: str) -> PartyAlias:
-        """Map an alias onto a canonical party (TASK-3029)."""
-        raise NotImplementedError("catalog administration is implemented by TASK-3029")
+        """Map a normalized alias onto a canonical party.
+
+        Raises:
+            AliasConflictError: When the alias already maps elsewhere; the
+                conflict is surfaced for review instead of being silently
+                remapped.
+        """
+        now = self._now()
+        async with await self._connection() as conn:
+            async with conn.transaction():
+                existing = await conn.fetchval(
+                    f"SELECT party_id FROM {self.schema}.party_aliases "
+                    "WHERE alias = $1 FOR UPDATE",
+                    alias,
+                )
+                if existing is not None and existing != party_id:
+                    raise AliasConflictError(alias, existing, party_id)
+                await conn.execute(
+                    f"""
+                    INSERT INTO {self.schema}.party_aliases (alias, party_id, actor, created_at)
+                    VALUES ($1, $2, $3, $4)
+                    ON CONFLICT (alias) DO UPDATE
+                        SET actor = EXCLUDED.actor, created_at = EXCLUDED.created_at
+                    """,
+                    alias,
+                    party_id,
+                    user,
+                    now,
+                )
+        return PartyAlias(alias=alias, party_id=party_id, actor=user, created_at=now)
 
     async def resolve_party(self, alias: str) -> Optional[str]:
-        """Resolve an alias to a canonical party (TASK-3029)."""
-        raise NotImplementedError("catalog administration is implemented by TASK-3029")
+        """Resolve a normalized alias to its canonical ``party_id``."""
+        async with await self._connection() as conn:
+            return await conn.fetchval(
+                f"SELECT party_id FROM {self.schema}.party_aliases WHERE alias = $1",
+                alias,
+            )
 
     async def list_parties(self) -> list[Party]:
-        """Distinct parties across active cards (TASK-3029)."""
-        raise NotImplementedError("catalog administration is implemented by TASK-3029")
+        """Return every distinct party across active cards, id-ordered."""
+        async with await self._connection() as conn:
+            rows = await conn.fetch(
+                f"""
+                SELECT DISTINCT ON (p ->> 'party_id')
+                       p ->> 'party_id' AS party_id,
+                       p ->> 'name'     AS name,
+                       p ->> 'role'     AS role,
+                       (p ->> 'is_us')::boolean AS is_us
+                FROM {self.schema}.contracts c,
+                     jsonb_array_elements(
+                         coalesce(c.card_json -> 'parties', '[]'::jsonb)
+                     ) AS p
+                WHERE c.active
+                ORDER BY p ->> 'party_id', p ->> 'name'
+                """
+            )
+        return [
+            Party(
+                party_id=row["party_id"],
+                name=row["name"],
+                role=row["role"] or "other",
+                is_us=bool(row["is_us"]),
+            )
+            for row in rows
+        ]
+
+    # -- answer audit and retirement --------------------------------------
 
     async def record_answer(self, record: AnswerRecord) -> None:
-        """Persist an audited answer (TASK-3029)."""
-        raise NotImplementedError("catalog administration is implemented by TASK-3029")
+        """Persist an audited answer before it is released."""
+        async with await self._connection() as conn:
+            await conn.execute(
+                f"""
+                INSERT INTO {self.schema}.contract_answers (
+                    answer_id, asked_at, answer_user, question, answer_kind, pattern,
+                    answer, citations, authorization_json, retired_by, retired_at,
+                    retirement_reason
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb, $10, $11, $12)
+                ON CONFLICT (answer_id) DO UPDATE SET
+                    answer = EXCLUDED.answer,
+                    citations = EXCLUDED.citations,
+                    authorization_json = EXCLUDED.authorization_json
+                """,
+                record.answer_id,
+                record.asked_at,
+                record.user,
+                record.question,
+                record.answer_kind,
+                record.pattern,
+                record.answer,
+                self._dumps([c.model_dump(mode="json") for c in record.citations]),
+                self._dumps(record.authorization.model_dump(mode="json")),
+                record.retired_by,
+                record.retired_at,
+                record.retirement_reason,
+            )
 
     async def get_answer(self, answer_id: str) -> Optional[AnswerRecord]:
-        """Return one audited answer (TASK-3029)."""
-        raise NotImplementedError("catalog administration is implemented by TASK-3029")
+        """Return one audited answer, or ``None`` when unknown."""
+        async with await self._connection() as conn:
+            row = await conn.fetchrow(
+                f"SELECT * FROM {self.schema}.contract_answers WHERE answer_id = $1",
+                answer_id,
+            )
+        return self._row_to_answer(row) if row else None
+
+    @classmethod
+    def _row_to_answer(cls, row: Any) -> AnswerRecord:
+        """Rebuild an :class:`AnswerRecord` from an audit row."""
+        return AnswerRecord(
+            answer_id=row["answer_id"],
+            asked_at=row["asked_at"],
+            user=row["answer_user"],
+            question=row["question"],
+            answer_kind=row["answer_kind"],
+            pattern=row["pattern"],
+            answer=row["answer"],
+            citations=cls._loads(row["citations"]) or [],
+            authorization=cls._loads(row["authorization_json"]) or {"allowed": False},
+            retired_by=row["retired_by"],
+            retired_at=row["retired_at"],
+            retirement_reason=row["retirement_reason"],
+        )
 
     async def retire_answer(self, answer_id: str, *, user: str, reason: str) -> AnswerRecord:
-        """Retire an answer and suppress its evidence (TASK-3029)."""
-        raise NotImplementedError("catalog administration is implemented by TASK-3029")
+        """Retire an answer; its cited nodes are suppressed from then on."""
+        now = self._now()
+        async with await self._connection() as conn:
+            row = await conn.fetchrow(
+                f"""
+                UPDATE {self.schema}.contract_answers
+                SET retired_by = $2, retired_at = $3, retirement_reason = $4
+                WHERE answer_id = $1
+                RETURNING *
+                """,
+                answer_id,
+                user,
+                now,
+                reason,
+            )
+        if row is None:
+            raise UnknownAnswerError(answer_id)
+        return self._row_to_answer(row)
 
     async def retired_citations(self) -> set[tuple[str, str]]:
-        """Suppressed contract/node pairs (TASK-3029)."""
-        raise NotImplementedError("catalog administration is implemented by TASK-3029")
+        """Return every suppressed ``(contract_id, node_id)`` pair.
+
+        Suppression is deliberately broad and version-independent: a
+        refresh cannot evade it by renumbering an unchanged excerpt.
+        """
+        async with await self._connection() as conn:
+            rows = await conn.fetch(
+                f"""
+                SELECT DISTINCT
+                    citation ->> 'contract_id' AS contract_id,
+                    citation ->> 'node_id'     AS node_id
+                FROM {self.schema}.contract_answers a,
+                     jsonb_array_elements(coalesce(a.citations, '[]'::jsonb)) AS citation
+                WHERE a.retired_at IS NOT NULL
+                """
+            )
+        return {(row["contract_id"], row["node_id"]) for row in rows}
+
+    # -- source identity and cursors --------------------------------------
 
     async def get_delta_token(self, source_uri: str) -> Optional[str]:
-        """Committed delta cursor (TASK-3029)."""
-        raise NotImplementedError("catalog administration is implemented by TASK-3029")
+        """Return the committed opaque delta cursor for a source."""
+        async with await self._connection() as conn:
+            return await conn.fetchval(
+                f"SELECT token FROM {self.schema}.source_delta_tokens WHERE source_uri = $1",
+                source_uri,
+            )
 
     async def set_delta_token(self, source_uri: str, token: str) -> None:
-        """Commit a delta cursor (TASK-3029)."""
-        raise NotImplementedError("catalog administration is implemented by TASK-3029")
+        """Commit a delta cursor after the batch is durable."""
+        async with await self._connection() as conn:
+            await conn.execute(
+                f"""
+                INSERT INTO {self.schema}.source_delta_tokens (source_uri, token, updated_at)
+                VALUES ($1, $2, $3)
+                ON CONFLICT (source_uri) DO UPDATE
+                    SET token = EXCLUDED.token, updated_at = EXCLUDED.updated_at
+                """,
+                source_uri,
+                token,
+                self._now(),
+            )
 
     async def upsert_source_item(self, item: SourceItem) -> None:
-        """Record remote item identity (TASK-3029)."""
-        raise NotImplementedError("catalog administration is implemented by TASK-3029")
+        """Record stable remote-item identity for renames and tombstones."""
+        async with await self._connection() as conn:
+            await conn.execute(
+                f"""
+                INSERT INTO {self.schema}.source_items (
+                    source, drive_id, item_id, current_uri, name, contract_id,
+                    sha256, deleted, last_seen_at
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                ON CONFLICT (drive_id, item_id) DO UPDATE SET
+                    source = EXCLUDED.source,
+                    current_uri = EXCLUDED.current_uri,
+                    name = EXCLUDED.name,
+                    contract_id = COALESCE(EXCLUDED.contract_id,
+                                           {self.schema}.source_items.contract_id),
+                    sha256 = EXCLUDED.sha256,
+                    deleted = EXCLUDED.deleted,
+                    last_seen_at = EXCLUDED.last_seen_at
+                """,
+                item.source,
+                item.drive_id,
+                item.item_id,
+                item.current_uri,
+                item.name,
+                item.contract_id,
+                item.sha256,
+                item.deleted,
+                item.last_seen_at or self._now(),
+            )
 
     async def get_source_item(self, drive_id: str, item_id: str) -> Optional[SourceItem]:
-        """Return one recorded source item (TASK-3029)."""
-        raise NotImplementedError("catalog administration is implemented by TASK-3029")
+        """Return one recorded source item by its stable identity."""
+        async with await self._connection() as conn:
+            row = await conn.fetchrow(
+                f"SELECT * FROM {self.schema}.source_items "
+                "WHERE drive_id = $1 AND item_id = $2",
+                drive_id,
+                item_id,
+            )
+        return self._row_to_source_item(row) if row else None
 
     async def list_source_items(self, source: str) -> list[SourceItem]:
-        """Return recorded items of one source (TASK-3029)."""
-        raise NotImplementedError("catalog administration is implemented by TASK-3029")
+        """Return every recorded item for one configured source."""
+        async with await self._connection() as conn:
+            rows = await conn.fetch(
+                f"SELECT * FROM {self.schema}.source_items "
+                "WHERE source = $1 ORDER BY drive_id, item_id",
+                source,
+            )
+        return [self._row_to_source_item(row) for row in rows]
+
+    @staticmethod
+    def _row_to_source_item(row: Any) -> SourceItem:
+        """Rebuild a :class:`SourceItem` from a ``source_items`` row."""
+        return SourceItem(
+            source=row["source"],
+            drive_id=row["drive_id"],
+            item_id=row["item_id"],
+            current_uri=row["current_uri"],
+            name=row["name"],
+            contract_id=row["contract_id"],
+            sha256=row["sha256"],
+            deleted=row["deleted"],
+            last_seen_at=row["last_seen_at"],
+        )
+
+    # -- relation judgements ----------------------------------------------
 
     async def record_judgement(self, judgement: RelationJudgement) -> None:
-        """Append a relation judgement (TASK-3029)."""
-        raise NotImplementedError("catalog administration is implemented by TASK-3029")
+        """Append a judgement row, including ``none`` outcomes."""
+        async with await self._connection() as conn:
+            await conn.execute(
+                f"""
+                INSERT INTO {self.schema}.relation_judgements (
+                    judgement_id, source_contract_id, target_contract_id, outcome,
+                    source_sha256, target_sha256, source_obligation_id,
+                    target_obligation_id, confidence, rationale, model, origin,
+                    active, judged_at
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+                ON CONFLICT (judgement_id) DO NOTHING
+                """,
+                judgement.judgement_id,
+                judgement.source_contract_id,
+                judgement.target_contract_id,
+                judgement.outcome,
+                judgement.source_sha256,
+                judgement.target_sha256,
+                judgement.source_obligation_id,
+                judgement.target_obligation_id,
+                judgement.confidence,
+                judgement.rationale,
+                judgement.model,
+                judgement.origin,
+                judgement.active,
+                judgement.judged_at or self._now(),
+            )
 
     async def judgements_for(self, contract_id: str) -> list[RelationJudgement]:
-        """Judgement history for a contract (TASK-3029)."""
-        raise NotImplementedError("catalog administration is implemented by TASK-3029")
+        """Return judgement history touching one contract, newest last."""
+        async with await self._connection() as conn:
+            rows = await conn.fetch(
+                f"""
+                SELECT * FROM {self.schema}.relation_judgements
+                WHERE source_contract_id = $1 OR target_contract_id = $1
+                ORDER BY judged_at, judgement_id
+                """,
+                contract_id,
+            )
+        return [
+            RelationJudgement(
+                judgement_id=row["judgement_id"],
+                source_contract_id=row["source_contract_id"],
+                target_contract_id=row["target_contract_id"],
+                outcome=row["outcome"],
+                source_sha256=row["source_sha256"],
+                target_sha256=row["target_sha256"],
+                source_obligation_id=row["source_obligation_id"],
+                target_obligation_id=row["target_obligation_id"],
+                confidence=row["confidence"],
+                rationale=row["rationale"],
+                model=row["model"],
+                origin=row["origin"],
+                active=row["active"],
+                judged_at=row["judged_at"],
+            )
+            for row in rows
+        ]
 
     async def replace_relations(
         self,
         contract_id: str,
         relations: list[ContractRelation],
     ) -> None:
-        """Replace active judged relations (TASK-3029)."""
-        raise NotImplementedError("catalog administration is implemented by TASK-3029")
+        """Replace the active relations owned by one source contract."""
+        async with await self._connection() as conn:
+            async with conn.transaction():
+                await conn.execute(
+                    f"DELETE FROM {self.schema}.contract_relations "
+                    "WHERE source_contract_id = $1",
+                    contract_id,
+                )
+                for relation in relations:
+                    await conn.execute(
+                        f"""
+                        INSERT INTO {self.schema}.contract_relations (
+                            source_contract_id, target_contract_id, kind,
+                            source_obligation_id, target_obligation_id, confidence,
+                            rationale, origin, active, judged_at
+                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                        ON CONFLICT (source_contract_id, target_contract_id, kind)
+                        DO UPDATE SET
+                            source_obligation_id = EXCLUDED.source_obligation_id,
+                            target_obligation_id = EXCLUDED.target_obligation_id,
+                            confidence = EXCLUDED.confidence,
+                            rationale = EXCLUDED.rationale,
+                            origin = EXCLUDED.origin,
+                            active = EXCLUDED.active,
+                            judged_at = EXCLUDED.judged_at
+                        """,
+                        relation.source_contract_id,
+                        relation.target_contract_id,
+                        relation.kind,
+                        relation.source_obligation_id,
+                        relation.target_obligation_id,
+                        relation.confidence,
+                        relation.rationale,
+                        relation.origin,
+                        relation.active,
+                        relation.judged_at or self._now(),
+                    )
 
     async def active_relations(
         self,
         contract_id: Optional[str] = None,
     ) -> list[ContractRelation]:
-        """Active judged relations (TASK-3029)."""
-        raise NotImplementedError("catalog administration is implemented by TASK-3029")
+        """Return active judged relations, optionally for one contract."""
+        async with await self._connection() as conn:
+            rows = await conn.fetch(
+                f"""
+                SELECT * FROM {self.schema}.contract_relations
+                WHERE active
+                  AND ($1::text IS NULL
+                       OR source_contract_id = $1
+                       OR target_contract_id = $1)
+                ORDER BY source_contract_id, target_contract_id, kind
+                """,
+                contract_id,
+            )
+        return [
+            ContractRelation(
+                source_contract_id=row["source_contract_id"],
+                target_contract_id=row["target_contract_id"],
+                kind=row["kind"],
+                source_obligation_id=row["source_obligation_id"],
+                target_obligation_id=row["target_obligation_id"],
+                confidence=row["confidence"],
+                rationale=row["rationale"],
+                origin=row["origin"],
+                active=row["active"],
+                judged_at=row["judged_at"],
+            )
+            for row in rows
+        ]
 
     async def invalidate_relations(self, contract_id: str, *, source_sha256: str) -> int:
-        """Invalidate relations on source change (TASK-3029)."""
-        raise NotImplementedError("catalog administration is implemented by TASK-3029")
+        """Deactivate judgements and relations made against an old hash."""
+        async with await self._connection() as conn:
+            async with conn.transaction():
+                invalidated = await conn.fetch(
+                    f"""
+                    UPDATE {self.schema}.relation_judgements
+                    SET active = false
+                    WHERE active
+                      AND (
+                            (source_contract_id = $1 AND source_sha256 IS DISTINCT FROM $2)
+                         OR (target_contract_id = $1 AND target_sha256 IS DISTINCT FROM $2)
+                      )
+                    RETURNING judgement_id
+                    """,
+                    contract_id,
+                    source_sha256,
+                )
+                if invalidated:
+                    await conn.execute(
+                        f"""
+                        UPDATE {self.schema}.contract_relations
+                        SET active = false
+                        WHERE source_contract_id = $1 OR target_contract_id = $1
+                        """,
+                        contract_id,
+                    )
+        return len(invalidated)
+
+    # -- durable publication outbox ---------------------------------------
 
     async def pending_publications(
         self,
@@ -1123,8 +1636,20 @@ class PostgresContractCatalog(ContractCatalogStore):
         target: Optional[PublicationTarget] = None,
         limit: int = 50,
     ) -> list[PublicationRecord]:
-        """Queued/failed publication work (TASK-3029)."""
-        raise NotImplementedError("catalog administration is implemented by TASK-3029")
+        """Return queued/failed publication work, oldest first."""
+        async with await self._connection() as conn:
+            rows = await conn.fetch(
+                f"""
+                SELECT * FROM {self.schema}.publication_outbox
+                WHERE state IN ('pending', 'failed')
+                  AND ($1::text IS NULL OR target = $1)
+                ORDER BY created_at, contract_id, version_n, revision, target
+                LIMIT $2
+                """,
+                target,
+                max(1, int(limit)),
+            )
+        return [self._row_to_publication(row) for row in rows]
 
     async def claim_publication(
         self,
@@ -1132,8 +1657,38 @@ class PostgresContractCatalog(ContractCatalogStore):
         target: PublicationTarget,
         limit: int = 1,
     ) -> list[PublicationRecord]:
-        """Claim publication work (TASK-3029)."""
-        raise NotImplementedError("catalog administration is implemented by TASK-3029")
+        """Claim publication work, marking it in flight and counting attempts.
+
+        Uses ``FOR UPDATE SKIP LOCKED`` so publication stays serialized per
+        row: a crashed run's claim is recovered on the next pass instead of
+        emitting a duplicate logical version.
+        """
+        async with await self._connection() as conn:
+            async with conn.transaction():
+                rows = await conn.fetch(
+                    f"""
+                    UPDATE {self.schema}.publication_outbox o
+                    SET state = 'in_flight', attempts = o.attempts + 1, updated_at = $3
+                    FROM (
+                        SELECT tenant_id, contract_id, version_n, revision, target
+                        FROM {self.schema}.publication_outbox
+                        WHERE state IN ('pending', 'failed') AND target = $1
+                        ORDER BY created_at, contract_id, version_n, revision
+                        LIMIT $2
+                        FOR UPDATE SKIP LOCKED
+                    ) AS claimed
+                    WHERE o.tenant_id = claimed.tenant_id
+                      AND o.contract_id = claimed.contract_id
+                      AND o.version_n = claimed.version_n
+                      AND o.revision = claimed.revision
+                      AND o.target = claimed.target
+                    RETURNING o.*
+                    """,
+                    target,
+                    max(1, int(limit)),
+                    self._now(),
+                )
+        return [self._row_to_publication(row) for row in rows]
 
     async def complete_publication(
         self,
@@ -1141,8 +1696,10 @@ class PostgresContractCatalog(ContractCatalogStore):
         *,
         receipt: str,
     ) -> PublicationRecord:
-        """Record a publication receipt (TASK-3029)."""
-        raise NotImplementedError("catalog administration is implemented by TASK-3029")
+        """Record a verified receipt and mark the row published."""
+        return await self._set_publication_state(
+            record, state="published", receipt=receipt, error=None
+        )
 
     async def fail_publication(
         self,
@@ -1150,5 +1707,42 @@ class PostgresContractCatalog(ContractCatalogStore):
         *,
         error: str,
     ) -> PublicationRecord:
-        """Record a retryable publication failure (TASK-3029)."""
-        raise NotImplementedError("catalog administration is implemented by TASK-3029")
+        """Record a retryable failure without losing the queued payload."""
+        return await self._set_publication_state(
+            record, state="failed", receipt=None, error=error
+        )
+
+    async def _set_publication_state(
+        self,
+        record: PublicationRecord,
+        *,
+        state: str,
+        receipt: Optional[str],
+        error: Optional[str],
+    ) -> PublicationRecord:
+        """Update one outbox row's terminal state, keeping its payload."""
+        async with await self._connection() as conn:
+            row = await conn.fetchrow(
+                f"""
+                UPDATE {self.schema}.publication_outbox
+                SET state = $6,
+                    receipt = COALESCE($7, receipt),
+                    last_error = $8,
+                    updated_at = $9
+                WHERE tenant_id = $1 AND contract_id = $2 AND version_n = $3
+                  AND revision = $4 AND target = $5
+                RETURNING *
+                """,
+                record.tenant_id,
+                record.contract_id,
+                record.version_n,
+                record.revision,
+                record.target,
+                state,
+                receipt,
+                error,
+                self._now(),
+            )
+        if row is None:
+            raise CatalogError(f"unknown publication row {record.key}")
+        return self._row_to_publication(row)
