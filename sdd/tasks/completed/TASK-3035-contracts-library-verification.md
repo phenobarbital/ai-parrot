@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-539 - Contracts Card & Ontology
 **Spec**: `sdd/specs/contracts-card-ontology.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2–4h)
 **Depends-on**: TASK-3034
@@ -97,4 +97,37 @@ Store execution logs in `artifacts/logs/task-3035.log`. Use frozen dates, synthe
 
 ## Completion Note
 
-Pending execution. Record executor, completion date, implementation summary, validation evidence and deviations when this task is completed.
+Completed 2026-09-09 by sdd-worker (Claude Opus 5).
+
+**Implementation**: extended `contracts/library.py`. `verify_card(contract_id,
+fields, *, user, expected_revision)`: a mapping confirms (origin untouched) or
+corrects (origin -> `manual`, confidence 1.0) only the named paths, always stamping
+`verified_by`/`verified_at`; `fields=None` verifies every non-rule field and marks
+the whole card verified **only** when `_verification_blockers` is empty (missing
+evidence, unresolved low confidence, remaining unverified fields, stale fields).
+Corrections recompute the derived notice/renewal dates and the status. Writes go
+through the catalog with optimistic revisions. `merge_verified_fields` (hooked into
+every update, i.e. every refresh) compares each previously verified field's stored
+quote against the refreshed bodies: a nonempty verbatim match preserves the verified
+value and rebinds the evidence to its new node; changed/missing evidence — and an
+empty quote, which never proves anything — keeps the prior value, stores the incoming
+one as `candidate` and marks the field stale. `refresh_card` re-cards from
+`source`/`source_path`/`source_uri` under the existing canonical URI.
+`apply_amendment_history` appends a contractual interval to the base contract only
+when the amendment has a resolved parent and a *verified* effective date; it is
+idempotent and never invents a date. `get_card_field`/`set_card_field` address
+top-level, `term.*`, `parties.<id>.*` and `obligations.<id>.*` paths and raise on
+unknown ones.
+
+**Validation**: `pytest .../test_verification.py -q` -> 25 passed; whole contracts
+suite **353 passed** (`artifacts/logs/task-3035.log`); ruff clean. Tests exercise
+confirm vs correct provenance transitions, partial vs whole-card verification,
+blocker reporting, rule fields never being human-verified, derived recomputation,
+manual termination, a stale `expected_revision` being rejected while the first
+writer's value survives, all four refresh evidence cases (unchanged / moved node /
+changed / empty quote), a changed value with unchanged evidence keeping the human
+decision, an end-to-end refresh that preserves a correction while the v1 citation
+still resolves, and amendment history for verified / unverified / undated /
+parentless cases.
+
+**Deviations**: none.
