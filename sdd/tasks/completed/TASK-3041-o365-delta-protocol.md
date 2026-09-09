@@ -2,11 +2,11 @@
 
 **Feature**: FEAT-539 - Contracts Card & Ontology
 **Spec**: `sdd/specs/contracts-card-ontology.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2–4h)
 **Depends-on**: none
-**Assigned-to**: unassigned
+**Assigned-to**: sdd-worker (O365 lane, worktree feat-FEAT-539-contracts-o365-delta)
 **Parallel**: true
 **Parallelism notes**: Execute in O365 worktree feat-FEAT-539-contracts-o365-delta. May run alongside ready tasks with disjoint owned files after all dependencies complete. No concurrent edits to any file listed below. M8 commits must be integrated into the core lane before the delta job. Packaging task alone owns pyproject.toml/uv.lock; DOCX task alone owns bookstore/library.py.
 
@@ -66,10 +66,10 @@ Use strict type hints, Pydantic v2, async entrypoints, black/isort and lazy opti
 
 ## Acceptance Criteria
 
-- [ ] Fake Graph pages cover multipage, empty intermediate page, final cursor, duplicate item and deleted marker.
-- [ ] 410 triggers safe rescan state; retry is bounded and respects throttling; malicious foreign continuation host is rejected before request.
-- [ ] Helper imports no contracts package and performs no cursor commit or document ingestion.
-- [ ] Changes stay within owned files, imports are verified and appropriate focused validation is recorded.
+- [x] Fake Graph pages cover multipage, empty intermediate page, final cursor, duplicate item and deleted marker.
+- [x] 410 triggers safe rescan state; retry is bounded and respects throttling; malicious foreign continuation host is rejected before request.
+- [x] Helper imports no contracts package and performs no cursor commit or document ingestion.
+- [x] Changes stay within owned files, imports are verified and appropriate focused validation is recorded.
 
 ## Test Specification
 
@@ -92,4 +92,77 @@ Store execution logs in `artifacts/logs/task-3041.log`. Use frozen dates, synthe
 
 ## Completion Note
 
-Pending execution. Record executor, completion date, implementation summary, validation evidence and deviations when this task is completed.
+**Executor**: sdd-worker (Claude Opus 5) — worktree `feat-FEAT-539-contracts-o365-delta`
+**Completed**: 2026-09-09
+
+### Implementation summary
+
+Created `packages/ai-parrot-tools/src/parrot_tools/o365/delta.py`, the
+transport half of Microsoft Graph drive change tracking, owned entirely by
+the O365 lane:
+
+- **Typed models** (Pydantic v2, `extra="forbid"`): `DeltaItem`
+  (stable `(drive_id, item_id)` identity, `deleted` tombstone flag,
+  normalized drive-relative `parent_path`/`path`, size/eTag/cTag/webUrl/
+  last-modified and Graph content hashes), `DeltaPage` (items plus the
+  opaque `next_link`/`delta_link`, `is_final`) and `DeltaEnumeration`
+  (aggregated items, final cursor, `pages_fetched`, `complete`,
+  `reset_performed`, `full_enumeration`, folder-filter metadata).
+- **`DriveDeltaHelper`** — drive-level enumeration anchored at
+  `drives/{drive-id}/items/root/delta`, following `@odata.nextLink` until
+  `@odata.deltaLink`. Repeated items across pages collapse by id with the
+  latest occurrence winning; empty intermediate pages do not end the walk;
+  a page bound prevents unbounded following and, when hit, deliberately
+  returns no committable cursor.
+- **410 Gone** raises `DeltaResetRequiredError` out of `fetch_page`;
+  `enumerate` catches it, discards the cursor and re-enumerates once from
+  scratch, flagging `reset_performed=True` so the consumer treats the
+  listing as a full rescan and never as mass deletion. A 410 burns no
+  retry budget.
+- **Bounded retry** on 429/500/502/503/504 honouring `Retry-After`
+  (capped by `max_backoff`), otherwise exponential from `initial_backoff`;
+  exhaustion raises `DeltaRetryExhaustedError`. Non-retryable statuses
+  propagate immediately. The sleep function is injectable for
+  deterministic tests.
+- **Continuation-host validation** — every `nextLink`/`deltaLink`
+  (including a caller-supplied stored cursor and the final cursor handed
+  back) is checked against `DEFAULT_GRAPH_ORIGINS` *before* the request is
+  built, so a poisoned feed can never receive the access token. Rejects
+  non-HTTPS, hostless, suffix-spoofed and non-443-port URLs.
+- **Local folder filtering** because Graph delta is drive-level; prefix
+  traps (`ContractsArchive` vs `Contracts`) do not match, and tombstones
+  whose parent path Graph did not report are retained so a retraction is
+  never silently lost.
+
+The helper holds no state between rounds: it commits no cursor, downloads
+no content and ingests no document.
+
+### Validation evidence
+
+- `pytest packages/ai-parrot-tools/tests/test_o365_delta_protocol.py -q`
+  → **55 passed** (fake Graph surface only; no network, credentials or
+  tenant involved).
+- `ruff check` on both owned files → clean.
+- Log: `artifacts/logs/task-3041.log`.
+- Codebase Contract re-verified against the installed SDK before coding:
+  `DeltaRequestBuilder.get()/.with_url()`, `DeltaGetResponse.value/
+  odata_next_link/odata_delta_link`, `DriveItem` fields and
+  `APIError.response_status_code/response_headers` all confirmed in
+  `.venv` msgraph; no assumed API.
+
+### Deviations / notes for downstream tasks
+
+- The task named no classes, so the interface TASK-3042 and the contracts
+  delta job must consume is: `DriveDeltaHelper.enumerate(client, drive_id,
+  *, delta_link=None, folder_path=None, max_pages=None) -> DeltaEnumeration`
+  and `DriveDeltaHelper.fetch_page(client, drive_id, *, link=None) ->
+  DeltaPage`. `client` is duck-typed on `.graph_client`.
+- `DeltaEnumeration.delta_link` is `None` whenever the walk was truncated
+  (page bound, or a page carrying neither link). Consumers MUST retain the
+  previous cursor in that case — this is the idempotent-replay contract
+  spec §2 requires, enforced here by simply not producing a cursor.
+- Sovereign-cloud Graph origins (US Gov, DoD, China, Germany) are allowed
+  by default alongside the commercial origin; deployments that want a
+  tighter set pass `allowed_origins`.
+- No packaging change was needed: `msgraph-sdk` already ships with the
+  existing `office365` extra.

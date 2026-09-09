@@ -356,7 +356,7 @@
       "feature_id": "FEAT-539",
       "feature": "contracts-card-ontology",
       "spec": "sdd/specs/contracts-card-ontology.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -364,9 +364,9 @@
       "parallelism_notes": "Execute in O365 worktree feat-FEAT-539-contracts-o365-delta. May run alongside ready tasks with disjoint owned files after all dependencies complete. No concurrent edits to any file listed below. M8 commits must be integrated into the core lane before the delta job. Packaging task alone owns pyproject.toml/uv.lock; DOCX task alone owns bookstore/library.py.",
       "assigned_to": null,
       "assigned_at": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3041-o365-delta-protocol.md"
+      "started_at": "2026-09-09T01:58:49+00:00",
+      "completed_at": "2026-09-09T01:58:49+00:00",
+      "file": "sdd/tasks/completed/TASK-3041-o365-delta-protocol.md"
     },
     {
       "id": "TASK-3042",
@@ -709,7 +709,7 @@
     {
       "id": "TASK-3056",
       "slug": "contracts-pilot-signoff",
-      "title": "Record Bob\u2019s twelve-case pilot acceptance",
+      "title": "Record Bob’s twelve-case pilot acceptance",
       "feature_id": "FEAT-539",
       "feature": "contracts-card-ontology",
       "spec": "sdd/specs/contracts-card-ontology.spec.md",
