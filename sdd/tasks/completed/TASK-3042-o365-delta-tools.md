@@ -293,3 +293,35 @@ reported rather than changed:
    subsequent run would 410 again and ingestion would stall permanently.)
    Microsoft's resynchronisation guidance requires comparing against local
    state after a reset. Fix belongs in the job.
+
+### Post-merge review, round 2
+
+A second review of the merge (and of the first round of post-merge fixes)
+confirmed the six merge regressions were repaired, and found two more —
+both now fixed in `da07a74dc`:
+
+- **The strict folder guard had made things worse for its own consumer.**
+  `SourceConfig` exposes only `folder_path`, and `_enumerate` forwards only
+  `drive_id`/`delta_token`/`folder_path`, so there was no way for the ingest
+  job to pass `folder_id` or opt out — every folder-scoped source would have
+  failed on every run. The tools now resolve `folder_path` to the folder's
+  item id themselves and `FolderAncestryResolver` walks each unmatched
+  item's parent chain (cached, depth-bounded) so nested descendants are
+  included. The guard only fires when a scope was requested and membership
+  is genuinely undecidable.
+- **Colon path-addressing bypassed the confinement check.**
+  `/drives/{id}/root:/delta` addresses an *item named "delta"*, not the
+  delta operation, and satisfied "last segment is delta". Rejected now.
+
+Restored for parity with the core lane's copy: status extraction inspects
+`status`/`code` as well as `response_status_code`/`status_code`, and the
+tool payload carries `truncated` again. The `DriveDeltaReader` /
+`DeltaError` / `DeltaTokenExpired` / `UntrustedContinuation` /
+`validate_continuation` names from the core lane's copy are deliberately
+**not** reintroduced — nothing in the repo references them, and they were
+only a day old.
+
+Still open, both in TASK-3049's `contracts/jobs.py` and unchanged by this
+lane: `_enumerate` cannot drive a real `O365Tool` (`getattr(tool, "client")`
+is always None → `AttributeError` on `None.graph_client`), and a recovered
+410 commits a new cursor without reconciling deletions against local state.
