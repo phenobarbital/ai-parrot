@@ -1,0 +1,91 @@
+{
+  "schema_version": "1.0",
+  "mode_hint": "enrichment",
+  "rationale": "Add an optional embedded vector/FTS backend and reuse local graph federation for autonomous agents.",
+  "queries": [
+    {
+      "id": "Q001",
+      "intent": "Locate store contracts, adapters, dependency declarations and existing LanceDB references.",
+      "type": "grep",
+      "priority": 1,
+      "params": {
+        "pattern": "LanceDB|lancedb|class VectorStoreOrigin|class GraphIndexOrigin|supported_stores",
+        "path": "packages",
+        "max_results": 100
+      }
+    },
+    {
+      "id": "Q002",
+      "intent": "Read the core vector-store abstraction and dispatch contract.",
+      "type": "read",
+      "priority": 1,
+      "params": {
+        "path": "packages/ai-parrot/src/parrot/stores/abstract.py",
+        "lines": null
+      }
+    },
+    {
+      "id": "Q003",
+      "intent": "Read multi-store adapters and verify local graph plus FTS integration.",
+      "type": "tree",
+      "priority": 1,
+      "params": {
+        "path": "packages/ai-parrot-tools/src/parrot_tools/multistoresearch",
+        "max_depth": 2
+      }
+    },
+    {
+      "id": "Q004",
+      "intent": "Identify dependency extras and local backend implementation patterns.",
+      "type": "read",
+      "priority": 1,
+      "params": {
+        "path": "packages/ai-parrot-embeddings/pyproject.toml",
+        "lines": null
+      }
+    },
+    {
+      "id": "Q005",
+      "intent": "Identify existing multi-store test coverage.",
+      "type": "glob",
+      "priority": 2,
+      "params": {
+        "pattern": "packages/**/test*multistore*",
+        "max_results": 500
+      }
+    },
+    {
+      "id": "Q006",
+      "intent": "Inspect recent history for multi-store integration constraints.",
+      "type": "git_log",
+      "priority": 2,
+      "params": {
+        "path": "packages/ai-parrot-tools/src/parrot_tools/multistoresearch",
+        "since": "30.days.ago",
+        "max_results": 5
+      }
+    }
+  ],
+  "expected_findings": [
+    "Store API and dispatch requirements",
+    "Existing local graph support",
+    "FTS adapter capability contract",
+    "Optional dependency packaging and meaningful tests"
+  ],
+  "meta": {
+    "wiki_orientation": {
+      "query": "How do AbstractStore, store dispatch, and multi-store graph/vector/full-text retrieval support local embedded backends?",
+      "page": "file:docs/multistoresearch-toolkit.md",
+      "status": "completed after sandbox retry"
+    },
+    "schema_note": "Wiki and external queries recorded in meta because the checked-in query schema only accepts repository query types. Optional discriminator fields disambiguate overlapping oneOf parameter shapes.",
+    "external_research": [
+      "LanceDB official local/async, FTS, hybrid, indexing, concurrency documentation"
+    ],
+    "estimated_budget_use": {
+      "files_read": 25,
+      "grep_calls": 12,
+      "git_calls": 2
+    }
+  }
+}
