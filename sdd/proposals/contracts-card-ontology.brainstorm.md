@@ -441,6 +441,22 @@ class, not by the model.
   client asked for without committing to the full crew port. Whether the
   answer layer is a ReAct `Agent` or a fixed crew is left as an open
   question for the spec.
+- **Decisions taken on 2026-09-09 with the user:**
+  - *DOCX*: extract `Bookstore._docx_to_markdown` into a public helper
+    (module-level `docx_to_markdown(path) -> str` in the bookstore package,
+    with the private method delegating to it). A small, behaviour-preserving
+    bookstore edit; `bookstore-indexed-library` is listed as modified.
+  - *Fuzzy matching*: add `rapidfuzz>=3.0` to the **`graphindex` extra** of
+    `packages/ai-parrot/pyproject.toml`. This also declares the dependency
+    that `parrot/knowledge/ontology/discovery.py` already imports lazily
+    (`from rapidfuzz import fuzz`, lines 248 and 400) without any extra
+    listing it. The contracts package imports it lazily with the same
+    explicit error, and its docs name `ai-parrot[graphindex]` as the
+    install requirement. The pyproject change is a task in the spec, not
+    applied by this brainstorm.
+  - *Graph loader*: designed above (`ContractCardDataSource` +
+    `ContractGraphLoader` over `OntologyRefreshPipeline`), so the
+    "no direct ancestor" gap is closed by reusing the legal domain's shape.
 - Phase the delivery exactly as the design doc's §7: v1 = models →
   carding → SQLite catalog → library → ontology + graph loader → toolkit +
   agent; phase 2 = Postgres backend + SharePoint delta loop.
@@ -553,6 +569,81 @@ signatories, obligations of a contract, version in force as of a date,
    section reads through `NodeContentStore` for the quotes, and the
    citation check before the answer is released.
 
+### `ContractGraphLoader` design (resolved 2026-09-09)
+
+The loader is **not** a bespoke Arango writer. It reproduces the legal
+domain's shape one-to-one, so the generic ontology machinery does the
+node sync and the loader only adds what that machinery cannot do:
+
+1. **`ContractCardDataSource(ExtractDataSource)`** — the `source:
+   contractcard` declared on `Contract`, `Party`, `Person` and
+   `Obligation` in the YAML. Registered with
+   `DataSourceFactory.register_api_source("contractcard", …)` so
+   `OntologyRefreshPipeline` resolves it by name. Its `extract(fields,
+   filters)` reads the catalog (`ContractCatalogStore.list_cards()`, or one
+   card when `filters={"contract_id": …}`) and infers the target entity from
+   the requested `fields` exactly as `BOEDataSource._target_entity` does
+   (the four key fields `contract_id` / `party_id` / `person_id` /
+   `obligation_id` are disjoint). Projection rules:
+   - `Contract` record = the YAML property list; dates as ISO-8601 strings
+     (ArangoDB has no date type; the legal domain compares ISO strings and
+     the AQL patterns `>= @today` rely on that), `counterparty_names`
+     denormalised from non-`us` parties, `versions[]` embedded as a list of
+     plain dicts, `verification`/`verified_by` copied from the card.
+   - `Party` record = one per distinct `party_id` **across the whole
+     catalog**, with `aliases` = union of every spelling seen on any card.
+     Computing the union at extraction time avoids a read-modify-write on
+     the graph and keeps the datasource pure.
+   - `Person` record = one per `person_id` (slug of name + party), carrying
+     `party_id` and `employee_id` so `represents` / `is_employee` are
+     discovered by `field_match`.
+   - `Obligation` record = one per card obligation, `contract_id` and
+     `standard_id` present so `imposed_by` / `requires` are discovered.
+   - `ComplianceStandard` has no `source:` in the YAML; it is a **static
+     seed table** (`standards.py`: id, name, aliases) that the loader upserts
+     once per publish (idempotent). The same table is the alias map
+     `assemble_card` uses for `standard_name → standard_id`, so there is a
+     single source of truth.
+2. **`ContractGraphLoader`** — the orchestrator, with three operations:
+   - `publish_all()` runs `OntologyRefreshPipeline.run(tenant_id,
+     domain="contracts")` (extract → diff → `upsert_nodes` → soft-delete
+     vanished keys → `field_match` rediscovery for `governed_by`,
+     `imposed_by`, `requires`, `represents`, `is_employee`, `owned_by`,
+     `managed_by`), then `_sync_card_edges()` writes the four
+     property-carrying edges the pipeline cannot derive — `party_to{role}`,
+     `signed_by{signed_on, on_behalf_of}`, `amends{effective_date}`,
+     `supersedes` — through `OntologyGraphStore.create_edges`, building
+     `_from`/`_to` from the merged ontology's `collection` names the same
+     way `_sync_provenance_edges` does for `modifica`/`deroga`.
+   - `publish(card)` is the single-card variant (datasource `filters`).
+   - `retract(contract_id)` soft-deletes the `Contract` vertex and its
+     `Obligation` vertices and hard-removes the incident property edges
+     (`edges_incident` + `remove_edge_by_triple`).
+   - **Set-replace rule for edges**: `create_edges` de-duplicates on
+     `(_from, _to)` but never deletes, so before writing a card's
+     `party_to`/`signed_by` edges the loader removes the existing ones for
+     that contract. `amends` is written only when `contract_type ==
+     "amendment"` and the parent resolved; `supersedes` only when
+     `supersedes_contract_id` is set. An amendment therefore carries both
+     `governed_by` (discovered from `parent_contract_id`) and `amends`
+     (with `effective_date`); `contract_family` uses `DISTINCT`, so the
+     redundancy is harmless and intentional.
+   - **Publication policy**: every card is published regardless of
+     `verification`; the vertex carries the state and the answer layer
+     labels provenance. Nothing is hidden from the graph, nothing is
+     presented as verified that is not.
+   - **No scheduler import** (same deployment note as `sync_boe`): the
+     `ingest_delta` watcher and the CLI call the loader; the loader never
+     imports `parrot.scheduler`, so the contracts package does not depend
+     on the server satellite.
+   - **Failure semantics**: the pipeline's `RefreshReport.errors` carry
+     per-entity failures; a card whose projection raises is skipped and
+     reported, never half-written; edge sync errors are appended to the
+     same report.
+   - Tenant context comes from `TenantOntologyManager.resolve(...)` for
+     `domain="contracts"`; the YAML must be reachable under
+     `{ontology_dir}/domains/contracts.ontology.yaml`.
+
 ### Edge Cases & Error Handling
 
 - **Unsupported format / missing file** → `ContractLibraryError` before any
@@ -606,9 +697,12 @@ signatories, obligations of a contract, version in force as of a date,
   consuming `verification_queue()` / `verify_card`.
 
 ### Modified Capabilities
-- none. `bookstore-indexed-library` and `ontological-graph-rag` are reused
-  by import only; `base.ontology.yaml` is unchanged (the domain `extends:
-  base`).
+- `bookstore-indexed-library`: `Bookstore._docx_to_markdown` is extracted
+  into a public `docx_to_markdown` helper (no behaviour change).
+- `ontological-graph-rag`: no requirement change; `rapidfuzz` becomes a
+  declared dependency (graphindex extra) for the fuzzy `field_match`
+  strategy that `discovery.py` already uses.
+- `base.ontology.yaml` is unchanged (the domain `extends: base`).
 
 ---
 
@@ -619,7 +713,9 @@ signatories, obligations of a contract, version in force as of a date,
 | `parrot/knowledge/contracts/` (new) | new package | models, carding, catalog, library, graph_loader, toolkit, agent |
 | `parrot/knowledge/ontology/defaults/domains/contracts.ontology.yaml` | new file | copied from `sdd/proposals/contracts.ontology.yaml`; loaded by `TenantOntologyManager` for `domain="contracts"` |
 | `parrot/knowledge/bookstore/carding.py` | depends on (import) | `slugify`, `unique_slug`, `derive_toc`; no edits |
-| `parrot/knowledge/bookstore/library.py` | depends on / small extension | `_docx_to_markdown` is private — either extract a public helper or call `parrot_loaders` directly (open question) |
+| `parrot/knowledge/bookstore/library.py` | small extension | `_docx_to_markdown` extracted into a public `docx_to_markdown` helper (decided) |
+| `parrot/knowledge/ontology/refresh.py`, `discovery.py` | depends on | `OntologyRefreshPipeline.run(tenant_id, domain)` drives node sync + `field_match` rediscovery; `RelationDiscovery` fuzzy strategy needs `rapidfuzz` |
+| `parrot_loaders/extractors/{base,factory}.py` | depends on | `ContractCardDataSource(ExtractDataSource)` registered via `DataSourceFactory.register_api_source` |
 | `parrot/knowledge/pageindex/` | depends on | `PageIndexToolkit`, `NodeContentStore`, `PageIndexLLMAdapter.ask_structured` |
 | `parrot/knowledge/ontology/graph_store.py` | depends on | `upsert_nodes`, `create_edges`, `execute_traversal` |
 | `parrot/knowledge/ontology/{intent,entity_resolver,authorization,mixin}.py` | depends on | intent fast path, resolvers, `AuthorizationChecker`, `OntologyRAGMixin` |
@@ -631,7 +727,7 @@ signatories, obligations of a contract, version in force as of a date,
 | `ai-parrot-server/src/parrot/scheduler/manager.py` | depends on | `@schedule`, `schedule_daily_report`, `schedule_weekly_report`, `register_bot_schedules`; rows in `navigator.agents_scheduler` |
 | `ai-parrot-server/ui` (Svelte 5) | separate spec | verification-queue page does not exist |
 | `parrot/interfaces/sharepoint.py`, `parrot/core/hooks/sharepoint.py` | not used | upload-oriented `SharepointClient`; superseded by `parrot_tools.o365` for reads |
-| `packages/ai-parrot/pyproject.toml` | possible new dep | `rapidfuzz` (decision pending) |
+| `packages/ai-parrot/pyproject.toml` | new optional dep | `rapidfuzz>=3.0` added to the `graphindex` extra (decided) |
 | `packages/ai-parrot/tests/knowledge/contracts/` (new) | tests | synthetic MSA + SOW markdown fixtures, fake adapter, no-LLM fallback path |
 | CI / deployment | none | additive; no migration of existing stores |
 
@@ -998,7 +1094,43 @@ class GraphIndexToolkit(AbstractToolkit):                   # line 110
 #   pdf.py, pdfmark.py, docx.py, basepdf.py (OCR language attr at line 34), ocr/__init__.py (OCRBackend, get_ocr_backend)
 #   ocr.get_ocr_backend is called only from image.py
 # From packages/ai-parrot-loaders/src/parrot_loaders/extractors/base.py
-class ExtractDataSource(ABC):                               # line 50 — extract() line 70, list_fields() line 91
+class ExtractDataSource(ABC):                               # line 50
+    def __init__(self, name: str, config: dict[str, Any] | None = None) -> None:   # line 62
+    async def extract(self, fields: list[str] | None = None, filters: dict[str, Any] | None = None) -> ExtractionResult:   # line 70
+    async def list_fields(self) -> list[str]:               # line 91
+# From packages/ai-parrot-loaders/src/parrot_loaders/extractors/factory.py
+class DataSourceFactory:                                    # line 13 — _api_registry line 32
+    @classmethod
+    def register_api_source(cls, name: str, source_cls: type[ExtractDataSource]) -> None:   # line 35
+    def get(self, source_name: str, source_config: dict[str, Any] | None = None) -> ExtractDataSource:   # line 46
+
+# From parrot/knowledge/ontology/refresh.py
+class RefreshReport(BaseModel):                             # line 41
+class OntologyRefreshPipeline:                              # line 61
+    def __init__(self, tenant_manager, graph_store, discovery: RelationDiscovery, datasource_factory,
+                 cache: OntologyCache, vector_store=None, source_configs=None) -> None:   # line 76
+    async def run(self, tenant_id: str, domain: str | None = None) -> RefreshReport:     # line 94
+    # _refresh_entity (line 145): factory.get(entity_def.source, cfg) → source.extract(fields=property_names)
+    #   → graph_store.upsert_nodes → soft_delete_nodes(vanished) → discovery.discover(...) per field_match relation
+# From parrot/knowledge/ontology/discovery.py
+class RelationDiscovery:                                    # line 52 — __init__(llm_client=None, review_dir=None) line 71
+    async def discover(self, ctx: TenantContext, relation_def: RelationDef,
+                       source_data: list[dict], target_data: list[dict]) -> DiscoveryResult:   # line 79
+    # lazy `from rapidfuzz import fuzz` at lines 248 and 400 — UNDECLARED dependency today
+# From parrot/knowledge/ontology/graph_store.py (additional)
+    async def soft_delete_nodes(self, ctx, collection: str, keys: list[str]) -> None:        # line 478 — sets _active=false
+    async def edges_incident(self, ctx, collection: str, node_id: str) -> list[dict]:         # line 725
+    async def remove_edge_by_triple(self, ctx, collection: str, source_id: str, target_id: str, kind: str) -> bool:   # line 752
+# From parrot/knowledge/ontology/tenant.py
+class TenantOntologyManager:
+    def resolve(...)                                        # line 92 — builds TenantContext (base + domains/<domain>.ontology.yaml)
+# From parrot/knowledge/ontology/schema.py
+class TenantContext(BaseModel):                             # line 529 — tenant_id, arango_db, pgvector_schema, ontology: MergedOntology
+# From parrot_tools/legal/boe/sync.py — the orchestration shape the loader copies
+async def sync_boe(tenant_id: str, since: date | None = None) -> RefreshReport:   # line 24 — pipeline.run("legal") then edge bridge; no scheduler import
+async def _sync_provenance_edges(ctx, graph_store, boe_source) -> tuple[dict[str, DiscoveryStats], list[str]]:   # line 106 — property edges via create_edges
+# From parrot_tools/legal/boe/datasource.py
+    def _target_entity(self, fields: list[str] | None) -> str:   # line 170 — infer entity from requested fields
 ```
 
 #### Verified Imports
@@ -1045,7 +1177,8 @@ from parrot_tools.legal.librarian.models import SpanRef, LegalAnswer            
 - ~~`claude/contracts-agent-definition.md`~~ — the path cited in the design doc header is wrong; the product definition lives at **`sdd/proposals/contracts-agent-definition.md`** (resolved).
 - ~~`parrot/knowledge/contracts/`~~ and every symbol in it (`ContractCard`, `Obligation`, `FieldProvenance`, `ContractVersion`, `ContractHeaderDraft`, `ObligationsDraft`, `ContractCatalogStore`, `ContractLibrary`, `ContractGraphLoader`, `ContractsToolkit`, `ContractsAgent`, `ContractAnswer`, `Citation`, `HandoffBrief`, `select_carding_nodes`, `assemble_card`, `verify_card`, `refresh_card` for contracts) — all **to be created**.
 - ~~`ontology/defaults/domains/contracts.ontology.yaml`~~ — the file lives only in `sdd/proposals/`; it must be copied into the defaults dir (or an `ontology_dir` configured) for `TenantOntologyManager` to find `domain="contracts"`.
-- ~~`parrot.knowledge.legal.BOEDataSource`~~ / a core "graph loader" precedent — `BOEDataSource` is `parrot_tools.legal.boe.datasource.BOEDataSource`, an `ExtractDataSource` (parrot_loaders extractor), not a card→graph writer. `ContractGraphLoader` has no direct ancestor; it composes `OntologyGraphStore.upsert_nodes/create_edges`.
+- ~~`parrot.knowledge.legal.BOEDataSource`~~ — it is `parrot_tools.legal.boe.datasource.BOEDataSource`, an `ExtractDataSource`. The graph-writing precedent is the pair `OntologyRefreshPipeline` + `sync_boe/_sync_provenance_edges`; `ContractGraphLoader` is designed on that pair (see *Feature Description*), not as a bespoke writer.
+- ~~`rapidfuzz` declared anywhere in `ai-parrot`~~ — `ontology/discovery.py` imports it lazily; no extra lists it (to be fixed by the decided `graphindex` extra addition).
 - ~~`PropertyDef.type == "datetime"`~~ / nested model property types — not allowed; `versions` must be `list`.
 - ~~`CatalogStore.expiring()` / `CatalogStore.verification_queue()` / `find_by_source_uri()`~~ — not on the bookstore store; new to `ContractCatalogStore`.
 - ~~a public `docx_to_markdown` helper in bookstore~~ — only the private `Bookstore._docx_to_markdown` (library.py:1073).
@@ -1114,11 +1247,13 @@ from parrot_tools.legal.librarian.models import SpanRef, LegalAnswer            
   queue? Neither is in the document text. — *Owner: Jesus Lara*
 - [ ] **Postgres from the pilot or after**: D8 says Postgres from day 1 if the
   pilot has ≥ 3 concurrent users with roles. How many pilot users? — *Owner: Jesus Lara*
-- [ ] **`rapidfuzz` as a core dependency** for `parent_contract_id` title
-  similarity, or `difflib.SequenceMatcher` to avoid a new dep? — *Owner: Jesus Lara*
-- [ ] **DOCX conversion**: extract `Bookstore._docx_to_markdown` into a public
-  helper (small bookstore edit) or call `parrot_loaders` directly from the
-  contracts library? — *Owner: Jesus Lara*
+- [x] **`rapidfuzz` dependency** — *Owner: Jesus Lara*: add `rapidfuzz>=3.0`
+  to the `graphindex` extra of `packages/ai-parrot/pyproject.toml`
+  (also covers the undeclared lazy import in `ontology/discovery.py`);
+  contracts imports it lazily and documents `ai-parrot[graphindex]`.
+- [x] **DOCX conversion** — *Owner: Jesus Lara*: extract
+  `Bookstore._docx_to_markdown` into a public `docx_to_markdown` helper in
+  the bookstore package; the private method delegates to it.
 - [ ] **`same_department` on a `Contract` target**: verify whether
   `AuthorizationChecker._check_same_department` reads `Contract.department`
   as-is or needs a target-entity hook before the rule is used in phase 2. — *Owner: implementer (spike in TASK for ontology)*
