@@ -574,3 +574,51 @@ async def test_legacy_unstamped_published_sections_remain_readable(library, tmp_
     index.write_text(json.dumps(tree))
     body = await library.load_section(result.card.contract_id, "0000", source_sha256=result.card.source_sha256)
     assert body and "Agreement" in body
+
+
+def test_numbered_captions_become_headings_and_the_first_line_the_title():
+    from parrot.knowledge.contracts.library import promote_numbered_headings
+
+    text = (
+        "DATA PROCESSING ADDENDUM\n"
+        "Contract Reference: HRS-KCS-DPA-2025\n"
+        "This DPA is entered into as of September 15, 2025.\n"
+        "1. DEFINITIONS\n"
+        '1.1 "Data Protection Laws" means all applicable laws.\n'
+        "2. SECURITY\n"
+        "Processor shall maintain ISO 27001.\n"
+        "12. GOVERNING LAW AND VENUE\n"
+        "Delaware.\n"
+    )
+    promoted = promote_numbered_headings(text)
+    lines = promoted.splitlines()
+    assert lines[0] == "# DATA PROCESSING ADDENDUM"
+    assert "## 1. DEFINITIONS" in lines and "## 2. SECURITY" in lines
+    assert "## 12. GOVERNING LAW AND VENUE" in lines
+    # Sub-clauses and body text are untouched, so every quote stays verbatim.
+    assert '1.1 "Data Protection Laws" means all applicable laws.' in lines
+    assert "Processor shall maintain ISO 27001." in lines
+    # No caption at all: unchanged, the caller falls back to deterministic sections.
+    assert promote_numbered_headings("just prose\n\nmore prose") == "just prose\n\nmore prose"
+
+
+@pytest.mark.asyncio
+async def test_heading_less_docx_is_sectioned_before_indexing(library, tmp_path, monkeypatch):
+    """A DOCX without Word heading styles must not become an empty tree."""
+    seen: list[str] = []
+
+    async def fake_docx(path: Path) -> str:
+        return "ACME ORDER FORM\nIssued under the MSA.\n1. SUBSCRIPTION TERM\nTwelve months.\n2. FEES\nUSD 10.\n"
+
+    monkeypatch.setattr("parrot.knowledge.contracts.library.docx_to_markdown", fake_docx)
+    markdown, hints = await library._to_markdown(tmp_path / "acme-order.docx", "docx")
+    assert hints == {}
+    assert markdown.splitlines()[0] == "# ACME ORDER FORM"
+    assert "## 1. SUBSCRIPTION TERM" in markdown and "## 2. FEES" in markdown
+
+    async def prose_only(path: Path) -> str:
+        return "plain prose paragraph one.\n\nplain prose paragraph two.\n"
+
+    monkeypatch.setattr("parrot.knowledge.contracts.library.docx_to_markdown", prose_only)
+    markdown, _ = await library._to_markdown(tmp_path / "prose.docx", "docx")
+    assert markdown.startswith("## Section 1")

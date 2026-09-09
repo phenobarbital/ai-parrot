@@ -727,3 +727,41 @@ def test_retrieval_accepts_no_llm_client():
     }
     for forbidden in ("ask", "ask_structured", "invoke", "completion", "generate"):
         assert forbidden not in called, forbidden
+
+
+@pytest.mark.asyncio
+async def test_a_standing_requirement_without_dates_is_still_found_by_standard():
+    """ "Shall maintain ISO 27001 throughout the term" has no due date and no
+    recurrence; the standard lookup must still return it (it used to go
+    through the due-window query, which silently excluded it)."""
+    from datetime import date
+
+    from parrot.knowledge.contracts.models import ContractCard, FieldProvenance, Obligation, Party, TermSpec
+
+    card = ContractCard(
+        contract_id="acme-msa",
+        title="ACME MSA",
+        contract_type="msa",
+        status="active",
+        parties=[Party(party_id="acme", name="ACME, Inc.", role="vendor")],
+        term=TermSpec(effective_date=date(2026, 1, 1)),
+        source_uri="file:///acme-msa.md",
+        source_sha256="a" * 64,
+    )
+    standing = Obligation(
+        obligation_id="acme-msa-ob-001",
+        contract_id="acme-msa",
+        kind="compliance",
+        obligor="counterparty",
+        text="Vendor shall maintain ISO/IEC 27001 certification throughout the term.",
+        node_id="0002",
+        standard_id="iso27001",
+        provenance=FieldProvenance(origin="llm", node_id="0002", quote="Vendor shall maintain ISO/IEC 27001"),
+    )
+    catalog = FakeCatalog()
+    await catalog.upsert(card.model_copy(update={"obligations": [standing]}))
+    retrieval = ContractRetrieval(catalog=catalog, today=lambda: date(2026, 9, 9))
+    result = await retrieval.retrieve("Which agreements require ISO 27001?", reader_context())
+    assert not isinstance(result, Clarification)
+    assert [c.contract_id for c in result.cards] == ["acme-msa"]
+    assert [o.obligation_id for o in result.obligations] == ["acme-msa-ob-001"]

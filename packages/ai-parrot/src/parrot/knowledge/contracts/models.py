@@ -87,6 +87,25 @@ __all__ = (
 #: Hard cap for any evidential quote persisted or released (spec §2).
 MAX_QUOTE_CHARS = 300
 
+
+def trim_quote(value: Any) -> Any:
+    """Trim an over-long quote to :data:`MAX_QUOTE_CHARS` at a word boundary.
+
+    Models regularly return excerpts a little longer than the requested
+    bound. Rejecting the whole structured draft for that discards every
+    other clause in the section, so the excerpt is shortened instead: a
+    verbatim prefix is still verbatim, and evidence validation checks it
+    against the indexed text afterwards exactly as before.
+    """
+    if not isinstance(value, str) or len(value) <= MAX_QUOTE_CHARS:
+        return value
+    cut = value[:MAX_QUOTE_CHARS]
+    space = cut.rfind(" ")
+    if space > MAX_QUOTE_CHARS // 2:
+        cut = cut[:space]
+    return cut.rstrip()
+
+
 #: An absent or invalid quote caps extraction confidence at this value and
 #: prioritises verification; it can never substantiate a released citation.
 UNSUBSTANTIATED_CONFIDENCE_CAP = 0.5
@@ -196,6 +215,12 @@ class Evidence(BaseModel):
 
     node_id: str = Field(..., min_length=1)
     quote: str = Field(default="", max_length=MAX_QUOTE_CHARS)
+
+    @field_validator("quote", mode="before")
+    @classmethod
+    def _trim_quote(cls, value: Any) -> Any:
+        return trim_quote(value)
+
     page: Optional[int] = Field(default=None, ge=1)
 
     @property
@@ -649,6 +674,12 @@ class ObligationClauseDraft(BaseModel):
     node_id: str = Field(..., min_length=1)
     page: Optional[int] = Field(default=None, ge=1)
     kind: ObligationKind = "other"
+
+    @field_validator("excerpt", mode="before")
+    @classmethod
+    def _trim_excerpt(cls, value: Any) -> Any:
+        return trim_quote(value)
+
     obligor: Obligor = "counterparty"
     standard_name: Optional[str] = None
     due_date: Optional[date] = None

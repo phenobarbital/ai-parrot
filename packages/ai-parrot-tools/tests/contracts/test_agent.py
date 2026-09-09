@@ -236,8 +236,9 @@ async def test_the_producer_reads_only_the_authorized_dossier(service, agent_pro
     prompt = agent_producer.agent.prompts[0]
 
     assert "acme-msa" in prompt
-    assert "Authorized contracts for this request" in prompt
-    assert "contracts_" in prompt, "the agent is told to use the toolkit"
+    assert "Contracts the deterministic retrieval matched" in prompt
+    assert "Today:" in prompt and "Retrieval pattern: contracts_requiring_standard" in prompt
+    assert "contracts_" in prompt, "the agent is told it may use the toolkit"
 
 
 @pytest.mark.asyncio
@@ -267,3 +268,39 @@ async def test_the_generic_bot_entrypoints_refuse_to_release_a_draft():
     assert "answer_question" in str(error)
     assert "unverified" in str(error)
     assert isinstance(error, PermissionError)
+
+
+class TaggingReActAgent:
+    """A model that paraphrases but tags the evidence it used."""
+
+    def __init__(self, reply: str) -> None:
+        self.reply = reply
+
+    async def ask(self, prompt: str) -> str:
+        return self.reply
+
+
+@pytest.mark.asyncio
+async def test_a_tagged_paraphrase_is_released_with_its_citation(service):
+    """The model may paraphrase as long as it tags authorized evidence."""
+    reply = (
+        "ACME must keep a SOC 2 Type II report current. [acme-msa/0005] "
+        "It also carries insurance duties. [acme-msa/0008] "
+        "Vendors owe liquidated damages of one million dollars."
+    )
+    service.producer = ContractsAgentProducer(TaggingReActAgent(reply))
+    outcome = await service.answer("Which contracts require SOC 2?", request_context=reader_context())
+    assert isinstance(outcome, AnswerOutcome)
+    assert outcome.answer.answer_kind == "lookup"
+    assert "[acme-msa/0005]" not in (outcome.answer.answer or ""), "tags are stripped from the released text"
+    assert "SOC 2 Type II" in (outcome.answer.answer or "")
+    assert any(c.node_id == "0005" for c in outcome.answer.citations)
+    assert any("liquidated damages" in dropped for dropped in outcome.dropped_claims), "untagged prose is deleted"
+
+
+def test_tags_outside_the_authorized_list_cite_nothing():
+    from parrot_tools.contracts.agent import ContractsAgentProducer
+
+    assert ContractsAgentProducer._strip_tags("Net 45 applies. [acme-msa/0003]") == "Net 45 applies."
+    sentences = ContractsAgentProducer._split_sentences("First fact. [a/1] Second fact [b/2]. Third.")
+    assert sentences == ["First fact. [a/1]", "Second fact [b/2].", "Third."]

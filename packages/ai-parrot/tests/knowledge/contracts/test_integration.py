@@ -355,21 +355,15 @@ def contracts_context(database: str) -> TenantContext:
     )
 
 
-#: Pre-existing upstream defect, reproduced against ArangoDB 3.11.14 while
-#: writing this suite: ``OntologyGraphStore.upsert_nodes`` builds
-#: ``UPSERT { @key_field: doc[@key_field] }``, and ArangoDB refuses a bind
-#: parameter as an UPSERT example attribute name (ERR 1501, "expecting
-#: object literal with literal attribute names in example"). The individual
-#: fallback path uses the same construct and fails identically, so **no**
-#: node reaches a real ArangoDB through that API. It lives in
-#: ``parrot/knowledge/ontology/graph_store.py`` — a generic module this
-#: feature is explicitly forbidden to modify — so it is reported rather
-#: than patched here. Until it is fixed, the contracts publish path cannot
-#: be verified end to end against a live graph; the ten AQL patterns are
-#: verified below against documents written directly.
+#: Historical note: ``OntologyGraphStore.upsert_nodes`` used to build
+#: ``UPSERT { @key_field: doc[@key_field] }``, which ArangoDB refuses (ERR
+#: 1501, "expecting object literal with literal attribute names in example"),
+#: so no node reached a real graph through that API. It now uses a computed
+#: attribute name (``{ [@key_field]: ... }``); the regression test below
+#: pins the fixed behaviour against a live server.
 UPSERT_NODES_DEFECT = (
-    "OntologyGraphStore.upsert_nodes uses a bind parameter as an AQL UPSERT "
-    "attribute name (ArangoDB ERR 1501); no node reaches a real graph"
+    "OntologyGraphStore.upsert_nodes must reach a real ArangoDB "
+    "(regression of the ERR 1501 bind-parameter attribute-name defect)"
 )
 
 
@@ -389,8 +383,8 @@ async def write_documents(adapter: Any, collection: str, documents: list[dict]) 
 
 @requires_arango
 @requires_pg
-async def test_the_generic_node_upsert_is_broken_against_a_real_graph(arango_store):
-    """Pin the upstream defect so the gap is visible, not silently skipped."""
+async def test_the_generic_node_upsert_reaches_a_real_graph(arango_store):
+    """Regression: nodes written through ``upsert_nodes`` land in ArangoDB."""
     store, database, adapter = arango_store
     ctx = contracts_context(database)
     await store.initialize_tenant(ctx)
@@ -398,8 +392,15 @@ async def test_the_generic_node_upsert_is_broken_against_a_real_graph(arango_sto
     result = await store.upsert_nodes(ctx, "contract", [{"contract_id": "probe", "title": "Probe"}], "contract_id")
     rows = await store.get_all_nodes(ctx, "contract")
 
-    assert result.inserted == 0 and result.updated == 0, UPSERT_NODES_DEFECT
-    assert rows == [], UPSERT_NODES_DEFECT
+    assert result.inserted == 1, UPSERT_NODES_DEFECT
+    assert [row["contract_id"] for row in rows] == ["probe"], UPSERT_NODES_DEFECT
+    assert rows[0]["_key"] == "probe"
+
+    # A second upsert with a changed title updates in place, never duplicates.
+    again = await store.upsert_nodes(ctx, "contract", [{"contract_id": "probe", "title": "Probe v2"}], "contract_id")
+    rows = await store.get_all_nodes(ctx, "contract")
+    assert again.updated == 1 and again.inserted == 0
+    assert [row["title"] for row in rows] == ["Probe v2"]
 
 
 @requires_arango
@@ -410,8 +411,8 @@ async def test_all_ten_patterns_execute_against_a_real_graph(arango_store):
     ctx = contracts_context(database)
     await store.initialize_tenant(ctx)
 
-    # The projection the loader computes, written with literal-attribute AQL
-    # because of UPSERT_NODES_DEFECT above.
+    # The projection the loader computes, written directly so the pattern
+    # suite does not depend on the loader.
     await write_documents(
         adapter,
         "contract",

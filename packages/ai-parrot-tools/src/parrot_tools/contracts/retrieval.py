@@ -25,7 +25,7 @@ import re
 from datetime import date, datetime, timezone
 from typing import Any, Optional, Sequence
 
-from parrot.knowledge.contracts.catalog import ContractCatalogStore, ObligationWindow
+from parrot.knowledge.contracts.catalog import ContractCatalogStore
 from parrot.knowledge.contracts.models import ContractCard, Obligation
 from parrot.knowledge.contracts.standards import find_standards
 from pydantic import BaseModel, Field
@@ -115,7 +115,7 @@ _TRIGGERS: tuple[tuple[str, tuple[str, ...]], ...] = (
         ("contracts with", "agreements with", "signed with", "our contract with"),
     ),
     ("my_contracts", ("my contracts", "contracts i own", "my team's contracts")),
-    ("search_contracts", ("mentions", "find the contract", "search contracts", "clause about")),
+    ("search_contracts", ("mentions", "mention", "find the contract", "search contracts", "clause about")),
 )
 
 #: Deontic/evaluative markers: these are judgement requests, not lookups.
@@ -560,21 +560,26 @@ class ContractRetrieval:
 
         if plan.pattern == "contracts_requiring_standard":
             standard_id = plan.binds["standard_id"]
-            obligations = await self.catalog.obligations_due(
-                ObligationWindow(until=date.max, standard_id=standard_id, limit=200)
-            )
-            contract_ids = {obligation.contract_id for obligation in obligations}
-            cards = [
-                card
-                for card in await self.catalog.list_cards()
-                if card.contract_id in contract_ids and card.status in plan.binds.get("statuses", ["active"])
-            ]
+            # A standing requirement ("shall maintain ISO 27001 throughout
+            # the term") has neither a due date nor a recurrence, so the
+            # due-window query would never return it: read every active
+            # obligation of every candidate contract and filter by standard.
+            statuses = plan.binds.get("statuses", ["active"])
+            cards: list[ContractCard] = []
+            obligations: list[Any] = []
+            for card in await self.catalog.list_cards():
+                if card.status not in statuses:
+                    continue
+                matching = [
+                    obligation
+                    for obligation in await self.catalog.obligations_for(card.contract_id)
+                    if obligation.active and obligation.standard_id == standard_id
+                ]
+                if matching:
+                    cards.append(card)
+                    obligations.extend(matching)
             result.cards = cards
-            result.obligations = [
-                obligation
-                for obligation in obligations
-                if obligation.contract_id in {card.contract_id for card in cards}
-            ]
+            result.obligations = obligations
         elif plan.pattern == "expiring_within":
             result.cards = await self.catalog.expiring(
                 until=plan.binds["until"], key="expiration_date", since=plan.binds["today"]

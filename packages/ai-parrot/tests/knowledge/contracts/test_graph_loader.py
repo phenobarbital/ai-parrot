@@ -7,6 +7,8 @@ from typing import Any
 
 import pytest
 
+from parrot.knowledge.contracts.standards import STANDARD_IDS
+
 from parrot.knowledge.contracts.datasource import ContractCardDataSource
 from parrot.knowledge.contracts.graph_loader import (
     FEATURE_EDGE_COLLECTIONS,
@@ -262,7 +264,7 @@ async def test_standards_are_seeded_before_requires_is_linked(loader):
     await loader.publish_all()
     store = loader.graph_store
     assert "soc2" in store.active_keys("compliance_standard")
-    assert len(store.active_keys("compliance_standard")) == 8
+    assert len(store.active_keys("compliance_standard")) == len(STANDARD_IDS)
     assert store.edge_pairs("requires")
 
 

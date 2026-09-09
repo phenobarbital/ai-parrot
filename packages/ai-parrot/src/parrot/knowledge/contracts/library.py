@@ -132,6 +132,40 @@ class OwnerRule(BaseModel):
     department: Optional[str] = None
 
 
+#: A numbered article caption in ALL CAPS, e.g. ``1. DEFINITIONS`` or
+#: ``12. GOVERNING LAW AND VENUE`` — the structure contracts carry when a
+#: DOCX has no Word heading styles.
+_NUMBERED_CAPTION_RE = re.compile(r"^(?P<number>\d{1,3})\.?\s+(?P<title>[A-Z][A-Z0-9 ,;:&/\-()'\u2019]{2,90})\s*$")
+
+
+def promote_numbered_headings(text: str) -> str:
+    """Turn numbered ALL-CAPS article captions into markdown headings.
+
+    The first non-empty line becomes the ``#`` document title and every
+    ``N. TITLE`` caption a ``##`` section heading; every other line is left
+    untouched, so the text stays verbatim for evidence checks. When no
+    caption is found the text is returned unchanged (and the caller falls
+    back to :func:`deterministic_sections`).
+
+    Args:
+        text: Heading-less markdown or plain text.
+
+    Returns:
+        Markdown with promoted headings, or ``text`` unchanged.
+    """
+    lines = (text or "").splitlines()
+    captions = [index for index, line in enumerate(lines) if _NUMBERED_CAPTION_RE.match(line.strip())]
+    if not captions:
+        return text
+    promoted = list(lines)
+    for index in captions:
+        promoted[index] = f"## {lines[index].strip()}"
+    first = next((index for index, line in enumerate(promoted) if line.strip()), None)
+    if first is not None and first < captions[0]:
+        promoted[first] = f"# {promoted[first].strip()}"
+    return "\n".join(promoted)
+
+
 def deterministic_sections(
     text: str,
     *,
@@ -885,7 +919,16 @@ class ContractLibrary:
             section index to its physical page (PDF sources only).
         """
         if source_format == "docx":
-            return (await docx_to_markdown(path), {})
+            markdown = await docx_to_markdown(path)
+            if not _HEADING_RE.search(markdown):
+                # No Word heading styles: promote the numbered article
+                # captions contracts almost always carry ("1. DEFINITIONS")
+                # so the tree gets clause-level sections, and fall back to
+                # deterministic sectioning when even those are absent.
+                markdown = promote_numbered_headings(markdown)
+            if not _HEADING_RE.search(markdown):
+                markdown = deterministic_sections(markdown)
+            return (markdown, {})
         if source_format == "pdf":
             pages = await self._extract_pdf_pages(path)
             markdown = pdf_markdown(pages)

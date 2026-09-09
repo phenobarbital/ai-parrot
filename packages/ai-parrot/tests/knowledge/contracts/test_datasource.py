@@ -231,13 +231,13 @@ async def test_person_and_obligation_projections(source):
 async def test_standard_seeds_are_static_and_deterministic(source):
     records = await source.records_for("ComplianceStandard")
     assert [record["standard_id"] for record in records] == list(STANDARD_IDS)
-    assert len(records) == 8
+    assert len(records) == len(STANDARD_IDS)
     assert records == await source.records_for("ComplianceStandard")
     assert "soc 2" in records[0]["aliases"]
 
     # Seeds do not depend on any card being present.
     empty = ContractCardDataSource(SOURCE_NAME, {"catalog": InMemoryContractCatalog()})
-    assert len(await empty.records_for("ComplianceStandard")) == 8
+    assert len(await empty.records_for("ComplianceStandard")) == len(STANDARD_IDS)
 
 
 @pytest.mark.asyncio
@@ -303,7 +303,7 @@ async def test_snapshot_returns_all_five_entities_prevalidated(source):
         "ComplianceStandard",
     }
     assert len(snapshot["Contract"]) == 1
-    assert len(snapshot["ComplianceStandard"]) == 8
+    assert len(snapshot["ComplianceStandard"]) == len(STANDARD_IDS)
     assert snapshot["Obligation"][0]["contract_id"] == "acme-msa"
 
 

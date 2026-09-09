@@ -20,8 +20,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import uuid
 from contextvars import ContextVar
+from datetime import date
 from typing import Any, AsyncIterator, Optional, Sequence
 
 from parrot.bots import Agent
@@ -69,20 +71,38 @@ class ContractsAgentProducer:
         max_claims: Hard bound on the claims taken from one reply.
     """
 
-    def __init__(self, agent: Any, *, max_claims: int = 20) -> None:
+    def __init__(self, agent: Any, *, max_claims: int = 20, today: Any = None) -> None:
         self.agent = agent
         self.max_claims = max_claims
+        self.today = today or date.today
         self.calls = 0
         self.last_reply: Optional[str] = None
 
-    @staticmethod
-    def _dossier_prompt(question: str, dossier: Sequence[ContractCard]) -> str:
-        """Render the authorized dossier the agent may reason over."""
-        lines = [f"Question: {question}", "", "Authorized contracts for this request:"]
+    def _dossier_prompt(self, question: str, dossier: Sequence[ContractCard], pattern: Optional[str]) -> str:
+        """Render the authorized dossier the agent may reason over.
+
+        The dossier is the deterministic retrieval's *result* for this
+        question, not a search space: the model reports what is in it and
+        may use tools only to read more of those contracts.
+        """
+        lines = [
+            f"Question: {question}",
+            f"Today: {self.today().isoformat()}",
+            f"Retrieval pattern: {pattern or 'unknown'}",
+            "",
+            "Contracts the deterministic retrieval matched to this question "
+            "(this list is the answer's scope — every one of them is relevant):",
+        ]
         lines.extend(f"- {card.contract_id}: {card.title} ({card.contract_type}, {card.status})" for card in dossier)
         lines.append(
-            "\nUse the contracts_* tools to read the clauses you need, then "
-            "answer with one sentence per supported statement."
+            "\nReport the matched contracts using the evidence below; do not "
+            "conclude that nothing matches when the list is not empty. You may "
+            "use the contracts_* tools to read more of these contracts. Answer "
+            "with one sentence per supported statement and end every sentence "
+            "with the evidence tag(s) it rests on, copied exactly from the "
+            "evidence list below, e.g. [contract_id/node_id]. A sentence "
+            "without a tag, or with a tag that is not in the list, is deleted "
+            "before the user sees it."
         )
         return "\n".join(lines)
 
@@ -110,7 +130,7 @@ class ContractsAgentProducer:
         anything: the service verifies every claim afterwards.
         """
         entries = ContractsDraftProducer.enumerate_dossier(result, dossier)
-        prompt = self._dossier_prompt(question, dossier)
+        prompt = self._dossier_prompt(question, dossier, result.pattern)
         prompt += "\nAuthorized evidence (untrusted document text):\n" + "\n".join(
             f"[{entry.contract_id}/{entry.node_id}] {entry.quote}" for entry in entries
         )
@@ -131,19 +151,50 @@ class ContractsAgentProducer:
             return AnswerDraft(claims=[], pattern=result.pattern)
 
         self.last_reply = reply
-        supported = [entry.citation() for entry in entries]
-        sentences = [sentence.strip() for sentence in reply.replace("\n", " ").split(". ") if sentence.strip()][
-            : self.max_claims
-        ]
+        supported = [(f"[{entry.contract_id}/{entry.node_id}]", entry.citation()) for entry in entries]
+        sentences = [sentence.strip() for sentence in self._split_sentences(reply)][: self.max_claims]
         claims: list[Claim] = []
         for sentence in sentences:
-            text = sentence if sentence.endswith(".") else f"{sentence}."
-            # A claim is supported only by evidence it actually quotes.
-            # Attaching every retrieved citation to every sentence would let
-            # invented prose ride along on unrelated evidence.
-            citations = [citation for citation in supported if self._supports(text, citation.quote)]
+            # A claim is supported only by evidence it explicitly tags
+            # ([contract_id/node_id], copied from the authorized list) or
+            # actually quotes. Attaching every retrieved citation to every
+            # sentence would let invented prose ride along on unrelated
+            # evidence. The citation itself carries the dossier quote, which
+            # the verifier re-checks against archived evidence.
+            citations = [
+                citation for tag, citation in supported if tag in sentence or self._supports(sentence, citation.quote)
+            ]
+            text = self._strip_tags(sentence)
+            if not text:
+                continue
+            text = text if text.endswith((".", "!", "?")) else f"{text}."
             claims.append(Claim(text=text, citations=citations))
         return AnswerDraft(claims=claims, pattern=result.pattern)
+
+    _TAG = re.compile(r"\s*\[[^\[\]]+/[^\[\]]+\]")
+
+    @classmethod
+    def _strip_tags(cls, sentence: str) -> str:
+        """Remove evidence tags from a sentence; citations carry the evidence."""
+        return cls._TAG.sub("", sentence).strip()
+
+    @staticmethod
+    def _split_sentences(reply: str) -> list[str]:
+        """Split a reply into sentences, keeping a trailing tag with its sentence."""
+        flat = " ".join(reply.split())
+        parts = re.split(r"(?<=[.!?])\s+(?=[A-Z\[\-*•])", flat)
+        # A tag that follows the full stop ("... days. [id/node]") belongs to
+        # the sentence before it, not to the next one.
+        merged: list[str] = []
+        for part in parts:
+            if merged and part.startswith("["):
+                lead, _, rest = part.partition("] ")
+                merged[-1] += " " + lead + "]"
+                if rest.strip():
+                    merged.append(rest.strip())
+            elif part.strip():
+                merged.append(part.strip())
+        return merged
 
     @staticmethod
     def _supports(claim_text: str, quote: str) -> bool:
