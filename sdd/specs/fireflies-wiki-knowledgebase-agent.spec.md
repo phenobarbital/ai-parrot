@@ -759,6 +759,33 @@ The Fireflies MCP shares the account's API rate limits (Free 50/day · Pro
   non-primary project may dangle until a later `full` run reconciles it
   (caught by `lint`, not the §34 gate). (`runner.py`, `classify.py`.)
 
+### A6 — Configurable GraphIndex retrieval-plane backend (Module 13)
+The derived wiki plane (Module 13) can now put its **retrieval plane**
+(`LLMWikiToolkit` WikiStore — pages + BM25 full-text search) on a
+**server-hosted ArangoDB** instead of the local `<vault>/.wiki_kb/graph/wiki.db`.
+Driven entirely by config, default-off — **nothing changes unless it is set**:
+- `conf.WIKI_KB_GRAPH_BACKEND` (`"sqlite"` default / `"memory"` / `"arangodb"`)
+  selects the backend; an unknown value falls back to `sqlite` with a warning
+  (the rebuild is non-fatal, D3).
+- For `arangodb`, `graph.py:_build_arango_wiki_store()` builds an
+  `ArangoDBWikiStore` from `WIKI_KB_ARANGO_DATABASE` (fallback
+  `wiki_fireflies_wiki_kb`), `WIKI_KB_ARANGO_CREDENTIALS_PREFIX` (default
+  `ARANGODB` → `ARANGODB_HOST`/`_PORT`/`_PROTOCOL`/`_USERNAME`/`_PASSWORD`, via
+  `resolve_arango_params`), and `WIKI_KB_ARANGO_TEXT_ANALYZER`; it is injected
+  as `LLMWikiToolkit(store=…)`. The constructor opens **no** connection (lazy),
+  so a misconfigured server never breaks agent construction — only the
+  non-fatal rebuild.
+- **Boundary (in scope vs. follow-up):** this moves the **retrieval plane**
+  (pages + FTS) to ArangoDB. The **PageIndex** authoring plane and the
+  **GraphIndex graph-memory edge store** (`build_graph_memory_toolkit` →
+  `SQLitePersistence`) remain **local**; a remote graph-edge store is a
+  separate follow-up (see `sdd/proposals/wikitoolkit-arangodb-backend.proposal.md`
+  and completed TASK-2059 / TASK-829 which wired Arango into the CLI wiki). The
+  `arangodb` retrieval-store wiring already existed inside `LLMWikiToolkit`
+  (`storage_backend == "arangodb"`); this amendment only threads the FEAT-481
+  config through to it.
+  (`graph.py`, `conf.py`.)
+
 ### New configuration keys (Module 1 addendum)
 
 | Key | Default | Introduced | Purpose |
@@ -766,6 +793,10 @@ The Fireflies MCP shares the account's API rate limits (Free 50/day · Pro
 | `WIKI_KB_MAX_REPROCESS_ATTEMPTS` | `3` | Module 17 | Bounded auto-retry cap for quarantined meetings |
 | `WIKI_KB_MAX_NEW_PER_RUN` | unset (no cap) | A4 | Backfill chunk size — NEW meetings fetched per run |
 | `WIKI_KB_INGEST_PROFILE` | `"full"` | A5 | Cost/fidelity profile (`full` / `backfill`) |
+| `WIKI_KB_GRAPH_BACKEND` | `"sqlite"` | A6 | Retrieval-plane backend (`sqlite` / `memory` / `arangodb`) |
+| `WIKI_KB_ARANGO_DATABASE` | unset → `wiki_fireflies_wiki_kb` | A6 | ArangoDB database name (arangodb backend) |
+| `WIKI_KB_ARANGO_CREDENTIALS_PREFIX` | `"ARANGODB"` | A6 | Env-var prefix for the ArangoDB connection credentials |
+| `WIKI_KB_ARANGO_TEXT_ANALYZER` | `"text_en"` | A6 | ArangoSearch text analyzer(s) for the pages FTS view |
 
 (`WIKI_KB_MAX_CATCHUP_DAYS`, default 90, already existed as the G10
 large-backlog guard; raise it, e.g. to 280, for a one-time 2026 backfill.)
@@ -786,3 +817,4 @@ meeting still compiles; surfaced, never silently swallowed). (`review_queue.ALLO
 | 0.3 | 2026-09-01 | Arturo Martinez / Claude | Codex review remediation round 1 + client-lifecycle fix (Amendments A1, A2, parts of A3) |
 | 0.4 | 2026-09-03 | Arturo Martinez / Claude | Module 17 quarantine wired; Codex review remediation round 2 (Amendment A3) |
 | 0.5 | 2026-09-05 | Arturo Martinez / Claude | Rate-limit-safe progressive backfill (A4) + LLM cost optimization: batched cheap entities + ingest profiles (A5); Amendments section added |
+| 0.6 | 2026-09-09 | Arturo Martinez / Claude | Configurable GraphIndex retrieval-plane backend — WIKI_KB_GRAPH_BACKEND + WIKI_KB_ARANGO_* (Amendment A6), defaulting to sqlite |

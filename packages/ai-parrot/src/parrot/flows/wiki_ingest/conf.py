@@ -27,6 +27,10 @@ __all__ = (
     "FIREFLIES_SYNC_OVERLAP_DAYS",
     "FIREFLIES_WIKI_EMAIL_ENABLED",
     "WIKI_KB_ACTIVE_WINDOW_DAYS",
+    "WIKI_KB_ARANGO_CREDENTIALS_PREFIX",
+    "WIKI_KB_ARANGO_DATABASE",
+    "WIKI_KB_ARANGO_TEXT_ANALYZER",
+    "WIKI_KB_GRAPH_BACKEND",
     "WIKI_KB_INGEST_CRON",
     "WIKI_KB_INGEST_LIMIT",
     "WIKI_KB_INGEST_PROFILE",
@@ -142,6 +146,37 @@ WIKI_KB_ACTIVE_WINDOW_DAYS: int = config.getint("WIKI_KB_ACTIVE_WINDOW_DAYS", fa
 #: Vault-relative root for the immutable raw-bundle capture
 #: (``Raw/Incoming/`` and ``Raw/Processed/…`` live under this root).
 WIKI_KB_RAW_ROOT: str = config.get("WIKI_KB_RAW_ROOT", fallback="Raw")
+
+
+# ---------------------------------------------------------------------------
+# Derived GraphIndex/wiki retrieval-plane backend (Module 13 / Amendment A6)
+# ---------------------------------------------------------------------------
+
+#: Retrieval-plane (``LLMWikiToolkit`` WikiStore) backend for this subsystem's
+#: derived wiki plane. ``"sqlite"`` (default; a local ``wiki.db`` under
+#: ``<vault>/.wiki_kb/graph``) keeps the historical behaviour — nothing changes
+#: unless this is set. ``"arangodb"`` moves the retrieval plane to a
+#: server-hosted, shared ArangoDB (pages + BM25 full-text search); ``"memory"``
+#: is the in-memory/OKF-bundle backend. The PageIndex authoring plane and the
+#: GraphIndex graph-memory edge store remain local regardless (a remote graph
+#: edge store is a separate follow-up — Amendment A6).
+WIKI_KB_GRAPH_BACKEND: str = config.get("WIKI_KB_GRAPH_BACKEND", fallback="sqlite")
+
+#: ArangoDB database name for the ``arangodb`` backend. Empty falls back to
+#: ``wiki_fireflies_wiki_kb`` (``wiki_<wiki_name>``). Only used when
+#: :data:`WIKI_KB_GRAPH_BACKEND` == ``"arangodb"``.
+WIKI_KB_ARANGO_DATABASE: str = config.get("WIKI_KB_ARANGO_DATABASE", fallback="")
+
+#: Env-var prefix that supplies the ArangoDB connection credentials, resolved
+#: via ``resolve_arango_params`` — e.g. ``ARANGODB`` → ``ARANGODB_HOST``,
+#: ``ARANGODB_PORT``, ``ARANGODB_PROTOCOL``, ``ARANGODB_USERNAME``,
+#: ``ARANGODB_PASSWORD`` (the established repo convention). Credentials are
+#: never stored here — only the prefix that names their env vars.
+WIKI_KB_ARANGO_CREDENTIALS_PREFIX: str = config.get("WIKI_KB_ARANGO_CREDENTIALS_PREFIX", fallback="ARANGODB")
+
+#: ArangoSearch text analyzer(s) for the pages full-text view (one name or a
+#: comma-separated list, e.g. ``"text_en"`` / ``"text_en,text_es"``).
+WIKI_KB_ARANGO_TEXT_ANALYZER: str = config.get("WIKI_KB_ARANGO_TEXT_ANALYZER", fallback="text_en")
 
 
 # ---------------------------------------------------------------------------

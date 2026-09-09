@@ -109,11 +109,38 @@ typed structured fields; `render/` writes the pages deterministically.
 | `WIKI_KB_ACTIVE_WINDOW_DAYS` | `14` | Rolling active window (§18/§31 archive) |
 | `WIKI_KB_PARTICIPANTS` | unset | Comma-separated participant-email allowlist (empty = all) |
 | `WIKI_KB_RAW_ROOT` | `Raw` | Vault-relative root for the immutable raw capture |
+| `WIKI_KB_GRAPH_BACKEND` | `sqlite` | Derived retrieval-plane backend: `sqlite` / `memory` / `arangodb` |
+| `WIKI_KB_ARANGO_DATABASE` | unset | ArangoDB DB name for the `arangodb` backend (fallback `wiki_fireflies_wiki_kb`) |
+| `WIKI_KB_ARANGO_CREDENTIALS_PREFIX` | `ARANGODB` | Env prefix for the ArangoDB connection (`ARANGODB_HOST`, …) |
+| `WIKI_KB_ARANGO_TEXT_ANALYZER` | `text_en` | ArangoSearch text analyzer(s) for the pages FTS view |
 | `FIREFLIES_WIKI_EMAIL_ENABLED` | `false` | §G9 email digests (shipped disabled) |
 
 Also required in the environment: **`FIREFLIES_API_KEY`** (the agent reaches
 Fireflies via its MCP tools) and the provider credential(s) for the tiers
 (e.g. `GOOGLE_API_KEY`). `FIREFLIES_SYNC_OVERLAP_DAYS` is reused from FEAT-472.
+
+### Server-hosted retrieval plane (ArangoDB)
+
+By default the derived wiki/GraphIndex retrieval plane is a local SQLite file
+under `<vault>/.wiki_kb/graph/`. To put the **retrieval plane** (pages + BM25
+full-text search) on a shared, server-hosted ArangoDB instead, set:
+
+```
+WIKI_KB_GRAPH_BACKEND=arangodb
+WIKI_KB_ARANGO_DATABASE=meetings_kb          # optional; default wiki_fireflies_wiki_kb
+WIKI_KB_ARANGO_CREDENTIALS_PREFIX=ARANGODB   # optional; names the *_HOST/_PORT/... env vars
+ARANGODB_HOST=arango.internal
+ARANGODB_PORT=8529
+ARANGODB_PROTOCOL=http
+ARANGODB_USERNAME=kb
+ARANGODB_PASSWORD=…
+```
+
+Nothing else changes — the next ingest's derived-plane rebuild writes the pages
+to ArangoDB. The connection is lazy (a bad server never breaks agent startup,
+only the non-fatal rebuild). **Scope:** this moves the retrieval plane only; the
+PageIndex authoring plane and the GraphIndex graph-memory **edge** store stay
+local (a remote edge store is a separate follow-up — see the spec's Amendment A6).
 
 ---
 

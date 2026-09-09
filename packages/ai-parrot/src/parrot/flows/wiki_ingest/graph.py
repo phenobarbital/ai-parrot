@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, cast
 
 from parrot.clients.factory import LLMFactory
 from parrot.knowledge.graphindex.factory import build_graph_memory_toolkit
@@ -37,6 +37,63 @@ logger = logging.getLogger(__name__)
 #: This subsystem's own wiki plane name — distinct from
 #: ``agents/fireflies_wiki.py``'s ``wiki_name`` (no shared instance, G11).
 WIKI_KB_GRAPH_WIKI_NAME = "fireflies_wiki_kb"
+
+#: Retrieval-plane backends this subsystem accepts (mirrors
+#: ``WikiConfig.storage_backend``).
+_ALLOWED_GRAPH_BACKENDS = frozenset({"sqlite", "memory", "arangodb"})
+
+
+def _graph_backend() -> Literal["sqlite", "memory", "arangodb"]:
+    """Resolve :data:`conf.WIKI_KB_GRAPH_BACKEND`, validated.
+
+    Returns the configured backend (``sqlite`` / ``memory`` / ``arangodb``);
+    an unknown value falls back to ``sqlite`` with a warning so a typo never
+    crashes the (non-fatal, D3) derived-plane rebuild.
+    """
+    backend = (conf.WIKI_KB_GRAPH_BACKEND or "sqlite").strip().lower()
+    if backend not in _ALLOWED_GRAPH_BACKENDS:
+        logger.warning(
+            "Unknown WIKI_KB_GRAPH_BACKEND %r; falling back to 'sqlite' (allowed: %s).",
+            conf.WIKI_KB_GRAPH_BACKEND,
+            sorted(_ALLOWED_GRAPH_BACKENDS),
+        )
+        return "sqlite"
+    return cast(Literal["sqlite", "memory", "arangodb"], backend)
+
+
+def _build_arango_wiki_store(wiki_name: str) -> Any:
+    """Build a server-hosted :class:`ArangoDBWikiStore` for the retrieval plane.
+
+    Connection credentials come from ``<WIKI_KB_ARANGO_CREDENTIALS_PREFIX>_*``
+    env vars (default ``ARANGODB_*``) resolved via ``resolve_arango_params``;
+    the database name from :data:`conf.WIKI_KB_ARANGO_DATABASE` (fallback
+    ``wiki_<wiki_name>``). The constructor is synchronous and opens NO
+    connection — the store connects lazily on first use, so a misconfigured
+    server never breaks agent construction, only the (non-fatal) rebuild.
+
+    Args:
+        wiki_name: The wiki plane name (database/view naming).
+
+    Returns:
+        An unconnected :class:`ArangoDBWikiStore`.
+    """
+    from parrot.knowledge.wiki.arango_store import ArangoDBWikiStore
+    from parrot.knowledge.wiki.project import WikiProjectConfig, resolve_arango_params
+
+    project_config = WikiProjectConfig(
+        wiki_name=wiki_name,
+        backend="arangodb",
+        arango_database=conf.WIKI_KB_ARANGO_DATABASE or None,
+        arango_credentials_env=conf.WIKI_KB_ARANGO_CREDENTIALS_PREFIX,
+        arango_text_analyzer=conf.WIKI_KB_ARANGO_TEXT_ANALYZER,
+    )
+    arango_params = resolve_arango_params(project_config)
+    return ArangoDBWikiStore(
+        arango_params,
+        database=arango_params["database"],
+        wiki_name=wiki_name,
+        text_analyzer=conf.WIKI_KB_ARANGO_TEXT_ANALYZER,
+    )
 
 
 def graph_storage_dir(vault_path: str | Path) -> Path:
@@ -93,8 +150,19 @@ async def build_wiki_kb_graph_toolkit(
     pageindex_toolkit = _build_pageindex_toolkit(storage)
     graph_toolkit = await build_graph_memory_toolkit(storage / "graphindex", tenant_id=wiki_name, agent_id=wiki_name)
 
-    wiki_config = WikiConfig(wiki_name=wiki_name, storage_dir=storage, sync_graph=True)
-    return LLMWikiToolkit(pageindex_toolkit, graph_toolkit, None, wiki_config, agent_id=wiki_name)
+    # Retrieval-plane backend (Amendment A6): "sqlite" (default) keeps the local
+    # <vault>/.wiki_kb/graph/wiki.db; "arangodb" moves the pages + FTS retrieval
+    # plane to a server-hosted ArangoDB (built here so WIKI_KB_ARANGO_* — custom
+    # database / credentials prefix — are honoured, then injected). "memory" is
+    # built by LLMWikiToolkit from `storage_backend`. The PageIndex + GraphIndex
+    # planes stay local regardless.
+    backend = _graph_backend()
+    store = _build_arango_wiki_store(wiki_name) if backend == "arangodb" else None
+
+    wiki_config = WikiConfig(
+        wiki_name=wiki_name, storage_dir=storage, sync_graph=True, storage_backend=backend
+    )
+    return LLMWikiToolkit(pageindex_toolkit, graph_toolkit, None, wiki_config, agent_id=wiki_name, store=store)
 
 
 async def rebuild_graph_index(
