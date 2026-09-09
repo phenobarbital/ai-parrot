@@ -87,4 +87,27 @@ Store execution logs in `artifacts/logs/task-3056.log`. Use frozen dates, synthe
 
 ## Completion Note
 
-Pending execution. Record executor, completion date, implementation summary, validation evidence and deviations when this task is completed.
+**IN PROGRESS — deliberately not completed.** 2026-09-09, sdd-worker (Claude Opus 5).
+
+This task is an *operational external acceptance*, and its own acceptance criteria say
+so: "Bob explicitly signs off; otherwise leave task pending/in-progress and identify
+missing cases/review without claiming completion."
+
+**Prepared**: `docs/knowledge/contracts-pilot-acceptance.md` — the twelve-case review
+matrix (2 client questions + Bob's 10), the exact procedure for running each case
+through the shared answer gate, per-case pass criteria (including that a handoff on an
+interpretation question is a pass, not a failure), tables for verification corrections
+and retirements, a six-week review log sized to the agreed ~2 hours/week, and a
+signoff block that is explicitly blank. Evidence is referenced by `contract_id` /
+`node_id` / `version_n` / `answer_id` so no sensitive contract text is committed.
+
+**Still missing — all external inputs**:
+1. the verbatim wording of the two initial client questions;
+2. Bob's ten common questions as he actually asks them;
+3. his expected answer for each of the twelve;
+4. the 50-100 active English contracts of the pilot corpus;
+5. his review time and explicit signoff.
+
+**Not done**: no case has been run, no disposition recorded, no signoff obtained. I
+did not invent questions, answers or an agreement. AC15 remains open, and the feature
+should not be reported as pilot-accepted.

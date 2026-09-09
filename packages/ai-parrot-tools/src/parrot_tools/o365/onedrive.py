@@ -504,7 +504,15 @@ class DeltaOneDriveFilesArgs(O365ToolArgsSchema):
         description=(
             "Opaque delta cursor returned by a previous call. Omit for a full "
             "enumeration. The cursor is validated against the configured "
-            "Microsoft Graph origin before any credential is forwarded."
+            "Microsoft Graph origin — and confined to this drive's delta "
+            "endpoint — before any credential is forwarded."
+        ),
+    )
+    delta_token: Optional[str] = Field(
+        default=None,
+        description=(
+            "Alias of delta_link accepted for the contracts ingest job. "
+            "delta_link wins when both are supplied."
         ),
     )
     max_pages: Optional[int] = Field(
@@ -605,7 +613,12 @@ class DeltaOneDriveFilesTool(O365Tool):
         user_id = kwargs.get("user_id")
         folder_path = kwargs.get("folder_path") or None
         folder_id = kwargs.get("folder_id") or None
-        delta_link = kwargs.get("delta_link") or None
+        # `delta_token` is the name the contracts ingest job (TASK-3049)
+        # passes; accept it as an alias so that consumer resumes from its
+        # committed cursor instead of silently re-enumerating the whole
+        # drive on every run. This is a name, not a dependency: nothing in
+        # this lane imports that package.
+        delta_link = kwargs.get("delta_link") or kwargs.get("delta_token") or None
         max_pages = kwargs.get("max_pages")
 
         if drive_id:
@@ -633,6 +646,13 @@ class DeltaOneDriveFilesTool(O365Tool):
         payload.update(
             {
                 "source": "onedrive",
+                # Keys the contracts ingest job (TASK-3049) reads.
+                "tombstones": [i.item_id for i in enumeration.deleted_items],
+                "pages": enumeration.pages_fetched,
+                # False by design: a 410 is recovered here by re-enumerating,
+                # so the caller gets a completed full rescan rather than being
+                # told to retry. `reset_performed` records that it happened.
+                "rescan_required": False,
                 # A @property, so model_dump() would otherwise drop it — tool
                 # consumers need it to know whether the folder filter applied.
                 "folder_filter_reliable": enumeration.folder_filter_reliable,

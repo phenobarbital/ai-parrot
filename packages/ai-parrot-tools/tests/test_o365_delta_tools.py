@@ -1052,3 +1052,99 @@ class TestNoContractsOrSchedulerCoupling:
         line = next(ln for ln in completed.stdout.splitlines() if ln.startswith("OFFENDERS:"))
         offenders = line.removeprefix("OFFENDERS:").strip()
         assert not offenders, f"bundle import pulled in: {offenders}"
+
+
+# ============================================================================
+# Consumer contract — the shape the contracts ingest job (TASK-3049) reads
+# ============================================================================
+
+class TestIngestJobPayloadContract:
+    """Pin the payload/argument contract the merged delta ingest job relies on.
+
+    That job calls the tool as
+    ``_execute_graph_operation(client, drive_id=..., delta_token=...,
+    folder_path=...)`` and reads ``items`` / ``tombstones`` /
+    ``delta_link`` / ``complete`` / ``rescan_required`` off the returned
+    dict. These tests exist so that contract cannot drift silently — the
+    job's own suite only ever exercises a hand-written fake.
+    """
+
+    @pytest.mark.parametrize("kind", ["sharepoint", "onedrive"])
+    async def test_job_shaped_call_returns_the_keys_the_job_reads(
+        self,
+        kind: str,
+        sharepoint_tool: DeltaSharePointFilesTool,
+        onedrive_tool: DeltaOneDriveFilesTool,
+    ) -> None:
+        tool = sharepoint_tool if kind == "sharepoint" else onedrive_tool
+        final = FINAL_SP if kind == "sharepoint" else FINAL_OD
+        graph = FakeGraph(
+            {
+                None: FakeDeltaResponse(
+                    [
+                        FakeDriveItem(id="live", name="a.docx"),
+                        FakeDriveItem(id="gone", name="b.docx",
+                                      deleted=FakeDeleted()),
+                    ],
+                    delta_link=final,
+                )
+            }
+        )
+        client = FakeO365Client(graph)
+
+        payload = await tool._execute_graph_operation(
+            client, drive_id=DRIVE_ID, delta_token=None, folder_path=None
+        )
+
+        for key in ("items", "tombstones", "delta_link", "complete",
+                    "rescan_required"):
+            assert key in payload, f"{kind} payload is missing {key!r}"
+        assert payload["tombstones"] == ["gone"]
+        assert payload["complete"] is True
+        assert payload["delta_link"] == final
+        # The helper recovers a 410 itself, so the job is never asked to
+        # retry; `reset_performed` is where that information lives.
+        assert payload["rescan_required"] is False
+        assert {i["item_id"] for i in payload["items"]} == {"live", "gone"}
+        assert any(i["deleted"] for i in payload["items"])
+
+    @pytest.mark.parametrize("kind", ["sharepoint", "onedrive"])
+    async def test_delta_token_alias_actually_resumes(
+        self,
+        kind: str,
+        sharepoint_tool: DeltaSharePointFilesTool,
+        onedrive_tool: DeltaOneDriveFilesTool,
+    ) -> None:
+        """`delta_token` must resume, not be ignored into a full rescan.
+
+        Ignoring it would be silent and expensive: every scheduled run would
+        re-enumerate the whole drive and re-report every item as changed.
+        """
+        tool = sharepoint_tool if kind == "sharepoint" else onedrive_tool
+        final = FINAL_SP if kind == "sharepoint" else FINAL_OD
+        stored = f"{DELTA}?token=committed-cursor"
+        graph = FakeGraph({stored: FakeDeltaResponse([], delta_link=final)})
+        client = FakeO365Client(graph)
+
+        payload = await tool._execute_graph_operation(
+            client, drive_id=DRIVE_ID, delta_token=stored, folder_path=None
+        )
+
+        assert graph.requested_urls == [stored]
+        assert payload["full_enumeration"] is False
+
+    async def test_delta_link_wins_over_delta_token(
+        self, onedrive_tool: DeltaOneDriveFilesTool
+    ) -> None:
+        preferred = f"{DELTA}?token=preferred"
+        graph = FakeGraph({preferred: FakeDeltaResponse([], delta_link=FINAL_OD)})
+
+        payload = await onedrive_tool._execute_graph_operation(
+            FakeO365Client(graph),
+            drive_id=DRIVE_ID,
+            delta_link=preferred,
+            delta_token=f"{DELTA}?token=ignored",
+        )
+
+        assert graph.requested_urls == [preferred]
+        assert payload["delta_link"] == FINAL_OD

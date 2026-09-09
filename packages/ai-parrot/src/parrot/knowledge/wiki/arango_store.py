@@ -94,7 +94,14 @@ def document_key(identity: str) -> str:
     Returns:
         A string usable directly as an ArangoDB ``_key``.
     """
-    safe = quote(identity, safe=_KEY_SAFE)
+    # ``quote`` never escapes ``~``: it is unreserved in RFC 3986, so it
+    # sits in urllib's own always-safe set and no ``safe`` argument can
+    # take it out. ArangoDB rejects it, and sym_concept_id() puts one in
+    # every repeated-qualname id ("sym:app.py#Foo.handle~2"), so escape it
+    # by hand. Doing it after quote() is unambiguous: a literal ``%`` in
+    # the identity has already become ``%25``, so every ``%`` left is one
+    # this encoding wrote.
+    safe = quote(identity, safe=_KEY_SAFE).replace("~", "%7E")
     if len(safe.encode("utf-8")) <= _KEY_MAX_BYTES:
         return safe
     digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:16]

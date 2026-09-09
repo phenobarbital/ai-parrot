@@ -235,3 +235,28 @@ Left alone deliberately, noted for the PR reviewer: the `drives` path segment
 is matched case-sensitively (Graph emits lowercase — conservative, not
 wrong), and a cursor may re-anchor enumeration to a different subtree of the
 *same* drive, which stays inside that drive's own permission boundary.
+
+### Duplicate-implementation collision with the core lane (merge of dev)
+
+`dev` (PR #1347) landed the core lane's own implementation of M8 —
+`o365/delta.py` with `DriveDeltaReader`/`validate_continuation`, its own
+`DeltaSharePointFilesTool`/`DeltaOneDriveFilesTool`, and same-named test
+modules — even though the spec's parallelism notes assign M8 to this
+worktree ("Execute in O365 worktree feat-FEAT-539-contracts-o365-delta.
+M8 commits must be integrated into the core lane before the delta job").
+Both lanes therefore built the same module twice, and the tool classes and
+tool `name` strings collide, so they cannot coexist.
+
+Merging `dev` here resolved every `o365/` file and both delta test modules
+to **this lane's** implementation, because it is the one that went through
+two adversarial review rounds and carries fixes for defects the core lane's
+copy still has (see the triage above): continuation links confined to the
+drive's delta endpoint rather than origin-only, folder-membership honesty,
+`Retry-After` respected in full, status-less transient retries, and the
+paginated library lookup. The core lane's copy is preserved in git history
+on `dev`.
+
+To keep the merged consumer working unchanged, the tools gained an additive
+compatibility surface for `parrot_tools.contracts.jobs.ingest_delta`
+(TASK-3049): the `delta_token` argument alias and the `tombstones` /
+`rescan_required` / `pages` payload keys it reads.
