@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-539 - Contracts Card & Ontology
 **Spec**: `sdd/specs/contracts-card-ontology.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2–4h)
 **Depends-on**: TASK-3029, TASK-3035, TASK-3043, TASK-3044
@@ -103,4 +103,30 @@ Store execution logs in `artifacts/logs/task-3045.log`. Use frozen dates, synthe
 
 ## Completion Note
 
-Pending execution. Record executor, completion date, implementation summary, validation evidence and deviations when this task is completed.
+Completed 2026-09-09 by sdd-worker (Claude Opus 5).
+
+**Implementation**: created `parrot_tools/contracts/service.py`.
+`ContractsAnswerService.answer` runs the fixed chain both producers share: closed-set
+pre-triage on the question alone (evaluative/deontic -> `interpretation_required`
+before any retrieval; an optional structured triage adapter sees only the question and
+cannot generate AQL or widen permissions), then authorize-then-retrieve, then a
+bounded enumerated dossier (`MAX_DOSSIER_CARDS`) handed to the injected producer,
+then `CitationVerifier`, then audit, then release. Every outcome is persisted before
+it is returned — including denials, not_found and verification failures — and an audit
+outage raises `ServiceUnavailable` instead of releasing an unaudited answer.
+Clarifications are returned as the typed `Clarification`, never as a new answer kind.
+`stream_answer` buffers everything substantive until the whole gate has passed, so a
+raw draft can never reach a transport. Owner-only operations (`retire_answer`,
+`verify_card`, `merge_parties`) require the owner role **and** a trusted transport
+confirmation; retirement records the invalidated answer id for transport caches.
+
+**Validation**: `pytest .../test_service.py -q` -> 20 passed (whole contracts tools
+suite 94 passed, `artifacts/logs/task-3045.log`); ruff clean. Tests cover the lookup /
+handoff / denied / not_found / clarification shapes with no judgment text, pre-triage
+running before retrieval, an unverifiable draft degrading to not_found, forged tenant
+and missing principal, audit outage failing both an answer and a denial, owner role +
+confirmation enforcement, a forged owner role refused by the tenant check, retirement
+suppressing evidence from a later lookup **and** from a later handoff, streaming
+emitting nothing for a denial or an unverified draft, and the bounded dossier.
+
+**Deviations**: none.
