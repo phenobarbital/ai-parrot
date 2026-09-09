@@ -69,7 +69,6 @@ class ListSharePointFilesTool(O365Tool):
     )
     args_schema: Type[BaseModel] = ListSharePointFilesArgs
 
-
     async def _execute_graph_operation(self, client: SharepointClient, **kwargs) -> Dict[str, Any]:
         """
         List SharePoint files using the SharepointClient.
@@ -765,9 +764,7 @@ class DeltaSharePointFilesTool(O365Tool):
             )
         return str(available[0].id)
 
-    async def _resolve_folder_id(
-        self, client: O365Client, drive_id: str, folder_path: str
-    ) -> Optional[str]:
+    async def _resolve_folder_id(self, client: O365Client, drive_id: str, folder_path: str) -> Optional[str]:
         """Resolve a drive-relative folder path to its stable item id.
 
         Graph's delta feed omits ``parentReference.path`` but reports
@@ -791,21 +788,19 @@ class DeltaSharePointFilesTool(O365Tool):
             return None
         try:
             item = await (
-                client.graph_client.drives.by_drive_id(drive_id)
-                .items.by_drive_item_id(f"root:/{cleaned}:")
-                .get()
+                client.graph_client.drives.by_drive_id(drive_id).items.by_drive_item_id(f"root:/{cleaned}:").get()
             )
         except Exception as exc:  # noqa: BLE001 - undecidable, not fatal here
             self.logger.warning(
                 "Could not resolve folder %r on drive %s: %s",
-                folder_path, drive_id, exc,
+                folder_path,
+                drive_id,
+                exc,
             )
             return None
         resolved = getattr(item, "id", None)
         if not resolved:
-            self.logger.warning(
-                "Folder %r on drive %s resolved to no item id", folder_path, drive_id
-            )
+            self.logger.warning("Folder %r on drive %s resolved to no item id", folder_path, drive_id)
             return None
         return str(resolved)
 
@@ -852,9 +847,7 @@ class DeltaSharePointFilesTool(O365Tool):
         if folder_path and not folder_id:
             # Turn the path into an id so membership becomes decidable;
             # otherwise the delta feed gives us nothing to filter on.
-            folder_id = await self._resolve_folder_id(
-                client, resolved_drive_id, folder_path
-            )
+            folder_id = await self._resolve_folder_id(client, resolved_drive_id, folder_path)
 
         enumeration = await self._delta_helper.enumerate(
             client,
@@ -866,11 +859,7 @@ class DeltaSharePointFilesTool(O365Tool):
         )
 
         scope_requested = folder_path or folder_id
-        if (
-            scope_requested
-            and self.strict_folder_scope
-            and not enumeration.folder_filter_reliable
-        ):
+        if scope_requested and self.strict_folder_scope and not enumeration.folder_filter_reliable:
             # Graph omits parentReference.path from delta responses, so a
             # path-only filter usually cannot decide membership. Returning
             # the unfiltered drive under a folder-scoped request would let

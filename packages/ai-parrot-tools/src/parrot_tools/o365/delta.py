@@ -458,9 +458,7 @@ def validate_continuation_link(
         # (`/drives/{id}/root:/Folder/file.docx`). A delta continuation never
         # uses it, and allowing it would let `/drives/{id}/root:/delta` — the
         # *item literally named "delta"* — pass the endpoint check below.
-        raise DeltaLinkValidationError(
-            f"Delta continuation link must not use path addressing: {parts.path!r}."
-        )
+        raise DeltaLinkValidationError(f"Delta continuation link must not use path addressing: {parts.path!r}.")
 
     last = segments[-1] if segments else ""
     if not (last == "delta" or last.startswith("delta(")):
@@ -804,14 +802,14 @@ class FolderAncestryResolver:
             chain.append(current)
             try:
                 item = await (
-                    self.client.graph_client.drives.by_drive_id(self.drive_id)
-                    .items.by_drive_item_id(current)
-                    .get()
+                    self.client.graph_client.drives.by_drive_id(self.drive_id).items.by_drive_item_id(current).get()
                 )
             except Exception as exc:  # noqa: BLE001 - undecidable, not fatal
                 self.logger.warning(
                     "Could not resolve ancestry of item %s on drive %s: %s",
-                    current, self.drive_id, exc,
+                    current,
+                    self.drive_id,
+                    exc,
                 )
                 verdict = None
                 break
@@ -819,9 +817,9 @@ class FolderAncestryResolver:
             current = _field(parent, "id")
         else:
             self.logger.warning(
-                "Ancestry walk for drive %s exceeded %s levels; membership "
-                "left undecided.",
-                self.drive_id, self.max_depth,
+                "Ancestry walk for drive %s exceeded %s levels; membership " "left undecided.",
+                self.drive_id,
+                self.max_depth,
             )
 
         for seen in chain:
@@ -1147,9 +1145,7 @@ class DriveDeltaHelper:
         # several pages, and the latest occurrence is authoritative.
         ancestry: Optional[FolderAncestryResolver] = None
         if folder_id and resolve_ancestry:
-            ancestry = FolderAncestryResolver(
-                client, drive_id, folder_id, logger_instance=self.logger
-            )
+            ancestry = FolderAncestryResolver(client, drive_id, folder_id, logger_instance=self.logger)
 
         collected: Dict[str, DeltaItem] = {}
         order: List[str] = []

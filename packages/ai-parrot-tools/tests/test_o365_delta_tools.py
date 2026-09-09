@@ -579,8 +579,7 @@ class TestEquivalentDeltaOutcomes:
                 # The tool resolves the path to the folder's item id...
                 "root:/Contracts:": FakeDriveItem(id="folder-x", name="Contracts"),
                 # ...and every item in the feed hangs off "parent-id".
-                "parent-id": FakeDriveItem(id="parent-id", name="Contracts",
-                                           parent_id=None),
+                "parent-id": FakeDriveItem(id="parent-id", name="Contracts", parent_id=None),
             },
         )
         bind_client(onedrive_tool, graph)
@@ -685,29 +684,22 @@ class TestEquivalentDeltaOutcomes:
             {
                 None: FakeDeltaResponse(
                     [
-                        FakeDriveItem(id="inside", name="a.docx",
-                                      parent_path=None, parent_id="folder-x"),
-                        FakeDriveItem(id="nested", name="b.docx",
-                                      parent_path=None, parent_id="folder-2026"),
-                        FakeDriveItem(id="outside", name="c.docx",
-                                      parent_path=None, parent_id="folder-z"),
+                        FakeDriveItem(id="inside", name="a.docx", parent_path=None, parent_id="folder-x"),
+                        FakeDriveItem(id="nested", name="b.docx", parent_path=None, parent_id="folder-2026"),
+                        FakeDriveItem(id="outside", name="c.docx", parent_path=None, parent_id="folder-z"),
                     ],
                     delta_link=FINAL_OD,
                 )
             },
             items_by_id={
                 "root:/Contracts:": FakeDriveItem(id="folder-x", name="Contracts"),
-                "folder-2026": FakeDriveItem(id="folder-2026", name="2026",
-                                             parent_id="folder-x"),
-                "folder-z": FakeDriveItem(id="folder-z", name="Invoices",
-                                          parent_id=None),
+                "folder-2026": FakeDriveItem(id="folder-2026", name="2026", parent_id="folder-x"),
+                "folder-z": FakeDriveItem(id="folder-z", name="Invoices", parent_id=None),
             },
         )
         bind_client(onedrive_tool, graph)
 
-        result = await onedrive_tool._execute(
-            drive_id=DRIVE_ID, folder_path="Contracts"
-        )
+        result = await onedrive_tool._execute(drive_id=DRIVE_ID, folder_path="Contracts")
 
         assert result.status == "success", result.error
         payload = result.result
@@ -716,15 +708,12 @@ class TestEquivalentDeltaOutcomes:
         assert payload["filtered_out"] == 1
         assert payload["folder_filter_reliable"] is True
 
-    async def test_unresolvable_folder_path_still_refuses(
-        self, onedrive_tool: DeltaOneDriveFilesTool
-    ) -> None:
+    async def test_unresolvable_folder_path_still_refuses(self, onedrive_tool: DeltaOneDriveFilesTool) -> None:
         """If the folder itself cannot be resolved, do not guess."""
         graph = FakeGraph(
             {
                 None: FakeDeltaResponse(
-                    [FakeDriveItem(id="a", name="a.docx", parent_path=None,
-                                   parent_id="folder-q")],
+                    [FakeDriveItem(id="a", name="a.docx", parent_path=None, parent_id="folder-q")],
                     delta_link=FINAL_OD,
                 )
             },
@@ -1263,8 +1252,7 @@ class TestIngestJobPayloadContract:
 
         payload = await tool._execute_graph_operation(client, drive_id=DRIVE_ID, delta_token=None, folder_path=None)
 
-        for key in ("items", "tombstones", "delta_link", "complete",
-                    "rescan_required", "pages", "truncated"):
+        for key in ("items", "tombstones", "delta_link", "complete", "rescan_required", "pages", "truncated"):
             assert key in payload, f"{kind} payload is missing {key!r}"
         assert payload["tombstones"] == ["gone"]
         assert payload["complete"] is True
