@@ -396,7 +396,7 @@
       "feature_id": "FEAT-539",
       "feature": "contracts-card-ontology",
       "spec": "sdd/specs/contracts-card-ontology.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -410,8 +410,8 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": "2026-09-09T01:49:58+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3043-contracts-authorized-retrieval.md"
+      "completed_at": "2026-09-09T03:31:54+00:00",
+      "file": "sdd/tasks/completed/TASK-3043-contracts-authorized-retrieval.md"
     },
     {
       "id": "TASK-3044",

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-539 - Contracts Card & Ontology
 **Spec**: `sdd/specs/contracts-card-ontology.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2–4h)
 **Depends-on**: TASK-3029, TASK-3035, TASK-3036, TASK-3038
@@ -106,4 +106,39 @@ Store execution logs in `artifacts/logs/task-3043.log`. Use frozen dates, synthe
 
 ## Completion Note
 
-Pending execution. Record executor, completion date, implementation summary, validation evidence and deviations when this task is completed.
+Completed 2026-09-09 by sdd-worker (Claude Opus 5).
+
+**Implementation**: created `parrot_tools/contracts/{__init__,retrieval}.py`.
+`RequestContext` is the trusted identity (user, roles, tenant, employee graph id) —
+never the question, the model or a tool argument. `ContractRetrieval.authorize` is
+the shared entry gate: default deny, `contract_reader OR contract_owner`, owner role
+for administrative operations, and an authenticated employee identity for
+`my_contracts`; it also refuses a mismatched tenant. `classify` matches the ten
+patterns most-specific-first and returns `None` (fail closed) otherwise;
+`is_interpretation` routes evaluative/deontic questions away from lookup. `plan`
+authorizes **before** resolving entities and binds every value itself: standard
+aliases resolved over the full question, injected today/until windows, explicit ISO
+`as_of`, an always-bound nullable obligation `kind`, `party_id`/`contract_id` `_key`
+values, the full `employees/<id>` `_id` for `my_contracts`, and a bounded `top_k`.
+Entity resolution is exact id -> exact title/alias -> normalized fuzzy (optional
+non-generative ranker), and any tie returns a typed `Clarification`. `execute` runs on
+SQL only, so search, windows and queues work with no ArangoDB at all;
+`execute_graph` runs only allowlisted YAML patterns and validates the projected
+`card_revision` against the catalog, failing closed on stale, inactive or incomplete
+rows. `_authorized_cards`/`_authorized_card` apply the `my_contracts` narrowing to
+subsequent reads, which is also what refuses a direct-tool bypass.
+
+**Validation**: `pytest packages/ai-parrot-tools/tests/contracts/ -q` -> **57 passed**
+(`artifacts/logs/task-3043.log`); ruff clean. Retrieval tests cover all ten triggers,
+most-specific ordering, every bind set (null kind, bounded top_k, injected dates, the
+SOC 2 alias with the trigger word intact), ambiguity clarifications, SQL-only
+execution, family de-duplication, effective-version selection, allowlist enforcement
+and stale/inactive/incomplete projection refusal, plus an AST proof that no LLM call
+site exists and the constructor takes no client. Authorization tests cover missing and
+forged principals, each read role independently, cross-tenant refusal, roles never
+being read from the question, owner-only operations, `my_contracts` narrowing applied
+to later evidence reads, and three bypass attempts — executing a pre-built plan,
+executing a graph pattern directly (the query never runs), and probing the catalog for
+entity names before authorization.
+
+**Deviations**: none.
