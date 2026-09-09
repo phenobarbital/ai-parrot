@@ -592,9 +592,7 @@ class TestEquivalentDeltaOutcomes:
         assert payload["unresolved_parent"] == 0
         assert payload["folder_filter_reliable"] is True
 
-    async def test_undecidable_folder_scope_is_refused_not_widened(
-        self, onedrive_tool: DeltaOneDriveFilesTool
-    ) -> None:
+    async def test_undecidable_folder_scope_is_refused_not_widened(self, onedrive_tool: DeltaOneDriveFilesTool) -> None:
         """Real Graph omits the parent path, so a path filter cannot decide.
 
         Returning the whole drive under a folder-scoped request would let
@@ -613,26 +611,20 @@ class TestEquivalentDeltaOutcomes:
         )
         bind_client(onedrive_tool, graph)
 
-        result = await onedrive_tool._execute(
-            drive_id=DRIVE_ID, folder_path="Contracts"
-        )
+        result = await onedrive_tool._execute(drive_id=DRIVE_ID, folder_path="Contracts")
 
         assert result.status == "error"
         assert "could not be applied" in result.error
         assert "folder_id" in result.error
 
-    async def test_decidable_folder_scope_is_not_refused(
-        self, onedrive_tool: DeltaOneDriveFilesTool
-    ) -> None:
+    async def test_decidable_folder_scope_is_not_refused(self, onedrive_tool: DeltaOneDriveFilesTool) -> None:
         """A filter that CAN be decided still works normally."""
         graph = FakeGraph(
             {
                 None: FakeDeltaResponse(
                     [
-                        FakeDriveItem(id="in", name="a.docx",
-                                      parent_id="folder-x", parent_path=None),
-                        FakeDriveItem(id="out", name="b.docx",
-                                      parent_id="folder-y", parent_path=None),
+                        FakeDriveItem(id="in", name="a.docx", parent_id="folder-x", parent_path=None),
+                        FakeDriveItem(id="out", name="b.docx", parent_id="folder-y", parent_path=None),
                     ],
                     delta_link=FINAL_OD,
                 )
@@ -640,17 +632,13 @@ class TestEquivalentDeltaOutcomes:
         )
         bind_client(onedrive_tool, graph)
 
-        result = await onedrive_tool._execute(
-            drive_id=DRIVE_ID, folder_id="folder-x"
-        )
+        result = await onedrive_tool._execute(drive_id=DRIVE_ID, folder_id="folder-x")
 
         assert result.status == "success", result.error
         assert [i["item_id"] for i in result.result["items"]] == ["in"]
 
     async def test_strict_scope_can_be_disabled_deliberately(self) -> None:
-        tool = DeltaOneDriveFilesTool(
-            credentials=dict(CREDENTIALS), strict_folder_scope=False
-        )
+        tool = DeltaOneDriveFilesTool(credentials=dict(CREDENTIALS), strict_folder_scope=False)
         graph = FakeGraph(
             {
                 None: FakeDeltaResponse(
@@ -1139,6 +1127,7 @@ class TestNoContractsOrSchedulerCoupling:
 # Consumer contract — the shape the contracts ingest job (TASK-3049) reads
 # ============================================================================
 
+
 class TestIngestJobPayloadContract:
     """Pin the payload/argument contract the merged delta ingest job relies on.
 
@@ -1164,8 +1153,7 @@ class TestIngestJobPayloadContract:
                 None: FakeDeltaResponse(
                     [
                         FakeDriveItem(id="live", name="a.docx"),
-                        FakeDriveItem(id="gone", name="b.docx",
-                                      deleted=FakeDeleted()),
+                        FakeDriveItem(id="gone", name="b.docx", deleted=FakeDeleted()),
                     ],
                     delta_link=final,
                 )
@@ -1173,12 +1161,9 @@ class TestIngestJobPayloadContract:
         )
         client = FakeO365Client(graph)
 
-        payload = await tool._execute_graph_operation(
-            client, drive_id=DRIVE_ID, delta_token=None, folder_path=None
-        )
+        payload = await tool._execute_graph_operation(client, drive_id=DRIVE_ID, delta_token=None, folder_path=None)
 
-        for key in ("items", "tombstones", "delta_link", "complete",
-                    "rescan_required"):
+        for key in ("items", "tombstones", "delta_link", "complete", "rescan_required"):
             assert key in payload, f"{kind} payload is missing {key!r}"
         assert payload["tombstones"] == ["gone"]
         assert payload["complete"] is True
@@ -1205,15 +1190,22 @@ class TestIngestJobPayloadContract:
     ) -> None:
         tool = sharepoint_tool if kind == "sharepoint" else onedrive_tool
         final = FINAL_SP if kind == "sharepoint" else FINAL_OD
-        raw = FakeDriveItem(id="doc", name="a.docx",
-                            parent_path="/drive/root:/Contracts")
-        raw.file = type("F", (), {"hashes": type("H", (), {
-            "quick_xor_hash": None, "sha1_hash": None,
-            "sha256_hash": "ABC123", "crc32_hash": None})()})()
+        raw = FakeDriveItem(id="doc", name="a.docx", parent_path="/drive/root:/Contracts")
+        raw.file = type(
+            "F",
+            (),
+            {
+                "hashes": type(
+                    "H", (), {"quick_xor_hash": None, "sha1_hash": None, "sha256_hash": "ABC123", "crc32_hash": None}
+                )()
+            },
+        )()
         graph = FakeGraph({None: FakeDeltaResponse([raw], delta_link=final)})
 
         payload = await tool._execute_graph_operation(
-            FakeO365Client(graph), drive_id=DRIVE_ID, delta_token=None,
+            FakeO365Client(graph),
+            drive_id=DRIVE_ID,
+            delta_token=None,
             folder_path=None,
         )
 
@@ -1239,16 +1231,12 @@ class TestIngestJobPayloadContract:
         graph = FakeGraph({stored: FakeDeltaResponse([], delta_link=final)})
         client = FakeO365Client(graph)
 
-        payload = await tool._execute_graph_operation(
-            client, drive_id=DRIVE_ID, delta_token=stored, folder_path=None
-        )
+        payload = await tool._execute_graph_operation(client, drive_id=DRIVE_ID, delta_token=stored, folder_path=None)
 
         assert graph.requested_urls == [stored]
         assert payload["full_enumeration"] is False
 
-    async def test_delta_link_wins_over_delta_token(
-        self, onedrive_tool: DeltaOneDriveFilesTool
-    ) -> None:
+    async def test_delta_link_wins_over_delta_token(self, onedrive_tool: DeltaOneDriveFilesTool) -> None:
         preferred = f"{DELTA}?token=preferred"
         graph = FakeGraph({preferred: FakeDeltaResponse([], delta_link=FINAL_OD)})
 

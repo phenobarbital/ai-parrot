@@ -371,9 +371,7 @@ class TestPageEnumeration:
         result = await helper.enumerate(FakeO365Client(graph), DRIVE_ID)
         assert [i.item_id for i in result.items] == ["real"]
 
-    async def test_unreconcilable_entries_block_the_cursor(
-        self, helper: DriveDeltaHelper
-    ) -> None:
+    async def test_unreconcilable_entries_block_the_cursor(self, helper: DriveDeltaHelper) -> None:
         """An entry with no item id means the picture is incomplete.
 
         Committing a cursor after silently dropping it would permanently
@@ -383,8 +381,7 @@ class TestPageEnumeration:
         graph = FakeGraph(
             {
                 None: FakeDeltaResponse(
-                    [FakeDriveItem(id=None, name="ghost.docx"),
-                     FakeDriveItem(id="real", name="real.docx")],
+                    [FakeDriveItem(id=None, name="ghost.docx"), FakeDriveItem(id="real", name="real.docx")],
                     delta_link=final,
                 )
             }

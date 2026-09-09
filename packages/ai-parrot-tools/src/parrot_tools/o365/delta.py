@@ -249,8 +249,7 @@ class DeltaPage(BaseModel):
     skipped_entries: int = Field(
         default=0,
         description=(
-            "Entries on this page that carried no stable item id and could "
-            "not be reconciled, so were dropped."
+            "Entries on this page that carried no stable item id and could " "not be reconciled, so were dropped."
         ),
     )
 
@@ -451,8 +450,7 @@ def validate_continuation_link(
 
     if any(seg in ("..", ".") for seg in segments):
         raise DeltaLinkValidationError(
-            f"Delta continuation link must not contain relative path "
-            f"segments: {parts.path!r}."
+            f"Delta continuation link must not contain relative path " f"segments: {parts.path!r}."
         )
 
     last = segments[-1] if segments else ""
@@ -465,8 +463,7 @@ def validate_continuation_link(
         drives_at = -1
     if drives_at < 0 or drives_at + 1 >= len(segments) or segments[drives_at + 1] != str(drive_id):
         raise DeltaLinkValidationError(
-            f"Delta continuation link does not address drive "
-            f"{drive_id!r}: {parts.path!r}."
+            f"Delta continuation link does not address drive " f"{drive_id!r}: {parts.path!r}."
         )
 
     return str(link)
@@ -599,10 +596,7 @@ def drive_item_to_delta_item(drive_item: Any, drive_id: str) -> Optional[DeltaIt
     parent_drive_id = _field(parent, "drive_id", "driveId")
 
     additional = _field(drive_item, "additional_data", "additionalData") or {}
-    deleted = (
-        _field(drive_item, "deleted") is not None
-        or (isinstance(additional, dict) and "deleted" in additional)
-    )
+    deleted = _field(drive_item, "deleted") is not None or (isinstance(additional, dict) and "deleted" in additional)
 
     return DeltaItem(
         drive_id=str(parent_drive_id or drive_id),
@@ -616,9 +610,7 @@ def drive_item_to_delta_item(drive_item: Any, drive_id: str) -> Optional[DeltaIt
         etag=_field(drive_item, "e_tag", "eTag"),
         ctag=_field(drive_item, "c_tag", "cTag"),
         web_url=_field(drive_item, "web_url", "webUrl"),
-        last_modified=_coerce_datetime(
-            _field(drive_item, "last_modified_date_time", "lastModifiedDateTime")
-        ),
+        last_modified=_coerce_datetime(_field(drive_item, "last_modified_date_time", "lastModifiedDateTime")),
         content_hashes=_extract_hashes(drive_item),
     )
 

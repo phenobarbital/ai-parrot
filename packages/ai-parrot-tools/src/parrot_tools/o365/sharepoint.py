@@ -645,8 +645,7 @@ class DeltaSharePointFilesArgs(O365ToolArgsSchema):
     delta_token: Optional[str] = Field(
         default=None,
         description=(
-            "Alias of delta_link accepted for the contracts ingest job. "
-            "delta_link wins when both are supplied."
+            "Alias of delta_link accepted for the contracts ingest job. " "delta_link wins when both are supplied."
         ),
     )
     max_pages: Optional[int] = Field(
