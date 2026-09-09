@@ -115,6 +115,9 @@ then `CitationVerifier`, then audit, then release. Every outcome is persisted be
 it is returned — including denials, not_found and verification failures — and an audit
 outage raises `ServiceUnavailable` instead of releasing an unaudited answer.
 Clarifications are returned as the typed `Clarification`, never as a new answer kind.
+A handoff LOCATES up to `MAX_HANDOFF_CLAUSES` clauses after authorization and each
+one still has to survive the citation gate (a lint finding caught that the first
+draft computed them and then dropped them on the floor).
 `stream_answer` buffers everything substantive until the whole gate has passed, so a
 raw draft can never reach a transport. Owner-only operations (`retire_answer`,
 `verify_card`, `merge_parties`) require the owner role **and** a trusted transport
