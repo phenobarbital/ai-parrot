@@ -406,3 +406,35 @@ class TestEdgeHelpers:
         assert binds["src"] == "a"
         assert binds["tgt"] == "b"
         assert binds["kind"] == "references"
+
+
+class TestUpsertAqlShape:
+    """The UPSERT example must use a *literal* attribute name (ArangoDB ERR 1501)."""
+
+    @pytest.mark.asyncio
+    async def test_key_field_is_a_literal_attribute_not_a_bind(self, store, tenant_ctx, mock_db):
+        mock_db.execute_query.return_value = [{"type": "inserted"}]
+        await store.upsert_nodes(tenant_ctx, "employees", nodes=[{"employee_id": "1"}], key_field="employee_id")
+        aql = mock_db.execute_query.call_args.args[0]
+        binds = mock_db.execute_query.call_args.kwargs["bind_vars"]
+        assert "UPSERT { employee_id: doc.employee_id }" in aql
+        assert "_key: doc.employee_id" in aql
+        assert "@key_field" not in aql and "[@key_field]" not in aql
+        assert "key_field" not in binds
+        assert binds["@collection"] == "employees"
+
+    @pytest.mark.asyncio
+    async def test_fallback_path_also_uses_a_literal_attribute(self, store, tenant_ctx, mock_db):
+        mock_db.execute_query.side_effect = [RuntimeError("batch failed"), None]
+        await store.upsert_nodes(tenant_ctx, "employees", nodes=[{"employee_id": "1"}], key_field="employee_id")
+        aql = mock_db.execute_query.call_args.args[0]
+        binds = mock_db.execute_query.call_args.kwargs["bind_vars"]
+        assert "UPSERT { employee_id: @key_value }" in aql
+        assert binds["key_value"] == "1"
+        assert "key_field" not in binds
+
+    @pytest.mark.asyncio
+    async def test_a_non_identifier_key_field_is_refused(self, store, tenant_ctx, mock_db):
+        with pytest.raises(ValueError):
+            await store.upsert_nodes(tenant_ctx, "employees", nodes=[{"x": 1}], key_field="x } REMOVE")
+        mock_db.execute_query.assert_not_called()

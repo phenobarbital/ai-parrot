@@ -630,3 +630,47 @@ async def test_only_approved_output_models_are_bound():
     kinds = [kind for _, kind in adapter.calls]
     assert kinds[0] is ContractHeaderDraft
     assert all(kind is ObligationsDraft for kind in kinds[1:])
+
+
+def test_a_clause_citing_the_article_number_is_rebound_when_its_excerpt_is_verbatim():
+    """Models put "3.2" in node_id; the verbatim excerpt proves the section."""
+    from parrot.knowledge.contracts.carding import validate_obligation_clauses
+    from parrot.knowledge.contracts.models import ObligationClauseDraft
+
+    bodies = {"0001": "3.2 Automatic Renewal. This Agreement shall automatically renew unless notice is given."}
+    good = ObligationClauseDraft(node_id="3.2", excerpt="This Agreement shall automatically renew", kind="notice")
+    invented = ObligationClauseDraft(node_id="3.9", excerpt="Vendor shall pay liquidated damages", kind="payment")
+    kept, notes = validate_obligation_clauses([good, invented], bodies, node_id="0001")
+    assert [clause.node_id for clause in kept] == ["0001"]
+    assert kept[0].excerpt == good.excerpt
+    assert any("rebound" in note for note in notes) and any("dropped" in note for note in notes)
+
+
+def test_fallback_header_nodes_are_not_excluded_from_obligation_extraction():
+    """A page-anchored PDF tree: the header fallback takes every page, but
+    obligation extraction must still read them."""
+    from parrot.knowledge.contracts.carding import header_nodes_matched_titles
+
+    bodies = {f"000{i}": f"Page {i + 1}. Vendor shall maintain SOC 2 and must notify within {i} days." for i in range(5)}
+    toc = [TocEntry(node_id=node_id, title=f"Page {index + 1}", level=1) for index, node_id in enumerate(bodies)]
+    header = select_header_nodes(toc, bodies)
+    assert set(header) == set(bodies), "the fallback consumed every page"
+    assert header_nodes_matched_titles(toc) is False
+    assert sorted(select_obligation_nodes(toc, bodies, limit=12, exclude=())) == sorted(bodies)
+    assert select_obligation_nodes(toc, bodies, limit=12, exclude=header) == []
+
+    titled = [TocEntry(node_id="0000", title="Preamble", level=1), TocEntry(node_id="0001", title="Security", level=1)]
+    assert header_nodes_matched_titles(titled) is True
+
+
+def test_qualified_standard_names_resolve_to_the_named_standard():
+    from parrot.knowledge.contracts.carding import standard_id_for
+    from parrot.knowledge.contracts.standards import resolve_standard
+
+    assert resolve_standard("UK GDPR") == "uk_gdpr"
+    assert resolve_standard("SOC 1 Type II") == "soc1"
+    assert standard_id_for("SOC 2 Type II") == "soc2"
+    assert standard_id_for("SOC 2 Type I or ISO 27001") == "soc2"
+    assert standard_id_for("ISO/IEC 27001:2022 certification") == "iso27001"
+    assert standard_id_for("an internal policy") is None
+    assert standard_id_for(None) is None

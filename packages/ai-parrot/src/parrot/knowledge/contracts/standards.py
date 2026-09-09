@@ -86,7 +86,7 @@ def _standard(
     )
 
 
-#: The eight standards seeded before any ``requires`` edge is discovered.
+#: The standards seeded before any ``requires`` edge is discovered.
 STANDARDS: dict[str, ComplianceStandard] = {
     standard.standard_id: standard
     for standard in (
@@ -105,6 +105,20 @@ STANDARDS: dict[str, ComplianceStandard] = {
                 "ssae 18",
                 "ssae 16",
                 "aicpa trust services criteria",
+            ),
+        ),
+        _standard(
+            "soc1",
+            "SOC 1",
+            (
+                "soc 1",
+                "soc i",
+                "soc-1",
+                "soc 1 type i",
+                "soc 1 type ii",
+                "soc 1 type 2",
+                "soc1 type 2",
+                "service organization control 1",
             ),
         ),
         _standard(
@@ -129,6 +143,17 @@ STANDARDS: dict[str, ComplianceStandard] = {
                 "regulation (eu) 2016/679",
                 "regulation eu 2016 679",
                 "2016/679",
+            ),
+            category="data_protection",
+        ),
+        _standard(
+            "uk_gdpr",
+            "UK GDPR",
+            (
+                "uk gdpr",
+                "uk general data protection regulation",
+                "data protection act 2018",
+                "dpa 2018",
             ),
             category="data_protection",
         ),

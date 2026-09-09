@@ -1,0 +1,34 @@
+services:
+  arangodb:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: parrot-arangodb
+    restart: unless-stopped
+    ports:
+      - "${ARANGODB_PORT:-8529}:8529"
+    environment:
+      # Parrot's default ARANGODB_PASSWORD is empty, so local development
+      # starts with authentication disabled. Set ARANGO_NO_AUTH=0 and
+      # ARANGODB_PASSWORD when authentication is required.
+      ARANGO_NO_AUTH: "${ARANGO_NO_AUTH:-1}"
+      ARANGO_ROOT_PASSWORD: "${ARANGODB_PASSWORD:-}"
+    volumes:
+      - arangodb-data:/var/lib/arangodb3
+      - arangodb-apps:/var/lib/arangodb3-apps
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          wget --quiet --spider http://127.0.0.1:8529/_api/version
+          || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+volumes:
+  arangodb-data:
+    name: parrot-arangodb-data
+  arangodb-apps:
+    name: parrot-arangodb-apps
