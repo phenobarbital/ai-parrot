@@ -25,6 +25,26 @@ base_branch: dev
 >   **Verified 2026-09-09**: `OntologyParser.load()` accepts it and
 >   `OntologyMerger().merge([base, contracts])` yields 8 entities /
 >   14 relations / 13 patterns with no integrity error.
+> - `sdd/proposals/contracts-agent-definition.md` — the product definition
+>   (what the client brochure promises: index-don't-move, cite-or-not_found,
+>   Bob stays the judge, contract card + map, **scheduled watchers**,
+>   guardrails, 6-week pilot) and its "need → existing piece → gap" mapping.
+>   Its mapping table was re-verified on `dev`; corrections are recorded in
+>   *Code Context* below.
+>
+> **Reconciliation.** Where the product definition and the card/ontology
+> design disagree, the later card/ontology design wins (it was written
+> against the live schema). The renames to carry into the spec:
+>
+> | Product definition | Card / ontology design (authoritative) |
+> |---|---|
+> | provenance origin `llm \| manual \| verified` | `FieldProvenance.origin ∈ llm \| rule \| manual` **plus** card/field `verification ∈ extracted \| verified \| stale` |
+> | entity `ComplianceRequirement` | entity `ComplianceStandard` (+ `Obligation.standard_id`) |
+> | pattern `requires_compliance` | pattern `contracts_requiring_standard` |
+> | bookstore-style relations `same_counterparty`, `same_type` | traversals over `party_to` / `Contract.contract_type` (no stored edge) |
+> | LLM-judged relations `conflicts_with`, `references_obligation` | **not in the YAML** — open question |
+> | temporal via graphindex Postgres plane (FEAT-520) | embedded `Contract.versions[]` (D6); the plane is deferred |
+> | Postgres catalog "decide before writing the card" | `ContractCatalogStore` protocol first, SQLite v1, Postgres phase 2 (D8) |
 >
 > **Discovery rounds.** The two interactive rounds were replaced by the
 > design documents (the user supplied them as the answers). Round 0
@@ -59,6 +79,17 @@ The pain is threefold:
 Affected users: contract owners and their managers (self-service lookups),
 legal/ops staff (verification queue, renewal radar), and the agent
 developer who must ship this on the existing bookstore + ontology stack.
+
+The product definition frames the first delivery as a **6-week pilot** over
+50–100 active contracts from the main repository, answering the two
+questions from the client's email (SOC 2 requirements, upcoming renewals)
+plus Bob's ten most common ones. Success is "the agent's answers match
+Bob's, with citations", on roughly two hours of Bob's time per week. The
+brochure also promises three **scheduled watchers** (renewal radar daily
+with 30/60/90-day windows keyed on the notice deadline, obligations
+calendar weekly, new-and-changed contracts every few hours feeding Bob's
+verification queue) — a requirement the card/ontology design does not
+cover and this brainstorm adds.
 
 The framework already has the two halves this needs — the **bookstore**
 (one PageIndex tree + one catalog card per document, SQLite + FTS,
@@ -111,6 +142,21 @@ that keeps every lookup citable.
   venv (3.11.0) but is only declared in the `ai-parrot-tools[scraping]`
   extra; the title-similarity step for `parent_contract_id` must either
   add it to core or use `difflib`.
+- **Scheduled watchers are part of the promise.** Renewal radar (daily,
+  30/60/90 on `notice_deadline`, falling back to `expiration_date`),
+  obligations calendar (weekly, `Obligation.due_date`/`recurrence`) and
+  new-and-changed contracts (every few hours → carding → verification
+  queue). They must run from the catalog's SQL (`expiring()`,
+  `verification_queue()`), never from an LLM, and hook into the existing
+  `@schedule` / `schedule_daily_report` / `schedule_weekly_report`
+  decorators of `ai-parrot-server` (persisted in `navigator.agents_scheduler`).
+- **Guardrails evaluated before retrieval, in the client's tenant, with an
+  audit trail.** Authorization runs on the pattern's rules before any
+  traversal; every answer records the `pattern` used and the citations
+  returned. Bob must be able to correct a card and retire an answer.
+- **Pilot scale and success metric**: 50–100 contracts, scanned PDFs
+  included ("contract locations & counts incl. scans" is a pilot input), and
+  agreement with Bob's answers as the acceptance test.
 
 ---
 
@@ -135,8 +181,18 @@ domain YAML dropped into `ontology/defaults/domains/`, a read-only
 `Agent` + `OntologyRAGMixin` that emits the `ContractAnswer` contract with a
 closed-set intent triage before retrieval.
 
-Postgres catalog backend and the SharePoint delta loop are an explicit
-**phase 2** (D8, §7.7).
+The three watchers are `@schedule`-decorated methods on the agent
+(`renewals_report` daily via `schedule_daily_report`, `obligations_digest`
+weekly via `schedule_weekly_report`, `ingest_delta` every few hours via
+`@schedule(ScheduleType.INTERVAL…)`), each a thin wrapper over the catalog's
+SQL queries plus `ContractLibrary.add_folder`/`refresh_card`, delivering
+through the scheduler's `send_result`/`callbacks`. Ingestion sources reuse
+the existing `parrot_tools.o365` download tools (SharePoint, OneDrive, mail
+attachments) and `parrot_loaders` (PDF, DOCX, OCR backend for scans).
+
+Postgres catalog backend, the SharePoint **delta** loop (no delta query
+exists in `parrot_tools.o365` today) and the verification page in the
+Svelte admin UI are an explicit **phase 2** (D8, §7.7).
 
 ✅ **Pros:**
 - Every building block already exists and is verified (see *Code Context*):
@@ -175,6 +231,9 @@ Postgres catalog backend and the SharePoint delta loop are an explicit
 | `rapidfuzz>=3.0` | title similarity for `parent_contract_id` (≥ 0.85) | **not a core dep** — only in `ai-parrot-tools[scraping]`; decide core-add vs `difflib.SequenceMatcher` |
 | `python-arango-async==1.2.0` | ArangoDB graph (`OntologyGraphStore`) | via `ai-parrot-embeddings` |
 | `asyncpg>=0.29` | phase-2 Postgres catalog backend | already core |
+| `ai-parrot-server` scheduler (`parrot.scheduler`) | `@schedule`, `schedule_daily_report`, `schedule_weekly_report`, `register_bot_schedules`, `send_result`/`callbacks` | core `parrot/scheduler/__init__.py` lazily re-exports from the server package; watchers need the server distribution at runtime |
+| `ai-parrot-tools` o365 (`parrot_tools.o365`) | list/search/download files from SharePoint, OneDrive, mail attachments | per-user OAuth (`oauth_toolkit.py`); **no delta query** |
+| `ai-parrot-loaders` (`parrot_loaders`) | `pdf.py`, `pdfmark.py`, `docx.py`, `ocr/` backend factory | OCR is wired only into `image.py` today |
 
 🔗 **Existing Code to Reuse:**
 - `parrot/knowledge/bookstore/carding.py` — `slugify`, `unique_slug`,
@@ -209,6 +268,15 @@ Postgres catalog backend and the SharePoint delta loop are an explicit
   `confirming_tools`, `get_tools`.
 - `parrot_tools/legal/librarian/models.py` — `SpanRef` / `LegalAnswer` as
   the precedent for a citation-carrying answer model.
+- `parrot_tools/legal/librarian/models.py` — `SuppressionRecord` as the
+  precedent for "retire an answer" (append-only suppression log).
+- `ai-parrot-server/src/parrot/scheduler/manager.py` — `schedule(...)`,
+  `schedule_daily_report`, `schedule_weekly_report`, `register_bot_schedules`.
+- `parrot_tools/o365/{sharepoint,onedrive,mail}.py` — `ListSharePointFilesTool`,
+  `SearchSharePointFilesTool`, `DownloadSharePointFileTool`,
+  `DownloadOneDriveFileTool`, `DownloadAttachmentTool` for the ingestion
+  fetch step.
+- `parrot_loaders/ocr/` — `get_ocr_backend` for the scanned-PDF path.
 
 ---
 
@@ -394,6 +462,22 @@ runs two carding passes (header, then obligations), assembles a
 `fallback` card (title from filename, type/dates by regex, confidence 0.3,
 no obligations). The operator sees `(card, "added" | "updated" | "skipped")`.
 
+**Sources.** Files are fetched, never moved: SharePoint/OneDrive documents
+and mail attachments come through the existing `parrot_tools.o365`
+download tools into a temporary `source_path`; `source_uri` keeps the
+canonical location. Scanned PDFs go through the `parrot_loaders` OCR
+backend before PageIndex import (path to be wired; see open questions).
+
+**Scheduled watchers.** Three agent methods registered with the server
+scheduler: `renewals_report` (daily) lists contracts whose
+`notice_deadline` (fallback `expiration_date`) falls in 30/60/90-day
+windows; `obligations_digest` (weekly) lists obligations with a
+`due_date` or `recurrence` hitting the coming period; `ingest_delta`
+(every few hours) re-scans the configured sources, cards new documents and
+refreshes changed ones (sha mismatch), pushing every new or `stale` card
+into the verification queue. Results go out through the scheduler's
+`send_result`/`callbacks` (email, Teams, etc.), never through the LLM.
+
 **Verification queue.** `verification_queue()` lists cards ordered by
 lowest-confidence and un-evidenced fields first, then `stale`. Bob calls
 `verify_card(contract_id, fields=None | {...}, user)`: verified fields get
@@ -422,7 +506,11 @@ state), `interpretation_required` (a `HandoffBrief` with the located
 clauses and a suggested owner), `not_found`, `out_of_scope`, or `denied`.
 The `provenance` field summarises the citations (`verified | mixed |
 extracted`) so the reader always knows whether they are looking at
-AI-extracted or human-verified facts. Typical questions map to the ten
+AI-extracted or human-verified facts. Every released answer is written to
+an audit record (user, question, `answer_kind`, `pattern`, citations,
+authorization outcome) and Bob can **retire** an answer, which suppresses
+its citations from future lookups the way the legal librarian's
+`SuppressionRecord` does. Typical questions map to the ten
 YAML traversal patterns: contracts requiring a standard, expiring within a
 window, notice deadlines, contracts with a party, contract family,
 signatories, obligations of a contract, version in force as of a date,
@@ -507,8 +595,15 @@ signatories, obligations of a contract, version in force as of a date,
   `contracts.ontology.yaml` in `ontology/defaults/domains/` +
   `ContractGraphLoader`; `ContractsToolkit` (read-only + confirming
   `verify_card`); `ContractsAgent` emitting `ContractAnswer` with citation
-  check and hand-off triage. Phase 2 (same spec, later tasks): Postgres
-  catalog backend and SharePoint delta loop.
+  check and hand-off triage; the three scheduled watchers
+  (`renewals_report`, `obligations_digest`, `ingest_delta`) over the
+  catalog SQL; answer audit record + answer retirement. Phase 2 (same
+  spec, later tasks): Postgres catalog backend, SharePoint/OneDrive delta
+  loop, OCR wiring for scanned PDFs.
+- `contracts-verification-ui` (proposed, **separate spec**): Bob's
+  verification-queue page in the Svelte 5 admin UI
+  (`ai-parrot-server/ui`, currently Home/Login/Dashboard/Agents only),
+  consuming `verification_queue()` / `verify_card`.
 
 ### Modified Capabilities
 - none. `bookstore-indexed-library` and `ontological-graph-rag` are reused
@@ -531,7 +626,11 @@ signatories, obligations of a contract, version in force as of a date,
 | `parrot/tools/toolkit.py` | depends on | `AbstractToolkit.tool_prefix`, `confirming_tools` |
 | `parrot/bots/agent.py` | depends on | `Agent` base for `ContractsAgent` |
 | `parrot_tools/security/reports/mappings/*.yaml` | reference data | seed for `ComplianceStandard` ids/aliases (soc2, hipaa, pci_dss present) |
-| `parrot/interfaces/sharepoint.py`, `parrot/core/hooks/sharepoint.py` | phase 2 depends on | client is upload-oriented; `create_subscription` exists; delta/download path to be verified |
+| `parrot_tools/o365/{sharepoint,onedrive,mail}.py` | depends on | list/search/download tools for the fetch step; **no delta query** — phase-2 delta loop must poll `List*`/`Search*` or add Graph `/delta` |
+| `parrot_loaders/{pdf,pdfmark,docx}.py`, `parrot_loaders/ocr/` | depends on | OCR backend factory exists but only `image.py` calls it; scanned-PDF path is new wiring |
+| `ai-parrot-server/src/parrot/scheduler/manager.py` | depends on | `@schedule`, `schedule_daily_report`, `schedule_weekly_report`, `register_bot_schedules`; rows in `navigator.agents_scheduler` |
+| `ai-parrot-server/ui` (Svelte 5) | separate spec | verification-queue page does not exist |
+| `parrot/interfaces/sharepoint.py`, `parrot/core/hooks/sharepoint.py` | not used | upload-oriented `SharepointClient`; superseded by `parrot_tools.o365` for reads |
 | `packages/ai-parrot/pyproject.toml` | possible new dep | `rapidfuzz` (decision pending) |
 | `packages/ai-parrot/tests/knowledge/contracts/` (new) | tests | synthetic MSA + SOW markdown fixtures, fake adapter, no-LLM fallback path |
 | CI / deployment | none | additive; no migration of existing stores |
@@ -860,6 +959,46 @@ class SpanVerifier:                                         # line 37; verify() 
 class LegalLibrarianAgent(Agent):                           # line 47 — literal system_prompt, agent_tools() -> [], async draft(...) line 79
 # From parrot_tools/legal/librarian/flow.py
 def build_legal_librarian_crew(agent, store, ctx, log) -> AgentCrew:   # line 494
+# From parrot_tools/legal/librarian/models.py
+class SuppressionRecord(BaseModel):                         # line 149 — append-only "retire" precedent
+
+# From packages/ai-parrot-server/src/parrot/scheduler/manager.py
+def schedule(schedule_type: ScheduleType = ScheduleType.DAILY, *, success_callback: Optional[Callable] = None,
+             send_result: Optional[Dict[str, Any]] = None, callbacks: Optional[List[Dict[str, Any]]] = None,
+             **schedule_config):                            # line 90 — decorator for agent methods
+schedule_daily_report = _report_decorator_factory("daily", ScheduleType.DAILY.value)     # line 173
+schedule_weekly_report = _report_decorator_factory(...)     # next to it
+class AgentScheduler:  def register_bot_schedules(self, bot: Any) -> int:   # line 1146
+# packages/ai-parrot-server/src/parrot/scheduler/models.py:12 — CREATE TABLE navigator.agents_scheduler (callbacks JSONB …)
+# packages/ai-parrot/src/parrot/scheduler/__init__.py:15-16 — lazy re-export map to parrot.scheduler.manager (server package)
+
+# From parrot_tools/o365/sharepoint.py
+class ListSharePointFilesTool(O365Tool):                    # line 41
+class SearchSharePointFilesTool(O365Tool):                  # line 232
+class DownloadSharePointFileTool(O365Tool):                 # line 369
+class UploadSharePointFileTool(O365Tool):                   # line 523
+# From parrot_tools/o365/onedrive.py
+class ListOneDriveFilesTool(O365Tool):                      # line 34
+class SearchOneDriveFilesTool(O365Tool):                    # line 147
+class DownloadOneDriveFileTool(O365Tool):                   # line 242
+# From parrot_tools/o365/mail.py
+class SearchEmailTool(O365Tool):                            # line 211
+class ListMessagesTool(O365Tool):                           # line 578
+class GetMessageTool(O365Tool):                             # line 747
+class DownloadAttachmentTool(O365Tool):                     # line 901
+# (per-user OAuth in parrot_tools/o365/oauth_toolkit.py; bundle.py groups SharePoint/OneDrive toolkits)
+
+# From parrot_tools/graphindex/toolkit.py (FEAT-520 temporal plane — deferred by D6)
+class GraphIndexToolkit(AbstractToolkit):                   # line 110
+    async def graph_as_of(self, timestamp: str) -> dict:                       # line 1214
+    async def graph_concept_history(self, concept_id: str) -> dict:            # line 1246
+    async def graph_diff(self, concept_id: str, t1: str, t2: str) -> dict:     # line 1270
+
+# From packages/ai-parrot-loaders/src/parrot_loaders/
+#   pdf.py, pdfmark.py, docx.py, basepdf.py (OCR language attr at line 34), ocr/__init__.py (OCRBackend, get_ocr_backend)
+#   ocr.get_ocr_backend is called only from image.py
+# From packages/ai-parrot-loaders/src/parrot_loaders/extractors/base.py
+class ExtractDataSource(ABC):                               # line 50 — extract() line 70, list_fields() line 91
 ```
 
 #### Verified Imports
@@ -899,9 +1038,11 @@ from parrot_tools.legal.librarian.models import SpanRef, LegalAnswer            
 - Compliance seeds: `parrot_tools/security/reports/mappings/soc2_controls.yaml`, `hipaa_controls.yaml`, `pci_dss_controls.yaml` (no `iso27001`, `gdpr`, `ccpa`, `nist_800_53`, `cyber_insurance` mapping files exist — those ids need a hand-written seed).
 - Dependencies (workspace pyprojects): `python-docx==1.1.2` (ai-parrot, ai-parrot-tools, ai-parrot-loaders), `mammoth` (loaders `document` extra, tools), `asyncpg>=0.29` (ai-parrot), `python-arango-async==1.2.0` (ai-parrot-embeddings), `rapidfuzz>=3.0` (**only** `ai-parrot-tools[scraping]`; 3.11.0 installed in the venv).
 - Tests convention: `packages/ai-parrot/tests/knowledge/{bookstore,ontology,pageindex,graphindex}/` and `packages/ai-parrot-tools/tests/legal/`.
+- Admin UI: `packages/ai-parrot-server/ui/` is Svelte `^5.55.7` (`package.json`), pages `Home`, `Login`, `Dashboard`, `Agents` only.
+- Scheduler: `ScheduleType` enum and the `@schedule` decorator live in the **server** package; `parrot.scheduler` in core is a lazy re-export shim (`packages/ai-parrot/src/parrot/scheduler/__init__.py`).
 
 ### Does NOT Exist (Anti-Hallucination)
-- ~~`claude/contracts-agent-definition.md`~~ — referenced in the design doc header as "Contexto"; **not in the repository**. The product framing must come from the design doc itself or be re-supplied.
+- ~~`claude/contracts-agent-definition.md`~~ — the path cited in the design doc header is wrong; the product definition lives at **`sdd/proposals/contracts-agent-definition.md`** (resolved).
 - ~~`parrot/knowledge/contracts/`~~ and every symbol in it (`ContractCard`, `Obligation`, `FieldProvenance`, `ContractVersion`, `ContractHeaderDraft`, `ObligationsDraft`, `ContractCatalogStore`, `ContractLibrary`, `ContractGraphLoader`, `ContractsToolkit`, `ContractsAgent`, `ContractAnswer`, `Citation`, `HandoffBrief`, `select_carding_nodes`, `assemble_card`, `verify_card`, `refresh_card` for contracts) — all **to be created**.
 - ~~`ontology/defaults/domains/contracts.ontology.yaml`~~ — the file lives only in `sdd/proposals/`; it must be copied into the defaults dir (or an `ontology_dir` configured) for `TenantOntologyManager` to find `domain="contracts"`.
 - ~~`parrot.knowledge.legal.BOEDataSource`~~ / a core "graph loader" precedent — `BOEDataSource` is `parrot_tools.legal.boe.datasource.BOEDataSource`, an `ExtractDataSource` (parrot_loaders extractor), not a card→graph writer. `ContractGraphLoader` has no direct ancestor; it composes `OntologyGraphStore.upsert_nodes/create_edges`.
@@ -911,7 +1052,13 @@ from parrot_tools.legal.librarian.models import SpanRef, LegalAnswer            
 - ~~a generic "card family" / `DocumentCard` base~~ — bookstore has none (Option B would create it).
 - ~~`PostgresPersistence` as a catalog backend~~ — it persists `UniversalNode` graphs (graphindex), not cards; the phase-2 Postgres catalog is new code that may only borrow its pool/DDL idioms.
 - ~~`rapidfuzz` as a core dependency~~ — only in an ai-parrot-tools extra.
-- ~~`SharepointClient.list_delta()` / download loop~~ — `parrot/interfaces/sharepoint.py` is upload-oriented (`upload_files`, `upload_folder`, `create_subscription`); a delta/download path is unverified and belongs to phase 2.
+- ~~a SharePoint/OneDrive **delta** query~~ — `parrot_tools.o365` has list/search/download/upload tools (verified) but no `/delta` support anywhere (grep on `delta` returns nothing in `sharepoint.py`, `onedrive.py`, `base.py`); the "new & changed every few hours" watcher must poll `List*`/`Search*` + sha compare, or add a Graph delta tool in phase 2. `parrot/interfaces/sharepoint.py` (`SharepointClient`) is upload-oriented and is not the reuse target.
+- ~~an OCR path for scanned PDFs in `parrot_loaders.pdf`/`basepdf`~~ — the OCR backend factory exists (`parrot_loaders/ocr/`) but only `image.py` calls it; scanned-PDF ingestion is new wiring.
+- ~~a verification-queue page in the admin UI~~ — `ai-parrot-server/ui` has only Home/Login/Dashboard/Agents pages.
+- ~~an ontology-level audit log~~ — `OntologyRAGMixin`/`AuthorizationChecker` contain no audit persistence (grep `audit` finds only `graph_store.py` and `concept_catalog/service.py` in the ontology package); the "full audit log" needs a new answer-audit record.
+- ~~`schedule_daily_report` in core~~ — defined in `ai-parrot-server` (`parrot/scheduler/manager.py:173`); core only re-exports lazily. Watchers require the server distribution.
+- ~~`conflicts_with` / `references_obligation` relations, `ComplianceRequirement` entity, `requires_compliance` pattern~~ — named in the product definition, absent from `contracts.ontology.yaml` (see the reconciliation table).
+- ~~`graph_as_of` on the contracts graph~~ — `GraphIndexToolkit.graph_as_of/graph_concept_history/graph_diff` exist (parrot_tools/graphindex/toolkit.py:1214-1270) but operate on the GraphIndex concept plane, not on the ontology's Arango graph; D6 keeps contract versions embedded in `versions[]`.
 - ~~`SpanVerifier` reusable as-is for contracts~~ — it is bound to BOE `SpanRef` (norma/articulo, char offsets over a normalised payload); the contracts citation check must be re-implemented over `(contract_id, node_id, quote)`.
 - ~~`same_department` proven to work with a `Contract` target~~ — `AuthorizationChecker._check_same_department` exists (authorization.py:293) but was written for Employee-shaped targets; whether it reads `Contract.department` without change is **unverified** (open question).
 - ~~ISO 27001 / GDPR / CCPA / NIST 800-53 compliance mapping files~~ — only SOC 2, HIPAA, PCI DSS mappings exist under `parrot_tools/security/reports/mappings/`.
@@ -977,10 +1124,32 @@ from parrot_tools.legal.librarian.models import SpanRef, LegalAnswer            
   as-is or needs a target-entity hook before the rule is used in phase 2. — *Owner: implementer (spike in TASK for ontology)*
 - [ ] **Bilingual corpus**: add `text_es` analyzers to `contracts_view` as in
   `legal_articulos_view`, or English-only for the pilot? — *Owner: Jesus Lara*
-- [ ] **Missing product doc**: `claude/contracts-agent-definition.md` is
-  referenced but absent from the repo. Should its product framing (personas,
-  "Bob", access rules) be added to `sdd/proposals/` so the spec can cite
-  it? — *Owner: Jesus Lara*
+- [x] **Missing product doc** — *Owner: Jesus Lara*: it exists at
+  `sdd/proposals/contracts-agent-definition.md` (the design doc's
+  `claude/…` path is stale); reconciled into this brainstorm on 2026-09-09.
+- [ ] **LLM-judged relations** (`conflicts_with`, `references_obligation`
+  from the product definition): in scope for v1 as bookstore-style
+  `relations.py` judgements written as extra edges, or dropped in favour
+  of the deterministic graph only? — *Owner: Jesus Lara*
+- [ ] **Watchers' home**: `@schedule` methods on `ContractsAgent` (needs
+  `ai-parrot-server` at runtime) or a standalone scheduled job class?
+  Where should `renewals_report` deliver by default (`send_result` email /
+  Teams)? — *Owner: Jesus Lara*
+- [ ] **Delta detection for "new & changed"**: poll `List*/Search*` + sha
+  compare for the pilot, or add a Microsoft Graph `/delta` tool to
+  `parrot_tools.o365` first? — *Owner: Jesus Lara*
+- [ ] **Scanned PDFs in the pilot**: wire `parrot_loaders.ocr` into the PDF
+  path in this spec, or exclude scans from the 50–100 pilot set? — *Owner: Jesus Lara*
+- [ ] **Answer audit + retirement**: new `contract_answers` table in the
+  catalog (question, user, `answer_kind`, `pattern`, citations,
+  authorization outcome, `retired_by`) — in this spec or a shared
+  answer-audit facility? — *Owner: Jesus Lara*
+- [ ] **Verification UI**: confirm it is a separate spec
+  (`contracts-verification-ui`) against the Svelte admin UI, with this spec
+  exposing only the API/tool surface. — *Owner: Jesus Lara*
+- [ ] **Temporal plane**: keep D6 (embedded `versions[]`) for the pilot and
+  revisit FEAT-520 `graph_as_of` once the ontology graph and GraphIndex
+  plane converge? — *Owner: Jesus Lara*
 - [x] **Flow type / base branch** — *Owner: Claude*: defaulted to
   `type: feature`, `base_branch: dev` (no hotfix semantics; additive
   feature work).
