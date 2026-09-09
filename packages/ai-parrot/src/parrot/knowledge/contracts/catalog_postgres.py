@@ -52,12 +52,22 @@ from .models import (
 if TYPE_CHECKING:  # pragma: no cover - typing only
     import asyncpg
 
-__all__ = ("PostgresContractCatalog", "CONTRACTS_DDL", "LOW_CONFIDENCE_THRESHOLD")
+__all__ = (
+    "PostgresContractCatalog",
+    "CONTRACTS_DDL",
+    "LOW_CONFIDENCE_THRESHOLD",
+    "MAX_SEARCH_TOP_K",
+    "MAX_QUEUE_LIMIT",
+)
 
 logger = logging.getLogger(__name__)
 
 #: Unverified fields below this confidence go to the verification queue.
 LOW_CONFIDENCE_THRESHOLD = 0.6
+
+#: Hard upper bounds so a caller (or a model) cannot request unbounded rows.
+MAX_SEARCH_TOP_K = 50
+MAX_QUEUE_LIMIT = 500
 
 #: Idempotent DDL for one tenant schema. ``{schema}`` is a validated
 #: identifier; no other interpolation happens anywhere in this module.
@@ -790,7 +800,7 @@ class PostgresContractCatalog(ContractCatalogStore):
             return await self._enqueue(conn, record)
 
     # ------------------------------------------------------------------
-    # Query surface — implemented by TASK-3028 (catalog search/windows)
+    # Query surface
     # ------------------------------------------------------------------
 
     async def list_cards(
@@ -800,12 +810,62 @@ class PostgresContractCatalog(ContractCatalogStore):
         verification: Optional[VerificationState] = None,
         active_only: bool = True,
     ) -> list[ContractCard]:
-        """List cards filtered by status/verification (TASK-3028)."""
-        raise NotImplementedError("catalog query surface is implemented by TASK-3028")
+        """List cards filtered by status and verification state.
+
+        Args:
+            status: Restrict to one contract status.
+            verification: Restrict to one verification state.
+            active_only: Exclude retracted cards.
+
+        Returns:
+            Cards ordered deterministically by ``contract_id``.
+        """
+        async with await self._connection() as conn:
+            rows = await conn.fetch(
+                f"""
+                SELECT * FROM {self.schema}.contracts
+                WHERE ($1::boolean IS NOT TRUE OR active)
+                  AND ($2::text IS NULL OR status = $2)
+                  AND ($3::text IS NULL OR verification = $3)
+                ORDER BY contract_id
+                """,
+                active_only,
+                status,
+                verification,
+            )
+        return [self._row_to_card(row) for row in rows]
 
     async def search(self, query: str, top_k: int = 8) -> list[SearchHit]:
-        """English full-text search (TASK-3028)."""
-        raise NotImplementedError("catalog query surface is implemented by TASK-3028")
+        """Rank cards with English ``plainto_tsquery`` / ``ts_rank``.
+
+        The query is always a bound parameter — injection payloads are
+        tokenised as ordinary search terms, never executed.
+
+        Args:
+            query: Free-form user query; blank queries match nothing.
+            top_k: Bounded number of hits (1..``MAX_SEARCH_TOP_K``).
+
+        Returns:
+            Hits ordered by descending rank, then ``contract_id``.
+        """
+        if not (query or "").strip():
+            return []
+        bounded = max(1, min(int(top_k), MAX_SEARCH_TOP_K))
+        async with await self._connection() as conn:
+            rows = await conn.fetch(
+                f"""
+                SELECT c.*, ts_rank(c.search_vector, q.query) AS rank
+                FROM {self.schema}.contracts c,
+                     plainto_tsquery('english', $1) AS q(query)
+                WHERE c.active
+                  AND c.search_vector @@ q.query
+                ORDER BY rank DESC, c.contract_id
+                LIMIT $2
+                """,
+                query,
+                bounded,
+            )
+        return [SearchHit(card=self._row_to_card(row), rank=float(row["rank"])) for row in rows]
 
     async def expiring(
         self,
@@ -814,16 +874,151 @@ class PostgresContractCatalog(ContractCatalogStore):
         key: ExpiringKey = "notice_deadline",
         since: Optional[date] = None,
     ) -> list[ContractCard]:
-        """Inclusive expiry/notice window (TASK-3028)."""
-        raise NotImplementedError("catalog query surface is implemented by TASK-3028")
+        """Return active cards inside an inclusive date window.
+
+        ``notice_deadline`` falls back to ``expiration_date`` for cards
+        without a notice period; cards whose driving date is null are
+        omitted entirely.
+
+        Args:
+            until: Inclusive end of the window.
+            key: Which date drives the window.
+            since: Inclusive start, or ``None`` for everything up to
+                ``until``.
+
+        Raises:
+            ValueError: When ``key`` is not a supported window key, or the
+                window is inverted.
+        """
+        if key not in ("notice_deadline", "expiration_date"):
+            raise ValueError(f"unsupported expiring key {key!r}")
+        if since is not None and since > until:
+            raise ValueError("expiring window start must not be after its end")
+        async with await self._connection() as conn:
+            rows = await conn.fetch(
+                f"""
+                SELECT c.*
+                FROM {self.schema}.contracts c,
+                     LATERAL (
+                         SELECT CASE
+                             WHEN $3 = 'notice_deadline'
+                                 THEN COALESCE(c.notice_deadline, c.expiration_date)
+                             ELSE c.expiration_date
+                         END AS driver
+                     ) AS w
+                WHERE c.active
+                  AND c.status = 'active'
+                  AND w.driver IS NOT NULL
+                  AND w.driver <= $1
+                  AND ($2::date IS NULL OR w.driver >= $2)
+                ORDER BY w.driver, c.contract_id
+                """,
+                until,
+                since,
+                key,
+            )
+        return [self._row_to_card(row) for row in rows]
 
     async def verification_queue(self, *, limit: int = 50) -> list[VerificationQueueEntry]:
-        """Prioritised verification queue (TASK-3028)."""
-        raise NotImplementedError("catalog query surface is implemented by TASK-3028")
+        """Return unverified cards in deterministic priority order.
+
+        Missing evidence first, then unresolved low-confidence fields, then
+        remaining stale cards; ``contract_id`` breaks every tie.
+        """
+        bounded = max(1, min(int(limit), MAX_QUEUE_LIMIT))
+        async with await self._connection() as conn:
+            rows = await conn.fetch(
+                f"""
+                WITH provenance AS (
+                    SELECT
+                        c.contract_id,
+                        array_remove(array_agg(fp.key ORDER BY fp.key) FILTER (
+                            WHERE fp.value ->> 'verification' IS DISTINCT FROM 'verified'
+                              AND coalesce(btrim(fp.value ->> 'quote'), '') = ''
+                        ), NULL) AS missing_fields,
+                        array_remove(array_agg(fp.key ORDER BY fp.key) FILTER (
+                            WHERE fp.value ->> 'verification' IS DISTINCT FROM 'verified'
+                              AND coalesce(btrim(fp.value ->> 'quote'), '') <> ''
+                              AND coalesce((fp.value ->> 'confidence')::double precision, 0) < $1
+                        ), NULL) AS low_fields
+                    FROM {self.schema}.contracts c
+                    LEFT JOIN LATERAL jsonb_each(
+                        coalesce(c.card_json -> 'field_provenance', '{{}}'::jsonb)
+                    ) AS fp ON true
+                    WHERE c.active AND c.verification <> 'verified'
+                    GROUP BY c.contract_id
+                )
+                SELECT
+                    c.*,
+                    coalesce(p.missing_fields, ARRAY[]::text[]) AS missing_fields,
+                    coalesce(p.low_fields, ARRAY[]::text[]) AS low_fields,
+                    CASE
+                        WHEN coalesce(array_length(p.missing_fields, 1), 0) > 0 THEN 0
+                        WHEN coalesce(array_length(p.low_fields, 1), 0) > 0 THEN 1
+                        ELSE 2
+                    END AS priority
+                FROM {self.schema}.contracts c
+                JOIN provenance p USING (contract_id)
+                WHERE coalesce(array_length(p.missing_fields, 1), 0) > 0
+                   OR coalesce(array_length(p.low_fields, 1), 0) > 0
+                   OR jsonb_array_length(
+                          coalesce(c.card_json -> 'stale_fields', '[]'::jsonb)
+                      ) > 0
+                ORDER BY priority, c.contract_id
+                LIMIT $2
+                """,
+                LOW_CONFIDENCE_THRESHOLD,
+                bounded,
+            )
+
+        entries: list[VerificationQueueEntry] = []
+        for row in rows:
+            card = self._row_to_card(row)
+            if row["priority"] == 0:
+                reason, fields = "missing_evidence", list(row["missing_fields"])
+            elif row["priority"] == 1:
+                reason, fields = "low_confidence", list(row["low_fields"])
+            else:
+                reason, fields = "stale", sorted(card.stale_fields)
+            entries.append(
+                VerificationQueueEntry(card=card, reason=reason, fields=fields)  # type: ignore[arg-type]
+            )
+        return entries
 
     async def obligations_due(self, window: ObligationWindow) -> list[Obligation]:
-        """Typed obligation due-date window (TASK-3028)."""
-        raise NotImplementedError("catalog query surface is implemented by TASK-3028")
+        """Return obligations inside a typed due-date window.
+
+        Fixed due dates are selected by an inclusive window. Recurrence is
+        returned for review when ``include_recurring`` is set; it is never
+        interpreted here.
+        """
+        async with await self._connection() as conn:
+            rows = await conn.fetch(
+                f"""
+                SELECT o.*
+                FROM {self.schema}.obligations o
+                JOIN {self.schema}.contracts c USING (contract_id)
+                WHERE o.active
+                  AND c.active
+                  AND ($1::text[] IS NULL OR o.kind = ANY($1))
+                  AND ($2::text IS NULL OR o.standard_id = $2)
+                  AND (
+                        (o.due_date IS NOT NULL
+                         AND o.due_date <= $3
+                         AND ($4::date IS NULL OR o.due_date >= $4))
+                     OR ($5::boolean AND o.due_date IS NULL AND o.recurrence IS NOT NULL)
+                  )
+                ORDER BY o.due_date NULLS LAST, o.obligation_id
+                LIMIT $6
+                """,
+                list(window.kinds) if window.kinds else None,
+                window.standard_id,
+                window.until,
+                window.since,
+                window.include_recurring,
+                window.limit,
+            )
+        return [self._row_to_obligation(row) for row in rows]
 
     # ------------------------------------------------------------------
     # Administration surface — implemented by TASK-3029
