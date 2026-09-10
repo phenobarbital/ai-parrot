@@ -7,18 +7,29 @@ stays importable without ``ai-parrot-embeddings[lancedb]``.
 from __future__ import annotations
 
 import asyncio
+import copy as _copy
+import json
 import logging
+import math
 import uuid
 from datetime import timedelta
 from typing import Any, Callable, List, Union
 
 from parrot.stores import AbstractStore  # verified: packages/ai-parrot-embeddings/tests/test_namespace_imports.py:151
 from parrot.stores.lancedb_concurrency import MutationCoordinator  # new in TASK-3061
+from parrot.stores.lancedb_filters import (  # new in TASK-3060
+    _quote_literal,  # noqa: F401 — reused single escaping choke point, not duplicated here
+    compile_metadata_filter,
+)
 from parrot.stores.lancedb_models import (  # new in TASK-3059
+    RESERVED_METADATA_KEY,
+    STANDARD_BOOL_FIELDS,
+    STANDARD_STRING_FIELDS,
     CollectionManifest,
     LanceDBConfig,
     build_arrow_schema,
     embedding_fingerprint,
+    record_id_for,
 )
 
 # Constructor kwargs that select/route to this backend or configure the base
@@ -360,20 +371,275 @@ class LanceDBStore(AbstractStore):
         raise NotImplementedError("TASK-3064 owns vector search")
 
     async def from_documents(self, documents: List[Any], collection: Union[str, None] = None, **kwargs: Any) -> Callable:
-        """Implemented by TASK-3063."""
-        raise NotImplementedError("TASK-3063 owns ingestion")
+        """Prepare the collection, add the documents and return this store."""
+        collection_name = collection or self._config.collection_name
+        await self.create_collection(collection_name)
+        if documents:
+            await self.add_documents(documents, collection=collection_name, **kwargs)
+        return self
 
     async def add_documents(self, documents: List[Any], collection: Union[str, None] = None, **kwargs: Any) -> None:
-        """Implemented by TASK-3063."""
-        raise NotImplementedError("TASK-3063 owns ingestion")
+        """Upsert documents into an existing prepared collection.
 
-    async def delete_documents(self, documents: Any = None, pk: str = "source_type", values: Any = None, table: str = None, schema: str = None, collection: str = None, **kwargs: Any) -> int:
-        """Implemented by TASK-3063."""
-        raise NotImplementedError("TASK-3063 owns deletion")
+        Raises:
+            LookupError: the collection does not exist.
+            ValueError: conflicting or duplicate IDs, invalid metadata, or an
+                invalid embedding vector, for ANY document in the input —
+                validated for the whole input before any batch is written.
+        """
+        collection_name = collection or self._config.collection_name
+        conn, _ = await self.connection()
+        existing_names = await conn.table_names()
+        if collection_name not in existing_names:
+            raise LookupError(
+                f"LanceDB collection {collection_name!r} does not exist; call "
+                f"create_collection()/from_documents() first"
+            )
+        if not documents:
+            return
+
+        # 1) Resolve IDs, 2) validate IDs/metadata for the FULL input, BEFORE
+        # any write and BEFORE contextual augmentation (spec §2 "Data Models").
+        explicit_ids = kwargs.get("ids")
+        record_ids = self._resolve_ids(documents, explicit_ids)
+        for document in documents:
+            self._validate_metadata(document.metadata or {})
+
+        # 3) Deep-copy documents; augment COPIES only, never caller objects.
+        copies = [_copy.deepcopy(document) for document in documents]
+        texts_to_embed = self._apply_contextual_augmentation(copies, _log=False)
+
+        provider = await self._ensure_provider()
+
+        batch_size = self._config.batch_size
+        total = len(documents)
+        total_batches = (total + batch_size - 1) // batch_size
+        completed_batches = 0
+
+        for start in range(0, total, batch_size):
+            end = min(start + batch_size, total)
+            batch_texts = texts_to_embed[start:end]
+            batch_original_text = [documents[i].page_content for i in range(start, end)]
+            batch_metadata = [copies[i].metadata or {} for i in range(start, end)]
+            batch_ids = record_ids[start:end]
+
+            try:
+                # 4) Embed the batch, validate every vector, then merge-insert
+                # under process-safe coordination with a fresh table handle.
+                # Embedding failures count as this batch's failure too — the
+                # reported "completed batch count" must reflect committed
+                # writes regardless of which step inside the batch failed.
+                vectors = await provider.embed_documents(batch_texts)
+                for vector in vectors:
+                    self._validate_vector(vector)
+
+                rows = [
+                    self._row_for(batch_ids[j], batch_original_text[j], batch_metadata[j], vectors[j])
+                    for j in range(len(vectors))
+                ]
+
+                async def _do_upsert(rows: list[dict[str, Any]] = rows) -> None:
+                    table = await conn.open_table(collection_name)
+                    merge = table.merge_insert("record_id")
+                    merge = merge.when_matched_update_all().when_not_matched_insert_all()
+                    await merge.execute(rows)
+                    # Refresh the cached default-table handle to the one that
+                    # just committed, so synchronous get_vector()/search
+                    # callers never see a pre-write snapshot (the same
+                    # staleness the TASK-3057 gate found for cross-handle
+                    # reads).
+                    if collection_name == self._config.collection_name:
+                        self._default_table = table
+
+                await self._coordinator.run_mutation(
+                    _do_upsert, description=f"add_documents:{collection_name}"
+                )
+            except Exception as exc:  # noqa: BLE001 — re-raised with batch accounting, never logging content
+                raise RuntimeError(
+                    f"add_documents failed after {completed_batches} of {total_batches} "
+                    f"batches committed to {collection_name!r}. Completed batches are "
+                    f"durable (no all-batch rollback); retrying with the same stable IDs "
+                    f"is idempotent."
+                ) from exc
+            completed_batches += 1
+
+    def _resolve_ids(self, documents: List[Any], explicit_ids: Any) -> list[str]:
+        if explicit_ids is not None and len(explicit_ids) != len(documents):
+            raise ValueError("ids must align 1:1 with documents")
+        resolved: list[str] = []
+        seen: set[str] = set()
+        for index, document in enumerate(documents):
+            explicit_id = explicit_ids[index] if explicit_ids is not None else None
+            metadata = document.metadata or {}
+            meta_id = metadata.get("id")
+            if not (isinstance(meta_id, str) and meta_id):
+                meta_id = None
+            if explicit_id is not None and meta_id is not None and explicit_id != meta_id:
+                raise ValueError(
+                    f"Conflicting IDs for document {index}: explicit id {explicit_id!r} vs "
+                    f"metadata['id'] {meta_id!r}"
+                )
+            record_id = explicit_id or meta_id
+            if record_id is None:
+                # Fallback ID is computed from the ORIGINAL text/metadata,
+                # BEFORE any contextual augmentation.
+                record_id = record_id_for(document.page_content, metadata)
+            if record_id in seen:
+                raise ValueError(f"Duplicate id {record_id!r} in one ingestion call")
+            seen.add(record_id)
+            resolved.append(record_id)
+        return resolved
+
+    @staticmethod
+    def _validate_metadata(metadata: dict[str, Any]) -> None:
+        if RESERVED_METADATA_KEY in metadata:
+            raise ValueError(f"metadata may not use the reserved key {RESERVED_METADATA_KEY!r}")
+        LanceDBStore._check_json_safe(metadata)
+
+    @staticmethod
+    def _check_json_safe(value: Any) -> None:
+        if isinstance(value, bool) or value is None or isinstance(value, str):
+            return
+        if isinstance(value, float):
+            if not math.isfinite(value):
+                raise ValueError("metadata contains a non-finite number")
+            return
+        if isinstance(value, int):
+            return
+        if isinstance(value, dict):
+            for nested in value.values():
+                LanceDBStore._check_json_safe(nested)
+            return
+        if isinstance(value, (list, tuple)):
+            for nested in value:
+                LanceDBStore._check_json_safe(nested)
+            return
+        raise ValueError(f"metadata contains a non-JSON value of type {type(value).__name__}")
+
+    def _validate_vector(self, vector: list[float]) -> None:
+        if len(vector) != self._config.dimension:
+            raise ValueError(
+                f"embedding dimension mismatch: expected {self._config.dimension}, got {len(vector)}"
+            )
+        if not all(math.isfinite(v) for v in vector):
+            raise ValueError("embedding contains a non-finite value")
+        if all(v == 0 for v in vector):
+            raise ValueError("embedding is a zero-norm vector")
+
+    def _row_for(self, record_id: str, original_text: str, metadata: dict[str, Any], vector: list[float]) -> dict[str, Any]:
+        row: dict[str, Any] = {
+            "record_id": record_id,
+            "document": original_text,
+            "embedding": vector,
+            "metadata_json": json.dumps(metadata, sort_keys=True, default=str),
+        }
+        for field in (*STANDARD_STRING_FIELDS, *STANDARD_BOOL_FIELDS, *self._config.metadata_fields):
+            row[f"meta_{field}"] = metadata.get(field)
+        return row
+
+    def _resolve_collection_selector(self, table: str | None, collection: str | None) -> str:
+        if table is not None and collection is not None and table != collection:
+            raise ValueError(f"Conflicting table={table!r} vs collection={collection!r} selectors")
+        return table or collection or self._config.collection_name
+
+    def _record_id_in_clause(self, record_ids: list[str]) -> str:
+        if not record_ids:
+            return "(1 = 0)"
+        literals = ", ".join(_quote_literal(record_id) for record_id in record_ids)
+        return f"record_id IN ({literals})"
+
+    async def delete_documents(
+        self,
+        documents: Any = None,
+        pk: str = "source_type",
+        values: Any = None,
+        table: str = None,
+        schema: str = None,
+        collection: str = None,
+        **kwargs: Any,
+    ) -> int:
+        """Delete by document identity or by ``pk`` + ``values``. Returns rows removed.
+
+        Raises:
+            ValueError: empty filter, missing selector, or conflicting selectors.
+        """
+        del schema  # schema is a no-op namespace; validated at construction time
+        collection_name = self._resolve_collection_selector(table, collection)
+
+        if documents is None and values is None:
+            raise ValueError(
+                "delete_documents requires either `documents` or `pk`+`values`; there is "
+                "no implicit delete-all operation"
+            )
+        if documents is not None and values is not None:
+            raise ValueError("delete_documents received both `documents` and `values`; conflicting selectors")
+
+        if documents is not None:
+            if not documents:
+                raise ValueError("delete_documents `documents` selector must be non-empty")
+            record_ids: list[str] = []
+            for item in documents:
+                if isinstance(item, str):
+                    record_ids.append(item)
+                    continue
+                metadata = getattr(item, "metadata", None) or {}
+                meta_id = metadata.get("id")
+                explicit_id = meta_id if isinstance(meta_id, str) and meta_id else None
+                record_ids.append(explicit_id or record_id_for(item.page_content, metadata))
+            predicate = self._record_id_in_clause(record_ids)
+        else:
+            values_list = [values] if isinstance(values, str) else list(values or [])
+            if not values_list:
+                raise ValueError("delete_documents `values` selector must be non-empty")
+            if pk == "id":
+                predicate = self._record_id_in_clause(values_list)
+            else:
+                if pk not in self._config.metadata_fields and pk not in STANDARD_STRING_FIELDS:
+                    raise ValueError(
+                        f"delete_documents pk={pk!r} must be 'id' or a declared metadata field"
+                    )
+                predicate = compile_metadata_filter({pk: values_list}, self._config)
+
+        async def _do_delete() -> int:
+            conn, _ = await self.connection()
+            table_handle = await conn.open_table(collection_name)
+            result = await table_handle.delete(predicate)
+            if collection_name == self._config.collection_name:
+                self._default_table = table_handle
+            return result.num_deleted_rows
+
+        return await self._coordinator.run_mutation(_do_delete, description=f"delete_documents:{collection_name}")
 
     async def delete_documents_by_filter(self, search_filter: dict, table: str = None, schema: str = None, collection: str = None, **kwargs: Any) -> int:
-        """Implemented by TASK-3063."""
-        raise NotImplementedError("TASK-3063 owns deletion")
+        """Delete by compiled metadata predicate (no parent-exclusion clause). Returns rows removed."""
+        del schema
+        collection_name = self._resolve_collection_selector(table, collection)
+        if not search_filter:
+            raise ValueError(
+                "delete_documents_by_filter requires a non-empty search_filter; there is "
+                "no implicit delete-all operation"
+            )
+        # Deletion reuses the metadata compiler WITHOUT the search-only
+        # parent-exclusion clause: a caller deleting source='x' expects
+        # matching parents to go too (spec §2 "Filters").
+        predicate = compile_metadata_filter(search_filter, self._config)
+        if predicate is None:
+            raise ValueError(
+                "delete_documents_by_filter requires a non-empty search_filter; there is "
+                "no implicit delete-all operation"
+            )
+
+        async def _do_delete() -> int:
+            conn, _ = await self.connection()
+            table_handle = await conn.open_table(collection_name)
+            result = await table_handle.delete(predicate)
+            if collection_name == self._config.collection_name:
+                self._default_table = table_handle
+            return result.num_deleted_rows
+
+        return await self._coordinator.run_mutation(
+            _do_delete, description=f"delete_documents_by_filter:{collection_name}"
+        )
 
     async def fulltext_search(self, query: str, collection: Union[str, None] = None, limit: int = 10, **kwargs: Any) -> list:
         """Implemented by TASK-3065."""
