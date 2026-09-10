@@ -234,7 +234,9 @@ reason for spec §9 and the command continues. **This step must never abort
   a `[ ]` item in §8).
 - **Never silently concede and never silently drop** a suggestion.
 - **Verify the reviewer's evidence.** Every `affected_paths` entry is checked
-  with `test -e`; an unverifiable path ⇒ `REJECT` "path not found".
+  for repository containment, then with `test -e`; a path resolving outside
+  the repo ⇒ `REJECT` "path outside repository"; an unverifiable path ⇒
+  `REJECT` "path not found".
 
 > **`agy` (Google Gemini / Antigravity) MUST NOT be used for this seat** — same
 > ban and same reason as for code review (`CLAUDE.md`, "Adversarial Second
@@ -258,9 +260,10 @@ if [ -z "$SKIP_REASON" ]; then
   PROBE_TEXT="$(cat "$DR/probe.txt" 2>/dev/null | tr -d '[:space:]')"
   [ "$PROBE_TEXT" = "OK" ] || SKIP_REASON="model probe returned unexpected output for $MODEL"
 fi
-CODEX_VERSION="$(codex --version 2>/dev/null | awk '{print $2}')"
-PROBE_OUTPUT="$(cat "$DR/probe.txt" 2>/dev/null || echo "")"
-python -c "
+if command -v codex >/dev/null 2>&1; then
+  CODEX_VERSION="$(codex --version 2>/dev/null | awk '{print $2}')"
+  PROBE_OUTPUT="$(cat "$DR/probe.txt" 2>/dev/null || echo "")"
+  python -c "
 import json, sys
 json.dump({
     'model': sys.argv[1],
@@ -270,6 +273,7 @@ json.dump({
     'probe_output': sys.argv[3],
 }, open(sys.argv[4], 'w'), indent=2)
 " "$MODEL" "$CODEX_VERSION" "$PROBE_OUTPUT" "$DR/run.json"
+fi
 ```
 
 #### 3b.2 Render the neutral brief (skipped when `SKIP_REASON` is already set)
@@ -557,11 +561,16 @@ git reset HEAD
 git add sdd/specs/<feature-name>.spec.md
 if [ -d "$DR" ]; then
   STAGE_TMP="sdd/state/.design_research/.promote-<FEAT-ID>-${RUN_ID}"
-  mkdir -p "$STAGE_TMP" && cp -a "$DR"/. "$STAGE_TMP"/ \
-    && mv "$STAGE_TMP" "sdd/state/<FEAT-ID>/design_research" \
-    && rm -rf "$DR" \
-    && git add "sdd/state/<FEAT-ID>/design_research/" \
-    || { echo "⚠️  Promotion of $DR failed — left in place for inspection (run-id ${RUN_ID})." ; rm -rf "$STAGE_TMP"; }
+  PROMOTED="sdd/state/<FEAT-ID>/design_research"
+  if [ -e "$PROMOTED" ]; then
+    echo "⚠️  $PROMOTED already exists — leaving $DR in place for manual review (run-id ${RUN_ID}); not overwriting existing design research."
+  else
+    mkdir -p "sdd/state/<FEAT-ID>" "$STAGE_TMP" && cp -a "$DR"/. "$STAGE_TMP"/ \
+      && mv "$STAGE_TMP" "$PROMOTED" \
+      && rm -rf "$DR" \
+      && git add "$PROMOTED/" \
+      || { echo "⚠️  Promotion of $DR failed — left in place for inspection (run-id ${RUN_ID})." ; rm -rf "$STAGE_TMP"; }
+  fi
 fi
 
 # 3. Verify ONLY those paths are staged
