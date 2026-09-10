@@ -15,11 +15,14 @@ import uuid
 from datetime import timedelta
 from typing import Any, Callable, List, Union
 
+from parrot.models.stores import SearchResult  # verified: packages/ai-parrot-tools/src/parrot_tools/multistoresearch/origins/vector.py:11
 from parrot.stores import AbstractStore  # verified: packages/ai-parrot-embeddings/tests/test_namespace_imports.py:151
 from parrot.stores.lancedb_concurrency import MutationCoordinator  # new in TASK-3061
 from parrot.stores.lancedb_filters import (  # new in TASK-3060
     _quote_literal,  # noqa: F401 — reused single escaping choke point, not duplicated here
+    combine,
     compile_metadata_filter,
+    parent_exclusion_clause,
 )
 from parrot.stores.lancedb_models import (  # new in TASK-3059
     RESERVED_METADATA_KEY,
@@ -29,6 +32,7 @@ from parrot.stores.lancedb_models import (  # new in TASK-3059
     LanceDBConfig,
     build_arrow_schema,
     embedding_fingerprint,
+    namespaced_id,
     record_id_for,
 )
 
@@ -366,9 +370,145 @@ class LanceDBStore(AbstractStore):
     # Query methods — implemented by TASK-3064 (vector) / TASK-3065 (FTS/hybrid)
     # ------------------------------------------------------------------
 
-    async def similarity_search(self, query: str, collection: Union[str, None] = None, limit: int = 2, **kwargs: Any) -> list:
-        """Implemented by TASK-3064."""
-        raise NotImplementedError("TASK-3064 owns vector search")
+    async def similarity_search(
+        self,
+        query: str,
+        collection: Union[str, None] = None,
+        limit: int = 2,
+        similarity_threshold: float = 0.0,
+        search_strategy: str = "auto",
+        metadata_filters: Union[dict, None] = None,
+        include_parents: bool = False,
+        **kwargs: Any,
+    ) -> list:
+        """Exact cosine search. Scores are RAW DISTANCES: lower is better.
+
+        Raises:
+            ValueError: non-positive/boolean/non-integer limit, out-of-range
+                threshold, or an unsupported ``search_strategy``.
+            LookupError: the collection does not exist.
+        """
+        if search_strategy != "auto":
+            raise ValueError(
+                f"LanceDBStore.similarity_search only supports search_strategy='auto' "
+                f"(exact search); got {search_strategy!r}"
+            )
+        if isinstance(limit, bool) or not isinstance(limit, int) or limit <= 0:
+            raise ValueError(f"limit must be a positive integer, got {limit!r}")
+
+        score_threshold = kwargs.pop("score_threshold", None)
+        ceiling = self._distance_ceiling(similarity_threshold, score_threshold)
+
+        table_alias = kwargs.pop("table", None)
+        collection_name = self._resolve_collection_selector(table_alias, collection)
+
+        schema_kw = kwargs.pop("schema", None)
+        if schema_kw not in (None, "public"):
+            raise ValueError(f"LanceDBStore.similarity_search does not support schema={schema_kw!r}")
+
+        for column_kwarg, default_label in (
+            ("content_column", "document"),
+            ("embedding_column", "embedding"),
+            ("metadata_column", "cmetadata"),
+            ("id_column", "id"),
+        ):
+            value = kwargs.pop(column_kwarg, default_label)
+            if value != default_label:
+                raise ValueError(
+                    f"LanceDBStore.similarity_search does not support a custom "
+                    f"{column_kwarg}={value!r}; only the default {default_label!r} is accepted"
+                )
+        if kwargs:
+            raise ValueError(f"Unknown similarity_search kwargs: {sorted(kwargs)}")
+
+        # Blank query returns [] after parameter validation above, WITHOUT
+        # generating an embedding (spec §2 "Filters, Parent Visibility and Limits").
+        if not query or not query.strip():
+            return []
+
+        conn, _ = await self.connection()
+        existing_names = await conn.table_names()
+        if collection_name not in existing_names:
+            raise LookupError(f"LanceDB collection {collection_name!r} does not exist")
+
+        table = await conn.open_table(collection_name)
+        manifest = await self._ensure_manifest_loaded(table)
+
+        metadata_clause = compile_metadata_filter(metadata_filters, self._config)
+        parent_clause = None if include_parents else parent_exclusion_clause()
+        predicate = combine(metadata_clause, parent_clause)
+
+        provider = await self._ensure_provider()
+        query_vector = await provider.embed_query(query)
+
+        query_builder = table.query().nearest_to(query_vector).distance_type("cosine")
+        if predicate:
+            query_builder = query_builder.where(predicate)
+        rows = await query_builder.limit(limit).to_list()
+
+        results: list[SearchResult] = []
+        for row in rows:
+            distance = float(row["_distance"])
+            if ceiling is not None and distance > ceiling:
+                continue
+            record_id = row["record_id"]
+            metadata = json.loads(row.get("metadata_json") or "{}")
+            metadata[RESERVED_METADATA_KEY] = {
+                "collection": collection_name,
+                "record_id": record_id,
+                "mode": "vector",
+                "score_kind": "cosine_distance",
+                "higher_is_better": False,
+            }
+            results.append(
+                SearchResult(
+                    id=namespaced_id(manifest.collection_uuid, record_id),
+                    content=row["document"],
+                    score=distance,
+                    metadata=metadata,
+                )
+            )
+        return results
+
+    async def _ensure_manifest_loaded(self, table: Any) -> CollectionManifest:
+        """Read the persisted manifest for search-time provenance.
+
+        Unlike :meth:`create_collection`, this does NOT validate identity
+        compatibility — a search-only caller (or FTS-only reopen) may have no
+        embedding configuration at all, and reading the stored identity is
+        exactly the "read without constructing" contract spec §2 requires.
+        """
+        if self._manifest is not None:
+            return self._manifest
+        schema = await table.schema()
+        manifest = self._manifest_from_schema(schema)
+        self._manifest = manifest
+        return manifest
+
+    def _distance_ceiling(self, similarity_threshold: float, score_threshold: float | None) -> float | None:
+        """Translate similarity thresholds into a maximum cosine distance.
+
+        ``similarity_threshold == 0.0`` disables thresholding (base
+        compatibility default). A tool-supplied ``score_threshold`` is
+        evaluated independently — including an explicit ``0.0``, which is
+        NOT the disable sentinel here (only ``similarity_threshold``'s
+        default has that meaning). When both are enabled, the STRICTER one
+        (smaller resulting distance ceiling) wins.
+        """
+        ceilings: list[float] = []
+        if similarity_threshold != 0.0:
+            if not (0.0 < similarity_threshold <= 1.0):
+                raise ValueError(
+                    f"similarity_threshold must be in (0, 1], got {similarity_threshold!r}"
+                )
+            ceilings.append(1.0 - similarity_threshold)
+        if score_threshold is not None:
+            if not (0.0 <= score_threshold <= 1.0):
+                raise ValueError(f"score_threshold must be in [0, 1], got {score_threshold!r}")
+            ceilings.append(1.0 - score_threshold)
+        if not ceilings:
+            return None
+        return min(ceilings)
 
     async def from_documents(self, documents: List[Any], collection: Union[str, None] = None, **kwargs: Any) -> Callable:
         """Prepare the collection, add the documents and return this store."""
