@@ -56,11 +56,12 @@
       "notes": "U3 (TASK-file blueprints), U1 (gpt-5.6-luna, verified F017), U2 (triage table), U4 (optional pass) \u2014 all resolved by user 2026-09-10."
     },
     "output": {
-      "status": "completed",
+      "status": "accepted",
       "proposal_path": "sdd/proposals/collaborative-adversarial-spec-design.proposal.md",
       "commit_sha": null,
       "next_command_recommended": "sdd-spec",
-      "next_command_rationale": "Localization high-confidence; unknowns are product choices with recommended defaults."
+      "next_command_rationale": "Localization high-confidence; unknowns are product choices with recommended defaults.",
+      "notes": "Proposal accepted by user 2026-09-10; handed to /sdd-spec."
     }
   },
   "budget": {

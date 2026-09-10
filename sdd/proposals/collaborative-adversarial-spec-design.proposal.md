@@ -4,7 +4,7 @@ title: Collaborative adversarial spec design — executor-ready reference code i
 slug: collaborative-adversarial-spec-design
 type: feature
 mode: enrichment
-status: review
+status: accepted
 source:
   kind: inline
   jira_key: null
@@ -16,7 +16,7 @@ base_branch: dev
 research_state: sdd/state/FEAT-564/
 created: 2026-09-10
 updated: 2026-09-10
-revision: 3  # 2026-09-10 — U1/U2/U4 resolved by user; model verified (F017); all unknowns closed
+revision: 4  # 2026-09-10 — accepted by user
 ---
 
 # FEAT-564 — Collaborative adversarial spec design
