@@ -4,6 +4,7 @@ The twin may differ ONLY by a leading YAML frontmatter block and by the
 `- Worktree policy:` reference line; every other line must be identical.
 Pattern: packages/ai-parrot/tests/flows/dev_loop/test_subagent_parity.py.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -19,7 +20,7 @@ def _strip_frontmatter(text: str) -> str:
     if not text.startswith("---\n"):
         return text
     end = text.find("\n---\n", 4)
-    return text if end == -1 else text[end + len("\n---\n"):].lstrip("\n")
+    return text if end == -1 else text[end + len("\n---\n") :].lstrip("\n")
 
 
 def _normalize(text: str) -> str:
@@ -34,8 +35,7 @@ def _normalize(text: str) -> str:
     lines = [
         ln
         for ln in text.splitlines()
-        if not ln.startswith("- Worktree policy:")
-        and "sub-features extend a parent feature branch — see `" not in ln
+        if not ln.startswith("- Worktree policy:") and "sub-features extend a parent feature branch — see `" not in ln
     ]
     return "\n".join(lines).strip()
 

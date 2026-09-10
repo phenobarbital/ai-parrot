@@ -1,4 +1,5 @@
 """Executable contract for the FEAT-545 templates (spec §4)."""
+
 from __future__ import annotations
 
 import json
@@ -13,8 +14,12 @@ _TPL = _REPO_ROOT / "sdd" / "templates"
 _SCHEMA = _TPL / "design_research.schema.json"
 _PROMPT = _TPL / "design_research.prompt.md"
 _PLACEHOLDERS = {
-    "problem_statement", "constraints_and_goals", "recommended_option_or_scope",
-    "code_context_paths", "open_questions", "question",
+    "problem_statement",
+    "constraints_and_goals",
+    "recommended_option_or_scope",
+    "code_context_paths",
+    "open_questions",
+    "question",
 }
 
 
@@ -28,12 +33,24 @@ def sample_suggestions() -> dict:
     return {
         "summary": "Two suggestions on the accepted design.",
         "suggestions": [
-            {"id": "S1", "kind": "architecture", "title": "Stage output under sdd/state",
-             "rationale": "artifacts/ is gitignored.", "affected_paths": [".gitignore"],
-             "risk": "low", "confidence": "high"},
-            {"id": "S2", "kind": "testing", "title": "Add twin parity test",
-             "rationale": "Twins drift silently.", "affected_paths": [".agent/workflows/sdd-spec.md"],
-             "risk": "medium", "confidence": "medium"},
+            {
+                "id": "S1",
+                "kind": "architecture",
+                "title": "Stage output under sdd/state",
+                "rationale": "artifacts/ is gitignored.",
+                "affected_paths": [".gitignore"],
+                "risk": "low",
+                "confidence": "high",
+            },
+            {
+                "id": "S2",
+                "kind": "testing",
+                "title": "Add twin parity test",
+                "rationale": "Twins drift silently.",
+                "affected_paths": [".agent/workflows/sdd-spec.md"],
+                "risk": "medium",
+                "confidence": "medium",
+            },
         ],
     }
 
@@ -68,4 +85,8 @@ def test_spec_template_has_skeleton_and_section_9() -> None:
     text = (_TPL / "spec.md").read_text(encoding="utf-8")
     assert "Interface Skeleton" in text
     assert "## 9. Design Research Cross-Check" in text
-    assert text.index("## 8. Open Questions") < text.index("## 9. Design Research Cross-Check") < text.index("## Revision History")
+    assert (
+        text.index("## 8. Open Questions")
+        < text.index("## 9. Design Research Cross-Check")
+        < text.index("## Revision History")
+    )
