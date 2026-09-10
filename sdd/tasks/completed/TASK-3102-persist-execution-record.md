@@ -219,10 +219,32 @@ diff .agent/workflows/sdd-spec.md .claude/commands/sdd-spec.md | grep -c '^[<>]'
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-10
+**Notes**: Implemented exactly per blueprint. §3b.1 now writes the first
+half of `$DR/run.json` (model, codex_cli_version, reasoning_effort,
+timeout_s, probe_output) right after the probe-content check (TASK-3104)
+closes. §3b.3 sets `STARTED_AT` immediately before the main `timeout 600
+codex exec` call and, guarded on `-f "$DR/run.json"` (not
+`-z "$SKIP_REASON"`, per the task's Key Constraints, so a later skip still
+gets a record), merges in `started_at`/`ended_at`/`exit_code`. Simulated
+both writes end-to-end in a scratch directory (not the real `$DR`, no
+`codex` binary invoked): the resulting JSON contains all 8 fields
+(`model`, `codex_cli_version`, `reasoning_effort`, `timeout_s`,
+`probe_output`, `started_at`, `ended_at`, `exit_code`) and parses with
+`json.load`. §6's promotion (already atomic per TASK-3100, `cp -a "$DR"/.`)
+carries `run.json` along automatically — no additional §6 edit needed.
+Twin regenerated; `diff | grep -c '^[<>]'` → `6`.
+**Deviations from spec**: none
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Post-review addendum (2026-09-10)**: the adversarial code-reviewer found
+the §3b.1 `run.json` first-write ran unconditionally, even when `codex` is
+not installed at all (`SKIP_REASON="codex CLI not installed"` set at the
+very top) — in that case `codex --version` and `probe.txt` are both empty,
+so a near-empty `run.json` was still written every time, permanently
+orphaning a mostly-useless `$DR` directory (gitignored, harmless to git,
+but unbounded local clutter and contrary to "evidence of a completed
+run"). Fixed in a follow-up commit by gating the write behind
+`command -v codex`, while keeping the intentional "write even on probe
+failure" behavior for the case where codex IS present but the probe fails.
+The §3b.3 merge step's own `-f "$DR/run.json"` guard needed no change.

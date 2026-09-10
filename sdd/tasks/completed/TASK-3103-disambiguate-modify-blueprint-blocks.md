@@ -207,10 +207,13 @@ diff .agent/workflows/sdd-task.md .claude/commands/sdd-task.md | grep -c '^[<>]'
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-10
+**Notes**: Implemented exactly per blueprint. `sdd/templates/task.md`'s
+MODIFY example now leads with `# occurrences: <N> (verified: grep -c
+'<verbatim anchor line>' parrot/path/to/existing.py)` and the **Why**
+paragraph documents the `> 1` disambiguation fallback. `.claude/commands/
+sdd-task.md` rule 1 of the Implementation Blueprint block gained the
+matching sub-clause. Twin regenerated with the established recipe; both
+`test_command_twin_parity` cases pass (`diff | grep -c '^[<>]'` → `6`).
+**Deviations from spec**: none

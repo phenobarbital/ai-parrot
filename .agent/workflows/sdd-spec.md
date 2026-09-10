@@ -6,6 +6,7 @@ description: Scaffold a Feature Specification using SDD methodology, resolving f
 
 Scaffold a new Feature Specification using the SDD methodology.
 
+
 ## Usage
 ```
 /sdd-spec <feature-name> [--type feature|hotfix] [--base-branch <branch>] [-- free-form description and notes]
@@ -233,7 +234,9 @@ reason for spec §9 and the command continues. **This step must never abort
   a `[ ]` item in §8).
 - **Never silently concede and never silently drop** a suggestion.
 - **Verify the reviewer's evidence.** Every `affected_paths` entry is checked
-  with `test -e`; an unverifiable path ⇒ `REJECT` "path not found".
+  for repository containment, then with `test -e`; a path resolving outside
+  the repo ⇒ `REJECT` "path outside repository"; an unverifiable path ⇒
+  `REJECT` "path not found".
 
 > **`agy` (Google Gemini / Antigravity) MUST NOT be used for this seat** — same
 > ban and same reason as for code review (`CLAUDE.md`, "Adversarial Second
@@ -243,7 +246,8 @@ reason for spec §9 and the command continues. **This step must never abort
 ```bash
 REPO_ROOT="$(pwd)"                                   # /sdd-spec always runs from the repo root (§2d)
 MODEL="${SDD_DESIGN_RESEARCH_MODEL:-gpt-5.6-luna}"
-DR="sdd/state/.design_research/<feature-name>"      # id-independent staging: FEAT-ID is reserved only in §5
+RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-$$"
+DR="sdd/state/.design_research/<feature-name>-${RUN_ID}"   # id-independent, run-scoped staging: FEAT-ID is reserved only in §5
 mkdir -p "$DR"; SKIP_REASON=""
 if ! command -v codex >/dev/null 2>&1; then SKIP_REASON="codex CLI not installed"; fi
 if [ -z "$SKIP_REASON" ]; then
@@ -251,6 +255,24 @@ if [ -z "$SKIP_REASON" ]; then
     -c model_reasoning_effort=high --ignore-user-config \
     -o "$DR/probe.txt" "Reply with exactly the single word OK." >/dev/null 2>&1 \
     || SKIP_REASON="model probe failed for $MODEL (rc=$?)"
+fi
+if [ -z "$SKIP_REASON" ]; then
+  PROBE_TEXT="$(cat "$DR/probe.txt" 2>/dev/null | tr -d '[:space:]')"
+  [ "$PROBE_TEXT" = "OK" ] || SKIP_REASON="model probe returned unexpected output for $MODEL"
+fi
+if command -v codex >/dev/null 2>&1; then
+  CODEX_VERSION="$(codex --version 2>/dev/null | awk '{print $2}')"
+  PROBE_OUTPUT="$(cat "$DR/probe.txt" 2>/dev/null || echo "")"
+  python -c "
+import json, sys
+json.dump({
+    'model': sys.argv[1],
+    'codex_cli_version': sys.argv[2],
+    'reasoning_effort': 'high',
+    'timeout_s': 600,
+    'probe_output': sys.argv[3],
+}, open(sys.argv[4], 'w'), indent=2)
+" "$MODEL" "$CODEX_VERSION" "$PROBE_OUTPUT" "$DR/run.json"
 fi
 ```
 
@@ -295,6 +317,7 @@ comment (verified by TASK-3099's dry run, which caught this exact corruption bef
 #### 3b.3 Run codex (capped, synchronous — NOT a background job)
 ```bash
 if [ -z "$SKIP_REASON" ]; then
+  STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%S+00:00)"
   timeout 600 codex exec --ephemeral --sandbox read-only --cd "$REPO_ROOT" \
     -m "$MODEL" -c model_reasoning_effort=high --ignore-user-config \
     --output-schema sdd/templates/design_research.schema.json \
@@ -302,6 +325,17 @@ if [ -z "$SKIP_REASON" ]; then
   rc=$?
   [ "$rc" -eq 124 ] && SKIP_REASON="codex timed out after 600s"
   [ "$rc" -ne 0 ] && [ -z "$SKIP_REASON" ] && SKIP_REASON="codex exited $rc (see $DR/codex.log)"
+  ENDED_AT="$(date -u +%Y-%m-%dT%H:%M:%S+00:00)"
+  if [ -f "$DR/run.json" ]; then
+    python -c "
+import json, sys
+d = json.load(open(sys.argv[1]))
+d['started_at'] = sys.argv[2]
+d['ended_at'] = sys.argv[3]
+d['exit_code'] = int(sys.argv[4])
+json.dump(d, open(sys.argv[1], 'w'), indent=2)
+" "$DR/run.json" "$STARTED_AT" "$ENDED_AT" "$rc"
+  fi
 fi
 ```
 This call blocks for up to 600s (`timeout 600`, foreground). There is no background/job-control
@@ -320,11 +354,24 @@ jsonschema.Draft202012Validator(s).validate(d)
 print(len(d['suggestions']), 'suggestions')" || SKIP_REASON="suggestions.json failed schema validation"
 fi
 ```
-For each suggestion (when not skipped): verify every `affected_paths` entry
-(`test -e <path>`); read the cited spots; decide **CONFIRM / REJECT /
-ESCALATE** with a one-sentence reason; write `$DR/triage.md` using the §9
-table shape from `sdd/templates/spec.md`. A suggestion with any unverifiable
-path is `REJECT — path not found`.
+For each suggestion (when not skipped), for every `affected_paths` entry:
+1. **Containment check first**: resolve the path against `$REPO_ROOT` and confirm it
+   stays inside it —
+   ```bash
+   python -c "
+import os, sys
+p = os.path.realpath(sys.argv[1])
+root = os.path.realpath('$REPO_ROOT')
+sys.exit(0 if p == root or p.startswith(root + os.sep) else 1)" "<path>" \
+     || REASON="REJECT — path outside repository: <path>"
+   ```
+   A path that fails containment is `REJECT — path outside repository: <path>` and is
+   NOT passed to `test -e` at all.
+2. **Existence check** (only for paths that passed containment): `test -e <path>` —
+   unverifiable ⇒ `REJECT — path not found: <path>`.
+3. Read the cited spots for paths that pass both checks; decide **CONFIRM / REJECT /
+   ESCALATE** with a one-sentence reason; write `$DR/triage.md` using the §9 table
+   shape from `sdd/templates/spec.md`.
 
 #### 3b.5 Fold and record
 - `CONFIRM` → apply while drafting §2 Overview / §3 modules / §7 notes; the
@@ -388,6 +435,14 @@ This step prevents AI hallucinations during implementation. You MUST:
    each line that touches existing code carrying `# verified: path:NN`. These
    skeletons are what `/sdd-task` turns into per-task Implementation Blueprints,
    so a name fixed here is not renegotiable later.
+
+#### Identify delegation-eligible modules
+
+While writing §3 Module Breakdown, fill the "Delegation-eligible modules"
+sub-table: for each module state whether its design is complete enough that
+implementing it is mechanical, and record the decided patterns and exact
+contracts (signatures, error codes, file layout). Architecture decisions
+stay with the thinking model — eligibility never delegates a design choice.
 
 ### 5. Scaffold the Spec
 1. Read the template at `sdd/templates/spec.md`. The template already contains
@@ -504,11 +559,18 @@ git reset HEAD
 
 # 2. Stage ONLY the spec file (+ the design-research transcript when §3b ran) — NEVER "git add ." / "-A"
 git add sdd/specs/<feature-name>.spec.md
-if [ -d "sdd/state/.design_research/<feature-name>" ]; then
-  mkdir -p "sdd/state/<FEAT-ID>/design_research"
-  mv sdd/state/.design_research/<feature-name>/* "sdd/state/<FEAT-ID>/design_research/"
-  rmdir "sdd/state/.design_research/<feature-name>"
-  git add "sdd/state/<FEAT-ID>/design_research/"
+if [ -d "$DR" ]; then
+  STAGE_TMP="sdd/state/.design_research/.promote-<FEAT-ID>-${RUN_ID}"
+  PROMOTED="sdd/state/<FEAT-ID>/design_research"
+  if [ -e "$PROMOTED" ]; then
+    echo "⚠️  $PROMOTED already exists — leaving $DR in place for manual review (run-id ${RUN_ID}); not overwriting existing design research."
+  else
+    mkdir -p "sdd/state/<FEAT-ID>" "$STAGE_TMP" && cp -a "$DR"/. "$STAGE_TMP"/ \
+      && mv "$STAGE_TMP" "$PROMOTED" \
+      && rm -rf "$DR" \
+      && git add "$PROMOTED/" \
+      || { echo "⚠️  Promotion of $DR failed — left in place for inspection (run-id ${RUN_ID})." ; rm -rf "$STAGE_TMP"; }
+  fi
 fi
 
 # 3. Verify ONLY those paths are staged

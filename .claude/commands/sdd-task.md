@@ -123,6 +123,10 @@ only the marked gaps:
 1. **One block per file** listed in "Files to Create / Modify" — CREATE blocks
    are whole-file starting points; MODIFY blocks quote the verified anchor line
    they attach to (`# AFTER — insert below \`<anchor>\` (verified: path:NN)`).
+   **MODIFY blocks MUST state the anchor's occurrence count**
+   (`# occurrences: <N> (verified: grep -c '<anchor>' path)`); if `<N>` is `> 1`,
+   the block is `# FILL IN: disambiguate — quote enough surrounding context (2–3
+   lines) to make the anchor unique` instead of a bare one-line anchor.
 2. **Mechanical code is complete**: imports, class/function signatures,
    docstrings, `self.logger` calls, registration/wiring, return types.
 3. **Judgement calls are `FILL IN` stubs**: `# FILL IN: <decision> — bounded by

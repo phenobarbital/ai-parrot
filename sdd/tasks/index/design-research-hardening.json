@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-10T09:00:00+00:00",
-  "completed_at": null,
+  "completed_at": "2026-09-10T10:27:53+00:00",
   "tasks": [
     {
       "id": "TASK-3100",
@@ -14,7 +14,7 @@
       "feature_id": "FEAT-546",
       "feature": "design-research-hardening",
       "spec": "sdd/specs/design-research-hardening.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,9 @@
       "parallelism_notes": "Touches .claude/commands/sdd-spec.md; sequential in one worktree per spec's Worktree Strategy.",
       "assigned_to": null,
       "started_at": "2026-09-10T09:46:18+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3100-unique-atomic-research-staging.md"
+      "completed_at": "2026-09-10T09:49:32+00:00",
+      "file": "sdd/tasks/completed/TASK-3100-unique-atomic-research-staging.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3101",
@@ -32,7 +33,7 @@
       "feature_id": "FEAT-546",
       "feature": "design-research-hardening",
       "spec": "sdd/specs/design-research-hardening.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -40,8 +41,9 @@
       "parallelism_notes": "Touches .claude/commands/sdd-spec.md §3b.4; sequential in one worktree.",
       "assigned_to": null,
       "started_at": "2026-09-10T09:46:18+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3101-path-containment-affected-paths.md"
+      "completed_at": "2026-09-10T09:50:34+00:00",
+      "file": "sdd/tasks/completed/TASK-3101-path-containment-affected-paths.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3102",
@@ -50,7 +52,7 @@
       "feature_id": "FEAT-546",
       "feature": "design-research-hardening",
       "spec": "sdd/specs/design-research-hardening.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -61,8 +63,9 @@
       "parallelism_notes": "Depends on TASK-3100's run-scoped $DR and TASK-3104's probe-content check.",
       "assigned_to": null,
       "started_at": "2026-09-10T09:46:18+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3102-persist-execution-record.md"
+      "completed_at": "2026-09-10T09:53:50+00:00",
+      "file": "sdd/tasks/completed/TASK-3102-persist-execution-record.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3103",
@@ -71,7 +74,7 @@
       "feature_id": "FEAT-546",
       "feature": "design-research-hardening",
       "spec": "sdd/specs/design-research-hardening.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -79,8 +82,9 @@
       "parallelism_notes": "Touches sdd/templates/task.md and .claude/commands/sdd-task.md; sequential in one worktree.",
       "assigned_to": null,
       "started_at": "2026-09-10T09:46:18+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3103-disambiguate-modify-blueprint-blocks.md"
+      "completed_at": "2026-09-10T09:51:46+00:00",
+      "file": "sdd/tasks/completed/TASK-3103-disambiguate-modify-blueprint-blocks.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3104",
@@ -89,7 +93,7 @@
       "feature_id": "FEAT-546",
       "feature": "design-research-hardening",
       "spec": "sdd/specs/design-research-hardening.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -97,8 +101,9 @@
       "parallelism_notes": "Touches .claude/commands/sdd-spec.md §3b.1; sequential in one worktree.",
       "assigned_to": null,
       "started_at": "2026-09-10T09:46:18+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3104-validate-probe-result.md"
+      "completed_at": "2026-09-10T09:52:31+00:00",
+      "file": "sdd/tasks/completed/TASK-3104-validate-probe-result.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3105",
@@ -107,7 +112,7 @@
       "feature_id": "FEAT-546",
       "feature": "design-research-hardening",
       "spec": "sdd/specs/design-research-hardening.spec.md",
-      "status": "in-progress",
+      "status": "done-with-issues",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -121,8 +126,9 @@
       "parallelism_notes": "Final verification gate; needs all five hardening tasks done.",
       "assigned_to": null,
       "started_at": "2026-09-10T09:46:18+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3105-tests-and-twin-parity.md"
+      "completed_at": "2026-09-10T09:57:26+00:00",
+      "file": "sdd/tasks/completed/TASK-3105-tests-and-twin-parity.md",
+      "verification": "verified"
     }
   ]
 }

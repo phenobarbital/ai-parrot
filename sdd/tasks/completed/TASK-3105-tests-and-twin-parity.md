@@ -202,10 +202,101 @@ sys.exit(0 if p == root or p.startswith(root + os.sep) else 1)" && echo "BUG: ac
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-10
 **Notes**:
 
-**Deviations from spec**: none | describe if any
+Added `test_task_template_modify_block_states_occurrence_count()`. Full run:
+```
+pytest tests/sdd_scripts/test_command_twin_parity.py tests/sdd_scripts/test_design_research_templates.py -v
+→ 9 passed (spec AC-1)
+ruff check tests/sdd_scripts/test_design_research_templates.py → All checks passed!
+```
+
+**AC-9 acceptance dry run (real `codex`, not simulated — `codex-cli 0.153.4`
+available in this environment):**
+- Run-id: `20260910T095611Z-737493`
+- Staging path (gitignored, `git check-ignore -v` confirms):
+  `sdd/state/.design_research/design-research-hardening-20260910T095611Z-737493/`
+- §3b.1 exercised for real: probe returned `OK`, `SKIP_REASON` stayed unset,
+  first-half `run.json` written with `model`/`codex_cli_version`/
+  `reasoning_effort`/`timeout_s`/`probe_output`.
+- §3b.3-equivalent exercised for real (a second, cheap `codex exec` call
+  standing in for the main run so the dry run doesn't burn a full 600s/large
+  research call): `rc=0`, merged in. Final `run.json`:
+  ```json
+  {
+    "model": "gpt-5.6-luna",
+    "codex_cli_version": "0.153.4",
+    "reasoning_effort": "high",
+    "timeout_s": 600,
+    "probe_output": "OK",
+    "started_at": "2026-09-10T09:56:33+00:00",
+    "ended_at": "2026-09-10T09:56:36+00:00",
+    "exit_code": 0
+  }
+  ```
+  All 8 spec §2 Data Models fields present; `json.load` succeeds.
+- Out-of-repo `affected_paths` test: `"../../../etc/passwd"` through the
+  exact §3b.4 `python -c` realpath check → correctly produced
+  `REJECT — path outside repository: ../../../etc/passwd`, never reached
+  `test -e`.
+- Forced-bad-probe check (TASK-3104): `"garbage"` compared against `"OK"`
+  → correctly rejected (would set `SKIP_REASON`).
+- Skip path not exercised (codex was available) — not needed per AC-9's own
+  "or the skip path is exercised and recorded" wording.
+
+**AC-10 finding (pre-existing, verified out of this feature's scope):**
+`pytest packages/ai-parrot/tests/flows/dev_loop/test_subagent_parity.py -v`
+→ 8 passed, 1 skipped, **1 failed**:
+`test_prompt_parity[sdd-worker]` — `.claude/agents/sdd-worker.md` has
+drifted from its packaged twin
+`packages/ai-parrot/src/parrot/flows/dev_loop/_subagent_data/sdd-worker.md`.
+Verified this is **not** caused by this feature: reproduced identically on
+the pristine `dev` checkout (main repo, zero worktree changes) before
+touching anything, and `git log` shows `.claude/agents/sdd-worker.md` was
+last edited by `461b74c2e` (FEAT-543/TASK-3090, merged as part of PR #1354
+immediately before this feature started) with no corresponding edit to the
+packaged twin. Not fixed here: fixing it means editing a file under
+`packages/ai-parrot/src/parrot/flows/dev_loop/`, which this spec's own
+AC-10 (and its non-goal "Any change to `parrot/flows/dev_loop/**`") forbids
+touching. AC-10's "no file under `.../dev_loop/` modified" half is fully
+satisfied (`git diff --stat` confirms); its "test still passes" half is
+blocked by this unrelated, pre-existing bug — logged here as a follow-up
+for a human/future task, not fixed in-scope. (Compiled-extension
+`.so` files for `parrot.utils.types`/`parrot.utils.parsers.toml` were
+missing in the worktree and copied in locally from the main checkout only
+to make the test importable at all — a known worktree-setup gap, not a
+repo change; not committed.)
+
+**AC-11**: `sdd/state/FEAT-545/design_research/suggestions.json` untouched
+by this feature; `design_research.schema.json` untouched (verified via
+TASK-3101's `git diff --stat` check). No breaking schema change made.
+
+**Deviations from spec**: none in the implemented modules. AC-10's "test
+still passes" clause is not met, for the pre-existing, out-of-scope,
+verified-independent reason above — flagged rather than silently ignored.
+
+**Post-review addendum (2026-09-10)**: an adversarial `code-reviewer`
+subagent (cross-checked by an independent `codex exec review --base dev`
+pass with no shared reasoning) reviewed the full feature diff and found
+this task's own AC-9 dry run had a real gap: §3b.1–§3b.4 were exercised
+directly, but the real §6 bash block (the atomic-promotion rewrite) was
+never actually invoked end-to-end — which is exactly how a CRITICAL bug in
+TASK-3100's promotion logic survived AC-9 undetected (`mv` failed with "No
+such file or directory" for a freshly-reserved FEAT-ID on every real run,
+since the destination's parent directory didn't exist yet; see TASK-3100's
+own addendum for the fix and re-verification). Also found and fixed: an
+IMPORTANT gap where TASK-3102's `run.json` first-write wasn't gated on
+`codex` being installed (see TASK-3102's addendum), and a 🟡 stale line in
+§3b's "Key Rules" summary referencing only `test -e`/"path not found"
+(updated to also mention the containment check). Both CRITICAL and
+IMPORTANT findings were CONFIRMed, fixed, and re-verified (full 9-test
+suite re-run green; the promotion logic re-simulated for both the
+fresh-FEAT-ID success path and the already-promoted nesting-guard path) in
+a follow-up commit before this feature was pushed. Lesson for future
+`/sdd-spec §3b`-adjacent work: an acceptance dry run must exercise the
+REAL promotion/commit bash block, not a hand-rolled Python stand-in for
+it — a functionally equivalent snippet can silently diverge from the
+actual script's failure modes (missing `mkdir -p` for the destination
+parent) in exactly the way that matters.
