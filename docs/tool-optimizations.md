@@ -48,6 +48,17 @@ parrot codex install --tool-guards
 parrot claude status --json      # includes a `tool_guards` block
 ```
 
+For Codex, restart in the trusted repository and review the installed guard
+with `/hooks`. Project trust alone does not activate a new hook: Codex also
+requires trust for the exact hook definition. `installed: true` in Parrot's
+status means the entry exists, not that Codex has trusted or executed it.
+Configure the bounded-source MCP server before activating the guard so its
+denial message points to an available tool.
+
+Hook commands preserve the absolute `.venv/bin/python` path, including when
+it is a symlink, and quote paths containing spaces. Resolving that symlink
+to system Python would lose the environment's installed hook module.
+
 Uninstall removes only the entries these commands created:
 
 ```bash
@@ -246,10 +257,35 @@ decision at all for anything outside the documented subset.
 | Host | Version tested | Notes |
 |---|---|---|
 | Claude Code | 2.1.267 | Denial keyword `deny`. |
-| Codex CLI | 0.154.0 | Denial keyword `block` — its `PreToolUseDecisionWire` enum is `approve\|block\|allow` and it rejects `deny` as an unsupported decision. |
+| Codex CLI | 0.154.0 | Structured `hookSpecificOutput.permissionDecision` uses `deny`. Verified with live blocked, bounded, and small-file reads. |
 
 Coverage was verified against **those versions only**. Re-test after a host
 upgrade; a host that silently changes its decision enum will fail open.
+
+Both hosts use `deny` in the structured response. Codex also supports the
+legacy top-level `{"decision":"block","reason":"..."}` format; putting
+`block` inside `hookSpecificOutput.permissionDecision` fails open. The live
+Codex test reproduced that failure and verified the corrected response.
+See the [official Codex hook contract](https://learn.chatgpt.com/docs/hooks).
+
+Codex's on-disk configuration uses
+`{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"...","timeout":10}]}]}}`.
+The `eventName` and `timeoutSec` fields returned by app-server `hooks/list`
+are metadata about loaded hooks, not alternative fields for `hooks.json`.
+
+Run the optional live host check explicitly (requires an authenticated Codex
+and incurs model usage):
+
+```bash
+PARROT_TOOL_OPT_HOST_SMOKE=1 pytest packages/ai-parrot-tools/tests/tool_optimizations/integration/test_host_smoke.py -q
+```
+
+It uses an isolated Git fixture, acknowledges trust only for the reviewed
+fixture hooks in that invocation, and keeps the shell sandbox read-only.
+It must observe the large-file denial, no execution of that read, and successful
+bounded and small-file reads. A requested smoke test that fails these checks
+fails pytest. Evidence goes to `artifacts/logs/host-smoke.json` and
+`artifacts/logs/codex-host-smoke.jsonl`.
 
 ### Coverage matrix
 
@@ -339,10 +375,10 @@ the host's own reported usage.
 - [ ] An offline benchmark report is attached, and a `--live` report if the
       deployment has provider access.
 - [ ] `prices.yaml` filled in if cost figures are required.
-- [ ] **Codex guard installation verified end to end.** The installer
-      currently writes a Claude-shaped `.codex/hooks.json`, while
-      codex-cli 0.154.0 exposes `eventName` / `timeoutSec` fields. See
-      `artifacts/logs/host-smoke.json`.
+- [x] **Codex guard installation verified end to end on 0.154.0.** The
+      project hooks file loads; structured `deny` blocks a large read while
+      bounded and small-file reads succeed. Repeat the opt-in live check for
+      the deployment's host and review its hook trust through `/hooks`.
 - [ ] Host versions re-confirmed against the deployment's installed hosts.
 
 **Numeric token, cost and latency targets are an owner decision** (spec

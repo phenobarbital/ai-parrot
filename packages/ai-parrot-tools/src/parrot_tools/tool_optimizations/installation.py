@@ -20,6 +20,7 @@ The user's home directory is never touched: Codex hooks are written to
 from __future__ import annotations
 
 import json
+import shlex
 import shutil
 import subprocess  # noqa: S404 — used only to read `--version` from a host binary
 import sys
@@ -76,7 +77,9 @@ def resolve_python(root: Path) -> str:
     """
     candidate = root / ".venv" / "bin" / "python"
     if candidate.exists():
-        return str(candidate.resolve())
+        # Preserve the venv executable path: resolving its symlink selects
+        # system Python and loses the environment's installed packages.
+        return str(candidate.absolute())
     return sys.executable
 
 
@@ -95,7 +98,7 @@ def hook_command(root: Path, host: str) -> str:
     """
     if host not in _HOSTS:
         raise ValueError(f"unsupported host {host!r}")
-    return f"{resolve_python(root)} -m {HOOK_MODULE} --host {host}"
+    return shlex.join([resolve_python(root), "-m", HOOK_MODULE, "--host", host])
 
 
 def guard_thresholds(root: Path) -> dict[str, Any]:

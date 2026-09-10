@@ -8,7 +8,6 @@ import sys
 from pathlib import Path
 
 import pytest
-
 from parrot_tools.tool_optimizations.hooks import (
     GuardPolicy,
     build_reason,
@@ -192,19 +191,13 @@ def test_malformed_stdin_exits_zero(workspace):
 # --------------------------------------------------------------------------- #
 # Hosts and configuration
 # --------------------------------------------------------------------------- #
-def test_each_host_gets_its_own_refusal_keyword(workspace):
-    """Regression: Codex rejects `deny`; its enum is approve|block|allow.
-
-    Verified against codex-cli 0.154.0, whose `PreToolUseDecisionWire`
-    serde variants are `approve`, `block`, `allow`, and which reports
-    "PreToolUse hook returned unsupported decision" otherwise. Sending
-    Claude's `deny` to Codex fails open — the large read would proceed.
-    """
+def test_hosts_use_structured_denial_keyword(workspace):
+    """Codex's legacy top-level `block` is not a structured permission decision."""
     claude_payload = json.loads(_run(_bash_payload("cat big.py"), host="claude", cwd=workspace))
     codex_payload = json.loads(_run(_bash_payload("cat big.py"), host="codex", cwd=workspace))
 
     assert claude_payload["hookSpecificOutput"]["permissionDecision"] == "deny"
-    assert codex_payload["hookSpecificOutput"]["permissionDecision"] == "block"
+    assert codex_payload["hookSpecificOutput"]["permissionDecision"] == "deny"
 
     # Everything else about the envelope is shared.
     assert claude_payload["hookSpecificOutput"]["hookEventName"] == "PreToolUse"
@@ -219,7 +212,7 @@ def test_deny_value_table_matches_each_host_enum():
     """The refusal keyword table is explicit, not incidental."""
     from parrot_tools.tool_optimizations.hooks import DENY_VALUE
 
-    assert DENY_VALUE == {"claude": "deny", "codex": "block"}
+    assert DENY_VALUE == {"claude": "deny", "codex": "deny"}
 
 
 def test_configured_thresholds_change_the_verdict(workspace):

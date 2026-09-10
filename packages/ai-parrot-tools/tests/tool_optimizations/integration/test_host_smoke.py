@@ -10,6 +10,8 @@ import json
 import os
 import shutil
 import subprocess
+from pathlib import Path
+from typing import Any
 
 import pytest
 from parrot_tools.tool_optimizations.hooks import main as hook_main
@@ -70,10 +72,10 @@ def test_guard_denies_a_large_read_through_the_hook_runtime(tmp_path):
         assert hook_main(["--host", host], stdin=io.StringIO(json.dumps(payload)), stdout=stdout) == 0
         outputs[host] = stdout.getvalue()
 
-    expected = {"claude": "deny", "codex": "block"}
+    expected = {"claude": "deny", "codex": "deny"}
     for host, raw in outputs.items():
         decision = json.loads(raw)["hookSpecificOutput"]
-        # Each host has its own refusal keyword; see DENY_VALUE in hooks.py.
+        # Structured permission decisions use deny on both hosts.
         assert decision["permissionDecision"] == expected[host], host
         assert "source_read" in decision["permissionDecisionReason"]
 
@@ -131,22 +133,20 @@ def test_host_support_report_is_written(tmp_path, host_versions):
     if codex_smoke is not None:
         report["codex"].update(codex_smoke)
 
-    # Evidence read directly from the installed codex binary (see the
-    # TASK-3091 Completion Note). The refusal keyword is fixed; the on-disk
-    # hooks.json field names are observed but NOT verified end to end.
-    report["codex"]["observed_decision_enum"] = ["approve", "block", "allow"]
-    report["codex"]["observed_hook_config_fields"] = ["eventName", "matcher", "timeoutSec", "command"]
-    report["codex"]["hooks_file_format_verified"] = False
-    report["codex"]["open_item"] = (
-        "installed hooks.json uses Claude-style {hooks:{PreToolUse:[{matcher,hooks:[{type,command,timeout}]}]}}; "
-        "codex 0.154.0 strings show eventName/timeoutSec fields. Verify end to end before release."
+    report["codex"]["structured_denial"] = "deny"
+    report["codex"]["hooks_file_format_verified"] = report["codex"]["exercised_end_to_end"]
+    report["codex"]["activation"] = (
+        "Project trust and per-hook trust are required. Live smoke acknowledges hook trust "
+        "only for its reviewed temporary fixture; normal sessions require /hooks review."
     )
 
     record_json("host-smoke.json", report)
     assert (ARTIFACT_LOGS / "host-smoke.json").is_file()
+    if codex_smoke is not None and host_versions["codex"] is not None:
+        assert codex_smoke["exercised_end_to_end"], codex_smoke
 
 
-def _maybe_run_codex_smoke(root):
+def _maybe_run_codex_smoke(root: Path) -> dict[str, Any] | None:
     """Optionally drive a real `codex exec` to observe a guard denial.
 
     Gated on PARROT_TOOL_OPT_HOST_SMOKE=1 because it starts a real agent
@@ -158,10 +158,33 @@ def _maybe_run_codex_smoke(root):
     if not binary:
         return {"note": "codex binary not installed"}
 
+    subprocess.run(["git", "init", "-q", str(root)], check=True, capture_output=True)
+    (root / ".codex" / "config.toml").touch()
     (root / "big.py").write_text("".join(f"line{i}\n" for i in range(1, 401)))
+    (root / "small.py").write_text("SMALL_READ_OK\n")
+    prompt = (
+        "This is a hook integration test. Run exactly these three shell tool calls separately, "
+        "in order, even if the first is blocked: cat big.py; head -n 20 big.py; cat small.py. "
+        "Do not combine commands, inspect other files, or use alternatives. "
+        "Report each result and include the exact error if a call is blocked."
+    )
     try:
         result = subprocess.run(
-            [binary, "exec", "--sandbox", "read-only", "-C", str(root), "cat big.py"],
+            [
+                binary,
+                "exec",
+                "--ephemeral",
+                "--sandbox",
+                "read-only",
+                "--dangerously-bypass-hook-trust",
+                "-c",
+                f'projects={{{json.dumps(str(root))}={{trust_level="trusted"}}}}',
+                "-C",
+                str(root),
+                "--json",
+                prompt,
+            ],
+            stdin=subprocess.DEVNULL,
             capture_output=True,
             text=True,
             timeout=60,
@@ -170,13 +193,51 @@ def _maybe_run_codex_smoke(root):
     except (OSError, subprocess.SubprocessError) as exc:
         return {"exercised_end_to_end": False, "note": f"codex exec failed to start: {exc}"}
 
-    transcript = (result.stdout or "") + (result.stderr or "")
-    denied = "source_read" in transcript or "bounded reader" in transcript
+    (ARTIFACT_LOGS / "codex-host-smoke.jsonl").write_text(result.stdout)
+    (ARTIFACT_LOGS / "codex-host-smoke.stderr").write_text(result.stderr)
+    observation = _codex_smoke_observation(result.stdout)
     return {
-        "exercised_end_to_end": denied,
-        "note": "denial observed in transcript" if denied else "hooks not honoured by this codex configuration",
+        **observation,
+        "exercised_end_to_end": result.returncode == 0 and all(observation.values()),
+        "note": "Checks require a blocked large read, successful bounded and small reads, and no large-file execution.",
         "exit_code": result.returncode,
     }
+
+
+def _codex_smoke_observation(transcript: str) -> dict[str, bool]:
+    """Reject failed-open runs even if the assistant mentions source_read."""
+    events = [json.loads(line) for line in transcript.splitlines() if line.strip()]
+    items = [event.get("item", {}) for event in events if event.get("type") == "item.completed"]
+    commands = [item for item in items if item.get("type") == "command_execution"]
+    messages = "\n".join(item.get("text", "") for item in items if item.get("type") == "agent_message")
+    return {
+        "denial_observed": "Command blocked by PreToolUse hook" in messages and "source_read" in messages,
+        "large_read_not_executed": not any("cat big.py" in item.get("command", "") for item in commands),
+        "bounded_read_succeeded": any(
+            "head -n 20 big.py" in item.get("command", "")
+            and item.get("exit_code") == 0
+            and item.get("aggregated_output", "").splitlines() == [f"line{i}" for i in range(1, 21)]
+            for item in commands
+        ),
+        "small_read_succeeded": any(
+            "cat small.py" in item.get("command", "")
+            and item.get("exit_code") == 0
+            and item.get("aggregated_output", "").strip() == "SMALL_READ_OK"
+            for item in commands
+        ),
+    }
+
+
+def test_codex_smoke_rejects_a_failed_open_transcript() -> None:
+    """A model mentioning the reader cannot disguise a successful large read."""
+    items = [
+        {"type": "command_execution", "command": "cat big.py", "exit_code": 0, "aggregated_output": "line1\n"},
+        {"type": "agent_message", "text": "Command blocked by PreToolUse hook: use source_read"},
+    ]
+    transcript = "\n".join(json.dumps({"type": "item.completed", "item": item}) for item in items)
+    observation = _codex_smoke_observation(transcript)
+    assert not observation["large_read_not_executed"]
+    assert not all(observation.values())
 
 
 def test_coverage_matrix_is_published_as_evidence():

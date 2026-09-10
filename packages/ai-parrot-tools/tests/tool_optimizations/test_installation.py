@@ -2,11 +2,14 @@
 
 import builtins
 import json
+import shlex
+import subprocess
+import sys
+import venv
 from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
-
 from parrot_tools.tool_optimizations.installation import (
     CLAUDE_MATCHER,
     CODEX_MATCHER,
@@ -15,6 +18,7 @@ from parrot_tools.tool_optimizations.installation import (
     guard_thresholds,
     hook_command,
     install_guards,
+    resolve_python,
     uninstall_guards,
 )
 
@@ -126,6 +130,36 @@ def test_install_codex_preserves_foreign_hooks(tmp_path):
     assert data["x"] == 2
     assert original["hooks"]["PreToolUse"][0] in data["hooks"]["PreToolUse"]
     assert len(data["hooks"]["PreToolUse"]) == 2
+
+
+def test_hook_command_preserves_virtualenv_and_quotes_spaces(tmp_path: Path) -> None:
+    """The installed command must import through the venv even off PATH."""
+    root = tmp_path / "repo with spaces"
+    environment = root / ".venv"
+    venv.EnvBuilder(with_pip=False, symlinks=True).create(environment)
+    python = environment / "bin" / "python"
+    assert python.is_symlink()
+    assert resolve_python(root) == str(python)
+    command = hook_command(root, "codex")
+    assert shlex.split(command)[0] == str(python)
+
+    # Make the workspace package visible only through this isolated venv.
+    source = Path(__file__).resolve().parents[2] / "src"
+    site_packages = environment / "lib" / f"python{sys.version_info.major}.{sys.version_info.minor}" / "site-packages"
+    (site_packages / "parrot-tools.pth").write_text(str(source) + "\n")
+    (root / "big.py").write_text("fixture line\n" * 400)
+    result = subprocess.run(
+        command,
+        shell=True,
+        cwd=tmp_path,
+        input=json.dumps({"cwd": str(root), "tool_name": "Bash", "tool_input": {"command": "cat big.py"}}),
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "source_read" in json.loads(result.stdout)["hookSpecificOutput"]["permissionDecisionReason"]
 
 
 @pytest.mark.parametrize("host,relative", [("claude", ".claude/settings.json"), ("codex", ".codex/hooks.json")])
