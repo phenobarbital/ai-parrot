@@ -309,7 +309,11 @@ These are test contracts, not executed test results or placeholder production im
 
 ## Completion Note
 
-**Completed by**: not started
-**Date**: not completed
-**Notes**: Pending execution; no implementation or acceptance tests run during task decomposition.
-**Deviations from spec**: The checked answers supersede stale prose; TASK-3057 reconciles that discrepancy before implementation.
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-10
+**Notes**: Implemented `examples/lancedb_local_agent.py` (force-added past the `examples/**/*.py` gitignore rule per this task's note): `assert_assets_provisioned()` checks the embedding-model path and validates `--llm-base-url` against a documented loopback allowlist BEFORE any client/store construction, raising `SystemExit` with an actionable message; `build_agent()` wires real, verified constructors (`LanceDBStore`, `LanceDBOrigin`, `LocalLLMClient`); `run_cycle()` runs one retrieval (`origin.search`) + grounded `LocalLLMClient.ask()` pass. Chose direct retrieval+LLM wiring over a full `BasicAgent` tool-calling loop — documented as a deliberate scope decision in both the script's docstring and `docs/lancedb-offline-profile.md`, since verifying `BasicAgent`'s tool-registration surface in enough depth to avoid guessing was outside this task's Codebase Contract and target effort.
+
+`test_lancedb_offline_agent.py`: 4 guard tests pass for real (`uv run pytest packages/ai-parrot-tools/tests/multistoresearch/test_lancedb_offline_agent.py -v`, log at `artifacts/logs/TASK-3068-lancedb.log`) — missing-asset (with a socket-blocking assertion proving zero network calls), non-loopback URL rejection, documented-loopback acceptance, and incompatible-dimension-reopen rejection with the original row still readable afterward. `TestRealOfflineRun` uses the **existing** `real_llm` marker (registered in `pytest.ini`) per this task's explicit instruction not to introduce a new custom marker — the blueprint's illustrative `@pytest.mark.offline_acceptance` was NOT used for that reason. `ruff check` clean.
+
+**AC6 completion status — honest, not hidden**: `TestRealOfflineRun::test_full_cycle_with_egress_denied` SKIPPED in this environment (`PARROT_TEST_REAL_LLM` unset), consistent with TASK-3057's gate finding that no embedding-model weights are cached here and no local LLM server is running. Per this task's own Acceptance Criteria ("feature acceptance cannot claim AC6 complete until the actual real-model run passes"), **AC6 is NOT fully certified by this session** — the test, environment variables (`PARROT_TEST_REAL_LLM=1`, `PARROT_LOCAL_EMBEDDING_MODEL_PATH`, `PARROT_LOCAL_LLM_BASE_URL`) and egress-denial mechanism are implemented and ready; a future run on a machine with provisioned local model/server assets is required to close AC6. This is a known, explicitly-flagged gap, not a fabricated pass — the deterministic-fake-provider path (already covered by the guard tests and every other FEAT-542 test module) is explicitly NOT accepted as AC6 certification per spec v0.2.
+**Deviations from spec**: None beyond the documented BasicAgent-vs-direct-wiring scope decision above.
