@@ -14,7 +14,7 @@
       "feature_id": "FEAT-549",
       "feature": "sdd-worker-subagents",
       "spec": "sdd/specs/sdd-worker-subagents.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "New package, no shared files; every other sdd_coder task depends on it, so it must land first but can run alongside TASK-3117/3123.",
       "assigned_to": null,
       "started_at": "2026-09-10T20:42:27+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3115-sdd-coder-models.md"
+      "completed_at": "2026-09-10T20:47:09+00:00",
+      "file": "sdd/tasks/completed/TASK-3115-sdd-coder-models.md"
     },
     {
       "id": "TASK-3116",
