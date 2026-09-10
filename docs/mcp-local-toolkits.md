@@ -211,8 +211,12 @@ task, across a roster of heterogeneous model seats, in parallel:
 happens in `_pre_execute` before the engine is ever touched.
 
 ```bash
-cp examples/sdd-coder-mcp.yaml .parrot/mcp-toolkits.yaml
-parrot mcp-local sdd-coder --config examples/sdd-coder-mcp.yaml   # or --list to confirm it resolves
+# Append the toolkit entry — never `cp` over an existing .parrot/mcp-toolkits.yaml,
+# which would drop every other toolkit configured in it.
+sed -n '/^toolkits:/,$p' examples/sdd-coder-mcp.yaml | tail -n +2 \
+  >> .parrot/mcp-toolkits.yaml
+parrot mcp-local --list --config .parrot/mcp-toolkits.yaml   # sdd-coder + your other toolkits
+parrot mcp-local sdd-coder --config examples/sdd-coder-mcp.yaml   # serve straight from the example
 ```
 
 The roster (which models fill which seat, and their fallbacks) lives

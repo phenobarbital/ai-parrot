@@ -4,12 +4,22 @@
 #     parrot mcp-local sdd-coder --config examples/sdd-coder-mcp.yaml
 #
 # Install:
-#   1. Copy this `toolkits.sdd-coder` section into `.parrot/mcp-toolkits.yaml`
-#      (git-ignored — an operator-local file, never committed).
-#   2. Add an entry to `.mcp.json` (also git-ignored):
+#   1. APPEND the `sdd-coder:` entry below under the `toolkits:` key of
+#      `.parrot/mcp-toolkits.yaml` (git-ignored — an operator-local file, never
+#      committed). Do NOT `cp` this file over an existing one: that replaces the
+#      whole file and drops every other toolkit configured in it.
+#        sed -n '/^toolkits:/,$p' examples/sdd-coder-mcp.yaml | tail -n +2 \
+#          >> .parrot/mcp-toolkits.yaml
+#      Then check with `parrot mcp-local --list --config .parrot/mcp-toolkits.yaml`
+#      that `sdd-coder` and your pre-existing toolkits are all still listed.
+#   2. Add an entry to `.mcp.json` (also git-ignored). Absolute paths + explicit
+#      `cwd` — hosts start servers from their own cwd, so a relative `--config`
+#      resolves against the host's directory, not the repository:
 #        "parrot-sdd-coder": {
-#          "command": "<venv>/bin/parrot",
-#          "args": ["mcp-local", "sdd-coder", "--config", ".parrot/mcp-toolkits.yaml"]
+#          "command": "/abs/path/to/repo/.venv/bin/parrot",
+#          "args": ["mcp-local", "sdd-coder",
+#                   "--config", "/abs/path/to/repo/.parrot/mcp-toolkits.yaml"],
+#          "cwd": "/abs/path/to/repo"
 #        }
 #   Claude Code then exposes the seven tools as
 #   `mcp__parrot-sdd-coder__coder_plan` … `mcp__parrot-sdd-coder__coder_cleanup`.
