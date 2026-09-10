@@ -913,8 +913,21 @@ class BedrockConverseBase(AbstractClient):
                     )
                     payload["modelId"] = self._translate_model(self._fallback_model)
                     used_fallback = True
-                    result = await self._sdk_create(payload)
+                    try:
+                        result = await self._sdk_create(payload)
+                    except Exception as fallback_exc:
+                        # FEAT-548 Finding #1: emit ClientCallFailedEvent
+                        await self._emit_failed_call_safe(
+                            _lc_tc, client_name=self.client_name,
+                            model=resolved_model, t0=_lc_t0, exc=fallback_exc,
+                        )
+                        raise
                 else:
+                    # FEAT-548 Finding #1: emit ClientCallFailedEvent
+                    await self._emit_failed_call_safe(
+                        _lc_tc, client_name=self.client_name,
+                        model=resolved_model, t0=_lc_t0, exc=e,
+                    )
                     raise
             _lc_round_number += 1
             _lc_round_duration_ms = (time.perf_counter() - _lc_round_t0) * 1000
@@ -1183,6 +1196,18 @@ class BedrockConverseBase(AbstractClient):
             if tool_specs:
                 payload["toolConfig"] = {"tools": tool_specs}
 
+        # FEAT-548: lifecycle instrumentation for ask_stream() — previously
+        # missing entirely. Mirrors ask()'s _emit_before_call / _emit_after_call.
+        _lc_tc_s = self._emit_before_call(
+            client_name=self.client_name,
+            model=resolved_model,
+            temperature=temperature if temperature is not None else self.temperature,
+            system_prompt=system_prompt,
+            has_tools=bool(use_tools and self.enable_tools),
+            parent_trace=None,
+        )
+        _lc_t0_s = time.perf_counter()
+
         # ── Streaming tool-call loop ──────────────────────────────────
         # Mirrors the while-True loop in ask() (line ~870). Each round
         # streams text chunks to the caller; when the model stops with
@@ -1202,7 +1227,15 @@ class BedrockConverseBase(AbstractClient):
             _current_tool_block: Optional[Dict[str, str]] = None
             _tool_use_blocks: List[Dict[str, Any]] = []
 
-            stream = await self._sdk_stream(payload)
+            try:
+                stream = await self._sdk_stream(payload)
+            except Exception as _lc_stream_exc:
+                # FEAT-548 Finding #1: emit ClientCallFailedEvent
+                await self._emit_failed_call_safe(
+                    _lc_tc_s, client_name=self.client_name,
+                    model=resolved_model, t0=_lc_t0_s, exc=_lc_stream_exc,
+                )
+                raise
             async for event in stream:
                 # --- Text chunks: yield immediately ---
                 delta = event.get("contentBlockDelta", {}).get("delta", {})
@@ -1316,7 +1349,7 @@ class BedrockConverseBase(AbstractClient):
             "stopReason": stop_reason,
             "usage": usage_dict,
         }
-        yield AIMessageFactory.from_bedrock(
+        _lc_stream_msg = AIMessageFactory.from_bedrock(
             response=synthetic_response,
             input_text=original_prompt,
             model=resolved_model,
@@ -1325,6 +1358,18 @@ class BedrockConverseBase(AbstractClient):
             turn_id=turn_id,
             tool_calls=all_tool_calls,
         )
+        # FEAT-548: lifecycle event — AfterClientCallEvent (previously missing)
+        _lc_s_usage = getattr(_lc_stream_msg, "usage", None)
+        await self._emit_after_call(
+            _lc_tc_s,
+            client_name=self.client_name,
+            model=resolved_model,
+            duration_ms=(time.perf_counter() - _lc_t0_s) * 1000,
+            input_tokens=getattr(_lc_s_usage, "input_tokens", None) if _lc_s_usage else None,
+            output_tokens=getattr(_lc_s_usage, "output_tokens", None) if _lc_s_usage else None,
+            finish_reason=stop_reason,
+        )
+        yield _lc_stream_msg
 
     async def resume(self, session_id: str, user_input: str, state: Dict[str, Any]) -> AIMessage:
         """Resume a suspended Bedrock tool-use execution.
@@ -1416,7 +1461,15 @@ class BedrockConverseBase(AbstractClient):
             # FEAT-404: time this round's SDK call for the round event's
             # duration_ms.
             _lc_round_t0 = time.perf_counter()
-            result = await self._sdk_create(payload)
+            try:
+                result = await self._sdk_create(payload)
+            except Exception as _lc_resume_exc:
+                # FEAT-548 Finding #1: emit ClientCallFailedEvent
+                await self._emit_failed_call_safe(
+                    _lc_tc, client_name=self.client_name,
+                    model=resolved_model, t0=_lc_t0, exc=_lc_resume_exc,
+                )
+                raise
             _lc_round_number += 1
             _lc_round_duration_ms = (time.perf_counter() - _lc_round_t0) * 1000
 

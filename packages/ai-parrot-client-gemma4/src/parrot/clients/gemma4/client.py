@@ -520,8 +520,16 @@ class Gemma4Client(AbstractClient):
 
         # ------ Tool-calling loop ------
         for _round in range(MAX_TOOL_ROUNDS):
-            inputs = self._apply_chat_template(chat_messages, tools=gemma_tools)
-            parsed, usage, gen_time = self._generate(inputs, max_tokens, temperature, **kwargs)
+            try:
+                inputs = self._apply_chat_template(chat_messages, tools=gemma_tools)
+                parsed, usage, gen_time = self._generate(inputs, max_tokens, temperature, **kwargs)
+            except BaseException as _lc_exc:
+                # FEAT-548 Finding #1: emit ClientCallFailedEvent on error
+                await self._emit_failed_call_safe(
+                    _lc_tc_g4, client_name="gemma4", model=_lc_model_g4,
+                    t0=_lc_t0_g4, exc=_lc_exc,
+                )
+                raise
 
             total_generation_time += gen_time
             total_usage = CompletionUsage(

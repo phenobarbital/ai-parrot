@@ -129,19 +129,26 @@ lost. AI-Parrot handles this automatically:
 - If you own the lifecycle, call `shutdown_observability()` yourself (aggregates
   the OTel and lightweight teardown paths; idempotent and safe when disabled).
 
-> **Short-lived callers (scripts/CLIs/one-shot lambdas): yield before you
-> shut down.** `BeforeClientCallEvent`/`AfterClientCallEvent`/
-> `ClientCallFailedEvent` are forwarded to the global registry as a
-> fire-and-forget scheduled task (`AbstractClient._emit_*` →
-> `forward_to_global`), not awaited inline. If the last client call is
-> immediately followed by `shutdown_telemetry()`/`shutdown_observability()`
-> with no intervening event-loop yield, that forwarded task may never run —
-> silently dropping the last call's request/duration/token/cost metrics
-> (empirically reproduced during FEAT-548's verification; see
-> `sdd/state/FEAT-548/verification/series-names.md`, Finding #2). A single
-> `await asyncio.sleep(0)` is **not** enough — verified empirically, it does
-> not give the scheduled task a turn. A real, positive-duration
-> `await asyncio.sleep(...)` (order of ~1s was reliable in verification)
-> between the last call and shutdown avoids it. Long-running processes
-> (servers, the autonomous orchestrator) are unaffected — they naturally
-> yield between calls.
+> **Short-lived callers (scripts/CLIs/one-shot lambdas).**
+> `_emit_after_call` and `_emit_failed_call` now **await** the global
+> forwarding directly (since the post-FEAT-548 fix), so the end-of-call
+> events — which carry all the metrics data — land before the caller's next
+> line executes. The earlier fire-and-forget race (FEAT-548 Finding #2) is
+> fixed for these events.
+>
+> `_emit_before_call` remains fire-and-forget (it is synchronous and
+> carries no metrics data — the `gen_ai.client.request.count` counter is
+> purely informational). If you need the request counter to land reliably
+> in a short-lived script, call `await drain_lifecycle_events()` (from
+> `parrot.observability.setup`) before `shutdown_telemetry()`:
+>
+> ```python
+> from parrot.observability.setup import drain_lifecycle_events, shutdown_telemetry
+>
+> result = await client.ask("hello", model="gpt-4o")
+> await drain_lifecycle_events()   # drains fire-and-forget Before events
+> shutdown_telemetry()
+> ```
+>
+> Long-running processes (servers, the autonomous orchestrator) are
+> unaffected — they naturally yield between calls.
