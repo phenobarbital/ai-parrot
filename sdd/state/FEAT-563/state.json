@@ -1,0 +1,86 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-563",
+  "feature_slug": "a2ui-form-output-renderer",
+  "started_at": "2026-09-10T00:32:23+00:00",
+  "updated_at": "2026-09-10T00:46:30.910302+00:00",
+  "source": {
+    "kind": "inline",
+    "raw_path": "sdd/state/FEAT-563/source.md",
+    "fetched_at": "2026-09-10T00:32:23+00:00",
+    "summary_oneline": "A2UI v1.0 renderer for FormDesigner FormSchema \u2014 full form interaction cycle over A2UI surfaces"
+  },
+  "mode": "auto",
+  "detected_mode": "enrichment",
+  "wiki_available": true,
+  "phase": "proposal_drafted",
+  "phases": {
+    "source": {
+      "status": "completed"
+    },
+    "plan": {
+      "status": "completed",
+      "approved_by_user": false,
+      "notes": "Gate skipped: session runs unattended; plan executed as written with depth-1 follow-ups (F022)."
+    },
+    "research": {
+      "status": "completed",
+      "completed_at": "2026-09-10T00:43:39.200413+00:00",
+      "files_read": 24,
+      "grep_calls": 22,
+      "git_calls": 1,
+      "wiki_calls": 6,
+      "depth_reached": 1,
+      "truncated": false,
+      "truncation_reason": null,
+      "queries_planned": 22,
+      "queries_skipped": 0,
+      "notes": "Wall time counts research + finding persistence."
+    },
+    "synthesis": {
+      "status": "completed",
+      "synthesis_path": "sdd/state/FEAT-563/synthesis.json",
+      "overall_confidence": "high",
+      "claims_total": 12,
+      "claims_high_conf": 9,
+      "claims_medium_conf": 3,
+      "claims_low_conf": 0,
+      "unknowns_count": 4,
+      "lint_passed": true,
+      "lint_iterations": 1
+    },
+    "qa": {
+      "status": "completed",
+      "questions_total": 4,
+      "questions_answered": 4,
+      "notes": "U1 dual-wire /data; U2 full A2UI cycle; U3 hybrid mapping; U4 core cycle only."
+    },
+    "output": {
+      "status": "completed",
+      "proposal_path": "sdd/proposals/a2ui-form-output-renderer.proposal.md",
+      "commit_sha": null,
+      "next_command_recommended": "sdd-spec",
+      "next_command_rationale": "Localization is high-confidence on both sides (renderer registry + submit pipeline; A2UI models + build_form); the remaining decisions (U1\u2013U4) are product choices, not research gaps, and are answerable at spec time."
+    }
+  },
+  "budget": {
+    "profile": "default",
+    "max_files_read": 40,
+    "max_grep_calls": 25,
+    "max_git_calls": 10,
+    "max_depth": 2,
+    "max_wall_seconds": 300
+  },
+  "consumed": {
+    "files_read": 24,
+    "grep_calls": 22,
+    "git_calls": 1,
+    "wall_seconds": 250,
+    "total_wall_seconds": 676
+  },
+  "errors": [],
+  "resume_hint": {
+    "next_phase": "commit",
+    "next_action": "git add proposal + state; commit"
+  }
+}

@@ -1,0 +1,8 @@
+# Synthesis reasoning — FEAT-563 (2026-09-10T00:43:39.200413+00:00)
+
+1. Ask restated: an `a2ui` FormDesigner output format whose surface can be filled and submitted back to the form's own answer endpoint, with A2UI-shaped responses — a full cycle, not a static export.
+2. Mode: additive verbs ("adding", "renderer", "covering the entire cycle") → enrichment.
+3. Localization: renderer contract + registry (F005/F006/F007), submit pipeline (F008/F009), A2UI models + build_form + basic primitives/functions (F010/F011/F012), catalog validation/extensions (F013/F017), FieldType surface (F018), action sink today (F016/F022), optional-dep precedent (F019).
+4. Constraints K1–K9 derived directly from those findings; the pivotal one is K6 — A2UI actions currently only reach LLM agent turns, so "submit pointing to the current endpoint" is a design decision, not a fact recoverable from the repo → U1/U2.
+5. Coverage gap 47 FieldTypes vs 5 primitives (K4) → U3; cycle extras (partials/depends_on/events) → U4.
+6. Confidence: 9 high / 3 medium (C9, C10, C12 are inferences about mapping semantics not yet exercised). Localization all high. No truncation → overall high; recommended next: sdd-spec.
