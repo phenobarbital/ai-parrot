@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-10T00:33:53Z",
-  "completed_at": null,
+  "completed_at": "2026-09-10T13:31:52+00:00",
   "isolation": "per-spec",
   "parallelism_notes": "TASK-3057 is the mandatory reconciliation/SDK gate. Packaging, models and then coordinator/filter/origin work use disjoint ownership. Backend lifecycle -> CRUD -> vector -> FTS/hybrid tasks are sequential. Offline and end-to-end validation can run concurrently after registration. Final docs/CI waits for both.",
   "scope_precedence": "The spec is marked approved. Its checked section 8 answers require fully offline agent operation after provisioning, concurrent independent writers, graph federation only, and whole-origin failure; they override older draft assumptions. TASK-3057 must reconcile the spec and prove the SDK/offline/concurrency contracts before dependent implementation begins. Do not reinstate single-writer-only or storage-only-offline behavior.",
@@ -89,7 +89,8 @@
       "assigned_at": null,
       "started_at": null,
       "completed_at": "2026-09-10T11:21:11+00:00",
-      "file": "sdd/tasks/completed/TASK-3057-lancedb-approved-contract-gate.md"
+      "file": "sdd/tasks/completed/TASK-3057-lancedb-approved-contract-gate.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3058",
@@ -111,7 +112,8 @@
       "assigned_at": null,
       "started_at": null,
       "completed_at": "2026-09-10T11:22:52+00:00",
-      "file": "sdd/tasks/completed/TASK-3058-lancedb-optional-dependency.md"
+      "file": "sdd/tasks/completed/TASK-3058-lancedb-optional-dependency.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3059",
@@ -133,7 +135,8 @@
       "assigned_at": null,
       "started_at": null,
       "completed_at": "2026-09-10T11:25:42+00:00",
-      "file": "sdd/tasks/completed/TASK-3059-lancedb-models-schema-identity.md"
+      "file": "sdd/tasks/completed/TASK-3059-lancedb-models-schema-identity.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3060",
@@ -155,7 +158,8 @@
       "assigned_at": null,
       "started_at": null,
       "completed_at": "2026-09-10T11:28:04+00:00",
-      "file": "sdd/tasks/completed/TASK-3060-lancedb-safe-metadata-filters.md"
+      "file": "sdd/tasks/completed/TASK-3060-lancedb-safe-metadata-filters.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3061",
@@ -178,7 +182,8 @@
       "assigned_at": null,
       "started_at": null,
       "completed_at": "2026-09-10T11:31:13+00:00",
-      "file": "sdd/tasks/completed/TASK-3061-lancedb-process-write-coordination.md"
+      "file": "sdd/tasks/completed/TASK-3061-lancedb-process-write-coordination.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3062",
@@ -202,7 +207,8 @@
       "assigned_at": null,
       "started_at": null,
       "completed_at": "2026-09-10T11:36:42+00:00",
-      "file": "sdd/tasks/completed/TASK-3062-lancedb-lifecycle-lazy-embeddings.md"
+      "file": "sdd/tasks/completed/TASK-3062-lancedb-lifecycle-lazy-embeddings.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3063",
@@ -225,7 +231,8 @@
       "assigned_at": null,
       "started_at": null,
       "completed_at": "2026-09-10T11:43:58+00:00",
-      "file": "sdd/tasks/completed/TASK-3063-lancedb-upserts-safe-deletes.md"
+      "file": "sdd/tasks/completed/TASK-3063-lancedb-upserts-safe-deletes.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3064",
@@ -247,7 +254,8 @@
       "assigned_at": null,
       "started_at": null,
       "completed_at": "2026-09-10T11:47:17+00:00",
-      "file": "sdd/tasks/completed/TASK-3064-lancedb-cosine-vector-search.md"
+      "file": "sdd/tasks/completed/TASK-3064-lancedb-cosine-vector-search.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3065",
@@ -269,7 +277,8 @@
       "assigned_at": null,
       "started_at": null,
       "completed_at": "2026-09-10T11:50:02+00:00",
-      "file": "sdd/tasks/completed/TASK-3065-lancedb-native-fts-hybrid.md"
+      "file": "sdd/tasks/completed/TASK-3065-lancedb-native-fts-hybrid.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3066",
@@ -291,7 +300,8 @@
       "assigned_at": null,
       "started_at": null,
       "completed_at": "2026-09-10T11:53:14+00:00",
-      "file": "sdd/tasks/completed/TASK-3066-lancedb-search-origin.md"
+      "file": "sdd/tasks/completed/TASK-3066-lancedb-search-origin.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3067",
@@ -314,7 +324,8 @@
       "assigned_at": null,
       "started_at": null,
       "completed_at": "2026-09-10T11:58:29+00:00",
-      "file": "sdd/tasks/completed/TASK-3067-lancedb-dispatch-compatibility.md"
+      "file": "sdd/tasks/completed/TASK-3067-lancedb-dispatch-compatibility.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3068",
@@ -336,7 +347,8 @@
       "assigned_at": null,
       "started_at": null,
       "completed_at": "2026-09-10T12:02:16+00:00",
-      "file": "sdd/tasks/completed/TASK-3068-lancedb-offline-agent-profile.md"
+      "file": "sdd/tasks/completed/TASK-3068-lancedb-offline-agent-profile.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3069",
@@ -358,7 +370,8 @@
       "assigned_at": null,
       "started_at": null,
       "completed_at": "2026-09-10T12:08:17+00:00",
-      "file": "sdd/tasks/completed/TASK-3069-lancedb-end-to-end-validation.md"
+      "file": "sdd/tasks/completed/TASK-3069-lancedb-end-to-end-validation.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3070",
@@ -381,7 +394,8 @@
       "assigned_at": null,
       "started_at": null,
       "completed_at": "2026-09-10T12:14:46+00:00",
-      "file": "sdd/tasks/completed/TASK-3070-lancedb-release-docs-ci.md"
+      "file": "sdd/tasks/completed/TASK-3070-lancedb-release-docs-ci.md",
+      "verification": "verified"
     }
   ]
 }
