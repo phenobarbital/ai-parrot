@@ -405,3 +405,5 @@ packages/ai-parrot-server/src/parrot/server/ui/dist/
 packages/ai-parrot-server/ui/node_modules/
 # parrot LLM-wiki state (local retrieval plane)
 .parrot/
+# FEAT-545: id-independent staging for /sdd-spec §3b; committed copies live under sdd/state/<FEAT-ID>/design_research/
+sdd/state/.design_research/

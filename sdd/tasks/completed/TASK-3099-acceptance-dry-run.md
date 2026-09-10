@@ -170,10 +170,86 @@ This task *is* the integration test of spec §4. Evidence file `artifacts/logs/f
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**ADDENDUM (same day, post code-review)**: The FEAT-545 code-review pass (run before
+pushing, over ALL 7 tasks) independently caught 3 CRITICAL bugs exercised by this task's
+own dry run: §3b.2 had no `SKIP_REASON` guard (would crash instead of skip), `$REPO_ROOT`
+was referenced but never assigned, and the brief renderer's whole-document `str.replace()`
+corrupted the template's own header comment. Separately, the committed `brief.md`'s
+`recommended_option_or_scope` section was empty due to a heading-boundary bug in this
+task's own extraction script (stopped at the first `###` instead of the next `##`). All
+were fixed, the twin-parity test was independently tightened, and this entire dry run was
+re-executed end-to-end against a corrected brief: 11 suggestions (5 confirmed / 1 rejected
+/ 5 escalated), schema-valid, all `affected_paths` verified, skip path re-confirmed with
+all three §3b guards exercised explicitly. The evidence files under
+`sdd/state/FEAT-545/design_research/` and spec §9 now reflect the RE-RUN, not the original
+notes below (kept for the historical record of what the first run found). See
+`sdd/specs/collaborative-adversarial-spec-design.spec.md` Revision History 0.4 and
+`sdd/state/FEAT-545/design_research/triage.md`.
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-10
 
-**Deviations from spec**: none | describe if any
+**Notes**: Ran the real §3b.1/3b.3/3b.4 pipeline (copied verbatim from `.claude/commands/sdd-spec.md`
+as landed by TASK-3097) against this feature's own accepted proposal, using `codex-cli` 0.153.4
+with model `gpt-5.6-luna`.
+
+- **Probe**: rc=0, "OK" (2026-09-10T02:05:21+00:00).
+- **Main run**: rc=0, ~5m03s (2026-09-10T02:05:29 → 02:10:32+00:00), produced a schema-valid
+  `suggestions.json` with 10 suggestions.
+- **Path verification**: every `affected_paths` entry across all 10 suggestions verified to exist
+  via `test -e` — 0 unverifiable, 0 rejected on that ground.
+- **Triage**: 5 CONFIRM / 2 REJECT / 3 ESCALATE — full table + one-sentence reasons in
+  `sdd/state/FEAT-545/design_research/triage.md`, mirrored into spec §9 and this note below.
+- **Skip path (AC-9)**: `SDD_DESIGN_RESEARCH_MODEL=does-not-exist` → `SKIP_REASON=model probe
+  failed for does-not-exist (rc=1)`, exact match to the spec's expected pattern.
+- **Blueprint coverage**: all 7 of this feature's own tasks (TASK-3093…3099) carry a populated
+  `## Implementation Blueprint` section (`grep -L` over both `active/` and `completed/` found none
+  missing it).
+- **AC-12**: `git status --porcelain` on `packages/ai-parrot/src/parrot/flows/dev_loop/` is empty;
+  `pytest packages/ai-parrot/tests/flows/dev_loop/test_subagent_parity.py -v` → 9 passed, 1 skipped
+  (verified after copying the worktree's missing compiled `.so` extensions for
+  `parrot.utils.types`/`parrot.utils.parsers.toml` locally from the main checkout — a pre-existing
+  worktree build-artifact gap unrelated to this feature; the copies are gitignored, never staged).
+- **Ratification-guard finding (not a real leak)**: `grep -c "Interface Skeleton|§3b" brief.md`
+  returned `1`, not the AC's expected `0`. Investigated: the sole hit is
+  `design_research.prompt.md`'s own HTML-comment header ("Rendered by /sdd-spec §3b and piped
+  to..."), i.e. the template's own self-documentation — not proposal content leaking spec draft
+  reasoning. No fix applied here (out of this task's scope; see follow-up list below).
+- **`*.log` gitignore collision**: the repo's global `*.log` rule silently excluded `codex.log` and
+  `skip-path.log` from a plain `git add`; both are explicitly required by this task's own Files
+  table and AC-1, so they were staged with `git add -f` (same pattern as the `templates/` global
+  rule documented elsewhere in `CLAUDE.md`).
+
+**Discovered findings needing follow-up (CONFIRM, not fixed here per task scope):**
+1. **S1** — §3b.2's variable binding and `$REPO_ROOT` are never actually assigned in the command
+   text as written; this dry run bound them manually as an ad hoc step.
+2. **S4** — research staging has no manifest or cleanup-on-failure; a rerun can consume stale
+   `suggestions.json`.
+3. **S5** — `affected_paths` validation is a bare `test -e` with no path-containment/traversal
+   check.
+4. **S6** — §3b.3's prose claims a background run; the fenced bash is a plain foreground call.
+5. **S8** — `test_command_twin_parity.py`'s `_normalize()` strips by broad substring match rather
+   than an exact per-file substitution assertion.
+6. **Ratification-guard grep** (this task's own AC-3, not a numbered suggestion) — the pattern
+   trips on the prompt template's own header comment; narrow it to the body after `-->`, or drop
+   "§3b" from the comment text.
+
+**Findings requiring a human decision (ESCALATE, not resolved here):**
+1. **S3** — should hotfix specs ever run §3b, and with what transcript identity given no `FEAT-ID`?
+2. **S7** — is exhaustive fake-Codex branch/state-machine coverage worth the infra investment,
+   given the spec's stated test scope was unit tests over templates + this one manual dry run?
+3. **S10** — should Implementation Blueprint *substance* be linted, re-opening the §8 "lint vs.
+   written rule" question (currently defaulted to written-rule-only) at a broader scope?
+
+**Findings rejected (with reason):**
+1. **S2** — model-catalog alignment with the dev-loop's `parrot/conf.py`/`catalog.py` conflicts with
+   the spec's explicit Non-Goal; `gpt-5.6-luna` was verified independently (probe re-run live here,
+   rc=0, "OK").
+2. **S9** — reusing `CodexCodeDispatcher` would require touching `parrot/flows/dev_loop/**`, an
+   explicit spec Non-Goal.
+
+Full evidence: `artifacts/logs/feat-545-dry-run.md` (untracked, gitignored per task design).
+
+**Deviations from spec**: none. The dry run surfaced 5 CONFIRM-worthy hardening gaps and 3
+ESCALATE-worthy policy questions in the machinery TASK-3093–3098 built — expected outcome of a
+first real run, not a deviation from what this task was scoped to do (find and triage, not fix).

@@ -137,10 +137,11 @@ Automated in TASK-3098 (`test_spec_template_has_skeleton_and_section_9`). Manual
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-10
+**Notes**: Added the "Interface Skeleton" bullet (with fenced python example) to both Module 1
+and Module 2 examples in §3, and inserted "## 9. Design Research Cross-Check" (with the fixed
+table columns and summary line) between §8 Open Questions and Revision History. Heading order
+verified §1…§9 then Revision History; no existing heading renamed.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

@@ -646,13 +646,30 @@ Dev-loop precedent for flag order: packages/ai-parrot/src/parrot/flows/dev_loop/
 ## 9. Design Research Cross-Check
 
 > Independent design opinion from the `codex` seat over the **accepted exploration
-> doc** (never over this spec). Model: `gpt-5.6-luna` · Status: **pending — this
-> section is filled by Module 7's dry run, the first execution of the phase this
-> spec introduces** · Transcript: `sdd/state/FEAT-545/design_research/`
+> doc** (never over this spec). Model: `gpt-5.6-luna` · Status: **completed**
+> (re-run after an adversarial code review found the first run's brief had an
+> extraction bug — see triage.md) · Transcript: `sdd/state/FEAT-545/design_research/`
 
 | # | Suggestion (kind) | Disposition | Reason | Landed in |
 |---|---|---|---|---|
-| — | *(filled by Module 7)* | | | |
+| S1 | Extract §3b into one checked helper (architecture) | REJECT | A Python helper for the phase is an explicit spec Non-Goal / "Does NOT Exist" entry. | — |
+| S2 | Make research staging run-scoped and collision-safe (risk) | CONFIRM | Staging is a deterministic `mkdir -p` dir with no per-run uniqueness or atomic promotion. | Follow-up task |
+| S3 | Resolve the foreground-versus-background contract (risk) | ESCALATE | The prose/code mismatch was fixed in this same pass; the residual concern (a 600s synchronous wait inside unattended planning) is an architecture decision. | Human decision needed |
+| S4 | Reject paths outside the repository root (risk) | CONFIRM | `affected_paths` validation is a bare `test -e` with no containment/traversal check. | Follow-up task |
+| S5 | Require line or symbol evidence, not paths alone (api) | ESCALATE | Legitimate hardening, but a schema/contract change beyond this dry-run task's authority. | Human decision needed |
+| S6 | Persist a replayable Codex execution record (architecture) | CONFIRM | `codex.log` is raw stdout/stderr only; no structured invocation metadata is persisted. | Follow-up task |
+| S7 | Validate triage completeness mechanically (testing) | ESCALATE | Valid, but new triage-validation infrastructure is beyond this feature's stated test scope. | Human decision needed |
+| S8 | Use patch-shaped blueprints for file edits (architecture) | CONFIRM | A task-template MODIFY block has no occurrence-count/disambiguation rule for repeated anchors. | Follow-up task |
+| S9 | Enforce blueprint completeness against the file table (testing) | ESCALATE | Re-opens the §8 "lint vs. written rule" question at a broader scope; a human policy call. | Human decision needed |
+| S10 | Frame the recommended option as a hypothesis to challenge (alternative) | ESCALATE | A legitimate anchoring-bias critique of the neutral-brief design; a genuine design tension worth a human call. | Human decision needed |
+| S11 | Validate the probe's actual result and configuration (risk) | CONFIRM | §3b.1's probe only checks the exit code, never that `probe.txt` actually contains `OK`. | Follow-up task |
+
+Summary: **5** confirmed · **1** rejected · **5** escalated. Full rationale and
+verified `affected_paths` in `sdd/state/FEAT-545/design_research/triage.md`, which
+also records the three CRITICAL findings (undefined §3b.2 variables, unassigned
+`$REPO_ROOT`, and a brief-rendering bug that corrupted the template's own header
+comment) that an adversarial code review caught and that were fixed directly in
+this same pass, ahead of triage.
 
 ---
 
@@ -680,3 +697,5 @@ Dev-loop precedent for flag order: packages/ai-parrot/src/parrot/flows/dev_loop/
 |---|---|---|---|
 | 0.1 | 2026-09-10 | Jesus Lara (with Claude Fable 5.1) | Initial draft from accepted proposal FEAT-545 (ex-provisional FEAT-564); all four proposal unknowns carried as resolved |
 | 0.2 | 2026-09-10 | Jesus Lara | Status → approved |
+| 0.3 | 2026-09-10 | sdd-worker (Claude Sonnet 5) | §9 filled from the TASK-3099 design-research dry run against this feature's own accepted proposal (gpt-5.6-luna, 10 suggestions, 5 confirmed / 2 rejected / 3 escalated) |
+| 0.4 | 2026-09-10 | sdd-worker (Claude Sonnet 5), post code-review | Adversarial code review found 3 CRITICAL bugs in `/sdd-spec` §3b (missing `SKIP_REASON` guard on 3b.2, unassigned `$REPO_ROOT`, and a brief-rendering bug corrupting the template's own header comment) plus a too-permissive twin-parity test; all fixed directly, and §9 re-run end-to-end against a corrected brief (11 suggestions, 5 confirmed / 1 rejected / 5 escalated) |

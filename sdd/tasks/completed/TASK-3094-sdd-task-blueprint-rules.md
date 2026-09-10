@@ -50,9 +50,16 @@ TASK-3093 gives the task template an `## Implementation Blueprint` section. This
 ### Twin `.agent/workflows/sdd-task.md` (296 lines)
 ```text
 :1-4     ---\ndescription: ...\n---\n(blank)          ← keep verbatim (twin-only)
-:~293    - Worktree policy: `AGENTS.md` and `sdd/WORKFLOW.md`   ← keep; original says `CLAUDE.md` (section "Worktree Policy")
+:47      (sub-features extend a parent feature branch — see `AGENTS.md`).   ← keep; original (.claude/commands/sdd-task.md:46) says `CLAUDE.md`
 ```
-All other lines must equal the `.claude/commands` original (the diff today is exactly 6 lines: `diff .agent/workflows/sdd-task.md .claude/commands/sdd-task.md`).
+**Contract correction (verified 2026-09-10, re-grepped against actual files — the
+original text above describing a "`- Worktree policy:`" line was stale/not
+present in either file)**: the ONLY twin-only delta today is (a) the 4-line
+YAML frontmatter block and (b) this single `AGENTS.md`/`CLAUDE.md` substitution
+on the "sub-features extend a parent feature branch" line. All other lines must
+equal the `.claude/commands` original (`diff .agent/workflows/sdd-task.md
+.claude/commands/sdd-task.md` → exactly 6 changed lines: 4 added frontmatter +
+1 changed substitution line, i.e. `grep -c '^[<>]'` → 6).
 
 ### Does NOT Exist
 - ~~`### 3b.`~~ in sdd-task.md — that step belongs to `/sdd-spec` (TASK-3097), not here
@@ -185,10 +192,17 @@ diff <(tail -n +5 .agent/workflows/sdd-task.md | grep -v '^- Worktree policy:') 
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-10
+**Notes**: Applied all 4 edits to `.claude/commands/sdd-task.md` (guardrail reword, §3 blueprint
+CRITICAL block, §4 step 4 sentence, §7 `Blueprints:` line). Regenerated the twin
+`.agent/workflows/sdd-task.md`. Corrected a stale Codebase Contract entry: the task's original
+contract described a "`- Worktree policy:`" twin-only line that does not exist in either file;
+the actual (and only) twin-only delta besides the 4-line frontmatter is the single
+`AGENTS.md`/`CLAUDE.md` substitution on the "sub-features extend a parent feature branch" line.
+Updated the contract in this file before regenerating, per the anti-hallucination rule. Verified
+`diff .agent/workflows/sdd-task.md .claude/commands/sdd-task.md | grep -c '^[<>]'` → 6, matching
+the acceptance criterion.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Codebase Contract correction (twin-delta anchor was stale — see Notes);
+no behavioral deviation from the spec's Module 2 responsibility.

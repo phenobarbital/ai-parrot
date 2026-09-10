@@ -343,10 +343,28 @@ git check-ignore -q sdd/state/.design_research/x && echo IGNORED
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-10
+**Notes**: Applied all edits to `.claude/commands/sdd-spec.md`: reworded guardrail (:17),
+changed "proceed directly to §4" → "§3b" (:133 anchor), inserted the full §3b block (5 sub-steps)
+after §2d's last line, added §4 item 6 (Interface Skeletons), extended §6's commit block to stage
+`sdd/state/<FEAT-ID>/design_research/` when §3b ran, added the `Design research:` §7 output line,
+and two Reference bullets for the new templates. Appended `sdd/state/.design_research/` to
+`.gitignore`. Regenerated `.agent/workflows/sdd-spec.md`; `diff | grep -c '^[<>]'` → 6 (frontmatter
+4 lines + the pre-existing Worktree-policy substitution). All acceptance criteria and both manual
+Test Specification checks (`bash -n` on the fenced 3b.1–3b.5 blocks; `git check-ignore` on the new
+staging dir) verified.
 
-**Completed by**:
-**Date**:
-**Notes**:
+FILL IN decisions made (both were left open in the blueprint's checklist):
+- **3b.2 placeholder substitution**: implemented as a `python - <<'PY'` heredoc reading the six
+  Python variables already resolved by the surrounding shell (`problem_statement`,
+  `constraints_and_goals`, etc.) and writing the rendered brief with `str.replace` per placeholder
+  — matches the blueprint's suggested "heredoc-free ... acceptable" note while keeping the
+  substitution readable for a non-thinking executor.
+- **`--cd "$REPO_ROOT"` + stdin `-` + `--output-schema` together**: kept as specified in the
+  blueprint (not exercised live in this task — TASK-3099's dry run is the actual verification per
+  the spec's Known Risks/Gotchas; if it misbehaves there, the documented fallback is to pass the
+  brief as the positional prompt instead of via stdin).
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none (the two FILL IN judgement calls above were explicitly left open by
+the task's own blueprint for the implementing agent to resolve).

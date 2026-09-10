@@ -11,7 +11,10 @@ Decompose an approved Feature Specification into atomic, assignable implementati
 - Only decompose specs with `status: approved`.
 - Each task must be independently implementable and testable.
 - Check `sdd/tasks/index/<feature>.json` for existing tasks to avoid duplication.
-- Do NOT write implementation code — tasks are plans, not code.
+- Do NOT write the full implementation — but every task MUST carry an
+  **Implementation Blueprint** (executor-ready per-file code blocks + why +
+  `FILL IN` checklist, see §3). Blueprints stop at the mechanical parts;
+  branches, edge cases and test bodies stay as `FILL IN` stubs.
 - Mark tasks that can run in parallel worktrees with `parallel: true`.
 - **`TASK-<NNN>` numbers are reserved via `scripts/sdd/reserve_ids.py`
   (FEAT-387), never hand-computed by scanning existing files for the
@@ -111,6 +114,35 @@ For EACH task, you MUST populate its `## Codebase Contract` section:
 The implementing agent (often Sonnet or Haiku) WILL hallucinate if not given
 explicit, verified code anchors.
 
+**CRITICAL — Implementation Blueprint per Task (Executor Readiness, FEAT-545):**
+For EACH task, you MUST populate its `## Implementation Blueprint` section so a
+non-thinking executor (Haiku) can write the declared code to disk and complete
+only the marked gaps:
+
+1. **One block per file** listed in "Files to Create / Modify" — CREATE blocks
+   are whole-file starting points; MODIFY blocks quote the verified anchor line
+   they attach to (`# AFTER — insert below \`<anchor>\` (verified: path:NN)`).
+2. **Mechanical code is complete**: imports, class/function signatures,
+   docstrings, `self.logger` calls, registration/wiring, return types.
+3. **Judgement calls are `FILL IN` stubs**: `# FILL IN: <decision> — bounded by
+   <constraint | AC-N>`. Never leave a gap without the constraint that bounds it.
+4. **Every import comes from the task's Verified Imports** — the blueprint may
+   not introduce a symbol the Codebase Contract does not list.
+5. **Derive from the spec's Interface Skeletons** (spec §3) and re-verify the
+   anchors now; signatures fixed by the skeleton are not renegotiable.
+6. **Size cap**: no block over ~80 lines. If a file needs more, split the task.
+7. **Explain-for-executor rule**: every non-trivial decision is written as an
+   imperative instruction *plus its reason* ("do X — because Y"), in the
+   Steps list and in the **Why** paragraph under each block. Do not rely on
+   the executor to infer intent.
+8. **Steps (in order)** and the **FILL IN checklist** are mandatory even when
+   a task has a single file.
+
+**Quality bar**: A task without a populated Implementation Blueprint section is
+incomplete — same bar as the Codebase Contract. If the blueprint would be the
+full implementation, the task is too small; if it needs more than ~80 lines per
+file, the task is too big.
+
 ### 4. Generate Tasks
 1. Ensure `sdd/tasks/active/` directory exists (create if needed).
 2. Read the task template at `sdd/templates/task.md`.
@@ -157,6 +189,8 @@ explicit, verified code anchors.
    task. Use each id verbatim for both the filename and every `id` field
    in the per-spec index; never invent, recompute, or reuse a `TASK-<NNN>`
    number outside of what `reserve_ids.py` returned.
+   Fill the template's `## Implementation Blueprint` section for every task
+   per §3's rules; a task without one is incomplete.
 
 **CRITICAL — Task file header must include the Feature ID:**
 The `**Feature**:` line at the top of every task file MUST combine the formal
@@ -276,6 +310,8 @@ git worktree add -b hotfix-<JIRA-KEY>-<slug> \
 Tasks created:
   TASK-<NNN> — <title> [<priority>/<effort>]      # feature
   HOTFIX-<JIRA-KEY>-<N> — <title> [<priority>/<effort>]  # hotfix
+
+Blueprints: <N>/<N> tasks carry an Implementation Blueprint
 
 Worktree created:
   .claude/worktrees/feat-<FEAT-ID>-<slug>              # feature

@@ -14,7 +14,9 @@ the exploration doc (or default to `feature`/`dev` when none exists).
 
 ## Guardrails
 - Always use the official template at `sdd/templates/spec.md`.
-- Do NOT write implementation code in the spec — specs are design documents.
+- Do NOT write implementation bodies in the spec — but every §3 module MUST
+  carry an **Interface Skeleton** (signatures, docstrings, `verified:` anchors;
+  see §4 item 6). Bodies belong to task Implementation Blueprints (`/sdd-task`).
 - **Feature IDs are unique by construction**: new `FEAT-<NNN>` numbers are
   reserved via `scripts/sdd/reserve_ids.py` (FEAT-387) — a git-native
   compare-and-swap ledger, not a manual "check existing specs" scan — so
@@ -130,7 +132,7 @@ Loaded brainstorm: sdd/proposals/<feature-name>.brainstorm.md
   Clarifying questions I still need to ask (K): <one-line list or "none">
 ```
 
-If K is zero, proceed directly to §4 without asking anything.
+If K is zero, proceed directly to §3b without asking anything.
 
 #### 2d. Sync the Base Branch (FEAT-145, resolver added FEAT-466)
 
@@ -204,6 +206,133 @@ If `--ff-only` fails, abort with:
 
 Carry `TYPE` and `BASE_BRANCH` forward into the spec's frontmatter at §5.
 
+### 3b. Collaborative Design Research (codex seat — optional, NEVER blocking)
+
+An independent design opinion over the **accepted exploration document**, taken
+*before* you draft §2/§6 so it cannot become a ratification of your own design
+(FEAT-545). This step is optional: every failure below is recorded as a skip
+reason for spec §9 and the command continues. **This step must never abort
+`/sdd-spec`** — `sdd-planner` runs this command unattended.
+
+**Preconditions (any false ⇒ skip):**
+- §2 found `<exploration-doc>` and its status is `accepted` (brainstorm
+  `**Status**: accepted`, or proposal frontmatter `status: accepted`).
+- `command -v codex` succeeds.
+
+**Rules (identical to the Adversarial Cross-Check in `.claude/agents/code-reviewer.md`):**
+- **Never feed the reviewer your reasoning, draft, or preferred conclusion.**
+  The brief carries ONLY the exploration document and verified code anchors.
+- **Run it in the background** — a call takes 30 s to 10 min. Do not call it
+  per edit.
+- **Treat the output as advisory.** Every suggestion gets a disposition:
+  `CONFIRM` (fold into §2/§3/§7), `REJECT` (record why), `ESCALATE` (becomes
+  a `[ ]` item in §8).
+- **Never silently concede and never silently drop** a suggestion.
+- **Verify the reviewer's evidence.** Every `affected_paths` entry is checked
+  with `test -e`; an unverifiable path ⇒ `REJECT` "path not found".
+
+> **`agy` (Google Gemini / Antigravity) MUST NOT be used for this seat** — same
+> ban and same reason as for code review (`CLAUDE.md`, "Adversarial Second
+> Opinion"). With no `codex`, skip; do not substitute another external CLI.
+
+#### 3b.1 Detect and probe
+```bash
+REPO_ROOT="$(pwd)"                                   # /sdd-spec always runs from the repo root (§2d)
+MODEL="${SDD_DESIGN_RESEARCH_MODEL:-gpt-5.6-luna}"
+DR="sdd/state/.design_research/<feature-name>"      # id-independent staging: FEAT-ID is reserved only in §5
+mkdir -p "$DR"; SKIP_REASON=""
+if ! command -v codex >/dev/null 2>&1; then SKIP_REASON="codex CLI not installed"; fi
+if [ -z "$SKIP_REASON" ]; then
+  timeout 120 codex exec --ephemeral --sandbox read-only -m "$MODEL" \
+    -c model_reasoning_effort=high --ignore-user-config \
+    -o "$DR/probe.txt" "Reply with exactly the single word OK." >/dev/null 2>&1 \
+    || SKIP_REASON="model probe failed for $MODEL (rc=$?)"
+fi
+```
+
+#### 3b.2 Render the neutral brief (skipped when `SKIP_REASON` is already set)
+Write each extracted value below to its own file under `$DR` — `problem_statement.txt`,
+`constraints_and_goals.txt`, `recommended_option_or_scope.txt`, `code_context_paths.txt`,
+`open_questions.txt`, `question.txt` (plain UTF-8 text, no code fences) — **before** running
+the renderer, sourced from:
+- `problem_statement.txt` ← brainstorm "## Problem Statement" | proposal "## 1. Synthesis Summary" + §0 Origin quote
+- `constraints_and_goals.txt` ← brainstorm "## Constraints & Requirements" | proposal "### 2.2 Constraints Discovered"
+- `recommended_option_or_scope.txt` ← brainstorm "## Recommendation" + Recommended Option body | proposal "## 3. Probable Scope" (or "## 3. Hypothesis")
+- `code_context_paths.txt` ← the **paths only** (one per line) from brainstorm "## Code Context" | proposal "### 2.1 Localization"
+- `open_questions.txt` ← the `[ ]` items of the exploration doc (or "none")
+- `question.txt` ← "Given this accepted design intent and these verified code anchors, how would you build it? What is missing, risky, or better done another way?"
+
+```bash
+if [ -z "$SKIP_REASON" ]; then
+  python - "$DR" <<'PY' || SKIP_REASON="brief rendering failed"
+import sys
+from pathlib import Path
+
+dr = Path(sys.argv[1])
+template = Path("sdd/templates/design_research.prompt.md").read_text(encoding="utf-8")
+names = [
+    "problem_statement", "constraints_and_goals", "recommended_option_or_scope",
+    "code_context_paths", "open_questions", "question",
+]
+for name in names:
+    value = (dr / f"{name}.txt").read_text(encoding="utf-8").strip()
+    template = template.replace("{{" + name + "}}", value)
+assert "{{" not in template, "unfilled placeholder remains"
+(dr / "brief.md").write_text(template, encoding="utf-8")
+PY
+fi
+```
+FORBIDDEN in the brief: anything you have written for this spec, your
+reasoning, this command's text, or a preferred answer. If in doubt, leave it out.
+Note: the template's own header comment intentionally spells placeholder names WITHOUT
+`{{ }}` braces, precisely so this whole-document `str.replace()` cannot also rewrite the
+comment (verified by TASK-3099's dry run, which caught this exact corruption before the fix).
+
+#### 3b.3 Run codex (capped, synchronous — NOT a background job)
+```bash
+if [ -z "$SKIP_REASON" ]; then
+  timeout 600 codex exec --ephemeral --sandbox read-only --cd "$REPO_ROOT" \
+    -m "$MODEL" -c model_reasoning_effort=high --ignore-user-config \
+    --output-schema sdd/templates/design_research.schema.json \
+    -o "$DR/suggestions.json" - < "$DR/brief.md" > "$DR/codex.log" 2>&1
+  rc=$?
+  [ "$rc" -eq 124 ] && SKIP_REASON="codex timed out after 600s"
+  [ "$rc" -ne 0 ] && [ -z "$SKIP_REASON" ] && SKIP_REASON="codex exited $rc (see $DR/codex.log)"
+fi
+```
+This call blocks for up to 600s (`timeout 600`, foreground). There is no background/job-control
+mechanism here — if you want to do other useful work (e.g. start §4 codebase research) while
+waiting, run this step as a separate shell invocation and poll/join it yourself; do not assume
+concurrency is provided for you.
+
+#### 3b.4 Validate and triage
+```bash
+if [ -z "$SKIP_REASON" ]; then
+  python -c "
+import json, sys, jsonschema
+s = json.load(open('sdd/templates/design_research.schema.json'))
+d = json.load(open('$DR/suggestions.json'))
+jsonschema.Draft202012Validator(s).validate(d)
+print(len(d['suggestions']), 'suggestions')" || SKIP_REASON="suggestions.json failed schema validation"
+fi
+```
+For each suggestion (when not skipped): verify every `affected_paths` entry
+(`test -e <path>`); read the cited spots; decide **CONFIRM / REJECT /
+ESCALATE** with a one-sentence reason; write `$DR/triage.md` using the §9
+table shape from `sdd/templates/spec.md`. A suggestion with any unverifiable
+path is `REJECT — path not found`.
+
+#### 3b.5 Fold and record
+- `CONFIRM` → apply while drafting §2 Overview / §3 modules / §7 notes; the
+  §9 row's "Landed in" names the section.
+- `ESCALATE` → add a `[ ]` question to §8 (owner: the user); "Landed in" = `§8 Q<N>`.
+- `REJECT` → row only.
+- Fill spec **§9 Design Research Cross-Check** from `$DR/triage.md`, with
+  `Model: <MODEL>` and `Status: completed` — or, when skipped, a single
+  line `Status: skipped (<SKIP_REASON>)` and an empty table.
+- §6 moves `$DR` to `sdd/state/<FEAT-ID>/design_research/` and commits it
+  with the spec.
+
 ### 3. Ask Clarifying Questions (only what is genuinely missing)
 
 After §2c, you may ask the user **only** for gaps the brainstorm/proposal did
@@ -250,6 +379,11 @@ This step prevents AI hallucinations during implementation. You MUST:
    implementing agents what NOT to reference.
 5. **Include user-provided code**: if the user or brainstorm provided code snippets,
    preserve them as verified references in the contract.
+6. **Interface Skeletons (FEAT-545)**: for every §3 module write the public
+   signatures and docstrings of what the module adds or changes — no bodies —
+   each line that touches existing code carrying `# verified: path:NN`. These
+   skeletons are what `/sdd-task` turns into per-task Implementation Blueprints,
+   so a name fixed here is not renegotiable later.
 
 ### 5. Scaffold the Spec
 1. Read the template at `sdd/templates/spec.md`. The template already contains
@@ -364,12 +498,18 @@ Include a `## Worktree Strategy` section in the spec with:
 # 1. Unstage everything first to ensure a clean staging area
 git reset HEAD
 
-# 2. Stage ONLY the spec file — NEVER use "git add ." or "git add -A"
+# 2. Stage ONLY the spec file (+ the design-research transcript when §3b ran) — NEVER "git add ." / "-A"
 git add sdd/specs/<feature-name>.spec.md
+if [ -d "sdd/state/.design_research/<feature-name>" ]; then
+  mkdir -p "sdd/state/<FEAT-ID>/design_research"
+  mv sdd/state/.design_research/<feature-name>/* "sdd/state/<FEAT-ID>/design_research/"
+  rmdir "sdd/state/.design_research/<feature-name>"
+  git add "sdd/state/<FEAT-ID>/design_research/"
+fi
 
-# 3. Verify ONLY the spec file is staged (nothing else)
+# 3. Verify ONLY those paths are staged
 git diff --cached --name-only
-# Expected output: sdd/specs/<feature-name>.spec.md
+# Expected: sdd/specs/<feature-name>.spec.md [+ sdd/state/<FEAT-ID>/design_research/*]
 # If ANY other files appear, run "git reset HEAD" and start over
 
 # 4. Commit
@@ -384,6 +524,8 @@ git commit -m "sdd: add spec for FEAT-<ID> — <feature-name>"
 
    Feature ID: FEAT-<ID>
    Isolation: per-spec (sequential tasks) | mixed (some parallel tasks)
+   Design research: <N> suggestions — <C> confirmed / <R> rejected / <E> escalated   (model <MODEL>)
+   # or:  Design research: skipped (<SKIP_REASON>)
 
    To create a worktree for this feature after task decomposition:
      git worktree add -b feat-<FEAT-ID>-<feature-name> \
@@ -420,6 +562,8 @@ Next:
 - Existing specs: `sdd/specs/`
 - SDD methodology: `sdd/WORKFLOW.md`
 - Worktree policy: `CLAUDE.md` (section "Worktree Policy")
+- Design-research brief: `sdd/templates/design_research.prompt.md` (FEAT-545)
+- Design-research schema: `sdd/templates/design_research.schema.json` (FEAT-545)
 
 ## Anti-Hallucination Policy
 
