@@ -150,33 +150,56 @@ FEAT-323 machinery as an "orchestration kernel":
    left by an earlier crash. The plan is **stateless**: the per-spec index is
    the single source of truth, and `sdd-worker`'s step (g) advances it.
 2. **Dispatch (MCP seats).** `coder_run_chunk(feature, worktree, task_ids)`
-   creates one sub-worktree + branch per task via `SubWorktreeManager`
-   (keyed by task id: branch `<feature-branch>--TASK-NNN`), builds a
-   `DevAgentPool` whose workers are the chunk's seats **in plan order**
-   (`count=1` each), and calls `run_wave` with `cwd_for(task_id)` → the task's
-   sub-worktree. Because `len(chunk) ≤ len(workers)`, `run_wave`'s
-   `workers[i % len(workers)]` assignment is injective and its built-in retry
-   (`_next_worker`) lands on a **different** seat by construction. The brief
-   is a `TaskScopedBrief` (`task_id`, `task_file`) and every profile's
-   `subagent` is `"sdd-coder"`. The call returns a **job id immediately**.
+   validates the request (tasks ∈ first chunk of the current plan, no job
+   already running for any of them — `task_already_running`), registers a job
+   and **returns the job id immediately**; every slow step below runs inside
+   the job (`asyncio.create_task`). Per task **attempt**, the engine creates a
+   fresh sub-worktree + branch through its own `SubWorktreeManager` instance
+   keyed `"<TASK-NNN>.a<attempt>"` (branch `<feature-branch>--TASK-NNN-a1`,
+   `…-a2`), materialises the seat with `build_dispatcher(DevAgentSpec(agent=
+   seat.backend, model=seat.model))`, forces `profile.subagent = "sdd-coder"`
+   (`model_copy`, since every dispatch profile defaults to `sdd-worker`), and
+   awaits `dispatcher.dispatch(brief=TaskScopedBrief(task_id, task_file),
+   profile, output_model=DevelopmentOutput, cwd=<that attempt's sub-worktree>,
+   labels=DispatchLabels(seat="sdd-coder.<label>", attempt=…),
+   session_host=<per-attempt telemetry collector>)`. All attempts of a chunk
+   run under one `asyncio.gather`. **The engine owns the retry**: a failed
+   attempt 1 is re-dispatched once on `ChunkAssigner.retry_seat(...)` in a new
+   `…-a2` sub-worktree; a second failure ⇒ `failed`. `DevAgentPool.run_wave`
+   is deliberately **not** used: it resolves `cwd` per *worker*
+   (`cwd_for(worker.worker_id)`, agent_pool.py:337/358) and its retry
+   dispatches into the *retry worker's* cwd — with per-task worktrees that
+   would write task A's retry into task B's worktree (design-research S1).
 3. **Dispatch (native seat).** For a task the plan flags `native`,
    `sdd-worker` calls `coder_prepare_native(feature, worktree, task_id)` to
    get the sub-worktree path and launches `Agent(sdd-coder, model: haiku)`
    with the task file and that cwd **in the same turn** as `coder_run_chunk`,
    so the chunk really runs in parallel. When the agent returns, `sdd-worker`
    calls `coder_merge(feature, worktree, task_id)`.
-4. **Consolidate.** For every finished task the kernel runs the **fidelity
-   check** (`git diff --name-only <feature-branch>..<task-branch>` ⊆ files
-   listed under the task's `## Files to Create / Modify`, and ∩ `sdd/` = ∅),
-   then merges the branch sequentially into the feature branch. A clean merge
-   ⇒ `merged`; a conflict ⇒ `git merge --abort`, branch kept, result
+4. **Consolidate.** For every finished attempt the kernel first requires a
+   **clean task worktree** (`git status --porcelain` empty in the attempt's
+   sub-worktree — uncommitted or untracked coder output ⇒
+   `dirty_task_worktree`, nothing merged; S5), then runs the **fidelity
+   check** on committed changes only (`git diff --name-only
+   <feature-branch>..<task-branch>` ⊆ files listed under the task's
+   `## Files to Create / Modify`, and ∩ `sdd/` = ∅), then merges the branch
+   into the feature branch under a single engine-wide `asyncio.Lock` (merges
+   are never concurrent against the base worktree, even across jobs). A clean
+   merge ⇒ `merged`; a conflict ⇒ `git merge --abort`, branch kept, result
    `merge_conflict(branch, files)`; a fidelity failure ⇒ branch kept, result
    `fidelity_violation(unexpected_files)`; a failure after the cross-model
    retry ⇒ `failed(diagnostics)`.
 5. **Wait.** `coder_wait(job_id, timeout_seconds ≤ 300)` blocks up to the
    timeout and returns the job snapshot (per-task outcome + attempts +
    usage). `sdd-worker` polls in a loop; jobs live in the server until
-   `coder_cleanup`.
+   `coder_cleanup`. Every snapshot is also journaled to
+   `<worktree>/.sdd-coder/jobs/<job_id>.json` (write-only, git-ignored) so a
+   restarted server can show what a lost job had reached; the per-spec index
+   and the git branches remain the only state that drives scheduling (S2).
+   The stdio server handles requests **sequentially** (local_server.py:63), so
+   `sdd-worker` must not issue `coder_status` in the same message as a
+   blocking `coder_wait`; background jobs keep running while the server
+   awaits the next request.
 6. **Judgment (Sonnet).** `sdd-worker` resolves `merge_conflict` branches by
    merging manually in the feature worktree, re-runs each merged task's
    acceptance criteria (integration with sibling branches can break them),
@@ -222,7 +245,7 @@ Claude Code session (Sonnet)                       parrot-sdd-coder  (stdio MCP:
 │   plan → dispatch → wait → merge  │ run_chunk    │   ├─ ChunkAssigner (bijection, rotating start)       │
 │   → ACs → step (g) → …            │─────────────►│   ├─ TaskScheduler ◄── sdd/tasks/index/<feat>.json   │
 │   → code-reviewer → fixes → push  │ prepare_nat. │   ├─ SubWorktreeManager (branch <feat>--TASK-NNN)    │
-│                                   │─────────────►│   ├─ DevAgentPool.run_wave ──► build_dispatcher       │
+│                                   │─────────────►│   ├─ per-attempt dispatch ──► build_dispatcher        │
 │  Agent(sdd-coder, model: haiku)   │ wait/status  │   │      ├─ nova ──────► NovaCodeDispatcher           │
 │   cwd = sub-worktree (native)     │◄─────────────│   │      ├─ google-compat ► GoogleCompatCodeDispatcher│
 │                                   │ merge        │   │      └─ codex ─────► CodexCodeDispatcher          │
@@ -239,7 +262,7 @@ Claude Code session (Sonnet)                       parrot-sdd-coder  (stdio MCP:
 | Existing Component | Integration Type | Notes |
 |---|---|---|
 | `parrot/flows/dev_loop/task_scheduler.py` (`TaskScheduler`, `TaskRef`) | uses (unchanged) | waves from the per-spec index; `mark_done` is not used — the index is re-read each plan |
-| `parrot/flows/dev_loop/agent_pool.py` (`DevAgentPool`, `WaveResult`) | uses (unchanged) | one pool per chunk, workers in plan order, `count=1`; `run_wave` retry = different seat |
+| `parrot/flows/dev_loop/agent_pool.py` (`DevAgentPool`) | **not used** (unchanged) | its `cwd_for` is worker-keyed and its retry lands in another worker's cwd (design research S1); the engine dispatches per attempt directly |
 | `parrot/flows/dev_loop/worktree_manager.py` (`SubWorktreeManager`) | uses (unchanged) | keyed by `task_id` instead of `worker_id`; `merge_sequential(resolver=None)`; `cleanup(keep_on_conflict=True)` |
 | `parrot/flows/dev_loop/agent_builder.py` (`build_dispatcher`) | extends | new `google-compat` branch |
 | `parrot/flows/dev_loop/models/base.py` (`DevAgentBackend`, `DevAgentSpec`, `TaskScopedBrief`, `ResearchOutput`, `DevelopmentOutput`, `WorkerSummary`, `DispatchLabels`) | extends / uses | `DevAgentBackend += "google-compat"`; `TaskScopedBrief` wraps a synthetic `ResearchOutput` |
@@ -340,9 +363,24 @@ class CoderResult(BaseModel):
 
 Error codes (`CoderError.code`, snake_case, closed set): `feature_not_found`,
 `index_unreadable`, `dependency_cycle`, `worktree_outside_base`, `task_not_pending`,
-`task_not_in_plan`, `seat_unavailable`, `roster_empty`, `job_not_found`,
-`branch_not_found`, `dirty_feature_worktree`, `merge_conflict`, `fidelity_violation`,
-`internal_error`.
+`task_not_in_plan`, `task_already_running`, `seat_unavailable`, `roster_empty`,
+`job_not_found`, `branch_not_found`, `dirty_feature_worktree`, `dirty_task_worktree`,
+`merge_conflict`, `fidelity_violation`, `invalid_arguments`, `internal_error`.
+
+Tool argument models (S6 — validated in `SddCoderToolkit._pre_execute`, the same
+enforcement point `OptimizationToolkitBase` uses; the generic MCP adapter calls
+`tool._execute(**arguments)` directly and does not validate):
+
+```python
+class CoderPlanArgs(BaseModel):          feature: str; worktree: str
+class CoderRunChunkArgs(BaseModel):      feature: str; worktree: str; task_ids: List[str] = Field(..., min_length=1)
+class CoderPrepareNativeArgs(BaseModel): feature: str; worktree: str; task_id: str
+class CoderMergeArgs(BaseModel):         feature: str; worktree: str; task_id: str
+class CoderWaitArgs(BaseModel):          job_id: str; timeout_seconds: int = Field(default=120, ge=1, le=300)
+class CoderStatusArgs(BaseModel):        job_id: str
+class CoderCleanupArgs(BaseModel):       feature: str; worktree: str; keep_conflicted: bool = True
+# all: model_config = ConfigDict(extra="forbid"); task ids must match r"^TASK-\d{1,5}$"; worktree must be absolute.
+```
 
 ### New Public Interfaces
 
@@ -479,7 +517,7 @@ DevAgentBackend  # += "google-compat"
 
 ### Module 4: Orchestration engine — `sdd_coder/engine.py`
 - **Path**: `packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/engine.py` (new), `sdd_coder/fidelity.py` (new), `sdd_coder/jobs.py` (new)
-- **Responsibility**: plan / run_chunk / prepare_native / merge / wait / status / cleanup over `TaskScheduler`, `SubWorktreeManager`, `DevAgentPool`, `build_dispatcher`; fidelity check; asyncio job table; orphan-branch discovery.
+- **Responsibility**: plan / run_chunk / prepare_native / merge / wait / status / cleanup over `TaskScheduler`, `SubWorktreeManager` (one instance per attempt), `build_dispatcher` + direct `dispatcher.dispatch()`; engine-owned cross-seat retry; clean-status + fidelity gates; serialised merges; asyncio job table + on-disk journal; per-attempt telemetry; orphan-branch discovery.
 - **Depends on**: M1, M2, M3 (for the `google-compat` backend to be buildable); FEAT-323 modules unchanged.
 - **Interface Skeleton**:
   ```python
@@ -503,48 +541,71 @@ DevAgentBackend  # += "google-compat"
 
   # packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/engine.py  (new)
   from parrot.flows.dev_loop.task_scheduler import TaskScheduler        # verified: task_scheduler.py:53, from_index_file :88, next_wave :176
-  from parrot.flows.dev_loop.agent_pool import DevAgentPool, WaveResult  # verified: agent_pool.py:135, build :155, run_wave :435
   from parrot.flows.dev_loop.worktree_manager import SubWorktreeManager, SubWorktreeMergeError  # verified: worktree_manager.py:75, :41
   from parrot.flows.dev_loop.agent_builder import build_dispatcher       # verified: agent_builder.py:135
-  from parrot.flows.dev_loop.models import (DevAgentPoolConfig, DevAgentSpec, ResearchOutput, DevelopmentOutput)  # verified: models/base.py:438, :412, :340-379, :497
+  from parrot.flows.dev_loop.models import (DevAgentSpec, DispatchLabels, ResearchOutput, DevelopmentOutput, TaskScopedBrief)  # verified: models/base.py:412, :763, :340-379, :497, :458
+  # NOT imported: DevAgentPool / run_wave — see §2 step 2 (cwd is resolved per worker, retry lands in another worker's cwd).
+
+  class AttemptTelemetryCollector:
+      """Duck-typed stand-in for the `session_host` a dispatcher binds (dispatchers/_shared.py:92-117 calls `host.apply(action)`).
+      Records the `dispatch.completed` usage payload (llm.py:373, `_completion_usage_payload` :585) plus wall-clock start/end,
+      so `AttemptRecord.usage`/`duration_s` are filled without Redis. Shape of `DevLoopAction` (session_state.py:1457-1463)
+      to be confirmed in M4 — (unverified — check before use)."""
+      def apply(self, action: Any, origin: Any = None) -> None: ...
+      def record(self) -> AttemptRecord: ...
 
   class SddCoderEngine:
       """Stateless-by-design kernel: every call re-reads the per-spec index from `worktree`."""
       def __init__(self, *, roster: RosterConfig, probe: Optional[RosterProbe] = None,
                    redis_url: Optional[str] = None, worktree_base_path: Optional[str] = None,
                    dispatcher_builder: Callable[..., Any] = build_dispatcher,
-                   stream_ttl_seconds: int = 3600) -> None: ...
+                   stream_ttl_seconds: int = 3600) -> None:
+          """Owns one asyncio.Lock (`_merge_lock`) serialising every merge against the base worktree, one JobTable,
+          and a per-feature dict of SubWorktreeManager instances keyed by '<TASK-NNN>.a<attempt>'."""
       async def open(self) -> None:
-          """Runs the probe once and caches `self.seats` (available_seats). Idempotent."""
+          """Runs the probe once and caches `self.seats` (available_seats). Idempotent. Called lazily on the first
+          tool call via AbstractToolkit.auto_open (toolkit.py:169-172) — the MCP server has no startup hook (S12)."""
       async def plan(self, feature: str, worktree: str) -> CoderPlan:
-          """Resolve feature (index header match, same order as sdd-worker.md §1), TaskScheduler.from_index_file,
-          next_wave → ChunkAssigner.assign; orphan branches = `git branch --list '<feature_branch>--TASK-*'` minus running jobs.
+          """Resolve feature (index header match, same order as sdd-worker.md §1); TaskScheduler.from_index_file via
+          asyncio.to_thread (sync Path.read_text, S11); next_wave sorted by task id (S3) → ChunkAssigner.assign; orphan
+          branches = `git branch --list '<feature_branch>--TASK-*'` minus branches owned by running jobs.
           Raises CoderFailure(code) for feature_not_found / index_unreadable / dependency_cycle / worktree_outside_base / roster_empty."""
       async def run_chunk(self, feature: str, worktree: str, task_ids: List[str]) -> CoderJob:
-          """Validates task_ids ⊆ current plan's first chunk's mcp tasks (task_not_in_plan otherwise); creates sub-worktrees
-          (SubWorktreeManager.create(task_id)); builds a pool with the chunk's seats IN PLAN ORDER (count=1, isolation 'isolated');
-          registers a JobTable job whose runner awaits pool.run_wave(...) then _consolidate() per task; returns immediately."""
+          """Validates task_ids ⊆ current plan's first chunk's mcp tasks (task_not_in_plan) and that none has a running
+          job (task_already_running); registers a JobTable job and returns IMMEDIATELY. The job runner does everything
+          slow: per task, `_run_attempt(task, seat, attempt=1)`; on failure `_run_attempt(task, retry_seat, attempt=2)`;
+          then `_consolidate(...)`. All tasks of the chunk run under one asyncio.gather."""
       async def prepare_native(self, feature: str, worktree: str, task_id: str) -> NativePrep:
-          """Sub-worktree for a `native` planned task; branch <feature_branch>--<task_id>."""
+          """Sub-worktree for a `native` planned task; key '<TASK-NNN>.a1' → branch <feature_branch>--TASK-NNN-a1."""
       async def merge(self, feature: str, worktree: str, task_id: str) -> TaskResult:
-          """_consolidate() for one branch: fidelity check → merge_sequential(resolver=None) on that branch only.
-          Used for native tasks and for re-merging after Sonnet fixed a conflict."""
+          """_consolidate() for the task's latest attempt branch. Used for native tasks and for re-merging after Sonnet
+          fixed a conflict (the branch then merges as-is)."""
       async def wait(self, job_id: str, timeout_seconds: int) -> CoderJob:
-          """min(timeout_seconds, roster.wait_timeout_max_s); never raises on timeout."""
+          """min(timeout_seconds, roster.wait_timeout_max_s); never raises on timeout; journals the snapshot."""
       def status(self, job_id: str) -> CoderJob: ...
       async def cleanup(self, feature: str, worktree: str, keep_conflicted: bool = True) -> CleanupReport: ...
       # internals (names fixed so tasks can reference them):
+      async def _run_attempt(self, task: PlannedTask, seat: RosterSeat, *, attempt: int, ctx: "_FeatureCtx") -> Tuple[AttemptRecord, Optional[DevelopmentOutput], str]:
+          """manager = SubWorktreeManager(base_worktree=ctx.worktree, feature_branch=ctx.feature_branch, worktree_base_path=...);
+          cwd = await manager.create(f"{task.task_id}.a{attempt}"); dispatcher, profile = self._dispatcher_builder(DevAgentSpec(agent=seat.backend, model=seat.model), redis_url=..., max_concurrent=1, stream_ttl_seconds=...);
+          profile = profile.model_copy(update={"subagent": "sdd-coder"})  # every profile defaults to sdd-worker (S7);
+          output = await dispatcher.dispatch(brief=TaskScopedBrief(research=..., task_id=..., task_file=...), profile=profile,
+                     output_model=DevelopmentOutput, run_id=job_id, node_id=f"sdd-coder.{seat.label}", cwd=cwd,
+                     session_host=collector, labels=self._labels_for(task, seat, attempt)).
+          Returns (record, output|None, error_text)."""
+      async def _consolidate(self, manager: SubWorktreeManager, task: PlannedTask) -> TaskResult:
+          """clean-status check (dirty_task_worktree) → fidelity → `async with self._merge_lock: manager.merge_sequential(resolver=None)`."""
       def _research_for(self, *, feature_id: str, spec_path: str, feature_branch: str, worktree_path: str, repo_path: str, base_branch: str) -> ResearchOutput:
           """Synthetic ResearchOutput(jira_issue_key="", log_excerpts=[]) — TaskScopedBrief requires one."""
-      async def _consolidate(self, manager: SubWorktreeManager, task_id: str, task_file: str) -> TaskResult: ...
-      def _labels_for(self, task: PlannedTask) -> DispatchLabels: ...   # seat="sdd-coder.<label>"
+      def _labels_for(self, task: PlannedTask, seat: RosterSeat, attempt: int) -> DispatchLabels: ...   # seat="sdd-coder.<label>"
+      def _journal(self, worktree: str, job: CoderJob) -> None: ...   # <worktree>/.sdd-coder/jobs/<job_id>.json (write-only)
 
   class CoderFailure(Exception):
       def __init__(self, code: str, message: str, **details: Any) -> None: ...
   ```
 
 ### Module 5: MCP toolkit + configuration — `sdd_coder/toolkit.py`
-- **Path**: `packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/toolkit.py` (new), `examples/sdd-coder-mcp.yaml` (new, tracked), `docs/mcp-local-toolkits.md` (modifies: new section), operator-local `.parrot/mcp-toolkits.yaml` + `.mcp.json` (git-ignored — documented, not committed)
+- **Path**: `packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/toolkit.py` (new), `examples/sdd-coder-mcp.yaml` (new, tracked), `docs/mcp-local-toolkits.md` (modifies: new section), `.gitignore` (modifies: add `.sdd-coder/` for the job journal), operator-local `.parrot/mcp-toolkits.yaml` + `.mcp.json` (git-ignored — documented, not committed)
 - **Responsibility**: expose the engine as seven MCP tools with the `CoderResult` envelope; map `CoderFailure` → `status="error"`; `_open()` runs the probe.
 - **Depends on**: M4.
 - **Interface Skeleton**:
@@ -555,10 +616,14 @@ DevAgentBackend  # += "google-compat"
   class SddCoderToolkit(AbstractToolkit):
       """`parrot mcp-local sdd-coder` — orchestration kernel for the interactive sdd-worker (FEAT-549)."""
       llm_dependent_tools: frozenset = frozenset()     # verified attr: toolkit.py:294 — no tool needs section.llm
+      arg_models: Dict[str, type[BaseModel]] = {"coder_plan": CoderPlanArgs, ...}   # one entry per tool (S6)
       def __init__(self, *, roster: List[Dict[str, Any]] | RosterConfig, redis_url: Optional[str] = None,
                    worktree_base_path: Optional[str] = None, **kwargs: Any) -> None:
           """kwargs come verbatim from the yaml `kwargs:` block (toolkit_server.py:113-117). auto_open=True."""
-      async def _open(self) -> None: ...                # engine.open() — probe once
+      async def _pre_execute(self, tool_name: str, /, **kwargs: Any) -> None:   # verified hook: toolkit.py:455; adapter.py:79 skips validation
+          """Validate kwargs against arg_models[tool_name] (extra='forbid'); ValidationError → CoderResult error `invalid_arguments`."""
+      async def _open(self) -> None: ...                # engine.open() — probe once, on FIRST tool call (auto_open; toolkit.py:169-172)
+      async def _close(self) -> None: ...               # cancel running jobs, journal final snapshots (only if the host ever calls it — S12, §8 Q4)
       async def coder_plan(self, feature: str, worktree: str) -> CoderResult: ...
       async def coder_run_chunk(self, feature: str, worktree: str, task_ids: List[str]) -> CoderResult: ...
       async def coder_prepare_native(self, feature: str, worktree: str, task_id: str) -> CoderResult: ...
@@ -661,6 +726,8 @@ DevAgentBackend  # += "google-compat"
 | `test_compat_client_has_no_model_defaults` | M3 | `_default_model`/`_fallback_model`/`_lightweight_model` absent (mirrors mantle rule) |
 | `test_compat_profile_defaults` | M3 | `llm == "google-compat:gemini-3.5-flash"`, `reasoning_effort == "none"`, `enable_thinking is False` |
 | `test_compat_dispatcher_carries_extra_content` | M3 | `_tool_call_to_openai_dict(call_with_extra_content)` output contains `extra_content` verbatim; without it, no key |
+| `test_compat_dispatcher_multiturn_wire_format` | M3 | two-round synthetic exchange (assistant tool_calls with `extra_content` → tool results → assistant) reproduces the exact `messages` list Gemini accepted in the spike; the base `LLMCodeDispatcher` on the same input emits NO `extra_content` (S9) |
+| `test_toolkit_pre_execute_rejects_bad_args` | M5 | unknown key / non-absolute worktree / bad task id ⇒ `CoderResult(status="error", error.code="invalid_arguments")` before the engine is touched (S6) |
 | `test_compat_dispatcher_completion_args` | M3 | no `extra_body`, has `reasoning_effort`, keeps `tools`/`tool_choice`/`parallel_tool_calls`/`max_tokens` |
 | `test_build_dispatcher_google_compat` | M3 | `build_dispatcher(DevAgentSpec(agent="google-compat"))` returns the new pair with env-driven model default |
 | `test_parse_task_files_from_template_section` | M4 | parses `## Files to Create / Modify` bullets with backticked paths; ignores prose |
@@ -681,7 +748,16 @@ DevAgentBackend  # += "google-compat"
 |---|---|
 | `test_engine_plan_from_real_index` (git sandbox) | temp repo + feature branch + per-spec index with 5 tasks (2 waves) ⇒ plan has correct chunks for a 3-seat roster (2 chunks in wave 1) and `blocked` lists the dependent tasks |
 | `test_engine_run_chunk_merges_clean_branches` | fake dispatchers write the listed files and commit; job ends `done`; every task `merged`; feature branch contains the commits; sub-worktrees removed by `cleanup` |
-| `test_engine_retry_on_other_seat_then_failed` | fake dispatcher for seat A always raises; run_wave retries on seat B (fake succeeds) ⇒ `attempts` has 2 records with different seats; a second failure ⇒ outcome `failed` |
+| `test_engine_retry_on_other_seat_then_failed` | fake dispatcher for seat A always raises; the engine retries on seat B (fake succeeds) in a NEW `…-a2` sub-worktree ⇒ `attempts` has 2 records with different seats and different `worktree_path`; a second failure ⇒ outcome `failed` |
+| `test_engine_attempt_cwd_is_task_branch` | for every attempt the fake dispatcher's received `cwd` equals that attempt's own sub-worktree (never another task's) — the S1 regression guard |
+| `test_engine_forces_sdd_coder_subagent` | the profile handed to `dispatch()` has `subagent == "sdd-coder"` for nova / google-compat / codex specs (S7) |
+| `test_engine_rejects_dirty_task_worktree` | fake coder commits AND leaves an untracked file ⇒ `dirty_task_worktree`, nothing merged (S5) |
+| `test_engine_run_chunk_returns_before_dispatch` | `run_chunk` returns while the fake dispatcher is still blocked on an `asyncio.Event`; `status` shows `running` (S4) |
+| `test_engine_run_chunk_rejects_running_task` | second `run_chunk` for a task with a live job ⇒ `task_already_running` (S2) |
+| `test_engine_merges_serialised_across_jobs` | two jobs consolidating concurrently never overlap inside `_merge_lock` (instrumented lock) |
+| `test_engine_plan_is_deterministic` | shuffled `TaskRef` order from a stubbed `next_wave` yields identical chunks (S3) |
+| `test_engine_journals_job_snapshot` | `<worktree>/.sdd-coder/jobs/<job_id>.json` exists after `wait` and matches `status` |
+| `test_telemetry_collector_captures_usage` | a synthetic `dispatch.completed` action with usage ⇒ `AttemptRecord.usage` filled, `duration_s > 0` (S8) |
 | `test_engine_fidelity_violation_keeps_branch` | fake coder touches an unlisted file ⇒ `fidelity_violation`, branch kept, feature branch unchanged |
 | `test_engine_merge_conflict_reported_and_aborted` | two branches editing the same line ⇒ second is `merge_conflict`, base worktree clean (`git status --porcelain` empty), branch listed in `kept` |
 | `test_engine_native_prepare_then_merge` | `prepare_native` creates the branch; a scripted commit in that worktree; `merge` ⇒ `merged` |
@@ -737,6 +813,11 @@ def noop_probe() -> RosterProbe:
 - [ ] **AC-17** `docs/dev_loop/sdd-coder-orchestrator.md` and the `docs/mcp-local-toolkits.md` section exist and document install, roster semantics, the loop, and the `thought_signature` / `navconfig` gotchas.
 - [ ] **AC-18** `ruff check` and `mypy` pass on every new/modified Python file.
 - [ ] **AC-19** No file under `packages/ai-parrot/src/parrot/flows/dev_loop/nodes/` is modified (dev-loop path untouched, non-goal).
+- [ ] **AC-20 (S1)** Every dispatch of an attempt receives `cwd` equal to that attempt's own sub-worktree; a retry never reuses the failed attempt's worktree nor another task's (`test_engine_attempt_cwd_is_task_branch`, `test_engine_retry_on_other_seat_then_failed`).
+- [ ] **AC-21 (S2/S4)** `coder_run_chunk` returns before any dispatcher call starts; a second `coder_run_chunk` naming a task with a live job is rejected with `task_already_running`; job snapshots are journaled under `<worktree>/.sdd-coder/jobs/`.
+- [ ] **AC-22 (S5)** A task worktree with uncommitted or untracked changes is never merged (`dirty_task_worktree`).
+- [ ] **AC-23 (S6)** Every tool rejects unknown or malformed arguments in `_pre_execute` with `invalid_arguments`, before the engine runs.
+- [ ] **AC-24 (S7)** Every dispatched profile carries `subagent == "sdd-coder"` regardless of backend default.
 
 ---
 
@@ -940,8 +1021,9 @@ is caught automatically.
 | New Component | Connects To | Via | Verified At |
 |---|---|---|---|
 | `SddCoderEngine.plan` | `TaskScheduler.from_index_file(...).next_wave()` | call | `task_scheduler.py:88, :176` |
-| `SddCoderEngine.run_chunk` | `SubWorktreeManager.create(task_id)` | call (worker_id := task_id) | `worktree_manager.py:146` |
-| `SddCoderEngine.run_chunk` | `DevAgentPool.build(DevAgentPoolConfig(agents=[DevAgentSpec(agent=seat.backend, model=seat.model)...], isolation_mode="isolated"), dispatcher_builder=partial(build_dispatcher, redis_url=..., max_concurrent=1, stream_ttl_seconds=...), pool_max=len(chunk))` then `.run_wave(tasks, research=..., run_id=job_id, cwd_for=...)` | call | `agent_pool.py:155, :435`; `agent_builder.py:135` |
+| `SddCoderEngine._run_attempt` | `SubWorktreeManager(base_worktree, feature_branch, worktree_base_path).create("<TASK-NNN>.a<attempt>")` | call — one manager instance per attempt | `worktree_manager.py:78, :146` |
+| `SddCoderEngine._run_attempt` | `build_dispatcher(DevAgentSpec(agent=seat.backend, model=seat.model), redis_url=…, max_concurrent=1, stream_ttl_seconds=…)` → `(dispatcher, profile)`; `profile.model_copy(update={"subagent": "sdd-coder"})`; `dispatcher.dispatch(brief=TaskScopedBrief(...), profile=..., output_model=DevelopmentOutput, run_id=job_id, node_id="sdd-coder.<label>", cwd=<attempt worktree>, session_host=AttemptTelemetryCollector(), labels=DispatchLabels(...))` | direct call — **not** `DevAgentPool.run_wave` (S1) | `agent_builder.py:135`; `dispatchers/llm.py:113`, `codex.py` dispatch, `nova.py` dispatch; `models/base.py:458, :763` |
+| `AttemptTelemetryCollector.apply` | `_apply_to_session_host(event)` → `host.apply(action)` | duck-typed session host bound by `dispatch(session_host=)` | `dispatchers/_shared.py:92-117`; usage in `dispatch.completed` payload `llm.py:373, :585` |
 | `SddCoderEngine._consolidate` | `SubWorktreeManager.merge_sequential(resolver=None)` | call; `SubWorktreeMergeError` ⇒ `merge_conflict` | `worktree_manager.py:181` |
 | `SddCoderEngine.cleanup` | `SubWorktreeManager.cleanup(keep_on_conflict=...)` | call | `worktree_manager.py:297` |
 | `GoogleCompatCodeDispatcher` | `LLMCodeDispatcher.__init__(client_factory=...)` | subclass | `dispatchers/llm.py:60` |
@@ -962,7 +1044,11 @@ is caught automatically.
 - ~~`gpt-5.3-codex-spark`~~ as a known constant in the OpenAI client — it defines `GPT5_3_CODEX = "gpt-5.3-codex"` only (openai/models.py:33). The spark id is a passthrough string that the `codex` CLI accepts on this account (operator-verified), hence `fallback_model` is a safety net, not a workaround.
 - ~~`_chat_completion` on `AnthropicClient`, `GoogleGenAIClient`, `BedrockConverseClient`, `NovaClient`~~ — only `OpenAIBaseClient` subclasses have it (openai_base.py:216); `LLMCodeDispatcher.dispatch` raises `DispatchExecutionError("... does not expose chat completion")` otherwise.
 - ~~A generic `"openai"` / `"anthropic"` / `"google"` `DevAgentBackend`~~ — `build_dispatcher` knows nine literals; `nvidia` is the only in-process `LLMCodeDispatcher` route besides `nova`/`grok`/`zai`/`moonshot` subclasses.
-- ~~`DevAgentPool.run_wave` guaranteeing distinct models~~ — assignment is `workers[i % len(workers)]`; distinctness holds only when `len(tasks) ≤ len(workers)` (the chunker enforces this).
+- ~~`DevAgentPool.run_wave` as this feature's dispatch primitive~~ — its `cwd_for` is keyed by **worker id** (`cwd=cwd_for(worker.worker_id)`, agent_pool.py:337 and :358) and its retry re-dispatches into the *retry worker's* cwd; with per-task worktrees that sends task A's retry into task B's worktree. The engine calls `dispatcher.dispatch()` directly per attempt (design-research S1). `DevAgentPool` itself is unchanged and still serves the dev-loop.
+- ~~`WaveResult` / `WorkerSummary` carrying duration or token usage~~ — they carry ids and summaries only (agent_pool.py:119-134, models/base.py:481-495); usage is published as a `dispatch.completed` event (llm.py:373), hence `AttemptTelemetryCollector` (S8).
+- ~~Argument validation in the generic MCP adapter~~ — `adapter.py:79` calls `tool._execute(**arguments)` directly; validation must live in `_pre_execute` (toolkit.py:455), as `OptimizationToolkitBase` does (S6).
+- ~~A toolkit startup/shutdown hook in the stdio MCP server~~ — `StdioMCPServer.stop()` only flips `_running` (local_server.py:80-82) and `create_toolkit_mcp_server` never calls `_open`/`_close`; `auto_open` fires on the FIRST tool call (toolkit.py:169-172) (S12).
+- ~~Ordered output from `TaskScheduler.next_wave()`~~ — it iterates a set and documents "no particular order" (task_scheduler.py:176-192); the engine sorts by task id (S3).
 - ~~`TaskScheduler` honouring the index `parallel` flag~~ — `depends_on` only.
 - ~~`SubWorktreeManager` per-task API~~ — keyed by `worker_id`; this feature passes the task id as that key.
 - ~~`DevAgentSpec.provider` / `.llm` / `.label`~~ — fields are `agent`, `model`, `count`, `escalation_model`.
@@ -991,8 +1077,10 @@ is caught automatically.
 - **Lazy provider imports in core** (FEAT-523 AC-3, see nova.py:59-64): `GoogleCompatCodeDispatcher` imports `GeminiOpenAICompatClient` inside `_create_compat_client`, never at module scope.
 - **Toolkit conventions**: `AbstractToolkit` public `async def` methods become tools; keep helpers underscore-prefixed; `_open()` for the probe with `auto_open=True` (FEAT-391 names are reserved — do not redefine them for other purposes).
 - **Result envelope**: every tool returns `CoderResult`; `status="error"` for domain failures (`CoderFailure` codes), MCP `isError` only for argument rejection/crashes (same split as `OperationResult`).
-- **Pool per chunk, workers in plan order, `count=1`, `pool_max=len(chunk)`**: this is what makes `run_wave`'s modulo assignment equal the plan's bijection and its retry land on a different seat. Never build one pool for the whole feature.
-- **Branch naming**: `<feature_branch>--<TASK-NNN>` via `SubWorktreeManager.create(task_id)`; sub-worktree path `<WORKTREE_BASE_PATH>/<feature_branch>--pool/<TASK-NNN>` — inside the R4 base by construction.
+- **Direct dispatch per attempt, engine-owned retry** (S1): `build_dispatcher` materialises the seat, `dispatcher.dispatch(cwd=<attempt worktree>)` runs it, `ChunkAssigner.retry_seat` picks the second seat, a NEW sub-worktree hosts attempt 2. `DevAgentPool.run_wave` is not used here (worker-keyed cwd). One `asyncio.Lock` serialises merges.
+- **Branch naming**: `<feature_branch>--<TASK-NNN>-a<attempt>` via `SubWorktreeManager.create(f"{task_id}.a{attempt}")` (`_branch_suffix` turns `.` into `-`); sub-worktree path `<WORKTREE_BASE_PATH>/<feature_branch>--pool/<TASK-NNN>-a<attempt>` — inside the R4 base by construction. `coder_plan` matches orphans with the glob `<feature_branch>--TASK-*`.
+- **Return-fast tool bodies** (S4): the stdio server awaits each request inline, so `coder_run_chunk` only validates + registers the job; sub-worktree creation and dispatch happen inside the `asyncio.Task`. Filesystem reads of the index go through `asyncio.to_thread` (S11).
+- **Argument validation in `_pre_execute`** (S6): mirror `OptimizationToolkitBase.arg_models` in core (do not import `parrot_tools`).
 - **Synthetic `ResearchOutput`**: `jira_issue_key=""`, `spec_path=<index header spec>`, `feat_id`, `branch_name=<feature_branch>`, `worktree_path=<sub-worktree>`, `repo_path=<feature worktree>`, `log_excerpts=[]`, `base_branch=<index header>`.
 - **Prompts**: `sdd-coder.md` reuses `sdd-worker.md`'s exact wording for Cardinal Rules and steps a–f (copy, then delete what does not apply); both prompts end with a byte-for-byte `cp` to `_subagent_data/`.
 - **Probe rules** (M2, fixed): `nova` ⇒ `config.get("BEDROCK_MANTLE_API_KEY") or config.get("AWS_NOVA_API_KEY")` present (names verified: mantle.py:110); `google-compat` ⇒ `config.get("GEMINI_API_KEY") or config.get("GOOGLE_API_KEY")`; `codex` ⇒ `which("codex")`; `google_coding` ⇒ `which("agy")`; `native` ⇒ always available. When `smoke` is provided it runs once per mcp seat with `model`, then `fallback_model` on failure; `smoke_timeout_s` bounds each call.
@@ -1005,7 +1093,9 @@ is caught automatically.
 - **Two dispatch paths per chunk**: the orchestrator must issue `coder_run_chunk` and the native `Agent` call in the same message for real parallelism, and must remember `coder_merge` for the native task. The prompt states this in one numbered step; the summary table exposes any task without a merge.
 - **MCP tool timeouts**: `coder_wait` ≤ 300 s; jobs persist in the server process. If the server dies, branches/sub-worktrees persist on disk and appear as orphans (Q6).
 - **`sdd-worker.md` `tools:` whitelist**: without the `mcp__parrot-sdd-coder__*` names the agent cannot call the server at all (verified convention: `sdd-ideation.md:44` lists `mcp__wikitoolkit__*`). AC-3 checks it.
-- **Startup step §2 of `sdd-worker` marks every task `in-progress`**: compatible with `TaskScheduler` (non-`done` ⇒ pending), but the engine must not treat `in-progress` as "running elsewhere".
+- **Startup step §2 of `sdd-worker` marks every task `in-progress`**: compatible with `TaskScheduler` (non-`done` ⇒ pending), but the engine must not treat `in-progress` as "running elsewhere"; "running" is defined by the in-memory job table plus the journal, and duplicates are refused by `task_already_running` (S2).
+- **No server lifecycle hooks** (S12): the probe runs on the first tool call, not at process start — `sdd-worker` calls `coder_plan` first, so the effect is the same; `_close()` is best-effort and only runs if a future host invokes it (§8 Q4). Jobs die with the process; their branches persist and surface as orphans.
+- **Telemetry for CLI seats**: `codex` publishes what its JSON stream exposes; usage may be partial. `AttemptRecord.usage` is best-effort, `duration_s` is always measured by the engine.
 - **Redis**: `_publish_event` degrades to warnings per event; the engine passes `conf.REDIS_URL` and pre-checks reachability once at `open()` to emit a single warning (AC-15). Verified tolerant: `llm.py:~2400`, `codex.py:616`.
 - **Model ids drift** (`gemini-3.8-flash` already exists; `gpt-5.3-codex-spark` is valid today per the operator's probe but entitlements change): handled by `fallback_model` + the startup probe, never by code changes.
 - **Cross-feature**: FEAT-523 (PEP-420 respec, worktree pending) may touch `dispatchers/*.py`/`models/*.py`; edits here are additive one-liners plus new files — low conflict surface, but rebase the feature branch onto `dev` before `/sdd-done` if FEAT-523 merges first.
@@ -1058,24 +1148,35 @@ Still open:
 - [ ] **Q1 — `agy` fallback validation**: confirm headless `agy --print … --output-format stream-json --json-schema …` works with this account (running the binary was declined in the brainstorm session) and decide whether `google_coding` is added to the example roster. Not blocking: the probe detects the binary and the seat is opt-in. — *Owner: Jesus Lara*
 - [ ] **Q2 — Where the `extra_content` carry-over lives**: only in `GoogleCompatCodeDispatcher._tool_call_to_openai_dict` (this spec's default) or in the base `LLMCodeDispatcher` for every OpenAI-compatible backend (benefits future Gemini-like providers; touches shared code). Decide during M3; default stays subclass-only. — *Owner: spec author / implementer*
 - [ ] **Q3 — Live test gating**: marker name and CI policy for `test_gemini_compat_live_roundtrip` (`-m live`, skipped without `GEMINI_API_KEY`). — *Owner: implementer*
+- [ ] **Q4 — Toolkit lifecycle in the stdio MCP server (design research S12, escalated)**: should `create_toolkit_mcp_server` / `StdioMCPServer.stop()` gain explicit `toolkit._open()` at start and `toolkit._close()` at shutdown (a small change in `parrot/mcp/`, benefiting every toolkit) or does FEAT-549 stay with lazy `auto_open` + no close (this spec's default)? — *Owner: Jesus Lara*
 
 ---
 
 ## 9. Design Research Cross-Check
 
 > Independent design opinion from the `codex` seat over the **accepted exploration
-> doc** (never over this spec). Model: `gpt-5.6-luna` · Status: **skipped (model probe failed for gpt-5.6-luna (rc=124) — 120 s probe timeout)**
-> · Transcript: `sdd/state/FEAT-549/design_research/` (probe `run.json` + `skip_reason.txt` only)
+> doc** (never over this spec). Model: `gpt-5.6-luna` (codex-cli 0.154.0, reasoning high, 5 min 05 s) · Status: **completed**
+> · Transcript: `sdd/state/FEAT-549/design_research/` (`brief.md`, `suggestions.json`, `run.json`, `triage.md` + the six brief inputs; `codex.log`/`probe.log` stay local — `*.log` is git-ignored;
+> the two earlier attempts' skip records are kept under `skipped-20260910T182644Z/` and `skipped-20260910T195451Z/` — the probe hung on an open stdin, fixed in
+> `/sdd-spec` §3b.1 by `< /dev/null`, commit `7ce31c9ef`)
+> All 28 cited paths verified: inside the repository and present.
 
 | # | Suggestion (kind) | Disposition | Reason | Landed in |
 |---|---|---|---|---|
-| — | — | — | — | — |
+| S1 | Introduce task-attempt worktree primitives (architecture, high) | **CONFIRM** | Verified: `run_wave` passes `cwd=cwd_for(worker.worker_id)` (agent_pool.py:337/358) and retries into the retry worker's cwd — with per-task worktrees the brainstorm's plan would write a retry into another task's tree. Engine now dispatches directly per attempt with a fresh `…-a<attempt>` sub-worktree; `DevAgentPool` untouched. | §2 step 2, §3 M4 `_run_attempt`, §6 Does NOT Exist, §7, AC-20 |
+| S2 | Reservation, idempotency, crash recovery (risk, high) | **CONFIRM** (partial) | `task_already_running` guard + write-only job journal under `<worktree>/.sdd-coder/jobs/`. Full persistence rejected: index + git branches are the reconciliation source (brainstorm Q6, orphans listed not auto-merged). | §2 step 5, §3 M4 `run_chunk`/`_journal`, AC-21 |
+| S3 | Stable wave ordering before rotating seats (risk, medium) | **CONFIRM** | Verified `next_wave()` documents "no particular order". Engine sorts by task id before `ChunkAssigner.assign`; determinism test added. | §3 M4 `plan`, §4 `test_engine_plan_is_deterministic`, §6 Does NOT Exist |
+| S4 | Background jobs at the transport boundary (architecture, high) | **CONFIRM** | Verified `StdioMCPServer.start()` awaits `_handle_request` inline (local_server.py:63). `run_chunk` now returns after validation; all slow work inside the `asyncio.Task`; prompt told not to mix `coder_wait` with other calls in one message. | §2 steps 2/5, §3 M4, §7, AC-21, `test_engine_run_chunk_returns_before_dispatch` |
+| S5 | Reject dirty/untracked coder worktrees before merge (risk, high) | **CONFIRM** | Clean-status precondition `dirty_task_worktree` added to `_consolidate`; fidelity stays on committed diff. | §2 step 4, §3 M4, error codes, AC-22 |
+| S6 | Explicit Pydantic arg/result models per tool (api, medium) | **CONFIRM** | Verified `adapter.py:79` calls `tool._execute(**arguments)` with no validation; `_pre_execute` (toolkit.py:455) is the hook. `arg_models` + `_pre_execute` added in core (cannot import `parrot_tools`). | §2 Data Models (arg models), §3 M5, AC-23 |
+| S7 | Separate roster seats from `DevAgentSpec` (architecture, medium) | **CONFIRM** (already largely so) | `RosterSeat` was already distinct; the real gap was that every dispatch profile defaults `subagent="sdd-worker"` — engine now forces `sdd-coder` via `model_copy`. `google-compat` backend already in scope. | §3 M4 `_run_attempt`, AC-24, `test_engine_forces_sdd_coder_subagent` |
+| S8 | First-class per-attempt telemetry record (risk, medium) | **CONFIRM** | Verified usage is only published as a `dispatch.completed` event (llm.py:373) reaching `host.apply(action)` (_shared.py:92-117). `AttemptTelemetryCollector` (duck-typed session host) captures it per attempt; `AttemptRecord` already existed. | §3 M4 `AttemptTelemetryCollector`, §6 Does NOT Exist, §7 |
+| S9 | Gemini tool-call wire-format regression test (testing, medium) | **CONFIRM** | Multi-turn synthetic test added alongside the existing single-call one; asserts the base dispatcher emits no `extra_content`. | §4 `test_compat_dispatcher_multiturn_wire_format` |
+| S10 | Test native Haiku through the same merge contract (testing, medium) | **CONFIRM** | Already planned (`test_engine_native_prepare_then_merge`); extended with dirty-status and fidelity cases via S5 tests. | §4 |
+| S11 | Move sync index reads off the async path (risk, medium) | **CONFIRM** | `TaskScheduler.from_index_file` uses sync `Path.read_text`; wrapped in `asyncio.to_thread` in `plan`. | §3 M4 `plan`, §7 |
+| S12 | Wire probe/cleanup to server lifecycle (risk, medium) | **CONFIRM** (probe) / **ESCALATE** (close) | Verified: `auto_open` fires on the first tool call (toolkit.py:169-172) and `stop()` only flips `_running` (local_server.py:80-82). Probe-on-first-call is acceptable because `coder_plan` is always first. Adding `_open`/`_close` hooks to `parrot/mcp/` is a shared-code change the user must decide. | §3 M4 `open`, §3 M5 `_close`, §7, §8 Q4 |
 
-Summary: **0** confirmed · **0** rejected · **0** escalated. The pass can be re-run
-manually (`codex exec … --output-schema sdd/templates/design_research.schema.json`
-over `sdd/proposals/sdd-worker-subagents.brainstorm.md`) and folded into this
-section before `Status: approved` if desired; it is optional and never blocking
-(FEAT-545).
+Summary: **12** confirmed (2 partial) · **0** rejected · **1** escalated (S12's shutdown half → §8 Q4).
 
 ---
 
@@ -1103,3 +1204,4 @@ section before `Status: approved` if desired; it is optional and never blocking
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-09-10 | Jesus Lara + Claude Fable 5.1 | Initial draft from accepted brainstorm (Option A); design research skipped (probe timeout) |
+| 0.2 | 2026-09-10 | Jesus Lara + Claude Fable 5.1 | Design research completed (12 suggestions, S1 changed the dispatch primitive: direct per-attempt dispatch instead of `run_wave`); dirty-worktree gate, arg validation, journal, telemetry collector, AC-20..24, §8 Q4; codex-spark id operator-verified |

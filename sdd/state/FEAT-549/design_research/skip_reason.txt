@@ -1,1 +1,1 @@
-SKIP_REASON=model probe failed for gpt-5.6-luna (rc=124)
+SKIP_REASON=
