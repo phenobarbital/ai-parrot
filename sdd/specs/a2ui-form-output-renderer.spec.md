@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-544
 **Date**: 2026-09-10
 **Author**: Jesus Lara
-**Status**: review
+**Status**: approved
 **Target version**: parrot-formdesigner 1.1.0 / ai-parrot 1.x
 **Proposal**: `sdd/proposals/a2ui-form-output-renderer.proposal.md` (research state `sdd/state/FEAT-544/`)
 
