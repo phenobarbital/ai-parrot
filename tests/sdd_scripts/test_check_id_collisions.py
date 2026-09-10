@@ -211,3 +211,35 @@ class TestCli:
         assert exit_code == 1
         out = capsys.readouterr().out
         assert "TASK-200" in out
+
+
+def test_id_sort_key_tolerates_non_numeric_ids():
+    """A hotfix-shaped id must not abort the whole collision check.
+
+    Regression: the report ordering used ``int(task_id.split("-")[1])``,
+    which raised ValueError on `HOTFIX-<slug>-<n>` ids that live in real
+    hotfix indexes. Because that key runs before any report is emitted, the
+    checker crashed and therefore detected *no* collisions at all — the
+    opposite of what a CI backstop should do on an unexpected id shape.
+    """
+    from scripts.sdd.check_id_collisions import _id_sort_key
+
+    ids = [
+        "TASK-3079",
+        "TASK-9",
+        "HOTFIX-chromemanager-async-migration-1",
+        "TASK-246-001",
+        "TASK-1968",
+    ]
+    # Must not raise, and must order numerically before non-numeric shapes.
+    assert sorted(ids, key=_id_sort_key) == [
+        "TASK-9",
+        "TASK-246-001",
+        "TASK-1968",
+        "TASK-3079",
+        "HOTFIX-chromemanager-async-migration-1",
+    ]
+
+    # Deterministic for equal-numbered ids, and stable across calls.
+    assert _id_sort_key("TASK-5") == _id_sort_key("TASK-5")
+    assert _id_sort_key("HOTFIX-a-1") < _id_sort_key("HOTFIX-b-1")
