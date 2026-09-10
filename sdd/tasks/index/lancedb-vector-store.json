@@ -300,7 +300,7 @@
       "feature_id": "FEAT-542",
       "feature": "lancedb-vector-store",
       "spec": "sdd/specs/lancedb-vector-store.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "estimated_hours": 2,
@@ -313,8 +313,8 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3067-lancedb-dispatch-compatibility.md"
+      "completed_at": "2026-09-10T11:58:29+00:00",
+      "file": "sdd/tasks/completed/TASK-3067-lancedb-dispatch-compatibility.md"
     },
     {
       "id": "TASK-3068",
