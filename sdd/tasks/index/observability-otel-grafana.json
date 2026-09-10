@@ -154,7 +154,7 @@
       "feature_id": "FEAT-548",
       "feature": "observability-otel-grafana",
       "spec": "sdd/specs/observability-otel-grafana.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -164,8 +164,8 @@
       "parallelism_notes": "PARALLEL-SAFE: creates two new test modules only. Needs 3107 solely for the example file's existence; shares no file with 3108-3113.",
       "assigned_to": null,
       "started_at": "2026-09-10T16:30:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3114-env-and-exporter-contract-tests.md"
+      "completed_at": "2026-09-10T16:36:46+00:00",
+      "file": "sdd/tasks/completed/TASK-3114-env-and-exporter-contract-tests.md"
     }
   ]
 }

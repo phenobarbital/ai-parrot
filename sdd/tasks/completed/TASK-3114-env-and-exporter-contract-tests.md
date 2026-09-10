@@ -312,10 +312,57 @@ existence; everything else is offline. Safe to run in a parallel worktree.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-09-10
 **Notes**:
+- Both files created and all FILL INs completed:
+  - `test_endpoint_is_a_base_url`: rejects an endpoint ending in
+    `/v1/metrics` or `/v1/traces` — NOT a bare `/v1/` substring check, which
+    would have false-positived on the legitimate base URL
+    `http://localhost:9090/api/v1/otlp` (its own `/api/v1/otlp` route
+    contains `/v1/`). Verified against the meta-criterion in the Test
+    Specification: temporarily rewriting the example's endpoint to the
+    doubled path makes this test fail, then reverted (confirmed
+    `git diff --stat` shows nothing afterward).
+  - `test_example_contains_no_secrets`: heuristic on key name
+    (KEY/SECRET/TOKEN/PASSWORD/CREDENTIAL) and opaque base64/token-shaped
+    values.
+  - `_spy_metric_exporter` monkeypatches
+    `opentelemetry.exporter.otlp.proto.http.metric_exporter.OTLPMetricExporter`
+    (the *origin* module), not `exporters.OTLPMetricExporter` — verified by
+    hand that `make_metric_exporter`'s function-local import re-resolves the
+    module attribute on every call, so patching the origin module is what
+    actually intercepts it.
+  - `test_zero_sampling_emits_no_spans`: builds an isolated
+    `TracerProvider(sampler=TraceIdRatioBased(0.0))` + `InMemorySpanExporter`
+    (mirroring `setup.py:144-146`) and separately an isolated
+    `MeterProvider` + `InMemoryMetricReader`, asserting both halves per the
+    task's explicit "must not pass vacuously" instruction.
+- **Stale contract reference corrected**: `REPO_ROOT = Path(__file__)
+  .resolve().parents[4]` in the blueprint resolves to `packages/`, not the
+  repo root, for this file's actual location
+  (`packages/ai-parrot/tests/unit/observability/`). Verified by hand;
+  `parents[5]` is correct and used instead (same off-by-one fixed in the
+  sibling `test_grafana_provisioning.py` from TASK-3109).
+- `RECOGNISED_ENV_VARS` cross-checked line-by-line against
+  `ObservabilityConfig.from_env()` (`config.py:301-367`) — exact match, no
+  drift from the blueprint's list.
+- All 9 tests (this task's 8 + TASK-3109's 1) pass:
+  `pytest packages/ai-parrot/tests/unit/observability/test_env_contract.py
+  packages/ai-parrot/tests/unit/observability/test_endpoint_composition.py
+  packages/ai-parrot/tests/unit/observability/test_grafana_provisioning.py -v`
+  → 9 passed.
+- AC-14 regression check: `pytest packages/ai-parrot/tests/unit/observability/ -q`
+  → 186 passed, 1 pre-existing failure
+  (`test_attributes.py::test_every_shipped_client_name_is_mapped`), confirmed
+  failing identically and unrelated on `dev` before this feature's changes —
+  no new failures introduced.
+- Worktree note (not a task deviation): this worktree initially lacked two
+  Cython-compiled `.so` modules (`parrot.utils.types`,
+  `parrot.utils.parsers.toml`) that `git worktree add` cannot carry (they are
+  `.gitignore`d build artifacts). Copied from the main checkout's matching
+  `cpython-312` build to make the test suite importable at all; both remain
+  git-ignored in the worktree (`git check-ignore` confirmed) and were not
+  committed.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.
