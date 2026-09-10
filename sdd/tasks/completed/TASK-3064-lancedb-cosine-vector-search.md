@@ -286,7 +286,9 @@ These are test contracts, not executed test results or placeholder production im
 
 ## Completion Note
 
-**Completed by**: not started
-**Date**: not completed
-**Notes**: Pending execution; no implementation or acceptance tests run during task decomposition.
-**Deviations from spec**: The checked answers supersede stale prose; TASK-3057 reconciles that discrepancy before implementation.
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-10
+**Notes**: Implemented `similarity_search` in the exact five-step order the blueprint fixed: validate `search_strategy`/`limit`/thresholds (and reject unknown kwargs/custom column aliases) before any I/O → blank query returns `[]` with zero embedding calls → resolve collection + compile `combine(compile_metadata_filter(...), None if include_parents else parent_exclusion_clause())` → `_ensure_provider()` + `embed_query` → run the exact query with `.distance_type("cosine")` explicit (per TASK-3057's gate finding that the SDK default is squared L2) and the prefilter applied via `.where()` BEFORE `.limit()`, so excluded parents never consume the candidate budget. Maps rows to `SearchResult(score=raw cosine distance, id=namespaced_id(...), metadata['_lancedb']={collection, record_id, mode: 'vector', score_kind: 'cosine_distance', higher_is_better: False})`. Added `_ensure_manifest_loaded()` — a read-only manifest load (no identity validation) so search works against a collection this store instance didn't itself `create_collection()` on (e.g. a fresh connect + search). `_distance_ceiling()` treats `similarity_threshold==0.0` as the disable sentinel but treats an explicit `score_threshold=0.0` as a real constraint (ceiling=1.0), per the task's explicit distinction; when both are enabled, `min()` of the two ceilings (the stricter one) wins.
+
+`test_lancedb_vector_search.py`: 23 tests, all pass on first real run (`uv run pytest packages/ai-parrot-embeddings/tests/test_lancedb_vector_search.py -v`, log at `artifacts/logs/TASK-3064-lancedb.log`), including the full `_distance_ceiling` parametrize matrix (disabled/base-only/tool-only/tool-zero-not-disabled/stricter-wins-either-direction) and a fixed-vector prefilter-before-limit test proving a closer excluded parent doesn't starve the requested budget. Full lancedb-scoped suite (8 modules): 119/119 passing. `ruff check` clean. Confirmed `LanceDBStore` has no remaining abstract methods (`inspect.isabstract(type(store))` is `False`).
+**Deviations from spec**: None. `mmr_search`'s explicit-rejection stub was already written by TASK-3062 and needed no change.
