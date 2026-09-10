@@ -1,0 +1,125 @@
+name: FEAT-542 LanceDB feature tests
+
+on:
+  pull_request:
+    paths:
+      - "packages/ai-parrot-embeddings/**"
+      - "packages/ai-parrot-tools/src/parrot_tools/multistoresearch/**"
+      - ".github/workflows/lancedb-vector-store.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lancedb:
+    name: "LanceDB dedicated feature tests (SDK installed, no skips)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libssl-dev libffi-dev
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      # Workspace-wide sync WITH the lancedb extra: the LanceDB tests span
+      # ai-parrot-embeddings (the backend) AND ai-parrot-tools
+      # (multistoresearch/origins) plus ai-parrot core (supported_stores /
+      # namespace regression) — a single-package `uv sync --package X`
+      # would leave one of the three import-unresolvable.
+      - name: Sync workspace with lancedb extra
+        run: uv sync --all-packages --extra lancedb
+
+      # NavConfig refuses to import without an env/<environment>/.env file,
+      # and env/ is gitignored — matches the existing test-core/test-tools
+      # convention in .github/workflows/ci.yml.
+      - name: Scaffold NavConfig environment
+        run: mkdir -p env/dev && touch env/dev/.env
+
+      - name: Record environment versions (AC9)
+        run: |
+          mkdir -p artifacts/logs
+          {
+            echo "FEAT-542 LanceDB feature job — $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "python: $(uv run python --version)"
+            echo "lancedb: $(uv run python -c 'import lancedb; print(lancedb.__version__)')"
+            echo "pyarrow: $(uv run python -c 'import pyarrow; print(pyarrow.__version__)')"
+          } | tee artifacts/logs/lancedb-vector-store-versions.log
+
+      # Two separate pytest invocations, not one combined command: both
+      # packages/ai-parrot-embeddings/tests/ and packages/ai-parrot-tools/tests/
+      # ship a `tests/__init__.py`, so pytest's prepend import mode resolves
+      # BOTH as the same top-level `tests` package when run together in one
+      # process — collection fails with `ModuleNotFoundError: No module named
+      # 'tests.multistoresearch'`. Verified directly before writing this step.
+      #
+      # Every FEAT-542 test module, plus the existing regression suites TASK-3067
+      # extended (exact-map assertions). `-m "not real_llm"` on the tools run
+      # excludes ONLY TestRealOfflineRun (TASK-3068), an explicit separate
+      # completion gate (provisioned local model/server, not something this
+      # shared CI runner has) — every other test here MUST run, not skip,
+      # since the extra is installed.
+      - name: Run LanceDB embeddings-package suite (no skips permitted)
+        run: |
+          uv run pytest \
+            packages/ai-parrot-embeddings/tests/test_lancedb_sdk_contract.py \
+            packages/ai-parrot-embeddings/tests/test_lancedb_packaging.py \
+            packages/ai-parrot-embeddings/tests/test_lancedb_models.py \
+            packages/ai-parrot-embeddings/tests/test_lancedb_filters.py \
+            packages/ai-parrot-embeddings/tests/test_lancedb_concurrency.py \
+            packages/ai-parrot-embeddings/tests/test_lancedb_lifecycle.py \
+            packages/ai-parrot-embeddings/tests/test_lancedb_mutations.py \
+            packages/ai-parrot-embeddings/tests/test_lancedb_vector_search.py \
+            packages/ai-parrot-embeddings/tests/test_lancedb_fts_hybrid.py \
+            packages/ai-parrot-embeddings/tests/test_lancedb_factory.py \
+            packages/ai-parrot-embeddings/tests/test_lancedb_store.py \
+            packages/ai-parrot-embeddings/tests/test_lancedb_multiprocess.py \
+            packages/ai-parrot-embeddings/tests/test_store_backends_present.py \
+            packages/ai-parrot-embeddings/tests/test_namespace_imports.py \
+            -v --tb=short -rs \
+            | tee artifacts/logs/lancedb-vector-store-tests-embeddings.log
+
+      # spec §4: "Run ... the entire existing multi-store test directory".
+      - name: Run LanceDB tools-package (multistoresearch) suite (no skips permitted)
+        run: |
+          uv run pytest \
+            packages/ai-parrot-tools/tests/multistoresearch/ \
+            -m "not real_llm" \
+            -v --tb=short -rs \
+            | tee artifacts/logs/lancedb-vector-store-tests-tools.log
+
+      - name: Fail if any required test was skipped (AC1/AC9)
+        run: |
+          fail=0
+          for log in artifacts/logs/lancedb-vector-store-tests-embeddings.log \
+                     artifacts/logs/lancedb-vector-store-tests-tools.log; do
+            if grep -q "^SKIPPED" "$log"; then
+              echo "One or more required LanceDB feature tests SKIPPED in $log" \
+                   "— the extra is installed, so a skip here (other than the" \
+                   "excluded real_llm marker) hides a gap."
+              grep "^SKIPPED" "$log"
+              fail=1
+            fi
+          done
+          if [ "$fail" -ne 0 ]; then exit 1; fi
+          echo "No unexpected skips."
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lancedb-logs
+          path: artifacts/logs/lancedb-vector-store-*.log
