@@ -1,0 +1,32 @@
+# Codex emits delta metrics. Accumulate them before Prometheus scrapes them.
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 256
+    spike_limit_mib: 64
+  deltatocumulative:
+    max_stale: 1h
+    max_streams: 50000
+  batch:
+
+exporters:
+  prometheus:
+    endpoint: 0.0.0.0:8889
+    translation_strategy: UnderscoreEscapingWithSuffixes
+    metric_expiration: 1h
+    # Retain process identity when several Codex processes emit the same metric.
+    resource_to_telemetry_conversion:
+      enabled: true
+
+service:
+  pipelines:
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, deltatocumulative, batch]
+      exporters: [prometheus]

@@ -8,9 +8,10 @@ Claude Code --OTLP/http--> parrot-prometheus <--query-- Grafana (claudestats app
               :9090/api/v1/otlp                            :3001
 ```
 
-No OTel collector: Prometheus runs with `--enable-feature=otlp-write-receiver`
-and accepts the OTLP push directly. Grafana is on 3001 because the OpenLIT UI
-already publishes 3000.
+Claude Code pushes directly to Prometheus with
+`--enable-feature=otlp-write-receiver`. Codex uses a collector to convert its
+delta metrics to cumulative metrics before Prometheus scrapes them. Grafana is
+on 3001 because the OpenLIT UI already publishes 3000.
 
 ## Run
 
@@ -40,6 +41,66 @@ Code afterwards — env is read at startup.
 `cumulative` is required: Claude Code defaults to delta temporality and
 Prometheus 2.x has no delta→cumulative conversion, so delta datapoints would be
 silently mis-added.
+
+## Codex side
+
+The shared Prometheus compose stack also starts `parrot-codex-otel`, pinned to
+`otel/opentelemetry-collector-contrib:0.148.0`:
+
+```text
+Codex --OTLP/http--> collector <--scrape :8889-- Prometheus <--query-- Grafana
+         :4328       delta to cumulative          :9090              :3001
+```
+
+Merge this into `~/.codex/config.toml` (do not duplicate existing TOML tables):
+
+```toml
+[otel]
+environment = "local"
+log_user_prompt = false
+
+[otel.metrics_exporter.otlp-http]
+endpoint = "http://localhost:4328/v1/metrics"
+protocol = "binary"
+```
+
+Restart Codex after changing its configuration. Processes already configured
+for this endpoint recover when the collector starts. The receiver is published
+only on loopback; its Prometheus exporter is internal to `parrot-metrics`.
+
+Codex 0.154.0 was observed emitting **delta** sums and histograms. Do not point
+it directly at the Prometheus 2.51 OTLP receiver: this stack needs the
+[delta-to-cumulative processor](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/v0.148.0/processor/deltatocumulativeprocessor).
+It keeps accumulation state in memory, so restarting the collector resets
+counters. Inactive streams expire after one hour. Prometheus `rate`/`increase`
+handle counter resets but cannot recover activity lost while the receiver was
+unavailable.
+
+Open [Codex Overview](http://localhost:3001/d/codex-overview/codex-overview).
+Allow at least two scrapes and new Codex activity for rate/increase panels.
+HTTP API and SSE panels can remain empty when Codex uses WebSocket transport.
+The `model` and `auth_mode` selectors default to All.
+
+To diagnose an empty dashboard:
+
+```bash
+docker compose -f docker/prometheus/docker-compose.yml ps
+docker logs --tail 30 parrot-codex-otel
+curl -fsSG http://localhost:9090/api/v1/query --data-urlencode 'query=up{job="codex"}'
+curl -fsSG http://localhost:9090/api/v1/query --data-urlencode 'query=count by (__name__) ({__name__=~"codex_.*"})'
+```
+
+`up{job="codex"}=1` confirms scraping works; actual `codex_*` series confirm
+Codex has exported metrics. A dashboard alone cannot create these series.
+After changing `docker/prometheus/prometheus.yml`, validate and reload it:
+
+```bash
+docker exec parrot-prometheus promtool check config /etc/prometheus/prometheus.yml
+curl -fsS -X POST http://localhost:9090/-/reload
+```
+
+See the [Codex configuration reference](https://developers.openai.com/codex/config-reference/)
+for metrics exporter settings.
 
 ## Grafana side
 

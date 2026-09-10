@@ -6,16 +6,28 @@
 #   * Claude Code  -> OTLP push  http://localhost:9090/api/v1/otlp
 #     (needs OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=cumulative;
 #      Prometheus 2.x has no delta->cumulative conversion)
+#   * Codex        -> OTLP push http://localhost:4328/v1/metrics
+#                     via otel-collector (delta->cumulative), scraped on :8889
 #   * Grafana      -> docker/grafana/docker-compose.yml joins `parrot-metrics`
 #                     and reaches this service as http://prometheus:9090
-#   * OpenLIT      -> scraped over the host gateway, so the observability
-#                     example stack can come and go independently.
 #
 # Moved here from packages/ai-parrot/src/parrot/observability/examples/ so
 # that every docker artifact lives under docker/.
 name: parrot-prometheus
 
 services:
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.148.0
+    container_name: parrot-codex-otel
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    ports:
+      - "127.0.0.1:4328:4318"
+    volumes:
+      - ./otel-collector.yml:/etc/otelcol-contrib/config.yaml:ro
+    networks:
+      - parrot-metrics
+    restart: unless-stopped
+
   prometheus:
     image: prom/prometheus:v2.51.0
     container_name: parrot-prometheus

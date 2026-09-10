@@ -12,6 +12,11 @@ scrape_configs:
     static_configs:
       - targets: ["localhost:9090"]
 
+  # Codex delta metrics are accumulated by the collector before scraping.
+  - job_name: "codex"
+    static_configs:
+      - targets: ["otel-collector:8889"]
+
   # The observability example stack (docker-compose.observability.yml) used
   # to be scraped here, but OpenLIT's 4318 is an OTLP receiver, not a
   # /metrics endpoint — the job 404'd there too. Re-enable it (through the
