@@ -72,7 +72,7 @@
       "feature_id": "FEAT-544",
       "feature": "a2ui-form-output-renderer",
       "spec": "sdd/specs/a2ui-form-output-renderer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M (2-4h)",
       "depends_on": [
@@ -82,8 +82,8 @@
       "parallelism_notes": "New file; only shares the pointer helpers from TASK-3071. No overlap with TASK-3072/3073 — safe in a parallel worktree.",
       "assigned_to": null,
       "started_at": "2026-09-10T22:10:09+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3074-a2ui-wire-helpers.md"
+      "completed_at": "2026-09-10T22:31:56+00:00",
+      "file": "sdd/tasks/completed/TASK-3074-a2ui-wire-helpers.md"
     },
     {
       "id": "TASK-3075",
