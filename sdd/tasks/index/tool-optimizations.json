@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-10T01:36:25Z",
-  "completed_at": null,
+  "completed_at": "2026-09-10T03:35:46+00:00",
   "tasks": [
     {
       "id": "TASK-3079",
@@ -304,7 +304,7 @@
       "feature_id": "FEAT-543",
       "feature": "tool-optimizations",
       "spec": "sdd/specs/tool-optimizations.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "estimated_hours": 4,
@@ -318,8 +318,8 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": "2026-09-10T01:47:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3092-benchmarks-docs-release.md"
+      "completed_at": "2026-09-10T03:35:46+00:00",
+      "file": "sdd/tasks/completed/TASK-3092-benchmarks-docs-release.md"
     }
   ]
 }
