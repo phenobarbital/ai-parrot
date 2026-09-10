@@ -187,10 +187,13 @@ sys.exit(0 if p == root or p.startswith(root + os.sep) else 1)" && echo "BUG: ac
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-10
+**Notes**: Implemented exactly per blueprint. §3b.4's prose now runs a
+`python -c` realpath containment check against `$REPO_ROOT` before the
+existing `test -e`; a path failing containment yields
+`REJECT — path outside repository: <path>`, distinct from the existing
+`REJECT — path not found: <path>`. `design_research.schema.json` untouched
+(verified `git diff --stat` empty for that file). Twin regenerated with the
+established recipe; `diff | grep -c '^[<>]'` reads `6`.
+**Deviations from spec**: none

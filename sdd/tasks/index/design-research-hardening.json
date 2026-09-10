@@ -32,7 +32,7 @@
       "feature_id": "FEAT-546",
       "feature": "design-research-hardening",
       "spec": "sdd/specs/design-research-hardening.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -40,8 +40,8 @@
       "parallelism_notes": "Touches .claude/commands/sdd-spec.md §3b.4; sequential in one worktree.",
       "assigned_to": null,
       "started_at": "2026-09-10T09:46:18+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3101-path-containment-affected-paths.md"
+      "completed_at": "2026-09-10T09:50:34+00:00",
+      "file": "sdd/tasks/completed/TASK-3101-path-containment-affected-paths.md"
     },
     {
       "id": "TASK-3102",
