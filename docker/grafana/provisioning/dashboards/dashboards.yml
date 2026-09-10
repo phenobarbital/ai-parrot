@@ -13,3 +13,18 @@ providers:
     options:
       path: /etc/grafana/provisioning/dashboards
       foldersFromFilesStructure: false
+
+  # AI-Parrot agent telemetry. Separate provider (not just another file in the
+  # dir above) so these land in their own folder instead of "Claude Code".
+  - name: parrot
+    orgId: 1
+    folder: AI-Parrot
+    type: file
+    disableDeletion: false
+    # Same convention as `claudestats`: provisioned dashboards are read-only in
+    # the UI; "Save as" makes an editable copy.
+    allowUiUpdates: false
+    updateIntervalSeconds: 30
+    options:
+      path: /etc/grafana/provisioning/dashboards/parrot
+      foldersFromFilesStructure: false
