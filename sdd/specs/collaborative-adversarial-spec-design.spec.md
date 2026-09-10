@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-545
 **Date**: 2026-09-10
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: n/a — SDD tooling (`.claude/commands`, `sdd/templates`, `CLAUDE.md`); nothing ships in a package
 **Proposal**: `sdd/proposals/collaborative-adversarial-spec-design.proposal.md` (accepted 2026-09-10; research audit at `sdd/state/FEAT-545/`)
 
@@ -679,3 +679,4 @@ Dev-loop precedent for flag order: packages/ai-parrot/src/parrot/flows/dev_loop/
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-09-10 | Jesus Lara (with Claude Fable 5.1) | Initial draft from accepted proposal FEAT-545 (ex-provisional FEAT-564); all four proposal unknowns carried as resolved |
+| 0.2 | 2026-09-10 | Jesus Lara | Status → approved |
