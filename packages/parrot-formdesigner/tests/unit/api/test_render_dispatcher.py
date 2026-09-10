@@ -79,6 +79,52 @@ def test_default_seed_includes_html_and_adaptive():
     assert "adaptive" in _RENDERERS
 
 
+def test_default_seed_includes_a2ui_when_available():
+    pytest.importorskip("parrot.outputs.a2ui")
+    _seed_default_renderers()
+    assert "a2ui" in _RENDERERS
+
+
+def test_seed_skips_a2ui_when_spec_missing(monkeypatch, caplog):
+    import importlib.util
+
+    real_find_spec = importlib.util.find_spec
+    monkeypatch.setattr(
+        importlib.util,
+        "find_spec",
+        lambda name, *args, **kwargs: (None if name == "parrot.outputs.a2ui" else real_find_spec(name, *args, **kwargs)),
+    )
+    with caplog.at_level("INFO"):
+        _seed_default_renderers()
+    assert "a2ui" not in _RENDERERS
+    assert {"html", "adaptive", "xml", "pdf", "audio"} <= set(_RENDERERS)
+    assert any("a2ui" in message for message in caplog.messages)
+
+
+async def test_render_a2ui_via_dispatcher(aiohttp_client, sample_form):
+    pytest.importorskip("parrot.outputs.a2ui")
+    from parrot.outputs.a2ui.serialization import deserialize
+
+    _seed_default_renderers()
+    registry = FormRegistry()
+    await registry.register(sample_form)
+
+    app = web.Application()
+    app["form_registry"] = registry
+    app.router.add_get(
+        "/api/v1/{tenant}/forms/{form_uid}/render/{format}",
+        _tenant_wrapped_render,
+    )
+
+    client = await aiohttp_client(app)
+    resp = await client.get(f"/api/v1/navigator/forms/{sample_form.form_uid}/render/a2ui")
+    assert resp.status == 200
+    assert resp.content_type == "application/a2ui+json"
+    body = await resp.json()
+    message = deserialize(body)
+    assert message.create_surface.surface_id == f"form-{sample_form.form_uid}"
+
+
 def test_register_renderer_overwrites():
     class _R(AbstractFormRenderer):
         async def render(
