@@ -79,6 +79,7 @@ TOOL_REGISTRY: dict[str, str] = {
     "lyria": "parrot_tools.google.lyria.LyriaToolkit",
     "graph_index": "parrot_tools.graphindex.toolkit.GraphIndexToolkit",
     "local_git": "parrot_tools.tool_optimizations.git.LocalGitToolkit",
+    "bounded_source": "parrot_tools.tool_optimizations.reader.BoundedSourceToolkit",
     "google_voice": "parrot_tools.gvoice.GoogleVoiceTool",
     "ibis_world": "parrot_tools.ibisworld.tool.IBISWorldTool",
     "jira": "parrot_tools.jiratoolkit.JiraToolkit",
