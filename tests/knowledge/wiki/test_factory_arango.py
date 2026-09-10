@@ -69,7 +69,7 @@ class TestCreateWikiStoreArangoBranch:
 
     def test_unknown_backend_raises(self, tmp_path: Path):
         with pytest.raises(ValueError, match="Unknown wiki storage backend"):
-            create_wiki_store(tmp_path, wiki_name="test-wiki", backend="postgres")
+            create_wiki_store(tmp_path, wiki_name="test-wiki", backend="nosuchbackend")
 
 
 class TestPackageExport:

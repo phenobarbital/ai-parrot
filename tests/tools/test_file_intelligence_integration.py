@@ -80,9 +80,9 @@ class TestToolkitIntegration:
         toolkit = ExcelIntelligenceToolkit()
         tools = toolkit.get_tools_sync()
         names = {t.name for t in tools}
-        assert "inspect_workbook" in names
-        assert "extract_table" in names
-        assert "query_cells" in names
+        assert "excel_inspect_workbook" in names
+        assert "excel_extract_table" in names
+        assert "excel_query_cells" in names
         # Verify descriptions exist
         for tool in tools:
             assert tool.description and len(tool.description) > 10

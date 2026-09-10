@@ -67,6 +67,7 @@ toolkits:
     include: null                                      # optional whitelist of tool names
     exclude: null                                      # optional blacklist of tool names
     llm: null                                          # optional "provider:model" string
+    llm_kwargs: {}                                     # optional extra kwargs for LLMFactory.create (requires llm)
     env: {}                                            # env vars written into installer entries
 ```
 
@@ -78,6 +79,7 @@ toolkits:
 | `include` | `list[str] \| null` | Whitelist of tool names to expose. When set, only these are exposed. |
 | `exclude` | `list[str] \| null` | Blacklist of tool names to exclude. Only consulted when `include` is unset. |
 | `llm` | `str \| null` | A `"provider:model"` string (e.g. `"openai:gpt-4o-mini"`, `"anthropic:claude-3-5-haiku-latest"`). When set, `LLMFactory.create()` builds a client passed to the toolkit's constructor as `llm_client`. |
+| `llm_kwargs` | `dict` | Extra keyword arguments forwarded verbatim to `LLMFactory.create(llm, **llm_kwargs)`, so they reach the client constructor unchanged — e.g. `fallback_model: null`, `max_retries`, `read_timeout`. This is **trusted server configuration**, never an LLM-callable argument. Requires `llm` to be set, and may not contain an `llm` key (it would collide with the factory's first argument). See `examples/tool-optimizations-mcp.yaml`, where `fallback_model: null` is required so the Bedrock client cannot silently answer with its default fallback model. |
 | `env` | `dict[str, str]` | Environment variables written into the generated `.mcp.json` / `.codex/config.toml` server entry (e.g. API keys the toolkit reads from its process env at runtime). **Not** passed as constructor kwargs. |
 
 ### The include/exclude/llm-dependent rules
@@ -184,6 +186,10 @@ MCP host's caller (the model) must pass `confirm: true` explicitly.
 
 ## Related
 
+- [Tool optimizations (FEAT-543)](tool-optimizations.md) — the
+  `local-git`, `bounded-source` and `targeted-writer` toolkits configured
+  through this machinery, including the `llm_kwargs` example and the
+  opt-in host read guards.
 - [FEAT-403 — `wikitoolkit mcp`](../sdd/specs/) — the pattern this feature
   generalizes; `StdioMCPServer`/`LocalServerConfig`/`MCPToolAdapter` are
   shared, unmodified core machinery.
@@ -191,3 +197,28 @@ MCP host's caller (the model) must pass `confirm: true` explicitly.
   multi-agent MCP server. Unrelated and unaffected by this feature; if you
   need the full server's capabilities (auth, multi-agent routing), use
   that instead of `mcp-local`.
+
+## `sdd-coder` — orchestration kernel for the interactive sdd-worker (FEAT-549)
+
+`SddCoderToolkit` (`parrot.flows.dev_loop.sdd_coder.toolkit.SddCoderToolkit`)
+exposes the FEAT-323 dev-loop machinery — `TaskScheduler`,
+`SubWorktreeManager`, `build_dispatcher` — as seven MCP tools so the
+interactive `sdd-worker` agent can dispatch one `sdd-coder` sub-agent per
+task, across a roster of heterogeneous model seats, in parallel:
+`coder_plan`, `coder_run_chunk`, `coder_prepare_native`, `coder_merge`,
+`coder_wait`, `coder_status`, `coder_cleanup`. Every result is a
+`CoderResult` envelope (`status: "ok" | "error"`); argument validation
+happens in `_pre_execute` before the engine is ever touched.
+
+```bash
+cp examples/sdd-coder-mcp.yaml .parrot/mcp-toolkits.yaml
+parrot mcp-local sdd-coder --config examples/sdd-coder-mcp.yaml   # or --list to confirm it resolves
+```
+
+The roster (which models fill which seat, and their fallbacks) lives
+entirely in the yaml's `kwargs.roster` — nothing is hardcoded in Python or
+in the `sdd-worker`/`sdd-coder` prompts. See
+[`docs/dev_loop/sdd-coder-orchestrator.md`](dev_loop/sdd-coder-orchestrator.md)
+for the full install steps, roster semantics, the orchestrator loop, and
+known gotchas (the Gemini 3 `thought_signature` echo requirement,
+`GEMINI_API_KEY` resolution via `navconfig`).

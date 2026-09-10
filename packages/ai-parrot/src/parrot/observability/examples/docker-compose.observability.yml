@@ -1,7 +1,12 @@
 # AI-Parrot Observability Stack
 # FEAT-177 TASK-1237
 #
-# Minimal development stack: OpenLIT UI + ClickHouse (OpenLIT storage) + Prometheus.
+# Minimal development stack: OpenLIT UI + ClickHouse (OpenLIT storage).
+#
+# Prometheus now lives in docker/prometheus/ (repo root) so that every docker
+# artifact sits under docker/. It scrapes this stack's OpenLIT metrics endpoint
+# over the host gateway, so the two stacks start and stop independently:
+#   docker compose -f docker/prometheus/docker-compose.yml up -d
 #
 # WARNING: DO NOT deploy this compose file to production as-is.
 #          No authentication, no TLS, no volume persistence tuning.
@@ -77,22 +82,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-    restart: unless-stopped
-
-  # --------------------------------------------------------------------------
-  # Prometheus — scrapes OpenLIT metrics endpoint (optional but recommended)
-  # --------------------------------------------------------------------------
-  prometheus:
-    image: prom/prometheus:v2.51.0
-    container_name: parrot-prometheus
-    ports:
-      - "9090:9090"   # Prometheus UI
-    volumes:
-      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
-    command:
-      - "--config.file=/etc/prometheus/prometheus.yml"
-      - "--storage.tsdb.path=/prometheus"
-      - "--web.enable-lifecycle"
     restart: unless-stopped
 
 volumes:

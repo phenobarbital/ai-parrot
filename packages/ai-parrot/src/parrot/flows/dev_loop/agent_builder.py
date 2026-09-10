@@ -45,6 +45,8 @@ from parrot.flows.dev_loop import (
     DevLoopCodeDispatcher,
     GeminiCodeDispatcher,
     GeminiCodeDispatchProfile,
+    GoogleCompatCodeDispatcher,
+    GoogleCompatCodeDispatchProfile,
     GrokCodeDispatcher,
     GrokCodeDispatchProfile,
     LLMCodeDispatcher,
@@ -256,6 +258,17 @@ def build_dispatcher(
             model=spec.model
             or config_getter("DEV_LOOP_NOVA_CODE_MODEL", "minimax.minimax-m2.5"),
             max_turns=llm_max_turns,
+        )
+        return dispatcher, profile
+
+    if spec.agent == "google-compat":
+        dispatcher = GoogleCompatCodeDispatcher(**common)
+        compat_model = spec.model or config_getter("DEV_LOOP_GOOGLE_COMPAT_MODEL", "gemini-3.5-flash")
+        profile = GoogleCompatCodeDispatchProfile(
+            model=compat_model,
+            llm=f"google-compat:{compat_model}",
+            max_turns=llm_max_turns,
+            reasoning_effort=config_getter("DEV_LOOP_GOOGLE_COMPAT_REASONING_EFFORT", "none"),
         )
         return dispatcher, profile
 

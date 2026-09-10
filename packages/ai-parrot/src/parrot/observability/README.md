@@ -145,9 +145,12 @@ nothing — configure an OTLP target or the `OpenLitUsageRecorder` instead.
 The Prometheus backend exposes `parrot_llm_requests_total`,
 `parrot_llm_input_tokens_total`, `parrot_llm_output_tokens_total`,
 `parrot_llm_cost_usd_total` (all labelled `{provider, model}`),
-`parrot_llm_request_duration_seconds`, and `parrot_llm_tokens{type}`. A starter
-dashboard ships at
-[`examples/grafana-dashboards/parrot-usage.json`](examples/grafana-dashboards/parrot-usage.json).
+`parrot_llm_request_duration_seconds`, and `parrot_llm_tokens{type}`. This path
+has no example dashboard (FEAT-548 retired the stale one, which queried these
+names with no by-agent panel and no stable `uid`) — for a usage/cost dashboard
+with agent, model and provider breakdowns, use `OBSERVABILITY_BACKEND=otel`
+with the OTel path's provisioned **AI-Parrot — LLM Usage & Cost** dashboard
+instead (`docker/grafana/README.md`).
 
 ### Programmatic use / custom backends
 
@@ -281,7 +284,7 @@ optional endpoint-reachability probe (`parrot-openlit-check`).
 
 - Live demo stack: [`examples/docker-compose.observability.yml`](examples/docker-compose.observability.yml)
 - Demo script: [`examples/basic_telemetry.py`](examples/basic_telemetry.py)
-- Grafana dashboard: [`examples/grafana-dashboards/parrot-overview.json`](examples/grafana-dashboards/parrot-overview.json)
+- Grafana dashboard (OTel path): [`examples/grafana-dashboards/parrot-usage-cost.json`](examples/grafana-dashboards/parrot-usage-cost.json)
 - Full quickstart: [`examples/README.md`](examples/README.md)
 
 ---

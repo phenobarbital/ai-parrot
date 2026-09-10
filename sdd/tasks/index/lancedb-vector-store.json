@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-10T00:33:53Z",
-  "completed_at": null,
+  "completed_at": "2026-09-10T13:31:52+00:00",
   "isolation": "per-spec",
   "parallelism_notes": "TASK-3057 is the mandatory reconciliation/SDK gate. Packaging, models and then coordinator/filter/origin work use disjoint ownership. Backend lifecycle -> CRUD -> vector -> FTS/hybrid tasks are sequential. Offline and end-to-end validation can run concurrently after registration. Final docs/CI waits for both.",
   "scope_precedence": "The spec is marked approved. Its checked section 8 answers require fully offline agent operation after provisioning, concurrent independent writers, graph federation only, and whole-origin failure; they override older draft assumptions. TASK-3057 must reconcile the spec and prove the SDK/offline/concurrency contracts before dependent implementation begins. Do not reinstate single-writer-only or storage-only-offline behavior.",
@@ -78,7 +78,7 @@
       "feature_id": "FEAT-542",
       "feature": "lancedb-vector-store",
       "spec": "sdd/specs/lancedb-vector-store.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "estimated_hours": 4,
@@ -88,8 +88,9 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3057-lancedb-approved-contract-gate.md"
+      "completed_at": "2026-09-10T11:21:11+00:00",
+      "file": "sdd/tasks/completed/TASK-3057-lancedb-approved-contract-gate.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3058",
@@ -98,7 +99,7 @@
       "feature_id": "FEAT-542",
       "feature": "lancedb-vector-store",
       "spec": "sdd/specs/lancedb-vector-store.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "estimated_hours": 1.5,
@@ -110,8 +111,9 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3058-lancedb-optional-dependency.md"
+      "completed_at": "2026-09-10T11:22:52+00:00",
+      "file": "sdd/tasks/completed/TASK-3058-lancedb-optional-dependency.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3059",
@@ -120,7 +122,7 @@
       "feature_id": "FEAT-542",
       "feature": "lancedb-vector-store",
       "spec": "sdd/specs/lancedb-vector-store.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "estimated_hours": 4,
@@ -132,8 +134,9 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3059-lancedb-models-schema-identity.md"
+      "completed_at": "2026-09-10T11:25:42+00:00",
+      "file": "sdd/tasks/completed/TASK-3059-lancedb-models-schema-identity.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3060",
@@ -142,7 +145,7 @@
       "feature_id": "FEAT-542",
       "feature": "lancedb-vector-store",
       "spec": "sdd/specs/lancedb-vector-store.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "estimated_hours": 3,
@@ -154,8 +157,9 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3060-lancedb-safe-metadata-filters.md"
+      "completed_at": "2026-09-10T11:28:04+00:00",
+      "file": "sdd/tasks/completed/TASK-3060-lancedb-safe-metadata-filters.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3061",
@@ -164,7 +168,7 @@
       "feature_id": "FEAT-542",
       "feature": "lancedb-vector-store",
       "spec": "sdd/specs/lancedb-vector-store.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "estimated_hours": 4,
@@ -177,8 +181,9 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3061-lancedb-process-write-coordination.md"
+      "completed_at": "2026-09-10T11:31:13+00:00",
+      "file": "sdd/tasks/completed/TASK-3061-lancedb-process-write-coordination.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3062",
@@ -187,7 +192,7 @@
       "feature_id": "FEAT-542",
       "feature": "lancedb-vector-store",
       "spec": "sdd/specs/lancedb-vector-store.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "estimated_hours": 4,
@@ -201,8 +206,9 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3062-lancedb-lifecycle-lazy-embeddings.md"
+      "completed_at": "2026-09-10T11:36:42+00:00",
+      "file": "sdd/tasks/completed/TASK-3062-lancedb-lifecycle-lazy-embeddings.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3063",
@@ -211,7 +217,7 @@
       "feature_id": "FEAT-542",
       "feature": "lancedb-vector-store",
       "spec": "sdd/specs/lancedb-vector-store.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "estimated_hours": 4,
@@ -224,8 +230,9 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3063-lancedb-upserts-safe-deletes.md"
+      "completed_at": "2026-09-10T11:43:58+00:00",
+      "file": "sdd/tasks/completed/TASK-3063-lancedb-upserts-safe-deletes.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3064",
@@ -234,7 +241,7 @@
       "feature_id": "FEAT-542",
       "feature": "lancedb-vector-store",
       "spec": "sdd/specs/lancedb-vector-store.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "estimated_hours": 3,
@@ -246,8 +253,9 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3064-lancedb-cosine-vector-search.md"
+      "completed_at": "2026-09-10T11:47:17+00:00",
+      "file": "sdd/tasks/completed/TASK-3064-lancedb-cosine-vector-search.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3065",
@@ -256,7 +264,7 @@
       "feature_id": "FEAT-542",
       "feature": "lancedb-vector-store",
       "spec": "sdd/specs/lancedb-vector-store.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "estimated_hours": 4,
@@ -268,8 +276,9 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3065-lancedb-native-fts-hybrid.md"
+      "completed_at": "2026-09-10T11:50:02+00:00",
+      "file": "sdd/tasks/completed/TASK-3065-lancedb-native-fts-hybrid.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3066",
@@ -278,7 +287,7 @@
       "feature_id": "FEAT-542",
       "feature": "lancedb-vector-store",
       "spec": "sdd/specs/lancedb-vector-store.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "estimated_hours": 3,
@@ -290,8 +299,9 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3066-lancedb-search-origin.md"
+      "completed_at": "2026-09-10T11:53:14+00:00",
+      "file": "sdd/tasks/completed/TASK-3066-lancedb-search-origin.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3067",
@@ -300,7 +310,7 @@
       "feature_id": "FEAT-542",
       "feature": "lancedb-vector-store",
       "spec": "sdd/specs/lancedb-vector-store.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "estimated_hours": 2,
@@ -313,8 +323,9 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3067-lancedb-dispatch-compatibility.md"
+      "completed_at": "2026-09-10T11:58:29+00:00",
+      "file": "sdd/tasks/completed/TASK-3067-lancedb-dispatch-compatibility.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3068",
@@ -323,7 +334,7 @@
       "feature_id": "FEAT-542",
       "feature": "lancedb-vector-store",
       "spec": "sdd/specs/lancedb-vector-store.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "estimated_hours": 4,
@@ -335,8 +346,9 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3068-lancedb-offline-agent-profile.md"
+      "completed_at": "2026-09-10T12:02:16+00:00",
+      "file": "sdd/tasks/completed/TASK-3068-lancedb-offline-agent-profile.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3069",
@@ -345,7 +357,7 @@
       "feature_id": "FEAT-542",
       "feature": "lancedb-vector-store",
       "spec": "sdd/specs/lancedb-vector-store.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "estimated_hours": 4,
@@ -357,8 +369,9 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3069-lancedb-end-to-end-validation.md"
+      "completed_at": "2026-09-10T12:08:17+00:00",
+      "file": "sdd/tasks/completed/TASK-3069-lancedb-end-to-end-validation.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3070",
@@ -367,7 +380,7 @@
       "feature_id": "FEAT-542",
       "feature": "lancedb-vector-store",
       "spec": "sdd/specs/lancedb-vector-store.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "estimated_hours": 4,
@@ -380,8 +393,9 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3070-lancedb-release-docs-ci.md"
+      "completed_at": "2026-09-10T12:14:46+00:00",
+      "file": "sdd/tasks/completed/TASK-3070-lancedb-release-docs-ci.md",
+      "verification": "verified"
     }
   ]
 }

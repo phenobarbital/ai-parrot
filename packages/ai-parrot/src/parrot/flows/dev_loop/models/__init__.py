@@ -72,6 +72,7 @@ from parrot.flows.dev_loop.models.gemini import (
 from parrot.flows.dev_loop.models.google_coding import (
     GoogleCodingDispatchProfile,
 )
+from parrot.flows.dev_loop.models.google_compat import GoogleCompatCodeDispatchProfile
 from parrot.flows.dev_loop.models.grok import GrokCodeDispatchProfile
 from parrot.flows.dev_loop.models.llm import LLMCodeDispatchProfile
 from parrot.flows.dev_loop.models.moonshot import MoonshotCodeDispatchProfile
@@ -106,6 +107,7 @@ __all__ = [
     "FlowtaskCriterion",
     "GeminiCodeDispatchProfile",
     "GoogleCodingDispatchProfile",
+    "GoogleCompatCodeDispatchProfile",
     "GrokCodeDispatchProfile",
     "JudgeBackend",
     "JudgePanelConfig",

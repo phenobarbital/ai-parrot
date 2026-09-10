@@ -4,7 +4,11 @@
 > It has no authentication, no TLS, and no volume persistence tuning.
 
 This directory contains a self-contained developer stack that lets you see
-AI-Parrot traces and metrics in under 5 minutes.
+AI-Parrot **traces** in under 5 minutes via OpenLIT. **Metrics go to the
+separate Prometheus + Grafana stack at the repo root** (`docker/prometheus/`,
+`docker/grafana/`) — see step 1 below and `docker/grafana/README.md`. OpenLIT
+is a plain OTLP trace destination (FEAT-462), not a metrics backend; the two
+stacks are independent and both optional.
 
 ---
 
@@ -33,9 +37,16 @@ Services started:
 | OTLP receiver | http://localhost:4318 (HTTP)   | Receives spans from the agent    |
 | OTLP gRPC     | grpc://localhost:4317          | Alternative gRPC ingestion       |
 | ClickHouse    | http://localhost:8123          | OpenLIT storage backend          |
-| Prometheus    | http://localhost:9090          | Optional metrics scraping        |
 
 Wait 15-20 seconds for OpenLIT to finish initialising its ClickHouse schema.
+
+Prometheus is no longer part of this stack — it moved to `docker/prometheus/`
+at the repo root (with every other docker artifact) and is now shared with the
+Grafana stack in `docker/grafana/`:
+
+```bash
+docker compose -f docker/prometheus/docker-compose.yml up -d   # http://localhost:9090
+```
 
 ---
 
@@ -69,17 +80,26 @@ Open **http://localhost:3000** in your browser.
 
 ## 4. Load the Grafana dashboard (optional)
 
-If you have Grafana 10+ running with a Prometheus datasource:
+This needs the separate Prometheus + Grafana stack (step 1's note above), with
+`env/.env`'s `[observability]` block pointed at Prometheus's OTLP write
+receiver — see `docker/grafana/README.md` for the exact config and topology.
+Once `docker/grafana/docker-compose.yml` is up, the **AI-Parrot — LLM Usage &
+Cost** dashboard is provisioned automatically into Grafana's **AI-Parrot**
+folder — no manual import needed. Open it at
+<http://localhost:3001/d/parrot-usage-cost/>.
 
-1. In Grafana: **Dashboards → Import**.
-2. Upload `grafana-dashboards/parrot-overview.json`.
-3. Select your Prometheus datasource when prompted.
+A byte-identical copy ships in this directory,
+[`grafana-dashboards/parrot-usage-cost.json`](grafana-dashboards/parrot-usage-cost.json),
+for reference or manual import elsewhere.
 
 The dashboard shows:
-- Token throughput by model (tokens/s)
-- Cost by model (USD/hour)
-- p95 latency by model (seconds)
-- Error rate by model
+- Total cost, requests, tokens, and requests without a matched cost (unpriced
+  models made visible, not silently dropped)
+- Cost rate, tokens/s, and cumulative cost **by agent** — the dimension no
+  earlier dashboard here ever had, despite `parrot.agent.name` being on every
+  LLM metric since FEAT-228
+- Cost rate, tokens/s, and cumulative cost by model + provider
+- Request rate by agent and p50/p95 latency
 
 ---
 

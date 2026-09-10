@@ -1,0 +1,14 @@
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    uid: claudestats-prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    # Allow tweaking the URL from the UI (still re-applied on restart).
+    editable: true
+    jsonData:
+      httpMethod: POST
+      timeInterval: 15s

@@ -360,9 +360,13 @@ class TestDatabaseQueryToolBackwardCompat:
         assert isinstance(creds, dict)
         assert dsn is None or isinstance(dsn, str)
 
-    def test_no_driver_info_class(self) -> None:
+    def test_driver_info_delegates_to_shared_helpers(self) -> None:
+        """DriverInfo is kept for back-compat (FEAT-105) but must delegate."""
         import parrot.tools.databasequery.tool as mod
-        assert not hasattr(mod, "DriverInfo")
+        from parrot.tools.databasequery.sources import normalize_driver
+
+        assert hasattr(mod, "DriverInfo"), "DriverInfo back-compat wrapper expected"
+        assert mod.DriverInfo.normalize_driver("postgres") == normalize_driver("postgres")
 
     def test_no_local_query_validator(self) -> None:
         import parrot.tools.databasequery.tool as mod

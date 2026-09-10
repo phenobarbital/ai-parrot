@@ -55,7 +55,7 @@ def test_project_trace_context_returns_none_for_none():
 
 
 def test_project_trace_context_projects_fields():
-    from parrot.core.events.lifecycle.trace import TraceContext
+    from parrot.core.events.lifecycle import TraceContext
 
     tc = TraceContext.new_root()
     projected = project_trace_context(tc)

@@ -25,6 +25,7 @@ dependencies = [
 [project.entry-points."parrot.clients"]
 google = "parrot.clients.google:GoogleGenAIClient"
 gemini-live = "parrot.clients.google:GeminiLiveClient"
+google-compat = "parrot.clients.google:GeminiOpenAICompatClient"
 
 [tool.setuptools.packages.find]
 where = ["src"]

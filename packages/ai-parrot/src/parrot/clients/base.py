@@ -5,6 +5,7 @@ from datetime import datetime
 import inspect
 import json
 import random
+import time
 import re
 import string as _string
 import mimetypes
@@ -693,9 +694,16 @@ $backstory
         )
         await self.events.emit(event)
         # Forward to global so cost/token recorders and OTel subscribers
-        # registered on the global registry observe this call (see
-        # _emit_before_call for the rationale).
-        self.events.forward_to_global(event)
+        # registered on the global registry observe this call.
+        #
+        # AWAITED (not fire-and-forget) — fixes the FEAT-548 Finding #2 race:
+        # forward_to_global() schedules a fire-and-forget task that is silently
+        # dropped when shutdown_telemetry() or process exit runs before the
+        # event loop yields. Since _emit_after_call is already async and awaited
+        # by the caller, awaiting the global emit here costs nothing and ensures
+        # the event reaches MetricsSubscriber before the next line of the caller
+        # executes.
+        await self._forward_to_global_awaited(event)
 
     async def _emit_failed_call(
         self,
@@ -734,9 +742,74 @@ $backstory
             session_id=current_session_id.get(),
         )
         await self.events.emit(event)
-        # Forward to global so error counters on the global registry observe
-        # the failure (see _emit_before_call for the rationale).
-        self.events.forward_to_global(event)
+        # AWAITED — same FEAT-548 Finding #2 rationale as _emit_after_call.
+        await self._forward_to_global_awaited(event)
+
+    async def _emit_failed_call_safe(
+        self,
+        tc: "TraceContext",
+        client_name: str,
+        model: str,
+        t0: float,
+        exc: "Exception",
+    ) -> None:
+        """Best-effort wrapper around :meth:`_emit_failed_call`.
+
+        Suppresses any exception raised by the emission itself so it never
+        masks the original ``exc``.  Call this from ``except`` blocks where
+        the original exception must propagate untouched.
+
+        Args:
+            tc: The ``TraceContext`` from :meth:`_emit_before_call`.
+            client_name: Provider identifier.
+            model: Model name.
+            t0: ``time.perf_counter()`` value captured right after
+                ``_emit_before_call``.
+            exc: The exception being handled.
+        """
+        try:
+            await self._emit_failed_call(
+                tc,
+                client_name=client_name,
+                model=model,
+                duration_ms=(time.perf_counter() - t0) * 1000,
+                exc=exc,
+            )
+        except Exception:  # noqa: BLE001
+            self.logger.debug(
+                "Failed to emit ClientCallFailedEvent", exc_info=True,
+            )
+
+    async def _forward_to_global_awaited(self, event: Any) -> None:
+        """Forward *event* to the global registry, **awaited**.
+
+        Unlike ``self.events.forward_to_global(event)`` — which schedules
+        a fire-and-forget ``create_task`` — this method awaits the global
+        emit directly. Use it in ``_emit_after_call`` / ``_emit_failed_call``
+        where the caller is already ``async`` and the event must land
+        before the next line executes (fixes FEAT-548 Finding #2: the race
+        where ``shutdown_telemetry()`` runs before the task is picked up).
+
+        ``_emit_before_call`` stays fire-and-forget because it is
+        synchronous (returns ``TraceContext``) and the ``Before`` event
+        carries no metrics data — missing it in a shutdown race is
+        cosmetic, not a data loss.
+        """
+        try:
+            from parrot.core.events.lifecycle import get_global_registry
+            global_reg = get_global_registry()
+            if global_reg is self.events:
+                return  # we ARE the global registry — already emitted
+            if not global_reg.has_subscribers(type(event)):
+                return  # nobody listening — skip the work
+            await global_reg.emit(event)
+        except Exception:  # noqa: BLE001
+            # Best-effort: never mask the caller's real work.
+            self.logger.debug(
+                "Failed to forward %s to global registry",
+                type(event).__name__,
+                exc_info=True,
+            )
 
     @property
     def tool_manager(self) -> ToolManager:

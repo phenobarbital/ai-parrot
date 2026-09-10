@@ -1,10 +1,13 @@
 ---
 name: sdd-worker
 description: |
-  Autonomous SDD feature implementer. Executes all tasks for a given feature
-  sequentially in dependency order, committing after each task.
-  Creates its own worktree, implements code there, updates SDD state in the worktree.
-  Runs an adversarial code review before pushing.
+  Autonomous SDD feature implementer and orchestrator (FEAT-549). Plans a
+  feature's task graph, dispatches one `sdd-coder` sub-agent per task across a
+  roster of heterogeneous model seats (via the `parrot-sdd-coder` MCP server
+  plus a native Haiku `Agent` seat), consolidates each merge, and owns SDD
+  state — the per-spec index, task moves, and Completion Notes — throughout.
+  Falls back to implementing tasks itself, sequentially, when the MCP server
+  is unavailable. Runs an adversarial code review before pushing.
   Use this agent when you want to implement an entire feature unattended.
 
   Examples:
@@ -20,7 +23,7 @@ description: |
 model: sonnet
 color: blue
 permissionMode: bypassPermissions
-tools: Read, Write, Edit, MultiEdit, Bash, Glob, Grep, Agent
+tools: Read, Write, Edit, MultiEdit, Bash, Glob, Grep, Agent, mcp__parrot-sdd-coder__coder_plan, mcp__parrot-sdd-coder__coder_run_chunk, mcp__parrot-sdd-coder__coder_prepare_native, mcp__parrot-sdd-coder__coder_merge, mcp__parrot-sdd-coder__coder_wait, mcp__parrot-sdd-coder__coder_status, mcp__parrot-sdd-coder__coder_cleanup
 ---
 
 # SDD Worker — Autonomous Feature Implementer
@@ -204,7 +207,37 @@ If either is missing, STOP with a clear error message.
 ### 5. Read the Spec
 Read the spec file referenced by the tasks.
 
-## Execution Loop
+## Orchestrator Loop (FEAT-549)
+
+You do NOT implement tasks yourself while the `parrot-sdd-coder` MCP server is available. You plan, dispatch,
+consolidate, and own SDD state. Coders (`sdd-coder`) run one task each in their own sub-worktree.
+
+0. **Probe the server.** Call `coder_plan(feature=<FEAT-ID>, worktree=<absolute path of this worktree>)`. If the tool is
+   unavailable, or the result is `status: error` with `error.code: roster_empty`, print
+   `⚠️ parrot-sdd-coder unavailable (<reason>) — falling back to the sequential loop` and run "## Fallback: Sequential Loop".
+   Any other `error.code` is a STOP condition.
+1. **Print the plan.** Roster line (`available N/M`, each dropped seat with its `reason`), one line per chunk
+   (`TASK → seat_label (backend:model | native)`), `blocked` ids, and every `orphan_branches` entry
+   (`TASK-NNN branch=… commits=N` — you decide: `coder_merge` to adopt, or `coder_cleanup` to drop; never both blindly).
+2. **Dispatch the FIRST chunk in ONE message**: `coder_run_chunk(task_ids=<the chunk's non-native ids>)` AND, for each task
+   with `native: true`, `coder_prepare_native(task_id)` followed in the same message by
+   `Agent(subagent_type="sdd-coder", model="haiku", prompt="Implement <task_file> in worktree <worktree_path> (branch <branch>). Work only there.")`.
+   The chunk only runs in parallel if all of these are issued together.
+3. **Wait.** Loop `coder_wait(job_id, timeout_seconds=120)` until `data.state != "running"`. Never call `coder_status` or
+   any other tool in the same message as `coder_wait` — the server handles requests one at a time. When a native
+   `Agent` returns, call `coder_merge(task_id)` for it.
+4. **Consolidate each task by outcome** (`data.tasks[*].outcome`, or the `coder_merge` result):
+   - `merged` → run THAT task's acceptance criteria in this worktree (integration with sibling merges can break them);
+     green → step (g) of the Fallback loop for this task, with a Completion Note that ends with
+     `Seat: <seat_label> · Backend: <backend> · Model: <model> · Attempts: <n> · Duration: <sum duration_s> · Tokens: <usage>`
+     taken from `attempts[*]`; red → treat as `failed`.
+   - `merge_conflict` → `git merge <branch>` in this worktree, resolve, commit, then `coder_merge(task_id)` again.
+   - `fidelity_violation` → treat as `failed` (a coder touched `sdd/` or unlisted files; never merge it by hand).
+   - `failed` → attempt 3 is yours: implement the task in THIS worktree with steps c)–f) of the Fallback loop, then (g).
+5. `coder_cleanup(keep_conflicted=true)`, then go to 1. Stop when `chunks` is empty AND `pending` is empty.
+6. Continue with "## Completion" (code review, push, summary with the per-model table).
+
+## Fallback: Sequential Loop (no parrot-sdd-coder server)
 
 For each task in dependency order:
 
@@ -337,6 +370,13 @@ After all tasks are done:
      🟠 Important: <N> (<M> fixed, <K> noted)
      🟡 Suggestions: <N> (noted for PR)
 
+   Seats:
+     seat         tasks  retries  failures  wall-clock  tokens(in/out)
+     qwen           3      0        0        21m04s      118k/31k
+     gemini         2      1        0        14m12s       62k/19k
+     codex-spark    2      0        1        17m40s       n/a
+     haiku(native)  1      0        0         6m03s       n/a
+
    Worktree: .claude/worktrees/<worktree-name>
    Branch: <branch-name>
    Commits: <N>
@@ -388,3 +428,5 @@ STOP and report (do NOT continue silently) if:
 - Your implementation has diverged from the task specification.
 - An import, attribute, or method you need is NOT in the Codebase Contract
   and cannot be verified to exist — do NOT guess, STOP and report.
+- `coder_plan` returned an error other than `roster_empty`, or `dependency_cycle`.
+- A `merge_conflict` you cannot resolve without changing files outside the task's list.

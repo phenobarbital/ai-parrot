@@ -1,0 +1,16 @@
+# Model prices for the FEAT-543 benchmark harness.
+#
+# This file ships EMPTY on purpose. An invented price is worse than no
+# price: cost is reported as `unknown` (null) until an operator fills in
+# real figures, and every row must record where its numbers came from.
+#
+# Fill in like this, then re-run the harness:
+#
+# models:
+#   bedrock-converse:qwen3-coder-480b-a35b:
+#     input_usd_per_1k: 0.0
+#     output_usd_per_1k: 0.0
+#     provenance: "AWS Bedrock pricing page, us-east-1, on-demand"
+#     as_of: "2026-09-10"
+
+models: {}
