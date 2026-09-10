@@ -1,0 +1,173 @@
+{
+  "feature": "a2ui-form-output-renderer",
+  "feature_id": "FEAT-544",
+  "spec": "sdd/specs/a2ui-form-output-renderer.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-09-10T01:17:10.446754+00:00",
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-3071",
+      "slug": "a2ui-renderer-skeleton-layout-submit",
+      "title": "A2UIFormRenderer skeleton: surface layout, dataModel, submit/cancel Buttons, pointer helpers",
+      "feature_id": "FEAT-544",
+      "feature": "a2ui-form-output-renderer",
+      "spec": "sdd/specs/a2ui-form-output-renderer.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L (4-8h)",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Foundation task — every other task imports from renderers/a2ui.py.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3071-a2ui-renderer-skeleton-layout-submit.md"
+    },
+    {
+      "id": "TASK-3072",
+      "slug": "a2ui-field-lowering-checks-degradation",
+      "title": "FieldType → Basic primitive lowering table, constraint → checks, honest degradation",
+      "feature_id": "FEAT-544",
+      "feature": "a2ui-form-output-renderer",
+      "spec": "sdd/specs/a2ui-form-output-renderer.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L (4-8h)",
+      "depends_on": [
+        "TASK-3071"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Edits renderers/a2ui.py created by TASK-3071 (same file) — must run after it; independent of TASK-3073/3074.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3072-a2ui-field-lowering-checks-degradation.md"
+    },
+    {
+      "id": "TASK-3073",
+      "slug": "a2ui-renderer-registration-packaging",
+      "title": "Register the `a2ui` render format (guarded seed), lazy package export, optional extra",
+      "feature_id": "FEAT-544",
+      "feature": "a2ui-form-output-renderer",
+      "spec": "sdd/specs/a2ui-form-output-renderer.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S (< 2h)",
+      "depends_on": [
+        "TASK-3071"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Touches api/render.py, renderers/__init__.py and pyproject.toml only — no file overlap with TASK-3072 or TASK-3074; can run in a parallel worktree once TASK-3071 is merged.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3073-a2ui-renderer-registration-packaging.md"
+    },
+    {
+      "id": "TASK-3074",
+      "slug": "a2ui-wire-helpers",
+      "title": "api/a2ui_wire.py: detect, unwrap, and shape A2UI envelopes for the form endpoints",
+      "feature_id": "FEAT-544",
+      "feature": "a2ui-form-output-renderer",
+      "spec": "sdd/specs/a2ui-form-output-renderer.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M (2-4h)",
+      "depends_on": [
+        "TASK-3071"
+      ],
+      "parallel": true,
+      "parallelism_notes": "New file; only shares the pointer helpers from TASK-3071. No overlap with TASK-3072/3073 — safe in a parallel worktree.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3074-a2ui-wire-helpers.md"
+    },
+    {
+      "id": "TASK-3075",
+      "slug": "submit-data-dual-wire",
+      "title": "Dual-wire `POST .../data`: accept A2UI action envelopes, reply with A2UI envelopes",
+      "feature_id": "FEAT-544",
+      "feature": "a2ui-form-output-renderer",
+      "spec": "sdd/specs/a2ui-form-output-renderer.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M (2-4h)",
+      "depends_on": [
+        "TASK-3074"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Edits handlers.py; TASK-3076 edits the same file — run sequentially (3075 then 3076).",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3075-submit-data-dual-wire.md"
+    },
+    {
+      "id": "TASK-3076",
+      "slug": "validate-dual-wire",
+      "title": "Dual-wire `POST .../validate` (dry run) for A2UI action envelopes",
+      "feature_id": "FEAT-544",
+      "feature": "a2ui-form-output-renderer",
+      "spec": "sdd/specs/a2ui-form-output-renderer.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S (< 2h)",
+      "depends_on": [
+        "TASK-3074",
+        "TASK-3075"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Same file as TASK-3075 (handlers.py) — sequential after it to avoid merge conflicts.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3076-validate-dual-wire.md"
+    },
+    {
+      "id": "TASK-3077",
+      "slug": "a2ui-form-cycle-integration-tests",
+      "title": "End-to-end A2UI form cycle, membership parity and official-schema conformance tests",
+      "feature_id": "FEAT-544",
+      "feature": "a2ui-form-output-renderer",
+      "spec": "sdd/specs/a2ui-form-output-renderer.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M (2-4h)",
+      "depends_on": [
+        "TASK-3072",
+        "TASK-3073",
+        "TASK-3075",
+        "TASK-3076"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Integration layer over all previous tasks — must run last.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3077-a2ui-form-cycle-integration-tests.md"
+    },
+    {
+      "id": "TASK-3078",
+      "slug": "a2ui-renderer-docs-changelog",
+      "title": "Documentation: A2UI form cycle, extension keys, dual-wire contract, coverage table; CHANGELOG",
+      "feature_id": "FEAT-544",
+      "feature": "a2ui-form-output-renderer",
+      "spec": "sdd/specs/a2ui-form-output-renderer.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S (< 2h)",
+      "depends_on": [
+        "TASK-3077"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Docs only, last.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3078-a2ui-renderer-docs-changelog.md"
+    }
+  ]
+}
