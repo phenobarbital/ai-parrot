@@ -1,10 +1,10 @@
 ---
-id: FEAT-565
+id: FEAT-548
 title: Wire parrot OTEL telemetry into the running parrot-prometheus and ship a usage/cost Grafana dashboard
 slug: observability-otel-grafana
 type: feature
 mode: enrichment
-status: review
+status: accepted
 source:
   kind: inline
   jira_key: null
@@ -13,24 +13,24 @@ source:
   summary_oneline: Point parrot OTEL at parrot-prometheus and build a Grafana dashboard for usage/tokens/cost by agent and model
 overall_confidence: high
 base_branch: dev
-research_state: sdd/state/FEAT-565/
+research_state: sdd/state/FEAT-548/
 created: 2026-09-10
 updated: 2026-09-10
 ---
 
-# FEAT-565 — Wire parrot OTEL telemetry into the running parrot-prometheus and ship a usage/cost Grafana dashboard
+# FEAT-548 — Wire parrot OTEL telemetry into the running parrot-prometheus and ship a usage/cost Grafana dashboard
 
 > **Mode**: enrichment
 > **Confidence**: high
 > **Source**: `inline`
-> **Audit**: [`sdd/state/FEAT-565/`](../state/FEAT-565/)
+> **Audit**: [`sdd/state/FEAT-548/`](../state/FEAT-548/)
 
 ---
 
 ## 0. Origin
 
 The original request, preserved verbatim. The full source is at
-`sdd/state/FEAT-565/source.md`.
+`sdd/state/FEAT-548/source.md`.
 
 > parrot observability was recently migrated from openlit to a compatible OTEL
 > opentelemetry with per-agent usage, tokens, etc, currently there are a
@@ -76,7 +76,7 @@ dashboard integration landed days ago as a working template.
 ## 2. Codebase Findings
 
 > All entries are grounded in the research findings persisted at
-> `sdd/state/FEAT-565/findings/`. Each cites the finding ID(s) that justify it.
+> `sdd/state/FEAT-548/findings/`. Each cites the finding ID(s) that justify it.
 
 ### 2.1 Localization
 
@@ -439,7 +439,7 @@ Distribution: **10** high, **1** medium, **1** low.
 
 ## 6. Recommended Next Step
 
-**`/sdd-spec FEAT-565`** — *Rationale*: localization is high-confidence and
+**`/sdd-spec FEAT-548`** — *Rationale*: localization is high-confidence and
 complete (C1–C6, C8, C9), the emitter needs no change, and all five
 configuration forks have been resolved. What remains is exactly what a spec
 formalizes: concrete acceptance criteria for the wiring, the panel inventory,
@@ -447,10 +447,10 @@ and the two verification steps that close C10 and C11.
 
 ### Alternatives
 
-- **`/sdd-brainstorm FEAT-565`** — not needed; the architectural forks
+- **`/sdd-brainstorm FEAT-548`** — not needed; the architectural forks
   (direct push vs collector, trace destination, dashboard placement) were
   enumerated in §3 and resolved in §5.
-- **`/sdd-task FEAT-565`** — not suitable. Despite "no instrumentation work",
+- **`/sdd-task FEAT-548`** — not suitable. Despite "no instrumentation work",
   this spans an operator action, two docker directories, two package example
   files and two docs — more than one logical commit.
 - **Manual review** — not required; research completed within budget with no
@@ -462,11 +462,11 @@ and the two verification steps that close C10 and C11.
 
 | Artifact | Path |
 |----------|------|
-| State checkpoints | `sdd/state/FEAT-565/state.json` |
-| Source | `sdd/state/FEAT-565/source.md` |
-| Research plan | `sdd/state/FEAT-565/research_plan.json` |
-| Findings (14) | `sdd/state/FEAT-565/findings/F001…F014` |
-| Synthesis | `sdd/state/FEAT-565/synthesis.json` |
+| State checkpoints | `sdd/state/FEAT-548/state.json` |
+| Source | `sdd/state/FEAT-548/source.md` |
+| Research plan | `sdd/state/FEAT-548/research_plan.json` |
+| Findings (14) | `sdd/state/FEAT-548/findings/F001…F014` |
+| Synthesis | `sdd/state/FEAT-548/synthesis.json` |
 
 **Budget**: `default` profile — completed without truncation.
 Wiki available (35 036 pages / 20 932 symbols); wiki orientation queries were

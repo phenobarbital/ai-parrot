@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "feature_id": "FEAT-565",
+  "feature_id": "FEAT-548",
   "phase": "committed",
   "started_at": "2026-09-10T14:11:19.362801+00:00",
   "updated_at": "2026-09-10T15:17:05.724625+00:00",
@@ -9,7 +9,7 @@
   "source": {
     "kind": "inline",
     "jira_key": null,
-    "path": "sdd/state/FEAT-565/source.md",
+    "path": "sdd/state/FEAT-548/source.md",
     "summary_oneline": "Point parrot OTEL observability at the running parrot-prometheus and build a Grafana dashboard for usage/tokens/cost by agent and model"
   },
   "budget": {
