@@ -48,35 +48,49 @@ seam. Subscribers (`GenAIOpenTelemetrySubscriber`, `MetricsSubscriber`,
 and cost records. Sensitive data is hashed; prompts/completions are **not**
 captured by default (PII guard).
 
-## 10.2 Get a dashboard of LLM requests (OpenLIT + OTLP)
+## 10.2 Get a dashboard of LLM requests (Prometheus + Grafana)
 
 ```bash
 # 1. Install the extra (aiohttp-only helper — no monkey-patching SDK)
-pip install 'ai-parrot[observability,observability-openlit]'
+pip install 'ai-parrot[observability]'
 
-# 2. Launch a local OpenLIT collector — see
-#    packages/ai-parrot-openlit-bridge/docker-compose.openlit.yml
-docker compose -f packages/ai-parrot-openlit-bridge/docker-compose.openlit.yml up -d
-parrot-openlit-check http://localhost:4318   # verify reachability
+# 2. The local stack (already running for most dev setups):
+docker compose -f docker/prometheus/docker-compose.yml up -d
+docker compose -f docker/grafana/docker-compose.yml up -d --build
 
-# 3. Point AI-Parrot at the collector (.env)
+# 3. Point AI-Parrot at the Prometheus OTLP write receiver (.env)
 OBSERVABILITY_ENABLED=true
 OBSERVABILITY_BACKEND=otel
 OBSERVABILITY_SERVICE_NAME=my-agent
-OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+# Metrics -> the local Prometheus OTLP write receiver. BASE URL ONLY: the
+# exporter appends /v1/metrics itself (exporters.py:152).
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:9090/api/v1/otlp
+# Prometheus 2.x serves no /v1/traces, and enable_traces is a code-only field
+# (config.py:132) — so silence traces here rather than 404ing on every batch.
+# Set OTLP_TARGETS instead if you want traces to keep reaching OpenLIT.
+OBSERVABILITY_SAMPLING=0.0
 ```
 
-Build/use any bot → open <http://localhost:3000> to see each LLM request with
-tokens, USD cost, latency, model and errors.
+A ready-to-copy, secret-free block lives at `env/.env.observability.example`.
+Build/use any bot → open the **AI-Parrot — LLM Usage & Cost** dashboard,
+provisioned automatically into Grafana's **AI-Parrot** folder from
+`docker/grafana/provisioning/dashboards-parrot/` (deep link and empty-dashboard
+diagnostics: `docker/grafana/README.md`) — see each LLM request with tokens, USD
+cost, latency, model, provider and, since FEAT-228, **agent**.
 
-For **multiple** OTLP destinations at once, set `OTLP_TARGETS` (a JSON list of
-`{"name","endpoint","headers"}`) instead of the single
-`OTEL_EXPORTER_OTLP_ENDPOINT` — one `BatchSpanProcessor` is attached per target
-on the shared `TracerProvider`.
+For **traces**, OpenLIT remains a supported destination (the
+`ai-parrot-openlit-bridge` distribution and its collector are unchanged):
+set `OBSERVABILITY_SAMPLING=1.0` and either point `OTEL_EXPORTER_OTLP_ENDPOINT`
+back at OpenLIT's receiver, or set `OTLP_TARGETS` (a JSON list of
+`{"name","endpoint","headers"}`) to fan traces out to OpenLIT while metrics keep
+going to Prometheus — one `BatchSpanProcessor` is attached per target on the
+shared `TracerProvider`. `parrot-openlit-check http://localhost:4318` verifies
+OpenLIT's own receiver is reachable before pointing traces at it.
 
-For Prometheus + Grafana, set
-`OBSERVABILITY_BACKEND=prometheus` and import the dashboards under
-`packages/ai-parrot/src/parrot/observability/examples/grafana-dashboards/`.
+`OBSERVABILITY_BACKEND=prometheus` is a *different*, non-OTel path: it exposes
+`parrot_llm_*` counters via `prometheus_client` on `:9464` for Prometheus to
+scrape, carries only `(provider, model)` labels, and cannot answer "cost by
+agent". Use it only if you specifically want that.
 
 ## 10.3 Configuration reference
 
@@ -90,10 +104,18 @@ For Prometheus + Grafana, set
 | `OBSERVABILITY_CAPTURE_CONTENT` | capture prompts/completions (PII; dev only) | `false` |
 | `OBSERVABILITY_SERVICE_NAME` | `service.name` | `ai-parrot` |
 | `OBSERVABILITY_COST` | USD cost tracking | `true` |
-| `OBSERVABILITY_SAMPLING` | trace sampling ratio (0.0–1.0) | `1.0` |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP collector base URL | `http://localhost:4318` |
+| `OBSERVABILITY_SAMPLING` | trace sampling ratio (0.0–1.0). **`0.0` is the only env-level way to switch traces off** — `enable_traces` is code-only (`config.py:132`) | `1.0` |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP **base** URL — `/v1/metrics` and `/v1/traces` are appended by the exporter. Metrics use this endpoint *only*; `OTLP_TARGETS` redirects traces alone | `http://localhost:4318` |
 | `OBSERVABILITY_PROM_PORT` / `_ADDR` | Prometheus exposition | `9464` / `0.0.0.0` |
 | `PARROT_PRICING_PATH` | custom pricing dir | bundled tables |
+
+> **Not settable from the environment.** `enable_traces` / `enable_metrics`
+> (`config.py:132-133`) and `metric_export_interval_ms` (`config.py:211`,
+> default 60 s) are code-only fields — `from_env()` never reads them. To turn
+> traces off from `.env`, set `OBSERVABILITY_SAMPLING=0.0`. Expect up to a
+> minute before the first metrics appear.
+>
+> A ready-to-copy block lives at `env/.env.observability.example`.
 
 ## 10.4 Lifecycle & graceful flush
 
@@ -106,3 +128,20 @@ lost. AI-Parrot handles this automatically:
   `AutonomousOrchestrator.stop()` before the worker exits.
 - If you own the lifecycle, call `shutdown_observability()` yourself (aggregates
   the OTel and lightweight teardown paths; idempotent and safe when disabled).
+
+> **Short-lived callers (scripts/CLIs/one-shot lambdas): yield before you
+> shut down.** `BeforeClientCallEvent`/`AfterClientCallEvent`/
+> `ClientCallFailedEvent` are forwarded to the global registry as a
+> fire-and-forget scheduled task (`AbstractClient._emit_*` →
+> `forward_to_global`), not awaited inline. If the last client call is
+> immediately followed by `shutdown_telemetry()`/`shutdown_observability()`
+> with no intervening event-loop yield, that forwarded task may never run —
+> silently dropping the last call's request/duration/token/cost metrics
+> (empirically reproduced during FEAT-548's verification; see
+> `sdd/state/FEAT-548/verification/series-names.md`, Finding #2). A single
+> `await asyncio.sleep(0)` is **not** enough — verified empirically, it does
+> not give the scheduled task a turn. A real, positive-duration
+> `await asyncio.sleep(...)` (order of ~1s was reliable in verification)
+> between the last call and shutdown avoids it. Long-running processes
+> (servers, the autonomous orchestrator) are unaffected — they naturally
+> yield between calls.

@@ -22,6 +22,12 @@ services:
       - parrot-grafana-data:/var/lib/grafana
       - ./provisioning/datasources:/etc/grafana/provisioning/datasources:ro
       - ./provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      # AI-Parrot dashboards (FEAT-548). Sibling mount, not a subdirectory of
+      # the mount above — the `claudestats` provider scans its path
+      # recursively, so a nested `dashboards/parrot/` was empirically found
+      # to be claimed by `claudestats` instead of the `parrot` provider and
+      # misfiled into "Claude Code". See dashboards.yml for the provider.
+      - ./provisioning/dashboards-parrot:/etc/grafana/provisioning/dashboards-parrot:ro
     networks:
       - parrot-metrics
     restart: unless-stopped

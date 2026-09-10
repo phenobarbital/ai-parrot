@@ -333,10 +333,36 @@ dashboards to watch it fail; only then let TASK-3110/3111's outputs make it pass
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-09-10
 **Notes**:
+- Both FILL INs completed: `_metric_names`'s keyword/macro exclusion (plus
+  a `label_values(metric, label)` special case not anticipated by the
+  blueprint — needed once real templating queries existed) and the
+  unit-segment tolerance via a `CONFIRMED_PROM_BASES` lookup keyed off
+  `series-names.md`'s verbatim data, rather than re-deriving OTel's
+  unit-insertion rules algorithmically.
+- **Stale path reference corrected**: blueprint specified
+  `docker/grafana/provisioning/dashboards/parrot` — the nested path
+  TASK-3109 found (empirically, via a live probe) causes silent
+  misfiling. Fixed to `dashboards-parrot` (the sibling mount actually in
+  use). Same `parents[4]`→`parents[5]` off-by-one as TASK-3109/3114's
+  test files, also corrected.
+- **Two real bugs in the blueprint's own skeleton found while
+  implementing** (not just filling blanks — verified against source):
+  (1) the suffix-stripping loop stripped every matching suffix
+  cumulatively instead of exactly one, so
+  `gen_ai_client_request_count_total` corrupted into
+  `gen_ai_client_request` (the legitimate `_count` segment collided with
+  the `_count` suffix entry) and false-failed; (2) `label_values(metric,
+  label)` — a Grafana-specific helper, not PromQL — needed explicit
+  handling so its label argument isn't misread as a metric name.
+- **Meta-criterion proven, not assumed**: reintroduced the actual
+  pre-TASK-3111 `parrot-overview.json` (via `git show 8e344cce5^:...`),
+  confirmed the guard fails on it with the expected message, removed it,
+  confirmed `git status` clean and the suite green again.
+- AC-14 regression check: 197 passed, 1 pre-existing unrelated failure
+  (same as recorded in TASK-3107/3114's notes).
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none beyond the two bug fixes and one path
+correction above, all verified against source rather than guessed.

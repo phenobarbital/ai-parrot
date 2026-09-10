@@ -102,6 +102,52 @@ curl -fsS -X POST http://localhost:9090/-/reload
 See the [Codex configuration reference](https://developers.openai.com/codex/config-reference/)
 for metrics exporter settings.
 
+## AI-Parrot side
+
+```text
+parrot --OTLP/http--> Prometheus <--query-- Grafana
+        :9090/api/v1/otlp   :9090            :3001
+```
+
+No collector: Prometheus runs with `--enable-feature=otlp-write-receiver` and
+takes the push directly. Put this in `env/.env` (full copy at
+`env/.env.observability.example`):
+
+```ini
+[observability]
+OBSERVABILITY_ENABLED=true
+OBSERVABILITY_BACKEND=otel
+OBSERVABILITY_SERVICE_NAME=parrot
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:9090/api/v1/otlp
+OBSERVABILITY_SAMPLING=0.0
+OBSERVABILITY_COST=True
+```
+
+The endpoint is a **base URL** — the exporter appends `/v1/metrics`. Sampling is
+`0.0` because that endpoint carries both signals, Prometheus 2.x serves no
+`/v1/traces`, and `enable_traces` is not settable from the environment
+(`config.py:132`). Metrics export every 60 s and that interval has no env var, so
+allow a minute after the first LLM call before calling the dashboard broken.
+
+The dashboard is provisioned from a **sibling** mount,
+`docker/grafana/provisioning/dashboards-parrot/` — not a subdirectory of the
+`claudestats` provider's own scanned path (`provisioning/dashboards/`). A
+nested layout was tried first and found, empirically, to make `claudestats`
+silently claim the file and misfile it into the *Claude Code* folder instead
+of *AI-Parrot*; see `dashboards.yml`'s comments.
+
+Open [AI-Parrot — LLM Usage & Cost](http://localhost:3001/d/parrot-usage-cost/).
+
+To diagnose an empty dashboard:
+
+```bash
+curl -fsSG http://localhost:9090/api/v1/query --data-urlencode 'query=count by (__name__) ({__name__=~"gen_ai_.*|parrot_.*"})'
+docker compose -f docker/prometheus/docker-compose.yml ps
+```
+
+Real `gen_ai_*` series confirm parrot has exported. A dashboard alone cannot
+create them.
+
 ## Grafana side
 
 1. http://localhost:3001 — the `Prometheus` data source is provisioned
