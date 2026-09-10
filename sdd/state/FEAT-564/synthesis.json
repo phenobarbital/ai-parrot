@@ -1,0 +1,420 @@
+{
+  "feat_id": "FEAT-564",
+  "mode": "enrichment",
+  "overall_confidence": "high",
+  "summary": "FormDesigner already ships an AdaptiveCardRenderer (format key `adaptive`, GET .../render/adaptive) that turns a FormSchema into an MS Teams-compatible Adaptive Card with native Input.* elements keyed by field_id. What is missing for the requested feature is (1) a Submit action that identifies WHERE the answers go: today `Action.Submit.data` is just `{\"_action\": \"submit\"}`, which only works inside a live Teams bot dialog; a standalone card has no receiver and the wrapper answers 'wasn't expecting it'. In Teams an Action.Submit never POSTs to an HTTP URL \u2014 the payload always returns to the bot as activity.value \u2014 so 'button pointing to the existing endpoint' must be realised as a submit envelope in `data` (form_uid, tenant, submit_url = POST .../forms/{uid}/data, form version) that a bot-side receiver forwards, mirroring the TASK-2545 `a2ui_action` envelope pattern. Per user correction, the receiver IS the existing Bot Framework bot (MSTeamsAgentWrapper._handle_card_submission): a new `_formdesigner` branch there forwards the card's answers to the endpoint. The bot currently has no FormRegistry/HTTP client/base-URL to FormDesigner (F023), so the envelope must carry enough (absolute submit_url or form_uid+tenant+relative path) for the bot to POST. (2) Image upload: Microsoft's docs state Adaptive Cards in Teams do not support file or image uploads, and the repo has no in-card upload path; upload fields currently degrade to Input.Text without a RenderWarning for FILE/IMAGE. The renderer should degrade explicitly (warning + Action.OpenUrl to the web upload path or URL text) and leave real image intake to a bot-side attachment flow (follow-up).",
+  "localization": {
+    "confidence": "high",
+    "items": [
+      {
+        "path": "packages/parrot-formdesigner/src/parrot_formdesigner/renderers/adaptive_card.py",
+        "symbol": "AdaptiveCardRenderer",
+        "lines": "121-1224",
+        "role": "existing FormSchema \u2192 Adaptive Card renderer; extension target",
+        "evidence": [
+          "F002",
+          "F004"
+        ]
+      },
+      {
+        "path": "packages/parrot-formdesigner/src/parrot_formdesigner/renderers/adaptive_card.py",
+        "symbol": "AdaptiveCardRenderer._build_form_actions",
+        "lines": "1079-1113",
+        "role": "Submit button \u2014 currently `data: {\"_action\": \"submit\"}` with no form/endpoint identity (the gap)",
+        "evidence": [
+          "F004"
+        ]
+      },
+      {
+        "path": "packages/parrot-formdesigner/src/parrot_formdesigner/renderers/adaptive_card.py",
+        "symbol": "_FIELD_TYPE_MAPPING / upload fallback",
+        "lines": "70-91, 1028-1044",
+        "role": "FILE/IMAGE/IMAGE_DROPZONE/MULTI_UPLOAD degrade to Input.Text; FILE/IMAGE missing from _AC_FALLBACK_TYPES (no warning)",
+        "evidence": [
+          "F004",
+          "F007"
+        ]
+      },
+      {
+        "path": "packages/parrot-formdesigner/src/parrot_formdesigner/renderers/base.py",
+        "symbol": "AbstractFormRenderer.render",
+        "lines": "57-89",
+        "role": "fixed render signature (form, style, locale, prefilled, errors) \u2014 no channel/target parameter",
+        "evidence": [
+          "F005"
+        ]
+      },
+      {
+        "path": "packages/parrot-formdesigner/src/parrot_formdesigner/api/render.py",
+        "symbol": "_seed_default_renderers / handle_render",
+        "lines": "38-60, 101-151",
+        "role": "`adaptive` already registered; handle_render forwards only `locale` to the renderer",
+        "evidence": [
+          "F011"
+        ]
+      },
+      {
+        "path": "packages/parrot-formdesigner/src/parrot_formdesigner/api/routes.py",
+        "symbol": "POST /forms/{form_uid}/data",
+        "lines": "398-401",
+        "role": "the existing payload endpoint the button must target",
+        "evidence": [
+          "F010",
+          "F017"
+        ]
+      },
+      {
+        "path": "packages/parrot-formdesigner/src/parrot_formdesigner/api/routes.py",
+        "symbol": "POST /forms/{form_uid}/fields/{field_uid}/file-upload",
+        "lines": "424-427",
+        "role": "only image/file intake path (web, multipart)",
+        "evidence": [
+          "F010",
+          "F019"
+        ]
+      },
+      {
+        "path": "packages/parrot-formdesigner/src/parrot_formdesigner/api/handlers.py",
+        "symbol": "FormAPIHandler.submit_data",
+        "lines": "1464-1530",
+        "role": "legacy JSON contract {field_id: value} + optional visit_context",
+        "evidence": [
+          "F017"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot-integrations/src/parrot/integrations/msteams/wrapper.py",
+        "symbol": "MSTeamsAgentWrapper._handle_card_submission",
+        "lines": "359-491",
+        "role": "Teams-side receiver of Action.Submit (activity.value); routes a2ui_token / a2ui_action / command / _action; no dialog \u2192 'wasn't expecting it'",
+        "evidence": [
+          "F009"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot-visualizations/src/parrot/outputs/a2ui_renderers/adaptive_cards.py",
+        "symbol": "AdaptiveCardsRenderer._render_Button",
+        "lines": "608-650",
+        "role": "shipped precedent: routing envelope inside Action.Submit.data + Action.OpenUrl",
+        "evidence": [
+          "F013"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/outputs/cards/inputs.py",
+        "symbol": "InputText/InputNumber/InputToggle/InputDate/InputTime/InputChoiceSet",
+        "lines": "17-75",
+        "role": "typed AC 1.5 element models (the 'input tools' code); optional building blocks",
+        "evidence": [
+          "F008"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot-integrations/src/parrot/integrations/msteams/dialogs/presets/base.py",
+        "symbol": "_get_card_renderer",
+        "lines": "160-176",
+        "role": "in-dialog consumer of AdaptiveCardRenderer; strips `_`-prefixed keys from submissions",
+        "evidence": [
+          "F021"
+        ]
+      },
+      {
+        "path": "packages/parrot-formdesigner/tests/unit/test_renderers.py",
+        "symbol": "TestAdaptiveCardRenderer",
+        "lines": "357-490, 787-823",
+        "role": "coverage baseline; no test on Submit payload shape",
+        "evidence": [
+          "F015"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot-integrations/src/parrot/integrations/msteams/dialogs/orchestrator.py",
+        "symbol": "RequestFormTool / ToolExtractor imports",
+        "lines": "17-19",
+        "role": "only in-process FormDesigner usage by the bot; no REST path",
+        "evidence": [
+          "F023"
+        ]
+      }
+    ]
+  },
+  "hypotheses": [
+    {
+      "id": "H1",
+      "statement": "The feature is a thin extension of AdaptiveCardRenderer plus a receiver branch in the existing Teams bot: (a) a Teams-targeted renderer variant embeds a `_formdesigner` submit envelope in Action.Submit.data (form_uid, tenant, submit_url/relative path, form version, envelope version) so the bot can forward activity.value to POST .../forms/{uid}/data; (b) MSTeamsAgentWrapper._handle_card_submission gains a `_formdesigner` branch (mirror of the a2ui_action branch) that strips control keys, coerces Teams string values and POSTs the legacy JSON body over aiohttp, replying with a confirmation/error card; (c) upload fields degrade explicitly (RenderWarning + Action.OpenUrl to the web upload flow or URL Input.Text); (d) registered under its own format key so the JSON is fetchable via GET .../render/{format}. The renderer never sends.",
+      "confidence": "medium",
+      "supporting": [
+        "F004",
+        "F009",
+        "F011",
+        "F013",
+        "F017",
+        "F020",
+        "F021",
+        "F023"
+      ],
+      "reasoning": "Every building block exists and the platform constraint (Submit returns to the bot, no in-card uploads) forces the envelope+receiver shape; medium because the envelope wire (legacy JSON vs A2UI), URL sourcing and whether the receiver branch is in scope are open decisions."
+    },
+    {
+      "id": "H2",
+      "statement": "The Bot Framework bot (MSTeamsAgentWrapper) is the receptor of every Adaptive Card Action.Submit in Teams; today it only knows dialog/a2ui/command branches and has no path to FormDesigner's REST API, so the forwarding branch plus a way to reach the endpoint (absolute URL in the envelope or a configured base URL) is required for the cycle to close.",
+      "confidence": "high",
+      "supporting": [
+        "F009",
+        "F020",
+        "F013",
+        "F023"
+      ],
+      "reasoning": "Wrapper code shows a card submit with no active dialog is rejected today; Teams docs confirm Action.Submit is bot-mediated and Incoming Webhooks do not support Action.Submit at all."
+    }
+  ],
+  "constraints": [
+    {
+      "id": "C1",
+      "text": "AbstractFormRenderer.render has a fixed signature; per-target config (public base URL, format options) must come via constructor/subclass or RenderedForm.metadata, not new render() kwargs.",
+      "evidence": [
+        "F005"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "C2",
+      "text": "handle_render forwards only `locale`; a Teams variant exposed over HTTP needs either constructor-configured base URL or a small dispatcher extension (e.g. request origin / query params).",
+      "evidence": [
+        "F011"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "C3",
+      "text": "msteams dialog presets instantiate AdaptiveCardRenderer for the in-dialog flow and drop `_`-prefixed submit keys \u2014 the default renderer's `_action` key must stay; any envelope should be additive and underscore-prefixed (or live only in the Teams variant).",
+      "evidence": [
+        "F021",
+        "F009"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "C4",
+      "text": "Adaptive Cards in Teams do not support file or image uploads (Microsoft docs); the repo has no Input.File/fileConsent code. In-card image upload is impossible; alternatives are Action.OpenUrl to the web file-upload path, a URL text input, or bot-side attachment intake (not existing).",
+      "evidence": [
+        "F020",
+        "F014",
+        "F019",
+        "F022"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "C5",
+      "text": "Legacy POST .../data expects {field_id: value}; card inputs are already keyed by field_id, so activity.value minus control keys IS the legacy body. The A2UI dual-wire on /data (FEAT-544 TASK-3074/3075) is not yet implemented.",
+      "evidence": [
+        "F017",
+        "F004",
+        "F016"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "C6",
+      "text": "Teams caps Adaptive Cards at v1.6, ignores positive/destructive action styling and Action.Submit.isEnabled; default version here is 1.4 (configurable) \u2014 compatible.",
+      "evidence": [
+        "F020",
+        "F004"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "C7",
+      "text": "FILE/IMAGE are in UPLOAD_FIELD_TYPES but not in _AC_FALLBACK_TYPES, so they degrade to Input.Text silently (no RenderWarning) \u2014 an inconsistency the new variant should close.",
+      "evidence": [
+        "F004",
+        "F007"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "C8",
+      "text": "Teams returns Input.Toggle as the string 'true'/'false' and multi-select ChoiceSet as a comma-separated string; the receiver/forwarder (not the renderer) must coerce before POST .../data validation.",
+      "evidence": [
+        "F009",
+        "F017"
+      ],
+      "confidence": "low"
+    },
+    {
+      "id": "C9",
+      "text": "The Teams bot has no FormRegistry, aiohttp ClientSession or FormDesigner base-URL config; forwarding requires either an absolute submit_url in the envelope or new bot config.",
+      "evidence": [
+        "F023"
+      ],
+      "confidence": "high"
+    }
+  ],
+  "confidence_map": [
+    {
+      "claim": "An AdaptiveCardRenderer for FormSchema already exists and is served at GET .../render/adaptive",
+      "confidence": "high",
+      "evidence": [
+        "F004",
+        "F011"
+      ]
+    },
+    {
+      "claim": "Its Submit action carries no form identity or endpoint; a standalone card has no receiver in the Teams wrapper",
+      "confidence": "high",
+      "evidence": [
+        "F004",
+        "F009"
+      ]
+    },
+    {
+      "claim": "Teams Action.Submit cannot target an HTTP URL; payload returns to the bot",
+      "confidence": "high",
+      "evidence": [
+        "F020",
+        "F009"
+      ]
+    },
+    {
+      "claim": "Adaptive Cards in Teams cannot upload files/images; no in-card upload code exists in the repo",
+      "confidence": "high",
+      "evidence": [
+        "F020",
+        "F014"
+      ]
+    },
+    {
+      "claim": "TASK-2545's a2ui_action envelope + wrapper branch is the pattern to mirror for a formdesigner submit envelope",
+      "confidence": "high",
+      "evidence": [
+        "F013",
+        "F009"
+      ]
+    },
+    {
+      "claim": "activity.value minus control keys maps 1:1 onto the legacy POST .../data body",
+      "confidence": "medium",
+      "evidence": [
+        "F017",
+        "F004"
+      ]
+    },
+    {
+      "claim": "A Teams variant should be a subclass/format key rather than a change to the default `adaptive` output, to protect the in-dialog presets",
+      "confidence": "medium",
+      "evidence": [
+        "F021",
+        "F011"
+      ]
+    },
+    {
+      "claim": "Teams input value coercion (toggle/multiselect strings) will be needed at the receiver",
+      "confidence": "low",
+      "evidence": [
+        "F009"
+      ]
+    },
+    {
+      "claim": "The bot cannot reach FormDesigner's REST API today (no client/base URL)",
+      "confidence": "high",
+      "evidence": [
+        "F023"
+      ]
+    }
+  ],
+  "unknowns": [
+    {
+      "id": "U1",
+      "question": "Is the Teams-side receiver (a `_formdesigner` branch in MSTeamsAgentWrapper._handle_card_submission that forwards activity.value to submit_url) in scope for this feature, or is the deliverable strictly the renderer JSON with forwarding deferred?",
+      "resolves": [
+        "H1",
+        "H2"
+      ],
+      "options": [
+        "a) Renderer only \u2014 document the envelope contract; receiver is a follow-up feature",
+        "b) Renderer + minimal wrapper branch (mirror of the a2ui_action branch) so the cycle works end-to-end",
+        "c) Renderer + wrapper branch + a FormDesigner-side helper that validates/coerces Teams values before POST"
+      ],
+      "user_answer": "b) Renderer + bot-side receiver branch: the existing Bot Framework integration (MSTeamsAgentWrapper) is the receptor of Action.Submit and forwards the answers to the form endpoint.",
+      "resolved_by": "user correction at review gate"
+    },
+    {
+      "id": "U2",
+      "question": "How does the bot learn the absolute URL of POST .../forms/{uid}/data? (it has no FormDesigner base URL or registry today \u2014 F023)",
+      "resolves": [
+        "C1",
+        "C2"
+      ],
+      "options": [
+        "a) Renderer embeds an absolute submit_url (renderer configured with a public base URL via constructor/settings)",
+        "b) Renderer embeds form_uid + tenant + relative path; the bot has a new FORMDESIGNER_API_URL config and joins them",
+        "c) Both: absolute submit_url when the renderer knows the base URL, else relative + bot config fallback"
+      ],
+      "user_answer": "a) Absolute URL in envelope \u2014 the renderer is configured with a public base URL (constructor/settings) and embeds submit_url; the bot just POSTs there.",
+      "resolved_by": "Q&A"
+    },
+    {
+      "id": "U3",
+      "question": "Ship it as a separate renderer/format key (e.g. `teams`, subclass of AdaptiveCardRenderer) or extend the default `adaptive` output for all consumers?",
+      "resolves": [
+        "C3"
+      ],
+      "options": [
+        "a) New subclass + format key `teams`; `adaptive` unchanged",
+        "b) Extend `adaptive` additively (underscore-prefixed envelope key) \u2014 one renderer",
+        "c) Constructor flag on AdaptiveCardRenderer (submit_target=...) registered twice"
+      ],
+      "user_answer": "a) New subclass + format key `teams` \u2014 TeamsFormRenderer(AdaptiveCardRenderer) registered as GET .../render/teams; `adaptive` output unchanged.",
+      "resolved_by": "Q&A"
+    },
+    {
+      "id": "U4",
+      "question": "Posture for image/file fields given Teams cards cannot upload: what should the card show?",
+      "resolves": [
+        "C4",
+        "C7"
+      ],
+      "options": [
+        "a) RenderWarning + Action.OpenUrl button to the web form/upload page for that field (two-step)",
+        "b) RenderWarning + Input.Text accepting an image URL (current fallback, made explicit)",
+        "c) Omit upload fields from the card entirely (warning only); intake later via bot attachment flow"
+      ],
+      "user_answer": "a) RenderWarning + Action.OpenUrl per upload field to the web form/upload page (two-step); the answer carries the returned FileEnvelope reference.",
+      "resolved_by": "Q&A"
+    },
+    {
+      "id": "U5",
+      "question": "Wire shape of the submit envelope: legacy JSON (field_id map, stable today) or the A2UI `a2ui_action` envelope (aligns with TASK-2545/FEAT-544 but /data dual-wire is not yet landed)?",
+      "resolves": [
+        "C5"
+      ],
+      "options": [
+        "a) Legacy JSON body \u2014 `_formdesigner` envelope + field_id values",
+        "b) A2UI action envelope \u2014 wait for / depend on FEAT-544 TASK-3074/3075",
+        "c) Legacy now, with the envelope versioned so an A2UI variant can be added later"
+      ],
+      "user_answer": "a) Legacy JSON {field_id: value} now, with a versioned `_formdesigner` envelope so an A2UI variant can be added when FEAT-544 lands.",
+      "resolved_by": "Q&A"
+    }
+  ],
+  "recommended_next_command": {
+    "command": "sdd-spec",
+    "rationale": "Localization is high-confidence, all five design unknowns are resolved by the user, and the design is an extension of shipped code (renderer subclass + one bot branch); the spec can be written directly.",
+    "alternatives": [
+      "sdd-brainstorm \u2014 if the receiver/wire-shape question (U1/U5) should be explored against FEAT-544's A2UI direction first"
+    ]
+  },
+  "budget_status": {
+    "consumed": {
+      "files_read": 22,
+      "grep_calls": 12,
+      "git_calls": 2,
+      "wiki_calls": 5,
+      "web_calls": 1
+    },
+    "truncated": false,
+    "truncation_reason": null
+  },
+  "user_correction": "ai-parrot-integrations has an MS Bot Framework integration (MSTeamsAgentWrapper) that acts as the receptor of Action.Submit buttons; use that approach for answering forms via MS Teams."
+}

@@ -1,0 +1,30 @@
+{
+  "feat_id": "FEAT-564",
+  "mode_detected": "enrichment",
+  "mode_rationale": "wiki_query surfaced an existing FormSchema Adaptive Card renderer (parrot_formdesigner/renderers/adaptive_card.py, TASK-524) and Teams-side native-input submit routing (TASK-2545). The request is an extension/verification of existing code, not greenfield.",
+  "budget": {"profile": "default", "max_files_read": 40, "max_grep_calls": 25, "max_git_calls": 10, "max_depth": 2, "max_wall_seconds": 300},
+  "queries": [
+    {"id": "Q001", "type": "wiki_query", "intent": "Locate FormDesigner renderer landscape", "params": {"question": "FormDesigner form definition export renderer"}, "priority": 1},
+    {"id": "Q002", "type": "wiki_query", "intent": "Locate Adaptive Card / MS Teams rendering code", "params": {"question": "adaptive card rendering MS Teams input tools integrations"}, "priority": 1},
+    {"id": "Q003", "type": "wiki_query", "intent": "Locate form submission endpoint", "params": {"question": "form submission endpoint handler payload survey answers"}, "priority": 1},
+    {"id": "Q004", "type": "read", "intent": "Existing AdaptiveCardRenderer: field mapping, submit action, warnings, gaps", "params": {"path": "packages/parrot-formdesigner/src/parrot_formdesigner/renderers/adaptive_card.py"}, "priority": 1},
+    {"id": "Q005", "type": "read", "intent": "Renderer base contract (BaseRenderer/RenderedForm/RenderWarning) and registry", "params": {"path": "packages/parrot-formdesigner/src/parrot_formdesigner/renderers/base.py"}, "priority": 1},
+    {"id": "Q006", "type": "read", "intent": "Renderer registration / format dispatch", "params": {"path": "packages/parrot-formdesigner/src/parrot_formdesigner/renderers/__init__.py"}, "priority": 1},
+    {"id": "Q007", "type": "grep", "intent": "FieldType enum: which field kinds exist (image/file/photo/signature)", "params": {"pattern": "class FieldType|^\\s+[A-Z_]+ = \"", "path": "packages/parrot-formdesigner/src/parrot_formdesigner/core/"}, "priority": 1},
+    {"id": "Q008", "type": "grep", "intent": "Where Teams-side Adaptive Card input rendering lives (Action.Submit / Input.*)", "params": {"pattern": "Action.Submit|Input.ChoiceSet|Input.Text|Input.Toggle", "path": "packages/ai-parrot-integrations/src/ packages/ai-parrot/src/parrot/outputs"}, "priority": 1},
+    {"id": "Q009", "type": "read", "intent": "Teams wrapper: how Action.Submit payloads are routed (a2ui_action)", "params": {"path": "packages/ai-parrot-integrations/src/parrot/integrations/msteams/wrapper.py"}, "priority": 2},
+    {"id": "Q010", "type": "grep", "intent": "Submit endpoint route for form data (POST .../data) and its request contract", "params": {"pattern": "submit_data|/data'|\"/data\"|forms/\\{", "path": "packages/parrot-formdesigner/src/parrot_formdesigner/"}, "priority": 1},
+    {"id": "Q011", "type": "read", "intent": "Prior scope of the Adaptive Card renderer task (what was intentionally left out)", "params": {"path": "sdd/tasks/completed/TASK-524-adaptive-card-renderer.md"}, "priority": 2},
+    {"id": "Q012", "type": "read", "intent": "Teams native-input pattern + a2ui_action envelope (the example code the user pointed at)", "params": {"path": "sdd/tasks/completed/TASK-2545-adaptive-cards-native-inputs-teams-submit.md"}, "priority": 2},
+    {"id": "Q013", "type": "grep", "intent": "Any existing file/image upload support in Adaptive Card or Teams code", "params": {"pattern": "Input.File|fileConsent|file_consent|attachment|upload", "path": "packages/ai-parrot-integrations/src/parrot/integrations/msteams/ packages/parrot-formdesigner/src/parrot_formdesigner/renderers/"}, "priority": 1},
+    {"id": "Q014", "type": "read", "intent": "Existing Adaptive Card renderer tests (coverage baseline)", "params": {"path": "packages/parrot-formdesigner/tests/unit/test_renderers.py", "grep_filter": "adaptive"}, "priority": 2},
+    {"id": "Q015", "type": "read", "intent": "FEAT-544 A2UI form renderer proposal: overlap/boundary with Teams dual-wire submit", "params": {"path": "sdd/proposals/a2ui-form-output-renderer.proposal.md"}, "priority": 2},
+    {"id": "Q016", "type": "read", "intent": "TASK-3075 dual-wire POST .../data contract (what the Teams button must post)", "params": {"path": "sdd/tasks/active/TASK-3075-submit-data-dual-wire.md"}, "priority": 2},
+    {"id": "Q017", "type": "read", "intent": "Teams A2UI submit routing tests", "params": {"path": "packages/ai-parrot-integrations/tests/msteams/test_a2ui_submit.py"}, "priority": 3},
+    {"id": "Q018", "type": "git_log", "intent": "Recent activity on formdesigner renderers", "params": {"path": "packages/parrot-formdesigner/src/parrot_formdesigner/renderers/", "since": "120 days"}, "priority": 3},
+    {"id": "Q019", "type": "git_log", "intent": "Recent activity on msteams integration", "params": {"path": "packages/ai-parrot-integrations/src/parrot/integrations/msteams/", "since": "120 days"}, "priority": 3},
+    {"id": "Q020", "type": "tree", "intent": "Renderer package layout", "params": {"path": "packages/parrot-formdesigner/src/parrot_formdesigner/renderers/"}, "priority": 3},
+    {"id": "Q021", "type": "read", "intent": "Semantic cards → Adaptive Cards doc (Teams card constraints)", "params": {"path": "docs/integrations/msagentsdk-semantic-cards.md"}, "priority": 3},
+    {"id": "Q022", "type": "web", "intent": "External check: does Adaptive Cards / Teams support file or image upload inside a card (Input.File)?", "params": {"url": "https://learn.microsoft.com/en-us/adaptive-cards/authoring-cards/input-validation"}, "priority": 2}
+  ]
+}
