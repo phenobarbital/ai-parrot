@@ -56,7 +56,7 @@
       "feature_id": "FEAT-543",
       "feature": "tool-optimizations",
       "spec": "sdd/specs/tool-optimizations.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "XL",
       "estimated_hours": 10,
@@ -68,8 +68,8 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": "2026-09-10T01:47:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3081-local-git-prepare-pull-push.md"
+      "completed_at": "2026-09-10T02:25:57+00:00",
+      "file": "sdd/tasks/completed/TASK-3081-local-git-prepare-pull-push.md"
     },
     {
       "id": "TASK-3082",

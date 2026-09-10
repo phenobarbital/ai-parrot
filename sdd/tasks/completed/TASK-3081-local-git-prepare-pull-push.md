@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-543 — Claude Code and Codex Tool Optimizations
 **Spec**: `sdd/specs/tool-optimizations.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: XL (> 8h)
 **Depends-on**: TASK-3080
@@ -352,8 +352,82 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+**Completed by**: sdd-worker (Claude Opus 5, session_01G9NM1TzdkFLd5foNDmh72K)
+**Date**: 2026-09-10
 **Notes**:
 
-**Deviations from spec**: none | describe if any
+Added `git_prepare_files`, `git_pull` and `git_push` to `LocalGitToolkit`
+plus `confirming_tools`. 91 tests pass across the feature suite; the file
+was run 10x consecutively to prove stability (see the race note below).
+
+Codebase Contract verified: `confirming_tools` is applied at
+`toolkit.py:684-689`, and `MCPToolAdapter` injects the required `confirm`
+boolean (`adapter.py:38-49`) and pops it before `_execute` (`:59`) — so the
+argument models correctly do NOT declare `confirm`. Asserted end-to-end in
+`test_mcp_tools_list_marks_confirm_required` /
+`test_mcp_call_rejected_without_confirm`.
+
+**Two real bugs found and fixed during implementation:**
+
+1. **`git add --end-of-options -- <paths>` is broken.** Once
+   `--end-of-options` has ended option parsing, git reads the following
+   `--` as a *literal pathspec* and dies with
+   `fatal: pathspec '--' did not match any files`. The two must never be
+   combined. `git add -- <paths>` is used instead; the `--` separator alone
+   already protects an option-shaped path, and `GIT_LITERAL_PATHSPECS=1`
+   neutralizes pathspec magic. (`git log --end-of-options <sha> --` is
+   unaffected and still works — the difference is that `log` has already
+   consumed a revision.)
+
+2. **Copying the index with `shutil.copyfile` silently loses edits.**
+   Git decides an index entry is "racily clean" by comparing the entry's
+   mtime against the *index file's own* mtime, re-hashing the file when it
+   is. A copy made with `copyfile` gets a fresh mtime, which converts those
+   racy entries into trusted-clean ones — so a same-size edit written
+   within the same (coarse, ~ms) filesystem clock tick as the last
+   `git add` was **not staged**, and the operation refused with
+   `staged_mismatch`. Measured: 4/120 same-size edits before the fix, 0/240
+   after switching to `shutil.copy2`, which preserves the mtime and makes
+   the private copy behave exactly like the real index. Plain `git diff`
+   missed the same change 0/200 times, which is what proved this was our
+   bug and not a git limitation. Covered by
+   `test_prepare_stages_same_size_edit_made_in_the_same_clock_tick`.
+   This surfaced first as an intermittent (~1-in-4-runs) test failure; it
+   was traced rather than retried, because the failure mode in production
+   is a false refusal, not a crash.
+
+Design notes:
+
+- The transaction order is validate -> submodule/tracked-deletion ->
+  unmerged -> unrelated/partial -> split/sparse -> fingerprint -> temp
+  index -> verify names -> verify whitespace -> re-fingerprint -> `index.lock`
+  -> `os.replace`. Nothing touches the real index before the last two steps,
+  and every refusal test asserts the index bytes are byte-identical
+  afterwards.
+- Publication uses git's own mechanism: create `index.lock` with `O_EXCL`,
+  write, `fsync`, `os.replace` onto `index`. A pre-existing lock is reported
+  as `index_locked` and never removed; only a lock this process created is
+  ever unlinked.
+- `git reset` is never invoked in any form — enforced by
+  `test_no_forbidden_git_verbs_in_source`, which also bars `"stash"`,
+  `"--force"`, `"--force-with-lease"`, `"--all"`, `"--mirror"` and
+  `"rebase"` as argv literals.
+- A push timeout is `uncertain` and is resolved by exactly one read-only
+  `ls-remote`; the push is never retried. On success the reported
+  `remote_commit_after` is the full local sha, not git's abbreviated
+  porcelain range.
+
+**Testing**: 91 tests, 10 consecutive clean runs; ruff and black clean.
+Log at `artifacts/logs/TASK-3081-pytest.log`.
+
+**Deviations from spec**: none, with two recorded test-level judgement calls:
+
+1. The task's test sketch clones the bare remote and commits directly. That
+   silently pushes `master`, because `git init --bare` leaves HEAD at
+   `refs/heads/master` while the fixture only ever pushes `dev` — the clone
+   lands on an unborn branch. Tests use a `_clone_on_dev` helper that checks
+   out `dev` explicitly. The `bare_remote` fixture itself was left untouched,
+   since `conftest.py` belongs to TASK-3080's file scope.
+2. `../outside.py` is rejected as `invalid_path` (the `..` shape check) rather
+   than `path_outside_root`; the shape check runs first and is the stricter
+   of the two. `path_outside_root` remains covered by `test_policy.py`.
