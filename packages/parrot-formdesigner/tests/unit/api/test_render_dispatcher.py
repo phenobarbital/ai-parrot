@@ -101,6 +101,33 @@ def test_seed_skips_a2ui_when_spec_missing(monkeypatch, caplog):
     assert any("a2ui" in message for message in caplog.messages)
 
 
+def test_seed_skips_a2ui_when_parent_package_genuinely_absent(monkeypatch, caplog):
+    """Code review fix (TASK-3073): a dotted find_spec() RAISES
+
+    ``ModuleNotFoundError`` — it does not return ``None`` — when a parent
+    package earlier in the chain (here: ``parrot`` itself) cannot be
+    imported at all. This is the REAL "ai-parrot extra not installed"
+    deployment shape; ``test_seed_skips_a2ui_when_spec_missing`` above only
+    covers the (also real, but different) "parrot exists, the a2ui
+    submodule doesn't" shape by monkeypatching a ``None`` return directly.
+    """
+    import importlib.util
+
+    real_find_spec = importlib.util.find_spec
+
+    def _raising_find_spec(name, *args, **kwargs):
+        if name == "parrot.outputs.a2ui":
+            raise ModuleNotFoundError("No module named 'parrot'")
+        return real_find_spec(name, *args, **kwargs)
+
+    monkeypatch.setattr(importlib.util, "find_spec", _raising_find_spec)
+    with caplog.at_level("INFO"):
+        _seed_default_renderers()  # must NOT raise
+    assert "a2ui" not in _RENDERERS
+    assert {"html", "adaptive", "xml", "pdf", "audio"} <= set(_RENDERERS)
+    assert any("a2ui" in message for message in caplog.messages)
+
+
 async def test_render_a2ui_via_dispatcher(aiohttp_client, sample_form):
     pytest.importorskip("parrot.outputs.a2ui")
     from parrot.outputs.a2ui.serialization import deserialize

@@ -68,7 +68,19 @@ def _seed_default_renderers() -> None:
     # find_spec() first: A2UIFormRenderer itself imports parrot.* lazily
     # (TASK-3071), so a bare `except ImportError` around the constructor
     # call would only catch a failure that never actually surfaces here.
-    if importlib.util.find_spec("parrot.outputs.a2ui") is not None:
+    #
+    # Code review fix (TASK-3073): find_spec() on a dotted name RAISES
+    # ModuleNotFoundError — it does not return None — when a parent package
+    # earlier in the chain fails to import (e.g. "parrot" itself is entirely
+    # absent, exactly the real "ai-parrot not installed" deployment this
+    # guard exists for). An unguarded find_spec() call would crash
+    # setup_form_api() at app startup instead of gracefully degrading.
+    try:
+        a2ui_available = importlib.util.find_spec("parrot.outputs.a2ui") is not None
+    except (ImportError, ModuleNotFoundError):
+        a2ui_available = False
+
+    if a2ui_available:
         from ..renderers.a2ui import A2UIFormRenderer
 
         _RENDERERS.setdefault("a2ui", A2UIFormRenderer())
