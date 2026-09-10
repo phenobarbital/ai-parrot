@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-542
 **Date**: 2026-09-10
 **Author**: Codex, with product approval pending from Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: next minor release
 **Source**: [Brainstorm](../proposals/lancedb-vector-store.brainstorm.md), [proposal](../proposals/lancedb-vector-store.proposal.md)
 **Research provenance**: FEAT-563 identifies the earlier proposal findings, not this implementation feature. The official allocator reserved FEAT-542 for this spec on `dev`.
@@ -386,11 +386,11 @@ If the candidate fails resolution or required behavior, stop that implementation
 
 Preserved verbatim from the brainstorm. No answers were received; the baseline in section 1 is a recommendation. These scope choices require resolution before this draft is marked approved and decomposed.
 
-- [ ] Include vector, FTS and native hybrid with optional graph federation in v1, or ship only vector and standalone FTS first? — *Owner: Jesus Lara*
-- [ ] Does local-only require embedded storage with existing model providers, or a fully offline agent after provisioning? — *Owner: Jesus Lara*
-- [ ] Can one process own writes initially, or must independent processes write the same dataset concurrently? — *Owner: Jesus Lara*
-- [ ] Is federation with existing GraphIndex sufficient, or must LanceDB also replace its internal seed index? — *Owner: Jesus Lara*
-- [ ] Should a failing hybrid leg fail that origin while other origins continue, or return explicitly marked partial results? — *Owner: Jesus Lara*
+- [x] Include vector, FTS and native hybrid with optional graph federation in v1, or ship only vector and standalone FTS first? — *Owner: Jesus Lara*: Yes
+- [x] Does local-only require embedded storage with existing model providers, or a fully offline agent after provisioning? — *Owner: Jesus Lara*: fully offline agent
+- [x] Can one process own writes initially, or must independent processes write the same dataset concurrently? — *Owner: Jesus Lara*: write concurrently
+- [x] Is federation with existing GraphIndex sufficient, or must LanceDB also replace its internal seed index? — *Owner: Jesus Lara*: only federation
+- [x] Should a failing hybrid leg fail that origin while other origins continue, or return explicitly marked partial results? — *Owner: Jesus Lara*: fail
 
 ---
 
