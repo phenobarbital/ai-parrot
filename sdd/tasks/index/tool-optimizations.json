@@ -100,7 +100,7 @@
       "feature_id": "FEAT-543",
       "feature": "tool-optimizations",
       "spec": "sdd/specs/tool-optimizations.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "estimated_hours": 6,
@@ -113,8 +113,8 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": "2026-09-10T01:47:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3083-delegation-contracts.md"
+      "completed_at": "2026-09-10T02:34:58+00:00",
+      "file": "sdd/tasks/completed/TASK-3083-delegation-contracts.md"
     },
     {
       "id": "TASK-3084",
