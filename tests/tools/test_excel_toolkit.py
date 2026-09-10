@@ -87,9 +87,9 @@ class TestToolGeneration:
     def test_tools_auto_generated(self, toolkit):
         tools = toolkit.get_tools_sync()
         tool_names = [t.name for t in tools]
-        assert "inspect_workbook" in tool_names
-        assert "extract_table" in tool_names
-        assert "query_cells" in tool_names
+        assert "excel_inspect_workbook" in tool_names
+        assert "excel_extract_table" in tool_names
+        assert "excel_query_cells" in tool_names
 
 
 class TestCleanup:

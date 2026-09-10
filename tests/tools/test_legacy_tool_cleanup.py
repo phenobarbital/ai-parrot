@@ -27,11 +27,14 @@ import pytest
 class TestNoLocalDuplicates:
     """Verify removed classes are gone."""
 
-    def test_no_local_driverinfo_class(self) -> None:
+    def test_driverinfo_delegates_to_shared_helpers(self) -> None:
+        """DriverInfo is kept for back-compat (FEAT-105) but must delegate
+        to the shared module-level helpers, not carry its own logic."""
         import parrot.tools.databasequery.tool as mod
-        assert not hasattr(mod, "DriverInfo"), (
-            "DriverInfo class should be removed from tool.py"
-        )
+        from parrot.tools.databasequery.sources import normalize_driver
+
+        assert hasattr(mod, "DriverInfo"), "DriverInfo back-compat wrapper expected"
+        assert mod.DriverInfo.normalize_driver("postgres") == normalize_driver("postgres")
 
     def test_no_local_queryvalidator_class(self) -> None:
         import inspect
