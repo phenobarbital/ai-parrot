@@ -30,6 +30,7 @@ from parrot.stores.lancedb_models import (  # new in TASK-3059
     STANDARD_STRING_FIELDS,
     CollectionManifest,
     LanceDBConfig,
+    LanceDBHybridHit,
     build_arrow_schema,
     embedding_fingerprint,
     namespaced_id,
@@ -781,13 +782,157 @@ class LanceDBStore(AbstractStore):
             _do_delete, description=f"delete_documents_by_filter:{collection_name}"
         )
 
-    async def fulltext_search(self, query: str, collection: Union[str, None] = None, limit: int = 10, **kwargs: Any) -> list:
-        """Implemented by TASK-3065."""
-        raise NotImplementedError("TASK-3065 owns FTS")
+    async def fulltext_search(
+        self,
+        query: str,
+        collection: Union[str, None] = None,
+        limit: int = 10,
+        metadata_filters: dict[str, Any] | None = None,
+        include_parents: bool = False,
+        **kwargs: Any,
+    ) -> list:
+        """Native BM25 lexical search. Constructs no embedding model.
 
-    async def hybrid_search(self, query: str, collection: Union[str, None] = None, limit: int = 10, **kwargs: Any) -> list:
-        """Implemented by TASK-3065."""
-        raise NotImplementedError("TASK-3065 owns hybrid search")
+        Scores are native BM25 (higher is better). The inherited
+        ``SearchResult.distance`` alias is therefore numerically BM25 and is
+        NOT a distance — this limitation is documented, not a bug.
+        """
+        if isinstance(limit, bool) or not isinstance(limit, int) or limit <= 0:
+            raise ValueError(f"limit must be a positive integer, got {limit!r}")
+        table_alias = kwargs.pop("table", None)
+        collection_name = self._resolve_collection_selector(table_alias, collection)
+        schema_kw = kwargs.pop("schema", None)
+        if schema_kw not in (None, "public"):
+            raise ValueError(f"LanceDBStore.fulltext_search does not support schema={schema_kw!r}")
+        if kwargs:
+            raise ValueError(f"Unknown fulltext_search kwargs: {sorted(kwargs)}")
+
+        if not query or not query.strip():
+            return []
+
+        conn, _ = await self.connection()
+        existing_names = await conn.table_names()
+        if collection_name not in existing_names:
+            raise LookupError(f"LanceDB collection {collection_name!r} does not exist")
+
+        # NOTE (AC6): self._ensure_provider() is NEVER called anywhere in
+        # this method — FTS must neither construct nor invoke an embedding
+        # model, including on a reopen with no usable provider configured.
+        table = await conn.open_table(collection_name)
+        manifest = await self._ensure_manifest_loaded(table)
+
+        metadata_clause = compile_metadata_filter(metadata_filters, self._config)
+        parent_clause = None if include_parents else parent_exclusion_clause()
+        predicate = combine(metadata_clause, parent_clause)
+
+        query_builder = table.query().nearest_to_text(query)
+        if predicate:
+            query_builder = query_builder.where(predicate)
+        rows = await query_builder.limit(limit).to_list()
+
+        results: list[SearchResult] = []
+        for row in rows:
+            record_id = row["record_id"]
+            metadata = json.loads(row.get("metadata_json") or "{}")
+            metadata[RESERVED_METADATA_KEY] = {
+                "collection": collection_name,
+                "record_id": record_id,
+                "mode": "fts",
+                "score_kind": "bm25",
+                "higher_is_better": True,
+            }
+            results.append(
+                SearchResult(
+                    id=namespaced_id(manifest.collection_uuid, record_id),
+                    content=row["document"],
+                    score=float(row["_score"]),
+                    metadata=metadata,
+                )
+            )
+        return results
+
+    async def hybrid_search(
+        self,
+        query: str,
+        collection: Union[str, None] = None,
+        limit: int = 10,
+        metadata_filters: dict[str, Any] | None = None,
+        include_parents: bool = False,
+        **kwargs: Any,
+    ) -> list:
+        """Native vector/FTS fusion. Returns ``LanceDBHybridHit``; no distance alias.
+
+        Raises:
+            Exception: whatever the SDK (or the provider) raises when either
+                leg fails. There is no fallback to a single leg — a failed
+                hybrid fails the whole call (spec §8 whole-origin-failure
+                answer).
+        """
+        if isinstance(limit, bool) or not isinstance(limit, int) or limit <= 0:
+            raise ValueError(f"limit must be a positive integer, got {limit!r}")
+        table_alias = kwargs.pop("table", None)
+        collection_name = self._resolve_collection_selector(table_alias, collection)
+        schema_kw = kwargs.pop("schema", None)
+        if schema_kw not in (None, "public"):
+            raise ValueError(f"LanceDBStore.hybrid_search does not support schema={schema_kw!r}")
+        if kwargs:
+            raise ValueError(f"Unknown hybrid_search kwargs: {sorted(kwargs)}")
+
+        if not query or not query.strip():
+            return []
+
+        conn, _ = await self.connection()
+        existing_names = await conn.table_names()
+        if collection_name not in existing_names:
+            raise LookupError(f"LanceDB collection {collection_name!r} does not exist")
+
+        table = await conn.open_table(collection_name)
+        manifest = await self._ensure_manifest_loaded(table)
+
+        # ONE compiled predicate, reused for both legs via a single chained
+        # query builder — spec §2 requires one conjunctive prefilter across
+        # vector, FTS and both hybrid components (verified against the real
+        # SDK: a single trailing .where() on a nearest_to()+nearest_to_text()
+        # chain filters both legs, not just one).
+        metadata_clause = compile_metadata_filter(metadata_filters, self._config)
+        parent_clause = None if include_parents else parent_exclusion_clause()
+        predicate = combine(metadata_clause, parent_clause)
+
+        provider = await self._ensure_provider()
+        query_vector = await provider.embed_query(query)
+
+        query_builder = (
+            table.query()
+            .nearest_to(query_vector)
+            .distance_type("cosine")
+            .nearest_to_text(query)
+        )
+        if predicate:
+            query_builder = query_builder.where(predicate)
+        rows = await query_builder.limit(limit).to_list()
+
+        # Retain the SDK's native RRF order — do not re-sort.
+        hits: list[LanceDBHybridHit] = []
+        for rank, row in enumerate(rows, start=1):
+            record_id = row["record_id"]
+            metadata = json.loads(row.get("metadata_json") or "{}")
+            metadata[RESERVED_METADATA_KEY] = {
+                "collection": collection_name,
+                "record_id": record_id,
+                "mode": "hybrid",
+                "score_kind": "rrf",
+                "higher_is_better": True,
+                "native_rank": rank,
+            }
+            hits.append(
+                LanceDBHybridHit(
+                    id=namespaced_id(manifest.collection_uuid, record_id),
+                    content=row["document"],
+                    metadata=metadata,
+                    score=float(row["_relevance_score"]),
+                )
+            )
+        return hits
 
     async def mmr_search(self, **kwargs: Any) -> list:
         """Always raises: v1 supports exact similarity search only."""
