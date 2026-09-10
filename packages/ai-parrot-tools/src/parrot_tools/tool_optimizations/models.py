@@ -347,6 +347,8 @@ class PatchManifest(_StrictModel):
     Attributes:
         artifact_id: Opaque identifier of the stored artifact directory.
         task_id: The originating task identifier.
+        task_path: Repo-relative path of the TASK file, so an apply can
+            re-validate the very same contract this patch came from.
         packet_sha256: Hash of the canonical delegation packet.
         patch_sha256: Hash of the normalized unified patch.
         before_hashes: Per-target baseline hash; ``None`` means "must be absent".
@@ -365,6 +367,7 @@ class PatchManifest(_StrictModel):
 
     artifact_id: ArtifactIdStr
     task_id: str = Field(..., pattern=r"^TASK-\d{3,}$")
+    task_path: ShortStr
     packet_sha256: Sha256Str
     patch_sha256: Sha256Str
     before_hashes: Dict[str, Optional[str]] = Field(default_factory=dict)

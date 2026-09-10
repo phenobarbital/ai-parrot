@@ -420,9 +420,17 @@ def test_system_prompt_forbids_prose_and_scope_creep():
     assert "Never invent an API" in SYSTEM_PROMPT
 
 
-async def test_writer_apply_is_not_implemented_yet(tmp_path):
-    """The apply stub reports its status rather than pretending to work."""
+async def test_writer_apply_rejects_unknown_artifact(tmp_path):
+    """Apply refuses an artifact it never generated (full behaviour: TASK-3086)."""
     repo, _task = _setup(tmp_path)
     result = await TargetedWriterToolkit(repo_root=repo).writer_apply("0" * 32, "a" * 64)
     assert result.status == "error"
-    assert result.error.code == "not_implemented"
+    assert result.error.code == "artifact_not_found"
+
+
+async def test_writer_apply_validates_its_arguments(tmp_path):
+    """A malformed artifact id or review hash never reaches the store."""
+    repo, _task = _setup(tmp_path)
+    toolkit = TargetedWriterToolkit(repo_root=repo)
+    assert (await toolkit.writer_apply("not-hex", "a" * 64)).error.code == "invalid_arguments"
+    assert (await toolkit.writer_apply("0" * 32, "short")).error.code == "invalid_arguments"

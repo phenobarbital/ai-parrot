@@ -441,3 +441,43 @@ async def test_mcp_raw_argument_rejection(tmp_path):
     assert payload["status"] == "ok"
     # metadata={} keeps the adapter from appending a second "Metadata:" block.
     assert len(good["result"]["content"]) == 1
+
+
+def test_patch_manifest_records_task_provenance():
+    """A manifest must name the TASK file so an apply can re-validate it.
+
+    Without `task_path` the apply step has no way to re-run the very same
+    delegation contract the patch came from — `task_id` is an identifier,
+    not a location.
+    """
+    from parrot_tools.tool_optimizations.models import PatchManifest
+
+    fields = {
+        "artifact_id": HEX32,
+        "task_id": "TASK-3086",
+        "task_path": "sdd/tasks/active/TASK-3086-x.md",
+        "packet_sha256": HEX64,
+        "patch_sha256": HEX64,
+        "before_hashes": {"a.py": None, "b.py": HEX64},
+        "after_hashes": {"a.py": HEX64},
+        "allowed_paths": ["a.py"],
+        "configured_model": "bedrock-converse:qwen3-coder-480b-a35b",
+        "actual_model": None,
+        "used_fallback": False,
+        "usage": {"prompt_tokens": None, "completion_tokens": None, "total_tokens": None},
+        "repairs": 1,
+        "elapsed_ms": 12,
+        "validation_state": "validated",
+        "created_at": "2026-09-10T00:00:00+00:00",
+    }
+    manifest = PatchManifest(**fields)
+    assert manifest.task_path == "sdd/tasks/active/TASK-3086-x.md"
+    assert manifest.before_hashes["a.py"] is None  # absence, not a digest
+
+    # It is required: provenance may not be omitted.
+    with pytest.raises(ValidationError):
+        PatchManifest(**{key: value for key, value in fields.items() if key != "task_path"})
+
+    # And the hash maps are still validated.
+    with pytest.raises(ValidationError):
+        PatchManifest(**{**fields, "after_hashes": {"a.py": "not-a-sha"}})

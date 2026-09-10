@@ -41,6 +41,7 @@ def _manifest(artifact_id: str, patch_text: str, packet_json: str = "{}") -> Pat
     return PatchManifest(
         artifact_id=artifact_id,
         task_id="TASK-1000",
+        task_path="sdd/tasks/active/TASK-1000-example.md",
         packet_sha256=hashlib.sha256(packet_json.encode()).hexdigest(),
         patch_sha256=hashlib.sha256(patch_text.encode()).hexdigest(),
         before_hashes={"pkg/__init__.py": hashlib.sha256(BASE_INIT).hexdigest()},
