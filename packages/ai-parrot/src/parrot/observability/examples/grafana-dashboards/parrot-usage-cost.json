@@ -1,0 +1,372 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "description": "AI-Parrot LLM usage and cost, sourced from the OTel gen_ai.client.* instrument catalog pushed to parrot-prometheus. Every field name below is verbatim from sdd/state/FEAT-548/verification/series-names.md (TASK-3108) — never guessed.",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "preload": false,
+  "refresh": "1m",
+  "schemaVersion": 42,
+  "tags": ["ai-parrot", "llm", "cost"],
+  "templating": {
+    "list": [
+      {
+        "allValue": ".*",
+        "allowCustomValue": true,
+        "current": { "text": "All", "value": ["$__all"] },
+        "datasource": { "type": "prometheus", "uid": "claudestats-prometheus" },
+        "definition": "label_values(gen_ai_client_request_count_total, parrot_agent_name)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Agent",
+        "multi": true,
+        "name": "agent",
+        "options": [],
+        "query": "label_values(gen_ai_client_request_count_total, parrot_agent_name)",
+        "refresh": 2,
+        "regex": "",
+        "regexApplyTo": "value",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "allowCustomValue": true,
+        "current": { "text": "All", "value": ["$__all"] },
+        "datasource": { "type": "prometheus", "uid": "claudestats-prometheus" },
+        "definition": "label_values(gen_ai_client_request_count_total, gen_ai_request_model)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Model",
+        "multi": true,
+        "name": "model",
+        "options": [],
+        "query": "label_values(gen_ai_client_request_count_total, gen_ai_request_model)",
+        "refresh": 2,
+        "regex": "",
+        "regexApplyTo": "value",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "allowCustomValue": true,
+        "current": { "text": "All", "value": ["$__all"] },
+        "datasource": { "type": "prometheus", "uid": "claudestats-prometheus" },
+        "definition": "label_values(gen_ai_client_request_count_total, gen_ai_provider_name)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Provider",
+        "multi": true,
+        "name": "provider",
+        "options": [],
+        "query": "label_values(gen_ai_client_request_count_total, gen_ai_provider_name)",
+        "refresh": 2,
+        "regex": "",
+        "regexApplyTo": "value",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      }
+    ]
+  },
+  "time": { "from": "now-24h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "AI-Parrot — LLM Usage & Cost",
+  "uid": "parrot-usage-cost",
+  "version": 1,
+  "panels": [
+    { "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }, "id": 1, "title": "Totals", "type": "row" },
+    {
+      "datasource": { "type": "prometheus", "uid": "claudestats-prometheus" },
+      "description": "Cumulative estimated USD spend. cost_usd() returns None (nothing added) for a model absent from the pricing tables — see 'Requests without cost' for the gap.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "fixedColor": "green", "mode": "fixed" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+          "unit": "currencyUSD",
+          "noValue": "No data"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 1 },
+      "id": 2,
+      "options": {
+        "colorMode": "value", "graphMode": "none", "justifyMode": "center", "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto", "wideLayout": true
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "claudestats-prometheus" },
+          "editorMode": "code",
+          "expr": "sum(gen_ai_client_cost_USD_total{parrot_agent_name=~\"${agent:regex}\", gen_ai_response_model=~\"${model:regex}\", gen_ai_provider_name=~\"${provider:regex}\"})",
+          "instant": true, "range": false, "refId": "A"
+        }
+      ],
+      "title": "Total cost (USD)",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "claudestats-prometheus" },
+      "description": "Total LLM API requests, including failed/errored attempts (gen_ai.client.request.count is recorded at call-start).",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "fixedColor": "blue", "mode": "fixed" },
+          "decimals": 0,
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] },
+          "unit": "short",
+          "noValue": "No data"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 1 },
+      "id": 3,
+      "options": {
+        "colorMode": "value", "graphMode": "none", "justifyMode": "center", "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto", "wideLayout": true
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "claudestats-prometheus" },
+          "editorMode": "code",
+          "expr": "sum(gen_ai_client_request_count_total{parrot_agent_name=~\"${agent:regex}\", gen_ai_request_model=~\"${model:regex}\", gen_ai_provider_name=~\"${provider:regex}\"})",
+          "instant": true, "range": false, "refId": "A"
+        }
+      ],
+      "title": "Total requests",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "claudestats-prometheus" },
+      "description": "Total tokens (input + output). gen_ai.client.token.usage is a histogram, not a counter — this reads its _sum. Excludes parrot.client.round.token.usage on purpose (FEAT-397: never sum the two, that double-counts).",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "fixedColor": "purple", "mode": "fixed" },
+          "decimals": 0,
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "purple", "value": null }] },
+          "unit": "short",
+          "noValue": "No data"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 1 },
+      "id": 4,
+      "options": {
+        "colorMode": "value", "graphMode": "none", "justifyMode": "center", "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto", "wideLayout": true
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "claudestats-prometheus" },
+          "editorMode": "code",
+          "expr": "sum(gen_ai_client_token_usage_tokens_sum{parrot_agent_name=~\"${agent:regex}\", gen_ai_response_model=~\"${model:regex}\", gen_ai_provider_name=~\"${provider:regex}\"})",
+          "instant": true, "range": false, "refId": "A"
+        }
+      ],
+      "title": "Total tokens",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "claudestats-prometheus" },
+      "description": "Requests whose (provider, model) never produced a matching cost.total sample — i.e. cost_usd() returned None, most commonly an unpriced model. Makes silent under-reporting visible instead of letting it vanish.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "fixedColor": "orange", "mode": "fixed" },
+          "decimals": 0,
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "orange", "value": null }] },
+          "unit": "short",
+          "noValue": "0"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 1 },
+      "id": 5,
+      "options": {
+        "colorMode": "value", "graphMode": "none", "justifyMode": "center", "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto", "wideLayout": true
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "claudestats-prometheus" },
+          "editorMode": "code",
+          "expr": "sum(gen_ai_client_request_count_total{parrot_agent_name=~\"${agent:regex}\", gen_ai_request_model=~\"${model:regex}\", gen_ai_provider_name=~\"${provider:regex}\"} unless on(gen_ai_provider_name, gen_ai_request_model) label_replace(gen_ai_client_cost_USD_total, \"gen_ai_request_model\", \"$1\", \"gen_ai_response_model\", \"(.*)\"))",
+          "instant": true, "range": false, "refId": "A"
+        }
+      ],
+      "title": "Requests without cost",
+      "type": "stat"
+    },
+
+    { "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 }, "id": 6, "title": "By agent", "type": "row" },
+    {
+      "datasource": { "type": "prometheus", "uid": "claudestats-prometheus" },
+      "description": "parrot.agent.name has been on every LLM metric since FEAT-228 — this dimension has never existed in a shipped dashboard before this one.",
+      "fieldConfig": { "defaults": { "unit": "currencyUSD", "custom": { "drawStyle": "line", "fillOpacity": 10, "spanNulls": false } }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "id": 7,
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "claudestats-prometheus" },
+          "editorMode": "code",
+          "expr": "sum by (parrot_agent_name) (increase(gen_ai_client_cost_USD_total{parrot_agent_name=~\"${agent:regex}\", gen_ai_response_model=~\"${model:regex}\", gen_ai_provider_name=~\"${provider:regex}\"}[1h]))",
+          "legendFormat": "{{parrot_agent_name}}", "range": true, "refId": "A"
+        }
+      ],
+      "title": "Cost rate by agent (USD/h)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "claudestats-prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "drawStyle": "line", "fillOpacity": 10, "spanNulls": false } }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "id": 8,
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "claudestats-prometheus" },
+          "editorMode": "code",
+          "expr": "sum by (parrot_agent_name, gen_ai_token_type) (rate(gen_ai_client_token_usage_tokens_sum{parrot_agent_name=~\"${agent:regex}\", gen_ai_response_model=~\"${model:regex}\", gen_ai_provider_name=~\"${provider:regex}\"}[5m]))",
+          "legendFormat": "{{parrot_agent_name}} / {{gen_ai_token_type}}", "range": true, "refId": "A"
+        }
+      ],
+      "title": "Tokens/s by agent",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "claudestats-prometheus" },
+      "fieldConfig": { "defaults": { "unit": "currencyUSD" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 14 },
+      "id": 9,
+      "options": { "showHeader": true },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "claudestats-prometheus" },
+          "editorMode": "code",
+          "expr": "sum by (parrot_agent_name) (gen_ai_client_cost_USD_total{parrot_agent_name=~\"${agent:regex}\", gen_ai_response_model=~\"${model:regex}\", gen_ai_provider_name=~\"${provider:regex}\"})",
+          "format": "table", "instant": true, "range": false, "refId": "A"
+        }
+      ],
+      "title": "Cumulative cost by agent",
+      "type": "table"
+    },
+
+    { "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 22 }, "id": 10, "title": "By model / provider", "type": "row" },
+    {
+      "datasource": { "type": "prometheus", "uid": "claudestats-prometheus" },
+      "fieldConfig": { "defaults": { "unit": "currencyUSD", "custom": { "drawStyle": "line", "fillOpacity": 10, "spanNulls": false } }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 23 },
+      "id": 11,
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "claudestats-prometheus" },
+          "editorMode": "code",
+          "expr": "sum by (gen_ai_response_model) (increase(gen_ai_client_cost_USD_total{parrot_agent_name=~\"${agent:regex}\", gen_ai_response_model=~\"${model:regex}\", gen_ai_provider_name=~\"${provider:regex}\"}[1h]))",
+          "legendFormat": "{{gen_ai_response_model}}", "range": true, "refId": "A"
+        }
+      ],
+      "title": "Cost rate by model (USD/h)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "claudestats-prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "drawStyle": "line", "fillOpacity": 10, "spanNulls": false } }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 23 },
+      "id": 12,
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "claudestats-prometheus" },
+          "editorMode": "code",
+          "expr": "sum by (gen_ai_response_model, gen_ai_token_type) (rate(gen_ai_client_token_usage_tokens_sum{parrot_agent_name=~\"${agent:regex}\", gen_ai_response_model=~\"${model:regex}\", gen_ai_provider_name=~\"${provider:regex}\"}[5m]))",
+          "legendFormat": "{{gen_ai_response_model}} / {{gen_ai_token_type}}", "range": true, "refId": "A"
+        }
+      ],
+      "title": "Tokens/s by model",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "claudestats-prometheus" },
+      "fieldConfig": { "defaults": { "unit": "currencyUSD" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 31 },
+      "id": 13,
+      "options": { "showHeader": true },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "claudestats-prometheus" },
+          "editorMode": "code",
+          "expr": "sum by (gen_ai_response_model, gen_ai_provider_name) (gen_ai_client_cost_USD_total{parrot_agent_name=~\"${agent:regex}\", gen_ai_response_model=~\"${model:regex}\", gen_ai_provider_name=~\"${provider:regex}\"})",
+          "format": "table", "instant": true, "range": false, "refId": "A"
+        }
+      ],
+      "title": "Cumulative cost by model + provider",
+      "type": "table"
+    },
+
+    { "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 39 }, "id": 14, "title": "Health", "type": "row" },
+    {
+      "datasource": { "type": "prometheus", "uid": "claudestats-prometheus" },
+      "description": "gen_ai.client.error.count exists in the instrument catalog but was not observed to emit in TASK-3108's live verification (see series-names.md Findings #1) — an error-rate-by-agent panel is deliberately omitted here rather than authored against an unconfirmed series name. Add it once that finding is resolved.",
+      "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "drawStyle": "line", "fillOpacity": 10, "spanNulls": false } }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 40 },
+      "id": 15,
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "claudestats-prometheus" },
+          "editorMode": "code",
+          "expr": "sum by (parrot_agent_name) (rate(gen_ai_client_request_count_total{parrot_agent_name=~\"${agent:regex}\", gen_ai_request_model=~\"${model:regex}\", gen_ai_provider_name=~\"${provider:regex}\"}[5m]))",
+          "legendFormat": "{{parrot_agent_name}}", "range": true, "refId": "A"
+        }
+      ],
+      "title": "Request rate by agent",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "claudestats-prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s", "custom": { "drawStyle": "line", "fillOpacity": 10, "spanNulls": false } }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 40 },
+      "id": 16,
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "claudestats-prometheus" },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(gen_ai_client_operation_duration_seconds_bucket{parrot_agent_name=~\"${agent:regex}\", gen_ai_response_model=~\"${model:regex}\", gen_ai_provider_name=~\"${provider:regex}\"}[5m])))",
+          "legendFormat": "p50", "range": true, "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "claudestats-prometheus" },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(gen_ai_client_operation_duration_seconds_bucket{parrot_agent_name=~\"${agent:regex}\", gen_ai_response_model=~\"${model:regex}\", gen_ai_provider_name=~\"${provider:regex}\"}[5m])))",
+          "legendFormat": "p95", "range": true, "refId": "B"
+        }
+      ],
+      "title": "p50 / p95 latency",
+      "type": "timeseries"
+    }
+  ]
+}
