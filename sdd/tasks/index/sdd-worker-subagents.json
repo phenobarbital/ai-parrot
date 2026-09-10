@@ -191,7 +191,7 @@
       "feature_id": "FEAT-549",
       "feature": "sdd-worker-subagents",
       "spec": "sdd/specs/sdd-worker-subagents.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -202,8 +202,8 @@
       "parallelism_notes": "Hardcodes the seven MCP tool names and the sdd-coder agent name.",
       "assigned_to": null,
       "started_at": "2026-09-10T20:42:27+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3124-sdd-worker-orchestrator-prompt.md"
+      "completed_at": "2026-09-10T21:33:06+00:00",
+      "file": "sdd/tasks/completed/TASK-3124-sdd-worker-orchestrator-prompt.md"
     },
     {
       "id": "TASK-3125",
