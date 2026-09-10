@@ -239,10 +239,34 @@ def test_compat_client_has_no_model_defaults():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Sonnet)
+**Date**: 2026-09-10
+**Notes**: Implemented `GeminiOpenAICompatClient` exactly per the (fully-decided)
+blueprint, wired the `__init__.py` export and the `pyproject.toml` entry point.
+4/4 unit tests pass (key resolution incl. the `ValueError` naming both keys,
+default/explicit `base_url`, no model-default class attrs); `ruff`/`mypy` clean.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: (1) Did not run the live editable-reinstall +
+`LLMFactory.list_providers()` check from AC-4/this task's AC list. The
+`.venv` is the **main repo's shared venv** (other concurrent Claude Code
+worktree sessions use it for their own test runs); `uv pip install -e
+packages/ai-parrot-client-google` from this worktree would repoint the
+venv's editable install away from the main checkout for every other
+session using it at the same time — an unacceptable shared-state mutation
+per the project's worktree-isolation rules. Verified the entry point
+statically instead: `pyproject.toml`'s `[project.entry-points."parrot.clients"]`
+parses correctly via `tomllib` and contains
+`google-compat = "parrot.clients.google:GeminiOpenAICompatClient"`; the live
+`LLMFactory.list_providers()` check will pass once the merged `dev` branch
+is reinstalled (CI / `/sdd-done` verification), which is the first point an
+editable reinstall is safe. (2) The spec/task's "Does NOT Exist" claim that
+`BedrockMantleClient` (mantle.py:35) "carries NO `_default_model` /
+`_fallback_model` / `_lightweight_model`" is inaccurate as of this commit —
+`mantle.py` actually declares `_default_model = "openai.gpt-oss-120b"` and
+`_fallback_model: str | None = None` as class attributes (FEAT-438 lesson:
+no *gpt-\* /claude-\** id, not no default at all). This did not change the
+implementation: the blueprint's literal `GeminiOpenAICompatClient` code
+never declared those attributes either, and `test_compat_client_has_no_model_defaults`
+only checks `GeminiOpenAICompatClient.__dict__` (not inherited members), so
+the bounded test still holds. Flagged for the spec author rather than
+silently corrected.

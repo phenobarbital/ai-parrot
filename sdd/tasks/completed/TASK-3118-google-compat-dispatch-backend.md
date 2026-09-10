@@ -347,10 +347,19 @@ def test_build_dispatcher_google_compat():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Sonnet)
+**Date**: 2026-09-10
+**Notes**: Implemented `GoogleCompatCodeDispatchProfile`, `GoogleCompatCodeDispatcher`
+(both overrides + lazy client factory), the `DevAgentBackend` literal addition,
+the `agent_builder.py` branch, and re-exports in all three `__init__.py` files
+exactly per the blueprint. 5/5 new unit tests pass. Ran the full
+`tests/flows/dev_loop` suite (AC-16): 1722 passed, 11 pre-existing failures in
+`test_pr_enrichment.py` (all `AttributeError: ... has no attribute 'NovaClient'`
+on `dispatchers.nova` — unrelated to this task; confirmed via `git status`/`git log`
+that neither `nova.py` nor `test_pr_enrichment.py` were touched by this or any
+prior FEAT-549 commit, and `git log` shows the last change to `nova.py` predates
+this feature branch). The four FEAT-323 regression suites named in AC-16
+(`test_agent_pool.py`, `test_task_scheduler.py`, `test_worktree_manager.py`,
+`test_pool_wiring.py`) pass in full (51/51). `ruff` and `mypy` clean.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.

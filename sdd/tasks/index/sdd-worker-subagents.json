@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-10T20:33:38+00:00",
-  "completed_at": null,
+  "completed_at": "2026-09-10T22:22:03+00:00",
   "tasks": [
     {
       "id": "TASK-3115",
@@ -14,16 +14,17 @@
       "feature_id": "FEAT-549",
       "feature": "sdd-worker-subagents",
       "spec": "sdd/specs/sdd-worker-subagents.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "New package, no shared files; every other sdd_coder task depends on it, so it must land first but can run alongside TASK-3117/3123.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3115-sdd-coder-models.md"
+      "started_at": "2026-09-10T20:42:27+00:00",
+      "completed_at": "2026-09-10T20:47:09+00:00",
+      "file": "sdd/tasks/completed/TASK-3115-sdd-coder-models.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3116",
@@ -32,7 +33,7 @@
       "feature_id": "FEAT-549",
       "feature": "sdd-worker-subagents",
       "spec": "sdd/specs/sdd-worker-subagents.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -41,9 +42,10 @@
       "parallel": false,
       "parallelism_notes": "Imports sdd_coder.models and edits sdd_coder/__init__.py.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3116-sdd-coder-roster.md"
+      "started_at": "2026-09-10T20:42:27+00:00",
+      "completed_at": "2026-09-10T20:49:46+00:00",
+      "file": "sdd/tasks/completed/TASK-3116-sdd-coder-roster.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3117",
@@ -52,16 +54,17 @@
       "feature_id": "FEAT-549",
       "feature": "sdd-worker-subagents",
       "spec": "sdd/specs/sdd-worker-subagents.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Only touches ai-parrot-client-google; disjoint from every other task.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3117-gemini-openai-compat-client.md"
+      "started_at": "2026-09-10T20:42:27+00:00",
+      "completed_at": "2026-09-10T20:53:13+00:00",
+      "file": "sdd/tasks/completed/TASK-3117-gemini-openai-compat-client.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3118",
@@ -70,7 +73,7 @@
       "feature_id": "FEAT-549",
       "feature": "sdd-worker-subagents",
       "spec": "sdd/specs/sdd-worker-subagents.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -79,9 +82,10 @@
       "parallel": false,
       "parallelism_notes": "Edits models/base.py, agent_builder.py and the three dev_loop __init__ exports; TASK-3123 edits other lines of models/*.py — same worktree to avoid literal collisions.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3118-google-compat-dispatch-backend.md"
+      "started_at": "2026-09-10T20:42:27+00:00",
+      "completed_at": "2026-09-10T20:57:33+00:00",
+      "file": "sdd/tasks/completed/TASK-3118-google-compat-dispatch-backend.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3119",
@@ -90,7 +94,7 @@
       "feature_id": "FEAT-549",
       "feature": "sdd-worker-subagents",
       "spec": "sdd/specs/sdd-worker-subagents.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -99,9 +103,10 @@
       "parallel": false,
       "parallelism_notes": "Imports sdd_coder.models.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3119-sdd-coder-fidelity-jobs.md"
+      "started_at": "2026-09-10T20:42:27+00:00",
+      "completed_at": "2026-09-10T20:58:55+00:00",
+      "file": "sdd/tasks/completed/TASK-3119-sdd-coder-fidelity-jobs.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3120",
@@ -110,7 +115,7 @@
       "feature_id": "FEAT-549",
       "feature": "sdd-worker-subagents",
       "spec": "sdd/specs/sdd-worker-subagents.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -121,9 +126,10 @@
       "parallel": false,
       "parallelism_notes": "Composes roster/fidelity/jobs; creates engine.py that TASK-3121 extends.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3120-sdd-coder-engine-plan-merge.md"
+      "started_at": "2026-09-10T20:42:27+00:00",
+      "completed_at": "2026-09-10T21:12:22+00:00",
+      "file": "sdd/tasks/completed/TASK-3120-sdd-coder-engine-plan-merge.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3121",
@@ -132,7 +138,7 @@
       "feature_id": "FEAT-549",
       "feature": "sdd-worker-subagents",
       "spec": "sdd/specs/sdd-worker-subagents.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -142,9 +148,10 @@
       "parallel": false,
       "parallelism_notes": "Modifies engine.py from TASK-3120; needs the google-compat backend to be buildable.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3121-sdd-coder-engine-dispatch.md"
+      "started_at": "2026-09-10T20:42:27+00:00",
+      "completed_at": "2026-09-10T21:22:36+00:00",
+      "file": "sdd/tasks/completed/TASK-3121-sdd-coder-engine-dispatch.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3122",
@@ -153,7 +160,7 @@
       "feature_id": "FEAT-549",
       "feature": "sdd-worker-subagents",
       "spec": "sdd/specs/sdd-worker-subagents.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -162,9 +169,10 @@
       "parallel": false,
       "parallelism_notes": "Wraps the finished engine; fixes the tool names TASK-3124 hardcodes.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3122-sdd-coder-toolkit-mcp.md"
+      "started_at": "2026-09-10T20:42:27+00:00",
+      "completed_at": "2026-09-10T21:29:25+00:00",
+      "file": "sdd/tasks/completed/TASK-3122-sdd-coder-toolkit-mcp.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3123",
@@ -173,16 +181,17 @@
       "feature_id": "FEAT-549",
       "feature": "sdd-worker-subagents",
       "spec": "sdd/specs/sdd-worker-subagents.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "New prompt files + one-line Literal edits in models/llm|gemini|codex|claude|google_coding.py and _subagent_defs.py — disjoint lines from TASK-3118 but same files; parallel worktree acceptable, merge carefully.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3123-sdd-coder-subagent-prompt.md"
+      "started_at": "2026-09-10T20:42:27+00:00",
+      "completed_at": "2026-09-10T21:04:35+00:00",
+      "file": "sdd/tasks/completed/TASK-3123-sdd-coder-subagent-prompt.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3124",
@@ -191,7 +200,7 @@
       "feature_id": "FEAT-549",
       "feature": "sdd-worker-subagents",
       "spec": "sdd/specs/sdd-worker-subagents.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -201,9 +210,10 @@
       "parallel": false,
       "parallelism_notes": "Hardcodes the seven MCP tool names and the sdd-coder agent name.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3124-sdd-worker-orchestrator-prompt.md"
+      "started_at": "2026-09-10T20:42:27+00:00",
+      "completed_at": "2026-09-10T21:33:06+00:00",
+      "file": "sdd/tasks/completed/TASK-3124-sdd-worker-orchestrator-prompt.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3125",
@@ -212,7 +222,7 @@
       "feature_id": "FEAT-549",
       "feature": "sdd-worker-subagents",
       "spec": "sdd/specs/sdd-worker-subagents.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -222,9 +232,10 @@
       "parallel": false,
       "parallelism_notes": "Exercises toolkit + engine + google-compat together.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3125-sdd-coder-integration-tests.md"
+      "started_at": "2026-09-10T20:42:27+00:00",
+      "completed_at": "2026-09-10T21:38:48+00:00",
+      "file": "sdd/tasks/completed/TASK-3125-sdd-coder-integration-tests.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3126",
@@ -233,7 +244,7 @@
       "feature_id": "FEAT-549",
       "feature": "sdd-worker-subagents",
       "spec": "sdd/specs/sdd-worker-subagents.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -243,9 +254,10 @@
       "parallel": false,
       "parallelism_notes": "Documents shipped behaviour; must read the two Completion Notes first.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3126-sdd-coder-docs.md"
+      "started_at": "2026-09-10T20:42:27+00:00",
+      "completed_at": "2026-09-10T21:41:10+00:00",
+      "file": "sdd/tasks/completed/TASK-3126-sdd-coder-docs.md",
+      "verification": "verified"
     }
   ]
 }

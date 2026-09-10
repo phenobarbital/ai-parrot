@@ -18,6 +18,8 @@ The dev-loop flow binds one of several subagents per dispatch:
   read-only, proposes ``retry``/``escalate``/``accept_with_notes`` over a
   QAReport + judge-panel verdicts; the deterministic envelope and stop
   rule are enforced in Python, never trusted from the proposal alone.
+* ``sdd-coder`` — task-scoped, code-only coder used by every FEAT-549
+  seat; dual-sourced (repo twin at ``.claude/agents/sdd-coder.md``).
 
 ``load_subagent_definition`` reads **only** the package-shipped copy at
 ``_subagent_data/<name>.md`` — this is the canonical, always-available
@@ -54,6 +56,7 @@ _VALID_NAMES: frozenset[str] = frozenset(
         "sdd-secondopinion",
         "sdd-planner",
         "sdd-feedback",
+        "sdd-coder",
     }
 )
 
@@ -89,7 +92,7 @@ def load_subagent_definition(name: str) -> str:
     Args:
         name: One of ``"sdd-research"``, ``"sdd-worker"``, ``"sdd-qa"``,
             ``"sdd-codereview"``, ``"sdd-secondopinion"``, ``"sdd-planner"``,
-            ``"sdd-feedback"``.
+            ``"sdd-feedback"``, ``"sdd-coder"``.
 
     Returns:
         The Markdown body of the subagent definition with the YAML

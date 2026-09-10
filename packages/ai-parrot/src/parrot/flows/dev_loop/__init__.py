@@ -13,6 +13,7 @@ from parrot.flows.dev_loop.commands import register_command_routes
 from parrot.flows.dev_loop.config import parse_repo_specs
 from parrot.flows.dev_loop.dispatchers import (
     GoogleCodingDispatcher,
+    GoogleCompatCodeDispatcher,
     ClaudeCodeDispatcher,
     CodexCodeDispatcher,
     GeminiCodeDispatcher,
@@ -42,6 +43,7 @@ from parrot.flows.dev_loop.models import (
     AcceptanceCriterion,
     AdversarialFinding,
     GoogleCodingDispatchProfile,
+    GoogleCompatCodeDispatchProfile,
     BugBrief,
     ClaudeCodeDispatchProfile,
     CodexAdversarialReviewProfile,
@@ -104,6 +106,8 @@ __all__ = [
     "DevLoopSessionState",
     "GeminiCodeDispatcher",
     "GeminiCodeDispatchProfile",
+    "GoogleCompatCodeDispatcher",
+    "GoogleCompatCodeDispatchProfile",
     "LLMCodeDispatcher",
     "LLMCodeDispatchProfile",
     "GrokCodeDispatcher",

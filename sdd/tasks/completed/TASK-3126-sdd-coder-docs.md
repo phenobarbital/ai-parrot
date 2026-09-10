@@ -151,10 +151,33 @@ Documentation task — verification is the checklist above plus a link check (`g
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Sonnet)
+**Date**: 2026-09-10
+**Notes**: Created `docs/dev_loop/sdd-coder-orchestrator.md` (all sections
+from the outline: What it does, Install, The roster, The loop, Outcomes,
+Branches & worktrees, Telemetry, Troubleshooting, Related). Appended the
+`sdd-coder` section to the end of `docs/mcp-local-toolkits.md` (no
+"tool-optimizations" heading exists inside that file itself — the FEAT-543
+toolkits live in a separate `docs/tool-optimizations.md`, linked from this
+file's own "## Related" section — so per the task's own instruction
+"append at END of file (no anchor needed)"). Added the `dev_loop/sdd_coder/`
+pointer paragraph to `.agent/CONTEXT.md`'s `flows/` tree entry.
 
-**Completed by**:
-**Date**:
-**Notes**:
+Verified every command in the guide once:
+```
+$ cp examples/sdd-coder-mcp.yaml .parrot/mcp-toolkits.yaml
+$ parrot mcp-local --list
+browsing	enabled	parrot_tools.browsing.toolkit.WebBrowsingToolkit
+memory	enabled	parrot.tools.working_memory.tool.WorkingMemoryToolkit
+scraping	enabled	parrot_tools.scraping.toolkit.WebScrapingToolkit
+sdd-coder	enabled	parrot.flows.dev_loop.sdd_coder.toolkit.SddCoderToolkit
+```
+(the operator-local `.parrot/mcp-toolkits.yaml` copy was removed afterward —
+git-ignored, never committed). Link check
+(`grep -o 'docs/[a-zA-Z_/.-]*' docs/dev_loop/sdd-coder-orchestrator.md`) —
+the one `docs/` reference (`docs/mcp-local-toolkits.md`) resolves. Confirmed
+the guide mentions `thought_signature`, `navconfig`, the `coder_wait` ≤ 300 s
+clamp, and orphan policy (AC-17); confirmed `docs/mcp-local-toolkits.md`
+names all seven `coder_*` tools.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.

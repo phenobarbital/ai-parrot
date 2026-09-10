@@ -276,10 +276,60 @@ def test_telemetry_collector_captures_usage(): ...   # build the action with ses
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Sonnet)
+**Date**: 2026-09-10
+**Notes**: Implemented `AttemptTelemetryCollector`, `_research_for`, `_labels_for`,
+`_run_attempt`, `_run_task`, `run_chunk`, `wait` exactly per the blueprint (all
+FILL INs completed, including `default_smoke` deliberately left out — marked
+optional in scope). 10 new fake-dispatcher tests pass (cwd-per-attempt
+isolation, cross-seat retry + both-attempts-fail, forced `sdd-coder` subagent,
+return-before-dispatch, `task_already_running`, native-task rejection,
+full-chunk merge, concurrent-job merge serialization, telemetry capture).
+122/122 `sdd_coder` tests pass; full `tests/flows/dev_loop` run: 1757 passed
+(up from 1747), same 11 pre-existing `test_pr_enrichment.py` failures, 6
+skipped; `ruff`/`mypy` clean.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**:
+1. **`node_id` passed to `dispatcher.dispatch()`** — the blueprint's
+   `_run_attempt` literally used `node_id=f"sdd-coder.{seat.label}"`. Verified
+   this breaks AC-10 in real dispatches: `_publish_event` (dispatchers/llm.py:2403)
+   always calls `_apply_to_session_host(event)`, which rolls `node_id` up via
+   `_owning_node_id` (splits on the first `.`) before building a `DevLoopAction`
+   via `action_from_dispatch_event` — and that function types `node_id` as the
+   CLOSED `NodeId` Literal (session_state.py:140-158: `intent_classifier`,
+   `bug_intake`, `research`, `development`, `qa`, ... — no `"sdd-coder"`
+   member). Constructing `DispatchCompleted(node_id="sdd-coder", ...)` raises
+   `ValidationError`, and `_apply_to_session_host`'s `except Exception` (by
+   design, "the shim must never break a dispatch") swallows it at DEBUG —
+   meaning `AttemptTelemetryCollector.apply()` would NEVER fire for a real
+   dispatch, and `AttemptRecord.usage` would always be empty in production
+   despite the unit test passing (a test that calls `collector.apply()`
+   directly, bypassing the real node_id-rollup path, cannot catch this).
+   Fixed by using `node_id=f"development.sdd-coder-{seat.label}"` instead —
+   `"development"` IS a valid `NodeId` (the same one `DevAgentPool` dispatches
+   under) and this feature does not touch `session_state.py`. Per-seat
+   identity for downstream consumers is unaffected: it still flows through
+   `labels.seat` (`"sdd-coder.<label>"`), which `action_from_dispatch_event`
+   reads from `payload["seat"]` (stamped by `DispatchLabels.as_payload()`) in
+   *preference* to the raw node_id (session_state.py:1489-1491). Documented
+   in-line in `engine.py` at the call site.
+2. **`_consolidate`'s fidelity diff command** — the blueprint (inherited from
+   TASK-3120, both authored to the same spec skeleton) used
+   `git diff --name-only <feature_branch>..<branch>` (two dots). Verified this
+   is wrong: for `git diff` (unlike `git log`/`rev-list`), `A..B` is a literal
+   two-tree comparison, NOT merge-base-relative — so once ANY other task's
+   attempt merges into `feature_branch` first (advancing it) while this
+   branch is still consolidating, the diff also reports every file the
+   *other* merge introduced as "changed" on this branch, incorrectly failing
+   fidelity for files this task never touched. This was latent in TASK-3120
+   (none of its tests exercised two concurrently-in-flight, non-conflicting
+   attempts) and surfaced here via
+   `test_engine_merges_serialised_across_jobs` (TASK-0002 spuriously
+   `fidelity_violation`'d on TASK-0001's file after TASK-0001 merged first).
+   Fixed in `_consolidate` (and, for consistency/correctness, the equivalent
+   `diff --name-only` call in `_orphan_branches`) by switching to triple-dot
+   (`A...B`, merge-base-relative) — `rev-list --count A..B` in
+   `_orphan_branches` was left as two-dot, which is the *correct* form for
+   `rev-list`. Both fixes are documented in-line in `engine.py`; this is a
+   correction to TASK-3120's code within this task's own file, not a scope
+   violation (`engine.py` is explicitly listed as MODIFY for TASK-3121).

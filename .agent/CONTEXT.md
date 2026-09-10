@@ -222,6 +222,8 @@ parrot/
 ├── flows/            # Application-level flows built ON TOP of bots/flows: dev_flow/,
 │                     #   dev_loop/. Use dev_loop/ as the template for a new domain
 │                     #   flow (definition.py + factories.py + nodes/ + runner.py).
+│                     #   dev_loop/sdd_coder/ — FEAT-549 orchestration kernel behind the `parrot-sdd-coder` MCP server
+│                     #   (roster · chunker · per-attempt dispatch · fidelity gate · jobs); see docs/dev_loop/sdd-coder-orchestrator.md
 ├── skills/           # On-demand skills: file/composite discovery + two
 │                     #   AbstractToolkits — SkillFileToolkit (file-based) and
 │                     #   SkillRegistryToolkit (DB store). See Core Abstractions.

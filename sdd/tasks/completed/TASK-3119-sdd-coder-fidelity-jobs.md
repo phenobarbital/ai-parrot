@@ -290,10 +290,13 @@ def test_job_unknown_id():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Sonnet)
+**Date**: 2026-09-10
+**Notes**: Implemented `parse_task_files`/`check_fidelity`/`FidelityReport` in
+`fidelity.py` and `JobTable` (incl. the `_run` state-transition FILL IN) in
+`jobs.py` exactly per the blueprint. Did not touch `sdd_coder/__init__.py`
+since it is not listed in this task's Files to Create/Modify — TASK-3120/3121
+will wire the engine to these submodules directly. 12/12 new unit tests pass
+(101/101 across the whole `sdd_coder` test package); `ruff` and `mypy` clean.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.
