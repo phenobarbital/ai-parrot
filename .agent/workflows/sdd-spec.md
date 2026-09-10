@@ -254,6 +254,10 @@ if [ -z "$SKIP_REASON" ]; then
     -o "$DR/probe.txt" "Reply with exactly the single word OK." >/dev/null 2>&1 \
     || SKIP_REASON="model probe failed for $MODEL (rc=$?)"
 fi
+if [ -z "$SKIP_REASON" ]; then
+  PROBE_TEXT="$(cat "$DR/probe.txt" 2>/dev/null | tr -d '[:space:]')"
+  [ "$PROBE_TEXT" = "OK" ] || SKIP_REASON="model probe returned unexpected output for $MODEL"
+fi
 ```
 
 #### 3b.2 Render the neutral brief (skipped when `SKIP_REASON` is already set)
