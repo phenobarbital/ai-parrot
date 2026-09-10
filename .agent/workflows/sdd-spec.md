@@ -322,11 +322,24 @@ jsonschema.Draft202012Validator(s).validate(d)
 print(len(d['suggestions']), 'suggestions')" || SKIP_REASON="suggestions.json failed schema validation"
 fi
 ```
-For each suggestion (when not skipped): verify every `affected_paths` entry
-(`test -e <path>`); read the cited spots; decide **CONFIRM / REJECT /
-ESCALATE** with a one-sentence reason; write `$DR/triage.md` using the §9
-table shape from `sdd/templates/spec.md`. A suggestion with any unverifiable
-path is `REJECT — path not found`.
+For each suggestion (when not skipped), for every `affected_paths` entry:
+1. **Containment check first**: resolve the path against `$REPO_ROOT` and confirm it
+   stays inside it —
+   ```bash
+   python -c "
+import os, sys
+p = os.path.realpath(sys.argv[1])
+root = os.path.realpath('$REPO_ROOT')
+sys.exit(0 if p == root or p.startswith(root + os.sep) else 1)" "<path>" \
+     || REASON="REJECT — path outside repository: <path>"
+   ```
+   A path that fails containment is `REJECT — path outside repository: <path>` and is
+   NOT passed to `test -e` at all.
+2. **Existence check** (only for paths that passed containment): `test -e <path>` —
+   unverifiable ⇒ `REJECT — path not found: <path>`.
+3. Read the cited spots for paths that pass both checks; decide **CONFIRM / REJECT /
+   ESCALATE** with a one-sentence reason; write `$DR/triage.md` using the §9 table
+   shape from `sdd/templates/spec.md`.
 
 #### 3b.5 Fold and record
 - `CONFIRM` → apply while drafting §2 Overview / §3 modules / §7 notes; the
