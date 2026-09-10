@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-549
 **Date**: 2026-09-10
 **Author**: Jesus Lara (with Claude Fable 5.1)
-**Status**: draft
+**Status**: approved
 **Target version**: ai-parrot 1.1.0 (next minor after 1.0.0) · ai-parrot-client-google 0.3.0
 **Origin**: `sdd/proposals/sdd-worker-subagents.brainstorm.md` (accepted 2026-09-10, Option A)
 
