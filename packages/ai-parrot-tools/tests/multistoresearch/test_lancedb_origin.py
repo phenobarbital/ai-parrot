@@ -1,4 +1,5 @@
 """LanceDBOrigin contract and lifecycle tests (FEAT-542, AC7). No SDK required."""
+
 from __future__ import annotations
 
 import asyncio
@@ -32,19 +33,52 @@ class FakeStore:
         self.raise_on_search: Exception | None = None
 
     async def similarity_search(self, query, collection=None, limit=10, metadata_filters=None, include_parents=False):
-        self.calls.append(("similarity_search", {"query": query, "collection": collection, "limit": limit, "metadata_filters": metadata_filters, "include_parents": include_parents}))
+        self.calls.append(
+            (
+                "similarity_search",
+                {
+                    "query": query,
+                    "collection": collection,
+                    "limit": limit,
+                    "metadata_filters": metadata_filters,
+                    "include_parents": include_parents,
+                },
+            )
+        )
         if self.raise_on_search:
             raise self.raise_on_search
         return self.results
 
     async def hybrid_search(self, query, collection=None, limit=10, metadata_filters=None, include_parents=False):
-        self.calls.append(("hybrid_search", {"query": query, "collection": collection, "limit": limit, "metadata_filters": metadata_filters, "include_parents": include_parents}))
+        self.calls.append(
+            (
+                "hybrid_search",
+                {
+                    "query": query,
+                    "collection": collection,
+                    "limit": limit,
+                    "metadata_filters": metadata_filters,
+                    "include_parents": include_parents,
+                },
+            )
+        )
         if self.raise_on_search:
             raise self.raise_on_search
         return self.results
 
     async def fulltext_search(self, query, collection=None, limit=10, metadata_filters=None, include_parents=False):
-        self.calls.append(("fulltext_search", {"query": query, "collection": collection, "limit": limit, "metadata_filters": metadata_filters, "include_parents": include_parents}))
+        self.calls.append(
+            (
+                "fulltext_search",
+                {
+                    "query": query,
+                    "collection": collection,
+                    "limit": limit,
+                    "metadata_filters": metadata_filters,
+                    "include_parents": include_parents,
+                },
+            )
+        )
         if self.raise_on_search:
             raise self.raise_on_search
         return self.results
@@ -55,9 +89,7 @@ class FakeStore:
 
 
 class TestDispatch:
-    @pytest.mark.parametrize(
-        "mode,expected_call", [("vector", "similarity_search"), ("hybrid", "hybrid_search")]
-    )
+    @pytest.mark.parametrize("mode,expected_call", [("vector", "similarity_search"), ("hybrid", "hybrid_search")])
     async def test_search_dispatches_by_mode(self, mode, expected_call):
         store = FakeStore()
         origin = LanceDBOrigin(store, mode=mode)

@@ -11,6 +11,7 @@ retry in :meth:`MutationCoordinator.run_mutation` is defense-in-depth for
 genuine ``CommitConflict``-raising failures (e.g. lock acquisition
 contention), not the primary correctness mechanism.
 """
+
 from __future__ import annotations
 
 import asyncio

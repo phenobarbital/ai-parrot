@@ -3,12 +3,12 @@
 Tests the core FEAT-201 promise: imports stay byte-identical when the
 satellite is installed, and fail with a clear ImportError when it is not.
 """
+
 import importlib
 
 import pytest
 
 from ._helpers import run_in_pruned_venv
-
 
 EMBEDDINGS_BACKENDS = [
     ("parrot.embeddings.google", "GoogleEmbeddingModel"),
@@ -18,7 +18,7 @@ EMBEDDINGS_BACKENDS = [
 
 STORE_BACKENDS = [
     ("parrot.stores.postgres", "PgVectorStore"),
-    ("parrot.stores.pgvector", "PgVectorStore"),     # shim re-export
+    ("parrot.stores.pgvector", "PgVectorStore"),  # shim re-export
     ("parrot.stores.arango", "ArangoDBStore"),
     ("parrot.stores.bigquery", "BigQueryStore"),
     ("parrot.stores.faiss_store", "FAISSStore"),
@@ -38,31 +38,26 @@ class TestSatelliteInstalled:
         """Moved embedding backends import from the satellite."""
         mod = importlib.import_module(module_path)
         assert hasattr(mod, cls_name), f"{module_path} missing {cls_name}"
-        assert "ai-parrot-embeddings" in mod.__file__, (
-            f"{module_path} resolved to host, not satellite: {mod.__file__}"
-        )
+        assert "ai-parrot-embeddings" in mod.__file__, f"{module_path} resolved to host, not satellite: {mod.__file__}"
 
     @pytest.mark.parametrize("module_path,cls_name", STORE_BACKENDS)
     def test_store_backend_imports(self, module_path, cls_name):
         """Moved store backends import from the satellite."""
         mod = importlib.import_module(module_path)
         assert hasattr(mod, cls_name), f"{module_path} missing {cls_name}"
-        assert "ai-parrot-embeddings" in mod.__file__, (
-            f"{module_path} resolved to host, not satellite: {mod.__file__}"
-        )
+        assert "ai-parrot-embeddings" in mod.__file__, f"{module_path} resolved to host, not satellite: {mod.__file__}"
 
     @pytest.mark.parametrize("module_path,cls_name", RERANKER_BACKENDS)
     def test_reranker_backend_imports(self, module_path, cls_name):
         """Moved reranker backends import from the satellite."""
         mod = importlib.import_module(module_path)
         assert hasattr(mod, cls_name), f"{module_path} missing {cls_name}"
-        assert "ai-parrot-embeddings" in mod.__file__, (
-            f"{module_path} resolved to host, not satellite: {mod.__file__}"
-        )
+        assert "ai-parrot-embeddings" in mod.__file__, f"{module_path} resolved to host, not satellite: {mod.__file__}"
 
     def test_lazy_rerankers_through_host_init(self):
         """The host's __getattr__ still produces satellite-supplied classes."""
         from parrot.rerankers import LocalCrossEncoderReranker, LLMReranker
+
         assert LocalCrossEncoderReranker.__module__ == "parrot.rerankers.local"
         assert LLMReranker.__module__ == "parrot.rerankers.llm"
 
@@ -101,8 +96,7 @@ class TestSatelliteAbsent:
         # shadowing stdlib); in that case skip the test rather than fail it.
         if rc != 0 and "operator" in err:
             pytest.skip(
-                "Subprocess environment has stdlib shadowing issue (operator.py); "
-                "skipping satellite-absent test"
+                "Subprocess environment has stdlib shadowing issue (operator.py); " "skipping satellite-absent test"
             )
         assert rc == 0, f"subprocess crashed unexpectedly: stderr={err!r}"
         # In a clean venv: expect IMPORTERROR
@@ -117,28 +111,31 @@ class TestCorePublicSurfaceUnchanged:
     def test_supported_embeddings_unchanged(self):
         """supported_embeddings dispatch map stays in core, unchanged."""
         from parrot.embeddings import supported_embeddings
+
         assert supported_embeddings == {
-            'huggingface': 'SentenceTransformerModel',
-            'google': 'GoogleEmbeddingModel',
-            'openai': 'OpenAIEmbeddingModel',
+            "huggingface": "SentenceTransformerModel",
+            "google": "GoogleEmbeddingModel",
+            "openai": "OpenAIEmbeddingModel",
         }
 
     def test_supported_stores_unchanged(self):
         """supported_stores dispatch map stays in core, with pre-existing mismatches."""
         from parrot.stores import supported_stores
+
         assert supported_stores == {
-            'postgres': 'PgVectorStore',
-            'milvus': 'MilvusStore',
-            'kb': 'KnowledgeBaseStore',
-            'faiss_store': 'FaissStore',   # pre-existing mismatch; do NOT fix
-            'arango': 'ArangoStore',       # pre-existing mismatch; do NOT fix
-            'bigquery': 'BigQueryStore',
-            'lancedb': 'LanceDBStore',
+            "postgres": "PgVectorStore",
+            "milvus": "MilvusStore",
+            "kb": "KnowledgeBaseStore",
+            "faiss_store": "FaissStore",  # pre-existing mismatch; do NOT fix
+            "arango": "ArangoStore",  # pre-existing mismatch; do NOT fix
+            "bigquery": "BigQueryStore",
+            "lancedb": "LanceDBStore",
         }
 
     def test_rerankers_all_unchanged(self):
         """parrot.rerankers.__all__ stays byte-identical."""
         import parrot.rerankers as r
+
         assert set(r.__all__) == {
             "AbstractReranker",
             "LocalCrossEncoderReranker",
@@ -151,10 +148,12 @@ class TestCorePublicSurfaceUnchanged:
         """AbstractStore is still importable from the core host."""
         from parrot.stores import AbstractStore
         from parrot.stores.abstract import AbstractStore as AbstractStore2
+
         assert AbstractStore is AbstractStore2
 
     def test_embedding_registry_stays_in_core(self):
         """EmbeddingRegistry is still importable from the core host."""
         from parrot.embeddings import EmbeddingRegistry
         from parrot.embeddings.registry import EmbeddingRegistry as EmbeddingRegistry2
+
         assert EmbeddingRegistry is EmbeddingRegistry2

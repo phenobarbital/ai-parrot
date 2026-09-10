@@ -6,11 +6,15 @@ the caller owns connection lifetime (spec §2). This module imports only
 — so importing it (and the whole origins package) never requires the
 optional SDK extra.
 """
+
 from __future__ import annotations
 
 from typing import Any, Literal
 
-from parrot.models import OriginHit, SearchOriginKind  # verified: packages/ai-parrot-tools/src/parrot_tools/multistoresearch/origins/vector.py:10
+from parrot.models import (
+    OriginHit,
+    SearchOriginKind,
+)  # verified: packages/ai-parrot-tools/src/parrot_tools/multistoresearch/origins/vector.py:10
 
 from .base import SearchOrigin  # verified: .../origins/vector.py:13
 
@@ -51,8 +55,7 @@ class LanceDBOrigin(SearchOrigin):
         self.store = store
         self.name = name
         self.description = description or (
-            f"LanceDB origin '{name}' — local {mode} search over an embedded "
-            "vector/full-text collection."
+            f"LanceDB origin '{name}' — local {mode} search over an embedded " "vector/full-text collection."
         )
         self.mode = mode
         self.collection = collection

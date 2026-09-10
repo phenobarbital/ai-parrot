@@ -1,4 +1,5 @@
 """Vector contracts and tool-argument compatibility (FEAT-542, AC5)."""
+
 from __future__ import annotations
 
 import sys

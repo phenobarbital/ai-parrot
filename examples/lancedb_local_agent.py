@@ -19,6 +19,7 @@ LLM server, e.g. Ollama):
         --collection agent_knowledge \\
         --query "What does the corpus say about X?"
 """
+
 from __future__ import annotations
 
 import argparse
@@ -36,9 +37,7 @@ _ALLOWED_LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--data-dir", required=True, help="Local directory for the LanceDB collection (storage)."
-    )
+    parser.add_argument("--data-dir", required=True, help="Local directory for the LanceDB collection (storage).")
     parser.add_argument(
         "--model-path",
         required=True,
@@ -97,7 +96,9 @@ async def build_agent(args: argparse.Namespace):
         grounded LLM call is the smallest path that still exercises the
         real offline contract end to end (spec §2, AC6).
     """
-    from parrot.clients.local import LocalLLMClient  # verified: packages/ai-parrot-client-local/src/parrot/clients/local/__init__.py:1
+    from parrot.clients.local import (
+        LocalLLMClient,
+    )  # verified: packages/ai-parrot-client-local/src/parrot/clients/local/__init__.py:1
     from parrot.stores.lancedb import LanceDBStore
     from parrot_tools.multistoresearch.origins import LanceDBOrigin
 

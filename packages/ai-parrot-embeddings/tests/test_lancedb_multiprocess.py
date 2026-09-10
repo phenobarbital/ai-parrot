@@ -1,4 +1,5 @@
 """Real concurrent-writer, crash and cancellation tests (FEAT-542, AC8, spec §4 I9)."""
+
 from __future__ import annotations
 
 import multiprocessing as mp
@@ -220,9 +221,7 @@ class TestConcurrentWriters:
         ctx = mp.get_context("spawn")
         barrier = ctx.Barrier(3)
         out_q = ctx.Queue()
-        procs = [
-            ctx.Process(target=_writer, args=(uri, f"p{i}", 10, True, barrier, out_q)) for i in range(3)
-        ]
+        procs = [ctx.Process(target=_writer, args=(uri, f"p{i}", 10, True, barrier, out_q)) for i in range(3)]
         for p in procs:
             p.start()
         for p in procs:
@@ -256,7 +255,9 @@ class TestFailureModes:
             from parrot.stores.models import Document
 
             store = _store(uri)
-            await store.add_documents([Document(page_content="after crash", metadata={"id": "post-crash"})], collection="t")
+            await store.add_documents(
+                [Document(page_content="after crash", metadata={"id": "post-crash"})], collection="t"
+            )
             await store.disconnect()
 
         asyncio.run(subsequent_mutation())  # must not deadlock
@@ -290,7 +291,9 @@ class TestFailureModes:
         # Cancellation must not claim the write was rolled back — it wasn't
         # even committed here (the op never wrote), but ownership must be
         # released so a subsequent mutation proceeds without deadlock.
-        await store.add_documents([Document(page_content="after cancel", metadata={"id": "after-cancel"})], collection="t")
+        await store.add_documents(
+            [Document(page_content="after cancel", metadata={"id": "after-cancel"})], collection="t"
+        )
         rows = await store._default_table.query().limit(10).to_list()
         assert any(r["record_id"] == "after-cancel" for r in rows)
         await store.disconnect()

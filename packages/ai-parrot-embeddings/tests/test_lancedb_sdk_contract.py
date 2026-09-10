@@ -9,6 +9,7 @@ Evidence produced by these probes is transcribed into
 
     uv run pytest packages/ai-parrot-embeddings/tests/test_lancedb_sdk_contract.py -v
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -325,7 +326,14 @@ async def test_offline_storage_path_denies_sockets(tmp_path):
         conn = await lancedb.connect_async(uri)
         tbl = await conn.create_table("t", schema=_schema())
         await tbl.add(
-            [{"record_id": "a", "document": "no network here", "embedding": [1.0, 0.0, 0.0, 0.0], "metadata_json": "{}"}]
+            [
+                {
+                    "record_id": "a",
+                    "document": "no network here",
+                    "embedding": [1.0, 0.0, 0.0, 0.0],
+                    "metadata_json": "{}",
+                }
+            ]
         )
         await tbl.create_index("document", config=FTS())
         vector_rows = await tbl.query().nearest_to([1.0, 0.0, 0.0, 0.0]).distance_type("cosine").limit(1).to_list()

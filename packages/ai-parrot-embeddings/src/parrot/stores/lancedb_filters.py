@@ -3,6 +3,7 @@
 Pure string construction over a validated projection. Never interpolates an
 unchecked identifier and never accepts a caller-supplied ``where`` expression.
 """
+
 from __future__ import annotations
 
 import math

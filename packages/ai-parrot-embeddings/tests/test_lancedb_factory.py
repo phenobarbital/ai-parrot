@@ -1,4 +1,5 @@
 """Factory, tool and origin integration plus absence errors (FEAT-542, AC2)."""
+
 from __future__ import annotations
 
 import importlib  # verified: packages/ai-parrot-embeddings/tests/test_store_backends_present.py:2

@@ -3,6 +3,7 @@
 Pure module: no SDK import, no I/O. Everything here is consumed by
 ``lancedb.py`` (TASK-3062+) and re-derived independently by tests.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -59,8 +60,7 @@ class LanceDBConfig(BaseModel):
         collection_name = data.get("collection_name")
         if collection_name is not None and collection_name != table:
             raise ValueError(
-                f"Conflicting collection name aliases: table={table!r} vs "
-                f"collection_name={collection_name!r}"
+                f"Conflicting collection name aliases: table={table!r} vs " f"collection_name={collection_name!r}"
             )
         data["collection_name"] = table
         return data
@@ -74,9 +74,7 @@ class LanceDBConfig(BaseModel):
         # drive) scheme; anything else (s3://, gs://, http://, ...) is a
         # rejected URI scheme. No fallback to another directory.
         if parsed.scheme and len(parsed.scheme) > 1:
-            raise ValueError(
-                f"LanceDBConfig.uri must be a local directory path, not a URI scheme: {self.uri!r}"
-            )
+            raise ValueError(f"LanceDBConfig.uri must be a local directory path, not a URI scheme: {self.uri!r}")
         object.__setattr__(self, "uri", str(Path(self.uri).expanduser()))
         return self
 
@@ -84,8 +82,7 @@ class LanceDBConfig(BaseModel):
     def _validate_collection_name(self) -> "LanceDBConfig":
         if not _COLLECTION_NAME_RE.match(self.collection_name):
             raise ValueError(
-                f"LanceDBConfig.collection_name {self.collection_name!r} must match "
-                f"[A-Za-z_][A-Za-z0-9_]{{0,127}}"
+                f"LanceDBConfig.collection_name {self.collection_name!r} must match " f"[A-Za-z_][A-Za-z0-9_]{{0,127}}"
             )
         return self
 
@@ -97,12 +94,8 @@ class LanceDBConfig(BaseModel):
 
     @model_validator(mode="after")
     def _validate_numeric_bounds(self) -> "LanceDBConfig":
-        if self.read_consistency_interval_seconds < 0 or not _is_finite(
-            self.read_consistency_interval_seconds
-        ):
-            raise ValueError(
-                "LanceDBConfig.read_consistency_interval_seconds must be finite and nonnegative"
-            )
+        if self.read_consistency_interval_seconds < 0 or not _is_finite(self.read_consistency_interval_seconds):
+            raise ValueError("LanceDBConfig.read_consistency_interval_seconds must be finite and nonnegative")
         if self.batch_size <= 0:
             raise ValueError("LanceDBConfig.batch_size must be a positive integer")
         return self
@@ -112,22 +105,17 @@ class LanceDBConfig(BaseModel):
         reserved = set(STANDARD_STRING_FIELDS) | set(STANDARD_BOOL_FIELDS)
         for name in self.metadata_fields:
             if name in (RESERVED_METADATA_KEY,):
-                raise ValueError(
-                    f"LanceDBConfig.metadata_fields may not redeclare reserved key {name!r}"
-                )
+                raise ValueError(f"LanceDBConfig.metadata_fields may not redeclare reserved key {name!r}")
             if name in reserved:
                 # Redeclaring a standard field with an incompatible type is
                 # rejected; redeclaring with the SAME type is a no-op that
                 # callers should simply omit, so treat any explicit
                 # redeclaration of a standard name as incompatible per the
                 # spec's "incompatible redeclarations rejected" language.
-                raise ValueError(
-                    f"LanceDBConfig.metadata_fields may not redeclare standard field {name!r}"
-                )
+                raise ValueError(f"LanceDBConfig.metadata_fields may not redeclare standard field {name!r}")
             if not _METADATA_FIELD_NAME_RE.match(name):
                 raise ValueError(
-                    f"LanceDBConfig.metadata_fields key {name!r} must match "
-                    f"[A-Za-z_][A-Za-z0-9_]{{0,63}}"
+                    f"LanceDBConfig.metadata_fields key {name!r} must match " f"[A-Za-z_][A-Za-z0-9_]{{0,63}}"
                 )
         return self
 

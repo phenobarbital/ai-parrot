@@ -1,4 +1,5 @@
 """Lifecycle, schema and provider-ownership tests (FEAT-542, AC3/AC4/AC6/AC8)."""
+
 from __future__ import annotations
 
 import asyncio

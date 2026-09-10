@@ -1,4 +1,5 @@
 """Real FTS, fusion, filter and freshness tests (FEAT-542, AC5/AC6/AC7)."""
+
 from __future__ import annotations
 
 import sys
@@ -109,8 +110,12 @@ class TestRetrievalMatrix:
         await _seed(
             store,
             [
-                Document(page_content="Internal reference token ZXQ731 identifies this case", metadata={"id": "lexical"}),
-                Document(page_content="A dedicated case identifier is assigned when escalated", metadata={"id": "semantic"}),
+                Document(
+                    page_content="Internal reference token ZXQ731 identifies this case", metadata={"id": "lexical"}
+                ),
+                Document(
+                    page_content="A dedicated case identifier is assigned when escalated", metadata={"id": "semantic"}
+                ),
                 Document(page_content="unrelated filler about the weather today", metadata={"id": "noise"}),
             ],
         )

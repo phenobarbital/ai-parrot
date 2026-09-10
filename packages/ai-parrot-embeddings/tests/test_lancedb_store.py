@@ -1,4 +1,5 @@
 """End-to-end persistence, filter and mutation suite (FEAT-542, AC3/AC4/AC5)."""
+
 from __future__ import annotations
 
 import socket
@@ -27,7 +28,10 @@ def _make_store(uri, **kwargs) -> LanceDBStore:
 
 
 def _corpus_documents() -> list[Document]:
-    return [Document(page_content=d["text"], metadata=dict(d["metadata"] | ({"id": d["id"]} if d["id"] else {}))) for d in corpus()]
+    return [
+        Document(page_content=d["text"], metadata=dict(d["metadata"] | ({"id": d["id"]} if d["id"] else {})))
+        for d in corpus()
+    ]
 
 
 async def _ingest_corpus(store: LanceDBStore, collection: str = "t") -> None:
@@ -63,7 +67,7 @@ class TestPersistence:
         result = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, timeout=60)
         assert result.returncode == 0, result.stderr
         ids_line = next(line for line in result.stdout.splitlines() if line.startswith("IDS:"))
-        ids_after = sorted(ids_line[len("IDS:"):].split(","))
+        ids_after = sorted(ids_line[len("IDS:") :].split(","))
         assert ids_after == ids_before
         assert "METADATA_OK:True" in result.stdout
 
@@ -91,9 +95,13 @@ class TestPersistence:
         store_b = _make_store(uri, collection_name="collection_b")
 
         await store_a.create_collection("collection_a")
-        await store_a.add_documents([Document(page_content="content A", metadata={"id": "shared"})], collection="collection_a")
+        await store_a.add_documents(
+            [Document(page_content="content A", metadata={"id": "shared"})], collection="collection_a"
+        )
         await store_b.create_collection("collection_b")
-        await store_b.add_documents([Document(page_content="content B", metadata={"id": "shared"})], collection="collection_b")
+        await store_b.add_documents(
+            [Document(page_content="content B", metadata={"id": "shared"})], collection="collection_b"
+        )
 
         results_a = await store_a.similarity_search("content", limit=5)
         results_b = await store_b.similarity_search("content", limit=5)
@@ -147,7 +155,9 @@ class TestMutationVisibility:
         assert len(await store.hybrid_search("alpha document", limit=5)) == 1
 
         # Upsert.
-        await store.add_documents([Document(page_content="alpha document updated", metadata={"id": "a"})], collection="t")
+        await store.add_documents(
+            [Document(page_content="alpha document updated", metadata={"id": "a"})], collection="t"
+        )
         assert len(await store.fulltext_search("updated", limit=5)) == 1
 
         # Delete.

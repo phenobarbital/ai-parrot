@@ -1,4 +1,5 @@
 """Filter and hostile-input matrix (FEAT-542, AC5). No SDK required."""
+
 from __future__ import annotations
 
 import math

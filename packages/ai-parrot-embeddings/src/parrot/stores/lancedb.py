@@ -4,6 +4,7 @@ Query methods are declared here but implemented by TASK-3064 (vector) and
 TASK-3065 (FTS/hybrid). The SDK is imported lazily inside methods so this module
 stays importable without ``ai-parrot-embeddings[lancedb]``.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -15,7 +16,9 @@ import uuid
 from datetime import timedelta
 from typing import Any, Callable, List, Union
 
-from parrot.models.stores import SearchResult  # verified: packages/ai-parrot-tools/src/parrot_tools/multistoresearch/origins/vector.py:11
+from parrot.models.stores import (
+    SearchResult,
+)  # verified: packages/ai-parrot-tools/src/parrot_tools/multistoresearch/origins/vector.py:11
 from parrot.stores import AbstractStore  # verified: packages/ai-parrot-embeddings/tests/test_namespace_imports.py:151
 from parrot.stores.lancedb_concurrency import MutationCoordinator  # new in TASK-3061
 from parrot.stores.lancedb_filters import (  # new in TASK-3060
@@ -76,6 +79,7 @@ def _import_lancedb() -> Any:
         raise ImportError(_MISSING_SDK_MESSAGE) from exc
     return lancedb
 
+
 _LEGACY_COLUMN_DEFAULTS = {
     "embedding_column": "embedding",
     "document_column": "document",
@@ -87,7 +91,9 @@ _LEGACY_COLUMN_DEFAULTS = {
 class LanceDBStore(AbstractStore):
     """Embedded vector, full-text and hybrid store over a local directory."""
 
-    def __init__(self, embedding_model: Union[dict, str] = None, embedding: Union[dict, Callable] = None, **kwargs: Any) -> None:
+    def __init__(
+        self, embedding_model: Union[dict, str] = None, embedding: Union[dict, Callable] = None, **kwargs: Any
+    ) -> None:
         self.logger = logging.getLogger(__name__)
 
         remaining = dict(kwargs)
@@ -206,9 +212,7 @@ class LanceDBStore(AbstractStore):
 
         kwargs: dict[str, Any] = {}
         if self._config.read_consistency_interval_seconds:
-            kwargs["read_consistency_interval"] = timedelta(
-                seconds=self._config.read_consistency_interval_seconds
-            )
+            kwargs["read_consistency_interval"] = timedelta(seconds=self._config.read_consistency_interval_seconds)
         conn = await lancedb.connect_async(self._config.uri, **kwargs)
 
         self._connection_handle = conn
@@ -235,8 +239,7 @@ class LanceDBStore(AbstractStore):
         """
         if self._default_table is None:
             raise RuntimeError(
-                "LanceDBStore has no open default collection; call connection() and "
-                "create_collection() first"
+                "LanceDBStore has no open default collection; call connection() and " "create_collection() first"
             )
         return self._default_table
 
@@ -521,9 +524,7 @@ class LanceDBStore(AbstractStore):
         ceilings: list[float] = []
         if similarity_threshold != 0.0:
             if not (0.0 < similarity_threshold <= 1.0):
-                raise ValueError(
-                    f"similarity_threshold must be in (0, 1], got {similarity_threshold!r}"
-                )
+                raise ValueError(f"similarity_threshold must be in (0, 1], got {similarity_threshold!r}")
             ceilings.append(1.0 - similarity_threshold)
         if score_threshold is not None:
             if not (0.0 <= score_threshold <= 1.0):
@@ -533,7 +534,9 @@ class LanceDBStore(AbstractStore):
             return None
         return min(ceilings)
 
-    async def from_documents(self, documents: List[Any], collection: Union[str, None] = None, **kwargs: Any) -> Callable:
+    async def from_documents(
+        self, documents: List[Any], collection: Union[str, None] = None, **kwargs: Any
+    ) -> Callable:
         """Prepare the collection, add the documents and return this store."""
         collection_name = collection or self._config.collection_name
         await self.create_collection(collection_name)
@@ -614,9 +617,7 @@ class LanceDBStore(AbstractStore):
                     if collection_name == self._config.collection_name:
                         self._default_table = table
 
-                await self._coordinator.run_mutation(
-                    _do_upsert, description=f"add_documents:{collection_name}"
-                )
+                await self._coordinator.run_mutation(_do_upsert, description=f"add_documents:{collection_name}")
             except Exception as exc:  # noqa: BLE001 — re-raised with batch accounting, never logging content
                 raise RuntimeError(
                     f"add_documents failed after {completed_batches} of {total_batches} "
@@ -681,15 +682,15 @@ class LanceDBStore(AbstractStore):
 
     def _validate_vector(self, vector: list[float]) -> None:
         if len(vector) != self._config.dimension:
-            raise ValueError(
-                f"embedding dimension mismatch: expected {self._config.dimension}, got {len(vector)}"
-            )
+            raise ValueError(f"embedding dimension mismatch: expected {self._config.dimension}, got {len(vector)}")
         if not all(math.isfinite(v) for v in vector):
             raise ValueError("embedding contains a non-finite value")
         if all(v == 0 for v in vector):
             raise ValueError("embedding is a zero-norm vector")
 
-    def _row_for(self, record_id: str, original_text: str, metadata: dict[str, Any], vector: list[float]) -> dict[str, Any]:
+    def _row_for(
+        self, record_id: str, original_text: str, metadata: dict[str, Any], vector: list[float]
+    ) -> dict[str, Any]:
         row: dict[str, Any] = {
             "record_id": record_id,
             "document": original_text,
@@ -758,9 +759,7 @@ class LanceDBStore(AbstractStore):
                 predicate = self._record_id_in_clause(values_list)
             else:
                 if pk not in self._config.metadata_fields and pk not in STANDARD_STRING_FIELDS:
-                    raise ValueError(
-                        f"delete_documents pk={pk!r} must be 'id' or a declared metadata field"
-                    )
+                    raise ValueError(f"delete_documents pk={pk!r} must be 'id' or a declared metadata field")
                 predicate = compile_metadata_filter({pk: values_list}, self._config)
 
         async def _do_delete() -> int:
@@ -773,7 +772,9 @@ class LanceDBStore(AbstractStore):
 
         return await self._coordinator.run_mutation(_do_delete, description=f"delete_documents:{collection_name}")
 
-    async def delete_documents_by_filter(self, search_filter: dict, table: str = None, schema: str = None, collection: str = None, **kwargs: Any) -> int:
+    async def delete_documents_by_filter(
+        self, search_filter: dict, table: str = None, schema: str = None, collection: str = None, **kwargs: Any
+    ) -> int:
         """Delete by compiled metadata predicate (no parent-exclusion clause). Returns rows removed."""
         del schema
         collection_name = self._resolve_collection_selector(table, collection)
@@ -923,12 +924,7 @@ class LanceDBStore(AbstractStore):
         provider = await self._ensure_provider()
         query_vector = await provider.embed_query(query)
 
-        query_builder = (
-            table.query()
-            .nearest_to(query_vector)
-            .distance_type("cosine")
-            .nearest_to_text(query)
-        )
+        query_builder = table.query().nearest_to(query_vector).distance_type("cosine").nearest_to_text(query)
         if predicate:
             query_builder = query_builder.where(predicate)
         rows = await query_builder.limit(limit).to_list()
@@ -958,6 +954,4 @@ class LanceDBStore(AbstractStore):
 
     async def mmr_search(self, **kwargs: Any) -> list:
         """Always raises: v1 supports exact similarity search only."""
-        raise NotImplementedError(
-            "LanceDBStore does not support MMR; v1 provides exact cosine search only."
-        )
+        raise NotImplementedError("LanceDBStore does not support MMR; v1 provides exact cosine search only.")

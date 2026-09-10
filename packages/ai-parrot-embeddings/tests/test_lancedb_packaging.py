@@ -3,6 +3,7 @@
 Reads pyproject.toml directly: these assertions must hold whether or not the
 extra is installed in the running environment.
 """
+
 from __future__ import annotations
 
 import subprocess

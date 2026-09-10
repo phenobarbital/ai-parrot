@@ -1,4 +1,5 @@
 """Offline-profile validation and real local-model acceptance (FEAT-542, AC6)."""
+
 from __future__ import annotations
 
 import os
@@ -86,7 +87,9 @@ class TestProfileGuards:
         await store.disconnect()
 
         # A "restart" with an incompatible dimension must fail non-destructively.
-        conflicting = LanceDBStore(uri=uri, dimension=16, embedding_id="local:model-a", collection_name="agent_knowledge")
+        conflicting = LanceDBStore(
+            uri=uri, dimension=16, embedding_id="local:model-a", collection_name="agent_knowledge"
+        )
         with pytest.raises(ValueError, match="dimension"):
             await conflicting.create_collection("agent_knowledge")
         await conflicting.disconnect()

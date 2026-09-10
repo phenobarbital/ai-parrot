@@ -1,4 +1,5 @@
 """CRUD, contextual text and multi-process mutation tests (FEAT-542, AC4/AC8)."""
+
 from __future__ import annotations
 
 import math
@@ -85,9 +86,7 @@ class TestIdentity:
         # Reingest the SAME original document — the fallback ID must match
         # (computed from original text, not the contextual-augmented text),
         # so this is an upsert, not a duplicate row.
-        await store.add_documents(
-            [Document(page_content="hello world", metadata={"source": "a"})], collection="t"
-        )
+        await store.add_documents([Document(page_content="hello world", metadata={"source": "a"})], collection="t")
         rows2 = await store._default_table.query().limit(10).to_list()
         assert len(rows2) == 1
         assert rows2[0]["record_id"] == first_id
@@ -171,9 +170,7 @@ class TestDeletion:
     async def test_counts_are_exact_including_zero(self, tmp_path):
         store = _make_store(tmp_path / "col")
         await store.create_collection("t")
-        await store.add_documents(
-            [Document(page_content="a", metadata={"id": "id-1", "source": "x"})], collection="t"
-        )
+        await store.add_documents([Document(page_content="a", metadata={"id": "id-1", "source": "x"})], collection="t")
         n = await store.delete_documents_by_filter({"source": "x"}, collection="t")
         assert n == 1
         n_zero = await store.delete_documents_by_filter({"source": "x"}, collection="t")

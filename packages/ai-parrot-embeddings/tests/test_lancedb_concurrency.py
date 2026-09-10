@@ -1,4 +1,5 @@
 """Real process coordination, failure and cancellation tests (FEAT-542, AC8)."""
+
 from __future__ import annotations
 
 import asyncio
@@ -16,14 +17,13 @@ from parrot.stores.lancedb_concurrency import (
     MutationCoordinator,
 )
 
+
 class TestKeying:
     def test_two_spellings_of_one_directory_share_a_key(self, tmp_path):
         target = tmp_path / "col"
         target.mkdir()
         absolute = MutationCoordinator.for_directory(target, "agent_knowledge")
-        relative = MutationCoordinator.for_directory(
-            os.path.relpath(target, os.getcwd()), "agent_knowledge"
-        )
+        relative = MutationCoordinator.for_directory(os.path.relpath(target, os.getcwd()), "agent_knowledge")
         assert absolute.dataset_key == relative.dataset_key
 
     def test_distinct_collections_retain_isolation(self, tmp_path):
@@ -43,7 +43,8 @@ class TestKeying:
 class TestRetry:
     async def test_conflict_retried_within_bound_then_succeeds(self):
         coordinator = MutationCoordinator.for_directory(
-            "/tmp/does-not-need-to-exist-for-retry-test", "c",
+            "/tmp/does-not-need-to-exist-for-retry-test",
+            "c",
             config=CoordinationConfig(max_attempts=5, base_backoff_seconds=0.001, max_backoff_seconds=0.01),
         )
         calls = {"n": 0}
@@ -60,7 +61,8 @@ class TestRetry:
 
     async def test_conflict_raised_after_exhausting_bound(self):
         coordinator = MutationCoordinator.for_directory(
-            "/tmp/does-not-need-to-exist-for-retry-test-2", "c",
+            "/tmp/does-not-need-to-exist-for-retry-test-2",
+            "c",
             config=CoordinationConfig(max_attempts=3, base_backoff_seconds=0.001, max_backoff_seconds=0.01),
         )
 
@@ -72,7 +74,8 @@ class TestRetry:
 
     async def test_backoff_does_not_block_the_event_loop(self):
         coordinator = MutationCoordinator.for_directory(
-            "/tmp/does-not-need-to-exist-for-retry-test-3", "c",
+            "/tmp/does-not-need-to-exist-for-retry-test-3",
+            "c",
             config=CoordinationConfig(max_attempts=4, base_backoff_seconds=0.05, max_backoff_seconds=0.05),
         )
         calls = {"n": 0}
@@ -137,9 +140,7 @@ class TestCrossProcess:
         start_evt = ctx.Event()
         out_q = ctx.Queue()
 
-        holder = ctx.Process(
-            target=_hold_exclusive_lock, args=(str(tmp_path), "c", 0.3, start_evt, out_q)
-        )
+        holder = ctx.Process(target=_hold_exclusive_lock, args=(str(tmp_path), "c", 0.3, start_evt, out_q))
         holder.start()
         assert start_evt.wait(timeout=10)
 

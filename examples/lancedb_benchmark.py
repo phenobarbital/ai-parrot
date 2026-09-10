@@ -7,6 +7,7 @@ Run:
     python examples/lancedb_benchmark.py --rows 1000 --dimension 8 \\
         --warmup 3 --samples 10
 """
+
 from __future__ import annotations
 
 import argparse

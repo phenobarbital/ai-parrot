@@ -1,4 +1,5 @@
 """Real hybrid-plus-graph federation acceptance (FEAT-542, AC7)."""
+
 from __future__ import annotations
 
 import sys
@@ -9,14 +10,17 @@ import pytest
 import rustworkx
 
 from parrot.models import SearchOriginKind
-from parrot_tools.multistoresearch import MultiStoreSearchToolkit  # verified: packages/ai-parrot-tools/tests/multistoresearch/test_toolkit.py:5
-from parrot_tools.multistoresearch.origins import GraphIndexOrigin, LanceDBOrigin  # verified: packages/ai-parrot-tools/tests/multistoresearch/test_graphindex_origin.py:5
+from parrot_tools.multistoresearch import (
+    MultiStoreSearchToolkit,
+)  # verified: packages/ai-parrot-tools/tests/multistoresearch/test_toolkit.py:5
+from parrot_tools.multistoresearch.origins import (
+    GraphIndexOrigin,
+    LanceDBOrigin,
+)  # verified: packages/ai-parrot-tools/tests/multistoresearch/test_graphindex_origin.py:5
 
 pytest.importorskip("lancedb", reason="requires ai-parrot-embeddings[lancedb]")
 
-_EMBEDDINGS_TESTS_DIR = (
-    Path(__file__).resolve().parents[3] / "ai-parrot-embeddings" / "tests"
-)
+_EMBEDDINGS_TESTS_DIR = Path(__file__).resolve().parents[3] / "ai-parrot-embeddings" / "tests"
 sys.path.insert(0, str(_EMBEDDINGS_TESTS_DIR))
 from lancedb_fixtures import DeterministicEmbedding  # noqa: E402
 
@@ -61,7 +65,9 @@ async def _make_lancedb_origin(tmp_path, mode="hybrid"):
     from parrot.stores.lancedb import LanceDBStore
     from parrot.stores.models import Document
 
-    store = LanceDBStore(uri=str(tmp_path / "col"), dimension=8, embedding_id="lancedb-test-embedding-v1", collection_name="t")
+    store = LanceDBStore(
+        uri=str(tmp_path / "col"), dimension=8, embedding_id="lancedb-test-embedding-v1", collection_name="t"
+    )
     store._embedding_callable_input = DeterministicEmbedding()
     await store.from_documents(
         [
