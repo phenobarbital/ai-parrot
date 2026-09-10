@@ -90,7 +90,7 @@
       "feature_id": "FEAT-549",
       "feature": "sdd-worker-subagents",
       "spec": "sdd/specs/sdd-worker-subagents.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -100,8 +100,8 @@
       "parallelism_notes": "Imports sdd_coder.models.",
       "assigned_to": null,
       "started_at": "2026-09-10T20:42:27+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3119-sdd-coder-fidelity-jobs.md"
+      "completed_at": "2026-09-10T20:58:55+00:00",
+      "file": "sdd/tasks/completed/TASK-3119-sdd-coder-fidelity-jobs.md"
     },
     {
       "id": "TASK-3120",
