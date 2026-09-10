@@ -133,7 +133,7 @@
       "feature_id": "FEAT-545",
       "feature": "collaborative-adversarial-spec-design",
       "spec": "sdd/specs/collaborative-adversarial-spec-design.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -143,8 +143,8 @@
       "parallelism_notes": "Needs the finished pipeline and green tests; requires the codex binary at runtime.",
       "assigned_to": null,
       "started_at": "2026-09-10T01:52:16+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3099-acceptance-dry-run.md"
+      "completed_at": "2026-09-10T02:15:21+00:00",
+      "file": "sdd/tasks/completed/TASK-3099-acceptance-dry-run.md"
     }
   ]
 }
