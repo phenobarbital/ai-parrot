@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-10T01:36:25Z",
-  "completed_at": "2026-09-10T03:35:46+00:00",
+  "completed_at": "2026-09-10T08:41:53+00:00",
   "tasks": [
     {
       "id": "TASK-3079",
@@ -25,7 +25,8 @@
       "assigned_at": null,
       "started_at": "2026-09-10T01:47:47+00:00",
       "completed_at": "2026-09-10T01:56:15+00:00",
-      "file": "sdd/tasks/completed/TASK-3079-tool-optimizations-models-policy.md"
+      "file": "sdd/tasks/completed/TASK-3079-tool-optimizations-models-policy.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3080",
@@ -47,7 +48,8 @@
       "assigned_at": null,
       "started_at": "2026-09-10T01:47:47+00:00",
       "completed_at": "2026-09-10T02:02:45+00:00",
-      "file": "sdd/tasks/completed/TASK-3080-local-git-discovery-fetch-preflight.md"
+      "file": "sdd/tasks/completed/TASK-3080-local-git-discovery-fetch-preflight.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3081",
@@ -69,7 +71,8 @@
       "assigned_at": null,
       "started_at": "2026-09-10T01:47:47+00:00",
       "completed_at": "2026-09-10T02:25:57+00:00",
-      "file": "sdd/tasks/completed/TASK-3081-local-git-prepare-pull-push.md"
+      "file": "sdd/tasks/completed/TASK-3081-local-git-prepare-pull-push.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3082",
@@ -91,7 +94,8 @@
       "assigned_at": null,
       "started_at": "2026-09-10T01:47:47+00:00",
       "completed_at": "2026-09-10T02:30:04+00:00",
-      "file": "sdd/tasks/completed/TASK-3082-bounded-source-reader.md"
+      "file": "sdd/tasks/completed/TASK-3082-bounded-source-reader.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3083",
@@ -114,7 +118,8 @@
       "assigned_at": null,
       "started_at": "2026-09-10T01:47:47+00:00",
       "completed_at": "2026-09-10T02:34:58+00:00",
-      "file": "sdd/tasks/completed/TASK-3083-delegation-contracts.md"
+      "file": "sdd/tasks/completed/TASK-3083-delegation-contracts.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3084",
@@ -136,7 +141,8 @@
       "assigned_at": null,
       "started_at": "2026-09-10T01:47:47+00:00",
       "completed_at": "2026-09-10T02:39:34+00:00",
-      "file": "sdd/tasks/completed/TASK-3084-patch-validation-artifact-store.md"
+      "file": "sdd/tasks/completed/TASK-3084-patch-validation-artifact-store.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3085",
@@ -159,7 +165,8 @@
       "assigned_at": null,
       "started_at": "2026-09-10T01:47:47+00:00",
       "completed_at": "2026-09-10T02:44:53+00:00",
-      "file": "sdd/tasks/completed/TASK-3085-writer-generate.md"
+      "file": "sdd/tasks/completed/TASK-3085-writer-generate.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3086",
@@ -181,7 +188,8 @@
       "assigned_at": null,
       "started_at": "2026-09-10T01:47:47+00:00",
       "completed_at": "2026-09-10T02:51:43+00:00",
-      "file": "sdd/tasks/completed/TASK-3086-writer-apply-recovery.md"
+      "file": "sdd/tasks/completed/TASK-3086-writer-apply-recovery.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3087",
@@ -201,7 +209,8 @@
       "assigned_at": null,
       "started_at": "2026-09-10T01:47:47+00:00",
       "completed_at": "2026-09-10T02:57:11+00:00",
-      "file": "sdd/tasks/completed/TASK-3087-mcp-llm-kwargs-config.md"
+      "file": "sdd/tasks/completed/TASK-3087-mcp-llm-kwargs-config.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3088",
@@ -223,7 +232,8 @@
       "assigned_at": null,
       "started_at": "2026-09-10T01:47:47+00:00",
       "completed_at": "2026-09-10T03:00:45+00:00",
-      "file": "sdd/tasks/completed/TASK-3088-host-read-guards.md"
+      "file": "sdd/tasks/completed/TASK-3088-host-read-guards.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3089",
@@ -246,7 +256,8 @@
       "assigned_at": null,
       "started_at": "2026-09-10T01:47:47+00:00",
       "completed_at": "2026-09-10T03:10:18+00:00",
-      "file": "sdd/tasks/completed/TASK-3089-guard-installation.md"
+      "file": "sdd/tasks/completed/TASK-3089-guard-installation.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3090",
@@ -269,7 +280,8 @@
       "assigned_at": null,
       "started_at": "2026-09-10T01:47:47+00:00",
       "completed_at": "2026-09-10T03:15:09+00:00",
-      "file": "sdd/tasks/completed/TASK-3090-sdd-delegation-workflow.md"
+      "file": "sdd/tasks/completed/TASK-3090-sdd-delegation-workflow.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3091",
@@ -295,7 +307,8 @@
       "assigned_at": null,
       "started_at": "2026-09-10T01:47:47+00:00",
       "completed_at": "2026-09-10T03:27:01+00:00",
-      "file": "sdd/tasks/completed/TASK-3091-integration-test-suite.md"
+      "file": "sdd/tasks/completed/TASK-3091-integration-test-suite.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3092",
@@ -319,7 +332,8 @@
       "assigned_at": null,
       "started_at": "2026-09-10T01:47:47+00:00",
       "completed_at": "2026-09-10T03:35:46+00:00",
-      "file": "sdd/tasks/completed/TASK-3092-benchmarks-docs-release.md"
+      "file": "sdd/tasks/completed/TASK-3092-benchmarks-docs-release.md",
+      "verification": "verified"
     }
   ],
   "code_review": {
