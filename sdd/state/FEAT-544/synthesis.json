@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "feat_id": "FEAT-563",
+  "feat_id": "FEAT-544",
   "mode": "enrichment",
   "summary_oneline": "A2UI v1.0 renderer for FormDesigner FormSchema covering render → validate → submit → response over A2UI envelopes",
   "restated_ask": "Add an `a2ui` output format to parrot-formdesigner that lowers any FormSchema into an A2UI v1.0 `createSurface` envelope (Basic Catalog primitives + ai-parrot `parrot_*` metadata extensions, no `Form` component), whose submit Button action targets the form's own answer endpoint, and make that endpoint speak A2UI back (validation errors / confirmation) so a v1.0 renderer can drive the whole fill-and-submit cycle without an LLM agent in the loop.",

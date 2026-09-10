@@ -1,4 +1,4 @@
-# Synthesis reasoning — FEAT-563 (2026-09-10T00:43:39.200413+00:00)
+# Synthesis reasoning — FEAT-544 (2026-09-10T00:43:39.200413+00:00)
 
 1. Ask restated: an `a2ui` FormDesigner output format whose surface can be filled and submitted back to the form's own answer endpoint, with A2UI-shaped responses — a full cycle, not a static export.
 2. Mode: additive verbs ("adding", "renderer", "covering the entire cycle") → enrichment.

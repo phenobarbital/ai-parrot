@@ -1,5 +1,5 @@
 ---
-id: FEAT-563
+id: FEAT-544
 title: A2UI v1.0 form renderer for FormDesigner — full render → submit → response cycle
 slug: a2ui-form-output-renderer
 type: feature
@@ -13,24 +13,24 @@ source:
   summary_oneline: A2UI v1.0 renderer for FormDesigner FormSchema — full form interaction cycle over A2UI surfaces
 overall_confidence: high
 base_branch: dev
-research_state: sdd/state/FEAT-563/
+research_state: sdd/state/FEAT-544/
 created: 2026-09-10
 updated: 2026-09-10
 ---
 
-# FEAT-563 — A2UI v1.0 form renderer for FormDesigner (full interaction cycle)
+# FEAT-544 — A2UI v1.0 form renderer for FormDesigner (full interaction cycle)
 
 > **Mode**: enrichment
 > **Confidence**: high
 > **Source**: `inline` (invocation slug `a2ui-form-output-renderer`)
-> **Audit**: [`sdd/state/FEAT-563/`](../state/FEAT-563/)
-> **ID note**: FEAT-563 is a *provisional* proposal id (max existing + 1). `/sdd-spec` reserves the definitive id through `scripts/sdd/reserve_ids.py` (ledger `next_feature_id` is 542).
+> **Audit**: [`sdd/state/FEAT-544/`](../state/FEAT-544/)
+> **ID note**: FEAT-544 was reserved via `scripts/sdd/reserve_ids.py` on 2026-09-10 (the provisional FEAT-563 used at research time collided with the concurrent lancedb proposal and was renumbered).
 
 ---
 
 ## 0. Origin
 
-The original request, preserved verbatim. Full source at `sdd/state/FEAT-563/source.md`.
+The original request, preserved verbatim. Full source at `sdd/state/FEAT-544/source.md`.
 
 > Parrot-FormDesigner can export FormSchema objects into HTML, json-schema or other output formats, this proposal is for adding A2UI v1.0 compatible (with the extensions added by ai-parrot) renderer to output a form as a A2UI Surface with the "submit" pointing to the current endpoint for answering forms, is covering the entire cycle of interaction with Forms of FormDesigner using A2UI.
 
@@ -50,7 +50,7 @@ Add an `a2ui` output format to parrot-formdesigner that lowers any FormSchema in
 
 ## 2. Codebase Findings
 
-> All entries are grounded in `sdd/state/FEAT-563/findings/`. Each cites the finding ID(s) that justify its inclusion. **No fabricated paths or symbols.**
+> All entries are grounded in `sdd/state/FEAT-544/findings/`. Each cites the finding ID(s) that justify its inclusion. **No fabricated paths or symbols.**
 
 ### 2.1 Localization
 
@@ -244,12 +244,12 @@ Distribution: **9** high, **3** medium, **0** low.
 
 ## 6. Recommended Next Step
 
-**`/sdd-spec FEAT-563`** — *Rationale*: Localization is high-confidence on both sides (renderer registry + submit pipeline; A2UI models + build_form); the remaining decisions (U1–U4) are product choices, not research gaps, and are answerable at spec time.
+**`/sdd-spec FEAT-544`** — *Rationale*: Localization is high-confidence on both sides (renderer registry + submit pipeline; A2UI models + build_form); the remaining decisions (U1–U4) are product choices, not research gaps, and are answerable at spec time.
 
 ### Alternatives
 
-- **`/sdd-brainstorm FEAT-563`** — only if the dual-wire `/data` decision (U1) is reopened against a dedicated `/a2ui` route or an A2UIRuntime-based sink.
-- **`/sdd-task FEAT-563`** — not suitable: the feature spans two packages (renderer + endpoint + docs + tests).
+- **`/sdd-brainstorm FEAT-544`** — only if the dual-wire `/data` decision (U1) is reopened against a dedicated `/a2ui` route or an A2UIRuntime-based sink.
+- **`/sdd-task FEAT-544`** — not suitable: the feature spans two packages (renderer + endpoint + docs + tests).
 - **Manual review** — not needed; research completed without truncation.
 
 ---
@@ -258,12 +258,12 @@ Distribution: **9** high, **3** medium, **0** low.
 
 | Artifact | Path |
 |----------|------|
-| State checkpoints | `sdd/state/FEAT-563/state.json` |
-| Source (raw) | `sdd/state/FEAT-563/source.md` |
-| Research plan | `sdd/state/FEAT-563/research_plan.json` |
+| State checkpoints | `sdd/state/FEAT-544/state.json` |
+| Source (raw) | `sdd/state/FEAT-544/source.md` |
+| Research plan | `sdd/state/FEAT-544/research_plan.json` |
 | Findings (digests) | `F001-formdesigner-renderer-landscape.md`, `F002-a2ui-subsystem-landscape.md`, `F003-form-submission-surface.md`, `F004-a2ui-action-routing-landscape.md`, `F005-abstractformrenderer-contract.md`, `F006-renderers-init-exports.md`, `F007-render-dispatcher-registry.md`, `F008-form-rest-routes.md`, `F009-submit-data-contract.md`, `F010-build-form-helper.md`, `F011-a2ui-wire-models.md`, `F012-basic-catalog-primitives-functions.md`, `F013-a2ui-v1-docs.md`, `F014-adaptive-card-renderer-precedent.md`, `F015-html5-submit-wiring.md`, `F016-a2ui-runtime-and-server-handler.md`, `F017-catalog-registration-validation.md`, `F018-formschema-fieldtype-surface.md`, `F019-no-a2ui-in-formdesigner.md`, `F020-git-log-60-days.md`, `F021-telegram-renderer-spec-precedent.md`, `F022-renderer-action-dispatch-client-half.md`, `F023-spec-g6-form-retired.md` |
-| Synthesis (JSON) | `sdd/state/FEAT-563/synthesis.json` |
-| Synthesis reasoning | `sdd/state/FEAT-563/synthesis.thinking.log` |
+| Synthesis (JSON) | `sdd/state/FEAT-544/synthesis.json` |
+| Synthesis reasoning | `sdd/state/FEAT-544/synthesis.thinking.log` |
 
 **Budget consumed** (profile `default`):
 - Files read: 24 / 40
