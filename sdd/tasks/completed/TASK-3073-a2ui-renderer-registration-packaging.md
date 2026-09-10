@@ -175,10 +175,25 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-11
+**Notes**: `_seed_default_renderers` now probes
+`importlib.util.find_spec("parrot.outputs.a2ui")` first and only imports
+`A2UIFormRenderer` + `setdefault("a2ui", ...)` when the spec resolves,
+logging one INFO line otherwise — the other five hard-dep renderers seed
+unconditionally, unaffected. `renderers/__init__.py` adds
+`"A2UIFormRenderer": ".a2ui"` to `_LAZY_EXPORTS`/`__all__`/the
+`TYPE_CHECKING` block. `pyproject.toml` gets an `a2ui` optional-extra alias
+(same pin as `ai-parrot`). Extended `test_render_dispatcher.py` with the
+seed-available/seed-skipped/dispatcher-e2e tests and added
+`test_a2ui_export.py` (lazy export + a static AST check that
+`renderers/__init__.py` imports no `parrot.*` at module level, same
+pattern as TASK-3071's eager-import test). 12 new/extended tests pass;
+`ruff check` clean on all 5 touched files.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+Verified a pre-existing, unrelated failure
+(`test_form_controls_endpoint.py::test_form_controls_payload_shape`) is
+present on the same commit *before* any FEAT-544 changes (confirmed via
+`git stash`) — out of scope for this task, not touched.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.

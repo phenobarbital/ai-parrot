@@ -52,7 +52,7 @@
       "feature_id": "FEAT-544",
       "feature": "a2ui-form-output-renderer",
       "spec": "sdd/specs/a2ui-form-output-renderer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S (< 2h)",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "Touches api/render.py, renderers/__init__.py and pyproject.toml only — no file overlap with TASK-3072 or TASK-3074; can run in a parallel worktree once TASK-3071 is merged.",
       "assigned_to": null,
       "started_at": "2026-09-10T22:10:09+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3073-a2ui-renderer-registration-packaging.md"
+      "completed_at": "2026-09-10T22:27:55+00:00",
+      "file": "sdd/tasks/completed/TASK-3073-a2ui-renderer-registration-packaging.md"
     },
     {
       "id": "TASK-3074",
