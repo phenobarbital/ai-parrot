@@ -353,7 +353,11 @@ These are test contracts, not executed test results or placeholder production im
 
 ## Completion Note
 
-**Completed by**: not started
-**Date**: not completed
-**Notes**: Pending execution; no implementation or acceptance tests run during task decomposition.
-**Deviations from spec**: The checked answers supersede stale prose; TASK-3057 reconciles that discrepancy before implementation.
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-10
+**Notes**: Implemented `lancedb_models.py` per blueprint: `LanceDBConfig` (frozen Pydantic model with `table`/`collection_name` alias-conflict validator, URI-scheme rejection + canonicalization, collection-name/metadata-field-name patterns, dimension/batch_size/read-consistency bounds, reserved+standard metadata-key rejection), `CollectionManifest.check_compatible()` (non-destructive, actionable mismatch errors on schema_version/dimension/metric/fingerprint), `LanceDBHybridHit` (no distance alias, `score_kind: Literal["rrf"]`), and the three pure identity helpers (`embedding_fingerprint` excludes credential-shaped keys via substring match on key name; `record_id_for` is SHA-256 of original text + canonical metadata; `namespaced_id` percent-encodes). `build_arrow_schema` imports pyarrow lazily and builds fields from `config`/`manifest` only — never a row. Spec §8 Q6 resolved per TASK-3057's gate evidence (`sdd/state/FEAT-542/lancedb-sdk-contract.md`): hybrid ships the single fused score, no component fields added, matching the blueprint's explicit instruction not to invent them.
+
+Wrote `lancedb_fixtures.py`: `DeterministicEmbedding` (SHA-256-derived 8-D vectors, call counters for AC6's "FTS never invokes a model" assertions) and `corpus()` — 24 documents covering two sources' child chunks, explicit parents, the `ZXQ731` lexical identifier, a semantic-only neighbor, contradictory parent/chunk markers, a legacy unmarked row, null/absent fields (including one `id=None` row exercising the SHA-256 fallback path), and a quoted-value row for filter-escaping tests.
+
+`test_lancedb_models.py`: 18 tests, all pass (`uv run pytest packages/ai-parrot-embeddings/tests/test_lancedb_models.py -v`, log at `artifacts/logs/TASK-3059-lancedb.log`). Verified with a blocked-import guard that `parrot.stores.lancedb_models` imports cleanly with `lancedb` unimportable. `ruff check` clean on all three files.
+**Deviations from spec**: None. One addition beyond the blueprint's listed test classes: added `TestArrowSchema` (2 tests) to directly assert the "never inferred from rows" contract and manifest-metadata round-trip, since the blueprint named `test_config_explicit_and_manifest_defaults`/`test_json_projection_and_hybrid_score_model`/`test_stable_identity_and_collection_namespace` as the Test Specification's three named tests but left the file's actual test-class shape as a FILL-IN stub — the additional class stays within this task's file ownership and the AC3 "no inferred first-row schema" requirement.
