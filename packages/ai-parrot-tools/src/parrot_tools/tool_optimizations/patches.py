@@ -131,6 +131,8 @@ class JournalEntry(BaseModel):
         before_sha256: The file's digest before, or None when it was absent.
         after_sha256: The digest this operation intended to write.
         before_index: Index of the saved ``before/<n>.bin`` payload.
+        before_mode: The file's original permission bits, so a rollback
+            restores them instead of silently normalizing to 0644.
         state: How far this file got.
     """
 
@@ -140,6 +142,7 @@ class JournalEntry(BaseModel):
     before_sha256: Optional[str] = None
     after_sha256: str
     before_index: int = Field(..., ge=0)
+    before_mode: Optional[int] = None
     state: Literal["pending", "written", "verified", "restored", "unrecoverable"] = "pending"
 
 
@@ -388,8 +391,12 @@ def _parse_hunk(lines: list[str], index: int, path: str) -> tuple[Hunk, int]:
                 no_newline_new = no_newline_new or (body and body[-1][0] == " ")
             cursor += 1
             continue
-        if raw.startswith("@@") or raw.startswith("--- ") or raw.startswith("diff --git "):
-            break
+        # While the declared counts are not yet satisfied, a line starting with
+        # ' ', '-' or '+' is hunk BODY even when it looks like a header:
+        # removing a source line that begins with '-- ' (an email signature
+        # marker, a SQL comment, ...) is legitimate. Unified diff resolves that
+        # ambiguity with the counts, exactly as git itself does — treating
+        # '--- signature' as a file header rejected valid patches.
         marker = raw[0] if raw else " "
         if marker not in (" ", "-", "+"):
             break

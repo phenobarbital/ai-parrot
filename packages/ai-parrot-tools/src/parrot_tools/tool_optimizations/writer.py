@@ -65,7 +65,13 @@ from .reader import sha256_stream, stat_regular
 if TYPE_CHECKING:  # pragma: no cover — typing only, keeps provider imports lazy
     from parrot.clients.base import AbstractClient
 
-__all__ = ("SYSTEM_PROMPT", "TargetedWriterToolkit", "build_prompt", "build_repair_prompt")
+__all__ = (
+    "SYSTEM_PROMPT",
+    "TargetedWriterToolkit",
+    "build_prompt",
+    "build_repair_prompt",
+    "redact_local_content",
+)
 
 #: Default permissions for a newly created file.
 _CREATE_MODE = 0o644
@@ -123,12 +129,46 @@ def build_prompt(contract: ValidatedContract) -> str:
     )
 
 
+#: Diagnostic keys that carry LOCAL file content rather than the model's own
+#: output. A `context_mismatch` reports the source line it actually found —
+#: which is repository content the delegate was never approved to see, and on
+#: an unapproved line at that. These must never reach the provider.
+_LOCAL_CONTENT_KEYS = frozenset({"actual", "actual_line", "current", "before", "source"})
+
+#: Placeholder substituted for redacted diagnostic values.
+_REDACTED = "<redacted: local file content>"
+
+
+def redact_local_content(details: dict[str, Any]) -> dict[str, Any]:
+    """Strip local file content from a diagnostic before it leaves the machine.
+
+    The thinking model sees the full, unredacted diagnostic — it runs locally.
+    The *delegate* does not: only the approved packet slices may be sent to
+    the provider, so a mismatch diagnostic reports that a line differed, never
+    what the local line said.
+
+    Args:
+        details: The raw error details.
+
+    Returns:
+        A copy safe to place in a provider prompt.
+    """
+    return {
+        key: (_REDACTED if key in _LOCAL_CONTENT_KEYS and value is not None else value)
+        for key, value in details.items()
+    }
+
+
 def build_repair_prompt(contract: ValidatedContract, previous_patch: str, error: PatchError) -> str:
     """Build the single permitted repair prompt.
 
     The delegate gets the same approved context plus a bounded diagnostic —
     never additional repository content, and never a second chance at a
     contract that was itself invalid.
+
+    The diagnostic is redacted (see :func:`redact_local_content`): the
+    rejected patch is the model's own output and may be echoed back, but the
+    local source it failed to match may not.
 
     Args:
         contract: The validated contract.
@@ -144,7 +184,7 @@ def build_repair_prompt(contract: ValidatedContract, previous_patch: str, error:
             build_prompt(contract),
             "## Your previous attempt was rejected",
             f"Rejection code: {error.code}",
-            f"Details: {compact_json(error.details)}",
+            f"Details: {compact_json(redact_local_content(error.details))}",
             "Rejected output (truncated):\n\n```\n" + excerpt + "\n```",
             "Return a corrected unified diff. Output only the diff.",
         ]
@@ -413,6 +453,14 @@ class TargetedWriterToolkit(OptimizationToolkitBase):
                         if repairs < limits.max_repairs:
                             repairs += 1
                             prompt = build_repair_prompt(contract, text, exc)
+                            if len(prompt.encode("utf-8")) > limits.max_context_bytes:
+                                return self._error(
+                                    operation,
+                                    "context_budget_exceeded",
+                                    "the repair prompt exceeds the configured context budget",
+                                    details={"bytes": len(prompt.encode("utf-8")), "repairs": repairs},
+                                    started=started,
+                                )
                             continue
                         return self._error(
                             operation,
@@ -748,6 +796,7 @@ class TargetedWriterToolkit(OptimizationToolkitBase):
                     before_sha256=manifest.before_hashes.get(target.path),
                     after_sha256=manifest.after_hashes[target.path],
                     before_index=index,
+                    before_mode=_mode_or_none(root / target.path),
                 )
                 for index, target in enumerate(packet.targets)
             ],
@@ -841,7 +890,9 @@ class TargetedWriterToolkit(OptimizationToolkitBase):
                 if original is None:
                     await asyncio.to_thread(destination.unlink)
                 else:
-                    await asyncio.to_thread(_write_atomic, destination, original, _CREATE_MODE)
+                    # Restore the ORIGINAL mode: normalizing to 0644 would strip
+                    # an executable bit or widen a 0600 file.
+                    await asyncio.to_thread(_write_atomic, destination, original, entry.before_mode or _CREATE_MODE)
                 entry.state = "restored"
             except OSError:
                 entry.state = "unrecoverable"
@@ -1004,3 +1055,18 @@ def _write_atomic(path: Path, data: bytes, mode: int) -> None:
         with contextlib.suppress(FileNotFoundError):
             os.unlink(temp)
         raise
+
+
+def _mode_or_none(path: Path) -> Optional[int]:
+    """Return a file's permission bits, or None when it does not exist.
+
+    Args:
+        path: The file to stat.
+
+    Returns:
+        The mode bits, or None.
+    """
+    try:
+        return os.stat(path).st_mode & 0o777
+    except OSError:
+        return None

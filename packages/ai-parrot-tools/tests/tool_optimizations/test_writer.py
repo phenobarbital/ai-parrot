@@ -434,3 +434,74 @@ async def test_writer_apply_validates_its_arguments(tmp_path):
     toolkit = TargetedWriterToolkit(repo_root=repo)
     assert (await toolkit.writer_apply("not-hex", "a" * 64)).error.code == "invalid_arguments"
     assert (await toolkit.writer_apply("0" * 32, "short")).error.code == "invalid_arguments"
+
+
+# --------------------------------------------------------------------------- #
+# Provider data-exposure regression (found in adversarial review)
+# --------------------------------------------------------------------------- #
+def test_repair_diagnostics_never_carry_local_file_content():
+    """A repair prompt must not ship the local source it failed to match.
+
+    Regression: `context_mismatch` details include the *actual* local line,
+    and the whole details dict was serialized into the next provider
+    request — sending repository content the delegate was never approved to
+    see, from a line that is not in any approved slice.
+    """
+    from parrot_tools.tool_optimizations.patches import PatchError
+    from parrot_tools.tool_optimizations.policy import compact_json
+    from parrot_tools.tool_optimizations.writer import redact_local_content
+
+    details = {
+        "path": "pkg/__init__.py",
+        "hunk_index": 0,
+        "line_no": 1,
+        "expected": "from .a import a",
+        "expected_line": "from .a import a",
+        "actual": 'SECRET_API_KEY = "sk-live-do-not-send"',
+        "actual_line": 'SECRET_API_KEY = "sk-live-do-not-send"',
+    }
+    redacted = compact_json(redact_local_content(details))
+
+    assert "sk-live-do-not-send" not in redacted
+    assert "SECRET_API_KEY" not in redacted
+    # Still actionable: the delegate learns WHICH line and what was expected.
+    assert "from .a import a" in redacted
+    assert '"line_no":1' in redacted
+    assert PatchError("context_mismatch", "x", details).details["actual"].startswith("SECRET")  # local copy untouched
+
+
+async def test_build_repair_prompt_redacts_unapproved_local_content(tmp_path):
+    """`build_repair_prompt` must not embed local source in the provider prompt.
+
+    The secret here is deliberately NOT part of any approved reference slice —
+    it is content the delegate was never authorized to see, surfaced only
+    because a generated hunk failed to match it.
+    """
+    from parrot_tools.tool_optimizations.contracts import validate_contract
+    from parrot_tools.tool_optimizations.patches import PatchError
+    from parrot_tools.tool_optimizations.policy import OptimizationPolicy
+    from parrot_tools.tool_optimizations.writer import build_repair_prompt
+
+    repo, task = _setup(tmp_path)
+    contract = await validate_contract(OptimizationPolicy(repo_root=repo), task)
+
+    error = PatchError(
+        "context_mismatch",
+        "does not match",
+        {
+            "path": "pkg/__init__.py",
+            "hunk_index": 0,
+            "line_no": 42,
+            "expected": "from .a import a",
+            "actual": 'SECRET_TOKEN = "sk-live-must-not-leave"',
+            "actual_line": 'SECRET_TOKEN = "sk-live-must-not-leave"',
+        },
+    )
+    prompt = build_repair_prompt(contract, "--- a/pkg/__init__.py\n+++ b/pkg/__init__.py\n", error)
+
+    assert "sk-live-must-not-leave" not in prompt
+    assert "SECRET_TOKEN" not in prompt
+    # The delegate still learns what went wrong and where.
+    assert "context_mismatch" in prompt
+    assert "line_no" in prompt
+    assert "from .a import a" in prompt

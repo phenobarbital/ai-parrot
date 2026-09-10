@@ -369,3 +369,37 @@ def test_temp_sweep_still_removes_a_genuine_stale_directory(tmp_path):
 
     store._sweep_stale_temp_dirs()
     assert not stale_dir.exists()
+
+
+def test_removal_line_starting_with_dashes_is_body_not_a_header():
+    """Removing a source line that begins with '-- ' must parse.
+
+    Regression: the hunk scanner broke out on any line starting with
+    `--- `, so deleting an email-signature marker (or any `-- ` prefixed
+    source line) was rejected as `malformed_hunk`. Unified diff resolves
+    that ambiguity with the declared counts, as git itself does.
+    """
+    patch_text = "--- a/f.txt\n+++ b/f.txt\n@@ -1,2 +1,1 @@\n keep\n--- signature\n"
+    patches = parse_patch(normalize_patch(patch_text), max_bytes=128_000)
+    assert len(patches) == 1
+    assert patches[0].path == "f.txt"
+
+    after = apply_in_memory(patches, {"f.txt": b"keep\n-- signature\n"})
+    assert after["f.txt"] == b"keep\n"
+
+
+def test_multi_file_patches_still_separate_correctly():
+    """The ambiguity fix must not merge two files into one patch."""
+    patch_text = (
+        "--- a/one.txt\n+++ b/one.txt\n@@ -1,1 +1,2 @@\n a\n+b\n"
+        "--- a/two.txt\n+++ b/two.txt\n@@ -1,1 +1,2 @@\n c\n+d\n"
+    )
+    patches = parse_patch(normalize_patch(patch_text), max_bytes=128_000)
+    assert [patch.path for patch in patches] == ["one.txt", "two.txt"]
+
+
+def test_journal_entry_records_the_original_mode():
+    """Rollback needs the original permissions, not a 0644 default."""
+    entry = JournalEntry(path="a.py", before_sha256="a" * 64, after_sha256="b" * 64, before_index=0, before_mode=0o750)
+    assert entry.before_mode == 0o750
+    assert JournalEntry(path="a.py", after_sha256="b" * 64, before_index=0).before_mode is None

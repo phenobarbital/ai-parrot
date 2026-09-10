@@ -1346,7 +1346,20 @@ class LocalGitToolkit(OptimizationToolkitBase):
             )
 
         merge_step, _ = await self._run_git(
-            ["-c", "merge.autoStash=false", "merge", "--ff-only", "--no-autostash", "--end-of-options", fetched]
+            [
+                "-c",
+                "merge.autoStash=false",
+                "merge",
+                "--ff-only",
+                "--no-autostash",
+                # Git's DEFAULT is to overwrite ignored files. A fast-forward
+                # that starts tracking a path currently occupied by an ignored
+                # local file would destroy it, despite this tool's promise to
+                # preserve untracked/ignored content.
+                "--no-overwrite-ignore",
+                "--end-of-options",
+                fetched,
+            ]
         )
         merge_step.name = "merge --ff-only"
         steps.append(merge_step)
