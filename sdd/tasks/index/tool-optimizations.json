@@ -145,7 +145,7 @@
       "feature_id": "FEAT-543",
       "feature": "tool-optimizations",
       "spec": "sdd/specs/tool-optimizations.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "XL",
       "estimated_hours": 10,
@@ -158,8 +158,8 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": "2026-09-10T01:47:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3085-writer-generate.md"
+      "completed_at": "2026-09-10T02:44:53+00:00",
+      "file": "sdd/tasks/completed/TASK-3085-writer-generate.md"
     },
     {
       "id": "TASK-3086",
