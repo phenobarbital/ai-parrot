@@ -1009,6 +1009,13 @@ class FormAPIHandler:
         pre-flighting a submission is not told `200` for a payload `/submit`
         would then `422`. `drop` and `keep` responses are unchanged — this
         route never stores anything, so `keep` needs no cap check here.
+
+        FEAT-544: dual-wire — an A2UI v1.0 `action` envelope (`form.validate`
+        or `form.submit`; `unwrap_action` accepts both) is unwrapped into
+        plain field_id answers exactly like `submit_data`'s A2UI branch; the
+        reply is then `{"messages": []}` (200, valid) or per-field
+        `VALIDATION_FAILED` envelopes (422, invalid) instead of plain JSON.
+        A legacy JSON caller is completely unaffected.
         """
         from ..core.schema import UnknownFieldsPolicy
 
@@ -1026,6 +1033,26 @@ class FormAPIHandler:
         except (json.JSONDecodeError, ValueError):
             return JSONResponse({"error": "Invalid JSON body"}, status=400)
 
+        # FEAT-544 (spec §3 Module 5) — same unwrap as submit_data's A2UI branch.
+        a2ui_surface_id: str | None = None
+        if a2ui_wire.is_a2ui_request(request, body):
+            expected_surface_id = f"form-{form.form_uid}"
+            if request.content_length is not None and request.content_length > a2ui_wire.A2UI_MAX_BODY_BYTES:
+                from parrot.outputs.a2ui.runtime.models import A2UIErrorCode, error_envelope
+
+                envelope = error_envelope(
+                    A2UIErrorCode.INTERNAL,
+                    "The submitted data model exceeds the maximum allowed size.",
+                    surface_id=expected_surface_id,
+                )
+                return a2ui_wire.a2ui_response([envelope], status=413)
+            try:
+                submission_in = a2ui_wire.unwrap_action(form, body)
+            except a2ui_wire.A2UIWireError as exc:
+                return a2ui_wire.a2ui_response([exc.envelope], status=exc.status)
+            a2ui_surface_id = submission_in.surface_id
+            body = submission_in.answers
+
         data, visit_context = self._extract_visit_context(form, body)
         result = await self.validator.validate(form, data, visit_context=visit_context)
 
@@ -1034,6 +1061,12 @@ class FormAPIHandler:
             errors["__unknown__"] = sorted(result.extra_data)
 
         is_valid = not errors
+
+        if a2ui_surface_id is not None:
+            if is_valid:
+                return a2ui_wire.a2ui_response([], status=200)
+            return a2ui_wire.a2ui_response(a2ui_wire.validation_errors(a2ui_surface_id, errors), status=422)
+
         return JSONResponse(
             {"is_valid": is_valid, "errors": errors},
             status=200 if is_valid else 422,
