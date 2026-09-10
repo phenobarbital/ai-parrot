@@ -27,6 +27,7 @@ The spec is marked approved. Its checked section 8 answers require fully offline
 - FTS must neither instantiate nor call the provider, including after reopening with stored embedding identity or with an unusable configured model.
 - Use native FTS and explicit vector+query-text hybrid with the gate-proven SDK builders and one conjunctive prefilter across both legs.
 - Map FTS to SearchResult carrying native BM25 metadata and its documented legacy alias; return LanceDBHybridHit for RRF with no distance alias.
+- Consume `LanceDBHybridHit` exactly as TASK-3059 froze it. Spec §8 Q6 (design research S2, spec §9) leaves per-leg vector/lexical component scores undecided — do not add them here unilaterally. If the SDK's hybrid result carries pre-fusion score columns, record that fact in the completion note instead of surfacing it through the model.
 - Any failed hybrid leg raises for that origin; no successful partial fallback. Confirm inserts after index creation, upserts and deletes are visible in all query modes without manual maintenance.
 
 **NOT in scope**: Toolkit reranking changes, graph seed replacement, generic hybrid interfaces, silent fallback and destructive index maintenance.
