@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-543 — Claude Code and Codex Tool Optimizations
 **Spec**: `sdd/specs/tool-optimizations.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-3081, TASK-3082, TASK-3086, TASK-3087, TASK-3089
@@ -292,8 +292,111 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+**Completed by**: sdd-worker (Claude Opus 5, session_01G9NM1TzdkFLd5foNDmh72K)
+**Date**: 2026-09-10
 **Notes**:
 
-**Deviations from spec**: none | describe if any
+Created the seven integration modules plus `conftest.py`. 45 integration
+tests (1 skipped by design), 360 across the whole feature suite.
+
+## A real defect found and fixed: Codex fails open on every denial
+
+`render_output` emitted `permissionDecision: "deny"` for **both** hosts.
+Reading the installed `codex-cli 0.154.0` binary directly shows its
+`PreToolUseDecisionWire` serde variants are **`approve | block | allow`** —
+there is no `deny` — and the binary carries the error string
+`"PreToolUse hook returned unsupported decision"`. So every guard denial
+sent to Codex was an unsupported value: the hook would have failed open and
+the unbounded read of a large file would have proceeded, silently.
+
+Fixed in the owning module (`hooks.py`) with an explicit `DENY_VALUE`
+table and two regression tests
+(`test_each_host_gets_its_own_refusal_keyword`,
+`test_deny_value_table_matches_each_host_enum`), plus an assertion in the
+host-smoke module. This is exactly the failure mode the spec warns about —
+"host guards cause a false sense of enforcement" — and it was only found
+because the host smoke test pinned and interrogated the *installed* binary
+rather than trusting the documentation.
+
+## Open item handed to the release gate (TASK-3092)
+
+The same binary inspection shows Codex's hook config fields are
+`eventName`, `matcher`, `timeoutSec`, while `install_guards` currently
+writes the Claude-shaped
+`{"hooks": {"PreToolUse": [{"matcher", "hooks": [{"type", "command", "timeout"}]}]}}`
+into `.codex/hooks.json`. I did **not** rewrite the installer on the
+strength of string inspection alone — the field names are visible but the
+container structure is not, and guessing would trade a documented-but-
+unverified format for an invented one. Instead the finding is recorded as
+hard evidence in `artifacts/logs/host-smoke.json`
+(`hooks_file_format_verified: false`, `observed_hook_config_fields`,
+`open_item`). **Codex guard installation must be verified end to end before
+release.** Claude Code's format is unaffected.
+
+## Coverage of the spec's seven integration rows
+
+- **Stdio protocol** — in-process for all three servers, plus a real
+  subprocess run of `parrot mcp-local bounded-source` asserting **every**
+  stdout line parses as JSON-RPC (stdout purity). Also proves
+  `writer_generate` is filtered out when no `llm:` is configured and
+  appears when one is.
+- **Raw MCP validation** — 21 cases, all through `_handle_request`, each
+  asserting `isError` *and* an unchanged snapshot of index bytes, artifact
+  directory and source file. One case was reclassified during the work:
+  an option-shaped `ref` is a *domain* refusal (`status="error"`,
+  `invalid_ref`) rather than an `isError` argument rejection, because the
+  argument model legitimately accepts any non-empty string. The test now
+  asserts what actually matters — `steps == []`, i.e. no git process was
+  ever spawned.
+- **Git lifecycle** — fetch → preflight → prepare → (harness commits) →
+  push → pull, in the main tree and in a linked worktree, plus three
+  injected failures (whitespace, foreign `index.lock`, diverged remote)
+  each asserting refs, files and index bytes are unchanged.
+- **Writer lifecycle** — generate → paged bounded review (asserting the
+  reviewed text equals the on-disk patch byte-for-byte) → apply → **the
+  harness executes the packet's real `pytest`**. Exit code 0 recorded in
+  `TASK-3091-writer-lifecycle.json` separately from the manifest, and
+  asserted independently of it.
+- **Cross-process coordination** — genuine OS subprocesses with a file
+  barrier (threads would not exercise `flock`). Staging: one wins, the
+  other is refused `unrelated_staged`, the winner's file *is* staged (no
+  lost update), the advisory lock file survives and no `index.lock` is
+  orphaned. Apply: one `ok`, the other `already_applied`, and the modify
+  hunk is asserted to appear exactly once — proving no double application.
+- **Client configuration** — exact factory kwargs from the shipped example,
+  `expected_model_ids` reaching the constructor, and a test that a client
+  still permitting fallback is refused at construction. The live Bedrock
+  smoke test is `@pytest.mark.real_llm` + env-gated and skipped by default.
+- **Host smoke** — records `artifacts/logs/host-versions.txt`
+  (`claude 2.1.267`, `codex-cli 0.154.0`) and `host-smoke.json`. Honest
+  about limits: `exercised_end_to_end: false`, because Claude's hook runner
+  cannot be driven headlessly; the guard runtime is invoked directly with
+  the documented payload shape instead.
+
+## Evidence artefacts (all under gitignored `artifacts/logs/`)
+
+`TASK-3091-integration.log`, `TASK-3091-regression.log`,
+`TASK-3091-writer-lifecycle.json`, `TASK-3091-cross-process-prepare.json`,
+`TASK-3091-cross-process-apply.json`, `TASK-3091-client-configuration.json`,
+`TASK-3091-guard-coverage.json`, `host-versions.txt`, `host-smoke.json`.
+
+## Regression status
+
+`packages/ai-parrot-tools/tests/tool_optimizations`: **360 passed,
+1 skipped**. `tests/mcp`: 10 failed / 192 passed / 1 error — the *same* 10
+failures and 1 error as `dev` (netsuite, oauth, chrome-manager), with 8
+more tests passing than baseline. `ruff` and `black --check` clean on the
+feature tree.
+
+**Note**: the two suites must be run as separate pytest invocations. The
+repo has two distinct `tests` packages (root `tests/` and
+`packages/ai-parrot-tools/tests/`), so a combined run shadows one with the
+other and fails at conftest import with
+`ModuleNotFoundError: No module named 'tests.tool_optimizations'`. This is
+pre-existing and identical in kind to the wiki-test collision noted in
+TASK-3089.
+
+**Deviations from spec**: none in coverage. Two judgement calls are recorded
+above: the `invalid_ref` reclassification, and declining to rewrite the
+Codex installer format on string evidence alone (recorded as a release-gate
+open item instead).
