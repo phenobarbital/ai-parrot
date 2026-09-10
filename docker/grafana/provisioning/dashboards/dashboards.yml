@@ -1,0 +1,15 @@
+apiVersion: 1
+
+providers:
+  - name: claudestats
+    orgId: 1
+    folder: Claude Code
+    type: file
+    disableDeletion: false
+    # Provisioned dashboards are read-only in the UI; "Save as" makes an
+    # editable copy if you want to customise a panel.
+    allowUiUpdates: false
+    updateIntervalSeconds: 30
+    options:
+      path: /etc/grafana/provisioning/dashboards
+      foldersFromFilesStructure: false

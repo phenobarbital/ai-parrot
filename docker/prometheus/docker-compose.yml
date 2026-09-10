@@ -1,0 +1,46 @@
+# Prometheus — shared metrics store for the local AI-Parrot stacks.
+#
+#   docker compose -f docker/prometheus/docker-compose.yml up -d
+#
+# Consumers:
+#   * Claude Code  -> OTLP push  http://localhost:9090/api/v1/otlp
+#     (needs OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=cumulative;
+#      Prometheus 2.x has no delta->cumulative conversion)
+#   * Grafana      -> docker/grafana/docker-compose.yml joins `parrot-metrics`
+#                     and reaches this service as http://prometheus:9090
+#   * OpenLIT      -> scraped over the host gateway, so the observability
+#                     example stack can come and go independently.
+#
+# Moved here from packages/ai-parrot/src/parrot/observability/examples/ so
+# that every docker artifact lives under docker/.
+name: parrot-prometheus
+
+services:
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    container_name: parrot-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - parrot-prometheus-data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=90d"
+      - "--web.enable-lifecycle"
+      # Prometheus 2.x: accept OTLP metrics pushed by local coding agents
+      # at /api/v1/otlp/v1/metrics.
+      - "--enable-feature=otlp-write-receiver"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - parrot-metrics
+    restart: unless-stopped
+
+volumes:
+  parrot-prometheus-data:
+
+networks:
+  parrot-metrics:
+    name: parrot-metrics

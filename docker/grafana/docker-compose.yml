@@ -1,0 +1,35 @@
+# Grafana + the Claude Code Stats app plugin.
+#
+#   docker compose -f docker/grafana/docker-compose.yml up -d --build
+#
+# Metrics live in the shared Prometheus from docker/prometheus/, which must be
+# up first (it owns the `parrot-metrics` network):
+#
+#   Claude Code --OTLP--> parrot-prometheus <-- Grafana (claudestats app)
+#                 :9090                            :3001
+#
+# Port 3001 because the OpenLIT UI already publishes 3000.
+name: claudestats
+
+services:
+  grafana:
+    build: .
+    image: parrot-grafana
+    container_name: parrot-grafana
+    ports:
+      - "127.0.0.1:3001:3000"
+    volumes:
+      - parrot-grafana-data:/var/lib/grafana
+      - ./provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+    networks:
+      - parrot-metrics
+    restart: unless-stopped
+
+volumes:
+  parrot-grafana-data:
+    external: true
+
+networks:
+  parrot-metrics:
+    external: true
