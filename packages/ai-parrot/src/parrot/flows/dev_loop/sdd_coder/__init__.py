@@ -11,6 +11,7 @@ from parrot.flows.dev_loop.sdd_coder.models import (  # noqa: F401
     CoderPlanArgs, CoderRunChunkArgs, CoderPrepareNativeArgs, CoderMergeArgs,
     CoderWaitArgs, CoderStatusArgs, CoderCleanupArgs,
 )
+from parrot.flows.dev_loop.sdd_coder.roster import ChunkAssigner, RosterProbe, available_seats  # noqa: F401
 
 __all__ = [
     "ERROR_CODES", "AttemptRecord", "CleanupReport", "CoderError", "CoderJob", "CoderPlan",
@@ -18,4 +19,5 @@ __all__ = [
     "RosterSeat", "SeatKind", "SeatProbeResult", "TaskOutcome", "TaskResult",
     "CoderPlanArgs", "CoderRunChunkArgs", "CoderPrepareNativeArgs", "CoderMergeArgs",
     "CoderWaitArgs", "CoderStatusArgs", "CoderCleanupArgs",
+    "ChunkAssigner", "RosterProbe", "available_seats",
 ]
