@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-548
 **Date**: 2026-09-10
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 0.x
 
 > **Source**: `sdd/proposals/observability-otel-grafana.proposal.md` (accepted)
@@ -632,11 +632,11 @@ def setup_telemetry(...):                          # line 63
       renaming it to name its backend explicitly, so it can never again be
       mistaken for the OTel dashboard. *Plausible answers*: a) delete (current
       plan) · b) keep, renamed `parrot-usage-prometheus-recorder.json`.
-- [ ] **Q4 — Should `/sdd-proposal`'s max+1 ID allocation be fixed to use the CAS
+- [x] **Q4 — Should `/sdd-proposal`'s max+1 ID allocation be fixed to use the CAS
       ledger?** *Owner*: Jesus Lara. Out of scope here, but this feature exposed
       it: the proposal series had drifted ~17 ahead (FEAT-565 vs the real 548),
       and FEAT-560/561/563/564 are similarly proposal-local numbers. Filed as an
-      observation, not a deliverable.
+      observation, not a deliverable: Yes
 
 ---
 
