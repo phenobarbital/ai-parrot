@@ -213,10 +213,13 @@ class NewComponent(ClassName):
 
 ### `parrot/path/to/existing.py` (MODIFY)
 ```python
+# occurrences: <N> (verified: grep -c '<verbatim anchor line>' parrot/path/to/existing.py)
 # AFTER — insert below `<verbatim anchor line>` (verified: parrot/path/to/existing.py:NN)
 <new lines>
 ```
-**Why**: <1–2 sentences>
+**Why**: <1–2 sentences>. If `<N>` > 1: replace the block above with
+`# FILL IN: disambiguate — quote enough surrounding context (2–3 lines) to make the
+anchor unique` instead of a bare one-line anchor.
 
 ### FILL IN checklist
 - [ ] `new_file.py::NewComponent.method` — <decision>; bounded by <constraint | AC-N>
