@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-543 — Claude Code and Codex Tool Optimizations
 **Spec**: `sdd/specs/tool-optimizations.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-3079
@@ -369,8 +369,59 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+**Completed by**: sdd-worker (Claude Opus 5, session_01G9NM1TzdkFLd5foNDmh72K)
+**Date**: 2026-09-10
 **Notes**:
 
-**Deviations from spec**: none | describe if any
+Created `git.py` with `LocalGitToolkit` (read/fetch/preflight half),
+`RepoLayout`, `GIT_ENV`, the bounded `_run_git` runner and module-level
+output parsers. `get_tools()` exposes exactly `git_recent`, `git_fetch`,
+`git_preflight`. No LLM call anywhere in this module (AC2).
+
+Codebase Contract verified: `validate_ref`/`parse_log`/`LOG_FORMAT`/
+`InvalidRefError` are all present at the cited lines in
+`parrot/tools/repo/git_tools.py`; `tool_schema` sets `_args_schema` as
+documented. Local git is 2.43.0, above the 2.24 floor `--end-of-options`
+and `--absolute-git-dir` need.
+
+Empirically-established behaviors that shaped the implementation (probed
+against real git before coding, not assumed):
+
+- **A bare repo makes the combined `rev-parse` exit 128**, because
+  `--show-toplevel` needs a work tree — but it still prints `true` for
+  `--is-bare-repository` on stdout first. So `_discover` checks the bare
+  marker BEFORE the exit code; checking exit code first would misreport a
+  bare repo as `not_a_repository`.
+- **`--git-common-dir` is relative (`.git`) in a normal checkout but
+  absolute in a linked worktree.** Both are handled; `is_linked_worktree`
+  is derived from `git_dir != common_dir`, never from probing whether
+  `.git` is a directory (the mistake called out in the contract at
+  `repo/toolkit.py:398` and `gittoolkit.py:1671`).
+- `_drain` keeps reading past the cap and discards the excess, so a
+  ~5.5 MiB `git show` is capped at exactly 1 MiB with `truncated=True` and
+  no pipe deadlock (`test_runner_bounds_large_output_without_deadlock`).
+
+Contract compliance worth noting: the fetch uses an explicit
+`refs/heads/<b>:refs/remotes/<r>/<b>` refspec with **no** leading `+`, so a
+non-fast-forward tracking update surfaces as `fetch_rejected` (covered by a
+real unrelated-history test, not a mock). A failed fetch returns only the
+`fetch` step and never performs the history lookup. `git_preflight` runs all
+four checks unconditionally and reports each one, and both `git_fetch` and
+`git_preflight` attach `data` to the *error* result too, so a failed
+preflight still returns the staged list and parsed status.
+
+**Testing**: 30 tests in `test_git.py`, 57 across the feature suite; ruff and
+black clean. Log at `artifacts/logs/TASK-3080-pytest.log`.
+
+**Deviations from spec**: none, with two recorded judgement calls:
+
+1. **`scripts/generate_tool_registry.py` was NOT run in bulk.** Running it
+   wholesale also added an unrelated `contracts:` entry, dropped the
+   `google_lyria` alias and reordered several blocks — unrelated churn that
+   Cardinal Rule 5 forbids. The registry file was reverted and the single
+   `"local_git"` entry added by hand. The pre-existing registry staleness on
+   `dev` is left untouched for its own owner.
+2. The task's own test spec asserts `[s.name for s in res.steps] == ["fetch"]`
+   on a failed fetch, so the failure path deliberately reports only the fetch
+   step (the preceding `remote` listing step is dropped). Implemented to the
+   task's assertion.
