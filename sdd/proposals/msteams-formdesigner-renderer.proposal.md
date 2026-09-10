@@ -1,5 +1,5 @@
 ---
-id: FEAT-564
+id: FEAT-551
 title: MS Teams FormDesigner renderer — FormSchema → interactive Adaptive Card with a submit envelope routed through the Teams bot to POST …/forms/{uid}/data
 slug: msteams-formdesigner-renderer
 type: feature
@@ -13,24 +13,24 @@ source:
   summary_oneline: Renderer exporting a FormDesigner Form/Survey as an MS Teams-compatible Adaptive Card JSON whose Submit reaches the existing form-data endpoint.
 overall_confidence: high
 base_branch: dev
-research_state: sdd/state/FEAT-564/
+research_state: sdd/state/FEAT-551/
 created: 2026-09-11
 updated: 2026-09-11
 ---
 
-# FEAT-564 — MS Teams FormDesigner renderer (Adaptive Card + submit envelope)
+# FEAT-551 — MS Teams FormDesigner renderer (Adaptive Card + submit envelope)
 
 > **Mode**: enrichment
 > **Confidence**: high (after Q&A — 5/5 unknowns resolved)
 > **Source**: `inline`
-> **Audit**: [`sdd/state/FEAT-564/`](../state/FEAT-564/)
-> **FEAT-ID**: provisional — allocated as `max(existing)+1`; `/sdd-spec` reserves the definitive id via `reserve_ids.py`.
+> **Audit**: [`sdd/state/FEAT-551/`](../state/FEAT-551/)
+> **FEAT-ID**: FEAT-551 — reserved via `reserve_ids.py` on 2026-09-11 (the proposal was drafted under provisional FEAT-564).
 
 ---
 
 ## 0. Origin
 
-The original request, preserved verbatim (`sdd/state/FEAT-564/source.md`):
+The original request, preserved verbatim (`sdd/state/FEAT-551/source.md`):
 
 > Using the ability of FormDesigner to export a Form or survey in a format using a renderer to build a renderer to export a Form as an interactive Adaptive Card compatible with MS Teams and button for answer question will pointing to the existing endpoint for sending form's payload. for this spec we need to cover the basics of a form in Adaptive Card (in ai-parrot-integrations there are code for rendering input tools as adaptive cards, can we use that code as example we are looking for here), but check if we can upload pictures in a form exposed as an Adaptive Card, the Renderer will be responsible for export a Form Definition as a Adaptive Card but not responsible for sending, only returning the JSON of Form.
 
@@ -54,7 +54,7 @@ FormDesigner already ships an `AdaptiveCardRenderer` (`renderers/adaptive_card.p
 
 ## 2. Codebase Findings
 
-> All entries are grounded in `sdd/state/FEAT-564/findings/`. **No fabricated paths or symbols.**
+> All entries are grounded in `sdd/state/FEAT-551/findings/`. **No fabricated paths or symbols.**
 
 ### 2.1 Localization
 
@@ -193,11 +193,11 @@ Distribution: **7** high, **1** medium, **1** low. Overall **high** — the sing
 
 ## 6. Recommended Next Step
 
-**`/sdd-spec FEAT-564`** — *Rationale*: localization is high-confidence, all five design unknowns are resolved, and the design is an extension of shipped code (one renderer subclass, one format registration, one bot branch). The spec can be written directly; the two remaining questions are implementation-level.
+**`/sdd-spec FEAT-551`** — *Rationale*: localization is high-confidence, all five design unknowns are resolved, and the design is an extension of shipped code (one renderer subclass, one format registration, one bot branch). The spec can be written directly; the two remaining questions are implementation-level.
 
 ### Alternatives
 
-- **`/sdd-brainstorm FEAT-564`** — only if the auth question should be explored against a broader "bot ↔ FormDesigner API" credential design.
+- **`/sdd-brainstorm FEAT-551`** — only if the auth question should be explored against a broader "bot ↔ FormDesigner API" credential design.
 - **Manual review** — not needed; research completed within budget.
 
 ---
@@ -206,11 +206,11 @@ Distribution: **7** high, **1** medium, **1** low. Overall **high** — the sing
 
 | Artifact | Path |
 |----------|------|
-| State checkpoints | `sdd/state/FEAT-564/state.json` |
-| Source (raw) | `sdd/state/FEAT-564/source.md` |
-| Research plan | `sdd/state/FEAT-564/research_plan.json` |
-| Findings (digests) | `sdd/state/FEAT-564/findings/F001-*.md` … `F023-*.md` |
-| Synthesis (JSON) | `sdd/state/FEAT-564/synthesis.json` |
+| State checkpoints | `sdd/state/FEAT-551/state.json` |
+| Source (raw) | `sdd/state/FEAT-551/source.md` |
+| Research plan | `sdd/state/FEAT-551/research_plan.json` |
+| Findings (digests) | `sdd/state/FEAT-551/findings/F001-*.md` … `F023-*.md` |
+| Synthesis (JSON) | `sdd/state/FEAT-551/synthesis.json` |
 
 **Budget consumed** (profile `default`):
 - Files read: 22 / 40

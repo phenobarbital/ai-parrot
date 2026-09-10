@@ -1,12 +1,12 @@
 {
   "schema_version": "1.0",
-  "feat_id": "FEAT-564",
+  "feat_id": "FEAT-551",
   "feature_slug": "msteams-formdesigner-renderer",
   "started_at": "2026-09-10T22:19:37Z",
   "updated_at": "2026-09-10T22:39:57Z",
   "source": {
     "kind": "inline",
-    "raw_path": "sdd/state/FEAT-564/source.md",
+    "raw_path": "sdd/state/FEAT-551/source.md",
     "fetched_at": "2026-09-10T22:19:37Z",
     "summary_oneline": "Renderer exporting a FormDesigner Form/Survey definition as an MS Teams-compatible Adaptive Card JSON."
   },
@@ -20,7 +20,7 @@
     "plan": {
       "status": "completed",
       "approved_by_user": true,
-      "plan_path": "sdd/state/FEAT-564/research_plan.json"
+      "plan_path": "sdd/state/FEAT-551/research_plan.json"
     },
     "research": {
       "status": "completed",
@@ -35,7 +35,7 @@
     },
     "synthesis": {
       "status": "completed",
-      "synthesis_path": "sdd/state/FEAT-564/synthesis.json",
+      "synthesis_path": "sdd/state/FEAT-551/synthesis.json",
       "overall_confidence": "high",
       "claims_total": 9,
       "claims_high_conf": 6,
@@ -74,6 +74,6 @@
   },
   "resume_hint": {
     "next_phase": "committed",
-    "next_action": "Run /sdd-spec FEAT-564 (or accept the proposal first)"
+    "next_action": "Run /sdd-spec FEAT-551 (or accept the proposal first)"
   }
 }

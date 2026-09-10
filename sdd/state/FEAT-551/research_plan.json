@@ -1,5 +1,5 @@
 {
-  "feat_id": "FEAT-564",
+  "feat_id": "FEAT-551",
   "mode_detected": "enrichment",
   "mode_rationale": "wiki_query surfaced an existing FormSchema Adaptive Card renderer (parrot_formdesigner/renderers/adaptive_card.py, TASK-524) and Teams-side native-input submit routing (TASK-2545). The request is an extension/verification of existing code, not greenfield.",
   "budget": {"profile": "default", "max_files_read": 40, "max_grep_calls": 25, "max_git_calls": 10, "max_depth": 2, "max_wall_seconds": 300},
