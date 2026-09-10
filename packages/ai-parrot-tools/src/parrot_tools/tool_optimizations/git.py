@@ -26,24 +26,33 @@ This module owns the read-only and fetch-only half of the toolkit;
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import hashlib
 import os
 import re
+import shutil
+import tempfile
 import time
 from pathlib import Path
 from typing import Any, Optional, Sequence
 
 from parrot.tools.decorators import tool_schema
+from parrot.tools.repo.confinement import PathOutsideRootError, SecretFileError
 from parrot.tools.repo.git_tools import LOG_FORMAT, InvalidRefError, parse_log, validate_ref
 from pydantic import BaseModel, ConfigDict
 
 from .base import OptimizationToolkitBase
 from .models import (
     GitFetchArgs,
+    GitPrepareFilesArgs,
     GitPreflightArgs,
+    GitPullArgs,
+    GitPushArgs,
     GitRecentArgs,
     OperationResult,
     StepResult,
 )
+from .policy import LockTimeoutError, SymlinkRejectedError, WorktreeLock, resolve_operand
 
 __all__ = ("GIT_ENV", "MIN_GIT_VERSION", "RepoLayout", "LocalGitToolkit")
 
@@ -144,7 +153,16 @@ class LocalGitToolkit(OptimizationToolkitBase):
         "git_recent": GitRecentArgs,
         "git_fetch": GitFetchArgs,
         "git_preflight": GitPreflightArgs,
+        "git_prepare_files": GitPrepareFilesArgs,
+        "git_pull": GitPullArgs,
+        "git_push": GitPushArgs,
     }
+
+    #: Mutating tools. The MCP adapter injects a required ``confirm`` boolean
+    #: for these and rejects the call unless it is true. ``confirm`` is the
+    #: host-side record that a human approved the operation — it is never
+    #: authorization a model can grant itself (spec Git Contract 12).
+    confirming_tools: frozenset = frozenset({"git_prepare_files", "git_pull", "git_push"})
 
     def __init__(self, **kwargs: Any) -> None:
         """Initialize the toolkit.
@@ -681,6 +699,860 @@ class LocalGitToolkit(OptimizationToolkitBase):
             return result
         return self._ok("git_preflight", data, steps, started)
 
+    # ----------------------------------------------------------------- #
+    # Staging helpers
+    # ----------------------------------------------------------------- #
+    def _normalise_literal_paths(
+        self, paths: Sequence[str]
+    ) -> tuple[list[str], Optional[tuple[str, str, dict[str, Any]]]]:
+        """Validate caller paths as literal, in-root, non-magic file paths.
+
+        Pathspec magic, globs, directories, symlinks and traversal are all
+        rejected here — before any Git process runs — so a refusal can never
+        have touched the repository.
+
+        Args:
+            paths: The caller-supplied paths.
+
+        Returns:
+            A ``(relative_paths, error)`` tuple, where ``error`` is
+            ``(code, message, details)`` or None.
+        """
+        seen: list[str] = []
+        for raw in paths:
+            candidate = raw
+            if not candidate or candidate != candidate.strip():
+                return [], ("invalid_path", f"{raw!r} is empty or padded with whitespace", {"path": raw})
+            if candidate.startswith(":"):
+                return [], ("pathspec_magic", f"{raw!r} uses git pathspec magic", {"path": raw})
+            if any(char in candidate for char in "*?[]"):
+                return [], ("glob_rejected", f"{raw!r} looks like a glob; pass literal paths", {"path": raw})
+            if "\\" in candidate:
+                return [], ("invalid_path", f"{raw!r} contains a backslash", {"path": raw})
+            if candidate.endswith("/"):
+                return [], ("invalid_path", f"{raw!r} has a trailing slash", {"path": raw})
+            if Path(candidate).is_absolute():
+                return [], ("invalid_path", f"{raw!r} must be repository-relative", {"path": raw})
+            segments = candidate.split("/")
+            if any(segment in ("", ".", "..") for segment in segments):
+                return [], ("invalid_path", f"{raw!r} contains an empty or traversal segment", {"path": raw})
+
+            try:
+                target = resolve_operand(self.policy, candidate, must_exist=False)
+            except SymlinkRejectedError as exc:
+                return [], ("symlink_rejected", str(exc), {"path": raw})
+            except SecretFileError as exc:
+                return [], ("secret_file", str(exc), {"path": raw})
+            except PathOutsideRootError as exc:
+                return [], ("path_outside_root", str(exc), {"path": raw})
+            except ValueError as exc:
+                return [], ("invalid_path", str(exc), {"path": raw})
+
+            if target.is_dir():
+                return [], ("directory_rejected", f"{raw!r} is a directory; pass individual files", {"path": raw})
+            if target.is_symlink():
+                return [], ("symlink_rejected", f"{raw!r} is a symlink", {"path": raw})
+
+            relative = target.relative_to(self.policy.repo_root).as_posix()
+            if relative in seen:
+                return [], ("duplicate_path", f"{relative!r} was supplied more than once", {"path": relative})
+            seen.append(relative)
+        return seen, None
+
+    @staticmethod
+    def _fingerprint(index_path: Path) -> Optional[tuple[int, int, str]]:
+        """Fingerprint the index file so a concurrent change is detectable.
+
+        Args:
+            index_path: The per-worktree index path.
+
+        Returns:
+            A ``(size, mtime_ns, sha256)`` tuple, or None when the index does
+            not exist yet (a repository with an unborn HEAD).
+        """
+        try:
+            stat_result = index_path.stat()
+        except FileNotFoundError:
+            return None
+        digest = hashlib.sha256()
+        with open(index_path, "rb") as handle:
+            for chunk in iter(lambda: handle.read(1 << 20), b""):
+                digest.update(chunk)
+        return (stat_result.st_size, stat_result.st_mtime_ns, digest.hexdigest())
+
+    async def _index_features_supported(self) -> tuple[bool, list[StepResult]]:
+        """Check that the index is a plain, fully readable index file.
+
+        A split or sparse index cannot be safely copied and republished as a
+        whole file, so those configurations are refused rather than corrupted.
+
+        Returns:
+            A ``(supported, steps)`` tuple.
+        """
+        steps: list[StepResult] = []
+        for key in ("core.splitIndex", "index.sparse"):
+            step, _ = await self._run_git(["config", "--get", key])
+            step.name = f"config {key}"
+            steps.append(step)
+            if step.exit_code == 0 and step.stdout.strip().lower() == "true":
+                return False, steps
+        return True, steps
+
+    # ----------------------------------------------------------------- #
+    # Mutating tools
+    # ----------------------------------------------------------------- #
+    @tool_schema(GitPrepareFilesArgs)
+    async def git_prepare_files(self, paths: list[str]) -> OperationResult:
+        """Stage exactly the listed files, refusing to disturb unrelated staging.
+
+        Staging happens in a private copy of the index; the copy is published
+        only after every check passes, the real index is byte-identical to
+        what it was at the start, and Git's own ``index.lock`` was acquired.
+        A refusal or a failed check therefore leaves the index and the working
+        files untouched. Unrelated already-staged paths cause a refusal — this
+        operation never unstages anything.
+
+        The ``confirm`` argument added over MCP records that a human approved
+        this mutation; it is not authorization a model can grant itself.
+
+        Args:
+            paths: Literal, repository-relative file paths. Tracked files that
+                have been deleted on disk are staged as removals.
+
+        Returns:
+            An operation result whose ``data`` carries the exact ``staged``
+            names, any ``deleted`` ones, ``whitespace_ok`` and
+            ``index_published``.
+        """
+        started = time.perf_counter()
+        operation = "git_prepare_files"
+        try:
+            args = GitPrepareFilesArgs(paths=paths)
+        except Exception as exc:  # pydantic ValidationError
+            return self._error(operation, "invalid_arguments", str(exc), started=started)
+
+        layout = await self._discover(operation, started)
+        if isinstance(layout, OperationResult):
+            return layout
+
+        selected, path_error = self._normalise_literal_paths(args.paths)
+        if path_error is not None:
+            code, message, details = path_error
+            return self._error(operation, code, message, details=details, started=started)
+
+        try:
+            async with WorktreeLock(layout.lock_path, self.policy.command_timeout_seconds):
+                return await self._prepare_locked(layout, selected, started)
+        except LockTimeoutError as exc:
+            return self._error(operation, "worktree_busy", str(exc), started=started)
+
+    async def _prepare_locked(self, layout: RepoLayout, selected: list[str], started: float) -> OperationResult:
+        """Run the staging transaction while holding the worktree lock.
+
+        Args:
+            layout: The discovered repository layout.
+            selected: Validated repo-relative paths.
+            started: A ``perf_counter()`` reading taken at operation start.
+
+        Returns:
+            The bounded operation result.
+        """
+        operation = "git_prepare_files"
+        steps: list[StepResult] = []
+
+        # --- Per-path git-level checks (submodule / tracked-deletion) ------
+        ls_step, ls_raw = await self._run_git(["ls-files", "-s", "-z", "--", *selected])
+        ls_step.name = "ls-files"
+        steps.append(ls_step)
+        if ls_step.exit_code != 0:
+            return self._error(
+                operation, "ls_files_failed", "could not read index entries", steps=steps, started=started
+            )
+        for record in _split_nul(ls_raw):
+            mode, _, remainder = record.partition(" ")
+            if mode == "160000":
+                path = remainder.split("\t", 1)[-1]
+                return self._error(
+                    operation,
+                    "submodule_rejected",
+                    f"{path!r} is a submodule",
+                    details={"path": path},
+                    steps=steps,
+                    started=started,
+                )
+
+        deleted: list[str] = []
+        for relative in selected:
+            absolute = self.policy.repo_root / relative
+            if absolute.exists():
+                continue
+            tracked_step, _ = await self._run_git(["ls-files", "--error-unmatch", "-z", "--", relative])
+            tracked_step.name = "ls-files --error-unmatch"
+            steps.append(tracked_step)
+            if tracked_step.exit_code != 0:
+                return self._error(
+                    operation,
+                    "path_not_found",
+                    f"{relative!r} does not exist and is not tracked",
+                    details={"path": relative},
+                    steps=steps,
+                    started=started,
+                )
+            deleted.append(relative)
+
+        # --- Index-state pre-checks ---------------------------------------
+        unmerged_step, unmerged_raw = await self._run_git(["ls-files", "-u", "-z"])
+        unmerged_step.name = "ls-files -u"
+        steps.append(unmerged_step)
+        if unmerged_step.exit_code != 0 or _split_nul(unmerged_raw):
+            return self._error(
+                operation,
+                "unmerged_index",
+                "the index has unmerged entries; resolve the conflict first",
+                steps=steps,
+                started=started,
+            )
+
+        staged_step, staged_raw = await self._run_git(["diff", "--cached", "--name-only", "-z"])
+        staged_step.name = "diff --cached --name-only"
+        steps.append(staged_step)
+        unstaged_step, unstaged_raw = await self._run_git(["diff", "--name-only", "-z"])
+        unstaged_step.name = "diff --name-only"
+        steps.append(unstaged_step)
+        if staged_step.exit_code != 0 or unstaged_step.exit_code != 0:
+            return self._error(
+                operation, "status_failed", "could not read the current staging state", steps=steps, started=started
+            )
+
+        staged_now = set(_split_nul(staged_raw))
+        unstaged_now = set(_split_nul(unstaged_raw))
+        chosen = set(selected)
+
+        unrelated = sorted(staged_now - chosen)
+        if unrelated:
+            return self._error(
+                operation,
+                "unrelated_staged",
+                "unrelated paths are already staged; this operation never unstages",
+                details={"unrelated": unrelated[:50]},
+                steps=steps,
+                started=started,
+            )
+        partial = sorted(chosen & staged_now & unstaged_now)
+        if partial:
+            return self._error(
+                operation,
+                "partially_staged",
+                "selected paths have partially staged content that whole-file staging would replace",
+                details={"partial": partial[:50]},
+                steps=steps,
+                started=started,
+            )
+
+        supported, config_steps = await self._index_features_supported()
+        steps.extend(config_steps)
+        if not supported:
+            return self._error(
+                operation,
+                "index_unsupported",
+                "split or sparse index is not supported by this operation",
+                steps=steps,
+                started=started,
+            )
+
+        # --- Transaction ---------------------------------------------------
+        fingerprint_before = self._fingerprint(layout.index_path)
+        handle = tempfile.NamedTemporaryFile(dir=layout.git_dir, prefix="parrot-index-", delete=False)
+        handle.close()
+        temp_index = Path(handle.name)
+        try:
+            if layout.index_path.exists():
+                # copy2, NOT copyfile: git decides an index entry is "racily
+                # clean" by comparing the entry's mtime against the *index
+                # file's* mtime, and re-hashes the file when it is. A copy
+                # with a fresh mtime silently turns those entries into
+                # trusted-clean ones, so a same-size edit made within the
+                # same clock tick as the last `git add` would not be staged
+                # (measured: ~3% of same-size edits). Preserving the index's
+                # mtime makes the private copy behave exactly like the real
+                # index.
+                shutil.copy2(layout.index_path, temp_index)
+            env = {"GIT_INDEX_FILE": str(temp_index.resolve())}
+
+            # NOTE: `--end-of-options` must NOT be combined with `--` here —
+            # git would then read `--` as a literal pathspec and fail. The
+            # `--` separator alone already protects an option-shaped path.
+            add_step, _ = await self._run_git(["add", "--", *selected], extra_env=env)
+            add_step.name = "add"
+            steps.append(add_step)
+            if add_step.exit_code != 0:
+                return self._error(
+                    operation, "add_failed", "git add rejected the selection", steps=steps, started=started
+                )
+
+            verify_step, verify_raw = await self._run_git(["diff", "--cached", "--name-only", "-z"], extra_env=env)
+            verify_step.name = "verify staged names"
+            steps.append(verify_step)
+            staged_after = sorted(_split_nul(verify_raw))
+            if verify_step.exit_code != 0 or staged_after != sorted(chosen):
+                return self._error(
+                    operation,
+                    "staged_mismatch",
+                    "the prepared index does not contain exactly the selected paths",
+                    details={"expected": sorted(chosen)[:50], "actual": staged_after[:50]},
+                    steps=steps,
+                    started=started,
+                )
+
+            check_step, _ = await self._run_git(["diff", "--cached", "--check"], extra_env=env)
+            check_step.name = "verify whitespace"
+            steps.append(check_step)
+            if check_step.exit_code != 0:
+                return self._error(
+                    operation,
+                    "whitespace_errors",
+                    "the selection introduces whitespace errors",
+                    details={"lines": _bounded_lines(check_step.stdout, 50)},
+                    steps=steps,
+                    started=started,
+                )
+
+            if self._fingerprint(layout.index_path) != fingerprint_before:
+                return self._error(
+                    operation,
+                    "index_changed",
+                    "the index changed while it was being prepared",
+                    steps=steps,
+                    started=started,
+                )
+
+            publish_step = self._publish_index(layout, temp_index)
+            steps.append(publish_step)
+            if publish_step.exit_code != 0:
+                code = "index_locked" if publish_step.stderr.startswith("index_locked") else "publish_failed"
+                return self._error(
+                    operation, code, publish_step.stderr or "could not publish the index", steps=steps, started=started
+                )
+        finally:
+            with contextlib.suppress(FileNotFoundError):
+                os.unlink(temp_index)
+
+        data = {
+            "staged": sorted(chosen),
+            "deleted": sorted(deleted),
+            "whitespace_ok": True,
+            "index_published": True,
+        }
+        return self._ok(operation, data, steps, started)
+
+    def _publish_index(self, layout: RepoLayout, temp_index: Path) -> StepResult:
+        """Publish the prepared index through Git's own ``index.lock``.
+
+        This is exactly how Git itself commits an index: write the new
+        content into ``index.lock`` and atomically rename it over ``index``.
+        A pre-existing lock belongs to another Git process and is never
+        removed.
+
+        Args:
+            layout: The discovered repository layout.
+            temp_index: The prepared private index file.
+
+        Returns:
+            A step describing the publish attempt. ``exit_code`` 0 means the
+            index was replaced.
+        """
+        lock_path = layout.index_path.with_name("index.lock")
+        try:
+            fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+        except FileExistsError:
+            return StepResult(
+                name="publish index",
+                exit_code=1,
+                timed_out=False,
+                state_changed=False,
+                stderr="index_locked: another git process holds the index lock",
+            )
+        try:
+            with os.fdopen(fd, "wb") as destination, open(temp_index, "rb") as source:
+                shutil.copyfileobj(source, destination)
+                destination.flush()
+                os.fsync(destination.fileno())
+            os.replace(lock_path, layout.index_path)
+        except BaseException as exc:  # noqa: BLE001 — cleanup then report
+            with contextlib.suppress(FileNotFoundError):
+                os.unlink(lock_path)
+            return StepResult(
+                name="publish index",
+                exit_code=1,
+                timed_out=False,
+                state_changed=False,
+                stderr=f"publish failed: {exc}"[:4096],
+            )
+        return StepResult(name="publish index", exit_code=0, timed_out=False, state_changed=True)
+
+    # ----------------------------------------------------------------- #
+    # Publication
+    # ----------------------------------------------------------------- #
+    async def _status_summary(self) -> tuple[dict[str, Any], StepResult]:
+        """Read and parse the porcelain-v2 status with branch headers.
+
+        Returns:
+            A ``(summary, step)`` tuple; ``summary`` is empty when the
+            command failed.
+        """
+        step, raw = await self._run_git(["status", "--porcelain=v2", "-z", "--branch", "--untracked-files=normal"])
+        step.name = "status"
+        return (_parse_status_v2(raw) if step.exit_code == 0 else {}), step
+
+    async def _resolve_publication_branch(
+        self,
+        operation: str,
+        summary: dict[str, Any],
+        remote: str,
+        branch: Optional[str],
+        steps: list[StepResult],
+        started: float,
+    ) -> tuple[Optional[str], Optional[OperationResult]]:
+        """Resolve which branch a pull/push acts on, refusing unsafe states.
+
+        Args:
+            operation: The calling operation name.
+            summary: The parsed status summary.
+            remote: The validated remote name.
+            branch: The caller-supplied branch, or None to use the upstream.
+            steps: Steps recorded so far, for the error result.
+            started: A ``perf_counter()`` reading taken at operation start.
+
+        Returns:
+            A ``(branch, error_result)`` tuple; exactly one is not None.
+        """
+        if summary.get("detached"):
+            return None, self._error(operation, "detached_head", "HEAD is detached", steps=steps, started=started)
+        if summary.get("unborn"):
+            return None, self._error(
+                operation, "unborn_head", "the current branch has no commits yet", steps=steps, started=started
+            )
+
+        current = summary.get("branch")
+        if not current:
+            return None, self._error(
+                operation, "unknown_branch", "could not determine the current branch", steps=steps, started=started
+            )
+
+        if branch is None:
+            upstream = summary.get("upstream")
+            if not upstream:
+                return None, self._error(
+                    operation,
+                    "missing_upstream",
+                    f"branch {current!r} has no upstream; pass an explicit branch",
+                    steps=steps,
+                    started=started,
+                )
+            upstream_remote, _, upstream_branch = upstream.partition("/")
+            if upstream_remote != remote:
+                return None, self._error(
+                    operation,
+                    "upstream_remote_mismatch",
+                    f"upstream {upstream!r} does not belong to remote {remote!r}",
+                    details={"upstream": upstream, "remote": remote},
+                    steps=steps,
+                    started=started,
+                )
+            return upstream_branch or current, None
+
+        if branch != current:
+            return None, self._error(
+                operation,
+                "branch_mismatch",
+                f"requested branch {branch!r} is not the current branch {current!r}",
+                details={"requested": branch, "current": current},
+                steps=steps,
+                started=started,
+            )
+        return branch, None
+
+    async def _fetch_branch(self, remote: str, branch: str) -> tuple[Optional[str], StepResult]:
+        """Fetch one branch with an explicit, non-forced destination refspec.
+
+        Args:
+            remote: A validated remote name.
+            branch: A validated branch name.
+
+        Returns:
+            A ``(fetched_sha_or_None, step)`` tuple.
+        """
+        refspec = f"refs/heads/{branch}:refs/remotes/{remote}/{branch}"
+        step, _ = await self._run_git(
+            ["fetch", "--no-tags", "--no-recurse-submodules", "--end-of-options", remote, refspec],
+            timeout=self.policy.network_timeout_seconds,
+        )
+        step.name = "fetch"
+        step.state_changed = step.exit_code == 0
+        if step.exit_code != 0:
+            return None, step
+        head_step, _ = await self._run_git(
+            ["rev-parse", "--verify", "--quiet", "--end-of-options", "FETCH_HEAD^{commit}"]
+        )
+        sha = head_step.stdout.strip()
+        return (sha if len(sha) == 40 else None), step
+
+    @tool_schema(GitPullArgs)
+    async def git_pull(self, remote: str = "origin", branch: Optional[str] = None) -> OperationResult:
+        """Fast-forward the current branch from its remote, or refuse.
+
+        Only a fast-forward is ever performed: there is no stash, no rebase
+        and no merge commit. A dirty or partially staged tree, a detached or
+        unborn HEAD, or a diverged history all cause a refusal that changes
+        nothing. Untracked files are preserved — Git itself refuses a
+        fast-forward that would overwrite one.
+
+        The ``confirm`` argument added over MCP records that a human approved
+        this mutation; it is not authorization a model can grant itself.
+
+        Args:
+            remote: A configured remote name. Defaults to ``origin``.
+            branch: The branch to pull. Defaults to the current branch's
+                upstream, and must equal the current branch when supplied.
+
+        Returns:
+            An operation result whose ``data`` carries ``branch``, ``remote``,
+            ``before``, ``after`` and ``updated``.
+        """
+        started = time.perf_counter()
+        operation = "git_pull"
+        try:
+            args = GitPullArgs(remote=remote, branch=branch)
+        except Exception as exc:  # pydantic ValidationError
+            return self._error(operation, "invalid_arguments", str(exc), started=started)
+
+        layout = await self._discover(operation, started)
+        if isinstance(layout, OperationResult):
+            return layout
+
+        try:
+            async with WorktreeLock(layout.lock_path, self.policy.command_timeout_seconds):
+                return await self._pull_locked(operation, args, started)
+        except LockTimeoutError as exc:
+            return self._error(operation, "worktree_busy", str(exc), started=started)
+
+    async def _pull_locked(self, operation: str, args: GitPullArgs, started: float) -> OperationResult:
+        """Perform the fast-forward-only pull while holding the worktree lock.
+
+        Args:
+            operation: The operation name.
+            args: The validated arguments.
+            started: A ``perf_counter()`` reading taken at operation start.
+
+        Returns:
+            The bounded operation result.
+        """
+        remotes, remote_step = await self._remote_names()
+        steps: list[StepResult] = [remote_step]
+        try:
+            safe_remote = self._validate_remote(args.remote, remotes)
+        except ValueError as exc:
+            return self._error(operation, "unknown_remote", str(exc), steps=steps, started=started)
+
+        summary, status_step = await self._status_summary()
+        steps.append(status_step)
+        if status_step.exit_code != 0:
+            return self._error(
+                operation, "status_failed", "could not read the working tree state", steps=steps, started=started
+            )
+
+        counts = summary.get("counts", {})
+        if counts.get("unmerged"):
+            return self._error(
+                operation, "unmerged_index", "the index has unmerged entries", steps=steps, started=started
+            )
+        if counts.get("staged"):
+            return self._error(
+                operation,
+                "staged_changes",
+                "the index has staged changes; publish or reset them yourself",
+                steps=steps,
+                started=started,
+            )
+        if counts.get("unstaged"):
+            return self._error(
+                operation,
+                "dirty_worktree",
+                "tracked files have uncommitted modifications",
+                steps=steps,
+                started=started,
+            )
+
+        branch, error = await self._resolve_publication_branch(
+            operation, summary, safe_remote, args.branch, steps, started
+        )
+        if error is not None:
+            return error
+        try:
+            safe_branch = await self._validate_branch(branch or "")
+        except ValueError as exc:
+            return self._error(operation, "invalid_branch", str(exc), steps=steps, started=started)
+
+        before = summary.get("head_commit")
+        fetched, fetch_step = await self._fetch_branch(safe_remote, safe_branch)
+        steps.append(fetch_step)
+        if fetch_step.timed_out:
+            return self._error(
+                operation, "fetch_timeout", "the fetch timed out", steps=steps, started=started, status="uncertain"
+            )
+        if fetch_step.exit_code != 0:
+            rejected = "rejected" in fetch_step.stderr or "non-fast-forward" in fetch_step.stderr
+            return self._error(
+                operation,
+                "fetch_rejected" if rejected else "fetch_failed",
+                "the fetch did not complete",
+                steps=steps,
+                started=started,
+            )
+        if fetched is None:
+            return self._error(
+                operation, "fetch_head_unresolved", "could not read the fetched commit", steps=steps, started=started
+            )
+
+        up_to_date_step, _ = await self._run_git(["merge-base", "--is-ancestor", "--end-of-options", fetched, "HEAD"])
+        up_to_date_step.name = "merge-base"
+        steps.append(up_to_date_step)
+        if up_to_date_step.exit_code == 0:
+            data = {"branch": safe_branch, "remote": safe_remote, "before": before, "after": before, "updated": False}
+            return self._ok(operation, data, steps, started)
+
+        ancestor_step, _ = await self._run_git(["merge-base", "--is-ancestor", "--end-of-options", "HEAD", fetched])
+        ancestor_step.name = "merge-base"
+        steps.append(ancestor_step)
+        if ancestor_step.exit_code != 0:
+            count_step, _ = await self._run_git(
+                ["rev-list", "--left-right", "--count", "--end-of-options", f"HEAD...{fetched}"]
+            )
+            count_step.name = "rev-list"
+            steps.append(count_step)
+            ahead_behind = count_step.stdout.split()
+            return self._error(
+                operation,
+                "diverged",
+                "the local branch and the remote branch have diverged",
+                details={
+                    "local": before,
+                    "remote": fetched,
+                    "ahead": int(ahead_behind[0]) if len(ahead_behind) == 2 else None,
+                    "behind": int(ahead_behind[1]) if len(ahead_behind) == 2 else None,
+                },
+                steps=steps,
+                started=started,
+            )
+
+        merge_step, _ = await self._run_git(
+            ["-c", "merge.autoStash=false", "merge", "--ff-only", "--no-autostash", "--end-of-options", fetched]
+        )
+        merge_step.name = "merge --ff-only"
+        steps.append(merge_step)
+        if merge_step.exit_code != 0:
+            untracked = (
+                "untracked working tree files" in merge_step.stderr or "would be overwritten" in merge_step.stderr
+            )
+            return self._error(
+                operation,
+                "untracked_conflict" if untracked else "fast_forward_failed",
+                "the fast-forward did not complete; nothing was changed",
+                details={"stderr": merge_step.stderr[:1024]},
+                steps=steps,
+                started=started,
+            )
+        merge_step.state_changed = True
+        data = {"branch": safe_branch, "remote": safe_remote, "before": before, "after": fetched, "updated": True}
+        return self._ok(operation, data, steps, started)
+
+    @tool_schema(GitPushArgs)
+    async def git_push(self, remote: str = "origin", branch: Optional[str] = None) -> OperationResult:
+        """Push the current branch to the same branch name on a remote.
+
+        The push is never forced, never pushes all refs and never creates a
+        commit. A rejection is reported with the remote's reason. If the push
+        times out after transmission its outcome is genuinely unknown, so the
+        result is ``uncertain`` and a single read-only ``ls-remote`` is used
+        to resolve it — the push is never blindly retried.
+
+        The ``confirm`` argument added over MCP records that a human approved
+        this mutation; it is not authorization a model can grant itself.
+
+        Args:
+            remote: A configured remote name. Defaults to ``origin``.
+            branch: The branch to push. Defaults to the current branch, and
+                must equal it when supplied.
+
+        Returns:
+            An operation result whose ``data`` carries ``branch``, ``remote``,
+            ``local_commit``, ``remote_commit_before``, ``remote_commit_after``
+            and ``summary``.
+        """
+        started = time.perf_counter()
+        operation = "git_push"
+        try:
+            args = GitPushArgs(remote=remote, branch=branch)
+        except Exception as exc:  # pydantic ValidationError
+            return self._error(operation, "invalid_arguments", str(exc), started=started)
+
+        layout = await self._discover(operation, started)
+        if isinstance(layout, OperationResult):
+            return layout
+
+        try:
+            async with WorktreeLock(layout.lock_path, self.policy.command_timeout_seconds):
+                return await self._push_locked(operation, args, started)
+        except LockTimeoutError as exc:
+            return self._error(operation, "worktree_busy", str(exc), started=started)
+
+    async def _push_locked(self, operation: str, args: GitPushArgs, started: float) -> OperationResult:
+        """Perform the non-forced push while holding the worktree lock.
+
+        Args:
+            operation: The operation name.
+            args: The validated arguments.
+            started: A ``perf_counter()`` reading taken at operation start.
+
+        Returns:
+            The bounded operation result.
+        """
+        remotes, remote_step = await self._remote_names()
+        steps: list[StepResult] = [remote_step]
+        try:
+            safe_remote = self._validate_remote(args.remote, remotes)
+        except ValueError as exc:
+            return self._error(operation, "unknown_remote", str(exc), steps=steps, started=started)
+
+        summary, status_step = await self._status_summary()
+        steps.append(status_step)
+        if status_step.exit_code != 0:
+            return self._error(
+                operation, "status_failed", "could not read the working tree state", steps=steps, started=started
+            )
+
+        branch, error = await self._resolve_publication_branch(
+            operation, summary, safe_remote, args.branch, steps, started
+        )
+        if error is not None:
+            return error
+        try:
+            safe_branch = await self._validate_branch(branch or "")
+        except ValueError as exc:
+            return self._error(operation, "invalid_branch", str(exc), steps=steps, started=started)
+
+        local_commit = summary.get("head_commit")
+        refspec = f"refs/heads/{safe_branch}:refs/heads/{safe_branch}"
+        push_step, _ = await self._run_git(
+            ["push", "--porcelain", "--no-force-with-lease", "--end-of-options", safe_remote, refspec],
+            timeout=self.policy.network_timeout_seconds,
+        )
+        push_step.name = "push"
+        steps.append(push_step)
+
+        data: dict[str, Any] = {
+            "branch": safe_branch,
+            "remote": safe_remote,
+            "local_commit": local_commit,
+            "remote_commit_before": None,
+            "remote_commit_after": None,
+            "summary": "",
+        }
+
+        if push_step.timed_out:
+            return await self._resolve_push_timeout(
+                operation, safe_remote, safe_branch, local_commit, data, steps, started
+            )
+
+        flag, refs, message = _parse_push_porcelain(push_step.stdout)
+        data["summary"] = message
+        before, _abbreviated_after = _parse_push_range(message)
+        # Git reports abbreviated shas in the porcelain range. On a successful
+        # non-forced push of <b>:<b> the remote ref is exactly our local
+        # commit, so report that full identity rather than the abbreviation.
+        data["remote_commit_before"] = before
+        if push_step.exit_code == 0 and flag in (" ", "*", "="):
+            data["remote_commit_after"] = local_commit
+
+        if push_step.exit_code != 0 or flag == "!":
+            return self._error(
+                operation,
+                "push_rejected",
+                "the remote rejected the push",
+                details={"summary": message, "refs": refs, "stderr": push_step.stderr[:1024]},
+                steps=steps,
+                started=started,
+            )
+        if flag in ("-", "+"):
+            # A deletion or a forced update must never come out of this tool.
+            return self._error(
+                operation,
+                "unexpected_push_effect",
+                f"the push reported an unexpected effect ({flag!r})",
+                details={"summary": message},
+                steps=steps,
+                started=started,
+            )
+        push_step.state_changed = flag != "="
+        return self._ok(operation, data, steps, started)
+
+    async def _resolve_push_timeout(
+        self,
+        operation: str,
+        remote: str,
+        branch: str,
+        local_commit: Optional[str],
+        data: dict[str, Any],
+        steps: list[StepResult],
+        started: float,
+    ) -> OperationResult:
+        """Resolve a push whose outcome is unknown, without retrying it.
+
+        A timeout after transmission may or may not have updated the remote.
+        Exactly one read-only ``ls-remote`` is used to find out; anything
+        else leaves the result ``uncertain``.
+
+        Args:
+            operation: The operation name.
+            remote: The validated remote name.
+            branch: The validated branch name.
+            local_commit: The local HEAD commit.
+            data: The partially built result payload.
+            steps: Steps recorded so far.
+            started: A ``perf_counter()`` reading taken at operation start.
+
+        Returns:
+            An ``ok`` result when the remote demonstrably matches the local
+            commit, otherwise an ``uncertain`` one.
+        """
+        probe_step, _ = await self._run_git(
+            ["ls-remote", "--heads", "--end-of-options", remote, f"refs/heads/{branch}"],
+            timeout=self.policy.network_timeout_seconds,
+        )
+        probe_step.name = "ls-remote"
+        steps.append(probe_step)
+        remote_sha = probe_step.stdout.split("\t")[0].strip() if probe_step.exit_code == 0 else ""
+
+        if remote_sha and local_commit and remote_sha == local_commit:
+            data["remote_commit_after"] = remote_sha
+            data["summary"] = "resolved after timeout"
+            data["resolved_after_timeout"] = True
+            return self._ok(operation, data, steps, started)
+
+        result = self._error(
+            operation,
+            "push_timeout",
+            "the push timed out; the remote state could not be confirmed",
+            details={"remote_commit": remote_sha or None, "local_commit": local_commit},
+            steps=steps,
+            started=started,
+            status="uncertain",
+        )
+        data["remote_commit_after"] = remote_sha or None
+        data["resolved_after_timeout"] = False
+        result.data = data
+        return result
+
 
 # --------------------------------------------------------------------------- #
 # Output parsing helpers (module level so _generate_tools never sees them)
@@ -795,3 +1667,42 @@ def _parse_status_v2(raw: bytes) -> dict[str, Any]:
             "unmerged": unmerged[:50],
         },
     }
+
+
+def _parse_push_porcelain(stdout: str) -> tuple[str, str, str]:
+    """Parse ``git push --porcelain`` output into flag, refs and summary.
+
+    Args:
+        stdout: The raw porcelain stdout.
+
+    Returns:
+        A ``(flag, refs, summary)`` tuple; empty strings when no ref line was
+        emitted.
+    """
+    for line in stdout.splitlines():
+        if not line or line.startswith("To ") or line.startswith("Done"):
+            continue
+        parts = line.split("\t")
+        if len(parts) < 2:
+            continue
+        flag = parts[0][:1] or " "
+        refs = parts[1]
+        summary = parts[2] if len(parts) > 2 else ""
+        return flag, refs, summary
+    return "", "", ""
+
+
+def _parse_push_range(summary: str) -> tuple[Optional[str], Optional[str]]:
+    """Extract ``<old>..<new>`` commit identities from a push summary.
+
+    Args:
+        summary: The porcelain summary field.
+
+    Returns:
+        An ``(old, new)`` tuple; ``(None, None)`` when the summary is not a
+        commit range (e.g. ``[new branch]`` or ``[rejected]``).
+    """
+    match = re.match(r"^([0-9a-f]{7,40})\.\.([0-9a-f]{7,40})$", summary.strip())
+    if match is None:
+        return None, None
+    return match.group(1), match.group(2)
