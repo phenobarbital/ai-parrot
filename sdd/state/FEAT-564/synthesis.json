@@ -3,7 +3,7 @@
   "feat_id": "FEAT-564",
   "mode": "enrichment",
   "summary_oneline": "Make /sdd-spec and /sdd-task emit executor-ready reference code with explanations, and add a Codex-backed collaborative design-research pass over the accepted exploration doc before the spec is written",
-  "overall_confidence": "medium",
+  "overall_confidence": "high",
   "localization": [
     {
       "path": ".claude/commands/sdd-spec.md",
@@ -184,12 +184,12 @@
       "confidence": "high"
     },
     {
-      "statement": "The requested Codex model name ('gpt 5.6-luna') was not verified against the installed CLI; the operator's config currently defaults to gpt-6-astra with high reasoning, and the dev-loop defaults to gpt-5.5.",
+      "statement": "The requested Codex model `gpt-5.6-luna` is accepted by codex-cli 0.153.4 (probe exit 0); it becomes the verified default of SDD_DESIGN_RESEARCH_MODEL.",
       "evidence": [
-        "F009",
-        "F007"
+        "F017",
+        "F009"
       ],
-      "confidence": "medium"
+      "confidence": "high"
     }
   ],
   "recent_history": [
@@ -512,9 +512,11 @@
     {
       "id": "C12",
       "claim": "The requested model name 'gpt 5.6-luna' is valid for the installed codex CLI.",
-      "evidence": [],
-      "confidence": "low",
-      "reasoning": "not verified; operator config uses gpt-6-astra, dev-loop default gpt-5.5"
+      "evidence": [
+        "F017"
+      ],
+      "confidence": "high",
+      "reasoning": "one-shot codex exec -m gpt-5.6-luna probe returned OK"
     },
     {
       "id": "C13",
@@ -523,8 +525,8 @@
         "F001",
         "F008"
       ],
-      "confidence": "medium",
-      "reasoning": "inferred from the phase order and the neutral-brief rule; alternative placements exist (U2)"
+      "confidence": "high",
+      "reasoning": "user confirmed triage-table design (U2)"
     },
     {
       "id": "C14",
@@ -549,7 +551,7 @@
         "b) reuse DEV_LOOP_ADVERSARIAL_MODEL (gpt-5.5 today)",
         "c) no -m flag: inherit the operator's ~/.codex/config.toml (gpt-6-astra/high today)"
       ],
-      "user_answer": null
+      "user_answer": "gpt-5.6-luna, confirmed against the installed CLI (F017); config key SDD_DESIGN_RESEARCH_MODEL, invoked with -m and -c model_reasoning_effort=high."
     },
     {
       "id": "U2",
@@ -562,7 +564,7 @@
         "b) silent merge, transcript only in state",
         "c) append Codex output verbatim as an appendix, no triage"
       ],
-      "user_answer": null
+      "user_answer": "As recommended: explicit CONFIRM/REJECT/ESCALATE table in spec §9; CONFIRMed items folded into §2/§3/§7; transcript under sdd/state/<FEAT-ID>/design_research/."
     },
     {
       "id": "U3",
@@ -588,12 +590,12 @@
         "b) mandatory in interactive runs, optional under sdd-planner",
         "c) always mandatory"
       ],
-      "user_answer": null
+      "user_answer": "Optional pass: skip with a recorded note when codex is absent/fails/times out."
     }
   ],
   "recommended_next_command": {
     "command": "sdd-spec",
-    "rationale": "Localization is high-confidence (two commands, two templates, two twins, one policy section) and the reusable pattern is fully documented in-repo; the four unknowns are product choices with recommended defaults, answerable at spec time — no architectural fork warrants a brainstorm."
+    "rationale": "Localization high-confidence and all four product choices (U1-U4) resolved by the user; model verified against the installed CLI."
   },
   "budget_status": {
     "truncated": false,

@@ -4,25 +4,25 @@ title: Collaborative adversarial spec design — executor-ready reference code i
 slug: collaborative-adversarial-spec-design
 type: feature
 mode: enrichment
-status: discussion
+status: review
 source:
   kind: inline
   jira_key: null
   jira_url: null
   fetched_at: 2026-09-10
   summary_oneline: Make /sdd-spec emit executor-ready code+explanations and add a Codex collaborative design-research pass before spec creation
-overall_confidence: medium
+overall_confidence: high
 base_branch: dev
 research_state: sdd/state/FEAT-564/
 created: 2026-09-10
 updated: 2026-09-10
-revision: 2  # 2026-09-10 — U3 resolved by user; change #1 re-centred on /sdd-task
+revision: 3  # 2026-09-10 — U1/U2/U4 resolved by user; model verified (F017); all unknowns closed
 ---
 
 # FEAT-564 — Collaborative adversarial spec design
 
 > **Mode**: enrichment
-> **Confidence**: medium
+> **Confidence**: high
 > **Source**: `inline`
 > **Audit**: [`sdd/state/FEAT-564/`](../state/FEAT-564/)
 > **ID note**: FEAT-564 is PROVISIONAL (`max(existing)+1`, the /sdd-proposal convention). `/sdd-spec` will reserve the authoritative number via `reserve_ids.py` (ledger `next_feature_id` is 542 today); this document's id is then rewritten.
@@ -151,7 +151,7 @@ codex exec --sandbox read-only -m "$SDD_DESIGN_RESEARCH_MODEL" \
 - **Task bloat and code drift** — blueprints go stale before implementation. *Mitigation*: blueprints are written at task time (the last step before the worktree exists), carry verified-at anchors, leave judgement calls as `FILL IN`, and sdd-worker's contract re-verification still runs. *Evidence*: F005, F013
 - **Unattended planner blocks on Codex** (absent binary, auth, timeout, bad model). *Mitigation*: `command -v codex` detection, 10-minute cap, on any failure write "no external design research" into §9 and continue — the review policy's fallback. *Evidence*: F012, F006
 - **Codex hallucinates paths/symbols** that leak into the Codebase Contract. *Mitigation*: every CONFIRMed suggestion is re-verified by read/grep before entering §2/§6; otherwise REJECT with reason. *Evidence*: F006, F008
-- **Requested model "gpt 5.6-luna" may not exist** for codex-cli 0.153.4. *Mitigation*: model is a config value with a verified default; one-shot validation at spec time, fallback to the operator's config model. *Evidence*: F009, F010
+- **Model drift** — `gpt-5.6-luna` is verified today (F017) but CLI/model catalogs change. *Mitigation*: the model is a config value (`SDD_DESIGN_RESEARCH_MODEL`, default `gpt-5.6-luna`) with the same one-shot probe at spec time; on failure the pass is skipped with a note (U4). *Evidence*: F009, F010, F017
 - **Twin drift** between `.claude/commands` and `.agent/workflows`. *Mitigation*: edit both in the same task; consider a command parity check like `test_subagent_parity.py`. *Evidence*: F011
 - **Ratification instead of research** if the brief carries Claude's design. *Mitigation*: brief built from the accepted exploration doc only; the pass runs *before* §4/§5 drafting. *Evidence*: F008
 
@@ -172,11 +172,11 @@ codex exec --sandbox read-only -m "$SDD_DESIGN_RESEARCH_MODEL" \
 | C9 | `artifacts/` is gitignored; `sdd/state/<FEAT-ID>/` is the tracked location | F015 | high | `.gitignore:283` |
 | C10 | Command edits must be mirrored into `.agent/workflows` twins | F011 | high | 6-line diff; commit `41187b8e6` |
 | C11 | `sdd-worker` consumes richer task files without change | F013 | high | execution loop |
-| C12 | "gpt 5.6-luna" is a valid model for the installed CLI | — | low | not verified; operator uses `gpt-6-astra`, dev-loop default `gpt-5.5` |
-| C13 | Placing the Codex pass between §2c and §4 prevents ratification and feeds both design and contract | F001, F008 | medium | inferred from phase order (see U2) |
+| C12 | `gpt-5.6-luna` is a valid model for the installed CLI | F017 | high | one-shot `codex exec -m gpt-5.6-luna` probe returned OK (exit 0) |
+| C13 | Placing the Codex pass between §2c and §4, with an explicit triage table, prevents ratification and feeds both design and contract | F001, F008 | high | user confirmed the triage-table design 2026-09-10 (U2 resolved) |
 | C14 | Interface skeletons in the spec + near-verbatim per-task blueprints (not full implementations) is the right granularity | F005, F013 | high | confirmed by the user 2026-09-10 (U3 resolved) |
 
-Distribution: **12** high, **1** medium, **1** low. Overall **medium**: localization is high, but U1/U2/U4 remain product choices and the model name is unverified.
+Distribution: **14** high, **0** medium, **0** low. Overall **high**: localization is high-confidence and all four product choices are resolved; the model name is verified against the installed CLI.
 
 ---
 
@@ -187,23 +187,23 @@ Distribution: **12** high, **1** medium, **1** low. Overall **medium**: localiza
 - [x] **U3 — How much code is "usable code + explanations"?** — *Resolved by user (2026-09-10)*: not the full implementation; the centre of gravity is `/sdd-task`. Each TASK file gets an Implementation Blueprint with enough declared code and insight that a non-thinking model (Haiku) can take the idea and the code from the file and write it to disk, filling only marked gaps. The spec keeps interface-level skeletons.
   *Resolves claims*: C14
 
-### Unresolved (resolve before `/sdd-spec`)
+- [x] **U1 — Which Codex model/reasoning for the design-research seat, and where is it configured?** — *Resolved by user (2026-09-10)*: `gpt-5.6-luna`, confirmed against the installed CLI (probe in F017). Configured as `SDD_DESIGN_RESEARCH_MODEL` (default `gpt-5.6-luna`) and invoked with `-m` plus `-c model_reasoning_effort=high`, never relying on the operator's `~/.codex/config.toml`.
+  *Resolves claims*: C12
+- [x] **U2 — How do Codex's suggestions enter the spec?** — *Resolved by user (2026-09-10)*: as recommended — an explicit CONFIRM / REJECT / ESCALATE table in spec §9, CONFIRMed items folded into §2/§3/§7, raw transcript under `sdd/state/<FEAT-ID>/design_research/`.
+  *Resolves claims*: C13
+- [x] **U4 — Is the Codex pass mandatory or optional?** — *Resolved by user (2026-09-10)*: optional pass. When `codex` is absent, the probe fails, or the call times out, `/sdd-spec` records "no external design research" in §9 and continues — required for the unattended `sdd-planner` path.
+  *Resolves claims*: C8
 
-- [ ] **U1 — Which Codex model/reasoning for the design-research seat, and where is it configured?** — *Owner*: jlara
-  *Blocks*: C12
-  *Plausible answers*: a) new key `SDD_DESIGN_RESEARCH_MODEL` with a verified default + `-c model_reasoning_effort=high` **(recommended)** · b) reuse `DEV_LOOP_ADVERSARIAL_MODEL` (`gpt-5.5` today) · c) no `-m`: inherit `~/.codex/config.toml` (`gpt-6-astra`/high today)
-- [ ] **U2 — How do Codex's suggestions enter the spec?** — *Owner*: jlara
-  *Blocks*: C13
-  *Plausible answers*: a) explicit §9 triage table, CONFIRMed items folded into §2/§3/§7, raw transcript under `sdd/state/<FEAT-ID>/design_research/` **(recommended — mirrors code review)** · b) silent merge, transcript only in state · c) verbatim appendix, no triage
-- [ ] **U4 — Is the Codex pass mandatory or optional?** — *Owner*: jlara
-  *Blocks*: C8
-  *Plausible answers*: a) optional, non-blocking, "no external design research" note in §9 **(recommended — required by the unattended planner)** · b) mandatory interactively, optional under `sdd-planner` · c) always mandatory
+### Unresolved (defer to spec / implementation)
+
+*(none)*
+
 
 ---
 
 ## 6. Recommended Next Step
 
-**`/sdd-spec collaborative-adversarial-spec-design`** — *Rationale*: localization is high-confidence (two commands, two templates, two twins, one policy section), the reusable pattern is fully documented in-repo, and the four unknowns are product choices with recommended defaults that can be confirmed at spec time. No architectural fork warrants a brainstorm.
+**`/sdd-spec collaborative-adversarial-spec-design`** — *Rationale*: localization is high-confidence (two commands, two templates, two twins, one policy section), the reusable pattern is fully documented in-repo, and all four product choices (U1–U4) are resolved. No architectural fork warrants a brainstorm.
 
 Suggested task shape for `/sdd-task` (single worktree, sequential): (1) `task.md` template — Implementation Blueprint section; (2) `/sdd-task` command edits (guardrail, §3/§4 blueprint rules) + twin; (3) `spec.md` template — Interface Skeleton sub-block + §9; (4) `/sdd-spec` command edits (guardrail, §3b Codex phase) + design-research prompt/schema templates + twin; (5) `CLAUDE.md` policy + a dry run of the Codex pass on this very proposal as the acceptance test.
 
@@ -223,7 +223,7 @@ Suggested task shape for `/sdd-task` (single worktree, sequential): (1) `task.md
 | State checkpoints | `sdd/state/FEAT-564/state.json` |
 | Source (raw) | `sdd/state/FEAT-564/source.md` |
 | Research plan | `sdd/state/FEAT-564/research_plan.json` |
-| Findings (digests) | `sdd/state/FEAT-564/findings/F001-*.md` … `F016-*.md` |
+| Findings (digests) | `sdd/state/FEAT-564/findings/F001-*.md` … `F017-*.md` |
 | Synthesis (JSON) | `sdd/state/FEAT-564/synthesis.json` |
 
 **Budget consumed** (profile `default`):
