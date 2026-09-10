@@ -166,10 +166,13 @@ PROBE_TEXT="$(echo 'garbage' | tr -d '[:space:]')"; [ "$PROBE_TEXT" = "OK" ] && 
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-10
+**Notes**: Implemented exactly per blueprint. §3b.1 now has a second
+`if [ -z "$SKIP_REASON" ]; then ... fi` block right after the probe
+invocation's own `fi`; it trims `probe.txt` and compares to the literal
+`OK`, setting `SKIP_REASON="model probe returned unexpected output for
+$MODEL"` on mismatch without ever clobbering a genuine probe-invocation
+failure (guarded by the same `-z "$SKIP_REASON"` check). Twin regenerated;
+`diff | grep -c '^[<>]'` → `6`.
+**Deviations from spec**: none
