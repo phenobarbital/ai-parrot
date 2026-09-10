@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-543 — Claude Code and Codex Tool Optimizations
 **Spec**: `sdd/specs/tool-optimizations.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -258,8 +258,67 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+**Completed by**: sdd-worker (Claude Opus 5, session_01G9NM1TzdkFLd5foNDmh72K)
+**Date**: 2026-09-10
 **Notes**:
 
-**Deviations from spec**: none | describe if any
+Added `ToolkitSection.llm_kwargs` with its `model_validator`, changed the
+one factory call to `LLMFactory.create(section.llm, **section.llm_kwargs)`,
+created `examples/tool-optimizations-mcp.yaml`, documented the field in
+`docs/mcp-local-toolkits.md`, and added 8 tests (33 passing across the two
+toolkit test modules).
+
+The production diff is deliberately tiny — 4 lines in `toolkit_server.py`
+and a field plus validator in `toolkit_config.py` — because backward
+compatibility is the requirement: a section without `llm_kwargs` produces
+an identical call, asserted by
+`test_old_config_without_llm_kwargs_is_unchanged` (`seen["kwargs"] == {}`).
+
+Tests worth noting:
+
+- `test_llm_kwargs_passed_to_factory` asserts the captured kwargs are
+  exactly `{"fallback_model": None, "max_retries": 1, "read_timeout": 120}`
+  **and** that `fallback_model` is present as a key. An explicit `None` is
+  not the same as an absent key here: `BedrockConverseBase.__init__` uses
+  `kwargs.setdefault("fallback_model", self._fallback_model)`, so only an
+  explicitly-passed `None` prevents the class default `claude-haiku-4-5`.
+- `test_deterministic_toolkit_never_imports_the_client_factory` makes
+  `importlib.import_module("parrot.clients.factory")` *raise*, so a
+  regression that eagerly imports the factory for a model-free toolkit
+  fails loudly. This is what keeps the Git and reader servers free of
+  provider/AWS dependencies.
+- `test_example_tool_optimizations_config_loads` loads the shipped example
+  and pins `fallback_model is None` plus the `expected_model_ids` entry, so
+  the documented configuration cannot silently rot.
+
+**Environment note for later tasks (important).** The venv's editable
+installs point at the MAIN repo checkout, so core `parrot` changes made in
+this worktree are invisible to pytest unless
+`PYTHONPATH=$PWD/packages/ai-parrot/src` is set. Doing that initially broke
+imports with `ModuleNotFoundError: parrot.utils.types` — that module is a
+compiled Cython extension whose `.so` is a gitignored build artifact
+present only in the main checkout. Fixed by symlinking the two compiled
+extensions into the worktree:
+
+    packages/ai-parrot/src/parrot/utils/types.cpython-312-*.so
+    packages/ai-parrot/src/parrot/utils/parsers/toml.cpython-312-*.so
+
+Both are covered by `.gitignore:7` (`*.so`), so they never enter the repo.
+`parrot/__init__.py` uses `pkgutil.extend_path`, so the satellite packages
+(e.g. `parrot.clients.amazon`) still resolve from the main checkout while
+core modules resolve from the worktree — verified explicitly.
+
+**Pre-existing failures, not caused by this change.** `pytest tests/mcp`
+reports 10 failures and 1 error on this branch; running the same suite on
+`dev` reports the *same* 10 failures and 1 error (netsuite, oauth,
+chrome-manager). This branch adds 8 passing tests (184 -> 192 passed).
+Likewise, `ruff check packages/ai-parrot/src/parrot/mcp` reports 2
+pre-existing implicit-string-concat errors at `toolkit_server.py:86` and 3
+in `integration.py`; `git show dev:...` confirms line 86 is unchanged by
+this task. They were left alone rather than opportunistically fixed.
+`black --check` is clean on both files this task modified.
+
+**Testing**: 33 tests in the two toolkit modules; log at
+`artifacts/logs/TASK-3087-pytest.log`.
+
+**Deviations from spec**: none.
