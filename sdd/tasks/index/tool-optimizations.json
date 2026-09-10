@@ -78,7 +78,7 @@
       "feature_id": "FEAT-543",
       "feature": "tool-optimizations",
       "spec": "sdd/specs/tool-optimizations.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "estimated_hours": 6,
@@ -90,8 +90,8 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": "2026-09-10T01:47:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3082-bounded-source-reader.md"
+      "completed_at": "2026-09-10T02:30:04+00:00",
+      "file": "sdd/tasks/completed/TASK-3082-bounded-source-reader.md"
     },
     {
       "id": "TASK-3083",
