@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-543 — Claude Code and Codex Tool Optimizations
 **Spec**: `sdd/specs/tool-optimizations.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-3079
@@ -322,8 +322,58 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+**Completed by**: sdd-worker (Claude Opus 5, session_01G9NM1TzdkFLd5foNDmh72K)
+**Date**: 2026-09-10
 **Notes**:
 
-**Deviations from spec**: none | describe if any
+Created `patches.py`: diff grammar, pure-Python in-memory applier,
+`ArtifactStore` and the `ApplyJournal`/`JournalEntry` models TASK-3086
+will drive. 31 tests in `test_patches.py`, 180 across the feature suite,
+all passing on the first run.
+
+Every rejection code in the task's Scope list has its own test, plus three
+that are worth calling out because they are the ones that protect the
+"no guessing" property:
+
+- **`test_no_fuzz_offset_search`** applies a *correct* patch to a source
+  with one extra line prepended. A fuzzy applier would relocate the hunk
+  and silently succeed; this one raises `context_mismatch`. That is the
+  whole point of applying in Python rather than shelling out to a patch
+  tool with a default fuzz factor.
+- **`test_modify_of_missing_file_is_a_mismatch`** proves a modify whose
+  target vanished is refused rather than quietly promoted to a create.
+- **`test_crash_between_write_and_publish_leaves_no_artifact`**
+  monkeypatches `os.rename` to fail and then asserts `load()` reports
+  `artifact_not_found` — the temp-dir-then-rename publish means a crash can
+  never leave a half-written artifact that a later apply would trust.
+
+Implementation notes:
+
+- **Unsupported diff features are detected in a pre-scan**, before header
+  parsing. This matters because a rename or binary patch often has *no*
+  `---`/`+++` headers at all; parsing first would report the misleading
+  `not_a_patch` instead of `rename_rejected` / `binary_rejected`.
+- `new file mode` is allowed only for `100644`/`100755`; anything else
+  (e.g. `120000`, a symlink) is `mode_change_rejected`. `old mode`/
+  `new mode` are always rejected — the checks are `startswith` on the exact
+  prefixes so `new file mode` is not caught by the `new mode` rule.
+- Added lines adopt the file's own newline convention: `_newline_for()`
+  returns CRLF only when *every* terminated source line is CRLF, so a
+  CRLF file stays CRLF and a mixed file is not "corrected".
+- `normalize_patch` strips leading *and* trailing blank lines so it is
+  genuinely idempotent — `reviewed_sha256` in TASK-3086 is a hash of this
+  text, so any drift here would break review gating.
+- The store hash-checks **both** `patch.diff` and `packet.json` on load,
+  refuses any `artifact_id` outside `^[0-9a-f]{32}$`, and refuses a
+  symlinked artifact directory.
+
+**Testing**: 180 tests pass; ruff and black clean. Log at
+`artifacts/logs/TASK-3084-pytest.log`.
+
+**Deviations from spec**: none. Two small additions the task implied but
+did not name: an `invalid_artifact_id` code (the store must reject a
+malformed id, and returning `artifact_not_found` for `../escape` would
+have been misleading) and an `artifact_not_found` code for a missing
+artifact directory. `ArtifactStore.directory_mode()` was added as a small
+read-only helper so TASK-3086 and the tests can assert permissions without
+reaching into private paths.
