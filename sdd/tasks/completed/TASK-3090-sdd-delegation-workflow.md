@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-543 — Claude Code and Codex Tool Optimizations
 **Spec**: `sdd/specs/tool-optimizations.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-3083, TASK-3086
@@ -285,8 +285,57 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+**Completed by**: sdd-worker (Claude Opus 5, session_01G9NM1TzdkFLd5foNDmh72K)
+**Date**: 2026-09-10
 **Notes**:
 
-**Deviations from spec**: none | describe if any
+Edited nine workflow documents (2 templates, 3 Claude commands, 3 Codex
+skills, the sdd-worker agent) and added `test_sdd_contracts.py`. No Python
+source changed. 21 tests in the new module, 314 across the feature suite.
+All nine edits are pure insertions — 234 added lines, 0 deletions — so the
+existing FEAT-466/FEAT-387 content is untouched.
+
+The tests are the interesting part, because documentation rots silently:
+
+- **`test_template_packet_is_rejected_while_placeholders_remain`** feeds the
+  template's own example packet through the real `parse_task_file` /
+  `extract_packet`, and asserts it is rejected as `invalid_packet` while the
+  `<sha256 …>` placeholders are present. The safety net is *executed*, not
+  merely described.
+- **`test_template_packet_validates_once_hashes_are_real`** then builds a
+  matching fixture repo, substitutes real digests, and runs the full
+  `validate_contract` — proving the shipped example is genuinely
+  copy-pasteable and not subtly malformed.
+- **`test_review_happens_before_apply`** asserts the *index positions* of
+  `writer_generate` < `source_read` < `writer_apply` in the Claude command,
+  the Codex skill and the worker agent. A future edit that documents apply
+  before review fails the suite.
+- **Parity is by meaning, not prose**: each command/skill pair is checked
+  for shared key phrases appropriate to its stage, so the terser Codex
+  skills can stay terse without drifting in substance.
+- `test_legacy_task_without_a_contract_is_simply_ineligible` runs
+  `validate_contract` against a section-less TASK file and asserts
+  `no_delegation_section` — the legacy route is proven to be the default.
+- Two parametrized tests pin the two non-negotiable sentences in all three
+  execution documents: SDD files are *never edited by the writer*, and the
+  workflow *never silently invokes another coder*.
+
+**A placement bug I caught and fixed.** My first insertion pass used a
+generic `"\n## "` anchor for `sdd-task.md` and `sdd-spec.md`, which matched
+the *first* heading in each file and dropped both new subsections directly
+under the one-line description, before Usage/Guardrails/Steps. The tests
+still passed (they check content and ordering, not position), so this would
+have shipped as quietly misplaced documentation. Both blocks were relocated
+to their intended homes — after the Codebase Contract research step in
+`sdd-spec.md` and after the per-task Codebase Contract step in
+`sdd-task.md` — and the placement was verified by eye afterwards.
+
+**Note on committing `sdd/templates/`**: `.gitignore` has a global
+`templates/` rule, so `git add sdd/templates/*.md` is refused even though
+the files are tracked. `git add -f` is required, exactly as CLAUDE.md's
+heads-up describes. No new files were added under `sdd/templates/`.
+
+**Testing**: 314 tests pass; ruff and black clean on the new test module.
+Log at `artifacts/logs/TASK-3090-pytest.log`.
+
+**Deviations from spec**: none.

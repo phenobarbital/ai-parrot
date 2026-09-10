@@ -255,7 +255,7 @@
       "feature_id": "FEAT-543",
       "feature": "tool-optimizations",
       "spec": "sdd/specs/tool-optimizations.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "estimated_hours": 5,
@@ -268,8 +268,8 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": "2026-09-10T01:47:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3090-sdd-delegation-workflow.md"
+      "completed_at": "2026-09-10T03:15:09+00:00",
+      "file": "sdd/tasks/completed/TASK-3090-sdd-delegation-workflow.md"
     },
     {
       "id": "TASK-3091",
