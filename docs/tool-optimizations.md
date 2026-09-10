@@ -300,6 +300,20 @@ executing the real acceptance test. Cost is `unknown` until
 `benchmarks/tool_optimizations/prices.yaml` is filled in with sourced
 prices. See `benchmarks/tool_optimizations/README.md`.
 
+The optimized arm is charged `tool_schema_overhead` — the tokens the MCP tool
+definitions occupy in the primary model's context, measured from the real
+`tools/list` output. It is charged to the primary model, once per run (a floor:
+schemas are re-sent every turn), and the baseline arm is charged zero because
+the host's built-in tools cancel across arms. It is material:
+`LocalGitToolkit` alone is roughly 1,880 tokens.
+
+**Deriving a savings figure.** Compute it over `total_tokens`, never over
+`primary_tokens` — delegation moves work, and moved work is not saved work.
+Note also that the harness's primary-side counts are `estimate:chars_div_4`,
+not provider measurements; for a defensible published number, A/B the same
+task in a real host session with and without these servers configured and use
+the host's own reported usage.
+
 ## Limitations and security notes
 
 - Multi-file application is not globally atomic; see [Recovery](#recovery).

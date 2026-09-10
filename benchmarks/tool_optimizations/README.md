@@ -50,6 +50,27 @@ figures are informational.
   targets are an owner decision (spec §8). The harness reports what it
   measured.
 
+## Tool-schema overhead
+
+The optimized arm is charged `tool_schema_overhead`: the tokens the MCP tool
+definitions themselves occupy in the primary model's context. It is measured
+from the **real** definitions a host receives (`MCPToolAdapter.to_mcp_tool_definition()`,
+the same JSON `tools/list` emits) — not estimated from source.
+
+Three things to understand about that figure:
+
+- It is charged to the **primary** model, because that is whose context holds it.
+- It is charged **once per run**, which is a *floor*. Schemas are re-sent every
+  turn, so a multi-turn task pays it repeatedly. Treat the number as a lower bound.
+- The **baseline arm is charged zero**. The host's own built-in tools exist in
+  both arms and cancel; what is measured is the *marginal* cost of adding
+  these servers.
+
+It is not small. `LocalGitToolkit`'s six tools alone serialize to roughly
+1,880 tokens — larger than the entire payload of the `git_prepare` scenario.
+Omitting it (as an earlier version of this harness did) silently flatters
+every optimized column.
+
 ## Reading the results honestly
 
 Fewer primary tokens is not fewer total tokens. Planning, review and repair
@@ -63,3 +84,12 @@ repository — where `git status` output is long and a failed step has to be
 diagnosed from raw text — that comparison changes. Draw conclusions from
 `--live` runs on representative repositories, not from the offline smoke
 run.
+
+Once schema overhead is counted, the offline fixtures show only
+`targeted_read` as a clear win (~5,940 -> ~1,690 primary tokens). Both
+`git_prepare` and a single small `decided_task` come out *net negative*: the
+servers cost more to have loaded than one small operation saves. That is a
+real result, not a bug — those two tools are bought for determinism, refusal
+on conflicting staging, and reviewable patches, and they amortize only across
+many operations in one session. Measure your own task mix before claiming
+otherwise.

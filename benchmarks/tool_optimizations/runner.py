@@ -117,6 +117,67 @@ class Summary(BaseModel):
 # --------------------------------------------------------------------------- #
 # Scenario execution
 # --------------------------------------------------------------------------- #
+
+#: Which toolkits a host must load to run each scenario's optimized path.
+#: `decided_task` includes the reader because the workflow reviews the patch
+#: through `source_read` before applying it.
+_SCENARIO_TOOLKITS: dict[str, tuple[str, ...]] = {
+    "git_fetch_preflight_prepare": ("git.LocalGitToolkit",),
+    "targeted_read_large_file": ("reader.BoundedSourceToolkit",),
+    "decided_create_modify_task": ("writer.TargetedWriterToolkit", "reader.BoundedSourceToolkit"),
+}
+
+
+def _schema_overhead(kind: str, repo_root: Path) -> UsageRecord:
+    """Measure the tool-schema tokens the optimized path adds to every turn.
+
+    This is the cost of the MCP tool definitions themselves sitting in the
+    primary model's context. It is measured from the *real* definitions a
+    host receives — `MCPToolAdapter.to_mcp_tool_definition()`, the same JSON
+    the server emits from `tools/list` — not estimated from the source.
+
+    Two accounting decisions, both deliberately conservative *against* the
+    optimized side being flattered:
+
+    * It is charged to the **primary** model, because that is whose context
+      window holds it.
+    * It is charged **once per run**, which is a floor. In reality the
+      schemas are re-sent every turn, so a multi-turn task pays this
+      repeatedly. Treat the reported figure as a lower bound.
+
+    The baseline arm is charged zero: the host's own built-in tools are
+    present in both arms and therefore cancel. What is measured here is the
+    *marginal* overhead of adding these servers.
+
+    Args:
+        kind: The scenario kind.
+        repo_root: A repository root to construct the toolkits against.
+
+    Returns:
+        A usage record for the ``tool_schema_overhead`` stage.
+    """
+    from parrot.mcp.adapter import MCPToolAdapter
+
+    from parrot_tools.tool_optimizations import git as git_module
+    from parrot_tools.tool_optimizations import reader as reader_module
+    from parrot_tools.tool_optimizations import writer as writer_module
+
+    modules = {"git": git_module, "reader": reader_module, "writer": writer_module}
+    definitions: list[dict[str, Any]] = []
+    for dotted in _SCENARIO_TOOLKITS.get(kind, ()):
+        module_name, class_name = dotted.split(".")
+        toolkit_cls = getattr(modules[module_name], class_name)
+        toolkit = toolkit_cls(repo_root=repo_root)
+        definitions.extend(MCPToolAdapter(tool).to_mcp_tool_definition() for tool in toolkit.get_tools())
+
+    blob = json.dumps(definitions, ensure_ascii=False, separators=(",", ":"))
+    return UsageRecord(
+        stage="tool_schema_overhead",
+        tokens=estimate_tokens(blob),
+        source="estimate:chars_div_4 over real MCP tool definitions",
+    )
+
+
 async def _run_git_scenario(mode: str, workdir: Path) -> tuple[list[UsageRecord], Optional[bool], int]:
     """Execute the Git scenario in one mode."""
     from parrot_tools.tool_optimizations.git import LocalGitToolkit
@@ -139,6 +200,7 @@ async def _run_git_scenario(mode: str, workdir: Path) -> tuple[list[UsageRecord]
         records.append(UsageRecord(stage="primary_input", tokens=estimate_tokens(output), source=ESTIMATE_METHOD))
         return records, None, 0
 
+    records.append(_schema_overhead("git_fetch_preflight_prepare", repo))
     toolkit = LocalGitToolkit(repo_root=repo)
     payload = ""
     for result in (
@@ -164,6 +226,7 @@ async def _run_read_scenario(mode: str, workdir: Path) -> tuple[list[UsageRecord
         records.append(UsageRecord(stage="primary_input", tokens=estimate_tokens(text), source=ESTIMATE_METHOD))
         return records, None, 0
 
+    records.append(_schema_overhead("targeted_read_large_file", repo))
     toolkit = BoundedSourceToolkit(repo_root=repo)
     info = await toolkit.source_info("big_module.py")
     chunk = await toolkit.source_read("big_module.py", 1, 350)
@@ -210,6 +273,7 @@ async def _run_task_scenario(mode: str, workdir: Path, client_factory) -> tuple[
         passed = _run_acceptance(repo)
         return records, passed, 0
 
+    records.append(_schema_overhead("decided_create_modify_task", repo))
     client = client_factory()
     writer = TargetedWriterToolkit(repo_root=repo, llm_client=client)
     generated = await writer.writer_generate(task_path)
@@ -389,6 +453,11 @@ def summarize(reports: list[RunReport], *, live: bool = False, prices: Optional[
         "— it never means zero.",
         "Cost is `unknown` until benchmarks/tool_optimizations/prices.yaml is filled in with sourced prices.",
         "Primary and total tokens are reported separately: fewer primary tokens is NOT fewer total tokens.",
+        "tool_schema_overhead is the MARGINAL cost of adding these MCP servers, measured from the real "
+        "tool definitions a host receives. It is charged to the primary model (whose context holds it) and "
+        "ONCE PER RUN — schemas are re-sent every turn, so this is a lower bound on a multi-turn task.",
+        "The baseline arm is charged no schema overhead: the host's own built-in tools exist in both arms "
+        "and cancel out.",
         "No savings percentage is claimed. Numeric targets are an owner decision (spec section 8).",
     ]
     if not live:

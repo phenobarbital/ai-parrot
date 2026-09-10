@@ -174,3 +174,97 @@ def test_docs_state_the_codex_release_blocker():
     doc = DOC.read_text()
     assert "Codex guard installation verified end to end" in doc
     assert "eventName" in doc
+
+
+# --------------------------------------------------------------------------- #
+# Tool-schema overhead
+# --------------------------------------------------------------------------- #
+def test_schema_overhead_is_measured_from_real_mcp_definitions(tmp_path):
+    """The overhead must come from the definitions a host actually receives.
+
+    Estimating it from source text, or omitting it, silently flatters the
+    optimized arm: the schemas sit in the primary model's context on every
+    turn and exist only because these servers were added.
+    """
+    import json as _json
+
+    from parrot.mcp.adapter import MCPToolAdapter
+    from parrot_tools.tool_optimizations.git import LocalGitToolkit
+
+    from benchmarks.tool_optimizations.runner import _schema_overhead
+
+    record = _schema_overhead("git_fetch_preflight_prepare", tmp_path)
+    assert record.stage == "tool_schema_overhead"
+    assert "real MCP tool definitions" in record.source
+    assert record.tokens is not None and record.tokens > 0
+
+    # It matches the definitions the MCP server would emit from tools/list.
+    definitions = [
+        MCPToolAdapter(tool).to_mcp_tool_definition() for tool in LocalGitToolkit(repo_root=tmp_path).get_tools()
+    ]
+    blob = _json.dumps(definitions, ensure_ascii=False, separators=(",", ":"))
+    assert record.tokens == len(blob) // 4
+    assert len(definitions) == 6
+
+
+def test_schema_overhead_is_charged_to_primary_not_delegate():
+    """The schemas live in the PRIMARY model's context window."""
+    from benchmarks.tool_optimizations.accounting import DELEGATE_STAGES
+
+    assert "tool_schema_overhead" not in DELEGATE_STAGES
+
+    records = [
+        UsageRecord(stage="tool_schema_overhead", tokens=1000, source="x"),
+        UsageRecord(stage="delegate_output", tokens=10, source="provider_usage"),
+    ]
+    totals = totals_by_kind(records)
+    assert totals["primary_tokens"] == 1000
+    assert totals["delegate_tokens"] == 10
+
+
+async def test_optimized_arm_pays_schema_overhead_and_baseline_does_not(tmp_path):
+    """Only the optimized arm is charged; host built-ins cancel across arms."""
+    scenario = next(item for item in SCENARIOS if item.name == "targeted_read")
+
+    optimized = await run(scenario, "optimized", runs=1, workdir=tmp_path / "opt")
+    baseline = await run(scenario, "baseline", runs=1, workdir=tmp_path / "base")
+
+    optimized_stages = {record.stage for record in optimized[0].usage}
+    baseline_stages = {record.stage for record in baseline[0].usage}
+
+    assert "tool_schema_overhead" in optimized_stages
+    assert "tool_schema_overhead" not in baseline_stages
+
+    overhead = next(r for r in optimized[0].usage if r.stage == "tool_schema_overhead")
+    assert overhead.tokens > 100, "a real schema is not a rounding error"
+
+
+async def test_schema_overhead_changes_the_reported_totals(tmp_path):
+    """The overhead must actually reach `primary_tokens`, not just be recorded.
+
+    Regression guard: an accounting stage that is collected but dropped from
+    the totals is indistinguishable from not measuring it at all.
+    """
+    scenario = next(item for item in SCENARIOS if item.name == "targeted_read")
+    reports = await run(scenario, "optimized", runs=1, workdir=tmp_path)
+    summary = summarize(reports)
+
+    entry = summary.scenarios[0]["optimized"]
+    overhead = next(r for r in reports[0].usage if r.stage == "tool_schema_overhead")
+    payload = sum(r.tokens for r in reports[0].usage if r.stage != "tool_schema_overhead")
+
+    assert entry["primary_tokens"] == overhead.tokens + payload
+    assert entry["total_tokens"] == entry["primary_tokens"] + entry["delegate_tokens"]
+
+
+def test_report_discloses_the_schema_overhead_accounting(tmp_path):
+    """The report must state that the figure is marginal and a per-run floor."""
+    from benchmarks.tool_optimizations.runner import render_markdown
+
+    summary = summarize([])
+    notes = " ".join(summary.notes)
+    assert "MARGINAL cost" in notes
+    assert "ONCE PER RUN" in notes
+    assert "lower bound" in notes
+    assert "cancel out" in notes
+    assert "tool_schema_overhead" in render_markdown(summary) or "tool_schema_overhead" in notes
