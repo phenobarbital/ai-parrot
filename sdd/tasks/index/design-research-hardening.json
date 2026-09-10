@@ -71,7 +71,7 @@
       "feature_id": "FEAT-546",
       "feature": "design-research-hardening",
       "spec": "sdd/specs/design-research-hardening.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -79,8 +79,8 @@
       "parallelism_notes": "Touches sdd/templates/task.md and .claude/commands/sdd-task.md; sequential in one worktree.",
       "assigned_to": null,
       "started_at": "2026-09-10T09:46:18+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3103-disambiguate-modify-blueprint-blocks.md"
+      "completed_at": "2026-09-10T09:51:46+00:00",
+      "file": "sdd/tasks/completed/TASK-3103-disambiguate-modify-blueprint-blocks.md"
     },
     {
       "id": "TASK-3104",
