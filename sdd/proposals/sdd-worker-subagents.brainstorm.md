@@ -189,9 +189,11 @@ Roster → backend mapping (the user-facing `provider:model` strings do not map
 - Two dispatch paths for one chunk (MCP job + native `Agent`): the plan must
   make the split explicit and the orchestrator must call `coder_merge` for
   the native task — one more thing the prompt has to get right.
-- Gemini's OpenAI-compatible endpoint may not honour every kwarg the loop
-  sends (`parallel_tool_calls`, `additionalProperties` in schemas, `extra_body`);
-  needs a smoke test before the seat is trusted.
+- Gemini 3 through the OpenAI-compatible endpoint requires every tool call's
+  `thought_signature` (`tool_call.extra_content`) to be echoed back; the base
+  `LLMCodeDispatcher` drops it when re-rendering the assistant turn, so the
+  Gemini dispatcher needs one targeted override (verified live, see Spike
+  evidence). Everything else the loop sends was accepted as-is.
 
 📊 **Effort:** High
 
@@ -422,9 +424,12 @@ price of a second dispatch path the orchestrator must handle explicitly.
 - **Gemini in-process**: `GoogleCompatCodeDispatcher` subclasses
   `LLMCodeDispatcher` and swaps `client_factory` for a
   `GeminiOpenAICompatClient(OpenAIBaseClient)` bound to Google's
-  OpenAI-compatible base URL with `GEMINI_API_KEY`/`GOOGLE_API_KEY` — the
-  `NovaCodeDispatcher` + `BedrockMantleClient` pattern verbatim. The loop,
-  tool schemas, cwd guard and output validation are inherited unchanged.
+  OpenAI-compatible base URL with `GEMINI_API_KEY`/`GOOGLE_API_KEY` read via
+  `navconfig` — the `NovaCodeDispatcher` + `BedrockMantleClient` pattern
+  verbatim, plus one override: `_tool_call_to_openai_dict` carries the raw
+  tool call's `extra_content` (Gemini 3 `thought_signature`) into the echoed
+  assistant turn. The loop, tool schemas, cwd guard and output validation
+  are inherited unchanged (verified live, see Spike evidence).
 - **Consolidate**: for each successful task the toolkit checks file fidelity
   (`git diff --name-only <feature>..<branch>` ⊆ files listed in the task, and
   ∩ `sdd/` = ∅), then `merge_sequential(resolver=None)`: clean merges are
@@ -475,11 +480,15 @@ price of a second dispatch path the orchestrator must handle explicitly.
   the result from git in the sub-worktree (`git log`, `git diff --name-only`)
   and `coder_merge` applies the same fidelity check; an empty branch is a
   failure and follows the retry policy.
-- **Gemini compat endpoint rejects a loop kwarg** (e.g. `parallel_tool_calls`,
-  `additionalProperties`) → the profile subclass strips/rewrites it in
-  `_completion_args` (as `NovaCodeDispatcher` already does for its endpoint);
-  if tool calling itself is unreliable, the probe's smoke dispatch fails and
-  the seat is dropped or swapped for `google_coding` (`agy`).
+- **Gemini tool round-trip without `thought_signature`** → 400 from the
+  endpoint (verified). `GoogleCompatCodeDispatcher` overrides
+  `_tool_call_to_openai_dict` to carry the raw call's `extra_content`; the
+  probe's smoke dispatch includes one full tool round-trip so a regression
+  here drops the seat (or swaps it for `google_coding`/`agy`) instead of
+  failing mid-task.
+- **Roster entry whose primary model id is rejected** (e.g. codex-spark not
+  enabled on the account) → the probe switches to the entry's declared
+  `fallback_model` and reports it; with no fallback the entry is dropped.
 - **Feature worktree not under `WORKTREE_BASE_PATH`** → the dispatchers'
   existing R4 check rejects the cwd; `coder_plan` reports it up-front.
 
@@ -526,8 +535,7 @@ price of a second dispatch path the orchestrator must handle explicitly.
 | `.claude/agents/sdd-coder.md` + `_subagent_data/sdd-coder.md` | new | dual-sourced coder prompt |
 | `packages/ai-parrot/src/parrot/flows/dev_loop/_subagent_defs.py` | extends | `_VALID_NAMES += "sdd-coder"` |
 | `flows/dev_loop/models/{llm,gemini,codex,claude,google_coding}.py` | extends | widen `subagent` literals |
-| `packages/ai-parrot-tools/src/parrot_tools/sdd_coder/` (new) | new | `SddCoderToolkit`, arg models, `OperationResult`-style results |
-| `packages/ai-parrot/src/parrot/flows/dev_loop/roster.py` (new, name TBD) | new | pure roster/chunker/probe models (core, so the dev-loop can reuse them) |
+| `packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/` (new package, core) | new | `SddCoderToolkit` (MCP tools), roster + `fallback_model`, credential probe (via `navconfig`), chunker, job table, arg/result models — decided Q3: all in core next to the FEAT-323 modules it composes |
 | `flows/dev_loop/task_scheduler.py`, `agent_pool.py`, `worktree_manager.py`, `agent_builder.py` | depends on | consumed unchanged; sub-worktree keyed by task id |
 | `packages/ai-parrot-client-google/src/parrot/clients/google/openai_compat.py` (new) + entry point `google-compat` | new | `GeminiOpenAICompatClient(OpenAIBaseClient)`, template `amazon/nova/mantle.py` |
 | `flows/dev_loop/dispatchers/google_compat.py` + `models/google_compat.py` (new) | new | `GoogleCompatCodeDispatcher(LLMCodeDispatcher)` + profile, template `dispatchers/nova.py` |
@@ -536,7 +544,7 @@ price of a second dispatch path the orchestrator must handle explicitly.
 | `.parrot/mcp-toolkits.yaml` (new in repo) + `.mcp.json` | config | `sdd-coder` section; `parrot-sdd-coder` server entry |
 | `docs/mcp-local-toolkits.md`, `docs/dev_loop/` | docs | install + roster semantics |
 | `packages/ai-parrot/tests/flows/dev_loop/test_subagent_parity.py` | extends | auto-discovers the new twin |
-| `packages/ai-parrot-tools/tests/sdd_coder/` (new) | tests | roster/chunker/probe/job API; git sandbox for merge paths |
+| `packages/ai-parrot/tests/flows/dev_loop/sdd_coder/` (new) | tests | roster/chunker/probe/job API; git sandbox for merge paths; Gemini compat dispatcher `extra_content` carry-over |
 | `conf.WORKTREE_BASE_PATH` | depends on | feature + sub-worktrees must live under it (R4) |
 
 No breaking change for external consumers; internal hard cuts are acceptable
@@ -721,6 +729,34 @@ from parrot import conf   # conf.WORKTREE_BASE_PATH  (parrot/conf.py:828-829, de
 - Claude Code `Agent` tool accepts a per-call `model` override (`sonnet` / `opus` / `haiku`) and agent definitions carry a `model:` frontmatter key; no `.claude/agents/*.md` uses `model: haiku` today (all are `sonnet`, `product-analyst` is `opus`).
 - FEAT-547 (`sdd-worker` twin sync) is **done** (TASK-3106 `done`), so `sdd-worker.md` and its twin are in parity on `dev` today.
 
+### Spike evidence — Gemini OpenAI-compatible endpoint (2026-09-10)
+
+Live smoke test from this repo's venv (`openai` SDK 3.3.1, key read via
+`navconfig` `config.get("GEMINI_API_KEY")`, base URL
+`https://generativelanguage.googleapis.com/v1beta/openai/`), using the
+dispatcher's real `read_file`/`list_files` schemas:
+
+| Check | Result |
+|---|---|
+| `models.list()` | serves `gemini-3-flash-preview`, `gemini-3.5-flash`, `gemini-3.5-flash-lite`, `gemini-3.6-flash`, `gemini-3.8-flash` |
+| `chat.completions.create(tools=…, tool_choice="auto", parallel_tool_calls=True, temperature=0.0, max_tokens=512)` on `gemini-3.5-flash` | `finish_reason="tool_calls"`, **two** tool calls in one turn, arguments as JSON strings, `usage` populated |
+| same + `reasoning_effort="none"` | accepted, same shape |
+| schema with `additionalProperties: false`, `minimum`, `maximum`, `default` | accepted unchanged (no need for `_fix_tool_schema`-style rewriting) |
+| tool round-trip echoing the assistant turn as the minimal `{id,type,function}` dict (today's `_tool_call_to_openai_dict`) | **400** `Function call is missing a thought_signature in functionCall parts` |
+| round-trip echoing `message.model_dump(exclude_none=True)` verbatim | OK, `finish_reason="stop"` |
+| round-trip with the minimal dict **plus** the raw call's `extra_content` field | OK — this is the minimal fix |
+
+Where the signature lives: `choices[0].message.tool_calls[i].extra_content
+== {"google": {"thought_signature": "<opaque base64>"}}`; the message object
+itself carries no extra fields. Google's compat doc states that parameters it
+does not know are "silently ignored by the compatibility layer" and that
+Gemini 3 "supports OpenAI compatibility for thought signatures in chat
+completion APIs"; the function-calling doc adds "Only a subset of the OpenAPI
+schema is supported" and "the API may reject very large or deeply nested
+schemas" (not hit by the dispatcher's flat schemas). The key is **not** in the
+process environment — it is loaded from `env/.env` by `navconfig`, so the
+roster probe must use `navconfig.config.get(...)`, never `os.environ`.
+
 ### Does NOT Exist (Anti-Hallucination)
 - ~~`bedrock:qwen3-coder`~~ as a working `llm` string — the `bedrock` provider key resolves to `AnthropicClient(backend="bedrock")` (factory.py:157); Qwen on Bedrock is reached via `nova`/`bedrock-mantle` (`qwen.qwen3-coder-480b-a35b-instruct`) or `bedrock-converse:qwen3-coder-480b-a35b`.
 - ~~`qwen3-coder`~~ bare alias — only `qwen3-coder-480b-a35b` exists (amazon/models.py:130); `qwen3-coder-30b` appears only in a context-window table (bedrock.py:1692).
@@ -767,16 +803,21 @@ Resolved during discovery (carried forward for `/sdd-spec`):
 - [x] Commit / SDD-state ownership? — *Owner: Jesus Lara*: coder commits code only in its sub-worktree; `sdd-worker` owns index, task move and Completion Note.
 - [x] Where does the roster live and what if a provider lacks credentials? — *Owner: Jesus Lara*: MCP server config with startup probe; unavailable entries skipped with a warning; single model ⇒ serial.
 
-Still open:
+Resolved in the 2026-09-10 review round (Q1–Q11):
 
-- [ ] **Exact backend/model ids for the four seats** — confirm `nova` + `qwen.qwen3-coder-480b-a35b-instruct` is invocable in the account/region, and that Codex CLI accepts `gpt-5.3-codex-spark`; otherwise pick the nearest available (`gpt-5.3-codex`). — *Owner: Jesus Lara*
-- [ ] **Gemini OpenAI-compatible endpoint coverage**: confirm against current Google docs that function calling, `tool_choice`, `parallel_tool_calls` and `additionalProperties: false` schemas are honoured (or must be stripped in `_completion_args`), and that `gemini-3.5-flash` is served there; a smoke dispatch is the spec's spike task. — *Owner: Claude (spike task in spec)*
-- [ ] **`agy` fallback validation**: `GoogleCodingDispatcher` exists with tests, but confirm headless `agy --print --output-format stream-json` works with this account before the probe advertises it as a fallback seat. — *Owner: Jesus Lara*
-- [ ] **Native haiku result contract**: should `sdd-coder.md` require the agent to end with the `DevelopmentOutput` JSON (so `sdd-worker` can parse it the same way the MCP does), or is git state in the sub-worktree enough? — *Owner: Jesus Lara*
-- [ ] **Job API bounds**: maximum `coder_wait` timeout (proposal ≤ 600 s) and Claude Code's effective MCP tool timeout in this setup. — *Owner: Claude*
-- [ ] **Where the toolkit package lives**: `parrot_tools/sdd_coder/` (CLAUDE.md rule: concrete toolkits in ai-parrot-tools) with pure roster/chunker models in core `parrot/flows/dev_loop/`, vs. everything in core next to `agent_pool.py`. — *Owner: Jesus Lara*
-- [ ] **Semantics of the index `parallel` flag**: keep it advisory (depends_on is the only scheduling input, current `TaskScheduler` behaviour) or let `parallel: false` force a task to run alone in its chunk? — *Owner: Jesus Lara*
-- [ ] **Redis for dispatch telemetry**: accept warning-level degradation when Redis is absent, or have the toolkit pass `conf.REDIS_URL` and document Redis as recommended? — *Owner: Jesus Lara*
-- [ ] **Recovery after an MCP server crash mid-chunk**: should `coder_plan` auto-adopt orphan `<feature>--TASK-NNN` branches (re-run fidelity + merge) or only list them for Sonnet? — *Owner: Claude*
-- [ ] **Should the coder run the task's acceptance criteria itself** (it can, via `run_command`) in addition to the orchestrator's post-merge run, at the cost of tokens on the cheap seat? — *Owner: Jesus Lara*
-- [ ] **`/sdd-start` interactive single-task path**: leave it on `writer_generate` (FEAT-543) or offer `coder_run_chunk` with one task as an alternative in a follow-up? — *Owner: Jesus Lara*
+- [x] **Exact backend/model ids for the four seats** — *Owner: Jesus Lara*: config + probe with a declared fallback. Each roster entry in the yaml carries `model` and an optional `fallback_model` (e.g. `gpt-5.3-codex-spark` → `gpt-5.3-codex`); the startup probe makes a smoke call, switches to the fallback when the primary id fails, and reports the switch. Nothing hardcoded in Python.
+- [x] **Gemini OpenAI-compatible endpoint coverage** — *Owner: Claude*: **verified live on 2026-09-10** (see "Spike evidence" under Code Context). `gemini-3.5-flash` is served; the loop's exact tool schemas (`additionalProperties: false`, `minimum`/`maximum`, `default`) are accepted; `tool_choice="auto"`, `parallel_tool_calls=True`, `temperature`, `max_tokens` and `reasoning_effort="none"` all succeed and two tool calls come back in one turn. **One blocker found and solved**: Gemini 3 requires the `thought_signature` of every tool call to be echoed back; it travels in `tool_call.extra_content.google.thought_signature`, and `LLMCodeDispatcher._tool_call_to_openai_dict` (llm.py:2237) drops it → 400. `GoogleCompatCodeDispatcher` must carry `extra_content` over when re-rendering the assistant turn (carrying only that field is sufficient — variant C passed). Unknown kwargs are silently ignored by the layer, so `extra_body.chat_template_kwargs` (only set when `enable_thinking=True`) is harmless but useless; use `reasoning_effort` instead.
+- [ ] **`agy` fallback validation** — *Owner: Jesus Lara*: intended for the same spike, **not executed** — running the `agy` binary was declined in this session. The roster still declares `agent: google_coding` as the Gemini fallback and the probe detects it (`which agy` + smoke); live validation moves to the spec's spike task or to a manual `agy --help` / `agy --print` check by the user.
+- [x] **Native haiku result contract** — *Owner: Jesus Lara*: `sdd-coder.md` requires the agent to end with the `DevelopmentOutput` JSON (same contract as the MCP seats); `sdd-worker` parses it, but `coder_merge` reconciles `files_changed` against `git diff --name-only` exactly as `DevelopmentNode` does. A missing or invalid JSON is not fatal when git shows valid commits; it is logged as a reporting defect.
+- [x] **Job API bounds** — *Owner: Claude*: `coder_wait` timeout ≤ 300 s, idempotent, jobs live in the server until `coder_cleanup`; `sdd-worker` polls in a loop. No dependency on `MCP_TOOL_TIMEOUT` or any Claude Code setting.
+- [x] **Where the toolkit package lives** — *Owner: Jesus Lara*: everything in core, `packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/` (toolkit, roster, probe, chunker, job table, arg/result models), next to the FEAT-323 modules it composes. Rationale: it is SDD tooling over dev-loop internals, not an external-API wrapper (the `parrot_tools` rule targets those), it avoids `ai-parrot-tools` importing dev-loop internals, and `DevelopmentNode` can reuse the roster later.
+- [x] **Semantics of the index `parallel` flag** — *Owner: Jesus Lara*: advisory. `depends_on` is the only scheduling input (current `TaskScheduler` behaviour); `parallel`/`parallelism_notes` are displayed in the plan but never change assignment. Two independent tasks that must not run together declare a dependency.
+- [x] **Redis for dispatch telemetry** — *Owner: Jesus Lara*: optional. The toolkit passes `conf.REDIS_URL` when set; if Redis is unreachable it logs one warning at startup (not one per event) and per-task telemetry still flows through `WorkerSummary`/usage in the job result. Redis is documented as recommended, never required.
+- [x] **Recovery after an MCP server crash mid-chunk** — *Owner: Claude*: `coder_plan` lists orphan `<feature>--TASK-NNN` branches with their state (commits, diff vs feature); adoption is explicit via `coder_merge(task_id)` (fidelity + merge) or deletion via `coder_cleanup`. No automatic merge of unsupervised work.
+- [x] **Should the coder run the task's acceptance criteria itself** — *Owner: Jesus Lara*: yes, both. The coder runs its task's pytest/ruff in its sub-worktree (the loop already allows `pytest`/`ruff`/`mypy`); `sdd-worker` re-runs them after merge because integration with sibling branches can break them.
+- [x] **`/sdd-start` interactive single-task path** — *Owner: Jesus Lara*: out of scope; `/sdd-start` keeps `writer_generate` (FEAT-543). Follow-up: offer a one-task `coder_run_chunk` from `/sdd-start` once the MCP is proven.
+
+Follow-ups (not blocking the spec):
+
+- [ ] Validate `agy` headless (`agy --print … --output-format stream-json`) with this account and decide whether `google_coding` stays as a fallback seat. — *Owner: Jesus Lara*
+- [ ] Decide whether the `extra_content` carry-over belongs in the base `LLMCodeDispatcher._tool_call_to_openai_dict` (generic, benefits every OpenAI-compatible backend) or only in `GoogleCompatCodeDispatcher`. — *Owner: spec author*
