@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-10T01:31:30+00:00",
-  "completed_at": null,
+  "completed_at": "2026-09-10T08:39:41+00:00",
   "tasks": [
     {
       "id": "TASK-3093",
@@ -23,7 +23,8 @@
       "assigned_to": null,
       "started_at": "2026-09-10T01:52:16+00:00",
       "completed_at": "2026-09-10T01:53:32+00:00",
-      "file": "sdd/tasks/completed/TASK-3093-task-template-implementation-blueprint.md"
+      "file": "sdd/tasks/completed/TASK-3093-task-template-implementation-blueprint.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3094",
@@ -43,7 +44,8 @@
       "assigned_to": null,
       "started_at": "2026-09-10T01:52:16+00:00",
       "completed_at": "2026-09-10T01:56:01+00:00",
-      "file": "sdd/tasks/completed/TASK-3094-sdd-task-blueprint-rules.md"
+      "file": "sdd/tasks/completed/TASK-3094-sdd-task-blueprint-rules.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3095",
@@ -61,7 +63,8 @@
       "assigned_to": null,
       "started_at": "2026-09-10T01:52:16+00:00",
       "completed_at": "2026-09-10T01:56:50+00:00",
-      "file": "sdd/tasks/completed/TASK-3095-spec-template-skeleton-and-section-9.md"
+      "file": "sdd/tasks/completed/TASK-3095-spec-template-skeleton-and-section-9.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3096",
@@ -79,7 +82,8 @@
       "assigned_to": null,
       "started_at": "2026-09-10T01:52:16+00:00",
       "completed_at": "2026-09-10T01:57:42+00:00",
-      "file": "sdd/tasks/completed/TASK-3096-design-research-templates.md"
+      "file": "sdd/tasks/completed/TASK-3096-design-research-templates.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3097",
@@ -100,7 +104,8 @@
       "assigned_to": null,
       "started_at": "2026-09-10T01:52:16+00:00",
       "completed_at": "2026-09-10T02:00:46+00:00",
-      "file": "sdd/tasks/completed/TASK-3097-sdd-spec-design-research-phase.md"
+      "file": "sdd/tasks/completed/TASK-3097-sdd-spec-design-research-phase.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3098",
@@ -124,7 +129,8 @@
       "assigned_to": null,
       "started_at": "2026-09-10T01:52:16+00:00",
       "completed_at": "2026-09-10T02:04:24+00:00",
-      "file": "sdd/tasks/completed/TASK-3098-policy-and-parity-tests.md"
+      "file": "sdd/tasks/completed/TASK-3098-policy-and-parity-tests.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3099",
@@ -144,7 +150,8 @@
       "assigned_to": null,
       "started_at": "2026-09-10T01:52:16+00:00",
       "completed_at": "2026-09-10T02:15:21+00:00",
-      "file": "sdd/tasks/completed/TASK-3099-acceptance-dry-run.md"
+      "file": "sdd/tasks/completed/TASK-3099-acceptance-dry-run.md",
+      "verification": "verified"
     }
   ]
 }
