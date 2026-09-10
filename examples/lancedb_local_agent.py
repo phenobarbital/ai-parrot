@@ -117,6 +117,11 @@ async def build_agent(args: argparse.Namespace):
 
     origin = LanceDBOrigin(store, name="lancedb-local", mode="hybrid", collection=args.collection)
 
+    # ``LocalLLMClient`` resolves an optional bearer token from the
+    # ``LOCAL_LLM_API_KEY`` environment variable — required by servers started
+    # with a key (e.g. llama.cpp's ``--api-key`` / ``LLAMA_API_KEY``), ignored
+    # by servers that accept anonymous requests. A local key is not "remote
+    # credentials": the profile still refuses any non-loopback base URL above.
     llm_client = LocalLLMClient(base_url=args.llm_base_url, model=args.llm_model)
 
     return store, origin, llm_client
@@ -135,7 +140,13 @@ async def run_cycle(origin, llm_client, query: str) -> str:
         "not contain the answer, say so explicitly.\n\n"
         f"Context:\n{context}\n\nQuestion: {query}\nAnswer:"
     )
-    response = await llm_client.ask(prompt)
+    # ``AbstractClient.__aenter__`` is what builds the per-event-loop SDK
+    # client (``_ensure_client()``); calling ``ask()`` on a merely-constructed
+    # client raises ``AttributeError: 'NoneType' object has no attribute
+    # 'chat'``. The context manager is the documented public lifecycle —
+    # entering it here keeps ``build_agent()``'s return contract unchanged.
+    async with llm_client as client:
+        response = await client.ask(prompt)
     return getattr(response, "content", str(response))
 
 
