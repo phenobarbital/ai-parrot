@@ -80,7 +80,9 @@ def fake_builder_factory(behaviour_by_backend: dict, *, gate: asyncio.Event | No
 
 
 def _roster(*labels_backends: tuple[str, str]) -> RosterConfig:
-    return RosterConfig(seats=[RosterSeat(label=lbl, backend=backend) for lbl, backend in labels_backends])
+    return RosterConfig(
+        seats=[RosterSeat(label=lbl, backend=backend) for lbl, backend in labels_backends]  # type: ignore[arg-type]
+    )
 
 
 @pytest.fixture
@@ -216,6 +218,51 @@ async def test_engine_run_chunk_rejects_native_task(git_sandbox_feature, noop_pr
     with pytest.raises(CoderFailure) as excinfo:
         await engine.run_chunk("demo", str(worktree), [native_ids[0]])
     assert excinfo.value.code == "task_not_in_plan"
+
+
+async def test_plan_then_dispatch_uses_consistent_seat_assignment(git_sandbox_feature, noop_probe):
+    """Code-review regression (FEAT-549, CRITICAL): a task's mcp/native classification must be
+    IDENTICAL between the `coder_plan()` call the orchestrator loop shows the operator and the
+    following `coder_run_chunk`/`coder_prepare_native` call that actually dispatches it.
+
+    `ChunkAssigner.assign()` mutates rotation state (`self._start`) on every call. With a roster
+    that mixes one native seat among mcp seats — like the shipped `examples/sdd-coder-mcp.yaml`
+    reference roster — and a wave that fills exactly one chunk (net rotation != 0 mod
+    len(seats), unlike the 2-seat/3-task shape `test_engine_run_chunk_rejects_native_task` uses,
+    where 2 chunks per call cancel out mod 2 and the bug stays invisible), recomputing the plan
+    a second time inside `run_chunk`/`prepare_native` used to reclassify a task from native to
+    mcp (or vice versa), and `run_chunk`/`prepare_native` would then reject a task the display
+    plan had just shown as valid for that call, with `task_not_in_plan`.
+    """
+    worktree, _feature_branch, base_path, _index_path = git_sandbox_feature
+    builder = fake_builder_factory({})
+    roster = RosterConfig(
+        seats=[
+            RosterSeat(label="h", kind="native"),
+            RosterSeat(label="a", backend="nova"),
+            RosterSeat(label="b", backend="codex"),
+        ]
+    )
+    engine = SddCoderEngine(roster=roster, probe=noop_probe, worktree_base_path=str(base_path), dispatcher_builder=builder)
+
+    plan = await engine.plan("demo", str(worktree))
+    assert len(plan.chunks) == 1
+    displayed = {t.task_id: t.native for t in plan.chunks[0].tasks}
+    mcp_ids = [tid for tid, native in displayed.items() if not native]
+    native_ids = [tid for tid, native in displayed.items() if native]
+    assert mcp_ids and native_ids, "the 3-seat mixed roster must classify at least one of each kind"
+
+    # Must NOT raise task_not_in_plan — the fix (SddCoderEngine._cached_plan) guarantees
+    # run_chunk/prepare_native reuse the plan just shown, instead of recomputing (and
+    # re-rotating) a second time.
+    job = await engine.run_chunk("demo", str(worktree), mcp_ids)
+    for native_id in native_ids:
+        prep = await engine.prepare_native("demo", str(worktree), native_id)
+        assert prep.task_id == native_id
+
+    done = await engine.wait(job.job_id, 5)
+    assert done.state == "done"
+    assert {t.outcome for t in done.tasks} == {"merged"}
 
 
 async def test_engine_run_chunk_merges_clean_branches(git_sandbox_feature, noop_probe):

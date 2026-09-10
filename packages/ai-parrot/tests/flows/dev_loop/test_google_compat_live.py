@@ -25,6 +25,12 @@ async def test_gemini_compat_live_roundtrip():
     dispatcher = GoogleCompatCodeDispatcher(max_concurrent=1, redis_url="redis://127.0.0.1:1/0", stream_ttl_seconds=60)
     profile = GoogleCompatCodeDispatchProfile()
     client = dispatcher._create_compat_client(profile.llm, model_args={"temperature": 0.0, "max_tokens": 256})
+    # Code-review fix (FEAT-549): the real `dispatch()` loop always calls this before its first
+    # `_chat_completion` (dispatchers/llm.py:273) — it lazily opens the client's underlying SDK
+    # session. Without it, `_chat_completion` raises `AttributeError: 'NoneType' object has no
+    # attribute 'chat'` before ever reaching the network, so this test never actually exercised
+    # the `thought_signature` fix it exists to guard.
+    await dispatcher._ensure_client_ready(client)
     tools = dispatcher._tool_schemas(DevelopmentOutput)
     args = dispatcher._completion_args(profile, tools)
     messages = [

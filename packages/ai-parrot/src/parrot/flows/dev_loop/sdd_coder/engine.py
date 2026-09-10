@@ -164,6 +164,7 @@ class SddCoderEngine:
         self.seats: List[RosterSeat] = []
         self.probe_results: List[SeatProbeResult] = []
         self._assigner: Optional[ChunkAssigner] = None
+        self._plan_cache: Dict[str, CoderPlan] = {}  # feature_id -> most recently computed plan (see plan()/_cached_plan)
         self._jobs = JobTable()
         self._merge_lock = asyncio.Lock()
         self._managers: Dict[str, SubWorktreeManager] = {}  # key: f"{task_id}.a{attempt}"
@@ -272,7 +273,7 @@ class SddCoderEngine:
         pending = sorted(t.id for t in sched.pending())
         blocked = sorted(set(pending) - {t.id for t in wave})
         orphans = await self._orphan_branches(ctx)
-        return CoderPlan(
+        result = CoderPlan(
             feature_id=ctx.feature_id,
             feature=ctx.feature,
             feature_branch=ctx.feature_branch,
@@ -283,6 +284,31 @@ class SddCoderEngine:
             roster=self.probe_results,
             orphan_branches=orphans,
         )
+        # Code-review fix (FEAT-549, CRITICAL): cache the computed plan, keyed by feature_id.
+        # `ChunkAssigner.assign()` mutates rotation state (`self._start`) on EVERY call — with a
+        # roster that mixes mcp and native seats (the shipped `examples/sdd-coder-mcp.yaml`
+        # reference roster does), a task's mcp/native classification can flip between the
+        # display `coder_plan()` call the orchestrator loop makes first and a SECOND, internal
+        # `plan()` re-computation `run_chunk`/`prepare_native` used to do as their first step —
+        # causing a correctly-classified task to spuriously fail with `task_not_in_plan`
+        # (or the reverse) purely because rotation advanced again in between. `run_chunk`/
+        # `prepare_native` now consult this cache via `_cached_plan()` instead of recomputing.
+        self._plan_cache[ctx.feature_id] = result
+        return result
+
+    async def _cached_plan(self, feature: str, worktree: str, ctx: _FeatureCtx) -> CoderPlan:
+        """Reuse the most recently computed plan for this feature instead of recomputing.
+
+        `run_chunk`/`prepare_native` must see EXACTLY the chunk `coder_plan` most recently
+        returned to the caller — recomputing would advance `ChunkAssigner`'s rotation state
+        again and could reclassify a task from mcp to native or vice versa (see `plan()`).
+        Falls back to a fresh `plan()` (which populates the cache) when nothing is cached yet
+        — e.g. a `coder_prepare_native`/`coder_run_chunk` call with no preceding `coder_plan`.
+        """
+        cached = self._plan_cache.get(ctx.feature_id)
+        if cached is not None:
+            return cached
+        return await self.plan(feature, worktree)
 
     def _manager_for(self, ctx: _FeatureCtx, task_id: str, attempt: int) -> SubWorktreeManager:
         key = f"{task_id}.a{attempt}"
@@ -294,8 +320,8 @@ class SddCoderEngine:
 
     async def prepare_native(self, feature: str, worktree: str, task_id: str) -> NativePrep:
         """Sub-worktree for a `native` planned task (attempt 1); branch <feature_branch>--<TASK-NNN>-a1."""
-        plan = await self.plan(feature, worktree)
         ctx = await self._resolve_feature(feature, worktree)
+        plan = await self._cached_plan(feature, worktree, ctx)
         planned = next((t for c in plan.chunks for t in c.tasks if t.task_id == task_id), None)
         if planned is None or not planned.native:
             raise CoderFailure("task_not_in_plan", f"{task_id} is not a native task of the current chunk plan")
@@ -328,9 +354,23 @@ class SddCoderEngine:
         # merge introduced too — this branch would then fail fidelity for files it never touched.
         # `A...B` restricts the diff to `branch`'s own changes since it forked from `feature_branch`.
         _rc, diff, _err = await _git("diff", "--name-only", f"{ctx.feature_branch}...{branch}", cwd=ctx.worktree)
-        task_md = await asyncio.to_thread(
-            Path(os.path.join(ctx.worktree, task.task_file)).read_text, "utf-8"
-        )
+        # Code-review fix (FEAT-549, IMPORTANT): resolve + verify containment before reading.
+        # `os.path.join(ctx.worktree, task.task_file)` silently discards `ctx.worktree` if
+        # `task.task_file` were ever absolute (`os.path.join` semantics), reading an arbitrary
+        # local path instead. `task.task_file` comes from the per-spec index's TaskRef.file —
+        # repo-local SDD data, not raw external input — but no containment check existed;
+        # mirrors `_resolve_feature`'s own worktree-containment pattern.
+        task_md_path = Path(ctx.worktree, task.task_file).resolve()
+        worktree_root = Path(ctx.worktree).resolve()
+        if not (task_md_path == worktree_root or str(task_md_path).startswith(str(worktree_root) + os.sep)):
+            return TaskResult(
+                task_id=task.task_id,
+                outcome="failed",
+                branch=branch,
+                worktree_path=path,
+                diagnostics=f"task_file {task.task_file!r} resolves outside the feature worktree",
+            )
+        task_md = await asyncio.to_thread(task_md_path.read_text, "utf-8")
         report = check_fidelity(parse_task_files(task_md), [p for p in diff.splitlines() if p.strip()])
         if not report.ok:
             return TaskResult(
@@ -429,11 +469,22 @@ class SddCoderEngine:
             orphans.append(OrphanBranch(task_id=task_id, branch=branch, commits=commits, files=files))
         return orphans
 
-    def _journal(self, worktree: str, job: CoderJob) -> None:
-        """Write-only snapshot: <worktree>/.sdd-coder/jobs/<job_id>.json (dir is git-ignored, TASK-3122 adds the rule)."""
-        d = Path(worktree) / ".sdd-coder" / "jobs"
-        d.mkdir(parents=True, exist_ok=True)
-        (d / f"{job.job_id}.json").write_text(job.model_dump_json(indent=2), encoding="utf-8")
+    async def _journal(self, worktree: str, job: CoderJob) -> None:
+        """Write-only snapshot: <worktree>/.sdd-coder/jobs/<job_id>.json (dir is git-ignored, TASK-3122 adds the rule).
+
+        Code-review fix (FEAT-549, IMPORTANT): wrapped the `mkdir`/`write_text` pair in
+        `asyncio.to_thread` — this method used to call them directly from async call sites
+        (`run_chunk`, `wait`), inconsistent with the S11 pattern this same module otherwise
+        follows everywhere else for sync I/O (`_resolve_feature`'s index glob/read,
+        `_scheduler_for`, `_consolidate`'s task-file read).
+        """
+
+        def _write() -> None:
+            d = Path(worktree) / ".sdd-coder" / "jobs"
+            d.mkdir(parents=True, exist_ok=True)
+            (d / f"{job.job_id}.json").write_text(job.model_dump_json(indent=2), encoding="utf-8")
+
+        await asyncio.to_thread(_write)
 
     def status(self, job_id: str) -> CoderJob:
         try:
@@ -472,19 +523,33 @@ class SddCoderEngine:
         """ONE dispatch in ONE fresh sub-worktree. Returns (record, output|None, error, manager, branch, path)."""
         assert seat.backend is not None, "_run_attempt is only called for mcp seats; native tasks use prepare_native"
         manager = self._manager_for(ctx, task.task_id, attempt)
-        path = await manager.create(f"{task.task_id}.a{attempt}")
         branch = f"{ctx.feature_branch}--{task.task_id}-a{attempt}"
+        # Computed the same way `SubWorktreeManager.create()` derives it internally
+        # (`_branch_suffix` replaces "." with "-"), so `path`/`branch` are always
+        # defined even if `manager.create()` itself raises below — see the
+        # code-review fix note on the `try:` block having moved to cover
+        # worktree-creation and dispatcher-construction too.
+        path = str(Path(self._base_path) / f"{ctx.feature_branch}--pool" / f"{task.task_id}-a{attempt}")
         collector = AttemptTelemetryCollector(attempt=attempt, seat=seat)
-        dispatcher, profile = self._dispatcher_builder(
-            DevAgentSpec(agent=seat.backend, model=seat.model),
-            redis_url=self._redis_url,
-            max_concurrent=1,
-            stream_ttl_seconds=self._stream_ttl,
-        )
-        profile = profile.model_copy(update={"subagent": "sdd-coder"})  # S7 — every profile defaults to sdd-worker
         output: Optional[DevelopmentOutput] = None
         error = ""
         try:
+            # Code-review fix (FEAT-549, IMPORTANT): sub-worktree creation and dispatcher
+            # construction used to happen BEFORE this try block — a `git worktree add`
+            # failure or a `build_dispatcher` error would propagate raw out of
+            # `_run_attempt`/`_run_task`, landing in `run_chunk`'s outer
+            # `asyncio.gather(..., return_exceptions=True)` as a bare "failed" TaskResult
+            # with an EMPTY `attempts` list, bypassing the attempt-2-on-a-different-seat
+            # retry ladder entirely. Moved inside so every failure mode becomes a proper
+            # attempt error the ladder can act on.
+            await manager.create(f"{task.task_id}.a{attempt}")
+            dispatcher, profile = self._dispatcher_builder(
+                DevAgentSpec(agent=seat.backend, model=seat.model),
+                redis_url=self._redis_url,
+                max_concurrent=1,
+                stream_ttl_seconds=self._stream_ttl,
+            )
+            profile = profile.model_copy(update={"subagent": "sdd-coder"})  # S7 — every profile defaults to sdd-worker
             output = await dispatcher.dispatch(
                 brief=TaskScopedBrief(
                     research=self._research_for(ctx, worktree_path=path),
@@ -548,8 +613,8 @@ class SddCoderEngine:
 
     async def run_chunk(self, feature: str, worktree: str, task_ids: List[str]) -> CoderJob:
         """Validate, register, RETURN. Everything slow happens inside the job (S4, AC-21)."""
-        plan = await self.plan(feature, worktree)
         ctx = await self._resolve_feature(feature, worktree)
+        plan = await self._cached_plan(feature, worktree, ctx)
         first = {t.task_id: t for t in (plan.chunks[0].tasks if plan.chunks else [])}
 
         running = self._jobs.running_task_ids()
@@ -578,12 +643,12 @@ class SddCoderEngine:
                 elif isinstance(raw, BaseException):
                     results.append(TaskResult(task_id=tid, outcome="failed", diagnostics=str(raw)))
             snapshot = self._jobs.snapshot(job.job_id)
-            self._journal(ctx.worktree, snapshot.model_copy(update={"tasks": results}))
+            await self._journal(ctx.worktree, snapshot.model_copy(update={"tasks": results}))
             return results
 
         job = self._jobs.create(ctx.feature_id, list(task_ids), runner)
         self._job_worktrees[job.job_id] = ctx.worktree
-        self._journal(ctx.worktree, job)
+        await self._journal(ctx.worktree, job)
         return job
 
     async def wait(self, job_id: str, timeout_seconds: int) -> CoderJob:
@@ -593,5 +658,5 @@ class SddCoderEngine:
             raise CoderFailure("job_not_found", f"unknown job {job_id}") from exc
         job_worktree = self._job_worktrees.get(job_id)
         if job_worktree is not None:
-            self._journal(job_worktree, job)
+            await self._journal(job_worktree, job)
         return job

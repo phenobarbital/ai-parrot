@@ -160,7 +160,15 @@ class ChunkAssigner:
         return chunks
 
     def retry_seat(self, failed_label: str, exclude: Set[str]) -> Optional[RosterSeat]:
-        """Next seat after `failed_label` in roster order not in `exclude`; None when none left."""
+        """Next MCP seat after `failed_label` in roster order not in `exclude`; None when none left.
+
+        Never returns a `kind="native"` seat: the retry ladder (`SddCoderEngine._run_task`)
+        only ever calls this after an MCP-seat dispatch attempt failed, and re-dispatches via
+        `dispatcher.dispatch()` — a native seat has no dispatcher (it is a Claude Code
+        `Agent` call `sdd-worker` makes itself via `coder_prepare_native`), so returning one
+        here would hit `_run_attempt`'s `assert seat.backend is not None` instead of
+        performing a real retry (code review finding, FEAT-549).
+        """
         n = len(self._seats)
         try:
             failed_index = next(i for i, seat in enumerate(self._seats) if seat.label == failed_label)
@@ -169,6 +177,6 @@ class ChunkAssigner:
         excluded = exclude | {failed_label}
         for offset in range(1, n + 1):
             candidate = self._seats[(failed_index + offset) % n]
-            if candidate.label not in excluded:
+            if candidate.label not in excluded and candidate.kind != "native":
                 return candidate
         return None

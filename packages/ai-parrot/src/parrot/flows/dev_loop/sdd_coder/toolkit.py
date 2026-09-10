@@ -96,7 +96,7 @@ class SddCoderToolkit(AbstractToolkit):
             worktree = self._engine._job_worktrees.get(job_id)  # noqa: SLF001 — same-package internal bookkeeping
             if worktree:
                 try:
-                    self._engine._journal(worktree, jobs.get(job_id))  # noqa: SLF001
+                    await self._engine._journal(worktree, jobs.get(job_id))  # noqa: SLF001
                 except KeyError:
                     continue
 

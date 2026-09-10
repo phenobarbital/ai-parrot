@@ -215,7 +215,7 @@ async def test_engine_journals_job_snapshot(git_sandbox_feature, three_seat_rost
     job = CoderJob(job_id="job-abc123", feature_id="FEAT-549", chunk_task_ids=["TASK-0001"], state="done",
                   started_at="2026-09-10T00:00:00+00:00")
 
-    engine._journal(str(worktree), job)
+    await engine._journal(str(worktree), job)
 
     journal_path = worktree / ".sdd-coder" / "jobs" / "job-abc123.json"
     assert journal_path.is_file()
