@@ -16,6 +16,14 @@ providers:
 
   # AI-Parrot agent telemetry. Separate provider (not just another file in the
   # dir above) so these land in their own folder instead of "Claude Code".
+  #
+  # SIBLING directory, not a subdirectory of `claudestats`' scanned path
+  # above. Empirically verified during implementation: a dashboard JSON
+  # placed under .../dashboards/parrot/ (nested) was silently claimed by the
+  # `claudestats` provider instead and misfiled into "Claude Code" — not
+  # even duplicated, just wrong. Moved to a sibling mount
+  # (docker-compose.yml) to eliminate the path-nesting hazard entirely, per
+  # this task's own contingency instructions ("move parrot/ outside it").
   - name: parrot
     orgId: 1
     folder: AI-Parrot
@@ -26,5 +34,5 @@ providers:
     allowUiUpdates: false
     updateIntervalSeconds: 30
     options:
-      path: /etc/grafana/provisioning/dashboards/parrot
+      path: /etc/grafana/provisioning/dashboards-parrot
       foldersFromFilesStructure: false
