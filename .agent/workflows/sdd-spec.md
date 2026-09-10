@@ -6,6 +6,7 @@ description: Scaffold a Feature Specification using SDD methodology, resolving f
 
 Scaffold a new Feature Specification using the SDD methodology.
 
+
 ## Usage
 ```
 /sdd-spec <feature-name> [--type feature|hotfix] [--base-branch <branch>] [-- free-form description and notes]
@@ -243,7 +244,8 @@ reason for spec §9 and the command continues. **This step must never abort
 ```bash
 REPO_ROOT="$(pwd)"                                   # /sdd-spec always runs from the repo root (§2d)
 MODEL="${SDD_DESIGN_RESEARCH_MODEL:-gpt-5.6-luna}"
-DR="sdd/state/.design_research/<feature-name>"      # id-independent staging: FEAT-ID is reserved only in §5
+RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-$$"
+DR="sdd/state/.design_research/<feature-name>-${RUN_ID}"   # id-independent, run-scoped staging: FEAT-ID is reserved only in §5
 mkdir -p "$DR"; SKIP_REASON=""
 if ! command -v codex >/dev/null 2>&1; then SKIP_REASON="codex CLI not installed"; fi
 if [ -z "$SKIP_REASON" ]; then
@@ -389,6 +391,14 @@ This step prevents AI hallucinations during implementation. You MUST:
    skeletons are what `/sdd-task` turns into per-task Implementation Blueprints,
    so a name fixed here is not renegotiable later.
 
+#### Identify delegation-eligible modules
+
+While writing §3 Module Breakdown, fill the "Delegation-eligible modules"
+sub-table: for each module state whether its design is complete enough that
+implementing it is mechanical, and record the decided patterns and exact
+contracts (signatures, error codes, file layout). Architecture decisions
+stay with the thinking model — eligibility never delegates a design choice.
+
 ### 5. Scaffold the Spec
 1. Read the template at `sdd/templates/spec.md`. The template already contains
    a YAML frontmatter block at the top (FEAT-145).
@@ -504,11 +514,13 @@ git reset HEAD
 
 # 2. Stage ONLY the spec file (+ the design-research transcript when §3b ran) — NEVER "git add ." / "-A"
 git add sdd/specs/<feature-name>.spec.md
-if [ -d "sdd/state/.design_research/<feature-name>" ]; then
-  mkdir -p "sdd/state/<FEAT-ID>/design_research"
-  mv sdd/state/.design_research/<feature-name>/* "sdd/state/<FEAT-ID>/design_research/"
-  rmdir "sdd/state/.design_research/<feature-name>"
-  git add "sdd/state/<FEAT-ID>/design_research/"
+if [ -d "$DR" ]; then
+  STAGE_TMP="sdd/state/.design_research/.promote-<FEAT-ID>-${RUN_ID}"
+  mkdir -p "$STAGE_TMP" && cp -a "$DR"/. "$STAGE_TMP"/ \
+    && mv "$STAGE_TMP" "sdd/state/<FEAT-ID>/design_research" \
+    && rm -rf "$DR" \
+    && git add "sdd/state/<FEAT-ID>/design_research/" \
+    || { echo "⚠️  Promotion of $DR failed — left in place for inspection (run-id ${RUN_ID})." ; rm -rf "$STAGE_TMP"; }
 fi
 
 # 3. Verify ONLY those paths are staged
