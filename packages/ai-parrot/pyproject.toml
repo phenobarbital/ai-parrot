@@ -966,6 +966,7 @@ asyncio_mode = "auto"
 markers = [
     "real_llm: mark a test as requiring a live LLM provider",
     "network: mark a test as requiring live network access (e.g. spec drift checks)",
+    "live: needs provider credentials; opt-in with -m live",
 ]
 
 [tool.cibuildwheel]
