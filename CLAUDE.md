@@ -182,6 +182,20 @@ codex exec --sandbox workspace-write -o <out.txt> \
   "Generate an image: <description>. Save as <name>.png"
 ```
 
+#### Design research at spec time (FEAT-545)
+
+The same codex seat gives an **independent design opinion** in `/sdd-spec`
+§3b, over the *accepted* brainstorm/proposal only — never over the spec
+draft. Model: `${SDD_DESIGN_RESEARCH_MODEL:-gpt-5.6-luna}` with
+`-c model_reasoning_effort=high` and `--ignore-user-config` (the operator's
+`~/.codex/config.toml` must not swap the model silently). The pass is
+**optional and never blocking**: no `codex`, failed probe, timeout or invalid
+output ⇒ spec §9 reads `Status: skipped (<reason>)` and the command continues
+(`sdd-planner` runs it unattended). Every suggestion is triaged
+`CONFIRM` / `REJECT` / `ESCALATE` in spec **§9 Design Research Cross-Check**;
+the transcript is committed under `sdd/state/<FEAT-ID>/design_research/`.
+The `agy` ban above applies to this seat too.
+
 ## Key References
 - Architecture & patterns: @.agent/CONTEXT.md
 - SDD workflow: @docs/sdd/WORKFLOW.md
