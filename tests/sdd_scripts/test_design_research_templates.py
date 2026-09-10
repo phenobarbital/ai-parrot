@@ -90,3 +90,8 @@ def test_spec_template_has_skeleton_and_section_9() -> None:
         < text.index("## 9. Design Research Cross-Check")
         < text.index("## Revision History")
     )
+
+
+def test_task_template_modify_block_states_occurrence_count() -> None:
+    text = (_TPL / "task.md").read_text(encoding="utf-8")
+    assert "# occurrences:" in text
