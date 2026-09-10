@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-550
 **Date**: 2026-09-11
 **Author**: Jesus Lara / Codex
-**Status**: review
+**Status**: approved
 **Target version**: Next development release after approval
 **Source**: `sdd/proposals/token-budget-bedrock.brainstorm.md`, resolved 2026-09-11
 **Code baseline**: `549959cdc` on `dev`; clean temporary checkout synchronized with `origin/dev` before reservation
