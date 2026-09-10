@@ -67,6 +67,7 @@ toolkits:
     include: null                                      # optional whitelist of tool names
     exclude: null                                      # optional blacklist of tool names
     llm: null                                          # optional "provider:model" string
+    llm_kwargs: {}                                     # optional extra kwargs for LLMFactory.create (requires llm)
     env: {}                                            # env vars written into installer entries
 ```
 
@@ -78,6 +79,7 @@ toolkits:
 | `include` | `list[str] \| null` | Whitelist of tool names to expose. When set, only these are exposed. |
 | `exclude` | `list[str] \| null` | Blacklist of tool names to exclude. Only consulted when `include` is unset. |
 | `llm` | `str \| null` | A `"provider:model"` string (e.g. `"openai:gpt-4o-mini"`, `"anthropic:claude-3-5-haiku-latest"`). When set, `LLMFactory.create()` builds a client passed to the toolkit's constructor as `llm_client`. |
+| `llm_kwargs` | `dict` | Extra keyword arguments forwarded verbatim to `LLMFactory.create(llm, **llm_kwargs)`, so they reach the client constructor unchanged — e.g. `fallback_model: null`, `max_retries`, `read_timeout`. This is **trusted server configuration**, never an LLM-callable argument. Requires `llm` to be set, and may not contain an `llm` key (it would collide with the factory's first argument). See `examples/tool-optimizations-mcp.yaml`, where `fallback_model: null` is required so the Bedrock client cannot silently answer with its default fallback model. |
 | `env` | `dict[str, str]` | Environment variables written into the generated `.mcp.json` / `.codex/config.toml` server entry (e.g. API keys the toolkit reads from its process env at runtime). **Not** passed as constructor kwargs. |
 
 ### The include/exclude/llm-dependent rules
