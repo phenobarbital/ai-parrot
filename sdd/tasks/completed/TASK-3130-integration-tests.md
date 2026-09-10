@@ -1,11 +1,11 @@
-# TASK-1971: Integration Tests
+# TASK-3130: Integration Tests
 
 **Feature**: FEAT-388 — Deterministic CreateFormTool
 **Spec**: `sdd/specs/deterministic-creationformtool.spec.md`
 **Status**: pending
 **Priority**: medium
 **Estimated effort**: S (< 2h)
-**Depends-on**: TASK-1968, TASK-1969, TASK-1970
+**Depends-on**: TASK-3127, TASK-3128, TASK-3129
 **Assigned-to**: unassigned
 
 ---
@@ -47,7 +47,7 @@ Implements spec Module 4 (integration test portion).
 
 ### Verified Imports
 ```python
-from parrot_formdesigner.assembler import FormAssembler       # assembler.py (TASK-1968)
+from parrot_formdesigner.assembler import FormAssembler       # assembler.py (TASK-3127)
 from parrot_formdesigner.tools.create_form import CreateFormTool  # tools/create_form.py
 from parrot_formdesigner.tools.edit_toolkit import EditToolkit    # tools/edit_toolkit.py
 from parrot_formdesigner.renderers.jsonschema import JsonSchemaRenderer  # renderers/jsonschema.py
@@ -238,7 +238,7 @@ class TestValidatorIntegration:
 When you pick up this task:
 
 1. **Read the spec** at `sdd/specs/deterministic-creationformtool.spec.md` for full context
-2. **Check dependencies** — verify TASK-1968, TASK-1969, TASK-1970 are in `tasks/completed/`
+2. **Check dependencies** — verify TASK-3127, TASK-3128, TASK-3129 are in `tasks/completed/`
 3. **Verify** that `FormAssembler`, `CreateFormTool` deterministic path, and `EditToolkit`
    schema methods all exist and work
 4. **Create** `test_deterministic_integration.py`

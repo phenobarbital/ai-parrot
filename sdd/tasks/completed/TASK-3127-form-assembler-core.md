@@ -1,4 +1,4 @@
-# TASK-1968: FormAssembler Core Class
+# TASK-3127: FormAssembler Core Class
 
 **Feature**: FEAT-388 — Deterministic CreateFormTool
 **Spec**: `sdd/specs/deterministic-creationformtool.spec.md`
@@ -14,8 +14,8 @@
 
 This is the foundational task for FEAT-388. The `FormAssembler` class encapsulates
 all deterministic form creation logic: format detection, shortcut expansion,
-extractor delegation, and component-level assembly. Both TASK-1969 (CreateFormTool
-integration) and TASK-1970 (EditToolkit expansion) depend on this class.
+extractor delegation, and component-level assembly. Both TASK-3128 (CreateFormTool
+integration) and TASK-3129 (EditToolkit expansion) depend on this class.
 
 Implements spec Module 1.
 
@@ -34,9 +34,9 @@ Implements spec Module 1.
 - Write unit tests for all methods
 
 **NOT in scope**:
-- Modifying `CreateFormTool` or `CreateFormInput` (TASK-1969)
-- Modifying `EditToolkit` (TASK-1970)
-- Integration/roundtrip tests (TASK-1971)
+- Modifying `CreateFormTool` or `CreateFormInput` (TASK-3128)
+- Modifying `EditToolkit` (TASK-3129)
+- Integration/roundtrip tests (TASK-3130)
 
 ---
 

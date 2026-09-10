@@ -1,11 +1,11 @@
-# TASK-1970: EditToolkit Schema-Aware Methods
+# TASK-3129: EditToolkit Schema-Aware Methods
 
 **Feature**: FEAT-388 — Deterministic CreateFormTool
 **Spec**: `sdd/specs/deterministic-creationformtool.spec.md`
 **Status**: pending
 **Priority**: medium
 **Estimated effort**: S (< 2h)
-**Depends-on**: TASK-1968
+**Depends-on**: TASK-3127
 **Assigned-to**: unassigned
 
 ---
@@ -15,7 +15,7 @@
 This task adds schema-aware creation methods to `EditToolkit` so that LLM agents
 (and programmatic callers) can add fields and sections from raw JSON dicts with
 shortcut expansion — without needing to construct fully-validated `FormField` /
-`FormSection` objects manually. The methods delegate to `FormAssembler` (TASK-1968)
+`FormSection` objects manually. The methods delegate to `FormAssembler` (TASK-3127)
 for shortcut expansion, then to the existing `add_field()` / `add_section()` operations.
 
 Implements spec Module 3.
@@ -32,9 +32,9 @@ Implements spec Module 3.
 - Write unit tests
 
 **NOT in scope**:
-- Modifying `FormAssembler` (TASK-1968)
-- Modifying `CreateFormTool` (TASK-1969)
-- Integration/roundtrip tests (TASK-1971)
+- Modifying `FormAssembler` (TASK-3127)
+- Modifying `CreateFormTool` (TASK-3128)
+- Integration/roundtrip tests (TASK-3130)
 
 ---
 
@@ -51,7 +51,7 @@ Implements spec Module 3.
 
 ### Verified Imports
 ```python
-from parrot_formdesigner.assembler import FormAssembler  # assembler.py (created by TASK-1968)
+from parrot_formdesigner.assembler import FormAssembler  # assembler.py (created by TASK-3127)
 from parrot_formdesigner.core.schema import FormSchema, FormSection, FormField  # core/schema.py
 from parrot_formdesigner.tools.edit_toolkit import EditToolkit  # tools/edit_toolkit.py:50
 from parrot.tools.toolkit import AbstractToolkit  # already imported in edit_toolkit.py
@@ -238,7 +238,7 @@ class TestAddSectionFromSchema:
 When you pick up this task:
 
 1. **Read the spec** at `sdd/specs/deterministic-creationformtool.spec.md` for full context
-2. **Check dependencies** — verify TASK-1968 is in `tasks/completed/`
+2. **Check dependencies** — verify TASK-3127 is in `tasks/completed/`
 3. **Verify the Codebase Contract** — confirm `EditToolkit` signatures and `FormAssembler` exists
 4. **Modify** `edit_toolkit.py` — add two new methods
 5. **Create** `test_edit_toolkit_schema.py`
@@ -278,7 +278,7 @@ hard-code a stale tool count/name set (documented as "15 tools") that was
 today (5 dependency-rule tools — `add_dependency`, `update_dependency`,
 `remove_dependency`, `add_post_dependency`, `remove_post_dependency` — were
 added by a prior feature without updating this test). Verified via
-`git stash` that both tests fail identically on the pre-TASK-1970 commit.
+`git stash` that both tests fail identically on the pre-TASK-3129 commit.
 Since `test_edit_toolkit.py` is not in this task's declared file list and
 the failure is pre-existing/unrelated, I left it untouched per the File
 Fidelity rule and reverted an earlier over-eager fix attempt. Flagging here
