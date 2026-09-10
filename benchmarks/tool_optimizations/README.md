@@ -30,6 +30,7 @@ python -m benchmarks.tool_optimizations --scenario all --runs 5 --live
 | `git_prepare` | The three shell commands from the spec's user-provided code | `git_fetch` + `git_preflight` + `git_prepare_files` |
 | `targeted_read` | Whole-file `Read` of a 2,000-line module | `source_info` + one bounded `source_read` |
 | `decided_task` | Primary model writes both files itself | `writer_generate` → bounded review → `writer_apply` → `pytest` |
+| `decided_task_large` | Same, ~150 lines instead of ~10 | Same — the two task rows differ *only* in implementation size |
 
 ## What the exit code means
 
@@ -70,6 +71,38 @@ It is not small. `LocalGitToolkit`'s six tools alone serialize to roughly
 1,880 tokens — larger than the entire payload of the `git_prepare` scenario.
 Omitting it (as an earlier version of this harness did) silently flatters
 every optimized column.
+
+## What the two task sizes show
+
+`decided_task` (~10 lines) and `decided_task_large` (~150 lines) are built by
+the same generator and differ only in size, so the pair isolates the effect of
+scale. The offline result:
+
+| Scenario | baseline | optimized | delta | relative |
+|---|---:|---:|---:|---:|
+| `decided_task` | 518 | 1,765 | **+1,247** | +241% |
+| `decided_task_large` | 2,205 | 3,452 | **+1,247** | +57% |
+
+The absolute penalty is **identical** — it is the fixed schema overhead
+(1,217) plus the delegate's own tokens. Only its *relative* weight falls as
+the work grows.
+
+That is not an accident of the fixtures, it is structural:
+
+- the primary reads the TASK in **both** paths;
+- the tokens it would have **written** become tokens it **reads** during hunk
+  review, 1:1;
+- the delegate's tokens are then added on top.
+
+**So delegation can never win on raw token count.** It is a *cost* argument:
+output tokens are several times dearer than input at every major provider, and
+the delegate is cheaper per token than the primary. Whether that arithmetic
+works out for you depends on your two models' prices and your task sizes —
+fill in `prices.yaml` and run `--live`.
+
+Note the offline delegate's token usage is a fixed stub (it does not scale
+with the generated code), so the delegate columns are placeholders until you
+run `--live`.
 
 ## Reading the results honestly
 

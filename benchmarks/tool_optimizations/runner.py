@@ -34,7 +34,7 @@ from .accounting import (
     percentile,
     totals_by_kind,
 )
-from .scenarios import Scenario, build_git_repo, build_large_file_repo
+from .scenarios import Scenario, build_decided_task_repo, build_git_repo, build_large_file_repo
 
 __all__ = ("RunReport", "ScenarioSummary", "Summary", "run", "summarize", "write_reports")
 
@@ -237,44 +237,47 @@ async def _run_read_scenario(mode: str, workdir: Path) -> tuple[list[UsageRecord
     return records, None, 0
 
 
-async def _run_task_scenario(mode: str, workdir: Path, client_factory) -> tuple[list[UsageRecord], Optional[bool], int]:
-    """Execute the decided-TASK scenario in one mode."""
-    sys.path.insert(0, str(_repo_root() / "packages" / "ai-parrot-tools" / "tests"))
-    from tool_optimizations.fixtures import GOOD_PATCH, make_repo_with_target, make_valid_task
+async def _run_task_scenario(
+    mode: str, workdir: Path, client_factory, scenario: Scenario
+) -> tuple[list[UsageRecord], Optional[bool], int]:
+    """Execute a decided-TASK scenario in one mode.
 
+    The small and large rows share this code path and differ only in
+    ``scenario.implementation_functions``, so the pair brackets the cost
+    crossover instead of confounding size with construction.
+    """
     from parrot_tools.tool_optimizations.reader import BoundedSourceToolkit
     from parrot_tools.tool_optimizations.writer import TargetedWriterToolkit
 
-    repo = make_repo_with_target(workdir)
-    tests_dir = repo / "tests"
-    tests_dir.mkdir()
-    (tests_dir / "test_greeter.py").write_text(
-        "from pkg.greeter import greet\n\n\ndef test_greet():\n    assert greet('world') == 'hello world'\n"
-    )
+    repo, task_path, expected_patch = build_decided_task_repo(workdir, scenario.implementation_functions)
     # `writer_apply` re-checks that no target is already staged, so it needs a
     # real repository — the same precondition a host would have in practice.
     _git(repo, "init", "-q", "-b", "dev")
     _git(repo, "config", "commit.gpgsign", "false")
     _git(repo, "add", ".")
     _git(repo, "commit", "-q", "-m", "base")
-    task = make_valid_task(repo)
-    task_path = task.relative_to(repo).as_posix()
+    task = repo / task_path
     records: list[UsageRecord] = []
 
     if mode == "baseline":
-        # The primary model reads the TASK and writes both files itself.
-        prompt = task.read_text()
-        records.append(UsageRecord(stage="primary_input", tokens=estimate_tokens(prompt), source=ESTIMATE_METHOD))
-        records.append(UsageRecord(stage="primary_output", tokens=estimate_tokens(GOOD_PATCH), source=ESTIMATE_METHOD))
-        # Simulate the same end state so the acceptance test is comparable.
-        (repo / "pkg" / "greeter.py").write_text(
-            'def greet(name: str) -> str:\n    """Return a greeting."""\n    return f"hello {name}"\n'
+        # The primary model reads the TASK and writes the implementation itself.
+        records.append(
+            UsageRecord(stage="primary_input", tokens=estimate_tokens(task.read_text()), source=ESTIMATE_METHOD)
         )
+        records.append(
+            UsageRecord(stage="primary_output", tokens=estimate_tokens(expected_patch), source=ESTIMATE_METHOD)
+        )
+        # Reach the same end state so the acceptance test is comparable.
+        from .scenarios import _generated_module
+
+        (repo / "pkg" / "calculations.py").write_text(_generated_module(scenario.implementation_functions))
+        init = repo / "pkg" / "__init__.py"
+        init.write_text(init.read_text().replace("__all__ = []", "from .calculations import compute_1\n\n__all__ = []"))
         passed = _run_acceptance(repo)
         return records, passed, 0
 
     records.append(_schema_overhead("decided_create_modify_task", repo))
-    client = client_factory()
+    client = client_factory(expected_patch)
     writer = TargetedWriterToolkit(repo_root=repo, llm_client=client)
     generated = await writer.writer_generate(task_path)
     if generated.status != "ok":
@@ -325,7 +328,7 @@ def _run_acceptance(repo: Path) -> bool:
         ]
     ).rstrip(os.pathsep)
     completed = subprocess.run(
-        [sys.executable, "-m", "pytest", "tests/test_greeter.py", "-q"],
+        [sys.executable, "-m", "pytest", "tests/", "-q"],
         cwd=repo,
         capture_output=True,
         text=True,
@@ -335,13 +338,21 @@ def _run_acceptance(repo: Path) -> bool:
     return completed.returncode == 0
 
 
-def _default_client_factory():
-    """Return the offline scripted delegate."""
+def _default_client_factory(patch_text: str):
+    """Return an offline scripted delegate that answers with ``patch_text``.
+
+    Args:
+        patch_text: The unified diff this scenario expects the delegate to
+            produce. Scripting it per scenario keeps the offline run
+            deterministic without pinning a single hard-coded patch.
+
+    Returns:
+        A recording fake client.
+    """
     sys.path.insert(0, str(_repo_root() / "packages" / "ai-parrot-tools" / "tests"))
-    from tool_optimizations.fixtures import GOOD_PATCH
     from tool_optimizations.test_writer import FakeClient
 
-    return FakeClient([GOOD_PATCH])
+    return FakeClient([patch_text])
 
 
 async def run(
@@ -380,7 +391,7 @@ async def run(
         elif scenario.kind == "targeted_read_large_file":
             records, passed, retries = await _run_read_scenario(mode, attempt_dir)
         else:
-            records, passed, retries = await _run_task_scenario(mode, attempt_dir, factory)
+            records, passed, retries = await _run_task_scenario(mode, attempt_dir, factory, scenario)
 
         reports.append(
             RunReport(
@@ -461,7 +472,19 @@ def summarize(reports: list[RunReport], *, live: bool = False, prices: Optional[
         "No savings percentage is claimed. Numeric targets are an owner decision (spec section 8).",
     ]
     if not live:
-        notes.append("Offline run: the delegate was a scripted fake, so delegate latency is not representative.")
+        notes.append(
+            "Offline run: the delegate is a scripted fake. Its latency AND its token usage are fixed stubs "
+            "that do not scale with the generated code, so delegate columns are placeholders offline. "
+            "Use --live for any delegate figure."
+        )
+    notes.append(
+        "On raw token count, delegation cannot win: the primary still reads the TASK, the tokens it would "
+        "have WRITTEN become tokens it READS during hunk review (1:1), and the delegate's own tokens are "
+        "added on top. The two decided_task rows show this — the absolute penalty is constant regardless of "
+        "implementation size; only its RELATIVE weight shrinks as the work grows. Delegation is a COST "
+        "argument (output tokens are several times dearer than input, and the delegate is cheaper per token), "
+        "not a token-count argument. Fill in prices.yaml and run --live to evaluate it."
+    )
     return Summary(created_at=datetime.now(timezone.utc).isoformat(), live=live, scenarios=scenarios, notes=notes)
 
 

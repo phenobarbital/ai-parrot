@@ -44,7 +44,10 @@ def _live_client_factory():
     config = load_toolkits_config(example.parent, config_path=example)
     section = config.toolkits["targeted-writer"]
 
-    def factory():
+    def factory(_expected_patch: str = ""):
+        # Signature matches the offline factory. A live delegate writes its
+        # own patch, so the scenario's expected diff is deliberately unused —
+        # feeding it in would turn the measurement into a rehearsal.
         return LLMFactory.create(section.llm, **section.llm_kwargs)
 
     return factory

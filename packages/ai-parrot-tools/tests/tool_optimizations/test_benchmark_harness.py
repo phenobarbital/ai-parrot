@@ -268,3 +268,103 @@ def test_report_discloses_the_schema_overhead_accounting(tmp_path):
     assert "lower bound" in notes
     assert "cancel out" in notes
     assert "tool_schema_overhead" in render_markdown(summary) or "tool_schema_overhead" in notes
+
+
+# --------------------------------------------------------------------------- #
+# The size crossover
+# --------------------------------------------------------------------------- #
+def test_both_task_sizes_are_registered():
+    """The suite brackets the crossover with a small and a realistic task."""
+    tasks = {s.name: s for s in SCENARIOS if s.kind == "decided_create_modify_task"}
+    assert set(tasks) == {"decided_task", "decided_task_large"}
+    assert tasks["decided_task"].implementation_functions < tasks["decided_task_large"].implementation_functions
+    assert all(s.has_acceptance for s in tasks.values())
+
+
+def test_generated_task_repo_is_self_consistent(tmp_path):
+    """The repo, packet and patch are generated together, so they cannot rot."""
+    import asyncio
+
+    from parrot_tools.tool_optimizations.contracts import validate_contract
+    from parrot_tools.tool_optimizations.patches import apply_in_memory, check_scope, normalize_patch, parse_patch
+    from parrot_tools.tool_optimizations.policy import OptimizationPolicy
+
+    from benchmarks.tool_optimizations.scenarios import build_decided_task_repo
+
+    repo, task_path, patch_text = build_decided_task_repo(tmp_path, 37)
+
+    contract = asyncio.run(validate_contract(OptimizationPolicy(repo_root=repo), task_path))
+    assert set(contract.blocks) == {"impl-calculations", "impl-init"}
+
+    patches = parse_patch(normalize_patch(patch_text), max_bytes=200_000)
+    check_scope(patches, {t.path: t.action for t in contract.packet.targets})
+    after = apply_in_memory(
+        patches,
+        {"pkg/__init__.py": (repo / "pkg" / "__init__.py").read_bytes(), "pkg/calculations.py": None},
+    )
+
+    module = after["pkg/calculations.py"].decode()
+    assert module.count("def compute_") == 37
+    assert 140 <= len(module.splitlines()) <= 160, "the large scenario must be a realistic ~150 lines"
+    assert "from .calculations import compute_1" in after["pkg/__init__.py"].decode()
+
+
+def test_generated_implementation_has_no_placeholders(tmp_path):
+    """A decided implementation must pass the contract's placeholder rules."""
+    import asyncio
+
+    from parrot_tools.tool_optimizations.contracts import find_placeholders, validate_contract
+    from parrot_tools.tool_optimizations.policy import OptimizationPolicy
+
+    from benchmarks.tool_optimizations.scenarios import build_decided_task_repo
+
+    repo, task_path, _patch = build_decided_task_repo(tmp_path, 37)
+    contract = asyncio.run(validate_contract(OptimizationPolicy(repo_root=repo), task_path))
+    for block in contract.blocks.values():
+        assert find_placeholders(block) == [], f"{block.block_id} contains placeholder code"
+
+
+async def test_large_task_acceptance_actually_runs(tmp_path):
+    """The large scenario's pass rate must come from a real pytest run."""
+    scenario = next(s for s in SCENARIOS if s.name == "decided_task_large")
+    reports = await run(scenario, "optimized", runs=1, workdir=tmp_path)
+    assert reports[0].acceptance_passed is True
+
+
+async def test_delegation_penalty_is_constant_across_task_size(tmp_path):
+    """The optimized penalty does not shrink in absolute terms as work grows.
+
+    This is the structural result the two rows exist to show: the primary
+    still reads the TASK, the tokens it would have written become tokens it
+    reads during review (1:1), and the delegate's tokens are added on top.
+    So the absolute delta is the fixed schema overhead plus delegate usage —
+    only its *relative* weight falls as the implementation grows.
+    """
+    deltas = {}
+    for name in ("decided_task", "decided_task_large"):
+        scenario = next(s for s in SCENARIOS if s.name == name)
+        reports = []
+        for mode in ("baseline", "optimized"):
+            reports.extend(await run(scenario, mode, runs=1, workdir=tmp_path / f"{name}-{mode}"))
+        entry = summarize(reports).scenarios[0]
+        deltas[name] = (
+            entry["optimized"]["total_tokens"] - entry["baseline"]["total_tokens"],
+            entry["baseline"]["total_tokens"],
+        )
+
+    small_delta, small_base = deltas["decided_task"]
+    large_delta, large_base = deltas["decided_task_large"]
+
+    assert large_base > small_base * 2, "the large scenario must be substantially bigger work"
+    assert small_delta == large_delta, "the absolute penalty is the fixed overhead, not size-dependent"
+    assert small_delta > 0, "delegation never reduces raw token count"
+    # Relative penalty collapses as the work grows — the useful half of the result.
+    assert (large_delta / large_base) < (small_delta / small_base) / 2
+
+
+def test_report_states_that_delegation_is_a_cost_argument():
+    """The report must not let a reader infer a token saving that cannot exist."""
+    notes = " ".join(summarize([]).notes)
+    assert "cannot win" in notes
+    assert "COST argument" in notes
+    assert "not a token-count argument" in notes
