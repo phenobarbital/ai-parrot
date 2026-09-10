@@ -44,6 +44,7 @@ TOOL_REGISTRY: dict[str, str] = {
     "code_interpreter": "parrot_tools.codeinterpreter.tool.CodeInterpreterTool",
     "company_info": "parrot_tools.company_info.tool.CompanyInfoToolkit",
     "computer_interaction": "parrot_tools.computer.toolkit.ComputerInteractionToolkit",
+    "contracts": "parrot_tools.contracts.toolkit.ContractsToolkit",
     "correlation_analysis": "parrot_tools.correlationanalysis.CorrelationAnalysisTool",
     "csv_export": "parrot_tools.csv_export.CSVExportTool",
     "data_frame_to_csv": "parrot_tools.csv_export.DataFrameToCSVTool",
