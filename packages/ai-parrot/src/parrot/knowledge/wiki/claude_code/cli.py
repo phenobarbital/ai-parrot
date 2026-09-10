@@ -78,12 +78,19 @@ def claude() -> None:
     show_default=True,
     help="Install Bookstore MCP and skill when an indexed library exists (no indexing).",
 )
+@click.option(
+    "--tool-guards/--no-tool-guards",
+    default=False,
+    show_default=True,
+    help="Install the opt-in PreToolUse read guard (FEAT-543) that denies unbounded reads of large files.",
+)
 def install(
     path_: Optional[str],
     git_hook: bool,
     gitignore: bool,
     build_now: bool,
     bookstore: bool,
+    tool_guards: bool,
 ) -> None:
     """Install the wiki toolkit as Claude Code infrastructure.
 
@@ -95,14 +102,24 @@ def install(
     root = _resolve_root(path_)
     try:
         config = load_effective_config(root).config
-        actions = install_claude_integration(
-            root, config, git_hook=git_hook, gitignore=gitignore, bookstore=bookstore
-        )
+        actions = install_claude_integration(root, config, git_hook=git_hook, gitignore=gitignore, bookstore=bookstore)
     except (RuntimeError, WikiConfigError) as exc:
         raise click.ClickException(str(exc)) from exc
 
     for action in actions:
         click.echo(f"  ✓ {action}")
+
+    if tool_guards:
+        # Lazy import: core must not hard-depend on ai-parrot-tools.
+        try:
+            from parrot_tools.tool_optimizations.installation import install_guards
+        except ImportError as exc:  # pragma: no cover - exercised via monkeypatch
+            raise click.ClickException("tool guards require ai-parrot-tools: uv pip install ai-parrot-tools") from exc
+        try:
+            for action in install_guards(root, "claude"):
+                click.echo(f"  ✓ {action}")
+        except RuntimeError as exc:
+            raise click.ClickException(str(exc)) from exc
 
     if build_now and not config.is_built(root):
         click.echo("Building the wiki plane (first run)...")
@@ -125,6 +142,17 @@ def uninstall(path_: Optional[str]) -> None:
     for action in uninstall_claude_integration(root):
         click.echo(f"  ✓ {action}")
 
+    try:
+        from parrot_tools.tool_optimizations.installation import uninstall_guards
+    except ImportError:
+        pass
+    else:
+        try:
+            for action in uninstall_guards(root, "claude"):
+                click.echo(f"  ✓ {action}")
+        except RuntimeError as exc:
+            raise click.ClickException(str(exc)) from exc
+
 
 @claude.command()
 @path_option
@@ -133,6 +161,13 @@ def status(path_: Optional[str], as_json: bool) -> None:
     """Show which integration pieces are installed."""
     root = _resolve_root(path_)
     info = integration_status(root)
+
+    try:
+        from parrot_tools.tool_optimizations.installation import guard_status
+    except ImportError:
+        pass
+    else:
+        info["tool_guards"] = guard_status(root, "claude")
     if as_json:
         click.echo(json.dumps(info, indent=2))
         return
