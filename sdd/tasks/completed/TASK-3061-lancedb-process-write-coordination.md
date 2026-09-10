@@ -309,7 +309,9 @@ These are test contracts, not executed test results or placeholder production im
 
 ## Completion Note
 
-**Completed by**: not started
-**Date**: not completed
-**Notes**: Pending execution; no implementation or acceptance tests run during task decomposition.
-**Deviations from spec**: The checked answers supersede stale prose; TASK-3057 reconciles that discrepancy before implementation.
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-10
+**Notes**: Implemented `lancedb_concurrency.py` per blueprint and TASK-3057's gate evidence (`sdd/state/FEAT-542/lancedb-sdk-contract.md::Concurrency contract`). `MutationCoordinator.for_directory(uri, collection)` keys on `str(Path(uri).resolve())::collection`, so two processes/spellings of the same path contend on the same key; `__post_init__` swaps in a process-local shared `asyncio.Lock` from a module-level registry so multiple in-process instances for the same key also serialize. `exclusive()` acquires a non-blocking, polling `fcntl.flock` off the event loop via `asyncio.to_thread` (bounded by `acquire_timeout_seconds`), stored at `<uri>/.parrot_lancedb_locks/<collection>.lock` — never unlinked, never stolen on a PID/age heuristic; process death releases it via the kernel's own fd-close-on-exit guarantee (verified with a real `SIGKILL` test). `run_mutation()` layers bounded retry-with-jitter around `exclusive()` for `CommitConflict`-raising operations, per the gate's explicit finding that this is defense-in-depth, not the primary mechanism (the SDK raised no distinguishable conflict exception in TASK-3057's race).
+
+`test_lancedb_concurrency.py`: 9 tests, all pass (`uv run pytest packages/ai-parrot-embeddings/tests/test_lancedb_concurrency.py -v`, log at `artifacts/logs/TASK-3061-lancedb.log`), including two real `multiprocessing.Process` (spawn context) cases — serialized exclusive sections (holder releases before waiter's `acquired` timestamp) and successor progress after `os.kill(pid, SIGKILL)` on the lock holder — deliberately not threads, which would pass against a coordinator with no actual cross-process guarantee. Cancellation test confirms a cancelled holder releases ownership (a fresh acquirer proceeds) without claiming any rollback of prior state. `ruff check` clean.
+**Deviations from spec**: None from scope. `run_mutation`'s retry path is exercised only with a synthetic `CommitConflict`-raising operation (no real SDK operation raises this exception per the gate's finding) — this is consistent with the task's explicit "NOT in scope: CRUD algorithms" boundary; TASK-3062/3063 wire real store operations through this coordinator.

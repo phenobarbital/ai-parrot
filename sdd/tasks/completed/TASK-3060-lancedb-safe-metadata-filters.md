@@ -279,7 +279,9 @@ These are test contracts, not executed test results or placeholder production im
 
 ## Completion Note
 
-**Completed by**: not started
-**Date**: not completed
-**Notes**: Pending execution; no implementation or acceptance tests run during task decomposition.
-**Deviations from spec**: The checked answers supersede stale prose; TASK-3057 reconciles that discrepancy before implementation.
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-10
+**Notes**: Implemented `lancedb_filters.py` per blueprint: `compile_metadata_filter` dispatches per-key to equality/membership/null with strict type checking against the field's declared type (`_declared_field_type` resolves standard reserved fields or `config.metadata_fields`), no string→number/bool coercion, `bool` explicitly excluded from `int` membership (checked via `type(item)` set, not `isinstance`, so `True`/`1` don't collapse into one "homogeneous" bucket). Empty IN-lists compile to `(1 = 0)` — a never-matching predicate distinct from "no restriction". `parent_exclusion_clause()` is a standalone function that never references `is_chunk`, so it cannot be overridden by it; missing markers (`IS NULL`) stay visible. `_quote_literal` is the single escaping choke point (doubled single-quotes, NUL-byte and non-finite-number rejection). `combine()` AND-joins into one parenthesized predicate string for reuse across vector/FTS/hybrid/delete callers.
+
+`test_lancedb_filters.py`: 27 tests, all pass (`uv run pytest packages/ai-parrot-embeddings/tests/test_lancedb_filters.py -v`, log at `artifacts/logs/TASK-3060-lancedb.log`), covering the supported-mapping matrix, the full rejection list (unknown field, nested object, str-as-number, bool-as-int, mixed list, null-in-list), parent-visibility (missing markers visible, `is_chunk` cannot override), hostile input (quotes, SQL-like payloads, NUL bytes, non-finite floats, malicious identifiers), and delete-predicate reuse without the parent clause. `ruff check` clean.
+**Deviations from spec**: None. No SDK query builder or delete execution touched (both explicitly out of scope) — this task ships only the pure string compiler.

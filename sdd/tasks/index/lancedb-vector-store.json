@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-10T00:33:53Z",
-  "completed_at": null,
+  "completed_at": "2026-09-10T13:31:52+00:00",
   "isolation": "per-spec",
   "parallelism_notes": "TASK-3057 is the mandatory reconciliation/SDK gate. Packaging, models and then coordinator/filter/origin work use disjoint ownership. Backend lifecycle -> CRUD -> vector -> FTS/hybrid tasks are sequential. Offline and end-to-end validation can run concurrently after registration. Final docs/CI waits for both.",
   "scope_precedence": "The spec is marked approved. Its checked section 8 answers require fully offline agent operation after provisioning, concurrent independent writers, graph federation only, and whole-origin failure; they override older draft assumptions. TASK-3057 must reconcile the spec and prove the SDK/offline/concurrency contracts before dependent implementation begins. Do not reinstate single-writer-only or storage-only-offline behavior.",
@@ -78,7 +78,7 @@
       "feature_id": "FEAT-542",
       "feature": "lancedb-vector-store",
       "spec": "sdd/specs/lancedb-vector-store.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "estimated_hours": 4,
@@ -87,9 +87,10 @@
       "parallelism_notes": "Sequential/gated. No production code until this gate is done. Provisioning and SDK installation during this future task still follow dependency/approval policy. Do not mark an unsupported SDK or a mock-only probe as passing.",
       "assigned_to": null,
       "assigned_at": null,
-      "started_at": "2026-09-10T11:10:52+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3057-lancedb-approved-contract-gate.md"
+      "started_at": null,
+      "completed_at": "2026-09-10T11:21:11+00:00",
+      "file": "sdd/tasks/completed/TASK-3057-lancedb-approved-contract-gate.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3058",
@@ -98,7 +99,7 @@
       "feature_id": "FEAT-542",
       "feature": "lancedb-vector-store",
       "spec": "sdd/specs/lancedb-vector-store.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "estimated_hours": 1.5,
@@ -109,9 +110,10 @@
       "parallelism_notes": "Independent file ownership once dependencies are done. Can run alongside schema and coordinator work after the gate; exclusive ownership of the embeddings manifest and uv.lock.",
       "assigned_to": null,
       "assigned_at": null,
-      "started_at": "2026-09-10T11:10:52+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3058-lancedb-optional-dependency.md"
+      "started_at": null,
+      "completed_at": "2026-09-10T11:22:52+00:00",
+      "file": "sdd/tasks/completed/TASK-3058-lancedb-optional-dependency.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3059",
@@ -120,7 +122,7 @@
       "feature_id": "FEAT-542",
       "feature": "lancedb-vector-store",
       "spec": "sdd/specs/lancedb-vector-store.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "estimated_hours": 4,
@@ -131,9 +133,10 @@
       "parallelism_notes": "Independent file ownership once dependencies are done. Independent of manifest packaging and coordinator implementation after the gate. Do not import the tools distribution or eagerly import lancedb.",
       "assigned_to": null,
       "assigned_at": null,
-      "started_at": "2026-09-10T11:10:52+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3059-lancedb-models-schema-identity.md"
+      "started_at": null,
+      "completed_at": "2026-09-10T11:25:42+00:00",
+      "file": "sdd/tasks/completed/TASK-3059-lancedb-models-schema-identity.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3060",
@@ -142,7 +145,7 @@
       "feature_id": "FEAT-542",
       "feature": "lancedb-vector-store",
       "spec": "sdd/specs/lancedb-vector-store.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "estimated_hours": 3,
@@ -153,9 +156,10 @@
       "parallelism_notes": "Independent file ownership once dependencies are done. Can run alongside lifecycle and origin work after models. Verify any new SDK expression API through gate evidence instead of inventing parameter binding.",
       "assigned_to": null,
       "assigned_at": null,
-      "started_at": "2026-09-10T11:10:52+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3060-lancedb-safe-metadata-filters.md"
+      "started_at": null,
+      "completed_at": "2026-09-10T11:28:04+00:00",
+      "file": "sdd/tasks/completed/TASK-3060-lancedb-safe-metadata-filters.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3061",
@@ -164,7 +168,7 @@
       "feature_id": "FEAT-542",
       "feature": "lancedb-vector-store",
       "spec": "sdd/specs/lancedb-vector-store.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "estimated_hours": 4,
@@ -176,9 +180,10 @@
       "parallelism_notes": "Independent file ownership once dependencies are done. Can run alongside filters and the origin adapter after models. Store integration happens in dependent tasks; this task tests the primitive using deterministic critical-section workers.",
       "assigned_to": null,
       "assigned_at": null,
-      "started_at": "2026-09-10T11:10:52+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3061-lancedb-process-write-coordination.md"
+      "started_at": null,
+      "completed_at": "2026-09-10T11:31:13+00:00",
+      "file": "sdd/tasks/completed/TASK-3061-lancedb-process-write-coordination.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3062",
@@ -187,7 +192,7 @@
       "feature_id": "FEAT-542",
       "feature": "lancedb-vector-store",
       "spec": "sdd/specs/lancedb-vector-store.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "estimated_hours": 4,
@@ -200,9 +205,10 @@
       "parallelism_notes": "Sequential/gated. The subclass may remain abstract until later tasks implement inherited operations; lifecycle tests may use a concrete test-only harness. Register only after all operations are complete. Shared backend edits are sequential.",
       "assigned_to": null,
       "assigned_at": null,
-      "started_at": "2026-09-10T11:10:52+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3062-lancedb-lifecycle-lazy-embeddings.md"
+      "started_at": null,
+      "completed_at": "2026-09-10T11:36:42+00:00",
+      "file": "sdd/tasks/completed/TASK-3062-lancedb-lifecycle-lazy-embeddings.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3063",
@@ -211,7 +217,7 @@
       "feature_id": "FEAT-542",
       "feature": "lancedb-vector-store",
       "spec": "sdd/specs/lancedb-vector-store.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "estimated_hours": 4,
@@ -223,9 +229,10 @@
       "parallelism_notes": "Sequential/gated. Only this task edits backend mutations. Later query task verifies cross-mode visibility; test-only lifecycle harness may remain until similarity_search is implemented.",
       "assigned_to": null,
       "assigned_at": null,
-      "started_at": "2026-09-10T11:10:52+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3063-lancedb-upserts-safe-deletes.md"
+      "started_at": null,
+      "completed_at": "2026-09-10T11:43:58+00:00",
+      "file": "sdd/tasks/completed/TASK-3063-lancedb-upserts-safe-deletes.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3064",
@@ -234,7 +241,7 @@
       "feature_id": "FEAT-542",
       "feature": "lancedb-vector-store",
       "spec": "sdd/specs/lancedb-vector-store.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "estimated_hours": 3,
@@ -245,9 +252,10 @@
       "parallelism_notes": "Sequential/gated. Sequential backend writer after mutation task. Preserve SearchResult.distance as raw score; the tool's input threshold is minimum similarity, not an output-score reinterpretation.",
       "assigned_to": null,
       "assigned_at": null,
-      "started_at": "2026-09-10T11:10:52+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3064-lancedb-cosine-vector-search.md"
+      "started_at": null,
+      "completed_at": "2026-09-10T11:47:17+00:00",
+      "file": "sdd/tasks/completed/TASK-3064-lancedb-cosine-vector-search.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3065",
@@ -256,7 +264,7 @@
       "feature_id": "FEAT-542",
       "feature": "lancedb-vector-store",
       "spec": "sdd/specs/lancedb-vector-store.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "estimated_hours": 4,
@@ -267,9 +275,10 @@
       "parallelism_notes": "Sequential/gated. Last normal backend writer. Use exact APIs from the gate; an async function wrapping a synchronous SDK call without offloading is not sufficient.",
       "assigned_to": null,
       "assigned_at": null,
-      "started_at": "2026-09-10T11:10:52+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3065-lancedb-native-fts-hybrid.md"
+      "started_at": null,
+      "completed_at": "2026-09-10T11:50:02+00:00",
+      "file": "sdd/tasks/completed/TASK-3065-lancedb-native-fts-hybrid.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3066",
@@ -278,7 +287,7 @@
       "feature_id": "FEAT-542",
       "feature": "lancedb-vector-store",
       "spec": "sdd/specs/lancedb-vector-store.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "estimated_hours": 3,
@@ -289,9 +298,10 @@
       "parallelism_notes": "Independent file ownership once dependencies are done. Can run alongside filter/coordinator/backend work after models. TYPE_CHECKING imports or a narrow typed duck contract must not require the SDK at runtime.",
       "assigned_to": null,
       "assigned_at": null,
-      "started_at": "2026-09-10T11:10:52+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3066-lancedb-search-origin.md"
+      "started_at": null,
+      "completed_at": "2026-09-10T11:53:14+00:00",
+      "file": "sdd/tasks/completed/TASK-3066-lancedb-search-origin.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3067",
@@ -300,7 +310,7 @@
       "feature_id": "FEAT-542",
       "feature": "lancedb-vector-store",
       "spec": "sdd/specs/lancedb-vector-store.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "estimated_hours": 2,
@@ -312,9 +322,10 @@
       "parallelism_notes": "Sequential/gated. Backend defects found here must be returned to the owning task or explicitly added to scope before editing its file. This task does not own lancedb.py.",
       "assigned_to": null,
       "assigned_at": null,
-      "started_at": "2026-09-10T11:10:52+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3067-lancedb-dispatch-compatibility.md"
+      "started_at": null,
+      "completed_at": "2026-09-10T11:58:29+00:00",
+      "file": "sdd/tasks/completed/TASK-3067-lancedb-dispatch-compatibility.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3068",
@@ -323,7 +334,7 @@
       "feature_id": "FEAT-542",
       "feature": "lancedb-vector-store",
       "spec": "sdd/specs/lancedb-vector-store.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "estimated_hours": 4,
@@ -334,9 +345,10 @@
       "parallelism_notes": "Independent file ownership once dependencies are done. Can run alongside integration tests after registration because owned files are disjoint. Use existing real_llm marker from root pyproject.toml; avoid unregistered custom markers. No new provider/core source edits without updated task scope.",
       "assigned_to": null,
       "assigned_at": null,
-      "started_at": "2026-09-10T11:10:52+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3068-lancedb-offline-agent-profile.md"
+      "started_at": null,
+      "completed_at": "2026-09-10T12:02:16+00:00",
+      "file": "sdd/tasks/completed/TASK-3068-lancedb-offline-agent-profile.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3069",
@@ -345,7 +357,7 @@
       "feature_id": "FEAT-542",
       "feature": "lancedb-vector-store",
       "spec": "sdd/specs/lancedb-vector-store.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "estimated_hours": 4,
@@ -356,9 +368,10 @@
       "parallelism_notes": "Independent file ownership once dependencies are done. Can run alongside offline profile task after registration. Do not modify common fixtures concurrently; fixture deficiencies go back to the models task owner.",
       "assigned_to": null,
       "assigned_at": null,
-      "started_at": "2026-09-10T11:10:52+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3069-lancedb-end-to-end-validation.md"
+      "started_at": null,
+      "completed_at": "2026-09-10T12:08:17+00:00",
+      "file": "sdd/tasks/completed/TASK-3069-lancedb-end-to-end-validation.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3070",
@@ -367,7 +380,7 @@
       "feature_id": "FEAT-542",
       "feature": "lancedb-vector-store",
       "spec": "sdd/specs/lancedb-vector-store.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "estimated_hours": 4,
@@ -379,9 +392,10 @@
       "parallelism_notes": "Sequential/gated. Follow .github/workflows/ci.yml setup conventions, verify action versions before adding new ones, and keep minimal workflow permissions. The real-model acceptance may use a separately provisioned local runner/manual release check, but must be an explicit completion gate.",
       "assigned_to": null,
       "assigned_at": null,
-      "started_at": "2026-09-10T11:10:52+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3070-lancedb-release-docs-ci.md"
+      "started_at": null,
+      "completed_at": "2026-09-10T12:14:46+00:00",
+      "file": "sdd/tasks/completed/TASK-3070-lancedb-release-docs-ci.md",
+      "verification": "verified"
     }
   ]
 }

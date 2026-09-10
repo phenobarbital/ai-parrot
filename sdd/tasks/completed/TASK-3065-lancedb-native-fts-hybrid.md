@@ -295,7 +295,13 @@ These are test contracts, not executed test results or placeholder production im
 
 ## Completion Note
 
-**Completed by**: not started
-**Date**: not completed
-**Notes**: Pending execution; no implementation or acceptance tests run during task decomposition.
-**Deviations from spec**: The checked answers supersede stale prose; TASK-3057 reconciles that discrepancy before implementation.
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-10
+**Notes**: Implemented `fulltext_search` with zero reference to `_ensure_provider`/`self._embedding_provider` anywhere in the method — verified with both a raising-provider fixture (would fail loudly if touched) and, more strongly per the blueprint's own note, a completely fresh `LanceDBStore` instance reopened with NO embedding configuration at all, which still resolves lexical queries. Maps rows to `SearchResult(score=row['_score'])` with `metadata['_lancedb']={mode:'fts', score_kind:'bm25', higher_is_better:True}`; `SearchResult.distance` stays the unchanged (BM25, not a distance) alias per spec.
+
+Implemented `hybrid_search` compiling ONE `combine(compile_metadata_filter(...), parent_exclusion_clause())` predicate and applying it via a SINGLE `.where()` call on the chained `table.query().nearest_to(vector).distance_type("cosine").nearest_to_text(query)` builder. Verified directly against the real SDK before writing the store code that one trailing `.where()` filters BOTH legs (not just the vector leg) — confirmed empirically, not assumed from documentation alone. Maps rows to `LanceDBHybridHit(score=row['_relevance_score'], score_kind='rrf', higher_is_better=True)` in the SDK's native order (1-based `native_rank` recorded, never re-sorted). Neither leg's failure is caught — no fallback, per spec §8.
+
+`test_lancedb_fts_hybrid.py`: 11 tests, all pass on first real run (`uv run pytest packages/ai-parrot-embeddings/tests/test_lancedb_fts_hybrid.py -v`, log at `artifacts/logs/TASK-3065-lancedb.log`), covering: model-free lexical path (both the raising-provider AND the no-provider-reopen cases), BM25/RRF score contracts, lexical-only (`ZXQ731`) + semantic-only candidates both eligible in fusion, one prefilter across both hybrid legs (verified for FTS too), parent exclusion in both FTS and hybrid, post-index-creation upsert/delete visibility with no manual maintenance, and failing-leg propagation with no partial success. Full lancedb-scoped suite (9 modules): 130/130 passing. `ruff check` clean.
+
+**Spec §8 Q6 input (repeated from TASK-3057's gate, reconfirmed here at the call site)**: the pinned SDK's hybrid query result exposes ONLY the fused `_relevance_score` column — no pre-fusion `_distance`/`_score` component columns were present on any row returned by the real hybrid queries this task ran. `LanceDBHybridHit` was NOT widened; no per-leg component scores were added, per the blueprint's explicit instruction.
+**Deviations from spec**: None.

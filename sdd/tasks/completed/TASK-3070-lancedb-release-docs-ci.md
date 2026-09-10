@@ -300,7 +300,11 @@ These are test contracts, not executed test results or placeholder production im
 
 ## Completion Note
 
-**Completed by**: not started
-**Date**: not completed
-**Notes**: Pending execution; no implementation or acceptance tests run during task decomposition.
-**Deviations from spec**: The checked answers supersede stale prose; TASK-3057 reconciles that discrepancy before implementation.
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-10
+**Notes**: `docs/lancedb-vector-store.md` written against shipped behavior (not spec intent) — every code example calls real, tested method signatures from `lancedb.py`. `.github/workflows/lancedb-vector-store.yml` follows the existing `ci.yml` conventions exactly (same action versions/pins, NavConfig scaffold step, system deps, Rust toolchain). Found and fixed a real collection bug while validating the workflow before committing: `packages/ai-parrot-embeddings/tests/` and `packages/ai-parrot-tools/tests/` both ship a `tests/__init__.py`, so pytest's prepend import mode resolves them as the SAME top-level `tests` package when run together in one process, producing `ModuleNotFoundError: No module named 'tests.multistoresearch'`. Split into two separate pytest steps/log files; verified both run clean. The skip-detection step (`grep "^SKIPPED"`) was tested against real log output from both steps before being trusted — `-m "not real_llm"` correctly *deselects* (not skips) `TestRealOfflineRun`, confirmed via `... 1 deselected ...` in the actual run, so the detection step never has to special-case it.
+
+`examples/lancedb_benchmark.py` (git add -f'd): ran a real 50-row smoke test then the actual 1,000-row deterministic baseline (`python examples/lancedb_benchmark.py --rows 1000 --dimension 8 --warmup 3 --samples 10`) — full JSON evidence at `artifacts/logs/lancedb-vector-store-benchmark.log`, transcribed into the doc's benchmark table with the "NOT an SLO" framing preserved verbatim from the task's own instruction.
+
+Commands run and logged: `uv run pytest <14 embeddings modules> -v --tb=short -rs` (177 passed, 3 pre-existing unrelated failures — same torch/transformers-missing and stale-`supported_embeddings`-assertion gaps confirmed pre-existing in TASK-3067's completion note, zero SKIPPED), `uv run pytest packages/ai-parrot-tools/tests/multistoresearch/ -m "not real_llm" -v --tb=short -rs` (71 passed, 1 pre-existing unrelated failure — `test_old_registry_key_removed`, same as TASK-3066/3067/3069 — 1 deselected, zero SKIPPED). Logs at `artifacts/logs/lancedb-vector-store-tests-{embeddings,tools}.log`. `ruff check` clean on the benchmark script; YAML syntax verified with `python -c "import yaml; yaml.safe_load(...)"`.
+**Deviations from spec**: None. This task's dedicated workflow intentionally still surfaces the 3 pre-existing unrelated failures named above (rather than filtering them out) since it runs the exact regression files the blueprint specifies — fixing them is explicitly out of this task's scope ("Library refactors... changing approved criteria" is a listed NOT-in-scope item), and hiding them would misrepresent what the job actually checked.

@@ -289,7 +289,13 @@ These are test contracts, not executed test results or placeholder production im
 
 ## Completion Note
 
-**Completed by**: not started
-**Date**: not completed
-**Notes**: Pending execution; no implementation or acceptance tests run during task decomposition.
-**Deviations from spec**: The checked answers supersede stale prose; TASK-3057 reconciles that discrepancy before implementation.
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-10
+**Notes**: Verified spec §9/v0.2/v0.3 reconciliation is complete (no stale prose remained). Installed `lancedb==0.38.0` in an isolated worktree venv (`uv venv --python /usr/bin/python3.12`) and wrote 6 real-SDK probes in `packages/ai-parrot-embeddings/tests/test_lancedb_sdk_contract.py` — all pass (`uv run pytest packages/ai-parrot-embeddings/tests/test_lancedb_sdk_contract.py -v`, 6 passed, log at `artifacts/logs/TASK-3057-lancedb.log`). Verified `importorskip` keeps the suite green with the SDK absent. Full evidence, including the concurrency coordinator interface for TASK-3061 and the offline profile for TASK-3068, recorded in `sdd/state/FEAT-542/lancedb-sdk-contract.md`. Verdict: **pass**, gate outcome appended to spec §7, §8 Q6 resolved and checked.
+**Deviations from spec**: None from the task's declared scope. One addition beyond the blueprint's 5 stub functions: added a 6th probe, `test_offline_storage_path_denies_sockets`, directly proving the storage half of AC6/I8 (socket-denied local path) inside the same file already owned by this task — no new file was created for it.
+**Key findings for downstream tasks**:
+1. Default LanceDB vector-query `distance_type` is squared L2, not cosine — TASK-3059/3064 must call `.distance_type("cosine")` explicitly on every vector query.
+2. Cross-process upsert correctness requires a `fcntl.flock`-guarded critical section that reopens the table handle (`conn.open_table`) before mutating — an in-process lock and/or catching a conflict exception is insufficient (no distinguishable conflict exception was observed). TASK-3061 must implement this exact pattern (reference implementation in the probe file's `_mutate_worker`).
+3. Spec §8 Q6 resolved: hybrid queries expose only `_relevance_score` (fused RRF), no pre-fusion component columns — `LanceDBHybridHit` ships the single fused score for v1.
+4. This dev environment's system default Python is 3.14, which `uv sync` cannot use for this workspace (`asyncdb==2.15.10` has no cp314 wheel); the worktree venv must be created with `--python /usr/bin/python3.12` (or 3.11/3.13).
+5. Offline agent profile (embedding + LLM provisioning) is fully specified for TASK-3068 but not executed here — no embedding-model weights are cached in this environment, and downloading them is out of this 4-hour gate's scope and a documented spec Non-Goal to vendor.

@@ -262,7 +262,11 @@ These are test contracts, not executed test results or placeholder production im
 
 ## Completion Note
 
-**Completed by**: not started
-**Date**: not completed
-**Notes**: Pending execution; no implementation or acceptance tests run during task decomposition.
-**Deviations from spec**: The checked answers supersede stale prose; TASK-3057 reconciles that discrepancy before implementation.
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-10
+**Notes**: Added exactly one key to `parrot/stores/__init__.py`'s `supported_stores`, verified against the file's actual current contents first (not assumed from the contract). Updated `STORE_BACKENDS` and both exact-equality `supported_stores` assertions (`test_store_backends_present.py`, `test_namespace_imports.py`) — kept as exact-equality, not weakened, and preserved the `faiss_store`/`arango` "pre-existing mismatch; do NOT fix" comments verbatim. Added `test_lancedb_factory.py` (9 tests, all pass): dispatch resolution to the satellite, `VectorInterface._get_database_store`'s exact name/embedding-field forwarding, `StoreConfig`'s default `index_type='IVF_FLAT'` actionably rejected via `LanceDBConfig`'s `Literal["FLAT"]` (pydantic `ValidationError` naming `'FLAT'`), the tool's full default column-alias kwarg set accepted, non-null `dsn` rejected, both `VectorStoreOrigin` and `LanceDBOrigin` working against one concrete store, and two subprocess-isolated tests for the missing-extra path.
+
+**Scope addition (explicit, not silent)**: found a real gap while testing the "actionable failure upon opening/selection" requirement this task's own Scope names — `LanceDBStore.connection()`'s lazy `import lancedb` raised a bare `ModuleNotFoundError`, not the "reports the exact install extra when missing" spec §7 requires. Per this task's own instruction ("Backend defects found here must be returned to the owning task or explicitly added to scope before editing its file"), I added `_import_lancedb()` — a single narrow wrapper turning that into `ImportError("...ai-parrot-embeddings[lancedb]...")`, used only at the one call site in `connection()`. No other line in `lancedb.py` was touched; `create_collection()` needs no separate fix since it always calls `connection()` first.
+
+Full embeddings suite (`uv run pytest packages/ai-parrot-embeddings/tests/`, log at `artifacts/logs/TASK-3067-lancedb.log`): 192 passed, 5 pre-existing failures (missing torch/transformers for the local reranker; a stale `supported_embeddings` assertion predating FEAT-229's `multimodal` backend) — confirmed via `git stash` that all 5 reproduce identically with this task's changes removed, so none are caused by this task. `ruff check` clean on all five touched files.
+**Deviations from spec**: One file beyond the declared list (`lancedb.py`) was modified, explicitly scoped and justified above — a 12-line additive wrapper, not a redesign or unrelated fix.

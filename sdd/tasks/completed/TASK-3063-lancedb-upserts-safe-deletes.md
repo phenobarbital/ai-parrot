@@ -309,7 +309,11 @@ These are test contracts, not executed test results or placeholder production im
 
 ## Completion Note
 
-**Completed by**: not started
-**Date**: not completed
-**Notes**: Pending execution; no implementation or acceptance tests run during task decomposition.
-**Deviations from spec**: The checked answers supersede stale prose; TASK-3057 reconciles that discrepancy before implementation.
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-10
+**Notes**: Implemented `from_documents`/`add_documents` in the exact five-step order the blueprint fixed: `_resolve_ids` (explicit > `metadata['id']` > `record_id_for(original text)`, conflicting/duplicate raise before any write) → `_validate_metadata` for the full input → deep-copy + `_apply_contextual_augmentation` on copies only → per-batch `provider.embed_documents` + `_validate_vector` (dimension/finite/non-zero-norm) → merge-insert under `self._coordinator.run_mutation` with a freshly reopened table handle. Batch failures (embedding OR mutation) raise `RuntimeError` naming completed-batch count, never claiming rollback; a retry with the same stable IDs converges (tested). `delete_documents` accepts `documents` (Document objects or raw IDs, hashed via the same identity algorithm) XOR `pk`+`values` (`pk="id"` → raw IDs, else a declared metadata field), rejects empty/missing/conflicting selectors, and returns the SDK's own `DeleteResult.num_deleted_rows` — count and delete are the same atomic call, so there's no separate count-then-delete race. `delete_documents_by_filter` reuses `compile_metadata_filter` WITHOUT `parent_exclusion_clause` (deletion is not search) and rejects an empty filter.
+
+Found and fixed a real staleness bug during integration testing (not anticipated by the blueprint): `self._default_table`, once mutated through a freshly-reopened handle inside a coordinator closure, must be reassigned to that exact handle — otherwise `get_vector()`/future search callers would read a pre-write snapshot. This reproduces TASK-3057's gate finding (fresh-handle-before-mutate) as an in-process staleness issue between two independently opened `AsyncTable` objects, not just a cross-process one.
+
+`test_lancedb_mutations.py`: 16 tests, all pass (`uv run pytest packages/ai-parrot-embeddings/tests/test_lancedb_mutations.py -v`, log at `artifacts/logs/TASK-3063-lancedb.log`), including a real two-process (`multiprocessing`, spawn) concurrent upsert of 3 colliding IDs converging to exactly 3 rows (no loss, no duplication). Full lancedb-scoped suite (7 modules): 96/96 passing. `ruff check` clean.
+**Deviations from spec**: None from scope. Reused `lancedb_filters._quote_literal` (a leading-underscore helper) for `record_id IN (...)` clause escaping rather than duplicating the escaping logic — `record_id` is a physical primary-key column, not a `meta_<field>` metadata projection, so `compile_metadata_filter` itself doesn't apply here; this is an import, not a modification, of TASK-3060's file.

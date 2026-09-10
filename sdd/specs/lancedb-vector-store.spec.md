@@ -383,18 +383,33 @@ The official Python API documents `connect_async`, read-consistency configuratio
 
 If the candidate fails resolution or required behavior, stop that implementation gate with the exact conflict and propose a revised pin/spec; do not silently switch to cloud storage, an older FTS engine, a mock-only test, or a global dependency downgrade.
 
+**Gate outcome (TASK-3057, 2026-09-10)**: pass. Resolved versions and the verified
+API surface are recorded in `sdd/state/FEAT-542/lancedb-sdk-contract.md`. The pin
+did not move (`lancedb==0.38.0` confirmed against `pyarrow==25.0.1` on Python
+3.12.3). Two findings sharpen downstream work beyond what was already written:
+default vector-query `distance_type` is squared L2, not cosine — every vector
+query must pass `distance_type="cosine"` explicitly (TASK-3059/3064); and an
+in-process lock plus a bounded retry-on-exception is insufficient for
+cross-process upsert correctness because the SDK raises no distinguishable
+conflict error for the colliding-insert race — the proven mechanism is a
+cross-process `fcntl.flock` guarding a reopen-then-mutate critical section
+(TASK-3061). Spec §8 Q6 is resolved: the SDK's default hybrid query exposes
+only the fused `_relevance_score`, no pre-fusion component columns, so
+`LanceDBHybridHit` ships the single fused score for v1, as already documented
+in §2.
+
 ---
 
 ## 8. Open Questions
 
-The five original brainstorm questions are preserved verbatim and are all answered. Their answers are binding on sections 1–5; where older draft text assumed otherwise it has been corrected (see the Revision History). Q6 is new — raised by the design-research cross-check in section 9 and not yet decided.
+The five original brainstorm questions are preserved verbatim and are all answered. Their answers are binding on sections 1–5; where older draft text assumed otherwise it has been corrected (see the Revision History). Q6 was raised by the design-research cross-check in section 9 and is now resolved by the TASK-3057 SDK gate.
 
 - [x] Include vector, FTS and native hybrid with optional graph federation in v1, or ship only vector and standalone FTS first? — *Owner: Jesus Lara*: Yes
 - [x] Does local-only require embedded storage with existing model providers, or a fully offline agent after provisioning? — *Owner: Jesus Lara*: fully offline agent
 - [x] Can one process own writes initially, or must independent processes write the same dataset concurrently? — *Owner: Jesus Lara*: write concurrently
 - [x] Is federation with existing GraphIndex sufficient, or must LanceDB also replace its internal seed index? — *Owner: Jesus Lara*: only federation
 - [x] Should a failing hybrid leg fail that origin while other origins continue, or return explicitly marked partial results? — *Owner: Jesus Lara*: fail
-- [ ] Q6: Must `LanceDBHybridHit` carry the per-leg vector and lexical component scores/ranks alongside the fused RRF relevance, or is the single fusion score plus `score_kind`/`higher_is_better` sufficient for v1? — *Owner: Jesus Lara* — *Raised by design research S2 (§9)*. Carrying components would let a caller explain why a hybrid hit ranked where it did and would let the toolkit rerank on a component rather than the fused score; it also widens a result contract that M1 freezes for every downstream module. Feasibility is unproven: whether the pinned SDK exposes pre-fusion `_distance`/`_score` columns on a hybrid query is exactly the kind of release-sensitive behavior the I1 gate exists to establish. **If undecided when TASK-3057 runs, that gate should record whether the columns are available, and v1 ships the single fused score.**
+- [x] Q6: Must `LanceDBHybridHit` carry the per-leg vector and lexical component scores/ranks alongside the fused RRF relevance, or is the single fusion score plus `score_kind`/`higher_is_better` sufficient for v1? — *Owner: Jesus Lara* — *Raised by design research S2 (§9), resolved by TASK-3057 gate (2026-09-10)*: single fused score is sufficient for v1. The pinned SDK (`lancedb==0.38.0`) does not expose pre-fusion `_distance`/`_score` component columns on its default hybrid query path (verified in `sdd/state/FEAT-542/lancedb-sdk-contract.md`) — only the fused `_relevance_score`. `LanceDBHybridHit` is NOT widened to carry component scores.
 
 ---
 
