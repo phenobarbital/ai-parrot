@@ -276,3 +276,27 @@ TASK-3101's `git diff --stat` check). No breaking schema change made.
 **Deviations from spec**: none in the implemented modules. AC-10's "test
 still passes" clause is not met, for the pre-existing, out-of-scope,
 verified-independent reason above — flagged rather than silently ignored.
+
+**Post-review addendum (2026-09-10)**: an adversarial `code-reviewer`
+subagent (cross-checked by an independent `codex exec review --base dev`
+pass with no shared reasoning) reviewed the full feature diff and found
+this task's own AC-9 dry run had a real gap: §3b.1–§3b.4 were exercised
+directly, but the real §6 bash block (the atomic-promotion rewrite) was
+never actually invoked end-to-end — which is exactly how a CRITICAL bug in
+TASK-3100's promotion logic survived AC-9 undetected (`mv` failed with "No
+such file or directory" for a freshly-reserved FEAT-ID on every real run,
+since the destination's parent directory didn't exist yet; see TASK-3100's
+own addendum for the fix and re-verification). Also found and fixed: an
+IMPORTANT gap where TASK-3102's `run.json` first-write wasn't gated on
+`codex` being installed (see TASK-3102's addendum), and a 🟡 stale line in
+§3b's "Key Rules" summary referencing only `test -e`/"path not found"
+(updated to also mention the containment check). Both CRITICAL and
+IMPORTANT findings were CONFIRMed, fixed, and re-verified (full 9-test
+suite re-run green; the promotion logic re-simulated for both the
+fresh-FEAT-ID success path and the already-promoted nesting-guard path) in
+a follow-up commit before this feature was pushed. Lesson for future
+`/sdd-spec §3b`-adjacent work: an acceptance dry run must exercise the
+REAL promotion/commit bash block, not a hand-rolled Python stand-in for
+it — a functionally equivalent snippet can silently diverge from the
+actual script's failure modes (missing `mkdir -p` for the destination
+parent) in exactly the way that matters.

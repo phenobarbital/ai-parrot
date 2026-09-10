@@ -236,3 +236,15 @@ both writes end-to-end in a scratch directory (not the real `$DR`, no
 carries `run.json` along automatically — no additional §6 edit needed.
 Twin regenerated; `diff | grep -c '^[<>]'` → `6`.
 **Deviations from spec**: none
+
+**Post-review addendum (2026-09-10)**: the adversarial code-reviewer found
+the §3b.1 `run.json` first-write ran unconditionally, even when `codex` is
+not installed at all (`SKIP_REASON="codex CLI not installed"` set at the
+very top) — in that case `codex --version` and `probe.txt` are both empty,
+so a near-empty `run.json` was still written every time, permanently
+orphaning a mostly-useless `$DR` directory (gitignored, harmless to git,
+but unbounded local clutter and contrary to "evidence of a completed
+run"). Fixed in a follow-up commit by gating the write behind
+`command -v codex`, while keeping the intentional "write even on probe
+failure" behavior for the case where codex IS present but the probe fails.
+The §3b.3 merge step's own `-f "$DR/run.json"` guard needed no change.

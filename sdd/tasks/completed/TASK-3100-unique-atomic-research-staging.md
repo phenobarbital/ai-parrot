@@ -204,3 +204,19 @@ recipe — this also happened to fix pre-existing, unrelated twin drift
 `.claude/commands/sdd-spec.md` after FEAT-543/TASK-3090 merged without
 updating the twin; `diff | grep -c '^[<>]'` now reads `6` as expected).
 **Deviations from spec**: none
+
+**Post-review addendum (2026-09-10)**: the adversarial `code-reviewer`
+subagent (cross-checked by `codex exec review --base dev`) found the
+original `mv "$STAGE_TMP" "sdd/state/<FEAT-ID>/design_research"` failed
+with "No such file or directory" on every real run, because `sdd/state/
+<FEAT-ID>/` (the destination's parent) does not exist yet for a freshly
+reserved FEAT-ID — the exact common case, since the ID is reserved earlier
+in the same `/sdd-spec` invocation. It also found that if the destination
+already existed (a spec rerun), `mv` would nest `STAGE_TMP` *inside* it
+instead of replacing it, silently leaving stale content with `exit 0`.
+Fixed in a follow-up commit: `mkdir -p "sdd/state/<FEAT-ID>"` before the
+`mv`, and an explicit `[ -e "$PROMOTED" ]` guard that refuses to promote
+(printing a warning, leaving `$DR` in place) instead of nesting. Both
+scenarios re-verified locally (fresh-ID success path now succeeds; rerun
+correctly refuses and leaves the destination unchanged) before this
+addendum was written.
