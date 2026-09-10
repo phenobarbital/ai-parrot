@@ -88,7 +88,7 @@
       "feature_id": "FEAT-545",
       "feature": "collaborative-adversarial-spec-design",
       "spec": "sdd/specs/collaborative-adversarial-spec-design.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -99,8 +99,8 @@
       "parallelism_notes": "Consumes the templates from TASK-3095/3096.",
       "assigned_to": null,
       "started_at": "2026-09-10T01:52:16+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3097-sdd-spec-design-research-phase.md"
+      "completed_at": "2026-09-10T02:00:46+00:00",
+      "file": "sdd/tasks/completed/TASK-3097-sdd-spec-design-research-phase.md"
     },
     {
       "id": "TASK-3098",
