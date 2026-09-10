@@ -14,14 +14,14 @@
       "feature_id": "FEAT-547",
       "feature": "sdd-worker-prompt-twin-sync",
       "spec": "sdd/specs/sdd-worker-prompt-twin-sync.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Single task, single file — no parallelism to coordinate.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-10T10:50:12+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3106-sync-sdd-worker-prompt-twin.md"
     }
