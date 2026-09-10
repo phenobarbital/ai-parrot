@@ -447,20 +447,18 @@ Out of scope, deliberately:
 * the verification UI (separate `contracts-verification-ui` spec);
 * new scheduler or transport infrastructure, and any automatic delivery.
 
-### Known limitation
+### Ontology projection notes
 
 `OntologyGraphStore.upsert_nodes` (generic module
-`parrot/knowledge/ontology/graph_store.py`) builds
-`UPSERT { @key_field: doc[@key_field] }`, and ArangoDB rejects a bind
-parameter as an UPSERT example attribute name (ERR 1501). The fallback path
-uses the same construct, so **no node reaches a real ArangoDB through that
-API**; it is pinned by a test in
-`packages/ai-parrot/tests/knowledge/contracts/test_integration.py`. The ten
-AQL patterns are verified against a real graph, but the ontology publish path
-cannot be exercised end to end until that generic module is fixed — which is
-outside this feature's owned files. The catalog, evidence, temporal plane and
-both answer paths are unaffected: SQL search, windows, queues and reports all
-work with no ArangoDB at all.
+`parrot/knowledge/ontology/graph_store.py`) used to build
+`UPSERT { @key_field: doc[@key_field] }`, which ArangoDB rejects (ERR 1501:
+only literal attribute names are allowed in an UPSERT example), so no node
+ever reached a real graph. It now interpolates the ontology-declared key
+field as a validated literal attribute, and the named graph is created with
+whichever edge-definition spelling the installed driver accepts. The
+regression is pinned against a live server in
+`packages/ai-parrot/tests/knowledge/contracts/test_integration.py`
+(`test_the_generic_node_upsert_reaches_a_real_graph`).
 
 ### Recovery and evidence compatibility
 
@@ -469,3 +467,94 @@ reporting the source as unchanged. Section tools read the source-hash-bound
 immutable archive, including for trees created before promotion hash markers.
 A verification timestamp is not a contractual recurrence anchor: recurring
 obligations without evidenced schedule anchors remain in `needs_review`.
+
+---
+
+## 11. Demo deployment — the `contracts_agent` over AgentTalk
+
+`agents/contracts_agent.py` is the deployment wiring this guide leaves to
+the operator: settings, the service factory and an agent the `BotManager`
+discovers from `AGENTS_DIR` and serves at
+`POST /api/v1/agents/chat/contracts_agent`.
+
+### Settings (`CONTRACTS_*`, read from `env/<ENV>/.env` or the process)
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `CONTRACTS_TENANT` | `demo` | catalog tenant; names the ArangoDB database (`contracts_<tenant>`) |
+| `CONTRACTS_PG_DSN` | built from `PG_*` | asyncpg DSN of the catalog database |
+| `CONTRACTS_PG_SCHEMA` | `contracts_<tenant>` | per-tenant Postgres schema |
+| `CONTRACTS_STORAGE_ROOT` / `CONTRACTS_EVIDENCE_ROOT` | `artifacts/contracts/{storage,evidence}` | PageIndex trees / immutable evidence |
+| `CONTRACTS_ARANGO_HOST` / `_PORT` / `_USER` / `_PASSWORD` | `127.0.0.1` / `8529` / `root` / empty | ArangoDB; an empty host disables the projection (SQL retrieval still works) |
+| `CONTRACTS_CARDING_LLM` | `google:gemini-3.1-flash-lite` | carding + PageIndex structured calls |
+| `CONTRACTS_AGENT_LLM` | `google:gemini-3.1-flash-lite` | the ReAct draft |
+| `CONTRACTS_DEFAULT_ROLES` | `contract_reader` | roles granted to every authenticated caller |
+| `CONTRACTS_OWNERS` | empty | user ids that also get `contract_owner` |
+| `CONTRACTS_TODAY` | real date | frozen contractual "today" for reproducible demos |
+
+Roles are configuration, never request data: the AgentTalk `user_id` comes
+from the authenticated session and the request body cannot widen it.
+
+### Feeding contracts and building the graph
+
+```bash
+source .venv/bin/activate
+docker run -d --name parrot-arangodb -p 127.0.0.1:8529:8529 -e ARANGO_ROOT_PASSWORD=parrot docker-arangodb:latest
+export CONTRACTS_ARANGO_PASSWORD=parrot
+
+# card + index + evidence, judge relations, publish the ontology snapshot
+python examples/contracts/demo_ingest.py --corpus artifacts/contracts/demo-contracts/corpus --recursive
+
+# ask through the same gate AgentTalk uses
+python examples/contracts/demo_ask.py --user bob@demo "Which agreements require SOC 2?"
+python examples/contracts/demo_ask.py --user bob@demo --pilot \
+  --answer-key artifacts/contracts/demo-contracts/pilot_answer_key.yaml
+```
+
+### How the agent answers
+
+`ContractsDemoAgent` subclasses `ContractsAgent`. The base class refuses
+`ask()` / `ask_stream()` / `invoke()` because they would return the ReAct
+draft; the demo agent overrides `ask()` and `ask_stream()` so AgentTalk's
+call runs `answer_question()` — authorization, deterministic retrieval,
+draft, citation verification, audit — and the reply is rendered from the
+*released* `ContractAnswer` only. `invoke()` keeps the refusal. The released
+payload (kind, `answer_id`, citations, dropped claims) travels in
+`AIMessage.data`.
+
+### How the ReAct draft is cited
+
+The draft prompt lists the contracts the deterministic retrieval matched
+(they *are* the answer's scope, with today's date and the pattern) and the
+authorized evidence as `[contract_id/node_id] quote` lines. The model ends
+each sentence with the tag(s) it rests on; a sentence is attached to a
+citation when it carries the tag or quotes the evidence verbatim, tags are
+stripped from the released text, and the verifier still re-checks every
+citation's quote against the archived evidence. Untagged prose is dropped.
+
+### Retrieval behaviour worth knowing
+
+* `contracts_requiring_standard` reads every active obligation of every
+  active card and filters by `standard_id`: a standing requirement ("shall
+  maintain ISO 27001 throughout the term") has no due date and no
+  recurrence, so the due-window query cannot see it.
+* The seeded standards include `soc1` and `uk_gdpr`; a qualified name
+  ("SOC 2 Type I or ISO 27001") resolves to the first catalogued standard it
+  mentions.
+
+### Ingestion behaviour worth knowing
+
+* A DOCX without Word heading styles is sectioned by its numbered article
+  captions (`1. DEFINITIONS` → `## 1. DEFINITIONS`, first line → `#` title)
+  and, failing that, deterministically — it never becomes an empty tree.
+* A model excerpt longer than 300 characters is trimmed at a word boundary
+  instead of failing the whole structured section (a verbatim prefix is
+  still verbatim and is checked against the indexed text as before).
+* A clause whose `node_id` is the article number (`3.2`) rather than the
+  section node that was read is rebound to that section when its excerpt is
+  verbatim there; an excerpt that is not verbatim in the read section is
+  still dropped. The obligation prompt now names the expected node id.
+* Only header nodes matched by a section *title* are excluded from
+  obligation extraction. On a page-anchored PDF (`## Page N`) the header
+  fallback takes the first, last and densest pages, which are exactly the
+  obligation-bearing ones, so they stay candidates.

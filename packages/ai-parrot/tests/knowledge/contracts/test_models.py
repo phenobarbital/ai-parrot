@@ -8,6 +8,7 @@ import pytest
 from pydantic import ValidationError
 
 from parrot.knowledge.contracts.models import (
+    ObligationClauseDraft,
     MAX_QUOTE_CHARS,
     AnswerRecord,
     AuthorizationOutcome,
@@ -181,9 +182,22 @@ def test_confidence_outside_unit_interval_is_rejected(confidence):
         Extracted[str](value="x", confidence=confidence)
 
 
-def test_quote_longer_than_cap_is_rejected():
-    with pytest.raises(ValidationError):
-        Evidence(node_id="0001", quote="x" * (MAX_QUOTE_CHARS + 1))
+def test_quote_longer_than_cap_is_trimmed_to_a_verbatim_prefix():
+    """An over-long model excerpt shortens at a word boundary instead of
+    rejecting the whole structured draft (which used to drop every other
+    clause of the section); the prefix stays verbatim for evidence checks."""
+    words = " ".join(f"word{i}" for i in range(80))
+    assert len(words) > MAX_QUOTE_CHARS
+    evidence = Evidence(node_id="0001", quote=words)
+    assert len(evidence.quote) <= MAX_QUOTE_CHARS
+    assert words.startswith(evidence.quote)
+    assert not evidence.quote.endswith(" ") and evidence.quote.split(" ")[-1].startswith("word")
+
+    clause = ObligationClauseDraft(excerpt=words, node_id="0001")
+    assert len(clause.excerpt) <= MAX_QUOTE_CHARS and words.startswith(clause.excerpt)
+
+    # A single unbreakable token is cut hard at the cap.
+    assert len(Evidence(node_id="0001", quote="x" * (MAX_QUOTE_CHARS + 50)).quote) == MAX_QUOTE_CHARS
 
 
 def test_blank_quote_caps_confidence_and_never_substantiates():

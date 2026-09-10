@@ -15,8 +15,10 @@ from parrot.knowledge.contracts.standards import (
 
 EXPECTED_IDS = (
     "soc2",
+    "soc1",
     "iso27001",
     "gdpr",
+    "uk_gdpr",
     "ccpa",
     "hipaa",
     "pci_dss",
@@ -25,7 +27,7 @@ EXPECTED_IDS = (
 )
 
 
-def test_all_eight_standards_are_seeded_in_a_deterministic_order():
+def test_all_standards_are_seeded_in_a_deterministic_order():
     assert STANDARD_IDS == EXPECTED_IDS
     assert set(STANDARDS) == set(EXPECTED_IDS)
 
