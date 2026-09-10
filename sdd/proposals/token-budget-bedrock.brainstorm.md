@@ -10,8 +10,8 @@ base_branch: dev
 
 **Date**: 2026-09-11
 **Author**: Jesus Lara / Codex
-**Status**: exploration
-**Recommended Option**: B
+**Status**: open questions resolved (2026-09-11) — ready for `/sdd-spec`
+**Recommended Option**: B (confirmed by user)
 **Research baseline**: `dev`, commit `2edc2eb9d`
 
 ---
@@ -36,14 +36,20 @@ tools, provider account spending controls, or a context-window size.
 
 ### Discovery Q&A
 
-Two question rounds were presented during exploration. No answers had arrived
-when this draft was written; recommendations below are provisional, not user
-approvals. Flow metadata uses the skill's defaults: feature, based on dev.
+Two question rounds were presented during exploration without answers; the
+draft recommendations were then reviewed with the user on 2026-09-11 and every
+open question was decided. Flow metadata uses the skill's defaults: feature,
+based on dev.
 
-| Round | Questions presented | Proposed answer pending review |
-|---|---|---|
-| 1 | Feature/hotfix and base; input/output accounting; initial provider scope | Feature/dev; input plus output including repeated history; Bedrock and Mantle with a shared interface |
-| 2 | Behavior without exact counting; exhaustion outcome; child agents and resumes | Explicit estimated mode for broad coverage, optional strict mode; partial result with exhaustion status; shared original allowance |
+| Topic | Decision (2026-09-11, Jesus Lara) |
+|---|---|
+| Token metric | Input plus output, all categories: repeated history, tool schemas, system prompt, cache read/write, reasoning. |
+| Guarantee | `estimated` mode by default (broad Mantle coverage, overrun reported); `strict` mode opt-in, rejects unverified model/endpoint combinations before inference. |
+| v1 provider scope | Shared contracts in core; adapters for Bedrock Converse/Nova text and Mantle only. Other clients are explicitly uncovered. |
+| Exhaustion outcome | Reserve a **final-answer request** inside the same ceiling. If even the finalization input does not fit, return the partial result with an exhausted status and no model call. |
+| Final reserve sizing | `final_answer_reserve` configurable as a fraction of the budget (default proposed: 15%) or as an absolute integer; covers input plus output of the closing request. |
+| Durability | In-process only in v1. `resume()` in the same process reattaches to the live ledger; a resume with no live ledger fails typed unless the caller supplies a settled snapshot. No cross-worker coordinator. |
+| Vocabulary | One cumulative ceiling, `token_budget`. The final reserve is an internal partition of it, not a second limit. No soft warning threshold in v1. |
 
 Success means that repeated model requests cannot silently restart the question's
 allowance, callers can see what consumed it, and every supported request path
@@ -62,7 +68,13 @@ either enforces its declared guarantee or explicitly rejects unsupported use.
   and `ContextBudget` are separate controls.
 - Optional configuration: no question budget means existing behavior. Zero means
   no model requests; reject negative/non-integral configuration. Do not select an
-  arbitrary default token allowance for every application.
+  arbitrary default token allowance for every application. When a budget is set,
+  `final_answer_reserve` defaults to a fraction of it (proposed 15%); an absolute
+  integer is accepted; zero disables the reserve. The reserve is carved out of
+  `token_budget`, never added on top of it.
+- v1 scope is a single process: the ledger lives in memory and is shared through
+  explicit arguments plus a ContextVar. Cross-worker or cross-restart budget
+  sharing is out of scope and must fail explicitly, never silently re-mint.
 - First implementation recommendation: text/tool workflows on Converse, inherited
   Nova text methods, and Mantle Chat Completions. Cover `ask`, `ask_stream`,
   `resume`, and text `invoke`, including internal continuations and fallback.
@@ -173,15 +185,16 @@ gives a precise meaning to the cumulative allowance. Option A can only provide a
 after-the-fact cutoff; Option C becomes useful when distributed descendants are a
 confirmed requirement.
 
-Provisionally prefer explicit estimated enforcement for broad Mantle support,
-with strict mode available for verified combinations. This choice requires user
-review: if the requirement is an absolute ceiling, unsupported combinations must
-be rejected rather than admitted using estimates. An estimated budget may overrun
-on an admitted request; it prevents further admissions after exhaustion is known.
+Confirmed: `estimated` enforcement is the default for broad Mantle support, and
+`strict` mode is opt-in for verified model/endpoint combinations. In strict mode
+an unverified combination is rejected before inference rather than admitted on an
+estimate. An estimated budget may overrun on an admitted request; it reports the
+overrun and prevents further admissions after exhaustion is known.
 
-Use one canonical cumulative limit rather than introducing unexplained differences
-between the words "budget" and "limit." A soft warning threshold or a reserved
-final-answer allowance can be added only if separately requested.
+Confirmed: one canonical cumulative ceiling, `token_budget`. "Budget" and "limit"
+are the same number. A **final-answer reserve** is part of v1 (see Feature
+Description); it is a partition of that ceiling, not extra capacity. A soft
+warning threshold is out of scope for v1.
 
 ---
 
@@ -212,13 +225,29 @@ by its model and configured per-request cap. If its required input instead costs
 4,000, the request is denied before inference. Compaction can reduce a future
 request's input; it never refunds tokens already processed.
 
-Recommended exhaustion behavior: return available partial output with a clear
-incomplete/budget-exhausted status and a budget report. Do not make an extra model
-request merely to explain exhaustion. Structured output must not label a partial,
-invalid object as a successful validated result. Low-level admission failures may
-use a typed exception that an outer boundary translates to the requested result
-contract; that exception must not trigger fallback or become an ordinary tool
-error that the model keeps retrying.
+Decided exhaustion behavior: a **final-answer reserve** plus a partial-result
+fallback.
+
+- Ordinary rounds (tool selection, tool-result processing, retries) may only draw
+  on `token_budget - final_answer_reserve`. When the next ordinary round cannot be
+  admitted from that working allowance, the tool loop stops.
+- The loop then issues exactly one **finalization request**: tools disabled, input
+  is the rendered history plus every completed tool result, output cap is whatever
+  remains of the whole ceiling after the finalization input. This is the only
+  request allowed to draw on the reserve. Its result is returned with
+  `budget_exhausted=True` and `finalized=True`.
+- If the finalization input alone does not fit in the remaining ceiling, no model
+  call is made: return the partial output already obtained, with
+  `budget_exhausted=True`, `finalized=False`, and the budget report.
+- `final_answer_reserve` is a fraction of `token_budget` (default 15%) or an
+  absolute integer, validated at configuration time; zero disables the reserve
+  and the behavior collapses to the partial-result fallback.
+
+Structured output must not label a partial, invalid object as a successful
+validated result. Low-level admission failures may use a typed exception that an
+outer boundary translates to the requested result contract; that exception must
+not trigger fallback or become an ordinary tool error that the model keeps
+retrying.
 
 The report distinguishes configured limit, actual settled input/output, outstanding
 or uncertain reservations, available tokens, rounds/attempts, counting mode, and
@@ -233,10 +262,12 @@ any observed overrun. Existing provider usage retains its documented meaning.
    tool definitions/results, structured-output instructions, and model-specific
    parameters. Count the actual request shape after these transformations.
 3. Under a short ledger lock, calculate available allowance as total limit minus
-   settled debits and outstanding reservations. For input estimate/bound `I` and
-   per-call output maximum `M`, allocate `O = min(M, available - I)`; reject if it
-   cannot satisfy the model's minimum valid output/reasoning configuration.
-   Atomically reserve `I + O`. Do not hold the lock during network I/O.
+   settled debits and outstanding reservations, minus `final_answer_reserve` for
+   ordinary rounds (the finalization request skips that subtraction). For input
+   estimate/bound `I` and per-call output maximum `M`, allocate
+   `O = min(M, available - I)`; reject if it cannot satisfy the model's minimum
+   valid output/reasoning configuration. Atomically reserve `I + O`. Do not hold
+   the lock during network I/O.
 4. Pass the admitted output cap through the actual endpoint's supported parameter.
    Converse uses `inferenceConfig.maxTokens` [C1]; the current Mantle client sends
    `max_tokens` [C3]. Verify model-specific alternatives rather than assuming one
@@ -245,13 +276,19 @@ any observed overrun. Existing provider usage retains its documented meaning.
 5. Reconcile each physical attempt once against its authoritative response usage.
    Release unused reservation, preserving an explicit uncertain debit when usage
    is missing. Never count both round deltas and their final accumulated response.
-6. Before further tool execution, stop if already exhausted. Recheck after tool
-   results change the next input. A child LLM call needs its own reservation from
-   the same parent ledger; non-LLM tool execution itself consumes no model tokens.
-7. Persist the operation reference/accounting through suspension as required by
-   the selected resume scope. Concurrent resumes must not duplicate reservations
-   or reset consumption. Unknown/restored state must not silently mint a fresh
-   allowance for the same operation.
+6. Before further tool execution, stop if the working allowance is exhausted.
+   Recheck after tool results change the next input. When an ordinary round is
+   denied, transition to the single finalization request described above; when
+   the finalization input does not fit either, return the partial result. A child
+   LLM call needs its own reservation from the same parent ledger; non-LLM tool
+   execution itself consumes no model tokens.
+7. v1 keeps the ledger in process, keyed by the operation identifier that
+   `resume()` state already carries. A resume in the same process reattaches to
+   the live ledger. A resume with no live ledger (restart, other worker) fails
+   with a typed error unless the caller passes a settled budget snapshot taken
+   from a previous report; a snapshot can only raise settled consumption, never
+   lower it. Concurrent resumes of one operation must not duplicate reservations
+   or reset consumption. Restored state never silently mints a fresh allowance.
 8. Emit observability after ledger transitions. The ledger is authoritative;
    asynchronous lifecycle subscribers remain reporting mechanisms [C9].
 
@@ -300,9 +337,10 @@ any observed overrun. Existing provider usage retains its documented meaning.
   and visible text omit some token categories; stopping a local iterator does not
   prove the server stopped generating. Keep the server-side output cap in force.
 - **Parallel children:** Reserve atomically. In-process ContextVar inheritance
-  carries the ledger reference but does not make compound updates atomic. Across
-  processes, use a durable coordinator/leases or reject unsupported shared-budget
-  execution. Unknown provider descendants must not bypass enforcement silently.
+  carries the ledger reference but does not make compound updates atomic; the
+  ledger's own lock does. Cross-process shared budgets are out of scope for v1
+  and are rejected explicitly; a durable coordinator is a separate future design.
+  Unknown provider descendants must not bypass enforcement silently.
 - **Exhaustion during a tool chain:** Preserve already-completed tool results and
   distinguish unexecuted calls. Never replay side-effecting tools solely because
   the final answer did not fit. Check budget-control exceptions through broad tool
@@ -310,9 +348,13 @@ any observed overrun. Existing provider usage retains its documented meaning.
 - **Missing/malformed usage:** Validate fields; missing usage is not zero. Retain
   a conservative debit and report incomplete accounting. In estimated mode,
   reconcile an observed overrun honestly and stop subsequent admissions.
-- **Final answer:** An optional finalization reserve must include its input and
-  output, and remains inside the same total allowance. It is not free additional
-  capacity and is not provisionally enabled.
+- **Final answer:** The finalization reserve is enabled by default (15% of
+  `token_budget`, or an absolute integer) and covers both input and output of the
+  closing request, inside the same total allowance. It is not free additional
+  capacity. The finalization request runs with tools disabled so it cannot start
+  another round; if its input alone exceeds what remains, it is skipped and the
+  partial result is returned. A budget too small to ever fit a finalization
+  input is a valid configuration that simply always ends in the partial path.
 - **Compaction and thinking:** Context retention can improve the next request's
   fit but does not reset the ledger. A thinking-token allocation must remain valid
   under the reduced request output cap or the request must be rejected.
@@ -321,6 +363,12 @@ any observed overrun. Existing provider usage retains its documented meaning.
 
 - Numeric example above, exact exhaustion, zero budget, and input too large before
   the first request; no provider call occurs for a denied request.
+- Finalization path: ordinary round denied while the reserve still fits → exactly
+  one tools-disabled request, `finalized=True`; finalization input too large →
+  no request, `finalized=False`; `final_answer_reserve=0` → partial path only;
+  fraction and integer forms validate and resolve to the same ledger partition.
+- Resume without a live ledger fails typed; resume with a settled snapshot
+  continues from that consumption and cannot lower it.
 - Multiple tool rounds, repeated input, cache reads/writes, reasoning details,
   and final-response aggregation without duplicate debits.
 - Streaming disconnects, missing usage, request failure after possible processing,
@@ -468,10 +516,10 @@ and no import smoke test is claimed.
 
 - [x] What is the budget lifetime? — *Owner: Jesus Lara*: Per question, cumulative across every turn required to answer it; supplied explicitly in the original request.
 - [x] What flow metadata is recorded? — *Owner: Codex*: `type: feature`, `base_branch: dev`, using the skill defaults because no override was supplied; these are not claimed as explicit user selections.
-- [ ] Should tokens mean input plus output including cache/repeated history, output only, or separate limits? — *Owner: Jesus Lara*: Input plus output is recommended.
-- [ ] Is an absolute ceiling mandatory, or is explicitly estimated enforcement acceptable for unsupported counting paths? — *Owner: Jesus Lara*: Estimated mode plus opt-in strict mode is provisionally recommended for broad Mantle coverage.
-- [ ] Is first-version scope Bedrock/Nova text and Mantle, or must other providers be implemented immediately? — *Owner: Jesus Lara*: Shared contracts with Bedrock/Mantle adapters first are recommended.
-- [ ] Should exhaustion return a partial result/status, raise publicly, or reserve a final-answer request? — *Owner: Jesus Lara*: Partial result/status without another model call is recommended; low-level typed control flow remains possible.
-- [ ] Must descendants and resumes work across process restarts/workers in v1? — *Owner: Jesus Lara*: Shared in-process scopes and explicit same-question resume are recommended; durable coordination needs a confirmed requirement and authoritative state design.
-- [ ] Which exact models, endpoint routes, request shapes, and SDK versions qualify for strict input counting and output caps? — *Owner: Implementer*: Validate full payloads including tools, cache and reasoning semantics; no generic cross-endpoint equivalence is assumed.
-- [ ] Do "token budget" and "token limit" denote one ceiling, or is a separate soft planning target desired? — *Owner: Jesus Lara*: One cumulative ceiling is recommended initially.
+- [x] Should tokens mean input plus output including cache/repeated history, output only, or separate limits? — *Owner: Jesus Lara* (2026-09-11): **Input plus output, all categories.** Repeated history, tool schemas, system prompt, cache read/write and reasoning tokens all debit the ledger every time they are processed.
+- [x] Is an absolute ceiling mandatory, or is explicitly estimated enforcement acceptable for unsupported counting paths? — *Owner: Jesus Lara* (2026-09-11): **`estimated` by default, `strict` opt-in.** Strict rejects unverified model/endpoint combinations before inference; estimated admits on tiktoken/heuristic counts and reports any observed overrun.
+- [x] Is first-version scope Bedrock/Nova text and Mantle, or must other providers be implemented immediately? — *Owner: Jesus Lara* (2026-09-11): **Shared contracts in core plus Bedrock Converse/Nova text and Mantle adapters only.** Other clients remain uncovered and must say so; extending `OpenAIBaseClient` siblings is a later feature.
+- [x] Should exhaustion return a partial result/status, raise publicly, or reserve a final-answer request? — *Owner: Jesus Lara* (2026-09-11): **Reserve a final-answer request** (`final_answer_reserve`, default 15% of the budget or an absolute integer, inside the same ceiling). One tools-disabled finalization request when ordinary rounds can no longer be admitted; if its input does not fit, return the partial result with `budget_exhausted=True` and no model call. No public exception on the bot boundary.
+- [x] Must descendants and resumes work across process restarts/workers in v1? — *Owner: Jesus Lara* (2026-09-11): **In-process only.** Same-process `resume()` reattaches to the live ledger; a resume without a live ledger fails typed unless a settled snapshot is supplied. Durable cross-worker coordination is a separate future design.
+- [x] Which exact models, endpoint routes, request shapes, and SDK versions qualify for strict input counting and output caps? — *Owner: Implementer* (resolved procedurally 2026-09-11): the spec must carry a **strict-qualification matrix** (model × endpoint × request shape × installed SDK) populated only by opt-in live probes; every entry not in the matrix runs in `estimated` mode. Strict support for Bedrock Converse via `CountTokens` is the first candidate; Mantle Chat Completions ships estimated-only until equivalence with the Claude count endpoint is proven.
+- [x] Do "token budget" and "token limit" denote one ceiling, or is a separate soft planning target desired? — *Owner: Jesus Lara* (2026-09-11): **One cumulative ceiling, `token_budget`.** The final reserve is an internal partition of it. No soft warning threshold in v1.
