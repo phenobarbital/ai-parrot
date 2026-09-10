@@ -50,7 +50,7 @@
       "feature_id": "FEAT-546",
       "feature": "design-research-hardening",
       "spec": "sdd/specs/design-research-hardening.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -61,8 +61,8 @@
       "parallelism_notes": "Depends on TASK-3100's run-scoped $DR and TASK-3104's probe-content check.",
       "assigned_to": null,
       "started_at": "2026-09-10T09:46:18+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3102-persist-execution-record.md"
+      "completed_at": "2026-09-10T09:53:50+00:00",
+      "file": "sdd/tasks/completed/TASK-3102-persist-execution-record.md"
     },
     {
       "id": "TASK-3103",
