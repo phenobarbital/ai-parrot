@@ -14,14 +14,14 @@
       "feature_id": "FEAT-544",
       "feature": "a2ui-form-output-renderer",
       "spec": "sdd/specs/a2ui-form-output-renderer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L (4-8h)",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Foundation task — every other task imports from renderers/a2ui.py.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-10T22:10:09+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3071-a2ui-renderer-skeleton-layout-submit.md"
     },
@@ -32,7 +32,7 @@
       "feature_id": "FEAT-544",
       "feature": "a2ui-form-output-renderer",
       "spec": "sdd/specs/a2ui-form-output-renderer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L (4-8h)",
       "depends_on": [
@@ -41,7 +41,7 @@
       "parallel": false,
       "parallelism_notes": "Edits renderers/a2ui.py created by TASK-3071 (same file) — must run after it; independent of TASK-3073/3074.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-10T22:10:09+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3072-a2ui-field-lowering-checks-degradation.md"
     },
@@ -52,7 +52,7 @@
       "feature_id": "FEAT-544",
       "feature": "a2ui-form-output-renderer",
       "spec": "sdd/specs/a2ui-form-output-renderer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S (< 2h)",
       "depends_on": [
@@ -61,7 +61,7 @@
       "parallel": true,
       "parallelism_notes": "Touches api/render.py, renderers/__init__.py and pyproject.toml only — no file overlap with TASK-3072 or TASK-3074; can run in a parallel worktree once TASK-3071 is merged.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-10T22:10:09+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3073-a2ui-renderer-registration-packaging.md"
     },
@@ -72,7 +72,7 @@
       "feature_id": "FEAT-544",
       "feature": "a2ui-form-output-renderer",
       "spec": "sdd/specs/a2ui-form-output-renderer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M (2-4h)",
       "depends_on": [
@@ -81,7 +81,7 @@
       "parallel": true,
       "parallelism_notes": "New file; only shares the pointer helpers from TASK-3071. No overlap with TASK-3072/3073 — safe in a parallel worktree.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-10T22:10:09+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3074-a2ui-wire-helpers.md"
     },
@@ -92,7 +92,7 @@
       "feature_id": "FEAT-544",
       "feature": "a2ui-form-output-renderer",
       "spec": "sdd/specs/a2ui-form-output-renderer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M (2-4h)",
       "depends_on": [
@@ -101,7 +101,7 @@
       "parallel": false,
       "parallelism_notes": "Edits handlers.py; TASK-3076 edits the same file — run sequentially (3075 then 3076).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-10T22:10:09+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3075-submit-data-dual-wire.md"
     },
@@ -112,7 +112,7 @@
       "feature_id": "FEAT-544",
       "feature": "a2ui-form-output-renderer",
       "spec": "sdd/specs/a2ui-form-output-renderer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S (< 2h)",
       "depends_on": [
@@ -122,7 +122,7 @@
       "parallel": false,
       "parallelism_notes": "Same file as TASK-3075 (handlers.py) — sequential after it to avoid merge conflicts.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-10T22:10:09+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3076-validate-dual-wire.md"
     },
@@ -133,7 +133,7 @@
       "feature_id": "FEAT-544",
       "feature": "a2ui-form-output-renderer",
       "spec": "sdd/specs/a2ui-form-output-renderer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M (2-4h)",
       "depends_on": [
@@ -145,7 +145,7 @@
       "parallel": false,
       "parallelism_notes": "Integration layer over all previous tasks — must run last.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-10T22:10:09+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3077-a2ui-form-cycle-integration-tests.md"
     },
@@ -156,7 +156,7 @@
       "feature_id": "FEAT-544",
       "feature": "a2ui-form-output-renderer",
       "spec": "sdd/specs/a2ui-form-output-renderer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S (< 2h)",
       "depends_on": [
@@ -165,7 +165,7 @@
       "parallel": false,
       "parallelism_notes": "Docs only, last.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-10T22:10:09+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3078-a2ui-renderer-docs-changelog.md"
     }
