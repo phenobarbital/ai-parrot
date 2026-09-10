@@ -2,6 +2,7 @@
 
 Decompose an approved Feature Specification into atomic, assignable implementation tasks.
 
+
 ## Usage
 ```
 /sdd-task sdd/specs/<feature-name>.spec.md
@@ -257,6 +258,26 @@ mkdir -p "$(dirname "$INDEX")"
   **`null` for a hotfix** (FEAT-466 — no id reserved); use `jira_issue_key`
   as the identity instead.
 - `feature`: Kebab-case slug (e.g., `"videoreel-visual-changes"`).
+
+#### Delegation Contract (optional, per task)
+
+Emit a `## Delegation Contract` packet ONLY for a task whose design is
+complete. `design_complete: true` is a declaration the task author signs.
+
+- List every target file with its `action` (`create`/`modify`), and give each
+  `modify` target a REAL `expected_sha256` — compute it, never guess:
+  `sha256sum <path>` or
+  `python -c "import hashlib,sys;print(hashlib.sha256(open(sys.argv[1],'rb').read()).hexdigest())" <path>`.
+- Every `create` target needs a block tagged `path=<target>` holding the new
+  file's full content; every referenced block id must exist in the task file.
+- Never leave placeholders (`...`, `TODO`, `FIXME`, `XXX`, `<angle>`,
+  `raise NotImplementedError`) in an implementation block — the validator
+  rejects them and the packet is not delegated.
+- Hashes are re-validated at execution time, after dependencies land. If they
+  are stale then, the executor refreshes the packet in the task file FIRST and
+  only then re-runs `writer_generate`.
+- Omit the section entirely when the task is not eligible. Most tasks are not,
+  and that is the normal, expected route.
 
 ### 5. Commit Tasks and Per-Spec Index to `<BASE>`
 

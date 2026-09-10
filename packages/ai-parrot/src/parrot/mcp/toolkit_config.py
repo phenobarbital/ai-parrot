@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class ToolkitSection(BaseModel):
@@ -36,6 +36,12 @@ class ToolkitSection(BaseModel):
             When set, the runner passes an LLMFactory-created client to the toolkit
             constructor as `llm_client`. When unset, tools named in the toolkit's
             `llm_dependent_tools` metadata are automatically excluded from exposure.
+        llm_kwargs: Optional constructor keyword arguments forwarded verbatim to
+            `LLMFactory.create(llm, **llm_kwargs)` — e.g. `fallback_model: null`,
+            `max_retries`, `read_timeout`. This is trusted server configuration,
+            never an LLM-callable argument. Requires `llm` to be set, and may not
+            contain an `llm` key (it would collide with the factory's first
+            argument). See `examples/tool-optimizations-mcp.yaml`.
         env: Dictionary of environment variables to pass to the toolkit server process
             (via installer entries). Useful for API keys or secrets.
     """
@@ -46,9 +52,28 @@ class ToolkitSection(BaseModel):
     include: list[str] | None = None
     exclude: list[str] | None = None
     llm: str | None = None
+    llm_kwargs: dict[str, Any] = Field(default_factory=dict)
     env: dict[str, str] = Field(default_factory=dict)
 
     model_config = ConfigDict(populate_by_name=True)
+
+    @model_validator(mode="after")
+    def _check_llm_kwargs(self) -> "ToolkitSection":
+        """Reject llm_kwargs that cannot be applied or would collide.
+
+        Returns:
+            The validated section.
+
+        Raises:
+            ValueError: `llm_kwargs` was supplied without `llm`, or it
+                contains an `llm` key, which would collide with
+                `LLMFactory.create`'s first argument.
+        """
+        if self.llm_kwargs and not self.llm:
+            raise ValueError("llm_kwargs requires llm to be set")
+        if "llm" in self.llm_kwargs:
+            raise ValueError("llm_kwargs must not contain 'llm' (collides with LLMFactory.create(llm=...))")
+        return self
 
 
 class MCPToolkitsConfig(BaseModel):

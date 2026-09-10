@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-543 — Claude Code and Codex Tool Optimizations
 **Spec**: `sdd/specs/tool-optimizations.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Estimated effort note**: harness + docs are M; running live-model scenarios is operator time outside this task.
@@ -277,8 +277,88 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+**Completed by**: sdd-worker (Claude Opus 5, session_01G9NM1TzdkFLd5foNDmh72K)
+**Date**: 2026-09-10
 **Notes**:
 
-**Deviations from spec**: none | describe if any
+Created `benchmarks/tool_optimizations/` (7 files), `docs/tool-optimizations.md`
+(357 lines), linked it from `docs/mcp-local-toolkits.md`, and added
+`test_benchmark_harness.py`. 12 harness/doc tests; 372 passed + 1 skipped
+across the whole feature suite; ruff and black clean.
+
+## A real bug found while running the harness
+
+The first end-to-end run died with
+`NotImplementedError` from `asyncio.get_child_watcher()`. Cause: importing
+`parrot` installs **uvloop's** event-loop policy as a side effect. The
+runner imported the toolkits *lazily, inside* an already-running stdlib
+loop, so the loop and the policy disagreed — `create_subprocess_exec` then
+asked uvloop's policy for a child watcher it does not implement, and every
+git call failed. Fixed with an explicit `_preload_toolkits()` before
+`asyncio.run()`, documented in place. Worth remembering: any new
+`asyncio.run()` entry point in this repo must import `parrot` **before**
+starting the loop.
+
+Second, smaller find: `writer_apply` requires a real git repository (it
+re-checks the staged file list), which the benchmark fixture initially
+lacked. That is correct product behaviour, not a defect, and is now stated
+explicitly in the docs.
+
+## Honest numbers, not flattering ones
+
+The offline report is deliberately unvarnished. `targeted_read` shows the
+expected large win (5,940 → 1,200 estimated primary tokens), but
+`git_prepare` shows the optimized path costing **more** primary tokens than
+the baseline (1,095 vs 6) — because the fixture repo has two files, so
+terse git stdout is genuinely smaller than structured JSON results. Rather
+than tune the fixture until the number looked good, that caveat is written
+into `benchmarks/tool_optimizations/README.md` ("Reading the results
+honestly") with a pointer to draw conclusions from `--live` runs on
+representative repositories.
+
+Accounting rules enforced by tests:
+
+- **Unknown is never zero.** A missing provider count yields `None`, which
+  propagates to `total_tokens=None` and `cost_usd=None`.
+- **`prices.yaml` ships empty**, with `provenance` and `as_of` fields, so
+  cost reads `unknown` until an operator supplies sourced figures.
+- **Primary and delegate tokens are separate columns**, and the report text
+  states outright that fewer primary tokens is not fewer total tokens.
+- Exit code is driven by **correctness only** — an optimized scenario whose
+  real pytest fails exits non-zero; token/latency numbers never fail a run.
+- `--live` refuses fewer than five runs, and no test ever exercises it.
+
+## Documentation
+
+`docs/tool-optimizations.md` covers every section in scope. Two parts are
+kept honest mechanically rather than by discipline:
+
+- The **coverage matrix is generated from `hooks.coverage_matrix()`** and
+  `test_docs_coverage_matrix_in_sync` re-derives it and compares row by
+  row, so the published table cannot drift from the code.
+- `test_docs_have_release_gate_and_traceability` asserts AC1–AC15 all
+  appear in the traceability table, and
+  `test_docs_record_tested_host_versions_and_bypasses` pins the tested host
+  versions (Claude Code 2.1.267, codex-cli 0.154.0) and the documented
+  bypasses.
+
+The docs also record the per-host denial keyword difference discovered in
+TASK-3091 (Claude `deny`, Codex `block`) and carry the Codex installer
+format issue as an explicit **release checklist blocker**, asserted by
+`test_docs_state_the_codex_release_blocker`.
+
+## Release gate
+
+**Numeric token, cost and latency targets are an owner decision (spec §8).**
+This feature ships with correctness parity enforced by the harness and
+reports the numbers it measured; no percentage saving is claimed anywhere
+in the repository or the docs. The one substantive open decision from the
+spec remains open by design — it was not invented here.
+
+**Testing**: 12 tests in `test_benchmark_harness.py`; log at
+`artifacts/logs/TASK-3092-pytest.log`. Reports at
+`artifacts/tool-optimizations/benchmarks/` (gitignored).
+
+**Deviations from spec**: none. Live-model benchmark runs are an operator
+action, as the task scopes them; the command is documented and the harness
+is ready.

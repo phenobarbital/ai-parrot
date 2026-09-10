@@ -2,6 +2,7 @@
 
 Scaffold a new Feature Specification using the SDD methodology.
 
+
 ## Usage
 ```
 /sdd-spec <feature-name> [--type feature|hotfix] [--base-branch <branch>] [-- free-form description and notes]
@@ -384,6 +385,14 @@ This step prevents AI hallucinations during implementation. You MUST:
    each line that touches existing code carrying `# verified: path:NN`. These
    skeletons are what `/sdd-task` turns into per-task Implementation Blueprints,
    so a name fixed here is not renegotiable later.
+
+#### Identify delegation-eligible modules
+
+While writing §3 Module Breakdown, fill the "Delegation-eligible modules"
+sub-table: for each module state whether its design is complete enough that
+implementing it is mechanical, and record the decided patterns and exact
+contracts (signatures, error codes, file layout). Architecture decisions
+stay with the thinking model — eligibility never delegates a design choice.
 
 ### 5. Scaffold the Spec
 1. Read the template at `sdd/templates/spec.md`. The template already contains

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-543 — Claude Code and Codex Tool Optimizations
 **Spec**: `sdd/specs/tool-optimizations.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-3085
@@ -295,8 +295,81 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+**Completed by**: sdd-worker (Claude Opus 5, session_01G9NM1TzdkFLd5foNDmh72K)
+**Date**: 2026-09-10
 **Notes**:
 
-**Deviations from spec**: none | describe if any
+Implemented `writer_apply`, `_rollback`, `_recovery_report` and the
+`_write_atomic` / `_missing_parents` / `_sha_or_none` helpers, replacing
+the TASK-3085 stub. Added the required `PatchManifest.task_path` field and
+populated it. 14 tests in `test_apply.py`, 219 across the feature suite.
+
+**Precondition order is load-bearing and is what the tests pin.** The
+sequence is: artifact load -> review hash -> packet identity -> lock ->
+`already_applied` -> `recovery_pending` -> `staged_target` -> per-target
+`create_collision` / `target_changed` -> contract re-validation ->
+in-memory re-apply -> after-hash check. Two orderings are deliberate:
+
+1. `already_applied` must precede contract re-validation. After a
+   successful apply the created file exists, so re-validating the contract
+   would fail with `target_exists_for_create` and an idempotent retry would
+   look like an error.
+2. `staged_target` precedes `target_changed` (asserted directly by
+   `test_staged_target_refused_before_changed_target`, which sets up both
+   conditions at once) so the report names the blocker the user must
+   actually resolve.
+
+**A test-methodology bug found and fixed — worth reading.** The task's
+sketch injects the write failure by counting `os.replace` calls
+(`if calls["n"] == 2: raise`). That does not work here: `ArtifactStore`
+publishes the journal with `os.replace` too, so call #1 is the *journal*
+write, not a target file. Both fault-injection tests were therefore
+"passing" while testing nothing:
+
+- the crash test aborted on the journal write, so no file was ever
+  written and the rollback loop had nothing to restore;
+- the concurrent-edit test corrupted `journal.json` with the sabotage
+  content instead of a target file, and produced `write_failed` rather
+  than `recovery_required`.
+
+Both now inject by **destination path**, so the crash lands on the second
+real target and the sabotage lands on the first. `test_crash_rolls_back_first_file`
+now asserts the actual rollback effect — `pkg/greeter.py` was written and
+then removed, journal entry `restored`, the failed entry still `pending`,
+errno 28 reported, and no `.parrot-tmp` files left behind.
+
+Other properties covered:
+
+- **Rollback never overwrites a concurrent editor.**
+  `test_concurrent_edit_requires_recovery` has an outside writer rewrite
+  the file we just wrote; rollback sees the hash no longer matches what it
+  wrote, marks the entry `unrecoverable`, returns `recovery_required` and
+  leaves the foreign content byte-intact. A retry then returns
+  `recovery_pending` rather than steamrolling it.
+- **Applying never stages, commits or pushes**: the happy-path test
+  asserts `git diff --cached --name-only` is empty and `HEAD` is unchanged,
+  and `test_apply_path_never_uses_mutating_git_verbs` greps the module for
+  `"add"`, `"commit"`, `"push"`, `"checkout"` and `"reset"` argv literals.
+- **Permissions are preserved on modify and defaulted on create**
+  (0o640 stays 0o640; a new file is 0o644).
+- The journal is retained as evidence after both success and idempotent
+  re-run; only its `state` changes.
+
+**Testing**: 219 tests pass; ruff and black clean. Log at
+`artifacts/logs/TASK-3086-pytest.log`.
+
+**Deviations from spec**: none, with three recorded file-scope notes:
+
+1. `tests/tool_optimizations/test_patches.py` (TASK-3084's file) needed a
+   one-line update because `PatchManifest.task_path` is a new **required**
+   field and that test builds a manifest. Making the field optional was
+   rejected: a manifest without provenance cannot be re-validated at apply
+   time, which is the whole reason the field was added.
+2. `test_writer.py`'s `test_writer_apply_is_not_implemented_yet` was
+   replaced (it asserted the stub this task removes) with two real tests:
+   unknown-artifact and argument validation.
+3. `test_stale_reference_refused` from the task sketch was renamed to
+   `test_unrelated_file_does_not_block_apply` and documents why: in this
+   fixture the packet's only reference *is* a target, so changing it is
+   caught earlier and more precisely as `target_changed`. Genuine
+   reference staleness is already covered in `test_contracts.py`.

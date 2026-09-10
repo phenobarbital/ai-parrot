@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-543 — Claude Code and Codex Tool Optimizations
 **Spec**: `sdd/specs/tool-optimizations.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-3079, TASK-3082
@@ -338,8 +338,55 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+**Completed by**: sdd-worker (Claude Opus 5, session_01G9NM1TzdkFLd5foNDmh72K)
+**Date**: 2026-09-10
 **Notes**:
 
-**Deviations from spec**: none | describe if any
+Created `contracts.py` (hand-written fence scanner, packet extraction,
+placeholder detection, scope/freshness validation, prompt rendering) plus
+`tests/tool_optimizations/fixtures.py` with the canonical
+`make_valid_task()` / `make_repo_with_target()` builders that TASK-3085 and
+TASK-3090 reuse. 28 tests in `test_contracts.py`, 149 across the feature
+suite.
+
+Every `ContractError` code in the task's Scope list has a test that
+triggers exactly it — including the pairs that are easy to conflate
+(`invalid_packet_json` vs `invalid_packet`, `no_packet_block` vs
+`duplicate_packet_block`, `target_exists_for_create` vs
+`target_missing_for_modify`).
+
+Design points worth carrying forward:
+
+- **The fixture computes real digests from the repo it just built**, so it
+  can never rot into a permanently-stale packet. `stale_target` is then
+  provoked by actually editing the file, which is what makes that test
+  meaningful.
+- **Ordering is deliberate: cheap structural checks first.** Command
+  allow-list and block/placeholder resolution run before any hashing, and
+  the packet+blocks context check runs before reference loading — so
+  `context_budget_exceeded` is raised without doing the expensive work, as
+  the acceptance criteria require.
+- **`test_no_subprocess_ever` monkeypatches four spawn entry points**
+  (`asyncio.create_subprocess_exec`/`_shell`, `subprocess.run`/`Popen`) and
+  still validates a packet whose `validation_commands` name pytest. This is
+  the guarantee that `validation_commands` is data, never an execution path.
+- The nested-fence test proves a ```` ```python ```` block inside a
+  ````` ````markdown ````` block is preserved literally, which is why the
+  scanner tracks fence length instead of matching the first closing fence.
+- The placeholder regexes are line-anchored where it matters: a bare `...`
+  line fails, while `x = "..."` inside an expression passes.
+
+Two small implementation choices, both covered by tests:
+
+1. Labelled blocks are collected from anywhere in the TASK file, while the
+   packet block is only recognized *inside* the `## Delegation Contract`
+   section. A `json` block carrying an `id=` is treated as an
+   implementation block, not as a second packet.
+2. `render_prompt_sections` emits a blank line between the acceptance
+   heading and its list, matching the other three sections (the only change
+   made to the renderer after the snapshot test was written).
+
+**Testing**: 149 tests pass; ruff and black clean. Log at
+`artifacts/logs/TASK-3083-pytest.log`.
+
+**Deviations from spec**: none.

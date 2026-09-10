@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-543 — Claude Code and Codex Tool Optimizations
 **Spec**: `sdd/specs/tool-optimizations.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: XL (> 8h)
 **Depends-on**: TASK-3083, TASK-3084
@@ -389,8 +389,69 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+**Completed by**: sdd-worker (Claude Opus 5, session_01G9NM1TzdkFLd5foNDmh72K)
+**Date**: 2026-09-10
 **Notes**:
 
-**Deviations from spec**: none | describe if any
+Created `writer.py` with `SYSTEM_PROMPT`, `build_prompt`,
+`build_repair_prompt` and `TargetedWriterToolkit` (`writer_generate` plus
+the `writer_apply` stub TASK-3086 replaces). 23 tests in `test_writer.py`,
+203 across the feature suite.
+
+Codebase Contract re-verified against this branch before writing code —
+all four load-bearing facts hold:
+
+- `AbstractClient.__init__` creates the `_fallback_model` *instance*
+  attribute only when `fallback_model` is in kwargs (`base.py:426-428`),
+  and the class attribute defaults to `None` (`base.py:298`).
+- `BedrockConverseBase.__init__` uses `kwargs.setdefault("fallback_model",
+  self._fallback_model)` (`bedrock.py:282`), so an explicit
+  `fallback_model=None` survives and the class default
+  `"claude-haiku-4-5"` (`bedrock.py:1669`) is not applied — which is
+  exactly why the documented `llm_kwargs: {fallback_model: null}` is
+  required and why the constructor guard is meaningful.
+- `metadata["used_fallback_model"] = True` is set at `bedrock.py:1063`.
+- `toolkit_server.py:108-110` injects the constructor kwarg as
+  `llm_client`, and drops `llm_dependent_tools` when no `llm:` is set.
+
+Tests worth highlighting (they encode the properties, not the code):
+
+- **`FakeClient.__getattr__` raises** on any attribute outside a documented
+  allow-list. If the writer ever starts reaching for a new client
+  attribute, the suite fails immediately instead of silently coupling to
+  a provider internal.
+- **`test_call_uses_exactly_the_approved_kwargs`** asserts the `ask()`
+  kwargs set is *exactly* `{prompt, system_prompt, max_tokens, temperature,
+  use_tools, history}` — and explicitly that `model` is absent, since a
+  per-call model override would be a substitution channel the no-fallback
+  guard cannot see.
+- **`test_prompt_contains_only_approved_content`** plants an unapproved
+  file in the repo and asserts its marker never appears in the prompt.
+- **`test_invalid_contract_makes_no_call` / `test_stale_contract_makes_no_call`**
+  assert `fake.calls == []` — AC7's "no delegate call" is verified, not
+  assumed.
+- **`test_generate_ok_and_no_target_mutation`** snapshots the target bytes
+  and asserts the created file still does not exist after generation.
+- **`test_model_substitution_rejected_without_repair`** proves a fallback
+  answer consumes exactly one call and produces no artifact.
+
+One test-design correction made during the work: the first version of
+`FakeClient` reported the same identity for the client's configured model
+and the response's `model`, which made the `expected_model_ids` check
+untestable (they always matched). The fake now takes a separate
+`response_model`, so substitution is genuinely exercised in both
+directions — rejecting an unlisted id and accepting Bedrock's translated
+`qwen.qwen3-coder-480b-a35b-v1:0`.
+
+Also verified by a subprocess test: importing `writer.py` does **not**
+import any boto module, so Git/reader startup stays free of AWS
+dependencies (spec §7).
+
+**Testing**: 203 tests pass; ruff and black clean. Log at
+`artifacts/logs/TASK-3085-pytest.log`.
+
+**Deviations from spec**: none, with one recorded file-scope note:
+`tests/tool_optimizations/fixtures.py` (created by TASK-3083) was extended
+with the `GOOD_PATCH` constant. The task's own Test Specification imports
+`GOOD_PATCH` from that module, so the addition is required by the task even
+though `fixtures.py` is not repeated in its file table.

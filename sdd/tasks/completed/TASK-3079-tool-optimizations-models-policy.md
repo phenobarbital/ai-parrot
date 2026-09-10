@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-543 — Claude Code and Codex Tool Optimizations
 **Spec**: `sdd/specs/tool-optimizations.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: none
@@ -501,8 +501,55 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+**Completed by**: sdd-worker (Claude Opus 5, session_01G9NM1TzdkFLd5foNDmh72K)
+**Date**: 2026-09-10
 **Notes**:
 
-**Deviations from spec**: none | describe if any
+Created `parrot_tools.tool_optimizations` with the four modules fixed by
+Decision 1: `models.py` (10 contracts + 10 per-tool argument models, all
+`extra="forbid"`), `policy.py` (`OptimizationPolicy`, byte budget, path
+policy, `WorktreeLock`), `base.py` (`OptimizationToolkitBase`) and a lazy
+`__init__.py`.
+
+Codebase Contract verified before implementing — every listed import,
+signature and line reference was re-read and is accurate as of this branch:
+`ToolkitTool._execute` still calls `toolkit._pre_execute(self.name, **hook_kwargs)`
+with RAW kwargs *before* the unknown-key strip (`toolkit.py:180-198`), and
+`MCPToolAdapter.execute` still calls `tool._execute(**arguments)` directly
+(`adapter.py:79`) — so `_pre_execute` is confirmed as the enforcement seam.
+
+Implementation notes worth carrying forward:
+
+- **`ShortStr`/`Sha256Str`/`ArtifactIdStr` are `Annotated` +
+  `StringConstraints`, not bare `Field(min_length=...)`.** Pydantic v2 cannot
+  always push a length constraint through an `Optional[str]` (nullable)
+  schema; the `Annotated` alias applies the constraint to the `str` member
+  and keeps `model_json_schema()` generatable, which `ToolkitTool` requires.
+- **`fit_to_budget` has five ordered stages** (clip step streams by whole
+  lines → drop payload list records → drop payload → drop steps → minimal
+  result). Status, operation and `elapsed_ms` survive to the last stage, so
+  a truncated result never becomes untruthful. It raises `BudgetError` for a
+  budget below 4096 rather than silently clamping.
+- **`resolve_operand` order is containment/secret FIRST, symlink check
+  second.** An escaping path is therefore reported as `PathOutsideRootError`
+  even when it is also a symlink, and `check_no_symlink_components` normalizes
+  (never resolves) so a symlinked *directory* component is caught too.
+- **`WorktreeLock` never unlinks the lock file** — flock is advisory and
+  kernel-released on process death, so a stale lock is impossible and
+  deleting the file would break mutual exclusion for current holders. A
+  real second-process contention test (`test_worktree_lock_refuses_other_process`)
+  covers this, not just an in-process one.
+- Package import is genuinely pydantic-free (subprocess-asserted), as
+  TASK-3088's hook runtime requires.
+
+**Testing**: 27 tests pass in `test_policy.py`; `ruff check` and
+`black --check --line-length 120 --target-version py312` clean. Log at
+`artifacts/logs/TASK-3079-pytest.log` (`artifacts/` is gitignored).
+
+**Note for later tasks**: the venv's editable installs point at the MAIN
+repo checkout, not this worktree. Run tests with
+`PYTHONPATH=$PWD/packages/ai-parrot-tools/src` (add other package `src` dirs
+as needed) or the worktree's new code is invisible to pytest.
+
+**Deviations from spec**: none. `base.py` is the recorded, task-sanctioned
+addition to the spec's M1 file list (Decision 1).

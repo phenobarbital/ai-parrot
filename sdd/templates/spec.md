@@ -74,6 +74,18 @@ class NewComponent:
 > Define the discrete modules that will be implemented.
 > These directly map to Task Artifacts in Phase 2.
 
+#### Delegation-eligible modules
+
+Mark which modules can be implemented by the targeted writer from an
+already-decided TASK packet. Architecture decisions always stay with the
+thinking model; eligibility only means "the design is complete enough that
+writing the code is mechanical".
+
+| Module | Eligible? | Decided patterns / exact contracts | Why not (if no) |
+|---|---|---|---|
+| M1: <name> | yes / no | <signatures, error codes, file layout already fixed> | <open design question> |
+
+
 ### Module 1: <Name>
 - **Path**: `parrot/path/to/module.py`
 - **Responsibility**: What this module does
@@ -176,6 +188,11 @@ class ExistingClass(BaseClass):
 ---
 
 ## 7. Implementation Notes & Constraints
+
+> Architecture decisions stay with the thinking model. A delegated
+> implementation may only express a decision already recorded here and in
+> the TASK's implementation blocks — it must never invent an API, choose a
+> file, or resolve an open design question.
 
 
 ### Patterns to Follow

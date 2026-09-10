@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-543 — Claude Code and Codex Tool Optimizations
 **Spec**: `sdd/specs/tool-optimizations.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-3079
@@ -337,8 +337,47 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+**Completed by**: sdd-worker (Claude Opus 5, session_01G9NM1TzdkFLd5foNDmh72K)
+**Date**: 2026-09-10
 **Notes**:
 
-**Deviations from spec**: none | describe if any
+Created `reader.py`: seven pure, synchronous, stdlib-only helpers followed
+by `BoundedSourceToolkit` (`source_info`, `source_read`). 30 tests in
+`test_reader.py`, 121 across the feature suite.
+
+Contract compliance highlights:
+
+- **Memory really is bounded by line length, not file length.** The
+  200 MiB single-line test asserts a `tracemalloc` peak under 8 MiB while
+  `read_line_range` raises `LineTooLargeError`. `readline(max_line_bytes + 1)`
+  is what makes this work: the oversized line is never materialized.
+- `test_no_whole_file_reads_in_source` greps the module for `read_text(`,
+  `.read()` and `readlines(` — the anti-patterns from
+  `ReadOnlyRepoToolkit.read_file`, whose API is left untouched.
+- Thresholds are strict `>` on both axes and are tested *independently*
+  (each parametrized test pins the other threshold at 10**9), so a
+  regression on one axis cannot hide behind the other.
+- Decoding is strict UTF-8: `test_binary_and_invalid_utf8` distinguishes a
+  NUL-bearing binary (`binary_file`) from valid-length-but-invalid UTF-8
+  (`invalid_encoding`, with the offending line number).
+- Byte fidelity is asserted as `res.content.encode() == raw` for CRLF plus
+  a missing final newline, so line endings cannot be silently normalized.
+- A `test_continuation_walks_the_whole_file` test pages a 900-line file with
+  `next_line` + `expected_sha256` and asserts the concatenation equals the
+  file byte-for-byte — proving the cursor has no gaps or overlaps, without
+  adding the concatenating call that Contract 5 forbids.
+
+**Note on `line_too_large` details:** the reported `bytes` is a documented
+**lower bound** (`max_line_bytes + 1`), not the true line length. Reading
+further to report an exact size would defeat the bounded-memory guarantee
+this tool exists for. The task's own acceptance test only pins the line
+number; the size assertion in the test was written as `> budget` with a
+comment explaining why an exact value is not available.
+
+**Testing**: 121 tests pass; ruff and black clean. Log at
+`artifacts/logs/TASK-3082-pytest.log`.
+
+**Deviations from spec**: none. `scripts/generate_tool_registry.py --check`
+demanded a `bounded_source` entry, which was added by hand (one line) rather
+than by running the generator in bulk, for the same scope-creep reason
+recorded in TASK-3080.
