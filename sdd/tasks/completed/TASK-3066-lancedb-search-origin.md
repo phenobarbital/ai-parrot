@@ -312,7 +312,9 @@ These are test contracts, not executed test results or placeholder production im
 
 ## Completion Note
 
-**Completed by**: not started
-**Date**: not completed
-**Notes**: Pending execution; no implementation or acceptance tests run during task decomposition.
-**Deviations from spec**: The checked answers supersede stale prose; TASK-3057 reconciles that discrepancy before implementation.
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-10
+**Notes**: Implemented `LanceDBOrigin` following `VectorStoreOrigin`'s verified normalization shape (`origins/vector.py:90`) exactly, rather than inventing one. Constructor borrows the store (never opens/closes), fixes `mode`/`collection`/`metadata_filters`/`include_parents` scope, sets `kind = SearchOriginKind.VECTOR` and `supports_fts = True` unconditionally (a plain `True`, not a duck-typed check like `VectorStoreOrigin`, per the blueprint's explicit reasoning). `search()` dispatches to `store.hybrid_search`/`store.similarity_search` by `self.mode`; `fts_search()` always calls `store.fulltext_search` regardless of mode. `_to_hits()` is one shared normalizer for both `SearchResult` and `LanceDBHybridHit` since both expose the same `id`/`content`/`score`/`metadata` attribute names — native score and SDK order preserved unchanged, `native_rank` 1-based. Exported from `origins/__init__.py` (import + `__all__` tuple, trailing comma and order preserved) with zero `lancedb` import anywhere in the chain.
+
+`test_lancedb_origin.py`: 10 tests, all pass (`uv run pytest packages/ai-parrot-tools/tests/multistoresearch/test_lancedb_origin.py -v`, log at `artifacts/logs/TASK-3066-lancedb.log`) using a hand-written `FakeStore` (no SDK, no I/O) that raises if `disconnect()` is ever called. The import-guard subprocess test needed one fix beyond the blueprint: the naive `name == 'lancedb'` block also caught the package's own internal `from .lancedb import LanceDBOrigin` relative import (Python passes the bare submodule name to `__import__` for relative imports too) — fixed by also checking `level == 0` so only an absolute `import lancedb`/`from lancedb import ...` is blocked. Ran the full `multistoresearch` suite: 63/64 passing; the one failure (`test_old_registry_key_removed`) is pre-existing and unrelated to this task — confirmed via `git stash` reproducing the same failure against this worktree's state before any FEAT-542 origin changes. `ruff check` clean. Installed `rank_bm25==0.2.2` locally (an existing `ai-parrot-embeddings[huggingface]` extra, not a new dependency) since it's required just to import `parrot_tools.multistoresearch` at all in this venv.
+**Deviations from spec**: None.
