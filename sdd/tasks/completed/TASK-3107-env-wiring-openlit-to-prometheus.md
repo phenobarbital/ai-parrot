@@ -264,13 +264,19 @@ present, stop and report.
   `--storage.tsdb.path`, `--web.enable-lifecycle`), even though
   `docker/prometheus/docker-compose.yml` declares that flag. The container has
   been `Up 39 hours`, i.e. it was started from a stale image/args predating the
-  compose file's current content — it needs
-  `docker compose -f docker/prometheus/docker-compose.yml up -d --force-recreate`
-  on the operator's machine to pick up the flag. Also `parrot-grafana` is not
-  running at all (`docker ps -a` shows no container). Recorded here per AC-7's
-  "record the curl status code" instruction; not fixed by this task (infra
-  restart is outside the file scope of TASK-3107 and belongs to the operator /
-  TASK-3108's live-verification precondition).
+  compose file's current content. **UPDATE (same session):** the container
+  was in fact mounted from the pre-docker/-reorg config path
+  (`packages/.../observability/examples/prometheus.yml`), so `--force-recreate`
+  alone was insufficient (name conflict against the old container using a
+  different, unnamed anonymous volume) — stopped and removed it explicitly,
+  then `docker compose -f docker/prometheus/docker-compose.yml up -d` created
+  a fresh container with `--enable-feature=otlp-write-receiver` present in
+  `Cmd`. Re-tested: `curl -X POST .../v1/otlp/v1/metrics` now returns **400**
+  (malformed/empty body — expected and healthy; 404 would mean the receiver
+  is absent). Baseline check re-run: 212 series total, 0 `gen_ai_*`/`parrot_*`
+  — the correct AC-3 starting point for TASK-3108. `parrot-grafana` was also
+  brought up (see TASK-3109's completion note for what that surfaced).
+  Recorded here per AC-7's "record the curl status code" instruction.
 - `env/.env` did **not** contain an `[observability]` block at all (checked:
   no `OBSERVABILITY_*` / `OTEL_EXPORTER_OTLP_ENDPOINT` anywhere in the file —
   the spec's Codebase Contract claim of "lines 715-726" is stale, the file is

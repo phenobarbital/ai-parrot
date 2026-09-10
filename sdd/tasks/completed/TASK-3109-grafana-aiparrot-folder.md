@@ -229,17 +229,50 @@ note rather than claiming AC-9.
   Test Specification) added at
   `packages/ai-parrot/tests/unit/observability/test_grafana_provisioning.py`
   and passes.
-- **Step 3 duplication check: UNVERIFIED.** `parrot-grafana` is not running on
-  this machine (`docker ps -a` shows no such container at all — the
-  `docker/grafana` compose stack has not been brought up here). Per this
-  task's own Agent Instructions ("if [Grafana] is not up, do the file
-  changes, then mark the duplication check as unverified... rather than
-  claiming AC-9"), AC-9 is **not** claimed. `parrot-prometheus` is up but
-  separately found to be running with stale container args missing
-  `--enable-feature=otlp-write-receiver` (see TASK-3107's completion note) —
-  operator action needed on both containers before AC-9 can be verified.
+- **UPDATE (same session, after operator brought up the docker stack):**
+  `parrot-prometheus` recreated with `docker compose -f
+  docker/prometheus/docker-compose.yml up -d` (old container predated the
+  docker/ reorg entirely — mounted from the pre-move
+  `packages/.../examples/prometheus.yml` config, missing
+  `--enable-feature=otlp-write-receiver`; removed and recreated cleanly).
+  `parrot-grafana` brought up via `docker compose -f
+  docker/grafana/docker-compose.yml up -d --build` (required creating the
+  external volume `parrot-grafana-data` first).
+- **Step 3 duplication check: RUN, and it failed as designed to catch.** A
+  probe dashboard JSON placed at
+  `docker/grafana/provisioning/dashboards/parrot/_probe-test.json` (not
+  committed) was, after the 30s provisioning scan, claimed by `claudestats`
+  and misfiled into **Claude Code** — not "AI-Parrot", and not duplicated
+  into both; `claudestats` recursively scans its path and evidently wins
+  ownership of anything under it. This is precisely the failure mode Step
+  3/4 of this task's own blueprint anticipated, independently corroborated
+  by two adversarial code reviews (Claude static analysis + `codex`, P1)
+  before the live check confirmed it.
+- **Step 4 remediation applied**, per this task's own authorized
+  contingency ("narrow claudestats' path or move parrot/ outside it"):
+  moved `docker/grafana/provisioning/dashboards/parrot/` to the sibling
+  `docker/grafana/provisioning/dashboards-parrot/` (git mv), added a
+  matching sibling bind mount in `docker/grafana/docker-compose.yml`, and
+  updated the `parrot` provider's `options.path` in `dashboards.yml`
+  accordingly. `foldersFromFilesStructure` was **not** flipped (forbidden
+  by the blueprint) and `claudestats`' own entry was **not** touched.
+  Re-verified with a second probe in the new location: landed correctly in
+  **AI-Parrot**, exactly once; `claudestats`' two existing dashboards
+  (`claude-code-metrics`, `codex-overview`) stayed in **Claude Code**,
+  untouched, exactly once each. Both probe files were removed after
+  verification (not committed).
+- Added `test_parrot_path_is_not_nested_under_claudestats` as a permanent
+  static regression guard, separate from committing this in a follow-up
+  commit (`fix(...): TASK-3109 — move parrot dashboards to a sibling
+  mount...`) once the live evidence existed.
+- **AC-9 is now fully claimed and verified**, not left unverified.
 
-**Deviations from spec**: none in the file changes themselves. AC-9 (folder
-appears in Grafana, no duplication) is left unverified — live-stack
-precondition not met on this machine, as anticipated by the task's own Agent
-Instructions.
+**Deviations from spec**: the file contract in spec §3 Module 3 specified
+`path: /etc/grafana/provisioning/dashboards/parrot` (nested). Live
+verification proved this nesting causes silent misfiling by the
+`claudestats` provider, defeating AC-9. Remediated to a sibling path
+(`docker/grafana/provisioning/dashboards-parrot/`) per this task's own
+explicit Step 4 contingency for exactly this outcome — not an unauthorized
+redesign, but the designated fallback, now exercised because Step 3's live
+check (previously blocked, now run) confirmed the failure it was written to
+catch.
