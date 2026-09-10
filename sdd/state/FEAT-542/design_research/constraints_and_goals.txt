@@ -1,0 +1,20 @@
+- Flow: `feature`, based on `dev`, carrying forward the proposal and the brainstorm workflow defaults. The authoring branch is `feat-contracts-demo-agent`; this document creates no implementation branch.
+- Add an optional backend in `ai-parrot-embeddings`, using the existing `AbstractStore` abstraction and namespace layout. SDK selection remains explicit; no dependency is installed in this brainstorm. R1–R2.
+- Local filesystem persistence must not require a database service, container, cloud account or storage API key. Model providers remain an independent configuration concern.
+- Preserve async public operations, stable identities, collection isolation, metadata filtering and default parent-document exclusion. R2.
+- Preserve native score semantics and provenance. Vector distance, lexical BM25 and hybrid relevance are different quantities. R4.
+- Reuse existing GraphIndex retrieval when graph federation is enabled. Replacing its internal seed backend is a distinct scope choice. R5.
+- Keep existing configured PostgreSQL and other backends usable. No automatic migration or global default switch is requested.
+- Implement no distributed transactions, cloud deployment or network-filesystem guarantees as part of the proposed baseline.
+- No numerical latency, memory, corpus-size or recall target was supplied. Establish a representative corpus during specification before making performance commitments.
+
+User decisions on the five scope questions (recorded after this exploration document was written):
+- v1 scope: include vector, FTS and native hybrid, with optional graph federation. (Yes)
+- Local-only boundary: a FULLY OFFLINE agent after provisioning — not merely embedded storage
+  with existing remote model providers.
+- Writer concurrency: independent processes MUST be able to write the same dataset concurrently.
+  (The exploration document's single-writer default is superseded.)
+- Graph integration: federation with the existing GraphIndex retriever ONLY; LanceDB does not
+  replace its internal seed index.
+- Hybrid failure: a failing hybrid leg fails that whole origin; other origins continue. No
+  partial-result marking.

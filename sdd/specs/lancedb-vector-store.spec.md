@@ -37,15 +37,15 @@ The repository has store and origin abstractions suitable for this integration, 
 
 ### Draft Decision Baseline
 
-This spec develops brainstorm **Option A**, not a recorded user approval. Its acceptance criteria assume vector/FTS/hybrid in v1, local storage with existing provider choice, one writer process, federation with the existing graph retriever, and whole-origin failure if hybrid retrieval fails. The five original scope questions remain unchecked in section 8; resolve them and revise this draft before task decomposition.
+This spec develops brainstorm **Option A**. All five original scope questions are now answered in section 8 and those answers are binding: vector/FTS/hybrid **plus** optional graph federation in v1; a **fully offline agent after provisioning** (not merely embedded storage behind remote providers); **independent processes may write the same dataset concurrently**; graph **federation only**, never replacing the GraphIndex seed index; and **whole-origin failure** when a hybrid leg fails. The concurrency and offline answers supersede the draft's original single-writer / storage-only-offline assumptions wherever older text survives — TASK-3057 owns the reconciliation and must prove both contracts against the pinned SDK before dependent work starts.
 
 ### Non-Goals (explicitly out of scope)
 
 - Changing the default store, migrating PostgreSQL data, removing PostgreSQL dependencies, or making the entire agent stack dependency-free.
-- Certifying an entirely offline agent or downloading/provisioning model weights. Storage tests do run without network access.
+- Downloading, provisioning or vendoring model weights, or shipping a bundled local model. A **fully offline agent after provisioning** IS in scope (section 8) and is proven by I8/AC6, but the feature supplies the offline *profile and proof*, not the weights.
 - Replacing GraphIndex's internal semantic seed index or building graph artifacts from LanceDB rows.
 - A generic hybrid API for all stores, adaptive-router/`StoreType` expansion, or changing toolkit ranking/deduplication.
-- Independent concurrent writer processes, distributed transactions, cloud/object-storage URIs, remote or network-filesystem guarantees.
+- Distributed transactions, cloud/object-storage URIs, remote or network-filesystem guarantees. **Independent concurrent writer processes over one local directory ARE in scope** (section 8); what stays out of scope is any guarantee beyond a single local filesystem.
 - ANN training/tuning, non-cosine vector metrics, MMR, arbitrary SQL, automatic schema migration, automatic version pruning, or corpus-scale latency/recall guarantees in v1.
 
 ---
@@ -153,7 +153,7 @@ New `LanceDBHybridHit` is a backend-owned Pydantic result with `id: str`, `conte
 7. Deletes use explicit IDs or compiled non-empty metadata predicates. Return the number actually removed, including 0 for no matches. Count and delete under the same mutation lock. Empty filters, missing selectors, or conflicting selectors raise `ValueError`; no implicit delete-all operation exists. Deletion includes matching parents, independent of search visibility.
 8. `disconnect()` is idempotent and waits for this store's in-flight operations before releasing handles. Nested contexts close only at the outermost exit. Caller-injected and registry-returned embeddings are borrowed: override cleanup to release references without calling their `free()` method.
 
-Mutations to a canonical directory/collection are serialized across store instances within one owning process/event loop. Independent writer processes and multi-event-loop sharing are unsupported and must be documented; an async lock is not a cross-process lock. Readers reopen/refresh according to the configured SDK consistency interval. Cancellation must release locks and propagate; it cannot undo a write already committed by the SDK. If an SDK write is still running, retain mutation ownership until its outcome is known before allowing another mutation or shutdown.
+Mutations to a canonical directory/collection are serialized across store instances within one owning process/event loop by an async lock. That lock is **not** a cross-process lock, and the settled requirement is that independent processes write the same dataset concurrently — so in-process serialization is a local optimization, never the correctness mechanism. Cross-process correctness rests on the SDK's own commit semantics: the gate (I1/TASK-3057) must establish, for the pinned release, what happens on a concurrent-commit conflict between two processes doing merge-insert, delete and table/FTS-index creation, and whether the SDK retries, raises a distinguishable conflict error, or corrupts. Wrap conflict-raising commits in a bounded retry with jitter, surface an actionable error when the bound is exhausted, and — if the gate shows the SDK cannot make a needed operation safe — add a documented file-based inter-process lock over that operation specifically rather than declaring concurrency unsupported. Reopening after another process's write, and reading while another process rebuilds the FTS index, must both yield either the pre-write or post-write state, never a partial or erroring one. Readers reopen/refresh according to the configured SDK consistency interval. Cancellation must release locks and propagate; it cannot undo a write already committed by the SDK. If an SDK write is still running, retain mutation ownership until its outcome is known before allowing another mutation or shutdown.
 
 Prefer native async SDK operations; move unavoidable blocking provider construction, Arrow conversion and synchronous SDK work off the event loop. Batch work to avoid unbounded event-loop stalls. No background pruning or destructive maintenance is scheduled. Updates/deletes must be visible to all three query modes without requiring users to run maintenance. Current index documentation describes combining indexed and unindexed data; verify this for the selected SDK in integration tests. [Official reindexing documentation](https://docs.lancedb.com/indexing/reindexing).
 
@@ -211,7 +211,7 @@ All paths marked **new** are implementation proposals; existing contracts are ve
 | M2: store lifecycle and writes | **New** `packages/ai-parrot-embeddings/src/parrot/stores/lancedb.py`; subclass, lazy providers, context ownership, schema/FTS setup, upserts/deletes and compatibility adapters; new `tests/test_lancedb_store.py` lifecycle cases | M1 |
 | M3: retrieval | Same backend file and store tests, sequenced after M2; exact vector, FTS, native hybrid, filters/thresholds and score conversion | M1, M2 |
 | M4: federation adapter | **New** `packages/ai-parrot-tools/src/parrot_tools/multistoresearch/origins/lancedb.py`; update existing origins `__init__.py`; new `tests/multistoresearch/test_lancedb_origin.py` | M1 result contract; existing `SearchOrigin`; real SDK integration waits for M3 |
-| M5: packaging and release integration | Existing embeddings `pyproject.toml`, root `uv.lock`, core stores `__init__.py`, existing namespace/backend tests; **new** `packages/ai-parrot-tools/tests/multistoresearch/test_lancedb_integration.py` and `docs/lancedb-vector-store.md` | SDK gate first; final regression/docs depend on M2–M4 |
+| M5: packaging and release integration | Existing embeddings `pyproject.toml`, root `uv.lock`, core stores `__init__.py`, existing namespace/backend tests — specifically `packages/ai-parrot-embeddings/tests/test_store_backends_present.py`, whose `test_supported_stores_unchanged` asserts **exact dict equality** on `supported_stores` and whose `STORE_BACKENDS` list drives a parametrized resolution test: both must be edited to include `lancedb`, they do not pass unmodified; **new** `packages/ai-parrot-tools/tests/multistoresearch/test_lancedb_integration.py` and `docs/lancedb-vector-store.md` | SDK gate first; final regression/docs depend on M2–M4 |
 
 The first implementation activity is an isolated SDK compatibility test and dependency resolution, not an unverified production API implementation. The manifest/lock changes remain part of M5 ownership even if required early. No new source files or packages are introduced by this draft.
 
@@ -229,7 +229,7 @@ The first implementation activity is an isolated SDK compatibility test and depe
 | U4 ingestion/deletion | M2 | Stable/generated IDs; duplicate/conflicting selectors; contextual copies; dimension/non-finite/zero-vector rejection; upsert; safe delete counts; partial batch error and idempotent retry |
 | U5 query contracts | M3 | Empty/blank cases; aliases; validation errors; raw distance; cosine thresholds including tool alias; FTS metadata; hybrid result has no distance; unsupported MMR |
 | U6 adapter | M4 | Vector/hybrid dispatch; fixed filters/collection; FTS routing; rank/provenance; no tools-to-SDK import requirement; borrowed-store ownership; errors and cancellation propagate |
-| U7 packaging/factory | M5 | SDK absent and present in isolated processes; existing map entries unchanged; new backend resolves from satellite; default tool column aliases; no satellite namespace initializer |
+| U7 packaging/factory | M5 | SDK absent and present in isolated processes; the six pre-existing map entries unchanged and `lancedb` added (update the exact-equality assertion in `test_store_backends_present.py`, do not weaken it to a subset check); new backend resolves from satellite and is added to that file's `STORE_BACKENDS`; selecting LanceDB without the extra names `ai-parrot-embeddings[lancedb]`; default tool column aliases; no satellite namespace initializer |
 
 ### Integration Tests
 
@@ -244,7 +244,8 @@ Run these against the selected real SDK, not only mocks. Optional SDK absence ma
 | I5 model-free lexical path | Reopen with no provider and with a configured provider factory that would raise; FTS succeeds without construction/inference; vector/hybrid fail explicitly without a working provider |
 | I6 federation | Real LanceDB hybrid origin plus existing `GraphIndexOrigin` in the real toolkit; grouped native order and origin score metadata preserved, merged cap/dedup unchanged; one failed/timed-out origin does not erase the other |
 | I7 async and cancellation | Multiple async reads, serialized mutations across two store instances, cancellation during an in-flight write, clean reopen; no prematurely released mutation lock |
-| I8 no storage network | Disable socket connections around real storage operations with deterministic providers; no PostgreSQL process, container, storage account or remote endpoint required |
+| I9 concurrent writer processes | Two or more independent OS processes ingest/upsert/delete into one local directory concurrently (disjoint IDs, then deliberately colliding IDs); every acknowledged write is present after a fresh reopen, no row is lost or duplicated, conflicts surface as the documented distinguishable error or succeed under bounded retry, and a reader running throughout never observes a partial or erroring table — including while another process creates or rebuilds the FTS index |
+| I8 no network at all | Disable socket connections around the whole exercised path — not only storage — with a locally provisioned embedding model: ingest, vector, FTS and hybrid retrieval all complete with sockets denied. Proves the fully offline profile, not merely embedded storage. No PostgreSQL process, container, storage account or remote endpoint required, and no provider that would dial out |
 
 ### Test Data / Fixtures
 
@@ -266,9 +267,9 @@ Completion requires every item below, after draft scope approval. None is claime
 - [ ] AC3: Collections persist across process restart; manifest/schema/model mismatches fail non-destructively and local IDs cannot collide across different collection UUIDs (U1, I2).
 - [ ] AC4: IDs, metadata and original text survive ingestion; upserts/deletes have defined counts, visibility and retry behavior; caller documents and borrowed models remain intact (U3, U4, I4).
 - [ ] AC5: Vector, FTS and native hybrid retrieval pass the same prefilter/parent-visibility matrix; unsupported inputs fail explicitly; thresholds preserve raw vector score semantics (U2, U5, I3).
-- [ ] AC6: FTS neither constructs nor invokes embedding models; storage CRUD/search requires no network service or database container (I5, I8).
+- [ ] AC6: FTS neither constructs nor invokes embedding models; and with a locally provisioned model the complete ingest/vector/FTS/hybrid path runs with sockets denied — no network service, database container or remote provider (I5, I8).
 - [ ] AC7: Hybrid-origin and graph federation preserve native score/rank provenance and current merged ranking/dedup semantics; isolated failures/timeouts retain successful origins (U6, I6).
-- [ ] AC8: Async heartbeat, concurrent reads, same-process mutation serialization, cancellation and nested-context cleanup pass (U3, I7).
+- [ ] AC8: Async heartbeat, concurrent reads, same-process mutation serialization, cancellation and nested-context cleanup pass; and independent OS processes write one directory concurrently without loss, duplication or partial reads, with conflicts either retried within the bound or raised as the documented error (U3, I7, I9).
 - [ ] AC9: Existing backend/namespace and complete multi-store regression suites pass; dedicated real-SDK feature tests execute without skips; logs identify versions and commands.
 - [ ] AC10: Documentation covers install/configuration, local-model provisioning versus storage locality, FTS's legacy score alias, write ownership, failures, unsupported modes, safe reopen/deletion and hybrid-plus-graph composition; the baseline benchmark is recorded without claiming an SLO.
 
@@ -365,6 +366,8 @@ from parrot_tools.multistoresearch.origins import GraphIndexOrigin
 | Cancellation after a native write starts | Track in-flight mutation outcome and lock ownership; no promise of rollback on timeout |
 | RRF followed by toolkit BM25 | Preserve native grouped results and explain separate merged ranking; no cross-origin comparison of raw scores |
 | Default `StoreConfig.index_type` is not FLAT | Explicit config example and actionable rejection; do not globally alter other backends' defaults |
+| Cross-process commit conflicts | Establish the pinned SDK's concurrent-commit behavior in the I1 gate before implementing writes; bounded retry with jitter plus a distinguishable conflict error, or a documented file lock over the specific unsafe operation. An asyncio lock is not a cross-process lock and must never be presented as one |
+| "Offline" claimed from storage locality alone | A local directory makes *storage* offline; the agent is offline only if the embedding provider is local and provisioned. Gate the claim on I8 with sockets denied across the whole path, and document the provisioning step separately from the storage story |
 | Version/platform compatibility | Resolve the optional dependency and test workspace-supported Python/Arrow combinations; no claim of universal wheel availability |
 
 ### External Dependencies and API Evidence
@@ -384,13 +387,52 @@ If the candidate fails resolution or required behavior, stop that implementation
 
 ## 8. Open Questions
 
-Preserved verbatim from the brainstorm. No answers were received; the baseline in section 1 is a recommendation. These scope choices require resolution before this draft is marked approved and decomposed.
+The five original brainstorm questions are preserved verbatim and are all answered. Their answers are binding on sections 1–5; where older draft text assumed otherwise it has been corrected (see the Revision History). Q6 is new — raised by the design-research cross-check in section 9 and not yet decided.
 
 - [x] Include vector, FTS and native hybrid with optional graph federation in v1, or ship only vector and standalone FTS first? — *Owner: Jesus Lara*: Yes
 - [x] Does local-only require embedded storage with existing model providers, or a fully offline agent after provisioning? — *Owner: Jesus Lara*: fully offline agent
 - [x] Can one process own writes initially, or must independent processes write the same dataset concurrently? — *Owner: Jesus Lara*: write concurrently
 - [x] Is federation with existing GraphIndex sufficient, or must LanceDB also replace its internal seed index? — *Owner: Jesus Lara*: only federation
 - [x] Should a failing hybrid leg fail that origin while other origins continue, or return explicitly marked partial results? — *Owner: Jesus Lara*: fail
+- [ ] Q6: Must `LanceDBHybridHit` carry the per-leg vector and lexical component scores/ranks alongside the fused RRF relevance, or is the single fusion score plus `score_kind`/`higher_is_better` sufficient for v1? — *Owner: Jesus Lara* — *Raised by design research S2 (§9)*. Carrying components would let a caller explain why a hybrid hit ranked where it did and would let the toolkit rerank on a component rather than the fused score; it also widens a result contract that M1 freezes for every downstream module. Feasibility is unproven: whether the pinned SDK exposes pre-fusion `_distance`/`_score` columns on a hybrid query is exactly the kind of release-sensitive behavior the I1 gate exists to establish. **If undecided when TASK-3057 runs, that gate should record whether the columns are available, and v1 ships the single fused score.**
+
+---
+
+## 9. Design Research Cross-Check
+
+> Independent design opinion from the `codex` seat over the **accepted exploration
+> doc** (never over this spec). Model: `gpt-5.6-luna` · Status: completed
+> · Transcript: `sdd/state/FEAT-542/design_research/`
+> Every row is a suggestion the reviewer made; the disposition is the spec author's
+> call (CONFIRM = folded into the spec, REJECT = reason recorded, ESCALATE = §8 question).
+>
+> Deviation from the `/sdd-spec` §3b precondition, recorded for audit: neither exploration
+> document is literally marked `accepted` (brainstorm `Status: exploration`, proposal
+> `status: discussion`). The pass was run anyway, at the user's explicit request, because the
+> design intent *was* accepted downstream — this spec is `Status: approved` and already
+> decomposed into 14 tasks. The brief carried the brainstorm's Problem Statement, Constraints,
+> Recommendation and Option A body, the paths (only) from its Code Context, and the user's five
+> §8 answers as constraints. No text from this spec was shown to the reviewer.
+>
+> All 12 suggestions passed path containment and `test -e` verification — the reviewer cited
+> only files that exist.
+
+| # | Suggestion (kind) | Disposition | Reason | Landed in |
+|---|---|---|---|---|
+| S1 | Define an explicit LanceDB capability contract (architecture) | REJECT | Already specified: §2 New Public Interfaces gives `fulltext_search`/`hybrid_search` full signatures and `LanceDBOrigin(mode=...)` selects the retrieval mode. No kwargs-driven or generic-hybrid path was ever proposed. | — |
+| S2 | Preserve hybrid component scores and conventions (api) | ESCALATE | Direction and kind are already carried (`LanceDBHybridHit.score_kind`/`higher_is_better`, `_lancedb` metadata, and §7's "no cross-origin comparison of raw scores"). Per-leg component scores are genuinely absent, would widen a contract M1 freezes, and depend on unverified SDK column exposure. | §8 Q6 |
+| S3 | One filter and parent-visibility policy for every Lance mode (api) | REJECT | Already specified: §2 Filters mandates one shared compiler producing a single conjunctive prefilter applied to vector, FTS and **both** hybrid legs before candidate limits, and §7 explicitly warns against copying PostgreSQL's stricter marker handling — the divergence the reviewer found in `arango.py`. U2/I3 cover the named cases. | — |
+| S4 | Prove the SDK async boundary before selecting the implementation (risk) | REJECT | Already specified: §2 Lifecycle requires native async operations with unavoidable blocking work moved off the loop, §2 items 2/8 define connection ownership and shutdown, and I1/TASK-3057 is a hard gate before dependent implementation. U3's event-loop heartbeat is the falsifying test. | — |
+| S5 | Design and test true cross-process write behavior (risk) | CONFIRM | The spec directly contradicted the settled requirement — §2 read "Independent writer processes … are unsupported" while §8 requires concurrent independent writers. Correctness now rests on the SDK's commit semantics (established by the I1 gate) with bounded retry, a distinguishable conflict error, or a scoped file lock; the asyncio lock is demoted to a local optimization. | §1 Non-Goals, §1 Baseline, §2 Lifecycle, §4 I9, §5 AC8, §7 |
+| S6 | Make collection, FTS-index and freshness lifecycle explicit (architecture) | CONFIRM | Mostly covered already (§2 item 3 for FTS creation and its failure mode, `read_consistency_interval_seconds` for freshness, §7 for post-index write freshness). The one uncovered case — reads while *another process* rebuilds the index — was real and is now required to yield pre- or post-write state, never a partial one. | §2 Lifecycle, §4 I9 |
+| S7 | Define stable IDs independently of generated row keys (api) | REJECT | Already specified in full: §2 Data Models fixes ID precedence (explicit `ids` → `metadata["id"]` → SHA-256 of original text plus canonical metadata), upsert-on-same-ID, conflict/duplicate errors, and namespaced `lancedb:<collection_uuid>:<id>` output preventing cross-collection collisions. The concurrent-writer half of the concern is handled by S5. | — |
+| S8 | Complete optional-backend registration without eager imports (architecture) | CONFIRM | Lazy imports and the extra were already specified, but the reviewer surfaced a concrete breakage the spec had softened into "existing map entries unchanged": `test_store_backends_present.py::test_supported_stores_unchanged` asserts **exact dict equality** on `supported_stores`, and `STORE_BACKENDS` drives a parametrized test. Both must be edited; neither passes unmodified. | §3 M5, §4 U7 |
+| S9 | Enforce whole-origin failure for hybrid errors (risk) | REJECT | Already specified: §2 requires "no silent fallback on a failed leg", propagation of errors and cancellation to the toolkit, and hybrid failure failing that origin while the toolkit retains successful graph/other sections. I6 tests exactly that. | — |
+| S10 | Keep LanceDB federation outside GraphExpandedRetriever (architecture) | REJECT | Already a stated Non-Goal ("Replacing GraphIndex's internal semantic seed index") with `GraphIndexOrigin` reused unmodified and I6 exercising the two as sibling origins. A negative test asserting non-substitution would guard a code path this feature never writes. | — |
+| S11 | Separate embedded storage from the fully-offline guarantee (risk) | CONFIRM | The sharpest finding. The spec's Non-Goals excluded "certifying an entirely offline agent" while §8 requires exactly that, and I8/AC6 proved only that *storage* needs no network. A local directory does not make an agent offline — the embedding provider must be local and provisioned. I8 now denies sockets across the whole ingest/vector/FTS/hybrid path. | §1 Non-Goals, §2 Baseline, §4 I8, §5 AC6, §7 |
+| S12 | Build an acceptance matrix before performance claims (testing) | CONFIRM | §4/§5 already covered restart, stable IDs, parent exclusion, filters, score provenance, index freshness and hybrid-leg failure, and §4 already forbids an SLO claim on the 1,000-row baseline. Two items on the reviewer's list were genuinely missing — multiprocess writes and whole-agent offline execution — and are added as I9 and the widened I8. | §4 I8/I9, §5 AC6/AC8 |
+
+Summary: **4** confirmed · **7** rejected · **1** escalated.
 
 ---
 
@@ -407,3 +449,4 @@ No implementation worktree or task artifacts are created by this spec. After app
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-09-10 | Codex | Initial FEAT-542 draft from Option A; verified current contracts, defined storage/search behavior and preserved all five unanswered scope questions |
+| 0.2 | 2026-09-10 | Claude Opus 5 | FEAT-545 design-research cross-check (§9, `gpt-5.6-luna`, 12 suggestions, all paths verified). Folded 4 CONFIRMs: cross-process concurrent writes are now in scope and rest on SDK commit semantics rather than an asyncio lock (§1/§2/§4 I9/§5 AC8/§7); "fully offline" now means the whole agent path with sockets denied, not just storage (§1/§2/§4 I8/§5 AC6/§7); the exact-equality `supported_stores` test is named as one that must be edited (§3 M5/§4 U7); cross-process FTS-index rebuild reads defined (§2). Escalated one question to §8 Q6 (per-leg hybrid component scores). Also corrected the stale §1 Draft Decision Baseline and §8 preamble, which still claimed the five scope questions were unanswered. |
