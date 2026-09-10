@@ -10,7 +10,7 @@ import hashlib
 import json
 from pathlib import Path
 
-__all__ = ("make_repo_with_target", "make_valid_task", "sha256_of", "PACKET_TASK_ID")
+__all__ = ("make_repo_with_target", "make_valid_task", "sha256_of", "PACKET_TASK_ID", "GOOD_PATCH")
 
 #: The task id used by the canonical fixture packet.
 PACKET_TASK_ID = "TASK-9999"
@@ -118,3 +118,24 @@ __all__ = [*__all__, "greet"]
     task = repo / "sdd" / "tasks" / "active" / name
     task.write_text(body)
     return task
+
+
+#: A correct unified diff for the `make_valid_task` packet: it creates
+#: `pkg/greeter.py` from /dev/null and modifies `pkg/__init__.py` in place.
+#: Its context lines match `make_repo_with_target` exactly, so it applies
+#: cleanly with zero fuzz.
+GOOD_PATCH = """--- a/pkg/__init__.py
++++ b/pkg/__init__.py
+@@ -1,3 +1,5 @@
+ \"\"\"Package.\"\"\"
+ 
++from .greeter import greet
++
+ __all__ = []
+--- /dev/null
++++ b/pkg/greeter.py
+@@ -0,0 +1,3 @@
++def greet(name: str) -> str:
++    \"\"\"Return a greeting.\"\"\"
++    return f"hello {name}"
+"""
