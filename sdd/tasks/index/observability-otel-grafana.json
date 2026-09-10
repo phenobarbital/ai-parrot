@@ -32,7 +32,7 @@
       "feature_id": "FEAT-548",
       "feature": "observability-otel-grafana",
       "spec": "sdd/specs/observability-otel-grafana.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -41,9 +41,9 @@
       "parallel": false,
       "parallelism_notes": "Needs the operator's machine (running stack + a real LLM call). Its artifact is TASK-3110's only source of truth for PromQL names.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3108-verify-live-series-names.md"
+      "started_at": "2026-09-10T17:55:07+00:00",
+      "completed_at": "2026-09-10T17:55:23+00:00",
+      "file": "sdd/tasks/completed/TASK-3108-verify-live-series-names.md"
     },
     {
       "id": "TASK-3109",

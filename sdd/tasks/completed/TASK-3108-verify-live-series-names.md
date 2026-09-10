@@ -252,10 +252,31 @@ hand back.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous), on the operator's own machine
+after the operator identified where the docker configs live (`docker/`)
+and the docker stack was brought up in-session
+**Date**: 2026-09-10
+**Notes**: Full details in
+`sdd/state/FEAT-548/verification/series-names.md`. Summary:
+- AC-3/AC-4/AC-5/AC-6/AC-8 all fully verified with real evidence.
+- AC-7 verified as a proxy (shutdown_telemetry() timing); no literal CTRL+C
+  since this is a non-interactive harness.
+- Two real findings recorded (not fixed — out of this task's scope):
+  `gen_ai.client.error.count` never observed across 7 real failures; a
+  fire-and-forget event-forwarding race that can silently drop metrics for
+  short-lived callers without a post-call event-loop yield.
+- `docker/prometheus` container had to be recreated (pre-dated the docker/
+  reorg, missing the OTLP flag); `docker/grafana` had to be brought up from
+  scratch (external volume didn't exist yet). See TASK-3107's completion
+  note for the Prometheus detail.
+- A `navconfig` BASE_DIR quirk (resolves to the main repo, not this
+  worktree, when sharing its venv) required exporting the six observability
+  env vars at the process level for these verification runs — documented in
+  the artifact; does not affect TASK-3107's actual `env/.env` wiring.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none in the artifact's required shape. Several
+catalog rows are honestly recorded `absent` (`gen_ai.client.error.count`,
+all `parrot.*` agent/tool instruments) because this verification used raw
+`AbstractClient.ask()` calls, not the agent framework — the task template
+explicitly requires writing `absent` rather than guessing, and the
+Findings section explains why in each case.
