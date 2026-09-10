@@ -192,12 +192,34 @@ def test_malformed_stdin_exits_zero(workspace):
 # --------------------------------------------------------------------------- #
 # Hosts and configuration
 # --------------------------------------------------------------------------- #
-def test_codex_host_gets_the_same_denial(workspace):
-    """Codex reads through the shell and accepts the same response shape."""
-    claude_out = _run(_bash_payload("cat big.py"), host="claude", cwd=workspace)
-    codex_out = _run(_bash_payload("cat big.py"), host="codex", cwd=workspace)
-    assert json.loads(codex_out) == json.loads(claude_out)
-    assert json.loads(codex_out)["hookSpecificOutput"]["permissionDecision"] == "deny"
+def test_each_host_gets_its_own_refusal_keyword(workspace):
+    """Regression: Codex rejects `deny`; its enum is approve|block|allow.
+
+    Verified against codex-cli 0.154.0, whose `PreToolUseDecisionWire`
+    serde variants are `approve`, `block`, `allow`, and which reports
+    "PreToolUse hook returned unsupported decision" otherwise. Sending
+    Claude's `deny` to Codex fails open — the large read would proceed.
+    """
+    claude_payload = json.loads(_run(_bash_payload("cat big.py"), host="claude", cwd=workspace))
+    codex_payload = json.loads(_run(_bash_payload("cat big.py"), host="codex", cwd=workspace))
+
+    assert claude_payload["hookSpecificOutput"]["permissionDecision"] == "deny"
+    assert codex_payload["hookSpecificOutput"]["permissionDecision"] == "block"
+
+    # Everything else about the envelope is shared.
+    assert claude_payload["hookSpecificOutput"]["hookEventName"] == "PreToolUse"
+    assert codex_payload["hookSpecificOutput"]["hookEventName"] == "PreToolUse"
+    assert (
+        claude_payload["hookSpecificOutput"]["permissionDecisionReason"]
+        == codex_payload["hookSpecificOutput"]["permissionDecisionReason"]
+    )
+
+
+def test_deny_value_table_matches_each_host_enum():
+    """The refusal keyword table is explicit, not incidental."""
+    from parrot_tools.tool_optimizations.hooks import DENY_VALUE
+
+    assert DENY_VALUE == {"claude": "deny", "codex": "block"}
 
 
 def test_configured_thresholds_change_the_verdict(workspace):

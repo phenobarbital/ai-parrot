@@ -41,6 +41,7 @@ from typing import Any, Optional
 __all__ = (
     "GuardDecision",
     "GuardPolicy",
+    "DENY_VALUE",
     "build_reason",
     "count_lines_bounded",
     "coverage_matrix",
@@ -402,11 +403,21 @@ def build_reason(decision: GuardDecision, policy: GuardPolicy, cwd: Optional[Pat
     )
 
 
+#: The refusal value each host's PreToolUse decision enum accepts.
+#:
+#: Claude Code documents ``deny``. Codex 0.154.0 does NOT accept it: its
+#: ``PreToolUseDecisionWire`` enum is ``approve | block | allow`` (verified
+#: against the shipped binary), and it rejects anything else with
+#: "PreToolUse hook returned unsupported decision" — i.e. sending ``deny``
+#: to Codex silently fails open and the large read proceeds.
+DENY_VALUE = {"claude": "deny", "codex": "block"}
+
+
 def render_output(decision: Optional[GuardDecision], host: str) -> Optional[str]:
     """Render a host-appropriate hook response.
 
-    Both hosts accept the ``hookSpecificOutput`` shape, so one renderer
-    serves both.
+    Both hosts use the ``hookSpecificOutput`` envelope, but they do **not**
+    share the refusal keyword — see :data:`DENY_VALUE`.
 
     Args:
         decision: The guard's verdict, if any.
@@ -420,7 +431,7 @@ def render_output(decision: Optional[GuardDecision], host: str) -> Optional[str]
     payload = {
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",
-            "permissionDecision": "deny",
+            "permissionDecision": DENY_VALUE.get(host, "deny"),
             "permissionDecisionReason": decision.reason,
         }
     }
