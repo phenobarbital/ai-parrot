@@ -238,7 +238,7 @@ These are test contracts, not executed test results or placeholder production im
 
 ## Completion Note
 
-**Completed by**: not started
-**Date**: not completed
-**Notes**: Pending execution; no implementation or acceptance tests run during task decomposition.
-**Deviations from spec**: The checked answers supersede stale prose; TASK-3057 reconciles that discrepancy before implementation.
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-10
+**Notes**: Added `lancedb = ["lancedb==0.38.0"]` extra (TASK-3057's gated pin) to `packages/ai-parrot-embeddings/pyproject.toml`, inserted `lancedb` into the `[all]` aggregator preserving every other name. Ran `uv lock` from the workspace root: resolved cleanly, added exactly 4 packages (`lancedb`, `deprecation`, `lance-namespace`, `lance-namespace-urllib3-client`) with no other package version changes — core `pyarrow>=25.0` floor untouched. Wrote `packages/ai-parrot-embeddings/tests/test_lancedb_packaging.py` (3 tests, all pass: `uv run pytest packages/ai-parrot-embeddings/tests/test_lancedb_packaging.py -v`, log at `artifacts/logs/TASK-3058-lancedb.log`). `ruff check` clean.
+**Deviations from spec**: `uv.lock` is NOT committed. The task's Codebase Contract listed `uv.lock:1` as an existing tracked file, but `git log -- uv.lock` shows it was deliberately removed and gitignored repo-wide (commit `4ffd761b84 "Delete uv.lock"`, `.gitignore:258`) — a repo-level policy change that predates this task and is out of this task's scope to reverse. The regenerated lockfile was verified locally (see above) but only the two manifest files are committed. This is a stale-contract finding, not a scope decision made here; downstream tasks/CI should regenerate `uv.lock` via `uv lock`/`uv sync` rather than expect a committed copy.
