@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-10T01:17:10.446754+00:00",
-  "completed_at": "2026-09-10T22:53:12+00:00",
+  "completed_at": "2026-09-10T23:20:54+00:00",
   "tasks": [
     {
       "id": "TASK-3071",
@@ -23,7 +23,8 @@
       "assigned_to": null,
       "started_at": "2026-09-10T22:10:09+00:00",
       "completed_at": "2026-09-10T22:18:26+00:00",
-      "file": "sdd/tasks/completed/TASK-3071-a2ui-renderer-skeleton-layout-submit.md"
+      "file": "sdd/tasks/completed/TASK-3071-a2ui-renderer-skeleton-layout-submit.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3072",
@@ -43,7 +44,8 @@
       "assigned_to": null,
       "started_at": "2026-09-10T22:10:09+00:00",
       "completed_at": "2026-09-10T22:25:13+00:00",
-      "file": "sdd/tasks/completed/TASK-3072-a2ui-field-lowering-checks-degradation.md"
+      "file": "sdd/tasks/completed/TASK-3072-a2ui-field-lowering-checks-degradation.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3073",
@@ -63,7 +65,8 @@
       "assigned_to": null,
       "started_at": "2026-09-10T22:10:09+00:00",
       "completed_at": "2026-09-10T22:27:55+00:00",
-      "file": "sdd/tasks/completed/TASK-3073-a2ui-renderer-registration-packaging.md"
+      "file": "sdd/tasks/completed/TASK-3073-a2ui-renderer-registration-packaging.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3074",
@@ -83,7 +86,8 @@
       "assigned_to": null,
       "started_at": "2026-09-10T22:10:09+00:00",
       "completed_at": "2026-09-10T22:31:56+00:00",
-      "file": "sdd/tasks/completed/TASK-3074-a2ui-wire-helpers.md"
+      "file": "sdd/tasks/completed/TASK-3074-a2ui-wire-helpers.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3075",
@@ -103,7 +107,8 @@
       "assigned_to": null,
       "started_at": "2026-09-10T22:10:09+00:00",
       "completed_at": "2026-09-10T22:39:01+00:00",
-      "file": "sdd/tasks/completed/TASK-3075-submit-data-dual-wire.md"
+      "file": "sdd/tasks/completed/TASK-3075-submit-data-dual-wire.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3076",
@@ -124,7 +129,8 @@
       "assigned_to": null,
       "started_at": "2026-09-10T22:10:09+00:00",
       "completed_at": "2026-09-10T22:41:01+00:00",
-      "file": "sdd/tasks/completed/TASK-3076-validate-dual-wire.md"
+      "file": "sdd/tasks/completed/TASK-3076-validate-dual-wire.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3077",
@@ -147,7 +153,8 @@
       "assigned_to": null,
       "started_at": "2026-09-10T22:10:09+00:00",
       "completed_at": "2026-09-10T22:50:39+00:00",
-      "file": "sdd/tasks/completed/TASK-3077-a2ui-form-cycle-integration-tests.md"
+      "file": "sdd/tasks/completed/TASK-3077-a2ui-form-cycle-integration-tests.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3078",
@@ -167,7 +174,8 @@
       "assigned_to": null,
       "started_at": "2026-09-10T22:10:09+00:00",
       "completed_at": "2026-09-10T22:53:12+00:00",
-      "file": "sdd/tasks/completed/TASK-3078-a2ui-renderer-docs-changelog.md"
+      "file": "sdd/tasks/completed/TASK-3078-a2ui-renderer-docs-changelog.md",
+      "verification": "verified"
     }
   ]
 }
