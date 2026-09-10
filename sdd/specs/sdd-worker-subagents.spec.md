@@ -193,7 +193,7 @@ FEAT-323 machinery as an "orchestration kernel":
 |---|---|---|---|---|
 | Qwen3-Coder on Bedrock | mcp | `nova` | `NovaCodeDispatcher` (bedrock-mantle, OpenAI-compatible) | `qwen.qwen3-coder-480b-a35b-instruct` |
 | Gemini 3.5 Flash | mcp | `google-compat` (**new**) | `GoogleCompatCodeDispatcher` (**new**) over `GeminiOpenAICompatClient` (**new**) | `gemini-3.5-flash` |
-| GPT-5.3-codex-spark | mcp | `codex` | `CodexCodeDispatcher` (`codex exec --json`) | `gpt-5.3-codex-spark` (fallback `gpt-5.3-codex`) |
+| GPT-5.3-codex-spark | mcp | `codex` | `CodexCodeDispatcher` (`codex exec --json`) | `gpt-5.3-codex-spark` — accepted by `codex exec -m` on this account (operator-verified 2026-09-10); `fallback_model: gpt-5.3-codex` kept as safety net |
 | Claude Haiku | native | — | Claude Code `Agent` tool + `.claude/agents/sdd-coder.md` (`model: haiku`) | `haiku` |
 
 Two facts from the brainstorm shape this table: the `bedrock:` provider key of
@@ -926,6 +926,16 @@ REDIS_URL                           # line 298 — config.get("REDIS_URL", fallb
 | echo with `extra_content` carried over (`{"google": {"thought_signature": "<base64>"}}` lives on each `tool_call`, not on the message) | OK, `finish_reason="stop"` |
 | key location | `GEMINI_API_KEY` is in `env/.env`, loaded by `navconfig`; **not** in `os.environ` |
 
+### Spike evidence — Codex CLI seat (operator-verified 2026-09-10)
+| Check | Result |
+|---|---|
+| `codex exec --ephemeral --sandbox read-only -m gpt-5.6-luna -c model_reasoning_effort=high --ignore-user-config "Reply with exactly the single word OK."` | `OK`, rc=0, 5137 tokens (codex-cli 0.153.4) — the design-research model works; the earlier rc=124 was transient |
+| same probe with `-m gpt-5.3-codex-spark` | responds (reported by the operator) — the codex-spark seat's primary model id is valid on this account; `fallback_model: gpt-5.3-codex` stays declared but is not expected to trigger |
+
+Note: both are single-turn probes, not coding dispatches; the roster probe's smoke call
+(`RosterProbe`, M2) repeats this check at every server start so a later entitlement change
+is caught automatically.
+
 ### Integration Points
 | New Component | Connects To | Via | Verified At |
 |---|---|---|---|
@@ -949,7 +959,7 @@ REDIS_URL                           # line 298 — config.get("REDIS_URL", fallb
 - ~~`"sdd-coder"`~~ — not in `_VALID_NAMES`, not in any `subagent` literal, no `.claude/agents/sdd-coder.md`, no `_subagent_data/sdd-coder.md`.
 - ~~`parrot mcp-local sdd-coder`~~, ~~`.parrot/mcp-toolkits.yaml` in the repo~~, ~~`parrot-sdd-coder` / `parrot-targeted-writer` in the committed `.mcp.json`~~ — `.mcp.json` and `.parrot/` are git-ignored; only `examples/tool-optimizations-mcp.yaml` exists today.
 - ~~`bedrock:qwen3-coder`~~ as a working `llm` string — `bedrock:` ⇒ `AnthropicClient(backend="bedrock")` (factory.py:157). Qwen is `nova` (bedrock-mantle id `qwen.qwen3-coder-480b-a35b-instruct`) or `bedrock-converse:qwen3-coder-480b-a35b`. ~~`qwen3-coder`~~ bare alias does not exist (only `qwen3-coder-480b-a35b`, amazon/models.py:130).
-- ~~`gpt-5.3-codex-spark`~~ as a known constant — OpenAI client defines `GPT5_3_CODEX = "gpt-5.3-codex"` only (openai/models.py:33); the spark id is a passthrough string, hence `fallback_model`.
+- ~~`gpt-5.3-codex-spark`~~ as a known constant in the OpenAI client — it defines `GPT5_3_CODEX = "gpt-5.3-codex"` only (openai/models.py:33). The spark id is a passthrough string that the `codex` CLI accepts on this account (operator-verified), hence `fallback_model` is a safety net, not a workaround.
 - ~~`_chat_completion` on `AnthropicClient`, `GoogleGenAIClient`, `BedrockConverseClient`, `NovaClient`~~ — only `OpenAIBaseClient` subclasses have it (openai_base.py:216); `LLMCodeDispatcher.dispatch` raises `DispatchExecutionError("... does not expose chat completion")` otherwise.
 - ~~A generic `"openai"` / `"anthropic"` / `"google"` `DevAgentBackend`~~ — `build_dispatcher` knows nine literals; `nvidia` is the only in-process `LLMCodeDispatcher` route besides `nova`/`grok`/`zai`/`moonshot` subclasses.
 - ~~`DevAgentPool.run_wave` guaranteeing distinct models~~ — assignment is `workers[i % len(workers)]`; distinctness holds only when `len(tasks) ≤ len(workers)` (the chunker enforces this).
@@ -997,7 +1007,7 @@ REDIS_URL                           # line 298 — config.get("REDIS_URL", fallb
 - **`sdd-worker.md` `tools:` whitelist**: without the `mcp__parrot-sdd-coder__*` names the agent cannot call the server at all (verified convention: `sdd-ideation.md:44` lists `mcp__wikitoolkit__*`). AC-3 checks it.
 - **Startup step §2 of `sdd-worker` marks every task `in-progress`**: compatible with `TaskScheduler` (non-`done` ⇒ pending), but the engine must not treat `in-progress` as "running elsewhere".
 - **Redis**: `_publish_event` degrades to warnings per event; the engine passes `conf.REDIS_URL` and pre-checks reachability once at `open()` to emit a single warning (AC-15). Verified tolerant: `llm.py:~2400`, `codex.py:616`.
-- **Model ids drift** (`gemini-3.8-flash` already exists; codex-spark may be unavailable): handled by `fallback_model` + probe, never by code changes.
+- **Model ids drift** (`gemini-3.8-flash` already exists; `gpt-5.3-codex-spark` is valid today per the operator's probe but entitlements change): handled by `fallback_model` + the startup probe, never by code changes.
 - **Cross-feature**: FEAT-523 (PEP-420 respec, worktree pending) may touch `dispatchers/*.py`/`models/*.py`; edits here are additive one-liners plus new files — low conflict surface, but rebase the feature branch onto `dev` before `/sdd-done` if FEAT-523 merges first.
 - **`agy` unvalidated**: the roster example does not include `google_coding`; operators may add it after the §8 follow-up.
 
