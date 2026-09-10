@@ -3,7 +3,7 @@
   "feat_id": "FEAT-564",
   "feature_slug": "msteams-formdesigner-renderer",
   "started_at": "2026-09-10T22:19:37Z",
-  "updated_at": "2026-09-10T22:39:45Z",
+  "updated_at": "2026-09-10T22:39:57Z",
   "source": {
     "kind": "inline",
     "raw_path": "sdd/state/FEAT-564/source.md",
@@ -12,7 +12,7 @@
   },
   "mode": "enrichment",
   "wiki_available": true,
-  "phase": "proposal_drafted",
+  "phase": "committed",
   "phases": {
     "source": {
       "status": "completed"
@@ -53,7 +53,7 @@
     "output": {
       "status": "completed",
       "proposal_path": "sdd/proposals/msteams-formdesigner-renderer.proposal.md",
-      "commit_sha": null,
+      "commit_sha": "af9057053761bef31bbcd4945d642b373d6a0c02",
       "next_command_recommended": "sdd-spec",
       "next_command_rationale": "Localization high; all 5 unknowns resolved; extension of shipped code."
     }
