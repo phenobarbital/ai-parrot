@@ -4,7 +4,7 @@
 # Core embedding deps (should already be installed via parrot[all])
 uform>=3.1
 torch>=2.0
-Pillow>=9.0
+Pillow>=12.3.0
 numpy>=1.24
 
 # Optional: ONNX backend
