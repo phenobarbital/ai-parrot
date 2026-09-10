@@ -62,10 +62,24 @@ parallel**.
 
 Decisions taken during the two discovery rounds are constraints for the spec:
 
-- **C1 — Bridge**: non-Anthropic coders are reached through a **local MCP
-  server** served by `parrot mcp-local` (the `parrot-targeted-writer` /
-  FEAT-543 pattern), not through Bash CLIs and not by moving the entry point
-  to the dev-loop server. `sdd-worker` stays a Claude Code agent on Sonnet.
+- **C1 — Bridge (hybrid, revised after research)**: the three non-Anthropic
+  coders are reached through a **local MCP server** served by `parrot
+  mcp-local` (the `parrot-targeted-writer` / FEAT-543 pattern), not through
+  ad-hoc Bash CLIs and not by moving the entry point to the dev-loop server.
+  The **haiku seat is a native Claude Code sub-agent**: `sdd-worker` launches
+  `Agent(sdd-coder, model: haiku)` itself, in the same turn as the MCP
+  dispatch, so no `ClaudeCodeDispatcher`/nested session is involved. The MCP
+  still owns every sub-worktree, fidelity check and merge, so consolidation
+  is uniform regardless of who ran the coder. `sdd-worker` stays a Claude
+  Code agent on Sonnet.
+- **C1b — Gemini route**: the `gemini` CLI is **not** a usable backend (a
+  binary exists on this machine but the product is corporate-only and
+  deprecated in favour of Antigravity `agy`). Gemini is reached
+  **in-process** through Google's OpenAI-compatible endpoint, mirroring the
+  `NovaCodeDispatcher` / `BedrockMantleClient` pattern (an `OpenAIBaseClient`
+  subclass with a different `base_url` + key, driven by the unchanged
+  `LLMCodeDispatcher` loop). The existing `google_coding` dispatcher (`agy
+  --print`, headless) is the documented fallback, not the primary route.
 - **C2 — Isolation**: one **sub-worktree + child branch per task**, branched
   from the feature branch; `sdd-worker` merges them back sequentially and
   resolves conflicts itself. Coders never share a working tree.
@@ -126,7 +140,9 @@ Tool surface (names indicative, for the spec to fix):
 | Tool | Purpose |
 |---|---|
 | `coder_plan(feature, worktree)` | Re-reads the per-spec index, returns the next wave already sliced into distinct-model chunks, plus the effective roster and the entries dropped by the probe. Stateless: the index is the single source of truth. |
-| `coder_run_chunk(feature, worktree, task_ids)` | Creates one sub-worktree/branch per task, dispatches all tasks of the chunk in parallel (one model each), retries a failure once on the next roster model, merges the successful branches sequentially into the feature branch, returns a **job id** immediately. |
+| `coder_run_chunk(feature, worktree, task_ids)` | For the MCP-backed seats: creates one sub-worktree/branch per task, dispatches all tasks of the chunk in parallel (one model each), retries a failure once on the next roster model, merges the successful branches sequentially into the feature branch, returns a **job id** immediately. |
+| `coder_prepare_native(feature, worktree, task_id)` | For the haiku seat: creates the task's sub-worktree/branch and returns its path; `sdd-worker` then launches `Agent(sdd-coder, model: haiku)` with that cwd in the same turn as `coder_run_chunk`. |
+| `coder_merge(feature, worktree, task_id)` | Fidelity check + sequential merge of one branch — used after a native (haiku) coder returns, and to re-merge a branch Sonnet had to fix. Same result vocabulary as the job API. |
 | `coder_wait(job_id, timeout_seconds)` | Blocks up to the timeout (bounded, e.g. ≤ 600 s) and returns progress or the final per-task result: `merged` / `merge_conflict(branch, files)` / `failed(diagnostics)` / `fidelity_violation(unexpected_files)`. |
 | `coder_status(job_id)` | Non-blocking snapshot for long tasks. |
 | `coder_cleanup(feature, keep_conflicted=true)` | Removes merged sub-worktrees; conflicted ones are kept for Sonnet. |
@@ -143,9 +159,9 @@ Roster → backend mapping (the user-facing `provider:model` strings do not map
 | Roster entry (as requested) | `DevAgentBackend` | Dispatcher | Model id to configure | Notes |
 |---|---|---|---|---|
 | `bedrock:qwen3-coder` | `nova` | `NovaCodeDispatcher` (in-process loop over the OpenAI-compatible **bedrock-mantle** endpoint) | `qwen.qwen3-coder-480b-a35b-instruct` | The `bedrock:` provider key resolves to `AnthropicClient` on Bedrock, not Qwen; `bedrock-converse` exposes no `_chat_completion`, so the in-process loop cannot drive it. |
-| `google:gemini-3.5-flash` | `gemini` | `GeminiCodeDispatcher` (headless `gemini` CLI) | `gemini-3.5-flash` | `GoogleGenAIClient` has no `_chat_completion` either; the CLI dispatcher is the existing route. `google_coding` (`agy`) is an alternative **coder** backend (the `agy` ban is reviewer-only). |
+| `google:gemini-3.5-flash` | `google-compat` (**new**) | `GoogleCompatCodeDispatcher(LLMCodeDispatcher)` (**new**, Nova pattern) over a `GeminiOpenAICompatClient(OpenAIBaseClient)` (**new**) pointed at `https://generativelanguage.googleapis.com/v1beta/openai/` | `gemini-3.5-flash` | `GoogleGenAIClient` speaks the native GenAI SDK and has no `_chat_completion`; the compat client is ~100 lines like `BedrockMantleClient`. Fallback: `google_coding` (`agy --print`, headless) — already a dispatcher with tests; the `agy` ban is reviewer-only. The `gemini` CLI is **not** an option (corporate-only, deprecated). |
 | `openai:gpt-5.3-codex-spark` | `codex` | `CodexCodeDispatcher` (`codex exec --json`) | `gpt-5.3-codex-spark` | Model string passes through; not a known constant in the OpenAI client (`GPT5_3_CODEX` = `gpt-5.3-codex`). |
-| `anthropic:haiku` | `claude-code` | `ClaudeCodeDispatcher` (`claude_agent_sdk`) | `claude-haiku-4-5-20251001` | Runs a headless Claude Code **inside** an MCP server that Claude Code spawned — nested-session env (`CLAUDECODE`) must be scrubbed in `_resolve_dispatch_env`. |
+| `anthropic:haiku` | — (native) | Claude Code `Agent` tool with the new `.claude/agents/sdd-coder.md` (`model: haiku`), launched by `sdd-worker` | `haiku` (Claude Code alias) | Outside the MCP; no `LLMCodeDispatcher`, no nested session. The MCP prepares its sub-worktree (`coder_prepare_native`) and merges it afterwards (`coder_merge`). Result is the agent's final message plus `git` state in the sub-worktree, not a validated `DevelopmentOutput`. |
 
 ✅ **Pros:**
 - Reuses ~1,300 lines of tested FEAT-323 code (34 pool/worktree tests) instead
@@ -170,7 +186,12 @@ Roster → backend mapping (the user-facing `provider:model` strings do not map
 - The dispatchers publish telemetry to Redis; without Redis they degrade to
   warnings (verified for `LLMCodeDispatcher` and `CodexCodeDispatcher`), which
   is acceptable but noisy.
-- Nested-Claude-Code risk for the `haiku` seat (see table).
+- Two dispatch paths for one chunk (MCP job + native `Agent`): the plan must
+  make the split explicit and the orchestrator must call `coder_merge` for
+  the native task — one more thing the prompt has to get right.
+- Gemini's OpenAI-compatible endpoint may not honour every kwarg the loop
+  sends (`parallel_tool_calls`, `additionalProperties` in schemas, `extra_body`);
+  needs a smoke test before the seat is trusted.
 
 📊 **Effort:** High
 
@@ -178,16 +199,20 @@ Roster → backend mapping (the user-facing `provider:model` strings do not map
 | Package | Purpose | Notes |
 |---|---|---|
 | `parrot.mcp.toolkit_server` / `parrot mcp-local` | Serve the toolkit over stdio MCP | in-repo (FEAT-485), no new dependency |
-| `claude_agent_sdk` | `ClaudeCodeDispatcher` for the haiku seat | already an optional dependency of the dev-loop |
-| `codex` CLI, `gemini` CLI | Codex / Gemini seats | both installed locally (`~/.local/bin/codex`, `/usr/bin/gemini`); probed at start |
+| `openai` SDK (via `OpenAIBaseClient`) | Gemini seat through Google's OpenAI-compatible endpoint | already a dependency; new ~100-line client subclass, no new package |
+| `codex` CLI | Codex seat (`CodexCodeDispatcher`) | installed locally (`~/.local/bin/codex`); probed at start |
+| `agy` CLI (fallback only) | `GoogleCodingDispatcher` if the compat endpoint disappoints | installed locally (`~/.local/bin/agy`); coder use only, never reviewer |
 | `aioboto3` (via `ai-parrot-client-amazon`) | `BedrockMantleClient` for the Qwen seat | already a dependency of the amazon client package |
+| Claude Code `Agent` tool | haiku seat | native, no dependency |
 | `redis` (optional) | dispatch event streams | best-effort, degrades to warnings |
 
 🔗 **Existing Code to Reuse:**
 - `packages/ai-parrot/src/parrot/flows/dev_loop/task_scheduler.py` — waves from the per-spec index (`TaskScheduler.from_index_file`, `next_wave`, `mark_done`, `mark_failed`).
 - `packages/ai-parrot/src/parrot/flows/dev_loop/agent_pool.py` — `DevAgentPool.build/run_wave`, retry on a different worker, `aggregate_outputs`.
 - `packages/ai-parrot/src/parrot/flows/dev_loop/worktree_manager.py` — `SubWorktreeManager.create/merge_sequential/cleanup` (key by task id instead of worker id).
-- `packages/ai-parrot/src/parrot/flows/dev_loop/agent_builder.py` — `build_dispatcher(spec, redis_url, ...)` for every roster backend.
+- `packages/ai-parrot/src/parrot/flows/dev_loop/agent_builder.py` — `build_dispatcher(spec, redis_url, ...)` for every roster backend (gains a `google-compat` branch).
+- `packages/ai-parrot/src/parrot/flows/dev_loop/dispatchers/nova.py` + `packages/ai-parrot-client-amazon/src/parrot/clients/amazon/nova/mantle.py` — the exact template for the Gemini compat dispatcher + client pair.
+- `packages/ai-parrot/src/parrot/flows/dev_loop/dispatchers/google_coding.py` — `agy` headless dispatcher, reused as-is for the fallback seat.
 - `packages/ai-parrot/src/parrot/flows/dev_loop/_subagent_defs.py` — `load_subagent_definition`, `_VALID_NAMES` (add `sdd-coder`).
 - `packages/ai-parrot/src/parrot/mcp/toolkit_config.py` + `toolkit_server.py` — yaml section model and server factory.
 - `packages/ai-parrot-tools/src/parrot_tools/tool_optimizations/base.py` — `OptimizationToolkitBase` (arg-model validation + `OperationResult` shaping) as the toolkit skeleton to imitate.
@@ -268,10 +293,11 @@ server; the interactive `sdd-worker` is reduced to a launcher.
 
 ### Option D (unconventional): CLI-native coders, no Python at all
 
-`sdd-worker` shells out directly, in background Bash, to the four agentic CLIs
-that are already installed — `codex exec`, `gemini -p`, `agy` (as coder) and
+`sdd-worker` shells out directly, in background Bash, to the agentic CLIs
+that are installed — `codex exec`, `agy --print` (as coder) and
 `claude -p --model haiku` — one per sub-worktree, each given the task file
-path, and polls their output files.
+path, and polls their output files. (The `gemini` CLI is not usable here:
+corporate-only and deprecated in favour of `agy`.)
 
 ✅ **Pros:**
 - Zero new Python; works the day the prompt is written.
@@ -282,10 +308,10 @@ path, and polls their output files.
   orchestrator has to parse free text to know whether a task finished.
 - No probe, no retry policy, no telemetry beyond what Sonnet transcribes.
 - `claude -p` inside a Claude Code session hits the nested-session guard.
-- Re-implements in prose what `CodexCodeDispatcher` / `GeminiCodeDispatcher`
-  / `GoogleCodingDispatcher` / `ClaudeCodeDispatcher` already do in Python
-  with tests.
-- Qwen-on-Bedrock has no CLI at all, so the roster shrinks to three.
+- Re-implements in prose what `CodexCodeDispatcher` / `GoogleCodingDispatcher`
+  / `ClaudeCodeDispatcher` already do in Python with tests.
+- Qwen-on-Bedrock and Gemini-via-API have no CLI at all, so the roster
+  shrinks to two plus `agy`.
 
 📊 **Effort:** Low–Medium
 
@@ -320,9 +346,12 @@ path, and polls their output files.
 
 **What is traded off**: effort (High) and two operational risks that the spec
 must address head-on — the job-based tool API to survive MCP tool timeouts,
-and the nested-Claude-Code environment for the haiku seat. If the haiku seat
-proves unworkable inside an MCP server, the roster simply drops to three via
-the probe; the design does not depend on it.
+and the feature coverage of Google's OpenAI-compatible endpoint for the
+Gemini seat. If that endpoint cannot drive the loop (tool calling, schema
+quirks), the seat falls back to the existing `google_coding` (`agy`)
+dispatcher or is dropped by the probe; the design does not depend on it. The
+haiku seat is native to Claude Code and carries no dispatcher risk, at the
+price of a second dispatch path the orchestrator must handle explicitly.
 
 ---
 
@@ -339,14 +368,16 @@ the probe; the design does not depend on it.
 3. `sdd-worker` prints a **dispatch plan** before touching code:
 
    ```
-   Roster (available 4/4): nova:qwen3-coder-480b · gemini:gemini-3.5-flash · codex:gpt-5.3-codex-spark · claude-code:haiku-4-5
+   Roster (available 4/4): nova:qwen3-coder-480b · google-compat:gemini-3.5-flash · codex:gpt-5.3-codex-spark · native:haiku
    Wave 1 (3 tasks, 1 chunk): TASK-3101→qwen  TASK-3102→gemini  TASK-3103→codex-spark
-   Wave 2 (5 tasks, 2 chunks): [3104→haiku 3105→qwen 3106→gemini 3107→codex-spark] [3108→haiku]
+   Wave 2 (5 tasks, 2 chunks): [3104→haiku(native) 3105→qwen 3106→gemini 3107→codex-spark] [3108→haiku(native)]
    Wave 3 (1 task): TASK-3109→qwen
    ```
 
    Dropped roster entries are named with the probe reason ("codex: CLI not
-   found", "nova: no AWS credentials").
+   found", "nova: no AWS credentials", "google-compat: GEMINI_API_KEY unset").
+   Tasks marked `native` are the ones `sdd-worker` will run itself through
+   the Claude Code `Agent` tool.
 4. While coders run, `sdd-worker` reports per-task progress as each
    `coder_wait` returns (merged / retrying on `<model>` / conflict / failed).
 5. After every merged task, `sdd-worker` runs that task's acceptance
@@ -368,8 +399,9 @@ the probe; the design does not depend on it.
   `len(available_roster)` tasks. Model assignment inside a chunk is a
   bijection onto the roster; the starting index rotates between chunks so
   that, over a feature, every model sees a mix of tasks.
-- **Dispatch**: `coder_run_chunk` builds one `DevAgentSpec` per roster entry
-  (`count=1`), materialises them through `build_dispatcher`, and runs
+- **Dispatch (MCP seats)**: `coder_run_chunk` builds one `DevAgentSpec` per
+  MCP-backed roster entry (`count=1`), materialises them through
+  `build_dispatcher` (`nova`, `google-compat`, `codex`), and runs
   `DevAgentPool.run_wave` over the chunk with `cwd_for(task_id)` pointing at a
   fresh sub-worktree created by `SubWorktreeManager.create(task_id)` (branch
   `<feature-branch>--TASK-NNN`). Because the chunk never exceeds the pool
@@ -377,6 +409,22 @@ the probe; the design does not depend on it.
   its built-in retry (`_next_worker`) is by construction a *different* model.
   The brief is a `TaskScopedBrief` whose `task_file` names the task
   artifact; the profile's `subagent` is `sdd-coder`.
+- **Dispatch (native seat)**: for the task the plan assigns to `haiku`,
+  `sdd-worker` calls `coder_prepare_native` to get the sub-worktree path, then
+  launches `Agent(sdd-coder, model: haiku)` with the task file and that cwd
+  **in the same turn** as `coder_run_chunk`, so the chunk really runs in
+  parallel. When the agent returns, `sdd-worker` calls `coder_merge` so the
+  fidelity check and merge follow the same path as the MCP seats. A retry of
+  a native failure goes to the next MCP model via a one-task
+  `coder_run_chunk`; a retry of an MCP failure may land on haiku only when
+  the pool has no other model left, in which case the MCP reports
+  `retry_native` and `sdd-worker` performs it.
+- **Gemini in-process**: `GoogleCompatCodeDispatcher` subclasses
+  `LLMCodeDispatcher` and swaps `client_factory` for a
+  `GeminiOpenAICompatClient(OpenAIBaseClient)` bound to Google's
+  OpenAI-compatible base URL with `GEMINI_API_KEY`/`GOOGLE_API_KEY` — the
+  `NovaCodeDispatcher` + `BedrockMantleClient` pattern verbatim. The loop,
+  tool schemas, cwd guard and output validation are inherited unchanged.
 - **Consolidate**: for each successful task the toolkit checks file fidelity
   (`git diff --name-only <feature>..<branch>` ⊆ files listed in the task, and
   ∩ `sdd/` = ∅), then `merge_sequential(resolver=None)`: clean merges are
@@ -422,9 +470,16 @@ the probe; the design does not depend on it.
   lists orphan `--TASK-NNN` branches for Sonnet to adopt or delete.
 - **Redis absent** → dispatch telemetry degrades to warnings (existing
   behaviour); dispatch still completes.
-- **Nested Claude Code (haiku seat)** → `ClaudeCodeDispatcher._resolve_dispatch_env`
-  must strip the parent session's `CLAUDECODE`/entrypoint variables; if the
-  probe's smoke dispatch fails, the seat is dropped with a clear reason.
+- **Native haiku agent returns without a usable report** (no
+  `DevelopmentOutput` validation exists on this path) → `sdd-worker` derives
+  the result from git in the sub-worktree (`git log`, `git diff --name-only`)
+  and `coder_merge` applies the same fidelity check; an empty branch is a
+  failure and follows the retry policy.
+- **Gemini compat endpoint rejects a loop kwarg** (e.g. `parallel_tool_calls`,
+  `additionalProperties`) → the profile subclass strips/rewrites it in
+  `_completion_args` (as `NovaCodeDispatcher` already does for its endpoint);
+  if tool calling itself is unreliable, the probe's smoke dispatch fails and
+  the seat is dropped or swapped for `google_coding` (`agy`).
 - **Feature worktree not under `WORKTREE_BASE_PATH`** → the dispatchers'
   existing R4 check rejects the cwd; `coder_plan` reports it up-front.
 
@@ -439,7 +494,13 @@ the probe; the design does not depend on it.
 - `model-roster-assignment`: ordered roster model + distinct-model chunking +
   rotating start index + cross-model retry mapping; pure, unit-tested.
 - `sdd-coder-subagent-prompt`: new dual-sourced `sdd-coder.md` (repo +
-  packaged twin), task-scoped, code-only, `DevelopmentOutput` contract.
+  packaged twin), task-scoped, code-only, `DevelopmentOutput` contract; the
+  repo copy carries `model: haiku` so the same definition serves as the native
+  Claude Code sub-agent.
+- `gemini-openai-compat-seat`: `GeminiOpenAICompatClient(OpenAIBaseClient)`
+  (provider key `google-compat`) + `GoogleCompatCodeDispatcher(LLMCodeDispatcher)`
+  + `GoogleCompatCodeDispatchProfile` + `DevAgentBackend` value, mirroring the
+  Nova/Mantle pair.
 - `sdd-worker-orchestrator-loop`: rewritten Execution Loop in
   `sdd-worker.md` (plan → dispatch → wait → consolidate → SDD state →
   review → fixes), with per-model summary.
@@ -468,7 +529,10 @@ the probe; the design does not depend on it.
 | `packages/ai-parrot-tools/src/parrot_tools/sdd_coder/` (new) | new | `SddCoderToolkit`, arg models, `OperationResult`-style results |
 | `packages/ai-parrot/src/parrot/flows/dev_loop/roster.py` (new, name TBD) | new | pure roster/chunker/probe models (core, so the dev-loop can reuse them) |
 | `flows/dev_loop/task_scheduler.py`, `agent_pool.py`, `worktree_manager.py`, `agent_builder.py` | depends on | consumed unchanged; sub-worktree keyed by task id |
-| `flows/dev_loop/dispatchers/claude.py` | modifies (small) | scrub nested-session env in `_resolve_dispatch_env` |
+| `packages/ai-parrot-client-google/src/parrot/clients/google/openai_compat.py` (new) + entry point `google-compat` | new | `GeminiOpenAICompatClient(OpenAIBaseClient)`, template `amazon/nova/mantle.py` |
+| `flows/dev_loop/dispatchers/google_compat.py` + `models/google_compat.py` (new) | new | `GoogleCompatCodeDispatcher(LLMCodeDispatcher)` + profile, template `dispatchers/nova.py` |
+| `flows/dev_loop/models/base.py` (`DevAgentBackend`) + `agent_builder.build_dispatcher` | extends | add `"google-compat"` |
+| `flows/dev_loop/dispatchers/google_coding.py` | depends on (fallback) | unchanged |
 | `.parrot/mcp-toolkits.yaml` (new in repo) + `.mcp.json` | config | `sdd-coder` section; `parrot-sdd-coder` server entry |
 | `docs/mcp-local-toolkits.md`, `docs/dev_loop/` | docs | install + roster semantics |
 | `packages/ai-parrot/tests/flows/dev_loop/test_subagent_parity.py` | extends | auto-discovers the new twin |
@@ -567,9 +631,22 @@ class LLMCodeDispatcher:                     # line 51
     async def _chat_completion(self, *, client, model, messages, args)   # line 973 — requires client._chat_completion
     async def _publish_event(...)             # line ~2386 — Redis failure → warning, never raises
 
-# From packages/ai-parrot/src/parrot/flows/dev_loop/dispatchers/claude.py
-class ClaudeCodeDispatcher:                  # line 112
-    def _resolve_dispatch_env(self) -> Dict[str, str]   # line 665 (currently only ANTHROPIC_API_KEY handling)
+# From packages/ai-parrot/src/parrot/flows/dev_loop/dispatchers/nova.py  — TEMPLATE for the Gemini seat
+class NovaCodeDispatcher(LLMCodeDispatcher):          # line 66
+    def __init__(self, *, max_concurrent, redis_url, stream_ttl_seconds)   # line 78 → super().__init__(client_factory=self._create_mantle_client)
+    def _create_mantle_client(self, llm: str, *, model_args=None, **kwargs) -> Any   # line 91 → BedrockMantleClient(api_key=..., base_url=..., model=...)
+# From packages/ai-parrot-client-amazon/src/parrot/clients/amazon/nova/mantle.py  (142 lines total)
+class BedrockMantleClient(OpenAIBaseClient):          # line 35 — no _default_model/_fallback_model/_lightweight_model
+    def __init__(self, api_key: str | None = None, base_url: str | None = None, region: str | None = None, **kwargs)   # line 103
+# From packages/ai-parrot/src/parrot/clients/openai_base.py
+class OpenAIBaseClient(AbstractClient):
+    def __init__(self, api_key: str | None = None, base_url: str | None = None, **kwargs)   # line 89-92
+    async def _chat_completion(self, model, messages, use_tools=False, stream=False, **kwargs)   # line 216 → self.client.chat.completions.create/parse
+
+# From packages/ai-parrot/src/parrot/flows/dev_loop/dispatchers/google_coding.py  — FALLBACK seat, exists today
+class GoogleCodingDispatcher:                          # line ~49: "agy --print ... --output-format stream-json" (headless)
+    def __init__(..., agy_bin: str = "agy", ...)       # line 64; resolves via shutil.which (line 75)
+# tests: packages/ai-parrot/tests/flows/dev_loop/test_google_coding_dispatcher.py
 
 # From packages/ai-parrot/src/parrot/flows/dev_loop/_subagent_defs.py
 _VALID_NAMES: frozenset[str]                 # line ~50: research, worker, qa, codereview, secondopinion, planner, feedback
@@ -640,7 +717,8 @@ from parrot import conf   # conf.WORKTREE_BASE_PATH  (parrot/conf.py:828-829, de
 - Clients that implement `_chat_completion` (required by `LLMCodeDispatcher`): `OpenAIBaseClient` (parrot/clients/openai_base.py:216) and subclasses (openai, nvidia, groq, vllm, openrouter, zai, moonshot). **Not** anthropic, google, bedrock-converse.
 - Per-spec index task fields (verified on `sdd/tasks/index/collaborative-adversarial-spec-design.json`): `id, title, slug, status, priority, effort, depends_on, parallel, parallelism_notes, assigned_to, started_at, completed_at, file, feature, feature_id, spec, verification`. Header fields include `dev_isolation` and `worktree_strategy` (both `null` today).
 - Existing tests to extend/mirror: `packages/ai-parrot/tests/flows/dev_loop/{test_agent_pool.py, test_pool_models.py, test_pool_wiring.py, test_task_scheduler.py, test_worktree_manager.py, test_subagent_parity.py}`. `test_prompt_parity` auto-discovers every `_subagent_data/*.md` and requires a `.claude/agents/<name>.md` twin unless the name is in `_NO_REPO_TWIN` (line 26).
-- Installed CLIs on this machine: `codex` (`~/.local/bin/codex`), `gemini` (`/usr/bin/gemini`), `agy` (`~/.local/bin/agy`), `claude` (`~/.local/bin/claude`).
+- Installed CLIs on this machine: `codex` (`~/.local/bin/codex`), `agy` (`~/.local/bin/agy`), `claude` (`~/.local/bin/claude`). A `gemini` binary exists at `/usr/bin/gemini` but is **not usable** (corporate-only product, deprecated in favour of `agy`) — do not plan on `GeminiCodeDispatcher`.
+- Claude Code `Agent` tool accepts a per-call `model` override (`sonnet` / `opus` / `haiku`) and agent definitions carry a `model:` frontmatter key; no `.claude/agents/*.md` uses `model: haiku` today (all are `sonnet`, `product-analyst` is `opus`).
 - FEAT-547 (`sdd-worker` twin sync) is **done** (TASK-3106 `done`), so `sdd-worker.md` and its twin are in parity on `dev` today.
 
 ### Does NOT Exist (Anti-Hallucination)
@@ -657,7 +735,9 @@ from parrot import conf   # conf.WORKTREE_BASE_PATH  (parrot/conf.py:828-829, de
 - ~~`TaskScheduler` honouring the index `parallel` flag~~ — it uses `depends_on` only; `parallel`/`parallelism_notes` are advisory hints written by `/sdd-task`.
 - ~~`SubWorktreeManager` per-task API~~ — it is keyed by `worker_id`; reusing it per task means passing the task id as the key (branch `<feature>--TASK-NNN`).
 - ~~`DevAgentSpec.provider`~~ / ~~`DevAgentSpec.llm`~~ — the fields are `agent`, `model`, `count`, `escalation_model`.
-- ~~Nested-session scrubbing in `ClaudeCodeDispatcher._resolve_dispatch_env`~~ — it only handles `ANTHROPIC_API_KEY` today (claude.py:665-699).
+- ~~`google-compat` provider key / `GeminiOpenAICompatClient` / `GoogleCompatCodeDispatcher`~~ — none exist; the Google package registers only `google` and `gemini-live` (pyproject entry points), and no module in the repo references `generativelanguage.googleapis.com/v1beta/openai/`.
+- ~~A working `gemini` CLI route (`GeminiCodeDispatcher`)~~ — the dispatcher class exists (`dispatchers/gemini.py`) but the CLI is not usable on this account; treat the backend as unavailable.
+- ~~`ClaudeCodeDispatcher` in this design~~ — not used; the haiku seat is a native Claude Code sub-agent, so no nested-session scrubbing is needed.
 - ~~`MCP_TOOL_TIMEOUT` / `MCP_TIMEOUT`~~ in repo or user settings — not configured anywhere; Claude Code defaults apply.
 - ~~`tests/mcp/test_toolkit_config.py`, `tests/mcp/test_toolkit_server.py`~~ — referenced by `docs/tool-optimizations.md` but not found under `packages/*/tests` at this commit; do not cite them as existing.
 
@@ -677,7 +757,8 @@ from parrot import conf   # conf.WORKTREE_BASE_PATH  (parrot/conf.py:828-829, de
 Resolved during discovery (carried forward for `/sdd-spec`):
 
 - [x] Feature or hotfix, and base branch? — *Owner: Jesus Lara*: `type: feature`, `base_branch: dev`.
-- [x] How does Sonnet reach non-Anthropic coders? — *Owner: Jesus Lara*: a local MCP server (`parrot mcp-local`, targeted-writer pattern) wrapping the ai-parrot dispatchers; not Bash CLIs, not the dev-loop server.
+- [x] How does Sonnet reach non-Anthropic coders? — *Owner: Jesus Lara*: a local MCP server (`parrot mcp-local`, targeted-writer pattern) wrapping the ai-parrot dispatchers; not Bash CLIs, not the dev-loop server. **Revised after research**: haiku is a native Claude Code sub-agent (`Agent(sdd-coder, model: haiku)`), not an MCP seat.
+- [x] How is Gemini reached, given the `gemini` CLI is unusable? — *Owner: Jesus Lara*: in-process via Google's OpenAI-compatible endpoint, Nova/Mantle pattern (new `OpenAIBaseClient` subclass + `LLMCodeDispatcher` subclass); `google_coding` (`agy`) is the fallback, not the primary route.
 - [x] Isolation between parallel coders? — *Owner: Jesus Lara*: one sub-worktree + child branch per task, merged sequentially by `sdd-worker`.
 - [x] Why "never the same model in parallel"? — *Owner: Jesus Lara*: both load-spreading across providers and per-model quality telemetry; assignment is rotating and recorded in the Completion Note.
 - [x] Does the dev-loop `DevelopmentNode` path change too? — *Owner: Jesus Lara*: no; only the interactive `sdd-worker`, twin synced for parity.
@@ -689,7 +770,9 @@ Resolved during discovery (carried forward for `/sdd-spec`):
 Still open:
 
 - [ ] **Exact backend/model ids for the four seats** — confirm `nova` + `qwen.qwen3-coder-480b-a35b-instruct` is invocable in the account/region, and that Codex CLI accepts `gpt-5.3-codex-spark`; otherwise pick the nearest available (`gpt-5.3-codex`). — *Owner: Jesus Lara*
-- [ ] **Haiku seat inside an MCP server**: does a headless `claude_agent_sdk` session start when the parent process is itself a Claude Code MCP child? Needs a smoke test; if not, is `anthropic:haiku` via a new in-process adapter worth it, or does the roster ship with three seats? — *Owner: Claude (spike task in spec)*
+- [ ] **Gemini OpenAI-compatible endpoint coverage**: confirm against current Google docs that function calling, `tool_choice`, `parallel_tool_calls` and `additionalProperties: false` schemas are honoured (or must be stripped in `_completion_args`), and that `gemini-3.5-flash` is served there; a smoke dispatch is the spec's spike task. — *Owner: Claude (spike task in spec)*
+- [ ] **`agy` fallback validation**: `GoogleCodingDispatcher` exists with tests, but confirm headless `agy --print --output-format stream-json` works with this account before the probe advertises it as a fallback seat. — *Owner: Jesus Lara*
+- [ ] **Native haiku result contract**: should `sdd-coder.md` require the agent to end with the `DevelopmentOutput` JSON (so `sdd-worker` can parse it the same way the MCP does), or is git state in the sub-worktree enough? — *Owner: Jesus Lara*
 - [ ] **Job API bounds**: maximum `coder_wait` timeout (proposal ≤ 600 s) and Claude Code's effective MCP tool timeout in this setup. — *Owner: Claude*
 - [ ] **Where the toolkit package lives**: `parrot_tools/sdd_coder/` (CLAUDE.md rule: concrete toolkits in ai-parrot-tools) with pure roster/chunker models in core `parrot/flows/dev_loop/`, vs. everything in core next to `agent_pool.py`. — *Owner: Jesus Lara*
 - [ ] **Semantics of the index `parallel` flag**: keep it advisory (depends_on is the only scheduling input, current `TaskScheduler` behaviour) or let `parallel: false` force a task to run alone in its chunk? — *Owner: Jesus Lara*
