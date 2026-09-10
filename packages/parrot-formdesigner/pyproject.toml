@@ -50,6 +50,11 @@ dependencies = [
 ai-parrot = [
     "ai-parrot>=1.0.0",
 ]
+# FEAT-544: alias for the "a2ui" render format — same pin as `ai-parrot`,
+# named for discoverability (`pip install parrot-formdesigner[a2ui]`).
+a2ui = [
+    "ai-parrot>=1.0.0",
+]
 redis = [
     "redis>=4.5",
 ]

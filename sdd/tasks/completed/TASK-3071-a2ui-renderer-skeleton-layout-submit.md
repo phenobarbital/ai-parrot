@@ -248,10 +248,30 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-11
+**Notes**: Implemented `A2UIFormRenderer` in
+`renderers/a2ui.py` exactly per scope: lazy `_a2ui_ns()` import helper
+(raises `RuntimeError` on `ImportError`), `field_pointer`/
+`field_id_from_pointer_token` (RFC 6901 escape/unescape), module-private
+`_resolve` (copied from `adaptive_card.py`), deterministic layout ids
+(`root`, `root-title`, `root-description`, `sec-<id>`, `sec-<id>-title`,
+`sub-<id>`, `f-<field_id>`, `f-<field_id>-error`, `root-status`,
+`root-actions`, `root-submit(-label)`, `root-cancel(-label)`), submit/cancel
+Buttons with `action.event` + `context.submit_url`, `metadata.extensions.
+parrot_*` on root/section/subsection/field, `dataModel` with prefilled >
+default > None precedence, and the stub `_lower_field` (Text notice +
+`RenderWarning(renderer="a2ui", reason="field lowering not implemented")`)
+that TASK-3072 replaces. Sections lower as `Card(child=<body Column id>)`
+wrapping a `Column` of [title?, field/subsection ids] — an internal
+`sec-<id>-body` id not enumerated in the task's deterministic-id list, but
+required since `Card.child` is a single id (verified `catalog/basic/
+layout.py:67-82`); no test asserts against it, so it's free to name. All
+10 unit tests pass (`pytest packages/parrot-formdesigner/tests/unit/
+renderers/test_a2ui_renderer.py -v`); `ruff check` clean on both new files.
+`test_module_import_does_not_import_ai_parrot_eagerly` uses a static AST
+check (no top-level `parrot.*` import) rather than a `sys.modules`
+delete/reload dance, to avoid mutating process-global module identity for
+later test files in the same session.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.

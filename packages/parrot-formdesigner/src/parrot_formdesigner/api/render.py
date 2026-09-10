@@ -10,13 +10,17 @@ V1 seeds two renderers:
 - ``"html"`` → :class:`HTML5Renderer`
 - ``"adaptive"`` → :class:`AdaptiveCardRenderer`
 
-Wave 2 plugs in additional renderers (``"xml"``, ``"pdf"``) by calling
-:func:`register_renderer` at module-import time. ``GET /api/v1/forms/{id}/render/{unknown}``
-returns ``415 Unsupported Media Type`` with ``{"supported": [...]}``.
+Wave 2 plugs in additional renderers (``"xml"``, ``"pdf"``, ``"audio"``,
+``"a2ui"``) by calling :func:`register_renderer` at module-import time.
+``"a2ui"`` (FEAT-544) is the one OPTIONAL seed — it requires the
+``ai-parrot`` extra and is simply absent (one INFO log) when that extra is
+not installed. ``GET /api/v1/forms/{id}/render/{unknown}`` returns
+``415 Unsupported Media Type`` with ``{"supported": [...]}``.
 """
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import logging
 from typing import Any
@@ -58,6 +62,30 @@ def _seed_default_renderers() -> None:
     _RENDERERS.setdefault("xml", XFormsRenderer())
     _RENDERERS.setdefault("pdf", PdfRenderer())
     _RENDERERS.setdefault("audio", AudioFormRenderer())
+
+    # FEAT-544: "a2ui" is the ONE optional seed — ai-parrot is an optional
+    # extra of parrot-formdesigner (unlike the hard deps above). Probe with
+    # find_spec() first: A2UIFormRenderer itself imports parrot.* lazily
+    # (TASK-3071), so a bare `except ImportError` around the constructor
+    # call would only catch a failure that never actually surfaces here.
+    #
+    # Code review fix (TASK-3073): find_spec() on a dotted name RAISES
+    # ModuleNotFoundError — it does not return None — when a parent package
+    # earlier in the chain fails to import (e.g. "parrot" itself is entirely
+    # absent, exactly the real "ai-parrot not installed" deployment this
+    # guard exists for). An unguarded find_spec() call would crash
+    # setup_form_api() at app startup instead of gracefully degrading.
+    try:
+        a2ui_available = importlib.util.find_spec("parrot.outputs.a2ui") is not None
+    except (ImportError, ModuleNotFoundError):
+        a2ui_available = False
+
+    if a2ui_available:
+        from ..renderers.a2ui import A2UIFormRenderer
+
+        _RENDERERS.setdefault("a2ui", A2UIFormRenderer())
+    else:
+        logger.info("render dispatcher: 'a2ui' format unavailable (install parrot-formdesigner[ai-parrot])")
 
 
 def register_renderer(format_key: str, renderer: AbstractFormRenderer) -> None:

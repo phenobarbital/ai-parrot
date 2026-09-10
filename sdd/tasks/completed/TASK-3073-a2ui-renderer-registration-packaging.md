@@ -175,10 +175,40 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-11
+**Notes**: `_seed_default_renderers` now probes
+`importlib.util.find_spec("parrot.outputs.a2ui")` first and only imports
+`A2UIFormRenderer` + `setdefault("a2ui", ...)` when the spec resolves,
+logging one INFO line otherwise — the other five hard-dep renderers seed
+unconditionally, unaffected. `renderers/__init__.py` adds
+`"A2UIFormRenderer": ".a2ui"` to `_LAZY_EXPORTS`/`__all__`/the
+`TYPE_CHECKING` block. `pyproject.toml` gets an `a2ui` optional-extra alias
+(same pin as `ai-parrot`). Extended `test_render_dispatcher.py` with the
+seed-available/seed-skipped/dispatcher-e2e tests and added
+`test_a2ui_export.py` (lazy export + a static AST check that
+`renderers/__init__.py` imports no `parrot.*` at module level, same
+pattern as TASK-3071's eager-import test). 12 new/extended tests pass;
+`ruff check` clean on all 5 touched files.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+Verified a pre-existing, unrelated failure
+(`test_form_controls_endpoint.py::test_form_controls_payload_shape`) is
+present on the same commit *before* any FEAT-544 changes (confirmed via
+`git stash`) — out of scope for this task, not touched.
 
-**Deviations from spec**: none | describe if any
+**Post-review addendum (2026-09-11)**: the FEAT-544 `code-reviewer` pass
+(cross-checked adversarially with `codex`) found that
+`importlib.util.find_spec("parrot.outputs.a2ui")` RAISES
+`ModuleNotFoundError` — it does not return `None` — when a parent package
+earlier in the dotted chain (here: `parrot` itself) cannot be imported at
+all, which is exactly the real "`ai-parrot` extra not installed"
+deployment shape. The unguarded `find_spec()` call would have crashed
+`setup_form_api()` at app startup instead of gracefully degrading.
+Independently reproduced (both "top-level `parrot` entirely absent" and
+"`parrot` exists, `a2ui` submodule doesn't" cases) before fixing: wrapped
+the probe in `try/except (ImportError, ModuleNotFoundError)` and added
+`test_seed_skips_a2ui_when_parent_package_genuinely_absent` (raises from
+a monkeypatched `find_spec`, rather than the pre-existing test's
+return-`None` monkeypatch, which never exercised the raising path). Fixed
+in a follow-up commit on this branch; not a change to this note's
+"Deviations from spec" (none) — a bug fix, not a design deviation.

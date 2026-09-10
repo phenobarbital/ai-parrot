@@ -184,10 +184,30 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-11
+**Notes**: Created `api/a2ui_wire.py` with `A2UI_SUBMIT_ACTION`/
+`A2UI_VALIDATE_ACTION`/`A2UI_CANCEL_ACTION` constants, `A2UI_MAX_BODY_BYTES`
+(env `A2UI_MAX_DATA_MODEL_BYTES`, same as the runtime — enforcement is
+left to TASK-3075/3076's handlers per spec §7), `A2UIActionSubmission`,
+`A2UIWireError` (`status` + ready `error` envelope), `is_a2ui_request`
+(never raises — returns `False` on `ImportError`), `unwrap_action`
+(deserialize -> require `ActionMessage` -> surfaceId/action-name checks ->
+`dataModel.answers` preferred over `context.answers` -> pointer-token
+unescape, dropping only undeclared `None`-valued keys), `validation_errors`,
+`confirmation`, and `a2ui_response` (single -> `application/a2ui+json`
+body; N -> `{"messages": [...]}`). `field_pointer`/
+`field_id_from_pointer_token` are imported directly from
+`renderers.a2ui` (TASK-3071) — that module has no top-level `parrot.*`
+import either, so this remains safe. 14 new tests pass, including a
+`validate_message()` conformance check on every produced envelope and a
+static AST check (no top-level `parrot.*` import); `ruff check` clean.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: `_malformed`/`_surface_mismatch` use
+`A2UIErrorCode.INVALID_FUNCTION_CALL` for "no action" / "wrong action
+name" / "answers not a dict" and `A2UIErrorCode.NOT_FOUND` specifically
+for surface mismatch (per the Implementation Notes' explicit example) —
+the task's Codebase Contract lists `INVALID_FUNCTION_CALL | NOT_FOUND |
+FORBIDDEN` as the available codes without prescribing which applies to
+which malformed-envelope case; this mapping was chosen as the most
+semantically apt of the three and is not otherwise specified.
