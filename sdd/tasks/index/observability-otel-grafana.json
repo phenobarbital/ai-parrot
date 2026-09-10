@@ -52,7 +52,7 @@
       "feature_id": "FEAT-548",
       "feature": "observability-otel-grafana",
       "spec": "sdd/specs/observability-otel-grafana.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -60,8 +60,8 @@
       "parallelism_notes": "PARALLEL-SAFE: touches only docker/grafana/provisioning/dashboards/dashboards.yml and a new subdirectory. Shares no file with any other task.",
       "assigned_to": null,
       "started_at": "2026-09-10T16:30:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3109-grafana-aiparrot-folder.md"
+      "completed_at": "2026-09-10T16:36:24+00:00",
+      "file": "sdd/tasks/completed/TASK-3109-grafana-aiparrot-folder.md"
     },
     {
       "id": "TASK-3110",

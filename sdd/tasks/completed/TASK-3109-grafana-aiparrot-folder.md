@@ -218,10 +218,28 @@ note rather than claiming AC-9.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-09-10
 **Notes**:
+- `dashboards.yml` before-edit sha256 matched the Codebase Contract exactly
+  (`23b20c27...`); the `parrot` provider block was appended verbatim from the
+  blueprint, `claudestats` untouched (`git diff` shows a pure append).
+- `docker/grafana/provisioning/dashboards/parrot/.gitkeep` created.
+- `test_provisioning_yaml_parses_and_has_both_providers` (from this task's own
+  Test Specification) added at
+  `packages/ai-parrot/tests/unit/observability/test_grafana_provisioning.py`
+  and passes.
+- **Step 3 duplication check: UNVERIFIED.** `parrot-grafana` is not running on
+  this machine (`docker ps -a` shows no such container at all — the
+  `docker/grafana` compose stack has not been brought up here). Per this
+  task's own Agent Instructions ("if [Grafana] is not up, do the file
+  changes, then mark the duplication check as unverified... rather than
+  claiming AC-9"), AC-9 is **not** claimed. `parrot-prometheus` is up but
+  separately found to be running with stale container args missing
+  `--enable-feature=otlp-write-receiver` (see TASK-3107's completion note) —
+  operator action needed on both containers before AC-9 can be verified.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none in the file changes themselves. AC-9 (folder
+appears in Grafana, no duplication) is left unverified — live-stack
+precondition not met on this machine, as anticipated by the task's own Agent
+Instructions.
