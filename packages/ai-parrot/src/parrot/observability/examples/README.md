@@ -33,9 +33,16 @@ Services started:
 | OTLP receiver | http://localhost:4318 (HTTP)   | Receives spans from the agent    |
 | OTLP gRPC     | grpc://localhost:4317          | Alternative gRPC ingestion       |
 | ClickHouse    | http://localhost:8123          | OpenLIT storage backend          |
-| Prometheus    | http://localhost:9090          | Optional metrics scraping        |
 
 Wait 15-20 seconds for OpenLIT to finish initialising its ClickHouse schema.
+
+Prometheus is no longer part of this stack — it moved to `docker/prometheus/`
+at the repo root (with every other docker artifact) and is now shared with the
+Grafana stack in `docker/grafana/`:
+
+```bash
+docker compose -f docker/prometheus/docker-compose.yml up -d   # http://localhost:9090
+```
 
 ---
 
