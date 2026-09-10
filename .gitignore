@@ -387,6 +387,7 @@ corpus/compliance_soc2_hipaa/trees/
 
 #MCP Custom Local configs
 .mcp.json
+.sdd-coder/
 
 # Matrix dev stack — generated secrets / homeserver state (FEAT-463)
 docker/matrix/**/registration.yaml
