@@ -1,0 +1,94 @@
+- **Metrics have exactly one destination; traces can have many.**
+  `make_metric_exporter(config)` reads `config.otlp_endpoint` alone and never
+  consults `otlp_targets`, while `setup_telemetry` builds one
+  `BatchSpanProcessor` per entry in `config.otlp_targets` (falling back to an
+  implicit single target from `otlp_endpoint`).
+  *Implication*: moving `otlp_endpoint` to Prometheus moves **both** signals,
+  so traces would POST to `/api/v1/otlp/v1/traces`, which Prometheus 2.x does
+  not serve.
+  *Evidence*: F006
+
+- **`OTEL_EXPORTER_OTLP_ENDPOINT` is a base URL.** The exporters append
+  `/v1/metrics` and `/v1/traces` themselves.
+  *Implication*: the correct value is `http://localhost:9090/api/v1/otlp`, **not**
+  the full `.../v1/metrics` path.
+  *Evidence*: F006, F007
+
+- **Traces cannot be switched off from env — but they can be silenced.**
+  `enable_traces` / `enable_metrics` are code-only fields; `from_env()` never
+  reads them. The env-only lever is `OBSERVABILITY_SAMPLING=0.0`, which feeds
+  `TraceIdRatioBased(0.0)`; every span is marked non-recording and never reaches
+  the exporter, so no trace request is issued and no 404 occurs.
+  *Implication*: this keeps the change a pure env move. Setting the value back
+  to `1.0` restores traces later, once a trace-capable endpoint is configured.
+  *Evidence*: F014, F006
+
+- **`gen_ai.client.token.usage` is a histogram recorded twice per call**
+  (once for input, once for output).
+  *Implication*: a token total must be built from its `_sum` series; no token
+  `_total` counter exists — which is exactly the false assumption baked into
+  `parrot-overview.json` today.
+  *Evidence*: F002, F009
+
+- **Per-round tokens must never be summed with per-call tokens.**
+  `parrot.client.round.token.usage` is a dedicated instrument that FEAT-397 kept
+  separate from `gen_ai.client.token.usage` specifically to avoid double counting.
+  *Evidence*: F002
+
+- **Per-user usage is not answerable from metrics.** `user_id`/`session_id` are
+  span attributes only, deliberately excluded from metric labels as a
+  cardinality guard.
+  *Implication*: no per-user cost panel is possible from Prometheus; that
+  question belongs to the trace backend.
+  *Evidence*: F002
+
+- **Cost is computed in-process, not in PromQL.** `CostCalculator` produces USD
+  which `MetricsSubscriber` adds to `gen_ai.client.cost.total` with the full
+  agent/model/provider label set.
+  *Implication*: cost panels are a direct `sum by (...)`, with no price table in
+  Grafana. But `cost_usd()` returns `None` for an unpriced model and that call
+  silently contributes nothing, so a cost panel needs a companion request-count
+  panel or unpriced models vanish from the dashboard entirely.
+  *Evidence*: F003
+
+- **`env/.env` is git-ignored** (`.gitignore:181`) and holds live API keys and
+  AWS credentials.
+  *Implication*: the wiring change is an operator action on this host, not a
+  committed diff, and the file's contents must never be reproduced in an SDD
+  artifact. This is why U5 (below) resolves to shipping a committed, secret-free
+  reference.
+  *Evidence*: F004
+
+- **First data can take a minute.** `metric_export_interval_ms` defaults to
+  60 000 and has **no env var** — it is settable only in code.
+  *Implication*: a freshly-wired dashboard is legitimately empty for up to a
+  minute after the first LLM call; verification steps must account for this.
+  *Evidence*: F005
+
+- **Prometheus name translation.** Dotted OTel names become Prometheus names via
+  `UnderscoreEscapingWithSuffixes` (dots → underscores, plus unit and `_total`
+  suffixes), so series will be shaped like `gen_ai_client_request_count_total`
+  and `gen_ai_client_token_usage_tokens_bucket`.
+  *Implication*: the exact rendering of the `USD` unit on
+  `gen_ai.client.cost.total` must be **read off the live TSDB after the first
+  export**, not assumed, before the PromQL is finalized.
+  *Evidence*: F011, F002
+
+- **Grafana folder naming.** The provider is named `claudestats` and files
+  everything into a folder literally called `Claude Code`, with
+  `foldersFromFilesStructure: false`. Provisioned dashboards are read-only in
+  the UI (`allowUiUpdates: false`) — operators must "Save as" to customise.
+  *Evidence*: F008
+
+- **`docker/` is currently dirty.** `docker/grafana/README.md`,
+  `docker/prometheus/docker-compose.yml` and `docker/prometheus/prometheus.yml`
+  are modified and `docker/prometheus/otel-collector.yml` is untracked — the
+  in-flight Codex collector work.
+  *Implication*: sequence this feature against that dirty state; do not assume a
+  clean tree.
+  *Evidence*: F011
+
+- **The emitter is protected but rigid.** 29 unit test modules under
+  `packages/ai-parrot/tests/unit/observability/` already assert the env contract,
+  multi-target wiring and instrument names.
+  *Evidence*: F012

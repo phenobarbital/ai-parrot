@@ -1,0 +1,12 @@
+- [ ] **What are the real Prometheus series names after the first export?**
+  *Owner*: implementation (first task)
+  *Blocks claims*: C10
+  *Plausible answers*: a) `gen_ai_client_cost_total_USD_total` ·
+  b) `gen_ai_client_cost_total_usd_total` · c) unit suffix dropped entirely.
+  Must be read off `/api/v1/label/__name__/values`, never assumed.
+
+- [ ] **Does the direct push actually deliver cumulative counters?**
+  *Owner*: implementation (verification step)
+  *Blocks claims*: C11
+  *Plausible answers*: a) yes — OTel Python defaults to cumulative, dashboard
+  works as designed · b) no — counters sawtooth, requiring the collector fallback.
