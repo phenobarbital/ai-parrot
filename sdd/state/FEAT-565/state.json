@@ -1,0 +1,68 @@
+{
+  "schema_version": "1.0",
+  "feature_id": "FEAT-565",
+  "phase": "proposal_drafted",
+  "started_at": "2026-09-10T14:11:19.362801+00:00",
+  "updated_at": "2026-09-10T14:33:59.379367+00:00",
+  "mode": "enrichment",
+  "wiki_available": true,
+  "source": {
+    "kind": "inline",
+    "jira_key": null,
+    "path": "sdd/state/FEAT-565/source.md",
+    "summary_oneline": "Point parrot OTEL observability at the running parrot-prometheus and build a Grafana dashboard for usage/tokens/cost by agent and model"
+  },
+  "budget": {
+    "profile": "default",
+    "max_files_read": 40,
+    "max_grep_calls": 25,
+    "max_git_calls": 10,
+    "max_depth": 2,
+    "max_wall_seconds": 300
+  },
+  "consumed": {
+    "files_read": 18,
+    "grep_calls": 12,
+    "git_calls": 2,
+    "depth_reached": 1,
+    "wall_seconds": 760
+  },
+  "phases": {
+    "plan": {
+      "status": "complete",
+      "approved_by_user": true,
+      "queries_planned": 20
+    },
+    "research": {
+      "status": "complete",
+      "completed_at": "2026-09-10T14:33:59.379367+00:00",
+      "findings": 13,
+      "truncated": false,
+      "truncation_reason": null
+    },
+    "synthesis": {
+      "status": "complete",
+      "overall_confidence": "high",
+      "lint": "pass",
+      "claims": {
+        "high": 9,
+        "medium": 1,
+        "low": 1
+      }
+    },
+    "review": {
+      "status": "complete",
+      "approved_by_user": true
+    },
+    "qa": {
+      "status": "complete",
+      "questions_total": 5,
+      "questions_answered": 5
+    },
+    "output": {
+      "proposal_path": "sdd/proposals/observability-otel-grafana.proposal.md"
+    }
+  },
+  "errors": [],
+  "recommended_next_command": "sdd-spec"
+}

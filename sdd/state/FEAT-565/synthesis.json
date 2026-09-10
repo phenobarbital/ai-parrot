@@ -1,0 +1,408 @@
+{
+  "schema_version": "1.0",
+  "mode": "enrichment",
+  "overall_confidence": "high",
+  "summary": "The openlit->OTEL migration is complete and the emitter already produces everything the request asks for: a USD cost counter, token histograms and request/error counters, every one of them labelled with parrot.agent.name, gen_ai.request/response.model and gen_ai.provider.name. Nothing needs to be instrumented. The gap is entirely at the two ends: (1) env/.env has telemetry switched OFF and aimed at OpenLIT's 4318 rather than the Prometheus OTLP receiver on 9090, which live Prometheus confirms by holding zero gen_ai_*/parrot_* series; and (2) both shipped example dashboards query metric names that no code path emits \u2014 one set belongs to the non-OTel PrometheusUsageRecorder, the other set never existed at all \u2014 and neither has a single by-agent panel. The work is therefore a wiring change plus a dashboard rewrite against the real instrument catalog, following the Codex integration landed days ago as a working template.",
+  "localization": [
+    {
+      "path": "env/.env",
+      "symbol": "[observability] section",
+      "lines": "715-726",
+      "role": "the switch to flip: OBSERVABILITY_ENABLED=false and OTEL_EXPORTER_OTLP_ENDPOINT aimed at OpenLIT",
+      "evidence": [
+        "F004",
+        "F010"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/observability/config.py",
+      "symbol": "ObservabilityConfig.from_env",
+      "lines": "347-470",
+      "role": "authoritative env-var contract; defines every variable that may be changed",
+      "evidence": [
+        "F005"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/observability/exporters.py",
+      "symbol": "make_metric_exporter",
+      "lines": "150-154",
+      "role": "appends /v1/metrics to the base URL; metrics use otlp_endpoint ONLY",
+      "evidence": [
+        "F006"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/observability/setup.py",
+      "symbol": "setup_telemetry",
+      "lines": "133-208",
+      "role": "traces fan out over otlp_targets, metrics do not \u2014 the asymmetry that lets traces and metrics go to different backends",
+      "evidence": [
+        "F006"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/observability/subscribers/metrics.py",
+      "symbol": "MetricsSubscriber",
+      "lines": "96-330",
+      "role": "the metric contract every PromQL expression must be written against",
+      "evidence": [
+        "F002",
+        "F003"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/observability/examples/grafana-dashboards/parrot-overview.json",
+      "symbol": "uid parrot-observability-overview",
+      "role": "example dashboard querying metric names that no code emits",
+      "evidence": [
+        "F009"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/observability/examples/grafana-dashboards/parrot-usage.json",
+      "symbol": "AI-Parrot \u2014 LLM Usage & Cost",
+      "role": "example dashboard bound to the non-OTel parrot_llm_* recorder names",
+      "evidence": [
+        "F009"
+      ]
+    },
+    {
+      "path": "docker/grafana/provisioning/dashboards/dashboards.yml",
+      "symbol": "provider claudestats",
+      "lines": "1-16",
+      "role": "the auto-load path a new parrot dashboard must land in to appear on the running Grafana",
+      "evidence": [
+        "F008",
+        "F011"
+      ]
+    },
+    {
+      "path": "docker/grafana/provisioning/datasources/prometheus.yml",
+      "symbol": "uid claudestats-prometheus",
+      "lines": "1-14",
+      "role": "datasource uid a new dashboard must reference",
+      "evidence": [
+        "F008"
+      ]
+    },
+    {
+      "path": "docker/prometheus/docker-compose.yml",
+      "symbol": "prometheus service",
+      "lines": "30-56",
+      "role": "runs 2.51.0 with --enable-feature=otlp-write-receiver, so it accepts a direct OTLP metric push",
+      "evidence": [
+        "F007"
+      ]
+    },
+    {
+      "path": "docker/prometheus/prometheus.yml",
+      "lines": "1-28",
+      "role": "scrape config; would need a job only if a collector/scrape model is chosen over direct push",
+      "evidence": [
+        "F007",
+        "F011"
+      ]
+    },
+    {
+      "path": "docs/architecture/10-observability.md",
+      "lines": "20-95",
+      "role": "documents the env table and points readers at 4318 and the stale example dashboards \u2014 must be updated in step",
+      "evidence": [
+        "F012"
+      ]
+    }
+  ],
+  "constraints": [
+    {
+      "statement": "Metrics can be pushed to exactly ONE OTLP endpoint (config.otlp_endpoint); only traces honour OTLP_TARGETS. Pointing otlp_endpoint at Prometheus without redirecting traces leaves every trace export POSTing to a non-existent /api/v1/otlp/v1/traces.",
+      "confidence": "high",
+      "evidence": [
+        "F006"
+      ]
+    },
+    {
+      "statement": "OTEL_EXPORTER_OTLP_ENDPOINT is a BASE URL \u2014 the exporters append /v1/metrics and /v1/traces themselves. For the Prometheus receiver the correct value is http://localhost:9090/api/v1/otlp, not the full .../v1/metrics path.",
+      "confidence": "high",
+      "evidence": [
+        "F006",
+        "F007"
+      ]
+    },
+    {
+      "statement": "gen_ai.client.token.usage is a HISTOGRAM recorded twice per call (input then output). A token total must come from its _sum series; no token _total counter exists, which is precisely what parrot-overview.json wrongly assumes.",
+      "confidence": "high",
+      "evidence": [
+        "F002",
+        "F009"
+      ]
+    },
+    {
+      "statement": "parrot.client.round.token.usage is a separate instrument and must never be summed together with gen_ai.client.token.usage \u2014 FEAT-397 kept them apart specifically to avoid double-counting rounds against call totals.",
+      "confidence": "high",
+      "evidence": [
+        "F002"
+      ]
+    },
+    {
+      "statement": "user_id and session_id are span attributes only and are deliberately excluded from metric labels for cardinality reasons, so per-user usage is NOT answerable from Prometheus \u2014 only per-agent, per-model, per-provider.",
+      "confidence": "high",
+      "evidence": [
+        "F002"
+      ]
+    },
+    {
+      "statement": "Cost is computed in-process by CostCalculator and emitted as the gen_ai.client.cost.total counter in USD with the full agent/model/provider label set, so cost panels are a direct sum, not a PromQL price join.",
+      "confidence": "high",
+      "evidence": [
+        "F003"
+      ]
+    },
+    {
+      "statement": "cost_usd() returns None for an unpriced model and that call silently adds nothing to the cost counter, so a cost dashboard needs a companion request-count panel to make unpriced models visible.",
+      "confidence": "high",
+      "evidence": [
+        "F003"
+      ]
+    },
+    {
+      "statement": "env/.env is git-ignored (.gitignore:181) and holds live API keys and AWS credentials. Changing it is an operator action on this host, not a committed diff, and its contents must never be reproduced in an SDD artifact.",
+      "confidence": "high",
+      "evidence": [
+        "F004"
+      ]
+    },
+    {
+      "statement": "metric_export_interval_ms defaults to 60000 and has no env var, so a freshly-wired dashboard stays empty for up to a minute after the first LLM call.",
+      "confidence": "high",
+      "evidence": [
+        "F005"
+      ]
+    },
+    {
+      "statement": "Dotted OTel names become Prometheus names via UnderscoreEscapingWithSuffixes (dots to underscores plus unit and _total suffixes), so the series will be shaped like gen_ai_client_request_count_total and gen_ai_client_token_usage_tokens_bucket \u2014 but the exact rendering of the USD unit on gen_ai.client.cost.total must be read off the live TSDB after the first export rather than assumed.",
+      "confidence": "medium",
+      "evidence": [
+        "F011",
+        "F002"
+      ]
+    },
+    {
+      "statement": "The Grafana dashboard provider is named claudestats and files everything into a folder literally called 'Claude Code' with foldersFromFilesStructure:false, so a parrot dashboard dropped in as-is lands in a misleadingly named folder.",
+      "confidence": "high",
+      "evidence": [
+        "F008"
+      ]
+    },
+    {
+      "statement": "Provisioned dashboards are read-only in the UI (allowUiUpdates:false); operators must 'Save as' to customise, which matters for how the dashboard is delivered.",
+      "confidence": "high",
+      "evidence": [
+        "F008"
+      ]
+    },
+    {
+      "statement": "docker/ currently has uncommitted work (modified README/compose/prometheus.yml plus untracked otel-collector.yml) introducing the Codex collector. Any change here must be sequenced against that dirty state rather than assuming a clean tree.",
+      "confidence": "high",
+      "evidence": [
+        "F011"
+      ]
+    },
+    {
+      "statement": "29 unit test modules under tests/unit/observability already assert the env contract, multi-target wiring and instrument names, so the emitter side is protected but also rigid.",
+      "confidence": "high",
+      "evidence": [
+        "F012"
+      ]
+    }
+  ],
+  "hypotheses": [
+    {
+      "rank": 1,
+      "statement": "No instrumentation work is required. Point OTEL_EXPORTER_OTLP_ENDPOINT at http://localhost:9090/api/v1/otlp and set OBSERVABILITY_ENABLED=true so metrics land in the existing parrot-prometheus over its OTLP write receiver; redirect traces to OpenLIT via OTLP_TARGETS so they do not 404; then replace both example dashboards with one written against the real instrument catalog, adding the by-agent dimension that has existed since FEAT-228 but was never surfaced.",
+      "confidence": "high",
+      "evidence": [
+        "F002",
+        "F003",
+        "F004",
+        "F006",
+        "F007",
+        "F010"
+      ],
+      "reasoning": "Every metric the request names already exists with the right labels, the target stack already accepts OTLP push and already serves two other producers end to end, and live Prometheus proves the only missing link is the producer."
+    },
+    {
+      "rank": 2,
+      "statement": "Alternative: route parrot through an OTel Collector (a new parrot-dedicated service alongside parrot-codex-otel, or a second pipeline in it) that fans metrics to Prometheus and traces to OpenLIT, instead of splitting them with OTLP_TARGETS at the SDK.",
+      "confidence": "medium",
+      "evidence": [
+        "F007",
+        "F011",
+        "F006"
+      ],
+      "reasoning": "Costs one more container but keeps a single endpoint in .env, isolates parrot from Prometheus receiver quirks, and matches the pattern already proven for Codex \u2014 at the price of the collector's in-memory state resetting counters on restart."
+    },
+    {
+      "rank": 3,
+      "statement": "Alternative: switch OBSERVABILITY_BACKEND to prometheus and let Prometheus scrape the PrometheusUsageRecorder on :9464, which would make parrot-usage.json's parrot_llm_* queries correct as written.",
+      "confidence": "low",
+      "evidence": [
+        "F006",
+        "F009",
+        "F002"
+      ],
+      "reasoning": "Cheapest dashboard fix but a functional regression: that recorder labels only (provider, model), so it cannot answer 'by agent' at all, and it abandons traces and the per-round instruments."
+    }
+  ],
+  "scope": {
+    "in_scope": [
+      "env/.env [observability] block: enable telemetry and repoint the OTLP endpoint (operator action on this host)",
+      "Trace destination decision so traces keep working once metrics go to Prometheus",
+      "A new/rewritten Grafana dashboard whose PromQL matches the real instrument catalog, with total / by-agent / by-model / by-provider / cost panels",
+      "Placement of that dashboard so the running parrot-grafana provisions it, plus a sane Grafana folder",
+      "Updating docs/architecture/10-observability.md and the examples README to match the new wiring",
+      "Deleting or fixing the two stale example dashboards so they stop advertising non-existent metrics"
+    ],
+    "out_of_scope": [
+      "Any change to MetricsSubscriber instruments or labels \u2014 the emitter is complete",
+      "Per-user or per-session dashboards \u2014 deliberately not available in metrics",
+      "Removing the OpenLIT stack or the ai-parrot-openlit-bridge package",
+      "Alerting rules, recording rules, long-term storage or auth/TLS on the local stack"
+    ],
+    "confidence": "high"
+  },
+  "confidence_map": [
+    {
+      "claim": "The emitter already labels every LLM metric with parrot.agent.name, model and provider",
+      "confidence": "high",
+      "basis": "directly cited",
+      "evidence": [
+        "F002"
+      ]
+    },
+    {
+      "claim": "Cost is emitted natively as a USD counter, not derived in PromQL",
+      "confidence": "high",
+      "basis": "directly cited",
+      "evidence": [
+        "F003"
+      ]
+    },
+    {
+      "claim": "Telemetry is currently disabled and pointed at OpenLIT, not Prometheus",
+      "confidence": "high",
+      "basis": "directly cited",
+      "evidence": [
+        "F004"
+      ]
+    },
+    {
+      "claim": "No parrot series exist in the running Prometheus",
+      "confidence": "high",
+      "basis": "directly observed on the live instance",
+      "evidence": [
+        "F010"
+      ]
+    },
+    {
+      "claim": "Both example dashboards query metric names nothing emits, and neither has a by-agent panel",
+      "confidence": "high",
+      "basis": "directly cited",
+      "evidence": [
+        "F009"
+      ]
+    },
+    {
+      "claim": "Prometheus accepts a direct OTLP metric push; a collector is optional for parrot",
+      "confidence": "high",
+      "basis": "directly cited from compose flags plus a healthy live instance",
+      "evidence": [
+        "F007"
+      ]
+    },
+    {
+      "claim": "Traces must be redirected via OTLP_TARGETS or they will 404 against Prometheus",
+      "confidence": "high",
+      "basis": "inferred from the exporter/setup code paths; not yet observed failing",
+      "evidence": [
+        "F006"
+      ]
+    },
+    {
+      "claim": "Dropping JSON into docker/grafana/provisioning/dashboards auto-loads it within 30s",
+      "confidence": "high",
+      "basis": "directly cited provider config, corroborated by two working dashboards",
+      "evidence": [
+        "F008",
+        "F011"
+      ]
+    },
+    {
+      "claim": "The exact Prometheus-translated series names (especially the USD unit suffix on the cost counter) are as predicted",
+      "confidence": "medium",
+      "basis": "inferred from the collector's translation_strategy; must be verified against the live TSDB after the first export",
+      "evidence": [
+        "F011",
+        "F002"
+      ]
+    },
+    {
+      "claim": "OTel Python's default cumulative temporality makes a direct push to Prometheus 2.51 safe without a delta-to-cumulative processor",
+      "confidence": "low",
+      "basis": "weakly supported \u2014 the SDK default was not verified in this repo, and the Codex README documents delta metrics breaking exactly this path",
+      "evidence": [
+        "F011",
+        "F006"
+      ]
+    }
+  ],
+  "unknowns": [
+    {
+      "id": "U1",
+      "question": "Once metrics point at Prometheus, where should traces go \u2014 OpenLIT via OTLP_TARGETS, a collector that fans out, or should traces be turned off on this host?",
+      "resolves_claims": [
+        "C7"
+      ],
+      "user_answer": "OpenLIT via OTLP_TARGETS \u2014 [{\"name\":\"openlit\",\"endpoint\":\"http://localhost:4318\"}]"
+    },
+    {
+      "id": "U2",
+      "question": "Which artifact is 'the example grafana dashboard' to update \u2014 the two files in the package examples directory, a new file provisioned into the running parrot-grafana, or both kept in sync?",
+      "resolves_claims": [
+        "C5",
+        "C8"
+      ],
+      "user_answer": "Both \u2014 a new provisioned dashboard in docker/grafana/provisioning/dashboards/ AND replace the two stale package-example files with the same JSON"
+    },
+    {
+      "id": "U3",
+      "question": "Direct OTLP push from parrot to Prometheus:9090, or route parrot through an OTel Collector like Codex does?",
+      "resolves_claims": [
+        "C10"
+      ],
+      "user_answer": "Direct OTLP push to http://localhost:9090/api/v1/otlp; collector stays as documented fallback"
+    },
+    {
+      "id": "U4",
+      "question": "Should the parrot dashboard live in the existing 'Claude Code' Grafana folder, or should a second provisioning provider create an 'AI-Parrot' folder?",
+      "resolves_claims": [
+        "C8"
+      ],
+      "user_answer": "New 'AI-Parrot' folder via a second provider entry in dashboards.yml"
+    },
+    {
+      "id": "U5",
+      "question": "Since env/.env is git-ignored, should this feature also add a committed, secret-free template documenting the [observability] block?",
+      "resolves_claims": [],
+      "user_answer": "Both \u2014 a committed secret-free example env file and the matching block in docs/architecture/10-observability.md"
+    }
+  ],
+  "recommended_next_command": {
+    "command": "sdd-spec",
+    "rationale": "Localization is high-confidence and complete \u2014 the emitter needs no change, the exact files, env vars, instrument names and provisioning paths are all identified, and a working precedent (the Codex dashboard) exists. What remains is a handful of configuration decisions, which is exactly what a spec resolves."
+  },
+  "budget_status": {
+    "truncated": false,
+    "truncation_reason": null
+  }
+}
