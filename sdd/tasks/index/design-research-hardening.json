@@ -14,7 +14,7 @@
       "feature_id": "FEAT-546",
       "feature": "design-research-hardening",
       "spec": "sdd/specs/design-research-hardening.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Touches .claude/commands/sdd-spec.md; sequential in one worktree per spec's Worktree Strategy.",
       "assigned_to": null,
       "started_at": "2026-09-10T09:46:18+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3100-unique-atomic-research-staging.md"
+      "completed_at": "2026-09-10T09:49:32+00:00",
+      "file": "sdd/tasks/completed/TASK-3100-unique-atomic-research-staging.md"
     },
     {
       "id": "TASK-3101",
