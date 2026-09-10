@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-543 — Claude Code and Codex Tool Optimizations
 **Spec**: `sdd/specs/tool-optimizations.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-3079
@@ -314,8 +314,52 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+**Completed by**: sdd-worker (Claude Opus 5, session_01G9NM1TzdkFLd5foNDmh72K)
+**Date**: 2026-09-10
 **Notes**:
 
-**Deviations from spec**: none | describe if any
+Created `hooks.py` (stdlib-only) with `GuardPolicy`, `GuardDecision`,
+`evaluate_read`, `evaluate_shell`, `parse_shell_subset`, `build_reason`,
+`render_output`, `coverage_matrix` and `main`. 54 tests in
+`test_hooks.py`, 273 across the feature suite.
+
+**A real parsing bug found by the coverage-gap tests.** `cat big.py || true`
+was being *denied* instead of ignored. `shlex.split` returns `||` as a
+single token, not two `|` separators, so the segment splitter (which only
+matched a token equal to `"|"`) treated `||` as an ordinary operand of
+`cat` — swallowing a compound statement into the parsed subset. Any token
+*containing* a pipe that is not exactly `"|"` now aborts parsing. This
+mattered: the guard's honesty depends on never claiming to understand a
+command it does not, and a compound statement is exactly the case where a
+confident-looking decision would be wrong.
+
+Properties the tests pin:
+
+- **A pipe never makes a large read safe**: `cat big.py | head -20` is
+  denied, because the *reading* segment decides.
+- **Coverage gaps produce silence, never a denial** — 14 parametrized
+  forms (`;`, `&&`, `||`, command substitution, globs, redirection, `sed`,
+  `awk`, `python -c`, `xargs`, `~`, `$VAR`) all yield empty output.
+- **`test_coverage_matrix_is_honest_and_complete`** cross-checks the
+  published matrix against the behaviour the other tests demonstrate: every
+  form asserted as a gap above must appear with `covered: False`. This is
+  what stops the matrix drifting into a false claim of enforcement.
+- **The guard can never break a session**: malformed JSON, empty payloads,
+  missing files, directories and unknown tools all exit 0 with no output,
+  and `main()` returns 0 unconditionally.
+- **Import weight is enforced by a subprocess assertion**: importing the
+  module loads neither `pydantic` nor any `parrot.*` module.
+- **The duplicated `count_lines_bounded` is held to the reader's
+  behaviour** by a parametrized agreement test (0/1/349/350/351 lines plus
+  a no-final-newline fixture), so the documented copy cannot drift.
+- Bare `head FILE` / `tail FILE` are treated as bounded (10-line default),
+  while `head -400` is denied.
+
+**Testing**: 273 tests pass; ruff and black clean. Log at
+`artifacts/logs/TASK-3088-pytest.log`.
+
+**Deviations from spec**: none. Note the host versions in the task's
+Context (`claude 2.1.267`, `codex-cli 0.154.0`) were not re-verified
+against live binaries here — this task implements and unit-tests the
+policy; pinning and recording installed host versions is TASK-3091's
+host-smoke work.
