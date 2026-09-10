@@ -241,12 +241,20 @@ used for its own non-Python modules.
 - **Depends on**: Module 3 (writes into `run.json`)
 - **Interface Skeleton**: n/a (bash; exact text fixed inline in Implementation Notes)
 
-### Module 6: Tests + twin parity
+### Module 6: Tests, twin parity, and acceptance dry run
 - **Path**: `tests/sdd_scripts/test_design_research_templates.py` (extends), no new test file
 - **Responsibility**: add `test_task_template_modify_block_states_occurrence_count()`
   (asserts `# occurrences:` appears in `task.md`'s MODIFY example, per Module 4); rely
   on the EXISTING `test_command_twin_parity.py` (unchanged, no new tolerated-delta
   lines are introduced by any module above) to catch twin drift for Modules 1/2/3/5.
+  Also owns AC-9's acceptance dry run: a lightweight functional rehearsal (not a full
+  `codex` design-research pass — this spec's own §9 is `skipped`, see §8) confirming
+  the 5 edits actually compose: exercise §3b.1's staging/probe-validation, one
+  intentionally out-of-repo `affected_paths` string against §3b.4's containment
+  check, and (if `codex` is available) one real or simulated §3b.3 run producing a
+  `run.json`; record the run-id, `run.json` contents, and the out-of-repo test
+  outcome in this task's Completion Note (or the skip-path outcome, per AC-9's own
+  "or the skip path is exercised and recorded" wording, if `codex` is unavailable).
 - **Depends on**: Modules 1–5
 - **Interface Skeleton**:
   ```python
