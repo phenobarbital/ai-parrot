@@ -187,10 +187,46 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-11
+**Notes**: Added `from . import a2ui_wire` at the top of `handlers.py` and,
+right after `body = await request.json()` (before `_extract_visit_context`),
+an A2UI unwrap block: detects via `is_a2ui_request`, enforces
+`A2UI_MAX_BODY_BYTES` via `request.content_length` (413 generic error on
+overflow), unwraps via `unwrap_action` (400 on `A2UIWireError`), and sets
+`body = submission_in.answers` + `a2ui_surface_id`. A single local `_reply`
+closure (dispatching purely on the `payload` dict's shape — `"errors"` ->
+`validation_errors`, `"submission_id"` -> `confirmation`, else a generic
+`A2UIErrorCode.INTERNAL` envelope) replaces every `JSONResponse` return
+inside `submit_data` EXCEPT the very first `onBeforeSubmit`-abort return
+(not in the task's enumerated list; deferred per Deviations below) and the
+invalid-JSON-body 400 (occurs before an A2UI body could even be detected).
+The sink-503 case keeps its `Retry-After` header on the legacy path only
+(`_reply(..., headers=...)`, forwarded solely to the `JSONResponse` branch —
+a generic A2UI error envelope has no header equivalent).
+`merge_partials`, lifecycle hooks, `visit_context`, persistence and
+forwarding are untouched. 8 new tests in `test_submit_a2ui.py` pass;
+baseline suites (`test_submit_unknown_fields.py`, `test_submit_path_branch.py`,
+`test_unknown_fields_e2e.py`) pass byte-identically. Verified (via a full
+`tests/unit` run, before and after, using `git stash`) that this change
+introduces zero new failures — the same 33 pre-existing, unrelated
+failures are present on both sides. `ruff check` clean.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+One test-authoring gotcha hit and fixed: `test_submit_a2ui_oversized_413`
+initially monkeypatched a FRESH `from parrot_formdesigner.api import
+a2ui_wire` bound inside the test body, which silently no-oped when run
+alongside the full `tests/unit/api` suite — `test_no_navigator_auth_fails_
+at_import.py` elsewhere in that directory pops `parrot_formdesigner.api.*`
+from `sys.modules`, so the test-local import resolved to a different
+module object than the one `handlers.py`'s own `a2ui_wire` name is bound
+to. Fixed by patching `handlers_module.a2ui_wire` (the reference actually
+used at call time) instead — same mitigation already documented in
+`test_submit_unknown_fields.py` for `dispatch` patching.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: the `onBeforeSubmit`-abort early return
+(`{"error": exc.user_message, "reason": exc.reason}`, status
+`exc.status_code`) is NOT wrapped through `_reply` — it is not one of the
+five enumerated return sites in the task's Scope, and no Acceptance
+Criterion exercises it for an A2UI caller. An A2UI caller aborted by
+`onBeforeSubmit` therefore still receives a legacy JSON body. Left
+unchanged rather than guessing an unspecified A2UI shape for it.

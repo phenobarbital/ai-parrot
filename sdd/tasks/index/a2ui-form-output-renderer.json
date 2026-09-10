@@ -92,7 +92,7 @@
       "feature_id": "FEAT-544",
       "feature": "a2ui-form-output-renderer",
       "spec": "sdd/specs/a2ui-form-output-renderer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M (2-4h)",
       "depends_on": [
@@ -102,8 +102,8 @@
       "parallelism_notes": "Edits handlers.py; TASK-3076 edits the same file — run sequentially (3075 then 3076).",
       "assigned_to": null,
       "started_at": "2026-09-10T22:10:09+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3075-submit-data-dual-wire.md"
+      "completed_at": "2026-09-10T22:39:01+00:00",
+      "file": "sdd/tasks/completed/TASK-3075-submit-data-dual-wire.md"
     },
     {
       "id": "TASK-3076",
