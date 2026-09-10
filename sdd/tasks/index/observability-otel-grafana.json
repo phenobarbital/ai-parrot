@@ -111,7 +111,7 @@
       "feature_id": "FEAT-548",
       "feature": "observability-otel-grafana",
       "spec": "sdd/specs/observability-otel-grafana.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -123,8 +123,8 @@
       "parallelism_notes": "Its grep-based acceptance checks assume the stale dashboards are already deleted (3111) and the new uid exists (3110).",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3112-docs-sync.md"
+      "completed_at": "2026-09-10T18:33:54+00:00",
+      "file": "sdd/tasks/completed/TASK-3112-docs-sync.md"
     },
     {
       "id": "TASK-3113",
