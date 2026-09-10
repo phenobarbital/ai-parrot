@@ -296,10 +296,36 @@ stale dashboards are already gone.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-09-10
 **Notes**:
+- All three listed files edited per the blueprint's exact anchors (all
+  verified present at their stated line numbers before editing).
+- **Files-to-Modify table was incomplete**: `packages/ai-parrot/src/parrot/
+  observability/README.md` (the module README, distinct from
+  `examples/README.md`) had two dangling links to the dashboards TASK-3111
+  deleted. Not listed in this task's own file table, but TASK-3111's own
+  dangling-reference grep step explicitly named it as "TASK-3112's input,"
+  and this task's own AC ("No doc links to parrot-overview.json or
+  parrot-usage.json") is phrased as a general absence, not scoped to 3
+  files. Fixed both links (minimal, targeted edits — not a full rewrite of
+  that file's OpenLIT-centric framing, which stays out of scope).
+- §10.2's quickstart reframe went further than a literal one-line swap
+  (the blueprint showed replacing just the endpoint line) because the
+  surrounding steps 1-2 setting up an OpenLIT collector would have become
+  incoherent next to a Prometheus-pointed step 3. Reframed the whole
+  section coherently: Prometheus+Grafana as the primary path, OpenLIT
+  explicitly retained as a trace destination via `OTLP_TARGETS` (per this
+  task's own "reframe, do not remove" constraint).
+- AC-15 and the dangling-link check both verified via `git grep` after the
+  edits — see the code commit message for the exact commands and results.
+- Deep link `/d/parrot-usage-cost/` confirmed to match TASK-3110's actual
+  `uid` (`parrot-usage-cost`) by reading the dashboard JSON directly.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: one file added beyond the task's own table
+(`packages/ai-parrot/src/parrot/observability/README.md`) — justified
+above as completing the task's own stated inputs/ACs, not scope creep.
+§10.2 rewritten more broadly than the blueprint's literal single-line diff
+to keep the section internally coherent — same net requirement (no
+:4318-for-metrics instruction, OpenLIT reframed not removed), different
+edit size.
