@@ -197,10 +197,24 @@ diff .claude/agents/sdd-worker.md packages/ai-parrot/src/parrot/flows/dev_loop/_
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-10
+**Notes**: Implemented exactly per blueprint — re-verified the Codebase
+Contract's `diff` claim before copying (still exactly the 24-line "b2)"
+block + one checklist line), then `cp .claude/agents/sdd-worker.md
+packages/ai-parrot/src/parrot/flows/dev_loop/_subagent_data/sdd-worker.md`.
+All 4 acceptance criteria verified:
+- AC-1: `diff` between the two files produces no output.
+- AC-2: `pytest packages/ai-parrot/tests/flows/dev_loop/test_subagent_parity.py -v`
+  → 9 passed, 1 skipped (the intentionally-excluded `sdd-codereview`), 0
+  failed — `test_prompt_parity[sdd-worker]` is green for the first time
+  since FEAT-543/TASK-3090 landed.
+- AC-3: `git diff --stat` shows exactly one file changed.
+- AC-4: `load_subagent_definition("sdd-worker")` returns a 14,499-char body
+  containing both `FEAT-145` and `per-spec index`.
+(Worktree note, not a repo change: `packages/ai-parrot/src/parrot/utils/
+types*.so` and `.../utils/parsers/toml*.so` were missing in this worktree,
+same known gap as FEAT-546's TASK-3105 — copied in locally from the main
+checkout only to make the test importable; both are gitignored build
+artifacts, not committed.)
+**Deviations from spec**: none
