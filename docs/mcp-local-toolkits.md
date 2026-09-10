@@ -186,6 +186,10 @@ MCP host's caller (the model) must pass `confirm: true` explicitly.
 
 ## Related
 
+- [Tool optimizations (FEAT-543)](tool-optimizations.md) — the
+  `local-git`, `bounded-source` and `targeted-writer` toolkits configured
+  through this machinery, including the `llm_kwargs` example and the
+  opt-in host read guards.
 - [FEAT-403 — `wikitoolkit mcp`](../sdd/specs/) — the pattern this feature
   generalizes; `StdioMCPServer`/`LocalServerConfig`/`MCPToolAdapter` are
   shared, unmodified core machinery.
