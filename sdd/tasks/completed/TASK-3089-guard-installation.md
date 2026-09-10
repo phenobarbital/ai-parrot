@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-543 — Claude Code and Codex Tool Optimizations
 **Spec**: `sdd/specs/tool-optimizations.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-3088, TASK-3087
@@ -302,8 +302,62 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+**Completed by**: sdd-worker (Claude Opus 5, session_01G9NM1TzdkFLd5foNDmh72K)
+**Date**: 2026-09-10
 **Notes**:
 
-**Deviations from spec**: none | describe if any
+Created `installation.py` (`install_guards`, `uninstall_guards`,
+`guard_status`, `guard_thresholds`, `hook_command`, `resolve_python`) and
+wired `--tool-guards` into both wiki CLIs. 20 tests in
+`test_installation.py`, 293 across the feature suite.
+
+The "touch only what we own" discipline is what the tests actually pin:
+
+- `test_install_is_idempotent_and_preserves_foreign_entries` asserts the
+  foreign entries come back **deep-equal to the originals**, including an
+  unknown `customKey` and an unrelated top-level key. The fixture models
+  this repository's real `.claude/settings.json` (the wiki nudge hook and
+  `dangerous-actions-blocker.sh`), so a regression that rewrites a
+  neighbour's entry fails immediately.
+- `test_malformed_config_is_never_clobbered` compares the file's **bytes**
+  before and after a failed install *and* a failed uninstall.
+- `test_wrong_container_types_are_refused` covers `hooks: []` and
+  `PreToolUse: {}` — a naive `setdefault` would silently reset either.
+- `test_uninstall_collapses_only_containers_we_emptied` and
+  `test_thresholds_survive_while_another_host_still_uses_them` cover the
+  two subtle lifecycle rules: containers are dropped only when we emptied
+  them, and the shared `.parrot/tool-guards.json` survives while the other
+  host still has a guard installed.
+- `test_cli_reports_a_useful_error_when_parrot_tools_is_absent` blocks the
+  import via `builtins.__import__` and asserts `--tool-guards` fails with
+  the install hint **while a plain install still succeeds** — core never
+  hard-depends on `ai-parrot-tools`.
+
+`guard_status` deliberately never raises: a malformed config reads as "not
+installed" rather than propagating, because status is a diagnostic. It
+reports `supported: None` for an unparseable/absent host version rather
+than guessing — an unknown version is never reported as supported. Against
+the locally installed hosts it correctly read `2.1.267 (Claude Code)` and
+resolved `supported: True`.
+
+The guard is **opt-in and off by default** (`--tool-guards/--no-tool-guards`,
+default False), and `permissions.allow` is never touched, per spec Git
+Contract 12 (no broad automatic-approval installation).
+
+**Regression check**: `tests/knowledge/wiki` (4 failed / 1595 passed / 12
+errors) and `packages/ai-parrot/tests/knowledge/wiki` (7 failed / 276
+passed) produce **byte-identical** counts on this branch and on `dev`, so
+the CLI edits regress nothing. (The two directories must be run separately
+— running both in one pytest invocation hits a pre-existing
+`ImportPathMismatchError` between their two `tests.conftest` modules.)
+
+**Testing**: 293 tests in the feature suite; ruff and black clean. Log at
+`artifacts/logs/TASK-3089-pytest.log`.
+
+**Deviations from spec**: none in behaviour. One open verification is
+explicitly deferred, as the task itself allows: the Codex hook format is
+written as `<root>/.codex/hooks.json` per the documented shape, but it was
+**not** validated against a running `codex` binary here. If the installed
+Codex version requires `config.toml` `[hooks]` tables instead, the writer
+must switch format — that check belongs to TASK-3091's host smoke test,
+which is where installed host versions get pinned and recorded.

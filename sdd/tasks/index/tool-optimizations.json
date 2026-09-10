@@ -232,7 +232,7 @@
       "feature_id": "FEAT-543",
       "feature": "tool-optimizations",
       "spec": "sdd/specs/tool-optimizations.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "estimated_hours": 6,
@@ -245,8 +245,8 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": "2026-09-10T01:47:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3089-guard-installation.md"
+      "completed_at": "2026-09-10T03:10:18+00:00",
+      "file": "sdd/tasks/completed/TASK-3089-guard-installation.md"
     },
     {
       "id": "TASK-3090",
