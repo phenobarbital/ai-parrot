@@ -1,12 +1,12 @@
 {
   "schema_version": "1.0",
-  "feat_id": "FEAT-564",
+  "feat_id": "FEAT-545",
   "feature_slug": "collaborative-adversarial-spec-design",
   "started_at": "2026-09-10T00:54:49+00:00",
   "updated_at": "2026-09-10T01:03:37+00:00",
   "source": {
     "kind": "inline",
-    "raw_path": "sdd/state/FEAT-564/source.md",
+    "raw_path": "sdd/state/FEAT-545/source.md",
     "fetched_at": "2026-09-10T00:54:49+00:00",
     "summary_oneline": "Make /sdd-spec emit executor-ready code+explanations and add a Codex collaborative design-research pass before spec creation"
   },
@@ -38,7 +38,7 @@
     },
     "synthesis": {
       "status": "completed",
-      "synthesis_path": "sdd/state/FEAT-564/synthesis.json",
+      "synthesis_path": "sdd/state/FEAT-545/synthesis.json",
       "overall_confidence": "high",
       "claims_total": 14,
       "claims_high_conf": 14,

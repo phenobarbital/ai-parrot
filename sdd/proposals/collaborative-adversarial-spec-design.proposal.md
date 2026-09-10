@@ -1,5 +1,5 @@
 ---
-id: FEAT-564
+id: FEAT-545
 title: Collaborative adversarial spec design — executor-ready reference code in specs/tasks + a Codex design-research pass before the spec is written
 slug: collaborative-adversarial-spec-design
 type: feature
@@ -13,25 +13,25 @@ source:
   summary_oneline: Make /sdd-spec emit executor-ready code+explanations and add a Codex collaborative design-research pass before spec creation
 overall_confidence: high
 base_branch: dev
-research_state: sdd/state/FEAT-564/
+research_state: sdd/state/FEAT-545/
 created: 2026-09-10
 updated: 2026-09-10
 revision: 4  # 2026-09-10 — accepted by user
 ---
 
-# FEAT-564 — Collaborative adversarial spec design
+# FEAT-545 — Collaborative adversarial spec design
 
 > **Mode**: enrichment
 > **Confidence**: high
 > **Source**: `inline`
-> **Audit**: [`sdd/state/FEAT-564/`](../state/FEAT-564/)
-> **ID note**: FEAT-564 is PROVISIONAL (`max(existing)+1`, the /sdd-proposal convention). `/sdd-spec` will reserve the authoritative number via `reserve_ids.py` (ledger `next_feature_id` is 542 today); this document's id is then rewritten.
+> **Audit**: [`sdd/state/FEAT-545/`](../state/FEAT-545/)
+> **ID note**: originally drafted as provisional FEAT-564; renumbered to FEAT-545 when `/sdd-spec` reserved the authoritative id via `reserve_ids.py` on 2026-09-10.
 
 ---
 
 ## 0. Origin
 
-The original request, preserved verbatim at `sdd/state/FEAT-564/source.md`.
+The original request, preserved verbatim at `sdd/state/FEAT-545/source.md`.
 
 > current "sdd-spec" command is using for converting a brainstorm or proposal into a full featured spec-driven development document, but because we are using thinking models for spec design but non-thinking models (as haiku) to take the "orders" and write the decided code into the expected files, I'm proposing here two changes over the "sdd-spec" command:
 >
@@ -54,7 +54,7 @@ The request asks the SDD pipeline to hand non-thinking executors explained, usab
 
 ## 2. Codebase Findings
 
-> All entries are grounded in `sdd/state/FEAT-564/findings/`. **No fabricated paths or symbols.**
+> All entries are grounded in `sdd/state/FEAT-545/findings/`. **No fabricated paths or symbols.**
 
 ### 2.1 Localization
 
@@ -220,11 +220,11 @@ Suggested task shape for `/sdd-task` (single worktree, sequential): (1) `task.md
 
 | Artifact | Path |
 |----------|------|
-| State checkpoints | `sdd/state/FEAT-564/state.json` |
-| Source (raw) | `sdd/state/FEAT-564/source.md` |
-| Research plan | `sdd/state/FEAT-564/research_plan.json` |
-| Findings (digests) | `sdd/state/FEAT-564/findings/F001-*.md` … `F017-*.md` |
-| Synthesis (JSON) | `sdd/state/FEAT-564/synthesis.json` |
+| State checkpoints | `sdd/state/FEAT-545/state.json` |
+| Source (raw) | `sdd/state/FEAT-545/source.md` |
+| Research plan | `sdd/state/FEAT-545/research_plan.json` |
+| Findings (digests) | `sdd/state/FEAT-545/findings/F001-*.md` … `F017-*.md` |
+| Synthesis (JSON) | `sdd/state/FEAT-545/synthesis.json` |
 
 **Budget consumed** (profile `default`):
 - Files read: 16 / 40

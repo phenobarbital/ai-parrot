@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "feat_id": "FEAT-564",
+  "feat_id": "FEAT-545",
   "mode_detected": "enrichment",
   "mode_rationale": "Source is a two-part change request against an existing command (/sdd-spec); no defect, no negation — enrichment of an existing pipeline.",
   "wiki_available": true,

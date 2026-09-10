@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "feat_id": "FEAT-564",
+  "feat_id": "FEAT-545",
   "mode": "enrichment",
   "summary_oneline": "Make /sdd-spec and /sdd-task emit executor-ready reference code with explanations, and add a Codex-backed collaborative design-research pass over the accepted exploration doc before the spec is written",
   "overall_confidence": "high",
