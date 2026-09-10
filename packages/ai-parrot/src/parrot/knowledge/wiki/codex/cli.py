@@ -60,7 +60,13 @@ def codex() -> None:
     show_default=True,
     help="Install Bookstore MCP and skill when an indexed library exists (no indexing).",
 )
-def install(path_: Optional[str], gitignore: bool, build_now: bool, bookstore: bool) -> None:
+@click.option(
+    "--tool-guards/--no-tool-guards",
+    default=False,
+    show_default=True,
+    help="Install the opt-in PreToolUse read guard (FEAT-543) that denies unbounded reads of large files.",
+)
+def install(path_: Optional[str], gitignore: bool, build_now: bool, bookstore: bool, tool_guards: bool) -> None:
     """Install WikiToolkit and Bookstore MCP servers and skills for Codex."""
     root = _resolve_root(path_)
     try:
@@ -71,6 +77,18 @@ def install(path_: Optional[str], gitignore: bool, build_now: bool, bookstore: b
 
     for action in actions:
         click.echo(f"  ✓ {action}")
+
+    if tool_guards:
+        # Lazy import: core must not hard-depend on ai-parrot-tools.
+        try:
+            from parrot_tools.tool_optimizations.installation import install_guards
+        except ImportError as exc:  # pragma: no cover - exercised via monkeypatch
+            raise click.ClickException("tool guards require ai-parrot-tools: uv pip install ai-parrot-tools") from exc
+        try:
+            for action in install_guards(root, "codex"):
+                click.echo(f"  ✓ {action}")
+        except RuntimeError as exc:
+            raise click.ClickException(str(exc)) from exc
 
     if build_now and not config.is_built(root):
         click.echo("Building the wiki plane (first run)...")
@@ -98,6 +116,17 @@ def uninstall(path_: Optional[str]) -> None:
     for action in actions:
         click.echo(f"  ✓ {action}")
 
+    try:
+        from parrot_tools.tool_optimizations.installation import uninstall_guards
+    except ImportError:
+        pass
+    else:
+        try:
+            for action in uninstall_guards(root, "codex"):
+                click.echo(f"  ✓ {action}")
+        except RuntimeError as exc:
+            raise click.ClickException(str(exc)) from exc
+
 
 @codex.command()
 @path_option
@@ -109,6 +138,13 @@ def status(path_: Optional[str], as_json: bool) -> None:
         info = integration_status(root)
     except (RuntimeError, WikiConfigError) as exc:
         raise click.ClickException(str(exc)) from exc
+
+    try:
+        from parrot_tools.tool_optimizations.installation import guard_status
+    except ImportError:
+        pass
+    else:
+        info["tool_guards"] = guard_status(root, "codex")
     if as_json:
         click.echo(json.dumps(info, indent=2))
         return

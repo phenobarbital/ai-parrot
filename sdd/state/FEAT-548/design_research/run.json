@@ -1,0 +1,10 @@
+{
+  "model": "gpt-5.6-luna",
+  "codex_cli_version": "0.154.0",
+  "reasoning_effort": "high",
+  "timeout_s": 600,
+  "probe_output": "",
+  "exit_code": 124,
+  "status": "skipped",
+  "skip_reason": "model probe failed for gpt-5.6-luna (rc=124 \u2014 timed out after 120s)"
+}

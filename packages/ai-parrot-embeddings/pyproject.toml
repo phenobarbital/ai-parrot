@@ -77,6 +77,9 @@ faiss = []  # faiss-cpu stays in core ai-parrot deps; this extra is a name-only 
 chroma = [
     "chromadb==0.6.3",
 ]
+lancedb = [
+    "lancedb==0.38.0",
+]
 
 # Reranker backends (TASK-1336)
 reranker-local = [
@@ -95,7 +98,7 @@ multimodal = [
 
 # Aggregator extra (TASK-1334/1335/1336)
 all = [
-    "ai-parrot-embeddings[huggingface,google,openai,pgvector,milvus,arango,bigquery,faiss,chroma,reranker-local,reranker-llm,multimodal]",
+    "ai-parrot-embeddings[huggingface,google,openai,pgvector,milvus,arango,bigquery,faiss,chroma,lancedb,reranker-local,reranker-llm,multimodal]",
 ]
 
 [project.urls]

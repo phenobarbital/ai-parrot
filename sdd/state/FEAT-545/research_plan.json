@@ -1,0 +1,32 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-545",
+  "mode_detected": "enrichment",
+  "mode_rationale": "Source is a two-part change request against an existing command (/sdd-spec); no defect, no negation — enrichment of an existing pipeline.",
+  "wiki_available": true,
+  "budget": {"profile": "default", "max_files_read": 40, "max_grep_calls": 25, "max_git_calls": 10, "max_depth": 2, "max_wall_seconds": 300},
+  "queries": [
+    {"id": "Q001", "type": "wiki_query", "priority": 1, "intent": "Orient: where does the /sdd-spec command live and what documents describe it", "params": {"question": "sdd-spec command scaffold feature specification"}},
+    {"id": "Q002", "type": "wiki_query", "priority": 1, "intent": "Orient: existing Codex adversarial second-opinion plumbing", "params": {"question": "codex adversarial second opinion reviewer dispatcher"}},
+    {"id": "Q003", "type": "read", "priority": 1, "intent": "Current /sdd-spec command: guardrails, phases, where a research phase would slot in", "params": {"path": ".claude/commands/sdd-spec.md"}},
+    {"id": "Q004", "type": "read", "priority": 1, "intent": "Current /sdd-task command: guardrails on code, per-task Codebase Contract", "params": {"path": ".claude/commands/sdd-task.md"}},
+    {"id": "Q005", "type": "read", "priority": 1, "intent": "Spec template: which sections already carry code", "params": {"path": "sdd/templates/spec.md"}},
+    {"id": "Q006", "type": "read", "priority": 1, "intent": "Task template: which sections already carry code / guidance for the executor", "params": {"path": "sdd/templates/task.md"}},
+    {"id": "Q007", "type": "read", "priority": 1, "intent": "code-reviewer agent: the Adversarial Cross-Check pattern the request wants to mirror", "params": {"path": ".claude/agents/code-reviewer.md"}},
+    {"id": "Q008", "type": "grep", "priority": 1, "intent": "Every place codex is referenced in commands/agents (pattern reuse surface)", "params": {"pattern": "codex", "paths": [".claude/commands", ".claude/agents"]}},
+    {"id": "Q009", "type": "grep", "priority": 2, "intent": "Which models execute which SDD stage (haiku/sonnet/--model)", "params": {"pattern": "haiku|sonnet|--model", "paths": [".claude/agents", ".claude/commands"]}},
+    {"id": "Q010", "type": "git_log", "priority": 2, "intent": "Recent history of the spec/task commands, templates and the reviewer agent", "params": {"paths": [".claude/commands/sdd-spec.md", ".claude/commands/sdd-task.md", "sdd/templates/spec.md", "sdd/templates/task.md", ".claude/agents/code-reviewer.md"], "since": "90 days"}},
+    {"id": "Q011", "type": "read", "priority": 2, "intent": "Codex dispatcher profiles + command construction (model, sandbox, output-schema)", "params": {"path": "packages/ai-parrot/src/parrot/flows/dev_loop/models/codex.py"}},
+    {"id": "Q012", "type": "read", "priority": 2, "intent": "How the dev-loop builds the codex exec command line", "params": {"path": "packages/ai-parrot/src/parrot/flows/dev_loop/dispatchers/codex.py", "lines": "235-345"}},
+    {"id": "Q013", "type": "read", "priority": 2, "intent": "sdd-secondopinion neutral-brief subagent (what a neutral brief is made of)", "params": {"path": ".claude/agents/sdd-secondopinion.md"}},
+    {"id": "Q014", "type": "read", "priority": 2, "intent": "sdd-planner: the unattended dev-loop caller of /sdd-spec", "params": {"path": ".claude/agents/sdd-planner.md"}},
+    {"id": "Q015", "type": "tree", "priority": 2, "intent": "Installed codex CLI version and exec flags (model, reasoning, schema, stdin)", "params": {"cmd": "codex --version; codex exec --help"}},
+    {"id": "Q016", "type": "grep", "priority": 2, "intent": "Status lifecycles: brainstorm accepted / proposal accepted / spec approved", "params": {"pattern": "status|accepted|approved", "paths": ["sdd/templates/brainstorm.md", ".claude/commands/sdd-proposal.md", "sdd/templates/spec.md"]}},
+    {"id": "Q017", "type": "tree", "priority": 3, "intent": "Measure how much code recent specs and task files already carry", "params": {"cmd": "awk code-fence line count over newest specs/tasks"}},
+    {"id": "Q018", "type": "grep", "priority": 3, "intent": "Where codex review artifacts land today and whether that path is tracked", "params": {"pattern": "artifacts", "paths": [".gitignore"]}},
+    {"id": "Q019", "type": "git_log", "priority": 3, "intent": "Why model: gpt-5.5 was dropped from sdd-secondopinion (model-selection constraint)", "params": {"commit": "dbd2cd740"}},
+    {"id": "Q020", "type": "glob", "priority": 3, "intent": "Twin copies of the commands (.agent/workflows) and agents (_subagent_data) that must stay in sync", "params": {"paths": [".agent/workflows/", "packages/ai-parrot/src/parrot/flows/dev_loop/_subagent_data/"]}, "parent_id": "F001"},
+    {"id": "Q021", "type": "read", "priority": 3, "intent": "How sdd-worker consumes a task file (what the executor actually reads)", "params": {"path": ".claude/agents/sdd-worker.md", "lines": "205-235"}, "parent_id": "F002"},
+    {"id": "Q022", "type": "read", "priority": 3, "intent": "Brainstorm Code Context section (what an accepted brainstorm hands to the spec)", "params": {"path": "sdd/templates/brainstorm.md", "lines": "154-200"}, "parent_id": "F015"}
+  ]
+}

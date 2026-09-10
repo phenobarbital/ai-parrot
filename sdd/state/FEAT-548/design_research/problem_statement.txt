@@ -1,0 +1,28 @@
+The original request, preserved verbatim. The full source is at
+`sdd/state/FEAT-548/source.md`.
+
+> parrot observability was recently migrated from openlit to a compatible OTEL
+> opentelemetry with per-agent usage, tokens, etc, currently there are a
+> prometheus (parrot-prometheus) and grafana (parrot-grafana) docker machines
+> running on this server, then we can change the env/.env variables to point to
+> prometheus and update the example grafana dashboard to render usage total, by
+> agent, by llm model, costs, etc.
+
+The openlit→OTEL migration is complete on the emitting side, and the emitter
+already produces everything this request asks for:
+`packages/ai-parrot/src/parrot/observability/subscribers/metrics.py` emits a USD
+cost counter, token histograms and request/error counters, every one of them
+labelled with `parrot.agent.name`, a model attribute and `gen_ai.provider.name`.
+**No instrumentation work is required.** The gap sits entirely at the two ends.
+First, `env/.env` has telemetry switched off and aimed at OpenLIT's `:4318`
+rather than the Prometheus OTLP receiver on `:9090` — the live
+`parrot-prometheus` confirms this by holding 291 metric names of which *zero*
+begin with `gen_ai_` or `parrot_`. Closing that gap is a **pure env-var move**:
+the `[observability]` block is repointed from OpenLIT to Prometheus, with no new
+container, no second export destination and no code change. Second, both shipped example dashboards under
+`packages/ai-parrot/src/parrot/observability/examples/grafana-dashboards/` query
+metric names that no code path emits, and neither contains a single by-agent
+panel. The work is therefore a configuration change plus a dashboard rewritten
+against the real instrument catalog, provisioned through
+`docker/grafana/provisioning/dashboards/dashboards.yml` — following the Codex
+dashboard integration landed days ago as a working template.

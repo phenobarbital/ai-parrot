@@ -663,8 +663,19 @@ class OpenAIBaseClient(AbstractClient):
                 )
                 model_str = self._fallback_model
                 _used_fallback = True
-                response = await self._chat_completion(model=model_str, messages=messages, use_tools=_use_tools, **args)
+                try:
+                    response = await self._chat_completion(
+                        model=model_str, messages=messages, use_tools=_use_tools, **args
+                    )
+                except Exception as fallback_exc:
+                    await self._emit_failed_call_safe(
+                        _lc_tc, self.client_name, model_str, _lc_t0, fallback_exc,
+                    )
+                    raise
             else:
+                await self._emit_failed_call_safe(
+                    _lc_tc, self.client_name, model_str, _lc_t0, e,
+                )
                 raise
         _round_duration_ms = (time.perf_counter() - _round_t0) * 1000
         result = response.choices[0].message
@@ -1006,9 +1017,15 @@ class OpenAIBaseClient(AbstractClient):
             # `.parse()` cannot reliably stream every SDK's tool-calling/plain
             # responses; only prefer it when structured output was requested —
             # mirrors the pre-FEAT-438 dispatch this funnel now formalizes.
-            response_stream = await self._chat_completion(
-                model=model_str, messages=messages, use_tools=not bool(output_config), stream=True, **args
-            )
+            try:
+                response_stream = await self._chat_completion(
+                    model=model_str, messages=messages, use_tools=not bool(output_config), stream=True, **args
+                )
+            except Exception as _stream_exc:
+                await self._emit_failed_call_safe(
+                    _lc_tc, self.client_name, model_str, _lc_t0, _stream_exc,
+                )
+                raise
 
             # Accumulate tool-call chunks by index. OpenAI streams them
             # incrementally: first chunk carries id+name, subsequent ones

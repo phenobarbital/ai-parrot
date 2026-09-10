@@ -465,7 +465,15 @@ class GroqClient(OpenAIBaseClient):
         _lc_round_number_groq = 1
         _lc_accumulated_usage_groq: "Optional[CompletionUsage]" = None
         _lc_round_t0_groq = _lc_time_groq.perf_counter()
-        response = await self._chat_completion(**request_args, use_tools=use_tools)
+        try:
+            response = await self._chat_completion(**request_args, use_tools=use_tools)
+        except Exception as _lc_init_exc:
+            # FEAT-548 Finding #1: emit ClientCallFailedEvent
+            await self._emit_failed_call_safe(
+                _lc_tc_groq, client_name="groq", model=model,
+                t0=_lc_t0_groq, exc=_lc_init_exc,
+            )
+            raise
         result = response.choices[0].message
         # FEAT-397: round 1 is this initial call.
         _lc_round_duration_groq = (_lc_time_groq.perf_counter() - _lc_round_t0_groq) * 1000
@@ -586,7 +594,15 @@ class GroqClient(OpenAIBaseClient):
                 )
 
                 _lc_round_t0_groq = _lc_time_groq.perf_counter()
-                response = await self._chat_completion(**continue_args, use_tools=use_tools)
+                try:
+                    response = await self._chat_completion(**continue_args, use_tools=use_tools)
+                except Exception as _lc_cont_exc:
+                    # FEAT-548 Finding #1: emit ClientCallFailedEvent
+                    await self._emit_failed_call_safe(
+                        _lc_tc_groq, client_name="groq", model=model,
+                        t0=_lc_t0_groq, exc=_lc_cont_exc,
+                    )
+                    raise
                 result = response.choices[0].message
                 # FEAT-397: accumulate this new round's usage
                 _lc_round_number_groq += 1
@@ -631,7 +647,15 @@ class GroqClient(OpenAIBaseClient):
                 else:
                     structured_args["response_format"] = {"type": "json_object"}
 
-            structured_response = await self._chat_completion(**structured_args, use_tools=False)
+            try:
+                structured_response = await self._chat_completion(**structured_args, use_tools=False)
+            except Exception as _lc_struct_exc:
+                # FEAT-548 Finding #1: emit ClientCallFailedEvent
+                await self._emit_failed_call_safe(
+                    _lc_tc_groq, client_name="groq", model=model,
+                    t0=_lc_t0_groq, exc=_lc_struct_exc,
+                )
+                raise
             result = (
                 structured_response.message
                 if hasattr(structured_response, "message")
@@ -778,7 +802,15 @@ class GroqClient(OpenAIBaseClient):
             request_args["tools"] = tools
             request_args["tool_choice"] = "auto"
 
-        response_stream = await self._chat_completion(**request_args, use_tools=bool(tools))
+        try:
+            response_stream = await self._chat_completion(**request_args, use_tools=bool(tools))
+        except Exception as _lc_stream_exc:
+            # FEAT-548 Finding #1: emit ClientCallFailedEvent
+            await self._emit_failed_call_safe(
+                _lc_tc_groqs, client_name="groq", model=model,
+                t0=_lc_t0_groqs, exc=_lc_stream_exc,
+            )
+            raise
 
         assistant_content = ""
         usage_data = None

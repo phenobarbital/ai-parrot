@@ -99,7 +99,10 @@ def create_toolkit_mcp_server(
         if section.llm:
             from parrot.clients.factory import LLMFactory
 
-            llm_client = LLMFactory.create(section.llm)
+            # llm_kwargs is trusted server configuration (e.g. the writer's
+            # required `fallback_model: null`); it reaches the client
+            # constructor verbatim via LLMFactory.create's **kwargs.
+            llm_client = LLMFactory.create(section.llm, **section.llm_kwargs)
         else:
             drop_tools = set(toolkit_cls.llm_dependent_tools)
 

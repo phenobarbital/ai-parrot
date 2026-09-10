@@ -1,0 +1,59 @@
+Decisions taken during the two discovery rounds are constraints for the spec:
+
+- **C1 — Bridge (hybrid, revised after research)**: the three non-Anthropic
+  coders are reached through a **local MCP server** served by `parrot
+  mcp-local` (the `parrot-targeted-writer` / FEAT-543 pattern), not through
+  ad-hoc Bash CLIs and not by moving the entry point to the dev-loop server.
+  The **haiku seat is a native Claude Code sub-agent**: `sdd-worker` launches
+  `Agent(sdd-coder, model: haiku)` itself, in the same turn as the MCP
+  dispatch, so no `ClaudeCodeDispatcher`/nested session is involved. The MCP
+  still owns every sub-worktree, fidelity check and merge, so consolidation
+  is uniform regardless of who ran the coder. `sdd-worker` stays a Claude
+  Code agent on Sonnet.
+- **C1b — Gemini route**: the `gemini` CLI is **not** a usable backend (a
+  binary exists on this machine but the product is corporate-only and
+  deprecated in favour of Antigravity `agy`). Gemini is reached
+  **in-process** through Google's OpenAI-compatible endpoint, mirroring the
+  `NovaCodeDispatcher` / `BedrockMantleClient` pattern (an `OpenAIBaseClient`
+  subclass with a different `base_url` + key, driven by the unchanged
+  `LLMCodeDispatcher` loop). The existing `google_coding` dispatcher (`agy
+  --print`, headless) is the documented fallback, not the primary route.
+- **C2 — Isolation**: one **sub-worktree + child branch per task**, branched
+  from the feature branch; `sdd-worker` merges them back sequentially and
+  resolves conflicts itself. Coders never share a working tree.
+- **C3 — Delegation is total**: every pending task is dispatched to an
+  `sdd-coder`, regardless of the spec's `Delegation-eligible` marking or the
+  presence of a `## Delegation Contract`. `sdd-worker` (Sonnet) writes task
+  code **only** as the third and last attempt (see C4) and when applying
+  `code-reviewer` fixes. The FEAT-543 `writer_generate`/`writer_apply` route
+  (step b2 of the current prompt) is **replaced** in `sdd-worker`, not kept
+  alongside.
+- **C4 — Failure policy**: attempt 1 on the assigned model → attempt 2 on a
+  **different** roster model in a fresh sub-worktree → attempt 3 by
+  `sdd-worker` itself in the feature worktree. A task is never left orphaned;
+  `done-with-issues` is reserved for the case where all three fail.
+- **C5 — Ownership**: the coder commits **code only** (`feat(<slug>): TASK-NNN
+  — <title>`) in its sub-worktree and never touches `sdd/`. `sdd-worker` owns
+  all SDD state — per-spec index, `mv` to `sdd/tasks/completed/`, Completion
+  Note (which records model, backend, attempts, duration and token usage).
+- **C6 — Model roster & rotation rule**: the roster lives in the MCP server's
+  configuration (`.parrot/mcp-toolkits.yaml`, env override), is ordered, and
+  is **probed for credentials/CLI availability at server start**; unavailable
+  entries are dropped from the rotation and reported. Within one parallel
+  slice no model repeats; a wave larger than the available roster is chunked
+  and the excess runs in the next slice. With a single available model the
+  run degrades to serial. Rationale is *both* load-spreading and per-model
+  quality telemetry, so every Completion Note records the model.
+- **C7 — Scope**: only the interactive Claude Code `sdd-worker` changes
+  behaviour. `DevelopmentNode` / `DevAgentPool` in the dev-loop are not
+  re-architected. The packaged twin `_subagent_data/sdd-worker.md` is synced
+  only to keep `test_subagent_parity.py` green (FEAT-547), and any new prompt
+  (`sdd-coder`) ships with a twin from day one.
+- **C8 — Cardinal Rules survive**: the coder prompt inherits `sdd-worker`'s
+  builder-not-architect, file-fidelity and codebase-contract rules; the
+  orchestrator verifies file fidelity from `git diff --name-only` before
+  merging a coder branch.
+- **C9 — No new blocking I/O in async contexts, Pydantic for every payload,
+  `aiohttp`-only, Google-style docstrings** (CLAUDE.md).
+
+---

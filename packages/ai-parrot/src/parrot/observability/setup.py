@@ -282,6 +282,45 @@ def setup_telemetry(
         return provider
 
 
+async def drain_lifecycle_events() -> None:
+    """Await all in-flight lifecycle forwarding tasks.
+
+    Short-lived scripts or lambda-style callers should
+    ``await drain_lifecycle_events()`` **before** ``shutdown_telemetry()``
+    to ensure fire-and-forget events (from ``_emit_before_call``'s
+    ``emit_nowait`` / ``forward_to_global``) have reached their
+    subscribers.
+
+    This is no longer strictly required for ``_emit_after_call`` /
+    ``_emit_failed_call`` events (those are now awaited directly), but
+    it still drains any ``BeforeClientCallEvent`` tasks scheduled via
+    ``emit_nowait`` / ``create_task``.
+
+    Idempotent and safe to call when no loop is running (returns
+    immediately in that case).
+
+    Example::
+
+        result = await client.ask("hello", model="gpt-4o")
+        await drain_lifecycle_events()
+        shutdown_telemetry()
+    """
+    import asyncio
+
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return  # no loop — nothing to drain
+
+    pending = [
+        t for t in asyncio.all_tasks(loop)
+        if t.get_name().startswith("lifecycle.") and not t.done()
+    ]
+    if pending:
+        logger.debug("drain_lifecycle_events: awaiting %d pending tasks", len(pending))
+        await asyncio.gather(*pending, return_exceptions=True)
+
+
 def shutdown_telemetry() -> None:
     """Flush all exporters and clear the setup state. Idempotent.
 
