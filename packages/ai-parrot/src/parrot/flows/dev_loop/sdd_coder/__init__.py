@@ -12,7 +12,7 @@ from parrot.flows.dev_loop.sdd_coder.models import (  # noqa: F401
     CoderWaitArgs, CoderStatusArgs, CoderCleanupArgs,
 )
 from parrot.flows.dev_loop.sdd_coder.roster import ChunkAssigner, RosterProbe, available_seats  # noqa: F401
-from parrot.flows.dev_loop.sdd_coder.engine import CoderFailure, SddCoderEngine  # noqa: F401
+from parrot.flows.dev_loop.sdd_coder.engine import AttemptTelemetryCollector, CoderFailure, SddCoderEngine  # noqa: F401
 
 __all__ = [
     "ERROR_CODES", "AttemptRecord", "CleanupReport", "CoderError", "CoderJob", "CoderPlan",
@@ -21,5 +21,5 @@ __all__ = [
     "CoderPlanArgs", "CoderRunChunkArgs", "CoderPrepareNativeArgs", "CoderMergeArgs",
     "CoderWaitArgs", "CoderStatusArgs", "CoderCleanupArgs",
     "ChunkAssigner", "RosterProbe", "available_seats",
-    "CoderFailure", "SddCoderEngine",
+    "CoderFailure", "SddCoderEngine", "AttemptTelemetryCollector",
 ]

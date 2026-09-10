@@ -16,12 +16,22 @@ import json
 import logging
 import os
 import re
+import time
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from parrot import conf
 from parrot.flows.dev_loop.agent_builder import build_dispatcher  # verified: agent_builder.py:135
+from parrot.flows.dev_loop.models import (  # verified: models/base.py:412, :763, :497, :340, :458
+    DevAgentSpec,
+    DevelopmentOutput,
+    DispatchLabels,
+    ResearchOutput,
+    TaskScopedBrief,
+)
+from parrot.flows.dev_loop.session_state import DispatchCompleted  # verified: session_state.py:476
 from parrot.flows.dev_loop.task_scheduler import TaskScheduler  # verified: task_scheduler.py:53
 from parrot.flows.dev_loop.worktree_manager import (  # verified: worktree_manager.py:75, :41
     SubWorktreeManager,
@@ -30,6 +40,7 @@ from parrot.flows.dev_loop.worktree_manager import (  # verified: worktree_manag
 from parrot.flows.dev_loop.sdd_coder.fidelity import check_fidelity, parse_task_files
 from parrot.flows.dev_loop.sdd_coder.jobs import JobTable
 from parrot.flows.dev_loop.sdd_coder.models import (
+    AttemptRecord,
     CleanupReport,
     CoderJob,
     CoderPlan,
@@ -77,6 +88,54 @@ class _FeatureCtx:
     base_branch: str
 
 
+class AttemptTelemetryCollector:
+    """Duck-typed session host (dispatchers/_shared.py:92-117 -> host.apply(action)).
+
+    Captures usage + timing per attempt. `dispatch()` binds this object as
+    `session_host`; every dispatch event reaching the bound host is folded
+    into a `DevLoopAction` and handed to `apply()` — only `DispatchCompleted`
+    carries usage (session_state.py:476-484), so every other action kind is
+    a no-op here.
+    """
+
+    def __init__(self, *, attempt: int, seat: RosterSeat) -> None:
+        self.attempt, self.seat = attempt, seat
+        self.started = time.monotonic()
+        self.started_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        self.usage: Dict[str, Any] = {}
+        self.error = ""
+
+    def apply(self, action: Any, origin: Any = None) -> None:
+        """Called by _apply_to_session_host for every dispatch event. Keep only usage from 'dispatch/completed'."""
+        if not isinstance(action, DispatchCompleted):
+            return
+        for field in (
+            "input_tokens",
+            "output_tokens",
+            "cache_creation_input_tokens",
+            "cache_read_input_tokens",
+            "total_cost_usd",
+            "num_turns",
+            "duration_ms",
+        ):
+            value = getattr(action, field, None)
+            if value is not None:
+                self.usage[field] = value
+
+    def record(self) -> AttemptRecord:
+        return AttemptRecord(
+            attempt=self.attempt,
+            seat_label=self.seat.label,
+            backend=self.seat.backend or "native",
+            model=self.seat.model,
+            started_at=self.started_at,
+            ended_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            duration_s=round(time.monotonic() - self.started, 3),
+            usage=self.usage,
+            error=self.error,
+        )
+
+
 class SddCoderEngine:
     """See spec §3 M4 for the method contracts.
 
@@ -108,6 +167,7 @@ class SddCoderEngine:
         self._jobs = JobTable()
         self._merge_lock = asyncio.Lock()
         self._managers: Dict[str, SubWorktreeManager] = {}  # key: f"{task_id}.a{attempt}"
+        self._job_worktrees: Dict[str, str] = {}  # job_id -> feature worktree, for re-journaling in wait()
         self._opened = False
 
     async def open(self) -> None:
@@ -261,7 +321,13 @@ class SddCoderEngine:
                 worktree_path=path,
                 diagnostics="dirty_task_worktree: uncommitted/untracked changes:\n" + status,
             )
-        _rc, diff, _err = await _git("diff", "--name-only", f"{ctx.feature_branch}..{branch}", cwd=ctx.worktree)
+        # Triple-dot (merge-base-relative), NOT double-dot (direct tree comparison): `git diff
+        # A..B` is a literal two-tree diff, so if `ctx.feature_branch` has advanced since `branch`
+        # was created (e.g. a sibling task's attempt merged first, under the SAME `_merge_lock`
+        # but in an EARLIER `_consolidate` call), a two-dot diff would list every file the other
+        # merge introduced too — this branch would then fail fidelity for files it never touched.
+        # `A...B` restricts the diff to `branch`'s own changes since it forked from `feature_branch`.
+        _rc, diff, _err = await _git("diff", "--name-only", f"{ctx.feature_branch}...{branch}", cwd=ctx.worktree)
         task_md = await asyncio.to_thread(
             Path(os.path.join(ctx.worktree, task.task_file)).read_text, "utf-8"
         )
@@ -357,7 +423,7 @@ class SddCoderEngine:
             )
             commits = int(commits_out.strip() or 0)
             _rc, files_out, _err = await _git(
-                "diff", "--name-only", f"{ctx.feature_branch}..{branch}", cwd=ctx.worktree
+                "diff", "--name-only", f"{ctx.feature_branch}...{branch}", cwd=ctx.worktree
             )
             files = [f for f in files_out.splitlines() if f.strip()]
             orphans.append(OrphanBranch(task_id=task_id, branch=branch, commits=commits, files=files))
@@ -375,32 +441,157 @@ class SddCoderEngine:
         except KeyError as exc:
             raise CoderFailure("job_not_found", f"unknown job {job_id}") from exc
 
-    # ---- TASK-3121 fills these (signatures fixed by spec §3 M4) ----
+    def _research_for(self, ctx: _FeatureCtx, *, worktree_path: str) -> ResearchOutput:
+        """Synthetic ResearchOutput — TaskScopedBrief requires one; no Jira ticket exists for a coder attempt."""
+        return ResearchOutput(
+            jira_issue_key="",
+            spec_path=ctx.spec_path,
+            feat_id=ctx.feature_id,
+            branch_name=ctx.feature_branch,
+            worktree_path=worktree_path,
+            repo_path=ctx.worktree,
+            log_excerpts=[],
+            base_branch=ctx.base_branch,
+        )
+
+    def _labels_for(self, task: PlannedTask, seat: RosterSeat, attempt: int) -> DispatchLabels:
+        return DispatchLabels(
+            task_id=task.task_id,
+            task_title=task.title,
+            task_file=task.task_file,
+            seat=f"sdd-coder.{seat.label}",
+            agent=seat.backend or "native",
+            model=seat.model,
+            subagent="sdd-coder",
+            attempt=attempt,
+        )
+
+    async def _run_attempt(
+        self, ctx: _FeatureCtx, task: PlannedTask, seat: RosterSeat, *, attempt: int, job_id: str
+    ) -> Tuple[AttemptRecord, Optional[DevelopmentOutput], str, SubWorktreeManager, str, str]:
+        """ONE dispatch in ONE fresh sub-worktree. Returns (record, output|None, error, manager, branch, path)."""
+        assert seat.backend is not None, "_run_attempt is only called for mcp seats; native tasks use prepare_native"
+        manager = self._manager_for(ctx, task.task_id, attempt)
+        path = await manager.create(f"{task.task_id}.a{attempt}")
+        branch = f"{ctx.feature_branch}--{task.task_id}-a{attempt}"
+        collector = AttemptTelemetryCollector(attempt=attempt, seat=seat)
+        dispatcher, profile = self._dispatcher_builder(
+            DevAgentSpec(agent=seat.backend, model=seat.model),
+            redis_url=self._redis_url,
+            max_concurrent=1,
+            stream_ttl_seconds=self._stream_ttl,
+        )
+        profile = profile.model_copy(update={"subagent": "sdd-coder"})  # S7 — every profile defaults to sdd-worker
+        output: Optional[DevelopmentOutput] = None
+        error = ""
+        try:
+            output = await dispatcher.dispatch(
+                brief=TaskScopedBrief(
+                    research=self._research_for(ctx, worktree_path=path),
+                    task_id=task.task_id,
+                    task_file=task.task_file,
+                ),
+                profile=profile,
+                output_model=DevelopmentOutput,
+                run_id=job_id,
+                # NOT f"sdd-coder.{seat.label}" (spec's literal wording): `_publish_event` rolls
+                # `node_id` up via `_owning_node_id` (splits on the first '.') and hands it to
+                # `action_from_dispatch_event`, which constructs a `DevLoopAction` typed with the
+                # CLOSED `NodeId` Literal (session_state.py:140-158) — "sdd-coder" is not a member,
+                # so that construction would raise and `_apply_to_session_host` silently swallows
+                # it (by design — "the shim must never break a dispatch"), meaning
+                # `AttemptTelemetryCollector.apply()` would NEVER fire and AC-10's usage capture
+                # would silently no-op for every real dispatch. "development" IS a valid NodeId
+                # (the same one the interactive DevAgentPool dispatches under) and is not touched
+                # by this feature; per-seat identity for downstream consumers still flows through
+                # `labels.seat` ("sdd-coder.<label>"), which `action_from_dispatch_event` reads
+                # from `payload["seat"]` (stamped by `DispatchLabels.as_payload()`) in preference to
+                # `node_id` — verified: dispatchers/_shared.py:92-117, session_state.py:1457-1489.
+                node_id=f"development.sdd-coder-{seat.label}",
+                cwd=path,
+                session_host=collector,
+                labels=self._labels_for(task, seat, attempt),
+            )
+        except Exception as exc:  # noqa: BLE001 — DispatchExecutionError/DispatchOutputValidationError/
+            # asyncio.TimeoutError all subclass Exception; every failure becomes an attempt error, the
+            # ladder (attempt 2 on a different seat, then "failed") decides what happens next.
+            error = f"{type(exc).__name__}: {exc}"
+            collector.error = error
+            self.logger.warning("attempt %d of %s on %s failed: %s", attempt, task.task_id, seat.label, error)
+        return collector.record(), output, error, manager, branch, path
+
+    async def _run_task(self, ctx: _FeatureCtx, task: PlannedTask, seat: RosterSeat, *, job_id: str) -> TaskResult:
+        """Attempt 1 on the assigned seat; on failure attempt 2 on a different seat in a NEW sub-worktree;
+        a second failure yields `outcome="failed"` with both attempts' errors (spec G6, AC-6, AC-20)."""
+        attempts: List[AttemptRecord] = []
+        rec, out, err, manager, branch, path = await self._run_attempt(ctx, task, seat, attempt=1, job_id=job_id)
+        attempts.append(rec)
+        if err:
+            assert self._assigner is not None
+            retry = self._assigner.retry_seat(seat.label, {seat.label})
+            if retry is not None:
+                rec, out, err, manager, branch, path = await self._run_attempt(
+                    ctx, task, retry, attempt=2, job_id=job_id
+                )
+                attempts.append(rec)
+        if err:
+            return TaskResult(
+                task_id=task.task_id,
+                outcome="failed",
+                branch=branch,
+                worktree_path=path,
+                attempts=attempts,
+                diagnostics="\n".join(a.error for a in attempts if a.error),
+            )
+        result = await self._consolidate(ctx, manager, task, branch=branch, path=path)
+        return result.model_copy(update={"attempts": attempts, "development_output": out})
+
     async def run_chunk(self, feature: str, worktree: str, task_ids: List[str]) -> CoderJob:
-        raise NotImplementedError("TASK-3121")
+        """Validate, register, RETURN. Everything slow happens inside the job (S4, AC-21)."""
+        plan = await self.plan(feature, worktree)
+        ctx = await self._resolve_feature(feature, worktree)
+        first = {t.task_id: t for t in (plan.chunks[0].tasks if plan.chunks else [])}
+
+        running = self._jobs.running_task_ids()
+        for task_id in task_ids:
+            if task_id in running:
+                raise CoderFailure("task_already_running", f"{task_id} already has a running job")
+            planned = first.get(task_id)
+            if planned is None:
+                raise CoderFailure("task_not_in_plan", f"{task_id} is not in the current chunk plan")
+            if planned.native:
+                raise CoderFailure(
+                    "task_not_in_plan", f"{task_id} is a native task — use coder_prepare_native"
+                )
+
+        seats = {s.label: s for s in self.seats}
+
+        async def runner() -> List[TaskResult]:
+            raw_results = await asyncio.gather(
+                *(self._run_task(ctx, first[tid], seats[first[tid].seat_label], job_id=job.job_id) for tid in task_ids),
+                return_exceptions=True,
+            )
+            results: List[TaskResult] = []
+            for tid, raw in zip(task_ids, raw_results):
+                if isinstance(raw, TaskResult):
+                    results.append(raw)
+                elif isinstance(raw, BaseException):
+                    results.append(TaskResult(task_id=tid, outcome="failed", diagnostics=str(raw)))
+            snapshot = self._jobs.snapshot(job.job_id)
+            self._journal(ctx.worktree, snapshot.model_copy(update={"tasks": results}))
+            return results
+
+        job = self._jobs.create(ctx.feature_id, list(task_ids), runner)
+        self._job_worktrees[job.job_id] = ctx.worktree
+        self._journal(ctx.worktree, job)
+        return job
 
     async def wait(self, job_id: str, timeout_seconds: int) -> CoderJob:
-        raise NotImplementedError("TASK-3121")
-
-    async def _run_attempt(self, *args: Any, **kwargs: Any) -> Any:
-        raise NotImplementedError("TASK-3121")
-
-    def _research_for(self, *args: Any, **kwargs: Any) -> Any:
-        raise NotImplementedError("TASK-3121")
-
-    def _labels_for(self, *args: Any, **kwargs: Any) -> Any:
-        raise NotImplementedError("TASK-3121")
-
-
-class AttemptTelemetryCollector:
-    """Duck-typed session-host stand-in that captures per-attempt usage/timing.
-
-    Stubbed here; TASK-3121 implements `apply`/`record` against the
-    `dispatch.completed` action shape (dispatchers/_shared.py:92-117).
-    """
-
-    def apply(self, action: Any, origin: Any = None) -> None:
-        raise NotImplementedError("TASK-3121")
-
-    def record(self) -> Any:
-        raise NotImplementedError("TASK-3121")
+        try:
+            job = await self._jobs.wait(job_id, min(timeout_seconds, self.roster.wait_timeout_max_s))
+        except KeyError as exc:
+            raise CoderFailure("job_not_found", f"unknown job {job_id}") from exc
+        job_worktree = self._job_worktrees.get(job_id)
+        if job_worktree is not None:
+            self._journal(job_worktree, job)
+        return job
