@@ -193,10 +193,12 @@ Automated in TASK-3098 (`test_schema_is_valid_draft_2020_12`, `test_sample_sugge
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-10
+**Notes**: Created both files verbatim from the blueprint. Schema validated with
+`Draft202012Validator.check_schema`; prompt contains all 6 required placeholders,
+`FORBIDDEN INPUTS`, and "exactly ONE JSON object". Both files hit the repo's global
+`templates/` .gitignore rule (as new files, unlike the already-tracked `task.md`/`spec.md`), so
+committed with `git add -f` per the CLAUDE.md heads-up.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
