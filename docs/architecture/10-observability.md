@@ -128,3 +128,20 @@ lost. AI-Parrot handles this automatically:
   `AutonomousOrchestrator.stop()` before the worker exits.
 - If you own the lifecycle, call `shutdown_observability()` yourself (aggregates
   the OTel and lightweight teardown paths; idempotent and safe when disabled).
+
+> **Short-lived callers (scripts/CLIs/one-shot lambdas): yield before you
+> shut down.** `BeforeClientCallEvent`/`AfterClientCallEvent`/
+> `ClientCallFailedEvent` are forwarded to the global registry as a
+> fire-and-forget scheduled task (`AbstractClient._emit_*` →
+> `forward_to_global`), not awaited inline. If the last client call is
+> immediately followed by `shutdown_telemetry()`/`shutdown_observability()`
+> with no intervening event-loop yield, that forwarded task may never run —
+> silently dropping the last call's request/duration/token/cost metrics
+> (empirically reproduced during FEAT-548's verification; see
+> `sdd/state/FEAT-548/verification/series-names.md`, Finding #2). A single
+> `await asyncio.sleep(0)` is **not** enough — verified empirically, it does
+> not give the scheduled task a turn. A real, positive-duration
+> `await asyncio.sleep(...)` (order of ~1s was reliable in verification)
+> between the last call and shutdown avoids it. Long-running processes
+> (servers, the autonomous orchestrator) are unaffected — they naturally
+> yield between calls.

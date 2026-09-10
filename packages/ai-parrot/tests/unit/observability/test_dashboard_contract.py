@@ -60,6 +60,23 @@ CONFIRMED_PROM_BASES: frozenset[str] = frozenset({
     "gen_ai_client_token_usage_tokens",             # gen_ai.client.token.usage, unit tokens
 })
 
+# The dotted instrument names CONFIRMED_PROM_BASES has an entry for. For
+# these, ONLY the confirmed exact base is valid — code review (post-merge)
+# correctly flagged that the generic dotted-to-underscore prefix fallback
+# below would otherwise still accept a name that merely shares the prefix
+# but omits the unit segment: e.g. the historical F009 defect string
+# ``gen_ai_client_token_usage_total`` shares the prefix
+# ``gen_ai_client_token_usage`` with the real, confirmed
+# ``gen_ai_client_token_usage_tokens`` and would pass a plain
+# ``startswith`` check even though it is exactly the wrong name this
+# feature exists to stop shipping again.
+_CONFIRMED_INSTRUMENTS: frozenset[str] = frozenset({
+    "gen_ai.client.request.count",
+    "gen_ai.client.cost.total",
+    "gen_ai.client.operation.duration",
+    "gen_ai.client.token.usage",
+})
+
 # Verified against metrics.py:204-220, 273-306.
 METRIC_LABELS: frozenset[str] = frozenset({
     "gen_ai.system", "gen_ai.provider.name", "gen_ai.request.model",
@@ -94,8 +111,19 @@ _LABEL_LIST_MODIFIER_RE = re.compile(
 
 
 def _prom_prefixes() -> frozenset[str]:
-    """Prometheus-side prefixes for every instrument (dots -> underscores)."""
-    return frozenset(name.replace(".", "_") for name in INSTRUMENTS)
+    """Best-effort dotted-to-underscore prefixes for UNCONFIRMED instruments only.
+
+    Deliberately excludes every instrument in ``_CONFIRMED_INSTRUMENTS`` —
+    those must match their ``CONFIRMED_PROM_BASES`` entry exactly. This
+    fallback exists only for instruments TASK-3108's live verification
+    never observed (``gen_ai.client.error.count``, the ``parrot.*``
+    agent/tool instruments), where no better data is available yet.
+    """
+    return frozenset(
+        name.replace(".", "_")
+        for name in INSTRUMENTS
+        if name not in _CONFIRMED_INSTRUMENTS
+    )
 
 
 def _iter_exprs(dashboard: dict):
@@ -153,6 +181,31 @@ def _dashboards() -> list[Path]:
 def dashboard(request) -> tuple[Path, dict]:
     path = request.param
     return path, json.loads(path.read_text(encoding="utf-8"))
+
+
+def test_dashboard_dirs_actually_contain_dashboards():
+    """Canary: this guard is only a guard if it collects something.
+
+    ``_dashboards()`` feeds ``pytest.fixture(params=...)`` at COLLECTION
+    time — if both ``DASHBOARD_DIRS`` entries ever go stale (this exact
+    class of drift already happened once mid-feature: the Grafana
+    provisioning path moved from a nested ``dashboards/parrot/`` to the
+    sibling ``dashboards-parrot/``, TASK-3109), every parametrized test
+    above silently collects ZERO instances and the guard vanishes from a
+    green test run instead of failing loudly. This test fails loudly.
+    """
+    found = _dashboards()
+    assert found, (
+        f"No dashboards found under any of {DASHBOARD_DIRS} — "
+        "the G6 regression guard is not actually guarding anything. "
+        "A DASHBOARD_DIRS path has gone stale."
+    )
+    assert len(found) >= 2, (
+        f"Expected at least 2 shipped dashboards (parrot-usage-cost.json in "
+        f"each of the two DASHBOARD_DIRS — the package example and the live "
+        f"Grafana provisioning copy), found {len(found)}: "
+        f"{[p.name for p in found]}"
+    )
 
 
 def test_shipped_dashboards_reference_real_metrics(dashboard):

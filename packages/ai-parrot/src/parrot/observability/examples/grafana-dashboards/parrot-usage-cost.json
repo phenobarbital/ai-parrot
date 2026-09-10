@@ -189,7 +189,7 @@
     },
     {
       "datasource": { "type": "prometheus", "uid": "claudestats-prometheus" },
-      "description": "Requests whose (provider, model) never produced a matching cost.total sample — i.e. cost_usd() returned None, most commonly an unpriced model. Makes silent under-reporting visible instead of letting it vanish.",
+      "description": "Requests whose (provider, model, agent) never produced a matching cost.total sample — i.e. cost_usd() returned None, most commonly an unpriced model. Makes silent under-reporting visible instead of letting it vanish.",
       "fieldConfig": {
         "defaults": {
           "color": { "fixedColor": "orange", "mode": "fixed" },
@@ -211,7 +211,7 @@
         {
           "datasource": { "type": "prometheus", "uid": "claudestats-prometheus" },
           "editorMode": "code",
-          "expr": "sum(gen_ai_client_request_count_total{parrot_agent_name=~\"${agent:regex}\", gen_ai_request_model=~\"${model:regex}\", gen_ai_provider_name=~\"${provider:regex}\"} unless on(gen_ai_provider_name, gen_ai_request_model) label_replace(gen_ai_client_cost_USD_total, \"gen_ai_request_model\", \"$1\", \"gen_ai_response_model\", \"(.*)\"))",
+          "expr": "sum(gen_ai_client_request_count_total{parrot_agent_name=~\"${agent:regex}\", gen_ai_request_model=~\"${model:regex}\", gen_ai_provider_name=~\"${provider:regex}\"} unless on(gen_ai_provider_name, gen_ai_request_model, parrot_agent_name) label_replace(gen_ai_client_cost_USD_total, \"gen_ai_request_model\", \"$1\", \"gen_ai_response_model\", \"(.*)\"))",
           "instant": true, "range": false, "refId": "A"
         }
       ],
