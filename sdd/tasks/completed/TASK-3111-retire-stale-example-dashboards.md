@@ -188,10 +188,23 @@ between deleting and renaming on your own.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-09-10
 **Notes**:
+- **§8 Q3 answered by the operator (Jesus Lara) mid-task: delete** (not
+  rename). Per this task's own explicit Agent Instructions ("Stop and ask
+  if §8 Q3 is unanswered — do not choose... on your own"), the unambiguous
+  half of this task (copy + `parrot-overview.json` deletion) was done and
+  staged first, then work paused and the question was put to the operator
+  before touching `parrot-usage.json`.
+- `parrot-usage-cost.json` confirmed byte-identical to the provisioned copy
+  (`diff` reports nothing).
+- AC-11 verified: no dashboard under `grafana-dashboards/` queries a metric
+  name the emitter doesn't produce (grepped every `expr` string — all
+  `gen_ai_client_*`/`parrot_agent_name`, all confirmed real names from
+  TASK-3108). `git grep 'parrot_llm_'` returns only
+  `prometheus_recorder.py` (the untouched recorder itself) and a
+  `README.md` prose paragraph describing that backend — no dashboard.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none — Q3 was genuinely unresolved in the spec
+and required the operator's decision, exactly as the task anticipated.

@@ -91,7 +91,7 @@
       "feature_id": "FEAT-548",
       "feature": "observability-otel-grafana",
       "spec": "sdd/specs/observability-otel-grafana.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -101,8 +101,8 @@
       "parallelism_notes": "Copies 3110's dashboard into the package examples, so it cannot start earlier. Gated on open question Q3 for the second deletion.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3111-retire-stale-example-dashboards.md"
+      "completed_at": "2026-09-10T18:26:23+00:00",
+      "file": "sdd/tasks/completed/TASK-3111-retire-stale-example-dashboards.md"
     },
     {
       "id": "TASK-3112",
