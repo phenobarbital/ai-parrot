@@ -254,6 +254,18 @@ if [ -z "$SKIP_REASON" ]; then
   PROBE_TEXT="$(cat "$DR/probe.txt" 2>/dev/null | tr -d '[:space:]')"
   [ "$PROBE_TEXT" = "OK" ] || SKIP_REASON="model probe returned unexpected output for $MODEL"
 fi
+CODEX_VERSION="$(codex --version 2>/dev/null | awk '{print $2}')"
+PROBE_OUTPUT="$(cat "$DR/probe.txt" 2>/dev/null || echo "")"
+python -c "
+import json, sys
+json.dump({
+    'model': sys.argv[1],
+    'codex_cli_version': sys.argv[2],
+    'reasoning_effort': 'high',
+    'timeout_s': 600,
+    'probe_output': sys.argv[3],
+}, open(sys.argv[4], 'w'), indent=2)
+" "$MODEL" "$CODEX_VERSION" "$PROBE_OUTPUT" "$DR/run.json"
 ```
 
 #### 3b.2 Render the neutral brief (skipped when `SKIP_REASON` is already set)
@@ -297,6 +309,7 @@ comment (verified by TASK-3099's dry run, which caught this exact corruption bef
 #### 3b.3 Run codex (capped, synchronous — NOT a background job)
 ```bash
 if [ -z "$SKIP_REASON" ]; then
+  STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%S+00:00)"
   timeout 600 codex exec --ephemeral --sandbox read-only --cd "$REPO_ROOT" \
     -m "$MODEL" -c model_reasoning_effort=high --ignore-user-config \
     --output-schema sdd/templates/design_research.schema.json \
@@ -304,6 +317,17 @@ if [ -z "$SKIP_REASON" ]; then
   rc=$?
   [ "$rc" -eq 124 ] && SKIP_REASON="codex timed out after 600s"
   [ "$rc" -ne 0 ] && [ -z "$SKIP_REASON" ] && SKIP_REASON="codex exited $rc (see $DR/codex.log)"
+  ENDED_AT="$(date -u +%Y-%m-%dT%H:%M:%S+00:00)"
+  if [ -f "$DR/run.json" ]; then
+    python -c "
+import json, sys
+d = json.load(open(sys.argv[1]))
+d['started_at'] = sys.argv[2]
+d['ended_at'] = sys.argv[3]
+d['exit_code'] = int(sys.argv[4])
+json.dump(d, open(sys.argv[1], 'w'), indent=2)
+" "$DR/run.json" "$STARTED_AT" "$ENDED_AT" "$rc"
+  fi
 fi
 ```
 This call blocks for up to 600s (`timeout 600`, foreground). There is no background/job-control
