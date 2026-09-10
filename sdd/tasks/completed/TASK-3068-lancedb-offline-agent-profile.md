@@ -317,3 +317,48 @@ These are test contracts, not executed test results or placeholder production im
 
 **AC6 completion status — honest, not hidden**: `TestRealOfflineRun::test_full_cycle_with_egress_denied` SKIPPED in this environment (`PARROT_TEST_REAL_LLM` unset), consistent with TASK-3057's gate finding that no embedding-model weights are cached here and no local LLM server is running. Per this task's own Acceptance Criteria ("feature acceptance cannot claim AC6 complete until the actual real-model run passes"), **AC6 is NOT fully certified by this session** — the test, environment variables (`PARROT_TEST_REAL_LLM=1`, `PARROT_LOCAL_EMBEDDING_MODEL_PATH`, `PARROT_LOCAL_LLM_BASE_URL`) and egress-denial mechanism are implemented and ready; a future run on a machine with provisioned local model/server assets is required to close AC6. This is a known, explicitly-flagged gap, not a fabricated pass — the deterministic-fake-provider path (already covered by the guard tests and every other FEAT-542 test module) is explicitly NOT accepted as AC6 certification per spec v0.2.
 **Deviations from spec**: None beyond the documented BasicAgent-vs-direct-wiring scope decision above.
+
+---
+
+### Follow-up: AC6 certified (2026-09-10, interactive session)
+
+**AC6 is now CLOSED.** `TestRealOfflineRun::test_full_cycle_with_egress_denied`
+**PASSED for real** — 1 passed in 20.55 s — against provisioned local assets on
+this machine:
+
+- embedding: `all-mpnet-base-v2` (768-d) saved to a local directory, loaded on
+  `cuda` from that path;
+- LLM: the repository's own `llama_server/` stack (`parrot-llama-server`,
+  llama.cpp CUDA) serving `qwen3.6-35b-a3b`
+  (`bartowski/Qwen_Qwen3.6-35B-A3B-GGUF:Q4_K_M`) at `http://localhost:8089/v1`;
+- store: `lancedb==0.38.0`, hybrid `LanceDBOrigin`;
+- egress: `socket.socket.connect` patched to loopback-only for the whole
+  ingest → vector/FTS/hybrid → answer path; the guard never fired.
+
+Full evidence: `artifacts/logs/TASK-3068-lancedb.log`.
+
+**The real run found a real defect** that every fake-provider test had missed:
+`run_cycle()` called `llm_client.ask()` on a never-entered client, so
+`self.client` was `None` (`AttributeError: 'NoneType' object has no attribute
+'chat'` at `parrot/clients/openai_base.py:261`). `AbstractClient.__aenter__` is
+what builds the per-loop SDK client via `_ensure_client()`. Fixed by entering
+the client as an async context manager in `run_cycle()`. This is the concrete
+justification for spec v0.2's rule that a deterministic fake provider is not
+AC6 certification.
+
+Second finding, documented rather than coded around: a reasoning model with
+`--reasoning-format deepseek` puts its chain of thought in `reasoning_content`
+and can exhaust its whole token budget there, leaving `content` empty —
+observed at 3 849 reasoning tokens for a one-sentence question. The local
+server must be started with `--reasoning off` / `--reasoning-budget 0`. Added
+to `docs/lancedb-offline-profile.md` §Provisioning.
+
+Also recorded there: `LOCAL_LLM_API_KEY` (for local servers started with a
+bearer token) and `HF_HUB_OFFLINE=1` / `TRANSFORMERS_OFFLINE=1`.
+
+Not completed: a standalone `python examples/lancedb_local_agent.py` run to
+capture a human-readable answer. Ingest and hybrid retrieval succeeded, then
+llama-server aborted with `CUDA error: unspecified launch failure` and
+`nvidia-smi` reported `[GPU requires reset]`. No reset was attempted (the
+desktop session shares the card). Infrastructure fault, not an AC6 failure —
+§3b had already passed.
