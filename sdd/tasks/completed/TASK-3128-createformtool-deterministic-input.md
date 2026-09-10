@@ -1,18 +1,18 @@
-# TASK-1969: CreateFormTool Deterministic Input
+# TASK-3128: CreateFormTool Deterministic Input
 
 **Feature**: FEAT-388 — Deterministic CreateFormTool
 **Spec**: `sdd/specs/deterministic-creationformtool.spec.md`
 **Status**: pending
 **Priority**: high
 **Estimated effort**: M (2-4h)
-**Depends-on**: TASK-1968
+**Depends-on**: TASK-3127
 **Assigned-to**: unassigned
 
 ---
 
 ## Context
 
-This task wires the `FormAssembler` (created in TASK-1968) into `CreateFormTool`.
+This task wires the `FormAssembler` (created in TASK-3127) into `CreateFormTool`.
 The tool gains three new optional input fields (`schema`, `sections`, `fields`)
 and a branching path in `_execute()` that bypasses the LLM when structured input
 is provided. The existing LLM path remains completely unchanged.
@@ -36,9 +36,9 @@ Implements spec Module 2.
 - Write unit tests for the new input paths
 
 **NOT in scope**:
-- Modifying `FormAssembler` (TASK-1968)
-- Modifying `EditToolkit` (TASK-1970)
-- Integration/roundtrip tests (TASK-1971)
+- Modifying `FormAssembler` (TASK-3127)
+- Modifying `EditToolkit` (TASK-3129)
+- Integration/roundtrip tests (TASK-3130)
 
 ---
 
@@ -55,7 +55,7 @@ Implements spec Module 2.
 
 ### Verified Imports
 ```python
-from parrot_formdesigner.assembler import FormAssembler  # assembler.py (created by TASK-1968)
+from parrot_formdesigner.assembler import FormAssembler  # assembler.py (created by TASK-3127)
 from parrot_formdesigner.core.schema import FormSchema    # core/schema.py
 from parrot_formdesigner.services.validators import FormValidator  # services/validators.py
 from parrot_formdesigner.services.registry import FormRegistry     # services/registry.py
@@ -274,7 +274,7 @@ class TestDeterministicInput:
 When you pick up this task:
 
 1. **Read the spec** at `sdd/specs/deterministic-creationformtool.spec.md` for full context
-2. **Check dependencies** — verify TASK-1968 is in `tasks/completed/`
+2. **Check dependencies** — verify TASK-3127 is in `tasks/completed/`
 3. **Verify the Codebase Contract** — confirm `CreateFormInput` and `CreateFormTool` signatures
 4. **Modify** `create_form.py` — extend `CreateFormInput`, add branching in `_execute`
 5. **Create** `test_create_form_deterministic.py`
@@ -302,7 +302,7 @@ behavior). `_execute_from_schema()` defaults `title` to `form_id or "Form"`
 for the `sections`/`fields` paths since `CreateFormInput` has no dedicated
 top-level `title` field — `FormSchema.title` is required and
 `assemble_from_sections`/`assemble_from_fields` don't invent one on their
-own (by design — not in TASK-1968 scope to change). Added
+own (by design — not in TASK-3127 scope to change). Added
 `self._assembler = FormAssembler()` in `__init__`. Created 8 unit tests in
 `test_create_form_deterministic.py` (7 from the task's Test Specification
 plus one extra `test_prompt_unchanged_uses_llm_path` verifying backward
@@ -311,7 +311,7 @@ compatibility against the existing LLM mock pattern from
 `test_create_form_tool.py` suite (59 tests) still passes unchanged. Ran
 the whole `tests/unit/` directory (1270 tests): 14 pre-existing failures
 confirmed unrelated to this change (verified by stashing my diff and
-re-running the same failing tests against the pre-TASK-1969 commit — same
+re-running the same failing tests against the pre-TASK-3128 commit — same
 failures, in unrelated modules: controls registry, venue service, core
 models, field helpers). `ruff check` on the modified file shows only the
 same 4 pre-existing `BLE001`/`G201` findings that existed in the file
