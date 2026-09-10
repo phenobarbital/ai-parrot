@@ -10,4 +10,5 @@ supported_stores = {
     'faiss_store': 'FaissStore',
     'arango': 'ArangoStore',
     'bigquery': 'BigQueryStore',
+    'lancedb': 'LanceDBStore',
 }

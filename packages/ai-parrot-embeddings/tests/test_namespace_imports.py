@@ -133,6 +133,7 @@ class TestCorePublicSurfaceUnchanged:
             'faiss_store': 'FaissStore',   # pre-existing mismatch; do NOT fix
             'arango': 'ArangoStore',       # pre-existing mismatch; do NOT fix
             'bigquery': 'BigQueryStore',
+            'lancedb': 'LanceDBStore',
         }
 
     def test_rerankers_all_unchanged(self):

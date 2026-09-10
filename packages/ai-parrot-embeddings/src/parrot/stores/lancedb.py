@@ -54,6 +54,28 @@ _LEGACY_PREPARE_KWARGS = (
 
 _ALLOWED_CONFIG_FIELDS = frozenset(LanceDBConfig.model_fields) | {"table"}
 
+_MISSING_SDK_MESSAGE = (
+    "The 'lancedb' package is not installed. Install it with the optional "
+    "extra: pip install 'ai-parrot-embeddings[lancedb]'"
+)
+
+
+def _import_lancedb() -> Any:
+    """Import the ``lancedb`` SDK, or raise an actionable error naming the extra.
+
+    Added in TASK-3067 (dispatch/selection integration): spec §7 requires
+    "selecting/opening LanceDB reports the exact install extra when
+    missing" — a bare ``ModuleNotFoundError`` from the lazy ``import
+    lancedb`` inside :meth:`LanceDBStore.connection` did not satisfy that.
+    This is a narrow, additive wrapper only; it changes no other behavior
+    in this file.
+    """
+    try:
+        import lancedb
+    except ModuleNotFoundError as exc:
+        raise ImportError(_MISSING_SDK_MESSAGE) from exc
+    return lancedb
+
 _LEGACY_COLUMN_DEFAULTS = {
     "embedding_column": "embedding",
     "document_column": "document",
@@ -180,7 +202,7 @@ class LanceDBStore(AbstractStore):
         if self._connection_handle is not None:
             return self._connection_handle, self._default_table
 
-        import lancedb  # lazy: keep this module importable without the extra
+        lancedb = _import_lancedb()  # lazy: keep this module importable without the extra
 
         kwargs: dict[str, Any] = {}
         if self._config.read_consistency_interval_seconds:

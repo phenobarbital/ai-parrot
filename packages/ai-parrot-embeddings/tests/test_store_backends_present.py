@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-STORE_BACKENDS = ["postgres", "milvus", "arango", "bigquery", "faiss_store"]
+STORE_BACKENDS = ["postgres", "milvus", "arango", "bigquery", "faiss_store", "lancedb"]
 
 
 @pytest.mark.parametrize("backend", STORE_BACKENDS)
@@ -34,6 +34,7 @@ def test_supported_stores_unchanged():
         'faiss_store': 'FaissStore',
         'arango': 'ArangoStore',
         'bigquery': 'BigQueryStore',
+        'lancedb': 'LanceDBStore',
     }
 
 
