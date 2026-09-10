@@ -228,9 +228,7 @@ def test_config_path_override_honored(tmp_path, monkeypatch):
     silent no-op before."""
     monkeypatch.setattr("parrot.mcp.toolkit_server.importlib.import_module", mock_import_module)
     elsewhere = tmp_path / "custom-toolkits.yaml"
-    elsewhere.write_text(
-        "toolkits:\n" "  stub:\n" "    class: tests.mcp.stub_toolkit.StubToolkit\n" "    kwargs: {}\n"
-    )
+    elsewhere.write_text("toolkits:\n" "  stub:\n" "    class: tests.mcp.stub_toolkit.StubToolkit\n" "    kwargs: {}\n")
 
     # No .parrot/ under tmp_path at all — only the override can resolve "stub".
     server = create_toolkit_mcp_server("stub", tmp_path, config_path=str(elsewhere))
