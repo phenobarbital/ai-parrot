@@ -61,7 +61,9 @@ labelled with `parrot.agent.name`, a model attribute and `gen_ai.provider.name`.
 First, `env/.env` has telemetry switched off and aimed at OpenLIT's `:4318`
 rather than the Prometheus OTLP receiver on `:9090` — the live
 `parrot-prometheus` confirms this by holding 291 metric names of which *zero*
-begin with `gen_ai_` or `parrot_`. Second, both shipped example dashboards under
+begin with `gen_ai_` or `parrot_`. Closing that gap is a **pure env-var move**:
+the `[observability]` block is repointed from OpenLIT to Prometheus, with no new
+container, no second export destination and no code change. Second, both shipped example dashboards under
 `packages/ai-parrot/src/parrot/observability/examples/grafana-dashboards/` query
 metric names that no code path emits, and neither contains a single by-agent
 panel. The work is therefore a configuration change plus a dashboard rewritten
@@ -119,10 +121,9 @@ answerable from this catalog with no schema change.
   consults `otlp_targets`, while `setup_telemetry` builds one
   `BatchSpanProcessor` per entry in `config.otlp_targets` (falling back to an
   implicit single target from `otlp_endpoint`).
-  *Implication*: pointing `otlp_endpoint` at Prometheus without also setting
-  `OTLP_TARGETS` leaves every trace export POSTing to a non-existent
-  `/api/v1/otlp/v1/traces`. This asymmetry is also the mechanism that makes the
-  chosen split possible.
+  *Implication*: moving `otlp_endpoint` to Prometheus moves **both** signals,
+  so traces would POST to `/api/v1/otlp/v1/traces`, which Prometheus 2.x does
+  not serve.
   *Evidence*: F006
 
 - **`OTEL_EXPORTER_OTLP_ENDPOINT` is a base URL.** The exporters append
@@ -130,6 +131,15 @@ answerable from this catalog with no schema change.
   *Implication*: the correct value is `http://localhost:9090/api/v1/otlp`, **not**
   the full `.../v1/metrics` path.
   *Evidence*: F006, F007
+
+- **Traces cannot be switched off from env — but they can be silenced.**
+  `enable_traces` / `enable_metrics` are code-only fields; `from_env()` never
+  reads them. The env-only lever is `OBSERVABILITY_SAMPLING=0.0`, which feeds
+  `TraceIdRatioBased(0.0)`; every span is marked non-recording and never reaches
+  the exporter, so no trace request is issued and no 404 occurs.
+  *Implication*: this keeps the change a pure env move. Setting the value back
+  to `1.0` restores traces later, once a trace-capable endpoint is configured.
+  *Evidence*: F014, F006
 
 - **`gen_ai.client.token.usage` is a histogram recorded twice per call**
   (once for input, once for output).
@@ -238,12 +248,27 @@ days old and is the template this feature should copy. *Evidence*: F011, F012
 
 ### What Changes
 
-- **`env/.env` `[observability]`** — operator action on this host:
-  `OBSERVABILITY_ENABLED=true`;
-  `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:9090/api/v1/otlp`;
-  `OTLP_TARGETS=[{"name":"openlit","endpoint":"http://localhost:4318"}]` to keep
-  traces flowing to OpenLIT; drop the now-no-op `OBSERVABILITY_OPENLIT=true`.
-  *Evidence*: F004, F005, F006, F013
+- **`env/.env` `[observability]`** — the core of the feature; an operator action
+  on this host, moving the existing variables from OpenLIT to Prometheus:
+
+  ```ini
+  [observability]
+  OBSERVABILITY_ENABLED=true                                     # was: false
+  OBSERVABILITY_BACKEND=otel                                     # unchanged
+  OBSERVABILITY_SERVICE_NAME=parrot                              # unchanged
+  OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:9090/api/v1/otlp  # was: http://localhost:4318
+  OBSERVABILITY_SAMPLING=0.0                                     # new: silence traces (see below)
+  OBSERVABILITY_COST=True                                        # unchanged
+  # OBSERVABILITY_OPENLIT=true  -> DELETE: deprecated no-op since FEAT-462
+  ```
+
+  Three notes on this block. The endpoint is a **base URL** — the exporter
+  appends `/v1/metrics` itself, so it must not include that suffix.
+  `OBSERVABILITY_OPENLIT=true` is removed rather than flipped to `false`: since
+  FEAT-462 it does nothing except raise a `DeprecationWarning`.
+  `OBSERVABILITY_SAMPLING=0.0` is what keeps this a pure env move — see the
+  trace constraint below.
+  *Evidence*: F004, F005, F006, F013, F014
 - **`packages/ai-parrot/src/parrot/observability/examples/grafana-dashboards/parrot-overview.json`**
   and **`parrot-usage.json`** — replaced with the corrected dashboard so the
   package stops shipping queries for metrics that do not exist. *Evidence*: F009
@@ -261,7 +286,12 @@ days old and is the template this feature should copy. *Evidence*: F011, F012
 - Per-user / per-session dashboards — structurally unavailable in metrics by
   design. *Evidence*: F002
 - Removing the OpenLIT stack, the `OpenLitUsageRecorder`, or the
-  `ai-parrot-openlit-bridge` distribution. *Evidence*: F013
+  `ai-parrot-openlit-bridge` distribution — `parrot-openlit-ui` keeps running,
+  it simply stops receiving parrot data. *Evidence*: F013
+- Any multi-destination export (`OTLP_TARGETS`), new collector service, or code
+  change to make `enable_traces` env-settable. Explicitly ruled out by the
+  requester: this is an env-variable move, not an architecture change.
+  *Evidence*: F006, F014
 - Alerting rules, recording rules, retention/long-term storage changes, or
   auth/TLS on the local stack.
 - The `PrometheusUsageRecorder` (`OBSERVABILITY_BACKEND=prometheus`, port 9464)
@@ -298,9 +328,25 @@ days old and is the template this feature should copy. *Evidence*: F011, F012
 - **Re-enabling telemetry may reintroduce the shutdown hang.** The `.env` comment
   records a ~10 s+ atexit flush block on CTRL+C when the endpoint was
   unreachable. Pointing at a *healthy* endpoint is precisely the documented
-  precondition for re-enabling. *Mitigation*: confirm both `:9090` and `:4318`
-  are reachable before flipping the switch; verify a CTRL+C after a crew run
-  still exits promptly. *Evidence*: F004
+  precondition for re-enabling. *Mitigation*: confirm `:9090` is reachable before
+  flipping the switch; verify a CTRL+C after a crew run still exits promptly.
+  *Evidence*: F004
+
+- **Trace exports would 404 if sampling is left at 1.0.** Because the endpoint
+  move carries traces along with metrics (F006) and `enable_traces` is not
+  env-settable (F014), omitting `OBSERVABILITY_SAMPLING=0.0` produces a failed
+  trace POST per batch — log noise, retry backoff, and a slower atexit flush,
+  i.e. a milder version of the very symptom that got telemetry disabled in the
+  first place. *Mitigation*: set the sampling variable in the same edit; verify
+  no `/v1/traces` requests appear in the Prometheus access path.
+  *Evidence*: F014, F006, F004
+
+- **Losing trace visibility is a deliberate trade.** Sampling at 0.0 means no
+  per-call timelines and no per-user/session attribution anywhere — spans are
+  the only carrier for `user_id`/`session_id` (F002). The running
+  `parrot-openlit-ui` will simply stop receiving parrot data.
+  *Mitigation*: accepted as scoped; reversible with one variable.
+  *Evidence*: F002, F014
 - **Dirty `docker/` tree.** Uncommitted Codex collector work sits in the same
   files this feature touches. *Mitigation*: land or stash that work first.
   *Evidence*: F011
@@ -321,13 +367,14 @@ days old and is the template this feature should copy. *Evidence*: F011, F012
 | C4 | Live Prometheus holds zero `gen_ai_*`/`parrot_*` series | F010 | high | directly observed: 291 names, 0 matches, both targets healthy |
 | C5 | Both example dashboards query names nothing emits; neither has a by-agent panel | F009 | high | every panel expression enumerated and compared to the catalog |
 | C6 | Prometheus accepts a direct OTLP push; a collector is optional for parrot | F007 | high | `--enable-feature=otlp-write-receiver` in compose + healthy live instance |
-| C7 | Traces will 404 against Prometheus unless `OTLP_TARGETS` redirects them | F006 | high | inferred from exporter/setup code paths; not yet observed failing |
+| C7 | Moving the endpoint carries traces along with metrics, so they would 404 against Prometheus unless silenced | F006, F014 | high | inferred from exporter/setup code paths; not yet observed failing |
+| C12 | `enable_traces` is not env-settable, so `OBSERVABILITY_SAMPLING=0.0` is the only env-only way to silence traces | F014 | high | direct read: field declared in the model, absent from `from_env` |
 | C8 | Dropping JSON into `docker/grafana/provisioning/dashboards/` auto-loads it in 30 s | F008, F011 | high | provider config, corroborated by two working dashboards |
 | C9 | The openlit→OTEL migration is complete; OpenLIT survives only as an OTLP destination | F013 | high | FEAT-462 deprecation validators + the instrumentor skip-list rationale |
 | C10 | Exact Prometheus-translated series names (esp. the `USD` suffix on the cost counter) are as predicted | F011, F002 | medium | inferred from the collector's `translation_strategy`; must be verified against the live TSDB |
 | C11 | OTel Python's default cumulative temporality makes direct push to Prometheus 2.51 safe without a delta→cumulative processor | F011, F006 | low | not verified in this repo, and the Codex README documents delta metrics breaking this exact path |
 
-Distribution: **9** high, **1** medium, **1** low.
+Distribution: **10** high, **1** medium, **1** low.
 
 > C11 is low and is load-bearing for the chosen transport (U3). It is mitigated
 > rather than resolved: the collector path stays available as a documented
@@ -340,11 +387,13 @@ Distribution: **9** high, **1** medium, **1** low.
 ### Resolved (during proposal phase)
 
 - [x] **U1 — Once metrics point at Prometheus, where should traces go?**
-  *Resolved*: OpenLIT via `OTLP_TARGETS` —
-  `[{"name":"openlit","endpoint":"http://localhost:4318"}]`. Traces keep landing
-  in the running `parrot-openlit-ui` while metrics go to Prometheus, using
-  FEAT-462's multi-target support exactly as designed.
-  *Resolves claims*: C7
+  *Resolved* (revised by the requester after the first pass): **nowhere — this is
+  a straight move of the existing env variables from OpenLIT to Prometheus.** No
+  `OTLP_TARGETS` split, no second destination, no collector. Because
+  `enable_traces` is not env-settable (F014), traces are silenced within the same
+  env move by `OBSERVABILITY_SAMPLING=0.0`, which stops any span from reaching an
+  exporter. Reversible with one variable if traces are wanted again later.
+  *Resolves claims*: C7, C12
 
 - [x] **U2 — Which artifact is "the example grafana dashboard" to update?**
   *Resolved*: Both. Author one correct dashboard provisioned into
@@ -416,7 +465,7 @@ and the two verification steps that close C10 and C11.
 | State checkpoints | `sdd/state/FEAT-565/state.json` |
 | Source | `sdd/state/FEAT-565/source.md` |
 | Research plan | `sdd/state/FEAT-565/research_plan.json` |
-| Findings (13) | `sdd/state/FEAT-565/findings/F001…F013` |
+| Findings (14) | `sdd/state/FEAT-565/findings/F001…F014` |
 | Synthesis | `sdd/state/FEAT-565/synthesis.json` |
 
 **Budget**: `default` profile — completed without truncation.
@@ -440,6 +489,7 @@ run off-budget alongside the planned grep/glob/read/git_log/tree queries.
 | F011 | The Codex dashboard is a working precedent — with uncommitted changes still in the tree |
 | F012 | Docs and a 29-file unit test suite already pin this surface |
 | F013 | The openlit→OTEL migration is complete; OpenLIT survives as an optional OTLP destination |
+| F014 | `enable_traces` is NOT env-settable; `OBSERVABILITY_SAMPLING=0.0` is the env-only way to silence traces |
 
 **Related prior specs** (background for the spec author): FEAT-177
 `otel-observability`, FEAT-228 `per-agent-cost-usage-metrics` (put

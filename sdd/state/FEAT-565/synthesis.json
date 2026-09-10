@@ -219,7 +219,7 @@
   "hypotheses": [
     {
       "rank": 1,
-      "statement": "No instrumentation work is required. Point OTEL_EXPORTER_OTLP_ENDPOINT at http://localhost:9090/api/v1/otlp and set OBSERVABILITY_ENABLED=true so metrics land in the existing parrot-prometheus over its OTLP write receiver; redirect traces to OpenLIT via OTLP_TARGETS so they do not 404; then replace both example dashboards with one written against the real instrument catalog, adding the by-agent dimension that has existed since FEAT-228 but was never surfaced.",
+      "statement": "No instrumentation work and no architecture change. Move the existing env/.env [observability] variables from OpenLIT to Prometheus: OBSERVABILITY_ENABLED=true, OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:9090/api/v1/otlp, OBSERVABILITY_SAMPLING=0.0 to silence traces (enable_traces is not env-settable), and delete the deprecated no-op OBSERVABILITY_OPENLIT. Then replace both example dashboards with one written against the real instrument catalog, adding the by-agent dimension that has existed since FEAT-228 but was never surfaced.",
       "confidence": "high",
       "evidence": [
         "F002",
@@ -227,14 +227,15 @@
         "F004",
         "F006",
         "F007",
-        "F010"
+        "F010",
+        "F014"
       ],
       "reasoning": "Every metric the request names already exists with the right labels, the target stack already accepts OTLP push and already serves two other producers end to end, and live Prometheus proves the only missing link is the producer."
     },
     {
       "rank": 2,
-      "statement": "Alternative: route parrot through an OTel Collector (a new parrot-dedicated service alongside parrot-codex-otel, or a second pipeline in it) that fans metrics to Prometheus and traces to OpenLIT, instead of splitting them with OTLP_TARGETS at the SDK.",
-      "confidence": "medium",
+      "statement": "Rejected by the requester: route parrot through an OTel Collector that fans metrics to Prometheus and traces to OpenLIT. Retained only as the fallback if direct-push temporality fails.",
+      "confidence": "low",
       "evidence": [
         "F007",
         "F011",
@@ -256,8 +257,8 @@
   ],
   "scope": {
     "in_scope": [
-      "env/.env [observability] block: enable telemetry and repoint the OTLP endpoint (operator action on this host)",
-      "Trace destination decision so traces keep working once metrics go to Prometheus",
+      "env/.env [observability] block: move the existing variables from OpenLIT to Prometheus and enable telemetry (operator action on this host)",
+      "Silence traces via OBSERVABILITY_SAMPLING=0.0 within the same env move, since enable_traces is not env-settable",
       "A new/rewritten Grafana dashboard whose PromQL matches the real instrument catalog, with total / by-agent / by-model / by-provider / cost panels",
       "Placement of that dashboard so the running parrot-grafana provisions it, plus a sane Grafana folder",
       "Updating docs/architecture/10-observability.md and the examples README to match the new wiring",
@@ -267,7 +268,8 @@
       "Any change to MetricsSubscriber instruments or labels \u2014 the emitter is complete",
       "Per-user or per-session dashboards \u2014 deliberately not available in metrics",
       "Removing the OpenLIT stack or the ai-parrot-openlit-bridge package",
-      "Alerting rules, recording rules, long-term storage or auth/TLS on the local stack"
+      "Alerting rules, recording rules, long-term storage or auth/TLS on the local stack",
+      "Multi-destination export (OTLP_TARGETS), any new collector service, or a code change to make enable_traces env-settable"
     ],
     "confidence": "high"
   },
@@ -354,6 +356,14 @@
         "F011",
         "F006"
       ]
+    },
+    {
+      "claim": "enable_traces is not env-settable, so OBSERVABILITY_SAMPLING=0.0 is the only env-only way to silence traces",
+      "confidence": "high",
+      "basis": "directly cited \u2014 field declared in the model, absent from from_env",
+      "evidence": [
+        "F014"
+      ]
     }
   ],
   "unknowns": [
@@ -363,7 +373,7 @@
       "resolves_claims": [
         "C7"
       ],
-      "user_answer": "OpenLIT via OTLP_TARGETS \u2014 [{\"name\":\"openlit\",\"endpoint\":\"http://localhost:4318\"}]"
+      "user_answer": "REVISED by requester: a straight move of the existing env variables from OpenLIT to Prometheus. No OTLP_TARGETS split, no collector. Traces silenced within the same env move via OBSERVABILITY_SAMPLING=0.0, since enable_traces is not env-settable (F014)."
     },
     {
       "id": "U2",
@@ -380,7 +390,7 @@
       "resolves_claims": [
         "C10"
       ],
-      "user_answer": "Direct OTLP push to http://localhost:9090/api/v1/otlp; collector stays as documented fallback"
+      "user_answer": "Direct OTLP push to http://localhost:9090/api/v1/otlp \u2014 pure env change, no new container; collector stays as documented fallback only if cumulative temporality fails."
     },
     {
       "id": "U4",
