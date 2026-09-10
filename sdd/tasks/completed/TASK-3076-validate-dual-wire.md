@@ -151,10 +151,37 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-11
+**Notes**: Added the same A2UI unwrap block as `submit_data` (detection,
+`A2UI_MAX_BODY_BYTES` 413 guard, `unwrap_action` 400-on-`A2UIWireError`) to
+`validate`, right after the JSON parse and before `_extract_visit_context`.
+The final reply branches explicitly on `a2ui_surface_id`/`is_valid`: valid
+→ `a2ui_response([], status=200)` (`{"messages": []}`); invalid →
+`a2ui_response(validation_errors(surface_id, errors), status=422)`
+(one `VALIDATION_FAILED` envelope per field + a trailing
+`updateDataModel(/errors)`); legacy path is the original
+`JSONResponse({"is_valid", "errors"}, ...)`, untouched. `unwrap_action`
+already accepts both `form.validate` and `form.submit` action names, so no
+extra logic was needed for that AC bullet — verified with a dedicated
+test. 6 new tests in `test_validate_a2ui.py` pass; the pre-existing
+`test_validate_endpoint_unknown_fields.py` suite (8 tests) passes
+unchanged; `ruff check` clean. Ran the wider `tests/unit/api` +
+`tests/unit/renderers` suites — only the same pre-existing, unrelated
+`test_form_controls_payload_shape` failure remains (already noted in
+TASK-3073/3074's Completion Notes).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: did NOT factor a shared module-level
+`_a2ui_or_json_reply(a2ui_surface_id, payload, status)` helper reused by
+both `submit_data` and `validate`, though the Scope text offered that as
+an option ("if that is cleaner"). `submit_data`'s `_reply` dispatches on
+whether `"errors"` is a KEY in the payload dict (present only on the
+failure paths there); `validate`'s payload always carries an `"errors"`
+key (`{}` when valid), so the same key-presence heuristic would
+mis-classify a *valid* dry-run as a validation failure and wrongly emit a
+trailing `updateDataModel(/errors)` for the 200 case. Reusing `_reply`
+would need an explicit `is_valid` branch bolted onto it anyway, at which
+point it stops being the same generic helper — so `validate` inlines its
+own two-line `if a2ui_surface_id is not None: ...` branch instead. Judged
+correctness-over-DRY given the acceptance criteria are explicit about the
+200 `{"messages": []}` shape.
