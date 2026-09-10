@@ -52,7 +52,7 @@
       "feature_id": "FEAT-549",
       "feature": "sdd-worker-subagents",
       "spec": "sdd/specs/sdd-worker-subagents.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -60,8 +60,8 @@
       "parallelism_notes": "Only touches ai-parrot-client-google; disjoint from every other task.",
       "assigned_to": null,
       "started_at": "2026-09-10T20:42:27+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3117-gemini-openai-compat-client.md"
+      "completed_at": "2026-09-10T20:53:13+00:00",
+      "file": "sdd/tasks/completed/TASK-3117-gemini-openai-compat-client.md"
     },
     {
       "id": "TASK-3118",
