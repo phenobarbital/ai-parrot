@@ -133,7 +133,7 @@
       "feature_id": "FEAT-548",
       "feature": "observability-otel-grafana",
       "spec": "sdd/specs/observability-otel-grafana.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -144,8 +144,8 @@
       "parallelism_notes": "Scans both dashboard directories, so both must be in their final state. Implements goal G6.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3113-dashboard-metric-name-guard.md"
+      "completed_at": "2026-09-10T18:30:43+00:00",
+      "file": "sdd/tasks/completed/TASK-3113-dashboard-metric-name-guard.md"
     },
     {
       "id": "TASK-3114",
