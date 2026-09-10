@@ -107,7 +107,7 @@
       "feature_id": "FEAT-546",
       "feature": "design-research-hardening",
       "spec": "sdd/specs/design-research-hardening.spec.md",
-      "status": "in-progress",
+      "status": "done-with-issues",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -121,8 +121,8 @@
       "parallelism_notes": "Final verification gate; needs all five hardening tasks done.",
       "assigned_to": null,
       "started_at": "2026-09-10T09:46:18+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3105-tests-and-twin-parity.md"
+      "completed_at": "2026-09-10T09:57:26+00:00",
+      "file": "sdd/tasks/completed/TASK-3105-tests-and-twin-parity.md"
     }
   ]
 }
