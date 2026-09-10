@@ -4,7 +4,7 @@ title: MS Teams FormDesigner renderer — FormSchema → interactive Adaptive Ca
 slug: msteams-formdesigner-renderer
 type: feature
 mode: enrichment
-status: review
+status: accepted
 source:
   kind: inline
   jira_key: null
