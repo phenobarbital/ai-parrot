@@ -1421,3 +1421,7 @@ class InvokeResult(BaseModel):
         default=None,
         description="Provider's raw response for debugging"
     )
+    budget_report: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Serialized BudgetReport when a question token budget was active (FEAT-550); None otherwise",
+    )
