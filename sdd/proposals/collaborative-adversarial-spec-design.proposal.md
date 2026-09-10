@@ -16,6 +16,7 @@ base_branch: dev
 research_state: sdd/state/FEAT-564/
 created: 2026-09-10
 updated: 2026-09-10
+revision: 2  # 2026-09-10 — U3 resolved by user; change #1 re-centred on /sdd-task
 ---
 
 # FEAT-564 — Collaborative adversarial spec design
@@ -47,7 +48,7 @@ The original request, preserved verbatim at `sdd/state/FEAT-564/source.md`.
 
 ## 1. Synthesis Summary
 
-The request asks `/sdd-spec` (and by extension `/sdd-task`) to stop being design-only documents and to hand non-thinking executors explained, usable reference code, and to add a Codex-backed "collaborative design research" step modelled on the existing Adversarial Cross-Check. The codebase confirms both halves are near-pure prose changes: the two commands (`.claude/commands/sdd-spec.md`, `.claude/commands/sdd-task.md`) each carry an explicit "Do NOT write implementation code" guardrail that must be reworded, while their templates (`sdd/templates/spec.md`, `sdd/templates/task.md`) already contain code fences but no slot for an *explained reference implementation*. The adversarial pattern the user wants to mirror exists as five shared rules in `.claude/agents/code-reviewer.md`, `CLAUDE.md` and `.claude/agents/sdd-secondopinion.md` (neutral brief, background session, CONFIRM/REJECT/ESCALATE, no silent concession, evidence verification), and the installed `codex` CLI (0.153.4) plus the dev-loop dispatcher in `packages/ai-parrot/src/parrot/flows/dev_loop/dispatchers/codex.py` prove that a thinking model, read-only sandbox and schema-validated JSON output are all available flags. Two constraints shape the design: `/sdd-spec` is also run unattended by `.claude/agents/sdd-planner.md`, so the Codex pass must be optional and non-blocking; and every command has a twin in `.agent/workflows/sdd-spec.md` that must receive the same edits. Recommendation: proceed to `/sdd-spec` after the user picks answers to four product questions (model/config, triage style, code granularity, mandatory-vs-optional), each of which has a recommended default below.
+The request asks the SDD pipeline to hand non-thinking executors explained, usable code — centred on the TASK files that `/sdd-task` produces during spec decomposition, with `/sdd-spec` contributing interface skeletons — and to add a Codex-backed "collaborative design research" step modelled on the existing Adversarial Cross-Check. The codebase confirms both halves are near-pure prose changes: the two commands (`.claude/commands/sdd-spec.md`, `.claude/commands/sdd-task.md`) each carry an explicit "Do NOT write implementation code" guardrail that must be reworded, while their templates (`sdd/templates/spec.md`, `sdd/templates/task.md`) already contain code fences but no slot for an *explained reference implementation*. The adversarial pattern the user wants to mirror exists as five shared rules in `.claude/agents/code-reviewer.md`, `CLAUDE.md` and `.claude/agents/sdd-secondopinion.md` (neutral brief, background session, CONFIRM/REJECT/ESCALATE, no silent concession, evidence verification), and the installed `codex` CLI (0.153.4) plus the dev-loop dispatcher in `packages/ai-parrot/src/parrot/flows/dev_loop/dispatchers/codex.py` prove that a thinking model, read-only sandbox and schema-validated JSON output are all available flags. Two constraints shape the design: `/sdd-spec` is also run unattended by `.claude/agents/sdd-planner.md`, so the Codex pass must be optional and non-blocking; and every command has a twin in `.agent/workflows/sdd-spec.md` that must receive the same edits. Recommendation: proceed to `/sdd-spec` after the user picks answers to four product questions (model/config, triage style, code granularity, mandatory-vs-optional), each of which has a recommended default below.
 
 ---
 
@@ -105,8 +106,8 @@ The request asks `/sdd-spec` (and by extension `/sdd-task`) to stop being design
 - **Design-research phase in `/sdd-spec` (new §3b)**, between the §2c carry-forward summary and §4 codebase research. It builds a *neutral brief* from the accepted brainstorm/proposal only (Problem Statement, Constraints, Recommended Option, Code Context, unresolved questions) — never Claude's draft — runs `codex` in the background with an explicit thinking model, receives a schema-validated JSON list of suggestions, triages each `CONFIRM` / `REJECT` / `ESCALATE`, folds CONFIRMed ideas into §2 / §3 / §7 while drafting, and records the triage table in the spec.
 - **Two new templates**: `sdd/templates/design_research.prompt.md` (brief + question) and `sdd/templates/design_research.schema.json` (suggestion: `id`, `kind ∈ {architecture, api, testing, risk, alternative}`, `title`, `rationale`, `affected_paths`, `risk`).
 - **Spec §9 "Design Research Cross-Check"**: triage table (`Suggestion | Disposition | Reason`) + pointer to the raw transcript at `sdd/state/<FEAT-ID>/design_research/`, mirroring the code-reviewer's "Adversarial Cross-Check" block.
-- **Reference Implementation blocks**: per module in spec §3 (signature-level skeleton, docstrings, one "why" paragraph per block, `verified: path:line` anchors) and a "Reference Implementation (starting point)" section in every task file (executor-ready skeleton, per-block explanation, explicit *fill-in* list).
-- **Explain-for-executor rule** in both commands: every non-trivial decision is restated as an imperative instruction plus its reason, so a non-thinking executor never has to infer intent.
+- **Implementation Blueprint per TASK file (the centre of change #1, lives in `/sdd-task`)**: during spec decomposition the thinking model writes, for every task, an ordered list of steps and, for every file the task creates or modifies, a code block the executor can write to disk nearly verbatim — imports, class/function bodies for the mechanical parts, docstrings, logger calls — followed by a short explanation of *why* each block exists and an explicit `FILL IN` list for the judgement calls left to the executor. This is *not* the full implementation: business-logic branches, edge-case handling and test bodies stay as annotated stubs. The spec (§3) keeps only interface-level skeletons (signatures + docstrings) so the blueprint is derived once, at task time, against a freshly re-verified Codebase Contract.
+- **Explain-for-executor rule** in `/sdd-task` (and, for the interface skeletons, `/sdd-spec`): every non-trivial decision is restated as an imperative instruction plus its reason, so a non-thinking executor (Haiku) never has to infer intent — it reads the blueprint, writes the declared code to the declared paths, and fills the marked gaps.
 
 Illustrative invocation shape (prose command, mirrors the dispatcher's trusted flags — F007/F009):
 
@@ -120,11 +121,11 @@ codex exec --sandbox read-only -m "$SDD_DESIGN_RESEARCH_MODEL" \
 
 ### What Changes
 
-- **`.claude/commands/sdd-spec.md`::Guardrails:17** — replace "Do NOT write implementation code" with: reference implementations are *required* at skeleton level (signatures, docstrings, explained blocks) with verified-at anchors; complete modules remain out of scope. *Evidence*: F001
+- **`.claude/commands/sdd-task.md`::Guardrails:14, §3, §4** — replace "tasks are plans, not code" with: every task MUST carry an Implementation Blueprint (per-file code blocks + explanations + `FILL IN` list) derived from the spec's interface skeletons and re-verified against the codebase; full implementations remain out of scope. *Evidence*: F002, F004
 - **`.claude/commands/sdd-spec.md`::new §3b, §5, §7** — insert the design-research phase; render §9 and per-module reference code; report disposition counts in the §7 output. *Evidence*: F001, F006
-- **`.claude/commands/sdd-task.md`::Guardrails:14, §3, §4** — same guardrail rewrite; require the Reference Implementation section per task, derived from the spec's §3 skeletons and re-verified. *Evidence*: F002, F004
-- **`sdd/templates/spec.md`::§3, new §9** — add the Reference Implementation sub-block and the Design Research Cross-Check section. *Evidence*: F003
-- **`sdd/templates/task.md`::Implementation Notes** — add "Reference Implementation (starting point)". *Evidence*: F004
+- **`.claude/commands/sdd-spec.md`::Guardrails:17** — relax "Do NOT write implementation code" to: interface-level skeletons (signatures, docstrings, `verified: path:line` anchors) are required per module; bodies belong to the task blueprints. *Evidence*: F001
+- **`sdd/templates/task.md`::Implementation Notes** — add the "Implementation Blueprint" section (Steps → per-file code blocks → Why → `FILL IN`). *Evidence*: F004
+- **`sdd/templates/spec.md`::§3, new §9** — add an Interface Skeleton sub-block per module and the Design Research Cross-Check section. *Evidence*: F003
 - **`.agent/workflows/sdd-spec.md`, `.agent/workflows/sdd-task.md`** — mirror every body edit. *Evidence*: F011
 - **`CLAUDE.md`::Adversarial Second Opinion (124-175)** — name design research as a second use of the codex seat; point at the new templates. *Evidence*: F006
 
@@ -147,7 +148,7 @@ codex exec --sandbox read-only -m "$SDD_DESIGN_RESEARCH_MODEL" \
 
 ### Integration Risks
 
-- **Spec/task bloat and code drift** — skeletons go stale before implementation. *Mitigation*: skeleton-level only, verified-at anchors, and sdd-worker's existing contract re-verification. *Evidence*: F005, F013
+- **Task bloat and code drift** — blueprints go stale before implementation. *Mitigation*: blueprints are written at task time (the last step before the worktree exists), carry verified-at anchors, leave judgement calls as `FILL IN`, and sdd-worker's contract re-verification still runs. *Evidence*: F005, F013
 - **Unattended planner blocks on Codex** (absent binary, auth, timeout, bad model). *Mitigation*: `command -v codex` detection, 10-minute cap, on any failure write "no external design research" into §9 and continue — the review policy's fallback. *Evidence*: F012, F006
 - **Codex hallucinates paths/symbols** that leak into the Codebase Contract. *Mitigation*: every CONFIRMed suggestion is re-verified by read/grep before entering §2/§6; otherwise REJECT with reason. *Evidence*: F006, F008
 - **Requested model "gpt 5.6-luna" may not exist** for codex-cli 0.153.4. *Mitigation*: model is a config value with a verified default; one-shot validation at spec time, fallback to the operator's config model. *Evidence*: F009, F010
@@ -173,9 +174,9 @@ codex exec --sandbox read-only -m "$SDD_DESIGN_RESEARCH_MODEL" \
 | C11 | `sdd-worker` consumes richer task files without change | F013 | high | execution loop |
 | C12 | "gpt 5.6-luna" is a valid model for the installed CLI | — | low | not verified; operator uses `gpt-6-astra`, dev-loop default `gpt-5.5` |
 | C13 | Placing the Codex pass between §2c and §4 prevents ratification and feeds both design and contract | F001, F008 | medium | inferred from phase order (see U2) |
-| C14 | Skeleton-level reference code is the right granularity | F005, F013 | medium | inferred; user may want more (see U3) |
+| C14 | Interface skeletons in the spec + near-verbatim per-task blueprints (not full implementations) is the right granularity | F005, F013 | high | confirmed by the user 2026-09-10 (U3 resolved) |
 
-Distribution: **11** high, **2** medium, **1** low. Overall **medium**: localization is high, but the *how* rests on four unresolved product choices and one unverified model name.
+Distribution: **12** high, **1** medium, **1** low. Overall **medium**: localization is high, but U1/U2/U4 remain product choices and the model name is unverified.
 
 ---
 
@@ -183,7 +184,8 @@ Distribution: **11** high, **2** medium, **1** low. Overall **medium**: localiza
 
 ### Resolved (during proposal phase)
 
-*(none — unattended run; answers below are recommended defaults, not decisions)*
+- [x] **U3 — How much code is "usable code + explanations"?** — *Resolved by user (2026-09-10)*: not the full implementation; the centre of gravity is `/sdd-task`. Each TASK file gets an Implementation Blueprint with enough declared code and insight that a non-thinking model (Haiku) can take the idea and the code from the file and write it to disk, filling only marked gaps. The spec keeps interface-level skeletons.
+  *Resolves claims*: C14
 
 ### Unresolved (resolve before `/sdd-spec`)
 
@@ -193,9 +195,6 @@ Distribution: **11** high, **2** medium, **1** low. Overall **medium**: localiza
 - [ ] **U2 — How do Codex's suggestions enter the spec?** — *Owner*: jlara
   *Blocks*: C13
   *Plausible answers*: a) explicit §9 triage table, CONFIRMed items folded into §2/§3/§7, raw transcript under `sdd/state/<FEAT-ID>/design_research/` **(recommended — mirrors code review)** · b) silent merge, transcript only in state · c) verbatim appendix, no triage
-- [ ] **U3 — How much code is "usable code + explanations"?** — *Owner*: jlara
-  *Blocks*: C14
-  *Plausible answers*: a) skeleton-level per module/task: signatures, docstrings, explained blocks, fill-in list, verified-at anchors **(recommended)** · b) near-complete reference implementation per task · c) skeletons in the spec, near-complete code only in task files
 - [ ] **U4 — Is the Codex pass mandatory or optional?** — *Owner*: jlara
   *Blocks*: C8
   *Plausible answers*: a) optional, non-blocking, "no external design research" note in §9 **(recommended — required by the unattended planner)** · b) mandatory interactively, optional under `sdd-planner` · c) always mandatory
@@ -206,7 +205,9 @@ Distribution: **11** high, **2** medium, **1** low. Overall **medium**: localiza
 
 **`/sdd-spec collaborative-adversarial-spec-design`** — *Rationale*: localization is high-confidence (two commands, two templates, two twins, one policy section), the reusable pattern is fully documented in-repo, and the four unknowns are product choices with recommended defaults that can be confirmed at spec time. No architectural fork warrants a brainstorm.
 
-Suggested task shape for `/sdd-task` (single worktree, sequential): (1) templates + schema/prompt files; (2) `/sdd-spec` command edits + twin; (3) `/sdd-task` command edits + twin; (4) `CLAUDE.md` policy + a dry run of the Codex pass on this very proposal as the acceptance test.
+Suggested task shape for `/sdd-task` (single worktree, sequential): (1) `task.md` template — Implementation Blueprint section; (2) `/sdd-task` command edits (guardrail, §3/§4 blueprint rules) + twin; (3) `spec.md` template — Interface Skeleton sub-block + §9; (4) `/sdd-spec` command edits (guardrail, §3b Codex phase) + design-research prompt/schema templates + twin; (5) `CLAUDE.md` policy + a dry run of the Codex pass on this very proposal as the acceptance test.
+
+**Assumption to confirm at spec time**: the Codex design-research pass stays at `/sdd-spec` time over the *accepted* exploration doc, as originally requested. If you also want Codex to review the task decomposition (a second, cheaper pass at `/sdd-task` over the approved spec), say so and it becomes task (6).
 
 ### Alternatives
 

@@ -15,15 +15,71 @@
   "wiki_available": true,
   "phase": "proposal_drafted",
   "phases": {
-    "source": {"status": "completed"},
-    "plan": {"status": "completed", "approved_by_user": false, "notes": "Gate skipped: session runs unattended; plan executed as written with three depth-1 follow-ups (F011, F013, F015)."},
-    "research": {"status": "completed", "completed_at": "2026-09-10T01:03:37+00:00", "files_read": 16, "grep_calls": 14, "git_calls": 3, "wiki_calls": 2, "depth_reached": 1, "truncated": false, "truncation_reason": null, "queries_planned": 22, "queries_skipped": 0},
-    "synthesis": {"status": "completed", "synthesis_path": "sdd/state/FEAT-564/synthesis.json", "overall_confidence": "medium", "claims_total": 14, "claims_high_conf": 11, "claims_medium_conf": 2, "claims_low_conf": 1, "unknowns_count": 4, "lint_passed": true, "lint_iterations": 2, "notes": "Lint iteration 1 flagged .agent/workflows/sdd-task.md as uncited; F011 citation added. Overall confidence held at medium because U1-U4 (product choices) are unresolved and C12 (model name) is low."},
-    "qa": {"status": "skipped", "questions_total": 4, "questions_answered": 0, "notes": "Unattended run: unknowns recorded with recommended answers in proposal §5; to be resolved by the user before /sdd-spec."},
-    "output": {"status": "completed", "proposal_path": "sdd/proposals/collaborative-adversarial-spec-design.proposal.md", "commit_sha": null, "next_command_recommended": "sdd-spec", "next_command_rationale": "Localization high-confidence; unknowns are product choices with recommended defaults."}
+    "source": {
+      "status": "completed"
+    },
+    "plan": {
+      "status": "completed",
+      "approved_by_user": false,
+      "notes": "Gate skipped: session runs unattended; plan executed as written with three depth-1 follow-ups (F011, F013, F015)."
+    },
+    "research": {
+      "status": "completed",
+      "completed_at": "2026-09-10T01:03:37+00:00",
+      "files_read": 16,
+      "grep_calls": 14,
+      "git_calls": 3,
+      "wiki_calls": 2,
+      "depth_reached": 1,
+      "truncated": false,
+      "truncation_reason": null,
+      "queries_planned": 22,
+      "queries_skipped": 0
+    },
+    "synthesis": {
+      "status": "completed",
+      "synthesis_path": "sdd/state/FEAT-564/synthesis.json",
+      "overall_confidence": "medium",
+      "claims_total": 14,
+      "claims_high_conf": 12,
+      "claims_medium_conf": 1,
+      "claims_low_conf": 1,
+      "unknowns_count": 4,
+      "lint_passed": true,
+      "lint_iterations": 2,
+      "notes": "Lint iteration 1 flagged .agent/workflows/sdd-task.md as uncited; F011 citation added. Overall confidence held at medium because U1-U4 (product choices) are unresolved and C12 (model name) is low."
+    },
+    "qa": {
+      "status": "partial",
+      "questions_total": 4,
+      "questions_answered": 1,
+      "notes": "U3 resolved by user 2026-09-10 (blueprints in TASK files, not full code); U1/U2/U4 open."
+    },
+    "output": {
+      "status": "completed",
+      "proposal_path": "sdd/proposals/collaborative-adversarial-spec-design.proposal.md",
+      "commit_sha": null,
+      "next_command_recommended": "sdd-spec",
+      "next_command_rationale": "Localization high-confidence; unknowns are product choices with recommended defaults."
+    }
   },
-  "budget": {"profile": "default", "max_files_read": 40, "max_grep_calls": 25, "max_git_calls": 10, "max_depth": 2, "max_wall_seconds": 300},
-  "consumed": {"files_read": 16, "grep_calls": 14, "git_calls": 3, "wall_seconds": 240},
+  "budget": {
+    "profile": "default",
+    "max_files_read": 40,
+    "max_grep_calls": 25,
+    "max_git_calls": 10,
+    "max_depth": 2,
+    "max_wall_seconds": 300
+  },
+  "consumed": {
+    "files_read": 16,
+    "grep_calls": 14,
+    "git_calls": 3,
+    "wall_seconds": 240
+  },
   "errors": [],
-  "resume_hint": {"next_phase": "commit", "next_action": "git add proposal + state; commit"}
+  "resume_hint": {
+    "next_phase": "commit",
+    "next_action": "git add proposal + state; commit"
+  }
 }
