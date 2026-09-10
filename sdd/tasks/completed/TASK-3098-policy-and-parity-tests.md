@@ -65,6 +65,20 @@ Precedent for twin parity: packages/ai-parrot/tests/flows/dev_loop/test_subagent
 .claude/commands/sdd-spec.md   ↔ .agent/workflows/sdd-spec.md   (twin has 4-line YAML frontmatter + "- Worktree policy: `AGENTS.md` and `sdd/WORKFLOW.md`")
 .claude/commands/sdd-task.md   ↔ .agent/workflows/sdd-task.md
 ```
+**Contract correction (verified 2026-09-10, re-grepped both twins as they exist after
+TASK-3094/3097 — the assumption below in the original blueprint that BOTH twins share
+the same "`- Worktree policy:`" tolerated-delta line is stale/wrong for `sdd-task`)**:
+- `sdd-spec.md` twin's one non-frontmatter delta IS the `- Worktree policy:` line
+  (`- Worktree policy: \`AGENTS.md\` and \`sdd/WORKFLOW.md\`` vs. original
+  `` - Worktree policy: `CLAUDE.md` (section "Worktree Policy")` ``).
+- `sdd-task.md` twin's one non-frontmatter delta is a DIFFERENT line that does
+  **not** start with `- Worktree policy:` at all:
+  `` (sub-features extend a parent feature branch — see `AGENTS.md`). `` vs.
+  original `` (sub-features extend a parent feature branch — see `CLAUDE.md`). ``
+  (`.claude/commands/sdd-task.md:46`).
+- The parity test's `_normalize()` must therefore strip BOTH patterns — lines
+  starting with `- Worktree policy:` AND lines containing
+  `"sub-features extend a parent feature branch — see \`"` — not only the first.
 ### Template strings asserted (must exist after TASK-3093/3095/3096)
 ```text
 sdd/templates/task.md:  "## Implementation Blueprint"  "### Steps (in order)"  "### FILL IN checklist"
@@ -273,10 +287,28 @@ pytest tests/sdd_scripts/test_command_twin_parity.py tests/sdd_scripts/test_desi
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-10
+**Notes**: Added the "Design research at spec time (FEAT-545)" paragraph to `CLAUDE.md` after the
+`#### codex commands` fenced block, before `## Key References`; the pre-existing `agy` ban text is
+untouched (`grep -c "agy.*MUST NOT"` unchanged at 1, `git diff` shows 0 removed `agy` lines). Created
+both test files. `pytest tests/sdd_scripts/test_command_twin_parity.py
+tests/sdd_scripts/test_design_research_templates.py -v` → 8 passed. `ruff check` clean on both new
+files. `pytest packages/ai-parrot/tests/flows/dev_loop/test_subagent_parity.py -v` → 9 passed, 1
+skipped (verified after copying the worktree's missing compiled `.so` extensions for
+`parrot.utils.types`/`parrot.utils.parsers.toml` locally — a pre-existing worktree build-artifact
+gap unrelated to this feature, per prior session notes; the copies are gitignored build artifacts,
+not committed).
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Anti-hallucination correction**: the task's own Codebase Contract (and the `_normalize()` shipped
+in its Implementation Blueprint) assumed BOTH command twins tolerate the same single delta pattern
+(a `- Worktree policy:` line). Re-grepping both twins as they exist after TASK-3094/3097 showed
+`sdd-task.md`'s tolerated delta is a *different* line ("sub-features extend a parent feature
+branch — see `AGENTS.md`)." vs `CLAUDE.md`), which does not start with `- Worktree policy:`. Running
+the blueprint's test verbatim failed `test_command_twin_parity[sdd-task]`. Updated the contract in
+this task file first, then generalized `_normalize()` to strip both known tolerated-delta line
+patterns (documented in the function's docstring). All 8 tests pass with the corrected function.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: `_normalize()` in `test_command_twin_parity.py` strips two line patterns
+instead of the one originally sketched in the blueprint, to match the actual (not assumed) twin
+deltas — no change to the spec's acceptance criteria or test count (still 8 tests, AC-1 unaffected).
