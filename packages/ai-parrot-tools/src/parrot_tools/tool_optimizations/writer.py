@@ -660,6 +660,15 @@ class TargetedWriterToolkit(OptimizationToolkitBase):
         staged_step, staged_raw = await git._run_git(["diff", "--cached", "--name-only", "-z"])
         if staged_step.exit_code != 0:
             return self._error(operation, "status_failed", "could not read the staged file list", started=started)
+        if staged_step.truncated:
+            # A clipped list could omit a genuinely conflicting staged target,
+            # so it must not be read as "nothing is staged".
+            return self._error(
+                operation,
+                "status_failed",
+                "the staged file list was truncated; cannot prove no target is staged",
+                started=started,
+            )
         staged = {item for item in staged_raw.decode("utf-8", "replace").split("\x00") if item}
         conflicting = sorted(staged & set(targets))
         if conflicting:
@@ -692,9 +701,22 @@ class TargetedWriterToolkit(OptimizationToolkitBase):
                 )
 
         try:
-            await validate_contract(self.policy, manifest.task_path, limits_override=self._limits)
+            revalidated = await validate_contract(self.policy, manifest.task_path, limits_override=self._limits)
         except ContractError as exc:
             return self._error(operation, exc.code, str(exc), details=exc.details, started=started)
+
+        # Re-validating proves the TASK is still *valid*; this proves it is
+        # still the *same* contract this artifact was generated and reviewed
+        # from. Without it, a TASK edited between review and apply (different
+        # targets, different decided code) would sail through.
+        if revalidated.packet_sha256 != manifest.packet_sha256:
+            return self._error(
+                operation,
+                "packet_mismatch",
+                "the TASK file changed since this patch was generated; regenerate it",
+                details={"expected": manifest.packet_sha256, "actual": revalidated.packet_sha256},
+                started=started,
+            )
 
         try:
             sources = await asyncio.to_thread(self._read_sources_for_packet, packet)
@@ -807,7 +829,7 @@ class TargetedWriterToolkit(OptimizationToolkitBase):
         artifact_id = journal.artifact_id
         for index in range(len(journal.entries) - 1, -1, -1):
             entry = journal.entries[index]
-            if entry.state != "written":
+            if entry.state not in ("written", "verified"):
                 continue
             destination = root / entry.path
             digest = await asyncio.to_thread(_sha_or_none, destination)

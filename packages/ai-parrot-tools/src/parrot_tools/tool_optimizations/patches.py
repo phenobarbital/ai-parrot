@@ -639,13 +639,20 @@ class ArtifactStore:
             return
         cutoff = time.time() - _TMP_TTL_SECONDS
         for entry in self.root.iterdir():
+            # NEVER follow a symlink here. `is_dir()` and `stat()` both follow
+            # links, so a `.tmp-*` symlink pointing outside the repository
+            # would pass every check and we would delete the *target's*
+            # contents. Only real directories we created are swept.
+            if entry.is_symlink():
+                continue
             if not entry.name.startswith(".tmp-") or not entry.is_dir():
                 continue
             try:
-                if entry.stat().st_mtime > cutoff:
+                if entry.lstat().st_mtime > cutoff:
                     continue
                 for child in entry.iterdir():
-                    child.unlink()
+                    if child.is_symlink() or child.is_file():
+                        child.unlink()
                 entry.rmdir()
             except OSError:  # pragma: no cover — best-effort housekeeping
                 continue

@@ -314,3 +314,72 @@ def test_build_reason_relativises_paths(tmp_path):
     reason = build_reason(decision, GuardPolicy(), tmp_path)
     assert '"path": "pkg/mod.py"' in reason
     assert "400 lines" in reason
+
+
+# --------------------------------------------------------------------------- #
+# Fail-open regressions (found in adversarial review)
+# --------------------------------------------------------------------------- #
+@pytest.mark.parametrize(
+    "command,why",
+    [
+        ("tail -n +1 big.py", "a signed count means 'from line 1 to EOF', not '1 line'"),
+        ("tail -n +10 big.py", "signed counts are offsets, not bounds"),
+        ("head -n -1 big.py", "a negative count means 'all but the last N lines'"),
+        ("head --lines=999999 big.py", "the equals form is one token and was missed by a two-token parser"),
+        ("head -n=999999 big.py", "short equals form"),
+        ("tail -f big.py", "follow/streaming is not a bounded read"),
+        ("head -c 999999 big.py", "a byte count above the threshold is not bounded"),
+        ("cat -n big.py", "'-n' numbers lines for cat and takes NO value; it must not swallow the filename"),
+        ("cat -b big.py", "same class of flag for cat"),
+        ("more -n big.py", "'more' does not take a value for -n either"),
+        ("less -N big.py", "'less' does not take a value for -N either"),
+        ("cat -- big.py", "'--' ends flags; the operand after it must still be checked"),
+    ],
+)
+def test_guard_does_not_fail_open(workspace, command, why):
+    """Every one of these silently ALLOWED a large read before the fix.
+
+    A guard that fails open is worse than no guard: it creates the
+    impression of enforcement while the unbounded read proceeds.
+    """
+    assert _run(_bash_payload(command), cwd=workspace) != "", f"fail-open: {command} ({why})"
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "head -n 50 big.py",
+        "head -50 big.py",
+        "head --lines=50 big.py",
+        "tail -c 1000 big.py",
+        "head big.py",
+        "tail big.py",
+        "cat small.py",
+        "cat -n small.py",
+    ],
+)
+def test_genuinely_bounded_reads_are_still_allowed(workspace, command):
+    """The fix must not turn legitimate bounded reads into denials."""
+    assert _run(_bash_payload(command), cwd=workspace) == "", f"false denial: {command}"
+
+
+def test_unrecognized_flags_are_not_assumed_bounded():
+    """An unparsed flag means 'cannot reason about it', not 'safe'."""
+    from parrot_tools.tool_optimizations.hooks import _is_bounded_invocation
+
+    policy = GuardPolicy()
+    assert _is_bounded_invocation(["head", "-n", "50", "f"], policy) is True
+    assert _is_bounded_invocation(["head", "f"], policy) is True
+    assert _is_bounded_invocation(["tail", "--follow", "f"], policy) is False
+    assert _is_bounded_invocation(["tail", "-n", "+1", "f"], policy) is False
+    assert _is_bounded_invocation(["head", "--retry", "f"], policy) is False
+
+
+def test_file_operands_respect_per_program_flag_semantics():
+    """Only head/tail consume a value after -n/-c."""
+    from parrot_tools.tool_optimizations.hooks import _file_operands
+
+    assert _file_operands(["cat", "-n", "big.py"], "cat") == ["big.py"]
+    assert _file_operands(["head", "-n", "50", "big.py"], "head") == ["big.py"]
+    assert _file_operands(["cat", "-"], "cat") is None
+    assert _file_operands(["cat", "--", "-weird-name.py"], "cat") == ["-weird-name.py"]

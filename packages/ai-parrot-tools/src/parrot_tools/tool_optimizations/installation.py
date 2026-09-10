@@ -163,18 +163,46 @@ def _write_json(path: Path, data: dict[str, Any]) -> None:
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
 
+def _is_our_hook(hook: Any) -> bool:
+    """Whether a single hook handler was installed by this module.
+
+    Ownership is decided per *hook*, not per entry: a user may legitimately
+    add their own command alongside ours under the same matcher, and that
+    command is not ours to rewrite or delete.
+
+    Args:
+        hook: A candidate hook handler.
+
+    Returns:
+        True when its command names our hook module.
+    """
+    return isinstance(hook, dict) and HOOK_MODULE in str(hook.get("command", ""))
+
+
 def _is_guard_entry(entry: Any) -> bool:
-    """Whether a PreToolUse entry was installed by this module.
+    """Whether a PreToolUse entry contains any hook installed by this module.
 
     Args:
         entry: A candidate hook entry.
 
     Returns:
-        True when any of its commands names our hook module.
+        True when at least one of its handlers is ours.
     """
     if not isinstance(entry, dict):
         return False
-    return any(HOOK_MODULE in str(hook.get("command", "")) for hook in entry.get("hooks", []) if isinstance(hook, dict))
+    return any(_is_our_hook(hook) for hook in entry.get("hooks", []))
+
+
+def _foreign_hooks(entry: dict[str, Any]) -> list[Any]:
+    """Return the handlers in ``entry`` that are not ours.
+
+    Args:
+        entry: A PreToolUse entry.
+
+    Returns:
+        The handlers this module must never modify or remove.
+    """
+    return [hook for hook in entry.get("hooks", []) if not _is_our_hook(hook)]
 
 
 def _guard_entry(matcher: str, command: str) -> dict[str, Any]:
@@ -254,17 +282,31 @@ def install_guards(root: Path, host: str) -> list[str]:
 
     command = hook_command(root, host)
     entry = _guard_entry(matcher, command)
-    existing = next((item for item in entries if _is_guard_entry(item)), None)
 
-    if existing == entry:
+    # Detach our handler from any entry it shares with a foreign one, so the
+    # foreign handler keeps its own matcher and settings untouched.
+    detached = False
+    exclusive: Optional[dict[str, Any]] = None
+    for item in list(entries):
+        if not _is_guard_entry(item):
+            continue
+        foreign = _foreign_hooks(item)
+        if foreign:
+            item["hooks"] = foreign
+            detached = True
+        else:
+            exclusive = item
+
+    if exclusive == entry and not detached:
         actions.append(f"{relative.as_posix()} — tool guard already installed")
         return actions
-    if existing is None:
+    if exclusive is None:
         entries.append(entry)
         verb = "installed"
     else:
-        existing.clear()
-        existing.update(entry)
+        # Safe to replace wholesale: this entry holds only our handler.
+        exclusive.clear()
+        exclusive.update(entry)
         verb = "updated"
     _write_json(path, data)
     actions.append(f"{relative.as_posix()} — tool guard {verb}")
@@ -299,8 +341,19 @@ def uninstall_guards(root: Path, host: str) -> list[str]:
         if entries is None:
             actions.append(f"{relative.as_posix()} — nothing to remove")
         else:
-            kept = [item for item in entries if not _is_guard_entry(item)]
-            if len(kept) == len(entries):
+            kept: list[Any] = []
+            removed = False
+            for item in entries:
+                if not _is_guard_entry(item):
+                    kept.append(item)
+                    continue
+                removed = True
+                foreign = _foreign_hooks(item)
+                if foreign:
+                    # Someone else's handler shares this entry: keep it.
+                    item["hooks"] = foreign
+                    kept.append(item)
+            if not removed:
                 actions.append(f"{relative.as_posix()} — nothing to remove")
             else:
                 hooks = data["hooks"]

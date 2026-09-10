@@ -755,3 +755,54 @@ async def test_prepare_stages_same_size_edit_made_in_the_same_clock_tick(git_rep
         assert res.status == "ok", (index, res.error.code, res.error.details)
         assert res.data["staged"] == ["a.py"]
         git(git_repo, "commit", "-q", "-m", f"c{index}")
+
+
+# =========================================================================== #
+# Push refspec regression (found in adversarial review)
+# =========================================================================== #
+async def test_push_publishes_the_current_branch_not_the_upstream_name(git_repo, bare_remote, tmp_path):
+    """A branch tracking a differently-named upstream must push ITS OWN commits.
+
+    Regression: `_resolve_publication_branch` returns the *upstream* branch
+    name, and that name was used on BOTH sides of the refspec. On a branch
+    tracking `origin/<other>`, this pushed the unrelated local `<other>`
+    branch's history while reporting the current branch's commit — wrong
+    data published, and an untruthful result.
+    """
+    # `dev` already exists and is pushed by the bare_remote fixture.
+    git(git_repo, "checkout", "-q", "-b", "feature")
+    (git_repo / "feature_only.py").write_text("feature = True\n")
+    git(git_repo, "add", "feature_only.py")
+    git(git_repo, "commit", "-q", "-m", "feature work")
+    git(git_repo, "branch", "--set-upstream-to", "origin/dev", "feature")
+
+    dev_sha = git(git_repo, "rev-parse", "dev").stdout.strip()
+    feature_sha = git(git_repo, "rev-parse", "feature").stdout.strip()
+    assert dev_sha != feature_sha
+
+    result = await LocalGitToolkit(repo_root=git_repo).git_push()
+    assert result.status == "ok", result.error
+
+    # Reported identity matches what was actually published.
+    assert result.data["branch"] == "feature"
+    assert result.data["remote_branch"] == "dev"
+    assert result.data["local_commit"] == feature_sha
+
+    published = git(bare_remote, "rev-parse", "refs/heads/dev").stdout.strip()
+    assert published == feature_sha, "the wrong branch's history was published"
+    assert published != dev_sha
+
+
+async def test_push_does_not_publish_tags(git_repo, bare_remote):
+    """`push.followTags` must not turn a branch push into a tag push."""
+    git(git_repo, "config", "push.followTags", "true")
+    git(git_repo, "tag", "-a", "v9.9.9", "-m", "should stay local")
+    (git_repo / "x.py").write_text("x = 1\n")
+    git(git_repo, "add", "x.py")
+    git(git_repo, "commit", "-q", "-m", "work")
+
+    result = await LocalGitToolkit(repo_root=git_repo).git_push(branch="dev")
+    assert result.status == "ok", result.error
+
+    tags = git(bare_remote, "tag", "--list").stdout.strip()
+    assert tags == "", f"tags leaked to the remote: {tags!r}"

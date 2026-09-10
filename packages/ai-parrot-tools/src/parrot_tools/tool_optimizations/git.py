@@ -1438,20 +1438,37 @@ class LocalGitToolkit(OptimizationToolkitBase):
             return error
         try:
             safe_branch = await self._validate_branch(branch or "")
+            # The SOURCE ref is always the branch actually checked out.
+            # Resolving the upstream can yield a DIFFERENT name (a branch may
+            # track origin/<other>); using that name on both sides of the
+            # refspec publishes an unrelated local branch's history while
+            # reporting the current branch's commit.
+            local_branch = await self._validate_branch(str(summary.get("branch") or ""))
         except ValueError as exc:
             return self._error(operation, "invalid_branch", str(exc), steps=steps, started=started)
 
         local_commit = summary.get("head_commit")
-        refspec = f"refs/heads/{safe_branch}:refs/heads/{safe_branch}"
+        refspec = f"refs/heads/{local_branch}:refs/heads/{safe_branch}"
         push_step, _ = await self._run_git(
-            ["push", "--porcelain", "--no-force-with-lease", "--end-of-options", safe_remote, refspec],
+            [
+                "push",
+                "--porcelain",
+                "--no-force-with-lease",
+                # Never publish tags as a side effect, even when the user's
+                # config sets push.followTags=true.
+                "--no-follow-tags",
+                "--end-of-options",
+                safe_remote,
+                refspec,
+            ],
             timeout=self.policy.network_timeout_seconds,
         )
         push_step.name = "push"
         steps.append(push_step)
 
         data: dict[str, Any] = {
-            "branch": safe_branch,
+            "branch": local_branch,
+            "remote_branch": safe_branch,
             "remote": safe_remote,
             "local_commit": local_commit,
             "remote_commit_before": None,

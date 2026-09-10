@@ -289,52 +289,107 @@ def parse_shell_subset(command: str) -> Optional[list[list[str]]]:
 def _is_bounded_invocation(argv: list[str], policy: GuardPolicy) -> bool:
     """Decide whether a head/tail invocation is explicitly bounded.
 
-    A bare ``head file`` / ``tail file`` defaults to 10 lines and is
-    therefore bounded.
+    Conservative by construction: anything this function cannot fully
+    reason about is reported as **not** bounded, so the caller falls
+    through to the size check instead of waving the command past.
+
+    Three ways a naive reading fails open, all rejected here:
+
+    * A **signed** count changes the meaning from "N lines" to "from/until
+      line N" — ``tail -n +1 f`` and ``head -n -1 f`` both read essentially
+      the whole file.
+    * The ``--lines=N`` / ``-n=N`` *equals* form is a single token and is
+      missed by a two-token-only parser.
+    * ``tail -f`` (and any other unrecognized flag) is not a bounded read
+      at all.
+
+    A bare ``head file`` / ``tail file`` really does default to 10 lines
+    and is the only case that is bounded without an explicit count.
 
     Args:
         argv: The segment's argv.
         policy: The active policy.
 
     Returns:
-        True when the invocation cannot produce more than the thresholds.
+        True only when the invocation provably cannot exceed the thresholds.
     """
     if os.path.basename(argv[0]) not in _BOUNDED_READERS:
         return False
+
     index = 1
     while index < len(argv):
         token = argv[index]
-        match = re.fullmatch(r"-(\d+)", token)
-        if match:
-            return int(match.group(1)) <= policy.max_lines
-        if token in ("-n", "--lines") and index + 1 < len(argv) and argv[index + 1].lstrip("+-").isdigit():
-            return int(argv[index + 1].lstrip("+-")) <= policy.max_lines
-        if token in ("-c", "--bytes") and index + 1 < len(argv) and argv[index + 1].lstrip("+-").isdigit():
-            return int(argv[index + 1].lstrip("+-")) <= policy.large_file_bytes
-        index += 1
+        if token == "--":
+            break  # everything after this is a file operand
+        if not token.startswith("-") or token == "-":
+            index += 1
+            continue
+
+        plain_count = re.fullmatch(r"-(\d+)", token)
+        if plain_count:
+            if int(plain_count.group(1)) > policy.max_lines:
+                return False
+            index += 1
+            continue
+
+        name, separator, inline = token.partition("=")
+        if name in ("-n", "--lines", "-c", "--bytes"):
+            if separator:
+                value, step = inline, 1
+            elif index + 1 < len(argv):
+                value, step = argv[index + 1], 2
+            else:
+                return False
+            # `isdigit()` rejects '+1' and '-1' — a signed count is not a bound.
+            if not value.isdigit():
+                return False
+            limit = policy.max_lines if name in ("-n", "--lines") else policy.large_file_bytes
+            if int(value) > limit:
+                return False
+            index += step
+            continue
+
+        if name in ("-q", "--quiet", "--silent", "-v", "--verbose", "-z", "--zero-terminated"):
+            index += 1
+            continue
+
+        # Unrecognized flag (-f/--follow, --retry, ...): not reasoned about,
+        # therefore not bounded.
+        return False
+
     return True  # bare head/tail: 10 lines by default
 
 
-def _file_operands(argv: list[str]) -> Optional[list[str]]:
+def _file_operands(argv: list[str], program: str) -> Optional[list[str]]:
     """Extract literal file operands from a reader invocation.
+
+    Only ``head`` and ``tail`` take a *value* after ``-n``/``-c``. For
+    ``cat``, ``less`` and ``more``, ``-n`` is a valueless flag (``cat -n``
+    numbers output lines), so treating it as value-consuming would swallow
+    the filename and leave no operand to size-check — a silent fail-open.
 
     Args:
         argv: The segment's argv.
+        program: The basename of ``argv[0]``.
 
     Returns:
-        The operands, or None when stdin is used or a flag takes a value we
-        would otherwise mistake for a file.
+        The operands, or None when stdin is used (nothing to check).
     """
+    consumes_value = program in _BOUNDED_READERS
     operands: list[str] = []
     index = 1
     while index < len(argv):
         token = argv[index]
+        if token == "--":
+            operands.extend(argv[index + 1 :])
+            break
         if token == "-":
             return None  # explicit stdin
-        if token in ("-n", "--lines", "-c", "--bytes"):
-            index += 2
-            continue
         if token.startswith("-"):
+            name, separator, _inline = token.partition("=")
+            if consumes_value and not separator and name in ("-n", "--lines", "-c", "--bytes"):
+                index += 2
+                continue
             index += 1
             continue
         operands.append(token)
@@ -364,7 +419,7 @@ def evaluate_shell(command: str, cwd: Path, policy: GuardPolicy) -> GuardDecisio
             continue
         if program in _BOUNDED_READERS and _is_bounded_invocation(argv, policy):
             continue
-        operands = _file_operands(argv)
+        operands = _file_operands(argv, program)
         if operands is None:
             return GuardDecision(coverage="not_applicable")
         for operand in operands:

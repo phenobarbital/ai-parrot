@@ -65,7 +65,7 @@ parrot claude uninstall
 | `git_preflight` | — | Runs every check independently and reports each one. |
 | `git_prepare_files` | `paths: list[str]` | Stages exactly these files via an isolated index. Requires `confirm`. |
 | `git_pull` | `remote="origin"`, `branch=None` | Fast-forward only. Requires `confirm`. |
-| `git_push` | `remote="origin"`, `branch=None` | Never forced, never creates a commit. Requires `confirm`. |
+| `git_push` | `remote="origin"`, `branch=None` | Never forced, never creates a commit, never publishes tags. Pushes the **currently checked-out** branch to the resolved remote branch; the result reports both as `branch` and `remote_branch`. Requires `confirm`. |
 
 Mutating tools carry a required `confirm` boolean over MCP. That flag is
 the host's record that a human approved the operation — it is not
@@ -86,6 +86,12 @@ authorization a model can grant itself.
 `upstream_remote_mismatch`, `branch_mismatch`, `diverged`,
 `untracked_conflict`, `fast_forward_failed`, `push_rejected`,
 `push_timeout`, `worktree_busy`.
+
+**`git_push` publishes the branch you are on.** When a branch tracks a
+differently-named upstream (`feature` -> `origin/dev`), the source ref is
+always the current branch and the destination is the resolved remote branch.
+The result reports `branch` (local) and `remote_branch` (remote) separately,
+so what was published is never ambiguous.
 
 **`git_prepare_files` never unstages anything.** If unrelated paths are
 already staged it refuses with `unrelated_staged` rather than resetting the

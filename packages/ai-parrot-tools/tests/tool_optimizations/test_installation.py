@@ -340,3 +340,72 @@ def test_cli_reports_a_useful_error_when_parrot_tools_is_absent(cli_root, monkey
 
     plain = runner.invoke(claude, ["install", "--path", str(cli_root), "--no-build"])
     assert plain.exit_code == 0, plain.output
+
+
+# --------------------------------------------------------------------------- #
+# Foreign-hook preservation (regression from adversarial review)
+# --------------------------------------------------------------------------- #
+def _guard_hooks(entries):
+    """Flatten every hook handler across all entries."""
+    return [hook for entry in entries for hook in entry.get("hooks", [])]
+
+
+def test_install_preserves_a_foreign_hook_sharing_our_entry(root):
+    """A user's own command under the SAME matcher must survive an update.
+
+    Ownership is per-hook, not per-entry. Before this was fixed, the update
+    path did `entry.clear(); entry.update(ours)` and silently deleted a
+    co-located foreign handler.
+    """
+    install_guards(root, "claude")
+    settings = _settings(root)
+    ours_entry = next(entry for entry in settings["hooks"]["PreToolUse"] if HOOK_MODULE in json.dumps(entry))
+    ours_entry["hooks"].append({"type": "command", "command": "my-own-important-hook.sh", "timeout": 5})
+    # Force the update path by staling our command.
+    ours_entry["hooks"][0]["command"] = f"/old/python -m {HOOK_MODULE} --host claude"
+    (root / ".claude" / "settings.json").write_text(json.dumps(settings, indent=2) + "\n")
+
+    install_guards(root, "claude")
+    hooks = _guard_hooks(_entries(root))
+
+    foreign = [hook for hook in hooks if hook.get("command") == "my-own-important-hook.sh"]
+    assert len(foreign) == 1, "the user's own hook was destroyed"
+    assert foreign[0]["timeout"] == 5, "the user's own hook was modified"
+
+    ours = [hook for hook in hooks if HOOK_MODULE in str(hook.get("command", ""))]
+    assert len(ours) == 1
+    assert ours[0]["command"] == hook_command(root, "claude"), "our hook was not refreshed"
+
+    # The unrelated pre-existing entries are still intact.
+    assert all(entry in _entries(root) for entry in FOREIGN_ENTRIES)
+
+
+def test_uninstall_preserves_a_foreign_hook_sharing_our_entry(root):
+    """Uninstall removes only our handler, keeping the entry for the other."""
+    install_guards(root, "claude")
+    settings = _settings(root)
+    ours_entry = next(entry for entry in settings["hooks"]["PreToolUse"] if HOOK_MODULE in json.dumps(entry))
+    ours_entry["hooks"].append({"type": "command", "command": "my-own-important-hook.sh", "timeout": 5})
+    (root / ".claude" / "settings.json").write_text(json.dumps(settings, indent=2) + "\n")
+
+    uninstall_guards(root, "claude")
+    hooks = _guard_hooks(_entries(root))
+
+    assert any(hook.get("command") == "my-own-important-hook.sh" for hook in hooks), "the user's own hook was destroyed"
+    assert not any(HOOK_MODULE in str(hook.get("command", "")) for hook in hooks), "our hook was not removed"
+    assert all(entry in _entries(root) for entry in FOREIGN_ENTRIES)
+
+
+def test_install_is_still_idempotent_with_a_shared_entry(root):
+    """Detaching from a shared entry must converge, not oscillate."""
+    install_guards(root, "claude")
+    settings = _settings(root)
+    ours_entry = next(entry for entry in settings["hooks"]["PreToolUse"] if HOOK_MODULE in json.dumps(entry))
+    ours_entry["hooks"].append({"type": "command", "command": "other.sh"})
+    (root / ".claude" / "settings.json").write_text(json.dumps(settings, indent=2) + "\n")
+
+    install_guards(root, "claude")
+    first = (root / ".claude" / "settings.json").read_bytes()
+    actions = install_guards(root, "claude")
+    assert (root / ".claude" / "settings.json").read_bytes() == first
+    assert any("already installed" in action for action in actions)

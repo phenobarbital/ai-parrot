@@ -260,3 +260,95 @@ def test_apply_path_never_uses_mutating_git_verbs():
     source = inspect.getsource(module)
     for verb in ('"add"', '"commit"', '"push"', '"checkout"', '"reset"'):
         assert verb not in source, f"forbidden git argv literal in the apply path: {verb}"
+
+
+# --------------------------------------------------------------------------- #
+# Regressions from the adversarial review
+# --------------------------------------------------------------------------- #
+async def test_apply_refuses_when_the_task_changed_after_review(tmp_path):
+    """Re-validation must prove the SAME contract, not merely a valid one.
+
+    Regression: `validate_contract()`'s result was discarded, so a TASK file
+    edited between generation/review and apply (different targets, different
+    decided code) was never detected as a different packet.
+    """
+    repo, toolkit, artifact_id, sha = await _generated(tmp_path)
+    task_file = next((repo / "sdd" / "tasks" / "active").iterdir())
+
+    # Edit the packet in a way that still validates: same targets/hashes,
+    # different declared intent.
+    text = task_file.read_text().replace('"planned_changes": "Export greet"', '"planned_changes": "Export greet v2"')
+    assert text != task_file.read_text()
+    task_file.write_text(text)
+
+    result = await toolkit.writer_apply(artifact_id, sha)
+    assert result.status == "error"
+    assert result.error.code == "packet_mismatch"
+    assert not (repo / "pkg" / "greeter.py").exists()
+
+
+async def test_rollback_restores_files_that_already_verified(tmp_path, monkeypatch):
+    """A late verification failure must roll back the earlier, verified files.
+
+    Regression: the post-write loop flips each entry to "verified" one at a
+    time, and rollback only restored entries still marked "written" — so a
+    failure on a later file left the earlier ones mutated while reporting a
+    rollback.
+    """
+    repo, toolkit, artifact_id, sha = await _generated(tmp_path)
+    init_before = (repo / "pkg" / "__init__.py").read_bytes()
+
+    import parrot_tools.tool_optimizations.writer as writer_module
+
+    real_sha = writer_module._sha_or_none
+    original_write = writer_module._write_atomic
+    state = {"writes": 0, "fired": False}
+
+    def counting_write(path, data, mode):
+        original_write(path, data, mode)
+        state["writes"] += 1
+
+    def failing_verification(path):
+        # Fire exactly ONCE, and only after both files are written, so this
+        # corrupts the verification pass without also breaking the rollback's
+        # own "does this file still match what we wrote?" comparison.
+        if state["writes"] >= 2 and not state["fired"] and str(path).endswith("__init__.py"):
+            state["fired"] = True
+            return "f" * 64
+        return real_sha(path)
+
+    monkeypatch.setattr(writer_module, "_write_atomic", counting_write)
+    monkeypatch.setattr(writer_module, "_sha_or_none", failing_verification)
+
+    result = await toolkit.writer_apply(artifact_id, sha)
+    monkeypatch.undo()
+
+    assert result.status == "error"
+    journal = toolkit._store.read_journal(artifact_id)
+    assert journal.state in {"rolled_back", "recovery_required"}
+    # The created file must not survive a rolled-back apply.
+    assert not (repo / "pkg" / "greeter.py").exists()
+    assert (repo / "pkg" / "__init__.py").read_bytes() == init_before
+
+
+async def test_truncated_staged_list_is_not_read_as_empty(tmp_path, monkeypatch):
+    """A clipped `git diff --cached` list must not imply 'nothing is staged'."""
+    repo, toolkit, artifact_id, sha = await _generated(tmp_path)
+
+    from parrot_tools.tool_optimizations.git import LocalGitToolkit
+
+    real_run = LocalGitToolkit._run_git
+
+    async def truncating_run(self, args, **kwargs):
+        step, raw = await real_run(self, args, **kwargs)
+        if args[:2] == ["diff", "--cached"]:
+            step.truncated = True
+        return step, raw
+
+    monkeypatch.setattr(LocalGitToolkit, "_run_git", truncating_run)
+    result = await toolkit.writer_apply(artifact_id, sha)
+    monkeypatch.undo()
+
+    assert result.status == "error"
+    assert result.error.code == "status_failed"
+    assert not (repo / "pkg" / "greeter.py").exists()

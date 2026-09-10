@@ -323,3 +323,49 @@ def test_no_external_command_in_module():
     source = inspect.getsource(module)
     assert "sub" + "process" not in source
     assert "git apply" not in source
+
+
+def test_temp_sweep_never_follows_a_symlink(tmp_path):
+    """A `.tmp-*` symlink must not let the sweeper delete files outside the repo.
+
+    Regression: `is_dir()` and `stat()` both follow symlinks, so a link
+    pointing outside the repository passed every check and its target's
+    contents were unlinked.
+    """
+    import os
+    import time
+
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    victim = outside / "precious.txt"
+    victim.write_text("do not delete me\n")
+
+    store = ArtifactStore(tmp_path / "repo")
+    store.root.mkdir(parents=True)
+    link = store.root / ".tmp-deadbeefdeadbeefdeadbeefdeadbeef"
+    link.symlink_to(outside, target_is_directory=True)
+    stale = time.time() - 7200
+    os.utime(outside, (stale, stale))
+
+    store._sweep_stale_temp_dirs()
+
+    assert victim.exists(), "the sweeper deleted a file outside the repository"
+    assert victim.read_text() == "do not delete me\n"
+    assert link.is_symlink(), "the symlink itself should be left alone, not resolved"
+
+
+def test_temp_sweep_still_removes_a_genuine_stale_directory(tmp_path):
+    """The symlink guard must not disable the sweeper's actual job."""
+    import os
+    import time
+
+    store = ArtifactStore(tmp_path)
+    store.root.mkdir(parents=True)
+    stale_dir = store.root / ".tmp-abcdefabcdefabcdefabcdefabcdef12"
+    stale_dir.mkdir()
+    (stale_dir / "patch.diff").write_text("junk\n")
+    old = time.time() - 7200
+    os.utime(stale_dir, (old, old))
+
+    store._sweep_stale_temp_dirs()
+    assert not stale_dir.exists()
