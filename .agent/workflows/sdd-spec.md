@@ -251,9 +251,12 @@ DR="sdd/state/.design_research/<feature-name>-${RUN_ID}"   # id-independent, run
 mkdir -p "$DR"; SKIP_REASON=""
 if ! command -v codex >/dev/null 2>&1; then SKIP_REASON="codex CLI not installed"; fi
 if [ -z "$SKIP_REASON" ]; then
+  # stdin MUST be redirected: without a TTY `codex exec` prints "Reading additional
+  # input from stdin..." and blocks until the timeout (rc=124) even though the
+  # prompt is passed as an argument (observed 2026-09-10, codex-cli 0.153/0.154).
   timeout 120 codex exec --ephemeral --sandbox read-only -m "$MODEL" \
     -c model_reasoning_effort=high --ignore-user-config \
-    -o "$DR/probe.txt" "Reply with exactly the single word OK." >/dev/null 2>&1 \
+    -o "$DR/probe.txt" "Reply with exactly the single word OK." < /dev/null >/dev/null 2>&1 \
     || SKIP_REASON="model probe failed for $MODEL (rc=$?)"
 fi
 if [ -z "$SKIP_REASON" ]; then
