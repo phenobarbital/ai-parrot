@@ -83,7 +83,9 @@ class TestConnection:
 
 class TestCollection:
     async def test_create_collection_persists_manifest_and_is_idempotent(self, tmp_path):
-        store = LanceDBStore(uri=str(tmp_path / "col"), embedding_id="fixed-id", dimension=4)
+        store = LanceDBStore(
+            uri=str(tmp_path / "col"), embedding_id="fixed-id", dimension=4, collection_name="agent_knowledge"
+        )
         await store.create_collection("agent_knowledge")
         assert store._manifest is not None
         assert store._default_table is not None
@@ -105,7 +107,9 @@ class TestCollection:
         await conflicting.disconnect()
 
     async def test_retry_completes_index_prep_without_replacing_rows(self, tmp_path):
-        store = LanceDBStore(uri=str(tmp_path / "col"), embedding_id="fixed-id", dimension=4)
+        store = LanceDBStore(
+            uri=str(tmp_path / "col"), embedding_id="fixed-id", dimension=4, collection_name="agent_knowledge"
+        )
         await store.create_collection("agent_knowledge")
         table = store._default_table
         await table.add(
@@ -114,7 +118,9 @@ class TestCollection:
 
         # A second store instance "retries" collection preparation against
         # the same directory — rows must survive.
-        store2 = LanceDBStore(uri=str(tmp_path / "col"), embedding_id="fixed-id", dimension=4)
+        store2 = LanceDBStore(
+            uri=str(tmp_path / "col"), embedding_id="fixed-id", dimension=4, collection_name="agent_knowledge"
+        )
         await store2.create_collection("agent_knowledge")
         rows = await store2._default_table.query().limit(10).to_list()
         assert [r["record_id"] for r in rows] == ["a"]
@@ -191,7 +197,9 @@ class TestCompatibilityConstructor:
 
 class TestPrepareEmbeddingTable:
     async def test_default_labels_and_use_jsonb_accepted(self, tmp_path):
-        store = LanceDBStore(uri=str(tmp_path / "col"), embedding_id="fixed-id", dimension=4)
+        store = LanceDBStore(
+            uri=str(tmp_path / "col"), embedding_id="fixed-id", dimension=4, collection_name="agent_knowledge"
+        )
         await store.prepare_embedding_table("agent_knowledge", dimension=4)
         assert store._default_table is not None
         await store.disconnect()

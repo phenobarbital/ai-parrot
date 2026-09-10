@@ -176,9 +176,18 @@ class TestRealOfflineRun:
                 [Document(page_content="Internal reference token ZXQ731 identifies this case.", metadata={"id": "a"})],
                 collection="agent_knowledge",
             )
+            # Retrieval actually surfaced the ingested fact BEFORE the LLM
+            # call — a real, checkable assertion. The LLM's free-text
+            # answer itself is not deterministic (a real local model may
+            # paraphrase), so we only require it to be non-empty rather
+            # than asserting on its exact wording (code review finding:
+            # the previous `"ZXQ731" in answer or len(answer) > 0` was a
+            # tautology once `answer` truthiness was already asserted).
+            hits = await origin.search(ns.query, k=5)
+            assert any("ZXQ731" in hit.content for hit in hits)
+
             answer = await profile.run_cycle(origin, llm_client, ns.query)
             assert answer
-            assert "ZXQ731" in answer or len(answer) > 0
             await store.disconnect()
         finally:
             socket.socket = real_socket

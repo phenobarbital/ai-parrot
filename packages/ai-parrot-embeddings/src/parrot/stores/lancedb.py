@@ -134,6 +134,15 @@ class LanceDBStore(AbstractStore):
         self._provider_lock = asyncio.Lock()
 
         self._manifest: CollectionManifest | None = None
+        # Per-collection manifest cache — self._manifest above mirrors only
+        # this store's OWN configured default collection (matching
+        # get_vector()'s "default table" contract), but every query/mutation
+        # method also accepts a `collection=` override. Without this cache,
+        # namespaced_id() could resolve the WRONG collection_uuid for a
+        # non-default collection touched by the same store instance —
+        # exactly what AC3 ("local IDs cannot collide across different
+        # collection UUIDs") exists to prevent. Code review finding.
+        self._manifest_cache: dict[str, CollectionManifest] = {}
         self._coordinator: MutationCoordinator = MutationCoordinator.for_directory(
             self._config.uri, self._config.collection_name
         )
@@ -288,8 +297,14 @@ class LanceDBStore(AbstractStore):
             if not has_fts:
                 await table.create_index("document", config=FTS())
 
-            self._manifest = manifest
-            self._default_table = table
+            # Always cache per-collection (namespaced_id() correctness for
+            # ANY collection this store touches); only mirror into the
+            # store's own "default" attributes when this IS that default
+            # collection — same guard as add_documents/delete_documents.
+            self._manifest_cache[collection] = manifest
+            if collection == self._config.collection_name:
+                self._manifest = manifest
+                self._default_table = table
 
         await self._coordinator.run_mutation(_do_create, description=f"create_collection:{collection}")
 
@@ -458,7 +473,7 @@ class LanceDBStore(AbstractStore):
             raise LookupError(f"LanceDB collection {collection_name!r} does not exist")
 
         table = await conn.open_table(collection_name)
-        manifest = await self._ensure_manifest_loaded(table)
+        manifest = await self._ensure_manifest_loaded(table, collection_name)
 
         metadata_clause = compile_metadata_filter(metadata_filters, self._config)
         parent_clause = None if include_parents else parent_exclusion_clause()
@@ -496,19 +511,27 @@ class LanceDBStore(AbstractStore):
             )
         return results
 
-    async def _ensure_manifest_loaded(self, table: Any) -> CollectionManifest:
+    async def _ensure_manifest_loaded(self, table: Any, collection_name: str) -> CollectionManifest:
         """Read the persisted manifest for search-time provenance.
+
+        Cached per ``collection_name`` (see ``self._manifest_cache``) so a
+        store instance that queries more than one collection never resolves
+        the wrong ``collection_uuid`` into ``namespaced_id()`` — a manifest
+        cached for collection A must never be handed back for collection B.
 
         Unlike :meth:`create_collection`, this does NOT validate identity
         compatibility — a search-only caller (or FTS-only reopen) may have no
         embedding configuration at all, and reading the stored identity is
         exactly the "read without constructing" contract spec §2 requires.
         """
-        if self._manifest is not None:
-            return self._manifest
+        cached = self._manifest_cache.get(collection_name)
+        if cached is not None:
+            return cached
         schema = await table.schema()
         manifest = self._manifest_from_schema(schema)
-        self._manifest = manifest
+        self._manifest_cache[collection_name] = manifest
+        if collection_name == self._config.collection_name:
+            self._manifest = manifest
         return manifest
 
     def _distance_ceiling(self, similarity_threshold: float, score_threshold: float | None) -> float | None:
@@ -842,7 +865,7 @@ class LanceDBStore(AbstractStore):
         # this method — FTS must neither construct nor invoke an embedding
         # model, including on a reopen with no usable provider configured.
         table = await conn.open_table(collection_name)
-        manifest = await self._ensure_manifest_loaded(table)
+        manifest = await self._ensure_manifest_loaded(table, collection_name)
 
         metadata_clause = compile_metadata_filter(metadata_filters, self._config)
         parent_clause = None if include_parents else parent_exclusion_clause()
@@ -910,7 +933,7 @@ class LanceDBStore(AbstractStore):
             raise LookupError(f"LanceDB collection {collection_name!r} does not exist")
 
         table = await conn.open_table(collection_name)
-        manifest = await self._ensure_manifest_loaded(table)
+        manifest = await self._ensure_manifest_loaded(table, collection_name)
 
         # ONE compiled predicate, reused for both legs via a single chained
         # query builder — spec §2 requires one conjunctive prefilter across

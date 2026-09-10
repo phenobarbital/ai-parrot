@@ -156,7 +156,17 @@ class MutationCoordinator:
         undone by releasing this lock — release only relinquishes future
         mutation ownership.
         """
-        fd = await asyncio.to_thread(_acquire_blocking, self._lock_file_path(), self.config.acquire_timeout_seconds)
+        lock_path = self._lock_file_path()
+        try:
+            fd = await asyncio.to_thread(_acquire_blocking, lock_path, self.config.acquire_timeout_seconds)
+        except TimeoutError as exc:
+            # Re-raise with the caller-supplied description so the error
+            # identifies operation + collection + cause (spec §7), not just
+            # the lock file path — code review finding.
+            raise TimeoutError(
+                f"Timed out acquiring LanceDB mutation lock for {description!r} "
+                f"(dataset_key={self.dataset_key!r}) at {lock_path}"
+            ) from exc
         try:
             yield
         finally:

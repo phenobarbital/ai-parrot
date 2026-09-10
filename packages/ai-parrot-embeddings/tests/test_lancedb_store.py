@@ -111,6 +111,37 @@ class TestPersistence:
         await store_a.disconnect()
         await store_b.disconnect()
 
+    async def test_one_store_instance_touching_two_collections_keeps_ids_distinct(self, tmp_path):
+        """Code review regression: a SINGLE store instance whose own default
+        collection differs from a `collection=` override it is also asked to
+        create/search must still resolve the CORRECT collection_uuid for
+        each — not silently reuse whichever manifest was cached first."""
+        uri = str(tmp_path / "col")
+        # Store's own default is "t"; it also touches "other" via collection=.
+        store = _make_store(uri, collection_name="t")
+
+        await store.create_collection("t")
+        await store.add_documents([Document(page_content="content T", metadata={"id": "shared"})], collection="t")
+
+        await store.create_collection("other")
+        await store.add_documents(
+            [Document(page_content="content OTHER", metadata={"id": "shared"})], collection="other"
+        )
+
+        results_t = await store.similarity_search("content", limit=5, collection="t")
+        results_other = await store.similarity_search("content", limit=5, collection="other")
+        assert results_t[0].id != results_other[0].id  # distinct collection_uuid per collection
+        assert results_t[0].content == "content T"
+        assert results_other[0].content == "content OTHER"
+
+        # The store's OWN default-collection attributes must still reflect
+        # "t" (its configured collection_name), never "other".
+        assert store._manifest is not None
+        default_rows = await store._default_table.query().limit(10).to_list()
+        assert [r["record_id"] for r in default_rows] == ["shared"]
+        assert default_rows[0]["document"] == "content T"
+        await store.disconnect()
+
 
 class TestRetrievalMatrix:
     async def test_vector_fts_and_hybrid_on_one_corpus(self, tmp_path):
