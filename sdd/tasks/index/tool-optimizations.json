@@ -321,5 +321,22 @@
       "completed_at": "2026-09-10T03:35:46+00:00",
       "file": "sdd/tasks/completed/TASK-3092-benchmarks-docs-release.md"
     }
-  ]
+  ],
+  "code_review": {
+    "reviewed_at": "2026-09-10T04:10:39+00:00",
+    "reviewers": [
+      "claude code-reviewer subagent",
+      "codex (external, per CLAUDE.md adversarial protocol)"
+    ],
+    "critical_found": 5,
+    "critical_fixed": 5,
+    "important_fixed": 6,
+    "claims_rejected_as_unreproducible": 2,
+    "open_items": [
+      "Codex .codex/hooks.json field format unverified end to end (release-checklist blocker, see docs/tool-optimizations.md)",
+      "index publish and per-file apply retain narrow TOCTOU windows against external editors (documented; advisory lock does not exclude foreign processes)",
+      "asyncio.to_thread cancellation does not stop an in-flight write worker"
+    ],
+    "tests_after": "409 passed, 1 skipped"
+  }
 }
