@@ -70,7 +70,7 @@
       "feature_id": "FEAT-549",
       "feature": "sdd-worker-subagents",
       "spec": "sdd/specs/sdd-worker-subagents.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -80,8 +80,8 @@
       "parallelism_notes": "Edits models/base.py, agent_builder.py and the three dev_loop __init__ exports; TASK-3123 edits other lines of models/*.py — same worktree to avoid literal collisions.",
       "assigned_to": null,
       "started_at": "2026-09-10T20:42:27+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3118-google-compat-dispatch-backend.md"
+      "completed_at": "2026-09-10T20:57:33+00:00",
+      "file": "sdd/tasks/completed/TASK-3118-google-compat-dispatch-backend.md"
     },
     {
       "id": "TASK-3119",
