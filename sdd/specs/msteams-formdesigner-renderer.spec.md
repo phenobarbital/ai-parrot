@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-551
 **Date**: 2026-09-11
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: parrot-formdesigner 1.1.0 · ai-parrot-integrations (msteams) next minor
 **Proposal**: `sdd/proposals/msteams-formdesigner-renderer.proposal.md` (accepted; drafted under provisional FEAT-564, re-id'd to the ledger-reserved FEAT-551)
 **Research audit**: `sdd/state/FEAT-551/` (23 findings, synthesis, design research)
