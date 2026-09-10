@@ -95,6 +95,50 @@ class ExistingPattern(AbstractBase):
 
 ---
 
+## Implementation Blueprint
+
+> **CRITICAL — Executor-ready starting point.** Write each block below to its declared
+> path nearly verbatim, then complete every `# FILL IN:` marker. Blocks were derived
+> from the spec's Interface Skeletons and re-verified against the Codebase Contract
+> above when this task was written. This is NOT the full implementation:
+> business-logic branches, edge cases and test bodies are `FILL IN` stubs by design.
+> Never change a signature, class name, or file path the blueprint fixes.
+
+### Steps (in order)
+1. <imperative step> — *why*: <one sentence>
+2. <imperative step> — *why*: <one sentence>
+
+### `parrot/path/to/new_file.py` (CREATE)
+```python
+"""<module docstring>."""
+from __future__ import annotations
+
+from parrot.module import ClassName  # verified: parrot/module/__init__.py:NN
+
+
+class NewComponent(ClassName):
+    """<one-line purpose>."""
+
+    async def method(self, param: Type) -> ReturnType:
+        """<what it returns and when it raises>."""
+        self.logger.debug("method: %s", param)
+        # FILL IN: <the exact decision left to you> — bounded by <constraint | AC-N>
+        raise NotImplementedError
+```
+**Why this shape**: <2–4 sentences: which spec decision each block implements; what must NOT change>
+
+### `parrot/path/to/existing.py` (MODIFY)
+```python
+# AFTER — insert below `<verbatim anchor line>` (verified: parrot/path/to/existing.py:NN)
+<new lines>
+```
+**Why**: <1–2 sentences>
+
+### FILL IN checklist
+- [ ] `new_file.py::NewComponent.method` — <decision>; bounded by <constraint | AC-N>
+
+---
+
 ## Acceptance Criteria
 
 - [ ] Implementation complete per scope
@@ -156,7 +200,8 @@ When you pick up this task:
    - If anything has changed, update the contract FIRST, then implement
    - **NEVER** reference an import, attribute, or method not in the contract without verifying it exists
 4. **Update status** in `tasks/.index.json` → `"in-progress"` with your session ID
-5. **Implement** following the scope, codebase contract, and notes above
+5. **Implement** — start from the Implementation Blueprint blocks, complete every
+   `# FILL IN:` marker, and never change a signature or path the blueprint fixes
 6. **Verify** all acceptance criteria are met
 7. **Move this file** to `tasks/completed/TASK-<NNN>-<slug>.md`
 8. **Update index** → `"done"`
