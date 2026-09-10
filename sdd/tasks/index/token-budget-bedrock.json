@@ -14,7 +14,7 @@
       "feature_id": "FEAT-550",
       "feature": "token-budget-bedrock",
       "spec": "sdd/specs/token-budget-bedrock.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation: every other task imports these records/errors. Must land first.",
       "assigned_to": null,
       "started_at": "2026-09-10T23:40:10+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3132-token-budget-models-and-errors.md"
+      "completed_at": "2026-09-10T23:54:36+00:00",
+      "file": "sdd/tasks/completed/TASK-3132-token-budget-models-and-errors.md"
     },
     {
       "id": "TASK-3133",
