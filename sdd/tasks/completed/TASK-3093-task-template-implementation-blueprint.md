@@ -179,10 +179,13 @@ grep -n "FILL IN" sdd/templates/task.md
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-10
+**Notes**: Inserted "## Implementation Blueprint" section verbatim from the spec's §2 New Public
+Interfaces block, between "## Implementation Notes" and "## Acceptance Criteria" in
+`sdd/templates/task.md`. Updated Agent Instructions step 5 to point at the blueprint. Verified
+heading order (Context, Scope, Files to Create / Modify, Codebase Contract, Implementation Notes,
+Implementation Blueprint, Acceptance Criteria, Test Specification, Agent Instructions, Completion
+Note) and all acceptance criteria via `grep`.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
