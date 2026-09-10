@@ -646,13 +646,24 @@ Dev-loop precedent for flag order: packages/ai-parrot/src/parrot/flows/dev_loop/
 ## 9. Design Research Cross-Check
 
 > Independent design opinion from the `codex` seat over the **accepted exploration
-> doc** (never over this spec). Model: `gpt-5.6-luna` · Status: **pending — this
-> section is filled by Module 7's dry run, the first execution of the phase this
-> spec introduces** · Transcript: `sdd/state/FEAT-545/design_research/`
+> doc** (never over this spec). Model: `gpt-5.6-luna` · Status: **completed**
+> · Transcript: `sdd/state/FEAT-545/design_research/`
 
 | # | Suggestion (kind) | Disposition | Reason | Landed in |
 |---|---|---|---|---|
-| — | *(filled by Module 7)* | | | |
+| S1 | Make brief rendering executable (architecture) | CONFIRM | §3b.2's variable binding and `$REPO_ROOT` are never actually assigned in the command text as written. | Follow-up task |
+| S2 | Align research model with dev-loop config (api) | REJECT | Coupling the model to `parrot/conf.py`/dev-loop catalog is an explicit spec Non-Goal; `gpt-5.6-luna` is verified independently against the installed `codex-cli` (F017). | — |
+| S3 | Define transcript identity for hotfix specs (architecture) | ESCALATE | Edge case if a hotfix has an accepted exploration doc and no `FEAT-ID`; flow-type policy call. | Human decision needed |
+| S4 | Use unique and atomic research staging (risk) | CONFIRM | Staging is keyed only by feature slug with no manifest or cleanup-on-failure. | Follow-up task |
+| S5 | Enforce repository containment for paths (risk) | CONFIRM | `affected_paths` validation is a bare `test -e` with no containment/traversal check. | Follow-up task |
+| S6 | Implement the claimed background lifecycle (architecture) | CONFIRM | Prose claims backgrounding; the fenced bash is a plain foreground call. | Follow-up task |
+| S7 | Test the complete skip-and-promote state machine (testing) | ESCALATE | Valid, but exhaustive fake-Codex branch coverage is beyond this feature's stated test scope (§4 Non-Goals). | Human decision needed |
+| S8 | Make twin parity fail closed (testing) | CONFIRM | `_normalize()` strips by broad substring match rather than an exact per-file substitution assertion. | Follow-up task |
+| S9 | Factor shared Codex invocation policy via `CodexCodeDispatcher` (alternative) | REJECT | Would require touching `parrot/flows/dev_loop/**`, an explicit spec Non-Goal. | — |
+| S10 | Validate blueprint substance, not headings (testing) | ESCALATE | Re-opens the §8 "lint vs. written rule" question at a broader scope; a human policy call. | Human decision needed |
+
+Summary: **5** confirmed · **2** rejected · **3** escalated. Full rationale and
+verified `affected_paths` in `sdd/state/FEAT-545/design_research/triage.md`.
 
 ---
 
@@ -680,3 +691,4 @@ Dev-loop precedent for flag order: packages/ai-parrot/src/parrot/flows/dev_loop/
 |---|---|---|---|
 | 0.1 | 2026-09-10 | Jesus Lara (with Claude Fable 5.1) | Initial draft from accepted proposal FEAT-545 (ex-provisional FEAT-564); all four proposal unknowns carried as resolved |
 | 0.2 | 2026-09-10 | Jesus Lara | Status → approved |
+| 0.3 | 2026-09-10 | sdd-worker (Claude Sonnet 5) | §9 filled from the TASK-3099 design-research dry run against this feature's own accepted proposal (gpt-5.6-luna, 10 suggestions, 5 confirmed / 2 rejected / 3 escalated) |
