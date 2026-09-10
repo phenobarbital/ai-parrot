@@ -296,10 +296,26 @@ async def test_probe_never_raises():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Sonnet)
+**Date**: 2026-09-10
+**Notes**: Implemented `RosterProbe` (static key/CLI rules from §7 + smoke/fallback
+ladder), `available_seats`, and `ChunkAssigner` (`assign` + `retry_seat`) exactly
+per the blueprint's signatures. Exported the three names from `sdd_coder/__init__.py`.
+96/96 unit tests pass (incl. the 80-case property test over wave sizes 1-20 ×
+roster sizes 1-4 for AC-2); `ruff check` and `mypy` clean.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: `ChunkAssigner.assign`'s rotation step advances
+`self._start` by **1** per chunk (mod `n`), not by `len(chunk)` as the
+blueprint's docstring says. With `len(chunk)` as the increment, a wave whose
+chunks are all full-sized (`len(chunk) == n`, the common case) leaves
+`start` unchanged mod `n` — chunk 2 would start on the *same* seat as chunk 1,
+contradicting the blueprint's own "so consecutive chunks begin on different
+seats" and failing the task's own bounded test
+(`test_assign_rotates_start_between_chunks`: 5 tasks over 4 seats expects
+chunk 2 to start on seat index 1). Advancing by 1 per chunk satisfies that
+test, the property test (AC-2), and the single-seat-is-serial case
+identically to a `len(chunk)` step whenever a wave needs more than one chunk
+with a partial final chunk; it only differs when every chunk is full-sized,
+which is exactly the case the blueprint's own wording contradicted itself
+on. Flagged here rather than silently resolved because it changes the
+rotation formula named in spec §3 M2's docstring.

@@ -222,10 +222,21 @@ def test_worker_prompt_tools_list_mcp_names():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Sonnet)
+**Date**: 2026-09-10
+**Notes**: Rewrote `.claude/agents/sdd-worker.md`: updated the frontmatter
+`description` and `tools:` line (seven `mcp__parrot-sdd-coder__*` names +
+`Agent`), inserted "## Orchestrator Loop (FEAT-549)" (steps 0-6, verbatim
+from spec §2 Overview) before the renamed "## Fallback: Sequential Loop"
+section, deleted "### b2) Delegated implementation" and its checklist line,
+extended "## Completion" with the `Seats:` per-model table, and appended the
+two new STOP conditions. `cp`'d byte-for-byte to
+`_subagent_data/sdd-worker.md` (verified with `cmp`). 5 new prompt-contract
+tests pass; the existing parity suite (incl.
+`test_worker_prompt_has_per_spec_index_instructions`, the regression guard
+named in this task) stays green. Full `tests/flows/dev_loop` run: 1771
+passed (up from 1766), same 11 pre-existing `test_pr_enrichment.py`
+failures, 6 skipped; `ruff`/`mypy` clean.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none — every kept section is untouched; only the
+scoped insert/rename/delete/extend edits were made.

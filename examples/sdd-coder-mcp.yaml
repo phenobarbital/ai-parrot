@@ -1,0 +1,45 @@
+# FEAT-549 — sdd-coder orchestration kernel as a local MCP toolkit.
+#
+# Serve with:
+#     parrot mcp-local sdd-coder --config examples/sdd-coder-mcp.yaml
+#
+# Install:
+#   1. Copy this `toolkits.sdd-coder` section into `.parrot/mcp-toolkits.yaml`
+#      (git-ignored — an operator-local file, never committed).
+#   2. Add an entry to `.mcp.json` (also git-ignored):
+#        "parrot-sdd-coder": {
+#          "command": "<venv>/bin/parrot",
+#          "args": ["mcp-local", "sdd-coder", "--config", ".parrot/mcp-toolkits.yaml"]
+#        }
+#   Claude Code then exposes the seven tools as
+#   `mcp__parrot-sdd-coder__coder_plan` … `mcp__parrot-sdd-coder__coder_cleanup`.
+#
+# NOTE ON THE ROSTER (G8)
+#   The roster below is config, not code: no model id, backend, or provider
+#   key appears anywhere in Python or in either sdd-coder/sdd-worker prompt.
+#   A seat whose credentials/CLI are missing is dropped by the startup probe
+#   (on the FIRST tool call — `coder_plan`) and reported in its response;
+#   `sdd-worker` prints the reason. `fallback_model` is tried when the
+#   primary model id is rejected by the seat's smoke check.
+#
+# NOTE ON CREDENTIALS
+#   No secrets appear here.
+#     - `nova`          (Qwen3-Coder on Bedrock Mantle): BEDROCK_MANTLE_API_KEY
+#       or AWS_NOVA_API_KEY (navconfig env/.env).
+#     - `google-compat` (Gemini via Google's OpenAI-compatible endpoint):
+#       GEMINI_API_KEY or GOOGLE_API_KEY (navconfig env/.env) — NOT
+#       os.environ; these load from env/.env.
+#     - `codex`         (GPT-5.3-codex-spark): the `codex` CLI's own login;
+#       the probe only checks the binary is on PATH.
+#     - `haiku`         (native seat): no credentials — a Claude Code
+#       sub-agent (`.claude/agents/sdd-coder.md`), not an MCP dispatch.
+
+toolkits:
+  sdd-coder:
+    class: parrot.flows.dev_loop.sdd_coder.toolkit.SddCoderToolkit
+    kwargs:
+      roster:
+        - {label: qwen,        kind: mcp,    backend: nova,          model: qwen.qwen3-coder-480b-a35b-instruct}
+        - {label: gemini,      kind: mcp,    backend: google-compat, model: gemini-3.5-flash}
+        - {label: codex-spark, kind: mcp,    backend: codex,         model: gpt-5.3-codex-spark, fallback_model: gpt-5.3-codex}
+        - {label: haiku,       kind: native, model: haiku}

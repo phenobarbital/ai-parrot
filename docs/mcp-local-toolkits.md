@@ -197,3 +197,28 @@ MCP host's caller (the model) must pass `confirm: true` explicitly.
   multi-agent MCP server. Unrelated and unaffected by this feature; if you
   need the full server's capabilities (auth, multi-agent routing), use
   that instead of `mcp-local`.
+
+## `sdd-coder` — orchestration kernel for the interactive sdd-worker (FEAT-549)
+
+`SddCoderToolkit` (`parrot.flows.dev_loop.sdd_coder.toolkit.SddCoderToolkit`)
+exposes the FEAT-323 dev-loop machinery — `TaskScheduler`,
+`SubWorktreeManager`, `build_dispatcher` — as seven MCP tools so the
+interactive `sdd-worker` agent can dispatch one `sdd-coder` sub-agent per
+task, across a roster of heterogeneous model seats, in parallel:
+`coder_plan`, `coder_run_chunk`, `coder_prepare_native`, `coder_merge`,
+`coder_wait`, `coder_status`, `coder_cleanup`. Every result is a
+`CoderResult` envelope (`status: "ok" | "error"`); argument validation
+happens in `_pre_execute` before the engine is ever touched.
+
+```bash
+cp examples/sdd-coder-mcp.yaml .parrot/mcp-toolkits.yaml
+parrot mcp-local sdd-coder --config examples/sdd-coder-mcp.yaml   # or --list to confirm it resolves
+```
+
+The roster (which models fill which seat, and their fallbacks) lives
+entirely in the yaml's `kwargs.roster` — nothing is hardcoded in Python or
+in the `sdd-worker`/`sdd-coder` prompts. See
+[`docs/dev_loop/sdd-coder-orchestrator.md`](dev_loop/sdd-coder-orchestrator.md)
+for the full install steps, roster semantics, the orchestrator loop, and
+known gotchas (the Gemini 3 `thought_signature` echo requirement,
+`GEMINI_API_KEY` resolution via `navconfig`).

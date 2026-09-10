@@ -376,10 +376,19 @@ def test_wait_args_cap():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Sonnet)
+**Date**: 2026-09-10
+**Notes**: Implemented `sdd_coder/__init__.py` + `models.py` exactly per the
+blueprint. All `FILL IN` items completed: `RosterSeat` backend/kind coupling,
+`CoderError` closed-code validation, `_check_task_id`/`_check_abs` and the
+`task_ids` list validator. 8/8 unit tests pass; `ruff check` clean.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: `RosterSeat._backend_required_for_mcp` was written
+as a `model_validator(mode="after")` instead of the blueprint's
+`field_validator("backend")`. A plain `field_validator` on `backend` does not
+run against the field's own default (`None`) in Pydantic v2 unless
+`validate_default=True` is set — so `RosterSeat(label="x", kind="mcp")` (no
+`backend` given) silently passed instead of raising, failing
+`test_roster_config_requires_backend_for_mcp`. The `model_validator` reads
+`self.kind`/`self.backend` after both are populated (including defaults) and
+enforces the same rule; behavior and error message intent are unchanged.

@@ -376,10 +376,49 @@ async def test_engine_journals_job_snapshot(...): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Sonnet)
+**Date**: 2026-09-10
+**Notes**: Implemented `engine.py` (`CoderFailure`, `_FeatureCtx`, `_git`,
+`SddCoderEngine.__init__/open/plan/prepare_native/merge/cleanup/status`,
+`_resolve_feature`, `_scheduler_for`, `_consolidate`, `_orphan_branches`,
+`_journal`, `_manager_for`) exactly per the blueprint, with `run_chunk`,
+`wait`, `_run_attempt`, `_research_for`, `_labels_for`, and
+`AttemptTelemetryCollector` left as `NotImplementedError("TASK-3121")`
+stubs. Wrote `conftest.py`'s `git_sandbox_feature` fixture (5-task index, 2
+waves) + `three_seat_roster`/`noop_probe`, and 11 git-sandbox tests covering
+every acceptance criterion (deterministic plan, dependency cycle,
+worktree-outside-base, feature-not-found, native prepare→merge, dirty
+worktree, fidelity violation, merge conflict, orphan branches, journal).
+112/112 `sdd_coder` tests pass; full `tests/flows/dev_loop` run: 1747
+passed (up from 1736), same 11 pre-existing `test_pr_enrichment.py`
+failures, 6 skipped; `ruff`/`mypy` clean.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**:
+1. `_consolidate`'s merge-conflict branch parses `exc.stderr` for
+   `CONFLICT (...): ... in <path>` lines (per the FILL IN's own direction),
+   but `worktree_manager.merge_sequential` discards the `git merge`
+   command's **stdout** (where such CONFLICT lines are actually printed)
+   and only keeps `stderr` on the exception — so `conflict_files` is
+   frequently empty in practice. Not fixed here: `worktree_manager.py` is
+   explicitly "unchanged" in this feature's Integration Points table. AC-13
+   only requires the merge_conflict outcome + a clean feature worktree +
+   the branch kept, none of which depend on a populated `conflict_files`
+   list, so the bounded tests still pass; flagged for a possible follow-up
+   spec note.
+2. `merge()` always consolidates the **highest** attempt number tracked in
+   `self._managers` for a task id (per the FILL IN's "find highest attempt
+   n"). This means the public API cannot target a specific older attempt
+   once a newer one exists — `test_engine_merge_conflict_reported_and_aborted`
+   works around this by calling the private `_consolidate()` directly for
+   attempt 1 (white-box) and only exercises the public `merge()` for
+   attempt 2's conflict. This matches §2 step 6's actual usage pattern
+   (`sdd-worker` always merges the latest/most-recent attempt after a
+   retry), so it is not a functional gap for TASK-3121/orchestrator use —
+   just a testing-ergonomics note.
+3. `cleanup()` and `_journal()`/orphan-detection touch
+   `SubWorktreeManager._created` (private) — no public API exists to
+   enumerate or adopt tracked sub-worktrees, and the task's own FILL IN
+   comment for `cleanup` explicitly says to do this ("manager._created
+   before/after is private — track paths yourself"). Left as directed
+   rather than adding a new public accessor to `worktree_manager.py`
+   (unchanged per Integration Points).

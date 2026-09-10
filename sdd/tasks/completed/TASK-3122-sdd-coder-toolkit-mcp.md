@@ -294,10 +294,50 @@ def test_mcp_local_serves_sdd_coder(monkeypatch): ...                           
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Sonnet)
+**Date**: 2026-09-10
+**Notes**: Implemented `SddCoderToolkit` per the blueprint (seven tools,
+`arg_models`, `_pre_execute`, `_open`, `_run` envelope), plus the two FILL
+INs: `_close` (best-effort job cancel + final journal, reaching into
+`JobTable`/engine internals since no public API exists, mirroring TASK-3120's
+own `_created` precedent) and `_post_execute` (serialises `CoderResult` to a
+JSON string, since `adapter.py`'s "direct result" branch does `str(result)` —
+a Python repr, not JSON — for anything that isn't a `ToolResult`). Added
+`examples/sdd-coder-mcp.yaml` and the `.sdd-coder/` `.gitignore` line. 9 new
+tests pass; full `tests/flows/dev_loop` run: 1766 passed (up from 1757), same
+11 pre-existing `test_pr_enrichment.py` failures, 6 skipped; `ruff`/`mypy`
+clean.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**:
+1. **`_pre_execute` must strip `_permission_context` before validating.**
+   Verified `ToolkitTool._execute` (toolkit.py:176-182) *always* injects
+   `_permission_context` into the kwargs passed to `_pre_execute`, even for
+   toolkits (like this one) that never use permission contexts. The
+   blueprint's `_pre_execute` body validates `**kwargs` verbatim against
+   `arg_models[tool_name]`, whose models all set `extra="forbid"` — without
+   popping `_permission_context` first, EVERY real tool call (even with
+   perfectly valid arguments) would fail `_pre_execute` with
+   `invalid_arguments` because of the extra key. Added
+   `kwargs.pop("_permission_context", None)` before the `model(**kwargs)`
+   call; covered by `test_toolkit_pre_execute_ignores_permission_context`.
+2. **AC-23's "via `_execute` path ⇒ `CoderResult(status="error", ...)`" does
+   not hold structurally as literally worded.** Verified
+   `ToolkitTool._execute()` (toolkit.py:145-202) has NO try/except between
+   `await toolkit._pre_execute(...)` and the bound method call — a
+   `CoderFailure` raised by `_pre_execute` propagates straight out of
+   `_execute()` as a Python exception, not as a returned value, so it cannot
+   be a `CoderResult` object at that point. The actual observable behavior
+   one layer up, at the real invocation surface
+   (`MCPToolAdapter.execute(arguments)`, adapter.py:59-95, which is what
+   `adapter.py:79` — the anchor this task's own contract cites for "no
+   validation in the adapter" — wraps `tool._execute()` in), IS structured:
+   its `except Exception` converts the propagated `CoderFailure` into
+   `{"isError": True, "content": [...]}`, and — critically — the engine's
+   `plan()` method is never invoked (verified via a monkeypatch that raises
+   `AssertionError` if called). Implemented and tested this real path
+   (`test_toolkit_pre_execute_via_full_execute_path_never_reaches_engine`)
+   instead of asserting a literal `CoderResult` return value that the
+   verified code cannot produce; the CoderFailure-raises-from-`_pre_execute`
+   half of AC-23 is covered directly
+   (`test_toolkit_pre_execute_rejects_bad_args`). Flagged for the spec
+   author rather than silently reworded in the AC text itself.

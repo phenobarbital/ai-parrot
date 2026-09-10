@@ -236,10 +236,37 @@ def test_sdd_coder_repo_twin_frontmatter():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Sonnet)
+**Date**: 2026-09-10
+**Notes**: Wrote `.claude/agents/sdd-coder.md` (frontmatter `model: haiku`,
+`tools:` without `Agent`) adapting `sdd-worker.md`'s Cardinal Rules/steps
+a–f/Structured Output Contract/STOP Conditions into the task-scoped,
+code-only shape spec §3 M6 describes; `cp`'d it byte-for-byte to
+`_subagent_data/sdd-coder.md` (verified with `cmp`). Added `"sdd-coder"` to
+`_VALID_NAMES` (+ docstring bullet) and to the `subagent` Literal in
+`models/llm.py`, `models/gemini.py`, `models/codex.py` (line 18 only, not
+:48), `models/claude.py` (the :18-27 block, not the separate
+`ClaudeCodeReviewProfile` at :106), and `models/google_coding.py`. 8 new
+tests pass (`test_subagent_defs.py`) + parity (`test_prompt_parity[sdd-coder]`);
+full `tests/flows/dev_loop` run: 1736 passed (up from 1722 pre-task), same
+11 pre-existing `test_pr_enrichment.py` failures, 6 skipped; `ruff` clean.
+Staged `.claude/agents/sdd-coder.md` with `git add -f` (directory is
+git-ignored, files are tracked).
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Deviations from spec**: the blueprint's `test_sdd_coder_repo_twin_frontmatter`
+FILL IN said to "reuse `_repo_agents_dir()` from `test_subagent_parity.py`";
+implemented an equivalent local walk-up helper inline in
+`test_subagent_defs.py` instead of importing the private `_repo_agents_dir`
+function across test modules (fragile — test packages aren't reliably
+importable by dotted path across files, and `_repo_agents_dir` is
+underscore-prefixed/private to its module). Same behavior (walks up from
+the test file to find `.claude/agents/`, skips if not found), no shared
+test-module coupling introduced.
 
-**Deviations from spec**: none | describe if any
+Separately (not scoped to this task's files but discovered while working
+this task): TASK-3115..3119's completion commits moved task files from
+`active/` to `completed/` via a plain `mv` and only `git add`ed the new
+path, never the old one — so git never staged the `active/` deletion. Fixed
+in a standalone commit (`0ec7bab43`) before this task's own commit, staging
+the five stale `active/` deletions explicitly. Going forward, `git add` both
+the old and new paths when moving a task file.

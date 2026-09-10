@@ -18,7 +18,9 @@ class GoogleCodingDispatchProfile(BaseModel):
     Targets the Google Antigravity CLI console (``agy``) in headless mode.
     """
 
-    subagent: Literal["sdd-worker", "sdd-secondopinion", "sdd-research", "sdd-qa", "sdd-planner", "sdd-feedback"] = "sdd-worker"
+    subagent: Literal[
+        "sdd-worker", "sdd-secondopinion", "sdd-research", "sdd-qa", "sdd-planner", "sdd-feedback", "sdd-coder"
+    ] = "sdd-worker"
     model: str = "auto"
     agent: Optional[str] = None
     effort: Optional[Literal["low", "medium", "high"]] = None
