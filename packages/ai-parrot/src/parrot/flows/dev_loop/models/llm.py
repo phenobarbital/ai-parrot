@@ -15,7 +15,7 @@ class LLMCodeDispatchProfile(BaseModel):
     so the model only needs standard chat/tool-calling support.
     """
 
-    subagent: Literal["sdd-worker"] = "sdd-worker"
+    subagent: Literal["sdd-worker", "sdd-coder"] = "sdd-worker"
     llm: str = "nvidia:minimaxai/minimax-m3"
     sandbox: Literal["workspace-write"] = "workspace-write"
     approval_policy: Literal["never"] = "never"
