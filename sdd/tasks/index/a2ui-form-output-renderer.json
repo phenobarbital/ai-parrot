@@ -32,7 +32,7 @@
       "feature_id": "FEAT-544",
       "feature": "a2ui-form-output-renderer",
       "spec": "sdd/specs/a2ui-form-output-renderer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L (4-8h)",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Edits renderers/a2ui.py created by TASK-3071 (same file) — must run after it; independent of TASK-3073/3074.",
       "assigned_to": null,
       "started_at": "2026-09-10T22:10:09+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3072-a2ui-field-lowering-checks-degradation.md"
+      "completed_at": "2026-09-10T22:25:13+00:00",
+      "file": "sdd/tasks/completed/TASK-3072-a2ui-field-lowering-checks-degradation.md"
     },
     {
       "id": "TASK-3073",
