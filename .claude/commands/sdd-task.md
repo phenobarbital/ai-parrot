@@ -328,6 +328,15 @@ git worktree add -b hotfix-<JIRA-KEY>-<slug> \
 ```
 
 ### 7. Output
+
+Before printing the summary, count the delegation-eligible tasks. This is the
+number the targeted writer will actually receive when the worker runs, so it
+is worth seeing up front:
+
+```bash
+grep -l '^## Delegation Contract' sdd/tasks/active/TASK-*.md | wc -l
+```
+
 ```
 ✅ Generated and committed <N> tasks for FEAT-<ID> — <feature-name>
    (hotfix: for Jira <KEY> — <feature-name>, no FEAT-<NNN>/TASK-<NNN> reserved)
@@ -337,6 +346,8 @@ Tasks created:
   HOTFIX-<JIRA-KEY>-<N> — <title> [<priority>/<effort>]  # hotfix
 
 Blueprints: <N>/<N> tasks carry an Implementation Blueprint
+Delegated:  <D>/<N> tasks carry a Delegation Contract (targeted writer)
+            TASK-<NNN>, TASK-<NNN>          # list them, or "none"
 
 Worktree created:
   .claude/worktrees/feat-<FEAT-ID>-<slug>              # feature

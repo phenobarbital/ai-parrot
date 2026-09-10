@@ -115,12 +115,20 @@ complete. `design_complete: true` is a declaration the task author signs.
 
 ## Output
 
+Count the delegation-eligible tasks first, so the report shows how many tasks
+the targeted writer will receive when the worker runs:
+
+```bash
+grep -l '^## Delegation Contract' sdd/tasks/active/TASK-*.md | wc -l
+```
+
 Report:
 
 ```text
 Generated and committed <N> tasks for FEAT-NNN - <feature-slug>
 Tasks created:
   TASK-NNN - <title> [priority/effort]
+Delegated: <D>/<N> tasks carry a Delegation Contract (list them, or "none")
 Worktree created:
   .claude/worktrees/feat-<FEAT-ID>-<slug>
 Next:
