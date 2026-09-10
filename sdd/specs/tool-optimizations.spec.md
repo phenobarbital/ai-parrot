@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-543
 **Date**: 2026-09-10
 **Author**: Jesus Lara / Codex
-**Status**: draft
+**Status**: approved
 **Target version**: next
 **Brainstorm**: `sdd/proposals/tool-optimizations.brainstorm.md`
 **Recommended architecture**: Option B — three focused toolkits with shared policy and TASK contracts
