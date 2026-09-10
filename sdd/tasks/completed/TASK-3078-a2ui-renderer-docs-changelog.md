@@ -109,10 +109,24 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-11
+**Notes**: Added a "Forms from FormDesigner (FEAT-544)" section to
+`docs/outputs/a2ui-v1.md` right after "Renderers and degradation" (layout,
+the `parrot_*` extension-key additions, the submit contract, the dual-wire
+reply shapes), plus two new "See also" cross-links (the new
+`a2ui-renderer.md` doc, and the FEAT-544 spec/proposal). Created
+`packages/parrot-formdesigner/docs/a2ui-renderer.md` (install extra,
+render/submit usage with wire examples, the full 45-entry FieldType
+coverage table transcribed from `FIELD_LOWERING`, v1 non-goals, cross-links
+back). Added a CHANGELOG "Added" entry under `[Unreleased]`. Cross-checked
+every `parrot_*` key named in both docs against a literal `grep` of
+`renderers/a2ui.py` — all present, and I caught one my first draft missed
+(`parrot_role="description"` on the form's description `Text`, alongside
+`"title"`) and added it to both docs.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: the FieldType coverage table lists **45** entries,
+not "47" as the spec/task text states — `list(FieldType)` verified at 45
+members; this stale count was already flagged and documented in TASK-3072's
+Completion Note, and this doc transcribes the actual (verified) table
+rather than repeating the spec's stale figure.

@@ -227,10 +227,44 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-11
+**Notes**: Added `A2UIFieldLowering` + the 45-entry `FIELD_LOWERING` table
+(module-level `assert set(FIELD_LOWERING) == set(FieldType)` fails loudly at
+import time on drift) and replaced the TASK-3071 stub `_lower_field` with
+the real table-driven lowering: `TextField`/`CheckBox`/`ChoicePicker`/
+`Slider`/`DateTimeInput` for every native FieldType, `"hidden"` for HIDDEN
+(no component; still seeded in `dataModel.answers` and `metadata.
+field_paths`), `"notice"` (Text + RenderWarning) for everything else.
+`_lower_checks` lowers `required`/`pattern`/`min_length`/`max_length`/
+`min_value`/`max_value` to `CheckRule`s using the exact `required`/`regex`/
+`length`/`numeric`/`email` argument names read from
+`catalog/basic/functions.py:466-518`; URL/PHONE get a conservative default
+`regex` pattern when the field has no `pattern` constraint of its own
+(open question — documented below). `metadata["degraded"]` now carries
+`{"id","field_id","field_type","reason"}` dicts (not bare field_ids) and
+`field_paths` is populated for every non-degraded (native or HIDDEN)
+field. 85 new tests in `test_a2ui_field_lowering.py` (including a
+`@pytest.mark.parametrize("field_type", list(FieldType))` property test —
+rendering never raises for any FieldType) + all 10 pre-existing TASK-3071
+tests still pass (190 total in `tests/unit/renderers`); `ruff check` clean.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: (1) The spec/task's Codebase Contract states
+`FieldType` has "47 members" — verified via `list(FieldType)` it is
+actually **45**; `FIELD_LOWERING` covers all 45 (the contract's count was
+stale, not a functional drift — every field/import/signature referenced
+was verified before use). (2) Conservative default `regex` patterns for
+URL (`^https?://\S+$`) / PHONE (`^\+?[0-9()\-\s]{7,20}$`) — spec §8 flags
+this as an explicit, non-blocking open question for the implementer to
+resolve; documented here per that note. (3) `DateTimeInput.min`/`max` from
+constraints (spec §7: "min/max from constraints when ISO strings") is
+NOT implemented — `FieldConstraints.min_value`/`max_value` are typed
+`float | None`, not ISO date strings, so there is no constraint field to
+source an ISO string from; implementing this would require guessing an
+unspecified convention. Not covered by this task's own Acceptance
+Criteria (only `enableDate`/`enableTime` are required for DATE/TIME/
+DATETIME). (4) Slider `min`/`max` defaults follow the differentiated
+"fallback 10 / NPS 10 / LIKERT 5" from §7 Implementation Notes rather
+than the uniform "or 10" in the §7 mapping table (LIKERT defaults to 5,
+RANKING to 10) — the two spec passages conflict slightly; the more
+specific Implementation Notes wording was treated as authoritative.
