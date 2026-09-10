@@ -133,7 +133,7 @@
       "feature_id": "FEAT-544",
       "feature": "a2ui-form-output-renderer",
       "spec": "sdd/specs/a2ui-form-output-renderer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M (2-4h)",
       "depends_on": [
@@ -146,8 +146,8 @@
       "parallelism_notes": "Integration layer over all previous tasks — must run last.",
       "assigned_to": null,
       "started_at": "2026-09-10T22:10:09+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3077-a2ui-form-cycle-integration-tests.md"
+      "completed_at": "2026-09-10T22:50:39+00:00",
+      "file": "sdd/tasks/completed/TASK-3077-a2ui-form-cycle-integration-tests.md"
     },
     {
       "id": "TASK-3078",
