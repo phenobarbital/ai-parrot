@@ -1,21 +1,45 @@
-# FEAT-545 — Design Research Triage (TASK-3099 acceptance dry run)
+# FEAT-545 — Design Research Triage (TASK-3099 acceptance dry run, re-run after code-review fixes)
 
 Model: `gpt-5.6-luna` (probe rc=0, "OK", 2026-09-10T02:05:21+00:00) · codex-cli 0.153.4
-Run: 2026-09-10T02:05:29+00:00 → 2026-09-10T02:10:32+00:00 (rc=0, ~5m03s) · 10 suggestions
-Every `affected_paths` entry verified with `test -e` before triage (see dry-run evidence log);
-none were unverifiable, so no suggestion is REJECTed on that ground alone.
+Run: 2026-09-10T02:28:12+00:00 → 2026-09-10T02:32:01+00:00 (rc=0, ~3m49s) · 11 suggestions
+Every `affected_paths` entry verified with `test -e` before triage; none were unverifiable,
+so no suggestion is REJECTed on that ground alone.
+
+> **Why this is a second run, not the first**: the code-reviewer agent found that the
+> ORIGINAL committed `brief.md` (rendered by TASK-3099's ad hoc extraction script) had an
+> empty `recommended_option_or_scope` section due to a heading-boundary bug in that script
+> (it stopped at the first `###` sub-heading instead of the next `##` same-level heading).
+> The bug was fixed and the brief re-rendered (13,659 chars vs. 11,120 originally) and
+> re-submitted to `codex`, producing this fresh, more informed set of suggestions. The prior
+> run's `sdd/state/FEAT-545/design_research/` output has been superseded by this one.
 
 | # | Suggestion (kind) | Disposition | Reason | Landed in |
 |---|---|---|---|---|
-| S1 | Make brief rendering executable (architecture) | CONFIRM | Verified real gap: §3b.2's Python heredoc references `problem_statement`/`constraints_and_goals`/etc. as already-bound variables without showing where they get assigned from the extracted section text, and `$REPO_ROOT` (used by §3b.3's `--cd "$REPO_ROOT"`) is never assigned anywhere in the command text (this dry run bound it manually as an ad hoc step). | Follow-up task (harden §3b.2 variable binding + set `$REPO_ROOT` in §3b.1) |
-| S2 | Align research model with dev-loop config (api) | REJECT | Confirmed dev-loop's `parrot/conf.py`/`catalog.py`/`models/codex.py` default to `gpt-5.5`/`gpt-5.6-sol`, not `gpt-5.6-luna` — but coupling the design-research model to that Python catalog is an explicit spec Non-Goal (§1: "no new dispatcher, profile, or conf.py key... uses the prose codex CLI path exactly like the code-review cross-check does"). `gpt-5.6-luna` was deliberately verified independently against the installed `codex-cli` (proposal F017; re-probed live in this dry run, rc=0, "OK"). Skip-on-probe-failure is intentional (G4), not a defect. | — |
-| S3 | Define transcript identity for hotfix specs (architecture) | ESCALATE | Real edge case: if a hotfix ever has an accepted exploration doc, §3b's precondition could fire with no `FEAT-ID` for §6's `sdd/state/<FEAT-ID>/design_research/` destination. Whether hotfixes should ever run §3b, and what identity (Jira key?) to use if so, is a flow-type policy call outside this task's authority (spec §8/Non-Goals boundary) — noted here, not added to the already-approved spec's §8. | Human decision needed (see Completion Note) |
-| S4 | Use unique and atomic research staging (risk) | CONFIRM | Verified: staging is keyed only by feature slug (`mkdir -p "$DR"`), and §6's `mv "$DR"/* ...` has no manifest or cleanup-on-failure; a rerun can consume stale `suggestions.json`. | Follow-up task (unique run dir + manifest + atomic promotion) |
-| S5 | Enforce repository containment for paths (risk) | CONFIRM | Verified: the schema only types `affected_paths` items as `string` with no pattern, and §3b.4's validation is a bare `test -e <path>` with no resolution/containment check against the repo root — a crafted `../../` or absolute path could point outside the repo. | Follow-up task (resolve + reject out-of-repo paths in §3b.4) |
-| S6 | Implement the claimed background lifecycle (architecture) | CONFIRM | Verified: §3b.3's prose says "Run this in the background... continue reading the codebase for §4 while it works; join before §5" but the fenced bash is a plain foreground `timeout 600 codex exec ...` with no `&`/PID/`wait`. Prose and code diverge. | Follow-up task (either implement real backgrounding or reword the prose to "runs synchronously, capped at 600s") |
-| S7 | Test the complete skip-and-promote state machine (testing) | ESCALATE | Valid observation — TASK-3098's tests cover template/schema shape only, not command execution branches (probe failure, timeout, invalid JSON, promotion). But the spec's own Test Specification (§4) and Non-Goals scope testing to unit tests over templates + a manual dry run (this task), not exhaustive fake-Codex branch coverage of a bash command — investing in that is a scope/effort decision beyond this task's authority. | Human decision needed (see Completion Note) |
-| S8 | Make twin parity fail closed (testing) | CONFIRM | Verified: TASK-3098's `_normalize()` strips lines by broad substring match (`"sub-features extend a parent feature branch — see \`" not in ln`) rather than asserting the exact expected per-file substitution, which could in principle hide unrelated drift on a line that happens to contain that substring. | Follow-up task (tighten twin-parity normalization to exact per-file substitution assertions) |
-| S9 | Factor shared Codex invocation policy via `CodexCodeDispatcher` (alternative) | REJECT | Confirmed `CodexCodeDispatcher` exists (`dispatchers/codex.py:43`), but reusing it would require touching `parrot/flows/dev_loop/**`, directly contradicting the spec's explicit Non-Goal (§1: "no new dispatcher, profile, or `conf.py` key"). | — |
-| S10 | Validate blueprint substance, not headings (testing) | ESCALATE | Valid — current tests only assert heading/marker strings exist, not per-task content quality (unbound `FILL IN`s, placeholder imports). But the spec's own §8 Open Questions already defaults a closely related question ("enforce the ~80-line cap via lint vs. written rule only") to *written rule only*; this suggestion asks for a broader substance-validation lint across all future tasks, which re-opens that decision at larger scope — a human policy call, not something to resolve unilaterally in a dry-run task. | Human decision needed (see Completion Note) |
+| S1 | Extract §3b into one checked helper (architecture) | REJECT | A Python helper for the phase is an explicit spec Non-Goal / "Does NOT Exist" entry (`scripts/sdd/design_research.py` — no Python helper; the phase is bash inside the command, mirroring the Adversarial Cross-Check pattern). | — |
+| S2 | Make research staging run-scoped and collision-safe (risk) | CONFIRM | Verified: staging is a deterministic `mkdir -p "sdd/state/.design_research/<feature-name>"` with no per-run uniqueness or atomic promotion. | Follow-up task |
+| S3 | Resolve the foreground-versus-background contract (risk) | ESCALATE | The prose/code mismatch itself was fixed in this same pass (§3b.3 now reads "synchronous — NOT a background job"), but the residual concern — a 600s synchronous wait inside `sdd-planner`'s unattended run, and whether a non-zero `codex` exit could be mistaken for a fatal `/sdd-spec` failure — is an operational/architecture decision beyond this task. | Human decision needed |
+| S4 | Reject paths outside the repository root (risk) | CONFIRM | Verified: schema types `affected_paths` as plain strings; validation is a bare `test -e` with no containment/traversal check. | Follow-up task |
+| S5 | Require line or symbol evidence, not paths alone (api) | ESCALATE | Legitimate hardening (aligning with the repo's `verified: path:NN` convention), but changing the schema's required fields is a contract change beyond this dry-run task's authority — AC-6 fixes the current schema shape. | Human decision needed |
+| S6 | Persist a replayable Codex execution record (architecture) | CONFIRM | Verified: `codex.log` today is raw stdout/stderr redirection only; no structured record of CLI version, model, timeout, or exit status is persisted alongside it. | Follow-up task |
+| S7 | Validate triage completeness mechanically (testing) | ESCALATE | Valid, but building a triage schema/validator is new infrastructure beyond this feature's stated test scope (unit tests over templates + this manual dry run). | Human decision needed |
+| S8 | Use patch-shaped blueprints for file edits (architecture) | CONFIRM | Verified: a task-template MODIFY block only says "insert below `<anchor>`" with no occurrence-count or disambiguation rule for repeated anchor text — could duplicate an insertion. | Follow-up task |
+| S9 | Enforce blueprint completeness against the file table (testing) | ESCALATE | Re-opens the spec's own §8 "lint vs. written rule" question (already defaulted to written-rule-only) at a broader scope; a human policy call, not resolved unilaterally here. | Human decision needed |
+| S10 | Frame the recommended option as a hypothesis to challenge (alternative) | ESCALATE | A sharp, legitimate point: the brief includes the exploration doc's "Recommended Option" verbatim, which is arguably itself a "preferred conclusion" under the Adversarial rules' own wording. Spec's position is that this is the *human-approved* proposal's recommendation, not Claude's about-to-be-drafted reasoning — a defensible distinction, but a genuine design tension worth a human call, not resolved unilaterally here. | Human decision needed |
+| S11 | Validate the probe's actual result and configuration (risk) | CONFIRM | Verified: §3b.1's probe only checks the `codex exec` exit code, never that `probe.txt` actually contains `OK` or which model/config was actually honored. | Follow-up task |
 
-Summary: **5** confirmed · **2** rejected · **3** escalated.
+Summary: **5** confirmed · **1** rejected · **5** escalated.
+
+## Fixes already applied in this same pass (not merely triaged — actually fixed)
+These three were caught by the code-reviewer agent (not by this codex run) and fixed directly
+in `.claude/commands/sdd-spec.md` / `.agent/workflows/sdd-spec.md` / `sdd/templates/design_research.prompt.md`
+before this re-run, because they were CRITICAL (the phase could crash instead of skip):
+1. §3b.2 lacked a `SKIP_REASON` guard — added `if [ -z "$SKIP_REASON" ]; then ... fi`.
+2. `$REPO_ROOT` was referenced (§3b.3's `--cd "$REPO_ROOT"`) but never assigned — added
+   `REPO_ROOT="$(pwd)"` in §3b.1.
+3. The brief renderer did a naive whole-document `str.replace()`, which corrupted the
+   template's own header comment (it repeated the `{{name}}` syntax as documentation) —
+   reworded the header to spell placeholder names without literal braces, and switched the
+   renderer to read each value from a per-name file instead of undefined Python variables.
+The twin-parity test (`tests/sdd_scripts/test_command_twin_parity.py`) was also tightened
+(S8 of the FIRST run, `triage` superseded by this file) to assert the exact expected
+`AGENTS.md`/`CLAUDE.md` substitution instead of dropping the whole tolerated line.

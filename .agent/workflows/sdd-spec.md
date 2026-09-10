@@ -241,6 +241,7 @@ reason for spec §9 and the command continues. **This step must never abort
 
 #### 3b.1 Detect and probe
 ```bash
+REPO_ROOT="$(pwd)"                                   # /sdd-spec always runs from the repo root (§2d)
 MODEL="${SDD_DESIGN_RESEARCH_MODEL:-gpt-5.6-luna}"
 DR="sdd/state/.design_research/<feature-name>"      # id-independent staging: FEAT-ID is reserved only in §5
 mkdir -p "$DR"; SKIP_REASON=""
@@ -253,38 +254,45 @@ if [ -z "$SKIP_REASON" ]; then
 fi
 ```
 
-#### 3b.2 Render the neutral brief
-Fill `sdd/templates/design_research.prompt.md` → `$DR/brief.md`, replacing:
-- `{{problem_statement}}` ← brainstorm "## Problem Statement" | proposal "## 1. Synthesis Summary" + §0 Origin quote
-- `{{constraints_and_goals}}` ← brainstorm "## Constraints & Requirements" | proposal "### 2.2 Constraints Discovered"
-- `{{recommended_option_or_scope}}` ← brainstorm "## Recommendation" + Recommended Option body | proposal "## 3. Probable Scope" (or "## 3. Hypothesis")
-- `{{code_context_paths}}` ← the **paths only** (one per line) from brainstorm "## Code Context" | proposal "### 2.1 Localization"
-- `{{open_questions}}` ← the `[ ]` items of the exploration doc (or "none")
-- `{{question}}` ← "Given this accepted design intent and these verified code anchors, how would you build it? What is missing, risky, or better done another way?"
+#### 3b.2 Render the neutral brief (skipped when `SKIP_REASON` is already set)
+Write each extracted value below to its own file under `$DR` — `problem_statement.txt`,
+`constraints_and_goals.txt`, `recommended_option_or_scope.txt`, `code_context_paths.txt`,
+`open_questions.txt`, `question.txt` (plain UTF-8 text, no code fences) — **before** running
+the renderer, sourced from:
+- `problem_statement.txt` ← brainstorm "## Problem Statement" | proposal "## 1. Synthesis Summary" + §0 Origin quote
+- `constraints_and_goals.txt` ← brainstorm "## Constraints & Requirements" | proposal "### 2.2 Constraints Discovered"
+- `recommended_option_or_scope.txt` ← brainstorm "## Recommendation" + Recommended Option body | proposal "## 3. Probable Scope" (or "## 3. Hypothesis")
+- `code_context_paths.txt` ← the **paths only** (one per line) from brainstorm "## Code Context" | proposal "### 2.1 Localization"
+- `open_questions.txt` ← the `[ ]` items of the exploration doc (or "none")
+- `question.txt` ← "Given this accepted design intent and these verified code anchors, how would you build it? What is missing, risky, or better done another way?"
 
 ```bash
-python - "$DR/brief.md" <<'PY'
+if [ -z "$SKIP_REASON" ]; then
+  python - "$DR" <<'PY' || SKIP_REASON="brief rendering failed"
 import sys
 from pathlib import Path
 
+dr = Path(sys.argv[1])
 template = Path("sdd/templates/design_research.prompt.md").read_text(encoding="utf-8")
-values = {
-    "{{problem_statement}}": problem_statement,
-    "{{constraints_and_goals}}": constraints_and_goals,
-    "{{recommended_option_or_scope}}": recommended_option_or_scope,
-    "{{code_context_paths}}": code_context_paths,
-    "{{open_questions}}": open_questions,
-    "{{question}}": question,
-}
-for placeholder, value in values.items():
-    template = template.replace(placeholder, value)
-Path(sys.argv[1]).write_text(template, encoding="utf-8")
+names = [
+    "problem_statement", "constraints_and_goals", "recommended_option_or_scope",
+    "code_context_paths", "open_questions", "question",
+]
+for name in names:
+    value = (dr / f"{name}.txt").read_text(encoding="utf-8").strip()
+    template = template.replace("{{" + name + "}}", value)
+assert "{{" not in template, "unfilled placeholder remains"
+(dr / "brief.md").write_text(template, encoding="utf-8")
 PY
+fi
 ```
 FORBIDDEN in the brief: anything you have written for this spec, your
 reasoning, this command's text, or a preferred answer. If in doubt, leave it out.
+Note: the template's own header comment intentionally spells placeholder names WITHOUT
+`{{ }}` braces, precisely so this whole-document `str.replace()` cannot also rewrite the
+comment (verified by TASK-3099's dry run, which caught this exact corruption before the fix).
 
-#### 3b.3 Run codex (background, capped)
+#### 3b.3 Run codex (capped, synchronous — NOT a background job)
 ```bash
 if [ -z "$SKIP_REASON" ]; then
   timeout 600 codex exec --ephemeral --sandbox read-only --cd "$REPO_ROOT" \
@@ -296,8 +304,10 @@ if [ -z "$SKIP_REASON" ]; then
   [ "$rc" -ne 0 ] && [ -z "$SKIP_REASON" ] && SKIP_REASON="codex exited $rc (see $DR/codex.log)"
 fi
 ```
-Run this in the background and continue reading the codebase for §4 while it
-works; join before §5.
+This call blocks for up to 600s (`timeout 600`, foreground). There is no background/job-control
+mechanism here — if you want to do other useful work (e.g. start §4 codebase research) while
+waiting, run this step as a separate shell invocation and poll/join it yourself; do not assume
+concurrency is provided for you.
 
 #### 3b.4 Validate and triage
 ```bash

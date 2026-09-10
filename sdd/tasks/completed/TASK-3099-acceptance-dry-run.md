@@ -170,6 +170,22 @@ This task *is* the integration test of spec §4. Evidence file `artifacts/logs/f
 
 ## Completion Note
 
+**ADDENDUM (same day, post code-review)**: The FEAT-545 code-review pass (run before
+pushing, over ALL 7 tasks) independently caught 3 CRITICAL bugs exercised by this task's
+own dry run: §3b.2 had no `SKIP_REASON` guard (would crash instead of skip), `$REPO_ROOT`
+was referenced but never assigned, and the brief renderer's whole-document `str.replace()`
+corrupted the template's own header comment. Separately, the committed `brief.md`'s
+`recommended_option_or_scope` section was empty due to a heading-boundary bug in this
+task's own extraction script (stopped at the first `###` instead of the next `##`). All
+were fixed, the twin-parity test was independently tightened, and this entire dry run was
+re-executed end-to-end against a corrected brief: 11 suggestions (5 confirmed / 1 rejected
+/ 5 escalated), schema-valid, all `affected_paths` verified, skip path re-confirmed with
+all three §3b guards exercised explicitly. The evidence files under
+`sdd/state/FEAT-545/design_research/` and spec §9 now reflect the RE-RUN, not the original
+notes below (kept for the historical record of what the first run found). See
+`sdd/specs/collaborative-adversarial-spec-design.spec.md` Revision History 0.4 and
+`sdd/state/FEAT-545/design_research/triage.md`.
+
 **Completed by**: sdd-worker (Claude Sonnet 5)
 **Date**: 2026-09-10
 

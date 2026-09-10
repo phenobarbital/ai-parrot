@@ -1,11 +1,14 @@
 <!--
   sdd/templates/design_research.prompt.md — neutral design-research brief (FEAT-545).
-  Rendered by /sdd-spec §3b and piped to `codex exec … --output-schema design_research.schema.json`.
+  Rendered by /sdd-spec section 3b and piped to `codex exec ... --output-schema
+  design_research.schema.json`.
   FORBIDDEN INPUTS: never paste the spec draft, the spec author's reasoning, a preferred
   conclusion, or any text written by the model that will author the spec. The brief carries
   ONLY the accepted exploration document (brainstorm/proposal) and verified code anchors.
-  Placeholders: {{problem_statement}} {{constraints_and_goals}} {{recommended_option_or_scope}}
-                {{code_context_paths}} {{open_questions}} {{question}}
+  Placeholders (double-curly-brace tokens, deliberately NOT written with literal braces in
+  this comment — a renderer that does a naive whole-document string replace must not also
+  rewrite this sentence): problem_statement, constraints_and_goals,
+  recommended_option_or_scope, code_context_paths, open_questions, question.
 -->
 # Independent design review — read-only
 

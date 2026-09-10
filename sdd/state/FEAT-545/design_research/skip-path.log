@@ -1,1 +1,4 @@
+after 3b.1: SKIP_REASON=model probe failed for does-not-exist (rc=1)
+3b.2 correctly skipped
+3b.3 correctly skipped
 SKIP_REASON=model probe failed for does-not-exist (rc=1)
