@@ -196,4 +196,19 @@ Verified a pre-existing, unrelated failure
 present on the same commit *before* any FEAT-544 changes (confirmed via
 `git stash`) — out of scope for this task, not touched.
 
-**Deviations from spec**: none.
+**Post-review addendum (2026-09-11)**: the FEAT-544 `code-reviewer` pass
+(cross-checked adversarially with `codex`) found that
+`importlib.util.find_spec("parrot.outputs.a2ui")` RAISES
+`ModuleNotFoundError` — it does not return `None` — when a parent package
+earlier in the dotted chain (here: `parrot` itself) cannot be imported at
+all, which is exactly the real "`ai-parrot` extra not installed"
+deployment shape. The unguarded `find_spec()` call would have crashed
+`setup_form_api()` at app startup instead of gracefully degrading.
+Independently reproduced (both "top-level `parrot` entirely absent" and
+"`parrot` exists, `a2ui` submodule doesn't" cases) before fixing: wrapped
+the probe in `try/except (ImportError, ModuleNotFoundError)` and added
+`test_seed_skips_a2ui_when_parent_package_genuinely_absent` (raises from
+a monkeypatched `find_spec`, rather than the pre-existing test's
+return-`None` monkeypatch, which never exercised the raising path). Fixed
+in a follow-up commit on this branch; not a change to this note's
+"Deviations from spec" (none) — a bug fix, not a design deviation.
