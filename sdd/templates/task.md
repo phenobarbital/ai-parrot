@@ -70,6 +70,90 @@ class ExistingClass(BaseClass):
 
 ---
 
+## Delegation Contract
+
+> **OPTIONAL.** Include this section ONLY when the task is
+> delegation-eligible: the design is COMPLETE (every target file listed,
+> every implementation block containing the already-decided code, no open
+> questions), hashes were computed at `/sdd-task` time, and they are
+> re-verified at execution time. `design_complete: true` is a declaration
+> the author signs — the validator checks structure, the thinking model
+> verifies semantics.
+>
+> **Remove this section entirely if the task is not delegation-eligible.**
+> A task without it takes the normal implementation route, which is the
+> default and is never a failure.
+
+```json
+{
+  "schema_version": 1,
+  "task_id": "TASK-<NNN>",
+  "spec_path": "sdd/specs/<feature>.spec.md",
+  "design_complete": true,
+  "targets": [
+    {
+      "path": "pkg/greeter.py",
+      "action": "create",
+      "expected_sha256": null,
+      "planned_changes": "New module with greet()",
+      "blocks": ["impl-greeter"]
+    },
+    {
+      "path": "pkg/__init__.py",
+      "action": "modify",
+      "expected_sha256": "<sha256 — MUST BE REPLACED with the real digest>",
+      "planned_changes": "Export greet",
+      "blocks": ["impl-init"]
+    }
+  ],
+  "references": [
+    {
+      "path": "pkg/__init__.py",
+      "sha256": "<sha256 — MUST BE REPLACED with the real digest>",
+      "start_line": 1,
+      "end_line": 3,
+      "purpose": "existing exports"
+    }
+  ],
+  "implementation_blocks": ["impl-greeter", "impl-init"],
+  "acceptance_criteria": ["pytest tests/test_greeter.py passes"],
+  "validation_commands": [["pytest", "tests/test_greeter.py", "-q"]]
+}
+```
+
+Compute every digest for real — the `<sha256 …>` placeholders above are
+**rejected** by the validator as `invalid_packet`, which is the intended
+safety net against shipping an unverified packet:
+
+```bash
+sha256sum pkg/__init__.py
+# or, without coreutils:
+python -c "import hashlib,sys;print(hashlib.sha256(open(sys.argv[1],'rb').read()).hexdigest())" pkg/__init__.py
+```
+
+A `create` target MUST have a block tagged with `path=<target>`; that block
+IS the new file's content. A `modify` target's blocks describe the decided
+edit and MUST carry `expected_sha256`.
+
+```python id=impl-greeter path=pkg/greeter.py
+def greet(name: str) -> str:
+    """Return a greeting."""
+    return f"hello {name}"
+```
+
+```python id=impl-init
+# Apply to pkg/__init__.py: add after the existing imports
+from .greeter import greet
+
+__all__ = [*__all__, "greet"]
+```
+
+Block ids match `^[a-z0-9][a-z0-9._-]{0,63}$` and must be unique in the
+file. Blocks must contain no placeholders (`...` on its own line, `TODO`,
+`FIXME`, `XXX`, `<angle placeholders>`, `raise NotImplementedError`) — the
+validator rejects them as `placeholder_code`.
+
+
 ## Implementation Notes
 
 > Technical guidance for the executing agent.

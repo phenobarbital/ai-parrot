@@ -226,6 +226,30 @@ Before writing ANY code, verify the task's `## Codebase Contract` section:
 - **NEVER guess an import, attribute, or method. If it's not in the contract
   and you're unsure, verify with `grep` or `read` before using it.**
 
+### b2) Delegated implementation (ONLY when a Delegation Contract exists)
+
+Skip this entire step unless the task file contains a `## Delegation Contract`
+section AND the `parrot-targeted-writer` MCP server is available. A task
+without one takes the normal route in step (c) — that is the default, not a
+failure.
+
+1. Call MCP tool `writer_generate` (server `parrot-targeted-writer`) with `task_path`.
+2. On `status: error` with a contract code (`stale_target`, `missing_block`,
+   `placeholder_code`, `underspecified_create`, …): fix the packet in the task file
+   (refresh hashes with `sha256sum`, complete the design) and retry once, or implement
+   the task yourself in step (c). **Never silently invokes another coder** — no other
+   coding tool is substituted when delegation fails.
+3. On `ok`: read `data.patch_path` with `source_read` in ranges of at most 350 lines and
+   review EVERY hunk against the task's Codebase Contract. Never apply a patch you have
+   not fully read. If a hunk is wrong, do not apply: fix the packet/blocks and regenerate
+   at most once more, else implement normally.
+4. Call `writer_apply` with `artifact_id` and `reviewed_sha256 = data.patch_sha256`
+   (verify it equals `sha256sum artifacts/tool-optimizations/<id>/patch.diff`).
+5. Run the task's acceptance tests yourself in step (e). The writer never runs tests, and
+   a model's claim that tests passed is not execution evidence.
+6. SDD state is never delegated: the index and task files are edited only by you,
+   in step (g).
+
 ### c) Implement — EXACTLY as specified (in worktree)
 - Create/modify ONLY the files listed in the task.
 - Use ONLY the class names, method signatures, and patterns specified.
@@ -240,6 +264,7 @@ VERIFICATION CHECKLIST for TASK-<NNN>:
 □ No files were created that are NOT listed in the task?
 □ Class/interface names match the task specification?
 □ No unrelated changes were made?
+□ Delegated patch hunks were all reviewed before writer_apply?
 ```
 If ANY check fails, fix or STOP.
 
