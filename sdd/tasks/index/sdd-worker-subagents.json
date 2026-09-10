@@ -173,7 +173,7 @@
       "feature_id": "FEAT-549",
       "feature": "sdd-worker-subagents",
       "spec": "sdd/specs/sdd-worker-subagents.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -181,8 +181,8 @@
       "parallelism_notes": "New prompt files + one-line Literal edits in models/llm|gemini|codex|claude|google_coding.py and _subagent_defs.py — disjoint lines from TASK-3118 but same files; parallel worktree acceptable, merge carefully.",
       "assigned_to": null,
       "started_at": "2026-09-10T20:42:27+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3123-sdd-coder-subagent-prompt.md"
+      "completed_at": "2026-09-10T21:04:35+00:00",
+      "file": "sdd/tasks/completed/TASK-3123-sdd-coder-subagent-prompt.md"
     },
     {
       "id": "TASK-3124",
