@@ -1,6 +1,6 @@
 # TASK-3064: Implement exact cosine search and tool-compatible thresholds
 
-**Feature**: FEAT-542 - Local LanceDB Vector, Full-Text and Hybrid Search
+**Feature**: FEAT-542 — Local LanceDB Vector, Full-Text and Hybrid Search
 **Spec**: `sdd/specs/lancedb-vector-store.spec.md`
 **Status**: pending
 **Priority**: high
@@ -108,6 +108,136 @@ Use the existing contracts above without changing unrelated shared behavior. Kee
 ### References in Codebase
 
 The task-specific locations above and the spec's sections 2, 4, 5, 6 and 8 are authoritative. Read any additional implementation API before relying on it; do not guess builder methods from a class name.
+
+---
+
+## Implementation Blueprint
+
+> **CRITICAL — Executor-ready starting point.** Write each block below to its declared
+> path nearly verbatim, then complete every `# FILL IN:` marker. Blocks were derived from
+> the spec's §2 New Public Interfaces and re-verified against the Codebase Contract above
+> when this task was written. This is NOT the full implementation: business-logic branches,
+> edge cases and test bodies are `FILL IN` stubs by design. Never change a signature, class
+> name, or file path the blueprint fixes.
+
+### Steps (in order)
+1. Validate parameters before generating any embedding — *why*: spec §2 says a blank query returns `[]` "after parameter validation, without embedding generation"; embedding first burns a model call for a request that was always invalid.
+2. Return raw cosine distance as `score`, never a similarity — *why*: `SearchResult.distance` returns `score` unchanged (`packages/ai-parrot/src/parrot/models/stores.py:74`), so converting here would silently redefine `distance` for every existing consumer.
+3. Translate thresholds into a distance predicate, do not rescale results — *why*: spec §2 requires `distance <= 1 - threshold` with scores still reported as distances.
+4. Apply the shared prefilter before the candidate limit — *why*: excluded parents must not consume the requested budget (spec §4 I3).
+
+### `packages/ai-parrot-embeddings/src/parrot/stores/lancedb.py` (MODIFY)
+```python
+# occurrences: 1 expected — verify after TASK-3062 lands:
+#   grep -c 'TASK-3064 owns vector search' packages/ai-parrot-embeddings/src/parrot/stores/lancedb.py
+# REPLACE the `similarity_search` stub TASK-3062 declared (keep the signature verbatim)
+
+    async def similarity_search(
+        self,
+        query: str,
+        collection: Union[str, None] = None,
+        limit: int = 2,
+        similarity_threshold: float = 0.0,
+        search_strategy: str = "auto",
+        metadata_filters: Union[dict, None] = None,
+        include_parents: bool = False,
+        **kwargs: Any,
+    ) -> list:
+        """Exact cosine search. Scores are RAW DISTANCES: lower is better.
+
+        Raises:
+            ValueError: non-positive/boolean/non-integer limit, out-of-range threshold,
+                or an unsupported ``search_strategy``.
+            LookupError: the collection does not exist.
+        """
+        # FILL IN, in this order:
+        #   1. validate limit (positive int, bool rejected), search_strategy ("auto" only),
+        #      and thresholds; blank query -> [] with NO embedding call
+        #   2. compile combine(compile_metadata_filter(...), parent clause unless include_parents)
+        #   3. await self._ensure_provider(); embed_query
+        #   4. run the exact (FLAT) query with the single prefilter applied BEFORE the limit
+        #   5. map rows to SearchResult with score = raw cosine distance, id = namespaced_id(...),
+        #      and metadata['_lancedb'] = {collection, record_id, mode: 'vector',
+        #      score_kind: 'cosine_distance', higher_is_better: False}
+        # — bounded by spec §2 "Search and Score Contracts", §2 Filters, AC5
+        raise NotImplementedError
+
+    def _distance_ceiling(self, similarity_threshold: float, score_threshold: float | None) -> float | None:
+        """Translate similarity thresholds into a maximum cosine distance."""
+        # FILL IN: similarity_threshold == 0.0 disables thresholding (base compatibility);
+        # nonzero must lie in (0, 1]; the tool's score_threshold means minimum cosine
+        # similarity in [0, 1]; when both are supplied use the STRICTER enabled one;
+        # return 1 - threshold — bounded by spec §2 threshold paragraph, AC5
+        raise NotImplementedError
+```
+**Why this shape**: `_distance_ceiling` is a separate pure helper because the threshold rule is the subtlest paragraph in the spec — two differently-defined inputs, one disabled sentinel, and a "stricter wins" tie-break — and it is far cheaper to unit-test in isolation than through a live query. The `_lancedb` metadata block is written here rather than in the origin so that provenance survives even for callers that bypass the toolkit.
+
+### `packages/ai-parrot-embeddings/tests/test_lancedb_vector_search.py` (CREATE)
+```python
+"""Vector contracts and tool-argument compatibility (FEAT-542, AC5)."""
+from __future__ import annotations
+
+import pytest
+
+from parrot.stores.lancedb import LanceDBStore
+
+pytestmark = pytest.mark.asyncio
+
+
+class TestValidation:
+    @pytest.mark.parametrize("limit", [0, -1, True, 1.5])
+    async def test_invalid_limits_raise(self, tmp_path, limit):
+        # FILL IN: bool must be rejected even though it is an int — bounded by spec §2
+        raise NotImplementedError
+
+    async def test_blank_query_returns_empty_without_embedding(self, tmp_path):
+        # FILL IN: assert the provider call counter stayed at 0 — bounded by spec §2
+        raise NotImplementedError
+
+    async def test_unsupported_search_strategy_rejected(self, tmp_path):
+        # FILL IN — bounded by spec §2 ("auto" uses exact search)
+        raise NotImplementedError
+
+
+class TestScores:
+    async def test_score_is_raw_cosine_distance_lower_is_better(self, tmp_path):
+        # FILL IN — bounded by spec §2 score contracts
+        raise NotImplementedError
+
+    async def test_distance_alias_is_unchanged(self, tmp_path):
+        # FILL IN: SearchResult.distance == score — bounded by models/stores.py:74
+        raise NotImplementedError
+
+
+class TestThresholds:
+    @pytest.mark.parametrize("similarity,score_threshold,expected_ceiling", [...])  # FILL IN
+    def test_distance_ceiling_rules(self, similarity, score_threshold, expected_ceiling):
+        # FILL IN: 0.0 disables; out-of-range raises; stricter wins — bounded by AC5
+        raise NotImplementedError
+
+
+class TestFilters:
+    async def test_excluded_parents_do_not_consume_the_candidate_budget(self, tmp_path):
+        # FILL IN: prefilter applied before limit — bounded by spec §4 I3, AC5
+        raise NotImplementedError
+
+    async def test_empty_collection_returns_empty_and_missing_raises(self, tmp_path):
+        # FILL IN: [] vs LookupError — bounded by spec §2 Filters
+        raise NotImplementedError
+
+
+class TestUnsupported:
+    async def test_mmr_search_raises_notimplementederror(self, tmp_path):
+        # FILL IN: message explains v1 is exact-search only — bounded by spec §2
+        raise NotImplementedError
+```
+**Why this shape**: `test_distance_alias_is_unchanged` guards the one cross-cutting invariant this task could break for every other backend's consumers; `test_excluded_parents_do_not_consume_the_candidate_budget` is the only way to tell a correct prefilter from a post-filter that silently returns fewer rows than asked.
+
+### FILL IN checklist
+- [ ] `lancedb.py::similarity_search` — the five ordered steps; bounded by AC5, spec §2 score contracts
+- [ ] `lancedb.py::_distance_ceiling` — sentinel, range, stricter-wins; bounded by AC5
+- [ ] `test_lancedb_vector_search.py` — all bodies and the threshold parametrize table; bounded by AC5
+- [ ] Confirm the `similarity_search` signature matches `abstract.py:245` exactly before editing
 
 ---
 

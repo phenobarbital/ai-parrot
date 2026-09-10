@@ -1,6 +1,6 @@
 # TASK-3063: Implement contextual ingestion, upserts and safe deletion
 
-**Feature**: FEAT-542 - Local LanceDB Vector, Full-Text and Hybrid Search
+**Feature**: FEAT-542 — Local LanceDB Vector, Full-Text and Hybrid Search
 **Spec**: `sdd/specs/lancedb-vector-store.spec.md`
 **Status**: pending
 **Priority**: high
@@ -113,6 +113,153 @@ Use the existing contracts above without changing unrelated shared behavior. Kee
 ### References in Codebase
 
 The task-specific locations above and the spec's sections 2, 4, 5, 6 and 8 are authoritative. Read any additional implementation API before relying on it; do not guess builder methods from a class name.
+
+---
+
+## Implementation Blueprint
+
+> **CRITICAL — Executor-ready starting point.** Write each block below to its declared
+> path nearly verbatim, then complete every `# FILL IN:` marker. Blocks were derived from
+> the spec's §2 New Public Interfaces and re-verified against the Codebase Contract above
+> when this task was written. This is NOT the full implementation: business-logic branches,
+> edge cases and test bodies are `FILL IN` stubs by design. Never change a signature, class
+> name, or file path the blueprint fixes.
+
+### Steps (in order)
+1. Validate IDs and metadata for the WHOLE input before writing any batch — *why*: spec §2 item 4 requires it, and a half-ingested corpus with a validation error at document 400 is unrecoverable without stable IDs.
+2. Compute fallback IDs BEFORE contextual augmentation — *why*: spec §2 "Data Models" is explicit; hashing the augmented text makes the same document hash differently on reingest and breaks upsert.
+3. Deep-copy caller documents before augmenting — *why*: spec §2 item 5 forbids mutating caller objects; the caller may reuse them for another store.
+4. Route every write through the TASK-3061 coordinator — *why*: this is where the §8 concurrent-writer answer becomes real behavior rather than a document.
+5. Report completed batch count on failure and never claim rollback — *why*: spec §2 item 6 says each committed batch is durable; claiming an all-or-nothing rollback would be false.
+
+### `packages/ai-parrot-embeddings/src/parrot/stores/lancedb.py` (MODIFY)
+```python
+# occurrences: 1 expected — verify after TASK-3062 lands:
+#   grep -c 'async def similarity_search' packages/ai-parrot-embeddings/src/parrot/stores/lancedb.py
+# BEFORE — insert above `    async def similarity_search(self, query: str, collection=None, limit: int = 2, **kwargs: Any) -> list:`
+#   (anchor created by TASK-3062's blueprint; if TASK-3062 renamed it, re-anchor before editing)
+
+    async def from_documents(self, documents: List[Any], collection=None, **kwargs: Any) -> Callable:
+        """Prepare the collection, add the documents and return this store."""
+        # FILL IN: create_collection then add_documents; empty input is a no-op
+        # — bounded by spec §2 item 4, AC4
+        raise NotImplementedError
+
+    async def add_documents(self, documents: List[Any], collection=None, **kwargs: Any) -> None:
+        """Upsert documents into an existing prepared collection.
+
+        Raises:
+            LookupError: the collection does not exist.
+            ValueError: conflicting or duplicate IDs in one call.
+        """
+        # FILL IN, in this order — the order is the contract, not a preference:
+        #   1. resolve IDs (explicit ids -> metadata['id'] -> record_id_for(ORIGINAL text))
+        #   2. validate every ID and metadata value for the FULL input; raise before writing
+        #   3. deep-copy documents, apply the existing contextual augmentation hook to copies
+        #   4. per batch: embed via the provider, validate dimension/finite/non-zero-norm,
+        #      then merge-insert under self._coordinator.run_mutation
+        #   5. on batch failure raise identifying the completed batch count, WITHOUT logging
+        #      document text, vectors or filter values
+        # — bounded by spec §2 items 4-6, AC4, AC8, and §7 "Avoid logging document text"
+        raise NotImplementedError
+
+    async def delete_documents(self, documents=None, pk: str = 'source_type', values=None,
+                               table=None, schema=None, collection=None, **kwargs: Any) -> int:
+        """Delete by document identity or by ``pk`` + ``values``. Returns rows removed.
+
+        Raises:
+            ValueError: empty filter, missing selector, or conflicting selectors.
+        """
+        # FILL IN: count and delete under ONE coordinator section so the returned count
+        # matches what was removed; pk='id' targets raw logical IDs, any other key must be
+        # a declared metadata field; no implicit delete-all; deletion reaches matching
+        # parents regardless of search visibility — bounded by spec §2 item 7, AC4
+        raise NotImplementedError
+
+    async def delete_documents_by_filter(self, search_filter: dict, table=None, schema=None,
+                                         collection=None, **kwargs: Any) -> int:
+        """Delete by compiled metadata predicate. Returns rows removed."""
+        # FILL IN: use compile_metadata_filter WITHOUT parent_exclusion_clause — deletion is
+        # not a search — and reject an empty filter — bounded by spec §2 item 7 and §2 Filters
+        raise NotImplementedError
+```
+**Why this shape**: the numbered order inside `add_documents` is the specification, not style — validating after the first batch has committed makes a partial write unavoidable, and augmenting before computing IDs breaks upsert idempotency on reingest. `delete_documents_by_filter` deliberately omits the parent clause because a caller deleting `source='x'` expects the parents to go too; reusing the search predicate would silently strand them.
+
+### `packages/ai-parrot-embeddings/tests/test_lancedb_mutations.py` (CREATE)
+```python
+"""CRUD, contextual text and multi-process mutation tests (FEAT-542, AC4/AC8)."""
+from __future__ import annotations
+
+import pytest
+
+from parrot.stores.lancedb import LanceDBStore
+
+pytestmark = pytest.mark.asyncio
+
+
+class TestIdentity:
+    async def test_explicit_ids_beat_metadata_id_beats_content_hash(self, tmp_path):
+        # FILL IN — bounded by spec §2 "Data Models" precedence
+        raise NotImplementedError
+
+    async def test_conflicting_or_duplicate_ids_raise_before_any_write(self, tmp_path):
+        # FILL IN: assert the table is untouched afterwards — bounded by AC4
+        raise NotImplementedError
+
+    async def test_fallback_id_uses_original_text_not_augmented(self, tmp_path):
+        # FILL IN: reingest with contextual augmentation on; assert upsert, not duplicate
+        # — bounded by spec §2 "Calculate fallback IDs before contextual augmentation"
+        raise NotImplementedError
+
+
+class TestIngestion:
+    async def test_caller_documents_are_not_mutated(self, tmp_path):
+        # FILL IN: snapshot inputs, compare after — bounded by AC4
+        raise NotImplementedError
+
+    @pytest.mark.parametrize("bad_vector", [...])  # FILL IN: wrong dim, NaN/inf, zero-norm
+    async def test_invalid_vectors_rejected(self, tmp_path, bad_vector):
+        # FILL IN — bounded by spec §2 row table
+        raise NotImplementedError
+
+    async def test_partial_batch_failure_reports_count_and_retry_is_idempotent(self, tmp_path):
+        # FILL IN: assert no rollback is claimed and a retry with stable IDs converges
+        # — bounded by spec §2 item 6, AC4
+        raise NotImplementedError
+
+    async def test_missing_collection_raises_lookuperror(self, tmp_path):
+        # FILL IN — bounded by spec §2 item 4
+        raise NotImplementedError
+
+
+class TestDeletion:
+    async def test_counts_are_exact_including_zero(self, tmp_path):
+        # FILL IN — bounded by AC4
+        raise NotImplementedError
+
+    async def test_empty_or_conflicting_selectors_raise(self, tmp_path):
+        # FILL IN: assert no rows removed — bounded by spec §2 item 7
+        raise NotImplementedError
+
+    async def test_deletion_reaches_parents_hidden_from_search(self, tmp_path):
+        # FILL IN — bounded by spec §2 item 7
+        raise NotImplementedError
+
+
+class TestConcurrentMutations:
+    def test_two_processes_upserting_the_same_ids_converge(self, tmp_path):
+        # FILL IN: real multiprocessing; every acknowledged write present after reopen,
+        # no duplicate logical document — bounded by AC8. Threads do NOT count.
+        raise NotImplementedError
+```
+**Why this shape**: `test_fallback_id_uses_original_text_not_augmented` is the test that catches the single most likely implementation slip in this task, and it is cheap; `test_partial_batch_failure_reports_count_and_retry_is_idempotent` exists because the spec explicitly refuses to promise rollback, so the test must assert the honest behavior rather than the comfortable one.
+
+### FILL IN checklist
+- [ ] `lancedb.py::from_documents` / `add_documents` — the five numbered steps in order; bounded by spec §2 items 4-6, AC4
+- [ ] `lancedb.py::delete_documents` — count+delete in one section, selector rules; bounded by AC4
+- [ ] `lancedb.py::delete_documents_by_filter` — no parent clause, no empty filter; bounded by spec §2 item 7
+- [ ] `test_lancedb_mutations.py` — all eleven bodies, real processes for the concurrent case; bounded by AC4/AC8
+- [ ] Re-verify the `similarity_search` anchor after TASK-3062 lands before applying the MODIFY block
 
 ---
 

@@ -1,6 +1,6 @@
 # TASK-3057: Reconcile approved requirements and prove SDK contracts
 
-**Feature**: FEAT-542 - Local LanceDB Vector, Full-Text and Hybrid Search
+**Feature**: FEAT-542 — Local LanceDB Vector, Full-Text and Hybrid Search
 **Spec**: `sdd/specs/lancedb-vector-store.spec.md`
 **Status**: pending
 **Priority**: high
@@ -115,6 +115,133 @@ Use the existing contracts above without changing unrelated shared behavior. Kee
 ### References in Codebase
 
 The task-specific locations above and the spec's sections 2, 4, 5, 6 and 8 are authoritative. Read any additional implementation API before relying on it; do not guess builder methods from a class name.
+
+---
+
+## Implementation Blueprint
+
+> **CRITICAL — Executor-ready starting point.** Write each block below to its declared
+> path nearly verbatim, then complete every `# FILL IN:` marker. Blocks were derived from
+> the spec's §2 New Public Interfaces and re-verified against the Codebase Contract above
+> when this task was written. This is NOT the full implementation: business-logic branches,
+> edge cases and test bodies are `FILL IN` stubs by design. Never change a signature, class
+> name, or file path the blueprint fixes.
+
+### Steps (in order)
+1. Read spec §9 (Design Research Cross-Check) and the v0.2/v0.3 rows in the Revision History — *why*: commit `12f552ff8` already performed the prose reconciliation this task was originally scoped to do; re-editing it burns the 4h budget that belongs to the SDK proof.
+2. Create the probe module and run it in an isolated environment with `lancedb==0.38.0` installed — *why*: the default suite must stay green without the optional extra, so the probes gate on `importorskip`.
+3. Record every observed signature, keyword and result column verbatim in the evidence document — *why*: TASK-3059/3061/3065 consume this document as their contract; a paraphrase is not a contract.
+4. Append the gate outcome to spec §7 — *why*: §7 currently states the pin is untested, and that sentence must stop being true or the pin must change.
+5. If any required behavior is absent, stop and leave this task `blocked` with the exact conflict — *why*: this gate exists precisely to prevent implementation against an unproven API (AC1).
+
+### `packages/ai-parrot-embeddings/tests/test_lancedb_sdk_contract.py` (CREATE)
+```python
+"""Bounded real-SDK compatibility probes for LanceDB (FEAT-542, AC1).
+
+Skipped unless the optional extra is installed. These are not product tests:
+each probe records one fact the spec depends on, and a failure here means the
+candidate pin is wrong, not that the backend is broken.
+"""
+from __future__ import annotations
+
+import pytest
+
+lancedb = pytest.importorskip("lancedb", reason="requires ai-parrot-embeddings[lancedb]")
+
+pytestmark = pytest.mark.asyncio
+
+
+async def test_async_connect_and_persisted_schema_metadata(tmp_path):
+    """connect_async opens a local dir; schema metadata survives reopen."""
+    # FILL IN: open tmp_path, create a table with an explicit pyarrow schema carrying
+    # manifest metadata, reopen in a fresh connection, assert metadata round-trips
+    # — bounded by spec §2 "Data Models and Persistent Schema" (schema version 1)
+    raise NotImplementedError
+
+
+async def test_cosine_distance_column_name_and_direction(tmp_path):
+    """Record the distance column name and whether lower is better."""
+    # FILL IN: run a vector query, capture the exact result column, assert direction
+    # — bounded by spec §2 "Search and Score Contracts" (raw cosine, lower is better)
+    raise NotImplementedError
+
+
+async def test_native_fts_index_and_hybrid_fusion(tmp_path):
+    """Native FTS index creation, BM25 order, and explicit vector+text hybrid."""
+    # FILL IN: create the FTS index via the async index API (NOT create_fts_index),
+    # run hybrid with an explicit query vector plus text, record the relevance column
+    # and whether pre-fusion component scores are exposed (spec §8 Q6)
+    # — bounded by spec §7 "Async/native FTS API drift"
+    raise NotImplementedError
+
+
+async def test_prefilter_merge_insert_delete_and_freshness(tmp_path):
+    """One conjunctive prefilter on all modes; merge-insert; delete; post-write reads."""
+    # FILL IN: assert the prefilter applies to vector, FTS and both hybrid legs, that
+    # merge-insert upserts by the stable id, and that rows written after index creation
+    # are visible to all three modes — bounded by spec §2 "Filters" and §7 "FTS index freshness"
+    raise NotImplementedError
+
+
+async def test_two_process_concurrent_commit_behavior(tmp_path):
+    """Two real OS processes commit to one directory; record the conflict contract."""
+    # FILL IN: spawn two processes doing merge-insert and index creation on the same dir;
+    # record whether the SDK retries, raises a distinguishable conflict error, or corrupts.
+    # An asyncio lock is NOT sufficient evidence — bounded by AC8 and spec §2 concurrency
+    raise NotImplementedError
+```
+**Why this shape**: each probe maps to exactly one spec claim that is currently unverified, so a failure names the claim that must change. `importorskip` keeps the default suite green without the extra (AC1). The concurrency probe must use real processes because the whole point of the §8 answer is that an in-process lock cannot prove it. Do not turn these into mocks — a mocked probe proves nothing and would let the pin ship untested.
+
+### `sdd/state/FEAT-542/lancedb-sdk-contract.md` (CREATE)
+```markdown
+# FEAT-542 — LanceDB SDK contract evidence
+
+**Gate task**: TASK-3057 · **Date**: <YYYY-MM-DD> · **Verdict**: pass | blocked
+
+## Environment
+| Item | Value |
+|---|---|
+| lancedb | <exact version resolved> |
+| pyarrow | <exact version resolved> |
+| Python | <exact version> |
+
+## Verified API surface
+<!-- One row per call the backend will make. Signature verbatim, not paraphrased. -->
+| Operation | Exact call | Result columns | Notes |
+|---|---|---|---|
+
+## Concurrency contract (consumed by TASK-3061)
+<!-- FILL IN: conflict behavior, whether a bounded retry suffices, and the exact
+     coordinator interface + configuration TASK-3061 must implement -->
+
+## Offline profile (consumed by TASK-3068)
+<!-- FILL IN: model/server fixture, provisioning steps, egress-denial mechanism -->
+
+## Spec §8 Q6 input
+<!-- FILL IN: does a hybrid result expose pre-fusion vector/lexical score columns? -->
+
+## Blockers
+<!-- FILL IN: exact conflict and proposed revised pin, or "none" -->
+```
+**Why this shape**: TASK-3061, TASK-3065 and TASK-3068 all name this document as their input, so the headings are a contract, not decoration. The Q6 row exists because the design-research escalation (spec §9 S2) can be decided cheaply from this gate's observation rather than by a separate investigation.
+
+### `sdd/specs/lancedb-vector-store.spec.md` (MODIFY)
+```markdown
+# occurrences: 1 (verified: grep -c 'If the candidate fails resolution or required behavior' sdd/specs/lancedb-vector-store.spec.md)
+# AFTER — insert below `If the candidate fails resolution or required behavior, stop that implementation gate with the exact conflict and propose a revised pin/spec; do not silently switch to cloud storage, an older FTS engine, a mock-only test, or a global dependency downgrade.` (verified: sdd/specs/lancedb-vector-store.spec.md:384)
+
+**Gate outcome (TASK-3057, <date>)**: <pass | blocked>. Resolved versions and the verified
+API surface are recorded in `sdd/state/FEAT-542/lancedb-sdk-contract.md`. <One sentence on
+what changed, if the pin moved.>
+```
+**Why**: §7 currently says the candidate pin's "resolution and runtime behavior were not tested during specification" — once this gate runs, that sentence needs an outcome next to it or the next reader re-does the work. Do not delete the original sentence; it is the honest record of what was known at spec time.
+
+### FILL IN checklist
+- [ ] `test_lancedb_sdk_contract.py` — all five probe bodies; bounded by AC1/AC8 and the spec sections named in each stub
+- [ ] `lancedb-sdk-contract.md::Concurrency contract` — the exact coordinator interface TASK-3061 implements; bounded by AC8
+- [ ] `lancedb-sdk-contract.md::Offline profile` — fixture and egress-denial mechanism; bounded by AC6
+- [ ] `lancedb-sdk-contract.md::Spec §8 Q6 input` — whether pre-fusion component columns exist; bounded by spec §9 S2
+- [ ] Spec §7 gate-outcome line — pass or blocked; bounded by AC1
 
 ---
 

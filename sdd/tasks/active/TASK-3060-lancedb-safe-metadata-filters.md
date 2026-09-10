@@ -1,6 +1,6 @@
 # TASK-3060: Compile safe metadata and parent filters
 
-**Feature**: FEAT-542 - Local LanceDB Vector, Full-Text and Hybrid Search
+**Feature**: FEAT-542 — Local LanceDB Vector, Full-Text and Hybrid Search
 **Spec**: `sdd/specs/lancedb-vector-store.spec.md`
 **Status**: pending
 **Priority**: high
@@ -97,6 +97,140 @@ Use the existing contracts above without changing unrelated shared behavior. Kee
 ### References in Codebase
 
 The task-specific locations above and the spec's sections 2, 4, 5, 6 and 8 are authoritative. Read any additional implementation API before relying on it; do not guess builder methods from a class name.
+
+---
+
+## Implementation Blueprint
+
+> **CRITICAL — Executor-ready starting point.** Write each block below to its declared
+> path nearly verbatim, then complete every `# FILL IN:` marker. Blocks were derived from
+> the spec's §2 New Public Interfaces and re-verified against the Codebase Contract above
+> when this task was written. This is NOT the full implementation: business-logic branches,
+> edge cases and test bodies are `FILL IN` stubs by design. Never change a signature, class
+> name, or file path the blueprint fixes.
+
+### Steps (in order)
+1. Compile to ONE conjunctive predicate string, never a chain of query-builder calls — *why*: spec §2 "Filters" warns that a builder can overwrite an earlier `where`; a single predicate has no such failure mode and is what both hybrid legs receive.
+2. Validate against the declared `metadata_fields` projection before emitting any SQL — *why*: filtering an undeclared field must raise, not silently match nothing (spec §2).
+3. Emit the parent-visibility clause as a separate, composable fragment — *why*: `delete_documents_by_filter` uses the same compiler *without* the search-only parent predicate (spec §2 last paragraph), so the two must be separable.
+4. Write the hostile-input tests in the same commit as the compiler — *why*: this module is the injection boundary; an untested escaper is the vulnerability.
+
+### `packages/ai-parrot-embeddings/src/parrot/stores/lancedb_filters.py` (CREATE)
+```python
+"""Typed predicate compiler for declared LanceDB metadata fields.
+
+Pure string construction over a validated projection. Never interpolates an
+unchecked identifier and never accepts a caller-supplied ``where`` expression.
+"""
+from __future__ import annotations
+
+from typing import Any
+
+from parrot.stores.lancedb_models import LanceDBConfig  # new in TASK-3059
+
+PARENT_DOCUMENT_TYPES = ("parent", "parent_chunk")
+
+
+class FilterCompilationError(ValueError):
+    """Raised for unknown fields, bad operators, mixed lists or unsafe literals."""
+
+
+def compile_metadata_filter(
+    filters: dict[str, Any] | None,
+    config: LanceDBConfig,
+) -> str | None:
+    """Compile a conjunctive predicate, or return None for no metadata restriction.
+
+    Raises:
+        FilterCompilationError: unknown field, undeclared operator, raw SQL,
+            mixed-type list, list containing null, or a non-finite value.
+    """
+    # FILL IN: per-key dispatch to equality / IN / IS NULL; AND-join; empty list compiles
+    # to a never-matching predicate; no str->number or str->bool coercion, and bool is not
+    # an int — bounded by spec §2 "Filters, Parent Visibility and Limits" and AC5
+    raise NotImplementedError
+
+
+def parent_exclusion_clause() -> str:
+    """Predicate excluding parents unless ``include_parents=True``."""
+    # FILL IN: exclude rows where is_full_document is true OR document_type is one of
+    # PARENT_DOCUMENT_TYPES; rows with MISSING markers stay visible; an is_chunk=True
+    # marker must NOT override an explicit parent marker
+    # — bounded by spec §2 (base-class semantics, NOT PostgreSQL's stricter version)
+    raise NotImplementedError
+
+
+def combine(*clauses: str | None) -> str | None:
+    """AND-join the non-empty clauses, or return None when all are empty."""
+    # FILL IN — bounded by spec §2 (one predicate reaches the SDK)
+    raise NotImplementedError
+
+
+def _quote_literal(value: Any) -> str:
+    """Escape a scalar for inclusion in a predicate."""
+    # FILL IN: correct quote escaping; reject NUL and non-finite numbers rather than
+    # stringifying them — bounded by spec §2 and the hostile-input tests
+    raise NotImplementedError
+```
+**Why this shape**: `parent_exclusion_clause` is a free function rather than a branch inside `compile_metadata_filter` precisely because deletion reuses the metadata half without it — folding them together is the bug spec §2 calls out. `_quote_literal` is the single escaping choke point, so every hostile-input test targets one function instead of a scattered set of f-strings. The docstring names the exact exception type because callers in TASK-3062–3065 must distinguish a user filter error from an SDK failure.
+
+### `packages/ai-parrot-embeddings/tests/test_lancedb_filters.py` (CREATE)
+```python
+"""Filter and hostile-input matrix (FEAT-542, AC5). No SDK required."""
+from __future__ import annotations
+
+import pytest
+
+from parrot.stores.lancedb_filters import (
+    FilterCompilationError,
+    compile_metadata_filter,
+    parent_exclusion_clause,
+)
+
+
+class TestSupportedMappings:
+    @pytest.mark.parametrize("value", [..., ...])  # FILL IN: scalar, list, None cases
+    def test_typed_equality_membership_and_null(self, value):
+        # FILL IN — bounded by spec §2 supported mapping values
+        raise NotImplementedError
+
+    def test_empty_membership_list_matches_nothing(self):
+        # FILL IN — bounded by spec §2 (empty list is not "unrestricted")
+        raise NotImplementedError
+
+
+class TestRejections:
+    @pytest.mark.parametrize("bad", [...])  # FILL IN: unknown field, raw SQL, mixed list,
+    # nested filter object, list containing null, bool-as-int, str-as-number
+    def test_rejected_before_any_sdk_call(self, bad):
+        # FILL IN: assert FilterCompilationError — bounded by AC5
+        raise NotImplementedError
+
+
+class TestParentVisibility:
+    def test_missing_markers_remain_visible(self):
+        # FILL IN — bounded by spec §2 (legacy unmarked rows stay visible)
+        raise NotImplementedError
+
+    def test_is_chunk_cannot_override_explicit_parent_marker(self):
+        # FILL IN — bounded by spec §2 contradictory-marker rule
+        raise NotImplementedError
+
+
+class TestHostileInput:
+    @pytest.mark.parametrize("payload", [...])  # FILL IN: quotes, SQL-like payloads,
+    # malicious identifiers, NUL bytes, non-finite numbers
+    def test_no_injection_and_no_stringification(self, payload):
+        # FILL IN — bounded by spec §2 "Compile only declared physical identifiers"
+        raise NotImplementedError
+```
+**Why this shape**: every test class maps to one spec paragraph, so a failure names the rule that broke. These tests need no SDK and no `tmp_path` — keeping them pure is what makes this task parallelizable against the store work.
+
+### FILL IN checklist
+- [ ] `lancedb_filters.py::compile_metadata_filter` — dispatch, AND-join, no coercion; bounded by AC5
+- [ ] `lancedb_filters.py::parent_exclusion_clause` — base-class semantics, not PostgreSQL's; bounded by AC5
+- [ ] `lancedb_filters.py::_quote_literal` — escaping plus NUL/non-finite rejection; bounded by AC5
+- [ ] `test_lancedb_filters.py` — all parametrize lists and bodies; bounded by AC5
 
 ---
 

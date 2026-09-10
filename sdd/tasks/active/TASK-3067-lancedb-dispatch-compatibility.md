@@ -1,6 +1,6 @@
 # TASK-3067: Register LanceDB and verify existing store consumers
 
-**Feature**: FEAT-542 - Local LanceDB Vector, Full-Text and Hybrid Search
+**Feature**: FEAT-542 — Local LanceDB Vector, Full-Text and Hybrid Search
 **Spec**: `sdd/specs/lancedb-vector-store.spec.md`
 **Status**: pending
 **Priority**: high
@@ -114,6 +114,107 @@ Use the existing contracts above without changing unrelated shared behavior. Kee
 ### References in Codebase
 
 The task-specific locations above and the spec's sections 2, 4, 5, 6 and 8 are authoritative. Read any additional implementation API before relying on it; do not guess builder methods from a class name.
+
+---
+
+## Implementation Blueprint
+
+> **CRITICAL — Executor-ready starting point.** Write each block below to its declared
+> path nearly verbatim, then complete every `# FILL IN:` marker. Blocks were derived from
+> the spec's §2 New Public Interfaces and re-verified against the Codebase Contract above
+> when this task was written. This is NOT the full implementation: business-logic branches,
+> edge cases and test bodies are `FILL IN` stubs by design. Never change a signature, class
+> name, or file path the blueprint fixes.
+
+### Steps (in order)
+1. Add exactly one key to `supported_stores` and change nothing else — *why*: two tests assert the map by exact equality, and the `faiss_store`/`arango` entries are deliberate pre-existing mismatches marked "do NOT fix".
+2. Update BOTH exact-equality assertions — *why*: there are two, in different files (`test_store_backends_present.py:27` and `test_namespace_imports.py:126`); fixing one leaves a red suite.
+3. Extend `STORE_BACKENDS` so the parametrized resolution test covers the new backend — *why*: otherwise nothing proves `parrot.stores.lancedb` resolves inside the satellite.
+4. Assert the missing-extra error names the install target — *why*: spec §7 requires "selecting/opening LanceDB reports the exact install extra when missing"; a bare `ImportError` is a support ticket.
+
+### `packages/ai-parrot/src/parrot/stores/__init__.py` (MODIFY)
+```python
+# occurrences: 1 (verified: grep -c "    'bigquery': 'BigQueryStore'," packages/ai-parrot/src/parrot/stores/__init__.py)
+# AFTER — insert below `    'bigquery': 'BigQueryStore',` (verified: packages/ai-parrot/src/parrot/stores/__init__.py:12)
+    'lancedb': 'LanceDBStore',
+```
+**Why**: this file must gain one line and nothing else. It has no eager backend imports — `from .postgres import PgVectorStore` is commented out at line 5 on purpose — and `VectorInterface._get_database_store` (`parrot/interfaces/vector.py:42`) resolves `parrot.stores.<name>` dynamically, so adding an import here would defeat the optional-extra design.
+
+### `packages/ai-parrot-embeddings/tests/test_store_backends_present.py` (MODIFY — backend list)
+```python
+# occurrences: 1 (verified: grep -c 'STORE_BACKENDS = \["postgres", "milvus", "arango", "bigquery", "faiss_store"\]' packages/ai-parrot-embeddings/tests/test_store_backends_present.py)
+# REPLACE line 7
+STORE_BACKENDS = ["postgres", "milvus", "arango", "bigquery", "faiss_store", "lancedb"]
+```
+**Why**: appended rather than inserted so the parametrize ids of the existing five cases do not shift in CI history.
+
+### `packages/ai-parrot-embeddings/tests/test_store_backends_present.py` (MODIFY — exact map)
+```python
+# occurrences: 1 (verified: grep -c "        'bigquery': 'BigQueryStore'," packages/ai-parrot-embeddings/tests/test_store_backends_present.py)
+# AFTER — insert below `        'bigquery': 'BigQueryStore',` (verified: packages/ai-parrot-embeddings/tests/test_store_backends_present.py:36)
+        'lancedb': 'LanceDBStore',
+```
+**Why**: extend the assertion, do NOT weaken it to a subset check — the exactness is the point of `test_supported_stores_unchanged`, and relaxing it would let a future accidental entry through unnoticed.
+
+### `packages/ai-parrot-embeddings/tests/test_namespace_imports.py` (MODIFY — second exact map)
+```python
+# occurrences: 1 (verified: grep -c "            'bigquery': 'BigQueryStore'," packages/ai-parrot-embeddings/tests/test_namespace_imports.py)
+# AFTER — insert below `            'bigquery': 'BigQueryStore',` (verified: packages/ai-parrot-embeddings/tests/test_namespace_imports.py:135)
+            'lancedb': 'LanceDBStore',
+```
+**Why**: this is the second, easily-missed copy of the same assertion — note the deeper indentation (it sits inside a test class). Leave the `# pre-existing mismatch; do NOT fix` comments on `faiss_store` and `arango` exactly as they are.
+
+### `packages/ai-parrot-embeddings/tests/test_lancedb_factory.py` (CREATE)
+```python
+"""Factory, tool and origin integration plus absence errors (FEAT-542, AC2)."""
+from __future__ import annotations
+
+import importlib  # verified: packages/ai-parrot-embeddings/tests/test_store_backends_present.py:2
+
+import pytest
+
+
+class TestDispatch:
+    def test_supported_stores_resolves_lancedb_to_the_satellite(self):
+        # FILL IN: import parrot.stores.lancedb, assert 'ai-parrot-embeddings' in __file__
+        # — bounded by AC2
+        raise NotImplementedError
+
+    def test_no_other_mapping_changed(self):
+        # FILL IN: the six pre-existing entries, values included — bounded by AC2
+        raise NotImplementedError
+
+
+class TestFactoryConfig:
+    def test_storeconfig_requires_explicit_flat_index_type(self):
+        # FILL IN: StoreConfig defaults index_type='IVF_FLAT' (models/stores.py:162), so a
+        # factory user must override it; assert the actionable rejection message
+        # — bounded by spec §2 config table, AC2
+        raise NotImplementedError
+
+    def test_default_tool_column_aliases_accepted(self):
+        # FILL IN: table/collection, document/embedding/cmetadata/id — bounded by AC2
+        raise NotImplementedError
+
+    def test_non_null_dsn_rejected_in_favour_of_uri(self):
+        # FILL IN — bounded by spec §2 last paragraph
+        raise NotImplementedError
+
+
+class TestMissingExtra:
+    def test_selecting_lancedb_without_the_sdk_names_the_install_extra(self):
+        # FILL IN: block lancedb from sys.modules in a subprocess; assert the error text
+        # contains 'ai-parrot-embeddings[lancedb]' — bounded by spec §7, AC1
+        raise NotImplementedError
+```
+**Why this shape**: `test_storeconfig_requires_explicit_flat_index_type` exists because `StoreConfig.index_type` defaults to `'IVF_FLAT'` (`packages/ai-parrot/src/parrot/models/stores.py:162`) while this backend supports `FLAT` only — that mismatch is listed in spec §7 as a known gotcha and will bite the first factory user otherwise. The missing-extra test runs in a subprocess because once `lancedb` is imported in-process you cannot un-import it reliably.
+
+### FILL IN checklist
+- [ ] `parrot/stores/__init__.py` — the single `lancedb` line, no imports added; bounded by AC2
+- [ ] `test_store_backends_present.py` — `STORE_BACKENDS` plus the exact-map entry; bounded by AC2
+- [ ] `test_namespace_imports.py` — the second exact-map entry; bounded by AC2
+- [ ] `test_lancedb_factory.py` — all six bodies; bounded by AC1/AC2
+- [ ] Preserve the `faiss_store`/`arango` "do NOT fix" comments verbatim in both test files
 
 ---
 

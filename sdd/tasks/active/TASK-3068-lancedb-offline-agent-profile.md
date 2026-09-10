@@ -1,6 +1,6 @@
 # TASK-3068: Deliver a fully offline local-agent profile
 
-**Feature**: FEAT-542 - Local LanceDB Vector, Full-Text and Hybrid Search
+**Feature**: FEAT-542 — Local LanceDB Vector, Full-Text and Hybrid Search
 **Spec**: `sdd/specs/lancedb-vector-store.spec.md`
 **Status**: pending
 **Priority**: high
@@ -114,6 +114,154 @@ Use the existing contracts above without changing unrelated shared behavior. Kee
 ### References in Codebase
 
 The task-specific locations above and the spec's sections 2, 4, 5, 6 and 8 are authoritative. Read any additional implementation API before relying on it; do not guess builder methods from a class name.
+
+---
+
+## Implementation Blueprint
+
+> **CRITICAL — Executor-ready starting point.** Write each block below to its declared
+> path nearly verbatim, then complete every `# FILL IN:` marker. Blocks were derived from
+> the spec's §2 New Public Interfaces and re-verified against the Codebase Contract above
+> when this task was written. This is NOT the full implementation: business-logic branches,
+> edge cases and test bodies are `FILL IN` stubs by design. Never change a signature, class
+> name, or file path the blueprint fixes.
+
+### Steps (in order)
+1. Read TASK-3057's "Offline profile" section before choosing a fixture — *why*: the gate names the model/server fixture and the egress-denial mechanism; picking a different one here means the acceptance test proves something the gate never validated.
+2. Verify the real `LocalLLMClient` and agent/tool-registration APIs before calling them — *why*: this task's Codebase Contract lists the import but not the constructor; inventing a signature is the exact failure the contract section exists to prevent.
+3. Separate provisioning from runtime, in code as well as in prose — *why*: spec §1 keeps weight downloading out of scope while requiring an offline agent; the example must fail loudly on missing assets rather than fetching them.
+4. Deny egress around the real run, permitting only documented loopback — *why*: AC6 as amended by spec v0.2 requires the whole path offline, not just storage; a test that only blocks the storage layer proves nothing new.
+
+### `examples/lancedb_local_agent.py` (CREATE)
+```python
+"""Fully offline local agent over LanceDB (FEAT-542, AC6).
+
+Provisioning is a SEPARATE, prior step: this script never downloads weights and
+never falls back to a remote provider. Missing assets are actionable failures.
+
+Run:
+    python examples/lancedb_local_agent.py --data-dir ./data/agent --model-path <path>
+"""
+from __future__ import annotations
+
+import argparse
+import asyncio
+import logging
+
+from parrot.clients.local import LocalLLMClient  # verified: packages/ai-parrot-client-local/src/parrot/clients/local/__init__.py:1
+
+logger = logging.getLogger(__name__)
+
+
+def parse_args() -> argparse.Namespace:
+    # FILL IN: --data-dir, --model-path, --embedding-path, --collection; all required,
+    # all local paths — bounded by this task's Scope (runnable explicit local paths)
+    raise NotImplementedError
+
+
+def assert_assets_provisioned(args: argparse.Namespace) -> None:
+    """Fail with an actionable message if any local asset is missing.
+
+    Raises:
+        SystemExit: missing weights, a non-local URL, an unreachable local server,
+            or an embedding dimension incompatible with the stored manifest.
+    """
+    # FILL IN: check each path exists; reject any http(s) URL that is not documented
+    # loopback; never download — bounded by spec §1 Non-Goals and this task's Scope
+    raise NotImplementedError
+
+
+async def build_agent(args: argparse.Namespace):
+    """Wire LanceDBStore -> LanceDBOrigin -> toolkit -> LocalLLMClient."""
+    # FILL IN: VERIFY the real constructor/registration signatures first (LocalLLMClient,
+    # the agent class and its tool registration) — this task's contract lists the import
+    # only. Limit tools to retrieval plus local memory; no implicit remote tool and no
+    # default remote LLM — bounded by this task's Scope, AC6
+    raise NotImplementedError
+
+
+async def main() -> None:
+    args = parse_args()
+    assert_assets_provisioned(args)
+    agent = await build_agent(args)
+    # FILL IN: one retrieval+answer cycle; log the answer via logger, not print
+    # — bounded by AC6
+    raise NotImplementedError
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+**Why this shape**: `assert_assets_provisioned` runs before `build_agent` so a missing model fails in one readable line instead of deep inside client construction — that ordering is the difference between a usable example and a support burden. Note that `examples/**/*.py` is gitignored in this repo: this file needs `git add -f` to be committed.
+
+### `packages/ai-parrot-tools/tests/multistoresearch/test_lancedb_offline_agent.py` (CREATE)
+```python
+"""Offline-profile validation and real local-model acceptance (FEAT-542, AC6)."""
+from __future__ import annotations
+
+import pytest
+
+pytestmark = pytest.mark.asyncio
+
+
+class TestProfileGuards:
+    async def test_missing_assets_fail_actionably_without_downloading(self, tmp_path):
+        # FILL IN: assert the error names the missing path and that no network call was
+        # attempted — bounded by spec §1 Non-Goals
+        raise NotImplementedError
+
+    async def test_nonlocal_url_is_rejected(self, tmp_path):
+        # FILL IN — bounded by this task's Scope
+        raise NotImplementedError
+
+    async def test_incompatible_embedding_dimension_is_rejected(self, tmp_path):
+        # FILL IN: manifest mismatch, non-destructive — bounded by AC3/AC6
+        raise NotImplementedError
+
+
+@pytest.mark.offline_acceptance
+class TestRealOfflineRun:
+    async def test_full_cycle_with_egress_denied(self, tmp_path):
+        # FILL IN: with REAL provisioned embedding + LLM assets, deny outbound DNS/HTTP
+        # (permit only documented loopback if the fixture uses a local server), then run
+        # ingest -> retrieve -> answer. A deterministic fake provider is NOT offline
+        # certification — bounded by AC6 as amended in spec v0.2
+        raise NotImplementedError
+```
+**Why this shape**: the `offline_acceptance` marker separates the real-asset run from the guard tests so CI can gate it on the dedicated feature job (spec §4 "the dedicated feature job installs the extra and must execute all integration tests without skips") while contributors without provisioned weights still get the guards. The comment forbidding fake providers is there because substituting one is the easiest way to make this file green while proving nothing.
+
+### `docs/lancedb-offline-profile.md` (CREATE)
+```markdown
+# Fully offline local agent with LanceDB (FEAT-542)
+
+## What "offline" means here
+Storage locality is not offline. This profile is offline because the embedding
+model AND the LLM are local and provisioned in advance; a local directory alone
+would still dial out for embeddings.
+
+## Provisioning (network required — done once, before going offline)
+<!-- FILL IN: exact steps to fetch the embedding model and LLM assets, with the
+     identities and paths the example expects -->
+
+## Running with egress denied
+<!-- FILL IN: the exact mechanism used by the acceptance test, and which loopback
+     endpoints (if any) are permitted and why -->
+
+## Failure modes
+<!-- FILL IN: missing asset, non-local URL, unavailable local server, incompatible
+     dimension — with the message each produces -->
+
+## What this profile does NOT do
+- Download or vendor weights.
+- Make the whole framework offline — only this documented path.
+```
+**Why this shape**: the first heading exists because "we use LanceDB so we're offline" is the exact wrong conclusion a reader would otherwise draw — it is the misconception design research S2/S11 flagged and spec §7 now carries as a named risk.
+
+### FILL IN checklist
+- [ ] `examples/lancedb_local_agent.py` — arg parsing, asset guards, real agent wiring; bounded by AC6 (verify constructors first; `git add -f` to commit)
+- [ ] `test_lancedb_offline_agent.py` — three guard bodies plus the real egress-denied run; bounded by AC6
+- [ ] `docs/lancedb-offline-profile.md` — provisioning, egress mechanism, failure table; bounded by AC10
+- [ ] Confirm the fixture and egress mechanism match `sdd/state/FEAT-542/lancedb-sdk-contract.md`
 
 ---
 

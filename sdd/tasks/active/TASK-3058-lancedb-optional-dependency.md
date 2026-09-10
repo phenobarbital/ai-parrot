@@ -1,6 +1,6 @@
 # TASK-3058: Package the optional LanceDB dependency
 
-**Feature**: FEAT-542 - Local LanceDB Vector, Full-Text and Hybrid Search
+**Feature**: FEAT-542 — Local LanceDB Vector, Full-Text and Hybrid Search
 **Spec**: `sdd/specs/lancedb-vector-store.spec.md`
 **Status**: pending
 **Priority**: high
@@ -91,6 +91,108 @@ Use the existing contracts above without changing unrelated shared behavior. Kee
 ### References in Codebase
 
 The task-specific locations above and the spec's sections 2, 4, 5, 6 and 8 are authoritative. Read any additional implementation API before relying on it; do not guess builder methods from a class name.
+
+---
+
+## Implementation Blueprint
+
+> **CRITICAL — Executor-ready starting point.** Write each block below to its declared
+> path nearly verbatim, then complete every `# FILL IN:` marker. Blocks were derived from
+> the spec's §2 New Public Interfaces and re-verified against the Codebase Contract above
+> when this task was written. This is NOT the full implementation: business-logic branches,
+> edge cases and test bodies are `FILL IN` stubs by design. Never change a signature, class
+> name, or file path the blueprint fixes.
+
+### Steps (in order)
+1. Add the `lancedb` extra next to the other backend extras — *why*: the file groups vector-store backends together under the "Vector-store backends (TASK-1335)" comment, and a stray extra elsewhere breaks that grouping.
+2. Add `lancedb` to the `all` aggregator — *why*: `pip install ai-parrot[all]` must pull it, per spec §2 "Configuration and Compatibility".
+3. Regenerate `uv.lock` from the workspace root, never by hand — *why*: a hand-edited lock is not reproducible and will not match CI.
+4. Assert the manifest contract in tests rather than the installed environment — *why*: the packaging test must pass whether or not the extra is installed (AC1).
+
+### `packages/ai-parrot-embeddings/pyproject.toml` (MODIFY)
+```toml
+# occurrences: 1 (verified: grep -c 'bigquery = [' packages/ai-parrot-embeddings/pyproject.toml)
+# AFTER — insert below the `bigquery = [ ... ]` block, before `faiss = []` (verified: packages/ai-parrot-embeddings/pyproject.toml:73)
+lancedb = [
+    "lancedb==0.38.0",  # FILL IN: use the exact pin TASK-3057's gate resolved — bounded by AC1
+]
+```
+**Why**: the pin is exact, not a floor, because spec §7 requires a gated release rather than "whatever resolves today". If TASK-3057 moved the pin, this value moves with it — do not leave `0.38.0` here if the gate chose otherwise.
+
+### `packages/ai-parrot-embeddings/pyproject.toml` (MODIFY — aggregator)
+```toml
+# occurrences: 1 (verified: grep -c 'all = [' packages/ai-parrot-embeddings/pyproject.toml)
+# REPLACE the single line inside the `all = [ ... ]` block (verified: packages/ai-parrot-embeddings/pyproject.toml:98)
+    "ai-parrot-embeddings[huggingface,google,openai,pgvector,milvus,arango,bigquery,faiss,chroma,lancedb,reranker-local,reranker-llm,multimodal]",
+```
+**Why**: `lancedb` is inserted after `chroma` so the list keeps its existing embeddings-then-stores-then-rerankers order. Every other name in that string must survive verbatim — dropping one silently un-installs a backend for every `[all]` user.
+
+### `uv.lock` (MODIFY)
+```bash
+# occurrences: n/a — this is a fully generated file with no anchor line to attach to;
+#   the "block" below is the command that regenerates it, not an edit to apply.
+# Generated file — do NOT hand-edit. Regenerate from the workspace root:
+uv lock
+# then confirm the new backend actually resolved, and that nothing else moved:
+git diff --stat uv.lock
+```
+**Why**: a hand-edited lock is not reproducible and will diverge from what CI resolves. If
+`uv lock` pulls the pin but also bumps unrelated packages, stop and report it — spec §7 says
+not to downgrade `pyarrow` (core pins `>=25.0` at `packages/ai-parrot/pyproject.toml:157`)
+merely to force LanceDB to resolve. A resolution conflict here is a TASK-3057 gate failure,
+not something to solve by loosening a constraint.
+
+### `packages/ai-parrot-embeddings/tests/test_lancedb_packaging.py` (CREATE)
+```python
+"""Manifest contract for the optional LanceDB extra (FEAT-542, AC1).
+
+Reads pyproject.toml directly: these assertions must hold whether or not the
+extra is installed in the running environment.
+"""
+from __future__ import annotations
+
+import tomllib
+from pathlib import Path
+
+import pytest
+
+PYPROJECT = Path(__file__).parent.parent / "pyproject.toml"
+
+
+@pytest.fixture(scope="module")
+def extras() -> dict:
+    return tomllib.loads(PYPROJECT.read_text())["project"]["optional-dependencies"]
+
+
+def test_lancedb_extra_declares_exact_pin(extras):
+    """The lancedb extra exists and pins one exact version."""
+    # FILL IN: assert the extra exists and every requirement uses '==' — bounded by
+    # spec §7 "Version/platform compatibility" (no floors for this backend)
+    raise NotImplementedError
+
+
+def test_all_aggregator_includes_lancedb_without_dropping_backends(extras):
+    """The all extra gains lancedb and keeps every pre-existing name."""
+    # FILL IN: assert the aggregator string contains lancedb AND each of
+    # huggingface, google, openai, pgvector, milvus, arango, bigquery, faiss, chroma,
+    # reranker-local, reranker-llm, multimodal — bounded by AC1
+    raise NotImplementedError
+
+
+def test_importing_core_does_not_require_the_sdk():
+    """parrot.stores imports cleanly with no lancedb installed."""
+    # FILL IN: import parrot.stores in a subprocess with lancedb blocked from sys.modules
+    # — bounded by AC1 (unrelated core/tools imports work without the SDK)
+    raise NotImplementedError
+```
+**Why this shape**: reading the manifest with `tomllib` rather than inspecting installed distributions is what makes these tests environment-independent — the whole point of AC1 is that the default suite passes without the extra. The third test is the one that actually catches an eager `import lancedb` sneaking into `parrot/stores/__init__.py`.
+
+### FILL IN checklist
+- [ ] `pyproject.toml::lancedb` — the exact pin from TASK-3057's gate; bounded by AC1
+- [ ] `test_lancedb_packaging.py::test_lancedb_extra_declares_exact_pin` — exact-pin assertion; bounded by spec §7
+- [ ] `test_lancedb_packaging.py::test_all_aggregator_includes_lancedb_without_dropping_backends` — full name list; bounded by AC1
+- [ ] `test_lancedb_packaging.py::test_importing_core_does_not_require_the_sdk` — subprocess import guard; bounded by AC1
+- [ ] `uv.lock` — regenerated via `uv lock` from the workspace root, never hand-edited
 
 ---
 

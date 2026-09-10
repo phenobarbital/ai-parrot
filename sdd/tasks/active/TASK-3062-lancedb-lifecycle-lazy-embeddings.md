@@ -1,6 +1,6 @@
 # TASK-3062: Implement async lifecycle and lazy embedding ownership
 
-**Feature**: FEAT-542 - Local LanceDB Vector, Full-Text and Hybrid Search
+**Feature**: FEAT-542 — Local LanceDB Vector, Full-Text and Hybrid Search
 **Spec**: `sdd/specs/lancedb-vector-store.spec.md`
 **Status**: pending
 **Priority**: high
@@ -114,6 +114,202 @@ Use the existing contracts above without changing unrelated shared behavior. Kee
 ### References in Codebase
 
 The task-specific locations above and the spec's sections 2, 4, 5, 6 and 8 are authoritative. Read any additional implementation API before relying on it; do not guess builder methods from a class name.
+
+---
+
+## Implementation Blueprint
+
+> **CRITICAL — Executor-ready starting point.** Write each block below to its declared
+> path nearly verbatim, then complete every `# FILL IN:` marker. Blocks were derived from
+> the spec's §2 New Public Interfaces and re-verified against the Codebase Contract above
+> when this task was written. This is NOT the full implementation: business-logic branches,
+> edge cases and test bodies are `FILL IN` stubs by design. Never change a signature, class
+> name, or file path the blueprint fixes.
+
+### Steps (in order)
+1. Initialize base state WITHOUT embedding arguments, then store normalized settings on the subclass — *why*: `AbstractStore.__init__` eagerly creates the configured provider at `abstract.py:155`, and spec §2 item 1 requires FTS-only reopen to work with no model constructed. Do not refactor the base class.
+2. Import the SDK inside methods, never at module top level — *why*: `parrot.stores.lancedb` must be importable without the extra for TASK-3058's guard and TASK-3067's dispatch test to pass.
+3. Make `connection()` idempotent and non-creating — *why*: spec §2 item 2 says connecting alone never creates or replaces a collection; a create-on-connect is silent data creation.
+4. Override `_free_resources` to release borrowed providers without calling `free()` — *why*: `abstract.py:222` calls `provider.free()`, which would destroy a registry-shared model another store is using (AC4).
+5. Leave every query method to TASK-3064/3065 as an explicit stub — *why*: this task owns lifecycle only; a half-written search here collides with the tasks that own it.
+
+### `packages/ai-parrot-embeddings/src/parrot/stores/lancedb.py` (CREATE)
+```python
+"""LanceDB backend: lifecycle, collection setup and compatibility normalization.
+
+Query methods are declared here but implemented by TASK-3064 (vector) and
+TASK-3065 (FTS/hybrid). The SDK is imported lazily inside methods so this module
+stays importable without ``ai-parrot-embeddings[lancedb]``.
+"""
+from __future__ import annotations
+
+import logging
+from typing import Any, Callable, List, Union
+
+from parrot.stores import AbstractStore  # verified: packages/ai-parrot-embeddings/tests/test_namespace_imports.py:151
+from parrot.stores.lancedb_concurrency import MutationCoordinator  # new in TASK-3061
+from parrot.stores.lancedb_models import CollectionManifest, LanceDBConfig  # new in TASK-3059
+
+
+class LanceDBStore(AbstractStore):
+    """Embedded vector, full-text and hybrid store over a local directory."""
+
+    def __init__(self, embedding_model=None, embedding=None, **kwargs: Any) -> None:
+        self.logger = logging.getLogger(__name__)
+        # FILL IN: call super().__init__() WITHOUT embedding_model/embedding so the base
+        # does not eagerly construct a provider (abstract.py:155), then keep the normalized
+        # provider settings on self for lazy construction — bounded by spec §2 item 1, AC6
+        self._config: LanceDBConfig = ...  # FILL IN: build from kwargs incl. table/uri aliases
+        self._manifest: CollectionManifest | None = None
+        self._coordinator: MutationCoordinator | None = None
+        raise NotImplementedError
+
+    async def _ensure_provider(self):
+        """Construct the embedding provider on first vector use, never for FTS."""
+        # FILL IN: single-flight construction under a lock; must remain uncalled on the
+        # FTS path — bounded by AC6 and the provider call counters in lancedb_fixtures
+        raise NotImplementedError
+
+    async def connection(self) -> tuple:
+        """Open the directory and return ``(connection, default_table_or_none)``.
+
+        Idempotent. Never creates or replaces a collection.
+        """
+        # FILL IN: lazy `import lancedb`; connect_async against the canonical uri with the
+        # configured read consistency; cache handles — bounded by spec §2 item 2, AC3
+        raise NotImplementedError
+
+    def get_vector(self, metric_type: str = None, **kwargs: Any):
+        """Return the already-open default table, or raise.
+
+        Raises:
+            RuntimeError: the store is not connected. This accessor performs no I/O.
+        """
+        # FILL IN — bounded by spec §2 item 2 (synchronous accessors do no async I/O)
+        raise NotImplementedError
+
+    async def create_collection(self, collection: str) -> None:
+        """Create the Arrow schema and the native FTS index when missing.
+
+        Idempotent on a compatible existing collection. A failed FTS setup leaves an
+        explicit initialization error, never a successful searchable collection.
+        """
+        # FILL IN: run under the coordinator's exclusive section (TASK-3061); use the async
+        # index API, NOT create_fts_index; never overwrite an existing table
+        # — bounded by spec §2 item 3, §7 "Async/native FTS API drift", AC3
+        raise NotImplementedError
+
+    async def prepare_embedding_table(self, tablename: str, conn: Any = None, **kwargs: Any) -> None:
+        """Legacy-compatible alias for :meth:`create_collection`."""
+        # FILL IN: accept conn=None or this store's connection, default column labels and
+        # use_jsonb=True as a compatibility-only flag; reject drop_columns=True, foreign
+        # connections and schema-changing options; FTS preparation happens even when
+        # create_all_indexes is False — bounded by spec §2 last paragraph, AC2
+        raise NotImplementedError
+
+```
+**Why this block**: construction, provider laziness and collection setup are the three places AC6 and AC3 can be lost, so they are read together. Do not move the lazy-provider logic into the base class.
+
+### `packages/ai-parrot-embeddings/src/parrot/stores/lancedb.py` (CREATE — part 2, same file)
+```python
+    async def disconnect(self) -> None:
+        """Idempotent shutdown; waits for this store's in-flight operations."""
+        # FILL IN: nested contexts close only at the outermost exit — bounded by AC8
+        raise NotImplementedError
+
+    def _free_resources(self) -> None:
+        """Release borrowed providers WITHOUT calling their ``free()``."""
+        # FILL IN: drop references only — the base implementation at abstract.py:222 calls
+        # provider.free(), which would destroy a registry-shared model — bounded by AC4
+        raise NotImplementedError
+
+    async def similarity_search(self, query: str, collection=None, limit: int = 2, **kwargs: Any) -> list:
+        """Implemented by TASK-3064."""
+        raise NotImplementedError("TASK-3064 owns vector search")
+
+    async def fulltext_search(self, query: str, collection=None, limit: int = 10, **kwargs: Any) -> list:
+        """Implemented by TASK-3065."""
+        raise NotImplementedError("TASK-3065 owns FTS")
+
+    async def hybrid_search(self, query: str, collection=None, limit: int = 10, **kwargs: Any) -> list:
+        """Implemented by TASK-3065."""
+        raise NotImplementedError("TASK-3065 owns hybrid search")
+
+    async def mmr_search(self, **kwargs: Any) -> list:
+        """Always raises: v1 supports exact similarity search only."""
+        raise NotImplementedError(
+            "LanceDBStore does not support MMR; v1 provides exact cosine search only."
+        )
+```
+**Why this shape**: the three query stubs exist so TASK-3063/3064/3065 have a verified anchor to attach to rather than inventing one, and so an executor who runs the class early gets an honest failure instead of a missing attribute. `mmr_search` raises with a message rather than being absent, because the existing vector tool has an opt-in MMR path that must fail clearly (spec §2). Do not remove `_free_resources` — it is the single line standing between this backend and freeing another store's shared model.
+
+### `packages/ai-parrot-embeddings/tests/test_lancedb_lifecycle.py` (CREATE)
+```python
+"""Lifecycle, schema and provider-ownership tests (FEAT-542, AC3/AC4/AC6/AC8)."""
+from __future__ import annotations
+
+import pytest
+
+from parrot.stores.lancedb import LanceDBStore
+
+pytestmark = pytest.mark.asyncio
+
+
+class TestLazyProvider:
+    async def test_construction_does_not_build_a_provider(self, tmp_path):
+        # FILL IN: provider factory that raises if touched — bounded by AC6
+        raise NotImplementedError
+
+    async def test_concurrent_first_use_constructs_exactly_once(self, tmp_path):
+        # FILL IN: gather N vector calls, assert one construction — bounded by AC6
+        raise NotImplementedError
+
+
+class TestConnection:
+    async def test_connect_is_idempotent_and_creates_nothing(self, tmp_path):
+        # FILL IN — bounded by spec §2 item 2
+        raise NotImplementedError
+
+    async def test_get_vector_raises_when_not_connected(self, tmp_path):
+        # FILL IN: RuntimeError, no I/O — bounded by spec §2 item 2
+        raise NotImplementedError
+
+
+class TestCollection:
+    async def test_failed_fts_setup_leaves_an_error_not_a_searchable_collection(self, tmp_path):
+        # FILL IN — bounded by spec §2 item 3
+        raise NotImplementedError
+
+    async def test_retry_completes_index_prep_without_replacing_rows(self, tmp_path):
+        # FILL IN — bounded by AC3
+        raise NotImplementedError
+
+
+class TestOwnership:
+    async def test_borrowed_provider_is_never_freed(self, tmp_path):
+        # FILL IN: injected provider with a free() that fails the test if called
+        # — bounded by AC4
+        raise NotImplementedError
+
+    async def test_nested_context_closes_only_at_outermost_exit(self, tmp_path):
+        # FILL IN — bounded by AC8
+        raise NotImplementedError
+
+    async def test_event_loop_heartbeat_advances_during_blocking_work(self, tmp_path):
+        # FILL IN: 200ms blocking fixture, 10ms heartbeat, >= 5 ticks
+        # — bounded by spec §4 "Test Data / Fixtures"
+        raise NotImplementedError
+```
+**Why this shape**: `test_construction_does_not_build_a_provider` uses a factory that *raises* rather than a counter, because a counter test passes if the provider is built lazily-but-eagerly on the FTS path; a raising factory fails loudly at the exact moment AC6 is violated.
+
+### FILL IN checklist
+- [ ] `lancedb.py::__init__` — base init without embedding args, config normalization; bounded by spec §2 item 1, AC6
+- [ ] `lancedb.py::_ensure_provider` — single-flight lazy construction; bounded by AC6
+- [ ] `lancedb.py::connection` / `get_vector` — idempotent, non-creating, no I/O in the accessor; bounded by spec §2 item 2
+- [ ] `lancedb.py::create_collection` / `prepare_embedding_table` — schema + native FTS, legacy arg mapping; bounded by AC2/AC3
+- [ ] `lancedb.py::disconnect` / `_free_resources` — nested contexts, borrowed providers; bounded by AC4/AC8
+- [ ] `test_lancedb_lifecycle.py` — all nine bodies; bounded by AC3/AC4/AC6/AC8
+- [ ] Leave `similarity_search` / `fulltext_search` / `hybrid_search` as stubs for TASK-3064/3065
 
 ---
 

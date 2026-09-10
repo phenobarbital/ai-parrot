@@ -1,6 +1,6 @@
 # TASK-3066: Add the LanceDB hybrid search origin
 
-**Feature**: FEAT-542 - Local LanceDB Vector, Full-Text and Hybrid Search
+**Feature**: FEAT-542 — Local LanceDB Vector, Full-Text and Hybrid Search
 **Spec**: `sdd/specs/lancedb-vector-store.spec.md`
 **Status**: pending
 **Priority**: high
@@ -104,6 +104,166 @@ Use the existing contracts above without changing unrelated shared behavior. Kee
 ### References in Codebase
 
 The task-specific locations above and the spec's sections 2, 4, 5, 6 and 8 are authoritative. Read any additional implementation API before relying on it; do not guess builder methods from a class name.
+
+---
+
+## Implementation Blueprint
+
+> **CRITICAL — Executor-ready starting point.** Write each block below to its declared
+> path nearly verbatim, then complete every `# FILL IN:` marker. Blocks were derived from
+> the spec's §2 New Public Interfaces and re-verified against the Codebase Contract above
+> when this task was written. This is NOT the full implementation: business-logic branches,
+> edge cases and test bodies are `FILL IN` stubs by design. Never change a signature, class
+> name, or file path the blueprint fixes.
+
+### Steps (in order)
+1. Follow `VectorStoreOrigin`'s normalization shape rather than inventing one — *why*: `origins/vector.py:90` is the verified provenance pattern the toolkit already expects, and a divergent shape breaks grouped ordering.
+2. Borrow the store; never open or close it — *why*: spec §2 says the caller owns connection lifetime, and an origin that closes a shared store breaks every other origin using it.
+3. Set `supports_fts = True` unconditionally — *why*: unlike `VectorStoreOrigin`, which computes it from a callable attribute (`origins/vector.py:48`), this backend always provides native FTS.
+4. Export from `origins/__init__.py` WITHOUT importing the SDK — *why*: importing `parrot_tools.multistoresearch.origins` must not require `ai-parrot-embeddings[lancedb]` (AC1).
+5. Let errors and cancellation propagate — *why*: the toolkit isolates per-origin failures itself; returning `[]` on failure would report a broken origin as an empty success (AC7).
+
+### `packages/ai-parrot-tools/src/parrot_tools/multistoresearch/origins/lancedb.py` (CREATE)
+```python
+"""LanceDB search origin: vector or native hybrid, plus an explicit FTS route.
+
+Borrows an already-configured ``LanceDBStore``. Never opens or closes it.
+"""
+from __future__ import annotations
+
+from typing import Any, Literal
+
+from parrot.models import OriginHit, SearchOriginKind  # verified: packages/ai-parrot-tools/src/parrot_tools/multistoresearch/origins/vector.py:10
+from parrot.models.stores import SearchResult  # verified: .../origins/vector.py:11
+
+from .base import SearchOrigin  # verified: .../origins/vector.py:13
+
+
+class LanceDBOrigin(SearchOrigin):
+    """Federates LanceDB vector or native hybrid results into the toolkit."""
+
+    def __init__(
+        self,
+        store: Any,
+        *,
+        name: str = "lancedb",
+        description: str = "",
+        mode: Literal["vector", "hybrid"] = "hybrid",
+        collection: str | None = None,
+        metadata_filters: dict[str, Any] | None = None,
+        include_parents: bool = False,
+        timeout: float | None = None,
+    ) -> None:
+        # FILL IN: call super().__init__ per base.py's contract, then store the fixed scope.
+        # kind = SearchOriginKind.VECTOR; supports_fts = True unconditionally (unlike
+        # VectorStoreOrigin, which computes it at origins/vector.py:48)
+        # — bounded by spec §2 New Public Interfaces
+        raise NotImplementedError
+
+    async def search(self, query: str, k: int) -> list[OriginHit]:
+        """Run the configured mode with ``limit=k`` and this origin's fixed scope."""
+        # FILL IN: dispatch to store.hybrid_search or store.similarity_search per self.mode,
+        # passing collection/metadata_filters/include_parents; normalize; propagate errors
+        # and cancellation — bounded by AC7
+        raise NotImplementedError
+
+    async def fts_search(self, query: str, k: int) -> list[OriginHit]:
+        """Always route to lexical search, regardless of the configured mode."""
+        # FILL IN: always store.fulltext_search — bounded by spec §2 New Public Interfaces
+        raise NotImplementedError
+
+    def _to_hits(self, results: list[Any]) -> list[OriginHit]:
+        """Normalize backend results into ``OriginHit`` with native score and rank."""
+        # FILL IN: preserve the native score and SDK order unchanged; native_rank is
+        # 1-based (models/stores.py:101); carry the namespaced id and ALL metadata
+        # including the '_lancedb' provenance block; set origin/origin_kind
+        # — bounded by AC7 and the pattern at origins/vector.py:90
+        raise NotImplementedError
+```
+**Why this shape**: `_to_hits` is one helper for both modes so vector and hybrid provenance cannot drift apart — the toolkit reranks the merged list with BM25 afterwards (`toolkit.py:359`), and the only thing preserving native meaning is the per-origin section plus the `_lancedb` block. `supports_fts` is a plain `True` rather than a computed property specifically because copying `VectorStoreOrigin`'s duck-typing check here would silently disable FTS if the store class is ever wrapped.
+
+### `packages/ai-parrot-tools/src/parrot_tools/multistoresearch/origins/__init__.py` (MODIFY)
+```python
+# occurrences: 1 (verified: grep -c 'from .wiki import ParrotWikiOrigin' packages/ai-parrot-tools/src/parrot_tools/multistoresearch/origins/__init__.py)
+# AFTER — insert below `from .wiki import ParrotWikiOrigin` (verified: packages/ai-parrot-tools/src/parrot_tools/multistoresearch/origins/__init__.py:11)
+from .lancedb import LanceDBOrigin
+```
+**Why**: this import must stay SDK-free — `origins/lancedb.py` imports only `parrot.models` and `.base`, never `lancedb` or `parrot.stores.lancedb`, so importing the package works with no optional extra installed (AC1). If you find yourself needing a store import here, the type belongs in a `TYPE_CHECKING` block instead.
+
+### `packages/ai-parrot-tools/src/parrot_tools/multistoresearch/origins/__init__.py` (MODIFY — `__all__`)
+```python
+# occurrences: 1 (verified: grep -c '    "ParrotWikiOrigin",' packages/ai-parrot-tools/src/parrot_tools/multistoresearch/origins/__init__.py)
+# AFTER — insert below `    "ParrotWikiOrigin",` (verified: packages/ai-parrot-tools/src/parrot_tools/multistoresearch/origins/__init__.py:18)
+    "LanceDBOrigin",
+```
+**Why**: `__all__` is a tuple here, not a list — keep the trailing comma and the existing order; do not re-sort the tuple, since other modules and tests read it positionally in no way but its contents are asserted elsewhere.
+
+### `packages/ai-parrot-tools/tests/multistoresearch/test_lancedb_origin.py` (CREATE)
+```python
+"""LanceDBOrigin contract and lifecycle tests (FEAT-542, AC7). No SDK required."""
+from __future__ import annotations
+
+import pytest
+
+from parrot_tools.multistoresearch.origins import LanceDBOrigin
+
+pytestmark = pytest.mark.asyncio
+
+
+class FakeStore:
+    """Records calls; returns canned results. No SDK, no I/O."""
+    # FILL IN: similarity_search / fulltext_search / hybrid_search recording their kwargs
+    # — bounded by AC7
+
+
+class TestDispatch:
+    @pytest.mark.parametrize("mode,expected_call", [("vector", "similarity_search"),
+                                                    ("hybrid", "hybrid_search")])
+    async def test_search_dispatches_by_mode(self, mode, expected_call):
+        # FILL IN — bounded by spec §2 New Public Interfaces
+        raise NotImplementedError
+
+    async def test_fts_search_always_routes_to_fulltext(self):
+        # FILL IN: even when mode='vector' — bounded by spec §2
+        raise NotImplementedError
+
+    async def test_fixed_scope_is_forwarded(self):
+        # FILL IN: collection, metadata_filters, include_parents reach the store
+        raise NotImplementedError
+
+
+class TestNormalization:
+    async def test_native_score_and_order_unchanged_and_rank_is_one_based(self):
+        # FILL IN — bounded by AC7, models/stores.py:101
+        raise NotImplementedError
+
+    async def test_provenance_metadata_survives(self):
+        # FILL IN: the '_lancedb' block reaches OriginHit.metadata — bounded by AC7
+        raise NotImplementedError
+
+
+class TestLifecycleAndErrors:
+    async def test_origin_never_closes_the_borrowed_store(self):
+        # FILL IN: FakeStore.disconnect fails the test if called — bounded by spec §2
+        raise NotImplementedError
+
+    async def test_errors_and_cancellation_propagate(self):
+        # FILL IN: assert no empty-success on backend failure — bounded by AC7
+        raise NotImplementedError
+
+
+def test_importing_origins_package_requires_no_sdk():
+    # FILL IN: subprocess import with lancedb blocked — bounded by AC1
+    raise NotImplementedError
+```
+**Why this shape**: `FakeStore` keeps this whole module SDK-free, which is what lets the task run in parallel with the backend work; `test_errors_and_cancellation_propagate` guards the failure mode that would otherwise look like a healthy empty result set in production.
+
+### FILL IN checklist
+- [ ] `origins/lancedb.py::__init__` — base wiring, `kind`, unconditional `supports_fts`; bounded by spec §2
+- [ ] `origins/lancedb.py::search` / `fts_search` — mode dispatch and the always-FTS route; bounded by spec §2
+- [ ] `origins/lancedb.py::_to_hits` — native score/order, 1-based rank, full metadata; bounded by AC7
+- [ ] `test_lancedb_origin.py` — `FakeStore` plus all eight bodies; bounded by AC7/AC1
+- [ ] Verify `SearchOrigin.__init__`'s real signature at `origins/base.py` before calling `super()`
 
 ---
 

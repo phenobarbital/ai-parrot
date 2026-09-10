@@ -1,6 +1,6 @@
 # TASK-3065: Implement model-free FTS and native hybrid search
 
-**Feature**: FEAT-542 - Local LanceDB Vector, Full-Text and Hybrid Search
+**Feature**: FEAT-542 — Local LanceDB Vector, Full-Text and Hybrid Search
 **Spec**: `sdd/specs/lancedb-vector-store.spec.md`
 **Status**: pending
 **Priority**: high
@@ -108,6 +108,144 @@ Use the existing contracts above without changing unrelated shared behavior. Kee
 ### References in Codebase
 
 The task-specific locations above and the spec's sections 2, 4, 5, 6 and 8 are authoritative. Read any additional implementation API before relying on it; do not guess builder methods from a class name.
+
+---
+
+## Implementation Blueprint
+
+> **CRITICAL — Executor-ready starting point.** Write each block below to its declared
+> path nearly verbatim, then complete every `# FILL IN:` marker. Blocks were derived from
+> the spec's §2 New Public Interfaces and re-verified against the Codebase Contract above
+> when this task was written. This is NOT the full implementation: business-logic branches,
+> edge cases and test bodies are `FILL IN` stubs by design. Never change a signature, class
+> name, or file path the blueprint fixes.
+
+### Steps (in order)
+1. Implement `fulltext_search` with no reference to the provider at all — *why*: AC6 requires FTS to neither construct nor invoke an embedding model, and the fixture's call counters will catch any touch.
+2. Reuse the SAME compiled predicate object for both hybrid legs — *why*: spec §2 requires one conjunctive prefilter across vector, FTS and both hybrid components; building it twice invites drift.
+3. Return `LanceDBHybridHit` from hybrid and `SearchResult` from FTS — *why*: spec §2 fixes both, and the asymmetry is deliberate: FTS keeps `SearchResult` only for existing adapter compatibility.
+4. Raise on either failing leg; never fall back to the other — *why*: the §8 answer is whole-origin failure, and a silent single-leg fallback would return lexical-only results labelled as hybrid.
+
+### `packages/ai-parrot-embeddings/src/parrot/stores/lancedb.py` (MODIFY)
+```python
+# occurrences: 1 expected each — verify after TASK-3062 lands:
+#   grep -c 'TASK-3065 owns FTS' packages/ai-parrot-embeddings/src/parrot/stores/lancedb.py
+#   grep -c 'TASK-3065 owns hybrid search' packages/ai-parrot-embeddings/src/parrot/stores/lancedb.py
+# REPLACE both stubs TASK-3062 declared (keep the signatures verbatim)
+
+    async def fulltext_search(
+        self,
+        query: str,
+        collection: str | None = None,
+        limit: int = 10,
+        metadata_filters: dict[str, Any] | None = None,
+        include_parents: bool = False,
+        **kwargs: Any,
+    ) -> list:
+        """Native BM25 lexical search. Constructs no embedding model.
+
+        Scores are native BM25 (higher is better). The inherited
+        ``SearchResult.distance`` alias is therefore numerically BM25 and is NOT a
+        distance — documented in spec §2 and in the user guide.
+        """
+        # FILL IN: validate params; compile the single prefilter; run native FTS; map to
+        # SearchResult with metadata['_lancedb'] = {mode: 'fts', score_kind: 'bm25',
+        # higher_is_better: True}. Do NOT reference self._ensure_provider anywhere in this
+        # method — bounded by AC6, spec §2 score contracts
+        raise NotImplementedError
+
+    async def hybrid_search(
+        self,
+        query: str,
+        collection: str | None = None,
+        limit: int = 10,
+        metadata_filters: dict[str, Any] | None = None,
+        include_parents: bool = False,
+        **kwargs: Any,
+    ) -> list:
+        """Native vector/FTS fusion. Returns ``LanceDBHybridHit``; no distance alias.
+
+        Raises:
+            Exception: whatever the SDK raises when either leg fails. There is no
+                fallback to a single leg — a failed hybrid fails the whole call.
+        """
+        # FILL IN: validate params; compile the prefilter ONCE and pass the same predicate
+        # to both legs; await self._ensure_provider() and embed_query for the vector leg;
+        # supply the explicit query vector AND the original query text; retain the SDK's
+        # RRF order; map to LanceDBHybridHit with score_kind='rrf', higher_is_better=True
+        # and metadata['_lancedb'] = {mode: 'hybrid', score_kind: 'rrf'}.
+        # Do NOT add per-leg component scores — spec §8 Q6 is undecided (spec §9 S2)
+        # — bounded by spec §2 score contracts, AC5, AC7
+        raise NotImplementedError
+```
+**Why this shape**: the "do not reference `_ensure_provider`" instruction is written into the FTS body because that single line is the difference between passing and failing AC6, and it is invisible from the signature. Compiling the predicate once and passing the same object to both legs is what makes "one prefilter" checkable in review rather than a claim. The Q6 note is repeated here because this is the method where an implementer would most naturally reach for component scores.
+
+### `packages/ai-parrot-embeddings/tests/test_lancedb_fts_hybrid.py` (CREATE)
+```python
+"""Real FTS, fusion, filter and freshness tests (FEAT-542, AC5/AC6/AC7)."""
+from __future__ import annotations
+
+import pytest
+
+from parrot.stores.lancedb import LanceDBStore
+from parrot.stores.lancedb_models import LanceDBHybridHit
+
+pytestmark = pytest.mark.asyncio
+
+
+class TestModelFreeLexicalPath:
+    async def test_fts_never_constructs_or_invokes_a_provider(self, tmp_path):
+        # FILL IN: provider factory that raises if called + counters at 0 — bounded by AC6
+        raise NotImplementedError
+
+    async def test_fts_works_on_a_reopen_with_no_provider_configured(self, tmp_path):
+        # FILL IN: reopen reads the stored identity without constructing the model
+        # — bounded by spec §2 config paragraph, AC6
+        raise NotImplementedError
+
+
+class TestScores:
+    async def test_fts_scores_are_bm25_higher_is_better(self, tmp_path):
+        # FILL IN — bounded by spec §2 score contracts
+        raise NotImplementedError
+
+    async def test_hybrid_returns_hybrid_hits_without_a_distance_alias(self, tmp_path):
+        # FILL IN: isinstance LanceDBHybridHit; no 'distance' attribute — bounded by spec §2
+        raise NotImplementedError
+
+    async def test_hybrid_retains_sdk_rrf_order(self, tmp_path):
+        # FILL IN: native_rank order preserved, not re-sorted — bounded by AC7
+        raise NotImplementedError
+
+
+class TestRetrievalMatrix:
+    async def test_lexical_only_identifier_and_semantic_only_neighbour_both_eligible(self, tmp_path):
+        # FILL IN: ZXQ731 and the semantic neighbour from lancedb_fixtures.corpus()
+        # — bounded by spec §4 I3
+        raise NotImplementedError
+
+    async def test_one_prefilter_applies_to_both_hybrid_legs(self, tmp_path):
+        # FILL IN — bounded by spec §2 Filters
+        raise NotImplementedError
+
+    async def test_rows_added_after_index_creation_are_visible(self, tmp_path):
+        # FILL IN — bounded by spec §7 "FTS index freshness after writes", AC5
+        raise NotImplementedError
+
+
+class TestFailure:
+    async def test_failing_leg_raises_and_never_falls_back(self, tmp_path):
+        # FILL IN: assert no partial/lexical-only result is returned — bounded by AC7
+        raise NotImplementedError
+```
+**Why this shape**: `test_fts_works_on_a_reopen_with_no_provider_configured` is the acceptance-shaped version of AC6 — a counter-based test passes even when the model is constructed and simply unused, but a reopen with no provider configured cannot.
+
+### FILL IN checklist
+- [ ] `lancedb.py::fulltext_search` — no provider reference anywhere in the body; bounded by AC6
+- [ ] `lancedb.py::hybrid_search` — one shared predicate, explicit vector + text, SDK order retained; bounded by AC5/AC7
+- [ ] `test_lancedb_fts_hybrid.py` — all nine bodies; bounded by AC5/AC6/AC7
+- [ ] Do NOT add per-leg component scores to `LanceDBHybridHit`; bounded by spec §8 Q6
+- [ ] Record in the completion note whether the SDK exposed pre-fusion score columns; bounded by spec §9 S2
 
 ---
 

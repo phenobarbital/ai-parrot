@@ -1,6 +1,6 @@
 # TASK-3070: Document, benchmark and gate the LanceDB feature
 
-**Feature**: FEAT-542 - Local LanceDB Vector, Full-Text and Hybrid Search
+**Feature**: FEAT-542 — Local LanceDB Vector, Full-Text and Hybrid Search
 **Spec**: `sdd/specs/lancedb-vector-store.spec.md`
 **Status**: pending
 **Priority**: medium
@@ -112,6 +112,147 @@ Use the existing contracts above without changing unrelated shared behavior. Kee
 ### References in Codebase
 
 The task-specific locations above and the spec's sections 2, 4, 5, 6 and 8 are authoritative. Read any additional implementation API before relying on it; do not guess builder methods from a class name.
+
+---
+
+## Implementation Blueprint
+
+> **CRITICAL — Executor-ready starting point.** Write each block below to its declared
+> path nearly verbatim, then complete every `# FILL IN:` marker. Blocks were derived from
+> the spec's §2 New Public Interfaces and re-verified against the Codebase Contract above
+> when this task was written. This is NOT the full implementation: business-logic branches,
+> edge cases and test bodies are `FILL IN` stubs by design. Never change a signature, class
+> name, or file path the blueprint fixes.
+
+### Steps (in order)
+1. Write the guide against the shipped behavior, not the spec's intent — *why*: by the time this task runs, TASK-3057's gate may have moved the pin or narrowed a guarantee; documenting the spec would document something that does not exist.
+2. Give the CI job its own workflow file with the extra installed — *why*: spec §4 requires the dedicated feature job to run every integration test "without skips", which the default suite cannot do.
+3. Upload `artifacts/logs/` from the job — *why*: AC9 requires logs identifying versions and commands; a green check with no artifacts does not satisfy it.
+4. Record the benchmark WITHOUT an SLO — *why*: spec §4 and AC10 are explicit that no latency or recall target was ever supplied; publishing one would invent a commitment.
+
+### `docs/lancedb-vector-store.md` (CREATE)
+```markdown
+# LanceDB vector, full-text and hybrid store (FEAT-542)
+
+## Install
+    pip install "ai-parrot-embeddings[lancedb]"
+<!-- FILL IN: the exact pin shipped, per TASK-3057's gate -->
+
+## Configure
+<!-- FILL IN: StoreConfig example incl. the explicit index_type="FLAT" override, since
+     StoreConfig defaults to IVF_FLAT (models/stores.py:162) — bounded by AC10 -->
+
+## Query modes and what each score means
+| Mode | Result type | Score | Direction |
+|---|---|---|---|
+| Vector | `SearchResult` | raw cosine distance | lower is better |
+| FTS | `SearchResult` | native BM25 | higher is better |
+| Hybrid | `LanceDBHybridHit` | native RRF relevance | higher is better |
+
+> **The FTS `distance` alias is not a distance.** `SearchResult.distance` returns
+> `score` unchanged, so on the FTS path it is numerically BM25. Documented here
+> because the shared model was deliberately left alone.
+<!-- FILL IN: expand with an example of each mode -->
+
+## Write ownership and concurrency
+<!-- FILL IN: what independent processes may do, the conflict/retry contract from
+     TASK-3057, and what is NOT guaranteed (network filesystems, cloud URIs)
+     — bounded by AC10 -->
+
+## Storage locality vs. offline
+<!-- FILL IN: point at docs/lancedb-offline-profile.md; state plainly that a local
+     directory alone does not make an agent offline — bounded by AC10 -->
+
+## Safe reopen, deletion and unsupported modes
+<!-- FILL IN: manifest mismatch behavior, deletion selectors, MMR raising -->
+
+## Composing hybrid with graph
+<!-- FILL IN: LanceDBOrigin + GraphIndexOrigin, and that the toolkit reranks the
+     merged list with BM25 — native RRF order survives only within the origin's section -->
+
+## Benchmark baseline (NOT an SLO)
+<!-- FILL IN: 1,000-row deterministic figures with SDK/Python/Arrow versions.
+     No p95 or recall target was supplied and none is claimed — bounded by AC10 -->
+```
+**Why this shape**: the score table and the `distance`-alias callout are the two things most likely to cause a silent misuse in a consumer's code, so they sit above the configuration detail rather than in a footnote. The final heading names itself "NOT an SLO" because a bare benchmark section in a product doc reads as a commitment.
+
+### `.github/workflows/lancedb-vector-store.yml` (CREATE)
+```yaml
+name: FEAT-542 LanceDB feature tests
+
+on:
+  pull_request:
+    paths:
+      - "packages/ai-parrot-embeddings/**"
+      - "packages/ai-parrot-tools/src/parrot_tools/multistoresearch/**"
+      - ".github/workflows/lancedb-vector-store.yml"
+  workflow_dispatch:
+
+jobs:
+  lancedb:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # FILL IN: set up Python at the workspace-supported version, install uv, then
+      # `uv sync` with the lancedb extra — bounded by AC1/AC9
+      # FILL IN: run the LanceDB unit + integration suites with NO skips permitted, and
+      # the existing embeddings namespace/backend suites plus the whole multistoresearch
+      # directory — bounded by AC9
+      # FILL IN: record versions and commands into artifacts/logs/lancedb-vector-store-*.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lancedb-logs
+          path: artifacts/logs/lancedb-vector-store-*.log
+```
+**Why this shape**: `if: always()` on the upload is deliberate — the logs matter most when the job failed, and a conditional upload would drop exactly the evidence AC9 asks for. The `paths` filter keeps this off unrelated PRs; do not add a `push` trigger on `dev` without checking the runner cost of installing the SDK on every merge.
+
+### `examples/lancedb_benchmark.py` (CREATE)
+```python
+"""Deterministic, non-gating 1,000-row ingestion/search baseline (FEAT-542, AC10).
+
+Records numbers. Asserts nothing. No latency or recall target was ever supplied
+for this feature, so this script must not be turned into a gate.
+"""
+from __future__ import annotations
+
+import argparse
+import asyncio
+import json
+import platform
+import time
+
+
+def environment() -> dict:
+    """Versions that make a recorded number interpretable."""
+    # FILL IN: lancedb, pyarrow, Python and platform — bounded by spec §4 fixtures
+    raise NotImplementedError
+
+
+async def run(rows: int, dimension: int, warmup: int, samples: int) -> dict:
+    """Ingest, then time vector/FTS/hybrid over the same corpus."""
+    # FILL IN: deterministic corpus and provider; discard warmup runs; report per-mode
+    # elapsed samples, not a single average — bounded by spec §4 "Test Data / Fixtures"
+    raise NotImplementedError
+
+
+async def main() -> None:
+    # FILL IN: parse --rows/--dimension/--warmup/--samples, run, then write the JSON to
+    # artifacts/logs/lancedb-vector-store-benchmark.log — bounded by AC9/AC10
+    raise NotImplementedError
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+**Why this shape**: reporting a list of samples rather than one mean is what keeps this honest — a single number invites comparison across machines, which is exactly the SLO claim AC10 forbids. Note `examples/**/*.py` is gitignored here: commit with `git add -f`.
+
+### FILL IN checklist
+- [ ] `docs/lancedb-vector-store.md` — every section, written against shipped behavior; bounded by AC10
+- [ ] `.github/workflows/lancedb-vector-store.yml` — setup, no-skip test invocation, log capture; bounded by AC1/AC9
+- [ ] `examples/lancedb_benchmark.py` — environment capture and sampling; bounded by AC9/AC10 (`git add -f`)
+- [ ] Confirm the shipped pin and any narrowed guarantee against `sdd/state/FEAT-542/lancedb-sdk-contract.md`
+- [ ] Do not publish a p95 or recall target anywhere; bounded by AC10
 
 ---
 

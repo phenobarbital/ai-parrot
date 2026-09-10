@@ -1,6 +1,6 @@
 # TASK-3061: Implement process-safe mutation coordination
 
-**Feature**: FEAT-542 - Local LanceDB Vector, Full-Text and Hybrid Search
+**Feature**: FEAT-542 — Local LanceDB Vector, Full-Text and Hybrid Search
 **Spec**: `sdd/specs/lancedb-vector-store.spec.md`
 **Status**: pending
 **Priority**: high
@@ -104,6 +104,163 @@ Use the existing contracts above without changing unrelated shared behavior. Kee
 ### References in Codebase
 
 The task-specific locations above and the spec's sections 2, 4, 5, 6 and 8 are authoritative. Read any additional implementation API before relying on it; do not guess builder methods from a class name.
+
+---
+
+## Implementation Blueprint
+
+> **CRITICAL — Executor-ready starting point.** Write each block below to its declared
+> path nearly verbatim, then complete every `# FILL IN:` marker. Blocks were derived from
+> the spec's §2 New Public Interfaces and re-verified against the Codebase Contract above
+> when this task was written. This is NOT the full implementation: business-logic branches,
+> edge cases and test bodies are `FILL IN` stubs by design. Never change a signature, class
+> name, or file path the blueprint fixes.
+
+### Steps (in order)
+1. Read `sdd/state/FEAT-542/lancedb-sdk-contract.md` (TASK-3057) before writing anything — *why*: that document records whether the SDK retries commit conflicts on its own; building a lock the SDK makes redundant is wasted work, and building none where it is needed loses writes.
+2. Key the coordinator on canonical dataset identity, not on the store instance — *why*: two `LanceDBStore` objects in two processes must contend on the same key, which is the entire requirement from spec §8.
+3. Cover collection/FTS-index creation, upsert, and count-and-delete under the same primitive — *why*: spec §2 requires the count and the delete to be consistent, and index creation races are the case TASK-3069 exercises.
+4. Keep all waiting off the event loop — *why*: a blocking `flock` in an async method stalls every other coroutine in the process (spec §2 "move unavoidable blocking … off the event loop").
+5. Define ownership through cancellation, crash and shutdown explicitly — *why*: an orphaned lock file that a later process "steals" on a PID/age heuristic is worse than no lock; the scope forbids it.
+
+### `packages/ai-parrot-embeddings/src/parrot/stores/lancedb_concurrency.py` (CREATE)
+```python
+"""Process-shared mutation coordination for one local LanceDB directory.
+
+The asyncio lock here is an in-process optimization only. Cross-process
+correctness comes from the SDK commit contract recorded by TASK-3057, with this
+module supplying bounded retry and — only where the gate proved it necessary —
+an inter-process exclusion primitive.
+"""
+from __future__ import annotations
+
+import asyncio
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, AsyncIterator, Callable, TypeVar
+
+from pydantic import BaseModel, Field  # verified: packages/ai-parrot/src/parrot/stores/models.py:13
+
+T = TypeVar("T")
+
+
+class CommitConflict(RuntimeError):
+    """A concurrent writer won the commit race; the caller may retry."""
+
+
+class CoordinationConfig(BaseModel):
+    """Bounded-contention settings. Values come from TASK-3057's evidence doc."""
+
+    max_attempts: int = 5
+    base_backoff_seconds: float = 0.05
+    max_backoff_seconds: float = 2.0
+    acquire_timeout_seconds: float = 30.0
+    # FILL IN: positive-value validators — bounded by AC8
+
+
+@dataclass
+class MutationCoordinator:
+    """Serializes mutations in-process and mediates cross-process conflicts."""
+
+    dataset_key: str
+    config: CoordinationConfig = field(default_factory=CoordinationConfig)
+    _local_lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False)
+
+    @classmethod
+    def for_directory(cls, uri: str | Path, collection: str, **kwargs: Any) -> "MutationCoordinator":
+        """Build a coordinator keyed by canonical directory + collection identity."""
+        # FILL IN: realpath the uri so two spellings of one directory share a key
+        # — bounded by AC8 (two processes must contend on the same key)
+        raise NotImplementedError
+
+    async def run_mutation(self, operation: Callable[[], Any], *, description: str) -> Any:
+        """Run one mutation with in-process serialization and bounded retry.
+
+        Raises:
+            CommitConflict: retries exhausted; the caller decides whether to surface
+                or escalate. Never swallowed into a silent no-op.
+        """
+        # FILL IN: hold _local_lock; attempt the operation; on a conflict recognised per
+        # TASK-3057's contract, back off with jitter and retry up to max_attempts; on
+        # cancellation release ownership but do NOT claim the in-flight write was undone
+        # — bounded by spec §2 concurrency paragraph and AC8
+        raise NotImplementedError
+
+    async def exclusive(self, *, description: str) -> AsyncIterator[None]:
+        """Cross-process exclusion for operations the gate proved unsafe to race.
+
+        Only used where ``lancedb-sdk-contract.md`` says the SDK cannot make the
+        operation safe on its own — typically collection and FTS-index creation.
+        """
+        # FILL IN: acquire an OS-level lock off the event loop (asyncio.to_thread), honour
+        # acquire_timeout_seconds, and release on every exit path. Do NOT unlink an active
+        # lock path and do NOT steal ownership on a PID/age heuristic
+        # — bounded by this task's Scope and AC8
+        raise NotImplementedError
+```
+**Why this shape**: `run_mutation` and `exclusive` are separate because they answer different questions — the first is "retry a conflict the SDK reports", the second is "prevent a race the SDK cannot survive" — and TASK-3057's evidence decides which operations need which. Keying on the realpath'd directory is what makes two independently launched processes contend at all; keying on the store object would produce two locks that never meet, which is exactly the bug the §8 answer forbids. The docstring on `run_mutation` states that a conflict is never swallowed, because a silent no-op under concurrency is indistinguishable from data loss.
+
+### `packages/ai-parrot-embeddings/tests/test_lancedb_concurrency.py` (CREATE)
+```python
+"""Real process coordination, failure and cancellation tests (FEAT-542, AC8)."""
+from __future__ import annotations
+
+import asyncio
+
+import pytest
+
+from parrot.stores.lancedb_concurrency import (
+    CommitConflict,
+    CoordinationConfig,
+    MutationCoordinator,
+)
+
+pytestmark = pytest.mark.asyncio
+
+
+class TestKeying:
+    def test_two_spellings_of_one_directory_share_a_key(self, tmp_path):
+        # FILL IN: relative vs absolute vs symlinked path — bounded by AC8
+        raise NotImplementedError
+
+
+class TestRetry:
+    async def test_conflict_retried_within_bound_then_raised(self):
+        # FILL IN: operation raising CommitConflict n times; assert success at n < max and
+        # CommitConflict at n >= max — bounded by AC8
+        raise NotImplementedError
+
+    async def test_backoff_does_not_block_the_event_loop(self):
+        # FILL IN: 10ms heartbeat advances during contention — bounded by spec §2
+        raise NotImplementedError
+
+
+class TestCrossProcess:
+    def test_two_real_processes_serialize_the_exclusive_section(self, tmp_path):
+        # FILL IN: spawn two OS processes (multiprocessing, not threads) into exclusive();
+        # assert non-overlapping critical sections — bounded by AC8. Threads do NOT count.
+        raise NotImplementedError
+
+    def test_process_death_releases_ownership(self, tmp_path):
+        # FILL IN: kill the holder, assert the next acquirer proceeds without any
+        # age/PID stealing heuristic — bounded by this task's Scope
+        raise NotImplementedError
+
+
+class TestCancellation:
+    async def test_cancellation_releases_ownership_without_claiming_rollback(self):
+        # FILL IN — bounded by spec §2 ("cannot undo a write already committed")
+        raise NotImplementedError
+```
+**Why this shape**: `test_two_real_processes_serialize_the_exclusive_section` must use `multiprocessing`, not threads — threads share the asyncio lock and would pass against a coordinator that provides no cross-process guarantee at all, which is the exact false green the §8 answer exists to prevent.
+
+### FILL IN checklist
+- [ ] `lancedb_concurrency.py::CoordinationConfig` — validators; bounded by AC8
+- [ ] `lancedb_concurrency.py::MutationCoordinator.for_directory` — canonical keying; bounded by AC8
+- [ ] `lancedb_concurrency.py::run_mutation` — retry, jitter, cancellation; bounded by AC8
+- [ ] `lancedb_concurrency.py::exclusive` — off-loop OS lock, no ownership stealing; bounded by Scope
+- [ ] `test_lancedb_concurrency.py` — all six bodies, real processes for the cross-process case; bounded by AC8
+- [ ] Confirm against `sdd/state/FEAT-542/lancedb-sdk-contract.md` which operations need `exclusive` at all
 
 ---
 
