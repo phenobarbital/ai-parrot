@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "feature_id": "FEAT-565",
-  "phase": "proposal_drafted",
+  "phase": "committed",
   "started_at": "2026-09-10T14:11:19.362801+00:00",
   "updated_at": "2026-09-10T14:33:59.379367+00:00",
   "mode": "enrichment",
@@ -60,7 +60,8 @@
       "questions_answered": 5
     },
     "output": {
-      "proposal_path": "sdd/proposals/observability-otel-grafana.proposal.md"
+      "proposal_path": "sdd/proposals/observability-otel-grafana.proposal.md",
+      "commit_sha": "34668ff1a2514ed9622e8a45299fb60547b7da19"
     }
   },
   "errors": [],
