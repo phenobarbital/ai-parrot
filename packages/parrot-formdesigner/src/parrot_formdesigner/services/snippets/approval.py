@@ -93,7 +93,9 @@ class SnippetApprovalService:
 
         # Insert a row with status='draft'
         manifest_json = bundle.manifest.model_dump_json()
-        event_val = bundle.event.value if hasattr(bundle.event, "value") else str(bundle.event)
+        # FormEventName (core/events.py:32) is a plain str Literal, not an
+        # enum — no .value to unwrap, str() is the correct conversion.
+        event_val = str(bundle.event)
         await self._store._pool.execute(
             """
             INSERT INTO form_snippets (
