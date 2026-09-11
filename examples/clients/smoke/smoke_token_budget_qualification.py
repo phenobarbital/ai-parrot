@@ -21,7 +21,6 @@ from typing import Any
 from parrot.clients.amazon import BedrockConverseClient, BedrockMantleClient, NovaClient
 from parrot.clients.amazon.budget import BedrockBudgetAdapter, MantleBudgetAdapter, fingerprint
 from parrot.clients.amazon.budget_qualifications import QualificationKey, installed_sdk_versions, probe_count_tokens_support
-from parrot.clients.budget import TokenBudgetPolicy
 from parrot.tools import tool
 
 VARIANTS = ("plain", "tools", "stream", "cache", "schema")
@@ -54,13 +53,15 @@ def _opted_in(a: argparse.Namespace) -> bool:
 
 
 async def _run_variant(client: Any, adapter: Any, variant: str, budget: int) -> dict[str, Any]:
-    """One budgeted request; compare counted input vs normalized actual usage; check the cap was respected."""
-    policy = TokenBudgetPolicy(token_budget=budget, budget_mode="estimated")
-    
-    # Build request parameters based on variant
+    """One budgeted request; report the ledger's settled totals; note whether the cap was respected."""
+    # `token_budget=` on ask()/ask_stream() is the plain int budget amount —
+    # `resolve_budget_request()` builds the TokenBudgetPolicy itself
+    # (code-reviewer finding, FEAT-550 wrap-up: this used to pass a whole
+    # TokenBudgetPolicy instance where an int is required).
     kwargs: dict[str, Any] = {
         "model": client._default_model or "unknown",
-        "token_budget": policy,
+        "token_budget": budget,
+        "budget_mode": "estimated",
     }
 
     prompt = "Hello, please reply with exactly one word: 'Acknowledged'."
@@ -125,16 +126,19 @@ async def _run_variant(client: Any, adapter: Any, variant: str, budget: int) -> 
                 "passed": False,
             }
 
-        # Extract counted vs actual
-        counted_input = report.get("initial_input_estimate", 0)
-        actual_input = report.get("cumulative_input_tokens", 0)
-        actual_output = report.get("cumulative_output_tokens", 0)
-        
-        # Check if output cap was respected
-        cap_sent = report.get("last_output_cap", None)
-        cap_respected = True
-        if cap_sent is not None and actual_output > cap_sent:
-            cap_respected = False
+        # Read the ledger's real settled totals — `BudgetReport` (see
+        # parrot.models.token_budget.BudgetReport) has no per-call
+        # "counted estimate" or "last output cap" field to compare against
+        # (those live only in the ephemeral per-attempt reservation, not the
+        # aggregate report); reading fields that don't exist on the model
+        # used to silently return .get()'s default and always report a
+        # trivial pass (code-reviewer finding, FEAT-550 wrap-up). This
+        # reports the real fields and marks the cap check explicitly
+        # unverifiable rather than fabricating a always-True result.
+        actual_input = report.get("input_tokens", 0)
+        actual_output = report.get("output_tokens", 0)
+        overrun = report.get("overrun_tokens", 0)
+        cap_respected = None  # not derivable from the aggregate BudgetReport
 
         # Generate request fingerprint
         # We can construct a dummy payload to get a fingerprint
@@ -146,13 +150,12 @@ async def _run_variant(client: Any, adapter: Any, variant: str, budget: int) -> 
         return {
             "variant": variant,
             "fingerprint": fp,
-            "counted_input": counted_input,
             "actual_input": actual_input,
             "actual_output": actual_output,
-            "cap_sent": cap_sent,
+            "overrun_tokens": overrun,
             "cap_respected": cap_respected,
-            "method": report.get("counting_method", "unknown"),
-            "passed": True,
+            "method": ",".join(report.get("counting_methods", ())) or "unknown",
+            "passed": overrun == 0,
             "latency_ms": int((time.time() - start_time) * 1000),
         }
 
@@ -202,14 +205,15 @@ async def main() -> int:
             res = await _run_variant(client, adapter, var, a.budget)
             results.append(res)
 
-    # Determine if strict qualification is achievable
+    # Determine if strict qualification is achievable. `count_tokens_available`
+    # already gates this False on any SDK without a real CountTokens
+    # operation (spec §2.5 — true for the SDKs this probe currently
+    # supports); a failed/overrun variant also disqualifies it.
     strict_achievable = count_tokens_available
     for r in results:
         if r.get("skipped"):
             continue
-        if not r.get("passed") or not r.get("cap_respected"):
-            strict_achievable = False
-        if r.get("counted_input") != r.get("actual_input"):
+        if not r.get("passed"):
             strict_achievable = False
 
     findings = {
@@ -235,15 +239,15 @@ async def main() -> int:
     
     # Print compact PASS/FAIL table
     print("\nVariant Results:")
-    print(f"{'Variant':<12} | {'Passed':<6} | {'Counted In':<10} | {'Actual In':<10} | {'Cap Respected':<13}")
+    print(f"{'Variant':<12} | {'Passed':<6} | {'Actual In':<10} | {'Actual Out':<10} | {'Cap Respected':<13}")
     print("-" * 62)
     for r in results:
         if r.get("skipped"):
             print(f"{r['variant']:<12} | SKIPPED | {r.get('reason', '')}")
             continue
         passed_str = "PASS" if r.get("passed") else "FAIL"
-        cap_str = "YES" if r.get("cap_respected") else "NO"
-        print(f"{r['variant']:<12} | {passed_str:<6} | {r.get('counted_input', 'N/A'):<10} | {r.get('actual_input', 'N/A'):<10} | {cap_str:<13}")
+        cap_str = "N/A" if r.get("cap_respected") is None else ("YES" if r.get("cap_respected") else "NO")
+        print(f"{r['variant']:<12} | {passed_str:<6} | {r.get('actual_input', 'N/A'):<10} | {r.get('actual_output', 'N/A'):<10} | {cap_str:<13}")
 
     # Print QualificationKey literal
     print("\nQualification Key for manual registry entry:")

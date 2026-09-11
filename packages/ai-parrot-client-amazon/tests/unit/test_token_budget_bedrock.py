@@ -167,7 +167,7 @@ class TestFinalizationPayload:
                         "content": [
                             {
                                 "toolUse": {
-                                    "id": "call-1",
+                                    "toolUseId": "call-1",
                                     "name": "get_weather",
                                     "input": {"location": "NY"},
                                 }
@@ -190,7 +190,7 @@ class TestFinalizationPayload:
                         "content": [
                             {
                                 "toolUse": {
-                                    "id": "call-2",
+                                    "toolUseId": "call-2",
                                     "name": "get_time",
                                     "input": {},
                                 }
@@ -235,6 +235,15 @@ class TestFinalizationPayload:
 
         # Check for completed result
         assert any("Sunny, 72F" in t for t in content_texts)
+
+        # The toolUse block itself (not just the separate toolResult block)
+        # must show call-1's REAL result, not "UNEXECUTED" — this requires
+        # matching `toolUse.toolUseId` (not the nonexistent `toolUse.id`)
+        # against `completed_tool_calls` (code-reviewer finding, FEAT-550
+        # wrap-up: this previously always mismatched and mislabeled every
+        # executed tool call UNEXECUTED).
+        assert any("[tool call call-1]" in t and "Sunny, 72F" in t for t in content_texts)
+        assert any("[tool call call-2]" in t and "UNEXECUTED" in t for t in content_texts)
 
         # Check for UNEXECUTED marker
         assert any("UNEXECUTED" in t for t in content_texts)
@@ -657,3 +666,21 @@ class TestStructuredResult:
         assert result.output == "42"
         assert result.budget_report is not None
         assert result.budget_report["operation_id"]
+
+
+class TestToolLoopBudgetErrorPropagation:
+    """Code-reviewer finding (FEAT-550 wrap-up): a tool's own inner budgeted
+    call raising BudgetExhausted/BudgetUnsupported must propagate to the
+    owner — never get swallowed into an ordinary `tc.error` tool result
+    (spec §3 M3: "budget control is never converted into a ToolResult")."""
+
+    async def test_budget_exhausted_from_tool_propagates_not_swallowed(self):
+        client = BedrockConverseClient(model="claude-sonnet-4-5", budget_registry=BudgetRegistry())
+
+        async def _exploding_tool(name, args):
+            raise BudgetExhausted("child scope exhausted", report={"partial_text": ""})
+
+        with patch.object(client, "_execute_tool", side_effect=_exploding_tool):
+            with patch.object(client, "_sdk_create", side_effect=[_tool_round("tu_1")]):
+                with pytest.raises(BudgetExhausted):
+                    await client.ask("Hello", max_tokens=100, token_budget=10_000)

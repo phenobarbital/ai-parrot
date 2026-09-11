@@ -41,16 +41,24 @@ def canonical_json(obj: Any) -> str:
 
 
 def local_counter() -> tuple[TokenCounter, str]:
-    """Return (counter, method_name); prefer an already-available tiktoken encoding, never download."""
-    # Try to use TiktokenCounter only if tiktoken is already importable and the encoding is cached
+    """Return (counter, method_name); prefer an already-available tiktoken encoding, never download.
+
+    Mirrors ``parrot.memory.compaction.tokens.resolve_default_counter()`` —
+    ``TiktokenCounter.__init__`` only records the encoding name (it never
+    loads anything), so a bare ``TiktokenCounter(...)`` construction can
+    never raise and never proves the encoding is actually available. This
+    eagerly calls ``tiktoken.get_encoding(...)`` (which tiktoken caches
+    per-process) so a load/download failure is caught HERE, with a clean
+    fallback to the heuristic counter, instead of surfacing later as an
+    unhandled exception from `count_input()`'s hot path (code-reviewer
+    finding, FEAT-550 wrap-up).
+    """
     try:
-        # Construct TiktokenCounter; this may trigger a download if the encoding isn't cached
-        # In a hot path, we'd want to check the cache directory first, but for now
-        # we'll try and fall back to heuristic if it fails
-        counter = TiktokenCounter("o200k_base")
-        return counter, "tiktoken:o200k_base"
-    except Exception:  # noqa: BLE001
-        # If tiktoken isn't available or encoding can't be loaded, fall back to heuristic
+        import tiktoken
+
+        tiktoken.get_encoding("o200k_base")
+        return TiktokenCounter("o200k_base"), "tiktoken:o200k_base"
+    except Exception:  # noqa: BLE001 — tokenizer optional, any failure falls back
         pass
 
     # Fallback to heuristic counter
@@ -197,7 +205,14 @@ class BedrockBudgetAdapter:
                     if "toolUse" in block:
                         # Convert toolUse block to text
                         tool_use = block["toolUse"]
-                        call_id = tool_use.get("id", "unknown")
+                        # Converse toolUse blocks key the call id as
+                        # `toolUseId`, not `id` — `id` never existed on this
+                        # shape, so every call_id silently matched nothing
+                        # against `completed_tool_calls` and every executed
+                        # tool call was mislabeled UNEXECUTED in the
+                        # finalization prompt (code-reviewer finding,
+                        # FEAT-550 wrap-up).
+                        call_id = tool_use.get("toolUseId", "unknown")
                         name = tool_use.get("name", "unknown")
                         args_json = json.dumps(tool_use.get("input", {}), separators=(",", ":"))
 

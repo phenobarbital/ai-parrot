@@ -331,9 +331,15 @@ class OpenAIBaseClient(AbstractClient):
         cap_key = "max_completion_tokens" if "max_completion_tokens" in kwargs else "max_tokens"
         max_out = kwargs.get(cap_key) or self._resolve_max_tokens(None)
         view = self.client.with_options(max_retries=0)  # request-local; shares transport, never closed here (spec §2.4)
+        # `.parse()` (installed openai SDK 3.3.1) has no `stream` parameter at
+        # all — a streaming call (e.g. `_finalize_budgeted_chat(..., stream=True)`,
+        # which always dispatches with `use_tools=False`) must always use
+        # `.create()` regardless of `use_tools`, or the SDK call raises
+        # TypeError before ever reaching the wire (code-reviewer finding,
+        # FEAT-550 wrap-up).
         method = (
             view.chat.completions.create
-            if use_tools
+            if (use_tools or stream)
             else getattr(view.chat.completions, "parse", view.chat.completions.create)
         )
         if stream:
@@ -607,6 +613,12 @@ class OpenAIBaseClient(AbstractClient):
                                 e.state = {**(getattr(e, "state", None) or {}), TOKEN_BUDGET_STATE_KEY: await _scope.registry.suspend(_scope)}
                             raise
 
+                        elif isinstance(e, BudgetError):
+                            # FEAT-550 §3 M3: budget control from a tool's own
+                            # inner budgeted call must propagate to the owner —
+                            # never converted into a tool result (code-reviewer
+                            # finding, FEAT-550 wrap-up).
+                            raise
                         tc.error = str(e)
                         messages.append(
                             {
@@ -874,20 +886,35 @@ class OpenAIBaseClient(AbstractClient):
                 duration_ms=duration_ms,
             )
 
-        result, response, all_tool_calls, accumulated_usage, round_number = await self._run_tool_call_loop(
-            result=result,
-            response=response,
-            messages=messages,
-            model_str=model_str,
-            use_tools=_use_tools,
-            args=args,
-            session_id=current_session_id.get(),
-            lazy_loading=lazy_loading,
-            active_tool_names=active_tool_names,
-            track_usage=True,
-            initial_duration_ms=_round_duration_ms,
-            on_round=_on_round,
-        )
+        if _budget_forced:
+            # The pre-loop call above was already the ONE tools-disabled
+            # final attempt (spec §2.3) — never re-enter the ordinary tool
+            # loop: `args` still carries the original `tools`/`tool_choice`,
+            # so looping here could re-enable tools and execute one after
+            # the terminal attempt (code-reviewer finding, FEAT-550
+            # wrap-up). Mirrors `_run_tool_call_loop`'s own no-tool-calls
+            # trivial return shape exactly.
+            all_tool_calls: list[ToolCall] = []
+            round_number = 1
+            accumulated_usage, _ = self._extract_completion_usage(response)
+            _bq_scope_pre = current_budget_scope()
+            if _bq_scope_pre is not None and getattr(result, "tool_calls", None):
+                await _bq_scope_pre.ledger.set_answer_complete(False)
+        else:
+            result, response, all_tool_calls, accumulated_usage, round_number = await self._run_tool_call_loop(
+                result=result,
+                response=response,
+                messages=messages,
+                model_str=model_str,
+                use_tools=_use_tools,
+                args=args,
+                session_id=current_session_id.get(),
+                lazy_loading=lazy_loading,
+                active_tool_names=active_tool_names,
+                track_usage=True,
+                initial_duration_ms=_round_duration_ms,
+                on_round=_on_round,
+            )
         # Either the pre-loop call or a round inside the loop may have forced
         # finalization (spec §2.3) — the loop signals it via _BUDGET_CALL_CTX
         # rather than the shared 5-tuple return (other callers depend on it).
@@ -1377,6 +1404,12 @@ class OpenAIBaseClient(AbstractClient):
                             _scope = current_budget_scope()
                             if _scope is not None:
                                 e.state = {**(getattr(e, "state", None) or {}), TOKEN_BUDGET_STATE_KEY: await _scope.registry.suspend(_scope)}
+                            raise
+                        elif isinstance(e, BudgetError):
+                            # FEAT-550 §3 M3: budget control from a tool's own
+                            # inner budgeted call must propagate to the owner —
+                            # never converted into a tool result (code-reviewer
+                            # finding, FEAT-550 wrap-up).
                             raise
                         tc.error = str(e)
                         messages.append(

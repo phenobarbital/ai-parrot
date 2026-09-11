@@ -1402,7 +1402,12 @@ class BaseBot(AbstractBot):
                             model=str(getattr(client, "model", "")),
                             provider=getattr(client, "client_type", ""),
                         )
-                    if _budget_scope is not None and "token_budget" not in response.metadata:
+                    if _budget_scope is not None and not response.metadata.get("token_budget"):
+                        # code-reviewer finding, FEAT-550 wrap-up: `_budget_partial_message`
+                        # ALWAYS sets metadata["token_budget"] (even to {} when the child
+                        # scope's BudgetExhausted.report carried nothing but partial_text),
+                        # so a bare `not in` presence check never fires and the real ledger
+                        # report was silently dropped for every bot-level exhaustion.
                         response.metadata["token_budget"] = (await _budget_scope.ledger.report()).model_dump()
 
                     self.logger.info(
@@ -1961,6 +1966,14 @@ class BaseBot(AbstractBot):
                     full_response = ""
                     ai_message = None
                     stream_error: Optional[Exception] = None
+                    # FEAT-550: True only when this ask_stream() ended via the
+                    # BudgetExhausted->partial-AIMessage translation below —
+                    # NOT whenever `ai_message` merely holds a normal terminal
+                    # AIMessage sentinel (every successful stream sets that).
+                    # Conflating the two used to skip the streaming-guardrail
+                    # flush on every ordinary completion (regression fixed
+                    # here; see the code-reviewer finding at FEAT-550 wrap-up).
+                    _budget_exhausted_stream = False
                     # FEAT-396 code review fix: OUTPUT_STREAM FLAG reports were
                     # computed per-chunk by `_feed_streaming_guardrails` and
                     # then discarded — accumulate them here and merge onto the
@@ -2002,11 +2015,8 @@ class BaseBot(AbstractBot):
                                 provider=getattr(client, "client_type", ""),
                             )
                             full_response = ai_message.output
-                        if (
-                            not _stream_blocked
-                            and not isinstance(ai_message, AIMessage)
-                            and not (ai_message and getattr(ai_message, "stop_reason", None) == "budget_exhausted")
-                        ):
+                            _budget_exhausted_stream = True
+                        if not _stream_blocked and not _budget_exhausted_stream:
                             # Flush any content a StreamingGuardrail adapter withheld.
                             _stream_tail = self._flush_streaming_guardrails()
                             if _stream_tail:
@@ -2086,7 +2096,8 @@ class BaseBot(AbstractBot):
                         ai_message.finish_reason = "error"
                         ai_message.stop_reason = "error"
 
-                    if _budget_scope is not None and "token_budget" not in ai_message.metadata:
+                    if _budget_scope is not None and not ai_message.metadata.get("token_budget"):
+                        # Same fix as the ask() site above (code-reviewer finding, FEAT-550 wrap-up).
                         ai_message.metadata["token_budget"] = (await _budget_scope.ledger.report()).model_dump()
 
                     # FEAT-396 code review fix: surface INPUT-stage and

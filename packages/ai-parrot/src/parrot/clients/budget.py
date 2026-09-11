@@ -254,8 +254,18 @@ class QuestionBudget:
             self._revision += 1
 
     async def claim_finalization(self, owner_call_id: str) -> bool:
-        """Claim the one final attempt after draining; false if already claimed."""
+        """Claim the one final attempt after draining; false if already claimed.
+
+        Spec §2.1: "Zero disables finalization" — a zero `final_answer_reserve`
+        must refuse the claim outright, not merely rely on the remaining
+        balance also happening to be zero (an ordinary round that underspends
+        could otherwise still leave room for a closing attempt, contradicting
+        the documented "zero disables" guarantee — code-reviewer finding,
+        FEAT-550 wrap-up).
+        """
         async with self._lock:
+            if self._policy.final_reserve_tokens == 0:
+                return False
             if self._state != "draining":
                 return False
             if self._finalization_owner is not None:

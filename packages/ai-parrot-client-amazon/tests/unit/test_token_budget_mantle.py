@@ -386,6 +386,38 @@ class TestMantleFinalization:
             report = ai_message.metadata["token_budget"]
             assert report["answer_complete"] is False
 
+    async def test_pre_loop_final_tool_calls_not_executed(self):
+        """Denial on the VERY FIRST round (before `_run_tool_call_loop` ever
+        starts) still forces exactly one tools-disabled final attempt, and a
+        tool_call embedded in THAT final result is never executed — the
+        pre-loop branch must not unconditionally re-enter the ordinary tool
+        loop with the original (still tools-enabled) `args` (code-reviewer
+        finding, FEAT-550 wrap-up)."""
+        client = BedrockMantleClient(api_key="k", region="us-east-1", budget_registry=BudgetRegistry())
+        execute_tool = AsyncMock(return_value="sunny")
+        with patch.object(client, "_execute_tool", execute_tool):
+            view = MagicMock()
+            final_with_tool_calls = _tool_call_response(40, tool_id="should-not-run")
+            view.chat.completions.parse = AsyncMock(side_effect=[final_with_tool_calls])
+            root = MagicMock()
+            root.with_options = MagicMock(return_value=view)
+            client.get_client = AsyncMock(return_value=root)
+            await client._ensure_client()
+
+            # available_work == 0 (budget - reserve) so the FIRST dispatch is
+            # denied before any tool round ever runs; available_final is
+            # generous, so the final attempt succeeds — with a lingering
+            # tool_call in its response.
+            ai_message = await client.ask(
+                "hi", max_tokens=30, token_budget=200, final_answer_reserve=190, use_tools=True
+            )
+
+            assert ai_message.stop_reason == "budget_exhausted"
+            assert view.chat.completions.parse.await_count == 1
+            execute_tool.assert_not_called()
+            report = ai_message.metadata["token_budget"]
+            assert report["answer_complete"] is False
+
 
 def _stream_chunk(text: str | None = None, *, finish_reason: str | None = None, usage=None) -> SimpleNamespace:
     return SimpleNamespace(
@@ -439,8 +471,15 @@ class TestMantleStreaming:
 
         with patch.object(client, "_execute_tool", AsyncMock(return_value="sunny")):
             view = MagicMock()
-            view.chat.completions.create = AsyncMock(side_effect=[_round1_stream(), _round2_stream()])
-            view.chat.completions.parse = AsyncMock(side_effect=[_final_stream()])
+            # `.parse()` (installed openai SDK) has no `stream` parameter at
+            # all, so ANY streaming dispatch — including the finalization
+            # stream, which always has use_tools=False — must go through
+            # `.create()` instead; `.parse` must never be called for a
+            # streaming finalization.
+            view.chat.completions.create = AsyncMock(
+                side_effect=[_round1_stream(), _round2_stream(), _final_stream()]
+            )
+            view.chat.completions.parse = AsyncMock(side_effect=AssertionError(".parse must not be used for stream=True"))
             root = MagicMock()
             root.with_options = MagicMock(return_value=view)
             client.get_client = AsyncMock(return_value=root)
@@ -458,10 +497,10 @@ class TestMantleStreaming:
         assert len(messages) == 1
         assert messages[0].stop_reason == "budget_exhausted"
         assert messages[0].metadata["token_budget"]["finalized"] is True
-        assert view.chat.completions.create.await_count == 2
-        assert view.chat.completions.parse.await_count == 1
+        assert view.chat.completions.create.await_count == 3
+        assert view.chat.completions.parse.await_count == 0
         # The final wire call must never carry tools/tool_choice.
-        _, final_kwargs = view.chat.completions.parse.await_args_list[-1]
+        _, final_kwargs = view.chat.completions.create.await_args_list[-1]
         assert "tools" not in final_kwargs
         assert "tool_choice" not in final_kwargs
 

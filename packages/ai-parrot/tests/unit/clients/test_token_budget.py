@@ -308,6 +308,34 @@ class TestReservationArithmetic:
                 phase="final",
             )
 
+    async def test_zero_reserve_refuses_claim_even_with_room_left(self) -> None:
+        """Spec §2.1 "Zero disables finalization" — a zero `final_answer_reserve`
+        must refuse `claim_finalization()` outright, even when the ordinary
+        round that triggered draining left plenty of headroom for a closing
+        attempt (code-reviewer finding, FEAT-550 wrap-up: relying only on the
+        remaining balance also happening to be zero does not hold in general —
+        an underspending ordinary round can leave room even with reserve=0)."""
+        q = await _ledger(b=1000, reserve=0)
+        r1 = await q.reserve(
+            _est(50), max_output_tokens=100, min_output_tokens=1,
+            call_id="c", round_number=1, attempt_number=1, phase="work",
+        )
+        await q.settle(r1.reservation_id, _usage(50, 10))  # consumes only 60/1000
+
+        # A next ordinary round whose ESTIMATE alone exceeds what remains
+        # (available_work == available_total for reserve=0) denies and
+        # transitions to draining, even though 940 tokens are still unspent.
+        with pytest.raises(BudgetExhausted):
+            await q.reserve(
+                _est(950), max_output_tokens=100, min_output_tokens=1,
+                call_id="c", round_number=2, attempt_number=1, phase="work",
+            )
+        assert q.state == "draining"
+
+        # There is plenty of room (940 tokens) for a tiny closing attempt —
+        # but reserve=0 must refuse the claim regardless.
+        assert await q.claim_finalization("c") is False
+
 
 class TestExactlyOnce:
     async def test_duplicate_settle_inert_and_contradiction_typed(self) -> None:
@@ -446,8 +474,13 @@ class TestConcurrency:
         assert sum(r is not None for r in results) == 1
 
     async def test_claim_finalization_single_owner(self) -> None:
-        """Two claims racing after drain: exactly one succeeds (spec §2.3 'Only the answer owner can claim')."""
-        q = await _ledger(b=1000, reserve=0)
+        """Two claims racing after drain: exactly one succeeds (spec §2.3 'Only the answer owner can claim').
+
+        Uses a nonzero reserve — reserve=0 now always refuses the claim
+        outright (spec §2.1 "Zero disables finalization"; see
+        test_zero_reserve_refuses_claim_even_with_room_left), which is
+        orthogonal to what THIS test exercises (the race itself)."""
+        q = await _ledger(b=1000, reserve=100)
         r = await q.reserve(
             _est(600),
             max_output_tokens=300,

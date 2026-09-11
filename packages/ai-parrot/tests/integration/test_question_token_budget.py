@@ -115,6 +115,9 @@ class TestScenario1TwoRoundsAndFinalization:
     by `AbstractBot._budget_partial_message` — no client-level tools-disabled
     finalization dispatch occurs (that path requires the client itself to be
     the direct, unenclosed answer owner; see TASK-3141/3143 unit coverage).
+    Documented in the TASK-3144 Completion Note as an architectural finding
+    (not fixed here — it needs an owner-handoff design, out of this task's
+    scope).
     """
 
     @pytest.mark.asyncio
@@ -150,14 +153,20 @@ class TestScenario1TwoRoundsAndFinalization:
         # output is legitimately empty, not a bug.
         assert msg.output == ""
 
-        # Independently verify the ledger's real totals via the scope
-        # captured from inside a tool call on the SAME shared ledger
-        # (bypassing the currently-empty `metadata["token_budget"]" —
-        # see the Completion Note finding).
+        # The bot-boundary translation must attach the REAL ledger report,
+        # not an empty dict (code-reviewer finding, FEAT-550 wrap-up: a bare
+        # `"token_budget" not in response.metadata` presence check never
+        # fired because `_budget_partial_message` always sets the key, even
+        # to `{}` — fixed to check truthiness instead).
+        report = msg.metadata["token_budget"]
+        assert report["total_tokens"] == 2500 + 3700  # both ordinary rounds settled
+        assert report["budget_exhausted"] is True
+
+        # Independently cross-check against the live ledger via the scope
+        # captured from inside a tool call on the SAME shared ledger.
         scope = captured["scopes"][0]
-        report = await scope.ledger.report()
-        assert report.total_tokens == 2500 + 3700  # both ordinary rounds settled
-        assert report.budget_exhausted is True
+        live_report = await scope.ledger.report()
+        assert live_report.total_tokens == report["total_tokens"]
 
     @pytest.mark.asyncio
     async def test_mantle_exhaustion_after_two_rounds_yields_partial(self):
@@ -207,10 +216,12 @@ class TestScenario1TwoRoundsAndFinalization:
 
         assert view.chat.completions.create.await_count == 2
         assert msg.stop_reason == "budget_exhausted"
+        report = msg.metadata["token_budget"]
+        assert report["total_tokens"] == 2500 + 3700
+        assert report["budget_exhausted"] is True
         scope = captured["scopes"][0]
-        report = await scope.ledger.report()
-        assert report.total_tokens == 2500 + 3700
-        assert report.budget_exhausted is True
+        live_report = await scope.ledger.report()
+        assert live_report.total_tokens == report["total_tokens"]
 
 
 class TestScenario2ChildBot:

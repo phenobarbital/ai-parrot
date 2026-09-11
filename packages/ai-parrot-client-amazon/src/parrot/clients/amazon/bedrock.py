@@ -1350,6 +1350,12 @@ class BedrockConverseBase(AbstractClient):
                                 }
                             raise
 
+                        elif isinstance(e, BudgetError):
+                            # FEAT-550 §3 M3: budget control from a tool's own
+                            # inner budgeted call must propagate to the owner —
+                            # never converted into a tool result (code-reviewer
+                            # finding, FEAT-550 wrap-up).
+                            raise
                         tc.error = str(e)
                         tool_result_blocks.append(
                             {
@@ -1739,6 +1745,12 @@ class BedrockConverseBase(AbstractClient):
                                     TOKEN_BUDGET_STATE_KEY: await _scope.registry.suspend(_scope),
                                 }
                             raise
+                        elif isinstance(e, BudgetError):
+                            # FEAT-550 §3 M3: budget control from a tool's own
+                            # inner budgeted call must propagate to the owner —
+                            # never converted into a tool result (code-reviewer
+                            # finding, FEAT-550 wrap-up).
+                            raise
                         tc.error = str(e)
                         tool_result_blocks.append(
                             {
@@ -2009,6 +2021,12 @@ class BedrockConverseBase(AbstractClient):
                                 }
                             raise
 
+                        elif isinstance(e, BudgetError):
+                            # FEAT-550 §3 M3: budget control from a tool's own
+                            # inner budgeted call must propagate to the owner —
+                            # never converted into a tool result (code-reviewer
+                            # finding, FEAT-550 wrap-up).
+                            raise
                         tc.error = str(e)
                         tool_result_blocks.append(
                             {
