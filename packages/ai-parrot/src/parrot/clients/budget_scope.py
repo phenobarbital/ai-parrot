@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import functools
+import inspect
 import logging
 import secrets
 import time
 import uuid
+from collections.abc import Callable
 from contextvars import ContextVar, Token
 from dataclasses import dataclass, field
 from typing import Any, Literal, Optional
@@ -288,4 +291,193 @@ def get_default_registry() -> BudgetRegistry:
     return _DEFAULT_REGISTRY
 
 
-__all__ = ["BudgetScope", "BudgetRegistry", "current_budget_scope", "get_default_registry", "TOKEN_BUDGET_STATE_KEY"]
+_MISSING = object()
+BUDGET_KWARGS: frozenset[str] = frozenset(
+    {"token_budget", "budget_mode", "final_answer_reserve", "budget_scope", "budget_snapshot"}
+)
+
+
+@dataclass(frozen=True)
+class BudgetDefaults:
+    """Constructor-level budget settings of a client or bot (spec §2.1)."""
+
+    token_budget: Optional[int] = None
+    budget_mode: str = "estimated"
+    final_answer_reserve: "int | float" = 0.15
+    registry: Optional[BudgetRegistry] = None
+
+
+@dataclass(frozen=True)
+class BudgetRequest:
+    """Resolved outcome of one call's budget keywords."""
+
+    policy: Optional[TokenBudgetPolicy]
+    scope: Optional[BudgetScope]  # inherited/explicit parent scope, or None for a root
+    snapshot: Optional[BudgetSnapshot]
+    disabled: bool
+
+    @property
+    def active(self) -> bool:
+        return not self.disabled and (self.policy is not None or self.scope is not None)
+
+
+def resolve_budget_request(
+    call_kwargs: dict[str, Any], *, defaults: BudgetDefaults, method_name: str
+) -> BudgetRequest:
+    """Pop the §2.1 keywords from *call_kwargs* (mutating it) and decide root/child/disabled."""
+    tb = call_kwargs.pop("token_budget", _MISSING)
+    mode = call_kwargs.pop("budget_mode", _MISSING)
+    reserve = call_kwargs.pop("final_answer_reserve", _MISSING)
+    explicit_scope = call_kwargs.pop("budget_scope", None)
+    snapshot = call_kwargs.pop("budget_snapshot", None)
+    if snapshot is not None and method_name != "resume":
+        raise TypeError("budget_snapshot is only accepted by resume()")
+    parent = explicit_scope or current_budget_scope()
+    if parent is not None:
+        if tb is _MISSING and mode is _MISSING and reserve is _MISSING:
+            # Omitted settings: inherit the parent scope/policy unchanged.
+            return BudgetRequest(parent.policy, parent, snapshot, False)
+        parent_policy = parent.policy
+        effective_budget = parent_policy.token_budget if tb is _MISSING else tb
+        effective_mode = parent_policy.budget_mode if mode is _MISSING else mode
+        effective_reserve = parent_policy.final_answer_reserve if reserve is _MISSING else reserve
+        if (
+            effective_budget == parent_policy.token_budget
+            and effective_mode == parent_policy.budget_mode
+            and effective_reserve == parent_policy.final_answer_reserve
+        ):
+            # Explicitly repeated but identical settings: still a child.
+            return BudgetRequest(parent.policy, parent, snapshot, False)
+        # A child cannot disable or replace the active question policy.
+        raise BudgetScopeConflict(
+            "child call cannot alter the inherited question's token budget policy",
+            operation_id=parent.operation_id,
+        )
+    if tb is None:  # explicit None at an independent root disables the constructor budget
+        return BudgetRequest(None, None, snapshot, True)
+    budget = defaults.token_budget if tb is _MISSING else tb
+    if budget is None:
+        if mode is not _MISSING or reserve is not _MISSING:
+            raise ValueError("budget_mode/final_answer_reserve require an effective token_budget")
+        return BudgetRequest(None, None, snapshot, True)
+    policy = TokenBudgetPolicy(
+        token_budget=budget,
+        budget_mode=defaults.budget_mode if mode is _MISSING else mode,
+        final_answer_reserve=defaults.final_answer_reserve if reserve is _MISSING else reserve,
+    )
+    return BudgetRequest(policy, None, snapshot, False)
+
+
+async def _enter_scope(
+    self: Any, request: BudgetRequest, *, method_name: str, state: Optional[dict] = None
+) -> BudgetScope:
+    """Materialise the scope for one call: child of parent, resumed ledger, or new root."""
+    registry = getattr(self, "_budget_registry", None) or get_default_registry()
+    if request.scope is not None:
+        return request.scope.child()
+    if method_name == "resume" and state is not None and TOKEN_BUDGET_STATE_KEY in state:
+        return await registry.resume(state, snapshot=request.snapshot)
+    return await registry.create(request.policy)
+
+
+def _amend_signature(fn: Callable, wrapper: Callable) -> None:
+    sig = inspect.signature(fn)
+    if any(p.kind is inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()):
+        wrapper.__signature__ = sig  # type: ignore[attr-defined]
+        return
+    extra = [inspect.Parameter(n, inspect.Parameter.KEYWORD_ONLY, default=None) for n in sorted(BUDGET_KWARGS)]
+    wrapper.__signature__ = sig.replace(parameters=[*sig.parameters.values(), *extra])  # type: ignore[attr-defined]
+
+
+def wrap_budgeted_coroutine(fn: Callable, *, method_name: str) -> Callable:
+    """Wrap a coroutine method: resolve keywords, bind scope for the await, strip keywords."""
+
+    @functools.wraps(fn)
+    async def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
+        if (
+            not (BUDGET_KWARGS & kwargs.keys())
+            and current_budget_scope() is None
+            and getattr(self, "_budget_defaults_active", False) is False
+        ):
+            return await fn(self, *args, **kwargs)  # zero-cost pass-through (AC: nothing added to no-budget path)
+        defaults = self._budget_defaults() if hasattr(self, "_budget_defaults") else BudgetDefaults()
+        request = resolve_budget_request(kwargs, defaults=defaults, method_name=method_name)
+        if not request.active:
+            return await fn(self, *args, **kwargs)
+        gate = getattr(self, "_budget_gate", None)
+        if gate is not None:
+            gate(method_name, request)  # raises BudgetUnsupported when the provider did not opt in (TASK-3136)
+        state = (
+            inspect.signature(fn).bind_partial(self, *args, **kwargs).arguments.get("state")
+            if method_name == "resume"
+            else None
+        )
+        scope = await _enter_scope(self, request, method_name=method_name, state=state)
+        async with scope:
+            return await fn(self, *args, **kwargs)
+
+    _amend_signature(fn, wrapper)
+    wrapper.__parrot_budget_wrapped__ = True  # type: ignore[attr-defined]
+    return wrapper
+
+
+def wrap_budgeted_async_generator(fn: Callable, *, method_name: str) -> Callable:
+    """Wrap an async-generator method: hold the scope binding through iteration (spec §2.4)."""
+
+    @functools.wraps(fn)
+    async def wrapper(self: Any, *args: Any, **kwargs: Any):
+        if (
+            not (BUDGET_KWARGS & kwargs.keys())
+            and current_budget_scope() is None
+            and getattr(self, "_budget_defaults_active", False) is False
+        ):
+            async for item in fn(self, *args, **kwargs):
+                yield item
+            return
+        defaults = self._budget_defaults() if hasattr(self, "_budget_defaults") else BudgetDefaults()
+        request = resolve_budget_request(kwargs, defaults=defaults, method_name=method_name)
+        if not request.active:
+            async for item in fn(self, *args, **kwargs):
+                yield item
+            return
+        gate = getattr(self, "_budget_gate", None)
+        if gate is not None:
+            gate(method_name, request)
+        state = (
+            inspect.signature(fn).bind_partial(self, *args, **kwargs).arguments.get("state")
+            if method_name == "resume"
+            else None
+        )
+        scope = await _enter_scope(self, request, method_name=method_name, state=state)
+        async with scope:
+            async for item in fn(self, *args, **kwargs):
+                yield item
+
+    _amend_signature(fn, wrapper)
+    wrapper.__parrot_budget_wrapped__ = True  # type: ignore[attr-defined]
+    return wrapper
+
+
+def budget_entry(fn: Callable, *, method_name: str) -> Callable:
+    """Pick the right wrapper for *fn*; idempotent on already-wrapped functions."""
+    if getattr(fn, "__parrot_budget_wrapped__", False):
+        return fn
+    if inspect.isasyncgenfunction(fn):
+        return wrap_budgeted_async_generator(fn, method_name=method_name)
+    return wrap_budgeted_coroutine(fn, method_name=method_name)
+
+
+__all__ = [
+    "BudgetScope",
+    "BudgetRegistry",
+    "current_budget_scope",
+    "get_default_registry",
+    "TOKEN_BUDGET_STATE_KEY",
+    "BUDGET_KWARGS",
+    "BudgetDefaults",
+    "BudgetRequest",
+    "resolve_budget_request",
+    "wrap_budgeted_coroutine",
+    "wrap_budgeted_async_generator",
+    "budget_entry",
+]
