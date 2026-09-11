@@ -14,14 +14,14 @@
       "feature_id": "FEAT-552",
       "feature": "worktree-creation-ownership",
       "spec": "sdd/specs/worktree-creation-ownership.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Touches only scripts/sdd/sdd_meta.py and a new test file; no other task writes there.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-11T00:16:19+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3153-plan-worktree-rule.md"
     },
@@ -32,7 +32,7 @@
       "feature_id": "FEAT-552",
       "feature": "worktree-creation-ownership",
       "spec": "sdd/specs/worktree-creation-ownership.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -41,7 +41,7 @@
       "parallel": false,
       "parallelism_notes": "Imports plan_worktree/WorktreePlan from TASK-3153.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-11T00:16:19+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3154-ensure-worktree-cli.md"
     },
@@ -52,7 +52,7 @@
       "feature_id": "FEAT-552",
       "feature": "worktree-creation-ownership",
       "spec": "sdd/specs/worktree-creation-ownership.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -61,7 +61,7 @@
       "parallel": true,
       "parallelism_notes": "Markdown-only, and the only task touching sdd-start.md; parallel with 3156-3158 once the CLI exists.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-11T00:16:19+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3155-sdd-start-ensures-worktree.md"
     },
@@ -72,14 +72,14 @@
       "feature_id": "FEAT-552",
       "feature": "worktree-creation-ownership",
       "spec": "sdd/specs/worktree-creation-ownership.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Pure deletion in sdd-task.md + its twin; shares no file with any other task and needs no CLI.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-11T00:16:19+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3156-sdd-task-drops-worktree.md"
     },
@@ -90,7 +90,7 @@
       "feature_id": "FEAT-552",
       "feature": "worktree-creation-ownership",
       "spec": "sdd/specs/worktree-creation-ownership.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -99,7 +99,7 @@
       "parallel": true,
       "parallelism_notes": "Only task touching sdd-worker.md and its _subagent_data twin.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-11T00:16:19+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3157-sdd-worker-shared-rule.md"
     },
@@ -110,7 +110,7 @@
       "feature_id": "FEAT-552",
       "feature": "worktree-creation-ownership",
       "spec": "sdd/specs/worktree-creation-ownership.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -119,7 +119,7 @@
       "parallel": true,
       "parallelism_notes": "Only task touching the planner/research/autopilot pair of copies.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-11T00:16:19+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3158-orchestrators-shared-rule.md"
     },
@@ -130,7 +130,7 @@
       "feature_id": "FEAT-552",
       "feature": "worktree-creation-ownership",
       "spec": "sdd/specs/worktree-creation-ownership.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -139,7 +139,7 @@
       "parallel": true,
       "parallelism_notes": "Only task touching CLAUDE.md; gated on 3156 so the docs describe a /sdd-task that really stopped.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-11T00:16:19+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3159-docs-worktree-ownership.md"
     },
@@ -150,7 +150,7 @@
       "feature_id": "FEAT-552",
       "feature": "worktree-creation-ownership",
       "spec": "sdd/specs/worktree-creation-ownership.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -163,7 +163,7 @@
       "parallel": false,
       "parallelism_notes": "Asserts the end state; every assertion is false until the five markdown tasks land.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-11T00:16:19+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3160-guard-tests.md"
     }
