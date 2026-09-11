@@ -41,8 +41,6 @@ from ..tools.manager import ToolManager, ToolFormat, ToolDefinition
 from ..core.exceptions import BudgetUnsupported
 from .budget_scope import BudgetDefaults, BudgetRequest, budget_entry
 
-_BUDGETED_METHODS: tuple[str, ...] = ("ask", "ask_stream", "resume", "invoke")
-
 # FEAT-176: Lifecycle Events System
 import hashlib
 
@@ -69,6 +67,9 @@ from parrot.observability.context import (
     current_session_id,
     current_user_id,
 )
+
+# FEAT-550: the four public text methods __init_subclass__ wraps with the budget entry adapter.
+_BUDGETED_METHODS: tuple[str, ...] = ("ask", "ask_stream", "resume", "invoke")
 
 LLM_PRESETS = {
     "analytical": {"temperature": 0.1, "max_tokens": 4000},
@@ -437,6 +438,7 @@ $backstory
             # Validate eagerly by constructing TokenBudgetPolicy(...) so a bad constructor value fails at
             # construction, not at first call — bounded by spec §2.1 "Reject booleans, strings, negative…".
             from parrot.models.token_budget import TokenBudgetPolicy
+
             TokenBudgetPolicy(
                 token_budget=_tb,
                 budget_mode=self._budget_defaults_value.budget_mode,
@@ -817,7 +819,8 @@ $backstory
             )
         except Exception:  # noqa: BLE001
             self.logger.debug(
-                "Failed to emit ClientCallFailedEvent", exc_info=True,
+                "Failed to emit ClientCallFailedEvent",
+                exc_info=True,
             )
 
     async def _forward_to_global_awaited(self, event: Any) -> None:
@@ -837,6 +840,7 @@ $backstory
         """
         try:
             from parrot.core.events.lifecycle import get_global_registry
+
             global_reg = get_global_registry()
             if global_reg is self.events:
                 return  # we ARE the global registry — already emitted

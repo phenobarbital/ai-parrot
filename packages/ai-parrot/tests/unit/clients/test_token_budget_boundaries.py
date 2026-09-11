@@ -1,4 +1,5 @@
 """FEAT-550 M3 — public entry compatibility and unsupported-provider gate (spec §4 rows)."""
+
 from __future__ import annotations
 
 import inspect
@@ -27,12 +28,16 @@ class _Base(AbstractClient):
 
     async def ask(self, prompt, model=None, **kwargs):
         self.calls.append(("ask", dict(kwargs)))
-        return AIMessage(input=prompt, output="ok", response="ok", model="stub", provider="stub", usage=CompletionUsage())
+        return AIMessage(
+            input=prompt, output="ok", response="ok", model="stub", provider="stub", usage=CompletionUsage()
+        )
 
     async def ask_stream(self, prompt, **kwargs) -> AsyncGenerator[Any, None]:
         self.calls.append(("ask_stream", dict(kwargs)))
         yield "chunk"
-        yield AIMessage(input=prompt, output="ok", response="ok", model="stub", provider="stub", usage=CompletionUsage())
+        yield AIMessage(
+            input=prompt, output="ok", response="ok", model="stub", provider="stub", usage=CompletionUsage()
+        )
 
     async def resume(self, session_id, user_input, state):
         self.calls.append(("resume", {}))
@@ -59,7 +64,9 @@ class TestPublicEntryCompatibility:
     def test_wrappers_installed_once_and_identity_preserved(self):
         assert getattr(SupportedClient.ask, "__parrot_budget_wrapped__", False)
         assert ThinSubclass.ask is SupportedClient.ask
-        assert inspect.iscoroutinefunction(SupportedClient.ask) and inspect.isasyncgenfunction(SupportedClient.ask_stream)
+        assert inspect.iscoroutinefunction(SupportedClient.ask) and inspect.isasyncgenfunction(
+            SupportedClient.ask_stream
+        )
         assert inspect.isabstract(AbstractClient)
 
     async def test_no_budget_pass_through(self):
@@ -139,6 +146,11 @@ class TestPublicEntryCompatibility:
             SupportedClient(token_budget=True)
         with pytest.raises(ValueError):
             SupportedClient(token_budget="invalid")
+
+    async def test_budget_snapshot_only_on_resume(self):
+        c = SupportedClient()
+        with pytest.raises(TypeError):
+            await c.ask("hi", budget_snapshot=object())
 
 
 class TestUnsupportedProviders:

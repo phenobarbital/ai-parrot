@@ -321,9 +321,7 @@ class BudgetRequest:
         return not self.disabled and (self.policy is not None or self.scope is not None)
 
 
-def resolve_budget_request(
-    call_kwargs: dict[str, Any], *, defaults: BudgetDefaults, method_name: str
-) -> BudgetRequest:
+def resolve_budget_request(call_kwargs: dict[str, Any], *, defaults: BudgetDefaults, method_name: str) -> BudgetRequest:
     """Pop the §2.1 keywords from *call_kwargs* (mutating it) and decide root/child/disabled."""
     tb = call_kwargs.pop("token_budget", _MISSING)
     mode = call_kwargs.pop("budget_mode", _MISSING)
