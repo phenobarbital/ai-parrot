@@ -180,29 +180,36 @@ git add "$INDEX"
 git commit -m "sdd: start FEAT-<ID> — <feature-slug> (<N> tasks)"
 ```
 
-### 3. Create the Worktree
+### 3. Ensure the Worktree
 
-The worktree branches from HEAD (which is `BASE_BRANCH` after §0). For
-features that's `dev`; for hotfixes that's `main`. The branch name follows
-the existing convention regardless of flow type.
+Provision it through the shared rule — never hand-build the name or the base
+ref (FEAT-552). The command is idempotent: it reuses an existing worktree and
+creates one only when absent.
 
 ```bash
-WORKTREE_NAME="feat-<FEAT-ID>-<feature-slug>"
-WORKTREE_PATH=".claude/worktrees/${WORKTREE_NAME}"
-
-# Check if worktree already exists
-git worktree list | grep "${WORKTREE_NAME}" && echo "Reusing existing worktree" || \
-  git worktree add -b "${WORKTREE_NAME}" "${WORKTREE_PATH}" HEAD
-
-cd "${WORKTREE_PATH}"
+WORKTREE_PATH=$(python -m scripts.sdd.ensure_worktree \
+  --slug "<feature-slug>" \
+  --feature-id "<FEAT-ID>" \
+  --spec "<spec-path>" \
+  --index "sdd/tasks/index/<feature-slug>.json")
+cd "$WORKTREE_PATH"
 ```
+
+For a hotfix (`type: hotfix` in the per-spec index header) pass
+`--jira-key <KEY>` instead of `--feature-id`. This is a real behaviour change:
+the previous block always produced `feat-<FEAT-ID>-<slug>` from `HEAD`, so a
+hotfix inherited unreleased `dev` commits (FEAT-466). Naming and base ref now
+come from `scripts.sdd.sdd_meta.plan_worktree`.
+
+If the command exits non-zero, STOP and report its message. Do not implement on
+`<BASE_BRANCH>`.
 
 ### 4. Verify SDD Files Are Visible
-```bash
-test -f sdd/tasks/index/<feature-slug>.json && echo "Per-spec index OK" || echo "INDEX MISSING"
-test -f <spec-path> && echo "Spec OK" || echo "SPEC MISSING"
-```
-If either is missing, STOP with a clear error message.
+
+Already enforced: §3 passed `--spec` and `--index`, and the CLI refuses to hand
+back a worktree in which either is missing. If you reached this point, both are
+present. A failure here means the base branch does not carry the task artifacts
+yet — fetch and re-run §3 rather than working around it.
 
 ### 5. Read the Spec
 Read the spec file referenced by the tasks.

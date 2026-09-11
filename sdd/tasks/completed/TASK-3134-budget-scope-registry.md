@@ -482,8 +482,43 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: sdd-worker orchestrator (parrot-sdd-coder pool: codex-spark CLI arg error on
+attempt 1, qwen timed out on attempt 2 — no code produced by either; orchestrator implemented
+directly as attempt 3)
+**Date**: 2026-09-11
+**Notes**: Added `QuestionBudget.restore_settled(...)` to `budget.py` (rebuilds a fresh ledger
+from a trusted snapshot; raises `BudgetAccountingError` if the ledger is not empty), plus
+`attempt_count`/`round_count` read-only properties needed by the registry to build a
+`BudgetSnapshot` on export. Created `budget_scope.py` with the ContextVar
+(`current_budget_scope()`), `BudgetScope` (`__aenter__`/`__aexit__` with the loop-identity
+guard and the close/suspend/retain decision on exit — root+no-exception closes, root+
+`HumanInteractionInterrupt` leaves state as-is since the provider already suspended, root+
+other exception closes with `terminal_reason`, child never closes), `child()` for descendant
+spending-only scopes, `_Record`, and `BudgetRegistry` (`create`/`suspend`/`resume`/
+`export_settled`/`release`/`mark_closed`/`_prune_locked`) plus `get_default_registry()`.
+`resume()` implements both the live-record path (policy/revision/nonce checks, atomic nonce
+consumption) and the snapshot-import path (`_import_snapshot_locked`: identity/policy/nonce/
+floor/closed-id checks, never lowering a known floor, never reopening a closed operation) —
+including an idempotent no-op for an identical re-import against an already-active record with
+no pending nonce. `export_settled` refuses anything not quiescent (in-flight/uncertain/
+finalizing) and detaches the source record so a stale envelope can never resume it again.
+Wrote `test_token_budget_scope.py` with the "Resume and snapshots" and "Registry lifecycle"
+groups (10 tests): suspend→resume identity reuse, duplicate-nonce rejection, missing-envelope
+typing, snapshot floor-tampering rejection + detach-after-export + idempotent re-import, new-
+UUID-per-create, expired-suspended-state pruning, full-registry refusal without evicting
+active work, release-active-rejected, ContextVar restoration on both normal and exceptional
+exit, and cross-loop rejection (a second `asyncio.run()` on a background thread).
+Verified: `pytest packages/ai-parrot/tests/unit/clients/test_token_budget_scope.py packages/
+ai-parrot/tests/unit/clients/test_token_budget.py -v` → 34 passed; `pytest packages/ai-parrot/
+tests/unit/clients -q` → 379 passed / 1 pre-existing unrelated failure (`test_client_class_attrs
+[google]`, confirmed failing on `dev` HEAD independent of this feature); `ruff check` clean on
+`budget_scope.py`, `budget.py` and the new test file; direct import spot-check of all five
+acceptance-criteria symbols from `parrot.clients.budget_scope` succeeded.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
+
+Seat: codex-spark (attempt 1, CLI `--ask-for-approval` arg incompatibility, 1.1s) → qwen (attempt
+2, timed out after 552.3s, no code produced) → sdd-worker orchestrator (attempt 3, implemented
+directly) · Backend: codex → nova → orchestrator (Claude Sonnet 5) · Attempts: 2 (pool, both
+non-productive) + 1 (orchestrator) · Duration: 1.1s + 552.3s (pool) + orchestrator implementation/
+test-authoring time · Tokens: pool attempts produced no billable output (dispatch-level failures).

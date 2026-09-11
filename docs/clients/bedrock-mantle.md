@@ -11,6 +11,7 @@ plain OpenAI SDK path, without SigV4 signing or the native Converse API.
 - `packages/ai-parrot/tests/clients/test_bedrock_mantle.py` — unit tests
 - `sdd/specs/bedrock-mantle-client.spec.md` — full design (FEAT-407)
 - `docs/clients/openai-compatible.md` — the shared `OpenAIBaseClient` hierarchy (FEAT-438)
+- `docs/clients/token-budgets.md` — cumulative question token budgets on Mantle / Bedrock (FEAT-550)
 
 ---
 

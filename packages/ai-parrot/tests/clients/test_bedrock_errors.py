@@ -81,7 +81,7 @@ class TestBedrockErrors:
 
         client = BedrockConverseClient(model="claude-sonnet-4-5")
 
-        async def fake_stream(_payload):
+        async def fake_stream(_payload, handle=None):
             async def _events():
                 yield {"contentBlockDelta": {"delta": {"text": "partial"}}}
                 raise ModelStreamErrorException("stream broke")
@@ -199,7 +199,7 @@ class TestBedrockErrors:
         client = BedrockConverseClient(model="claude-sonnet-4-5")
         captured = []
 
-        async def fake_create(payload):
+        async def fake_create(payload, handle=None):
             captured.append(payload)
             return tool_response if len(captured) == 1 else final_response
 

@@ -437,8 +437,58 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: sdd-worker orchestrator (parrot-sdd-coder pool: codex-spark CLI arg error on
+attempt 1, qwen timed out on attempt 2 — no code produced by either; orchestrator implemented
+directly as attempt 3, following the blueprint's disambiguated anchors precisely)
+**Date**: 2026-09-11
+**Notes**: Added `budget_supported_methods` opt-in, `_AttemptHandle` dataclass (settle/
+uncertain/release, exactly-once via `done`), `_build_client(no_retry=...)` (refactored from
+`get_client()`, swapping only the `BotoConfig.retries` dict — never mutating the shared
+client's config), `_get_budget_adapter()`/`_get_budgeted_client()` (per-loop cache alongside
+the shared client, same lock idiom as `_ensure_client`), `_budgeted_attempt` (pass-through
+when no scope is live; counts, reserves, lowers the payload's output cap to
+`reservation.output_cap`, computes the thinking-budget minimum when
+`additionalModelRequestFields.thinking.budget_tokens` is set), and a `close()` override that
+tears down every budgeted client alongside the shared one. Threaded `handle=` through
+`_sdk_create`/`_sdk_stream`/`_invoke_native`, wrapped all four dispatch seams (`ask`'s primary
++ fallback attempts, `ask_stream`'s per-round stream, `resume`, `invoke`) in
+`_budgeted_attempt`, merged the namespaced envelope at all three `HumanInteractionInterrupt`
+sites, and replaced `resume()`'s shallow `list(state["messages"])` with `copy.deepcopy`.
+Verification surfaced two things needing fixes of my own: (1) the signature change adds a
+`handle=` kwarg to `_sdk_create`/`_sdk_stream`, which broke 8 EXISTING tests across
+`test_bedrock_converse.py`, `test_bedrock_errors.py`, `test_bedrock_integration.py`,
+`test_bedrock_thinking.py` and `test_nova.py` whose `side_effect` callables took a bare
+`payload` argument — the task's own blueprint anticipated and authorized this ("update … mocks
+to accept **kwargs if they fail"); added `handle=None` to each affected mock signature.
+(2) A test-environment hazard: the shared venv's editable install for `ai-parrot-client-amazon`
+currently resolves to THIS worktree even from the main repo checkout, making a naive
+"run on dev to check pre-existing" comparison unreliable for this package — worked around by
+git-showing the pre-TASK-3140 HEAD version of `bedrock.py` into place, confirming only 3
+pre-existing unrelated failures remained, then restoring my changes and confirming the same 8
+failures disappeared once the mock signatures were fixed.
+Wrote the full `TestAttemptHooks` group (7 tests, including the required
+`test_native_invoke_model_guarded` addition): fallback retry is two reservations (first
+uncertain from the dispatch failure, second settled — a generous budget confirms the ledger's
+"an HTTP error is not proof of zero charge" rule keeps the failed attempt's full reservation
+debited); no-budget path never touches the adapter; stream settles once at the metadata event
+and marks uncertain when it never arrives; the budgeted client's `BotoConfig.retries` differs
+from the shared client's; `NovaClient` inherits the opt-in; a tool-raised
+`HumanInteractionInterrupt` under a budget carries `state["token_budget"]["operation_id"]` and
+`resume()` never mutates the caller's stored message list; and `_invoke_native` reserves once
+with `route="invoke_model"` and lowers `body["max_tokens"]`.
+Verified: `pytest packages/ai-parrot-client-amazon/tests/unit/test_token_budget_bedrock.py -v`
+→ 16 passed; `pytest packages/ai-parrot-client-amazon/tests/unit -q` → 48 passed; broader sweep
+across all Bedrock/Nova/Mantle client test files plus `packages/ai-parrot/tests/unit/clients`
+→ 554 passed / 4 pre-existing unrelated failures (2 in `test_bedrock_inference_config.py`, 1 in
+`test_factory_bedrock.py`, 1 in `test_folder_convention.py[google]` — all confirmed identical to
+`dev`/pre-TASK-3140 HEAD); `ruff check` clean on `bedrock.py` and every touched test file.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none — fixed 8 pre-existing test mocks whose breakage the task's own
+blueprint explicitly anticipated as a consequence of the mandated `handle=` signature change.
+
+Seat: codex-spark (attempt 1, CLI `--ask-for-approval` arg incompatibility, 1.0s) → qwen
+(attempt 2, timed out after 552.3s, no code produced) → sdd-worker orchestrator (attempt 3,
+implemented directly) · Backend: codex → nova → orchestrator (Claude Sonnet 5) · Attempts: 2
+(pool, both non-productive) + 1 (orchestrator) · Duration: 1.0s + 552.3s (pool) + orchestrator
+implementation/test-authoring time · Tokens: pool attempts produced no billable output
+(dispatch-level failures).

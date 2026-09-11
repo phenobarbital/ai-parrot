@@ -240,7 +240,12 @@ the Action fails (or the user is offline), run
 should require PRs, passing CI, and signed commits. Not configured
 declaratively in this repo — set via GitHub repo settings.
 
-- **Worktrees branch from `base_branch`** (which `/sdd-task` and `sdd-worker` ensure HEAD is on before creating the worktree). Hotfix worktrees branch from `main`; feature worktrees branch from `dev` or `staging` (during a release freeze).
+- **Worktrees branch from `origin/<base_branch>`**, and are created by whoever
+  implements: `/sdd-start` and `sdd-worker` for the normal lanes, and the
+  dev-loop orchestrators (`sdd-planner`, `sdd-research`, `sdd-autopilot`) which
+  plan and dispatch in one run. `/sdd-task` creates none (FEAT-552). Naming and
+  base ref come from `scripts.sdd.sdd_meta.plan_worktree` via
+  `python -m scripts.sdd.ensure_worktree` — never hand-built.
 
 ## Worktree Creation
 
@@ -254,22 +259,21 @@ declaratively in this repo — set via GitHub repo settings.
 git worktree add -b <branch-name> .claude/worktrees/<worktree-name> HEAD
 ```
 
-> **Carve-out (FEAT-466): "from the current branch … `HEAD`" is shorthand,
-> not the rule.** The actual rule is **worktrees branch from `base_branch`**
-> (§ Git Configuration above). `HEAD` only works as shorthand when `HEAD`
-> already *is* the intended base — true for `/sdd-task` and `sdd-worker`,
-> which always `git checkout "$BASE_BRANCH"` immediately beforehand. It is
-> **not** true for a hotfix: `sdd-research.md` branches
-> `hotfix-<JIRA-KEY>-<slug>` explicitly from `origin/main`, regardless of
-> what branch happens to be checked out in the main repo at the time (a
-> hotfix must never inherit unreleased `dev` commits — this is the FEAT-466
-> root cause, PR #1250). When base and `HEAD` might differ, name the ref
-> explicitly:
+> **Carve-out (FEAT-466): a hotfix must never branch from `HEAD` or inherit
+> unreleased `dev` commits.** That used to depend on the caller already
+> being on the right branch when `HEAD` was used as shorthand for
+> `base_branch` — fragile, because whatever branch happened to be checked
+> out in the main repo at the time silently became the base (the FEAT-466
+> root cause, PR #1250). `plan_worktree` (`scripts/sdd/sdd_meta.py`) now
+> enforces the rule directly: it always resolves `base_ref` to
+> `origin/<base_branch>`, so a worktree can never inherit a local, unpushed
+> `HEAD` — for a hotfix that `base_ref` is `origin/main` by construction.
+> Use the shared CLI, never hand-build the `git worktree add` line:
 > ```bash
 > # Feature — from the base branch (dev, or staging during a freeze)
-> git worktree add -b feat-<id>-<slug> .claude/worktrees/feat-<id>-<slug> origin/dev
+> python -m scripts.sdd.ensure_worktree --slug <slug> --feature-id FEAT-<NNN>
 > # Hotfix — ALWAYS from origin/main, never from HEAD/dev
-> git worktree add -b hotfix-<JIRA-KEY>-<slug> .claude/worktrees/hotfix-<JIRA-KEY>-<slug> origin/main
+> python -m scripts.sdd.ensure_worktree --slug <slug> --jira-key <JIRA-KEY>
 > ```
 
 ### Quick reference
@@ -318,7 +322,7 @@ git worktree prune
 | `/sdd-brainstorm` | `sdd/proposals/<n>.brainstorm.md` (with frontmatter) | `base_branch` |
 | `/sdd-proposal`   | `sdd/proposals/<n>.proposal.md` (with frontmatter)  | `base_branch` |
 | `/sdd-spec`       | `sdd/specs/<n>.spec.md` (with frontmatter) + a `reserve_ids.py` FEAT-ID reservation commit to `sdd/tasks/.id_ledger.json` (FEAT-387) | `base_branch` |
-| `/sdd-task`       | `sdd/tasks/index/<feature>.json` + `sdd/tasks/active/TASK-*` + a `reserve_ids.py` TASK-ID reservation commit to `sdd/tasks/.id_ledger.json` (FEAT-387) | `base_branch` |
+| `/sdd-task`       | `sdd/tasks/index/<feature>.json` + `sdd/tasks/active/TASK-*` + a `reserve_ids.py` TASK-ID reservation commit to `sdd/tasks/.id_ledger.json` (FEAT-387) — and NO worktree (FEAT-552: it is created by the implementing lane) | `base_branch` |
 | `/sdd-start`      | Per-spec index status update + implementation code  | worktree (feature branch) |
 | `/sdd-done`       | Verification stamp on per-spec index (committed on feature branch); merges feature → `base_branch` | worktree (feature branch), merged to `base_branch` by Step 9 |
 
@@ -373,9 +377,8 @@ git checkout dev && git pull origin dev
 /sdd-spec videoreel-visual-changes -- ...
 /sdd-task sdd/specs/videoreel-visual-changes.spec.md
 
-# 3. Create worktree from dev
-git worktree add -b feat-014-videoreel-visual-changes \
-  .claude/worktrees/feat-014 HEAD
+# 3. Start a task — creates the worktree on this machine, idempotently
+/sdd-start TASK-069
 
 # 4. Enter worktree and work
 cd .claude/worktrees/feat-014
