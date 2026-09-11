@@ -52,7 +52,7 @@
       "feature_id": "FEAT-552",
       "feature": "worktree-creation-ownership",
       "spec": "sdd/specs/worktree-creation-ownership.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "Markdown-only, and the only task touching sdd-start.md; parallel with 3156-3158 once the CLI exists.",
       "assigned_to": null,
       "started_at": "2026-09-11T00:16:19+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3155-sdd-start-ensures-worktree.md"
+      "completed_at": "2026-09-11T00:57:40+00:00",
+      "file": "sdd/tasks/completed/TASK-3155-sdd-start-ensures-worktree.md"
     },
     {
       "id": "TASK-3156",
