@@ -72,7 +72,7 @@
       "feature_id": "FEAT-552",
       "feature": "worktree-creation-ownership",
       "spec": "sdd/specs/worktree-creation-ownership.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -80,8 +80,8 @@
       "parallelism_notes": "Pure deletion in sdd-task.md + its twin; shares no file with any other task and needs no CLI.",
       "assigned_to": null,
       "started_at": "2026-09-11T00:16:19+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3156-sdd-task-drops-worktree.md"
+      "completed_at": "2026-09-11T00:29:52+00:00",
+      "file": "sdd/tasks/completed/TASK-3156-sdd-task-drops-worktree.md"
     },
     {
       "id": "TASK-3157",

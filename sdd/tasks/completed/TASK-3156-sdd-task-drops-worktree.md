@@ -245,10 +245,24 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (fallback — the parrot-sdd-coder gemini attempt
+failed: its sandbox blocked python invocations containing the literal
+substring "TASK-", so it could not run the twin-regeneration script)
+**Date**: 2026-09-11
+**Notes**: Baseline parity check measured `1 failed, 1 passed` as expected.
+Deleted §6 "Create the Worktree", renumbered §7 "Output" → §6, rewrote the
+"Worktree created" stanza to "Worktree: not created…" plus the `Next:`
+block, and reworded the §Guardrails commit bullet — all exactly per the
+blueprint. Regenerated `.agent/workflows/sdd-task.md` programmatically from
+the edited original (frontmatter preserved, the one documented `CLAUDE.md`→
+`AGENTS.md` substitution re-applied), healing the pre-existing FEAT-545
+drift in the same stroke. `pytest tests/sdd_scripts/test_command_twin_parity.py -q`
+now reports `2 passed`. All 7 acceptance criteria (AC-1 through AC-7)
+verified individually.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Deviations from spec**: none
 
-**Deviations from spec**: none | describe if any
+Seat: sdd-worker (sonnet, direct) · Backend: n/a (fallback after MCP-seat
+failure) · Model: claude-sonnet-5 · Attempts: 2 (1 gemini/google-compat
+sandbox failure, 1 direct fallback success) · Duration: 152.7s (failed MCP
+attempt) + fallback · Tokens: n/a
