@@ -377,10 +377,18 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (orchestrated via parrot-sdd-coder, retried once)
+**Date**: 2026-09-11
+**Notes**: Implemented `scripts/build_snippet_bundles.py` — CI/authoring-time
+script that compiles `client.ts` → `client.js` via `esbuild`, updates
+`manifest.json`'s `client_sha256`, and supports a `--check` dry-run mode
+that never writes and exits non-zero on drift. Bundles without
+`client.ts` are skipped silently (valid for server-only Python
+snippets); raises `EsbuildNotFoundError` when `esbuild` is absent on
+`PATH`. 5/5 tests pass (fake-esbuild fixture, no real external
+dependency), `ruff check`/`mypy` clean, never imported from
+`packages/parrot-formdesigner/src/` (confirmed via grep guard).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Deviations from spec**: none
 
-**Deviations from spec**: none | describe if any
+**Seat: minimax (attempt 2, after qwen attempt-1 timeout) · Backend: nova · Model: minimax.minimax-m2.5 · Attempts: 2 · Duration: 685.5s (552.5s timeout + 133.0s success) · Tokens: 400,368 in / 5,904 out**

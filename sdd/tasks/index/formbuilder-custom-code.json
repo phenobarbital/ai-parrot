@@ -134,7 +134,7 @@
       "feature_id": "FEAT-459",
       "feature": "formbuilder-custom-code",
       "spec": "sdd/specs/formbuilder-custom-code.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -144,8 +144,8 @@
       "parallelism_notes": "Track 2 (Worktree A per spec), independent of TASK-3168/3169/3170/3171 until TASK-3172 integrates them.",
       "assigned_to": null,
       "started_at": "2026-09-11T16:38:03+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3167-context-projector.md"
+      "completed_at": "2026-09-11T17:14:07+00:00",
+      "file": "sdd/tasks/completed/TASK-3167-context-projector.md"
     },
     {
       "id": "TASK-3168",
@@ -283,7 +283,7 @@
       "feature_id": "FEAT-459",
       "feature": "formbuilder-custom-code",
       "spec": "sdd/specs/formbuilder-custom-code.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -293,8 +293,8 @@
       "parallelism_notes": "Track 3, independent of TASK-3173 (different files: scripts/build_snippet_bundles.py vs renderers/).",
       "assigned_to": null,
       "started_at": "2026-09-11T16:38:03+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3174-ts-bundler-integration.md"
+      "completed_at": "2026-09-11T17:14:07+00:00",
+      "file": "sdd/tasks/completed/TASK-3174-ts-bundler-integration.md"
     },
     {
       "id": "TASK-3175",

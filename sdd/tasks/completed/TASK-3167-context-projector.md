@@ -403,10 +403,17 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (orchestrated via parrot-sdd-coder)
+**Date**: 2026-09-11
+**Notes**: Implemented `ContextProjector` in `services/sandbox/projector.py`,
+converting live `FormEventContext` into serialisable `SandboxContext`,
+enforcing the per-tier claim projection policy (OQ-5): tier `PURE` always
+projects `claims == {}`; tiers `HELPERS`/`BROKERED`/`TOOLKIT` project only
+`SAFE_CLAIM_KEYS`-allowlisted, manifest-declared `auth_claims`; `token`/
+headers are never projected at any tier. Non-JSON-serialisable
+`payload`/`schema_dump` raise `TypeError`. 6/6 tests pass, `ruff check`
+and `mypy` clean.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Deviations from spec**: none
 
-**Deviations from spec**: none | describe if any
+**Seat: gemini · Backend: google-compat · Model: gemini-3.5-flash · Attempts: 1 · Duration: 855.2s · Tokens: 1,768,715 in / 4,951 out**
