@@ -112,7 +112,7 @@
       "feature_id": "FEAT-459",
       "feature": "formbuilder-custom-code",
       "spec": "sdd/specs/formbuilder-custom-code.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -124,8 +124,8 @@
       "parallelism_notes": "Spec's 'Ordering caveat': M6 depends on M15 (TASK-3175) by design, but is written with an injected ConformanceCheckFn so it can be implemented/tested against a fake before TASK-3175 lands, then wired to the real gate.",
       "assigned_to": null,
       "started_at": "2026-09-11T16:38:03+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3166-tenant-approval-service.md"
+      "completed_at": "2026-09-11T18:21:40+00:00",
+      "file": "sdd/tasks/completed/TASK-3166-tenant-approval-service.md"
     },
     {
       "id": "TASK-3167",

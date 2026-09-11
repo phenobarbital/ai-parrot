@@ -457,10 +457,25 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (orchestrated via parrot-sdd-coder, retried
+once; 1 mypy error fixed directly post-merge)
+**Date**: 2026-09-11
+**Notes**: Implemented `SnippetApprovalService` with `draft()`,
+`publish()`, `revoke()`, `get_published()`, `list_versions()`.
+`publish()` refuses on a failing injected conformance check or a
+`check_tier_cap` failure (no row mutated either way); a successful
+`publish()` sets `approved_by`/`approved_at` and calls
+`store.invalidate()` exactly once with the correct `(tenant,
+handler_ref)`; `revoke()` invalidates the cache and flips status to
+`REVOKED`; `get_published()` never returns a `DRAFT` row. 7/7 tests
+pass, `ruff check` clean as delivered. `mypy` initially reported 1 error
+(`bundle.event.value` — `FormEventName` is a plain `str` `Literal`, not
+an enum, so `.value` never exists even inside the `hasattr` guard) —
+fixed directly by simplifying to `str(bundle.event)`, re-verified clean,
+no behavioral change.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Deviations from spec**: none — post-merge fix was a type-checking
+correction only, required by this task's own "`mypy` clean" acceptance
+criterion.
 
-**Deviations from spec**: none | describe if any
+**Seat: gemini (attempt 2, after minimax attempt-1 timeout) · Backend: google-compat · Model: gemini-3.5-flash · Attempts: 2 · Duration: 784.7s (644.6s timeout + 140.1s success) · Tokens: 1,587,953 in / 10,019 out**
