@@ -11,7 +11,12 @@ from parrot_formdesigner.renderers.worker_bridge import (
 
 def test_worker_patch_allowlist_has_exactly_six_operations() -> None:
     assert ALLOWED_PATCH_OPERATIONS == {
-        "set_visibility", "set_required", "set_enabled", "set_value", "set_hint", "narrow_options",
+        "set_visibility",
+        "set_required",
+        "set_enabled",
+        "set_value",
+        "set_hint",
+        "narrow_options",
     }
 
 

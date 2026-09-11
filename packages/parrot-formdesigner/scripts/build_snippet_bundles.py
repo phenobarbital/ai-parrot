@@ -79,9 +79,7 @@ def _update_manifest_hash(bundle_dir: Path, js_source: str) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--root", type=Path, required=True, help="Snippet bundle root directory"
-    )
+    parser.add_argument("--root", type=Path, required=True, help="Snippet bundle root directory")
     parser.add_argument(
         "--check",
         action="store_true",
