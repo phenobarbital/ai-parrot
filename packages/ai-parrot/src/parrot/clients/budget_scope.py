@@ -66,7 +66,9 @@ class BudgetScope:
     def designate_owner(self, call_id: str) -> None:
         """Mark this root's answer owner once; descendants can never claim (spec §2.1/§2.3)."""
         if not self.is_root:
-            raise BudgetScopeConflict("only a root scope can designate the answer owner", operation_id=self.operation_id)
+            raise BudgetScopeConflict(
+                "only a root scope can designate the answer owner", operation_id=self.operation_id
+            )
         if not self.owner_designated:
             self.owner_call_id, self.owner_designated = call_id, True
 

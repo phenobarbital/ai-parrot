@@ -92,6 +92,7 @@ class BedrockMantleClient(OpenAIBaseClient):
     @staticmethod
     def budget_adapter_factory():
         from ..budget import MantleBudgetAdapter  # lazy: keep import-time cost off the no-budget path
+
         return MantleBudgetAdapter()
 
     # FEAT-523 folder-convention attributes (read by LLMFactory).

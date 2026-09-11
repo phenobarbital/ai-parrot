@@ -259,7 +259,9 @@ class OpenAIBaseClient(AbstractClient):
         """
         _scope = current_budget_scope()
         if _scope is not None and self.budget_adapter_factory is not None:
-            return await self._chat_completion_budgeted(_scope, model=model, messages=messages, use_tools=use_tools, stream=stream, **kwargs)
+            return await self._chat_completion_budgeted(
+                _scope, model=model, messages=messages, use_tools=use_tools, stream=stream, **kwargs
+            )
 
         from openai import APIConnectionError, APIError, RateLimitError
 
@@ -279,17 +281,27 @@ class OpenAIBaseClient(AbstractClient):
             with attempt:
                 return await method(model=model, messages=messages, **kwargs)
 
-    async def _chat_completion_budgeted(self, scope: Any, *, model: str, messages: Any, use_tools: bool, stream: bool, **kwargs) -> Any:
+    async def _chat_completion_budgeted(
+        self, scope: Any, *, model: str, messages: Any, use_tools: bool, stream: bool, **kwargs
+    ) -> Any:
         """Budgeted funnel: reserve per physical attempt on a no-retry SDK view, settle from usage (FEAT-550 §2.2/§2.4)."""
         from openai import APIConnectionError, APIError, RateLimitError
 
         adapter = self.budget_adapter_factory()
         ctx = _BUDGET_CALL_CTX.get()
-        call_id, round_no, phase = ctx.get("call_id") or str(uuid.uuid4()), ctx.get("round_number", 1), ctx.get("phase", "work")
+        call_id, round_no, phase = (
+            ctx.get("call_id") or str(uuid.uuid4()),
+            ctx.get("round_number", 1),
+            ctx.get("phase", "work"),
+        )
         cap_key = "max_completion_tokens" if "max_completion_tokens" in kwargs else "max_tokens"
         max_out = kwargs.get(cap_key) or self._resolve_max_tokens(None)
         view = self.client.with_options(max_retries=0)  # request-local; shares transport, never closed here (spec §2.4)
-        method = view.chat.completions.create if use_tools else getattr(view.chat.completions, "parse", view.chat.completions.create)
+        method = (
+            view.chat.completions.create
+            if use_tools
+            else getattr(view.chat.completions, "parse", view.chat.completions.create)
+        )
         if stream:
             kwargs["stream"] = True
             kwargs.setdefault("stream_options", {"include_usage": True})
@@ -304,10 +316,17 @@ class OpenAIBaseClient(AbstractClient):
             with attempt:
                 attempt_no += 1
                 body = {"model": model, "messages": messages, **kwargs}
-                estimate = await adapter.count_input(body, route="chat_completions", mode=scope.policy.budget_mode, endpoint=str(self.base_url or ""))
+                estimate = await adapter.count_input(
+                    body, route="chat_completions", mode=scope.policy.budget_mode, endpoint=str(self.base_url or "")
+                )
                 reservation = await scope.ledger.reserve(
-                    estimate, max_output_tokens=max_out, min_output_tokens=1, call_id=call_id,
-                    round_number=round_no, attempt_number=attempt_no, phase=phase,
+                    estimate,
+                    max_output_tokens=max_out,
+                    min_output_tokens=1,
+                    call_id=call_id,
+                    round_number=round_no,
+                    attempt_number=attempt_no,
+                    phase=phase,
                 )
                 kwargs[cap_key] = reservation.output_cap
                 try:
@@ -751,12 +770,20 @@ class OpenAIBaseClient(AbstractClient):
                     )
                 except Exception as fallback_exc:
                     await self._emit_failed_call_safe(
-                        _lc_tc, self.client_name, model_str, _lc_t0, fallback_exc,
+                        _lc_tc,
+                        self.client_name,
+                        model_str,
+                        _lc_t0,
+                        fallback_exc,
                     )
                     raise
             else:
                 await self._emit_failed_call_safe(
-                    _lc_tc, self.client_name, model_str, _lc_t0, e,
+                    _lc_tc,
+                    self.client_name,
+                    model_str,
+                    _lc_t0,
+                    e,
                 )
                 raise
         _round_duration_ms = (time.perf_counter() - _round_t0) * 1000
@@ -1105,7 +1132,11 @@ class OpenAIBaseClient(AbstractClient):
                 )
             except Exception as _stream_exc:
                 await self._emit_failed_call_safe(
-                    _lc_tc, self.client_name, model_str, _lc_t0, _stream_exc,
+                    _lc_tc,
+                    self.client_name,
+                    model_str,
+                    _lc_t0,
+                    _stream_exc,
                 )
                 raise
 

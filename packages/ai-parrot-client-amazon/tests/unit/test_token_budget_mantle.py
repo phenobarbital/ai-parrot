@@ -1,4 +1,5 @@
 """FEAT-550 M5 — Mantle accounting, per-attempt hooks, no sibling opt-in (spec §4 rows)."""
+
 from __future__ import annotations
 
 import json
@@ -55,9 +56,7 @@ class TestMantleAccounting:
     async def test_strict_refused(self):
         """Strict mode raises BudgetUnsupported without a qualification."""
         with pytest.raises(BudgetUnsupported):
-            await MantleBudgetAdapter().count_input(
-                {"model": "m", "messages": []}, mode="strict"
-            )
+            await MantleBudgetAdapter().count_input({"model": "m", "messages": []}, mode="strict")
 
     @pytest.mark.asyncio
     async def test_response_format_counted_as_wire_dict(self):
@@ -66,8 +65,7 @@ class TestMantleAccounting:
 
         # Without response_format
         estimate1 = await a.count_input(
-            {"model": "test-model", "messages": [{"role": "user", "content": "hello"}]},
-            mode="estimated"
+            {"model": "test-model", "messages": [{"role": "user", "content": "hello"}]}, mode="estimated"
         )
 
         # With response_format
@@ -77,7 +75,7 @@ class TestMantleAccounting:
                 "messages": [{"role": "user", "content": "hello"}],
                 "response_format": {"type": "json_schema", "json_schema": {"name": "Test"}},
             },
-            mode="estimated"
+            mode="estimated",
         )
 
         # Estimates should differ due to the response_format
@@ -91,9 +89,7 @@ class TestNoSiblingOptIn:
         """OpenAIBaseClient and siblings have no budget support."""
         assert OpenAIBaseClient.budget_supported_methods == frozenset()
         assert OpenAIBaseClient.budget_adapter_factory is None
-        assert BedrockMantleClient.budget_supported_methods == frozenset(
-            {"ask", "ask_stream", "resume", "invoke"}
-        )
+        assert BedrockMantleClient.budget_supported_methods == frozenset({"ask", "ask_stream", "resume", "invoke"})
         assert BedrockMantleClient.budget_adapter_factory is not None
 
 
@@ -104,9 +100,7 @@ def _fake_openai(create_side_effects):
     view.chat.completions.parse = AsyncMock(side_effect=create_side_effects)
     root = MagicMock()
     root.with_options = MagicMock(return_value=view)
-    root.chat.completions.create = AsyncMock(
-        side_effect=AssertionError("shared client must not be used when budgeted")
-    )
+    root.chat.completions.create = AsyncMock(side_effect=AssertionError("shared client must not be used when budgeted"))
     return root, view
 
 
@@ -139,7 +133,5 @@ class TestChatCompletionHooks:
         from parrot.clients.openai_base import OpenAIBaseClient
 
         # Verify opt-in is explicit and local to Mantle
-        assert BedrockMantleClient.budget_supported_methods == frozenset(
-            {"ask", "ask_stream", "resume", "invoke"}
-        )
+        assert BedrockMantleClient.budget_supported_methods == frozenset({"ask", "ask_stream", "resume", "invoke"})
         assert OpenAIBaseClient.budget_supported_methods == frozenset()

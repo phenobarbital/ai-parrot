@@ -8,7 +8,13 @@ from typing import Any, AsyncGenerator
 import pytest
 
 from parrot.clients.base import AbstractClient
-from parrot.clients.budget_scope import BudgetRegistry, current_budget_scope, BudgetDefaults, _CURRENT_SCOPE
+from parrot.clients.budget_scope import (
+    BudgetRegistry,
+    current_budget_scope,
+    BudgetDefaults,
+    _CURRENT_SCOPE,
+    TOKEN_BUDGET_STATE_KEY,
+)
 from parrot.core.exceptions import BudgetUnsupported, BudgetExhausted
 from parrot.models.basic import CompletionUsage
 from parrot.models.responses import AIMessage, InvokeResult
@@ -31,6 +37,7 @@ class _Base(AbstractClient):
         self.calls.append(("ask", dict(kwargs)))
         if kwargs.get("raise_exhausted"):
             from parrot.core.exceptions import BudgetExhausted
+
             raise BudgetExhausted("exhausted", report={"partial_text": "partial text", "total_tokens": 120})
         return AIMessage(
             input=prompt, output="ok", response="ok", model="stub", provider="stub", usage=CompletionUsage()
@@ -40,6 +47,7 @@ class _Base(AbstractClient):
         self.calls.append(("ask_stream", dict(kwargs)))
         if kwargs.get("raise_exhausted"):
             from parrot.core.exceptions import BudgetExhausted
+
             yield "chunk1"
             raise BudgetExhausted("exhausted", report={"partial_text": "chunk1 partial text", "total_tokens": 150})
         yield "chunk"
@@ -190,22 +198,53 @@ class TestUnsupportedProviders:
         assert (await c.invoke("x")).output == "ok"
 
 
+async def _make_budget_bot(client: SupportedClient, **bot_kwargs: Any) -> BaseBot:
+    """A configured ``BaseBot`` wired to *client* (mirrors tests/unit/bots/test_bot_history_wiring.py)."""
+    bot = BaseBot(
+        name="budget-boundary-probe",
+        llm=client,
+        memory_type="memory",
+        injection_detection=False,
+        **bot_kwargs,
+    )
+    await bot.configure()
+    return bot
+
+
+class ExhaustingAskClient(SupportedClient):
+    """Always raises ``BudgetExhausted`` from ``ask`` (bot.ask's llm_kwargs do not
+    forward arbitrary caller kwargs, so a dedicated subclass — not a flag — is
+    the deterministic way to exercise the bot boundary's translation)."""
+
+    async def ask(self, prompt, model=None, **kwargs):
+        self.calls.append(("ask", dict(kwargs)))
+        raise BudgetExhausted("exhausted", report={"partial_text": "partial text", "total_tokens": 120})
+
+
+class ExhaustingStreamClient(SupportedClient):
+    """Always yields one chunk then raises ``BudgetExhausted`` from ``ask_stream``."""
+
+    async def ask_stream(self, prompt, **kwargs):
+        self.calls.append(("ask_stream", dict(kwargs)))
+        yield "chunk1"
+        raise BudgetExhausted("exhausted", report={"partial_text": "chunk1 partial text", "total_tokens": 150})
+
+
 class TestBotBoundary:
     async def test_bot_ask_translates_budget_exhausted(self):
-        client = SupportedClient()
-        bot = BaseBot(llm=client)
-        # Trigger BudgetExhausted inside the client
-        response = await bot.ask("hello", token_budget=1000, raise_exhausted=True)
+        client = ExhaustingAskClient()
+        bot = await _make_budget_bot(client)
+        response = await bot.ask("hello", token_budget=1000)
         assert response.stop_reason == "budget_exhausted"
         assert response.output == "partial text"
         assert response.metadata["token_budget"]["total_tokens"] == 120
         assert response.metadata["budget_exhausted"] is True
 
     async def test_bot_ask_stream_translates_budget_exhausted(self):
-        client = SupportedClient()
-        bot = BaseBot(llm=client)
+        client = ExhaustingStreamClient()
+        bot = await _make_budget_bot(client)
         chunks = []
-        async for chunk in bot.ask_stream("hello", token_budget=1000, raise_exhausted=True):
+        async for chunk in bot.ask_stream("hello", token_budget=1000):
             chunks.append(chunk)
         # The first chunk "chunk1" is yielded before the exception, then the terminal AIMessage is yielded
         assert len(chunks) == 2
@@ -215,3 +254,75 @@ class TestBotBoundary:
         assert chunks[1].output == "chunk1 partial text"
         assert chunks[1].metadata["token_budget"]["total_tokens"] == 150
         assert chunks[1].metadata["budget_exhausted"] is True
+
+    async def test_successful_answer_carries_report(self):
+        client = SupportedClient()
+        bot = await _make_budget_bot(client)
+        response = await bot.ask("hello", token_budget=1000)
+        assert response.metadata["token_budget"]["budget_exhausted"] is False
+
+    async def test_typed_errors_still_propagate(self):
+        client = UnsupportedClient()
+        bot = await _make_budget_bot(client)
+        with pytest.raises(BudgetUnsupported):
+            await bot.ask("hello", token_budget=1000)
+
+    async def test_child_bot_reraises_to_owner(self):
+        registry = BudgetRegistry()
+        policy = TokenBudgetPolicy(token_budget=1000)
+        scope = await registry.create(policy)
+        client = ExhaustingAskClient(budget_registry=registry)
+        bot = await _make_budget_bot(client)
+        token = _CURRENT_SCOPE.set(scope)
+        try:
+            with pytest.raises(BudgetExhausted):
+                await bot.ask("hello")
+        finally:
+            _CURRENT_SCOPE.reset(token)
+
+    async def test_owner_designated_once_on_execute_llm_call(self):
+        # The client sees a CHILD scope (its own `owner_designated` default), since
+        # execute_llm_call forwards `budget_scope=<root>` and the entry adapter turns
+        # an inherited parent into a child (spec §2.1) — so designation must be
+        # observed on the ROOT scope, which is what stays bound around the client
+        # call, not what the client itself sees.
+        seen_owner_designated: list[bool] = []
+
+        class OwnerCapturingBot(BaseBot):
+            async def execute_llm_call(self, client, method="ask", **llm_kwargs):
+                result = await super().execute_llm_call(client, method, **llm_kwargs)
+                scope = current_budget_scope()
+                seen_owner_designated.append(scope.owner_designated if scope else None)
+                return result
+
+        client = SupportedClient()
+        bot = OwnerCapturingBot(name="owner-probe", llm=client, memory_type="memory", injection_detection=False)
+        await bot.configure()
+        await bot.ask("hello", token_budget=1000)
+        # execute_llm_call designates the root owner exactly once, before the client call returns.
+        assert seen_owner_designated == [True]
+
+    async def test_resume_with_envelope_reattaches(self):
+        registry = BudgetRegistry()
+        policy = TokenBudgetPolicy(token_budget=1000)
+        scope = await registry.create(policy)
+        env = await registry.suspend(scope)
+
+        seen_operation_ids: list[str] = []
+
+        class ResumeRecordingClient(SupportedClient):
+            async def resume(self, session_id, user_input, state):
+                s = current_budget_scope()
+                seen_operation_ids.append(s.operation_id if s else None)
+                return await self.ask(user_input)
+
+        client = ResumeRecordingClient(budget_registry=registry)
+        bot = await _make_budget_bot(client, budget_registry=registry)
+        # NOTE: AbstractBot.resume() references `self.client`, an attribute that is
+        # never assigned anywhere in the class today (pre-existing on `dev`, unrelated
+        # to FEAT-550 — confirmed via `git show dev:.../abstract.py`). Out of scope
+        # for this task to fix; set it directly here so the FEAT-550 reattachment
+        # logic (which runs BEFORE that pre-existing reference) can be exercised.
+        bot.client = client
+        await bot.resume("session-1", "hello", {TOKEN_BUDGET_STATE_KEY: env})
+        assert seen_operation_ids == [scope.operation_id]

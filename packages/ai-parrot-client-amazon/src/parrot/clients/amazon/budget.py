@@ -310,7 +310,9 @@ class MantleBudgetAdapter:
             )
             rec = match_qualification(key, registry=registry)
             if rec is None:
-                raise BudgetUnsupported("Mantle Chat Completions has no strict qualification on the installed openai SDK")
+                raise BudgetUnsupported(
+                    "Mantle Chat Completions has no strict qualification on the installed openai SDK"
+                )
             # Exact path — only reachable with an injected registry
             self.logger.debug(
                 "count_input route=%s method=%s quality=exact qualification_id=%s",
@@ -431,8 +433,16 @@ class MantleBudgetAdapter:
                     for call in tool_calls:
                         if isinstance(call, dict):
                             call_id = call.get("id", "unknown")
-                            func_name = call.get("function", {}).get("name") if isinstance(call.get("function"), dict) else "unknown"
-                            args_json = call.get("function", {}).get("arguments", "{}") if isinstance(call.get("function"), dict) else "{}"
+                            func_name = (
+                                call.get("function", {}).get("name")
+                                if isinstance(call.get("function"), dict)
+                                else "unknown"
+                            )
+                            args_json = (
+                                call.get("function", {}).get("arguments", "{}")
+                                if isinstance(call.get("function"), dict)
+                                else "{}"
+                            )
 
                             # Look for the result in completed calls
                             result_text = "UNEXECUTED"
@@ -452,7 +462,9 @@ class MantleBudgetAdapter:
                     tool_use_id = msg.get("tool_use_id", "unknown")
                     result_text = msg.get("content", "UNEXECUTED")
                     if isinstance(result_text, list):
-                        result_text = " ".join(str(item.get("text", "") if isinstance(item, dict) else item) for item in result_text)
+                        result_text = " ".join(
+                            str(item.get("text", "") if isinstance(item, dict) else item) for item in result_text
+                        )
                     msg["role"] = "user"
                     msg["content"] = f"[tool result {tool_use_id}] {result_text}"
 
@@ -482,4 +494,11 @@ class MantleBudgetAdapter:
         return payload
 
 
-__all__ = ["BedrockBudgetAdapter", "MantleBudgetAdapter", "FINALIZATION_INSTRUCTION", "canonical_json", "fingerprint", "local_counter"]
+__all__ = [
+    "BedrockBudgetAdapter",
+    "MantleBudgetAdapter",
+    "FINALIZATION_INSTRUCTION",
+    "canonical_json",
+    "fingerprint",
+    "local_counter",
+]

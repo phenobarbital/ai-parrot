@@ -1396,17 +1396,22 @@ class BaseBot(AbstractBot):
                     except BudgetExhausted as _bx:
                         if _budget_is_child:
                             raise  # propagate budget control to the owner (spec §2.3)
-                        response = self._budget_partial_message(prompt_for_llm, _bx, model=str(getattr(client, "model", "")), provider=getattr(client, "client_type", ""))
+                        response = self._budget_partial_message(
+                            prompt_for_llm,
+                            _bx,
+                            model=str(getattr(client, "model", "")),
+                            provider=getattr(client, "client_type", ""),
+                        )
                     if _budget_scope is not None and "token_budget" not in response.metadata:
                         response.metadata["token_budget"] = (await _budget_scope.ledger.report()).model_dump()
 
                     self.logger.info(
-                    "[%s] ask timing: client.ask_ms=%.1f model=%s use_tools=%s",
-                    self.name,
-                    (time.perf_counter() - phase_started) * 1000,
-                    getattr(response, "model", None),
-                    use_tools,
-                )
+                        "[%s] ask timing: client.ask_ms=%.1f model=%s use_tools=%s",
+                        self.name,
+                        (time.perf_counter() - phase_started) * 1000,
+                        getattr(response, "model", None),
+                        use_tools,
+                    )
 
                 # FEAT-396 code review fix: surface INPUT-stage FLAG reports
                 # (computed above by `_run_input_pipeline`, previously
@@ -1943,10 +1948,12 @@ class BaseBot(AbstractBot):
 
                     # Owner designation for streaming path
                     from ..clients.budget_scope import current_budget_scope
+
                     _scope = current_budget_scope()
                     if _scope is not None and _scope.is_root and not _scope.owner_designated:
                         _scope.designate_owner(_scope.owner_call_id)
                         import inspect
+
                         sig = inspect.signature(client.ask_stream)
                         if "budget_scope" in sig.parameters:
                             llm_kwargs["budget_scope"] = _scope
@@ -1972,8 +1979,8 @@ class BaseBot(AbstractBot):
                                     # OUTPUT_STREAM GuardrailPipeline (both empty by
                                     # default today — zero-overhead passthrough; see
                                     # `_feed_streaming_guardrails`).
-                                    transformed_chunk, _stream_blocked, _chunk_flags = await self._feed_streaming_guardrails(
-                                        chunk
+                                    transformed_chunk, _stream_blocked, _chunk_flags = (
+                                        await self._feed_streaming_guardrails(chunk)
                                     )
                                     if _chunk_flags:
                                         _stream_flag_reports.update(_chunk_flags)
@@ -1985,11 +1992,21 @@ class BaseBot(AbstractBot):
                         except BudgetExhausted as _bx:
                             if _budget_is_child:
                                 raise
-                            # Translate BudgetExhausted raised by the stream into a terminal partial AIMessage yielded once
-                            ai_message = self._budget_partial_message(prompt_for_llm, _bx, model=str(getattr(client, "model", "")), provider=getattr(client, "client_type", ""))
+                            # Translate BudgetExhausted raised by the stream into a terminal partial
+                            # AIMessage yielded exactly once (spec §2.4) — do NOT also yield its text
+                            # as a chunk here; the tail code below yields `ai_message` itself once.
+                            ai_message = self._budget_partial_message(
+                                prompt_for_llm,
+                                _bx,
+                                model=str(getattr(client, "model", "")),
+                                provider=getattr(client, "client_type", ""),
+                            )
                             full_response = ai_message.output
-                            yield ai_message.output
-                        if not _stream_blocked and not isinstance(ai_message, AIMessage) and not (ai_message and getattr(ai_message, "stop_reason", None) == "budget_exhausted"):
+                        if (
+                            not _stream_blocked
+                            and not isinstance(ai_message, AIMessage)
+                            and not (ai_message and getattr(ai_message, "stop_reason", None) == "budget_exhausted")
+                        ):
                             # Flush any content a StreamingGuardrail adapter withheld.
                             _stream_tail = self._flush_streaming_guardrails()
                             if _stream_tail:
