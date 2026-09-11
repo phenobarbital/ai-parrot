@@ -17,7 +17,9 @@ See ``sdd/specs/openai-compatible-clients.spec.md`` (FEAT-438) §3 Module 1.
 
 from __future__ import annotations
 
+import asyncio
 import base64
+import copy
 import io
 import json
 import mimetypes
@@ -36,6 +38,7 @@ from tenacity import (
 )
 
 from ..exceptions import InvokeError
+from ..core.exceptions import BudgetAccountingError, BudgetError, BudgetExhausted
 from ..models import (
     AIMessage,
     AIMessageFactory,
@@ -52,8 +55,7 @@ from ..memory.render import HistoryMessage
 # from the per-call ContextVars BaseBot binds (FEAT-228).
 from parrot.observability.context import current_session_id, current_user_id
 from .base import AbstractClient
-from .budget_scope import current_budget_scope
-from ..core.exceptions import BudgetAccountingError
+from .budget_scope import current_budget_scope, TOKEN_BUDGET_STATE_KEY
 
 # The OpenAI SDK speaks httpx2/httpcore2, which trace every request phase at
 # DEBUG. Quieted here — the base of EVERY OpenAI-protocol client — so Bedrock
@@ -281,6 +283,35 @@ class OpenAIBaseClient(AbstractClient):
             with attempt:
                 return await method(model=model, messages=messages, **kwargs)
 
+    async def _finalize_budgeted_chat(
+        self, messages: list[dict[str, Any]], *, model_str: str, args: dict[str, Any], all_tool_calls: list[ToolCall],
+        pending_tool_calls: list[dict[str, Any]], partial_text: str, stream: bool,
+    ) -> Any:
+        """Owner-only, one tools-disabled Chat Completions attempt inside A_final (spec §2.3); raises BudgetExhausted otherwise."""
+        scope = current_budget_scope()
+        if scope is None or not scope.is_root:
+            raise BudgetExhausted("child scope exhausted", report={"partial_text": partial_text})
+        ctx = _BUDGET_CALL_CTX.get()
+        if not scope.owner_designated:
+            scope.designate_owner(ctx.get("call_id") or str(uuid.uuid4()))
+        if not await scope.ledger.claim_finalization(scope.owner_call_id):
+            raise BudgetExhausted("finalization already claimed or in-flight", operation_id=scope.ledger.operation_id,
+                                  report={**(await scope.ledger.report()).model_dump(), "partial_text": partial_text})
+        adapter = self.budget_adapter_factory()
+        frame = {"payload": {"model": model_str, "messages": messages, **args}, "completed_tool_calls": [tc.model_dump() for tc in all_tool_calls if tc.error is None],
+                 "pending_tool_calls": pending_tool_calls, "answer_text": partial_text}
+        final_payload = adapter.prepare_finalization(frame)
+        final_args = {k: v for k, v in args.items() if k not in ("tools", "tool_choice")}
+        token = _BUDGET_CALL_CTX.set({**ctx, "phase": "final", "single_attempt": True})
+        try:
+            return await self._chat_completion(model=model_str, messages=final_payload["messages"], use_tools=False, stream=stream, **final_args)
+        except BudgetExhausted:
+            raise
+        except Exception as exc:
+            raise BudgetExhausted(f"finalization failed: {exc}", report={"partial_text": partial_text}) from exc
+        finally:
+            _BUDGET_CALL_CTX.reset(token)
+
     async def _chat_completion_budgeted(
         self, scope: Any, *, model: str, messages: Any, use_tools: bool, stream: bool, **kwargs
     ) -> Any:
@@ -305,10 +336,11 @@ class OpenAIBaseClient(AbstractClient):
         if stream:
             kwargs["stream"] = True
             kwargs.setdefault("stream_options", {"include_usage": True})
+        stop_strategy = stop_after_attempt(1) if ctx.get("single_attempt") else stop_after_attempt(3)
         retry_policy = AsyncRetrying(
             retry=retry_if_exception_type((APIConnectionError, RateLimitError, APIError)),
             wait=wait_exponential(multiplier=1, min=2, max=10),
-            stop=stop_after_attempt(3),
+            stop=stop_strategy,
             reraise=True,
         )
         attempt_no = 0
@@ -567,6 +599,9 @@ class OpenAIBaseClient(AbstractClient):
                             e.messages = messages.copy()
                             e.tool_call_id = getattr(tool_call, "id", "")
                             e.agent_name = model_str
+                            _scope = current_budget_scope()
+                            if _scope is not None:
+                                e.state = {**(getattr(e, "state", None) or {}), TOKEN_BUDGET_STATE_KEY: await _scope.registry.suspend(_scope)}
                             raise
 
                         tc.error = str(e)
@@ -608,7 +643,22 @@ class OpenAIBaseClient(AbstractClient):
                 on_round(round_number, round_usage, round_raw_usage, round_tool_names, round_duration_ms)
 
             round_t0 = time.perf_counter()
-            response = await call_completion(model=model_str, messages=messages, use_tools=use_tools, **args)
+            _BUDGET_CALL_CTX.set({**_BUDGET_CALL_CTX.get(), "round_number": round_number + 1, "phase": "work"})
+            try:
+                response = await call_completion(model=model_str, messages=messages, use_tools=use_tools, **args)
+            except BudgetExhausted:
+                # Collect partial text from messages
+                partial_text = ""
+                for msg in messages:
+                    if msg.get("role") == "assistant" and msg.get("content"):
+                        partial_text += msg.get("content", "")
+                response = await self._finalize_budgeted_chat(messages, model_str=model_str, args=args, all_tool_calls=all_tool_calls,
+                                                              pending_tool_calls=[], partial_text=partial_text, stream=False)
+                _BUDGET_CALL_CTX.set({**_BUDGET_CALL_CTX.get(), "forced": True})
+                result = response.choices[0].message
+                round_number += 1
+                round_duration_ms = (time.perf_counter() - round_t0) * 1000
+                break
             round_number += 1
             round_duration_ms = (time.perf_counter() - round_t0) * 1000
 
@@ -890,9 +940,13 @@ class OpenAIBaseClient(AbstractClient):
         """
         await self._ensure_client()
 
-        messages = state["messages"]
+        # FEAT-550: Deep copy messages and restore budget scope from interrupt envelope
+        messages = copy.deepcopy(state["messages"])
         tool_call_id = state["tool_call_id"]
         model_str = state.get("agent_name", self.model or self.default_model)
+        _scope = current_budget_scope()
+        if _scope is not None and TOKEN_BUDGET_STATE_KEY in state:
+            await _scope.registry.restore(state[TOKEN_BUDGET_STATE_KEY])
 
         messages.append({"role": "tool", "tool_call_id": tool_call_id, "name": "handoff_tool", "content": user_input})
 
@@ -901,7 +955,8 @@ class OpenAIBaseClient(AbstractClient):
         response = await self._chat_completion(model=model_str, messages=messages, use_tools=True)
         result = response.choices[0].message
 
-        result, response, all_tool_calls, _accumulated_usage, _round_number = await self._run_tool_call_loop(
+        _track_usage = _scope is not None
+        result, response, all_tool_calls, accumulated_usage, _round_number = await self._run_tool_call_loop(
             result=result,
             response=response,
             messages=messages,
@@ -911,6 +966,7 @@ class OpenAIBaseClient(AbstractClient):
             session_id=session_id,
             record_malformed_tool_calls=False,
             default_tool_name="unknown",
+            track_usage=_track_usage,
         )
 
         ai_message = AIMessageFactory.from_openai(
@@ -922,6 +978,12 @@ class OpenAIBaseClient(AbstractClient):
             turn_id=turn_id,
         )
         ai_message.tool_calls = all_tool_calls
+
+        # FEAT-550: Attach accumulated usage and budget report
+        if accumulated_usage is not None and _scope is not None:
+            ai_message.usage = accumulated_usage
+            ai_message.metadata["token_budget"] = (await _scope.ledger.report()).model_dump()
+
         return ai_message
 
     async def batch_ask(self, requests: list[dict[str, Any]]) -> list[AIMessage]:
@@ -1231,6 +1293,9 @@ class OpenAIBaseClient(AbstractClient):
                             e.messages = messages
                             e.tool_call_id = tc_info["id"]
                             e.agent_name = model_str
+                            _scope = current_budget_scope()
+                            if _scope is not None:
+                                e.state = {**(getattr(e, "state", None) or {}), TOKEN_BUDGET_STATE_KEY: await _scope.registry.suspend(_scope)}
                             raise
                         tc.error = str(e)
                         messages.append(
