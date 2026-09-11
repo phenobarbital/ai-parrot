@@ -1,4 +1,5 @@
 """Question token budget ledger and public feature entry point (FEAT-550, spec §2.2/§2.3/§3 M1)."""
+
 from __future__ import annotations
 
 import asyncio

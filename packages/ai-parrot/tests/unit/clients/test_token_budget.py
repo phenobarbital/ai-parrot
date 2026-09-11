@@ -1,4 +1,5 @@
 """FEAT-550 M1 — policy validation and record semantics (spec §4 'Policy validation')."""
+
 from __future__ import annotations
 
 import asyncio
@@ -209,13 +210,23 @@ class TestReservationArithmetic:
         """Spec §2.3 example: 2000+500, 3000+700 -> A_work=2300, A_final=3800; 3200 input denied for work."""
         q = await _ledger()
         r1 = await q.reserve(
-            _est(2000), max_output_tokens=4096, min_output_tokens=1,
-            call_id="c", round_number=1, attempt_number=1, phase="work",
+            _est(2000),
+            max_output_tokens=4096,
+            min_output_tokens=1,
+            call_id="c",
+            round_number=1,
+            attempt_number=1,
+            phase="work",
         )
         await q.settle(r1.reservation_id, _usage(2000, 500))
         r2 = await q.reserve(
-            _est(3000), max_output_tokens=4096, min_output_tokens=1,
-            call_id="c", round_number=2, attempt_number=1, phase="work",
+            _est(3000),
+            max_output_tokens=4096,
+            min_output_tokens=1,
+            call_id="c",
+            round_number=2,
+            attempt_number=1,
+            phase="work",
         )
         await q.settle(r2.reservation_id, _usage(3000, 700))
 
@@ -225,28 +236,48 @@ class TestReservationArithmetic:
 
         with pytest.raises(BudgetExhausted):
             await q.reserve(
-                _est(3200), max_output_tokens=4096, min_output_tokens=1,
-                call_id="c", round_number=3, attempt_number=1, phase="work",
+                _est(3200),
+                max_output_tokens=4096,
+                min_output_tokens=1,
+                call_id="c",
+                round_number=3,
+                attempt_number=1,
+                phase="work",
             )
 
     async def test_final_phase_requires_claim_and_uses_a_final(self) -> None:
         q = await _ledger()
         r1 = await q.reserve(
-            _est(2000), max_output_tokens=4096, min_output_tokens=1,
-            call_id="c", round_number=1, attempt_number=1, phase="work",
+            _est(2000),
+            max_output_tokens=4096,
+            min_output_tokens=1,
+            call_id="c",
+            round_number=1,
+            attempt_number=1,
+            phase="work",
         )
         await q.settle(r1.reservation_id, _usage(2000, 500))
         r2 = await q.reserve(
-            _est(3000), max_output_tokens=4096, min_output_tokens=1,
-            call_id="c", round_number=2, attempt_number=1, phase="work",
+            _est(3000),
+            max_output_tokens=4096,
+            min_output_tokens=1,
+            call_id="c",
+            round_number=2,
+            attempt_number=1,
+            phase="work",
         )
         await q.settle(r2.reservation_id, _usage(3000, 700))
 
         # Denial transitions active -> draining
         with pytest.raises(BudgetExhausted):
             await q.reserve(
-                _est(3200), max_output_tokens=4096, min_output_tokens=1,
-                call_id="c", round_number=3, attempt_number=1, phase="work",
+                _est(3200),
+                max_output_tokens=4096,
+                min_output_tokens=1,
+                call_id="c",
+                round_number=3,
+                attempt_number=1,
+                phase="work",
             )
         assert q.state == "draining"
 
@@ -255,16 +286,26 @@ class TestReservationArithmetic:
         assert q.state == "draining"
 
         r3 = await q.reserve(
-            _est(3200), max_output_tokens=4096, min_output_tokens=1,
-            call_id="c", round_number=3, attempt_number=1, phase="final",
+            _est(3200),
+            max_output_tokens=4096,
+            min_output_tokens=1,
+            call_id="c",
+            round_number=3,
+            attempt_number=1,
+            phase="final",
         )
         assert r3.output_cap == 600
         assert q.state == "finalizing"
 
         with pytest.raises(BudgetExhausted):
             await q.reserve(
-                _est(4000), max_output_tokens=4096, min_output_tokens=1,
-                call_id="c", round_number=4, attempt_number=1, phase="final",
+                _est(4000),
+                max_output_tokens=4096,
+                min_output_tokens=1,
+                call_id="c",
+                round_number=4,
+                attempt_number=1,
+                phase="final",
             )
 
 
@@ -272,8 +313,13 @@ class TestExactlyOnce:
     async def test_duplicate_settle_inert_and_contradiction_typed(self) -> None:
         q = await _ledger()
         r = await q.reserve(
-            _est(1000), max_output_tokens=1000, min_output_tokens=1,
-            call_id="c", round_number=1, attempt_number=1, phase="work",
+            _est(1000),
+            max_output_tokens=1000,
+            min_output_tokens=1,
+            call_id="c",
+            round_number=1,
+            attempt_number=1,
+            phase="work",
         )
         await q.settle(r.reservation_id, _usage(1000, 200))
         # identical duplicate settlement is inert
@@ -285,8 +331,13 @@ class TestExactlyOnce:
     async def test_uncertain_then_late_settle_once(self) -> None:
         q = await _ledger()
         r = await q.reserve(
-            _est(1000), max_output_tokens=500, min_output_tokens=1,
-            call_id="c", round_number=1, attempt_number=1, phase="work",
+            _est(1000),
+            max_output_tokens=500,
+            min_output_tokens=1,
+            call_id="c",
+            round_number=1,
+            attempt_number=1,
+            phase="work",
         )
         await q.mark_uncertain(r.reservation_id, "network timeout")
         rep = await q.report()
@@ -303,8 +354,13 @@ class TestExactlyOnce:
     async def test_release_only_from_reserved(self) -> None:
         q = await _ledger()
         r = await q.reserve(
-            _est(1000), max_output_tokens=500, min_output_tokens=1,
-            call_id="c", round_number=1, attempt_number=1, phase="work",
+            _est(1000),
+            max_output_tokens=500,
+            min_output_tokens=1,
+            call_id="c",
+            round_number=1,
+            attempt_number=1,
+            phase="work",
         )
         await q.settle(r.reservation_id, _usage(1000, 200))
         with pytest.raises(BudgetAccountingError):
@@ -313,8 +369,13 @@ class TestExactlyOnce:
     async def test_estimated_overrun_recorded_unclamped(self) -> None:
         q = await _ledger(b=1_000, reserve=0)
         r = await q.reserve(
-            _est(500), max_output_tokens=700, min_output_tokens=1,
-            call_id="c", round_number=1, attempt_number=1, phase="work",
+            _est(500),
+            max_output_tokens=700,
+            min_output_tokens=1,
+            call_id="c",
+            round_number=1,
+            attempt_number=1,
+            phase="work",
         )
         await q.settle(r.reservation_id, _usage(500, 700))
         rep = await q.report()
@@ -324,22 +385,37 @@ class TestExactlyOnce:
         q = await _ledger(b=0, reserve=0)
         with pytest.raises(BudgetExhausted):
             await q.reserve(
-                _est(1), max_output_tokens=1, min_output_tokens=1,
-                call_id="c", round_number=1, attempt_number=1, phase="work",
+                _est(1),
+                max_output_tokens=1,
+                min_output_tokens=1,
+                call_id="c",
+                round_number=1,
+                attempt_number=1,
+                phase="work",
             )
 
     async def test_strict_mode_violation_denies_all_further_admission(self) -> None:
         q = await _ledger(b=10_000, reserve=0, mode="strict")
         r = await q.reserve(
-            _est(1000), max_output_tokens=500, min_output_tokens=1,
-            call_id="c", round_number=1, attempt_number=1, phase="work",
+            _est(1000),
+            max_output_tokens=500,
+            min_output_tokens=1,
+            call_id="c",
+            round_number=1,
+            attempt_number=1,
+            phase="work",
         )
         with pytest.raises(BudgetAccountingError):
             await q.settle(r.reservation_id, _usage(1000, 600))
         with pytest.raises(BudgetExhausted):
             await q.reserve(
-                _est(1), max_output_tokens=1, min_output_tokens=1,
-                call_id="c", round_number=2, attempt_number=1, phase="work",
+                _est(1),
+                max_output_tokens=1,
+                min_output_tokens=1,
+                call_id="c",
+                round_number=2,
+                attempt_number=1,
+                phase="work",
             )
 
 
@@ -353,8 +429,13 @@ class TestConcurrency:
             await gate.wait()
             try:
                 return await q.reserve(
-                    _est(600), max_output_tokens=300, min_output_tokens=100,
-                    call_id=f"c{idx}", round_number=1, attempt_number=1, phase="work",
+                    _est(600),
+                    max_output_tokens=300,
+                    min_output_tokens=100,
+                    call_id=f"c{idx}",
+                    round_number=1,
+                    attempt_number=1,
+                    phase="work",
                 )
             except BudgetExhausted:
                 return None
@@ -368,14 +449,24 @@ class TestConcurrency:
         """Two claims racing after drain: exactly one succeeds (spec §2.3 'Only the answer owner can claim')."""
         q = await _ledger(b=1000, reserve=0)
         r = await q.reserve(
-            _est(600), max_output_tokens=300, min_output_tokens=1,
-            call_id="c", round_number=1, attempt_number=1, phase="work",
+            _est(600),
+            max_output_tokens=300,
+            min_output_tokens=1,
+            call_id="c",
+            round_number=1,
+            attempt_number=1,
+            phase="work",
         )
         await q.settle(r.reservation_id, _usage(600, 300))
         with pytest.raises(BudgetExhausted):
             await q.reserve(
-                _est(600), max_output_tokens=300, min_output_tokens=100,
-                call_id="c", round_number=2, attempt_number=1, phase="work",
+                _est(600),
+                max_output_tokens=300,
+                min_output_tokens=100,
+                call_id="c",
+                round_number=2,
+                attempt_number=1,
+                phase="work",
             )
         assert q.state == "draining"
 

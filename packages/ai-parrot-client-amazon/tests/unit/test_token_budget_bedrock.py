@@ -1,16 +1,28 @@
 """FEAT-550 M4 — Bedrock accounting, strict qualification and finalization payload (spec §4 rows)."""
+
 from __future__ import annotations
 
 import pytest
 
 from parrot.clients.amazon.budget import BedrockBudgetAdapter, FINALIZATION_INSTRUCTION, fingerprint
 from parrot.clients.amazon.budget_qualifications import (
-    QualificationKey, QualificationRecord, STRICT_QUALIFICATIONS, installed_sdk_versions, match_qualification, probe_count_tokens_support,
+    QualificationKey,
+    QualificationRecord,
+    STRICT_QUALIFICATIONS,
+    installed_sdk_versions,
+    match_qualification,
+    probe_count_tokens_support,
 )
 from parrot.core.exceptions import BudgetAccountingError, BudgetUnsupported
 from parrot.models.basic import CompletionUsage
 
-CACHE_USAGE = {"inputTokens": 100, "cacheReadInputTokens": 800, "cacheWriteInputTokens": 50, "outputTokens": 50, "totalTokens": 1000}
+CACHE_USAGE = {
+    "inputTokens": 100,
+    "cacheReadInputTokens": 800,
+    "cacheWriteInputTokens": 50,
+    "outputTokens": 50,
+    "totalTokens": 1000,
+}
 
 
 class TestBedrockAccounting:
@@ -25,7 +37,12 @@ class TestBedrockAccounting:
 
     def test_native_body_categories(self):
         # Native Anthropic body format with cache fields
-        native_usage = {"input_tokens": 10, "cache_read_input_tokens": 5, "cache_creation_input_tokens": 1, "output_tokens": 2}
+        native_usage = {
+            "input_tokens": 10,
+            "cache_read_input_tokens": 5,
+            "cache_creation_input_tokens": 1,
+            "output_tokens": 2,
+        }
         u = BedrockBudgetAdapter().normalize_usage(native_usage, route="invoke_model")
         assert (u.input_tokens, u.output_tokens) == (16, 2)
 
@@ -84,23 +101,31 @@ class TestStrictQualification:
         rec = QualificationRecord(key=key, qualification_id="q1", evidence_ref="artifacts/logs/x")
 
         # Should succeed with injected registry
-        result = await adapter.count_input(payload, route="converse", mode="strict", registry=(rec,), endpoint="us-east-1")
+        result = await adapter.count_input(
+            payload, route="converse", mode="strict", registry=(rec,), endpoint="us-east-1"
+        )
         assert result.quality == "exact"
         assert result.qualification_id == "q1"
 
         # Change the model ID in payload - should fail
         payload_diff_model = {**payload, "modelId": "different-model"}
         with pytest.raises(BudgetUnsupported):
-            await adapter.count_input(payload_diff_model, route="converse", mode="strict", registry=(rec,), endpoint="us-east-1")
+            await adapter.count_input(
+                payload_diff_model, route="converse", mode="strict", registry=(rec,), endpoint="us-east-1"
+            )
 
         # Change tools flag - should fail
         payload_with_tools = {**payload, "toolConfig": {"tools": []}}
         with pytest.raises(BudgetUnsupported):
-            await adapter.count_input(payload_with_tools, route="converse", mode="strict", registry=(rec,), endpoint="us-east-1")
+            await adapter.count_input(
+                payload_with_tools, route="converse", mode="strict", registry=(rec,), endpoint="us-east-1"
+            )
 
         # Change route - should fail
         with pytest.raises(BudgetUnsupported):
-            await adapter.count_input(payload, route="invoke_model", mode="strict", registry=(rec,), endpoint="us-east-1")
+            await adapter.count_input(
+                payload, route="invoke_model", mode="strict", registry=(rec,), endpoint="us-east-1"
+            )
 
         # Change SDK versions in registry - should fail
         key_diff_sdk = QualificationKey(
@@ -181,9 +206,7 @@ class TestFinalizationPayload:
             "completed_tool_calls": [
                 {"id": "call-1", "name": "get_weather", "arguments": '{"location":"NY"}', "result": "Sunny, 72F"}
             ],
-            "pending_tool_calls": [
-                {"id": "call-2", "name": "get_time", "arguments": "{}", "result": None}
-            ],
+            "pending_tool_calls": [{"id": "call-2", "name": "get_time", "arguments": "{}", "result": None}],
             "answer_text": "The weather is sunny.",
         }
 

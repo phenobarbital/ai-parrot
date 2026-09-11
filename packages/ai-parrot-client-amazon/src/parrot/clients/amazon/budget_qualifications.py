@@ -4,6 +4,7 @@ Ships EMPTY on purpose: on the inspected environment (botocore 1.35.36, openai 3
 no model/route/SDK combination is qualified for strict admission. Records are only
 added after an opt-in live probe (see examples/clients/smoke/smoke_token_budget_qualification.py).
 """
+
 from __future__ import annotations
 
 import importlib.metadata
@@ -19,14 +20,14 @@ class QualificationKey:
     """Exact tuple that must match for strict admission — no wildcards (spec §2.5)."""
 
     model: str
-    endpoint: str            # region or Mantle base_url host
-    route: str               # "converse" | "invoke_model" | "chat_completions"
+    endpoint: str  # region or Mantle base_url host
+    route: str  # "converse" | "invoke_model" | "chat_completions"
     tools: bool
     schema: bool
     cache: bool
     thinking: bool
     stream: bool
-    sdk_versions: tuple[tuple[str, str], ...]   # (("botocore","1.35.36"), ("aiobotocore","2.15.2")) — sorted by name
+    sdk_versions: tuple[tuple[str, str], ...]  # (("botocore","1.35.36"), ("aiobotocore","2.15.2")) — sorted by name
     count_method: str
     output_cap_semantics: str
 
@@ -54,7 +55,9 @@ def installed_sdk_versions(*names: str) -> tuple[tuple[str, str], ...]:
     return tuple(out)
 
 
-def match_qualification(key: QualificationKey, *, registry: tuple[QualificationRecord, ...] = STRICT_QUALIFICATIONS) -> Optional[QualificationRecord]:
+def match_qualification(
+    key: QualificationKey, *, registry: tuple[QualificationRecord, ...] = STRICT_QUALIFICATIONS
+) -> Optional[QualificationRecord]:
     """Exact-match lookup; returns None when unqualified."""
     for rec in registry:
         if rec.key == key:
@@ -66,6 +69,7 @@ def probe_count_tokens_support() -> bool:
     """True only if the INSTALLED botocore service model exposes Runtime CountTokens (no network, no credentials)."""
     try:
         import botocore.session
+
         model = botocore.session.get_session().get_service_model("bedrock-runtime")
         return "CountTokens" in set(model.operation_names)
     except Exception as exc:  # noqa: BLE001 — absence of the SDK is "unsupported", not an error
@@ -73,4 +77,11 @@ def probe_count_tokens_support() -> bool:
         return False
 
 
-__all__ = ["QualificationKey", "QualificationRecord", "STRICT_QUALIFICATIONS", "installed_sdk_versions", "match_qualification", "probe_count_tokens_support"]
+__all__ = [
+    "QualificationKey",
+    "QualificationRecord",
+    "STRICT_QUALIFICATIONS",
+    "installed_sdk_versions",
+    "match_qualification",
+    "probe_count_tokens_support",
+]

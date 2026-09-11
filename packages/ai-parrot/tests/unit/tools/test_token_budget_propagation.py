@@ -1,4 +1,5 @@
 """FEAT-550 M3 — BudgetError propagation through tools, manager and model switching (spec §4 'Exception propagation')."""
+
 from __future__ import annotations
 
 import asyncio
@@ -63,13 +64,9 @@ class TestToolPropagation:
         manager.register_tool(_PlainFailingTool())
 
         with pytest.raises(BudgetExhausted):
-            await manager.execute_tool_call(
-                {"name": "exhaust", "input": {}, "id": "t1"}
-            )
+            await manager.execute_tool_call({"name": "exhaust", "input": {}, "id": "t1"})
 
-        result = await manager.execute_tool_call(
-            {"name": "boom", "input": {}, "id": "t2"}
-        )
+        result = await manager.execute_tool_call({"name": "boom", "input": {}, "id": "t2"})
         assert result["is_error"] is True
 
 

@@ -1,4 +1,5 @@
 """FEAT-550 M2 — resume/snapshot and registry lifecycle (spec §4 rows 'Resume and snapshots', 'Registry lifecycle')."""
+
 from __future__ import annotations
 
 import asyncio

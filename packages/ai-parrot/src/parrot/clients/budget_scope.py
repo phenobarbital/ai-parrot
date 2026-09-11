@@ -1,4 +1,5 @@
 """Question budget scopes, process-local registry and suspension/snapshot transfer (FEAT-550, spec §2.6 / §3 M2)."""
+
 from __future__ import annotations
 
 import asyncio
@@ -156,9 +157,7 @@ class BudgetRegistry:
                 return await self._import_snapshot_locked(envelope, snapshot)
 
             if rec.detached:
-                raise BudgetResumeConflict(
-                    f"operation {envelope.get('operation_id')} was already exported/detached"
-                )
+                raise BudgetResumeConflict(f"operation {envelope.get('operation_id')} was already exported/detached")
             if snapshot is not None and rec.nonce is None and rec.status == "active":
                 # Identical re-import of an already-live record: no-op (idempotent).
                 return BudgetScope(
@@ -229,9 +228,7 @@ class BudgetRegistry:
         async with self._lock:
             rec = self._records.get(operation_id)
             if rec is None or rec.status != "suspended":
-                raise BudgetSnapshotInvalid(
-                    f"operation {operation_id!r} is not a suspended record eligible for export"
-                )
+                raise BudgetSnapshotInvalid(f"operation {operation_id!r} is not a suspended record eligible for export")
             report = await rec.ledger.report()
             if report.in_flight_tokens != 0 or report.uncertain_tokens != 0 or report.finalization_attempted:
                 raise BudgetSnapshotInvalid(

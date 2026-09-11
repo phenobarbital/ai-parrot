@@ -3,6 +3,7 @@
 Counting is a local estimate unless a strict qualification matches; usage normalization
 follows spec §2.2 (all input categories summed once, provider totals ignored).
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -10,11 +11,21 @@ import json
 import logging
 from typing import Any, Optional
 
-from parrot.core.exceptions import BudgetAccountingError, BudgetUnsupported          # TASK-3132
-from parrot.memory.compaction.tokens import HeuristicCounter, TiktokenCounter, TokenCounter           # verified tokens.py:70/:30/:40
-from parrot.models.token_budget import BudgetUsage, TokenEstimate                    # TASK-3132
+from parrot.core.exceptions import BudgetAccountingError, BudgetUnsupported  # TASK-3132
+from parrot.memory.compaction.tokens import (
+    HeuristicCounter,
+    TiktokenCounter,
+    TokenCounter,
+)  # verified tokens.py:70/:30/:40
+from parrot.models.token_budget import BudgetUsage, TokenEstimate  # TASK-3132
 
-from .budget_qualifications import QualificationKey, QualificationRecord, STRICT_QUALIFICATIONS, installed_sdk_versions, match_qualification
+from .budget_qualifications import (
+    QualificationKey,
+    QualificationRecord,
+    STRICT_QUALIFICATIONS,
+    installed_sdk_versions,
+    match_qualification,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -65,8 +76,13 @@ class BedrockBudgetAdapter:
         self._counter, self._method = counter, method or "heuristic"
 
     async def count_input(
-        self, payload: dict[str, Any], *, route: str, mode: str,
-        registry: tuple[QualificationRecord, ...] = STRICT_QUALIFICATIONS, endpoint: str = "",
+        self,
+        payload: dict[str, Any],
+        *,
+        route: str,
+        mode: str,
+        registry: tuple[QualificationRecord, ...] = STRICT_QUALIFICATIONS,
+        endpoint: str = "",
     ) -> TokenEstimate:
         """Estimate locally or require an exact qualified Runtime counting path."""
         fp = fingerprint(payload, route=route)
@@ -76,8 +92,19 @@ class BedrockBudgetAdapter:
             if rec is None:
                 raise BudgetUnsupported(f"no strict qualification for {key.model} via {route} on installed SDKs")
             # Exact path — only reachable with an injected registry
-            self.logger.debug("count_input route=%s method=%s quality=exact qualification_id=%s", route, rec.key.count_method, rec.qualification_id)
-            return TokenEstimate(input_tokens=0, method=rec.key.count_method, quality="exact", request_fingerprint=fp, qualification_id=rec.qualification_id)
+            self.logger.debug(
+                "count_input route=%s method=%s quality=exact qualification_id=%s",
+                route,
+                rec.key.count_method,
+                rec.qualification_id,
+            )
+            return TokenEstimate(
+                input_tokens=0,
+                method=rec.key.count_method,
+                quality="exact",
+                request_fingerprint=fp,
+                qualification_id=rec.qualification_id,
+            )
 
         fields = _CONVERSE_TOKEN_FIELDS if route == "converse" else _NATIVE_TOKEN_FIELDS
         text = canonical_json({k: payload.get(k) for k in fields if k in payload})
@@ -104,7 +131,9 @@ class BedrockBudgetAdapter:
             input_val = int(raw[req_in])
             output_val = int(raw[req_out])
         except (ValueError, TypeError):
-            raise BudgetAccountingError(f"usage fields must be integers, got {type(raw.get(req_in))}/{type(raw.get(req_out))}")
+            raise BudgetAccountingError(
+                f"usage fields must be integers, got {type(raw.get(req_in))}/{type(raw.get(req_out))}"
+            )
 
         if input_val < 0 or output_val < 0:
             raise BudgetAccountingError(f"usage tokens must be non-negative, got input={input_val} output={output_val}")
@@ -131,7 +160,9 @@ class BedrockBudgetAdapter:
         if isinstance(model, (dict, list)):
             model = ""
 
-        self.logger.debug("normalize_usage route=%s input=%d output=%d details=%s", route, total_input, output_val, details)
+        self.logger.debug(
+            "normalize_usage route=%s input=%d output=%d details=%s", route, total_input, output_val, details
+        )
         return BudgetUsage(
             input_tokens=total_input,
             output_tokens=output_val,
@@ -199,10 +230,7 @@ class BedrockBudgetAdapter:
                 msg["content"] = new_content
 
         # Append finalization instruction as a user message
-        finalization_msg = {
-            "role": "user",
-            "content": [{"text": FINALIZATION_INSTRUCTION}]
-        }
+        finalization_msg = {"role": "user", "content": [{"text": FINALIZATION_INSTRUCTION}]}
 
         # Check if the last message is a user message, if so merge the content
         if payload.get("messages") and isinstance(payload["messages"][-1], dict):
@@ -223,12 +251,22 @@ class BedrockBudgetAdapter:
 
     def _qualification_key(self, payload: dict[str, Any], *, route: str, endpoint: str) -> QualificationKey:
         return QualificationKey(
-            model=str(payload.get("modelId") or payload.get("model") or ""), endpoint=endpoint, route=route,
-            tools="toolConfig" in payload or "tools" in payload, schema=False,
-            cache=any("cachePoint" in b for m in payload.get("messages", []) for b in m.get("content", []) if isinstance(b, dict)),
-            thinking="additionalModelRequestFields" in payload, stream=False,
+            model=str(payload.get("modelId") or payload.get("model") or ""),
+            endpoint=endpoint,
+            route=route,
+            tools="toolConfig" in payload or "tools" in payload,
+            schema=False,
+            cache=any(
+                "cachePoint" in b
+                for m in payload.get("messages", [])
+                for b in m.get("content", [])
+                if isinstance(b, dict)
+            ),
+            thinking="additionalModelRequestFields" in payload,
+            stream=False,
             sdk_versions=installed_sdk_versions("botocore", "aiobotocore", "aioboto3"),
-            count_method="runtime_count_tokens", output_cap_semantics="converse_maxTokens",
+            count_method="runtime_count_tokens",
+            output_cap_semantics="converse_maxTokens",
         )
 
 
