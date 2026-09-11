@@ -24,6 +24,7 @@ import mimetypes
 import time
 import uuid
 from collections.abc import AsyncIterator, Callable
+from contextvars import ContextVar
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Sequence
 from datamodel.parsers.json import json_decoder
@@ -51,12 +52,17 @@ from ..memory.render import HistoryMessage
 # from the per-call ContextVars BaseBot binds (FEAT-228).
 from parrot.observability.context import current_session_id, current_user_id
 from .base import AbstractClient
+from .budget_scope import current_budget_scope
+from ..core.exceptions import BudgetAccountingError
 
 # The OpenAI SDK speaks httpx2/httpcore2, which trace every request phase at
 # DEBUG. Quieted here — the base of EVERY OpenAI-protocol client — so Bedrock
 # Mantle, OpenRouter, Moonshot, Nvidia, vLLM and LocalLLM are covered, not
 # just parrot.clients.openai. See parrot.utils.http_logging for the name split.
 quiet_http_loggers()
+
+# FEAT-550: per-call attempt context set by the public loops (TASK-3143) and read by _chat_completion.
+_BUDGET_CALL_CTX: ContextVar[dict[str, Any]] = ContextVar("parrot_openai_budget_call", default={})
 
 if TYPE_CHECKING:
     from PIL import Image
@@ -85,6 +91,10 @@ class OpenAIBaseClient(AbstractClient):
     # default, so every such call failed with ``APITimeoutError`` even though
     # the endpoint was healthy and would have answered.
     _default_timeout: float = 60.0
+
+    # FEAT-550: providers that honour question budgets supply an adapter factory; None keeps
+    # the shared hooks inert (OpenAI-compatible siblings stay uncovered — spec §1 non-goals).
+    budget_adapter_factory: Callable[[], Any] | None = None
 
     def __init__(
         self,
@@ -247,6 +257,10 @@ class OpenAIBaseClient(AbstractClient):
             The raw SDK response object (or, when ``stream=True``, the SDK's
             async stream object).
         """
+        _scope = current_budget_scope()
+        if _scope is not None and self.budget_adapter_factory is not None:
+            return await self._chat_completion_budgeted(_scope, model=model, messages=messages, use_tools=use_tools, stream=stream, **kwargs)
+
         from openai import APIConnectionError, APIError, RateLimitError
 
         retry_policy = AsyncRetrying(
@@ -264,6 +278,74 @@ class OpenAIBaseClient(AbstractClient):
         async for attempt in retry_policy:
             with attempt:
                 return await method(model=model, messages=messages, **kwargs)
+
+    async def _chat_completion_budgeted(self, scope: Any, *, model: str, messages: Any, use_tools: bool, stream: bool, **kwargs) -> Any:
+        """Budgeted funnel: reserve per physical attempt on a no-retry SDK view, settle from usage (FEAT-550 §2.2/§2.4)."""
+        from openai import APIConnectionError, APIError, RateLimitError
+
+        adapter = self.budget_adapter_factory()
+        ctx = _BUDGET_CALL_CTX.get()
+        call_id, round_no, phase = ctx.get("call_id") or str(uuid.uuid4()), ctx.get("round_number", 1), ctx.get("phase", "work")
+        cap_key = "max_completion_tokens" if "max_completion_tokens" in kwargs else "max_tokens"
+        max_out = kwargs.get(cap_key) or self._resolve_max_tokens(None)
+        view = self.client.with_options(max_retries=0)  # request-local; shares transport, never closed here (spec §2.4)
+        method = view.chat.completions.create if use_tools else getattr(view.chat.completions, "parse", view.chat.completions.create)
+        if stream:
+            kwargs["stream"] = True
+            kwargs.setdefault("stream_options", {"include_usage": True})
+        retry_policy = AsyncRetrying(
+            retry=retry_if_exception_type((APIConnectionError, RateLimitError, APIError)),
+            wait=wait_exponential(multiplier=1, min=2, max=10),
+            stop=stop_after_attempt(3),
+            reraise=True,
+        )
+        attempt_no = 0
+        async for attempt in retry_policy:
+            with attempt:
+                attempt_no += 1
+                body = {"model": model, "messages": messages, **kwargs}
+                estimate = await adapter.count_input(body, route="chat_completions", mode=scope.policy.budget_mode, endpoint=str(self.base_url or ""))
+                reservation = await scope.ledger.reserve(
+                    estimate, max_output_tokens=max_out, min_output_tokens=1, call_id=call_id,
+                    round_number=round_no, attempt_number=attempt_no, phase=phase,
+                )
+                kwargs[cap_key] = reservation.output_cap
+                try:
+                    response = await method(model=model, messages=messages, **kwargs)
+                except Exception:
+                    await scope.ledger.mark_uncertain(reservation.reservation_id, "dispatch_failed")
+                    raise
+                if stream:
+                    return self._budgeted_stream(response, reservation, scope.ledger, adapter)
+                # Settle from usage
+                usage = getattr(response, "usage", None)
+                if usage is not None:
+                    try:
+                        settled_usage = adapter.normalize_usage(usage, route="chat_completions")
+                        await scope.ledger.settle(reservation.reservation_id, settled_usage)
+                    except BudgetAccountingError:
+                        await scope.ledger.mark_uncertain(reservation.reservation_id, "missing_usage")
+                else:
+                    await scope.ledger.mark_uncertain(reservation.reservation_id, "missing_usage")
+                return response
+
+    async def _budgeted_stream(self, inner: Any, reservation: Any, ledger: Any, adapter: Any):
+        """Yield chunks; settle once at the terminal usage snapshot; uncertain if it never arrives (spec §2.4)."""
+        settled = False
+        try:
+            async for chunk in inner:
+                usage = getattr(chunk, "usage", None)
+                if usage is not None and not settled:
+                    try:
+                        settled_usage = adapter.normalize_usage(usage, route="chat_completions")
+                        await ledger.settle(reservation.reservation_id, settled_usage)
+                        settled = True
+                    except BudgetAccountingError:
+                        await ledger.mark_uncertain(reservation.reservation_id, "missing_usage")
+                yield chunk
+        finally:
+            if not settled:
+                await ledger.mark_uncertain(reservation.reservation_id, "missing_terminal_usage")
 
     @staticmethod
     def _extract_completion_usage(response_obj: Any) -> tuple:

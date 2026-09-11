@@ -85,6 +85,15 @@ class BedrockMantleClient(OpenAIBaseClient):
     client_type: str = "bedrock-mantle"
     client_name: str = "bedrock-mantle"
 
+    # FEAT-550: Mantle opts in to cumulative question budgets (estimated mode; strict
+    # refuses until a qualification exists — spec §2.5). Siblings stay uncovered.
+    budget_supported_methods = frozenset({"ask", "ask_stream", "resume", "invoke"})
+
+    @staticmethod
+    def budget_adapter_factory():
+        from ..budget import MantleBudgetAdapter  # lazy: keep import-time cost off the no-budget path
+        return MantleBudgetAdapter()
+
     # FEAT-523 folder-convention attributes (read by LLMFactory).
     provider_keys: tuple[str, ...] = ("bedrock-mantle", "mantle")
     models: type[Enum] = AmazonModel

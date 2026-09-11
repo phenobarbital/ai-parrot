@@ -32,6 +32,7 @@ logger = logging.getLogger(__name__)
 FINALIZATION_INSTRUCTION = "Answer from the information already available. Do not request tools."
 _CONVERSE_TOKEN_FIELDS = ("system", "messages", "toolConfig")
 _NATIVE_TOKEN_FIELDS = ("system", "messages", "tools")
+_CHAT_TOKEN_FIELDS = ("messages", "tools", "response_format")
 
 
 def canonical_json(obj: Any) -> str:
@@ -270,4 +271,215 @@ class BedrockBudgetAdapter:
         )
 
 
-__all__ = ["BedrockBudgetAdapter", "FINALIZATION_INSTRUCTION", "canonical_json", "fingerprint", "local_counter"]
+class MantleBudgetAdapter:
+    """Chat Completions (Bedrock Mantle) counting and usage normalization; estimated mode only until qualified (spec §3 M5)."""
+
+    provider = "bedrock-mantle"
+
+    def __init__(self, *, counter: Optional[TokenCounter] = None, method: Optional[str] = None) -> None:
+        self.logger = logging.getLogger(__name__)
+        if counter is None:
+            counter, method = local_counter()
+        self._counter, self._method = counter, method or "heuristic"
+
+    async def count_input(
+        self,
+        payload: dict[str, Any],
+        *,
+        route: str = "chat_completions",
+        mode: str = "estimated",
+        registry: tuple[QualificationRecord, ...] = STRICT_QUALIFICATIONS,
+        endpoint: str = "",
+    ) -> TokenEstimate:
+        """Count the prepared wire body (messages, tools, response_format) — never a Python type object."""
+        body = {k: payload.get(k) for k in _CHAT_TOKEN_FIELDS if k in payload}
+        fp = hashlib.sha256(f"{route}|{payload.get('model', '')}|{canonical_json(body)}".encode("utf-8")).hexdigest()
+        if mode == "strict":
+            key = QualificationKey(
+                model=str(payload.get("model", "")),
+                endpoint=endpoint,
+                route=route,
+                tools="tools" in payload,
+                schema="response_format" in payload,
+                cache=False,
+                thinking=False,
+                stream=bool(payload.get("stream")),
+                sdk_versions=installed_sdk_versions("openai"),
+                count_method="local_estimate",
+                output_cap_semantics="max_tokens",
+            )
+            rec = match_qualification(key, registry=registry)
+            if rec is None:
+                raise BudgetUnsupported("Mantle Chat Completions has no strict qualification on the installed openai SDK")
+            # Exact path — only reachable with an injected registry
+            self.logger.debug(
+                "count_input route=%s method=%s quality=exact qualification_id=%s",
+                route,
+                rec.key.count_method,
+                rec.qualification_id,
+            )
+            return TokenEstimate(
+                input_tokens=0,
+                method=rec.key.count_method,
+                quality="exact",
+                request_fingerprint=fp,
+                qualification_id=rec.qualification_id,
+            )
+        n = self._counter.count(canonical_json(body))
+        self.logger.debug("count_input route=%s method=%s tokens=%d", route, self._method, n)
+        return TokenEstimate(input_tokens=n, method=self._method, quality="estimated", request_fingerprint=fp)
+
+    def normalize_usage(self, raw: Any, *, route: str = "chat_completions") -> BudgetUsage:
+        """prompt_tokens/completion_tokens are complete aggregates; cached/reasoning details are retained, never re-added (spec §2.2)."""
+        data = raw if isinstance(raw, dict) else (raw.model_dump() if hasattr(raw, "model_dump") else None)
+        if not isinstance(data, dict) or data.get("prompt_tokens") is None or data.get("completion_tokens") is None:
+            raise BudgetAccountingError("Chat Completions usage missing aggregate fields (unknown, never zero)")
+
+        try:
+            prompt_tokens = int(data.get("prompt_tokens"))
+            completion_tokens = int(data.get("completion_tokens"))
+        except (ValueError, TypeError):
+            raise BudgetAccountingError(
+                f"usage fields must be integers, got prompt_tokens={type(data.get('prompt_tokens'))} "
+                f"completion_tokens={type(data.get('completion_tokens'))}"
+            )
+
+        if prompt_tokens < 0 or completion_tokens < 0:
+            raise BudgetAccountingError(
+                f"usage tokens must be non-negative, got prompt_tokens={prompt_tokens} completion_tokens={completion_tokens}"
+            )
+
+        # Extract cached_tokens and reasoning_tokens for details, never re-add them
+        details = {}
+        prompt_tokens_details = data.get("prompt_tokens_details", {})
+        if isinstance(prompt_tokens_details, dict):
+            cached_tokens = prompt_tokens_details.get("cached_tokens")
+            if isinstance(cached_tokens, int) and cached_tokens >= 0:
+                details["cached_tokens"] = cached_tokens
+
+        completion_tokens_details = data.get("completion_tokens_details", {})
+        if isinstance(completion_tokens_details, dict):
+            reasoning_tokens = completion_tokens_details.get("reasoning_tokens")
+            if isinstance(reasoning_tokens, int) and reasoning_tokens >= 0:
+                details["reasoning_tokens"] = reasoning_tokens
+
+        model = str(data.get("model", ""))
+        self.logger.debug(
+            "normalize_usage route=%s input=%d output=%d details=%s", route, prompt_tokens, completion_tokens, details
+        )
+        return BudgetUsage(
+            input_tokens=prompt_tokens,
+            output_tokens=completion_tokens,
+            details=details,
+            provider=self.provider,
+            model=model,
+            route=route,
+        )
+
+    def prepare_finalization(self, frame: dict[str, Any]) -> dict[str, Any]:
+        """Drop tools/tool_choice, render tool protocol as text, keep response_format, append the finalization instruction."""
+        payload = json.loads(canonical_json(frame["payload"]))
+        payload.pop("tools", None)
+        payload.pop("tool_choice", None)
+
+        # Process messages, rewriting tool blocks as text
+        if "messages" in payload and isinstance(payload["messages"], list):
+            for msg in payload["messages"]:
+                if not isinstance(msg, dict) or "content" not in msg:
+                    continue
+
+                content = msg["content"]
+                # Handle string content (convert to list format for uniform processing)
+                if isinstance(content, str):
+                    msg["content"] = [{"type": "text", "text": content}]
+                    continue
+
+                if not isinstance(content, list):
+                    continue
+
+                new_content = []
+                for block in content:
+                    if not isinstance(block, dict):
+                        new_content.append(block)
+                        continue
+
+                    if "tool_calls" in block or msg.get("role") == "assistant" and "tool_calls" in msg:
+                        # For OpenAI format: tool_calls is at the message level
+                        pass  # Handle at message level below
+                    elif "type" in block and block["type"] == "tool_result":
+                        # OpenAI format tool result block
+                        tool_call_id = block.get("tool_use_id", block.get("tool_call_id", "unknown"))
+                        result_text = block.get("content", "UNEXECUTED")
+                        text_block = {"type": "text", "text": f"[tool result {tool_call_id}] {result_text}"}
+                        new_content.append(text_block)
+                    else:
+                        new_content.append(block)
+
+                msg["content"] = new_content
+
+            # Handle assistant tool_calls at the message level
+            for msg in payload["messages"]:
+                if msg.get("role") == "assistant" and "tool_calls" in msg:
+                    tool_calls = msg.get("tool_calls", [])
+                    if isinstance(msg.get("content"), str):
+                        content_text = msg["content"]
+                    else:
+                        content_text = ""
+
+                    # Convert tool_calls to text
+                    tool_texts = []
+                    for call in tool_calls:
+                        if isinstance(call, dict):
+                            call_id = call.get("id", "unknown")
+                            func_name = call.get("function", {}).get("name") if isinstance(call.get("function"), dict) else "unknown"
+                            args_json = call.get("function", {}).get("arguments", "{}") if isinstance(call.get("function"), dict) else "{}"
+
+                            # Look for the result in completed calls
+                            result_text = "UNEXECUTED"
+                            for completed in frame.get("completed_tool_calls", []):
+                                if isinstance(completed, dict) and completed.get("id") == call_id:
+                                    result_text = str(completed.get("result", "UNEXECUTED"))
+                                    break
+
+                            tool_texts.append(f"[tool call {call_id}] {func_name}({args_json}) -> {result_text}")
+
+                    # Combine content and tool texts
+                    combined_text = "\n".join([content_text] + tool_texts) if content_text else "\n".join(tool_texts)
+                    msg["content"] = combined_text
+                    msg.pop("tool_calls", None)
+                elif msg.get("role") == "tool":
+                    # Bedrock Converse format tool message
+                    tool_use_id = msg.get("tool_use_id", "unknown")
+                    result_text = msg.get("content", "UNEXECUTED")
+                    if isinstance(result_text, list):
+                        result_text = " ".join(str(item.get("text", "") if isinstance(item, dict) else item) for item in result_text)
+                    msg["role"] = "user"
+                    msg["content"] = f"[tool result {tool_use_id}] {result_text}"
+
+        # Append finalization instruction as a user message
+        finalization_msg = {"role": "user", "content": FINALIZATION_INSTRUCTION}
+
+        # Check if the last message is a user message, if so merge the content
+        if payload.get("messages") and isinstance(payload["messages"][-1], dict):
+            last_msg = payload["messages"][-1]
+            if last_msg.get("role") == "user":
+                # Merge into the last user message
+                if isinstance(last_msg.get("content"), str):
+                    last_msg["content"] = f"{last_msg['content']}\n{FINALIZATION_INSTRUCTION}"
+                elif isinstance(last_msg.get("content"), list):
+                    last_msg["content"].append({"type": "text", "text": FINALIZATION_INSTRUCTION})
+            else:
+                # Append as new message
+                if "messages" not in payload:
+                    payload["messages"] = []
+                payload["messages"].append(finalization_msg)
+        else:
+            # No messages yet, append the finalization message
+            if "messages" not in payload:
+                payload["messages"] = []
+            payload["messages"].append(finalization_msg)
+
+        return payload
+
+
+__all__ = ["BedrockBudgetAdapter", "MantleBudgetAdapter", "FINALIZATION_INSTRUCTION", "canonical_json", "fingerprint", "local_counter"]
