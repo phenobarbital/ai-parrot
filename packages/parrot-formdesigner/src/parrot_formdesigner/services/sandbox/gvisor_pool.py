@@ -217,12 +217,12 @@ class GVisorWorkerPool(SandboxProvider):
         # Pool is full - wait for a worker to become available
         try:
             async with asyncio.timeout(timeout_ms / 1000.0):
-                worker = await self._acquire_queue.get()
-                if worker is None:
+                queued_worker = await self._acquire_queue.get()
+                if queued_worker is None:
                     raise PoolExhaustedError("Pool exhausted and timeout expired")
                 async with self._lock:
                     self._active_count += 1
-                return worker
+                return queued_worker
         except asyncio.TimeoutError:
             raise PoolExhaustedError(f"Acquire timeout after {timeout_ms}ms - pool exhausted")
 
@@ -269,7 +269,7 @@ class GVisorWorkerPool(SandboxProvider):
             self.logger.warning(f"Attempted to release non-GVisorSandbox: {sandbox}")
             return
 
-        worker = sandbox.worker
+        worker = sandbox._worker
 
         async with self._lock:
             self._active_count -= 1
