@@ -29,17 +29,17 @@ from parrot_formdesigner.core.events import EventResolution, FormEventName
 class CapabilityTier(StrEnum):
     """Declared power level of a snippet; selects its executor (spec §2)."""
 
-    PURE = "pure"          # payload + schema only, no I/O
-    HELPERS = "helpers"    # + curated stdlib subset, metadata, declared claims
+    PURE = "pure"  # payload + schema only, no I/O
+    HELPERS = "helpers"  # + curated stdlib subset, metadata, declared claims
     BROKERED = "brokered"  # + host-mediated allowlisted outbound calls
-    TOOLKIT = "toolkit"    # + registered parrot tools/agents
+    TOOLKIT = "toolkit"  # + registered parrot tools/agents
 
 
 class SnippetSource(StrEnum):
     """Where a bundle came from. Determines its approval gate and tier cap."""
 
     GIT = "git"  # platform-wide, tenant=None, approved by merged PR
-    DB = "db"    # tenant-scoped, approved in-app by a tenant admin
+    DB = "db"  # tenant-scoped, approved in-app by a tenant admin
 
 
 class SnippetStatus(StrEnum):
@@ -59,10 +59,10 @@ class BrokerAllowlist(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    http_hosts: tuple[str, ...] = ()      # exact hostnames; no wildcards in v1
-    query_tables: tuple[str, ...] = ()    # fully-qualified table names
-    notifications: tuple[str, ...] = ()   # channel identifiers
-    toolkits: tuple[str, ...] = ()        # registered parrot toolkit names
+    http_hosts: tuple[str, ...] = ()  # exact hostnames; no wildcards in v1
+    query_tables: tuple[str, ...] = ()  # fully-qualified table names
+    notifications: tuple[str, ...] = ()  # channel identifiers
+    toolkits: tuple[str, ...] = ()  # registered parrot toolkit names
 
 
 class CapabilityManifest(BaseModel):
@@ -76,7 +76,7 @@ class CapabilityManifest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     tier: CapabilityTier
-    auth_claims: tuple[str, ...] = ()     # AuthContext.claims keys projected in (OQ-5)
+    auth_claims: tuple[str, ...] = ()  # AuthContext.claims keys projected in (OQ-5)
     stdlib_modules: tuple[str, ...] = ()  # subset of a fixed curated allowlist
     allowlist: BrokerAllowlist = Field(default_factory=BrokerAllowlist)
     timeout_ms: int = Field(default=5_000, ge=1, le=30_000)
@@ -90,7 +90,7 @@ class SnippetBundle(BaseModel):
 
     source: SnippetSource
     status: SnippetStatus = SnippetStatus.PUBLISHED
-    version: int = 1                # DB snippets increment; git is always 1
+    version: int = 1  # DB snippets increment; git is always 1
     approved_by: str | None = None  # tenant admin id (DB) or commit sha (git)
     approved_at: datetime | None = None
     handler_ref: str = Field(
