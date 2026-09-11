@@ -79,9 +79,7 @@ def test_pool_for_tier_raises_without_gvisor_pool() -> None:
 async def test_router_abort_rehydrates_exception() -> None:
     router = TierRouter(_FakePool(), _FakePool())
     outcome = SandboxOutcome(
-        abort=AbortSignal(
-            reason="policy violation", user_message="Not allowed", status_code=403
-        ),
+        abort=AbortSignal(reason="policy violation", user_message="Not allowed", status_code=403),
         duration_ms=1.0,
     )
     with pytest.raises(FormEventAbort) as excinfo:
@@ -122,9 +120,7 @@ async def test_router_on_failure_abort() -> None:
     router.execute = _fake_execute  # type: ignore[method-assign]
 
     with pytest.raises(FormEventAbort):
-        await router.execute_with_policy(
-            _bundle(CapabilityTier.PURE), _ctx(), on_failure="abort"
-        )
+        await router.execute_with_policy(_bundle(CapabilityTier.PURE), _ctx(), on_failure="abort")
 
 
 async def test_router_on_failure_continue() -> None:
@@ -138,9 +134,7 @@ async def test_router_on_failure_continue() -> None:
 
     router.execute = _fake_execute  # type: ignore[method-assign]
 
-    result = await router.execute_with_policy(
-        _bundle(CapabilityTier.PURE), _ctx(), on_failure="continue"
-    )
+    result = await router.execute_with_policy(_bundle(CapabilityTier.PURE), _ctx(), on_failure="continue")
     assert result == EventResolution()
 
 
@@ -191,7 +185,5 @@ async def test_router_on_failure_continue_survives_acquisition_failure() -> None
 
     router = TierRouter(_ExhaustedPool(), _FakePool())
 
-    result = await router.execute_with_policy(
-        _bundle(CapabilityTier.PURE), _ctx(), on_failure="continue"
-    )
+    result = await router.execute_with_policy(_bundle(CapabilityTier.PURE), _ctx(), on_failure="continue")
     assert result == EventResolution()

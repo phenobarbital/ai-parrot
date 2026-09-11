@@ -203,12 +203,8 @@ class HostBroker:
             raise CapabilityDenied(f"http_hosts path must start with '/', got {path!r}")
         url = URL.build(scheme="https", host=request.target, path=path)
         safe_kwargs = {k: v for k, v in request.args.items() if k in _ALLOWED_HTTP_ARGS}
-        async with aiohttp.ClientSession(
-            timeout=aiohttp.ClientTimeout(total=10)
-        ) as session:
-            async with session.request(
-                method, url, allow_redirects=False, **safe_kwargs
-            ) as resp:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
+            async with session.request(method, url, allow_redirects=False, **safe_kwargs) as resp:
                 body_bytes = await resp.content.read(_MAX_RESPONSE_BODY_BYTES)
                 body = body_bytes.decode("utf-8", errors="replace")
                 return BrokerResponse(result={"status": resp.status, "body": body})

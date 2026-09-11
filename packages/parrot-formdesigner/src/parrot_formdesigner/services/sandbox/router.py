@@ -128,9 +128,7 @@ class TierRouter:
             # uncaught, breaking the "execute() never raises" invariant
             # even for on_failure="continue". Nothing was acquired, so
             # there is nothing to release.
-            self.logger.exception(
-                "snippet %s failed to acquire a sandbox worker", bundle.handler_ref
-            )
+            self.logger.exception("snippet %s failed to acquire a sandbox worker", bundle.handler_ref)
             duration_ms = (time.monotonic() - started) * 1000
             return SandboxOutcome(
                 abort=AbortSignal(
@@ -143,9 +141,7 @@ class TierRouter:
         try:
             timeout_s = bundle.manifest.timeout_ms / 1000.0
             try:
-                raw_outcome = await asyncio.wait_for(
-                    self._run_on_sandbox(sandbox, bundle, ctx), timeout=timeout_s
-                )
+                raw_outcome = await asyncio.wait_for(self._run_on_sandbox(sandbox, bundle, ctx), timeout=timeout_s)
             except Exception:
                 # Any failure — timeout, worker crash, or a Sandbox
                 # implementation not (yet) exposing run_snippet — is
