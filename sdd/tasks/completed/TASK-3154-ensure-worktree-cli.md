@@ -380,10 +380,22 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestrator (FEAT-549 pool) + sdd-worker fixup
+**Date**: 2026-09-11
+**Notes**: Implemented `ensure()`, `EnsureWorktreeError`, and `main()`/CLI in
+`scripts/sdd/ensure_worktree.py` with `tests/sdd_scripts/test_ensure_worktree.py`;
+all 7 tests pass. AC-1 through AC-8 verified (help exits 0, bare-path and
+`--json` stdout shapes checked live, `--dry-run` leaves `git worktree list`
+unchanged). AC-9 initially FAILED on merge — the cleanup-on-failed-verification
+branch had a comment that quoted the forbidden git-command substrings in
+prose (explaining what NOT to do), which the literal grep matched even
+though the actual code only calls a plain non-forced branch delete on a
+branch it just created. Fixed by rewording the comment only, no behavior
+change; re-verified AC-9 grep returns nothing, tests still 7/7, ruff clean.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Deviations from spec**: none (the AC-9 fix touched only the file already
+listed for this task)
 
-**Deviations from spec**: none | describe if any
+Seat: gemini · Backend: google-compat · Model: gemini-3.5-flash · Attempts: 1
+(merged first try) · Duration: 43.01s · Tokens: 287432 in / 5714 out
+(+ sdd-worker direct fixup for AC-9 comment reword, untimed)

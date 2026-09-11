@@ -207,10 +207,28 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (direct implementation — the native haiku
+seat's attempt committed the right code changes but also moved the task
+file and edited the per-spec index INSIDE its own sub-worktree, which
+`coder_merge` correctly flagged as `fidelity_violation` per the sdd-coder
+contract "commits code only, never touches sdd/"; per the orchestrator's
+consolidation rule that outcome is never merged by hand, so this task was
+re-implemented from a clean, untouched copy of both files)
+**Date**: 2026-09-11
+**Notes**: Replaced §3's body with the `scripts.sdd.ensure_worktree` call
+and reduced §4 to a restatement, exactly per the blueprint; `cp`'d the
+result over the `_subagent_data/` twin. Verified all 6 acceptance
+criteria: no `git worktree add` remains, `scripts.sdd.ensure_worktree` and
+`--jira-key` are both documented, the old `WORKTREE_NAME=` template is
+gone, `cmp` exits 0 on the twin pair,
+`pytest packages/ai-parrot/tests/flows/dev_loop/test_subagent_parity.py -q`
+reports `10 passed, 1 skipped`, and §3/§4/§5 keep their numbers (§0-§2
+unaffected).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Deviations from spec**: none
 
-**Deviations from spec**: none | describe if any
+Seat: haiku (native) — attempt discarded for fidelity_violation, redone
+directly by sdd-worker · Backend: n/a · Model: claude-sonnet-5 (redo) ·
+Attempts: 2 (1 native haiku fidelity_violation, 1 direct redo success) ·
+Duration: 220.10s (discarded attempt) + direct redo · Tokens: 71370 in
+(discarded attempt, input+output combined per agent report)
