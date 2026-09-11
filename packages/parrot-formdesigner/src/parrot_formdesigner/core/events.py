@@ -138,10 +138,10 @@ class FormEventContext(BaseModel):
     form_id: str
     tenant: str | None
     auth_context: Any  # services.auth_context.AuthContext — avoid circular
-    payload: Mapping[str, Any] | None = None       # submit only
-    schema_dump: Mapping[str, Any] | None = None   # open / schema_loaded only
-    error: BaseException | None = None             # onError only
-    user_message: str | None = None                # onError mutable
+    payload: Mapping[str, Any] | None = None  # submit only
+    schema_dump: Mapping[str, Any] | None = None  # open / schema_loaded only
+    error: BaseException | None = None  # onError only
+    user_message: str | None = None  # onError mutable
     extra: dict[str, Any] = Field(default_factory=dict)  # correlation_id, etc.
 
 
@@ -199,10 +199,10 @@ class EventResolution(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    payload: Mapping[str, Any] | None = None             # replace payload
-    schema_overrides: Mapping[str, Any] | None = None    # shallow merge on form dump
-    metadata: Mapping[str, Any] | None = None            # added to ctx.extra
-    user_message: str | None = None                      # only meaningful in onError
+    payload: Mapping[str, Any] | None = None  # replace payload
+    schema_overrides: Mapping[str, Any] | None = None  # shallow merge on form dump
+    metadata: Mapping[str, Any] | None = None  # added to ctx.extra
+    user_message: str | None = None  # only meaningful in onError
 
 
 # ---------------------------------------------------------------------------
