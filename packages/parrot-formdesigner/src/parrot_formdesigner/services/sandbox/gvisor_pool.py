@@ -123,9 +123,7 @@ class GVisorWorkerPool(SandboxProvider):
         self._lock = asyncio.Lock()
 
         # Queue for waiting acquire requests
-        self._acquire_queue: asyncio.Queue[GVisorWorker | None] = asyncio.Queue(
-            maxsize=max_queue_depth
-        )
+        self._acquire_queue: asyncio.Queue[GVisorWorker | None] = asyncio.Queue(maxsize=max_queue_depth)
 
         # Track worker creation time for recycling
         self._worker_created_at: dict[str, float] = {}
@@ -226,9 +224,7 @@ class GVisorWorkerPool(SandboxProvider):
                     self._active_count += 1
                 return worker
         except asyncio.TimeoutError:
-            raise PoolExhaustedError(
-                f"Acquire timeout after {timeout_ms}ms - pool exhausted"
-            )
+            raise PoolExhaustedError(f"Acquire timeout after {timeout_ms}ms - pool exhausted")
 
     async def _destroy_worker(self, worker: GVisorWorker) -> None:
         """Destroy a worker and clean up resources."""
@@ -359,6 +355,5 @@ class GVisorSandbox(Sandbox):
         # This is a placeholder - actual execution would use the sandbox tool
         # For now, raise NotImplementedError as per the spec
         raise NotImplementedError(
-            "GVisorSandbox.exec() not yet implemented - "
-            "use the SandboxTool directly for code execution"
+            "GVisorSandbox.exec() not yet implemented - " "use the SandboxTool directly for code execution"
         )
