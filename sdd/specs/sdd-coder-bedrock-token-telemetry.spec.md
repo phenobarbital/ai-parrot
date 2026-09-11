@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-554
 **Date**: 2026-09-12
 **Author**: Jesus Lara / Claude
-**Status**: draft
+**Status**: approved
 **Target version**: next development release after approval
 **Source**: `sdd/proposals/sdd-coder-bedrock-token-telemetry.brainstorm.md` (Status: accepted, 12/12 questions resolved)
 **Code baseline**: `10ecf45eb` on `dev`
