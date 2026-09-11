@@ -52,7 +52,7 @@
       "feature_id": "FEAT-550",
       "feature": "token-budget-bedrock",
       "spec": "sdd/specs/token-budget-bedrock.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "Extends QuestionBudget (restore_settled) and creates budget_scope.py that TASK-3135 appends to.",
       "assigned_to": null,
       "started_at": "2026-09-10T23:40:10+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3134-budget-scope-registry.md"
+      "completed_at": "2026-09-11T00:28:10+00:00",
+      "file": "sdd/tasks/completed/TASK-3134-budget-scope-registry.md"
     },
     {
       "id": "TASK-3135",
