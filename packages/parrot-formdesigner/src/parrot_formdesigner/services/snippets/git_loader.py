@@ -70,11 +70,7 @@ def _load_bundle_dir(bundle_dir: Path) -> SnippetBundle:
         )
     client_path = bundle_dir / CLIENT_SOURCE_FILENAME
     client_source = client_path.read_text() if client_path.exists() else None
-    client_sha256 = (
-        hashlib.sha256(client_source.encode("utf-8")).hexdigest()
-        if client_source is not None
-        else None
-    )
+    client_sha256 = hashlib.sha256(client_source.encode("utf-8")).hexdigest() if client_source is not None else None
     return SnippetBundle(
         source=SnippetSource.GIT,
         status=SnippetStatus.PUBLISHED,
@@ -138,9 +134,7 @@ class GitSnippetLoader:
         self._by_ref = {(b.tenant, b.handler_ref): b for b in bundles}
         return bundles
 
-    async def resolve_current(
-        self, *, tenant: str | None, handler_ref: str
-    ) -> SnippetBundle | None:
+    async def resolve_current(self, *, tenant: str | None, handler_ref: str) -> SnippetBundle | None:
         """SnippetSourceProtocol implementation — plain dict lookup.
 
         Git bundles never change without a redeploy (which re-runs

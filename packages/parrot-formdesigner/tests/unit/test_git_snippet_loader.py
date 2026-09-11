@@ -80,9 +80,7 @@ async def test_git_loader_rejects_tier3_without_gvisor(tmp_path: Path) -> None:
     loader = GitSnippetLoader(tmp_path)
 
     with pytest.raises(SnippetTierUnavailableError):
-        await loader.register_all(
-            project_context=_fake_project, execute=_fake_execute, gvisor_available=lambda: False
-        )
+        await loader.register_all(project_context=_fake_project, execute=_fake_execute, gvisor_available=lambda: False)
 
 
 async def test_git_loader_duplicate_ref_raises(tmp_path: Path) -> None:

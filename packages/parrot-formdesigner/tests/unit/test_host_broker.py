@@ -15,9 +15,7 @@ from parrot_formdesigner.services.sandbox.protocol import BrokerRequest
 
 
 def _manifest(**allowlist_kwargs) -> CapabilityManifest:
-    return CapabilityManifest(
-        tier=CapabilityTier.BROKERED, allowlist=BrokerAllowlist(**allowlist_kwargs)
-    )
+    return CapabilityManifest(tier=CapabilityTier.BROKERED, allowlist=BrokerAllowlist(**allowlist_kwargs))
 
 
 class _FakeResponse:
@@ -121,8 +119,6 @@ async def test_broker_allows_declared_host(monkeypatch: pytest.MonkeyPatch) -> N
         target="allowed.example.com",
         args={"method": "GET", "path": "/"},
     )
-    response = await broker.handle(
-        request, manifest, tenant="acme", handler_ref="x.onBeforeSubmit"
-    )
+    response = await broker.handle(request, manifest, tenant="acme", handler_ref="x.onBeforeSubmit")
     assert response.denied is False
     assert response.result["status"] == 200

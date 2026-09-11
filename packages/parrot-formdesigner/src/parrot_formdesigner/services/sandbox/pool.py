@@ -91,13 +91,9 @@ class _SubprocessSandbox(Sandbox):
         # (running shell commands inside a sandbox). The forms use case
         # instead uses run_snippet() which sends a SandboxContext frame
         # and reads a SandboxOutcome frame via the protocol.
-        raise NotImplementedError(
-            "Use run_snippet() for forms use case; exec() is for eval harness."
-        )
+        raise NotImplementedError("Use run_snippet() for forms use case; exec() is for eval harness.")
 
-    async def run_snippet(
-        self, ctx: "SandboxContext"
-    ) -> "SandboxOutcome":
+    async def run_snippet(self, ctx: "SandboxContext") -> "SandboxOutcome":
         """Run a snippet with the given context and return the outcome.
 
         This is the forms-specific method that uses the protocol to
@@ -118,9 +114,7 @@ class _SubprocessSandbox(Sandbox):
         # (see _create_worker), so a None here means the worker died
         # between creation and use.
         if process.stdin is None or process.stdout is None:
-            raise WorkerDiedError(
-                f"worker {worker!r} has no stdin/stdout pipe — process died"
-            )
+            raise WorkerDiedError(f"worker {worker!r} has no stdin/stdout pipe — process died")
 
         # Send the context to the worker
         process.stdin.write(encode_frame(ctx))
@@ -129,9 +123,7 @@ class _SubprocessSandbox(Sandbox):
         # Read the outcome from the worker
         outcome = await decode_frame(process.stdout)
         if not isinstance(outcome, SandboxOutcome):
-            raise WorkerDiedError(
-                f"Worker returned unexpected frame type: {type(outcome).__name__}"
-            )
+            raise WorkerDiedError(f"Worker returned unexpected frame type: {type(outcome).__name__}")
 
         # Note: invocation_count is incremented in release() when the
         # sandbox is returned to the pool, not here.
@@ -178,9 +170,7 @@ class SubprocessWorkerPool(SandboxProvider):
         self._max_queue_depth = max_queue_depth
         self._health_check_interval_s = health_check_interval_s
         self._cold_start_timeout_ms = cold_start_timeout_ms
-        self._idle: asyncio.Queue[_PooledWorker] = asyncio.Queue(
-            maxsize=tier12_pool_size
-        )
+        self._idle: asyncio.Queue[_PooledWorker] = asyncio.Queue(maxsize=tier12_pool_size)
         self._waiters = 0
         self._live_count = 0
         self._health_check_task: asyncio.Task | None = None
@@ -213,15 +203,11 @@ class SubprocessWorkerPool(SandboxProvider):
                 timeout=self._cold_start_timeout_ms / 1000,
             )
         except asyncio.TimeoutError:
-            raise ColdStartTimeoutError(
-                f"Worker spawn exceeded cold_start_timeout_ms={self._cold_start_timeout_ms}"
-            )
+            raise ColdStartTimeoutError(f"Worker spawn exceeded cold_start_timeout_ms={self._cold_start_timeout_ms}")
 
         # Check if the process already died
         if process.returncode is not None:
-            raise WorkerDiedError(
-                f"Worker exited during startup with code {process.returncode}"
-            )
+            raise WorkerDiedError(f"Worker exited during startup with code {process.returncode}")
 
         self._live_count += 1
         return _PooledWorker(process=process)
@@ -229,16 +215,15 @@ class SubprocessWorkerPool(SandboxProvider):
     def _needs_recycle(self, worker: _PooledWorker) -> bool:
         """Check if a worker should be recycled."""
         age_s = time.monotonic() - worker.spawned_at
-        return (
-            worker.invocation_count >= self._recycle_after_invocations
-            or age_s >= self._recycle_after_seconds
-        )
+        return worker.invocation_count >= self._recycle_after_invocations or age_s >= self._recycle_after_seconds
 
     async def _recycle_worker(self, worker: _PooledWorker) -> _PooledWorker:
         """Terminate an old worker and spawn a fresh one."""
-        self.logger.debug("Recycling worker (invocations=%d, age=%.1fs)",
-                          worker.invocation_count,
-                          time.monotonic() - worker.spawned_at)
+        self.logger.debug(
+            "Recycling worker (invocations=%d, age=%.1fs)",
+            worker.invocation_count,
+            time.monotonic() - worker.spawned_at,
+        )
         worker.process.terminate()
         try:
             await asyncio.wait_for(worker.process.wait(), timeout=5.0)
@@ -261,8 +246,7 @@ class SubprocessWorkerPool(SandboxProvider):
 
         if self._waiters >= self._max_queue_depth:
             raise PoolExhaustedError(
-                f"acquire queue depth ({self._waiters}) already at max_queue_depth="
-                f"{self._max_queue_depth}"
+                f"acquire queue depth ({self._waiters}) already at max_queue_depth=" f"{self._max_queue_depth}"
             )
 
         self._waiters += 1
@@ -278,13 +262,10 @@ class SubprocessWorkerPool(SandboxProvider):
                     # Wait for a worker to become available
                     timeout_s = self._acquire_queue_timeout_ms / 1000
                     try:
-                        worker = await asyncio.wait_for(
-                            self._idle.get(), timeout=timeout_s
-                        )
+                        worker = await asyncio.wait_for(self._idle.get(), timeout=timeout_s)
                     except asyncio.TimeoutError:
                         raise PoolExhaustedError(
-                            f"No worker available within "
-                            f"acquire_queue_timeout_ms={self._acquire_queue_timeout_ms}"
+                            f"No worker available within " f"acquire_queue_timeout_ms={self._acquire_queue_timeout_ms}"
                         )
 
             # Check if the worker needs recycling before handing it out
@@ -306,16 +287,14 @@ class SubprocessWorkerPool(SandboxProvider):
     async def release(self, sandbox: Sandbox) -> None:
         """Return a worker to the idle queue, or recycle/discard it first."""
         if not isinstance(sandbox, _SubprocessSandbox):
-            self.logger.warning("release() called with non-_SubprocessSandbox: %s",
-                                type(sandbox).__name__)
+            self.logger.warning("release() called with non-_SubprocessSandbox: %s", type(sandbox).__name__)
             return
 
         worker = sandbox._worker
 
         # Check if worker is still healthy
         if worker.process.returncode is not None:
-            self.logger.warning("Worker died during use (exit code: %s)",
-                                worker.process.returncode)
+            self.logger.warning("Worker died during use (exit code: %s)", worker.process.returncode)
             self._live_count -= 1
             return
 
@@ -324,8 +303,7 @@ class SubprocessWorkerPool(SandboxProvider):
 
         # Check if worker needs recycling
         if self._needs_recycle(worker):
-            self.logger.debug("Worker needs recycling after %d invocations",
-                              worker.invocation_count)
+            self.logger.debug("Worker needs recycling after %d invocations", worker.invocation_count)
             self._live_count -= 1
             # Recycle asynchronously (don't block the release)
             try:
@@ -373,8 +351,7 @@ class SubprocessWorkerPool(SandboxProvider):
         for worker in workers:
             if worker.process.returncode is not None:
                 # Worker died
-                self.logger.warning("Health check: worker died (exit code: %s)",
-                                    worker.process.returncode)
+                self.logger.warning("Health check: worker died (exit code: %s)", worker.process.returncode)
                 self._live_count -= 1
                 # Spawn replacement
                 try:

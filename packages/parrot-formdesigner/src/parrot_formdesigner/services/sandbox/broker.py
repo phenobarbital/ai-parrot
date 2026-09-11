@@ -61,13 +61,10 @@ class HostBroker:
         allowed_targets: tuple[str, ...] = getattr(manifest.allowlist, field_name)
         if request.target not in allowed_targets:
             raise CapabilityDenied(
-                f"{request.kind}={request.target!r} is not in the declared allowlist "
-                f"{allowed_targets!r}"
+                f"{request.kind}={request.target!r} is not in the declared allowlist " f"{allowed_targets!r}"
             )
 
-    def _log_denial(
-        self, request: BrokerRequest, *, tenant: str | None, handler_ref: str, reason: str
-    ) -> None:
+    def _log_denial(self, request: BrokerRequest, *, tenant: str | None, handler_ref: str, reason: str) -> None:
         """Structured security log event (spec §5 Operational AC)."""
         self.logger.warning(
             "capability_denied tenant=%r handler_ref=%r kind=%r target=%r reason=%r",
@@ -113,9 +110,7 @@ class HostBroker:
                 handler_ref=handler_ref,
                 reason=f"call cap exceeded ({self._max_calls_per_invocation})",
             )
-            raise CapabilityDenied(
-                f"broker call cap ({self._max_calls_per_invocation}) exceeded for this invocation"
-            )
+            raise CapabilityDenied(f"broker call cap ({self._max_calls_per_invocation}) exceeded for this invocation")
         self._call_count += 1
 
         try:
@@ -141,9 +136,7 @@ class HostBroker:
             #   (parrot.tools.ToolManager or similar) — do not reimplement
             #   toolkit invocation here; call the existing manager.
             raise NotImplementedError("toolkits broker path not yet implemented")
-        raise CapabilityDenied(
-            f"unhandled broker request kind: {request.kind!r}"
-        )  # unreachable given _check_allowlist
+        raise CapabilityDenied(f"unhandled broker request kind: {request.kind!r}")  # unreachable given _check_allowlist
 
     async def _handle_http(self, request: BrokerRequest) -> BrokerResponse:
         """Perform an allowlisted outbound HTTP call via aiohttp."""
