@@ -263,7 +263,7 @@
       "feature_id": "FEAT-459",
       "feature": "formbuilder-custom-code",
       "spec": "sdd/specs/formbuilder-custom-code.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -273,8 +273,8 @@
       "parallelism_notes": "Track 3 (Worktree B per spec) — touches renderers/html5.py and build config only, disjoint from Track 2 and Track 4. Corrects spec's stale _LIFECYCLE_SCRIPT_TEMPLATE line numbers (423/574 -> 479/630).",
       "assigned_to": null,
       "started_at": "2026-09-11T16:38:03+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3173-web-worker-runtime-patch-allowlist.md"
+      "completed_at": "2026-09-11T17:09:27+00:00",
+      "file": "sdd/tasks/completed/TASK-3173-web-worker-runtime-patch-allowlist.md"
     },
     {
       "id": "TASK-3174",
