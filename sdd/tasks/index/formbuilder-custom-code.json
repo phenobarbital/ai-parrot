@@ -91,7 +91,7 @@
       "feature_id": "FEAT-459",
       "feature": "formbuilder-custom-code",
       "spec": "sdd/specs/formbuilder-custom-code.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -102,8 +102,8 @@
       "parallelism_notes": "Independent of TASK-3164 once TASK-3163 lands (spec Worktree Strategy internal split). Migration number corrected to 008 (007 already taken by 007_dedupe_duplicate_field_ids.py — spec text is stale).",
       "assigned_to": null,
       "started_at": "2026-09-11T16:38:03+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3165-tenant-snippet-store-migration.md"
+      "completed_at": "2026-09-11T17:31:13+00:00",
+      "file": "sdd/tasks/completed/TASK-3165-tenant-snippet-store-migration.md"
     },
     {
       "id": "TASK-3166",
