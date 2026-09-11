@@ -311,10 +311,23 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+**Completed by**: parrot-sdd-coder pool (gemini, after qwen timed out), consolidated by sdd-worker orchestrator
+**Date**: 2026-09-11
 **Notes**:
+`docs/clients/token-budgets.md` covers configuration, the §2.3 worked
+example, finalization/streaming/cancellation/retries, scope/resume/
+snapshot trust, coverage matrix and strict-mode status — all Amazon
+paths cite the satellite (`ai-parrot-client-amazon`), never the core
+package. `examples/clients/smoke/smoke_token_budget_qualification.py`
+prints `SKIPPED…` and exits 0 with no arguments (verified), never
+mutates `STRICT_QUALIFICATIONS`, and passes `ruff check` clean.
+`docs/clients/bedrock-mantle.md` links to the new doc. Verified all
+manual acceptance checks in the worktree.
 
-**Deviations from spec**: none | describe if any
+Seat: qwen (attempt 1, timed out after 552.5s — "Request timed out")
+→ gemini (attempt 2, succeeded) · Backend: nova → google-compat ·
+Model: qwen.qwen3-coder-480b-a35b-instruct → gemini-3.5-flash ·
+Attempts: 2 · Duration: 616.3s · Tokens: 542,553 in / 7,467 out (gemini
+attempt only; qwen attempt's usage unavailable due to timeout)
+
+**Deviations from spec**: none.

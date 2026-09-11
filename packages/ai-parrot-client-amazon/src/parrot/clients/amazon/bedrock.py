@@ -32,9 +32,13 @@ See ``sdd/specs/bedrock-client-llm.spec.md`` and
 
 from __future__ import annotations
 
+import asyncio
+import copy
 import json
 import time
 import uuid
+from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Any, AsyncIterator, Dict, List, Optional, Sequence, Union
@@ -42,14 +46,17 @@ from typing import Any, AsyncIterator, Dict, List, Optional, Sequence, Union
 from ...memory.render import HistoryMessage
 from parrot.observability.context import current_session_id, current_user_id
 from ..base import AbstractClient
+from ...clients.budget_scope import TOKEN_BUDGET_STATE_KEY, current_budget_scope
 from ...conf import (
     AWS_CREDENTIALS,
     AWS_REGION_NAME,
     BEDROCK_AWS_REGION,
     AWS_NOVA_API_KEY,
 )
+from ...core.exceptions import BudgetAccountingError, BudgetError, BudgetExhausted
 from ...exceptions import InvokeError
 from ...models.basic import CompletionUsage, ToolCall
+from .budget import BedrockBudgetAdapter
 from .models import translate as translate_bedrock_model, AmazonModel
 from ...models.responses import AIMessage, AIMessageFactory, InvokeResult
 from ...models.outputs import StructuredOutputConfig
@@ -110,6 +117,44 @@ def _requires_adaptive_thinking(model_id: str) -> bool:
     return rejects_sampling_params(model_id)
 
 
+@dataclass
+class _AttemptHandle:
+    """Per-attempt resolution helper returned by ``BedrockConverseBase._budgeted_attempt``."""
+
+    client: Any
+    reservation: Any = None
+    ledger: Any = None
+    adapter: Any = None
+    route: str = "converse"
+    done: bool = False
+
+    async def settle(self, raw_usage: Any) -> None:
+        """Reconcile the reservation from a raw provider usage payload (spec §2.2)."""
+        if self.reservation is None or self.done:
+            return
+        self.done = True
+        try:
+            await self.ledger.settle(
+                self.reservation.reservation_id, self.adapter.normalize_usage(raw_usage, route=self.route)
+            )
+        except BudgetAccountingError:
+            await self.ledger.mark_uncertain(self.reservation.reservation_id, "missing_or_malformed_usage")
+
+    async def uncertain(self, reason: str) -> None:
+        """Retain the full admitted debit when the actual usage is unknown (spec §2.4)."""
+        if self.reservation is None or self.done:
+            return
+        self.done = True
+        await self.ledger.mark_uncertain(self.reservation.reservation_id, reason)
+
+    async def release(self) -> None:
+        """Release a reservation proven not to have been dispatched (spec §2.4)."""
+        if self.reservation is None or self.done:
+            return
+        self.done = True
+        await self.ledger.release_unspent(self.reservation.reservation_id)
+
+
 class _StaticBedrockTokenProvider:
     """Serves a fixed Bedrock API key as a botocore auth token.
 
@@ -159,6 +204,10 @@ class BedrockConverseBase(AbstractClient):
     # than the framework's 8192, and let callers raise it per-instance with
     # ``max_tokens=``.
     _default_max_tokens: int = 4096
+
+    # FEAT-550: Bedrock Converse (and Nova text by inheritance) honours cumulative
+    # question budgets on all four public text methods (spec §2.1 capability gate).
+    budget_supported_methods = frozenset({"ask", "ask_stream", "resume", "invoke"})
 
     def __init__(
         self,
@@ -287,7 +336,7 @@ class BedrockConverseBase(AbstractClient):
     # ------------------------------------------------------------------
 
     async def get_client(self) -> Any:
-        """Create and return an aioboto3 Bedrock Runtime client.
+        """Create and return an aioboto3 Bedrock Runtime client with the shared (adaptive) retry policy.
 
         ``aioboto3`` is imported lazily here so that importing this module
         does not require the optional ``bedrock-native`` extra (TASK-1747)
@@ -298,15 +347,35 @@ class BedrockConverseBase(AbstractClient):
         Returns:
             An ``aiobotocore`` Bedrock Runtime client instance.
         """
+        return await self._build_client(no_retry=False)
+
+    async def _build_client(self, *, no_retry: bool = False) -> Any:
+        """Build an aioboto3 Bedrock Runtime client.
+
+        Args:
+            no_retry: When ``True``, build a request-local client with
+                ``retries={"total_max_attempts": 1, "mode": "standard"}`` for
+                budgeted attempts (FEAT-550 §2.4) instead of the shared
+                client's adaptive retry policy — never mutating the shared
+                client's config while concurrent calls are running.
+
+        Returns:
+            An ``aiobotocore`` Bedrock Runtime client instance.
+        """
         import aioboto3
         from botocore.config import Config as BotoConfig
 
         session = aioboto3.Session(profile_name=self._profile) if self._profile else aioboto3.Session()
 
+        retries = (
+            {"total_max_attempts": 1, "mode": "standard"}
+            if no_retry
+            else {"max_attempts": self._max_retries, "mode": "adaptive"}
+        )
         client_kwargs: Dict[str, Any] = {
             "region_name": self._region,
             "config": BotoConfig(
-                retries={"max_attempts": self._max_retries, "mode": "adaptive"},
+                retries=retries,
                 read_timeout=self._read_timeout,
             ),
         }
@@ -390,11 +459,236 @@ class BedrockConverseBase(AbstractClient):
     # Thin SDK wrappers (pattern: AnthropicClient._sdk_create/_sdk_stream)
     # ------------------------------------------------------------------
 
-    async def _sdk_create(self, payload: dict) -> Dict[str, Any]:
-        """Dispatch a non-streaming ``converse()`` call."""
-        return await self.client.converse(**payload)
+    def _get_budget_adapter(self) -> BedrockBudgetAdapter:
+        """Lazily build the counting/normalization adapter (never on the no-budget path)."""
+        adapter = getattr(self, "_budget_adapter", None)
+        if adapter is None:
+            adapter = self._budget_adapter = BedrockBudgetAdapter()
+        return adapter
 
-    async def _sdk_stream(self, payload: dict) -> AsyncIterator[Dict[str, Any]]:
+    async def _get_budgeted_client(self) -> Any:
+        """Per-loop no-retry Runtime client for budgeted attempts (spec §2.4); cached alongside the shared client."""
+        loop_id = id(asyncio.get_running_loop())
+        cache = self.__dict__.setdefault("_budgeted_clients_by_loop", {})
+        async with self._get_or_create_lock():
+            client = cache.get(loop_id)
+            if client is None:
+                client = cache[loop_id] = await self._build_client(no_retry=True)
+                self.logger.info("Bedrock: built no-retry budgeted client for loop %s", loop_id)
+            return client
+
+    @staticmethod
+    def _budget_cap_slot(payload: Dict[str, Any], route: str) -> tuple:
+        """Return ``(getter, setter)`` for the route's output-cap slot (Converse vs. native invoke)."""
+        if route == "invoke_model":
+            return payload.get("max_tokens"), lambda v: payload.__setitem__("max_tokens", v)
+        inference_config = payload.setdefault("inferenceConfig", {})
+        return inference_config.get("maxTokens"), lambda v: inference_config.__setitem__("maxTokens", v)
+
+    @staticmethod
+    def _partial_text_from_messages(bedrock_messages: List[Dict[str, Any]]) -> str:
+        """Concatenate assistant 'text' blocks already accumulated (spec §2.3 partial_text)."""
+        parts: List[str] = []
+        for msg in bedrock_messages:
+            if msg.get("role") != "assistant":
+                continue
+            for block in msg.get("content", []) or []:
+                if isinstance(block, dict) and "text" in block:
+                    parts.append(block["text"])
+        return "".join(parts)
+
+    async def _finalize_budgeted(
+        self,
+        payload: Dict[str, Any],
+        *,
+        bedrock_messages: List[Dict[str, Any]],
+        content_blocks: List[Dict[str, Any]],
+        all_tool_calls: List[ToolCall],
+        call_id: str,
+        round_number: int,
+        resolved_model: str,
+        partial_text: str,
+        stream: bool = False,
+    ) -> Any:
+        """Owner-only, one tools-disabled final attempt inside A_final (spec §2.3); raises BudgetExhausted with partial_text otherwise.
+
+        Returns the Converse ``result`` dict (non-stream) or a
+        ``(stream_iterator, handle)`` tuple (``stream=True`` — the caller
+        settles at the metadata event using the returned handle).
+        """
+        scope = current_budget_scope()
+        if scope is None or not scope.is_root:
+            raise BudgetExhausted("child scope exhausted", report={"partial_text": partial_text})  # owner handles it
+        if not scope.owner_designated:
+            scope.designate_owner(call_id)  # direct client root is its own owner (spec §2.1)
+        ledger = scope.ledger
+        if not await ledger.claim_finalization(scope.owner_call_id):
+            raise BudgetExhausted(
+                "finalization already claimed or in-flight",
+                operation_id=ledger.operation_id,
+                report={**(await ledger.report()).model_dump(), "partial_text": partial_text},
+            )
+        frame = {
+            "payload": payload,
+            "completed_tool_calls": [
+                tc.model_dump() if hasattr(tc, "model_dump") else vars(tc)
+                for tc in all_tool_calls
+                if getattr(tc, "error", None) is None
+            ],
+            "pending_tool_calls": [b["toolUse"] for b in content_blocks if isinstance(b, dict) and "toolUse" in b],
+            "answer_text": partial_text,
+        }
+        final_payload = self._get_budget_adapter().prepare_finalization(frame)
+
+        if not stream:
+            try:
+                async with self._budgeted_attempt(
+                    final_payload,
+                    route="converse",
+                    stream=False,
+                    call_id=call_id,
+                    round_number=round_number,
+                    attempt_number=1,
+                    phase="final",
+                ) as _h:
+                    try:
+                        result = await self._sdk_create(final_payload, handle=_h)
+                    except Exception as dispatch_exc:
+                        await _h.uncertain("final_dispatch_failed")
+                        raise BudgetExhausted(
+                            "final dispatch failed", report={"partial_text": partial_text}
+                        ) from dispatch_exc
+                    await _h.settle(result.get("usage"))
+                    return result
+            except BudgetExhausted as bx:
+                bx.report = {**(bx.report or {}), "partial_text": partial_text}
+                raise
+
+        # Streaming: `_budgeted_attempt`'s `async with` cleanup (mark
+        # uncertain if the handle is still unresolved) must NOT fire until
+        # the CALLER (ask_stream) finishes consuming the returned stream and
+        # settles via the handle at the metadata event — a `return` from
+        # inside the `async with` would close it immediately, marking the
+        # reservation uncertain before it was ever settled. Enter/exit the
+        # context manager manually instead, closing it only once the
+        # wrapped generator is exhausted (spec §2.4).
+        attempt_cm = self._budgeted_attempt(
+            final_payload,
+            route="converse",
+            stream=True,
+            call_id=call_id,
+            round_number=round_number,
+            attempt_number=1,
+            phase="final",
+        )
+        try:
+            _h = await attempt_cm.__aenter__()
+        except BudgetExhausted as bx:
+            bx.report = {**(bx.report or {}), "partial_text": partial_text}
+            raise
+        try:
+            stream_iter = await self._sdk_stream(final_payload, handle=_h)
+        except Exception as dispatch_exc:
+            await _h.uncertain("final_dispatch_failed")
+            await attempt_cm.__aexit__(type(dispatch_exc), dispatch_exc, dispatch_exc.__traceback__)
+            raise BudgetExhausted("final dispatch failed", report={"partial_text": partial_text}) from dispatch_exc
+
+        async def _wrapped_stream():
+            try:
+                async for event in stream_iter:
+                    yield event
+            finally:
+                await attempt_cm.__aexit__(None, None, None)
+
+        return _wrapped_stream(), _h
+
+    @asynccontextmanager
+    async def _budgeted_attempt(
+        self,
+        payload: Dict[str, Any],
+        *,
+        route: str,
+        stream: bool,
+        call_id: str,
+        round_number: int,
+        attempt_number: int,
+        phase: str = "work",
+    ):
+        """Reserve → yield a resolution handle → guarantee exactly-once resolution (spec §2.2/§2.4).
+
+        Args:
+            payload: The prepared request body (Converse ``payload`` dict or
+                the native ``invoke_model`` body), mutated in place to lower
+                its output cap to the admitted reservation.
+            route: ``"converse"`` or ``"invoke_model"`` — selects the cap
+                slot and the usage-normalization shape.
+            stream: Whether this attempt will be dispatched as a stream
+                (informational only; settlement still happens via
+                ``handle.settle``/``handle.uncertain``).
+            call_id: Identifier shared by every physical attempt of one
+                public-method invocation.
+            round_number: The tool-use round this attempt belongs to.
+            attempt_number: 1-based attempt counter within the round
+                (incremented for a fallback-model retry).
+            phase: ``"work"`` or ``"final"`` (spec §2.3).
+
+        Yields:
+            An :class:`_AttemptHandle` — a pass-through handle
+            (``reservation=None``) when no budget scope is active.
+        """
+        scope = current_budget_scope()
+        if scope is None:
+            yield _AttemptHandle(client=self.client)
+            return
+        adapter = self._get_budget_adapter()
+        estimate = await adapter.count_input(payload, route=route, mode=scope.policy.budget_mode, endpoint=self._region)
+        thinking = (payload.get("additionalModelRequestFields") or {}).get("thinking") or {}
+        min_output_tokens = int(thinking["budget_tokens"]) + 1 if thinking.get("budget_tokens") else 1
+        current_cap, set_cap = self._budget_cap_slot(payload, route)
+        max_output_tokens = current_cap or self._default_max_tokens
+        reservation = await scope.ledger.reserve(
+            estimate,
+            max_output_tokens=max_output_tokens,
+            min_output_tokens=min_output_tokens,
+            call_id=call_id,
+            round_number=round_number,
+            attempt_number=attempt_number,
+            phase=phase,
+        )
+        # Always forward an explicit bounded output parameter (spec §2.2).
+        set_cap(reservation.output_cap)
+        handle = _AttemptHandle(
+            client=await self._get_budgeted_client(),
+            reservation=reservation,
+            ledger=scope.ledger,
+            adapter=adapter,
+            route=route,
+        )
+        try:
+            yield handle
+        finally:
+            if not handle.done:
+                await handle.uncertain("unresolved")
+
+    async def close(self) -> None:
+        """Close the shared client and every per-loop budgeted (no-retry) client (spec §2.4)."""
+        budgeted = self.__dict__.get("_budgeted_clients_by_loop") or {}
+        for client in list(budgeted.values()):
+            try:
+                await client.__aexit__(None, None, None)
+            except Exception:  # noqa: BLE001
+                self.logger.debug("Bedrock: error closing a budgeted client", exc_info=True)
+        budgeted.clear()
+        await super().close()
+
+    async def _sdk_create(self, payload: dict, handle: Optional[_AttemptHandle] = None) -> Dict[str, Any]:
+        """Dispatch a non-streaming ``converse()`` call (on the budgeted client when a handle is given)."""
+        client = handle.client if handle is not None else self.client
+        return await client.converse(**payload)
+
+    async def _sdk_stream(
+        self, payload: dict, handle: Optional[_AttemptHandle] = None
+    ) -> AsyncIterator[Dict[str, Any]]:
         """Dispatch a streaming ``converse_stream()`` call.
 
         Returns:
@@ -402,7 +696,8 @@ class BedrockConverseBase(AbstractClient):
             (``contentBlockStart`` / ``contentBlockDelta`` /
             ``contentBlockStop`` / ``messageStop`` / ``metadata``).
         """
-        response = await self.client.converse_stream(**payload)
+        client = handle.client if handle is not None else self.client
+        response = await client.converse_stream(**payload)
         return response["stream"]
 
     # ------------------------------------------------------------------
@@ -707,14 +1002,28 @@ class BedrockConverseBase(AbstractClient):
         if system_prompt:
             body["system"] = system_prompt
 
-        response = await self.client.invoke_model(
-            modelId=resolved_model,
-            body=json.dumps(body),
-            contentType="application/json",
-            accept="application/json",
-        )
-        response_body = await response["body"].read()
-        return json.loads(response_body)
+        async with self._budgeted_attempt(
+            body,
+            route="invoke_model",
+            stream=False,
+            call_id=str(uuid.uuid4()),
+            round_number=1,
+            attempt_number=1,
+        ) as _hn:
+            try:
+                response = await _hn.client.invoke_model(
+                    modelId=resolved_model,
+                    body=json.dumps(body),
+                    contentType="application/json",
+                    accept="application/json",
+                )
+            except Exception:
+                await _hn.uncertain("dispatch_failed")
+                raise
+            response_body = await response["body"].read()
+            decoded = json.loads(response_body)
+            await _hn.settle(decoded.get("usage"))
+            return decoded
 
     # ------------------------------------------------------------------
     # Public API: ask / ask_stream / resume / invoke
@@ -896,13 +1205,36 @@ class BedrockConverseBase(AbstractClient):
         # (mirrors the FEAT-397 idiom in AnthropicClient.ask()).
         _lc_round_number = 0
         _lc_accumulated_usage: Optional[CompletionUsage] = None
+        # FEAT-550: one call_id per public-method invocation; every physical
+        # SDK attempt (including a fallback-model retry) reserves anew.
+        _budget_call_id = str(uuid.uuid4())
+        # FEAT-550 §2.3: True once a final tools-disabled attempt forced the
+        # answer (owner's ordinary work was denied by the ledger).
+        _budget_forced = False
 
         while True:
             # FEAT-404: time this round's SDK call (including a fallback
             # retry, if any) for the round event's duration_ms.
             _lc_round_t0 = time.perf_counter()
+            _budget_round_number = _lc_round_number + 1
+            _budget_exhausted: Optional[BudgetExhausted] = None
             try:
-                result = await self._sdk_create(payload)
+                async with self._budgeted_attempt(
+                    payload,
+                    route="converse",
+                    stream=False,
+                    call_id=_budget_call_id,
+                    round_number=_budget_round_number,
+                    attempt_number=1,
+                ) as _h:
+                    try:
+                        result = await self._sdk_create(payload, handle=_h)
+                    except Exception:
+                        await _h.uncertain("dispatch_failed")
+                        raise
+                    await _h.settle(result.get("usage"))
+            except BudgetExhausted as bx:
+                _budget_exhausted = bx
             except Exception as e:
                 if self._should_use_fallback(payload["modelId"], e):
                     self.logger.warning(
@@ -914,21 +1246,67 @@ class BedrockConverseBase(AbstractClient):
                     payload["modelId"] = self._translate_model(self._fallback_model)
                     used_fallback = True
                     try:
-                        result = await self._sdk_create(payload)
+                        async with self._budgeted_attempt(
+                            payload,
+                            route="converse",
+                            stream=False,
+                            call_id=_budget_call_id,
+                            round_number=_budget_round_number,
+                            attempt_number=2,
+                        ) as _h2:
+                            try:
+                                result = await self._sdk_create(payload, handle=_h2)
+                            except Exception:
+                                await _h2.uncertain("dispatch_failed")
+                                raise
+                            await _h2.settle(result.get("usage"))
+                    except BudgetExhausted as bx2:
+                        _budget_exhausted = bx2
                     except Exception as fallback_exc:
                         # FEAT-548 Finding #1: emit ClientCallFailedEvent
                         await self._emit_failed_call_safe(
-                            _lc_tc, client_name=self.client_name,
-                            model=resolved_model, t0=_lc_t0, exc=fallback_exc,
+                            _lc_tc,
+                            client_name=self.client_name,
+                            model=resolved_model,
+                            t0=_lc_t0,
+                            exc=fallback_exc,
                         )
                         raise
                 else:
                     # FEAT-548 Finding #1: emit ClientCallFailedEvent
                     await self._emit_failed_call_safe(
-                        _lc_tc, client_name=self.client_name,
-                        model=resolved_model, t0=_lc_t0, exc=e,
+                        _lc_tc,
+                        client_name=self.client_name,
+                        model=resolved_model,
+                        t0=_lc_t0,
+                        exc=e,
                     )
                     raise
+
+            if _budget_exhausted is not None:
+                # Ordinary work is denied: the owner attempts ONE tools-disabled
+                # final attempt; a child scope re-raises to its owner (spec §2.3).
+                result = await self._finalize_budgeted(
+                    payload,
+                    bedrock_messages=bedrock_messages,
+                    content_blocks=content_blocks,
+                    all_tool_calls=all_tool_calls,
+                    call_id=_budget_call_id,
+                    round_number=_budget_round_number,
+                    resolved_model=resolved_model,
+                    partial_text=self._partial_text_from_messages(bedrock_messages),
+                )
+                _budget_forced = True
+                content_blocks = result.get("output", {}).get("message", {}).get("content", [])
+                bedrock_messages.append({"role": "assistant", "content": content_blocks})
+                _bq_scope = current_budget_scope()
+                if _bq_scope is not None and (
+                    result.get("stopReason") in ("tool_use", "max_tokens")
+                    or any(isinstance(b, dict) and "toolUse" in b for b in content_blocks)
+                ):
+                    await _bq_scope.ledger.set_answer_complete(False)
+                break
+
             _lc_round_number += 1
             _lc_round_duration_ms = (time.perf_counter() - _lc_round_t0) * 1000
 
@@ -997,8 +1375,22 @@ class BedrockConverseBase(AbstractClient):
                             e.messages = bedrock_messages + [{"role": "assistant", "content": content_blocks}]
                             e.tool_call_id = tool_id
                             e.agent_name = resolved_model
+                            # FEAT-550 §2.6: merge the namespaced budget envelope
+                            # into the interrupt's state so a resume() can reattach.
+                            _scope = current_budget_scope()
+                            if _scope is not None:
+                                e.state = {
+                                    **(getattr(e, "state", None) or {}),
+                                    TOKEN_BUDGET_STATE_KEY: await _scope.registry.suspend(_scope),
+                                }
                             raise
 
+                        elif isinstance(e, BudgetError):
+                            # FEAT-550 §3 M3: budget control from a tool's own
+                            # inner budgeted call must propagate to the owner —
+                            # never converted into a tool result (code-reviewer
+                            # finding, FEAT-550 wrap-up).
+                            raise
                         tc.error = str(e)
                         tool_result_blocks.append(
                             {
@@ -1038,7 +1430,7 @@ class BedrockConverseBase(AbstractClient):
 
         final_output = None
         assistant_response_text = "".join(block.get("text", "") for block in content_blocks if "text" in block)
-        if output_config:
+        if output_config and not _budget_forced:
             try:
                 # Known-truncated output must not reach a custom parser either.
                 self._raise_if_truncated(result.get("stopReason"), model=resolved_model)
@@ -1055,8 +1447,15 @@ class BedrockConverseBase(AbstractClient):
                 raise
             except Exception:
                 final_output = assistant_response_text
-        elif output_schema:
+        elif output_schema and not _budget_forced:
             final_output = self._parse_json_schema_output(assistant_response_text)
+        elif _budget_forced and (output_config or output_schema):
+            # FEAT-550 §2.3: a budget-forced final never reaches a custom
+            # parser as if it were validated — raw text, marked incomplete.
+            final_output = assistant_response_text
+            _bq_scope = current_budget_scope()
+            if _bq_scope is not None:
+                await _bq_scope.ledger.set_answer_complete(False)
 
         # FEAT-524: no memory write — AbstractBot.save_conversation_turn is
         # the single writer.
@@ -1085,6 +1484,15 @@ class BedrockConverseBase(AbstractClient):
             if _lc_round_number > 1:
                 _lc_accumulated_usage.extra_usage["rounds"] = _lc_round_number
             ai_message.usage = _lc_accumulated_usage
+
+        # FEAT-550 §2.3: every budgeted answer carries the ledger's report;
+        # forced termination surfaces stop_reason="budget_exhausted" while
+        # keeping the provider's own value available via finish_reason below.
+        _bq_scope = current_budget_scope()
+        if _bq_scope is not None:
+            if _budget_forced:
+                ai_message.stop_reason = "budget_exhausted"
+            ai_message.metadata["token_budget"] = (await _bq_scope.ledger.report()).model_dump()
 
         _lc_usage = ai_message.usage
         await self._emit_after_call(
@@ -1218,6 +1626,10 @@ class BedrockConverseBase(AbstractClient):
         stop_reason: Optional[str] = None
         usage_dict: Dict[str, Any] = {}
         _max_tool_rounds = 25  # safety cap, same depth as ask()
+        # FEAT-550: one call_id per ask_stream() invocation; each round is a
+        # fresh physical attempt admitted before dispatch (spec §2.2/§2.4).
+        _budget_call_id_s = str(uuid.uuid4())
+        _budget_forced = False
 
         for _round in range(_max_tool_rounds):
             # ── Stream one round ──────────────────────────────────────
@@ -1228,44 +1640,95 @@ class BedrockConverseBase(AbstractClient):
             _tool_use_blocks: List[Dict[str, Any]] = []
 
             try:
-                stream = await self._sdk_stream(payload)
-            except Exception as _lc_stream_exc:
-                # FEAT-548 Finding #1: emit ClientCallFailedEvent
-                await self._emit_failed_call_safe(
-                    _lc_tc_s, client_name=self.client_name,
-                    model=resolved_model, t0=_lc_t0_s, exc=_lc_stream_exc,
-                )
+                async with self._budgeted_attempt(
+                    payload,
+                    route="converse",
+                    stream=True,
+                    call_id=_budget_call_id_s,
+                    round_number=_round + 1,
+                    attempt_number=1,
+                ) as _hs:
+                    try:
+                        stream = await self._sdk_stream(payload, handle=_hs)
+                    except Exception as _lc_stream_exc:
+                        await _hs.uncertain("dispatch_failed")
+                        # FEAT-548 Finding #1: emit ClientCallFailedEvent
+                        await self._emit_failed_call_safe(
+                            _lc_tc_s,
+                            client_name=self.client_name,
+                            model=resolved_model,
+                            t0=_lc_t0_s,
+                            exc=_lc_stream_exc,
+                        )
+                        raise
+                    async for event in stream:
+                        # --- Text chunks: yield immediately ---
+                        delta = event.get("contentBlockDelta", {}).get("delta", {})
+                        text_chunk = delta.get("text")
+                        if text_chunk:
+                            round_text += text_chunk
+                            accumulated_text += text_chunk
+                            yield text_chunk
+
+                        # --- Tool-use block collection ---
+                        if "contentBlockStart" in event:
+                            start_body = event["contentBlockStart"].get("start", {})
+                            if "toolUse" in start_body:
+                                _current_tool_block = {
+                                    "toolUseId": start_body["toolUse"].get("toolUseId", ""),
+                                    "name": start_body["toolUse"].get("name", ""),
+                                    "input_json": "",
+                                }
+                        # Accumulate streamed tool-input JSON fragments.
+                        tool_use_delta = delta.get("toolUse")
+                        if tool_use_delta and _current_tool_block is not None:
+                            _current_tool_block["input_json"] += tool_use_delta.get("input", "")
+                        if "contentBlockStop" in event and _current_tool_block is not None:
+                            _tool_use_blocks.append(_current_tool_block)
+                            _current_tool_block = None
+
+                        if "messageStop" in event:
+                            stop_reason = event["messageStop"].get("stopReason")
+                        if "metadata" in event:
+                            usage_dict = event["metadata"].get("usage", {})
+                            await _hs.settle(usage_dict)
+            except asyncio.CancelledError:
+                # spec §2.3 table row 4: cancellation never starts finalization.
                 raise
-            async for event in stream:
-                # --- Text chunks: yield immediately ---
-                delta = event.get("contentBlockDelta", {}).get("delta", {})
-                text_chunk = delta.get("text")
-                if text_chunk:
-                    round_text += text_chunk
-                    accumulated_text += text_chunk
-                    yield text_chunk
-
-                # --- Tool-use block collection ---
-                if "contentBlockStart" in event:
-                    start_body = event["contentBlockStart"].get("start", {})
-                    if "toolUse" in start_body:
-                        _current_tool_block = {
-                            "toolUseId": start_body["toolUse"].get("toolUseId", ""),
-                            "name": start_body["toolUse"].get("name", ""),
-                            "input_json": "",
-                        }
-                # Accumulate streamed tool-input JSON fragments.
-                tool_use_delta = delta.get("toolUse")
-                if tool_use_delta and _current_tool_block is not None:
-                    _current_tool_block["input_json"] += tool_use_delta.get("input", "")
-                if "contentBlockStop" in event and _current_tool_block is not None:
-                    _tool_use_blocks.append(_current_tool_block)
-                    _current_tool_block = None
-
-                if "messageStop" in event:
-                    stop_reason = event["messageStop"].get("stopReason")
-                if "metadata" in event:
-                    usage_dict = event["metadata"].get("usage", {})
+            except BudgetExhausted:
+                # Ordinary work denied: the owner attempts ONE tools-disabled
+                # final attempt, streaming its text in-band (spec §2.3/§2.4).
+                final_stream, _hf = await self._finalize_budgeted(
+                    payload,
+                    bedrock_messages=bedrock_messages,
+                    content_blocks=round_content_blocks,
+                    all_tool_calls=all_tool_calls,
+                    call_id=_budget_call_id_s,
+                    round_number=_round + 1,
+                    resolved_model=resolved_model,
+                    partial_text=accumulated_text,
+                    stream=True,
+                )
+                async for event in final_stream:
+                    delta = event.get("contentBlockDelta", {}).get("delta", {})
+                    text_chunk = delta.get("text")
+                    if text_chunk:
+                        round_text += text_chunk
+                        accumulated_text += text_chunk
+                        yield text_chunk
+                    if "messageStop" in event:
+                        stop_reason = event["messageStop"].get("stopReason")
+                    if "metadata" in event:
+                        usage_dict = event["metadata"].get("usage", {})
+                        await _hf.settle(usage_dict)
+                _budget_forced = True
+                if round_text:
+                    round_content_blocks.append({"text": round_text})
+                bedrock_messages.append({"role": "assistant", "content": round_content_blocks})
+                _bq_scope_s = current_budget_scope()
+                if _bq_scope_s is not None and (stop_reason in ("tool_use", "max_tokens") or _tool_use_blocks):
+                    await _bq_scope_s.ledger.set_answer_complete(False)
+                break
 
             # ── Build the assistant content blocks for this round ─────
             if round_text:
@@ -1321,6 +1784,20 @@ class BedrockConverseBase(AbstractClient):
                             e.messages = bedrock_messages
                             e.tool_call_id = tb["toolUseId"]
                             e.agent_name = resolved_model
+                            # FEAT-550 §2.6: merge the namespaced budget envelope
+                            # into the interrupt's state so a resume() can reattach.
+                            _scope = current_budget_scope()
+                            if _scope is not None:
+                                e.state = {
+                                    **(getattr(e, "state", None) or {}),
+                                    TOKEN_BUDGET_STATE_KEY: await _scope.registry.suspend(_scope),
+                                }
+                            raise
+                        elif isinstance(e, BudgetError):
+                            # FEAT-550 §3 M3: budget control from a tool's own
+                            # inner budgeted call must propagate to the owner —
+                            # never converted into a tool result (code-reviewer
+                            # finding, FEAT-550 wrap-up).
                             raise
                         tc.error = str(e)
                         tool_result_blocks.append(
@@ -1358,6 +1835,16 @@ class BedrockConverseBase(AbstractClient):
             turn_id=turn_id,
             tool_calls=all_tool_calls,
         )
+
+        # FEAT-550 §2.3/§2.4: attach the ledger report to the single terminal
+        # AIMessage; forced termination sets stop_reason (finish_reason keeps
+        # the provider's own value via `stop_reason` above).
+        _bq_scope_s2 = current_budget_scope()
+        if _bq_scope_s2 is not None:
+            if _budget_forced:
+                _lc_stream_msg.stop_reason = "budget_exhausted"
+            _lc_stream_msg.metadata["token_budget"] = (await _bq_scope_s2.ledger.report()).model_dump()
+
         # FEAT-548: lifecycle event — AfterClientCallEvent (previously missing)
         _lc_s_usage = getattr(_lc_stream_msg, "usage", None)
         await self._emit_after_call(
@@ -1406,7 +1893,10 @@ class BedrockConverseBase(AbstractClient):
         # stored state in place. A retried resume() call against the same
         # saved state would otherwise accumulate stray entries from the
         # first attempt. Same pattern pre-exists in AnthropicClient.resume().
-        bedrock_messages: List[Dict[str, Any]] = list(state["messages"])
+        # FEAT-550 §2.6: deep-copy (not a shallow list copy) so mutations to
+        # individual message dicts never leak back into the caller's stored
+        # suspended state either.
+        bedrock_messages: List[Dict[str, Any]] = copy.deepcopy(state["messages"])
         tool_call_id = state["tool_call_id"]
         resolved_model = self._translate_model(state.get("agent_name", self.model or self.default_model))
 
@@ -1456,18 +1946,60 @@ class BedrockConverseBase(AbstractClient):
         # branch, unlike ask().
         _lc_round_number = 0
         _lc_accumulated_usage: Optional[CompletionUsage] = None
+        # FEAT-550: one call_id per resume() invocation; every physical
+        # attempt reserves anew (spec §2.2/§2.4).
+        _budget_call_id_r = str(uuid.uuid4())
+        _budget_forced = False
 
         while True:
             # FEAT-404: time this round's SDK call for the round event's
             # duration_ms.
             _lc_round_t0 = time.perf_counter()
+            _budget_round_number_r = _lc_round_number + 1
             try:
-                result = await self._sdk_create(payload)
+                async with self._budgeted_attempt(
+                    payload,
+                    route="converse",
+                    stream=False,
+                    call_id=_budget_call_id_r,
+                    round_number=_budget_round_number_r,
+                    attempt_number=1,
+                ) as _hr:
+                    try:
+                        result = await self._sdk_create(payload, handle=_hr)
+                    except Exception:
+                        await _hr.uncertain("dispatch_failed")
+                        raise
+                    await _hr.settle(result.get("usage"))
+            except BudgetExhausted:
+                result = await self._finalize_budgeted(
+                    payload,
+                    bedrock_messages=bedrock_messages,
+                    content_blocks=content_blocks,
+                    all_tool_calls=all_tool_calls,
+                    call_id=_budget_call_id_r,
+                    round_number=_budget_round_number_r,
+                    resolved_model=resolved_model,
+                    partial_text=self._partial_text_from_messages(bedrock_messages),
+                )
+                _budget_forced = True
+                content_blocks = result.get("output", {}).get("message", {}).get("content", [])
+                bedrock_messages.append({"role": "assistant", "content": content_blocks})
+                _bq_scope = current_budget_scope()
+                if _bq_scope is not None and (
+                    result.get("stopReason") in ("tool_use", "max_tokens")
+                    or any(isinstance(b, dict) and "toolUse" in b for b in content_blocks)
+                ):
+                    await _bq_scope.ledger.set_answer_complete(False)
+                break
             except Exception as _lc_resume_exc:
                 # FEAT-548 Finding #1: emit ClientCallFailedEvent
                 await self._emit_failed_call_safe(
-                    _lc_tc, client_name=self.client_name,
-                    model=resolved_model, t0=_lc_t0, exc=_lc_resume_exc,
+                    _lc_tc,
+                    client_name=self.client_name,
+                    model=resolved_model,
+                    t0=_lc_t0,
+                    exc=_lc_resume_exc,
                 )
                 raise
             _lc_round_number += 1
@@ -1539,8 +2071,22 @@ class BedrockConverseBase(AbstractClient):
                             e.messages = bedrock_messages + [{"role": "assistant", "content": content_blocks}]
                             e.tool_call_id = tool_id
                             e.agent_name = resolved_model
+                            # FEAT-550 §2.6: merge the namespaced budget envelope
+                            # into the interrupt's state so a resume() can reattach.
+                            _scope = current_budget_scope()
+                            if _scope is not None:
+                                e.state = {
+                                    **(getattr(e, "state", None) or {}),
+                                    TOKEN_BUDGET_STATE_KEY: await _scope.registry.suspend(_scope),
+                                }
                             raise
 
+                        elif isinstance(e, BudgetError):
+                            # FEAT-550 §3 M3: budget control from a tool's own
+                            # inner budgeted call must propagate to the owner —
+                            # never converted into a tool result (code-reviewer
+                            # finding, FEAT-550 wrap-up).
+                            raise
                         tc.error = str(e)
                         tool_result_blocks.append(
                             {
@@ -1591,6 +2137,13 @@ class BedrockConverseBase(AbstractClient):
             if _lc_round_number > 1:
                 _lc_accumulated_usage.extra_usage["rounds"] = _lc_round_number
             ai_message.usage = _lc_accumulated_usage
+
+        # FEAT-550 §2.3: every budgeted resume answer carries the ledger's report.
+        _bq_scope_r = current_budget_scope()
+        if _bq_scope_r is not None:
+            if _budget_forced:
+                ai_message.stop_reason = "budget_exhausted"
+            ai_message.metadata["token_budget"] = (await _bq_scope_r.ledger.report()).model_dump()
 
         _lc_usage = ai_message.usage
         await self._emit_after_call(
@@ -1669,7 +2222,52 @@ class BedrockConverseBase(AbstractClient):
                 if tool_defs:
                     payload["toolConfig"] = {"tools": tool_defs}
 
-            result = await self._sdk_create(payload)
+            _budget_forced = False
+            try:
+                async with self._budgeted_attempt(
+                    payload,
+                    route="converse",
+                    stream=False,
+                    call_id=str(uuid.uuid4()),
+                    round_number=1,
+                    attempt_number=1,
+                ) as _hi:
+                    try:
+                        result = await self._sdk_create(payload, handle=_hi)
+                    except Exception:
+                        await _hi.uncertain("dispatch_failed")
+                        raise
+                    await _hi.settle(result.get("usage"))
+            except BudgetExhausted:
+                # invoke() is a single-shot call: the frame is the payload
+                # without tools; owner finalization still applies (spec §2.3).
+                try:
+                    result = await self._finalize_budgeted(
+                        payload,
+                        bedrock_messages=payload["messages"],
+                        content_blocks=[],
+                        all_tool_calls=[],
+                        call_id=str(uuid.uuid4()),
+                        round_number=1,
+                        resolved_model=resolved_model,
+                        partial_text="",
+                    )
+                    _budget_forced = True
+                except BudgetExhausted as bx2:
+                    _scope = current_budget_scope()
+                    _report = bx2.report or {}
+                    partial = _report.pop("partial_text", "") or ""
+                    usage = CompletionUsage()
+                    invoke_result = InvokeResult(
+                        output=partial,
+                        output_type=None,
+                        model=resolved_model,
+                        usage=usage,
+                        raw_response=None,
+                    )
+                    if _scope is not None:
+                        invoke_result.budget_report = (await _scope.ledger.report()).model_dump()
+                    return invoke_result
 
             raw_text = "".join(
                 block.get("text", "")
@@ -1678,7 +2276,7 @@ class BedrockConverseBase(AbstractClient):
             )
 
             output: Any = raw_text
-            if config:
+            if config and not _budget_forced:
                 # Known-truncated output must not reach a custom parser either.
                 self._raise_if_truncated(self._extract_finish_reason(result), model=resolved_model)
                 if config.custom_parser:
@@ -1693,7 +2291,19 @@ class BedrockConverseBase(AbstractClient):
 
             usage = CompletionUsage.from_bedrock(result.get("usage", {}))
 
-            return self._build_invoke_result(output, output_type, resolved_model, usage, result)
+            invoke_result = self._build_invoke_result(
+                output if not _budget_forced else raw_text,
+                None if _budget_forced else output_type,
+                resolved_model,
+                usage,
+                result,
+            )
+            _bq_scope_i = current_budget_scope()
+            if _bq_scope_i is not None:
+                invoke_result.budget_report = (await _bq_scope_i.ledger.report()).model_dump()
+            return invoke_result
+        except BudgetError:
+            raise
         except InvokeError:
             raise
         except Exception as exc:

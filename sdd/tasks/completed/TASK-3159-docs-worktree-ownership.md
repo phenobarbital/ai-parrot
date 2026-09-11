@@ -197,10 +197,29 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (fallback — the parrot-sdd-coder codex-spark
+attempt failed instantly on a CLI argument mismatch, `--ask-for-approval`;
+the qwen/nova retry then timed out after ~9 minutes)
+**Date**: 2026-09-11
+**Notes**: Made all four anchored edits exactly per the blueprint: (1) the
+base-branch bullet now says worktrees branch from `origin/<base_branch>`
+and names every creator plus `/sdd-task`'s exclusion; (2) the FEAT-466
+carve-out is shortened to state the guarantee is now enforced by
+`plan_worktree`, keeps the FEAT-466/PR #1250 attribution, and its example
+now calls `python -m scripts.sdd.ensure_worktree` instead of hand-building
+`git worktree add`; (3) the `/sdd-task` row of the Auto-Commit table now
+notes it creates no worktree; (4) Typical Workflow step 3 now reads
+`/sdd-start TASK-069` instead of a raw `git worktree add`. Verified all 7
+acceptance criteria individually (AC-1 empty grep, AC-2 no remaining
+`/sdd-task`-creates-worktree claim, AC-3 step 3 confirmed, AC-4 carve-out
+still cites FEAT-466/PR #1250 and `origin/main`, AC-5 three
+`scripts.sdd.ensure_worktree` mentions, AC-6 Worktree Creation
+heading/Cleanup/.gitignore/Quick reference untouched, AC-7 `git diff CLAUDE.md`
+shows exactly 4 reviewable hunks in one file).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Deviations from spec**: none
 
-**Deviations from spec**: none | describe if any
+Seat: sdd-worker (sonnet, direct) · Backend: n/a (fallback after two MCP-seat
+failures) · Model: claude-sonnet-5 · Attempts: 3 (codex-spark CLI-arg error
+1.05s, qwen/nova timeout 552.25s, direct fallback success) · Duration: n/a
+(fallback) · Tokens: n/a

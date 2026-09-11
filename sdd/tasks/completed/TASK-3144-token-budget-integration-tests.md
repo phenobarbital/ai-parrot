@@ -333,10 +333,67 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+**Completed by**: sdd-worker (orchestrator, direct implementation — attempt 3 after a pooled
+`fidelity_violation`: the native haiku agent committed `sdd/tasks/completed/...` and
+`sdd/tasks/index/token-budget-bedrock.json` itself, and its test file was separately
+broken: `client.client = fake` violates `AbstractClient`'s loop-local `client` property
+guard (raises `AttributeError` on every fixture use), and its own Scenario 1 numbers
+didn't force the finalization it asserted)
+**Date**: 2026-09-11
 **Notes**:
+Rewrote `packages/ai-parrot/tests/integration/test_question_token_budget.py` from
+scratch, covering all six spec §4 scenarios with real `BaseBot` + real
+`BedrockConverseClient`/`BedrockMantleClient`, patched only at the SDK dispatch
+boundary (`_sdk_create`/`_sdk_stream`/`chat.completions.create`) — 8 tests, all
+passing (`pytest packages/ai-parrot/tests/integration/test_question_token_budget.py
+-q` → 8 passed in ~3s; full regression sweep `pytest packages/ai-parrot/tests/
+integration/test_question_token_budget.py packages/ai-parrot/tests/clients/
+test_bedrock_mantle.py packages/ai-parrot/tests/unit/clients -q` → 431 passed, 1
+pre-existing unrelated failure (`test_client_class_attrs[google]`), 12 skipped;
+`pytest packages/ai-parrot-client-amazon/tests/unit -q` → 67 passed).
 
-**Deviations from spec**: none | describe if any
+**Two production findings documented here, NOT patched (out of this task's scope
+per "do not patch production modules from this task")**:
+
+1. **Bot-driven calls never reach the client-level tools-disabled finalization.**
+   `AbstractBot.execute_llm_call` forwards `budget_scope=<bot's root>` to the
+   client; the client's entry wrapper (`_enter_scope`) always turns an inherited
+   `request.scope` into a **child** (`request.scope.child()`), so
+   `scope.is_root` is `False` from the client's own perspective whenever it is
+   invoked through a bot. `_finalize_budgeted`/`_finalize_budgeted_chat` both
+   require `scope.is_root` to attempt their one tools-disabled wire call — a
+   bot-driven client can therefore NEVER dispatch that final attempt; the
+   `BudgetExhausted` it raises always propagates to the bot, which translates it
+   into a partial `AIMessage` via `_budget_partial_message` (spec §2.3's own text
+   confirms this is the intended design: "under an inherited child scope,
+   propagate budget control to the owner" — the bot IS the owner here, and its
+   translation, not a second wire attempt, is the "finalization"). A secondary
+   consequence: `_budget_partial_message`'s `msg.metadata["token_budget"]` ends
+   up an EMPTY dict, because `_finalize_budgeted`'s "child scope exhausted"
+   raise only carries `report={"partial_text": ...}` (no ledger totals) — and
+   `bots/base.py`'s own fallback attachment
+   (`if "token_budget" not in response.metadata: ...`) never fires because the
+   key already exists (with an empty value). Proposed follow-up: either enrich
+   the "child scope exhausted" `BudgetExhausted.report` with the full ledger
+   report, or change the bot-side check to `if not response.metadata.get(
+   "token_budget"):`. Scenario 1's tests independently verify the ledger's real
+   totals by capturing `current_budget_scope()` from inside a real tool call.
+2. **`AbstractBot.resume()` is unconditionally broken.**
+   `packages/ai-parrot/src/parrot/bots/abstract.py:4308` reads `self.client`, an
+   attribute `BaseBot` does not define (the LLM client is `self.llm`/`self._llm`)
+   — every `bot.resume(...)` call raises `AttributeError` before reaching any
+   budget logic. This predates FEAT-550 and is orthogonal to token-budget wiring,
+   but Scenario 4 is the first exerciser of this code path in the test suite.
+   Scenario 4 drives resume through the CLIENT directly instead (client-level
+   resume/suspend was already exhaustively covered by TASK-3140/3141's
+   `test_interrupt_carries_envelope_and_resume_deepcopies`); a follow-up task
+   should fix `self.client` → `self.llm` and re-point this integration test at
+   `bot.resume(...)`.
+
+**Deviations from spec**: Scenario 1's token_budget/final_answer_reserve values
+differ from the spec's raw worked-example numbers (`B=10,000`/`F=1,500`) — a
+bot's registered tool specs and system prompt inflate the real per-round input
+estimate enough that those exact numbers admit a 3rd round rather than deny it
+(verified empirically); the test tunes the budget so round 1/2 admit and round 3
+is denied against the ACTUAL estimate, while still asserting the exact settled
+totals (2500 + 3700) from the spec's fixture usage numbers.

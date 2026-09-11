@@ -37,6 +37,10 @@ from ..exceptions import InvokeError, TruncatedResponseError
 from ..tools.abstract import AbstractTool, ToolResult
 from ..tools.manager import ToolManager, ToolFormat, ToolDefinition
 
+# FEAT-550: Core Entry Guards
+from ..core.exceptions import BudgetUnsupported
+from .budget_scope import BudgetDefaults, BudgetRequest, budget_entry
+
 # FEAT-176: Lifecycle Events System
 import hashlib
 
@@ -63,6 +67,9 @@ from parrot.observability.context import (
     current_session_id,
     current_user_id,
 )
+
+# FEAT-550: the four public text methods __init_subclass__ wraps with the budget entry adapter.
+_BUDGETED_METHODS: tuple[str, ...] = ("ask", "ask_stream", "resume", "invoke")
 
 LLM_PRESETS = {
     "analytical": {"temperature": 0.1, "max_tokens": 4000},
@@ -236,6 +243,20 @@ class AbstractClient(EventEmitterMixin, ABC):
     client_name: str = "generic"
     use_session: bool = False
 
+    # FEAT-550: providers that can honour a cumulative question budget list the
+    # public text methods they cover. Empty means "unsupported": any requested or
+    # inherited budget fails with BudgetUnsupported BEFORE the implementation runs.
+    budget_supported_methods: FrozenSet[str] = frozenset()
+
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        """Install the budget entry adapter once on each concrete public text method (FEAT-550 §2.1)."""
+        super().__init_subclass__(**kwargs)
+        for _name in _BUDGETED_METHODS:
+            _fn = cls.__dict__.get(_name)
+            if _fn is None or getattr(_fn, "__isabstractmethod__", False):
+                continue  # inherited or still abstract: nothing to wrap here
+            setattr(cls, _name, budget_entry(_fn, method_name=_name))
+
     # Wire format used for tool schemas. ``None`` means "derive it from
     # ``client_type``" (see :meth:`_resolve_tool_format`), which only works
     # for clients whose ``client_type`` happens to name their wire protocol.
@@ -402,6 +423,27 @@ $backstory
         # ``None`` means "fall back to an explicit self.max_tokens, then the
         # class default" (see _resolve_max_tokens).
         self.invoke_max_tokens: Optional[int] = kwargs.get("invoke_max_tokens", None)
+        # FEAT-550 §2.1: constructor-level question budget defaults. Immutable
+        # record, never a mutable counter on the shared client instance.
+        _tb = kwargs.get("token_budget", None)
+        self._budget_defaults_value: BudgetDefaults = BudgetDefaults(
+            token_budget=_tb,
+            budget_mode=kwargs.get("budget_mode", "estimated"),
+            final_answer_reserve=kwargs.get("final_answer_reserve", 0.15),
+            registry=kwargs.get("budget_registry", None),
+        )
+        self._budget_defaults_active: bool = _tb is not None
+        self._budget_registry = self._budget_defaults_value.registry
+        if _tb is not None:
+            # Validate eagerly by constructing TokenBudgetPolicy(...) so a bad constructor value fails at
+            # construction, not at first call — bounded by spec §2.1 "Reject booleans, strings, negative…".
+            from parrot.models.token_budget import TokenBudgetPolicy
+
+            TokenBudgetPolicy(
+                token_budget=_tb,
+                budget_mode=self._budget_defaults_value.budget_mode,
+                final_answer_reserve=self._budget_defaults_value.final_answer_reserve,
+            )
         self.base_headers.update(kwargs.get("headers", {}))
         self.api_key = kwargs.get("api_key", None)
         self.version = kwargs.get("version", self.version)
@@ -777,7 +819,8 @@ $backstory
             )
         except Exception:  # noqa: BLE001
             self.logger.debug(
-                "Failed to emit ClientCallFailedEvent", exc_info=True,
+                "Failed to emit ClientCallFailedEvent",
+                exc_info=True,
             )
 
     async def _forward_to_global_awaited(self, event: Any) -> None:
@@ -797,6 +840,7 @@ $backstory
         """
         try:
             from parrot.core.events.lifecycle import get_global_registry
+
             global_reg = get_global_registry()
             if global_reg is self.events:
                 return  # we ARE the global registry — already emitted
@@ -899,6 +943,23 @@ $backstory
             lock = asyncio.Lock()
             self._locks_by_loop[loop_id] = lock
         return lock
+
+    def _budget_defaults(self) -> BudgetDefaults:
+        """Constructor-level budget settings consumed by the entry adapter (FEAT-550)."""
+        return self._budget_defaults_value
+
+    def _budget_gate(self, method_name: str, request: BudgetRequest) -> None:
+        """Refuse a requested or inherited budget on a provider/method that did not opt in.
+
+        Raises:
+            BudgetUnsupported: when ``method_name`` is not in ``budget_supported_methods``.
+        """
+        if method_name not in self.budget_supported_methods:
+            self.logger.warning("token budget requested on unsupported %s.%s", self.__class__.__name__, method_name)
+            raise BudgetUnsupported(
+                f"{self.__class__.__name__}.{method_name} does not support question token budgets",
+                operation_id=request.scope.operation_id if request.scope is not None else None,
+            )
 
     async def _ensure_client(self, **hints: Any) -> Any:
         """Return the loop-local SDK client, building it on a cache miss.

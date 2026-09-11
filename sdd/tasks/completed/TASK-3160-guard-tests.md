@@ -225,10 +225,37 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestrator (FEAT-549 pool, native haiku seat) +
+sdd-worker verification
+**Date**: 2026-09-11
+**Notes**: Created `tests/sdd_scripts/test_command_contracts.py` with three
+guard tests: `test_no_command_hand_rolls_a_worktree` (parametrized over the
+six creator files), `test_every_creator_calls_ensure_worktree`
+(parametrized over the five that must call `scripts.sdd.ensure_worktree`),
+and `test_no_legacy_naming_template_remains` (repo-wide walk of `.claude/`
+excluding `worktrees/`). 12 cases collected and all pass, none skipped.
+Verified AC-2 live: temporarily reintroduced a `git worktree add` line into
+`.claude/commands/sdd-task.md`, confirmed
+`test_no_command_hand_rolls_a_worktree[.claude/commands/sdd-task.md]` fails
+with an assertion naming the offending file, then reverted (working tree
+confirmed clean afterward). Confirmed the tests never read
+`.claude/worktrees/` (guarded by `"worktrees" in md_file.parts`). Full
+`tests/sdd_scripts/` suite: `142 passed`. `ruff check` clean. The exact
+combined command in the spec's last AC
+(`pytest tests/sdd_scripts/ packages/ai-parrot/tests/flows/dev_loop/test_subagent_parity.py -q`)
+hits a pre-existing, repo-wide pytest rootdir collision
+(`ImportPathMismatchError` on `tests.conftest` — both `tests/` and
+`packages/ai-parrot/tests/` package as `tests`) that is reproducible on
+unmodified `dev` with unrelated test files, unrelated to this feature; ran
+the two suites separately instead (`142 passed` and `10 passed, 1 skipped`
+respectively), both green.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Deviations from spec**: none. (Note: this worktree also needed its
+compiled Cython `.so` extensions copied from the main checkout before any
+suite importing `parrot` would even collect — a known, harmless,
+gitignored environment gap unrelated to this task.)
 
-**Deviations from spec**: none | describe if any
+Seat: haiku (native) · Backend: n/a · Model: claude-sonnet-5 (haiku
+implementation, sonnet verification) · Attempts: 1 (merged first try,
+correctly scoped this time — commits only the listed test file) ·
+Duration: 234.06s · Tokens: 71871 (subagent-reported combined)

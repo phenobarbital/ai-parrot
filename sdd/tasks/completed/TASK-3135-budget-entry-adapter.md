@@ -390,8 +390,38 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: sdd-worker orchestrator (parrot-sdd-coder native haiku seat returned a
+`fidelity_violation` — it wrote `sdd/tasks/completed/...` and `sdd/tasks/index/...` itself,
+which is the orchestrator's job only; per the FEAT-549 fidelity gate the merge was refused
+and the orchestrator implemented the task directly as the required next attempt)
+**Date**: 2026-09-11
+**Notes**: Appended `_MISSING`, `BUDGET_KWARGS`, `BudgetDefaults`, `BudgetRequest`,
+`resolve_budget_request` (root/child/disabled decision table from spec §2.1, including the
+child-conflict raise for any differing setting and the `ValueError` for non-default mode/
+reserve without an effective budget), `_enter_scope`, `_amend_signature`,
+`wrap_budgeted_coroutine`, `wrap_budgeted_async_generator` (scope held through iteration via
+`async with scope: async for item in fn(...): yield item`, mirroring the coroutine wrapper's
+pass-through/resolve/gate branches), and `budget_entry` to `budget_scope.py`. Extended
+`test_token_budget_scope.py` with `TestResolveBudgetRequest` (omission vs explicit-None,
+child-conflict inside an active scope, non-default options without a budget, `budget_snapshot`
+rejected outside `resume`) and `TestEntryWrappers` (identity/signature/`__wrapped__`
+preservation, idempotent re-wrapping, no-budget pass-through with keyword stripping, the
+async-generator wrapper holding `current_budget_scope()` through iteration and resetting after,
+and a `resume()` reattachment test using a stub whose constructor `token_budget` matches the
+original session so the wrapper's own decision logic — not a manual override — drives it into
+`registry.resume(state, snapshot=...)`).
+Verified: `pytest packages/ai-parrot/tests/unit/clients/test_token_budget_scope.py -v` → 18
+passed; `pytest packages/ai-parrot/tests/unit/clients -q` → 387 passed / 1 pre-existing
+unrelated failure (`test_client_class_attrs[google]`); `ruff check` clean on `budget_scope.py`
+and the test file.
+Note: a separate automated process (commit `be58462d0`, "style: apply black formatting (post
+sdd-worker)") reformatted several FEAT-550 files concurrently with this task; verified all
+affected suites still pass after that reformat before building on top of it.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
+
+Seat: haiku (native), attempt 1 → `fidelity_violation` (touched `sdd/` files out of scope) ·
+sdd-worker orchestrator, attempt 2 (implemented directly) · Backend: n/a → orchestrator (Claude
+Sonnet 5) · Attempts: 1 (pool, rejected by fidelity gate) + 1 (orchestrator) · Duration: 332.6s
+(pool, discarded) + orchestrator implementation/test-authoring time · Tokens: 103792
+(subagent_tokens, discarded — not merged).

@@ -489,10 +489,23 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestrator (parrot-sdd-coder pool: qwen attempt 1 timed out, gemini attempt 2 succeeded)
+**Date**: 2026-09-11
+**Notes**: Implemented the six immutable Pydantic records (`TokenBudgetPolicy`,
+`TokenEstimate`, `BudgetUsage`, `BudgetReservation`, `BudgetReport`,
+`BudgetSnapshot`) in `parrot/models/token_budget.py` with strict validation and
+decimal-string arithmetic for `final_reserve_tokens` rounding. Added the
+`BudgetError` hierarchy (8 typed subclasses) to `parrot/core/exceptions.py`.
+Added the optional `budget_report` field (default `None`) to `InvokeResult` in
+`parrot/models/responses.py`. All acceptance criteria verified in the
+orchestrator worktree: imports resolve, `TokenBudgetPolicy(token_budget=10_000
+).final_reserve_tokens == 1500`, `InvokeResult` constructs without
+`budget_report`, `pytest packages/ai-parrot/tests/unit/clients/test_token_budget.py
+-v` → 14 passed, `pytest packages/ai-parrot/tests/unit/clients -q` → 359 passed /
+1 pre-existing failure unrelated to this task (`test_client_class_attrs[google]`,
+confirmed failing on `dev` HEAD before this change too), `ruff check` clean on
+both touched files.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Deviations from spec**: none
 
-**Deviations from spec**: none | describe if any
+Seat: qwen (attempt 1, timed out after 553.9s) → gemini (attempt 2, succeeded) · Backend: nova → google-compat · Model: qwen.qwen3-coder-480b-a35b-instruct → gemini-3.5-flash · Attempts: 2 · Duration: 635.65s · Tokens: 651315 in / 6543 out

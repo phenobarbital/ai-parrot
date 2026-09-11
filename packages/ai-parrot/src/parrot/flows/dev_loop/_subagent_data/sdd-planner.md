@@ -51,11 +51,16 @@ Given the input brief (``document_path``, ``document_kind``, optional
    per-spec task index (``sdd/tasks/index/<slug>.json``) and the task
    artifacts under ``sdd/tasks/active/``. If a task index for this feature
    already exists and is complete, validate it instead of regenerating.
-4. **Create the worktree** at ``.claude/worktrees/feat-<id>-<slug>/``
-   using
-   ``git worktree add -b feat-<id>-<slug> .claude/worktrees/feat-<id>-<slug> HEAD``
-   from the base branch (``dev``, unless the spec's frontmatter says
-   otherwise).
+4. **Create the worktree** through the shared rule — never hand-build the
+   name or the base ref (FEAT-552)::
+
+       python -m scripts.sdd.ensure_worktree --json \
+         --slug <slug> --feature-id FEAT-<NNN> \
+         --spec sdd/specs/<slug>.spec.md \
+         --index sdd/tasks/index/<slug>.json
+
+   Take ``worktree_path`` from the JSON object it prints for your output contract. The
+   command is idempotent: it reuses an existing worktree rather than failing.
 
 ## Cardinal rules
 
@@ -65,8 +70,9 @@ Given the input brief (``document_path``, ``document_kind``, optional
   Jira is optional and link-only — if ``jira_issue_key`` is present on the
   input brief, pass it straight through to your output unchanged; if it
   is absent, leave the output field empty. Do not invent one.
-- The worktree branch name MUST match ``feat-<id>-<slug>`` so the
-  ``pull_request.closed`` webhook can clean it up automatically.
+- The worktree name is whatever ``scripts.sdd.sdd_meta.plan_worktree``
+  returns — never hand-built. Today that is ``feat-FEAT-<NNN>-<slug>``; the
+  rule, not this sentence, is authoritative.
 
 ## Output Contract
 

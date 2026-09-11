@@ -302,10 +302,36 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestrator (parrot-sdd-coder pool: codex-spark CLI arg error on attempt 1,
+qwen timed out on attempt 2 — no code was produced by either; orchestrator implemented directly as attempt 3)
+**Date**: 2026-09-11
+**Notes**: Added the `BudgetError` re-raise guard to `AbstractTool.execute()`'s except block
+(placed before the existing `AuthorizationRequired`/`CredentialRequired` escape hatches, per the
+blueprint), `except BudgetError: raise` before the broad `except Exception` in
+`ToolManager.execute_tool_call`, and three independent guards in `ModelSwitchingMixin`:
+`should_switch_on()` returns `False` for `BudgetError`, `_fallback_call` re-raises `BudgetError`
+before calling the secondary, and `_contrastive_call` re-raises a `BudgetError` from either branch
+(primary checked first) instead of returning the surviving branch. Created
+`packages/ai-parrot/tests/unit/tools/test_token_budget_propagation.py` reusing the
+`FakeClient`/`SwitchingBot`/`make_bot` fixture pattern from
+`tests/bots/test_model_switching_mixin.py` (per the task's own instruction to look for an
+existing model-switching test host first) — 8 tests covering tool re-raise, manager re-raise,
+the `AuthorizationRequired` escape-hatch-still-works regression check, `should_switch_on` veto,
+fallback non-triggering, and both contrastive scenarios (one branch raises, both raise —
+primary wins).
+Verified: `pytest packages/ai-parrot/tests/unit/tools/test_token_budget_propagation.py -v` → 8
+passed; `pytest packages/ai-parrot/tests/unit/tools -q` → 127 passed / 7 pre-existing failures
+confirmed identical on `dev` HEAD (test-order pollution in the infographic/adhoc-dataset suites,
+unrelated to this task — same 7 tests fail in isolation from `dev` too); `pytest packages/ai-parrot/
+tests/bots/test_model_switching_mixin.py -q` → 21 passed (no regressions); `ruff check` clean on
+`tools/abstract.py`, `bots/mixins/model_switching.py` and the new test file; `tools/manager.py`'s
+only ruff finding (`F821 Undefined name AbstractToolkit` at a forward-ref type hint, one line
+shifted by my added import) is confirmed pre-existing on `dev` HEAD, not introduced by this task.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Deviations from spec**: none
 
-**Deviations from spec**: none | describe if any
+Seat: codex-spark (attempt 1, CLI `--ask-for-approval` arg incompatibility, 1.1s) → qwen (attempt 2,
+timed out after 552.7s, no code produced) → sdd-worker orchestrator (attempt 3, implemented directly)
+· Backend: codex → nova → orchestrator (Claude Sonnet 5) · Attempts: 2 (pool, both non-productive) + 1
+(orchestrator) · Duration: 1.1s + 552.7s (pool) + orchestrator implementation/test-authoring time ·
+Tokens: pool attempts produced no billable output (dispatch-level failures).

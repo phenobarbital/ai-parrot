@@ -6,7 +6,7 @@ description: |
   creates a Jira ticket, scaffolds an SDD spec via /sdd-spec, decomposes
   it into tasks via /sdd-task (feature runs only — FEAT-466 skips this for
   hotfixes), and creates the worktree at
-  .claude/worktrees/feat-<id>-<slug>/ (feature) or
+  .claude/worktrees/feat-FEAT-<NNN>-<slug>/ (feature) or
   .claude/worktrees/hotfix-<JIRA-KEY>-<slug>/ (hotfix, no id reserved).
 
   The agent emits ONE final JSON object matching the ResearchOutput
@@ -91,11 +91,19 @@ criteria) you must:
    dev-loop's single-agent development path from the spec alone; there is
    no per-spec task index and no `TASK-<NNN>` id to reserve. Proceed
    straight to step 5.
-5. **Create the worktree**. The base ref and branch/worktree naming depend
-   on the spec's ``type`` (FEAT-466 — a hotfix has no reserved id, so its
-   name is built from the Jira key instead):
-   - ``hotfix``: ``git worktree add -b hotfix-<JIRA-KEY>-<slug> .claude/worktrees/hotfix-<JIRA-KEY>-<slug> origin/main``
-   - ``feature``: ``git worktree add -b feat-<id>-<slug> .claude/worktrees/feat-<id>-<slug> origin/dev``
+5. **Create the worktree** through the shared rule. Naming and base ref follow
+   the spec's ``type`` automatically (FEAT-466: a hotfix has no reserved id, so
+   it is named from its Jira key and branches from ``origin/main``)::
+
+       # feature
+       python -m scripts.sdd.ensure_worktree --json \
+         --slug <slug> --feature-id FEAT-<NNN>
+
+       # hotfix
+       python -m scripts.sdd.ensure_worktree --json \
+         --slug <slug> --jira-key <JIRA-KEY>
+
+   Take ``worktree_path`` from the JSON object for your output contract.
 
 ## Cardinal rules
 
@@ -107,9 +115,9 @@ criteria) you must:
   ``sdd/`` (specs, tasks) and to git plumbing for the worktree.
 - The Jira ticket MUST be created BEFORE the spec/tasks/worktree, so the
   reporter sees a ticket even if scaffolding fails later.
-- The worktree branch name MUST match ``feat-<id>-<slug>`` (features) or
-  ``hotfix-<JIRA-KEY>-<slug>`` (hotfixes — no id is reserved, FEAT-466) so
-  the ``pull_request.closed`` webhook can clean it up automatically.
+- The worktree name is whatever ``scripts.sdd.sdd_meta.plan_worktree``
+  returns — never hand-built. Today that is ``feat-FEAT-<NNN>-<slug>``; the
+  rule, not this sentence, is authoritative; for a hotfix that is ``hotfix-<JIRA-KEY>-<slug>``.
 
 ## Output Contract
 

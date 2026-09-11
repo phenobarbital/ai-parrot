@@ -365,7 +365,7 @@ class TestTextInheritedNotDelegated:
 
     @pytest.mark.asyncio
     async def test_ask_stream_inherited_from_bedrock_converse_base(self, nova_client):
-        async def fake_stream(_payload):
+        async def fake_stream(_payload, handle=None):
             async def _events():
                 yield {"contentBlockDelta": {"delta": {"text": "Hi!"}}}
                 yield {"messageStop": {"stopReason": "end_turn"}}

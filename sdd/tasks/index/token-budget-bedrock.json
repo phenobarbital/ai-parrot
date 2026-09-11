@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-11T00:00:00+00:00",
-  "completed_at": null,
+  "completed_at": "2026-09-11T13:40:21+00:00",
   "tasks": [
     {
       "id": "TASK-3132",
@@ -14,7 +14,7 @@
       "feature_id": "FEAT-550",
       "feature": "token-budget-bedrock",
       "spec": "sdd/specs/token-budget-bedrock.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,9 @@
       "parallelism_notes": "Foundation: every other task imports these records/errors. Must land first.",
       "assigned_to": null,
       "started_at": "2026-09-10T23:40:10+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3132-token-budget-models-and-errors.md"
+      "completed_at": "2026-09-10T23:54:36+00:00",
+      "file": "sdd/tasks/completed/TASK-3132-token-budget-models-and-errors.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3133",
@@ -32,7 +33,7 @@
       "feature_id": "FEAT-550",
       "feature": "token-budget-bedrock",
       "spec": "sdd/specs/token-budget-bedrock.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -42,8 +43,9 @@
       "parallelism_notes": "Imports TASK-3132 records; owns clients/budget.py which TASK-3134/3141 later extend.",
       "assigned_to": null,
       "started_at": "2026-09-10T23:40:10+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3133-question-budget-ledger.md"
+      "completed_at": "2026-09-11T00:07:36+00:00",
+      "file": "sdd/tasks/completed/TASK-3133-question-budget-ledger.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3134",
@@ -52,7 +54,7 @@
       "feature_id": "FEAT-550",
       "feature": "token-budget-bedrock",
       "spec": "sdd/specs/token-budget-bedrock.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -62,8 +64,9 @@
       "parallelism_notes": "Extends QuestionBudget (restore_settled) and creates budget_scope.py that TASK-3135 appends to.",
       "assigned_to": null,
       "started_at": "2026-09-10T23:40:10+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3134-budget-scope-registry.md"
+      "completed_at": "2026-09-11T00:28:10+00:00",
+      "file": "sdd/tasks/completed/TASK-3134-budget-scope-registry.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3135",
@@ -72,7 +75,7 @@
       "feature_id": "FEAT-550",
       "feature": "token-budget-bedrock",
       "spec": "sdd/specs/token-budget-bedrock.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -82,8 +85,9 @@
       "parallelism_notes": "Same module (budget_scope.py) as TASK-3134; sequential to avoid conflicting edits.",
       "assigned_to": null,
       "started_at": "2026-09-10T23:40:10+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3135-budget-entry-adapter.md"
+      "completed_at": "2026-09-11T00:38:16+00:00",
+      "file": "sdd/tasks/completed/TASK-3135-budget-entry-adapter.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3136",
@@ -92,7 +96,7 @@
       "feature_id": "FEAT-550",
       "feature": "token-budget-bedrock",
       "spec": "sdd/specs/token-budget-bedrock.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -102,8 +106,9 @@
       "parallelism_notes": "Foundational edit to parrot/clients/base.py (spec §7 highest-risk change); all provider tasks depend on it. Needs senior review per spec §3 M3.",
       "assigned_to": null,
       "started_at": "2026-09-10T23:40:10+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3136-abstract-client-budget-gate.md"
+      "completed_at": "2026-09-11T01:02:45+00:00",
+      "file": "sdd/tasks/completed/TASK-3136-abstract-client-budget-gate.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3137",
@@ -112,7 +117,7 @@
       "feature_id": "FEAT-550",
       "feature": "token-budget-bedrock",
       "spec": "sdd/specs/token-budget-bedrock.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -122,8 +127,9 @@
       "parallelism_notes": "Edits bots/abstract.py, bots/base.py and budget_scope.py (designate_owner); shares test file with TASK-3136.",
       "assigned_to": null,
       "started_at": "2026-09-10T23:40:10+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3137-bot-budget-boundary.md"
+      "completed_at": "2026-09-11T01:23:55+00:00",
+      "file": "sdd/tasks/completed/TASK-3137-bot-budget-boundary.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3138",
@@ -132,7 +138,7 @@
       "feature_id": "FEAT-550",
       "feature": "token-budget-bedrock",
       "spec": "sdd/specs/token-budget-bedrock.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -142,8 +148,9 @@
       "parallelism_notes": "Only needs BudgetError (TASK-3132). Touches tools/abstract.py, tools/manager.py, mixins/model_switching.py and its own test file — no file shared with TASK-3133..3137 or TASK-3139. Safe in a separate worktree.",
       "assigned_to": null,
       "started_at": "2026-09-10T23:40:10+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3138-budget-error-propagation.md"
+      "completed_at": "2026-09-11T00:12:42+00:00",
+      "file": "sdd/tasks/completed/TASK-3138-budget-error-propagation.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3139",
@@ -152,7 +159,7 @@
       "feature_id": "FEAT-550",
       "feature": "token-budget-bedrock",
       "spec": "sdd/specs/token-budget-bedrock.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -162,8 +169,9 @@
       "parallelism_notes": "Creates only new files in the Amazon satellite (budget.py, budget_qualifications.py, its test). Imports records/errors from TASK-3132 and the clients.budget re-export from TASK-3133; no client edits. Safe alongside TASK-3134..3138.",
       "assigned_to": null,
       "started_at": "2026-09-10T23:40:10+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3139-bedrock-budget-adapter.md"
+      "completed_at": "2026-09-11T00:24:02+00:00",
+      "file": "sdd/tasks/completed/TASK-3139-bedrock-budget-adapter.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3140",
@@ -172,7 +180,7 @@
       "feature_id": "FEAT-550",
       "feature": "token-budget-bedrock",
       "spec": "sdd/specs/token-budget-bedrock.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -183,8 +191,9 @@
       "parallelism_notes": "Edits amazon/bedrock.py; needs the AbstractClient gate and the adapter. Sequential with TASK-3141 (same file).",
       "assigned_to": null,
       "started_at": "2026-09-10T23:40:10+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3140-bedrock-attempt-hooks-transport.md"
+      "completed_at": "2026-09-11T01:41:48+00:00",
+      "file": "sdd/tasks/completed/TASK-3140-bedrock-attempt-hooks-transport.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3141",
@@ -193,7 +202,7 @@
       "feature_id": "FEAT-550",
       "feature": "token-budget-bedrock",
       "spec": "sdd/specs/token-budget-bedrock.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -203,8 +212,9 @@
       "parallelism_notes": "Same file as TASK-3140 (bedrock.py); also adds QuestionBudget.set_answer_complete in clients/budget.py.",
       "assigned_to": null,
       "started_at": "2026-09-10T23:40:10+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3141-bedrock-finalization-loops.md"
+      "completed_at": "2026-09-11T02:43:29+00:00",
+      "file": "sdd/tasks/completed/TASK-3141-bedrock-finalization-loops.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3142",
@@ -213,7 +223,7 @@
       "feature_id": "FEAT-550",
       "feature": "token-budget-bedrock",
       "spec": "sdd/specs/token-budget-bedrock.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -224,8 +234,9 @@
       "parallelism_notes": "Appends to amazon/budget.py (owned first by TASK-3139 — spec §7 shared-ownership rule) and edits openai_base.py + nova/mantle.py. Does not touch bedrock.py, so it may run concurrently with TASK-3140/3141 only if amazon/budget.py appends are coordinated; default sequential.",
       "assigned_to": null,
       "started_at": "2026-09-10T23:40:10+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3142-mantle-adapter-chat-completion-hooks.md"
+      "completed_at": "2026-09-11T01:28:23+00:00",
+      "file": "sdd/tasks/completed/TASK-3142-mantle-adapter-chat-completion-hooks.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3143",
@@ -234,7 +245,7 @@
       "feature_id": "FEAT-550",
       "feature": "token-budget-bedrock",
       "spec": "sdd/specs/token-budget-bedrock.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -244,8 +255,9 @@
       "parallelism_notes": "Same file as TASK-3142 (openai_base.py).",
       "assigned_to": null,
       "started_at": "2026-09-10T23:40:10+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3143-mantle-finalization-loops.md"
+      "completed_at": "2026-09-11T02:44:37+00:00",
+      "file": "sdd/tasks/completed/TASK-3143-mantle-finalization-loops.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3144",
@@ -254,7 +266,7 @@
       "feature_id": "FEAT-550",
       "feature": "token-budget-bedrock",
       "spec": "sdd/specs/token-budget-bedrock.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -267,8 +279,9 @@
       "parallelism_notes": "Test-only; new file under tests/integration. Independent of TASK-3145 (docs) — the two can run in parallel once all providers land.",
       "assigned_to": null,
       "started_at": "2026-09-10T23:40:10+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3144-token-budget-integration-tests.md"
+      "completed_at": "2026-09-11T03:13:22+00:00",
+      "file": "sdd/tasks/completed/TASK-3144-token-budget-integration-tests.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3145",
@@ -277,7 +290,7 @@
       "feature_id": "FEAT-550",
       "feature": "token-budget-bedrock",
       "spec": "sdd/specs/token-budget-bedrock.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -288,8 +301,9 @@
       "parallelism_notes": "Docs + examples only; no source or test files shared with TASK-3144.",
       "assigned_to": null,
       "started_at": "2026-09-10T23:40:10+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3145-token-budget-docs-and-probe.md"
+      "completed_at": "2026-09-11T02:56:20+00:00",
+      "file": "sdd/tasks/completed/TASK-3145-token-budget-docs-and-probe.md",
+      "verification": "verified"
     }
   ]
 }

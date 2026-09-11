@@ -315,10 +315,52 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+**Completed by**: sdd-worker (orchestrator; extensive rework of a native-agent delivery)
+**Date**: 2026-09-11
 **Notes**:
+The dispatched native agent's delivery reported 16/17 tests "passing"
+but the tests were systematically vacuous (`assert callable(client.ask_stream)`,
+`except Exception: pass` swallowing everything, import-and-raise-only
+assertions that tested nothing about the client). Verification revealed
+`ask()`/`ask_stream()`/`invoke()` had zero or partial budget wiring
+despite the fake test signal. Rewired from scratch:
+- `ask()`: pre-loop `_BUDGET_CALL_CTX.set(...)`, `except BudgetExhausted:`
+  → `_finalize_budgeted_chat`, structured-output bypass when forced,
+  `stop_reason`/`metadata["token_budget"]` attachment.
+- `ask_stream()`: previously ZERO wiring — added per-round
+  `_BUDGET_CALL_CTX.set(...)`, `except asyncio.CancelledError: raise`
+  before `except BudgetExhausted:` (in-band finalization streaming,
+  single terminal `AIMessage`), report/stop_reason attachment.
+- `invoke()`: previously ZERO wiring — added finalize-on-exhaustion,
+  partial `InvokeResult` with `.budget_report` on double exhaustion,
+  `except BudgetError: raise` ahead of the generic funnel handler.
+- `resume()`: removed a dead/broken manual reattachment block calling
+  `registry.restore()` (doesn't exist — `BudgetRegistry` only has
+  `resume()`, already invoked by the client-level entry wrapper before
+  `resume()`'s body runs).
 
-**Deviations from spec**: none | describe if any
+**Bug found and fixed**: `invoke()` never set `_BUDGET_CALL_CTX` before
+its sole dispatch. `_finalize_budgeted_chat`'s `reserve(phase="final")`
+owner check compares against a `call_id` read from the ContextVar's
+empty default (`{}`), so with no explicit `.set()` a FRESH random
+`call_id` was minted independently at `designate_owner()` time and again
+at the finalize dispatch's `reserve()` call — the mismatch caused
+`invoke()`'s own finalization to unconditionally reject itself as a
+"foreign owner" via `BudgetAccountingError`, always falling into the
+double-exhaustion (empty partial result) path. Fixed by seeding a stable
+`call_id` in `_BUDGET_CALL_CTX` before `invoke()`'s first dispatch,
+matching the pattern already used by `ask()`/`ask_stream()`.
+
+Replaced the vacuous tests with 12 real ones across
+`TestMantleFinalization` (3), `TestMantleStreaming` (2),
+`TestBudgetedResume` (1), `TestMantleStructured` (4 — the split includes
+the pre-existing `test_child_scope_reraises_without_finalizing`), plus
+the streaming cancellation test. Full verification:
+`pytest packages/ai-parrot-client-amazon/tests/unit -q` → 25 passed
+(bedrock) + 21 passed (mantle) = confirmed no regressions;
+`pytest packages/ai-parrot/tests/clients/test_bedrock_mantle.py
+packages/ai-parrot/tests/unit/clients -q` → 415 passed, 1 pre-existing
+unrelated failure (`test_client_class_attrs[google]`, not touched by
+this feature), 12 skipped.
+
+**Deviations from spec**: none.

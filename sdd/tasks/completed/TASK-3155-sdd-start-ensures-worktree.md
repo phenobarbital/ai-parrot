@@ -215,10 +215,26 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (fallback — the parrot-sdd-coder codex-spark
+attempt failed instantly on a CLI argument mismatch, `--ask-for-approval`;
+the qwen/nova retry then timed out after ~9 minutes)
+**Date**: 2026-09-11
+**Notes**: Replaced `### 3. Detect Context` with `### 3. Ensure the
+Worktree` in `.claude/commands/sdd-start.md`, applying the blueprint text
+verbatim, and mirrored the identical edit into `.agent/workflows/sdd-start.md`
+(preserving its `description:` frontmatter). Verified all 7 acceptance
+criteria: the new heading exists and the old one is gone, the section
+invokes `python -m scripts.sdd.ensure_worktree` and `cd`s to `$WT`, no
+`git worktree add` remains, §1-§9 headings are each present exactly once
+and unrenumbered, the twin carries the same section with its frontmatter
+intact, `pytest tests/sdd_scripts/test_command_twin_parity.py -q` still
+reports `2 passed` (no worse than the TASK-3156 baseline), and the section
+reads `type`/`base_branch` from the per-spec index header, not spec
+frontmatter.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Deviations from spec**: none
 
-**Deviations from spec**: none | describe if any
+Seat: sdd-worker (sonnet, direct) · Backend: n/a (fallback after two MCP-seat
+failures) · Model: claude-sonnet-5 · Attempts: 3 (codex-spark CLI-arg error
+1.08s, qwen/nova timeout 551.89s, direct fallback success) · Duration: n/a
+(fallback) · Tokens: n/a

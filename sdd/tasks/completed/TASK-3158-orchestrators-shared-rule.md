@@ -251,10 +251,27 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestrator (FEAT-549 pool) + sdd-worker fixup
+**Date**: 2026-09-11
+**Notes**: Replaced the inline `git worktree add` in `sdd-planner` step 4,
+`sdd-research` step 5, and `sdd-autopilot` §6 with
+`python -m scripts.sdd.ensure_worktree --json`; restated each cardinal
+rule to defer to `plan_worktree`; mirrored all three edits to
+`_subagent_data/`. AC checks initially found one gap the merged attempt
+missed: `sdd-research.md`'s YAML frontmatter `description` (line 9) still
+quoted the legacy `feat-<id>-<slug>` template — AC-2's repo-wide grep
+covers all of `.claude/`, not just the numbered steps. Fixed the command
+and its twin; `cmp` exits 0 for all three pairs and
+`pytest packages/ai-parrot/tests/flows/dev_loop/test_subagent_parity.py -q`
+now reports `10 passed, 1 skipped`. (Note: this worktree needed its
+compiled Cython `.so` extensions copied over from the main checkout
+before that suite could even import `parrot` — a known environment gap,
+unrelated to this task, harmless since `.so` artifacts are gitignored.)
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Deviations from spec**: none (the frontmatter fix touched only a file
+already listed for this task)
 
-**Deviations from spec**: none | describe if any
+Seat: gemini · Backend: google-compat · Model: gemini-3.5-flash · Attempts: 2
+(1 qwen/nova timeout, 1 gemini/google-compat success) · Duration: 631.06s ·
+Tokens: 1173485 in / 3455 out (+ sdd-worker direct fixup for the residual
+frontmatter template, untimed)
