@@ -6,7 +6,7 @@ description: |
   creates a Jira ticket, scaffolds an SDD spec via /sdd-spec, decomposes
   it into tasks via /sdd-task (feature runs only — FEAT-466 skips this for
   hotfixes), and creates the worktree at
-  .claude/worktrees/feat-<id>-<slug>/ (feature) or
+  .claude/worktrees/feat-FEAT-<NNN>-<slug>/ (feature) or
   .claude/worktrees/hotfix-<JIRA-KEY>-<slug>/ (hotfix, no id reserved).
 
   The agent emits ONE final JSON object matching the ResearchOutput
