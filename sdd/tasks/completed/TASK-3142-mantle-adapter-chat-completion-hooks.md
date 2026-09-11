@@ -482,8 +482,41 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: sdd-worker orchestrator (parrot-sdd-coder native haiku seat; orchestrator
+strengthened test coverage during acceptance-criteria verification)
+**Date**: 2026-09-11
+**Notes**: The native agent implemented `MantleBudgetAdapter` (counting over messages/tools/
+response_format, usage normalization where cached/reasoning details are never re-added into
+the aggregate), `_BUDGET_CALL_CTX` and `budget_adapter_factory` on `OpenAIBaseClient`,
+`_chat_completion_budgeted`/`_budgeted_stream` (per-attempt reservation on a
+`with_options(max_retries=0)` no-retry view, forwarded output cap, settle-once stream
+handling with uncertain-marking on missing/unparseable usage), and `BedrockMantleClient`'s
+explicit opt-in. During review I found the delivered test suite's `TestChatCompletionHooks`
+group contained only two shallow "structure" tests (asserting class attributes exist) despite
+defining a `_fake_openai()` mock-client helper that was never actually invoked — none of the
+four functional acceptance criteria this task itself calls out (per-attempt reservation via
+the no-retry view; forwarded cap == reservation.output_cap; stream settling once at the
+usage-bearing chunk; missing/unparseable usage marking the reservation uncertain) were
+exercised end-to-end. Added four real tests using `_fake_openai()` against a
+`BedrockMantleClient` instance (patching `get_client()` + `_ensure_client()`, since direct
+`client.client = ...` assignment is rejected by the per-loop-cache property setter):
+`test_per_attempt_reservation_uses_no_retry_view_and_forwards_cap` (asserts the SHARED
+retrying client's `create` is never called, only the `with_options(max_retries=0)` view's
+is, and the forwarded cap respects the reservation), `test_stream_settles_once_at_usage_chunk`,
+`test_stream_missing_usage_marks_uncertain`, and the explicitly-required-but-missing
+`test_parse_failure_without_usage_marks_uncertain` (malformed usage dict missing aggregate
+fields → `mark_uncertain`, not a raised exception or a settle).
+Verified: `pytest packages/ai-parrot-client-amazon/tests/unit/test_token_budget_mantle.py -v`
+→ 11 passed (up from 7); `pytest packages/ai-parrot/tests/clients/test_bedrock_mantle.py
+packages/ai-parrot/tests/unit/clients -q` → 415 passed / 1 pre-existing unrelated failure;
+`pytest packages/ai-parrot-client-amazon/tests/unit -q` → 41 passed (no regression); `ruff
+check` clean on all four touched/new files.
+
+**Deviations from spec**: none — added test coverage for acceptance criteria the delivered
+tests did not actually exercise; no production-code changes were needed.
+
+Seat: haiku (native) · Backend: n/a · Model: haiku · Attempts: 1 · Duration: 520.5s · Tokens:
+130013 (subagent_tokens, in+out combined) · Tool uses: 68 · Orchestrator added 4 functional
+tests on top.
 
 **Deviations from spec**: none | describe if any

@@ -470,10 +470,32 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestrator (parrot-sdd-coder pool attempted gemini a1, left uncommitted;
+codex-spark CLI arg error, qwen timeout — orchestrator implemented TASK-3133 directly as attempt 3)
+**Date**: 2026-09-11
+**Notes**: Adopted the `QuestionBudget` ledger implementation from the pool's gemini attempt
+(`clients/budget.py`, reviewed line-by-line against the blueprint skeleton — all six mutator
+signatures, the `_available`/`_report_locked` formulas, and the exactly-once state machine matched
+spec §2.2/§2.3 exactly) after fixing one bug found during review: `BudgetSnapshotInvalid` was listed
+in `__all__` but never imported from `parrot.core.exceptions`, which `ruff check` caught as
+`F822 Undefined name`. The pool's proposed test additions used hardcoded absolute worktree paths and
+`sys.modules` monkeypatching to work around its own import issues — these were rejected as
+environment-specific hacks, not a spec-scaffold-faithful test suite. Instead I wrote the ledger test
+groups myself, following the blueprint's exact scaffold (`TestReservationArithmetic`,
+`TestExactlyOnce`, `TestConcurrency`, `asyncio.Event` barriers per spec §4 fixtures — never `sleep`),
+filling every FILL IN with the spec §2.3 default-reserve example, exactly-once/strict-mode/overrun
+cases, and barrier-synchronized single-admission/single-owner-claim races.
+Verified: `pytest packages/ai-parrot/tests/unit/clients/test_token_budget.py -v` → 24 passed;
+`pytest packages/ai-parrot/tests/unit/clients -q` → 369 passed / 1 pre-existing failure unrelated to
+this task (`test_client_class_attrs[google]`, confirmed failing on `dev` HEAD before FEAT-550);
+`ruff check packages/ai-parrot/src/parrot/clients/budget.py` clean; confirmed no import of
+`parrot.clients.budget` was added to `parrot/clients/__init__.py`.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Deviations from spec**: none
 
-**Deviations from spec**: none | describe if any
+Seat: gemini (attempt 1, produced code but left it uncommitted — dirty_task_worktree) → codex-spark
+(attempt 2, CLI arg error) → qwen (attempt 2b/parallel retry, timed out after 552.7s) → sdd-worker
+orchestrator (attempt 3, adopted+fixed gemini's `budget.py`, wrote tests from scratch) · Backend:
+google-compat → codex → nova → orchestrator (Claude Sonnet 5) · Attempts: 3 (pool) + 1 (orchestrator)
+· Duration: 154.8s + 1.1s + 552.7s (pool, all non-committing) + orchestrator review/fix/test-authoring
+time · Tokens: pool usage not attributed per-attempt for failed/dirty outcomes.

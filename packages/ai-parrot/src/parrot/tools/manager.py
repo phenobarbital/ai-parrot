@@ -17,6 +17,7 @@ from .compression.tee import CompressionTee
 from .mcp_mixin import MCPToolManagerMixin
 from ..a2a.models import RegisteredAgent, AgentCard
 from ..auth.exceptions import AuthorizationRequired
+from ..core.exceptions import BudgetError
 
 if TYPE_CHECKING:
     from ..auth.permission import PermissionContext
@@ -2271,6 +2272,8 @@ class ToolManager(MCPToolManagerMixin):
         try:
             tool_result = await self.execute_tool(tool_name, tool_input, permission_context=permission_context)
             return {"type": "tool_result", "tool_use_id": tool_id, "content": str(tool_result)}
+        except BudgetError:
+            raise  # FEAT-550 §3 M3: never serialize budget control as model input
         except Exception as e:
             return {"type": "tool_result", "tool_use_id": tool_id, "is_error": True, "content": str(e)}
 
