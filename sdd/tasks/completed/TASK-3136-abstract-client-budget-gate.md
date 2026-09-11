@@ -369,8 +369,41 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: sdd-worker orchestrator (parrot-sdd-coder pool: qwen attempt 1 timed out,
+gemini attempt 2 succeeded); orchestrator performed the senior review this task explicitly
+flags as required (spec §7 "the largest integration risk")
+**Date**: 2026-09-11
+**Notes**: Reviewed gemini's diff line-by-line against the blueprint before accepting. It
+matched exactly: `budget_supported_methods: FrozenSet[str] = frozenset()`, the cooperative
+`__init_subclass__` wrapping only concrete overrides in `cls.__dict__` (never abstract
+declarations, never re-wrapping inherited/thin-subclass methods), constructor consumption of
+the four §2.1 keywords into an immutable `BudgetDefaults`, eager `TokenBudgetPolicy(...)`
+construction so a bad constructor `token_budget` fails at construction time, and the
+`_budget_defaults()`/`_budget_gate()` hooks with the `BudgetUnsupported` refusal. Found and
+fixed one regression during review: the coder placed the new `_BUDGETED_METHODS` module-level
+tuple in the middle of `base.py`'s existing import block (between two pre-existing import
+statements), which is not an import itself and made ruff flag E402 on every import below it;
+moved it to just above `LLM_PRESETS` after all imports. Also found the test file was missing
+`test_budget_snapshot_only_on_resume`, an explicitly required addition per the task's own Test
+Specification section — added it (`ask(..., budget_snapshot=...)` raises `TypeError`).
+Verified: `python -c "import parrot.clients.base"` succeeds (no import cycle);
+`pytest packages/ai-parrot/tests/unit/clients/test_token_budget_boundaries.py -v` → 10 passed;
+`pytest packages/ai-parrot/tests/unit/clients -q` → 397 passed / 1 pre-existing unrelated
+failure; `pytest packages/ai-parrot-client-amazon/tests/unit -q` → 30 passed (thin subclasses
+inherit wrapped methods without re-wrapping, confirmed); broader regression sweep —
+`packages/ai-parrot/tests/unit/bots` (322 passed / 5 pre-existing failures, confirmed
+byte-identical on `dev` HEAD before this feature) and all four spot-checked satellite client
+packages (anthropic/google/openai/groq, all green) — to cover the foundational-file risk this
+task itself calls out; `ruff check` clean on both files after the E402 fix.
+Note: a separate automated post-commit hook ("style: apply black formatting (post
+sdd-worker)") swept my manual review fixes (the `_BUDGETED_METHODS` relocation and the added
+test) into its own commit alongside genuine black reformatting of unrelated pre-existing code
+in the same files. Content verified correct either way; re-ran the full acceptance-criteria
+suite after that commit to confirm.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
+
+Seat: qwen (attempt 1, timed out after 552.7s) → gemini (attempt 2, succeeded) · Backend: nova →
+google-compat · Model: qwen.qwen3-coder-480b-a35b-instruct → gemini-3.5-flash · Attempts: 2 ·
+Duration: 552.7s + 209.0s · Tokens: 3036738 in / 13036 out (gemini attempt) · Orchestrator senior
+review + 2 fixes (misplaced module-level constant, missing required test) on top.

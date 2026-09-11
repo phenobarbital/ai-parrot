@@ -92,7 +92,7 @@
       "feature_id": "FEAT-550",
       "feature": "token-budget-bedrock",
       "spec": "sdd/specs/token-budget-bedrock.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -102,8 +102,8 @@
       "parallelism_notes": "Foundational edit to parrot/clients/base.py (spec §7 highest-risk change); all provider tasks depend on it. Needs senior review per spec §3 M3.",
       "assigned_to": null,
       "started_at": "2026-09-10T23:40:10+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3136-abstract-client-budget-gate.md"
+      "completed_at": "2026-09-11T01:02:45+00:00",
+      "file": "sdd/tasks/completed/TASK-3136-abstract-client-budget-gate.md"
     },
     {
       "id": "TASK-3137",
