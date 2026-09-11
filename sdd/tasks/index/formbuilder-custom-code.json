@@ -216,7 +216,7 @@
       "feature_id": "FEAT-459",
       "feature": "formbuilder-custom-code",
       "spec": "sdd/specs/formbuilder-custom-code.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -227,8 +227,8 @@
       "parallelism_notes": "Track 2, independent of TASK-3169/3170.",
       "assigned_to": null,
       "started_at": "2026-09-11T16:38:03+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3171-host-broker.md"
+      "completed_at": "2026-09-11T17:40:38+00:00",
+      "file": "sdd/tasks/completed/TASK-3171-host-broker.md"
     },
     {
       "id": "TASK-3172",
