@@ -370,10 +370,43 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+**Completed by**: sdd-worker (orchestrator, direct implementation)
+**Date**: 2026-09-11
 **Notes**:
+Implemented `_finalize_budgeted` (owner check → `claim_finalization` →
+frame → `prepare_finalization` → one `phase="final"` attempt, no retry/
+fallback), wired into `ask`/`resume`/`ask_stream`/`invoke` round sites.
+`AIMessage.metadata["token_budget"]` attached on every budgeted call;
+`stop_reason="budget_exhausted"` set only when forced. Structured output
+bypasses `custom_parser`/`_raise_if_truncated` when forced, marking
+`answer_complete=False`. `ask_stream` streams the finalization text
+in-band and yields exactly one terminal `AIMessage`;
+`except asyncio.CancelledError: raise` precedes the `BudgetExhausted`
+handler so cancellation never triggers finalization. `invoke()` gained
+`except BudgetError: raise` ahead of the generic funnel-error handler and
+returns a partial `InvokeResult` with `.budget_report` when finalization
+itself is denied. Added `QuestionBudget.set_answer_complete()`.
 
-**Deviations from spec**: none | describe if any
+Appended `TestFinalization` (3 SDK calls / no-toolConfig / maxTokens
+bound; zero-reserve propagates partial_text with no closing call;
+oversized-final-input skips inference; final `toolUse` never executed +
+`answer_complete=False`; child scope re-raises without finalizing),
+`TestStreamingFinalization` (in-band chunks + single sentinel;
+cancellation never finalizes), `TestStructuredResult` (budget cutoff
+never reaches `custom_parser`; `InvokeResult.budget_report` populated)
+to `test_token_budget_bedrock.py` — 12 new tests, all passing
+(`pytest packages/ai-parrot-client-amazon/tests/unit -q` → 83 passed).
+
+**Bug found and fixed during verification**: `_finalize_budgeted`'s
+streaming branch originally did `async with self._budgeted_attempt(...)
+as _h: ... return stream_iter, _h` — returning from inside the `async
+with` closes it immediately, and `_budgeted_attempt`'s `finally: if not
+handle.done: await handle.uncertain(...)` fired before the caller
+(`ask_stream`) ever got to iterate the stream and call `_h.settle()` at
+the metadata event. This silently marked every streamed finalization as
+"uncertain" and `finalized` never became `True`. Fixed by entering/
+exiting the `_budgeted_attempt` context manager manually and wrapping
+the returned stream so `__aexit__` only fires once the caller has fully
+consumed it (after `settle()` has already run).
+
+**Deviations from spec**: none.

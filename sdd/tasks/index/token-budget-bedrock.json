@@ -193,7 +193,7 @@
       "feature_id": "FEAT-550",
       "feature": "token-budget-bedrock",
       "spec": "sdd/specs/token-budget-bedrock.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -203,8 +203,8 @@
       "parallelism_notes": "Same file as TASK-3140 (bedrock.py); also adds QuestionBudget.set_answer_complete in clients/budget.py.",
       "assigned_to": null,
       "started_at": "2026-09-10T23:40:10+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3141-bedrock-finalization-loops.md"
+      "completed_at": "2026-09-11T02:43:29+00:00",
+      "file": "sdd/tasks/completed/TASK-3141-bedrock-finalization-loops.md"
     },
     {
       "id": "TASK-3142",
