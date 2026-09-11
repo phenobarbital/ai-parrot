@@ -113,6 +113,15 @@ class _SubprocessSandbox(Sandbox):
         worker = self._worker
         process = worker.process
 
+        # process.stdin/stdout are only None if the subprocess was spawned
+        # without PIPE for that stream — this pool always requests both
+        # (see _create_worker), so a None here means the worker died
+        # between creation and use.
+        if process.stdin is None or process.stdout is None:
+            raise WorkerDiedError(
+                f"worker {worker!r} has no stdin/stdout pipe — process died"
+            )
+
         # Send the context to the worker
         process.stdin.write(encode_frame(ctx))
         await process.stdin.drain()
