@@ -168,12 +168,11 @@ def ensure(
             missing_paths.append(req)
 
     if missing_paths:
-        # Clean up the worktree we just created
-        # Since we cannot use git worktree remove, we can use git worktree prune after deleting the directory,
-        # or we can use git worktree prune. Wait, AC-9 says:
-        # "The module contains no git worktree remove, git branch -D, reset --hard, or checkout of a local branch"
-        # But we can delete the directory and run git worktree prune, or we can use git worktree prune.
-        # Let's delete the directory and run git worktree prune to clean up the worktree registration.
+        # Clean up the worktree we just created: delete the directory and let
+        # `git worktree prune` drop the now-stale registration, then remove
+        # the branch we created (a plain, non-forced delete of an unpushed
+        # branch that carries no commits of its own — never a forced delete
+        # of a branch that might hold real work).
         try:
             import shutil
             if target_path.is_dir():
