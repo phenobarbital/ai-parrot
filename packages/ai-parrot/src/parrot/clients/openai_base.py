@@ -305,7 +305,10 @@ class OpenAIBaseClient(AbstractClient):
         token = _BUDGET_CALL_CTX.set({**ctx, "phase": "final", "single_attempt": True})
         try:
             return await self._chat_completion(model=model_str, messages=final_payload["messages"], use_tools=False, stream=stream, **final_args)
-        except BudgetExhausted:
+        except BudgetExhausted as bx:
+            # Merge partial_text even when the denial came from the final
+            # reserve() itself (spec §2.3 "propagated in BudgetExhausted.report").
+            bx.report = {**(bx.report or {}), "partial_text": partial_text}
             raise
         except Exception as exc:
             raise BudgetExhausted(f"finalization failed: {exc}", report={"partial_text": partial_text}) from exc
@@ -658,6 +661,12 @@ class OpenAIBaseClient(AbstractClient):
                 result = response.choices[0].message
                 round_number += 1
                 round_duration_ms = (time.perf_counter() - round_t0) * 1000
+                # The final tools-disabled attempt is never executed even if the
+                # provider still returned tool_calls (spec §2.3 table row 3) — flag
+                # the answer as incomplete since intended tool work never ran.
+                _bq_scope = current_budget_scope()
+                if _bq_scope is not None and getattr(result, "tool_calls", None):
+                    await _bq_scope.ledger.set_answer_complete(False)
                 break
             round_number += 1
             round_duration_ms = (time.perf_counter() - round_t0) * 1000
@@ -800,10 +809,24 @@ class OpenAIBaseClient(AbstractClient):
 
         _used_fallback = False
         _original_model = model_str
+        # FEAT-550: one call_id per ask() invocation; the pre-loop call is
+        # round 1 (spec §2.2/§2.4 — every physical attempt reserves anew).
+        _budget_call_id = str(uuid.uuid4())
+        _budget_forced = False
+        _BUDGET_CALL_CTX.set({"call_id": _budget_call_id, "round_number": 1, "phase": "work"})
 
         _round_t0 = time.perf_counter()
         try:
             response = await self._chat_completion(model=model_str, messages=messages, use_tools=_use_tools, **args)
+        except BudgetExhausted:
+            # Ordinary work denied before the tool loop even starts: the
+            # owner attempts ONE tools-disabled final attempt (spec §2.3).
+            response = await self._finalize_budgeted_chat(
+                messages, model_str=model_str, args=args, all_tool_calls=[],
+                pending_tool_calls=[], partial_text="", stream=False,
+            )
+            _budget_forced = True
+            _BUDGET_CALL_CTX.set({**_BUDGET_CALL_CTX.get(), "forced": True})
         except Exception as e:
             if self._should_use_fallback(model_str, e):
                 self.logger.warning(
@@ -865,12 +888,17 @@ class OpenAIBaseClient(AbstractClient):
             initial_duration_ms=_round_duration_ms,
             on_round=_on_round,
         )
+        # Either the pre-loop call or a round inside the loop may have forced
+        # finalization (spec §2.3) — the loop signals it via _BUDGET_CALL_CTX
+        # rather than the shared 5-tuple return (other callers depend on it).
+        _budget_forced = _budget_forced or bool(_BUDGET_CALL_CTX.get().get("forced"))
 
         messages.append({"role": "assistant", "content": result.content})
 
         response_text = result.content if isinstance(result.content, str) else self._json.dumps(result.content)
         final_output = None
-        if output_config:
+        _bq_ask_scope = current_budget_scope()
+        if output_config and not _budget_forced:
             try:
                 # Known-truncated output must not reach a custom parser either.
                 self._raise_if_truncated(self._extract_finish_reason(response), model=model_str)
@@ -887,6 +915,12 @@ class OpenAIBaseClient(AbstractClient):
                 raise
             except Exception:  # noqa: BLE001 pylint: disable=broad-except
                 final_output = response_text
+        elif _budget_forced and output_config:
+            # FEAT-550 §2.3: a budget-forced final never reaches a custom
+            # parser as if it were validated — raw text, marked incomplete.
+            final_output = response_text
+            if _bq_ask_scope is not None:
+                await _bq_ask_scope.ledger.set_answer_complete(False)
 
         # FEAT-524: no memory write — AbstractBot.save_conversation_turn is the single writer.
 
@@ -915,6 +949,14 @@ class OpenAIBaseClient(AbstractClient):
             ai_message.metadata["original_model"] = _original_model
             ai_message.metadata["fallback_model"] = self._fallback_model
 
+        # FEAT-550 §2.3: every budgeted answer carries the ledger's report;
+        # forced termination surfaces stop_reason="budget_exhausted" while the
+        # provider's own value stays available via finish_reason below.
+        if _bq_ask_scope is not None:
+            if _budget_forced:
+                ai_message.stop_reason = "budget_exhausted"
+            ai_message.metadata["token_budget"] = (await _bq_ask_scope.ledger.report()).model_dump()
+
         _lc_usage = getattr(ai_message, "usage", None)
         await self._emit_after_call(
             _lc_tc,
@@ -940,13 +982,17 @@ class OpenAIBaseClient(AbstractClient):
         """
         await self._ensure_client()
 
-        # FEAT-550: Deep copy messages and restore budget scope from interrupt envelope
+        # FEAT-550 §2.6: deep-copy (never mutate the caller's stored suspended
+        # state). Reattachment of a suspended budget scope from the
+        # TOKEN_BUDGET_STATE_KEY envelope already happened in the client-level
+        # entry adapter (AbstractClient.__init_subclass__ wraps resume() and
+        # calls registry.resume(state, ...) before this body runs — see
+        # budget_scope.py::_enter_scope) — current_budget_scope() below
+        # already reflects it; no manual reattachment needed here.
         messages = copy.deepcopy(state["messages"])
         tool_call_id = state["tool_call_id"]
         model_str = state.get("agent_name", self.model or self.default_model)
         _scope = current_budget_scope()
-        if _scope is not None and TOKEN_BUDGET_STATE_KEY in state:
-            await _scope.registry.restore(state[TOKEN_BUDGET_STATE_KEY])
 
         messages.append({"role": "tool", "tool_call_id": tool_call_id, "name": "handoff_tool", "content": user_input})
 
@@ -1183,15 +1229,57 @@ class OpenAIBaseClient(AbstractClient):
         assistant_content = ""
         usage_data = None
         _max_tool_rounds = 25  # safety cap
+        # FEAT-550: one call_id per ask_stream() invocation; each round is a
+        # fresh physical attempt admitted before dispatch (spec §2.2/§2.4).
+        _budget_call_id_s = str(uuid.uuid4())
+        _budget_forced = False
 
         for _round in range(_max_tool_rounds):
-            # `.parse()` cannot reliably stream every SDK's tool-calling/plain
-            # responses; only prefer it when structured output was requested —
-            # mirrors the pre-FEAT-438 dispatch this funnel now formalizes.
+            # Accumulate tool-call chunks by index. OpenAI streams them
+            # incrementally: first chunk carries id+name, subsequent ones
+            # carry argument fragments.
+            _tc_accum: dict[int, dict[str, str]] = {}
+            _round_content = ""
+            _finish_reason: str | None = None
+
+            _BUDGET_CALL_CTX.set({"call_id": _budget_call_id_s, "round_number": _round + 1, "phase": "work"})
             try:
+                # `.parse()` cannot reliably stream every SDK's tool-calling/plain
+                # responses; only prefer it when structured output was requested —
+                # mirrors the pre-FEAT-438 dispatch this funnel now formalizes.
                 response_stream = await self._chat_completion(
                     model=model_str, messages=messages, use_tools=not bool(output_config), stream=True, **args
                 )
+            except asyncio.CancelledError:
+                # spec §2.3 table row 4: cancellation never starts finalization.
+                raise
+            except BudgetExhausted:
+                # Ordinary work denied: the owner attempts ONE tools-disabled
+                # final attempt, streaming its text in-band (spec §2.3/§2.4).
+                partial_text = assistant_content
+                final_stream = await self._finalize_budgeted_chat(
+                    messages, model_str=model_str, args=args, all_tool_calls=all_tool_calls,
+                    pending_tool_calls=[], partial_text=partial_text, stream=True,
+                )
+                async for chunk in final_stream:
+                    if chunk.choices:
+                        choice = chunk.choices[0]
+                        delta = choice.delta
+                        if delta and delta.content:
+                            text_chunk = delta.content
+                            _round_content += text_chunk
+                            assistant_content += text_chunk
+                            yield text_chunk
+                        _finish_reason = getattr(choice, "finish_reason", None) or _finish_reason
+                    if hasattr(chunk, "usage") and chunk.usage is not None:
+                        usage_data = chunk.usage
+                _budget_forced = True
+                if _round_content:
+                    messages.append({"role": "assistant", "content": _round_content})
+                _bq_scope_s = current_budget_scope()
+                if _bq_scope_s is not None and _finish_reason in ("tool_calls", "length"):
+                    await _bq_scope_s.ledger.set_answer_complete(False)
+                break
             except Exception as _stream_exc:
                 await self._emit_failed_call_safe(
                     _lc_tc,
@@ -1201,13 +1289,6 @@ class OpenAIBaseClient(AbstractClient):
                     _stream_exc,
                 )
                 raise
-
-            # Accumulate tool-call chunks by index. OpenAI streams them
-            # incrementally: first chunk carries id+name, subsequent ones
-            # carry argument fragments.
-            _tc_accum: dict[int, dict[str, str]] = {}
-            _round_content = ""
-            _finish_reason: str | None = None
 
             async for chunk in response_stream:
                 if chunk.choices:
@@ -1331,6 +1412,15 @@ class OpenAIBaseClient(AbstractClient):
             turn_id=turn_id,
             tool_calls=all_tool_calls,
         )
+
+        # FEAT-550 §2.3/§2.4: attach the ledger report to the single terminal
+        # AIMessage; forced termination sets stop_reason.
+        _bq_stream_scope = current_budget_scope()
+        if _bq_stream_scope is not None:
+            if _budget_forced:
+                ai_message.stop_reason = "budget_exhausted"
+            ai_message.metadata["token_budget"] = (await _bq_stream_scope.ledger.report()).model_dump()
+
         await self._emit_after_call(
             _lc_tc,
             client_name=self.client_name,
@@ -1419,11 +1509,42 @@ class OpenAIBaseClient(AbstractClient):
             if not self.client:
                 raise RuntimeError(f"{type(self).__name__} not initialised. Use async context manager.")
 
-            response = await self._chat_completion(model=resolved_model, messages=messages, use_tools=True, **kwargs)
+            _budget_forced = False
+            # FEAT-550: a stable call_id across the sole dispatch and any
+            # follow-on finalization attempt — without this, `reserve()`'s
+            # phase="final" owner check mints a fresh random call_id on each
+            # `_BUDGET_CALL_CTX.get()` (empty default) and unconditionally
+            # rejects the finalize dispatch as a foreign owner.
+            _budget_call_id = str(uuid.uuid4())
+            _BUDGET_CALL_CTX.set({"call_id": _budget_call_id, "round_number": 1, "phase": "work"})
+            try:
+                response = await self._chat_completion(
+                    model=resolved_model, messages=messages, use_tools=True, **kwargs
+                )
+            except BudgetExhausted:
+                # invoke() is a single-shot call: the frame is the payload
+                # without tools; owner finalization still applies (spec §2.3).
+                try:
+                    response = await self._finalize_budgeted_chat(
+                        messages, model_str=resolved_model, args=kwargs, all_tool_calls=[],
+                        pending_tool_calls=[], partial_text="", stream=False,
+                    )
+                    _budget_forced = True
+                except BudgetExhausted as bx2:
+                    _scope = current_budget_scope()
+                    partial = (bx2.report or {}).pop("partial_text", "") or ""
+                    invoke_result = InvokeResult(
+                        output=partial, output_type=None, model=resolved_model,
+                        usage=CompletionUsage(), raw_response=None,
+                    )
+                    if _scope is not None:
+                        invoke_result.budget_report = (await _scope.ledger.report()).model_dump()
+                    return invoke_result
+
             raw_text = response.choices[0].message.content or ""
 
             output: Any = raw_text
-            if config:
+            if config and not _budget_forced:
                 # Known-truncated output must not reach a custom parser either.
                 self._raise_if_truncated(self._extract_finish_reason(response), model=resolved_model)
                 if config.custom_parser:
@@ -1435,9 +1556,25 @@ class OpenAIBaseClient(AbstractClient):
                         finish_reason=self._extract_finish_reason(response),
                         model=resolved_model,
                     )
+            elif _budget_forced:
+                _scope = current_budget_scope()
+                if _scope is not None:
+                    await _scope.ledger.set_answer_complete(False)
 
             usage = CompletionUsage.from_openai(response.usage)
-            return self._build_invoke_result(output, output_type, resolved_model, usage, response)
+            invoke_result = self._build_invoke_result(
+                output if not _budget_forced else raw_text,
+                None if _budget_forced else output_type,
+                resolved_model,
+                usage,
+                response,
+            )
+            _scope = current_budget_scope()
+            if _scope is not None:
+                invoke_result.budget_report = (await _scope.ledger.report()).model_dump()
+            return invoke_result
+        except BudgetError:
+            raise
         except InvokeError:
             raise
         except Exception as exc:  # noqa: BLE001 — funnel errors are wrapped into InvokeError
