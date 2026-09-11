@@ -62,6 +62,11 @@ class FormEventBinding(BaseModel):
             server via a ``fetch`` call to the remote endpoint.
         required: When ``True`` and the handler is not registered, the
             dispatcher raises ``RuntimeError`` instead of silently no-op-ing.
+        on_failure: When the handler runs and fails (raises, times out, or
+            returns an invalid resolution), ``"abort"`` rejects the submission
+            via ``FormEventAbort`` semantics; ``"continue"`` (default) logs the
+            failure and proceeds as if the handler returned ``EventResolution()``.
+            Distinct from ``required``, which governs a MISSING handler.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -73,6 +78,13 @@ class FormEventBinding(BaseModel):
     )
     remote: bool = False  # if True, HTML5 client bridges via fetch
     required: bool = False  # if True and handler missing → 500
+    on_failure: Literal["abort", "continue"] = "continue"
+    # NEW (FEAT-459) — governs a handler that RAN and FAILED (raised, timed
+    # out, exceeded its sandbox budget, or returned an invalid
+    # EventResolution). Distinct from `required`, which governs a handler
+    # that is MISSING from the registry. Widening `required` to cover both
+    # was rejected: it would silently change runtime behavior for every
+    # existing binding already setting required=True (G10).
 
 
 class FormEventsConfig(BaseModel):
