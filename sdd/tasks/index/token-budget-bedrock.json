@@ -112,7 +112,7 @@
       "feature_id": "FEAT-550",
       "feature": "token-budget-bedrock",
       "spec": "sdd/specs/token-budget-bedrock.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -122,8 +122,8 @@
       "parallelism_notes": "Edits bots/abstract.py, bots/base.py and budget_scope.py (designate_owner); shares test file with TASK-3136.",
       "assigned_to": null,
       "started_at": "2026-09-10T23:40:10+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3137-bot-budget-boundary.md"
+      "completed_at": "2026-09-11T01:23:55+00:00",
+      "file": "sdd/tasks/completed/TASK-3137-bot-budget-boundary.md"
     },
     {
       "id": "TASK-3138",

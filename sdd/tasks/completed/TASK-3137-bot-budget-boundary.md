@@ -394,8 +394,50 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: sdd-worker orchestrator (parrot-sdd-coder pool: gemini attempt 1 succeeded on
+first try; orchestrator found and fixed 3 real bugs during acceptance-criteria verification)
+**Date**: 2026-09-11
+**Notes**: gemini implemented `BudgetScope.designate_owner()`, the bot constructor budget
+kwargs, `_budget_defaults()`/`_resolve_bot_budget()`/`_bind_question_scope()`/
+`_budget_partial_message()` helpers, owner designation in `execute_llm_call`, resume
+reattachment, and scope binding + `BudgetExhausted` translation in both `ask()` and
+`ask_stream()`. During review/verification I found and fixed three real defects:
+(1) `_bind_question_scope`'s root branch read `request.policy.registry`, but
+`TokenBudgetPolicy` (a strict Pydantic model) has no `registry` field — only
+`BudgetDefaults` does; this would have raised `AttributeError` on every root-scope
+creation. Fixed to `self._budget_defaults_value.registry or get_default_registry()`.
+(2) `ask_stream`'s `BudgetExhausted` handler had a spurious `yield ai_message.output` in
+addition to the tail code's unconditional `yield ai_message` — this violated spec §2.4
+"emit exactly one sentinel" by yielding the partial text as an extra chunk before the
+terminal `AIMessage`. Removed the spurious yield. (3) An unused `BudgetError` import in
+`abstract.py` (ruff F401, not present on `dev` baseline). Also found the coder's own two
+tests used a `raise_exhausted=True` flag on `bot.ask(...)`/`bot.ask_stream(...)` that
+`bots/base.py`'s `llm_kwargs` construction never forwards to the client (pre-existing,
+unrelated `base.py` behavior — arbitrary caller kwargs are not passed through) — both
+tests were silently passing for the wrong reason (`bot.configure()` was never called,
+so `self._llm` was `None` and both tests errored before reaching any budget logic).
+Rewrote both using dedicated always-raising client subclasses
+(`ExhaustingAskClient`/`ExhaustingStreamClient`) and a `_make_budget_bot()` helper that
+calls `await bot.configure()` (mirrors `tests/unit/bots/test_bot_history_wiring.py`).
+Added all five explicitly-required-but-missing tests from the task's own Test
+Specification/Acceptance-Criteria sections: `test_successful_answer_carries_report`,
+`test_typed_errors_still_propagate`, `test_child_bot_reraises_to_owner`,
+`test_owner_designated_once_on_execute_llm_call` (had to assert on the ROOT scope via a
+bot-level `execute_llm_call` override, not the client-visible scope — the client sees a
+CHILD scope object with its own independent `owner_designated` default, by design),
+and `test_resume_with_envelope_reattaches` (worked around a confirmed pre-existing,
+out-of-scope bug: `AbstractBot.resume()` references `self.client`, an attribute never
+assigned anywhere in the class on `dev` HEAD either — set it directly in the test rather
+than fix unrelated code).
+Verified: `pytest packages/ai-parrot/tests/unit/clients/test_token_budget_boundaries.py -v`
+→ 17 passed; `pytest packages/ai-parrot/tests/unit/bots -q` → 339 passed / 5 pre-existing
+failures confirmed byte-identical to `dev` HEAD (test-order pollution + one unrelated stale
+fixture, nothing to do with FEAT-550); `ruff check` on `abstract.py`/`base.py` → 18 errors,
+identical count and content to `dev` HEAD (all pre-existing E402/F841 in unrelated code).
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none — three implementation bugs found and fixed during review,
+documented above; none change the spec's intended behavior.
+
+Seat: gemini (attempt 1, succeeded) · Backend: google-compat · Model: gemini-3.5-flash ·
+Attempts: 1 · Duration: 102.2s · Tokens: 1504182 in / 11941 out · Orchestrator review + 3
+bug fixes + 5 added tests on top.
