@@ -433,10 +433,36 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (direct implementation — parrot-sdd-coder's
+gemini attempt produced code but left it uncommitted in its
+sub-worktree, `dirty_task_worktree`)
+**Date**: 2026-09-11
+**Notes**: Implemented `HostBroker.handle()` exactly per the blueprint —
+deny-by-default allowlist check (`_check_allowlist`, exact-string
+matching only, no wildcards), structured security log on every denial
+(`tenant`/`handler_ref`/`kind`/`target`), a `max_calls_per_invocation=10`
+per-invocation call cap (documented rationale: not spec-mandated, chosen
+conservatively so a compromised manifest cannot loop indefinitely), and
+the real `http_hosts` I/O path via `aiohttp.ClientSession`.
+`query_tables`/`notifications`/`toolkits` left as documented
+`NotImplementedError` stubs per the task's explicit scope ("the spec
+gives no concrete query/notification backend to call — document the
+shape, do not invent one"). Completed both test FILL INs
+(`test_broker_enforces_call_cap`, `test_broker_allows_declared_host`)
+using a `_FakeClientSession`/`_FakeResponse` monkeypatch pair — no real
+network I/O in tests. 6/6 tests pass, `ruff check` and `mypy` clean, no
+`requests`/`httpx` import anywhere in the file.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Deviations from spec**: none — `handle()`'s `tenant`/`handler_ref`
+keyword-only args are the blueprint's own documented, deliberate
+extension over the spec's bare `(request, manifest)` §2 skeleton
+(required to satisfy the denial-logging acceptance criterion).
 
-**Deviations from spec**: none | describe if any
+**Seat: sonnet (orchestrator, direct attempt 2 after gemini left work uncommitted) · Backend: n/a · Model: claude-sonnet-5 · Attempts: 1 · Duration: n/a (interactive) · Tokens: n/a**
+
+**Prior failed dispatch attempt** (for the record): `gemini`
+(google-compat backend, `gemini-3.5-flash`) ran for 177s, produced
+`broker.py`/`test_host_broker.py`, but never committed them in its
+sub-worktree — surfaced as `dirty_task_worktree` and treated as `failed`
+per the orchestrator's fidelity rules (never merged by hand from an
+uncommitted state).

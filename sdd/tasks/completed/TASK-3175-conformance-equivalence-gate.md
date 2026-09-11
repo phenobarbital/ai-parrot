@@ -475,10 +475,19 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (orchestrated via parrot-sdd-coder)
+**Date**: 2026-09-11
+**Notes**: Implemented `check_tier_conformance()` (static AST analysis
+rejecting undeclared stdlib imports / I/O calls at a snippet's declared
+tier) and `check_equivalence()` (runs the Python half against fixtures,
+requires at least one fixture, detects divergence from
+`expected_output`, and fails loudly — never silently passes — when
+`client_source` is set but no `run_js` runner callable is supplied) plus
+`run_gate()` combining both for TASK-3166's injection point. 8/8 tests
+pass, `ruff check`/`mypy` clean, never imported from
+`packages/parrot-formdesigner/src/` (one docstring mention of the
+filename in `core/snippets.py`, not an import statement — verified).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Deviations from spec**: none
 
-**Deviations from spec**: none | describe if any
+**Seat: minimax · Backend: nova · Model: minimax.minimax-m2.5 · Attempts: 1 · Duration: 429.7s · Tokens: 887,902 in / 7,446 out**

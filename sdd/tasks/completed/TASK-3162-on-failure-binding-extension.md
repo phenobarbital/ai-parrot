@@ -239,10 +239,16 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (orchestrated via parrot-sdd-coder)
+**Date**: 2026-09-11
+**Notes**: Added `on_failure: Literal["abort", "continue"] = "continue"` to
+`FormEventBinding` in `core/events.py`, governing handler-run failures
+(raised / timed out / sandbox-budget-exceeded / invalid `EventResolution`),
+distinct from `required` (which governs missing handlers). Default
+`"continue"` preserves G10 backward compatibility. 4/4 new tests pass
+(`test_form_event_binding_on_failure.py`); existing `events` suite still
+green (103 passed). `ruff check` and `mypy` clean.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Deviations from spec**: none
 
-**Deviations from spec**: none | describe if any
+**Seat: minimax · Backend: nova · Model: minimax.minimax-m2.5 · Attempts: 1 · Duration: 268.5s · Tokens: 292,074 in / 3,002 out**

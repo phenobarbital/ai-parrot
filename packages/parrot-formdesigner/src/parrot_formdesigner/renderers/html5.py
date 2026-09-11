@@ -24,10 +24,12 @@ from ..core.schema import (
     RenderedForm,
     RenderWarning,
 )
+from ..core.snippets import SnippetBundle
 from ..core.style import StyleSchema
 from ..core.types import FieldType, LocalizedString
 from .base import AbstractFormRenderer, FallbackRenderer, FieldRenderer
 from .fields.audio import AudioFieldRenderer
+from .worker_bridge import render_worker_boot_block
 
 logger = logging.getLogger(__name__)
 
@@ -599,6 +601,27 @@ class HTML5Renderer(AbstractFormRenderer):
         "</script>"
     )
 
+    def _snippet_bundles_for(self, form: FormSchema) -> list[SnippetBundle]:
+        """Return snippet bundles applicable to a form.
+
+        TASK-3173 coordination point: this helper is a placeholder pending
+        TASK-3163-3165 finalizing the snippet registry/resolver public API.
+
+        Args:
+            form: The FormSchema being rendered.
+
+        Returns:
+            A list of SnippetBundle objects with client_source, or an empty
+            list if no resolver is available yet.
+
+        TODO: Wire up the snippet registry/resolver once TASK-3163-3165
+        is complete. For now, return an empty list to allow the boot block
+        to be injected safely (the Worker block checks
+        `if (!SNIPPET_CLIENT_SOURCES.length) { return; }` and exits).
+        """
+        # Placeholder: return empty list until snippet registry is available
+        return []
+
     def _inject_lifecycle(
         self,
         html_str: str,
@@ -647,6 +670,17 @@ class HTML5Renderer(AbstractFormRenderer):
             .replace("__TENANT__", json.dumps(form.tenant or "")).replace(
                 "__EVENTS_CONFIG__", json.dumps(events_config)
             )
+        )
+
+        # FEAT-459 (TASK-3173): Inject the Web Worker boot block (FEAT-459 M13,
+        # OQ-7) as an additive block preserving the existing fetch-based bridge.
+        # The boot block awaits __SNIPPET_CLIENT_SOURCES__, a JSON array of
+        # compiled snippet JS strings, one per bundle with a client_source.
+        worker_boot_block = render_worker_boot_block()
+        script = script + worker_boot_block
+        script = script.replace(
+            "__SNIPPET_CLIENT_SOURCES__",
+            json.dumps([b.client_source for b in self._snippet_bundles_for(form) if b.client_source]),
         )
 
         return prefix + html_str + script
