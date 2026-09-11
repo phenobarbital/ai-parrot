@@ -10,7 +10,7 @@ base_branch: dev
 
 **Date**: 2026-09-12
 **Author**: Jesus Lara / Claude
-**Status**: exploration
+**Status**: accepted
 **Recommended Option**: Option B (with Option A as a zero-cost day-0 step)
 
 ---
