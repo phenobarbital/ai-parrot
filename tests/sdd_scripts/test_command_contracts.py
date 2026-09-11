@@ -43,19 +43,16 @@ def _read(rel: str) -> str:
 def test_no_command_hand_rolls_a_worktree(rel: str) -> None:
     """No SDD command or agent runs `git worktree add` itself (FEAT-552)."""
     assert "git worktree add" not in _read(rel), (
-        f"{rel} hand-rolls a worktree; call "
-        "`python -m scripts.sdd.ensure_worktree` instead"
+        f"{rel} hand-rolls a worktree; call " "`python -m scripts.sdd.ensure_worktree` instead"
     )
 
 
-@pytest.mark.parametrize(
-    "rel", sorted(r for r, needs_cli in _CREATORS.items() if needs_cli)
-)
+@pytest.mark.parametrize("rel", sorted(r for r, needs_cli in _CREATORS.items() if needs_cli))
 def test_every_creator_calls_ensure_worktree(rel: str) -> None:
     """Each lane that provisions a worktree goes through the shared CLI."""
-    assert "scripts.sdd.ensure_worktree" in _read(rel), (
-        f"{rel} must call `python -m scripts.sdd.ensure_worktree` to provision worktrees"
-    )
+    assert "scripts.sdd.ensure_worktree" in _read(
+        rel
+    ), f"{rel} must call `python -m scripts.sdd.ensure_worktree` to provision worktrees"
 
 
 def test_no_legacy_naming_template_remains() -> None:
@@ -77,7 +74,4 @@ def test_no_legacy_naming_template_remains() -> None:
         if _LEGACY_TEMPLATE in content:
             offenders.append(md_file.relative_to(_REPO_ROOT))
 
-    assert not offenders, (
-        f"Legacy template `{_LEGACY_TEMPLATE}` found in: "
-        + ", ".join(str(p) for p in offenders)
-    )
+    assert not offenders, f"Legacy template `{_LEGACY_TEMPLATE}` found in: " + ", ".join(str(p) for p in offenders)
