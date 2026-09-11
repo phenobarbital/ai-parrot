@@ -132,7 +132,7 @@
       "feature_id": "FEAT-550",
       "feature": "token-budget-bedrock",
       "spec": "sdd/specs/token-budget-bedrock.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -142,8 +142,8 @@
       "parallelism_notes": "Only needs BudgetError (TASK-3132). Touches tools/abstract.py, tools/manager.py, mixins/model_switching.py and its own test file — no file shared with TASK-3133..3137 or TASK-3139. Safe in a separate worktree.",
       "assigned_to": null,
       "started_at": "2026-09-10T23:40:10+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3138-budget-error-propagation.md"
+      "completed_at": "2026-09-11T00:12:42+00:00",
+      "file": "sdd/tasks/completed/TASK-3138-budget-error-propagation.md"
     },
     {
       "id": "TASK-3139",
