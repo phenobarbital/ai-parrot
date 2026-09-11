@@ -254,7 +254,7 @@
       "feature_id": "FEAT-550",
       "feature": "token-budget-bedrock",
       "spec": "sdd/specs/token-budget-bedrock.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -267,8 +267,8 @@
       "parallelism_notes": "Test-only; new file under tests/integration. Independent of TASK-3145 (docs) — the two can run in parallel once all providers land.",
       "assigned_to": null,
       "started_at": "2026-09-10T23:40:10+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3144-token-budget-integration-tests.md"
+      "completed_at": "2026-09-11T03:13:22+00:00",
+      "file": "sdd/tasks/completed/TASK-3144-token-budget-integration-tests.md"
     },
     {
       "id": "TASK-3145",
