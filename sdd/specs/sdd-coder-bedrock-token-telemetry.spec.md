@@ -46,7 +46,7 @@ What exists today falls short in specific, verified ways:
 - Per-attempt usage **is** collected — `AttemptTelemetryCollector`
   (`sdd_coder/engine.py:91-136`) folds the `dispatch.completed` payload built by
   `LLMCodeDispatcher._completion_usage_payload` (`dispatchers/llm.py:584-617`)
-  into `AttemptRecord.usage` (`sdd_coder/models.py:115-127`).
+  into `AttemptRecord.usage` (`sdd_coder/models.py:115-126`).
 - It **is** written to disk — `SddCoderEngine._journal`
   (`sdd_coder/engine.py:472-488`) snapshots the whole `CoderJob` to
   `<worktree>/.sdd-coder/jobs/<job_id>.json`.
@@ -140,7 +140,7 @@ extra salvage call after it ends (`llm.py:552`), each budgeted call permits thre
 physical attempts whose failures retain a full uncertain debit
 (`openai_base.py:364,392`), and the cap is recomputed per request as
 `min(max_output_tokens, available - estimate.input_tokens)`
-(`clients/budget.py:145`), so accumulated consumption alone can shrink it.
+(`clients/budget.py:147`), so accumulated consumption alone can shrink it.
 Worse, the budgeted funnel swaps in `with_options(max_retries=0)`
 (`openai_base.py:349`) while the ordinary funnel keeps the SDK default of 2
 (`openai/_constants.py:8`), cutting the worst-case physical attempts per call
@@ -186,14 +186,14 @@ They are the substance of this design, not footnotes:
 4. **`(feature_id, task_id, attempt)` is not a unique key.** `_run_task`
    hard-codes `attempt=1` on every invocation (`sdd_coder/engine.py:592`),
    `run_chunk` rejects only tasks in a *currently running* job
-   (`engine.py:620-623`), and every chunk gets a fresh job id
+   (`engine.py:622-625`), and every chunk gets a fresh job id
    (`sdd_coder/jobs.py:30`). A task re-dispatched in a later job — or by a second
    server process — reuses the same triple, so joining two attempts against two
    outcomes yields four rows. Every row therefore carries an `attempt_uid`
    minted per attempt, plus `job_id` as human-readable context, and the join is
    on `attempt_uid` alone.
 5. **Consolidation is not an outcome event for every attempt.** When both
-   attempts fail, `_run_task` returns at `engine.py:603-612` without calling
+   attempts fail, `_run_task` returns at `engine.py:602-611` without calling
    `_consolidate` at all, so a failed attempt would have no outcome row; and
    `merge()` deliberately supports re-merging after a manual conflict repair
    (`engine.py:407`), so one attempt can legitimately produce a
@@ -472,7 +472,7 @@ def build_attempt_row(
           never transitions to draining/finalizing, and sets
           `output_cap = max_output_tokens` without the
           `available - estimate.input_tokens` computation (verified:
-          parrot/clients/budget.py:145).
+          parrot/clients/budget.py:147).
           """
 
       def _report_locked(self) -> BudgetReport:  # verified: parrot/clients/budget.py:327
@@ -610,7 +610,7 @@ def build_attempt_row(
 
   # parrot/flows/dev_loop/sdd_coder/models.py  (modifies parrot/flows/dev_loop/sdd_coder/models.py:115)
   class AttemptRecord(BaseModel):
-      # ... existing fields unchanged (verified: sdd_coder/models.py:117-127)
+      # ... existing fields unchanged (verified: sdd_coder/models.py:116-126)
       attempt_uid: str = ""
       """uuid4 hex minted in `_run_attempt`; the telemetry join key (§10 R3)."""
       job_id: str = ""
@@ -645,7 +645,7 @@ def build_attempt_row(
           """Emit ONE outcome row for the attempt that produced *outcome*.
 
           Called from `_run_task` — which owns both the both-attempts-failed
-          return (verified: engine.py:603-612, which never reaches
+          return (verified: engine.py:602-611, which never reaches
           `_consolidate`) and the consolidated success path — and from `merge()`,
           whose documented re-merge after a manual conflict repair
           (engine.py:407) legitimately adds a later event for the same attempt.
@@ -920,8 +920,8 @@ def get_default_registry() -> BudgetRegistry:                         # line 297
 # parrot/clients/budget.py
 async def reserve(self, estimate, *, max_output_tokens, min_output_tokens,
                   call_id, round_number, attempt_number, phase):       # line 117
-    available = self._available(phase)                                 # line 144
-    output_cap = min(max_output_tokens, available - estimate.input_tokens)  # line 145
+    available = self._available(phase)                                 # line 146
+    output_cap = min(max_output_tokens, available - estimate.input_tokens)  # line 147
     #   ^ the cap SHRINKS as consumption accumulates — a large ceiling is not a guard
 async def release_unspent(self, reservation_id: str) -> None:          # line 244
     #   "Release only a request proven not to have been dispatched/consumed"
@@ -973,9 +973,9 @@ rec, out, err, ... = await self._run_attempt(ctx, task, seat, attempt=1, job_id=
 #   ^ attempt numbering restarts at 1 on EVERY _run_task invocation
 return TaskResult(task_id=..., outcome="failed", attempts=attempts, ...)   # lines 603-612
 #   ^ the both-failed path NEVER calls _consolidate
-result = await self._consolidate(ctx, manager, task, branch=branch, path=path)  # line 613
-return result.model_copy(update={"attempts": attempts, ...})               # line 614
-if task_id in running: raise CoderFailure("task_already_running", ...)     # lines 620-623
+result = await self._consolidate(ctx, manager, task, branch=branch, path=path)  # line 611
+return result.model_copy(update={"attempts": attempts, ...})               # line 612
+if task_id in running: raise CoderFailure("task_already_running", ...)     # lines 622-625
 #   ^ only CURRENTLY RUNNING tasks are rejected — a later job re-dispatches freely
 
 # parrot/flows/dev_loop/sdd_coder/jobs.py
@@ -1048,7 +1048,7 @@ decisions are configured together.
 
 ### Known Risks / Gotchas
 
-- **The output-cap overwrite was the sharpest edge, and arithmetic could not blunt it.** `_chat_completion_budgeted` sets `kwargs[cap_key] = reservation.output_cap` (`openai_base.py:388`), computed as `min(max_output_tokens, available - estimate.input_tokens)` (`budget.py:145`). A "large" ceiling is not a defence: input is unbounded (a tool result can be a whole file, `llm.py:518`), the loop adds a salvage call after it ends (`llm.py:552`), and failed physical attempts retain a full uncertain debit (`openai_base.py:392`). Resolved structurally by `enforcement="observe"`, which returns the cap verbatim (§10 R1). The residual risk is a future edit to `reserve()` that forgets the observe branch — hence AC-3's adversarial test rather than a unit assertion on the policy.
+- **The output-cap overwrite was the sharpest edge, and arithmetic could not blunt it.** `_chat_completion_budgeted` sets `kwargs[cap_key] = reservation.output_cap` (`openai_base.py:388`), computed as `min(max_output_tokens, available - estimate.input_tokens)` (`budget.py:147`). A "large" ceiling is not a defence: input is unbounded (a tool result can be a whole file, `llm.py:518`), the loop adds a salvage call after it ends (`llm.py:552`), and failed physical attempts retain a full uncertain debit (`openai_base.py:392`). Resolved structurally by `enforcement="observe"`, which returns the cap verbatim (§10 R1). The residual risk is a future edit to `reserve()` that forgets the observe branch — hence AC-3's adversarial test rather than a unit assertion on the policy.
 - **Instrumentation must not change the retry regime.** The ordinary funnel keeps the SDK's `DEFAULT_MAX_RETRIES = 2` (`openai/_constants.py:8`; `get_client` does not override it, `openai_base.py:152`) under three tenacity attempts — up to nine physical requests — while the budgeted funnel's `with_options(max_retries=0)` (`openai_base.py:349`) allows three. A provider recovering on the fourth physical request would succeed unmeasured and fail measured. Observational mode keeps the ordinary client view; enforcing mode is untouched (§10 R2).
 - **Cumulative budgets for a coder live in the millions.** ≈4.7M measured for 60 turns; ≈5.1M if every turn saturates the output cap. Anyone treating `token_budget` as a context-window number will kill every attempt. This belongs in the docs, not only in this spec.
 - **The tokenizer runs on the event loop.** `count_input` is `async` but counts synchronously (`amazon/budget.py:345`): 4.9 ms at turn 1, 65 ms at turn 60, ≈2.8 s per attempt, so ≈11 s of blocking per 4-seat wave. Measured as 0.1-0.5% of attempt wall-clock — acceptable, and a one-line `asyncio.to_thread` fixes it if a wider wave ever makes it matter.
@@ -1057,8 +1057,8 @@ decisions are configured together.
 - **Privacy**: `AttemptRecord.error` holds the full exception string and `TaskResult.diagnostics` holds raw merge output. The row projection is an allowlist so a future field added to `AttemptRecord` cannot leak into the dataset by default.
 - **Two processes, one feature file**: per-feature partitioning removes the common cross-process case, not all of it (two Claude Code sessions on the same feature). Mitigated by one pre-serialized `os.write` per line on an `O_APPEND` fd (POSIX makes the seek-and-append atomic for a regular file, independently of `PIPE_BUF`), with an 8 KB line budget against a measured ~3.6 KB worst case. The row models bound their string fields, but that does not by itself establish the byte bound — the sink's check does (AC-22).
 - **The durable root cannot be inherited from `BASE_DIR`.** navconfig resolves it from `SITE_ROOT`, an explicit `BASE_DIR`, a virtualenv's parent, or a project-root search (`navconfig/project.py:129-161`). A feature checkout with its own virtualenv therefore resolves `BASE_DIR` *into the worktree*, and the dataset would be deleted with it. The root is derived from git's common dir and refused if it falls under `worktree_base_path` (§10 R7).
-- **Attempt identity is not `attempt` number.** `_run_task` restarts numbering at 1 per invocation (`engine.py:592`) and `run_chunk` only blocks tasks in a running job (`engine.py:620-623`), so the same `(feature, task, attempt)` recurs across jobs. Anything keyed on that triple silently fuses distinct attempts (§10 R3).
-- **An attempt's outcome is not always a consolidation.** Both-attempts-failed returns before `_consolidate` (`engine.py:603-612`), and a repaired `merge()` legitimately re-emits (`engine.py:407`). Outcome rows are emitted per attempt with a monotonic `event_seq`, highest effective (§10 R4).
+- **Attempt identity is not `attempt` number.** `_run_task` restarts numbering at 1 per invocation (`engine.py:592`) and `run_chunk` only blocks tasks in a running job (`engine.py:622-625`), so the same `(feature, task, attempt)` recurs across jobs. Anything keyed on that triple silently fuses distinct attempts (§10 R3).
+- **An attempt's outcome is not always a consolidation.** Both-attempts-failed returns before `_consolidate` (`engine.py:602-611`), and a repaired `merge()` legitimately re-emits (`engine.py:407`). Outcome rows are emitted per attempt with a monotonic `event_seq`, highest effective (§10 R4).
 - **Fractional reserve against a huge ceiling** would immobilise ~700k tokens of a 4.7M-class budget to protect a ~1k `DevelopmentOutput` JSON. This is a risk for the *enforcing* configuration the campaign recommends, not for observational mode (which reserves nothing) — see the recommendation below.
 
 ### External Dependencies
@@ -1134,10 +1134,10 @@ with the brainstorm's own description.
 
 | # | Finding (severity) | Disposition | Verification & resolution | Landed in |
 |---|---|---|---|---|
-| R1 | A non-binding ceiling cannot be derived from `max_turns`/`max_tokens` (P1) | **CONFIRM** | Verified all four mechanisms: unbounded tool-result input (`llm.py:518`), the post-loop salvage call (`llm.py:552`), three physical attempts retaining uncertain debits (`openai_base.py:364,392`), and the per-request cap `min(max_output_tokens, available - estimate.input_tokens)` (`budget.py:145`). The reviewer is right that no profile-derived number proves non-interference. Resolved at the root by an **observational (non-enforcing) ledger mode** rather than by adding bounds — `_min_safe_ceiling` and the ceiling knob are removed. | §2 Overview, M1, M3, AC-3, §7 |
+| R1 | A non-binding ceiling cannot be derived from `max_turns`/`max_tokens` (P1) | **CONFIRM** | Verified all four mechanisms: unbounded tool-result input (`llm.py:518`), the post-loop salvage call (`llm.py:552`), three physical attempts retaining uncertain debits (`openai_base.py:364,392`), and the per-request cap `min(max_output_tokens, available - estimate.input_tokens)` (`budget.py:147`). The reviewer is right that no profile-derived number proves non-interference. Resolved at the root by an **observational (non-enforcing) ledger mode** rather than by adding bounds — `_min_safe_ceiling` and the ceiling knob are removed. | §2 Overview, M1, M3, AC-3, §7 |
 | R2 | Binding the scope changes retry behaviour even with unlimited headroom (P1) | **CONFIRM** | Verified `DEFAULT_MAX_RETRIES = 2` (`openai/_constants.py:8`), `get_client` not overriding it (`openai_base.py:152`), the ordinary funnel's `stop_after_attempt(3)` (`openai_base.py:273`) and the budgeted funnel's `with_options(max_retries=0)` (`openai_base.py:349`): 9 physical versus 3. Behaviour preservation was a stated goal, so "document a different regime" is not acceptable here. Observational mode keeps the **ordinary** client view — per-physical-attempt exactness is only needed when requests can be denied. | §2 Overview, M1, AC-4, integration tests |
-| R3 | The join key collides across jobs (P1) | **CONFIRM** | Verified `attempt=1` hard-coded per `_run_task` (`engine.py:592`), `run_chunk` rejecting only running tasks (`engine.py:620-623`), fresh job ids (`jobs.py:30`). Adopted the reviewer's stronger option: a minted `attempt_uid` as the sole join key, with `job_id` carried for context. | §2 Data Models, M4, AC-12 |
-| R4 | Consolidation is not an outcome event for every attempt (P1) | **CONFIRM** | Verified the both-failed return that never reaches `_consolidate` (`engine.py:603-612`), `attempts` attached afterwards by `model_copy` (`engine.py:614`), and the documented re-merge (`engine.py:407`). Outcome emission moves to `_run_task` and `merge()`, one row per event with a monotonic `event_seq`, highest effective. | §2 Overview (5), M4, M5, AC-19 |
+| R3 | The join key collides across jobs (P1) | **CONFIRM** | Verified `attempt=1` hard-coded per `_run_task` (`engine.py:592`), `run_chunk` rejecting only running tasks (`engine.py:622-625`), fresh job ids (`jobs.py:30`). Adopted the reviewer's stronger option: a minted `attempt_uid` as the sole join key, with `job_id` carried for context. | §2 Data Models, M4, AC-12 |
+| R4 | Consolidation is not an outcome event for every attempt (P1) | **CONFIRM** | Verified the both-failed return that never reaches `_consolidate` (`engine.py:602-611`), `attempts` attached afterwards by `model_copy` (`engine.py:612`), and the documented re-merge (`engine.py:407`). Outcome emission moves to `_run_task` and `merge()`, one row per event with a monotonic `event_seq`, highest effective. | §2 Overview (5), M4, M5, AC-19 |
 | R5 | Calibration must not include unspent requests (P2) | **CONFIRM** | Verified `release_unspent`'s contract — "only a request proven not to have been dispatched/consumed" (`budget.py:244`) — and the silent skip of missing round usage (`llm.py:331-333`). The v0.1 field would have manufactured error from requests that never happened. Split into `settled_estimate_input_tokens` (the comparison) and `released_estimate_tokens` (operational), plus an explicit `calibration_eligible` flag. | M1, §2 Data Models, M5, AC-21 |
 | R6 | The turn-series schemas disagree about missing usage (P2) | **CONFIRM** | Trivially reproducible: `List[List[int]]` rejects `[1, None, None]`, which the transport's nullable `TurnUsage` explicitly produces (`llm.py:1089`). Persisted type is now `List[Tuple[int, Optional[int], Optional[int]]]`; unknown turns are counted and make the attempt calibration-ineligible rather than being dropped or zero-filled. | §2 Data Models, M4, AC-20 |
 | R7 | The default storage location may be disposable (P2) | **CONFIRM** | Verified navconfig resolves `site_root` from `SITE_ROOT`, else a virtualenv's parent, else a project-root search (`navconfig/project.py:129-161`) — it never resolves the git main checkout. `BASE_DIR` is dropped as the default: the root is an explicit absolute path or derived from `git rev-parse --git-common-dir`, validated at startup, and **refused under `worktree_base_path`**. | M3 (conf), M4, AC-9 |
