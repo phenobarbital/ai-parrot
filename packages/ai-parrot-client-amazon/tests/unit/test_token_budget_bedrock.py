@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 from parrot.clients.amazon.budget import BedrockBudgetAdapter, FINALIZATION_INSTRUCTION, fingerprint
@@ -269,7 +271,7 @@ from unittest.mock import AsyncMock, MagicMock, patch  # noqa: E402
 from parrot.clients.amazon.bedrock import BedrockConverseClient  # noqa: E402
 from parrot.clients.amazon.nova import NovaClient  # noqa: E402
 from parrot.clients.budget_scope import BudgetRegistry, TOKEN_BUDGET_STATE_KEY, current_budget_scope  # noqa: E402
-from parrot.core.exceptions import HumanInteractionInterrupt  # noqa: E402
+from parrot.core.exceptions import BudgetExhausted, HumanInteractionInterrupt  # noqa: E402
 from parrot.models.token_budget import TokenBudgetPolicy  # noqa: E402
 
 
@@ -448,3 +450,210 @@ class TestAttemptHooks:
         assert sent_body["max_tokens"] <= 10_000
         report = await scope.ledger.report()
         assert report.total_tokens == 30
+
+
+class TestFinalization:
+    """TASK-3141: draining, one tools-disabled finalization, report attachment (spec §2.3)."""
+
+    async def test_one_tools_disabled_attempt_within_a_final(self):
+        """Two ordinary tool rounds admit, a third is denied, and the owner
+        gets exactly ONE tools-disabled final attempt — three SDK calls total."""
+        final_response = _final({"inputTokens": 30, "outputTokens": 10}, text="final answer")
+        client = BedrockConverseClient(model="claude-sonnet-4-5", budget_registry=BudgetRegistry())
+        with patch.object(client, "_execute_tool", AsyncMock(return_value="ok")):
+            with patch.object(
+                client,
+                "_sdk_create",
+                side_effect=[_tool_round("tu_1"), _tool_round("tu_2"), final_response],
+            ) as mock_create:
+                ai_message = await client.ask(
+                    "Hello", max_tokens=600, token_budget=300, final_answer_reserve=100
+                )
+
+        assert ai_message.stop_reason == "budget_exhausted"
+        assert mock_create.call_count == 3
+        final_payload = mock_create.call_args_list[-1].args[0]
+        assert "toolConfig" not in final_payload
+        assert final_payload["inferenceConfig"]["maxTokens"] <= 600
+        report = ai_message.metadata["token_budget"]
+        assert report["finalized"] is True
+        assert report["finalization_attempted"] is True
+
+    async def test_zero_reserve_skips_finalization_and_propagates_partial_text(self):
+        """final_answer_reserve=0 leaves nothing for the closing attempt once
+        the ordinary round has consumed the whole budget — BudgetExhausted
+        propagates to the caller with partial_text, no closing SDK call."""
+        client = BedrockConverseClient(model="claude-sonnet-4-5", budget_registry=BudgetRegistry())
+        with patch.object(client, "_execute_tool", AsyncMock(return_value="ok")):
+            with patch.object(client, "_sdk_create", side_effect=[_tool_round("tu_1")]) as mock_create:
+                with pytest.raises(BudgetExhausted) as excinfo:
+                    await client.ask("Hello", max_tokens=90, token_budget=60, final_answer_reserve=0)
+        assert excinfo.value.report.get("partial_text") is not None
+        assert mock_create.call_count == 1
+
+    async def test_oversized_final_input_skips_inference(self):
+        """A final payload whose estimate cannot fit even the full remaining
+        budget is denied without a closing SDK call (spec §2.3 table row 2)."""
+        from parrot.models.token_budget import TokenEstimate
+
+        client = BedrockConverseClient(model="claude-sonnet-4-5", budget_registry=BudgetRegistry())
+        real_adapter = client._get_budget_adapter()
+        calls = {"n": 0}
+
+        async def _count_input(payload, **kw):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                return await real_adapter.count_input(payload, **kw)
+            return TokenEstimate(
+                input_tokens=100_000, method="heuristic", quality="upper_bound", request_fingerprint="oversized"
+            )
+
+        fake_adapter = MagicMock()
+        fake_adapter.count_input = AsyncMock(side_effect=_count_input)
+        fake_adapter.prepare_finalization = real_adapter.prepare_finalization
+        fake_adapter.normalize_usage = real_adapter.normalize_usage
+
+        with patch.object(client, "_get_budget_adapter", return_value=fake_adapter):
+            with patch.object(client, "_execute_tool", AsyncMock(return_value="ok")):
+                with patch.object(client, "_sdk_create", side_effect=[_tool_round("tu_1")]) as mock_create:
+                    with pytest.raises(BudgetExhausted) as excinfo:
+                        await client.ask(
+                            "Hello", max_tokens=600, token_budget=10_000, final_answer_reserve=5_000
+                        )
+        assert mock_create.call_count == 1
+        assert excinfo.value.report.get("partial_text") is not None
+
+    async def test_final_tool_call_not_executed_and_no_fallback(self):
+        """A final result still carrying a `toolUse` block is never executed,
+        and the report reflects an incomplete answer (spec §2.3 table row 3)."""
+        # The final ("tools-disabled") attempt still returns a toolUse block —
+        # it must never be dispatched to _execute_tool.
+        final_with_tool_use = _tool_round("should-not-run")
+        client = BedrockConverseClient(model="claude-sonnet-4-5", budget_registry=BudgetRegistry())
+        execute_tool = AsyncMock(return_value="ok")
+        with patch.object(client, "_execute_tool", execute_tool):
+            with patch.object(
+                client, "_sdk_create",
+                side_effect=[_tool_round("tu_1"), _tool_round("tu_2"), final_with_tool_use],
+            ):
+                ai_message = await client.ask(
+                    "Hello", max_tokens=600, token_budget=300, final_answer_reserve=100
+                )
+        assert ai_message.stop_reason == "budget_exhausted"
+        # Only the two ordinary rounds ever executed a tool.
+        assert execute_tool.await_count == 2
+        report = ai_message.metadata["token_budget"]
+        assert report["answer_complete"] is False
+
+    async def test_child_scope_reraises_without_finalizing(self):
+        """A child (non-root) scope re-raises BudgetExhausted to its owner
+        instead of attempting finalization itself (spec §2.1/§2.3)."""
+        registry = BudgetRegistry()
+        root_scope = await registry.create(TokenBudgetPolicy(token_budget=10, final_answer_reserve=0))
+        child_scope = root_scope.child()
+        assert not child_scope.is_root
+
+        client = BedrockConverseClient(model="claude-sonnet-4-5")
+        async with child_scope:
+            with pytest.raises(BudgetExhausted):
+                await client.ask("Hello")
+
+        report = await root_scope.ledger.report()
+        assert report.finalization_attempted is False
+
+
+class TestStreamingFinalization:
+    """TASK-3141: streamed finalization text in-band, exactly one sentinel."""
+
+    async def test_finalization_chunks_in_stream_and_single_sentinel(self):
+        from parrot.models.responses import AIMessage
+
+        async def _final_stream(_payload=None, handle=None):
+            yield {"contentBlockDelta": {"delta": {"text": "final chunk"}}}
+            yield {"messageStop": {"stopReason": "end_turn"}}
+            yield {"metadata": {"usage": {"inputTokens": 30, "outputTokens": 5}}}
+
+        client = BedrockConverseClient(model="claude-sonnet-4-5", budget_registry=BudgetRegistry())
+        with patch.object(client, "_sdk_stream", side_effect=_final_stream) as mock_stream:
+            collected = [
+                item
+                async for item in client.ask_stream(
+                    "Hi", max_tokens=100, token_budget=50, final_answer_reserve=40
+                )
+            ]
+
+        text_chunks = [c for c in collected if isinstance(c, str)]
+        messages = [c for c in collected if isinstance(c, AIMessage)]
+        assert "".join(text_chunks) == "final chunk"
+        assert len(messages) == 1
+        assert messages[0].stop_reason == "budget_exhausted"
+        assert messages[0].metadata["token_budget"]["finalized"] is True
+        assert mock_stream.call_count == 1
+
+    async def test_cancellation_never_finalizes(self):
+        """asyncio.CancelledError mid-stream propagates untouched — never
+        routed into finalization (spec §2.3 table row 4)."""
+        client = BedrockConverseClient(model="claude-sonnet-4-5")
+        registry = BudgetRegistry()
+        scope = await registry.create(TokenBudgetPolicy(token_budget=10_000))
+
+        async def _cancelling_stream(_payload=None, handle=None):
+            yield {"contentBlockDelta": {"delta": {"text": "partial"}}}
+            raise asyncio.CancelledError()
+
+        async with scope:
+            with patch.object(client, "_sdk_stream", side_effect=_cancelling_stream) as mock_stream:
+                with pytest.raises(asyncio.CancelledError):
+                    async for _ in client.ask_stream("Hi"):
+                        pass
+
+        assert mock_stream.call_count == 1
+        report = await scope.ledger.report()
+        assert report.finalization_attempted is False
+        # The unresolved reservation was marked uncertain, never silently dropped.
+        assert report.uncertain_tokens > 0
+
+
+class TestStructuredResult:
+    """TASK-3141: budget-forced answers never reach a custom parser."""
+
+    async def test_budget_cutoff_never_reaches_custom_parser(self):
+        from pydantic import BaseModel
+
+        from parrot.models.outputs import StructuredOutputConfig
+
+        class _Answer(BaseModel):
+            value: str = ""
+
+        custom_parser = AsyncMock(side_effect=AssertionError("custom_parser must not run when budget-forced"))
+        config = StructuredOutputConfig(output_type=_Answer, custom_parser=custom_parser)
+        final_response = _final({"inputTokens": 30, "outputTokens": 10}, text="raw final text")
+
+        client = BedrockConverseClient(model="claude-sonnet-4-5", budget_registry=BudgetRegistry())
+        with patch.object(client, "_execute_tool", AsyncMock(return_value="ok")):
+            with patch.object(
+                client,
+                "_sdk_create",
+                side_effect=[_tool_round("tu_1"), final_response],
+            ) as mock_create:
+                ai_message = await client.ask(
+                    "Hello", max_tokens=600, token_budget=300, final_answer_reserve=100,
+                    structured_output=config,
+                )
+        # One ordinary round (the schema instruction inflates the prompt
+        # enough that a second is already denied) then the forced final.
+        assert mock_create.call_count == 2
+
+        custom_parser.assert_not_called()
+        assert ai_message.structured_output == "raw final text"
+        report = ai_message.metadata["token_budget"]
+        assert report["answer_complete"] is False
+
+    async def test_invoke_result_carries_budget_report(self):
+        response = _final({"inputTokens": 20, "outputTokens": 10}, text="42")
+        client = BedrockConverseClient(model="claude-sonnet-4-5", budget_registry=BudgetRegistry())
+        with patch.object(client, "_sdk_create", side_effect=[response]):
+            result = await client.invoke("What is 6*7?", token_budget=10_000)
+        assert result.output == "42"
+        assert result.budget_report is not None
+        assert result.budget_report["operation_id"]

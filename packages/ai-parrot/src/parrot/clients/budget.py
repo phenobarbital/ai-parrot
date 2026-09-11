@@ -280,6 +280,12 @@ class QuestionBudget:
                 self._terminal_reason = terminal_reason
             self._revision += 1
 
+    async def set_answer_complete(self, value: bool) -> None:
+        """Record whether the terminal answer is complete (provider cutoff, parse failure, final tool call → False)."""
+        async with self._lock:
+            self._answer_complete = bool(value)
+            self._revision += 1
+
     def restore_settled(
         self,
         *,
