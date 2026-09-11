@@ -54,13 +54,19 @@ R2 = {"inputTokens": 3000, "outputTokens": 700}
 def _tool_round(tid: str, usage: dict, name: str = "lookup") -> dict:
     return {
         "stopReason": "tool_use",
-        "output": {"message": {"role": "assistant", "content": [{"toolUse": {"toolUseId": tid, "name": name, "input": {}}}]}},
+        "output": {
+            "message": {"role": "assistant", "content": [{"toolUse": {"toolUseId": tid, "name": name, "input": {}}}]}
+        },
         "usage": usage,
     }
 
 
 def _final_round(usage: dict, text: str = "final answer") -> dict:
-    return {"stopReason": "end_turn", "output": {"message": {"role": "assistant", "content": [{"text": text}]}}, "usage": usage}
+    return {
+        "stopReason": "end_turn",
+        "output": {"message": {"role": "assistant", "content": [{"text": text}]}},
+        "usage": usage,
+    }
 
 
 async def _make_bot(client: Any, **kw: Any) -> BaseBot:
@@ -85,7 +91,9 @@ class _StubBase(AbstractClient):
 
     async def ask(self, prompt, model=None, **kwargs):
         self.calls.append(("ask", dict(kwargs)))
-        return AIMessage(input=prompt, output="ok", response="ok", model="stub", provider="stub", usage=CompletionUsage())
+        return AIMessage(
+            input=prompt, output="ok", response="ok", model="stub", provider="stub", usage=CompletionUsage()
+        )
 
     async def ask_stream(self, prompt, **kwargs):
         self.calls.append(("ask_stream", dict(kwargs)))
@@ -140,10 +148,15 @@ class TestScenario1TwoRoundsAndFinalization:
         # tuned here (not spec's raw B=10_000/F=1_500) so round1/round2 admit
         # and round3 is denied against the ACTUAL estimate, not the settled
         # usage sum alone.
-        with patch.object(client, "_sdk_create", side_effect=[_tool_round("t1", R1), _tool_round("t2", R2)]) as mock_create:
+        with patch.object(
+            client, "_sdk_create", side_effect=[_tool_round("t1", R1), _tool_round("t2", R2)]
+        ) as mock_create:
             msg = await bot.ask(
-                "q", token_budget=4700, final_answer_reserve=1500,
-                use_conversation_history=False, use_vector_context=False,
+                "q",
+                token_budget=4700,
+                final_answer_reserve=1500,
+                use_conversation_history=False,
+                use_vector_context=False,
             )
 
         assert mock_create.call_count == 2  # no third (client-side) dispatch attempted
@@ -185,17 +198,25 @@ class TestScenario1TwoRoundsAndFinalization:
         def _mantle_tool_round(tid, prompt_tokens, completion_tokens):
             return SimpleNamespace(
                 usage=SimpleNamespace(
-                    prompt_tokens=prompt_tokens, completion_tokens=completion_tokens,
+                    prompt_tokens=prompt_tokens,
+                    completion_tokens=completion_tokens,
                     total_tokens=prompt_tokens + completion_tokens,
                     model_dump=lambda: {
-                        "prompt_tokens": prompt_tokens, "completion_tokens": completion_tokens,
+                        "prompt_tokens": prompt_tokens,
+                        "completion_tokens": completion_tokens,
                         "total_tokens": prompt_tokens + completion_tokens,
                     },
                 ),
-                choices=[SimpleNamespace(message=SimpleNamespace(
-                    tool_calls=[SimpleNamespace(id=tid, function=SimpleNamespace(name="lookup", arguments="{}"))],
-                    content=None,
-                ))],
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(
+                            tool_calls=[
+                                SimpleNamespace(id=tid, function=SimpleNamespace(name="lookup", arguments="{}"))
+                            ],
+                            content=None,
+                        )
+                    )
+                ],
             )
 
         view = MagicMock()
@@ -210,8 +231,11 @@ class TestScenario1TwoRoundsAndFinalization:
         # Same tuning note as the Bedrock variant above — Mantle's own
         # per-round estimate (message-shape dependent) needs its own budget.
         msg = await bot.ask(
-            "q", token_budget=4700, final_answer_reserve=1500,
-            use_conversation_history=False, use_vector_context=False,
+            "q",
+            token_budget=4700,
+            final_answer_reserve=1500,
+            use_conversation_history=False,
+            use_vector_context=False,
         )
 
         assert view.chat.completions.create.await_count == 2
@@ -246,7 +270,9 @@ class TestScenario2ChildBot:
             view.chat.completions.create = AsyncMock(
                 return_value=SimpleNamespace(
                     usage=SimpleNamespace(
-                        prompt_tokens=900, completion_tokens=100, total_tokens=1000,
+                        prompt_tokens=900,
+                        completion_tokens=100,
+                        total_tokens=1000,
                         model_dump=lambda: {"prompt_tokens": 900, "completion_tokens": 100, "total_tokens": 1000},
                     ),
                     choices=[SimpleNamespace(message=SimpleNamespace(tool_calls=None, content="child done"))],
@@ -267,14 +293,18 @@ class TestScenario2ChildBot:
         root_bot = await _make_bot(root_client, tools=[call_child])
 
         with patch.object(
-            root_client, "_sdk_create",
+            root_client,
+            "_sdk_create",
             side_effect=[
                 _tool_round("t1", {"inputTokens": 500, "outputTokens": 50}, name="call_child"),
                 _final_round({"inputTokens": 500, "outputTokens": 100}),
             ],
         ):
             msg = await root_bot.ask(
-                "q", token_budget=B, use_conversation_history=False, use_vector_context=False,
+                "q",
+                token_budget=B,
+                use_conversation_history=False,
+                use_vector_context=False,
             )
 
         assert captured["child_operation_id"] == captured["root_operation_id"]
@@ -294,11 +324,15 @@ class TestScenario3FallbackAndContrastive:
             pass
 
         registry = BudgetRegistry()
-        client = BedrockConverseClient(model="claude-sonnet-4-5", fallback_model="claude-haiku-4-5", budget_registry=registry)
+        client = BedrockConverseClient(
+            model="claude-sonnet-4-5", fallback_model="claude-haiku-4-5", budget_registry=registry
+        )
         bot = await _make_bot(client)
 
         final_response = _final_round({"inputTokens": 100, "outputTokens": 50})
-        with patch.object(client, "_sdk_create", side_effect=[ThrottlingException("slow down"), final_response]) as mock_create:
+        with patch.object(
+            client, "_sdk_create", side_effect=[ThrottlingException("slow down"), final_response]
+        ) as mock_create:
             msg = await bot.ask("q", token_budget=100_000, use_conversation_history=False, use_vector_context=False)
 
         assert mock_create.call_count == 2
@@ -320,8 +354,12 @@ class TestScenario3FallbackAndContrastive:
         secondary = UnsupportedStub()
 
         bot = ContrastiveBot(
-            name="contrastive-probe", llm=primary, secondary_llm=secondary, model_switch_mode="contrastive",
-            memory_type="memory", injection_detection=False,
+            name="contrastive-probe",
+            llm=primary,
+            secondary_llm=secondary,
+            model_switch_mode="contrastive",
+            memory_type="memory",
+            injection_detection=False,
         )
         await bot.configure()
 
@@ -371,7 +409,11 @@ class TestScenario4SuspendResume:
         # default registry, not the local `registry` this test constructs.
         bot = await _make_bot(client, tools=[wait_for_input], budget_registry=registry)
 
-        with patch.object(client, "_sdk_create", side_effect=[_tool_round("t1", {"inputTokens": 100, "outputTokens": 20}, name="wait_for_input")]):
+        with patch.object(
+            client,
+            "_sdk_create",
+            side_effect=[_tool_round("t1", {"inputTokens": 100, "outputTokens": 20}, name="wait_for_input")],
+        ):
             with pytest.raises(HumanInteractionInterrupt) as excinfo:
                 await bot.ask("q", token_budget=B, use_conversation_history=False, use_vector_context=False)
 

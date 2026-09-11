@@ -543,8 +543,13 @@ class BedrockConverseBase(AbstractClient):
         if not stream:
             try:
                 async with self._budgeted_attempt(
-                    final_payload, route="converse", stream=False, call_id=call_id,
-                    round_number=round_number, attempt_number=1, phase="final",
+                    final_payload,
+                    route="converse",
+                    stream=False,
+                    call_id=call_id,
+                    round_number=round_number,
+                    attempt_number=1,
+                    phase="final",
                 ) as _h:
                     try:
                         result = await self._sdk_create(final_payload, handle=_h)
@@ -568,8 +573,13 @@ class BedrockConverseBase(AbstractClient):
         # context manager manually instead, closing it only once the
         # wrapped generator is exhausted (spec §2.4).
         attempt_cm = self._budgeted_attempt(
-            final_payload, route="converse", stream=True, call_id=call_id,
-            round_number=round_number, attempt_number=1, phase="final",
+            final_payload,
+            route="converse",
+            stream=True,
+            call_id=call_id,
+            round_number=round_number,
+            attempt_number=1,
+            phase="final",
         )
         try:
             _h = await attempt_cm.__aenter__()
@@ -581,9 +591,7 @@ class BedrockConverseBase(AbstractClient):
         except Exception as dispatch_exc:
             await _h.uncertain("final_dispatch_failed")
             await attempt_cm.__aexit__(type(dispatch_exc), dispatch_exc, dispatch_exc.__traceback__)
-            raise BudgetExhausted(
-                "final dispatch failed", report={"partial_text": partial_text}
-            ) from dispatch_exc
+            raise BudgetExhausted("final dispatch failed", report={"partial_text": partial_text}) from dispatch_exc
 
         async def _wrapped_stream():
             try:
@@ -650,7 +658,11 @@ class BedrockConverseBase(AbstractClient):
         # Always forward an explicit bounded output parameter (spec §2.2).
         set_cap(reservation.output_cap)
         handle = _AttemptHandle(
-            client=await self._get_budgeted_client(), reservation=reservation, ledger=scope.ledger, adapter=adapter, route=route
+            client=await self._get_budgeted_client(),
+            reservation=reservation,
+            ledger=scope.ledger,
+            adapter=adapter,
+            route=route,
         )
         try:
             yield handle
@@ -991,8 +1003,12 @@ class BedrockConverseBase(AbstractClient):
             body["system"] = system_prompt
 
         async with self._budgeted_attempt(
-            body, route="invoke_model", stream=False,
-            call_id=str(uuid.uuid4()), round_number=1, attempt_number=1,
+            body,
+            route="invoke_model",
+            stream=False,
+            call_id=str(uuid.uuid4()),
+            round_number=1,
+            attempt_number=1,
         ) as _hn:
             try:
                 response = await _hn.client.invoke_model(
@@ -1204,8 +1220,12 @@ class BedrockConverseBase(AbstractClient):
             _budget_exhausted: Optional[BudgetExhausted] = None
             try:
                 async with self._budgeted_attempt(
-                    payload, route="converse", stream=False,
-                    call_id=_budget_call_id, round_number=_budget_round_number, attempt_number=1,
+                    payload,
+                    route="converse",
+                    stream=False,
+                    call_id=_budget_call_id,
+                    round_number=_budget_round_number,
+                    attempt_number=1,
                 ) as _h:
                     try:
                         result = await self._sdk_create(payload, handle=_h)
@@ -1227,8 +1247,12 @@ class BedrockConverseBase(AbstractClient):
                     used_fallback = True
                     try:
                         async with self._budgeted_attempt(
-                            payload, route="converse", stream=False,
-                            call_id=_budget_call_id, round_number=_budget_round_number, attempt_number=2,
+                            payload,
+                            route="converse",
+                            stream=False,
+                            call_id=_budget_call_id,
+                            round_number=_budget_round_number,
+                            attempt_number=2,
                         ) as _h2:
                             try:
                                 result = await self._sdk_create(payload, handle=_h2)
@@ -1241,15 +1265,21 @@ class BedrockConverseBase(AbstractClient):
                     except Exception as fallback_exc:
                         # FEAT-548 Finding #1: emit ClientCallFailedEvent
                         await self._emit_failed_call_safe(
-                            _lc_tc, client_name=self.client_name,
-                            model=resolved_model, t0=_lc_t0, exc=fallback_exc,
+                            _lc_tc,
+                            client_name=self.client_name,
+                            model=resolved_model,
+                            t0=_lc_t0,
+                            exc=fallback_exc,
                         )
                         raise
                 else:
                     # FEAT-548 Finding #1: emit ClientCallFailedEvent
                     await self._emit_failed_call_safe(
-                        _lc_tc, client_name=self.client_name,
-                        model=resolved_model, t0=_lc_t0, exc=e,
+                        _lc_tc,
+                        client_name=self.client_name,
+                        model=resolved_model,
+                        t0=_lc_t0,
+                        exc=e,
                     )
                     raise
 
@@ -1257,9 +1287,14 @@ class BedrockConverseBase(AbstractClient):
                 # Ordinary work is denied: the owner attempts ONE tools-disabled
                 # final attempt; a child scope re-raises to its owner (spec §2.3).
                 result = await self._finalize_budgeted(
-                    payload, bedrock_messages=bedrock_messages, content_blocks=content_blocks,
-                    all_tool_calls=all_tool_calls, call_id=_budget_call_id, round_number=_budget_round_number,
-                    resolved_model=resolved_model, partial_text=self._partial_text_from_messages(bedrock_messages),
+                    payload,
+                    bedrock_messages=bedrock_messages,
+                    content_blocks=content_blocks,
+                    all_tool_calls=all_tool_calls,
+                    call_id=_budget_call_id,
+                    round_number=_budget_round_number,
+                    resolved_model=resolved_model,
+                    partial_text=self._partial_text_from_messages(bedrock_messages),
                 )
                 _budget_forced = True
                 content_blocks = result.get("output", {}).get("message", {}).get("content", [])
@@ -1606,8 +1641,12 @@ class BedrockConverseBase(AbstractClient):
 
             try:
                 async with self._budgeted_attempt(
-                    payload, route="converse", stream=True,
-                    call_id=_budget_call_id_s, round_number=_round + 1, attempt_number=1,
+                    payload,
+                    route="converse",
+                    stream=True,
+                    call_id=_budget_call_id_s,
+                    round_number=_round + 1,
+                    attempt_number=1,
                 ) as _hs:
                     try:
                         stream = await self._sdk_stream(payload, handle=_hs)
@@ -1615,8 +1654,11 @@ class BedrockConverseBase(AbstractClient):
                         await _hs.uncertain("dispatch_failed")
                         # FEAT-548 Finding #1: emit ClientCallFailedEvent
                         await self._emit_failed_call_safe(
-                            _lc_tc_s, client_name=self.client_name,
-                            model=resolved_model, t0=_lc_t0_s, exc=_lc_stream_exc,
+                            _lc_tc_s,
+                            client_name=self.client_name,
+                            model=resolved_model,
+                            t0=_lc_t0_s,
+                            exc=_lc_stream_exc,
                         )
                         raise
                     async for event in stream:
@@ -1657,9 +1699,15 @@ class BedrockConverseBase(AbstractClient):
                 # Ordinary work denied: the owner attempts ONE tools-disabled
                 # final attempt, streaming its text in-band (spec §2.3/§2.4).
                 final_stream, _hf = await self._finalize_budgeted(
-                    payload, bedrock_messages=bedrock_messages, content_blocks=round_content_blocks,
-                    all_tool_calls=all_tool_calls, call_id=_budget_call_id_s, round_number=_round + 1,
-                    resolved_model=resolved_model, partial_text=accumulated_text, stream=True,
+                    payload,
+                    bedrock_messages=bedrock_messages,
+                    content_blocks=round_content_blocks,
+                    all_tool_calls=all_tool_calls,
+                    call_id=_budget_call_id_s,
+                    round_number=_round + 1,
+                    resolved_model=resolved_model,
+                    partial_text=accumulated_text,
+                    stream=True,
                 )
                 async for event in final_stream:
                     delta = event.get("contentBlockDelta", {}).get("delta", {})
@@ -1910,8 +1958,12 @@ class BedrockConverseBase(AbstractClient):
             _budget_round_number_r = _lc_round_number + 1
             try:
                 async with self._budgeted_attempt(
-                    payload, route="converse", stream=False,
-                    call_id=_budget_call_id_r, round_number=_budget_round_number_r, attempt_number=1,
+                    payload,
+                    route="converse",
+                    stream=False,
+                    call_id=_budget_call_id_r,
+                    round_number=_budget_round_number_r,
+                    attempt_number=1,
                 ) as _hr:
                     try:
                         result = await self._sdk_create(payload, handle=_hr)
@@ -1921,9 +1973,14 @@ class BedrockConverseBase(AbstractClient):
                     await _hr.settle(result.get("usage"))
             except BudgetExhausted:
                 result = await self._finalize_budgeted(
-                    payload, bedrock_messages=bedrock_messages, content_blocks=content_blocks,
-                    all_tool_calls=all_tool_calls, call_id=_budget_call_id_r, round_number=_budget_round_number_r,
-                    resolved_model=resolved_model, partial_text=self._partial_text_from_messages(bedrock_messages),
+                    payload,
+                    bedrock_messages=bedrock_messages,
+                    content_blocks=content_blocks,
+                    all_tool_calls=all_tool_calls,
+                    call_id=_budget_call_id_r,
+                    round_number=_budget_round_number_r,
+                    resolved_model=resolved_model,
+                    partial_text=self._partial_text_from_messages(bedrock_messages),
                 )
                 _budget_forced = True
                 content_blocks = result.get("output", {}).get("message", {}).get("content", [])
@@ -1938,8 +1995,11 @@ class BedrockConverseBase(AbstractClient):
             except Exception as _lc_resume_exc:
                 # FEAT-548 Finding #1: emit ClientCallFailedEvent
                 await self._emit_failed_call_safe(
-                    _lc_tc, client_name=self.client_name,
-                    model=resolved_model, t0=_lc_t0, exc=_lc_resume_exc,
+                    _lc_tc,
+                    client_name=self.client_name,
+                    model=resolved_model,
+                    t0=_lc_t0,
+                    exc=_lc_resume_exc,
                 )
                 raise
             _lc_round_number += 1
@@ -2165,8 +2225,12 @@ class BedrockConverseBase(AbstractClient):
             _budget_forced = False
             try:
                 async with self._budgeted_attempt(
-                    payload, route="converse", stream=False,
-                    call_id=str(uuid.uuid4()), round_number=1, attempt_number=1,
+                    payload,
+                    route="converse",
+                    stream=False,
+                    call_id=str(uuid.uuid4()),
+                    round_number=1,
+                    attempt_number=1,
                 ) as _hi:
                     try:
                         result = await self._sdk_create(payload, handle=_hi)
@@ -2179,18 +2243,27 @@ class BedrockConverseBase(AbstractClient):
                 # without tools; owner finalization still applies (spec §2.3).
                 try:
                     result = await self._finalize_budgeted(
-                        payload, bedrock_messages=payload["messages"], content_blocks=[],
-                        all_tool_calls=[], call_id=str(uuid.uuid4()), round_number=1,
-                        resolved_model=resolved_model, partial_text="",
+                        payload,
+                        bedrock_messages=payload["messages"],
+                        content_blocks=[],
+                        all_tool_calls=[],
+                        call_id=str(uuid.uuid4()),
+                        round_number=1,
+                        resolved_model=resolved_model,
+                        partial_text="",
                     )
                     _budget_forced = True
                 except BudgetExhausted as bx2:
                     _scope = current_budget_scope()
-                    _report = (bx2.report or {})
+                    _report = bx2.report or {}
                     partial = _report.pop("partial_text", "") or ""
                     usage = CompletionUsage()
                     invoke_result = InvokeResult(
-                        output=partial, output_type=None, model=resolved_model, usage=usage, raw_response=None,
+                        output=partial,
+                        output_type=None,
+                        model=resolved_model,
+                        usage=usage,
+                        raw_response=None,
                     )
                     if _scope is not None:
                         invoke_result.budget_report = (await _scope.ledger.report()).model_dump()

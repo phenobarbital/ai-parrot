@@ -284,8 +284,15 @@ class OpenAIBaseClient(AbstractClient):
                 return await method(model=model, messages=messages, **kwargs)
 
     async def _finalize_budgeted_chat(
-        self, messages: list[dict[str, Any]], *, model_str: str, args: dict[str, Any], all_tool_calls: list[ToolCall],
-        pending_tool_calls: list[dict[str, Any]], partial_text: str, stream: bool,
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        model_str: str,
+        args: dict[str, Any],
+        all_tool_calls: list[ToolCall],
+        pending_tool_calls: list[dict[str, Any]],
+        partial_text: str,
+        stream: bool,
     ) -> Any:
         """Owner-only, one tools-disabled Chat Completions attempt inside A_final (spec §2.3); raises BudgetExhausted otherwise."""
         scope = current_budget_scope()
@@ -295,16 +302,25 @@ class OpenAIBaseClient(AbstractClient):
         if not scope.owner_designated:
             scope.designate_owner(ctx.get("call_id") or str(uuid.uuid4()))
         if not await scope.ledger.claim_finalization(scope.owner_call_id):
-            raise BudgetExhausted("finalization already claimed or in-flight", operation_id=scope.ledger.operation_id,
-                                  report={**(await scope.ledger.report()).model_dump(), "partial_text": partial_text})
+            raise BudgetExhausted(
+                "finalization already claimed or in-flight",
+                operation_id=scope.ledger.operation_id,
+                report={**(await scope.ledger.report()).model_dump(), "partial_text": partial_text},
+            )
         adapter = self.budget_adapter_factory()
-        frame = {"payload": {"model": model_str, "messages": messages, **args}, "completed_tool_calls": [tc.model_dump() for tc in all_tool_calls if tc.error is None],
-                 "pending_tool_calls": pending_tool_calls, "answer_text": partial_text}
+        frame = {
+            "payload": {"model": model_str, "messages": messages, **args},
+            "completed_tool_calls": [tc.model_dump() for tc in all_tool_calls if tc.error is None],
+            "pending_tool_calls": pending_tool_calls,
+            "answer_text": partial_text,
+        }
         final_payload = adapter.prepare_finalization(frame)
         final_args = {k: v for k, v in args.items() if k not in ("tools", "tool_choice")}
         token = _BUDGET_CALL_CTX.set({**ctx, "phase": "final", "single_attempt": True})
         try:
-            return await self._chat_completion(model=model_str, messages=final_payload["messages"], use_tools=False, stream=stream, **final_args)
+            return await self._chat_completion(
+                model=model_str, messages=final_payload["messages"], use_tools=False, stream=stream, **final_args
+            )
         except BudgetExhausted as bx:
             # Merge partial_text even when the denial came from the final
             # reserve() itself (spec §2.3 "propagated in BudgetExhausted.report").
@@ -610,7 +626,10 @@ class OpenAIBaseClient(AbstractClient):
                             e.agent_name = model_str
                             _scope = current_budget_scope()
                             if _scope is not None:
-                                e.state = {**(getattr(e, "state", None) or {}), TOKEN_BUDGET_STATE_KEY: await _scope.registry.suspend(_scope)}
+                                e.state = {
+                                    **(getattr(e, "state", None) or {}),
+                                    TOKEN_BUDGET_STATE_KEY: await _scope.registry.suspend(_scope),
+                                }
                             raise
 
                         elif isinstance(e, BudgetError):
@@ -667,8 +686,15 @@ class OpenAIBaseClient(AbstractClient):
                 for msg in messages:
                     if msg.get("role") == "assistant" and msg.get("content"):
                         partial_text += msg.get("content", "")
-                response = await self._finalize_budgeted_chat(messages, model_str=model_str, args=args, all_tool_calls=all_tool_calls,
-                                                              pending_tool_calls=[], partial_text=partial_text, stream=False)
+                response = await self._finalize_budgeted_chat(
+                    messages,
+                    model_str=model_str,
+                    args=args,
+                    all_tool_calls=all_tool_calls,
+                    pending_tool_calls=[],
+                    partial_text=partial_text,
+                    stream=False,
+                )
                 _BUDGET_CALL_CTX.set({**_BUDGET_CALL_CTX.get(), "forced": True})
                 result = response.choices[0].message
                 round_number += 1
@@ -834,8 +860,13 @@ class OpenAIBaseClient(AbstractClient):
             # Ordinary work denied before the tool loop even starts: the
             # owner attempts ONE tools-disabled final attempt (spec §2.3).
             response = await self._finalize_budgeted_chat(
-                messages, model_str=model_str, args=args, all_tool_calls=[],
-                pending_tool_calls=[], partial_text="", stream=False,
+                messages,
+                model_str=model_str,
+                args=args,
+                all_tool_calls=[],
+                pending_tool_calls=[],
+                partial_text="",
+                stream=False,
             )
             _budget_forced = True
             _BUDGET_CALL_CTX.set({**_BUDGET_CALL_CTX.get(), "forced": True})
@@ -1285,8 +1316,13 @@ class OpenAIBaseClient(AbstractClient):
                 # final attempt, streaming its text in-band (spec §2.3/§2.4).
                 partial_text = assistant_content
                 final_stream = await self._finalize_budgeted_chat(
-                    messages, model_str=model_str, args=args, all_tool_calls=all_tool_calls,
-                    pending_tool_calls=[], partial_text=partial_text, stream=True,
+                    messages,
+                    model_str=model_str,
+                    args=args,
+                    all_tool_calls=all_tool_calls,
+                    pending_tool_calls=[],
+                    partial_text=partial_text,
+                    stream=True,
                 )
                 async for chunk in final_stream:
                     if chunk.choices:
@@ -1403,7 +1439,10 @@ class OpenAIBaseClient(AbstractClient):
                             e.agent_name = model_str
                             _scope = current_budget_scope()
                             if _scope is not None:
-                                e.state = {**(getattr(e, "state", None) or {}), TOKEN_BUDGET_STATE_KEY: await _scope.registry.suspend(_scope)}
+                                e.state = {
+                                    **(getattr(e, "state", None) or {}),
+                                    TOKEN_BUDGET_STATE_KEY: await _scope.registry.suspend(_scope),
+                                }
                             raise
                         elif isinstance(e, BudgetError):
                             # FEAT-550 §3 M3: budget control from a tool's own
@@ -1559,16 +1598,24 @@ class OpenAIBaseClient(AbstractClient):
                 # without tools; owner finalization still applies (spec §2.3).
                 try:
                     response = await self._finalize_budgeted_chat(
-                        messages, model_str=resolved_model, args=kwargs, all_tool_calls=[],
-                        pending_tool_calls=[], partial_text="", stream=False,
+                        messages,
+                        model_str=resolved_model,
+                        args=kwargs,
+                        all_tool_calls=[],
+                        pending_tool_calls=[],
+                        partial_text="",
+                        stream=False,
                     )
                     _budget_forced = True
                 except BudgetExhausted as bx2:
                     _scope = current_budget_scope()
                     partial = (bx2.report or {}).pop("partial_text", "") or ""
                     invoke_result = InvokeResult(
-                        output=partial, output_type=None, model=resolved_model,
-                        usage=CompletionUsage(), raw_response=None,
+                        output=partial,
+                        output_type=None,
+                        model=resolved_model,
+                        usage=CompletionUsage(),
+                        raw_response=None,
                     )
                     if _scope is not None:
                         invoke_result.budget_report = (await _scope.ledger.report()).model_dump()

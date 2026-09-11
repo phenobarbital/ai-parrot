@@ -8,6 +8,7 @@ Usage:
     python examples/clients/smoke/smoke_token_budget_qualification.py \
         --provider bedrock --model claude-haiku-4-5 --region us-east-1 --budget 4000 --i-accept-paid-inference
 """
+
 from __future__ import annotations
 
 import argparse
@@ -20,7 +21,11 @@ from typing import Any
 
 from parrot.clients.amazon import BedrockConverseClient, BedrockMantleClient, NovaClient
 from parrot.clients.amazon.budget import BedrockBudgetAdapter, MantleBudgetAdapter, fingerprint
-from parrot.clients.amazon.budget_qualifications import QualificationKey, installed_sdk_versions, probe_count_tokens_support
+from parrot.clients.amazon.budget_qualifications import (
+    QualificationKey,
+    installed_sdk_versions,
+    probe_count_tokens_support,
+)
 from parrot.tools import tool
 
 VARIANTS = ("plain", "tools", "stream", "cache", "schema")
@@ -65,7 +70,7 @@ async def _run_variant(client: Any, adapter: Any, variant: str, budget: int) -> 
     }
 
     prompt = "Hello, please reply with exactly one word: 'Acknowledged'."
-    
+
     if variant == "tools":
         kwargs["tools"] = [get_weather]
         prompt = "What is the weather in Seattle, WA?"
@@ -80,14 +85,8 @@ async def _run_variant(client: Any, adapter: Any, variant: str, budget: int) -> 
                 "type": "json_schema",
                 "json_schema": {
                     "name": "simple_response",
-                    "schema": {
-                        "type": "object",
-                        "properties": {
-                            "reply": {"type": "string"}
-                        },
-                        "required": ["reply"]
-                    }
-                }
+                    "schema": {"type": "object", "properties": {"reply": {"type": "string"}}, "required": ["reply"]},
+                },
             }
             prompt = "Reply with JSON containing a 'reply' field set to 'Acknowledged'."
         else:
@@ -145,7 +144,9 @@ async def _run_variant(client: Any, adapter: Any, variant: str, budget: int) -> 
         dummy_payload = {"model": kwargs["model"], "prompt": prompt}
         if "tools" in kwargs:
             dummy_payload["tools"] = ["get_weather"]
-        fp = fingerprint(dummy_payload, route="converse" if "mantle" not in getattr(client, "provider", "") else "chat_completions")
+        fp = fingerprint(
+            dummy_payload, route="converse" if "mantle" not in getattr(client, "provider", "") else "chat_completions"
+        )
 
         return {
             "variant": variant,
@@ -170,7 +171,9 @@ async def _run_variant(client: Any, adapter: Any, variant: str, budget: int) -> 
 async def main() -> int:
     a = _parse()
     if not _opted_in(a):
-        print("SKIPPED: qualification probe requires --provider --model --region|--endpoint --budget --i-accept-paid-inference")
+        print(
+            "SKIPPED: qualification probe requires --provider --model --region|--endpoint --budget --i-accept-paid-inference"
+        )
         return 0
 
     versions = installed_sdk_versions("botocore", "aiobotocore", "aioboto3", "openai", "tiktoken")
@@ -231,12 +234,12 @@ async def main() -> int:
     log_dir.mkdir(parents=True, exist_ok=True)
     timestamp = int(time.time())
     findings_file = log_dir / f"token_budget_qualification_{a.provider}_{a.model.replace('/', '_')}_{timestamp}.json"
-    
+
     with open(findings_file, "w") as f:
         json.dump(findings, f, indent=2)
 
     print(f"\nFindings written to {findings_file}")
-    
+
     # Print compact PASS/FAIL table
     print("\nVariant Results:")
     print(f"{'Variant':<12} | {'Passed':<6} | {'Actual In':<10} | {'Actual Out':<10} | {'Cap Respected':<13}")
@@ -247,7 +250,9 @@ async def main() -> int:
             continue
         passed_str = "PASS" if r.get("passed") else "FAIL"
         cap_str = "N/A" if r.get("cap_respected") is None else ("YES" if r.get("cap_respected") else "NO")
-        print(f"{r['variant']:<12} | {passed_str:<6} | {r.get('actual_input', 'N/A'):<10} | {r.get('actual_output', 'N/A'):<10} | {cap_str:<13}")
+        print(
+            f"{r['variant']:<12} | {passed_str:<6} | {r.get('actual_input', 'N/A'):<10} | {r.get('actual_output', 'N/A'):<10} | {cap_str:<13}"
+        )
 
     # Print QualificationKey literal
     print("\nQualification Key for manual registry entry:")
@@ -264,7 +269,9 @@ async def main() -> int:
         count_method="local_estimate" if not count_tokens_available else "count_tokens",
         output_cap_semantics="converse_maxTokens" if a.provider != "mantle" else "max_tokens",
     )
-    print(f"QualificationKey(\n    model={key.model!r},\n    endpoint={key.endpoint!r},\n    route={key.route!r},\n    tools={key.tools},\n    schema={key.schema},\n    cache={key.cache},\n    thinking={key.thinking},\n    stream={key.stream},\n    sdk_versions={key.sdk_versions!r},\n    count_method={key.count_method!r},\n    output_cap_semantics={key.output_cap_semantics!r},\n)")
+    print(
+        f"QualificationKey(\n    model={key.model!r},\n    endpoint={key.endpoint!r},\n    route={key.route!r},\n    tools={key.tools},\n    schema={key.schema},\n    cache={key.cache},\n    thinking={key.thinking},\n    stream={key.stream},\n    sdk_versions={key.sdk_versions!r},\n    count_method={key.count_method!r},\n    output_cap_semantics={key.output_cap_semantics!r},\n)"
+    )
 
     return 0
 

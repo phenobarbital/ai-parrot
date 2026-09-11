@@ -268,7 +268,9 @@ def _tool_call_response(usage_total: int, tool_id: str = "t1") -> SimpleNamespac
         choices=[
             SimpleNamespace(
                 message=SimpleNamespace(
-                    tool_calls=[SimpleNamespace(id=tool_id, function=SimpleNamespace(name="get_weather", arguments="{}"))],
+                    tool_calls=[
+                        SimpleNamespace(id=tool_id, function=SimpleNamespace(name="get_weather", arguments="{}"))
+                    ],
                     content=None,
                 )
             )
@@ -352,9 +354,7 @@ class TestMantleFinalization:
             await client._ensure_client()
 
             with pytest.raises(BudgetExhausted) as excinfo:
-                await client.ask(
-                    "hi", max_tokens=90, token_budget=100, final_answer_reserve=0, use_tools=True
-                )
+                await client.ask("hi", max_tokens=90, token_budget=100, final_answer_reserve=0, use_tools=True)
             assert excinfo.value.report.get("partial_text") is not None
             # Only the one ordinary round's create() call happened; no
             # finalization dispatch (there was nothing left to finalize with).
@@ -429,9 +429,7 @@ def _stream_chunk(text: str | None = None, *, finish_reason: str | None = None, 
 def _stream_tool_call_chunk(tool_id: str, name: str, arguments: str) -> SimpleNamespace:
     """A single delta chunk carrying a fully-formed tool-call fragment
     (id+name+arguments in one shot, which ask_stream's accumulator supports)."""
-    tc_delta = SimpleNamespace(
-        index=0, id=tool_id, function=SimpleNamespace(name=name, arguments=arguments)
-    )
+    tc_delta = SimpleNamespace(index=0, id=tool_id, function=SimpleNamespace(name=name, arguments=arguments))
     return SimpleNamespace(
         choices=[SimpleNamespace(delta=SimpleNamespace(content=None, tool_calls=[tc_delta]), finish_reason=None)],
         usage=None,
@@ -440,7 +438,9 @@ def _stream_tool_call_chunk(tool_id: str, name: str, arguments: str) -> SimpleNa
 
 def _stream_usage(total: int) -> SimpleNamespace:
     return SimpleNamespace(
-        prompt_tokens=total - 5, completion_tokens=5, total_tokens=total,
+        prompt_tokens=total - 5,
+        completion_tokens=5,
+        total_tokens=total,
         model_dump=lambda: {"prompt_tokens": total - 5, "completion_tokens": 5, "total_tokens": total},
     )
 
@@ -476,18 +476,17 @@ class TestMantleStreaming:
             # stream, which always has use_tools=False — must go through
             # `.create()` instead; `.parse` must never be called for a
             # streaming finalization.
-            view.chat.completions.create = AsyncMock(
-                side_effect=[_round1_stream(), _round2_stream(), _final_stream()]
+            view.chat.completions.create = AsyncMock(side_effect=[_round1_stream(), _round2_stream(), _final_stream()])
+            view.chat.completions.parse = AsyncMock(
+                side_effect=AssertionError(".parse must not be used for stream=True")
             )
-            view.chat.completions.parse = AsyncMock(side_effect=AssertionError(".parse must not be used for stream=True"))
             root = MagicMock()
             root.with_options = MagicMock(return_value=view)
             client.get_client = AsyncMock(return_value=root)
             await client._ensure_client()
 
             collected = [
-                item
-                async for item in client.ask_stream("hi", max_tokens=30, token_budget=260, use_tools=True)
+                item async for item in client.ask_stream("hi", max_tokens=30, token_budget=260, use_tools=True)
             ]
 
         text_chunks = [c for c in collected if isinstance(c, str)]
@@ -546,9 +545,7 @@ class TestBudgetedResume:
         # wrapper does not zero-cost-pass-through resume() (it only inspects
         # BUDGET_KWARGS at call time / `_budget_defaults_active` at construction
         # — the state envelope alone does not flip the gate).
-        client = BedrockMantleClient(
-            api_key="k", region="us-east-1", token_budget=1000, budget_registry=registry
-        )
+        client = BedrockMantleClient(api_key="k", region="us-east-1", token_budget=1000, budget_registry=registry)
 
         # A real root scope, suspended to mint a genuine resume envelope
         # (not a hand-rolled fake — the registry validates nonce/revision/policy).
@@ -606,7 +603,11 @@ class TestMantleStructured:
         await client._ensure_client()
 
         result = await client.invoke(
-            "hi", structured_output=config, max_tokens=90, token_budget=400, final_answer_reserve=350,
+            "hi",
+            structured_output=config,
+            max_tokens=90,
+            token_budget=400,
+            final_answer_reserve=350,
         )
 
         custom_parser.assert_not_called()
@@ -636,7 +637,10 @@ class TestMantleStructured:
         await client._ensure_client()
 
         result = await client.invoke(
-            "hi", max_tokens=90, token_budget=100, final_answer_reserve=0,
+            "hi",
+            max_tokens=90,
+            token_budget=100,
+            final_answer_reserve=0,
         )
 
         assert result.output == ""
@@ -657,9 +661,7 @@ class TestMantleStructured:
         client.get_client = AsyncMock(return_value=root)
         await client._ensure_client()
 
-        with patch.object(
-            client, "_chat_completion", AsyncMock(side_effect=BudgetAccountingError("ledger corrupted"))
-        ):
+        with patch.object(client, "_chat_completion", AsyncMock(side_effect=BudgetAccountingError("ledger corrupted"))):
             with pytest.raises(BudgetAccountingError, match="ledger corrupted"):
                 await client.invoke("hi", max_tokens=30, token_budget=100)
 

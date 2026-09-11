@@ -317,8 +317,13 @@ class TestReservationArithmetic:
         an underspending ordinary round can leave room even with reserve=0)."""
         q = await _ledger(b=1000, reserve=0)
         r1 = await q.reserve(
-            _est(50), max_output_tokens=100, min_output_tokens=1,
-            call_id="c", round_number=1, attempt_number=1, phase="work",
+            _est(50),
+            max_output_tokens=100,
+            min_output_tokens=1,
+            call_id="c",
+            round_number=1,
+            attempt_number=1,
+            phase="work",
         )
         await q.settle(r1.reservation_id, _usage(50, 10))  # consumes only 60/1000
 
@@ -327,8 +332,13 @@ class TestReservationArithmetic:
         # transitions to draining, even though 940 tokens are still unspent.
         with pytest.raises(BudgetExhausted):
             await q.reserve(
-                _est(950), max_output_tokens=100, min_output_tokens=1,
-                call_id="c", round_number=2, attempt_number=1, phase="work",
+                _est(950),
+                max_output_tokens=100,
+                min_output_tokens=1,
+                call_id="c",
+                round_number=2,
+                attempt_number=1,
+                phase="work",
             )
         assert q.state == "draining"
 

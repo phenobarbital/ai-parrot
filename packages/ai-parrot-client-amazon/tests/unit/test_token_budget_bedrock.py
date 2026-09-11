@@ -475,9 +475,7 @@ class TestFinalization:
                 "_sdk_create",
                 side_effect=[_tool_round("tu_1"), _tool_round("tu_2"), final_response],
             ) as mock_create:
-                ai_message = await client.ask(
-                    "Hello", max_tokens=600, token_budget=300, final_answer_reserve=100
-                )
+                ai_message = await client.ask("Hello", max_tokens=600, token_budget=300, final_answer_reserve=100)
 
         assert ai_message.stop_reason == "budget_exhausted"
         assert mock_create.call_count == 3
@@ -526,9 +524,7 @@ class TestFinalization:
             with patch.object(client, "_execute_tool", AsyncMock(return_value="ok")):
                 with patch.object(client, "_sdk_create", side_effect=[_tool_round("tu_1")]) as mock_create:
                     with pytest.raises(BudgetExhausted) as excinfo:
-                        await client.ask(
-                            "Hello", max_tokens=600, token_budget=10_000, final_answer_reserve=5_000
-                        )
+                        await client.ask("Hello", max_tokens=600, token_budget=10_000, final_answer_reserve=5_000)
         assert mock_create.call_count == 1
         assert excinfo.value.report.get("partial_text") is not None
 
@@ -542,12 +538,11 @@ class TestFinalization:
         execute_tool = AsyncMock(return_value="ok")
         with patch.object(client, "_execute_tool", execute_tool):
             with patch.object(
-                client, "_sdk_create",
+                client,
+                "_sdk_create",
                 side_effect=[_tool_round("tu_1"), _tool_round("tu_2"), final_with_tool_use],
             ):
-                ai_message = await client.ask(
-                    "Hello", max_tokens=600, token_budget=300, final_answer_reserve=100
-                )
+                ai_message = await client.ask("Hello", max_tokens=600, token_budget=300, final_answer_reserve=100)
         assert ai_message.stop_reason == "budget_exhausted"
         # Only the two ordinary rounds ever executed a tool.
         assert execute_tool.await_count == 2
@@ -585,10 +580,7 @@ class TestStreamingFinalization:
         client = BedrockConverseClient(model="claude-sonnet-4-5", budget_registry=BudgetRegistry())
         with patch.object(client, "_sdk_stream", side_effect=_final_stream) as mock_stream:
             collected = [
-                item
-                async for item in client.ask_stream(
-                    "Hi", max_tokens=100, token_budget=50, final_answer_reserve=40
-                )
+                item async for item in client.ask_stream("Hi", max_tokens=100, token_budget=50, final_answer_reserve=40)
             ]
 
         text_chunks = [c for c in collected if isinstance(c, str)]
@@ -646,7 +638,10 @@ class TestStructuredResult:
                 side_effect=[_tool_round("tu_1"), final_response],
             ) as mock_create:
                 ai_message = await client.ask(
-                    "Hello", max_tokens=600, token_budget=300, final_answer_reserve=100,
+                    "Hello",
+                    max_tokens=600,
+                    token_budget=300,
+                    final_answer_reserve=100,
                     structured_output=config,
                 )
         # One ordinary round (the schema instruction inflates the prompt
