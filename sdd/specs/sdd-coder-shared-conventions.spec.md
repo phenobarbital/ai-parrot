@@ -93,8 +93,8 @@ is the number that bites whenever a profile is constructed directly.
 - Language-aware injection (only shipping the Cython/Rust rules when the
   task touches `.pyx`/`.rs`). The full coder rule set is ~10 KB (~2.5 K
   tokens); trimming it is a later optimisation, see §8.
-- Rewriting `AGENTS.md`'s persona prose. Only the managed block is
-  owned by this feature; pruning the stale lines is a §8 question.
+- Rewriting `AGENTS.md`'s **safety / git protocol** sections. Only the
+  stale tech-stack and formatting prose is pruned (§3 M3, §8 Q1 resolved).
 - Changing `DEFAULT_LLM_MAX_TURNS = 60` or the `DEV_LOOP_LLM_MAX_TURNS`
   env override in `agent_builder.py`.
 - Bringing the whole repository to zero TID251 findings. Existing
@@ -120,12 +120,20 @@ it, each through the mechanism it already has:
    right after the `sdd-coder` body. The helper prefers the worktree copy
    (`<cwd>/.agent/rules/<name>.md`, so a feature branch that edits a rule
    dispatches its own version) and falls back to a package-shipped copy
-   under `_subagent_data/rules/` — the same dual-sourcing
+   under `parrot/flows/_rules_data/` — the same dual-sourcing
    `load_subagent_definition` already uses, so dispatch keeps working when
-   `ai-parrot` runs from a wheel outside the repo.
+   `ai-parrot` runs from a wheel outside the repo. The helper lives in a
+   **stdlib-only leaf module, `parrot/flows/conventions.py`** (importing
+   `parrot.flows` costs ~8 ms; importing anything under
+   `parrot.flows.dev_loop` costs ~2.2 s because that package's `__init__`
+   eagerly imports every dispatcher), and `_subagent_defs` re-exports it.
 3. **`AGENTS.md` / `GEMINI.md`** get a `<!-- parrot:conventions:… -->`
-   marker block upserted by the codex/google wiki installers, rendered from
-   the same helper output.
+   marker block rendered from the same helper, upserted by **both**
+   installer paths: the codex/google wiki installers
+   (`knowledge/wiki/codex|google/installer.py`) and the stdlib-only
+   `coding_agents.install()` (`parrot wiki <agent> install`). `AGENTS.md`'s
+   stale prose outside the markers (front-end stack, `black`/`isort`,
+   the unresolved `@RTK.md` include) is pruned in the same module.
 
 Prompts are advisory, so the guarantee is deterministic: `ruff.toml` bans
 the forbidden modules (TID251) with a per-file grandfather list, and the
@@ -149,14 +157,15 @@ automatically.
         │
         ├─ byte-parity test ──→ .claude/rules/<same>.md    ← native haiku seat (Claude Code auto-load)
         │
-        ├─ byte-parity test ──→ _subagent_data/rules/<same>.md   ← wheel fallback
+        ├─ byte-parity test ──→ parrot/flows/_rules_data/<same>.md   ← wheel fallback
         │
-        └─ load_project_conventions(cwd)
+        └─ parrot/flows/conventions.py : load_project_conventions(cwd)   (stdlib-only leaf)
                  │
-                 ├─→ LLMCodeDispatcher._initial_messages()      (nova, google-compat, grok, zai, moonshot)
-                 ├─→ CodexCodeDispatcher._build_codex_prompt()  (codex)
-                 ├─→ GoogleCodingDispatcher._build_agy_prompt() (agy)
-                 └─→ wiki codex/google installers ──→ AGENTS.md / GEMINI.md marker block
+                 ├─→ _subagent_defs (re-export) ─→ LLMCodeDispatcher._initial_messages()      (nova, google-compat, grok, zai, moonshot)
+                 │                              ├→ CodexCodeDispatcher._build_codex_prompt()  (codex)
+                 │                              └→ GoogleCodingDispatcher._build_agy_prompt() (agy)
+                 ├─→ knowledge/wiki/codex|google installers ──→ AGENTS.md / GEMINI.md marker block
+                 └─→ knowledge/wiki/coding_agents.install()   ──→ AGENTS.md / GEMINI.md / CLAUDE.md marker block
 
 ruff.toml [lint.flake8-tidy-imports.banned-api] ──→ sdd-coder step e) `ruff check`
                                                  └─→ SddCoderEngine._run_attempt() → check_banned_imports() → attempt error
@@ -166,7 +175,10 @@ ruff.toml [lint.flake8-tidy-imports.banned-api] ──→ sdd-coder step e) `ruf
 
 | Existing Component | Integration Type | Notes |
 |---|---|---|
-| `parrot.flows.dev_loop._subagent_defs` | extends | adds `CODER_RULE_NAMES`, `load_project_conventions()` |
+| `parrot/flows/conventions.py` (new) | creates | stdlib-only `CODER_RULE_NAMES`, `load_project_conventions()`, `CONVENTIONS_PREAMBLE` |
+| `parrot.flows.dev_loop._subagent_defs` | extends | re-exports the three names above |
+| `knowledge/wiki/coding_agents.py` `install()` (`:89`) | extends | second marker block for conventions, all three agents |
+| `AGENTS.md` | modifies | stale prose pruned outside the managed blocks |
 | `LLMCodeDispatcher._initial_messages` (`llm.py:891`) | modifies | appends conventions to the system message |
 | `CodexCodeDispatcher._build_codex_prompt` (`codex.py:345`) | modifies | gains `cwd`, appends conventions after the body |
 | `GoogleCodingDispatcher._build_agy_prompt` (`google_coding.py:317`) | modifies | gains `cwd`, appends conventions after the body |
@@ -176,7 +188,7 @@ ruff.toml [lint.flake8-tidy-imports.banned-api] ──→ sdd-coder step e) `ruf
 | `knowledge/wiki/google/installer.py` `_install_gemini_md` (`:81`) | extends | second marker block for conventions |
 | `ruff.toml` | modifies | `TID251` in `select`, `banned-api` table, grandfather `per-file-ignores` |
 | `models/llm.py:23`, `models/grok.py:22` | modifies | `max_turns` default 24 → 40 |
-| `packages/ai-parrot/pyproject.toml:906` | modifies | package-data glob for `_subagent_data/rules/*.md` |
+| `packages/ai-parrot/pyproject.toml:894-909` | modifies | new package-data entry `"parrot.flows" = ["_rules_data/*.md"]` |
 | `tests/flows/dev_loop/test_subagent_parity.py` | reference | pattern reused by the new `test_rules_parity.py` |
 
 ### Data Models
@@ -188,9 +200,10 @@ unchanged.
 ### New Public Interfaces
 
 ```python
-# parrot/flows/dev_loop/_subagent_defs.py
+# parrot/flows/conventions.py  (new, stdlib-only — re-exported by parrot/flows/dev_loop/_subagent_defs.py)
 CODER_RULE_NAMES: tuple[str, ...]
 RULES_DIRNAME: str  # ".agent/rules"
+CONVENTIONS_PREAMBLE: str
 
 def load_project_conventions(cwd: str | os.PathLike[str] | None = None, *, names: Sequence[str] = CODER_RULE_NAMES) -> str: ...
 
@@ -211,15 +224,15 @@ async def check_banned_imports(cwd: str, changed: List[str]) -> List[str]: ...
 |---|---|---|---|
 | M1: Conventions source of truth | **no** (content) / yes (twins + parity test) | File names, twin locations, parity test shape fixed | The prose of `codebase-conventions.md` encodes architectural decisions; a thinking model writes it, the twins and test are mechanical |
 | M2: `load_project_conventions` + prompt injection | yes | Signature, lookup order, separator, insertion point per builder all fixed below | — |
-| M3: AGENTS.md / GEMINI.md conventions block | yes | Marker strings, upsert helper, installer hook points fixed | — |
+| M3: AGENTS.md / GEMINI.md conventions block + AGENTS.md prune | yes | Marker strings, upsert helpers, installer hook points, and the exact list of AGENTS.md sections to delete are fixed | — |
 | M4: ruff banned-api + engine backstop | yes | Rule list, grandfather list, `check_banned_imports` contract, attempt-error wiring fixed | — |
 | M5: `max_turns` 24 → 40 | yes | Two field defaults + one comment + one test | — |
 
 ### Module 1: Conventions source of truth
 - **Path**: `.agent/rules/codebase-conventions.md` (new),
   `.claude/rules/codebase-conventions.md` (new twin),
-  `packages/ai-parrot/src/parrot/flows/dev_loop/_subagent_data/rules/{codebase-conventions,python-development,cython-development,rust-development}.md` (new, byte-identical to `.agent/rules/`),
-  `packages/ai-parrot/pyproject.toml:906` (add `"_subagent_data/rules/*.md"`),
+  `packages/ai-parrot/src/parrot/flows/_rules_data/{codebase-conventions,python-development,cython-development,rust-development}.md` (new, byte-identical to `.agent/rules/`),
+  `packages/ai-parrot/pyproject.toml` (`[tool.setuptools.package-data]`, add `"parrot.flows" = ["_rules_data/*.md"]` next to the `parrot.flows.dev_loop` entry at `:906`),
   `packages/ai-parrot/tests/flows/dev_loop/test_rules_parity.py` (new)
 - **Responsibility**: the canonical coder rule set and the guards that keep
   its three copies identical. `.agent/rules/python-development.md`,
@@ -251,7 +264,7 @@ async def check_banned_imports(cwd: str, changed: List[str]) -> List[str]: ...
 - **Interface Skeleton** *(test module only — rule files are Markdown)*:
   ```python
   # packages/ai-parrot/tests/flows/dev_loop/test_rules_parity.py  (new; mirrors test_subagent_parity.py:38-64)
-  from parrot.flows.dev_loop._subagent_defs import CODER_RULE_NAMES  # verified after M2 lands
+  from parrot.flows.conventions import CODER_RULE_NAMES  # verified after M2 lands
 
   @pytest.mark.parametrize("name", CODER_RULE_NAMES)
   def test_claude_rules_twin_is_identical(name: str) -> None:
@@ -259,14 +272,15 @@ async def check_banned_imports(cwd: str, changed: List[str]) -> List[str]: ...
 
   @pytest.mark.parametrize("name", CODER_RULE_NAMES)
   def test_package_rules_copy_is_identical(name: str) -> None:
-      """`_subagent_data/rules/<name>.md` == `.agent/rules/<name>.md` byte-for-byte; skipped when the repo dir is absent."""
+      """`parrot/flows/_rules_data/<name>.md` == `.agent/rules/<name>.md` byte-for-byte; skipped when the repo dir is absent."""
 
   def test_coder_rules_fit_the_prompt_budget() -> None:
-      """sum(len(bytes)) over CODER_RULE_NAMES in `_subagent_data/rules/` ≤ 12_000."""
+      """sum(len(bytes)) over CODER_RULE_NAMES in `parrot/flows/_rules_data/` ≤ 12_000."""
   ```
 
 ### Module 2: `load_project_conventions` + prompt injection
-- **Path**: `packages/ai-parrot/src/parrot/flows/dev_loop/_subagent_defs.py` (modifies),
+- **Path**: `packages/ai-parrot/src/parrot/flows/conventions.py` (new, stdlib-only),
+  `packages/ai-parrot/src/parrot/flows/dev_loop/_subagent_defs.py` (modifies: re-export only),
   `dispatchers/llm.py` (modifies `_initial_messages`, `:891`),
   `dispatchers/codex.py` (modifies `_build_codex_prompt` `:345` and its call site `:118`),
   `dispatchers/google_coding.py` (modifies `_build_agy_prompt` `:317` and its call site `:171`),
@@ -277,11 +291,19 @@ async def check_banned_imports(cwd: str, changed: List[str]) -> List[str]: ...
 - **Depends on**: Module 1 (package copy must exist for the fallback).
 - **Interface Skeleton**:
   ```python
-  # parrot/flows/dev_loop/_subagent_defs.py  (modifies; adds after load_subagent_definition, :89)
+  # parrot/flows/conventions.py  (new; imports ONLY os, pathlib, importlib.resources, typing — never parrot.flows.dev_loop)
   CODER_RULE_NAMES: tuple[str, ...] = (
       "codebase-conventions", "python-development", "cython-development", "rust-development",
   )
   RULES_DIRNAME: str = ".agent/rules"
+  CONVENTIONS_PREAMBLE: str = (
+      "Project conventions — binding for every file you touch; a banned import fails "
+      "this attempt at the merge gate:"
+  )
+
+  def _strip_frontmatter(text: str) -> str:
+      """Same contract as `_subagent_defs._strip_frontmatter` (:64); duplicated here (8 lines) so this module stays a leaf.
+      `_subagent_defs` switches to importing THIS one to keep a single implementation."""
 
   def load_project_conventions(
       cwd: str | os.PathLike[str] | None = None,
@@ -292,22 +314,23 @@ async def check_banned_imports(cwd: str, changed: List[str]) -> List[str]: ...
 
       Lookup order per name: `<cwd>/.agent/rules/<name>.md` when `cwd` is given and the
       file exists (the worktree copy wins, so a branch that edits a rule dispatches its own
-      text), else the package copy `_subagent_data/rules/<name>.md`. Each file has its YAML
-      frontmatter stripped with `_strip_frontmatter` (:64) and is wrapped as
+      text), else the package copy `files("parrot.flows") / "_rules_data" / f"{name}.md"`.
+      Each file has its YAML frontmatter stripped with `_strip_frontmatter` and is wrapped as
       `## Project rule: <name>\n\n<body>`; blocks are joined with `\n\n---\n\n`.
       Never raises for a missing worktree file. Raises FileNotFoundError only when a
       package copy is missing (packaging error), ValueError when a name is not in
       CODER_RULE_NAMES.
       """
 
-  __all__ = ["load_subagent_definition", "load_project_conventions", "CODER_RULE_NAMES"]  # :117
+  # parrot/flows/dev_loop/_subagent_defs.py  (modifies :117 — re-export, no logic)
+  from parrot.flows.conventions import CODER_RULE_NAMES, CONVENTIONS_PREAMBLE, load_project_conventions, _strip_frontmatter
+  __all__ = ["load_subagent_definition", "load_project_conventions", "CODER_RULE_NAMES", "CONVENTIONS_PREAMBLE"]
 
   # parrot/flows/dev_loop/dispatchers/llm.py  (modifies _initial_messages, :891-951)
   def _initial_messages(self, profile, brief, output_model, *, cwd: str = "") -> List[Dict[str, Any]]:
       """Unchanged signature. The system content gains, immediately after
       `f"Subagent instructions:\n{body}"`:
-          "\n\nProject conventions — binding for every file you touch; a banned import fails "
-          "this attempt at the merge gate:\n" + load_project_conventions(cwd or None)
+          "\n\n" + CONVENTIONS_PREAMBLE + "\n" + load_project_conventions(cwd or None)
       """
 
   # parrot/flows/dev_loop/dispatchers/codex.py  (modifies :345; call site :118 passes cwd=cwd)
@@ -318,25 +341,47 @@ async def check_banned_imports(cwd: str, changed: List[str]) -> List[str]: ...
   def _build_agy_prompt(self, profile, brief, output_model, *, cwd: str = "") -> str:
       """Same text as today plus the conventions paragraph between the body and the output prompt."""
   ```
-- **Notes**: the "binding … fails this attempt" sentence is the same literal
-  in all three builders (factor it as a module constant in
-  `_subagent_defs.py`, e.g. `CONVENTIONS_PREAMBLE`). `NovaCodeDispatcher`
+- **Notes**: the three builders use the `CONVENTIONS_PREAMBLE` constant, never
+  a re-typed literal. `NovaCodeDispatcher`
   and `GoogleCompatCodeDispatcher` inherit `_initial_messages`, so they
   need no change (`nova.py:66`, `google_compat.py:19`).
 
-### Module 3: AGENTS.md / GEMINI.md conventions block
+### Module 3: AGENTS.md / GEMINI.md conventions block + AGENTS.md prune
 - **Path**: `packages/ai-parrot/src/parrot/knowledge/wiki/codex/assets.py` (modifies),
   `knowledge/wiki/codex/installer.py` (modifies `_install_agents` `:77`, `uninstall_codex_integration` `:235`),
   `knowledge/wiki/google/assets.py` (modifies),
   `knowledge/wiki/google/installer.py` (modifies `_install_gemini_md` `:81`, `uninstall_google_integration` `:247`),
-  `AGENTS.md`, `GEMINI.md` (regenerated block committed),
-  `packages/ai-parrot/tests/knowledge/wiki/` (extends the existing codex/google installer tests)
-- **Responsibility**: a second managed block, `<!-- parrot:conventions:codex:begin/end -->`
-  in `AGENTS.md` and `<!-- parrot:conventions:google:begin/end -->` in
-  `GEMINI.md`, whose body is `load_project_conventions(root)` under a
-  `## Project conventions` heading. Install upserts it with the existing
-  `_upsert_marker_block` (`codex/installer.py:17`, `google/installer.py:18`);
-  uninstall removes it with `_remove_marker_block` (`:31` / `:32`).
+  `knowledge/wiki/coding_agents.py` (modifies `install()` `:89`; adds `_conventions_markers`, `_conventions_block`),
+  `AGENTS.md` (pruned + regenerated block), `GEMINI.md` (regenerated block),
+  `packages/ai-parrot/tests/test_coding_agents.py` (extends),
+  `packages/ai-parrot/tests/knowledge/wiki/test_codex_installer_conventions.py` (new),
+  `packages/ai-parrot/tests/knowledge/wiki/test_google_installer_conventions.py` (new)
+- **Responsibility**: a second managed block —
+  `<!-- parrot:conventions:codex:begin/end -->` in `AGENTS.md`,
+  `<!-- parrot:conventions:google:begin/end -->` in `GEMINI.md`,
+  `<!-- parrot:conventions:claude:begin/end -->` in `CLAUDE.md` (only via
+  `coding_agents.install("claude")`; the Claude native seat already reads
+  `.claude/rules/`, the block is for consistency) — whose body is
+  `load_project_conventions(root)` under a `## Project conventions`
+  heading. **Both installer paths** write it (§8 Q3 resolved: yes):
+  the `knowledge/wiki/codex|google` installers via their own
+  `_upsert_marker_block` (`codex/installer.py:17`, `google/installer.py:18`)
+  and the stdlib-only `coding_agents.install()` via its `_upsert` (`:66`).
+  Uninstall removes it with `_remove_marker_block` (`:31` / `:32`).
+  The marker strings are the same for both paths so either installer
+  updates the block the other wrote.
+- **AGENTS.md prune** (§8 Q1 resolved: yes). Delete, outside the managed
+  blocks: the whole `### Frontend / Mobile (If React/Web detected)`
+  section; in `## CODING STANDARDS` the `black`, `prettier`, `isort` lines
+  and the two JavaScript camelCase/PascalCase lines; the sentence
+  `- **Rules:** are specific rules for python development, use it.`; the
+  trailing `@RTK.md` line (a Claude-Code import codex cannot resolve).
+  Replace the `### Python / Backend` and `### Rust Development` bodies
+  with one line each pointing at the conventions block ("see *Project
+  conventions* below"). Keep untouched: role/planning/operating
+  style/tone, MUST-READ FILES, SAFETY & GIT PROTOCOLS, ARCHITECTURE &
+  PATTERN, the Completeness / No Hallucinations / Dependency Hygiene /
+  Change Discipline / Correctness First paragraphs, and the wiki block.
 - **Depends on**: Module 2.
 - **Interface Skeleton**:
   ```python
@@ -351,9 +396,18 @@ async def check_banned_imports(cwd: str, changed: List[str]) -> List[str]: ...
       """Upserts the wiki block (unchanged) THEN the conventions block; return string names both."""
 
   # knowledge/wiki/google/assets.py / installer.py — same pair with the `google` marker and GEMINI_PATH (:17 / :81)
+
+  # knowledge/wiki/coding_agents.py  (modifies; stdlib-only contract kept — imports parrot.flows.conventions ONLY)
+  def _conventions_markers(agent: str) -> tuple[str, str]:
+      """`<!-- parrot:conventions:{agent}:begin -->`, `<!-- parrot:conventions:{agent}:end -->` — byte-identical to the codex/google assets constants."""
+  def _conventions_block(agent: str, root: Path) -> str:
+      """`{begin}\n## Project conventions\n\n{load_project_conventions(root)}\n\n{end}\n`."""
+  def install(agent: str, root: Path = Path.cwd()) -> list[str]:
+      """Unchanged signature. After the wiki `_upsert` (:97-100) runs a second `_upsert` with the
+      conventions block on the same instruction file; `changes` still lists the file once."""
   ```
-- **Notes**: the blocks are regenerated, never hand-edited; `AGENTS.md`'s
-  existing prose outside the markers is untouched by this module (§8 Q1).
+- **Notes**: blocks are regenerated, never hand-edited. Order in a fresh
+  file: wiki block, then conventions block; re-running must not reorder.
 
 ### Module 4: ruff banned-api + engine backstop
 - **Path**: `ruff.toml` (modifies `[lint] select` and adds two tables),
@@ -375,7 +429,11 @@ async def check_banned_imports(cwd: str, changed: List[str]) -> List[str]: ...
   "starlette".msg = "The HTTP stack is aiohttp + navigator-api behind gunicorn — starlette is banned."
   "fastapi".msg   = "The HTTP stack is aiohttp + navigator-api behind gunicorn — fastapi is banned."
   "uvicorn".msg   = "Serve with gunicorn (aiohttp worker) — uvicorn is banned."
-  "langchain".msg = "LangChain was removed; use parrot primitives (AbstractClient, AbstractTool, …)."
+  "langchain".msg           = "LangChain was removed; use parrot primitives (AbstractClient, AbstractTool, …)."
+  "langchain_core".msg      = "LangChain was removed; use parrot primitives."
+  "langchain_community".msg = "LangChain was removed; use parrot primitives."
+  "langgraph".msg           = "LangGraph is banned; use AgentsFlow / AgentCrew (parrot.bots.flows)."
+  "langsmith".msg           = "LangSmith is banned; use parrot observability."
 
   [lint.per-file-ignores]   # grandfathered, existing usages only — never add a new file here
   "packages/ai-parrot/src/parrot/flows/dev_loop/replication.py" = ["TID251"]
@@ -397,10 +455,13 @@ async def check_banned_imports(cwd: str, changed: List[str]) -> List[str]: ...
   "packages/ai-parrot-client-openai/src/parrot/clients/openai/codex_tool_bridge.py" = ["TID251"]
   ```
   (17 files, measured 2026-09-12: 7 import `requests`, 10 `httpx`,
-  `codex_tool_bridge.py` imports `starlette` + `uvicorn`; `fastapi` and
-  `langchain` have zero usages.) `banned-api` matches a module and its submodules
-  (`langchain.chains`), but NOT sibling top-level names (`langchain_core`,
-  `langchain_community`, `langgraph`) — see §8 Q4.
+  `codex_tool_bridge.py` imports `starlette` + `uvicorn`; `fastapi`,
+  `langchain`, `langchain_core`, `langchain_community`, `langgraph` and
+  `langsmith` have zero usages.) `banned-api` matches a module and its
+  submodules (`langchain.chains`), but NOT sibling top-level names, hence
+  the explicit `langchain_*`/`langgraph`/`langsmith` rows (§8 Q4 resolved:
+  nothing `langchain*` in the repo). A new `langchain_<provider>` package
+  seen in a diff is added to this table on sight.
 - **Interface Skeleton**:
   ```python
   # parrot/flows/dev_loop/sdd_coder/fidelity.py  (extends; after check_fidelity)
@@ -446,7 +507,7 @@ async def check_banned_imports(cwd: str, changed: List[str]) -> List[str]: ...
 | Test | Module | Description |
 |---|---|---|
 | `test_claude_rules_twin_is_identical[name]` | M1 | `.claude/rules/<name>.md` == `.agent/rules/<name>.md` for the 4 coder rules |
-| `test_package_rules_copy_is_identical[name]` | M1 | `_subagent_data/rules/<name>.md` == `.agent/rules/<name>.md` |
+| `test_package_rules_copy_is_identical[name]` | M1 | `parrot/flows/_rules_data/<name>.md` == `.agent/rules/<name>.md` |
 | `test_coder_rules_fit_the_prompt_budget` | M1 | total bytes ≤ 12 000 |
 | `test_conventions_prefer_worktree_copy` | M2 | with a tmp `cwd/.agent/rules/codebase-conventions.md`, its text wins over the package copy |
 | `test_conventions_fall_back_to_package_copy` | M2 | `cwd=None` and a `cwd` without `.agent/rules/` both return the package text |
@@ -458,6 +519,9 @@ async def check_banned_imports(cwd: str, changed: List[str]) -> List[str]: ...
 | `test_install_agents_upserts_conventions_block` | M3 | `_install_agents(tmp)` writes both markers; re-run is idempotent (`already current`) |
 | `test_uninstall_removes_conventions_block` | M3 | uninstall leaves prose outside the markers untouched |
 | `test_install_gemini_md_upserts_conventions_block` | M3 | same for GEMINI.md |
+| `test_coding_agents_install_writes_conventions_block[agent]` | M3 | `coding_agents.install(agent, tmp)` for codex/claude/gemini writes both marker blocks, idempotent on re-run (extends `tests/test_coding_agents.py:9`) |
+| `test_agents_md_has_no_stale_prose` | M3 | repo `AGENTS.md` contains neither `Svelte`, `black`, `isort`, `prettier`, `camelCase` nor `@RTK.md`, and contains both marker pairs |
+| `test_conventions_module_is_import_light` | M2 | `python -c "import parrot.flows.conventions, sys; assert 'parrot.flows.dev_loop' not in sys.modules"` in a subprocess exits 0 |
 | `test_check_banned_imports_flags_requests` | M4 | a tmp file with `import requests` → one finding line |
 | `test_check_banned_imports_clean_and_empty` | M4 | clean file → `[]`; empty `changed` → `[]` without spawning |
 | `test_check_banned_imports_skips_non_python` | M4 | `.md`/`.toml` paths are ignored |
@@ -489,17 +553,19 @@ def rules_worktree(tmp_path: Path) -> Path:
 > This feature is complete when ALL of the following are true:
 
 - [ ] AC-1 `.agent/rules/codebase-conventions.md` exists with the five sections of §3 M1 and names every forbidden module with its substitute (`requests`, `httpx`, `starlette`, `fastapi`, `uvicorn`, `langchain`, `print`, `pip`, `black`).
-- [ ] AC-2 `.claude/rules/<name>.md` and `_subagent_data/rules/<name>.md` are byte-identical to `.agent/rules/<name>.md` for the four `CODER_RULE_NAMES`, enforced by `test_rules_parity.py`.
+- [ ] AC-2 `.claude/rules/<name>.md` and `parrot/flows/_rules_data/<name>.md` are byte-identical to `.agent/rules/<name>.md` for the four `CODER_RULE_NAMES`, enforced by `test_rules_parity.py`.
 - [ ] AC-3 The four coder rule files total ≤ 12 000 bytes.
 - [ ] AC-4 `load_project_conventions(cwd)` prefers `<cwd>/.agent/rules/`, falls back to the package copy, strips frontmatter, never raises for a missing worktree file.
 - [ ] AC-5 The system prompt built by `LLMCodeDispatcher._initial_messages` and the prompts built by `CodexCodeDispatcher._build_codex_prompt` and `GoogleCodingDispatcher._build_agy_prompt` contain the conventions block after the `sdd-coder` body; the `nova` and `google-compat` dispatchers inherit it without changes.
-- [ ] AC-6 `parrot wiki codex install` and `parrot wiki google install` upsert an idempotent `parrot:conventions:*` block in `AGENTS.md` / `GEMINI.md`; the regenerated blocks are committed; uninstall removes them and nothing else.
-- [ ] AC-7 `ruff.toml` selects `TID251` with the §3 M4 banned-api table and grandfather list; `ruff check --select TID251 packages/ scripts/` exits 0 on `dev` after the change.
+- [ ] AC-6 `parrot wiki codex install`, `parrot wiki google install` AND `coding_agents.install(<agent>)` upsert an idempotent `parrot:conventions:<agent>:*` block in `AGENTS.md` / `GEMINI.md` (/ `CLAUDE.md` for `claude`); the regenerated blocks are committed; uninstall removes them and nothing else.
+- [ ] AC-6b `AGENTS.md` no longer contains the Frontend/Mobile section, the `black`/`isort`/`prettier`/camelCase lines, the "Rules: are specific rules…" pointer or the `@RTK.md` line; its safety/git sections are byte-unchanged.
+- [ ] AC-7 `ruff.toml` selects `TID251` with the §3 M4 banned-api table (incl. `langchain_core`, `langchain_community`, `langgraph`, `langsmith`) and grandfather list; `ruff check --select TID251 packages/ scripts/` exits 0 on `dev` after the change.
+- [ ] AC-14 `parrot/flows/conventions.py` imports nothing from `parrot.flows.dev_loop`; importing it in a fresh interpreter leaves `parrot.flows.dev_loop` out of `sys.modules`.
 - [ ] AC-8 `check_banned_imports()` returns one line per finding and `[]` when clean; the engine records a `BannedImport:` attempt error and the retry ladder runs attempt 2 on a different seat.
 - [ ] AC-9 `LLMCodeDispatchProfile().max_turns == 40` and `GrokCodeDispatchProfile().max_turns == 40`; `DEFAULT_LLM_MAX_TURNS` stays 60; `le=100` unchanged.
-- [ ] AC-10 `pyproject.toml` package-data ships `_subagent_data/rules/*.md` (verified by `importlib.resources` in the parity test).
+- [ ] AC-10 `pyproject.toml` package-data ships `parrot/flows/_rules_data/*.md` (verified by `importlib.resources` in the parity test).
 - [ ] AC-11 `docs/dev_loop/sdd-coder-orchestrator.md` gains a short "Conventions & lint backstop" section and the 40-turn note.
-- [ ] AC-12 All tests pass: `pytest packages/ai-parrot/tests/flows/dev_loop/ packages/ai-parrot/tests/knowledge/wiki/ -v`.
+- [ ] AC-12 All tests pass: `pytest packages/ai-parrot/tests/flows/ packages/ai-parrot/tests/knowledge/wiki/ packages/ai-parrot/tests/test_coding_agents.py -v`.
 - [ ] AC-13 No breaking change to public APIs: every modified builder keeps its positional signature; the new `cwd` keyword defaults to `""`.
 
 ---
@@ -528,6 +594,9 @@ from parrot.flows.dev_loop.models.base import TaskScopedBrief                # v
 from parrot.knowledge.wiki.codex import assets                               # verified: knowledge/wiki/codex/assets.py (AGENTS_BEGIN :13)
 from parrot.knowledge.wiki.google import assets                              # verified: knowledge/wiki/google/assets.py (AGENTS_BEGIN :15, GEMINI_PATH :17)
 from importlib.resources import files                                        # verified: used at _subagent_defs.py:48/111
+from parrot.knowledge.wiki import coding_agents                              # verified: knowledge/wiki/coding_agents.py; install() :89, _upsert :66, _markers :57, _AGENTS :43
+# import cost, measured 2026-09-12 (python -X importtime): parrot 8.4 ms · parrot.flows 8.5 ms (docstring-only __init__) ·
+# parrot.knowledge.wiki.coding_agents 10.8 ms · parrot.flows.dev_loop._subagent_defs 2 248 ms (eager dev_loop/__init__.py:11-25 imports every dispatcher)
 ```
 
 ### Existing Class Signatures
@@ -624,7 +693,15 @@ def _upsert_marker_block(...)  # line 18 ; def _remove_marker_block(...)  # line
 def _install_gemini_md(root: Path) -> str                      # line 81
 def install_google_integration(...)                            # line 214
 def uninstall_google_integration(root, mcp_config_path=None) -> list[str]   # line 247 — GEMINI.md block removal at :258-268
-# knowledge/wiki/coding_agents.py — a SEPARATE stdlib-only installer (`parrot wiki <agent> install`, cli.py:4643-4656) with its own _upsert (:66) and markers (:57); NOT the codex/google installers above. Out of scope unless §8 Q3 says otherwise.
+# knowledge/wiki/coding_agents.py — a SEPARATE stdlib-only installer (`parrot wiki <agent> install`, cli.py:4643-4656)
+_AGENTS = {"codex": ("AGENTS.md", ".codex/hooks.json", ...), "claude": ("CLAUDE.md", ...), "gemini": ("GEMINI.md", ...), "google": ("GEMINI.md", ...)}  # line 43
+def _markers(agent: str) -> tuple[str, str]                    # line 57 — wiki markers; add _conventions_markers next to it
+def _block(agent: str) -> str                                  # line 61
+def _upsert(text: str, block: str, begin: str, end: str) -> str   # line 66 — idempotent marker upsert, reuse for the conventions block
+def install(agent: str, root: Path = Path.cwd()) -> list[str]  # line 89 — instruction-file upsert at :97-100, skill at :101-104, hooks at :105-120
+# tests/test_coding_agents.py — test_install_is_idempotent_and_preserves_settings (:9), test_codex_and_claude_emit_advisory_hook_responses (:27)
+# tests/knowledge/wiki/ — NO existing test exercises _install_agents / _install_gemini_md / install_codex_integration / install_google_integration (grep 2026-09-12): M3 adds them
+# parrot/flows/__init__.py — docstring only, no imports (verified) → safe home for a stdlib-only leaf module
 
 # tests/flows/dev_loop/test_subagent_parity.py
 _REPO_ROOT = Path(__file__).resolve().parents[5]               # line 20
@@ -662,8 +739,10 @@ assert profile.max_turns == DEFAULT_LLM_MAX_TURNS == 60        # line 123 — mu
 | `TID251` | `sdd-coder.md` step e) `ruff check` | existing behaviour | `_subagent_data/sdd-coder.md` "### e) Validate" |
 
 ### Does NOT Exist (Anti-Hallucination)
-- ~~`parrot.flows.dev_loop._subagent_defs.load_project_conventions`~~ — created by M2.
-- ~~`_subagent_data/rules/`~~ — created by M1; the package-data glob at `pyproject.toml:906` does not cover it until M1 adds `"_subagent_data/rules/*.md"`.
+- ~~`parrot/flows/conventions.py`~~, ~~`parrot.flows.conventions.load_project_conventions`~~ — created by M2; `_subagent_defs` only re-exports it.
+- ~~`parrot/flows/_rules_data/`~~ — created by M1; no package-data entry for `parrot.flows` exists until M1 adds `"parrot.flows" = ["_rules_data/*.md"]`.
+- ~~`coding_agents._conventions_markers` / `_conventions_block`~~ — created by M3.
+- ~~`tests/knowledge/wiki/test_codex_installer_conventions.py`~~, ~~`test_google_installer_conventions.py`~~ — created by M3.
 - ~~`.agent/rules/codebase-conventions.md`~~, ~~`.claude/rules/codebase-conventions.md`~~ — created by M1.
 - ~~`RosterSeat.max_turns`~~ — no per-seat turn budget exists (`sdd_coder/models.py:23-34`); do not add one.
 - ~~`LLMCodeDispatchProfile.rules` / `.conventions` / `.extra_instructions`~~ — no profile field carries extra prompt text; injection happens in the builders.
@@ -672,7 +751,7 @@ assert profile.max_turns == DEFAULT_LLM_MAX_TURNS == 60        # line 123 — mu
 - ~~`fidelity.check_banned_imports`~~ — created by M4; `check_fidelity` is synchronous and pure, the new function is async because it spawns ruff.
 - ~~`_subagent_defs.load_rules` / `load_rule`~~ — the helper is named `load_project_conventions`; do not invent aliases.
 - ~~`CodexCodeDispatcher` reading `.codex/agents/sdd-worker.toml`~~ — the dispatcher embeds the prompt body itself; that toml is for interactive `codex` only.
-- ~~`GEMINI.md` conventions via `coding_agents.install()`~~ — that stdlib installer is a separate path (§8 Q3); M3 targets `knowledge/wiki/google/installer.py`.
+- ~~`coding_agents.py` importing `parrot.flows.dev_loop.*`~~ — forbidden: it would add ~2.2 s to `parrot wiki <agent> install` and break the module's stdlib-only contract. Import `parrot.flows.conventions` only.
 
 ---
 
@@ -697,7 +776,8 @@ assert profile.max_turns == DEFAULT_LLM_MAX_TURNS == 60        # line 123 — mu
 - **`banned-api` semantics.** Ruff's banned-api matches a module and its submodules; `langchain` does NOT cover the sibling top-level names `langchain_core`, `langchain_community`, `langgraph`. They must be listed explicitly (§8 Q4, default yes).
 - **Prompt size.** ~2.5 K tokens more per dispatch for every in-process seat; the 12 000-byte cap in AC-3 is the guard. `max_tokens` (`models/llm.py:24`) is the output budget and is unaffected.
 - **Codex reads `AGENTS.md` AND gets the inline block** — duplicated text is harmless and intentional (covers hand-launched sessions).
-- **`AGENTS.md` still says `black` and mentions Svelte** outside the managed block; the inline conventions contradict it. Codex will see both until §8 Q1 is answered.
+- **Import cost trap.** `parrot.flows.dev_loop` is an eager package (2.2 s); anything that must stay cheap (`coding_agents.py`, the parity tests, the `parrot wiki … install` CLI) imports `parrot.flows.conventions`, never `_subagent_defs`.
+- **AGENTS.md prune is a hand edit inside a managed file**: the installers only touch text between their markers, so the prune is done once in M3 and guarded by `test_agents_md_has_no_stale_prose`.
 - **Parity tests need the repo**: skip (not fail) when `.agent/rules/` is not found by the walk-up, exactly like `test_subagent_parity.py:48-52`.
 - **`_upsert_marker_block` ordering**: upsert the conventions block after the wiki block so a fresh `AGENTS.md` reads wiki → conventions; re-running must not reorder.
 
@@ -714,10 +794,10 @@ No new runtime dependency.
 
 > Questions that must be resolved before or during implementation.
 
-- [ ] Q1 Prune the stale persona prose in `AGENTS.md` (Svelte/Capacitor, `black`/`isort`, the `@RTK.md` include) now, or leave it and rely on the managed block? — *Owner: Jesus Lara*
+- [x] Q1 Prune the stale persona prose in `AGENTS.md` (Svelte/Capacitor, `black`/`isort`, the `@RTK.md` include)? — *Resolved by Jesus Lara, 2026-09-12*: **yes, prune it** — folded into §3 M3 and AC-6b.
 - [ ] Q2 Which path produced the 35-turn failure — a directly constructed profile (24) or the roster/`build_dispatcher` path (60)? Check `max_turns` in that run's `dispatch.completed` payload. If it was 60, M5 is still wanted but the failure needs its own ticket. — *Owner: Jesus Lara*
-- [ ] Q3 Should the stdlib-only `coding_agents.install()` path (`parrot wiki <agent> install`, `coding_agents.py:89`) also write the conventions block, or is the `knowledge/wiki/codex|google` installer pair enough? Default: installer pair only. — *Owner: Jesus Lara*
-- [ ] Q4 Ban `langchain_core` / `langchain_community` / `langgraph` explicitly in addition to `langchain`? Default: yes, add the three names. — *Owner: Jesus Lara*
+- [x] Q3 Should the stdlib-only `coding_agents.install()` path (`parrot wiki <agent> install`, `coding_agents.py:89`) also write the conventions block? — *Resolved by Jesus Lara, 2026-09-12*: **yes** — folded into §3 M3 (helper moved to the stdlib-only `parrot/flows/conventions.py` so the installer keeps its import contract) and AC-6/AC-14.
+- [x] Q4 Ban `langchain_core` / `langchain_community` / `langgraph` explicitly in addition to `langchain`? — *Resolved by Jesus Lara, 2026-09-12*: **yes, nothing `langchain*` in the repo** — folded into §3 M4 (`langchain_core`, `langchain_community`, `langgraph`, `langsmith`) and AC-7.
 - [ ] Q5 Language-aware trimming (skip `cython-development` / `rust-development` unless the task's file list has `.pyx`/`.pxd`/`.rs`) — deferred; revisit if AC-3 becomes hard to hold. — *Owner: implementation*
 
 ---
@@ -750,3 +830,4 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-09-12 | Jesus Lara | Initial draft — enhancement of FEAT-549 |
+| 0.2 | 2026-09-12 | Jesus Lara | Q1/Q3/Q4 resolved: AGENTS.md prune, `coding_agents.install()` writes the block, full `langchain*` ban; helper moved to stdlib-only `parrot/flows/conventions.py` |
