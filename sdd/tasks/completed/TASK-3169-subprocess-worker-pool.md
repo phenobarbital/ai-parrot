@@ -483,10 +483,30 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (orchestrated via parrot-sdd-coder, retried
+once; 3 mypy errors fixed directly post-merge)
+**Date**: 2026-09-11
+**Notes**: Implemented `SubprocessWorkerPool(SandboxProvider)` with all 7
+knobs this task owns (`tier12_pool_size=4`, `recycle_after_invocations=500`,
+`recycle_after_seconds=3600`, `acquire_queue_timeout_ms=2000`,
+`max_queue_depth=32`, `health_check_interval_s=30`,
+`cold_start_timeout_ms=5000` — matching spec §7 verbatim; the remaining 3
+of "all ten OQ-6 knobs" belong to TASK-3170/TASK-3161). Recycling on
+whichever of invocation-count/wall-clock comes first; bounded acquire
+queue raises `PoolExhaustedError` rather than hanging; unhealthy workers
+destroyed and replaced. Also added `run_snippet()` using
+`encode_frame`/`decode_frame` (TASK-3168) for the forms use case. 10/10
+tests pass, `ruff check` clean as delivered. `mypy` initially reported 3
+errors (`process.stdin`/`stdout` are typed `StreamWriter | None` /
+`StreamReader | None`; this pool always spawns with both PIPEs, so a
+`None` here means the worker died between creation and use) — fixed
+directly with an explicit narrowing check that raises `WorkerDiedError`,
+re-verified clean, no change to the happy path.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Deviations from spec**: none — post-merge fix was a type-checking
+correction only, required by this task's own "`mypy` clean" acceptance
+criterion. Note: worker entrypoint script is a placeholder per the
+delivering coder (out of this task's file scope — flagged for whichever
+task/spec section owns the actual `runsc`/subprocess entrypoint binary).
 
-**Deviations from spec**: none | describe if any
+**Seat: minimax (attempt 2, after qwen attempt-1 timeout) · Backend: nova · Model: minimax.minimax-m2.5 · Attempts: 2 · Duration: 912.8s (552.1s timeout + 360.6s success) · Tokens: 1,617,967 in / 11,778 out**

@@ -174,7 +174,7 @@
       "feature_id": "FEAT-459",
       "feature": "formbuilder-custom-code",
       "spec": "sdd/specs/formbuilder-custom-code.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -185,8 +185,8 @@
       "parallelism_notes": "Track 2, independent of TASK-3170/3171 (different files) until TASK-3172 integrates all of Track 2.",
       "assigned_to": null,
       "started_at": "2026-09-11T16:38:03+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3169-subprocess-worker-pool.md"
+      "completed_at": "2026-09-11T17:38:23+00:00",
+      "file": "sdd/tasks/completed/TASK-3169-subprocess-worker-pool.md"
     },
     {
       "id": "TASK-3170",
