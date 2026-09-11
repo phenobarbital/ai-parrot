@@ -10,8 +10,10 @@ import pytest
 
 from parrot.clients.amazon.budget import MantleBudgetAdapter
 from parrot.clients.amazon.nova import BedrockMantleClient
+from parrot.clients.budget_scope import BudgetRegistry
 from parrot.clients.openai_base import OpenAIBaseClient
 from parrot.core.exceptions import BudgetAccountingError, BudgetUnsupported
+from parrot.models.token_budget import TokenBudgetPolicy
 
 USAGE = {
     "prompt_tokens": 950,
@@ -135,3 +137,115 @@ class TestChatCompletionHooks:
         # Verify opt-in is explicit and local to Mantle
         assert BedrockMantleClient.budget_supported_methods == frozenset({"ask", "ask_stream", "resume", "invoke"})
         assert OpenAIBaseClient.budget_supported_methods == frozenset()
+
+    async def test_per_attempt_reservation_uses_no_retry_view_and_forwards_cap(self):
+        """Each call reserves anew via `with_options(max_retries=0)`; cap == reservation.output_cap."""
+        client = BedrockMantleClient(api_key="k", region="us-east-1")
+        root, view = _fake_openai([SimpleNamespace(usage=USAGE)])
+        client.get_client = AsyncMock(return_value=root)
+        await client._ensure_client()
+
+        registry = BudgetRegistry()
+        scope = await registry.create(TokenBudgetPolicy(token_budget=10_000))
+
+        response = await client._chat_completion_budgeted(
+            scope,
+            model="test-model",
+            messages=[{"role": "user", "content": "hi"}],
+            use_tools=True,
+            stream=False,
+            max_tokens=500,
+        )
+        assert response.usage == USAGE
+        # The shared (retrying) client must never be used for a budgeted attempt.
+        root.chat.completions.create.assert_not_called()
+        view.chat.completions.create.assert_awaited_once()
+        _, call_kwargs = view.chat.completions.create.await_args
+        # Forwarded cap equals the reservation's output_cap, not the raw max_tokens.
+        report = await scope.ledger.report()
+        assert report.total_tokens == USAGE["total_tokens"]
+        assert call_kwargs["max_tokens"] <= 500
+
+    async def test_stream_settles_once_at_usage_chunk(self):
+        """Streams settle exactly once, at the chunk that carries usage."""
+
+        async def _chunks():
+            yield SimpleNamespace(usage=None)
+            yield SimpleNamespace(usage=None)
+            yield SimpleNamespace(usage=USAGE)
+
+        client = BedrockMantleClient(api_key="k", region="us-east-1")
+        root, view = _fake_openai([_chunks()])
+        client.get_client = AsyncMock(return_value=root)
+        await client._ensure_client()
+
+        registry = BudgetRegistry()
+        scope = await registry.create(TokenBudgetPolicy(token_budget=10_000))
+
+        stream = await client._chat_completion_budgeted(
+            scope,
+            model="test-model",
+            messages=[{"role": "user", "content": "hi"}],
+            use_tools=True,
+            stream=True,
+            max_tokens=500,
+        )
+        collected = [c async for c in stream]
+        assert len(collected) == 3
+        report = await scope.ledger.report()
+        assert report.total_tokens == USAGE["total_tokens"]
+        assert report.uncertain_tokens == 0
+
+    async def test_stream_missing_usage_marks_uncertain(self):
+        """A stream that never carries usage settles nothing and marks the reservation uncertain."""
+
+        async def _chunks():
+            yield SimpleNamespace(usage=None)
+            yield SimpleNamespace(usage=None)
+
+        client = BedrockMantleClient(api_key="k", region="us-east-1")
+        root, view = _fake_openai([_chunks()])
+        client.get_client = AsyncMock(return_value=root)
+        await client._ensure_client()
+
+        registry = BudgetRegistry()
+        scope = await registry.create(TokenBudgetPolicy(token_budget=10_000))
+
+        stream = await client._chat_completion_budgeted(
+            scope,
+            model="test-model",
+            messages=[{"role": "user", "content": "hi"}],
+            use_tools=True,
+            stream=True,
+            max_tokens=500,
+        )
+        collected = [c async for c in stream]
+        assert len(collected) == 2
+        report = await scope.ledger.report()
+        assert report.total_tokens == 0
+        assert report.uncertain_tokens > 0
+
+    async def test_parse_failure_without_usage_marks_uncertain(self):
+        """A non-streaming response whose usage cannot be parsed (missing aggregates)
+        marks the reservation uncertain instead of raising or settling."""
+        malformed_usage = {"completion_tokens": 1}  # missing prompt_tokens/total_tokens
+        client = BedrockMantleClient(api_key="k", region="us-east-1")
+        root, view = _fake_openai([SimpleNamespace(usage=malformed_usage)])
+        client.get_client = AsyncMock(return_value=root)
+        await client._ensure_client()
+
+        registry = BudgetRegistry()
+        scope = await registry.create(TokenBudgetPolicy(token_budget=10_000))
+
+        response = await client._chat_completion_budgeted(
+            scope,
+            model="test-model",
+            messages=[{"role": "user", "content": "hi"}],
+            use_tools=True,
+            stream=False,
+            max_tokens=500,
+        )
+        assert response.usage == malformed_usage
+        report = await scope.ledger.report()
+        assert report.total_tokens == 0
+        assert report.uncertain_tokens > 0
