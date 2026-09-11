@@ -450,10 +450,50 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (direct implementation — parrot-sdd-coder's
+gemini attempt produced a `fidelity_violation`: it touched
+`core/__init__.py`, which is not in this task's file list, so it was
+discarded rather than merged)
+**Date**: 2026-09-11
+**Notes**: Implemented `SnippetAuthoringToolkit(AbstractToolkit)` with
+`draft_from_description()`, `summarize_capabilities()`, and
+`propose_for_tenant()`. `draft_from_description()` always runs
+`run_gate()` before returning and never raises on a gate failure
+(returned as `ready=False` + `gate_errors`). `summarize_capabilities()`
+translates `CapabilityManifest` into a plain-language paragraph (verified
+no `{`/`}` characters). `propose_for_tenant()` resolves the blueprint's
+FILL IN by re-tagging the generated bundle to `source=SnippetSource.DB`
++ the target `tenant` via `model_copy(update=...)` (`SnippetBundle` is
+not frozen) before calling `SnippetApprovalService.draft()` — verified
+`draft()` raises `ValueError` on a non-DB source, confirming the re-tag
+is required. Structural C4 test (`test_toolkit_never_calls_publish_or_exec`)
+passes: no `.publish(`/`exec(` anywhere in the class source.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Codebase-contract correction (documented per Cardinal Rule 4 — the
+task's own contract flagged this as unverified)**: the blueprint's
+`from parrot.tools import AbstractToolkit, tool` + `@tool`-decorated
+methods does not match this framework's actual mechanism. Verified
+against `parrot/tools/toolkit.py` (`AbstractToolkit` auto-converts every
+**public async method** into a tool) and `tools/edit_toolkit.py` (the
+real convention in this package: no per-method decorator, plain
+`async def`). Dropped the `tool` import and all `@tool` decorators
+accordingly; made `summarize_capabilities()` async (was sync in the
+blueprint) so it is auto-exposed as a tool too, consistent with this
+task's own Scope ("exposing tools to: ... produce the plain-language
+capability summary"). Added 2 tests beyond the blueprint's 5 (both
+`propose_for_tenant` paths — success re-tagging + gate-failure skip),
+resolving the blueprint's stubbed `test_propose_for_tenant_calls_draft_never_publish`.
+6/6 tests pass, `ruff check`/`mypy` clean.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: the `@tool`-decorator → auto-async-method
+correction above is a deliberate, documented fix of an unverified
+blueprint pattern, not a deviation from any acceptance criterion —
+all acceptance criteria are met as specified.
+
+**Seat: sonnet (orchestrator, direct attempt 2 after gemini's fidelity violation) · Backend: n/a · Model: claude-sonnet-5 · Attempts: 1 · Duration: n/a (interactive) · Tokens: n/a**
+
+**Prior failed dispatch attempt** (for the record): `gemini`
+(google-compat backend, `gemini-3.5-flash`) ran for 119s, produced
+`tools/snippet_authoring.py`/`tests/unit/test_snippet_authoring.py`
+plus an out-of-scope edit to `core/__init__.py` — surfaced as
+`fidelity_violation` and never merged.
