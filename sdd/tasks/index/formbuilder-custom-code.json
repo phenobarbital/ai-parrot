@@ -154,7 +154,7 @@
       "feature_id": "FEAT-459",
       "feature": "formbuilder-custom-code",
       "spec": "sdd/specs/formbuilder-custom-code.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -164,8 +164,8 @@
       "parallelism_notes": "Track 2, independent of TASK-3167; TASK-3169/3170/3171 all depend on this instead.",
       "assigned_to": null,
       "started_at": "2026-09-11T16:38:03+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3168-worker-protocol.md"
+      "completed_at": "2026-09-11T17:19:06+00:00",
+      "file": "sdd/tasks/completed/TASK-3168-worker-protocol.md"
     },
     {
       "id": "TASK-3169",
