@@ -80,9 +80,11 @@ worktree** that `sdd-worker` must then adopt or discard.
   local unless the operator explicitly `git add -f`s a curated snapshot), never
   inside the ephemeral sub-worktree.
 - **Append-only and concurrency-safe.** Up to `len(roster)` seats run
-  concurrently inside one MCP-server process, and a second `sdd-worker` may run
-  in another terminal against another feature. Single-line `O_APPEND` writes,
-  no read-modify-write.
+  concurrently inside one MCP-server process. Partitioning the dataset **one
+  file per feature** removes the cross-process case entirely — a second
+  `sdd-worker` in another terminal is working another feature, hence another
+  file — leaving only single-process asyncio appends, handled with single-line
+  `O_APPEND` writes and no read-modify-write.
 - **Telemetry must never break a dispatch.** Every failure swallowed and logged
   at DEBUG — the same discipline `_apply_to_session_host`
   (`dispatchers/_shared.py:91-124`) already applies to its own shim.
@@ -140,7 +142,8 @@ Four parts, each small:
 
 1. **Bind one root `BudgetScope` around the whole turn loop** of
    `LLMCodeDispatcher.dispatch`, opt-in by env var, with a ceiling large enough
-   that it can never deny. Because
+   that it can never deny and an **absolute** `final_answer_reserve` of
+   `2 × profile.max_tokens` rather than the 0.15 fractional default. Because
    `OpenAIBaseClient._chat_completion:262-264` checks
    `current_budget_scope()` on every wire call, every turn of the loop is then
    reserved and reconciled by the ledger — **the same machinery that would later
@@ -151,7 +154,7 @@ Four parts, each small:
    `_extract_usage` at `llm.py:331-333`) and, when a scope is bound, the
    `BudgetReport` dump from `scope.ledger.report()`.
 3. **A telemetry sink in `SddCoderEngine`** writes two JSONL lines to
-   `artifacts/logs/sdd-coder-usage.jsonl`: an `attempt` line when the attempt
+   `artifacts/logs/sdd-coder-usage/<FEAT-ID>.jsonl`: an `attempt` line when the attempt
    ends (from `AttemptRecord`, so the measurement is durable even if the server
    dies mid-consolidation) and an `outcome` line at consolidation, joined by
    `(feature_id, task_id, attempt)`.
@@ -178,16 +181,22 @@ Four parts, each small:
 - Touches the dispatch critical path. Mitigated by opt-in activation and
   swallowed failures, but it is a real difference between an instrumented and a
   normal run, and must be characterised rather than assumed away.
-- **Measurement overhead is quadratic**: `MantleBudgetAdapter.count_input`
-  (`amazon/budget.py:300-347`) serializes the whole wire body to canonical JSON
-  and tokenizes it with `tiktoken` on *every physical attempt*. Over a 50-turn
-  loop with a growing history that is 50 passes over an ever-larger payload.
-  Acceptable for a measurement campaign, not necessarily for always-on use — and
-  it must be measured, not guessed.
+- **Measurement overhead grows quadratically over the loop, but the constant is
+  small.** `MantleBudgetAdapter.count_input` (`amazon/budget.py:300-347`)
+  serializes the whole wire body to canonical JSON and tokenizes it with
+  `tiktoken` on *every physical attempt*. Measured on 2026-09-12
+  (`artifacts/logs/sdd-coder-count-input-overhead-20260912.md`): 4.9 ms at turn 1,
+  65 ms at turn 60, **2.77 s total for a 60-turn attempt reaching 148k tokens of
+  history** — 0.1-0.5% of attempt wall-clock against 10-60 s network turns. Not a
+  reason to restrict the scope to campaigns. The residual caveat is that
+  `count_input` is declared `async` but counts synchronously (`budget.py:345`),
+  so each seat's pass blocks the shared event loop; ~11 s per 4-seat wave, and a
+  one-line `asyncio.to_thread` removes it if it ever matters.
 - The `output_cap` overwrite (`openai_base.py:388`) means a mis-set shadow
   ceiling would silently shrink `max_tokens`; needs an explicit guard.
-- Cross-process JSONL appends need `O_APPEND` discipline and a line small enough
-  to be written atomically.
+- In-process concurrent appends need `O_APPEND` discipline and a line small
+  enough to be written atomically (the cross-process case is designed away by
+  the per-feature partitioning).
 
 📊 **Effort:** Medium
 
@@ -328,13 +337,14 @@ follow for their credentials):
 Nothing else changes. `sdd-worker` runs exactly as documented in
 `docs/dev_loop/sdd-coder-orchestrator.md`; the Completion Notes and the per-model
 summary table keep the shape they have. In the background,
-`artifacts/logs/sdd-coder-usage.jsonl` grows by two lines per attempt.
+`artifacts/logs/sdd-coder-usage/<FEAT-ID>.jsonl` grows by two lines per attempt.
 
 When enough attempts have accumulated, the operator runs the analysis script and
 gets a table: for each seat and each task-size bucket, the number of merged
 attempts, p50/p95/p99 of total tokens, the median estimation error, and a
-suggested `token_budget` — with an explicit refusal to suggest anything for a
-segment with too few samples.
+suggested `token_budget`. Percentiles are always printed, but a segment with
+fewer than **12 merged attempts** is marked unreliable and gets **no** suggested
+ceiling: a p95 over five samples is noise wearing the costume of a number.
 
 ### Internal Behavior
 
@@ -358,9 +368,12 @@ same key plus the outcome, the declared-file count and any fidelity or conflict
 detail. The two are joined at analysis time. Splitting them is what makes a
 crashed MCP server cost one outcome line instead of a whole measurement.
 
-**Analysis path.** The script joins, filters to `merged`, buckets by declared
-file count, and reports percentiles per segment, treating estimation error as a
-distribution rather than a constant.
+**Analysis path.** The script globs `artifacts/logs/sdd-coder-usage/*.jsonl`,
+joins the two line kinds, filters to `merged`, buckets by declared file count,
+and reports percentiles per segment, treating estimation error as a distribution
+rather than a constant. The suggested ceiling for a segment is derived from its
+p95 plus a margin taken from that segment's own measured estimation error, and is
+withheld below the 12-attempt threshold.
 
 ### Edge Cases & Error Handling
 
@@ -376,6 +389,12 @@ distribution rather than a constant.
   funnel is simply not taken (`openai_base.py:263` requires both), so the row
   carries provider totals and no ledger report. This is the intended comparison
   baseline, not a failure.
+- **Fractional reserve against a huge ceiling**: `final_answer_reserve=0.15`
+  against an 800k shadow ceiling would immobilise ~120k tokens to protect a
+  `DevelopmentOutput` JSON of roughly 1k. The shadow policy therefore passes an
+  absolute reserve (`2 × max_tokens`), which FEAT-550 already supports
+  (`TokenBudgetPolicy.final_answer_reserve`, `models/token_budget.py:32`, int =
+  absolute tokens).
 - **Shadow ceiling too low**: the ledger would begin denying and shrink the
   output cap. Guarded by refusing to bind a shadow scope whose ceiling is not
   comfortably above `max_turns × max_tokens`, and by asserting the resolved
@@ -583,7 +602,7 @@ from parrot.models.basic import CompletionUsage                                 
 
 - ~~`LLMCodeDispatchProfile.token_budget`~~ — the profile has `max_turns`, `max_tokens`, `timeout_seconds`, but **no** budget field (`models/llm.py:10-40`).
 - ~~`AttemptRecord.turns`~~ / ~~`AttemptRecord.outcome`~~ — turns live inside `usage["num_turns"]`; the outcome lives on `TaskResult`, not on the attempt.
-- ~~`artifacts/logs/sdd-coder-usage.jsonl`~~ and any telemetry writer in `sdd_coder/` — the only disk write is `_journal` (`engine.py:472-488`).
+- ~~`artifacts/logs/sdd-coder-usage/`~~ and any telemetry writer in `sdd_coder/` — the only disk write is `_journal` (`engine.py:472-488`).
 - ~~`BedrockMantleClient.budget_supported_methods` covering `_chat_completion`~~ — the frozenset is `{"ask", "ask_stream", "resume", "invoke"}` (`mantle.py:90`). The dispatcher loop is covered **only** because `_chat_completion` consults the ContextVar (`openai_base.py:262-264`), not because of that frozenset.
 - ~~A strict-mode qualification for Mantle~~ — `MantleBudgetAdapter.count_input` raises `BudgetUnsupported` in `strict` mode unless an injected registry matches (`amazon/budget.py:326-330`). Shadow mode must use `budget_mode="estimated"`.
 - ~~`scripts/telemetry/`~~ — no such package; `scripts/` holds flat modules plus `scripts/sdd/`, `scripts/bench/`, `scripts/matrix/`.
@@ -615,15 +634,23 @@ from parrot.models.basic import CompletionUsage                                 
 
 ## Open Questions
 
+<!-- All questions resolved 2026-09-12. Convention: [x] + answer after the final ':' -->
+
 - [x] Which seats does the instrumentation cover? — *Owner: Jesus Lara*: All of `LLMCodeDispatcher` — `nova` (Mantle/Bedrock) and `google-compat` (Gemini) — so there is a comparison baseline; `codex` and `haiku` are out of scope.
-- [x] Where does the dataset live? — *Owner: Jesus Lara*: Append-only JSONL under `artifacts/logs/` in the main repository (git-ignored; force-add a curated snapshot when it should be shared).
+- [x] Where does the dataset live? — *Owner: Jesus Lara*: Append-only JSONL under `artifacts/logs/sdd-coder-usage/<FEAT-ID>.jsonl` in the main repository, one file per feature (git-ignored; force-add a curated snapshot when it should be shared).
 - [x] How is the shadow scope activated? — *Owner: Jesus Lara*: Opt-in environment variable; disabled by default so normal runs never touch the budgeted funnel.
 - [x] Does the feature include the analysis tooling? — *Owner: Jesus Lara*: Yes — a percentile script that recommends a `token_budget` per seat × task-size segment.
 - [x] How are consumption and outcome joined? — *Owner: Jesus Lara*: Two append-only lines (`attempt` at attempt end, `outcome` at consolidation) joined by `(feature_id, task_id, attempt)`, so a crash between them costs the outcome, never the measurement.
 - [x] Aggregates only, or a per-turn series? — *Owner: Jesus Lara*: Aggregates plus a compact per-turn input/output series — it is what distinguishes a large task from a degenerate loop.
 - [x] One accounting source or two? — *Owner: Jesus Lara*: Both side by side (provider `CompletionUsage` and the ledger's `BudgetReport`); their difference calibrates the margin.
-- [ ] What is the actual overhead of `count_input` over a long loop? It tokenizes the full canonical-JSON body every turn, so cost grows with history size squared over the loop. Needs a measured number before anyone considers leaving the scope bound outside a campaign — *Owner: Jesus Lara*
-- [ ] Retention and rotation of the JSONL: unbounded growth, or rotate per feature / per month? Analysis must not depend on the whole history being in one file — *Owner: Jesus Lara*
-- [ ] How many merged attempts per segment before a recommendation is trustworthy? A p95 over five samples is noise; the script should refuse below a threshold, and the threshold needs a decision — *Owner: Jesus Lara*
-- [ ] Should `final_answer_reserve` keep its 0.15 default for a coder seat? A coder's final output is a small `DevelopmentOutput` JSON, so a fractional reserve looks oversized against a large ceiling; an absolute reserve (a small multiple of `max_tokens`) may fit better. Decide once the dataset exists — *Owner: Jesus Lara*
-- [ ] Should FEAT-550 finalization and the existing `max_turns` salvage (`llm.py:800-843`) be unified into one closing mechanism? Out of scope here, but the dataset is what would justify it — *Owner: Jesus Lara*
+- [x] What is the actual overhead of `count_input` over a long loop? — *Owner: Jesus Lara*: **Measured, not estimated** (2026-09-12, `artifacts/logs/sdd-coder-count-input-overhead-20260912.md`): 4.9 ms at turn 1, 65 ms at turn 60, 2.77 s total for a 60-turn attempt reaching 148k tokens of history — 0.1–0.5% of attempt wall-clock. Not a reason to restrict the shadow scope to campaigns. Residual caveat recorded: `count_input` counts synchronously on the event loop (`amazon/budget.py:345`), ~11 s of blocking per 4-seat wave, removable with one `asyncio.to_thread` if it ever matters.
+- [x] Retention and rotation of the JSONL? — *Owner: Jesus Lara*: One file per feature, `artifacts/logs/sdd-coder-usage/<FEAT-ID>.jsonl`. No rotation logic; the analysis globs the directory. This also designs away the cross-process append race — two concurrent `sdd-worker` runs are two features, hence two files.
+- [x] How many merged attempts per segment before a recommendation is trustworthy? — *Owner: Jesus Lara*: **n ≥ 12** to emit a suggested ceiling. Below that the script still prints the percentiles, marked unreliable, but withholds the recommendation.
+- [x] Should `final_answer_reserve` keep its 0.15 default for a coder seat? — *Owner: Jesus Lara*: No — the shadow policy passes an **absolute** reserve of `2 × profile.max_tokens`. A coder's final output is a small `DevelopmentOutput` JSON; a fractional reserve against a large ceiling would immobilise ~120k tokens to protect ~1k. FEAT-550 already accepts an int as absolute tokens (`models/token_budget.py:32`).
+- [x] Should FEAT-550 finalization and the `max_turns` salvage (`llm.py:800-843`) be unified? — *Owner: Jesus Lara*: Not here — recorded as the follow-up this feature's dataset would justify. They are the same gesture (force a tools-disabled close when a resource runs out) reached by two paths, but unifying them is a behavior change and this feature's value rests on changing nothing.
+
+## Follow-ups (out of scope, recorded)
+
+- **Option D — budget elasticity experiment**: once the dataset exists, run the same tasks at several *real* ceilings and measure merged-rate per token, to find the ceiling that maximises useful work rather than the one that never interrupts.
+- **Unify the two finalization paths**: FEAT-550's tools-disabled finalization and `LLMCodeDispatcher`'s forced-`final_output` salvage.
+- **`asyncio.to_thread` for `count_input`**: only if event-loop blocking during wide waves ever shows up in practice.
