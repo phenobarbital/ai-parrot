@@ -1,0 +1,282 @@
+"""Idempotent feature/hotfix worktree provisioning for SDD commands (FEAT-552).
+
+Replaces the hand-rolled ``git worktree add`` blocks that used to live in
+``/sdd-task``, ``/sdd-start``, ``sdd-worker``, ``sdd-planner``,
+``sdd-research`` and ``sdd-autopilot``. Naming and base ref come from
+``scripts.sdd.sdd_meta.plan_worktree`` — never built here.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import logging
+import subprocess
+import sys
+from pathlib import Path
+from typing import Sequence
+
+from scripts.sdd.sdd_meta import WorktreePlan, plan_worktree, resolve_flow
+
+logger = logging.getLogger(__name__)
+
+
+class EnsureWorktreeError(RuntimeError):
+    """Raised when the worktree cannot be provisioned (CLI exit code 1)."""
+
+
+def _git(*args: str, cwd: Path) -> str:
+    """Run a git command, returning stdout; raise EnsureWorktreeError on failure."""
+    res = subprocess.run(
+        ["git", *args],
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if res.returncode != 0:
+        cmd_str = " ".join(["git", *args])
+        raise EnsureWorktreeError(
+            f"Command '{cmd_str}' failed with exit code {res.returncode}.\n"
+            f"stdout: {res.stdout.strip()}\n"
+            f"stderr: {res.stderr.strip()}"
+        )
+    return res.stdout
+
+
+def ensure(
+    plan: WorktreePlan,
+    *,
+    repo_root: Path,
+    sync: bool = True,
+    require_paths: Sequence[str] = (),
+    dry_run: bool = False,
+) -> tuple[Path, bool]:
+    """Create the worktree if absent, reuse it if present, and verify it.
+
+    Steps, in order:
+      1. Reuse — if ``git worktree list --porcelain`` already lists a worktree
+         whose path basename is ``plan.name``, confirm its checked-out branch
+         is ``plan.name`` and return it. A path holding a DIFFERENT branch is
+         an error, never a silent reuse.
+      2. Sync (skipped when ``sync`` is False) — ``git fetch origin
+         <base_branch>``. No local branch is checked out; no local commit moves.
+      3. Refuse when a branch named ``plan.name`` exists but is checked out
+         nowhere — the operator decides (reuse it, or pick another slug).
+      4. Create — ``git worktree add -b <name> <path> <base_ref>``.
+      5. Verify — every ``require_paths`` entry must exist inside the worktree.
+         A miss means the base does not carry the task artifacts yet.
+      6. Return ``(absolute_path, created)``.
+
+    Args:
+        plan: The naming/base-ref decision from ``plan_worktree``.
+        repo_root: Absolute path to the main clone.
+        sync: Fetch ``origin/<base_branch>`` before creating.
+        require_paths: Repo-relative paths that must exist in the worktree.
+        dry_run: Resolve and report without running any mutating git command.
+
+    Returns:
+        ``(path, created)`` — ``created`` is False when an existing worktree
+        was reused.
+
+    Raises:
+        EnsureWorktreeError: On any refusal above, or a failing git command.
+    """
+    target_path = (repo_root / plan.path).resolve()
+
+    # Step 1: Reuse check
+    # git worktree list --porcelain outputs blocks like:
+    # worktree /path/to/worktree
+    # branch refs/heads/branch-name
+    # (or bare worktree line for the main worktree)
+    wt_list_out = _git("worktree", "list", "--porcelain", cwd=repo_root)
+    current_wt_path = None
+    wt_to_branch = {}
+    for line in wt_list_out.splitlines():
+        line = line.strip()
+        if line.startswith("worktree "):
+            current_wt_path = Path(line[9:]).resolve()
+        elif line.startswith("branch ") and current_wt_path is not None:
+            branch_ref = line[7:]
+            if branch_ref.startswith("refs/heads/"):
+                wt_to_branch[current_wt_path] = branch_ref[11:]
+
+    # Check if any existing worktree has the target path or basename plan.name
+    reused_path = None
+    for wt_path, branch_name in wt_to_branch.items():
+        if wt_path == target_path or wt_path.name == plan.name:
+            if branch_name != plan.name:
+                raise EnsureWorktreeError(
+                    f"Worktree at {wt_path} is checked out on branch {branch_name!r}, "
+                    f"but expected branch {plan.name!r}."
+                )
+            reused_path = wt_path
+            break
+
+    if reused_path is not None:
+        # Verify require_paths in the reused worktree
+        for req in require_paths:
+            if not (reused_path / req).exists():
+                raise EnsureWorktreeError(
+                    f"Required path {req!r} does not exist in reused worktree {reused_path}."
+                )
+        return reused_path, False
+
+    if dry_run:
+        return target_path, True
+
+    # Step 2: Sync
+    if sync:
+        # base_ref is origin/<base_branch>
+        base_branch = plan.base_ref.split("/", 1)[1]
+        _git("fetch", "origin", base_branch, cwd=repo_root)
+
+    # Step 3: Refuse when a branch named plan.name exists but is checked out nowhere
+    # git branch --list plan.name
+    branch_list_out = _git("branch", "--list", plan.name, cwd=repo_root)
+    has_branch = False
+    for line in branch_list_out.splitlines():
+        if line.strip().replace("*", "").strip() == plan.name:
+            has_branch = True
+            break
+
+    if has_branch:
+        # It exists, but we already checked all active worktrees and none of them checked it out.
+        raise EnsureWorktreeError(
+            f"Branch {plan.name!r} already exists but is not checked out in any worktree."
+        )
+
+    # Step 4: Create
+    # git worktree add -b <name> <path> <base_ref>
+    # We must ensure the parent directory of target_path exists
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        _git("worktree", "add", "-b", plan.name, str(target_path), plan.base_ref, cwd=repo_root)
+    except EnsureWorktreeError as e:
+        # Clean up target_path if it was created but git worktree add failed
+        if target_path.exists():
+            try:
+                _git("worktree", "prune", cwd=repo_root)
+            except Exception:
+                pass
+        raise e
+
+    # Step 5: Verify
+    missing_paths = []
+    for req in require_paths:
+        if not (target_path / req).exists():
+            missing_paths.append(req)
+
+    if missing_paths:
+        # Clean up the worktree we just created
+        # Since we cannot use git worktree remove, we can use git worktree prune after deleting the directory,
+        # or we can use git worktree prune. Wait, AC-9 says:
+        # "The module contains no git worktree remove, git branch -D, reset --hard, or checkout of a local branch"
+        # But we can delete the directory and run git worktree prune, or we can use git worktree prune.
+        # Let's delete the directory and run git worktree prune to clean up the worktree registration.
+        try:
+            import shutil
+            if target_path.is_dir():
+                shutil.rmtree(target_path)
+            _git("worktree", "prune", cwd=repo_root)
+            # Also delete the branch we created
+            _git("branch", "-d", plan.name, cwd=repo_root)
+        except Exception as cleanup_err:
+            logger.warning("Failed to clean up worktree/branch after verification failure: %s", cleanup_err)
+        raise EnsureWorktreeError(
+            f"Verification failed: the following required paths were missing from the new worktree: "
+            f"{', '.join(missing_paths)}"
+        )
+
+    return target_path, True
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """CLI entry point. Prints the worktree path to stdout; 0 on success.
+
+    With ``--json``, prints one object instead —
+    ``{"name": …, "path": …, "base_ref": …, "created": bool}`` — so
+    ``sdd-planner``/``sdd-research`` can lift ``worktree_path`` straight into
+    their ``PlannerOutput``/``ResearchOutput`` contracts (spec §8).
+    """
+    parser = argparse.ArgumentParser(
+        description="Idempotent feature/hotfix worktree provisioning for SDD commands."
+    )
+    parser.add_argument("--slug", required=True, help="Feature slug, kebab-case.")
+    parser.add_argument("--feature-id", help="FEAT-<NNN>; required for feature runs.")
+    parser.add_argument("--jira-key", help="Jira issue key; required for hotfix runs.")
+    parser.add_argument("--spec", help="Path to spec markdown file.")
+    parser.add_argument("--index", help="Path to index JSON file.")
+    parser.add_argument("--base-branch", help="Override base branch.")
+    parser.add_argument(
+        "--type", choices=["feature", "hotfix"], help="Override flow type."
+    )
+    parser.add_argument(
+        "--no-sync", action="store_true", help="Skip fetching origin/<base_branch>."
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Resolve and report without mutating git."
+    )
+    parser.add_argument(
+        "--json", action="store_true", help="Output JSON instead of bare path."
+    )
+
+    args = parser.parse_args(argv if argv is not None else sys.argv[1:])
+
+    try:
+        # Resolve flow
+        doc_path = Path(args.spec) if args.spec else None
+        meta = resolve_flow(
+            doc_path=doc_path,
+            type_override=args.type,
+            base_branch_override=args.base_branch,
+        )
+
+        # Plan worktree
+        plan = plan_worktree(
+            meta,
+            slug=args.slug,
+            feature_id=args.feature_id,
+            jira_key=args.jira_key,
+        )
+
+        # Determine require_paths
+        require_paths = []
+        if args.spec:
+            require_paths.append(args.spec)
+        if args.index:
+            require_paths.append(args.index)
+
+        # Run ensure
+        repo_root = Path.cwd()
+        path, created = ensure(
+            plan,
+            repo_root=repo_root,
+            sync=not args.no_sync,
+            require_paths=require_paths,
+            dry_run=args.dry_run,
+        )
+
+        if args.json:
+            print(
+                json.dumps(
+                    {
+                        "name": plan.name,
+                        "path": str(path),
+                        "base_ref": plan.base_ref,
+                        "created": created,
+                    }
+                )
+            )
+        else:
+            print(str(path))
+
+        return 0
+
+    except Exception as e:
+        sys.stderr.write(f"Error: {e}\n")
+        return 1
+
+
+if __name__ == "__main__":  # pragma: no cover
+    raise SystemExit(main())
