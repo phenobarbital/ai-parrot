@@ -161,3 +161,46 @@ def test_ensure_json_output_shape(tmp_git_repo: Path, capsys, monkeypatch) -> No
     out, err = capsys.readouterr()
     data = json.loads(out.strip())
     assert data["created"] is False
+
+
+def test_json_output_includes_worktree_path_alias(tmp_git_repo: Path, capsys, monkeypatch) -> None:
+    """sdd-planner/sdd-research read ``worktree_path`` from the JSON object
+    for their PlannerOutput/ResearchOutput contracts (spec §8) — the CLI
+    must actually emit that key, not just ``path`` (code review fixup)."""
+    monkeypatch.chdir(tmp_git_repo)
+
+    ret = main(["--slug", SLUG, "--feature-id", FEATURE_ID, "--json"])
+    assert ret == 0
+    out, _err = capsys.readouterr()
+    data = json.loads(out.strip())
+    assert "worktree_path" in data
+    assert data["worktree_path"] == data["path"]
+
+
+def test_main_infers_hotfix_from_jira_key_alone(tmp_git_repo: Path, capsys, monkeypatch) -> None:
+    """The documented invocation ``--slug <slug> --jira-key <KEY>`` (CLAUDE.md,
+    sdd-research.md) must work without also requiring ``--type``/
+    ``--base-branch`` — ``resolve_flow()`` has no other signal here that this
+    is a hotfix run, so ``main()`` must infer it (code review fixup)."""
+    # Hotfix worktrees branch from origin/main; give the fixture's origin a
+    # main branch mirroring dev so the fetch/worktree-add in ensure() succeeds.
+    subprocess.run(["git", "push", "origin", "dev:main"], cwd=tmp_git_repo, check=True)
+    monkeypatch.chdir(tmp_git_repo)
+
+    ret = main(["--slug", SLUG, "--jira-key", "NAV-8036", "--json"])
+    assert ret == 0
+    out, _err = capsys.readouterr()
+    data = json.loads(out.strip())
+    assert data["name"] == f"hotfix-NAV-8036-{SLUG}"
+    assert data["base_ref"] == "origin/main"
+
+
+def test_ensure_rejects_absolute_require_paths(tmp_git_repo: Path) -> None:
+    """An absolute ``require_paths`` entry must be rejected outright, not
+    silently pass verification — ``Path(x) / <absolute>`` discards ``x``,
+    which would make Step 5 check a path outside the worktree entirely and
+    report success regardless (code review fixup)."""
+    plan = _plan()
+    with pytest.raises(EnsureWorktreeError) as exc_info:
+        ensure(plan, repo_root=tmp_git_repo, require_paths=["/etc/hostname"])
+    assert "repo-relative" in str(exc_info.value)

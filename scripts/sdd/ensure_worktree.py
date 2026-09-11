@@ -82,6 +82,14 @@ def ensure(
     Raises:
         EnsureWorktreeError: On any refusal above, or a failing git command.
     """
+    # `Path(x) / y` silently discards `x` when `y` is absolute, which would
+    # make the Step 5 verification below report success for a path that was
+    # never actually inside the new worktree. require_paths is documented as
+    # repo-relative — enforce that instead of failing open.
+    for req in require_paths:
+        if Path(req).is_absolute():
+            raise EnsureWorktreeError(f"require_paths entries must be repo-relative, got absolute path: {req!r}")
+
     target_path = (repo_root / plan.path).resolve()
 
     # Step 1: Reuse check
@@ -168,7 +176,12 @@ def ensure(
         # `git worktree prune` drop the now-stale registration, then remove
         # the branch we created (a plain, non-forced delete of an unpushed
         # branch that carries no commits of its own — never a forced delete
-        # of a branch that might hold real work).
+        # of a branch that might hold real work). `prune` is repo-wide by
+        # git's own design, but it is intentionally harmless here: it only
+        # forgets registrations whose directory is already gone from disk,
+        # so a concurrent process's still-live worktree is never touched —
+        # this was verified empirically (an unrelated live worktree/branch
+        # survives a run that hits this cleanup path).
         try:
             import shutil
 
@@ -198,7 +211,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Idempotent feature/hotfix worktree provisioning for SDD commands.")
     parser.add_argument("--slug", required=True, help="Feature slug, kebab-case.")
     parser.add_argument("--feature-id", help="FEAT-<NNN>; required for feature runs.")
-    parser.add_argument("--jira-key", help="Jira issue key; required for hotfix runs.")
+    parser.add_argument(
+        "--jira-key",
+        help="Jira issue key; required for hotfix runs. Implies --type hotfix "
+        "and --base-branch main unless either is passed explicitly.",
+    )
     parser.add_argument("--spec", help="Path to spec markdown file.")
     parser.add_argument("--index", help="Path to index JSON file.")
     parser.add_argument("--base-branch", help="Override base branch.")
@@ -210,12 +227,24 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv if argv is not None else sys.argv[1:])
 
     try:
-        # Resolve flow
+        # Resolve flow. `--jira-key` with no explicit `--type` implies a
+        # hotfix (and therefore `origin/main`) — without this, the
+        # documented invocation `--slug <slug> --jira-key <KEY>` (see
+        # CLAUDE.md and sdd-research.md) would fail with "feature_id is
+        # required", since resolve_flow() defaults to type="feature" and
+        # has no other signal here that this is a hotfix run.
+        type_override = args.type
+        base_branch_override = args.base_branch
+        if args.jira_key and not type_override:
+            type_override = "hotfix"
+            if not base_branch_override:
+                base_branch_override = "main"
+
         doc_path = Path(args.spec) if args.spec else None
         meta = resolve_flow(
             doc_path=doc_path,
-            type_override=args.type,
-            base_branch_override=args.base_branch,
+            type_override=type_override,
+            base_branch_override=base_branch_override,
         )
 
         # Plan worktree
@@ -249,6 +278,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                     {
                         "name": plan.name,
                         "path": str(path),
+                        # Alias of "path" — sdd-planner/sdd-research read this
+                        # key name into their PlannerOutput/ResearchOutput
+                        # `worktree_path` field (spec §8); both keys always
+                        # carry the same value.
+                        "worktree_path": str(path),
                         "base_ref": plan.base_ref,
                         "created": created,
                     }
