@@ -49,16 +49,14 @@ BundleGeneratorFn = Callable[[str], Awaitable[GeneratedBundle]]
 _TIER_PLAIN_LANGUAGE: dict[CapabilityTier, str] = {
     CapabilityTier.PURE: "cannot read any account information and cannot access the network",
     CapabilityTier.HELPERS: (
-        "can read basic account info (like your email or role) but cannot make "
-        "network calls or access other systems"
+        "can read basic account info (like your email or role) but cannot make " "network calls or access other systems"
     ),
     CapabilityTier.BROKERED: (
         "can make a small number of pre-approved network calls or database "
         "lookups, but only to hosts/tables explicitly listed below"
     ),
     CapabilityTier.TOOLKIT: (
-        "can use pre-approved automated tools/agents in addition to everything "
-        "the tier above allows"
+        "can use pre-approved automated tools/agents in addition to everything " "the tier above allows"
     ),
 }
 
@@ -118,22 +116,13 @@ class SnippetAuthoringToolkit(AbstractToolkit):
         base = _TIER_PLAIN_LANGUAGE[manifest.tier]
         lines = [f"This code's declared tier is '{manifest.tier.value}' — it {base}."]
         if manifest.allowlist.http_hosts:
-            lines.append(
-                f"It may contact these external services: "
-                f"{', '.join(manifest.allowlist.http_hosts)}."
-            )
+            lines.append(f"It may contact these external services: " f"{', '.join(manifest.allowlist.http_hosts)}.")
         if manifest.allowlist.query_tables:
-            lines.append(
-                f"It may read from these data tables: "
-                f"{', '.join(manifest.allowlist.query_tables)}."
-            )
+            lines.append(f"It may read from these data tables: " f"{', '.join(manifest.allowlist.query_tables)}.")
         if manifest.auth_claims:
-            lines.append(
-                f"It may see these account details: {', '.join(manifest.auth_claims)}."
-            )
+            lines.append(f"It may see these account details: {', '.join(manifest.auth_claims)}.")
         lines.append(
-            f"It must finish within {manifest.timeout_ms} ms and use at most "
-            f"{manifest.max_memory_mb} MB of memory."
+            f"It must finish within {manifest.timeout_ms} ms and use at most " f"{manifest.max_memory_mb} MB of memory."
         )
         return " ".join(lines)
 
@@ -163,9 +152,7 @@ class SnippetAuthoringToolkit(AbstractToolkit):
         # default to GIT; a DB-targeted draft requires source=DB and the
         # target tenant, so re-tag a copy before drafting — draft() raises
         # ValueError on a non-DB source (approval.py's own guard).
-        retagged = result["bundle"].model_copy(
-            update={"source": SnippetSource.DB, "tenant": tenant}
-        )
+        retagged = result["bundle"].model_copy(update={"source": SnippetSource.DB, "tenant": tenant})
         drafted = await approval_service.draft(retagged, tenant=tenant)
         result["draft_version"] = drafted.version
         return result

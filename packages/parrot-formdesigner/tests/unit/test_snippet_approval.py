@@ -48,23 +48,39 @@ class _FakePool:
 
     async def execute(self, query: str, *args: Any) -> str:
         if "INSERT INTO form_snippets" in query:
-            tenant, handler_ref, event, version, status, manifest_json, python_source, python_sha256, client_source, client_sha256, approved_by, approved_at = args
+            (
+                tenant,
+                handler_ref,
+                event,
+                version,
+                status,
+                manifest_json,
+                python_source,
+                python_sha256,
+                client_source,
+                client_sha256,
+                approved_by,
+                approved_at,
+            ) = args
             import json
+
             manifest_dict = json.loads(manifest_json)
-            self.rows.append({
-                "tenant": tenant,
-                "handler_ref": handler_ref,
-                "event": event,
-                "version": version,
-                "status": status,
-                "manifest": manifest_dict,
-                "python_source": python_source,
-                "python_sha256": python_sha256,
-                "client_source": client_source,
-                "client_sha256": client_sha256,
-                "approved_by": approved_by,
-                "approved_at": approved_at,
-            })
+            self.rows.append(
+                {
+                    "tenant": tenant,
+                    "handler_ref": handler_ref,
+                    "event": event,
+                    "version": version,
+                    "status": status,
+                    "manifest": manifest_dict,
+                    "python_source": python_source,
+                    "python_sha256": python_sha256,
+                    "client_source": client_source,
+                    "client_sha256": client_sha256,
+                    "approved_by": approved_by,
+                    "approved_at": approved_at,
+                }
+            )
         elif "UPDATE form_snippets" in query:
             if "status = $1, approved_by = $2, approved_at = $3" in query:
                 status, approved_by, approved_at, tenant, handler_ref, version = args
@@ -98,7 +114,9 @@ class _FakeStore:
         return None
 
 
-def _make_bundle(tenant: str = "acme", handler_ref: str = "x.onBeforeSubmit", tier: CapabilityTier = CapabilityTier.PURE) -> SnippetBundle:
+def _make_bundle(
+    tenant: str = "acme", handler_ref: str = "x.onBeforeSubmit", tier: CapabilityTier = CapabilityTier.PURE
+) -> SnippetBundle:
     return SnippetBundle(
         source=SnippetSource.DB,
         status=SnippetStatus.DRAFT,
@@ -124,7 +142,9 @@ async def test_approval_refuses_unconformant() -> None:
     drafted = await service.draft(bundle, tenant="acme")
 
     with pytest.raises(ValueError, match="conformance"):
-        await service.publish(tenant="acme", handler_ref="x.onBeforeSubmit", version=drafted.version, approved_by="admin")
+        await service.publish(
+            tenant="acme", handler_ref="x.onBeforeSubmit", version=drafted.version, approved_by="admin"
+        )
 
     assert store.invalidate_calls == []
 
@@ -140,7 +160,9 @@ async def test_approval_records_approver() -> None:
     bundle = _make_bundle()
     drafted = await service.draft(bundle, tenant="acme")
 
-    published = await service.publish(tenant="acme", handler_ref="x.onBeforeSubmit", version=drafted.version, approved_by="admin-user")
+    published = await service.publish(
+        tenant="acme", handler_ref="x.onBeforeSubmit", version=drafted.version, approved_by="admin-user"
+    )
     assert published.status == SnippetStatus.PUBLISHED
     assert published.approved_by == "admin-user"
     assert published.approved_at is not None
@@ -223,4 +245,6 @@ async def test_publish_refuses_tier_cap() -> None:
     drafted = await service.draft(bundle, tenant="acme")
 
     with pytest.raises(ValueError, match="capped at tier 2"):
-        await service.publish(tenant="acme", handler_ref="x.onBeforeSubmit", version=drafted.version, approved_by="admin")
+        await service.publish(
+            tenant="acme", handler_ref="x.onBeforeSubmit", version=drafted.version, approved_by="admin"
+        )
