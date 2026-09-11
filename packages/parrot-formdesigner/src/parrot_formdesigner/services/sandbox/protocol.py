@@ -89,13 +89,9 @@ def encode_frame(message: BaseModel) -> bytes:
     type_tag = next((k for k, v in _FRAME_MODELS.items() if isinstance(message, v)), None)
     if type_tag is None:
         raise ValueError(f"{type(message)!r} is not a recognised frame type")
-    body = json.dumps(
-        {"type": type_tag, "payload": message.model_dump(mode="json")}
-    ).encode("utf-8")
+    body = json.dumps({"type": type_tag, "payload": message.model_dump(mode="json")}).encode("utf-8")
     if len(body) > MAX_FRAME_BYTES:
-        raise FrameTooLargeError(
-            f"frame body is {len(body)} bytes, exceeds MAX_FRAME_BYTES={MAX_FRAME_BYTES}"
-        )
+        raise FrameTooLargeError(f"frame body is {len(body)} bytes, exceeds MAX_FRAME_BYTES={MAX_FRAME_BYTES}")
     return struct.pack(_LENGTH_HEADER_FORMAT, len(body)) + body
 
 
@@ -119,9 +115,7 @@ async def decode_frame(reader: asyncio.StreamReader) -> BaseModel:
     header = await reader.readexactly(_LENGTH_HEADER_SIZE)
     (declared_length,) = struct.unpack(_LENGTH_HEADER_FORMAT, header)
     if declared_length > MAX_FRAME_BYTES:
-        raise FrameTooLargeError(
-            f"frame declares {declared_length} bytes, exceeds MAX_FRAME_BYTES={MAX_FRAME_BYTES}"
-        )
+        raise FrameTooLargeError(f"frame declares {declared_length} bytes, exceeds MAX_FRAME_BYTES={MAX_FRAME_BYTES}")
     body = await reader.readexactly(declared_length)
     envelope = json.loads(body)
     type_tag = envelope["type"]

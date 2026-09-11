@@ -23,9 +23,7 @@ logger = logging.getLogger(__name__)
 
 # Fixed maximum safe-claim set (spec §2 OQ-5). A manifest's `auth_claims`
 # may only narrow this set, never extend it.
-SAFE_CLAIM_KEYS: frozenset[str] = frozenset(
-    {"sub", "tenant", "roles", "scope", "email", "preferred_username"}
-)
+SAFE_CLAIM_KEYS: frozenset[str] = frozenset({"sub", "tenant", "roles", "scope", "email", "preferred_username"})
 
 # FILL IN (resolves the SandboxContext.scheme gap noted in the Codebase
 # Contract): this key folds AuthContext.scheme into SandboxContext.claims
@@ -47,8 +45,7 @@ def _assert_json_serialisable(value: Mapping[str, Any] | None, *, field_name: st
         json.dumps(value)
     except (TypeError, ValueError) as exc:
         raise TypeError(
-            f"{field_name} is not JSON-serialisable and cannot cross the "
-            f"sandbox boundary: {exc}"
+            f"{field_name} is not JSON-serialisable and cannot cross the " f"sandbox boundary: {exc}"
         ) from exc
 
 
@@ -95,8 +92,8 @@ class ContextProjector:
                 #   log, never raising, since a missing auth_context is a
                 #   caller/test setup issue, not a security violation.
                 self.logger.debug(
-                    "ContextProjector: auth_context is not an AuthContext "
-                    "instance (%r) — projecting empty claims", type(auth)
+                    "ContextProjector: auth_context is not an AuthContext " "instance (%r) — projecting empty claims",
+                    type(auth),
                 )
 
         return SandboxContext(

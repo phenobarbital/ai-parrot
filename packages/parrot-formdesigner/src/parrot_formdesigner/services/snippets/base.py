@@ -31,9 +31,7 @@ logger = logging.getLogger(__name__)
 class SnippetSourceProtocol(Protocol):
     """What both the git loader (TASK-3164) and DB store (TASK-3165) implement."""
 
-    async def resolve_current(
-        self, *, tenant: str | None, handler_ref: str
-    ) -> SnippetBundle | None:
+    async def resolve_current(self, *, tenant: str | None, handler_ref: str) -> SnippetBundle | None:
         """Return the currently published bundle for this key, or None.
 
         Called on EVERY dispatch by the resolver closure — implementations
@@ -150,6 +148,4 @@ def register_resolver(
         execute=execute,
     )
     register_form_event(handler_ref, tenant=tenant)(adapter)
-    logger.info(
-        "registered snippet resolver for (tenant=%r, handler_ref=%r)", tenant, handler_ref
-    )
+    logger.info("registered snippet resolver for (tenant=%r, handler_ref=%r)", tenant, handler_ref)

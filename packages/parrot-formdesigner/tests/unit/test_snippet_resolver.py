@@ -80,14 +80,10 @@ def test_resolver_registers_once_per_key() -> None:
 async def test_resolver_survives_republish() -> None:
     """Swapping `source.bundle` changes behaviour with NO re-registration."""
 
-    async def _project_current_version(
-        ctx: FormEventContext, bundle: SnippetBundle
-    ) -> SandboxContext:
+    async def _project_current_version(ctx: FormEventContext, bundle: SnippetBundle) -> SandboxContext:
         return SandboxContext(event=ctx.event, form_id=ctx.form_id, tenant=ctx.tenant, claims={})
 
-    async def _execute_reports_version(
-        bundle: SnippetBundle, ctx: SandboxContext
-    ) -> SandboxOutcome:
+    async def _execute_reports_version(bundle: SnippetBundle, ctx: SandboxContext) -> SandboxOutcome:
         return SandboxOutcome(
             resolution=EventResolution(metadata={"version": bundle.version}),
             duration_ms=1.0,
@@ -140,9 +136,7 @@ async def test_resolver_calls_injected_project_and_execute() -> None:
         execute=_fake_execute,
     )
     handler = get_form_event("survey_v1.onBeforeSubmit")
-    ctx = FormEventContext(
-        event="onBeforeSubmit", form_id="f1", tenant=None, auth_context=None
-    )
+    ctx = FormEventContext(event="onBeforeSubmit", form_id="f1", tenant=None, auth_context=None)
     result = await handler(ctx)
     assert isinstance(result, EventResolution)
     assert source.resolve_calls == 1
@@ -153,9 +147,7 @@ async def test_resolver_rehydrates_abort() -> None:
 
     async def _execute_aborts(bundle: SnippetBundle, ctx: SandboxContext) -> SandboxOutcome:
         return SandboxOutcome(
-            abort=AbortSignal(
-                reason="total exceeds limit", user_message="Amount too high", status_code=422
-            ),
+            abort=AbortSignal(reason="total exceeds limit", user_message="Amount too high", status_code=422),
             duration_ms=1.0,
         )
 

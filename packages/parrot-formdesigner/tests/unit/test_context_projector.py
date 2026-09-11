@@ -23,8 +23,11 @@ def _bundle(tier: CapabilityTier, auth_claims: tuple[str, ...] = ()) -> SnippetB
 
 def _ctx(auth: AuthContext | None) -> FormEventContext:
     return FormEventContext(
-        event="onBeforeSubmit", form_id="f1", tenant="acme",
-        auth_context=auth, payload={"a": 1},
+        event="onBeforeSubmit",
+        form_id="f1",
+        tenant="acme",
+        auth_context=auth,
+        payload={"a": 1},
     )
 
 
@@ -63,8 +66,11 @@ async def test_projector_tier4_claims_equal_tier2() -> None:
 async def test_projector_rejects_unserialisable() -> None:
     projector = ContextProjector()
     ctx = FormEventContext(
-        event="onBeforeSubmit", form_id="f1", tenant="acme",
-        auth_context=None, payload={"bad": object()},
+        event="onBeforeSubmit",
+        form_id="f1",
+        tenant="acme",
+        auth_context=None,
+        payload={"bad": object()},
     )
     with pytest.raises(TypeError):
         await projector.project(ctx, _bundle(CapabilityTier.PURE))
