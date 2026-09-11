@@ -152,7 +152,7 @@
       "feature_id": "FEAT-550",
       "feature": "token-budget-bedrock",
       "spec": "sdd/specs/token-budget-bedrock.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -162,8 +162,8 @@
       "parallelism_notes": "Creates only new files in the Amazon satellite (budget.py, budget_qualifications.py, its test). Imports records/errors from TASK-3132 and the clients.budget re-export from TASK-3133; no client edits. Safe alongside TASK-3134..3138.",
       "assigned_to": null,
       "started_at": "2026-09-10T23:40:10+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3139-bedrock-budget-adapter.md"
+      "completed_at": "2026-09-11T00:24:02+00:00",
+      "file": "sdd/tasks/completed/TASK-3139-bedrock-budget-adapter.md"
     },
     {
       "id": "TASK-3140",

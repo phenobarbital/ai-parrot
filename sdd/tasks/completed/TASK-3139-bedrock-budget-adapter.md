@@ -470,8 +470,23 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: sdd-worker orchestrator (parrot-sdd-coder native haiku seat)
+**Date**: 2026-09-11
+**Notes**: Implemented `BedrockBudgetAdapter` (local counting via tiktoken-or-heuristic
+fallback, usage normalization for both Converse cache-aware fields and native
+Anthropic-shaped body categories, deterministic fingerprinting, `prepare_finalization`
+tool-protocol-to-text rewriting with `toolConfig` removal and `UNEXECUTED` markers for
+pending calls) and `budget_qualifications.py` (empty `STRICT_QUALIFICATIONS` registry,
+`QualificationKey`/`QualificationRecord`, exact-match `match_qualification`, offline
+`probe_count_tokens_support()` returning `False` on the installed botocore SDK).
+Verified: `pytest packages/ai-parrot-client-amazon/tests/unit/test_token_budget_bedrock.py -v`
+→ 9 passed (cache-field summation to 950/50/1000, missing-field → `BudgetAccountingError`,
+native body categories, deterministic fingerprint, empty strict registry + `False` probe,
+strict refusal without a qualification match, injected exact-match success, finalization
+payload rewriting, `totalTokens` never re-added even when inflated in the raw payload);
+`ruff check` clean on both new modules; imports and `STRICT_QUALIFICATIONS == ()` /
+`probe_count_tokens_support() is False` spot-checked directly in the orchestrator worktree.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
+
+Seat: haiku (native) · Backend: n/a · Model: haiku · Attempts: 1 · Duration: 310.1s · Tokens: 90768 (subagent_tokens, in+out combined) · Tool uses: 42
