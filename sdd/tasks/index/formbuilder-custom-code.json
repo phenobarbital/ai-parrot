@@ -70,7 +70,7 @@
       "feature_id": "FEAT-459",
       "feature": "formbuilder-custom-code",
       "spec": "sdd/specs/formbuilder-custom-code.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -81,8 +81,8 @@
       "parallelism_notes": "Spec Worktree Strategy: M4 and M5+M6 are independent once M3 (TASK-3163) lands — different files, no shared deps with TASK-3165/3166.",
       "assigned_to": null,
       "started_at": "2026-09-11T16:38:03+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3164-git-snippet-loader.md"
+      "completed_at": "2026-09-11T17:43:24+00:00",
+      "file": "sdd/tasks/completed/TASK-3164-git-snippet-loader.md"
     },
     {
       "id": "TASK-3165",
