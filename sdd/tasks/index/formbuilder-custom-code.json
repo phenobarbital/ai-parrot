@@ -237,7 +237,7 @@
       "feature_id": "FEAT-459",
       "feature": "formbuilder-custom-code",
       "spec": "sdd/specs/formbuilder-custom-code.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -253,8 +253,8 @@
       "parallelism_notes": "Integrates all of Track 2 (M7-M11) — must be last in that track, per spec 'M12 depends on M7-M11'.",
       "assigned_to": null,
       "started_at": "2026-09-11T16:38:03+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3172-tier-router.md"
+      "completed_at": "2026-09-11T18:06:21+00:00",
+      "file": "sdd/tasks/completed/TASK-3172-tier-router.md"
     },
     {
       "id": "TASK-3173",
