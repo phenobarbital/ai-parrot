@@ -90,9 +90,12 @@ is the number that bites whenever a profile is constructed directly.
   on-demand skill loader (the in-process loop has no `load_skill` tool),
   and a skill is by definition something the agent decides to invoke. An
   always-injected rule is the right shape.
-- Language-aware injection (only shipping the Cython/Rust rules when the
-  task touches `.pyx`/`.rs`). The full coder rule set is ~10 KB (~2.5 K
-  tokens); trimming it is a later optimisation, see §8.
+- Injecting the Cython and Rust rules. v1 ships **Python only**
+  (`codebase-conventions` + `python-development`, §8 Q5 resolved);
+  `cython-development.md` / `rust-development.md` stay where they are as
+  Claude-side rules and join `CODER_RULE_NAMES` in a later feature, with or
+  without language-aware selection.
+- Root-causing the reported 35-turn failure (§8 Q2 → separate ticket).
 - Rewriting `AGENTS.md`'s **safety / git protocol** sections. Only the
   stale tech-stack and formatting prose is pruned (§3 M3, §8 Q1 resolved).
 - Changing `DEFAULT_LLM_MAX_TURNS = 60` or the `DEV_LOOP_LLM_MAX_TURNS`
@@ -108,11 +111,12 @@ is the number that bites whenever a profile is constructed directly.
 ### Overview
 
 One directory, `.agent/rules/`, becomes the canonical home of the coder
-rule set — the four files named in `CODER_RULE_NAMES`. Three consumers read
+rule set — the two files named in `CODER_RULE_NAMES` (`codebase-conventions`,
+`python-development`). Three consumers read
 it, each through the mechanism it already has:
 
 1. **Claude Code (native seat)** keeps auto-loading `.claude/rules/*.md`.
-   The four files exist there as byte-identical twins; a parity test
+   The two files exist there as byte-identical twins; a parity test
    fails when they drift (the same discipline `test_subagent_parity.py`
    applies to `_subagent_data/*.md` vs `.claude/agents/*.md`).
 2. **The three dispatch prompt builders** call a new helper,
@@ -153,8 +157,7 @@ automatically.
 ### Component Diagram
 
 ```
-.agent/rules/{codebase-conventions,python-development,
-              cython-development,rust-development}.md      ← single source
+.agent/rules/{codebase-conventions,python-development}.md   ← single source (v1: Python only)
         │
         ├─ byte-parity test ──→ .claude/rules/<same>.md    ← native haiku seat (Claude Code auto-load)
         │
@@ -234,15 +237,17 @@ async def check_banned_imports(cwd: str, changed: List[str]) -> List[str]: ...
   `.claude/rules/codebase-conventions.md` (new twin),
   `.agent/rules/python-development.md` + `.claude/rules/python-development.md` (modifies CRITICAL RULE 2 — see below),
   `packages/ai-parrot/src/parrot/flows/conventions.py` (new, stdlib-only: `CODER_RULE_NAMES`, `RULES_DIRNAME`, `CONVENTIONS_PREAMBLE`, `_strip_frontmatter`, `load_project_conventions` — contract in §3 M2's skeleton; M1 owns the file so M1's tests collect on their own),
-  `packages/ai-parrot/src/parrot/flows/_rules_data/{codebase-conventions,python-development,cython-development,rust-development}.md` (new, byte-identical to `.agent/rules/`),
+  `packages/ai-parrot/src/parrot/flows/_rules_data/{codebase-conventions,python-development}.md` (new, byte-identical to `.agent/rules/`),
   `packages/ai-parrot/pyproject.toml` (`[tool.setuptools.package-data]`, add `"parrot.flows" = ["_rules_data/*.md"]` next to the `parrot.flows.dev_loop` entry at `:906`),
   `packages/ai-parrot/tests/flows/dev_loop/test_rules_parity.py` (new)
 - **Responsibility**: the canonical coder rule set and the guards that keep
-  its three copies identical. `.agent/rules/python-development.md`,
-  `cython-development.md`, `rust-development.md` already exist and are
-  byte-identical to their `.claude/rules/` twins today (verified
-  2026-09-12). `cython-development.md` and `rust-development.md` are
-  adopted as-is. `python-development.md` CRITICAL RULE 2 ("NEVER run
+  its three copies identical. v1 is **Python only** (§8 Q5):
+  `CODER_RULE_NAMES = ("codebase-conventions", "python-development")`.
+  `.agent/rules/python-development.md` already exists and is
+  byte-identical to its `.claude/rules/` twin today (verified 2026-09-12).
+  `cython-development.md` / `rust-development.md` are NOT touched, not
+  shipped in `_rules_data/`, and not injected. `python-development.md`
+  CRITICAL RULE 2 ("NEVER run
   `uv`, `python`, or `pip` commands without activating first") gains one
   sentence: *"A tool-driven coder with no shell (the dev-loop in-process
   seats) cannot `source`; it runs the allowlisted `pytest`/`ruff`/
@@ -281,8 +286,9 @@ async def check_banned_imports(cwd: str, changed: List[str]) -> List[str]: ...
   5. `## Code standards` — Google-style docstrings, strict type hints,
      snake_case / PascalCase, 120-column lines, no blocking I/O in async
      code, secrets via environment only.
-  6. Size cap: the four coder rule files together ≤ 12 000 bytes
-     (they are injected into a 40-turn prompt).
+  6. Size cap: the two coder rule files together ≤ 8 000 bytes
+     (`python-development.md` is 2 3xx bytes today, leaving ~5.5 KB for
+     `codebase-conventions.md`; they are injected into a 40-turn prompt).
 - **Interface Skeleton** *(test module only — rule files are Markdown)*:
   ```python
   # packages/ai-parrot/tests/flows/dev_loop/test_rules_parity.py  (new; mirrors test_subagent_parity.py:38-64)
@@ -297,7 +303,7 @@ async def check_banned_imports(cwd: str, changed: List[str]) -> List[str]: ...
       """`parrot/flows/_rules_data/<name>.md` == `.agent/rules/<name>.md` byte-for-byte; skipped when the repo dir is absent."""
 
   def test_coder_rules_fit_the_prompt_budget() -> None:
-      """sum(len(bytes)) over CODER_RULE_NAMES in `parrot/flows/_rules_data/` ≤ 12_000."""
+      """sum(len(bytes)) over CODER_RULE_NAMES in `parrot/flows/_rules_data/` ≤ 8_000."""
   ```
 
 ### Module 2: prompt injection + `_subagent_defs` re-export
@@ -314,7 +320,7 @@ async def check_banned_imports(cwd: str, changed: List[str]) -> List[str]: ...
   ```python
   # parrot/flows/conventions.py  (CREATED IN M1 — contract restated here because M2 consumes it; imports ONLY os, pathlib, importlib.resources, typing — never parrot.flows.dev_loop)
   CODER_RULE_NAMES: tuple[str, ...] = (
-      "codebase-conventions", "python-development", "cython-development", "rust-development",
+      "codebase-conventions", "python-development",   # v1 Python only (§8 Q5); cython/rust join later
   )
   RULES_DIRNAME: str = ".agent/rules"
   CONVENTIONS_PREAMBLE: str = (
@@ -552,7 +558,7 @@ async def check_banned_imports(cwd: str, changed: List[str]) -> List[str]: ...
 |---|---|---|
 | `test_claude_rules_twin_is_identical[name]` | M1 | `.claude/rules/<name>.md` == `.agent/rules/<name>.md` for the 4 coder rules |
 | `test_package_rules_copy_is_identical[name]` | M1 | `parrot/flows/_rules_data/<name>.md` == `.agent/rules/<name>.md` |
-| `test_coder_rules_fit_the_prompt_budget` | M1 | total bytes ≤ 12 000 |
+| `test_coder_rules_fit_the_prompt_budget` | M1 | total bytes ≤ 8 000 |
 | `test_conventions_prefer_worktree_copy` | M1 | with a tmp `cwd/.agent/rules/codebase-conventions.md`, its text wins over the package copy |
 | `test_conventions_fall_back_to_package_copy` | M1 | `cwd=None` and a `cwd` without `.agent/rules/` both return the package text |
 | `test_conventions_strip_frontmatter_and_join` | M1 | headings `## Project rule: <name>` and the `---` separator are present, no `---\nname:` frontmatter survives |
@@ -601,8 +607,8 @@ def rules_worktree(tmp_path: Path) -> Path:
 
 - [ ] AC-1 `.agent/rules/codebase-conventions.md` exists with the five sections of §3 M1 and names every forbidden module with its substitute (`requests`, `httpx`, `starlette`, `fastapi`, `uvicorn`, `langchain`, `print`, `pip`, `isort`); it names `black` as the formatter and `ruff` as the linter, never bans `black`.
 - [ ] AC-1b The `## Tooling` section carries both modes (interactive shell vs tool-driven coder) and `.agent/rules/python-development.md` + twins no longer state that `source .venv/bin/activate` is mandatory for a coder without a shell.
-- [ ] AC-2 `.claude/rules/<name>.md` and `parrot/flows/_rules_data/<name>.md` are byte-identical to `.agent/rules/<name>.md` for the four `CODER_RULE_NAMES`, enforced by `test_rules_parity.py`.
-- [ ] AC-3 The four coder rule files total ≤ 12 000 bytes.
+- [ ] AC-2 `.claude/rules/<name>.md` and `parrot/flows/_rules_data/<name>.md` are byte-identical to `.agent/rules/<name>.md` for the two `CODER_RULE_NAMES`, enforced by `test_rules_parity.py`; `cython-development.md` / `rust-development.md` are byte-unchanged by this feature.
+- [ ] AC-3 The two coder rule files total ≤ 8 000 bytes.
 - [ ] AC-4 `load_project_conventions(cwd)` prefers `<cwd>/.agent/rules/`, falls back to the package copy, strips frontmatter, never raises for a missing worktree file.
 - [ ] AC-5 The system prompt built by `LLMCodeDispatcher._initial_messages` and the prompts built by `CodexCodeDispatcher._build_codex_prompt` and `GoogleCodingDispatcher._build_agy_prompt` contain the conventions block after the `sdd-coder` body; the `nova` and `google-compat` dispatchers inherit it without changes.
 - [ ] AC-6 `parrot wiki codex install`, `parrot wiki google install` AND `coding_agents.install(codex|gemini|google)` upsert an idempotent `parrot:conventions:<canonical>:*` block in `AGENTS.md` / `GEMINI.md` (`gemini` canonicalises to `google`; `claude` writes none); the regenerated blocks are committed; `uninstall_codex_integration` / `uninstall_google_integration` remove them and nothing else (`coding_agents` has no uninstall, pre-existing).
@@ -767,7 +773,7 @@ assert profile.max_turns == DEFAULT_LLM_MAX_TURNS == 60        # line 123 — mu
 # Repo-root files
 # ruff.toml — [lint] select = ["E4", "E7", "E9", "F"] ; [lint.per-file-ignores] exists ; extend-exclude has ".claude/worktrees"
 # packages/ai-parrot/pyproject.toml:906 — "parrot.flows.dev_loop" = ["_subagent_data/*.md"]   (glob does NOT cover a rules/ subdirectory)
-# .agent/rules/ — python-development.md, cython-development.md, rust-development.md (byte-identical to .claude/rules/ twins, verified 2026-09-12) + 5 Antigravity persona files NOT in CODER_RULE_NAMES
+# .agent/rules/ — python-development.md, cython-development.md, rust-development.md (byte-identical to .claude/rules/ twins, verified 2026-09-12) + 5 Antigravity persona files. Only python-development is in CODER_RULE_NAMES (v1); cython/rust are NOT
 # .claude/rules/ — the three coding rules + 4 worktree rules; Claude Code auto-loads every *.md here
 # .claude/agents/sdd-coder.md:108 == _subagent_data/sdd-coder.md:108 — the single "Follow project conventions" line
 # AGENTS.md — has the `parrot:wiki:codex` block; GEMINI.md — has only the `parrot:wiki:google` block
@@ -823,10 +829,10 @@ assert profile.max_turns == DEFAULT_LLM_MAX_TURNS == 60        # line 123 — mu
 - Google-style docstrings, strict type hints, `self.logger`, async subprocess via `asyncio.create_subprocess_exec` (mirror `engine._git`).
 
 ### Known Risks / Gotchas
-- **The 24 vs 60 discrepancy.** The MCP roster path builds profiles through `build_dispatcher`, which sets `max_turns=60` unless `DEV_LOOP_LLM_MAX_TURNS` overrides it; `env/.env` does not set it. A run that died at 35 turns against a 24 budget therefore came from a profile constructed directly (or from an env override in that session). M5 raises the library default as asked; §8 Q2 asks the operator to confirm which path the failing run used, because if it was the roster path the budget was 60 and the failure has another cause (`dispatch.completed` payload at `llm.py:840` records the effective `max_turns` — check the run bundle).
+- **The 24 vs 60 discrepancy.** The MCP roster path builds profiles through `build_dispatcher`, which sets `max_turns=60` unless `DEV_LOOP_LLM_MAX_TURNS` overrides it; `env/.env` does not set it. A run that died at 35 turns against a 24 budget therefore came from a profile constructed directly (or from an env override in that session). M5 raises the library default as asked. Root-causing that specific run is **out of scope** (§8 Q2, separate ticket); the `dispatch.completed` payload at `llm.py:840` records the effective `max_turns` for whoever picks it up.
 - **TID251 backlog.** 17 files import a banned module today; the grandfather list keeps `ruff check` at zero new findings, but any coder that touches one of those files will see zero TID251 findings there (whole-file ignore). Acceptable: the goal is new code. Never extend the list.
 - **`banned-api` semantics.** Ruff's banned-api matches a module and its submodules; `langchain` does NOT cover the sibling top-level names `langchain_core`, `langchain_community`, `langgraph`. They must be listed explicitly (§8 Q4, default yes).
-- **Prompt size.** ~2.5 K tokens more per dispatch for every in-process seat; the 12 000-byte cap in AC-3 is the guard. `max_tokens` (`models/llm.py:24`) is the output budget and is unaffected.
+- **Prompt size.** ~2 K tokens more per dispatch for every in-process seat; the 8 000-byte cap in AC-3 is the guard. `max_tokens` (`models/llm.py:24`) is the output budget and is unaffected.
 - **Codex reads `AGENTS.md` AND gets the inline block** — duplicated text is harmless and intentional (covers hand-launched sessions).
 - **No shell in the in-process seats** (review R2): rule text that says `source …` is unexecutable there; the Tooling section's two-mode wording is the fix, and `python-development.md` is edited in step with it.
 - **Pre-existing marker duplication in the wiki blocks**: `coding_agents._markers("gemini")` emits `parrot:wiki:gemini` while `google/assets.py` emits `parrot:wiki:google` in the same `GEMINI.md`. Out of scope here (the conventions markers avoid it by canonicalising), worth its own fix.
@@ -849,10 +855,10 @@ No new runtime dependency.
 > Questions that must be resolved before or during implementation.
 
 - [x] Q1 Prune the stale persona prose in `AGENTS.md` (Svelte/Capacitor, `isort`/`prettier`, the `@RTK.md` include)? — *Resolved by Jesus Lara, 2026-09-12*: **yes, prune it** — folded into §3 M3 and AC-6b. Narrowed by adversarial review R3: the `black` line is NOT stale (black is the active formatter) and is kept.
-- [ ] Q2 Which path produced the 35-turn failure — a directly constructed profile (24) or the roster/`build_dispatcher` path (60)? Check `max_turns` in that run's `dispatch.completed` payload. If it was 60, M5 is still wanted but the failure needs its own ticket. — *Owner: Jesus Lara*
+- [x] Q2 Which path produced the 35-turn failure — a directly constructed profile (24) or the roster/`build_dispatcher` path (60)? — *Resolved by Jesus Lara, 2026-09-12*: **out of scope, separate ticket**. M5 (24 → 40) stays; no investigation is part of FEAT-553.
 - [x] Q3 Should the stdlib-only `coding_agents.install()` path (`parrot wiki <agent> install`, `coding_agents.py:89`) also write the conventions block? — *Resolved by Jesus Lara, 2026-09-12*: **yes** — folded into §3 M3 (helper moved to the stdlib-only `parrot/flows/conventions.py` so the installer keeps its import contract) and AC-6/AC-14.
 - [x] Q4 Ban `langchain_core` / `langchain_community` / `langgraph` explicitly in addition to `langchain`? — *Resolved by Jesus Lara, 2026-09-12*: **yes, nothing `langchain*` in the repo** — folded into §3 M4 (`langchain_core`, `langchain_community`, `langgraph`, `langsmith`) and AC-7.
-- [ ] Q5 Language-aware trimming (skip `cython-development` / `rust-development` unless the task's file list has `.pyx`/`.pxd`/`.rs`) — deferred; revisit if AC-3 becomes hard to hold. — *Owner: implementation*
+- [x] Q5 Inject the Cython/Rust rules (always, or language-aware)? — *Resolved by Jesus Lara, 2026-09-12*: **Python only for now**. `CODER_RULE_NAMES` is (`codebase-conventions`, `python-development`); `cython-development` / `rust-development` are untouched and join in a later feature. Folded into §1 Non-Goals, §3 M1, AC-2/AC-3.
 
 ---
 
@@ -908,4 +914,5 @@ Summary: **7** confirmed (one of them, R3, by reversing the spec's own black ban
 |---|---|---|---|
 | 0.1 | 2026-09-12 | Jesus Lara | Initial draft — enhancement of FEAT-549 |
 | 0.2 | 2026-09-12 | Jesus Lara | Q1/Q3/Q4 resolved: AGENTS.md prune, `coding_agents.install()` writes the block, full `langchain*` ban; helper moved to stdlib-only `parrot/flows/conventions.py` |
+| 0.4 | 2026-09-12 | Jesus Lara | Q2 out of scope (separate ticket); Q5: Python-only rule set, cap 8 000 bytes |
 | 0.3 | 2026-09-12 | Jesus Lara | Adversarial review R1–R7 folded in (§10): gate at `_consolidate` too, two-mode Tooling rule, black ban reversed, gemini→google marker canonicalisation, no CLAUDE.md block, `conventions.py` owned by M1, stale-prose test scoped to unmanaged text |
