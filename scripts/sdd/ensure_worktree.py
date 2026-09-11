@@ -117,9 +117,7 @@ def ensure(
         # Verify require_paths in the reused worktree
         for req in require_paths:
             if not (reused_path / req).exists():
-                raise EnsureWorktreeError(
-                    f"Required path {req!r} does not exist in reused worktree {reused_path}."
-                )
+                raise EnsureWorktreeError(f"Required path {req!r} does not exist in reused worktree {reused_path}.")
         return reused_path, False
 
     if dry_run:
@@ -142,9 +140,7 @@ def ensure(
 
     if has_branch:
         # It exists, but we already checked all active worktrees and none of them checked it out.
-        raise EnsureWorktreeError(
-            f"Branch {plan.name!r} already exists but is not checked out in any worktree."
-        )
+        raise EnsureWorktreeError(f"Branch {plan.name!r} already exists but is not checked out in any worktree.")
 
     # Step 4: Create
     # git worktree add -b <name> <path> <base_ref>
@@ -175,6 +171,7 @@ def ensure(
         # of a branch that might hold real work).
         try:
             import shutil
+
             if target_path.is_dir():
                 shutil.rmtree(target_path)
             _git("worktree", "prune", cwd=repo_root)
@@ -198,27 +195,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     ``sdd-planner``/``sdd-research`` can lift ``worktree_path`` straight into
     their ``PlannerOutput``/``ResearchOutput`` contracts (spec §8).
     """
-    parser = argparse.ArgumentParser(
-        description="Idempotent feature/hotfix worktree provisioning for SDD commands."
-    )
+    parser = argparse.ArgumentParser(description="Idempotent feature/hotfix worktree provisioning for SDD commands.")
     parser.add_argument("--slug", required=True, help="Feature slug, kebab-case.")
     parser.add_argument("--feature-id", help="FEAT-<NNN>; required for feature runs.")
     parser.add_argument("--jira-key", help="Jira issue key; required for hotfix runs.")
     parser.add_argument("--spec", help="Path to spec markdown file.")
     parser.add_argument("--index", help="Path to index JSON file.")
     parser.add_argument("--base-branch", help="Override base branch.")
-    parser.add_argument(
-        "--type", choices=["feature", "hotfix"], help="Override flow type."
-    )
-    parser.add_argument(
-        "--no-sync", action="store_true", help="Skip fetching origin/<base_branch>."
-    )
-    parser.add_argument(
-        "--dry-run", action="store_true", help="Resolve and report without mutating git."
-    )
-    parser.add_argument(
-        "--json", action="store_true", help="Output JSON instead of bare path."
-    )
+    parser.add_argument("--type", choices=["feature", "hotfix"], help="Override flow type.")
+    parser.add_argument("--no-sync", action="store_true", help="Skip fetching origin/<base_branch>.")
+    parser.add_argument("--dry-run", action="store_true", help="Resolve and report without mutating git.")
+    parser.add_argument("--json", action="store_true", help="Output JSON instead of bare path.")
 
     args = parser.parse_args(argv if argv is not None else sys.argv[1:])
 

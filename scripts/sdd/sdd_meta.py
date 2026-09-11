@@ -230,4 +230,3 @@ def plan_worktree(
     base_ref = f"origin/{meta.base_branch}"
 
     return WorktreePlan(name=name, path=path, base_ref=base_ref)
-

@@ -54,9 +54,7 @@ def tmp_git_repo(tmp_path: Path) -> Path:
 
 
 def _plan(branch: str = "dev"):
-    return plan_worktree(
-        FlowMeta(type="feature", base_branch=branch), slug=SLUG, feature_id=FEATURE_ID
-    )
+    return plan_worktree(FlowMeta(type="feature", base_branch=branch), slug=SLUG, feature_id=FEATURE_ID)
 
 
 def test_ensure_creates_worktree_when_absent(tmp_git_repo: Path) -> None:
@@ -127,13 +125,17 @@ def test_ensure_requires_paths_visible(tmp_git_repo: Path) -> None:
 
 def test_ensure_dry_run_mutates_nothing(tmp_git_repo: Path) -> None:
     """--dry-run resolves and reports; `git worktree list` is unchanged."""
-    res_before = subprocess.run(["git", "worktree", "list"], cwd=tmp_git_repo, capture_output=True, text=True, check=True)
+    res_before = subprocess.run(
+        ["git", "worktree", "list"], cwd=tmp_git_repo, capture_output=True, text=True, check=True
+    )
     before_list = res_before.stdout
 
     path, created = ensure(_plan(), repo_root=tmp_git_repo, dry_run=True)
     assert created is True
 
-    res_after = subprocess.run(["git", "worktree", "list"], cwd=tmp_git_repo, capture_output=True, text=True, check=True)
+    res_after = subprocess.run(
+        ["git", "worktree", "list"], cwd=tmp_git_repo, capture_output=True, text=True, check=True
+    )
     after_list = res_after.stdout
 
     assert before_list == after_list
