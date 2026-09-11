@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-11T00:00:00+00:00",
-  "completed_at": null,
+  "completed_at": "2026-09-11T13:40:21+00:00",
   "tasks": [
     {
       "id": "TASK-3132",
@@ -23,7 +23,8 @@
       "assigned_to": null,
       "started_at": "2026-09-10T23:40:10+00:00",
       "completed_at": "2026-09-10T23:54:36+00:00",
-      "file": "sdd/tasks/completed/TASK-3132-token-budget-models-and-errors.md"
+      "file": "sdd/tasks/completed/TASK-3132-token-budget-models-and-errors.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3133",
@@ -43,7 +44,8 @@
       "assigned_to": null,
       "started_at": "2026-09-10T23:40:10+00:00",
       "completed_at": "2026-09-11T00:07:36+00:00",
-      "file": "sdd/tasks/completed/TASK-3133-question-budget-ledger.md"
+      "file": "sdd/tasks/completed/TASK-3133-question-budget-ledger.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3134",
@@ -63,7 +65,8 @@
       "assigned_to": null,
       "started_at": "2026-09-10T23:40:10+00:00",
       "completed_at": "2026-09-11T00:28:10+00:00",
-      "file": "sdd/tasks/completed/TASK-3134-budget-scope-registry.md"
+      "file": "sdd/tasks/completed/TASK-3134-budget-scope-registry.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3135",
@@ -83,7 +86,8 @@
       "assigned_to": null,
       "started_at": "2026-09-10T23:40:10+00:00",
       "completed_at": "2026-09-11T00:38:16+00:00",
-      "file": "sdd/tasks/completed/TASK-3135-budget-entry-adapter.md"
+      "file": "sdd/tasks/completed/TASK-3135-budget-entry-adapter.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3136",
@@ -103,7 +107,8 @@
       "assigned_to": null,
       "started_at": "2026-09-10T23:40:10+00:00",
       "completed_at": "2026-09-11T01:02:45+00:00",
-      "file": "sdd/tasks/completed/TASK-3136-abstract-client-budget-gate.md"
+      "file": "sdd/tasks/completed/TASK-3136-abstract-client-budget-gate.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3137",
@@ -123,7 +128,8 @@
       "assigned_to": null,
       "started_at": "2026-09-10T23:40:10+00:00",
       "completed_at": "2026-09-11T01:23:55+00:00",
-      "file": "sdd/tasks/completed/TASK-3137-bot-budget-boundary.md"
+      "file": "sdd/tasks/completed/TASK-3137-bot-budget-boundary.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3138",
@@ -143,7 +149,8 @@
       "assigned_to": null,
       "started_at": "2026-09-10T23:40:10+00:00",
       "completed_at": "2026-09-11T00:12:42+00:00",
-      "file": "sdd/tasks/completed/TASK-3138-budget-error-propagation.md"
+      "file": "sdd/tasks/completed/TASK-3138-budget-error-propagation.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3139",
@@ -163,7 +170,8 @@
       "assigned_to": null,
       "started_at": "2026-09-10T23:40:10+00:00",
       "completed_at": "2026-09-11T00:24:02+00:00",
-      "file": "sdd/tasks/completed/TASK-3139-bedrock-budget-adapter.md"
+      "file": "sdd/tasks/completed/TASK-3139-bedrock-budget-adapter.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3140",
@@ -184,7 +192,8 @@
       "assigned_to": null,
       "started_at": "2026-09-10T23:40:10+00:00",
       "completed_at": "2026-09-11T01:41:48+00:00",
-      "file": "sdd/tasks/completed/TASK-3140-bedrock-attempt-hooks-transport.md"
+      "file": "sdd/tasks/completed/TASK-3140-bedrock-attempt-hooks-transport.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3141",
@@ -204,7 +213,8 @@
       "assigned_to": null,
       "started_at": "2026-09-10T23:40:10+00:00",
       "completed_at": "2026-09-11T02:43:29+00:00",
-      "file": "sdd/tasks/completed/TASK-3141-bedrock-finalization-loops.md"
+      "file": "sdd/tasks/completed/TASK-3141-bedrock-finalization-loops.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3142",
@@ -225,7 +235,8 @@
       "assigned_to": null,
       "started_at": "2026-09-10T23:40:10+00:00",
       "completed_at": "2026-09-11T01:28:23+00:00",
-      "file": "sdd/tasks/completed/TASK-3142-mantle-adapter-chat-completion-hooks.md"
+      "file": "sdd/tasks/completed/TASK-3142-mantle-adapter-chat-completion-hooks.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3143",
@@ -245,7 +256,8 @@
       "assigned_to": null,
       "started_at": "2026-09-10T23:40:10+00:00",
       "completed_at": "2026-09-11T02:44:37+00:00",
-      "file": "sdd/tasks/completed/TASK-3143-mantle-finalization-loops.md"
+      "file": "sdd/tasks/completed/TASK-3143-mantle-finalization-loops.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3144",
@@ -268,7 +280,8 @@
       "assigned_to": null,
       "started_at": "2026-09-10T23:40:10+00:00",
       "completed_at": "2026-09-11T03:13:22+00:00",
-      "file": "sdd/tasks/completed/TASK-3144-token-budget-integration-tests.md"
+      "file": "sdd/tasks/completed/TASK-3144-token-budget-integration-tests.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3145",
@@ -289,7 +302,8 @@
       "assigned_to": null,
       "started_at": "2026-09-10T23:40:10+00:00",
       "completed_at": "2026-09-11T02:56:20+00:00",
-      "file": "sdd/tasks/completed/TASK-3145-token-budget-docs-and-probe.md"
+      "file": "sdd/tasks/completed/TASK-3145-token-budget-docs-and-probe.md",
+      "verification": "verified"
     }
   ]
 }
