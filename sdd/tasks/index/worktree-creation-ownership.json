@@ -90,7 +90,7 @@
       "feature_id": "FEAT-552",
       "feature": "worktree-creation-ownership",
       "spec": "sdd/specs/worktree-creation-ownership.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -100,8 +100,8 @@
       "parallelism_notes": "Only task touching sdd-worker.md and its _subagent_data twin.",
       "assigned_to": null,
       "started_at": "2026-09-11T00:16:19+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3157-sdd-worker-shared-rule.md"
+      "completed_at": "2026-09-11T00:58:58+00:00",
+      "file": "sdd/tasks/completed/TASK-3157-sdd-worker-shared-rule.md"
     },
     {
       "id": "TASK-3158",
