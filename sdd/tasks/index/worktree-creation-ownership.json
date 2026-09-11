@@ -130,7 +130,7 @@
       "feature_id": "FEAT-552",
       "feature": "worktree-creation-ownership",
       "spec": "sdd/specs/worktree-creation-ownership.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -140,8 +140,8 @@
       "parallelism_notes": "Only task touching CLAUDE.md; gated on 3156 so the docs describe a /sdd-task that really stopped.",
       "assigned_to": null,
       "started_at": "2026-09-11T00:16:19+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3159-docs-worktree-ownership.md"
+      "completed_at": "2026-09-11T00:42:50+00:00",
+      "file": "sdd/tasks/completed/TASK-3159-docs-worktree-ownership.md"
     },
     {
       "id": "TASK-3160",
