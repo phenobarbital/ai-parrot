@@ -68,9 +68,7 @@ class TierRouter:
             )
         return self._gvisor_pool
 
-    async def _run_on_sandbox(
-        self, sandbox: Any, bundle: SnippetBundle, sandbox_ctx: Any
-    ) -> SandboxOutcome:
+    async def _run_on_sandbox(self, sandbox: Any, bundle: SnippetBundle, sandbox_ctx: Any) -> SandboxOutcome:
         """Call the acquired Sandbox's forms-specific run method.
 
         Kept as its own method (rather than inlined in execute()) so
@@ -117,9 +115,7 @@ class TierRouter:
                 # implementation not (yet) exposing run_snippet — is
                 # logged internally with its traceback and NEVER
                 # surfaced to the end user (spec §7 risk table).
-                self.logger.exception(
-                    "snippet %s failed during sandbox execution", bundle.handler_ref
-                )
+                self.logger.exception("snippet %s failed during sandbox execution", bundle.handler_ref)
                 duration_ms = (time.monotonic() - started) * 1000
                 return SandboxOutcome(
                     abort=AbortSignal(
