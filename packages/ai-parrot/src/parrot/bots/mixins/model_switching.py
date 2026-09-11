@@ -43,6 +43,7 @@ from enum import Enum
 from typing import Any, Dict, Optional, Union
 
 from ...clients.base import AbstractClient
+from ...core.exceptions import BudgetError
 from ...exceptions import ConfigError
 from ...models.basic import CompletionUsage
 
@@ -162,6 +163,9 @@ class ModelSwitchingMixin:
         Returns:
             ``True`` to retry the call on the secondary client.
         """
+        if isinstance(error, BudgetError):
+            # FEAT-550 §3 M3: never fall back on budget control.
+            return False
         return not isinstance(error, asyncio.CancelledError)
 
     # ── Core override ────────────────────────────────────────────────────
@@ -212,6 +216,8 @@ class ModelSwitchingMixin:
             response = await super().execute_llm_call(client, method, **llm_kwargs)
         except asyncio.CancelledError:
             raise
+        except BudgetError:
+            raise  # FEAT-550: budget control never triggers cross-provider fallback
         except Exception as primary_err:
             if not self.should_switch_on(primary_err):
                 raise
@@ -273,6 +279,17 @@ class ModelSwitchingMixin:
             raise primary_res
         if isinstance(secondary_res, asyncio.CancelledError):
             raise secondary_res
+
+        # FEAT-550 §3 M3: an exhausted branch cannot be bypassed via the other branch —
+        # surface budget control to the root, which performs the single finalization.
+        for _label, _res in (("primary", primary_res), ("secondary", secondary_res)):
+            if isinstance(_res, BudgetError):
+                self.logger.warning(
+                    "Contrastive call: %s branch raised %s — propagating budget control",
+                    _label,
+                    type(_res).__name__,
+                )
+                raise _res
 
         primary_failed = isinstance(primary_res, BaseException)
         secondary_failed = isinstance(secondary_res, BaseException)
