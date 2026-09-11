@@ -497,10 +497,27 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (direct implementation — parrot-sdd-coder's
+minimax attempt produced a `fidelity_violation`: it touched
+`core/__init__.py`, which is not in this task's file list, so it was
+discarded rather than merged)
+**Date**: 2026-09-11
+**Notes**: Implemented `SnippetSourceProtocol`, `make_resolver_adapter()`,
+and `register_resolver()` in `services/snippets/base.py` exactly per the
+blueprint. Completed both FILL INs: (1) the "no bundle resolves" branch
+raises `RuntimeError` (the fallback-to-global case is handled entirely by
+`get_form_event()`'s own precedence, not this closure); (2) the outcome
+translation checks `outcome.abort is not None` first and raises
+`FormEventAbort(outcome.abort.reason, user_message=..., status_code=...)`,
+else returns `outcome.resolution`. Completed `test_resolver_survives_republish`
+by swapping the fake source's bundle version between two dispatches with
+no second registration call. Added two extra tests beyond the blueprint
+(`test_resolver_rehydrates_abort`, `test_resolver_raises_when_no_bundle_resolves`)
+to directly cover the two FILL IN branches. 5/5 tests pass, `ruff check`
+and `mypy` clean on `services/snippets/base.py`.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Deviations from spec**: none — added 2 tests beyond the 3 specified in
+the blueprint (rehydrate-abort, no-bundle-resolves), both exercising
+acceptance criteria already required by the task.
 
-**Deviations from spec**: none | describe if any
+**Seat: sonnet (orchestrator, direct attempt 3 after fidelity_violation) · Backend: n/a · Model: claude-sonnet-5 · Attempts: 1 · Duration: n/a (interactive) · Tokens: n/a**

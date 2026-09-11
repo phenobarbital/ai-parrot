@@ -50,7 +50,7 @@
       "feature_id": "FEAT-459",
       "feature": "formbuilder-custom-code",
       "spec": "sdd/specs/formbuilder-custom-code.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -60,8 +60,8 @@
       "parallelism_notes": "Depends on TASK-3161's models. Blocks TASK-3164/3165 (both consume SnippetSourceProtocol/register_resolver).",
       "assigned_to": null,
       "started_at": "2026-09-11T16:38:03+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3163-snippet-source-protocol-resolver.md"
+      "completed_at": "2026-09-11T17:17:16+00:00",
+      "file": "sdd/tasks/completed/TASK-3163-snippet-source-protocol-resolver.md"
     },
     {
       "id": "TASK-3164",
