@@ -20,27 +20,43 @@ import time
 from typing import Any, Literal
 
 from parrot.eval.sandbox.base import SandboxProvider, SandboxSpec
-from parrot_formdesigner.core.events import EventResolution, FormEventAbort, FormEventContext
+from parrot_formdesigner.core.events import EventResolution, FormEventAbort
 from parrot_formdesigner.core.snippets import (
     AbortSignal,
     CapabilityTier,
+    SandboxContext,
     SandboxOutcome,
     SnippetBundle,
 )
-from parrot_formdesigner.services.sandbox.projector import ContextProjector
 
 logger = logging.getLogger(__name__)
 
 
 class TierRouter:
-    """Routes a SnippetBundle to its cheapest satisfying executor."""
+    """Routes a SnippetBundle to its cheapest satisfying executor.
+
+    Post-review correction (code review of this feature's first pass —
+    both an independent Claude subagent and an adversarial `codex`
+    cross-check, 2026-09-11): `execute()` originally took the LIVE
+    `FormEventContext` and performed its own projection via an owned
+    `ContextProjector`. That contradicted the spec's own declared
+    `TierRouter.execute(bundle, ctx: SandboxContext)` interface AND
+    `services/snippets/base.py`'s actual resolver closure (TASK-3163),
+    which already projects the live context via the INJECTED
+    `project_context` callable before calling `execute(bundle,
+    sandbox_ctx)`. Passing an already-projected `SandboxContext` into a
+    parameter that then tried to re-project it raised `AttributeError`
+    at tier >= 2 (`SandboxContext` has no `auth_context`). Fixed by
+    accepting the pre-projected `SandboxContext` directly and dropping
+    the internal projection entirely — projection now has exactly ONE
+    owner (the resolver closure), matching both the spec text and
+    `base.py`'s tested behavior.
+    """
 
     def __init__(
         self,
         subprocess_pool: SandboxProvider,
         gvisor_pool: SandboxProvider | None,
-        *,
-        projector: ContextProjector | None = None,
     ) -> None:
         """
         Args:
@@ -51,11 +67,9 @@ class TierRouter:
                 — the loader (TASK-3164) should already have refused
                 such bundles at boot, so reaching this branch indicates a
                 configuration bug, not routine unavailability.
-            projector: Defaults to a fresh ContextProjector() if omitted.
         """
         self._subprocess_pool = subprocess_pool
         self._gvisor_pool = gvisor_pool
-        self._projector = projector or ContextProjector()
         self.logger = logger
 
     def _pool_for_tier(self, tier: CapabilityTier) -> SandboxProvider:
@@ -81,14 +95,18 @@ class TierRouter:
         """
         return await sandbox.run_snippet(sandbox_ctx)
 
-    async def execute(self, bundle: SnippetBundle, ctx: FormEventContext) -> SandboxOutcome:
-        """Run `bundle` against the live `ctx`, returning the raw outcome.
+    async def execute(self, bundle: SnippetBundle, ctx: SandboxContext) -> SandboxOutcome:
+        """Run `bundle` against an already-projected `ctx`, returning the raw outcome.
 
-        Note: takes the LIVE FormEventContext (not a pre-projected
-        SandboxContext) so this method owns the projection step via the
-        injected ContextProjector — keeping "when does projection happen"
-        in one place rather than split between the resolver closure and
-        this router.
+        Args:
+            bundle: The snippet to run.
+            ctx: An ALREADY-PROJECTED SandboxContext — the caller (a
+                TASK-3163 resolver closure) owns projection via its own
+                injected ContextProjector before calling this method.
+                This method does NOT project; passing a live
+                FormEventContext here would fail at the pool boundary
+                (SandboxContext and FormEventContext are distinct,
+                unrelated Pydantic models).
 
         Returns:
             SandboxOutcome with exactly one of resolution/abort set, even
@@ -101,14 +119,13 @@ class TierRouter:
             FormEventAbort or a logged continue.
         """
         pool = self._pool_for_tier(bundle.manifest.tier)
-        sandbox_ctx = await self._projector.project(ctx, bundle)
         started = time.monotonic()
         sandbox = await pool.acquire(SandboxSpec())
         try:
             timeout_s = bundle.manifest.timeout_ms / 1000.0
             try:
                 raw_outcome = await asyncio.wait_for(
-                    self._run_on_sandbox(sandbox, bundle, sandbox_ctx), timeout=timeout_s
+                    self._run_on_sandbox(sandbox, bundle, ctx), timeout=timeout_s
                 )
             except Exception:
                 # Any failure — timeout, worker crash, or a Sandbox
@@ -166,7 +183,7 @@ class TierRouter:
     async def execute_with_policy(
         self,
         bundle: SnippetBundle,
-        ctx: FormEventContext,
+        ctx: SandboxContext,
         *,
         on_failure: Literal["abort", "continue"],
     ) -> EventResolution | None:
