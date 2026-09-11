@@ -61,6 +61,15 @@ class BudgetScope:
     def policy(self) -> TokenBudgetPolicy:
         return self.ledger.policy
 
+    owner_designated: bool = False
+
+    def designate_owner(self, call_id: str) -> None:
+        """Mark this root's answer owner once; descendants can never claim (spec §2.1/§2.3)."""
+        if not self.is_root:
+            raise BudgetScopeConflict("only a root scope can designate the answer owner", operation_id=self.operation_id)
+        if not self.owner_designated:
+            self.owner_call_id, self.owner_designated = call_id, True
+
     def child(self) -> "BudgetScope":
         """Derive a descendant scope: spending rights only, never finalization ownership (spec §2.1)."""
         return BudgetScope(self.ledger, registry=self.registry, is_root=False, owner_call_id=None)

@@ -9,10 +9,11 @@ import pytest
 
 from parrot.clients.base import AbstractClient
 from parrot.clients.budget_scope import BudgetRegistry, current_budget_scope, BudgetDefaults, _CURRENT_SCOPE
-from parrot.core.exceptions import BudgetUnsupported
+from parrot.core.exceptions import BudgetUnsupported, BudgetExhausted
 from parrot.models.basic import CompletionUsage
 from parrot.models.responses import AIMessage, InvokeResult
 from parrot.models.token_budget import TokenBudgetPolicy
+from parrot.bots.base import BaseBot
 
 
 class _Base(AbstractClient):
@@ -28,12 +29,19 @@ class _Base(AbstractClient):
 
     async def ask(self, prompt, model=None, **kwargs):
         self.calls.append(("ask", dict(kwargs)))
+        if kwargs.get("raise_exhausted"):
+            from parrot.core.exceptions import BudgetExhausted
+            raise BudgetExhausted("exhausted", report={"partial_text": "partial text", "total_tokens": 120})
         return AIMessage(
             input=prompt, output="ok", response="ok", model="stub", provider="stub", usage=CompletionUsage()
         )
 
     async def ask_stream(self, prompt, **kwargs) -> AsyncGenerator[Any, None]:
         self.calls.append(("ask_stream", dict(kwargs)))
+        if kwargs.get("raise_exhausted"):
+            from parrot.core.exceptions import BudgetExhausted
+            yield "chunk1"
+            raise BudgetExhausted("exhausted", report={"partial_text": "chunk1 partial text", "total_tokens": 150})
         yield "chunk"
         yield AIMessage(
             input=prompt, output="ok", response="ok", model="stub", provider="stub", usage=CompletionUsage()
@@ -180,3 +188,30 @@ class TestUnsupportedProviders:
     async def test_no_budget_keeps_behavior(self):
         c = UnsupportedClient()
         assert (await c.invoke("x")).output == "ok"
+
+
+class TestBotBoundary:
+    async def test_bot_ask_translates_budget_exhausted(self):
+        client = SupportedClient()
+        bot = BaseBot(llm=client)
+        # Trigger BudgetExhausted inside the client
+        response = await bot.ask("hello", token_budget=1000, raise_exhausted=True)
+        assert response.stop_reason == "budget_exhausted"
+        assert response.output == "partial text"
+        assert response.metadata["token_budget"]["total_tokens"] == 120
+        assert response.metadata["budget_exhausted"] is True
+
+    async def test_bot_ask_stream_translates_budget_exhausted(self):
+        client = SupportedClient()
+        bot = BaseBot(llm=client)
+        chunks = []
+        async for chunk in bot.ask_stream("hello", token_budget=1000, raise_exhausted=True):
+            chunks.append(chunk)
+        # The first chunk "chunk1" is yielded before the exception, then the terminal AIMessage is yielded
+        assert len(chunks) == 2
+        assert chunks[0] == "chunk1"
+        assert isinstance(chunks[1], AIMessage)
+        assert chunks[1].stop_reason == "budget_exhausted"
+        assert chunks[1].output == "chunk1 partial text"
+        assert chunks[1].metadata["token_budget"]["total_tokens"] == 150
+        assert chunks[1].metadata["budget_exhausted"] is True
