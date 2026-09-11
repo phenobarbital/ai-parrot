@@ -509,10 +509,19 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (orchestrated via parrot-sdd-coder, native haiku seat)
+**Date**: 2026-09-11
+**Notes**: Added `migrations/008_snippet_store.sql` (versioned, append-only
+`form_snippets` table with `UNIQUE(tenant, handler_ref, version)` and a
+partial published-lookup index) and `DbSnippetStore` in
+`services/snippets/db_store.py`, mirroring `FormRegistry._read_through()`'s
+fail-soft read-through cache pattern. `check_tier_cap()` denies
+`BROKERED`/`TOOLKIT` unless the tenant is explicitly in
+`tier3_tier4_tenants`; `resolve_current(tenant=None, ...)` short-circuits
+to `None` without querying storage; a storage fault in `get_published()`
+is logged and returns `None`, never raises. 7/7 tests pass, `ruff check`
+and `mypy` clean.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Deviations from spec**: none
 
-**Deviations from spec**: none | describe if any
+**Seat: haiku (native) · Backend: n/a · Model: claude-haiku-4-5 · Attempts: 1 · Duration: ~394s · Tokens: n/a (native, not MCP-metered)**

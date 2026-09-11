@@ -379,10 +379,28 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (direct implementation — parrot-sdd-coder's
+two dispatch attempts both failed before producing any code)
+**Date**: 2026-09-11
+**Notes**: Implemented `encode_frame()`/`decode_frame()` length-prefixed
+JSON framing exactly per the blueprint, plus `BrokerRequest`,
+`BrokerResponse`, `FrameTooLargeError`, and `MAX_FRAME_BYTES` (1 MiB).
+Completed the one FILL IN (`test_encode_rejects_oversized_body`) using a
+`BrokerRequest` with an oversized `args` blob as the simplest fixture.
+Added one extra round-trip test for `SandboxOutcome` beyond the
+blueprint's 5. 7/7 tests pass, `ruff check` and `mypy` clean on
+`services/sandbox/protocol.py`.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Deviations from spec**: none — added 1 test beyond the blueprint
+(`SandboxOutcome` round-trip), exercising the "round-trips every type in
+`_FRAME_MODELS`" acceptance criterion more completely.
 
-**Deviations from spec**: none | describe if any
+**Seat: sonnet (orchestrator, direct attempt 3 after 2 dispatch failures) · Backend: n/a · Model: claude-sonnet-5 · Attempts: 1 · Duration: n/a (interactive) · Tokens: n/a**
+
+**Prior failed dispatch attempts** (for the record):
+1. `codex-spark` (codex backend, `gpt-5.3-codex-spark`) — failed
+   immediately: `codex exec` CLI rejected `--ask-for-approval` as an
+   unexpected argument (dispatcher/CLI version mismatch, not a task
+   issue).
+2. `qwen` (nova backend, `qwen.qwen3-coder-480b-a35b-instruct`) — request
+   timed out after 551s with no code produced.

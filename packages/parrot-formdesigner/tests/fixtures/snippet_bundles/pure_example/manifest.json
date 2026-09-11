@@ -1,0 +1,9 @@
+{
+  "handler_ref": "pure_example.onBeforeSubmit",
+  "event": "onBeforeSubmit",
+  "python_sha256": "65b9d393b55ba47c77fb0a5247ce43309c03c6e0a4149d47ebe103a1607ea7ba",
+  "manifest": {
+    "tier": "pure",
+    "timeout_ms": 1000
+  }
+}

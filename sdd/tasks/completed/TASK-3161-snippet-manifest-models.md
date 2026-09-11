@@ -435,10 +435,17 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (orchestrated via parrot-sdd-coder)
+**Date**: 2026-09-11
+**Notes**: Created `core/snippets.py` with `CapabilityTier`, `SnippetSource`,
+`SnippetStatus`, `BrokerAllowlist`, `CapabilityManifest`, `SnippetBundle`,
+`SandboxContext`, `AbortSignal`, `SandboxOutcome`, and the four typed
+exceptions (`SnippetIntegrityError`, `SnippetTierUnavailableError`,
+`CapabilityDenied`, `SnippetNotApprovedError`). All models use
+`ConfigDict(extra="forbid")`. `SandboxContext` structurally has no
+`token`/`headers` field (OQ-5). 9/9 tests pass
+(`test_snippets_models.py`), `ruff check` and `mypy` clean.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Deviations from spec**: none
 
-**Deviations from spec**: none | describe if any
+**Seat: minimax (attempt 2, after qwen attempt-1 timeout) · Backend: nova · Model: minimax.minimax-m2.5 · Attempts: 2 · Duration: 782.7s (553.7s timeout + 229.0s success) · Tokens: 1,150,288 in / 10,139 out**

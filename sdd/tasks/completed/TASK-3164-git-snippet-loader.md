@@ -533,10 +533,34 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (direct implementation — parrot-sdd-coder's
+two dispatch attempts both failed before producing any code)
+**Date**: 2026-09-11
+**Notes**: Implemented `GitSnippetLoader` exactly per the blueprint:
+`discover()` walks `root` in sorted order, hash-verifies each bundle's
+`run.py` against `manifest.json`'s declared `python_sha256`
+(`SnippetIntegrityError` on mismatch), and `register_all()` refuses any
+`BROKERED`/`TOOLKIT` bundle when `gvisor_available()` is `False` (default
+fail-safe `lambda: False`) before ever calling `register_resolver()`.
+`GitSnippetLoader` implements `SnippetSourceProtocol.resolve_current()`
+itself via a plain dict populated by `discover()` — no cache layer, since
+git bundles are immutable at runtime. Completed the FILL INs: (1)
+`strict=False` documented as deliberately rare/ops-only (G4/G5 treat
+unverified source as unsafe); (2) fixture hash resolved by computing the
+real `sha256` of the committed `run.py` once and writing it into
+`manifest.json` directly (the alternative of the two allowed approaches);
+(3) `test_git_loader_duplicate_ref_raises` — two bundle dirs with the
+same `handler_ref`, asserts `ValueError` propagates through
+`register_all()`. Used `from collections.abc import Callable` (not
+`typing.Callable`) for project convention consistency. 5/5 tests pass,
+`ruff check` and `mypy` clean.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Deviations from spec**: none
 
-**Deviations from spec**: none | describe if any
+**Seat: sonnet (orchestrator, direct attempt 3 after 2 dispatch failures) · Backend: n/a · Model: claude-sonnet-5 · Attempts: 1 · Duration: n/a (interactive) · Tokens: n/a**
+
+**Prior failed dispatch attempts** (for the record):
+1. `codex-spark` (codex backend) — failed immediately: `codex exec` CLI
+   rejected `--ask-for-approval` as an unexpected argument.
+2. `qwen` (nova backend, `qwen.qwen3-coder-480b-a35b-instruct`) — request
+   timed out after 552s with no code produced.

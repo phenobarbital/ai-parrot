@@ -413,10 +413,23 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (orchestrated via parrot-sdd-coder, native haiku seat)
+**Date**: 2026-09-11
+**Notes**: Created `renderers/worker_bridge.py` with `ALLOWED_PATCH_OPERATIONS`
+(exactly `set_visibility`, `set_required`, `set_enabled`, `set_value`,
+`set_hint`, `narrow_options`), `validate_patch()`, and
+`render_worker_boot_block()`. Wired the boot block into
+`_LIFECYCLE_SCRIPT_TEMPLATE` in `html5.py` purely additively (only new
+imports + a new `_snippet_bundles_for()` helper + an appended
+`.replace()` on the script chain — verified byte-for-byte no change to
+the existing fetch-based bridge). `_snippet_bundles_for()` is a
+documented placeholder returning `[]` pending TASK-3163–3165 finalizing
+the snippet registry API; the boot block safely no-ops when empty.
+8/8 tests pass, `ruff check` clean on `worker_bridge.py`. `mypy` on
+`worker_bridge.py`/`html5.py` shows one pre-existing unrelated error
+(`PackageLoader`/`FileSystemLoader` assignment, line ~161) confirmed
+present before this commit — not introduced by this task.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Deviations from spec**: none
 
-**Deviations from spec**: none | describe if any
+**Seat: haiku (native) · Backend: n/a · Model: claude-haiku-4-5 · Attempts: 1 · Duration: ~455s · Tokens: n/a (native, not MCP-metered)**
