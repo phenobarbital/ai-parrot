@@ -6,7 +6,13 @@ from datetime import datetime
 
 import pytest
 
-from parrot_formdesigner.core.snippets import CapabilityManifest, CapabilityTier, SnippetBundle, SnippetSource, SnippetStatus
+from parrot_formdesigner.core.snippets import (
+    CapabilityManifest,
+    CapabilityTier,
+    SnippetBundle,
+    SnippetSource,
+    SnippetStatus,
+)
 from parrot_formdesigner.services.snippets.db_store import DbSnippetStore
 
 

@@ -103,7 +103,9 @@ class DbSnippetStore:
         except Exception:
             self.logger.error(
                 "DbSnippetStore: storage fault resolving (%r, %r)",
-                tenant, handler_ref, exc_info=True,
+                tenant,
+                handler_ref,
+                exc_info=True,
             )
             return None
         if row is None:
@@ -128,9 +130,7 @@ class DbSnippetStore:
         self._cache[cache_key] = bundle
         return bundle
 
-    async def resolve_current(
-        self, *, tenant: str | None, handler_ref: str
-    ) -> SnippetBundle | None:
+    async def resolve_current(self, *, tenant: str | None, handler_ref: str) -> SnippetBundle | None:
         """SnippetSourceProtocol implementation.
 
         `tenant=None` never resolves here — DB snippets are always
