@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-552
 **Date**: 2026-09-11
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 1.0.0
 
 ---
@@ -204,8 +204,10 @@ python -m scripts.sdd.ensure_worktree \
     --slug <feature-slug> \
     [--feature-id FEAT-<NNN>] [--jira-key <KEY>] \
     [--spec sdd/specs/<slug>.spec.md] [--index sdd/tasks/index/<slug>.json] \
-    [--no-sync] [--dry-run]
+    [--no-sync] [--dry-run] [--json]
 # prints the absolute worktree path on stdout; exit 0 whether created or reused
+# --json prints {"name","path","base_ref","created"} instead — for the dev-loop
+#        subagents that must return worktree_path in a Pydantic contract
 ```
 
 ---
@@ -342,7 +344,14 @@ python -m scripts.sdd.ensure_worktree \
       """
 
   def main(argv: Sequence[str] | None = None) -> int:
-      """CLI entry point. Prints the worktree path to stdout; 0 on success."""
+      """CLI entry point. Prints the worktree path to stdout; 0 on success.
+
+      With ``--json``, prints a single object instead —
+      ``{"name": …, "path": …, "base_ref": …, "created": bool}`` — so
+      ``sdd-planner``/``sdd-research`` can lift ``worktree_path`` straight into
+      their ``PlannerOutput``/``ResearchOutput`` contracts without parsing prose
+      (resolved in §8, 2026-09-11). Human output stays the bare path.
+      """
   ```
 
 ### Module 3: `/sdd-start` ensures its own worktree
@@ -476,6 +485,7 @@ python -m scripts.sdd.ensure_worktree \
 | `test_ensure_rejects_existing_unchecked_branch` | M2 | Branch exists but no worktree → refuses with an actionable message |
 | `test_ensure_requires_paths_visible` | M2 | `require_paths` naming a file absent from the base commit → raises, and the created worktree is not left behind |
 | `test_ensure_dry_run_mutates_nothing` | M2 | `--dry-run` prints the plan; `git worktree list` unchanged |
+| `test_ensure_json_output_shape` | M2 | `--json` emits one parseable object with `name`/`path`/`base_ref`/`created`; `created` is `True` on first call and `False` on the second |
 | `test_sdd_task_has_no_worktree_add` | M4 | `grep -c "git worktree add" .claude/commands/sdd-task.md == 0` |
 | `test_no_legacy_naming_template_remains` | M6 | No `feat-<id>-<slug>` in `.claude/**` (excluding `.claude/worktrees/`) |
 | `test_every_creator_calls_ensure_worktree` | M5/M6 | Each of sdd-worker, sdd-planner, sdd-research, sdd-autopilot, sdd-start mentions `scripts.sdd.ensure_worktree` |
@@ -507,6 +517,7 @@ def tmp_git_repo(tmp_path: Path) -> Path:
 - [ ] Each of `sdd-worker.md`, `sdd-planner.md`, `sdd-research.md`, `sdd-autopilot.md`, `sdd-start.md` references `scripts.sdd.ensure_worktree`, and none of them contains a bare `git worktree add`
 - [ ] `python -m scripts.sdd.ensure_worktree --help` exits 0
 - [ ] Running `ensure_worktree` twice for the same feature exits 0 both times, prints the same path, and leaves exactly one branch
+- [ ] `--json` emits a single parseable object with `name`, `path`, `base_ref`, `created`; without it stdout is the bare path and nothing else
 - [ ] `plan_worktree` refuses a `hotfix` without `--jira-key` and a `feature` without a well-formed `FEAT-<NNN>`
 - [ ] All new tests pass: `pytest tests/sdd_scripts/ -v`
 - [ ] `ruff check scripts/sdd/sdd_meta.py scripts/sdd/ensure_worktree.py` and `mypy` on both are clean
@@ -679,10 +690,10 @@ No new dependency is introduced.
   worktrees too? — *Resolved during the design discussion*: no. They plan
   and dispatch in the same run on the same machine, so their intention is
   contemporaneous. They keep creating, via the shared rule (Module 6).
-- [ ] Should `ensure_worktree.py` also emit machine-readable output (JSON)
+- [x] Should `ensure_worktree.py` also emit machine-readable output (JSON)
   for the dev-loop subagents that must return `worktree_path` in a Pydantic
   contract (`PlannerOutput`, `ResearchOutput`)? A `--json` flag is trivial to
-  add now and awkward to retrofit. — *Owner: Jesus Lara*
+  add now and awkward to retrofit. — *Owner: Jesus Lara*: yes
 
 ---
 
