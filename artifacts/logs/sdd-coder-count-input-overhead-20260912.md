@@ -37,3 +37,29 @@ against 10-20 minute attempts; a one-line `asyncio.to_thread` would remove it if
 it ever matters.
 
 Script: scratchpad `bench_count_input.py` (synthetic payload, no network, no spend).
+
+## Follow-on measurement: the cumulative question budget of one attempt
+
+Same synthetic loop, accumulating every turn's estimated input plus a
+conservative 1,500-token assistant turn (the real cap is
+`LLMCodeDispatchProfile.max_tokens`, 8,192):
+
+| turn | cumulative input | + output | = cumulative question total |
+|---|---|---|---|
+| 10 |   168,043 | 15,000 |   183,043 |
+| 24 |   806,018 | 36,000 |   842,018 |
+| 40 | 2,109,777 | 60,000 | 2,169,777 |
+| 60 | 4,604,763 | 90,000 | **4,694,763** |
+
+Worst case with every turn hitting the 8,192 output cap: **5,096,283**.
+
+**The operational consequence**: a cumulative per-question budget for a coding
+attempt lives in the MILLIONS, not in the low hundreds of thousands. The number
+is dominated by history re-sent each turn, and it is roughly quadratic in
+`max_turns` — which the MCP roster path sets to 60
+(`DEFAULT_LLM_MAX_TURNS`, agent_builder.py:134), not the
+`LLMCodeDispatchProfile` default of 24.
+
+An operator who reads `token_budget` as a context-window figure and sets
+200,000 would kill every attempt around turn 11. Any documentation of this knob
+for a coding seat must lead with this.
