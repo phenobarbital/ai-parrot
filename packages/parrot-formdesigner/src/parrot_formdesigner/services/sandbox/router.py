@@ -120,7 +120,26 @@ class TierRouter:
         """
         pool = self._pool_for_tier(bundle.manifest.tier)
         started = time.monotonic()
-        sandbox = await pool.acquire(SandboxSpec())
+        try:
+            sandbox = await pool.acquire(SandboxSpec())
+        except Exception:
+            # Post-review fix: acquisition failure (PoolExhaustedError,
+            # ColdStartTimeoutError, ...) used to escape execute()
+            # uncaught, breaking the "execute() never raises" invariant
+            # even for on_failure="continue". Nothing was acquired, so
+            # there is nothing to release.
+            self.logger.exception(
+                "snippet %s failed to acquire a sandbox worker", bundle.handler_ref
+            )
+            duration_ms = (time.monotonic() - started) * 1000
+            return SandboxOutcome(
+                abort=AbortSignal(
+                    reason=f"sandbox acquisition failed for {bundle.handler_ref!r}",
+                    user_message="An internal error occurred.",
+                    status_code=500,
+                ),
+                duration_ms=duration_ms,
+            )
         try:
             timeout_s = bundle.manifest.timeout_ms / 1000.0
             try:

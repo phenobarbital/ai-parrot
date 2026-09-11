@@ -170,3 +170,28 @@ async def test_router_execute_converts_raised_exception_to_abort() -> None:
     outcome = await router.execute(_bundle(CapabilityTier.PURE), _ctx())
     assert outcome.abort is not None
     assert outcome.abort.user_message == "An internal error occurred."
+
+
+async def test_router_execute_converts_acquisition_failure_to_abort() -> None:
+    class _ExhaustedPool(_FakePool):
+        async def acquire(self, spec):
+            raise RuntimeError("pool exhausted")
+
+    router = TierRouter(_ExhaustedPool(), _FakePool())
+
+    outcome = await router.execute(_bundle(CapabilityTier.PURE), _ctx())
+    assert outcome.abort is not None
+    assert outcome.abort.user_message == "An internal error occurred."
+
+
+async def test_router_on_failure_continue_survives_acquisition_failure() -> None:
+    class _ExhaustedPool(_FakePool):
+        async def acquire(self, spec):
+            raise RuntimeError("pool exhausted")
+
+    router = TierRouter(_ExhaustedPool(), _FakePool())
+
+    result = await router.execute_with_policy(
+        _bundle(CapabilityTier.PURE), _ctx(), on_failure="continue"
+    )
+    assert result == EventResolution()
