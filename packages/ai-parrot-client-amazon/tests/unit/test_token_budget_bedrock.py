@@ -262,3 +262,189 @@ class TestFinalizationPayload:
         assert u.total_tokens == 1000
         assert u.input_tokens == 950
         assert u.output_tokens == 50
+
+
+from unittest.mock import AsyncMock, MagicMock, patch  # noqa: E402
+
+from parrot.clients.amazon.bedrock import BedrockConverseClient  # noqa: E402
+from parrot.clients.amazon.nova import NovaClient  # noqa: E402
+from parrot.clients.budget_scope import BudgetRegistry, TOKEN_BUDGET_STATE_KEY, current_budget_scope  # noqa: E402
+from parrot.core.exceptions import HumanInteractionInterrupt  # noqa: E402
+from parrot.models.token_budget import TokenBudgetPolicy  # noqa: E402
+
+
+def _final(usage, text="done"):
+    return {
+        "stopReason": "end_turn",
+        "output": {"message": {"role": "assistant", "content": [{"text": text}]}},
+        "usage": usage,
+    }
+
+
+def _tool_round(tool_use_id: str, tool_name: str = "t"):
+    return {
+        "stopReason": "tool_use",
+        "output": {
+            "message": {
+                "role": "assistant",
+                "content": [{"toolUse": {"toolUseId": tool_use_id, "name": tool_name, "input": {}}}],
+            }
+        },
+        "usage": {"inputTokens": 50, "outputTokens": 10},
+    }
+
+
+class TestAttemptHooks:
+    async def test_every_physical_attempt_reserved_including_fallback(self):
+        """Under a budget, a capacity error + fallback retry is TWO reservations
+        (first uncertain, second settled); the forwarded cap never exceeds it."""
+
+        class ThrottlingException(Exception):
+            pass
+
+        final_response = _final({"inputTokens": 100, "outputTokens": 50})
+        client = BedrockConverseClient(model="claude-sonnet-4-5", fallback_model="claude-haiku-4-5")
+        registry = BudgetRegistry()
+        # A generous budget: the first (failed) attempt's FULL reservation stays
+        # debited as "uncertain" (spec §2.4 "an HTTP error is not proof of zero
+        # charge") — the fallback retry must still fit inside what remains.
+        scope = await registry.create(TokenBudgetPolicy(token_budget=100_000))
+
+        async with scope:
+            with patch.object(
+                client, "_sdk_create", side_effect=[ThrottlingException("slow down"), final_response]
+            ) as mock_create:
+                result = await client.ask("Hello", max_tokens=500)
+            assert result.output == "done"
+            assert mock_create.call_count == 2
+            # Both attempts' forwarded payload carries a bounded, non-default cap.
+            for call in mock_create.call_args_list:
+                payload = call.args[0]
+                assert payload["inferenceConfig"]["maxTokens"] <= 500
+
+        report = await scope.ledger.report()
+        # First attempt (ThrottlingException) marked uncertain; second settled.
+        assert report.total_tokens == 150
+        assert report.uncertain_tokens > 0
+
+    async def test_no_budget_path_touches_nothing(self):
+        """No active scope -> the adapter/registry are never touched; the legacy path is untouched."""
+        client = BedrockConverseClient(model="claude-sonnet-4-5")
+        final_response = _final({"inputTokens": 10, "outputTokens": 5})
+        with patch.object(client, "_get_budget_adapter", side_effect=AssertionError("must not be called")):
+            with patch.object(client, "_sdk_create", side_effect=[final_response]):
+                result = await client.ask("Hello")
+        assert result.output == "done"
+
+    async def test_stream_settles_at_metadata_and_uncertain_when_missing(self):
+        """Streams settle once at the metadata event; missing metadata marks uncertain."""
+
+        async def _stream_with_metadata(_payload=None, handle=None):
+            yield {"contentBlockDelta": {"delta": {"text": "hi"}}}
+            yield {"messageStop": {"stopReason": "end_turn"}}
+            yield {"metadata": {"usage": {"inputTokens": 20, "outputTokens": 5}}}
+
+        client = BedrockConverseClient(model="claude-sonnet-4-5")
+        registry = BudgetRegistry()
+        scope = await registry.create(TokenBudgetPolicy(token_budget=10_000))
+        async with scope:
+            with patch.object(client, "_sdk_stream", side_effect=_stream_with_metadata):
+                chunks = [c async for c in client.ask_stream("hi")]
+        assert "hi" in chunks
+        report = await scope.ledger.report()
+        assert report.total_tokens == 25
+        assert report.uncertain_tokens == 0
+
+        async def _stream_without_metadata(_payload=None, handle=None):
+            yield {"contentBlockDelta": {"delta": {"text": "hi"}}}
+            yield {"messageStop": {"stopReason": "end_turn"}}
+
+        client2 = BedrockConverseClient(model="claude-sonnet-4-5")
+        scope2 = await registry.create(TokenBudgetPolicy(token_budget=10_000))
+        async with scope2:
+            with patch.object(client2, "_sdk_stream", side_effect=_stream_without_metadata):
+                _ = [c async for c in client2.ask_stream("hi")]
+        report2 = await scope2.ledger.report()
+        assert report2.total_tokens == 0
+        assert report2.uncertain_tokens > 0
+
+    async def test_budgeted_client_is_no_retry_and_shared_stays_adaptive(self):
+        """The budgeted (no-retry) client uses a distinct BotoConfig from the shared client."""
+        captured_configs = []
+
+        class _FakeClientCtx:
+            async def __aenter__(self):
+                return MagicMock()
+
+            async def __aexit__(self, *a):
+                return False
+
+        class _FakeSession:
+            def __init__(self, *a, **kw):
+                self._session = MagicMock()
+
+            def client(self, service, **kwargs):
+                captured_configs.append(kwargs["config"])
+                return _FakeClientCtx()
+
+        client = BedrockConverseClient(model="claude-sonnet-4-5")
+        with patch("aioboto3.Session", _FakeSession):
+            shared = await client._build_client(no_retry=False)
+            budgeted = await client._build_client(no_retry=True)
+        assert captured_configs[0].retries["mode"] == "adaptive"
+        assert captured_configs[1].retries == {"total_max_attempts": 1, "mode": "standard"}
+
+    async def test_nova_inherits_opt_in(self):
+        assert NovaClient.budget_supported_methods == BedrockConverseClient.budget_supported_methods
+
+    async def test_interrupt_carries_envelope_and_resume_deepcopies(self):
+        """A tool-raised HumanInteractionInterrupt under a budget carries the
+        namespaced envelope; resume() never mutates the caller's stored messages."""
+        client = BedrockConverseClient(model="claude-sonnet-4-5")
+        registry = BudgetRegistry()
+        scope = await registry.create(TokenBudgetPolicy(token_budget=10_000))
+
+        interrupt = HumanInteractionInterrupt("need human input")
+        async with scope:
+            with (
+                patch.object(client, "_sdk_create", side_effect=[_tool_round("tu_1")]),
+                patch.object(client, "_execute_tool", side_effect=interrupt),
+            ):
+                with pytest.raises(HumanInteractionInterrupt) as excinfo:
+                    await client.ask("Hello")
+
+        raised = excinfo.value
+        assert TOKEN_BUDGET_STATE_KEY in raised.state
+        assert raised.state[TOKEN_BUDGET_STATE_KEY]["operation_id"] == scope.operation_id
+
+        # resume() must not mutate the caller's stored message list.
+        original_messages = list(raised.messages)
+        state = {"messages": raised.messages, "tool_call_id": raised.tool_call_id}
+        final_response = _final({"inputTokens": 5, "outputTokens": 5})
+        with patch.object(client, "_sdk_create", side_effect=[final_response]):
+            await client.resume("session-1", "the answer", state)
+        assert raised.messages == original_messages
+        assert len(state["messages"]) == len(original_messages)
+
+    async def test_native_invoke_model_guarded(self):
+        """_invoke_native reserves once with route='invoke_model' and lowers body['max_tokens']."""
+        client = BedrockConverseClient(model="claude-sonnet-4-5")
+        registry = BudgetRegistry()
+        scope = await registry.create(TokenBudgetPolicy(token_budget=10_000))
+
+        fake_body = {"usage": {"input_tokens": 20, "output_tokens": 10}}
+        fake_response = {"body": AsyncMock()}
+        fake_response["body"].read = AsyncMock(return_value=__import__("json").dumps(fake_body).encode())
+
+        async with scope:
+            budgeted_client = MagicMock()
+            budgeted_client.invoke_model = AsyncMock(return_value=fake_response)
+            with patch.object(client, "_get_budgeted_client", AsyncMock(return_value=budgeted_client)):
+                result = await client._invoke_native([{"role": "user", "content": [{"type": "text", "text": "hi"}]}])
+        assert result == fake_body
+        budgeted_client.invoke_model.assert_awaited_once()
+        _, call_kwargs = budgeted_client.invoke_model.await_args
+        sent_body = __import__("json").loads(call_kwargs["body"])
+        assert sent_body["max_tokens"] <= 10_000
+        report = await scope.ledger.report()
+        assert report.total_tokens == 30
