@@ -65,6 +65,8 @@ class QuestionBudget:
         self._strict_violated = False
         self._counting_methods: set[str] = set()
         self._terminal_reason: Optional[str] = None
+        self._restored_attempts = 0
+        self._restored_rounds = 0
 
     # ── read-only identity ────────────────────────────────────────────
     @property
@@ -82,6 +84,17 @@ class QuestionBudget:
     @property
     def revision(self) -> int:
         return self._revision
+
+    @property
+    def attempt_count(self) -> int:
+        """Total attempts recorded on this ledger, including a restored floor."""
+        return len(self._attempts) + self._restored_attempts
+
+    @property
+    def round_count(self) -> int:
+        """Distinct rounds observed on this ledger, including a restored floor."""
+        rounds = {a.reservation.round_number for a in self._attempts.values()}
+        return len(rounds) + self._restored_rounds
 
     # ── §2.2 quantities (call ONLY under self._lock) ──────────────────
     def _consumed(self) -> int:
@@ -265,6 +278,25 @@ class QuestionBudget:
             if terminal_reason:
                 self._terminal_reason = terminal_reason
             self._revision += 1
+
+    def restore_settled(
+        self,
+        *,
+        input_tokens: int,
+        output_tokens: int,
+        revision: int,
+        attempt_count: int,
+        round_count: int,
+    ) -> None:
+        """Seed a fresh ledger from a trusted snapshot (registry-only; spec §2.6)."""
+        if self._attempts or self._consumed() or self._revision:
+            raise BudgetAccountingError(
+                "restore_settled requires an empty ledger",
+                operation_id=self._operation_id,
+            )
+        self._settled_input, self._settled_output = input_tokens, output_tokens
+        self._revision = revision
+        self._restored_attempts, self._restored_rounds = attempt_count, round_count
 
     def _require(self, reservation_id: str) -> _Attempt:
         try:
