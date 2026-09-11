@@ -213,7 +213,7 @@
       "feature_id": "FEAT-550",
       "feature": "token-budget-bedrock",
       "spec": "sdd/specs/token-budget-bedrock.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -224,8 +224,8 @@
       "parallelism_notes": "Appends to amazon/budget.py (owned first by TASK-3139 — spec §7 shared-ownership rule) and edits openai_base.py + nova/mantle.py. Does not touch bedrock.py, so it may run concurrently with TASK-3140/3141 only if amazon/budget.py appends are coordinated; default sequential.",
       "assigned_to": null,
       "started_at": "2026-09-10T23:40:10+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3142-mantle-adapter-chat-completion-hooks.md"
+      "completed_at": "2026-09-11T01:28:23+00:00",
+      "file": "sdd/tasks/completed/TASK-3142-mantle-adapter-chat-completion-hooks.md"
     },
     {
       "id": "TASK-3143",
