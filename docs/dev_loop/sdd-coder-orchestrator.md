@@ -15,18 +15,38 @@ Coders never touch `sdd/`.
 
 ## Install
 
-1. Copy the `sdd-coder:` section of `examples/sdd-coder-mcp.yaml` into
-   `.parrot/mcp-toolkits.yaml` (git-ignored — operator-local):
+1. **Append** the `sdd-coder:` entry of `examples/sdd-coder-mcp.yaml` under the
+   `toolkits:` key of `.parrot/mcp-toolkits.yaml` (git-ignored — operator-local).
+   That file usually already holds other toolkits (`bounded-source`,
+   `targeted-writer`, …), so **do not `cp` the example over it** — a copy
+   replaces the whole file and silently drops every other toolkit you had
+   configured. When `.parrot/mcp-toolkits.yaml` does not exist yet, and only
+   then, a copy is safe:
    ```bash
+   # File already exists — append just the toolkit entry (everything after `toolkits:`)
+   sed -n '/^toolkits:/,$p' examples/sdd-coder-mcp.yaml | tail -n +2 \
+     >> .parrot/mcp-toolkits.yaml
+
+   # File does not exist yet — a copy is fine
    cp examples/sdd-coder-mcp.yaml .parrot/mcp-toolkits.yaml
    ```
-2. Add an entry to `.mcp.json` (also git-ignored):
+   Either way, confirm with `parrot mcp-local --list --config
+   .parrot/mcp-toolkits.yaml` that `sdd-coder` **and** every toolkit you had
+   before are still listed.
+2. Add an entry to `.mcp.json` (also git-ignored). Use **absolute** paths and
+   an explicit `cwd`: MCP hosts start servers from their own working
+   directory, so a relative `--config` resolves against the host's cwd, not
+   the repository:
    ```json
    "parrot-sdd-coder": {
-     "command": "<venv>/bin/parrot",
-     "args": ["mcp-local", "sdd-coder", "--config", ".parrot/mcp-toolkits.yaml"]
+     "command": "/abs/path/to/repo/.venv/bin/parrot",
+     "args": ["mcp-local", "sdd-coder",
+              "--config", "/abs/path/to/repo/.parrot/mcp-toolkits.yaml"],
+     "cwd": "/abs/path/to/repo"
    }
    ```
+   Claude Code reads `.mcp.json` only at startup — restart it (and approve the
+   project-scoped server) before `/mcp` will show `parrot-sdd-coder`.
    Claude Code then exposes the seven tools as
    `mcp__parrot-sdd-coder__coder_plan` … `mcp__parrot-sdd-coder__coder_cleanup`.
 3. Credentials (none live in the yaml — see `examples/sdd-coder-mcp.yaml`'s
