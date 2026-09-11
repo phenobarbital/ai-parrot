@@ -378,10 +378,23 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (orchestrated via parrot-sdd-coder; 2 mypy
+errors fixed directly post-merge)
+**Date**: 2026-09-11
+**Notes**: Implemented `GVisorWorkerPool(SandboxProvider)` with
+`is_available()` (pure `shutil.which("runsc")` probe, never spawns),
+`GVisorUnavailableError` raised at construction when unavailable (no
+silent downgrade), `tier34_pool_size` default `2`, `SandboxConfig.network`
+default `"none"`. Structurally mirrors `SubprocessWorkerPool` (idle queue,
+health checks, recycling). 9/9 tests pass without a real `runsc` binary,
+`ruff check` clean as delivered. `mypy` initially reported 2 errors
+(queue `None`-sentinel shadowing the narrower `GVisorWorker` type in
+`_get_worker()`; `GVisorSandbox.release()` reading the nonexistent public
+`sandbox.worker` instead of `sandbox._worker`) — fixed directly (rename +
+correct attribute), re-verified clean, no behavioral change.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Deviations from spec**: none — post-merge fix was a type-checking
+correction only, required by this task's own "`mypy` clean" acceptance
+criterion.
 
-**Deviations from spec**: none | describe if any
+**Seat: minimax · Backend: nova · Model: minimax.minimax-m2.5 · Attempts: 1 · Duration: 450.6s · Tokens: 1,643,543 in / 10,538 out**

@@ -195,7 +195,7 @@
       "feature_id": "FEAT-459",
       "feature": "formbuilder-custom-code",
       "spec": "sdd/specs/formbuilder-custom-code.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -206,8 +206,8 @@
       "parallelism_notes": "Track 2, independent of TASK-3169/3171. All tests gated on fake_gvisor_absent — runsc confirmed absent in this environment.",
       "assigned_to": null,
       "started_at": "2026-09-11T16:38:03+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3170-gvisor-worker-pool.md"
+      "completed_at": "2026-09-11T17:35:37+00:00",
+      "file": "sdd/tasks/completed/TASK-3170-gvisor-worker-pool.md"
     },
     {
       "id": "TASK-3171",
