@@ -303,7 +303,7 @@
       "feature_id": "FEAT-459",
       "feature": "formbuilder-custom-code",
       "spec": "sdd/specs/formbuilder-custom-code.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -313,8 +313,8 @@
       "parallelism_notes": "Track 4 (Worktree C per spec) — depends on Track 1's contracts, not Track 2 or 3. TASK-3166 (Track 1) has a forward dependency on this task, per spec's own 'Ordering caveat' (mitigated via dependency injection in TASK-3166).",
       "assigned_to": null,
       "started_at": "2026-09-11T16:38:03+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3175-conformance-equivalence-gate.md"
+      "completed_at": "2026-09-11T18:02:45+00:00",
+      "file": "sdd/tasks/completed/TASK-3175-conformance-equivalence-gate.md"
     },
     {
       "id": "TASK-3176",
