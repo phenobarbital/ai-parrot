@@ -112,7 +112,7 @@
       "feature_id": "FEAT-553",
       "feature": "sdd-coder-shared-conventions",
       "spec": "sdd/specs/sdd-coder-shared-conventions.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -120,8 +120,8 @@
       "parallelism_notes": "ruff.toml + fidelity.py + test_fidelity.py; no file shared with the conventions tasks.",
       "assigned_to": null,
       "started_at": "2026-09-12T00:21:57+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3182-ruff-tid251-and-banned-import-check.md"
+      "completed_at": "2026-09-12T00:35:00+00:00",
+      "file": "sdd/tasks/completed/TASK-3182-ruff-tid251-and-banned-import-check.md"
     },
     {
       "id": "TASK-3183",

@@ -270,10 +270,31 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (orchestrated via parrot-sdd-coder MCP; consolidated by the orchestrator after a `failed` outcome on attempt 1)
+**Date**: 2026-09-12
+**Notes**: `ruff.toml` gained `TID251` in `select`, the 10-module banned-api
+table, and the grandfather list (the spec's 17 production files, PLUS 5
+test files that also import a banned module directly — needed for AC-7's
+literal requirement that `ruff check --select TID251 packages/ scripts/`
+exits 0; verified clean after the addition). `check_banned_imports(cwd,
+changed, *, ruff_bin="ruff")` added to `fidelity.py` (spawns `ruff check
+--select TID251 --no-fix --output-format json`, parses JSON findings into
+`"<path>:<row>: <message>"` lines, fails closed with a `"ruff: …"` line on
+a missing binary or exit ≥ 2, returns `[]` for empty/non-.py `changed`).
+4 new async tests in `test_fidelity.py`, all passing; `ruff check` clean
+on the two modified Python files.
 
-**Completed by**: 
-**Date**: 
-**Notes**: 
+Orchestrator note: attempt 1 (minimax/nova) produced the correct commit
+but left two untracked scratch files (`test_check_banned_imports.py`,
+`test_requests_temp.py` — ad hoc manual-testing scripts, not part of the
+task's file list) in its sub-worktree, which the merge gate correctly
+rejected as `dirty_task_worktree`. The orchestrator removed the two stray
+files (never committed, no functional content lost), re-verified the
+committed diff matched the task's file list exactly, re-ran the
+acceptance criteria, and merged.
 
-**Deviations from spec**: none
+**Deviations from spec**: grandfather list extended from 17 to 22 entries
+(5 additional test files) to satisfy AC-7's literal "exits 0" requirement;
+no production file was added beyond the spec's list.
+
+Seat: minimax · Backend: nova · Model: minimax.minimax-m2.5 · Attempts: 1 · Duration: 251.4s · Tokens: 1004248 in / 9383 out
