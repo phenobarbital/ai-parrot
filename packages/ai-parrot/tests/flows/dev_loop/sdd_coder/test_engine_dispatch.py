@@ -1,4 +1,5 @@
 """Fake-dispatcher tests for SddCoderEngine's dispatch/retry side (TASK-3121)."""
+
 from __future__ import annotations
 
 import asyncio
@@ -245,7 +246,9 @@ async def test_plan_then_dispatch_uses_consistent_seat_assignment(git_sandbox_fe
             RosterSeat(label="b", backend="codex"),
         ]
     )
-    engine = SddCoderEngine(roster=roster, probe=noop_probe, worktree_base_path=str(base_path), dispatcher_builder=builder)
+    engine = SddCoderEngine(
+        roster=roster, probe=noop_probe, worktree_base_path=str(base_path), dispatcher_builder=builder
+    )
 
     plan = await engine.plan("demo", str(worktree))
     assert len(plan.chunks) == 1

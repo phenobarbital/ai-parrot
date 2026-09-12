@@ -1,4 +1,5 @@
 """File-fidelity gate for coder branches (spec G7/AC-7, design research S5)."""
+
 from __future__ import annotations
 
 import asyncio
@@ -78,8 +79,17 @@ async def check_banned_imports(cwd: str, changed: List[str], *, ruff_bin: str = 
         return []
     try:
         proc = await asyncio.create_subprocess_exec(
-            ruff_bin, "check", "--select", "TID251", "--no-fix", "--output-format", "json", *py_files,
-            cwd=cwd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            ruff_bin,
+            "check",
+            "--select",
+            "TID251",
+            "--no-fix",
+            "--output-format",
+            "json",
+            *py_files,
+            cwd=cwd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
         )
         out, err = await proc.communicate()
     except (FileNotFoundError, OSError) as exc:

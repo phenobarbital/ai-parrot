@@ -167,11 +167,7 @@ class TestLLMTurnBudget:
 
 class TestEnvParsing:
     def test_valid_json(self):
-        cfg = parse_pool_env(
-            fake_getter(
-                {"DEV_LOOP_DEV_AGENTS": '[{"agent": "claude-code", "count": 2}]'}
-            )
-        )
+        cfg = parse_pool_env(fake_getter({"DEV_LOOP_DEV_AGENTS": '[{"agent": "claude-code", "count": 2}]'}))
         assert cfg is not None
         assert cfg.agents[0].count == 2
 
@@ -190,9 +186,7 @@ class TestEnvParsing:
         assert parse_pool_env(fake_getter({"DEV_LOOP_DEV_AGENTS": "{oops"})) is None
 
     def test_unknown_backend_returns_none(self):
-        cfg = parse_pool_env(
-            fake_getter({"DEV_LOOP_DEV_AGENTS": '[{"agent": "not-a-backend"}]'})
-        )
+        cfg = parse_pool_env(fake_getter({"DEV_LOOP_DEV_AGENTS": '[{"agent": "not-a-backend"}]'}))
         assert cfg is None
 
     def test_absent_returns_none(self):

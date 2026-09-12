@@ -29,9 +29,7 @@ def test_install_is_idempotent_and_preserves_settings(tmp_path):
 def test_codex_and_claude_emit_advisory_hook_responses(tmp_path):
     for agent, event in (("codex", "PreToolUse"), ("claude", "PreToolUse")):
         output = io.StringIO()
-        assert coding_agents.hook(
-            agent, io.StringIO(json.dumps({"hook_event_name": event})), output
-        ) == 0
+        assert coding_agents.hook(agent, io.StringIO(json.dumps({"hook_event_name": event})), output) == 0
         response = json.loads(output.getvalue())
         assert "systemMessage" in response
         assert "permissionDecision" not in response
@@ -63,9 +61,10 @@ def test_gemini_and_google_share_one_conventions_block(tmp_path):
     (tmp_path / ".agent" / "rules" / "python-development.md").write_text("RULE-TWO\n")
     coding_agents.install("gemini", tmp_path)
     from parrot.knowledge.wiki.google.installer import _install_gemini_md
+
     _install_gemini_md(tmp_path)
     assert (tmp_path / "GEMINI.md").read_text().count("<!-- parrot:conventions:google:begin -->") == 1
-    
+
     # Test the reverse order too
     (tmp_path / "GEMINI.md").unlink()
     _install_gemini_md(tmp_path)

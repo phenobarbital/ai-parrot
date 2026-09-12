@@ -9,6 +9,7 @@ engine. The DISPATCH side (`run_chunk`, `wait`, `_run_attempt`,
 `_research_for`, `_labels_for`, `AttemptTelemetryCollector`) is stubbed here
 and filled in by TASK-3121 — the signatures below are final.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -164,7 +165,9 @@ class SddCoderEngine:
         self.seats: List[RosterSeat] = []
         self.probe_results: List[SeatProbeResult] = []
         self._assigner: Optional[ChunkAssigner] = None
-        self._plan_cache: Dict[str, CoderPlan] = {}  # feature_id -> most recently computed plan (see plan()/_cached_plan)
+        self._plan_cache: Dict[str, CoderPlan] = (
+            {}
+        )  # feature_id -> most recently computed plan (see plan()/_cached_plan)
         self._jobs = JobTable()
         self._merge_lock = asyncio.Lock()
         self._managers: Dict[str, SubWorktreeManager] = {}  # key: f"{task_id}.a{attempt}"
@@ -235,9 +238,7 @@ class SddCoderEngine:
         found = _match()
         if found is None:
             candidates = sorted({h.get("feature_id", "?") for _, h in headers})
-            raise CoderFailure(
-                "feature_not_found", f"no per-spec index matches {feature!r}", candidates=candidates
-            )
+            raise CoderFailure("feature_not_found", f"no per-spec index matches {feature!r}", candidates=candidates)
 
         index_path, header = found
         rc, out, _err = await _git("rev-parse", "--abbrev-ref", "HEAD", cwd=wt)
@@ -466,7 +467,7 @@ class SddCoderEngine:
         for branch in (b.strip() for b in out.splitlines() if b.strip()):
             if not branch.startswith(prefix):
                 continue
-            suffix = branch[len(prefix):]  # e.g. "TASK-0001-a1"
+            suffix = branch[len(prefix) :]  # e.g. "TASK-0001-a1"
             task_id, sep, _attempt = suffix.rpartition("-a")
             if not sep or not task_id:
                 continue
@@ -647,9 +648,7 @@ class SddCoderEngine:
             if planned is None:
                 raise CoderFailure("task_not_in_plan", f"{task_id} is not in the current chunk plan")
             if planned.native:
-                raise CoderFailure(
-                    "task_not_in_plan", f"{task_id} is a native task — use coder_prepare_native"
-                )
+                raise CoderFailure("task_not_in_plan", f"{task_id} is a native task — use coder_prepare_native")
 
         seats = {s.label: s for s in self.seats}
 

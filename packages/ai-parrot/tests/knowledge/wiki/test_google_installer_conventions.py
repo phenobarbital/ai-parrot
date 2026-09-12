@@ -1,4 +1,5 @@
 """Google installer writes/removes the managed conventions block (FEAT-553, AC-6/AC-6b)."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -31,23 +32,23 @@ def test_uninstall_removes_conventions_block(tmp_path):
     _seed(tmp_path)
     (tmp_path / "GEMINI.md").write_text("# Gemini\nkeep me\n")
     _install_gemini_md(tmp_path)
-    
+
     # Verify the blocks were installed
     text = (tmp_path / "GEMINI.md").read_text()
     assert assets.AGENTS_BEGIN in text
     assert assets.CONVENTIONS_BEGIN in text
-    
+
     # Uninstall and verify both blocks are removed but original content remains
     actions = uninstall_google_integration(tmp_path)
     text_after = (tmp_path / "GEMINI.md").read_text()
-    
+
     # Check that the managed blocks are removed
     assert assets.AGENTS_BEGIN not in text_after
     assert assets.CONVENTIONS_BEGIN not in text_after
-    
+
     # Check that original content is preserved
     assert "keep me" in text_after
-    
+
     # Check that the uninstall action mentions both sections
     uninstall_actions = [action for action in actions if "GEMINI.md" in action]
     assert len(uninstall_actions) == 1

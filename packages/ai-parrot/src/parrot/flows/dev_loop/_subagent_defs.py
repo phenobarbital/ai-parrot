@@ -88,7 +88,7 @@ def _strip_frontmatter(text: str) -> str:
         # Malformed frontmatter — return text unchanged rather than
         # silently dropping the whole file.
         return text
-    body = "\n".join(lines[closing + 1:]).lstrip("\n")
+    body = "\n".join(lines[closing + 1 :]).lstrip("\n")
     return body
 
 
@@ -110,10 +110,7 @@ def load_subagent_definition(name: str) -> str:
             (indicates a packaging error).
     """
     if name not in _VALID_NAMES:
-        raise ValueError(
-            f"Unknown subagent name {name!r}. Expected one of "
-            f"{sorted(_VALID_NAMES)}."
-        )
+        raise ValueError(f"Unknown subagent name {name!r}. Expected one of " f"{sorted(_VALID_NAMES)}.")
     data_dir = files("parrot.flows.dev_loop") / "_subagent_data"
     target = data_dir / f"{name}.md"
     text = target.read_text(encoding="utf-8")

@@ -4,6 +4,7 @@ Stdlib-only LEAF module: it must never import ``parrot.flows.dev_loop`` (that
 package's ``__init__`` eagerly imports every dispatcher, ~2.2 s) so that
 ``parrot.knowledge.wiki.coding_agents`` and the parity tests stay cheap.
 """
+
 from __future__ import annotations
 
 import os
@@ -14,8 +15,7 @@ from typing import Sequence
 CODER_RULE_NAMES: tuple[str, ...] = ("codebase-conventions", "python-development")  # v1 Python only (spec §8 Q5)
 RULES_DIRNAME: str = ".agent/rules"
 CONVENTIONS_PREAMBLE: str = (
-    "Project conventions — binding for every file you touch; a banned import fails "
-    "this attempt at the merge gate:"
+    "Project conventions — binding for every file you touch; a banned import fails " "this attempt at the merge gate:"
 )
 _SEPARATOR: str = "\n\n---\n\n"
 
@@ -41,7 +41,7 @@ def _strip_frontmatter(text: str) -> str:
         # Malformed frontmatter — return text unchanged rather than
         # silently dropping the whole file.
         return text
-    body = "\n".join(lines[closing + 1:]).lstrip("\n")
+    body = "\n".join(lines[closing + 1 :]).lstrip("\n")
     return body
 
 

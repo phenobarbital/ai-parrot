@@ -15,10 +15,10 @@ from typing import Any, TextIO
 
 NUDGE = (
     "This repository has an ai-parrot LLM-wiki. Before scanning source files, "
-    "run `wikitoolkit query \"<focused question>\"`, then inspect a result "
+    'run `wikitoolkit query "<focused question>"`, then inspect a result '
     "with `wikitoolkit page <id>` or `wikitoolkit related <id>`. When you "
     "learn a durable fact or decision, save it: "
-    "`wikitoolkit remember \"<fact>\" --category decision`."
+    '`wikitoolkit remember "<fact>" --category decision`.'
 )
 SKILL = """---
 name: parrot-wiki
@@ -44,11 +44,15 @@ _AGENTS = {
     "codex": ("AGENTS.md", ".codex/hooks.json", "PreToolUse", "Bash|Grep|Glob|Read"),
     "claude": ("CLAUDE.md", ".claude/settings.json", "PreToolUse", "Bash|Grep|Glob|Read"),
     "gemini": (
-        "GEMINI.md", ".gemini/settings.json", "AfterTool",
+        "GEMINI.md",
+        ".gemini/settings.json",
+        "AfterTool",
         "run_shell_command|read_file|read_many_files|grep_search|search_file_content|glob|list_directory",
     ),
     "google": (
-        "GEMINI.md", ".gemini/settings.json", "AfterTool",
+        "GEMINI.md",
+        ".gemini/settings.json",
+        "AfterTool",
         "run_shell_command|read_file|read_many_files|grep_search|search_file_content|glob|list_directory",
     ),
 }
@@ -77,7 +81,9 @@ def _conventions_markers(agent: str) -> tuple[str, str] | None:
 
 
 def _conventions_block(agent: str, root: Path) -> str:
-    from parrot.flows.conventions import load_project_conventions  # stdlib-only leaf; local import keeps this module cheap
+    from parrot.flows.conventions import (
+        load_project_conventions,
+    )  # stdlib-only leaf; local import keeps this module cheap
 
     begin, end = _conventions_markers(agent)  # type: ignore[misc]  # caller checked for None
     return f"{begin}\n## Project conventions\n\n{load_project_conventions(root)}\n\n{end}\n"

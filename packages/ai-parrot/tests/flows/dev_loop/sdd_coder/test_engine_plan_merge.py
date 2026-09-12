@@ -1,4 +1,5 @@
 """Git-sandbox integration tests for SddCoderEngine's read/consolidation side (TASK-3120)."""
+
 from __future__ import annotations
 
 import asyncio
@@ -125,8 +126,11 @@ async def test_engine_native_prepare_then_merge(git_sandbox_feature, noop_probe)
 
 async def test_engine_rejects_dirty_task_worktree(git_sandbox_feature, noop_probe):
     worktree, feature_branch, base_path, _index_path = git_sandbox_feature
-    engine = SddCoderEngine(roster=RosterConfig(seats=[RosterSeat(label="h", kind="native")]), probe=noop_probe,
-                            worktree_base_path=str(base_path))
+    engine = SddCoderEngine(
+        roster=RosterConfig(seats=[RosterSeat(label="h", kind="native")]),
+        probe=noop_probe,
+        worktree_base_path=str(base_path),
+    )
     ctx = await engine._resolve_feature("demo", str(worktree))
     manager = engine._manager_for(ctx, "TASK-0002", 1)
     path = Path(await manager.create("TASK-0002.a1"))
@@ -140,8 +144,11 @@ async def test_engine_rejects_dirty_task_worktree(git_sandbox_feature, noop_prob
 
 async def test_engine_fidelity_violation_keeps_branch(git_sandbox_feature, noop_probe):
     worktree, feature_branch, base_path, _index_path = git_sandbox_feature
-    engine = SddCoderEngine(roster=RosterConfig(seats=[RosterSeat(label="h", kind="native")]), probe=noop_probe,
-                            worktree_base_path=str(base_path))
+    engine = SddCoderEngine(
+        roster=RosterConfig(seats=[RosterSeat(label="h", kind="native")]),
+        probe=noop_probe,
+        worktree_base_path=str(base_path),
+    )
     ctx = await engine._resolve_feature("demo", str(worktree))
     manager = engine._manager_for(ctx, "TASK-0003", 1)
     path = Path(await manager.create("TASK-0003.a1"))
@@ -157,8 +164,11 @@ async def test_engine_fidelity_violation_keeps_branch(git_sandbox_feature, noop_
 
 async def test_engine_merge_conflict_reported_and_aborted(git_sandbox_feature, noop_probe):
     worktree, feature_branch, base_path, _index_path = git_sandbox_feature
-    engine = SddCoderEngine(roster=RosterConfig(seats=[RosterSeat(label="h", kind="native")]), probe=noop_probe,
-                            worktree_base_path=str(base_path))
+    engine = SddCoderEngine(
+        roster=RosterConfig(seats=[RosterSeat(label="h", kind="native")]),
+        probe=noop_probe,
+        worktree_base_path=str(base_path),
+    )
     ctx = await engine._resolve_feature("demo", str(worktree))
 
     manager1 = engine._manager_for(ctx, "TASK-0001", 1)
@@ -172,9 +182,7 @@ async def test_engine_merge_conflict_reported_and_aborted(git_sandbox_feature, n
     planned = PlannedTask(
         task_id="TASK-0001", task_file="sdd/tasks/active/TASK-0001-demo.md", seat_label="h", native=True
     )
-    first = await engine._consolidate(
-        ctx, manager1, planned, branch=f"{feature_branch}--TASK-0001-a1", path=str(path1)
-    )
+    first = await engine._consolidate(ctx, manager1, planned, branch=f"{feature_branch}--TASK-0001-a1", path=str(path1))
     assert first.outcome == "merged"
 
     second = await engine.merge("demo", str(worktree), "TASK-0001")
@@ -212,8 +220,13 @@ async def test_engine_journals_job_snapshot(git_sandbox_feature, three_seat_rost
 
     worktree, _feature_branch, base_path, _index_path = git_sandbox_feature
     engine = SddCoderEngine(roster=three_seat_roster, probe=noop_probe, worktree_base_path=str(base_path))
-    job = CoderJob(job_id="job-abc123", feature_id="FEAT-549", chunk_task_ids=["TASK-0001"], state="done",
-                  started_at="2026-09-10T00:00:00+00:00")
+    job = CoderJob(
+        job_id="job-abc123",
+        feature_id="FEAT-549",
+        chunk_task_ids=["TASK-0001"],
+        state="done",
+        started_at="2026-09-10T00:00:00+00:00",
+    )
 
     await engine._journal(str(worktree), job)
 
@@ -230,9 +243,14 @@ _BANNED_CFG = (
 
 async def test_consolidate_rejects_banned_import(git_sandbox_feature, noop_probe):
     worktree, feature_branch, base_path, _index_path = git_sandbox_feature
-    await _write_and_commit(worktree, "ruff.toml", _BANNED_CFG, "ruff config")  # on the feature branch, so sub-worktrees inherit it
-    engine = SddCoderEngine(roster=RosterConfig(seats=[RosterSeat(label="h", kind="native")]), probe=noop_probe,
-                            worktree_base_path=str(base_path))
+    await _write_and_commit(
+        worktree, "ruff.toml", _BANNED_CFG, "ruff config"
+    )  # on the feature branch, so sub-worktrees inherit it
+    engine = SddCoderEngine(
+        roster=RosterConfig(seats=[RosterSeat(label="h", kind="native")]),
+        probe=noop_probe,
+        worktree_base_path=str(base_path),
+    )
     ctx = await engine._resolve_feature("demo", str(worktree))
     manager = engine._manager_for(ctx, "TASK-0003", 1)
     path = Path(await manager.create("TASK-0003.a1"))

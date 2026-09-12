@@ -1,4 +1,5 @@
 """Loader contract for parrot.flows.conventions (FEAT-553, spec AC-4/AC-14)."""
+
 from __future__ import annotations
 
 import subprocess

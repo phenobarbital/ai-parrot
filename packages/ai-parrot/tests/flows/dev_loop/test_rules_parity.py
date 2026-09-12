@@ -1,4 +1,5 @@
 """Three-way byte parity for the coder rule files (FEAT-553, spec AC-2/AC-3, mirrors test_subagent_parity.py)."""
+
 from __future__ import annotations
 
 from importlib import resources
@@ -32,9 +33,9 @@ def test_claude_rules_twin_is_identical(name: str) -> None:
     agent_copy = agent_rules / f"{name}.md"
     assert claude_copy.is_file(), f"Missing .claude/rules/{name}.md"
     assert agent_copy.is_file(), f"Missing .agent/rules/{name}.md"
-    assert claude_copy.read_bytes() == agent_copy.read_bytes(), (
-        f".claude/rules/{name}.md differs from .agent/rules/{name}.md"
-    )
+    assert (
+        claude_copy.read_bytes() == agent_copy.read_bytes()
+    ), f".claude/rules/{name}.md differs from .agent/rules/{name}.md"
 
 
 @pytest.mark.parametrize("name", CODER_RULE_NAMES)
@@ -50,15 +51,14 @@ def test_package_rules_copy_is_identical(name: str) -> None:
     pkg_copy = resources.files("parrot.flows") / "_rules_data" / f"{name}.md"
     agent_copy = agent_rules / f"{name}.md"
     assert agent_copy.is_file(), f"Missing .agent/rules/{name}.md"
-    assert pkg_copy.read_bytes() == agent_copy.read_bytes(), (
-        f"Package _rules_data/{name}.md differs from .agent/rules/{name}.md"
-    )
+    assert (
+        pkg_copy.read_bytes() == agent_copy.read_bytes()
+    ), f"Package _rules_data/{name}.md differs from .agent/rules/{name}.md"
 
 
 def test_coder_rules_fit_the_prompt_budget() -> None:
     """Total size of all rule files must fit within the prompt budget."""
     total = sum(
-        len((resources.files("parrot.flows") / "_rules_data" / f"{n}.md").read_bytes())
-        for n in CODER_RULE_NAMES
+        len((resources.files("parrot.flows") / "_rules_data" / f"{n}.md").read_bytes()) for n in CODER_RULE_NAMES
     )
     assert total <= 8_000, total
