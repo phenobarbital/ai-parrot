@@ -32,7 +32,7 @@
       "feature_id": "FEAT-554",
       "feature": "sdd-coder-bedrock-token-telemetry",
       "spec": "sdd/specs/sdd-coder-bedrock-token-telemetry.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Needs the policy flag from TASK-3185; shares clients/budget.py with nothing else.",
       "assigned_to": null,
       "started_at": "2026-09-12T00:22:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3186-ledger-observational-semantics.md"
+      "completed_at": "2026-09-12T00:51:13+00:00",
+      "file": "sdd/tasks/completed/TASK-3186-ledger-observational-semantics.md"
     },
     {
       "id": "TASK-3187",
