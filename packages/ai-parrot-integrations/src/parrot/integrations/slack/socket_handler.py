@@ -364,7 +364,8 @@ class SlackSocketHandler:
         # are authorized on user only).
         channel = (payload.get("channel") or {}).get("id")
         user = (payload.get("user") or {}).get("id")
-        if channel and not self.wrapper._is_authorized(channel, user):
+        authorized = self.wrapper._is_authorized(channel, user) if channel else self.wrapper._is_user_authorized(user)
+        if not authorized:
             logger.warning("Unauthorized interactive attempt: user=%s, channel=%s", user, channel)
             return
 

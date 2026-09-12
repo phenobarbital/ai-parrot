@@ -204,6 +204,25 @@ class SlackAgentWrapper:
                 return False
         return True
 
+    def _is_user_authorized(self, user_id: Optional[str]) -> bool:
+        """Check the user whitelist alone — for payloads with no channel context.
+
+        ``view_submission`` payloads carry no ``channel`` (FEAT-555 code
+        review finding): ``_is_authorized(channel, user)`` cannot be used
+        for them, because a falsy ``channel`` would either bypass the
+        check entirely (as it did before this fix) or spuriously fail the
+        channel whitelist. Only ``allowed_user_ids`` applies here.
+
+        Args:
+            user_id: The Slack user ID, or ``None`` to skip the check.
+
+        Returns:
+            True if authorized, False otherwise.
+        """
+        if self.config.allowed_user_ids is not None:
+            return user_id in self.config.allowed_user_ids
+        return True
+
     async def _handle_events(self, request: web.Request) -> web.Response:
         """Handle Slack Events API requests.
 
@@ -741,7 +760,8 @@ class SlackAgentWrapper:
         # view_submission payloads carry no channel — authorize on user only in that case.
         channel = (payload.get("channel") or {}).get("id")
         user = (payload.get("user") or {}).get("id")
-        if channel and not self._is_authorized(channel, user):
+        authorized = self._is_authorized(channel, user) if channel else self._is_user_authorized(user)
+        if not authorized:
             self.logger.warning("Unauthorized interactive attempt: user=%s, channel=%s", user, channel)
             return web.json_response({"ok": True})
 

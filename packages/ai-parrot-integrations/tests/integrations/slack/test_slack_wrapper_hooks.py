@@ -216,3 +216,36 @@ async def test_socket_mode_enforces_user_whitelist():
     # interactive
     await handler._handle_interactive({"type": "block_actions", "channel": {"id": "C1"}, "user": {"id": "U_BAD"}})
     wrapper._interactive_handler.handle.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_view_submission_enforces_user_whitelist_webhook_and_socket():
+    """A view_submission payload carries no channel — both paths must still check allowed_user_ids (code review fix).
+
+    Before this fix, ``if channel and not self._is_authorized(channel, user)``
+    short-circuited to ``False`` whenever ``channel`` was falsy (every
+    ``view_submission``), so NO authorization check ran at all for modal
+    submissions in either the webhook or Socket Mode path.
+    """
+    wrapper = _make_wrapper(allowed_user_ids=["U_OK"])
+    import urllib.parse
+
+    inner = {"type": "view_submission", "user": {"id": "U_BAD"}, "view": {"private_metadata": "{}"}}
+    body = urllib.parse.urlencode({"payload": json.dumps(inner)}).encode("utf-8")
+    request = MagicMock()
+    request.headers = {}
+    request.read = AsyncMock(return_value=body)
+
+    with patch("parrot.integrations.slack.wrapper.verify_slack_signature_raw", return_value=True):
+        resp = await wrapper._handle_interactive(request)
+    assert resp.status == 200
+    wrapper._interactive_handler.handle.assert_not_awaited()
+
+    handler = _make_socket_handler(wrapper)
+    await handler._handle_interactive(inner)
+    wrapper._interactive_handler.handle.assert_not_awaited()
+
+    # A whitelisted user's view_submission still reaches the handler.
+    inner_ok = {"type": "view_submission", "user": {"id": "U_OK"}, "view": {"private_metadata": "{}"}}
+    await handler._handle_interactive(inner_ok)
+    wrapper._interactive_handler.handle.assert_awaited_once_with(inner_ok)

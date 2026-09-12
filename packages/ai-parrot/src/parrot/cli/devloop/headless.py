@@ -163,7 +163,14 @@ async def run_headless(
     )
     from parrot.flows.dev_flow.models import DevRequestBrief  # noqa: PLC0415
 
-    logging.basicConfig(stream=sys.stderr, level=logging.INFO)  # stdout is reserved for the handshake
+    # `force=True` is required here: by this point `parrot.cli.devloop.bootstrap`'s
+    # own imports (navconfig/`parrot.conf`) have already installed a root
+    # logging handler, so a plain `basicConfig()` would silently no-op (a
+    # bare `basicConfig` call is a documented no-op once any handler exists)
+    # and every subsequent `logger.*` call — including this module's own
+    # `logger.exception(...)` on failure — would keep leaking onto stdout
+    # instead of stderr (code review finding, FEAT-555 completion pass).
+    logging.basicConfig(stream=sys.stderr, level=logging.INFO, force=True)  # stdout is reserved for the handshake
 
     token = os.environ.get("PARROT_DEVLOOP_COMMAND_TOKEN", "")
     if not token:
