@@ -655,3 +655,190 @@ class TestSettledEstimateReporting:
         # NEW settled/released totals track — see the established assertion
         # `rep.uncertain_tokens == r.total` above in TestBasicFlow.
         assert rep.uncertain_tokens == r1.total
+# packages/ai-parrot/tests/unit/clients/test_token_budget.py  (append)
+from unittest.mock import AsyncMock, MagicMock  # noqa: E402
+from parrot.clients.openai_base import _BUDGET_CALL_CTX  # noqa: E402
+from parrot.clients.budget_scope import BudgetScope  # noqa: E402
+from parrot.models.token_budget import TokenBudgetPolicy, TokenEstimate, BudgetReservation  # noqa: E402
+from parrot.core.exceptions import BudgetExhausted  # noqa: E402
+from openai import APIError  # noqa: E402
+
+
+class _RecordingClient:
+    """Minimal OpenAI-shaped double that records `with_options` calls."""
+
+    def __init__(self) -> None:
+        self.with_options_calls: list[dict] = []
+        self.chat = MagicMock()
+        self.chat.completions = MagicMock()
+        
+        # We mock both create and parse to return a mock response with usage
+        mock_response = MagicMock()
+        mock_response.usage = MagicMock()
+        mock_response.usage.prompt_tokens = 10
+        mock_response.usage.completion_tokens = 20
+        
+        self.chat.completions.create = AsyncMock(return_value=mock_response)
+        self.chat.completions.parse = AsyncMock(return_value=mock_response)
+
+    def with_options(self, **kwargs):
+        self.with_options_calls.append(kwargs)
+        return self
+
+
+class TestObserveRetryRegime:
+    async def test_observe_does_not_swap_the_view(self, monkeypatch):
+        # Bind an observe scope, call the funnel, assert client.with_options_calls == []
+        policy = TokenBudgetPolicy(token_budget=10000, enforcement="observe")
+        ledger = MagicMock()
+        
+        # Mock ledger.reserve to return a dummy reservation
+        dummy_res = BudgetReservation(
+            reservation_id="res_1",
+            call_id="c1",
+            round_number=1,
+            attempt_number=1,
+            phase="work",
+            input_estimate=10,
+            output_cap=50,
+            total=60,
+            state="active",
+        )
+        ledger.reserve = AsyncMock(return_value=dummy_res)
+        ledger.settle = AsyncMock()
+        
+        scope = BudgetScope(policy=policy, ledger=ledger)
+        
+        # Create a dummy client subclassing the base client
+        from parrot.clients.openai_base import OpenAIBaseClient
+        client_instance = OpenAIBaseClient()
+        rec_client = _RecordingClient()
+        client_instance.client = rec_client
+        
+        # Mock budget_adapter_factory
+        mock_adapter = MagicMock()
+        mock_adapter.count_input = AsyncMock(return_value=TokenEstimate(input_tokens=10, method="test", quality="estimated", request_fingerprint="fp"))
+        mock_adapter.normalize_usage = MagicMock(return_value=MagicMock())
+        client_instance.budget_adapter_factory = MagicMock(return_value=mock_adapter)
+        
+        # Call _chat_completion_budgeted
+        await client_instance._chat_completion_budgeted(
+            scope,
+            model="gpt-4",
+            messages=[{"role": "user", "content": "hello"}],
+            use_tools=False,
+            stream=False,
+        )
+        
+        assert rec_client.with_options_calls == []
+
+    async def test_enforce_still_swaps_the_view(self, monkeypatch):
+        # Same with enforcement="enforce"; assert [{"max_retries": 0}]
+        policy = TokenBudgetPolicy(token_budget=10000, enforcement="enforce")
+        ledger = MagicMock()
+        
+        dummy_res = BudgetReservation(
+            reservation_id="res_1",
+            call_id="c1",
+            round_number=1,
+            attempt_number=1,
+            phase="work",
+            input_estimate=10,
+            output_cap=50,
+            total=60,
+            state="active",
+        )
+        ledger.reserve = AsyncMock(return_value=dummy_res)
+        ledger.settle = AsyncMock()
+        
+        scope = BudgetScope(policy=policy, ledger=ledger)
+        
+        from parrot.clients.openai_base import OpenAIBaseClient
+        client_instance = OpenAIBaseClient()
+        rec_client = _RecordingClient()
+        client_instance.client = rec_client
+        
+        mock_adapter = MagicMock()
+        mock_adapter.count_input = AsyncMock(return_value=TokenEstimate(input_tokens=10, method="test", quality="estimated", request_fingerprint="fp"))
+        mock_adapter.normalize_usage = MagicMock(return_value=MagicMock())
+        client_instance.budget_adapter_factory = MagicMock(return_value=mock_adapter)
+        
+        await client_instance._chat_completion_budgeted(
+            scope,
+            model="gpt-4",
+            messages=[{"role": "user", "content": "hello"}],
+            use_tools=False,
+            stream=False,
+        )
+        
+        assert rec_client.with_options_calls == [{"max_retries": 0}]
+
+    async def test_transient_failure_recovers_identically(self, monkeypatch):
+        # A client failing twice with a retryable APIError then succeeding;
+        # assert the observed result equals the unscoped result
+        policy = TokenBudgetPolicy(token_budget=10000, enforcement="observe")
+        ledger = MagicMock()
+        
+        dummy_res = BudgetReservation(
+            reservation_id="res_1",
+            call_id="c1",
+            round_number=1,
+            attempt_number=1,
+            phase="work",
+            input_estimate=10,
+            output_cap=50,
+            total=60,
+            state="active",
+        )
+        ledger.reserve = AsyncMock(return_value=dummy_res)
+        ledger.settle = AsyncMock()
+        
+        scope = BudgetScope(policy=policy, ledger=ledger)
+        
+        from parrot.clients.openai_base import OpenAIBaseClient
+        client_instance = OpenAIBaseClient()
+        
+        # Setup a client that fails twice then succeeds
+        rec_client = _RecordingClient()
+        
+        mock_response = MagicMock()
+        mock_response.usage = MagicMock()
+        mock_response.usage.prompt_tokens = 10
+        mock_response.usage.completion_tokens = 20
+        
+        # We raise APIError twice
+        from openai import APIError
+        mock_request = MagicMock()
+        mock_request.url = "https://api.openai.com"
+        err = APIError("Transient error", response=MagicMock(status_code=503), body=None, request=mock_request)
+        
+        call_count = 0
+        async def mock_create(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count < 3:
+                raise err
+            return mock_response
+            
+        rec_client.chat.completions.create = AsyncMock(side_effect=mock_create)
+        client_instance.client = rec_client
+        
+        mock_adapter = MagicMock()
+        mock_adapter.count_input = AsyncMock(return_value=TokenEstimate(input_tokens=10, method="test", quality="estimated", request_fingerprint="fp"))
+        mock_adapter.normalize_usage = MagicMock(return_value=MagicMock())
+        client_instance.budget_adapter_factory = MagicMock(return_value=mock_adapter)
+        
+        # Temporarily monkeypatch wait_exponential to avoid sleeping in tests
+        import tenacity
+        monkeypatch.setattr(tenacity, "nap_ops", [AsyncMock()])
+        
+        res = await client_instance._chat_completion_budgeted(
+            scope,
+            model="gpt-4",
+            messages=[{"role": "user", "content": "hello"}],
+            use_tools=False,
+            stream=False,
+        )
+        
+        assert res == mock_response
+        assert call_count == 3
