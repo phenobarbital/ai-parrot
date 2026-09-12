@@ -331,3 +331,34 @@ run is `task-3054-fixes-live.log`.
 The separately recorded generic Arango UPSERT defect and live Arango acceptance
 were not changed or claimed resolved by this follow-up. No new dependencies,
 service messages, or pilot-signoff claims were introduced.
+
+## Upstream defect resolved — 2026-09-11
+
+The **BLOCKING UPSTREAM DEFECT** recorded above (`OntologyGraphStore.upsert_nodes`
+sending a bind parameter as an UPSERT example attribute name, ArangoDB ERR 1501)
+was fixed the same day this task completed, in `341d56919` ("fix(contracts): make
+the demo agent answer end to end on real documents", 2026-09-09) — a later commit
+on `dev` this task's completion note predates. `graph_store.py` now interpolates
+the key field as a validated literal AQL attribute name (`_literal_attribute()`,
+guarded by a plain-identifier regex) in both the batch path and the individual-
+upsert fallback, instead of a bind parameter, in both `UPSERT { key: doc.key }`
+sites. The regression test that pinned the failure was renamed/flipped from
+`test_the_generic_node_upsert_is_broken_against_a_real_graph` to
+`test_the_generic_node_upsert_reaches_a_real_graph` and now asserts a real
+insert + in-place update with no duplication.
+
+Re-verified today against the live stack (`parrot-arangodb` container, ArangoDB
+3.11.14; `docker_postgres_1`, Postgres 17):
+- `test_the_generic_node_upsert_reaches_a_real_graph` — **passed**.
+- Full `packages/ai-parrot/tests/knowledge/contracts/` +
+  `tests/knowledge/test_ontology_graph_store.py` + `tests/knowledge/ontology/` —
+  **745 passed**, 0 failed. Log: `artifacts/logs/feat539-upsert-fix-verify.log`.
+
+**AC5/AC6 are no longer blocked by this defect** — the ten AQL patterns can now
+be verified against a live graph written through the real `upsert_nodes` path
+rather than documents pre-written with literal-attribute AQL. This task's
+`done-with-issues` status stands, unrelated to this defect: the `ESCALATE` design
+findings above (shared mutable producer, ReAct producer's two-of-ten citable
+patterns, unverified handoff fields, `rapidfuzz` packaging, ingest promotion
+staging leak, publication outbox tenant filter, `merge_parties` revision bump)
+remain open and still require a spec decision, not a code fix.
