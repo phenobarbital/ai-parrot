@@ -52,7 +52,7 @@
       "feature_id": "FEAT-553",
       "feature": "sdd-coder-shared-conventions",
       "spec": "sdd/specs/sdd-coder-shared-conventions.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "Imports load_project_conventions from TASK-3178; touches llm.py/codex.py/google_coding.py.",
       "assigned_to": null,
       "started_at": "2026-09-12T00:21:57+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3179-inject-conventions-into-prompt-builders.md"
+      "completed_at": "2026-09-12T00:58:27+00:00",
+      "file": "sdd/tasks/completed/TASK-3179-inject-conventions-into-prompt-builders.md"
     },
     {
       "id": "TASK-3180",
