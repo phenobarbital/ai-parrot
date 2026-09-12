@@ -50,7 +50,7 @@
       "feature_id": "FEAT-555",
       "feature": "dev-loop-slack",
       "spec": "sdd/specs/dev-loop-slack.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -60,8 +60,8 @@
       "parallelism_notes": "Imports build_dev_flow_runtime/load_headless_brief from TASK-3197.",
       "assigned_to": null,
       "started_at": "2026-09-12T15:21:05+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3198-devloop-headless-cli-mode.md"
+      "completed_at": "2026-09-12T15:33:58+00:00",
+      "file": "sdd/tasks/completed/TASK-3198-devloop-headless-cli-mode.md"
     },
     {
       "id": "TASK-3199",
