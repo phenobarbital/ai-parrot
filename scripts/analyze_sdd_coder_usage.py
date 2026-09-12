@@ -149,17 +149,25 @@ def recommend(df: pd.DataFrame, *, max_tokens: int) -> pd.DataFrame:
 
     # Compute total tokens
     def total_tokens(row):
-        # Use ledger if available, else provider
+        # Use ledger if available, else provider. `row.get(...)` on a pandas
+        # Series returns `NaN` (a float), not `None`, for a missing value in
+        # a mixed-null column — `NaN is not None` is True in Python, so an
+        # `is not None` check here would treat a missing ledger field as
+        # present and return `NaN + NaN = NaN`, which then gets silently
+        # dropped by `.notna()` below instead of falling through to the
+        # provider-total fallback. This is exactly how the `gemini` seat
+        # (provider-totals-only by design, AC-15) would vanish from every
+        # percentile instead of contributing its baseline data.
         ledger_in = row.get("ledger_input_tokens")
         ledger_out = row.get("ledger_output_tokens")
 
-        if ledger_in is not None and ledger_out is not None:
+        if pd.notna(ledger_in) and pd.notna(ledger_out):
             return ledger_in + ledger_out
 
         provider_in = row.get("provider_input_tokens")
         provider_out = row.get("provider_output_tokens")
 
-        if provider_in is not None and provider_out is not None:
+        if pd.notna(provider_in) and pd.notna(provider_out):
             return provider_in + provider_out
 
         return None
@@ -174,7 +182,7 @@ def recommend(df: pd.DataFrame, *, max_tokens: int) -> pd.DataFrame:
         settled = row.get("ledger_settled_estimate_input_tokens")
         actual = row.get("ledger_input_tokens")
 
-        if settled is not None and actual is not None and actual != 0:
+        if pd.notna(settled) and pd.notna(actual) and actual != 0:
             return (settled - actual) / actual
 
         return None
@@ -187,6 +195,16 @@ def recommend(df: pd.DataFrame, *, max_tokens: int) -> pd.DataFrame:
     results = []
 
     for (seat, bucket), group in grouped:
+        # AC-13 gates the recommendation on MERGED attempts specifically
+        # ("withholds a recommendation below 12 merged attempts") — a
+        # failed/fidelity_violation/merge_conflict row still burned tokens
+        # (it stays a valid consumption sample above, per calibration
+        # eligibility separately), but it must not count toward the
+        # merged-sample threshold that makes a ceiling trustworthy.
+        group = group[group["outcome"] == "merged"]
+        if group.empty:
+            continue
+
         # Sample counts
         n_consumption = len(group)
         n_calibration = len(group[group["calibration_eligible"]])

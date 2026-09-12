@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 from pathlib import Path
 
@@ -354,16 +355,26 @@ class TestAttemptIdentity:
         assert result1.tasks[0].attempts[0].attempt_uid != result2.tasks[0].attempts[0].attempt_uid
 
 
+def _read_jsonl_rows(telemetry_dir: Path, feature_id: str) -> list[dict]:
+    """Read every JSONL row the sink wrote for `feature_id`, in file order."""
+    path = telemetry_dir / f"{feature_id}.jsonl"
+    if not path.exists():
+        return []
+    return [json.loads(line) for line in path.read_text("utf-8").splitlines() if line.strip()]
+
+
 class TestOutcomeEvents:
-    async def test_both_attempts_failed(self, git_sandbox_feature, noop_probe):
-        """Test that a task failing on both seats writes two attempt rows and two failed outcome rows."""
+    async def test_both_attempts_failed(self, git_sandbox_feature, noop_probe, tmp_path):
+        """A task failing on both seats writes two attempt rows and two failed outcome rows (AC-19)."""
         worktree, _feature_branch, base_path, _index_path = git_sandbox_feature
+        telemetry_dir = tmp_path / "telemetry"
         builder = fake_builder_factory({"nova": "fail", "codex": "fail", "google-compat": "fail"})
         engine = SddCoderEngine(
             roster=_roster(("a", "nova"), ("b", "codex"), ("c", "google-compat")),
             probe=noop_probe,
             worktree_base_path=str(base_path),
             dispatcher_builder=builder,
+            telemetry_dir=str(telemetry_dir),
         )
         job = await engine.run_chunk("demo", str(worktree), ["TASK-0001"])
         result = await engine.wait(job.job_id, 5)
@@ -376,15 +387,31 @@ class TestOutcomeEvents:
         assert task.attempts[0].attempt == 1
         assert task.attempts[1].attempt == 2
 
-    async def test_failed_then_merged_per_attempt(self, git_sandbox_feature, noop_probe):
-        """Test that attempt 1 failed + attempt 2 merged: each outcome attaches to its own attempt_uid."""
+        rows = _read_jsonl_rows(telemetry_dir, "FEAT-549")
+        attempt_rows = [r for r in rows if r["kind"] == "attempt"]
+        outcome_rows = [r for r in rows if r["kind"] == "outcome"]
+        assert len(attempt_rows) == 2
+        assert len(outcome_rows) == 2
+        assert {r["attempt_uid"] for r in outcome_rows} == {a.attempt_uid for a in task.attempts}
+        assert all(r["outcome"] == "failed" for r in outcome_rows)
+        assert all(r["task_id"] == "TASK-0001" for r in attempt_rows + outcome_rows)
+
+    async def test_failed_then_merged_per_attempt(self, git_sandbox_feature, noop_probe, tmp_path):
+        """attempt 1 failed + attempt 2 merged: EACH attempt gets its own outcome row (AC-19).
+
+        Regression coverage for the bug where `_run_task` only emitted an
+        outcome for `attempts[-1]` — attempt 1's failure never got a row at
+        all when a retry later succeeded.
+        """
         worktree, _feature_branch, base_path, _index_path = git_sandbox_feature
+        telemetry_dir = tmp_path / "telemetry"
         builder = fake_builder_factory({"nova": "fail"})  # First seat fails, others succeed
         engine = SddCoderEngine(
             roster=_roster(("a", "nova"), ("b", "codex"), ("c", "google-compat")),
             probe=noop_probe,
             worktree_base_path=str(base_path),
             dispatcher_builder=builder,
+            telemetry_dir=str(telemetry_dir),
         )
         job = await engine.run_chunk("demo", str(worktree), ["TASK-0001"])
         result = await engine.wait(job.job_id, 5)
@@ -397,25 +424,76 @@ class TestOutcomeEvents:
         assert task.attempts[0].attempt == 1
         assert task.attempts[1].attempt == 2
 
-    async def test_conflict_then_remerge_increments_seq(self, git_sandbox_feature, noop_probe):
-        """Test that a merge_conflict followed by a repaired merge() yields two outcome rows
-        for one attempt_uid with increasing event_seq."""
-        # This test would require simulating a merge conflict and then resolving it
-        # For now, we'll test that the engine properly handles multiple outcomes
+        rows = _read_jsonl_rows(telemetry_dir, "FEAT-549")
+        outcome_rows = [r for r in rows if r["kind"] == "outcome"]
+        assert len(outcome_rows) == 2, "attempt 1's failure must get its own outcome row too"
+        by_uid = {r["attempt_uid"]: r for r in outcome_rows}
+        assert by_uid[task.attempts[0].attempt_uid]["outcome"] == "failed"
+        assert by_uid[task.attempts[1].attempt_uid]["outcome"] == "merged"
+        # Never attributed to both attempts (never averaged/collapsed)
+        assert by_uid[task.attempts[0].attempt_uid]["attempt"] == 1
+        assert by_uid[task.attempts[1].attempt_uid]["attempt"] == 2
+
+    async def test_conflict_then_remerge_increments_seq(self, git_sandbox_feature, noop_probe, tmp_path):
+        """A merge_conflict followed by a repaired merge() yields two outcome rows
+        for ONE attempt_uid with increasing event_seq (AC-19).
+
+        Regression coverage for the bug where `merge()`'s re-emit condition
+        (`result.attempts`) was always false — `_consolidate` never sets
+        `attempts=` on any `TaskResult` it returns — so the whole re-emit
+        path was dead code.
+        """
+        from parrot.flows.dev_loop.worktree_manager import SubWorktreeMergeError
+
         worktree, _feature_branch, base_path, _index_path = git_sandbox_feature
+        telemetry_dir = tmp_path / "telemetry"
         builder = fake_builder_factory({})  # All succeed
         engine = SddCoderEngine(
             roster=_roster(("a", "nova"), ("b", "codex"), ("c", "google-compat")),
             probe=noop_probe,
             worktree_base_path=str(base_path),
             dispatcher_builder=builder,
+            telemetry_dir=str(telemetry_dir),
         )
+
+        # Force the FIRST consolidation (inside run_chunk) to hit the
+        # merge_conflict branch, exactly like a real content conflict would,
+        # without needing to engineer one at the git level.
+        manager = engine._manager_for(
+            await engine._resolve_feature("demo", str(worktree)), "TASK-0001", 1
+        )
+        original_merge_sequential = manager.merge_sequential
+        calls = {"n": 0}
+
+        async def _flaky_merge_sequential(*args, **kwargs):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise SubWorktreeMergeError(
+                    "conflict", branch="feat--TASK-0001-a1", worktree_path="x", stderr="CONFLICT (content): x"
+                )
+            return await original_merge_sequential(*args, **kwargs)
+
+        manager.merge_sequential = _flaky_merge_sequential
+
         job = await engine.run_chunk("demo", str(worktree), ["TASK-0001"])
         result = await engine.wait(job.job_id, 5)
+        task = result.tasks[0]
+        assert task.outcome == "merge_conflict"
+        attempt_uid = task.attempts[0].attempt_uid
 
-        # Test that merge can be called on a completed task
+        # A human resolves the conflict; the coder re-runs merge() (the
+        # SECOND merge_sequential call succeeds via the real implementation).
         merge_result = await engine.merge("demo", str(worktree), "TASK-0001")
         assert merge_result.task_id == "TASK-0001"
+        assert merge_result.outcome == "merged"
+
+        rows = _read_jsonl_rows(telemetry_dir, "FEAT-549")
+        outcome_rows = [r for r in rows if r["kind"] == "outcome" and r["attempt_uid"] == attempt_uid]
+        assert len(outcome_rows) == 2, "one attempt_uid must get TWO outcome rows across conflict + re-merge"
+        outcome_rows.sort(key=lambda r: r["event_seq"])
+        assert [r["event_seq"] for r in outcome_rows] == [1, 2]
+        assert outcome_rows[0]["outcome"] == "merge_conflict"
+        assert outcome_rows[1]["outcome"] == "merged"
 
 
 class TestDurableRootGuard:

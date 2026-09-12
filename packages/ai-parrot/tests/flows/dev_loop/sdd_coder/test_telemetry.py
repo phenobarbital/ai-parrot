@@ -112,8 +112,8 @@ class TestProjection:
             error="SECRET-TOKEN-XYZ: database connection failed",
         )
         # Set extra attributes that build_attempt_row expects
-        # (task_id is NOT a record field — it is supplied by the caller
-        # via the row constructor at the engine layer, not by build_attempt_row).
+        # (task_id is NOT a record field — it is a required build_attempt_row
+        # parameter, supplied by the caller at the engine layer).
         record.attempt_uid = "a" * 32
         record.resolved_model = "anthropic.claude-3-resolved"
         record.turns = 3
@@ -121,25 +121,44 @@ class TestProjection:
         record.error_class = "DatabaseError"
         record.declared_files_known = True
         record.turns_with_unknown_usage = 0
+        # `budget_report` is `BudgetReport.model_dump()` — its field names are
+        # UNPREFIXED (verified: parrot/models/token_budget.py:122-158). Only
+        # this row's OWN fields carry the `ledger_` prefix.
         record.budget_report = {
-            "ledger_input_tokens": 120,
-            "ledger_output_tokens": 60,
-            "ledger_settled_estimate_input_tokens": 10,
-            "ledger_released_estimate_tokens": 5,
-            "ledger_uncertain_tokens": 0,
-            "ledger_overrun_tokens": 0,
-            "ledger_counting_methods": ["exact"],
-            "ledger_accounting_complete": True,
+            "input_tokens": 120,
+            "output_tokens": 60,
+            "settled_estimate_input_tokens": 10,
+            "released_estimate_tokens": 5,
+            "uncertain_tokens": 0,
+            "overrun_tokens": 0,
+            "counting_methods": ["exact"],
+            "accounting_complete": True,
+            "policy": {"enforcement": "observe"},
         }
         record.turn_series = [(1, 50, 25)]
 
-        row = build_attempt_row(record, feature_id="FEAT-554", job_id="job-123", declared_files=5)
+        row = build_attempt_row(
+            record, feature_id="FEAT-554", job_id="job-123", task_id="TASK-1", declared_files=5
+        )
         serialized = row.model_dump_json()
 
         assert "SECRET-TOKEN-XYZ" not in serialized
         assert "database connection failed" not in serialized
         assert row.error_class == "DatabaseError"
         assert row.calibration_eligible is True
+        assert row.task_id == "TASK-1"
+        # The whole point of this projection: both accountings side by side.
+        # Assert the REAL unprefixed->prefixed mapping actually landed —
+        # a prior version of this test used the wrong ("ledger_"-prefixed)
+        # source keys and would have passed even if every ledger_* field on
+        # the row stayed None.
+        assert row.ledger_input_tokens == 120
+        assert row.ledger_output_tokens == 60
+        assert row.ledger_settled_estimate_input_tokens == 10
+        assert row.ledger_released_estimate_tokens == 5
+        assert row.ledger_accounting_complete is True
+        assert row.ledger_counting_methods == ["exact"]
+        assert row.enforcement == "observe"
 
     def test_calibration_eligible_conditions(self):
         record = AttemptRecord(
@@ -151,20 +170,20 @@ class TestProjection:
 
         # Case 1: accounting incomplete
         record.turns_with_unknown_usage = 0
-        record.budget_report = {"ledger_accounting_complete": False}
-        row = build_attempt_row(record, feature_id="FEAT-554", job_id="job-123", declared_files=None)
+        record.budget_report = {"accounting_complete": False}
+        row = build_attempt_row(record, feature_id="FEAT-554", job_id="job-123", task_id="TASK-1", declared_files=None)
         assert row.calibration_eligible is False
 
         # Case 2: turns with unknown usage > 0
         record.turns_with_unknown_usage = 1
-        record.budget_report = {"ledger_accounting_complete": True}
-        row = build_attempt_row(record, feature_id="FEAT-554", job_id="job-123", declared_files=None)
+        record.budget_report = {"accounting_complete": True}
+        row = build_attempt_row(record, feature_id="FEAT-554", job_id="job-123", task_id="TASK-1", declared_files=None)
         assert row.calibration_eligible is False
 
         # Case 3: complete and 0 unknown
         record.turns_with_unknown_usage = 0
-        record.budget_report = {"ledger_accounting_complete": True}
-        row = build_attempt_row(record, feature_id="FEAT-554", job_id="job-123", declared_files=None)
+        record.budget_report = {"accounting_complete": True}
+        row = build_attempt_row(record, feature_id="FEAT-554", job_id="job-123", task_id="TASK-1", declared_files=None)
         assert row.calibration_eligible is True
 
 

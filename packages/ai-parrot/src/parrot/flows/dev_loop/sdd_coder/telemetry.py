@@ -140,9 +140,15 @@ def resolve_durable_root(configured: Optional[str], *, worktree_base_path: str) 
 
 
 def build_attempt_row(
-    record: AttemptRecord, *, feature_id: str, job_id: str, declared_files: Optional[int]
+    record: AttemptRecord, *, feature_id: str, job_id: str, task_id: str, declared_files: Optional[int]
 ) -> AttemptUsageRow:
     """Project an AttemptRecord onto a row by EXPLICIT ALLOWLIST.
+
+    `task_id` is a required parameter, not sourced from `record` — unlike
+    `feature_id`/`job_id`, `AttemptRecord` has no `task_id` field, and
+    `AttemptUsageRow.task_id` is a required (non-defaulted) key field used
+    for per-task correlation in the analysis. The caller (the engine, which
+    always has the owning `PlannedTask` in scope) must supply it explicitly.
 
     Never a `model_dump()`: `AttemptRecord.error` holds the full exception
     string (verified: engine.py:583) and a field added to that model later must
@@ -155,21 +161,32 @@ def build_attempt_row(
     # Safely extract fields from record, handling potential missing attributes
     # (e.g. if record is from an un-migrated AttemptRecord or has new fields)
     attempt_uid = getattr(record, "attempt_uid", "")
-    # If attempt_uid is empty, we can generate or default it, but let's use getattr
-    # with default.
 
-    # Let's read budget_report safely
+    # `budget_report` is `BudgetReport.model_dump()` (set in llm.py's dispatch
+    # `finally` block from `(await scope.ledger.report()).model_dump()`), whose
+    # field names are UNPREFIXED (verified: parrot/models/token_budget.py:
+    # 122-158 — `input_tokens`, `output_tokens`, `settled_estimate_input_tokens`,
+    # `released_estimate_tokens`, `uncertain_tokens`, `overrun_tokens`,
+    # `counting_methods`, `accounting_complete`). There is no "ledger_"-prefixed
+    # key anywhere in that model — only this row's OWN fields carry the
+    # `ledger_` prefix, to distinguish them from the row's `provider_*` fields
+    # (spec §2 Data Models).
     budget_report = getattr(record, "budget_report", {}) or {}
 
-    # Extract ledger_* fields from budget_report
-    ledger_input_tokens = budget_report.get("ledger_input_tokens")
-    ledger_output_tokens = budget_report.get("ledger_output_tokens")
-    ledger_settled_estimate_input_tokens = budget_report.get("ledger_settled_estimate_input_tokens")
-    ledger_released_estimate_tokens = budget_report.get("ledger_released_estimate_tokens")
-    ledger_uncertain_tokens = budget_report.get("ledger_uncertain_tokens")
-    ledger_overrun_tokens = budget_report.get("ledger_overrun_tokens")
-    ledger_counting_methods = budget_report.get("ledger_counting_methods", [])
-    ledger_accounting_complete = budget_report.get("ledger_accounting_complete")
+    ledger_input_tokens = budget_report.get("input_tokens")
+    ledger_output_tokens = budget_report.get("output_tokens")
+    ledger_settled_estimate_input_tokens = budget_report.get("settled_estimate_input_tokens")
+    ledger_released_estimate_tokens = budget_report.get("released_estimate_tokens")
+    ledger_uncertain_tokens = budget_report.get("uncertain_tokens")
+    ledger_overrun_tokens = budget_report.get("overrun_tokens")
+    ledger_counting_methods = list(budget_report.get("counting_methods") or [])
+    ledger_accounting_complete = budget_report.get("accounting_complete")
+    # `enforcement` lives on the nested policy, not on the report itself
+    # (verified: BudgetReport.policy: TokenBudgetPolicy; TokenBudgetPolicy.
+    # enforcement — token_budget.py:31,128-158). Default "observe": every
+    # scope this feature binds is observational by construction.
+    _policy = budget_report.get("policy") or {}
+    ledger_enforcement = _policy.get("enforcement", "observe") if isinstance(_policy, dict) else "observe"
 
     # Extract other fields
     turns_with_unknown_usage = getattr(record, "turns_with_unknown_usage", 0)
@@ -183,7 +200,7 @@ def build_attempt_row(
         attempt_uid=attempt_uid,
         job_id=job_id,
         feature_id=feature_id,
-        task_id=getattr(record, "task_id", ""),  # Fallback if not present
+        task_id=task_id,
         attempt=record.attempt,
         seat_label=record.seat_label,
         backend=record.backend,
@@ -205,7 +222,7 @@ def build_attempt_row(
         ledger_overrun_tokens=ledger_overrun_tokens,
         ledger_counting_methods=ledger_counting_methods,
         ledger_accounting_complete=ledger_accounting_complete,
-        enforcement=getattr(record, "enforcement", "observe"),
+        enforcement=ledger_enforcement,
         turns_with_unknown_usage=turns_with_unknown_usage,
         calibration_eligible=calibration_eligible,
         turn_series=getattr(record, "turn_series", []),

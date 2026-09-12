@@ -116,6 +116,11 @@ class AttemptTelemetryCollector:
         self.started_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
         self.usage: Dict[str, Any] = {}
         self.error = ""
+        self.error_class = ""
+        """Set by `_run_attempt`'s `except` block alongside `.error`. Used by
+        `record()` only as a fallback when `on_attempt_telemetry` never
+        fired (a pre-dispatch failure), since `AttemptTelemetry.error_class`
+        is normally the source of truth."""
         self.telemetry: Optional[Any] = None
         self.declared_files: Optional[int] = None
         self.declared_files_known: bool = False
@@ -158,6 +163,7 @@ class AttemptTelemetryCollector:
         turn_series = []
         budget_report = {}
 
+        usage = dict(self.usage)
         if self.telemetry is not None:
             error_class = self.telemetry.error_class
             resolved_model = self.telemetry.resolved_model
@@ -171,6 +177,27 @@ class AttemptTelemetryCollector:
             if self.telemetry.budget_report:
                 budget_report = self.telemetry.budget_report
 
+            # `self.usage` comes from `apply()`'s `DispatchCompleted` action,
+            # which is only populated on the SUCCESS path — a failed dispatch
+            # burns real tokens but may never produce that action at all
+            # (spec Goal 6: "record a failed attempt's consumption too").
+            # `AttemptTelemetry.provider_input_tokens`/`_output_tokens` are
+            # populated on every exit path (llm.py's dispatch `finally`), so
+            # fill the gap from there rather than losing the data.
+            if usage.get("input_tokens") is None and self.telemetry.provider_input_tokens is not None:
+                usage["input_tokens"] = self.telemetry.provider_input_tokens
+            if usage.get("output_tokens") is None and self.telemetry.provider_output_tokens is not None:
+                usage["output_tokens"] = self.telemetry.provider_output_tokens
+        elif self.error:
+            # `on_attempt_telemetry` never fired: the failure happened before
+            # `dispatch()` was even entered (e.g. `manager.create()` or
+            # `build_dispatcher()` raising in `_run_attempt`'s try block, per
+            # the code-review-fix comment there). No `AttemptTelemetry` was
+            # ever produced, so `terminal` must not default to "completed"
+            # for a genuinely failed attempt.
+            terminal = "failed"
+            error_class = self.error_class
+
         return AttemptRecord(
             attempt=self.attempt,
             seat_label=self.seat.label,
@@ -179,7 +206,7 @@ class AttemptTelemetryCollector:
             started_at=self.started_at,
             ended_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
             duration_s=round(time.monotonic() - self.started, 3),
-            usage=self.usage,
+            usage=usage,
             error=self.error,
             attempt_uid=self.attempt_uid,
             job_id=self.job_id,
@@ -232,13 +259,33 @@ class SddCoderEngine:
         self._managers: Dict[str, SubWorktreeManager] = {}  # key: f"{task_id}.a{attempt}"
         self._job_worktrees: Dict[str, str] = {}  # job_id -> feature worktree, for re-journaling in wait()
         self._opened = False
+        # attempt_uid -> last emitted OutcomeRow.event_seq. Persists across
+        # `_run_task`/`merge()` calls so a re-merge after a manual conflict
+        # repair gets event_seq=2 (not a re-derived duplicate of 1) for the
+        # SAME attempt_uid (spec AC-19).
+        self._event_seq_counters: Dict[str, int] = {}
+        # task_id -> the most recent AttemptRecord used for consolidation.
+        # `merge()` has no `AttemptRecord` of its own (it only resolves a
+        # branch/worktree from `self._managers`), so it reads this to attach
+        # the correct attempt_uid/job_id to its re-merge outcome row. Native
+        # tasks never populate this (they bypass `_run_attempt` entirely, per
+        # spec's non-goal: no telemetry rows for the native/codex seats), so
+        # `merge()` on a native task correctly emits nothing.
+        self._latest_attempt: Dict[str, AttemptRecord] = {}
 
-        # Telemetry setup
+        # Telemetry setup (FEAT-554). `conf.DEV_LOOP_CODER_TELEMETRY` is the
+        # master switch — mirrors the same conf-fallback pattern `redis_url`/
+        # `worktree_base_path` already use above, so the documented env-var
+        # workflow (docs/dev_loop/sdd-coder-orchestrator.md) actually enables
+        # the sink, not just the observational ledger in llm.py. An explicit
+        # `telemetry_dir` constructor kwarg (e.g. from a test, or a future
+        # toolkit YAML override) still wins over conf either way.
         self._sink: Optional[CoderTelemetrySink] = None
-        if telemetry_dir is not None:
+        if telemetry_dir is not None or conf.DEV_LOOP_CODER_TELEMETRY:
             from parrot.flows.dev_loop.sdd_coder.telemetry import CoderTelemetrySink, resolve_durable_root
 
-            telemetry_root = resolve_durable_root(telemetry_dir, worktree_base_path=self._base_path)
+            effective_dir = telemetry_dir if telemetry_dir is not None else (conf.SDD_CODER_TELEMETRY_DIR or None)
+            telemetry_root = resolve_durable_root(effective_dir, worktree_base_path=self._base_path)
             self._sink = CoderTelemetrySink(telemetry_root)
 
     async def open(self) -> None:
@@ -495,32 +542,26 @@ class SddCoderEngine:
         )
         result = await self._consolidate(ctx, manager, planned, branch=branch, path=path)
 
-        # Emit outcome row for the re-merge with incremented event_seq
-        if hasattr(self, "_sink") and self._sink is not None and result.attempts:
-            try:
-                last_attempt = result.attempts[-1]  # The attempt being re-merged
-                # Find the next event sequence number for this attempt
-                # For simplicity, we'll use a fixed sequence number for re-merges
-                # In a real implementation, this would track the sequence per attempt
-                event_seq = len([a for a in result.attempts if a.attempt_uid == last_attempt.attempt_uid]) + 1
-
-                await self._sink.write_outcome(
-                    OutcomeRow(
-                        ts=datetime.now(timezone.utc).isoformat(),
-                        attempt_uid=last_attempt.attempt_uid,
-                        job_id=last_attempt.job_id,
-                        feature_id=ctx.feature_id,
-                        task_id=task_id,
-                        attempt=last_attempt.attempt,
-                        event_seq=event_seq,
-                        outcome=result.outcome,
-                        conflict_file_count=len(result.conflict_files),
-                        unexpected_file_count=len(result.unexpected_files),
-                    )
-                )
-            except Exception:
-                # Sink failure must not change the outcome (AC-11)
-                pass
+        # Emit an outcome row for the re-merge, attributed to the SAME
+        # attempt_uid the original (pre-repair) outcome used. `_consolidate`
+        # returns a bare `TaskResult` with no `attempts` of its own (it only
+        # knows a branch/worktree, not telemetry identity) — `merge()` reads
+        # `self._latest_attempt`, populated by `_run_task` for MCP-seat
+        # tasks. A native task (`prepare_native`, never routed through
+        # `_run_attempt`) has no entry here, so this correctly emits nothing
+        # for it, per the spec's non-goal that native/codex seats produce no
+        # telemetry rows at all.
+        last_attempt = self._latest_attempt.get(task_id)
+        if last_attempt is not None:
+            await self._emit_outcome(
+                ctx,
+                attempt_rec=last_attempt,
+                task_id=task_id,
+                outcome=result.outcome,
+                conflict_file_count=len(result.conflict_files),
+                unexpected_file_count=len(result.unexpected_files),
+            )
+            result = result.model_copy(update={"attempts": [last_attempt]})
 
         return result
 
@@ -697,26 +738,89 @@ class SddCoderEngine:
             # ladder (attempt 2 on a different seat, then "failed") decides what happens next.
             error = f"{type(exc).__name__}: {exc}"
             collector.error = error
+            collector.error_class = type(exc).__name__
             self.logger.warning("attempt %d of %s on %s failed: %s", attempt, task.task_id, seat.label, error)
 
         record = collector.record()
         # Write the measurement BEFORE consolidation: if the server dies between
         # here and the outcome, the attempt row still survives and the analysis
         # reports an incomplete pair rather than losing the sample (spec §2).
-        if hasattr(self, "_sink"):
+        # `self._sink is not None`, NOT `hasattr(self, "_sink")` — the attribute
+        # is always set in __init__ (to None or an instance), so `hasattr`
+        # alone is always True and calling `None.write_attempt(...)` here
+        # would raise AttributeError on every attempt when telemetry is off,
+        # silently swallowed below with no log line (contradicting AC-11's
+        # "logs and drops").
+        if self._sink is not None:
             try:
                 await self._sink.write_attempt(
                     build_attempt_row(
                         record,
                         feature_id=ctx.feature_id,
                         job_id=job_id,
+                        task_id=task.task_id,
                         declared_files=record.declared_files,
                     )
                 )
             except Exception:
-                # Sink failure must not change the outcome (AC-11)
-                pass
+                # Sink failure must not change the outcome (AC-11) — but it
+                # must still be visible, or a silent build_attempt_row/write
+                # regression (e.g. a ValidationError) would go unnoticed forever.
+                self.logger.warning(
+                    "telemetry attempt-row write failed for %s attempt %d", task.task_id, attempt, exc_info=True
+                )
         return record, output, error, manager, branch, path
+
+    async def _emit_outcome(
+        self,
+        ctx: _FeatureCtx,
+        *,
+        attempt_rec: AttemptRecord,
+        task_id: str,
+        outcome: str,
+        conflict_file_count: int = 0,
+        unexpected_file_count: int = 0,
+    ) -> None:
+        """Write one `OutcomeRow` for `attempt_rec`, never raising (AC-11).
+
+        `event_seq` is drawn from `self._event_seq_counters`, keyed on
+        `attempt_rec.attempt_uid` and persisted for the engine's lifetime —
+        NOT re-derived per call — so a `merge()` re-emission for the same
+        attempt_uid after a manual conflict repair correctly gets the NEXT
+        sequence number rather than a recomputed duplicate (spec AC-19: "a
+        merge_conflict followed by a repaired merge() yields two rows for
+        one attempt_uid with increasing event_seq").
+        """
+        if self._sink is None:
+            return
+        seq = self._event_seq_counters.get(attempt_rec.attempt_uid, 0) + 1
+        self._event_seq_counters[attempt_rec.attempt_uid] = seq
+        try:
+            await self._sink.write_outcome(
+                OutcomeRow(
+                    ts=datetime.now(timezone.utc).isoformat(),
+                    attempt_uid=attempt_rec.attempt_uid,
+                    job_id=attempt_rec.job_id,
+                    feature_id=ctx.feature_id,
+                    task_id=task_id,
+                    attempt=attempt_rec.attempt,
+                    event_seq=seq,
+                    outcome=outcome,
+                    conflict_file_count=conflict_file_count,
+                    unexpected_file_count=unexpected_file_count,
+                )
+            )
+        except Exception:
+            # Sink failure must not change the outcome (AC-11) — but it must
+            # still be visible, or a silent regression here would go
+            # unnoticed forever (matching CoderTelemetrySink._append's own
+            # self.logger.warning(...) pattern).
+            self.logger.warning(
+                "telemetry outcome-row write failed for %s attempt_uid=%s",
+                task_id,
+                attempt_rec.attempt_uid,
+                exc_info=True,
+            )
 
     async def _run_task(self, ctx: _FeatureCtx, task: PlannedTask, seat: RosterSeat, *, job_id: str) -> TaskResult:
         """Attempt 1 on the assigned seat; on failure attempt 2 on a different seat in a NEW sub-worktree;
@@ -724,41 +828,31 @@ class SddCoderEngine:
         attempts: List[AttemptRecord] = []
         rec, out, err, manager, branch, path = await self._run_attempt(ctx, task, seat, attempt=1, job_id=job_id)
         attempts.append(rec)
-        # Track event sequence per attempt for outcome rows
-        attempt_event_seqs = {rec.attempt_uid: 1}
 
         if err:
             assert self._assigner is not None
             retry = self._assigner.retry_seat(seat.label, {seat.label})
             if retry is not None:
+                # Emit attempt 1's own outcome NOW, before running the
+                # retry: `_run_task` only returns ONE `TaskResult`, so if
+                # attempt 2 succeeds below, attempt 1's failure would
+                # otherwise never get an outcome row at all — the exact
+                # "failed-then-merged" scenario AC-19 names, "attributed
+                # per attempt, never to both". (If no retry seat is
+                # available, `rec` — still attempt 1 — falls through to the
+                # single emission below instead, avoiding a double-emit.)
+                await self._emit_outcome(ctx, attempt_rec=rec, task_id=task.task_id, outcome="failed")
                 rec, out, err, manager, branch, path = await self._run_attempt(
                     ctx, task, retry, attempt=2, job_id=job_id
                 )
                 attempts.append(rec)
-                attempt_event_seqs[rec.attempt_uid] = 1
 
         if err:
-            # Both attempts failed - emit outcome rows for both
-            if hasattr(self, "_sink") and self._sink is not None:
-                try:
-                    for attempt_rec in attempts:
-                        await self._sink.write_outcome(
-                            OutcomeRow(
-                                ts=datetime.now(timezone.utc).isoformat(),
-                                attempt_uid=attempt_rec.attempt_uid,
-                                job_id=attempt_rec.job_id,
-                                feature_id=ctx.feature_id,
-                                task_id=task.task_id,
-                                attempt=attempt_rec.attempt,
-                                event_seq=attempt_event_seqs[attempt_rec.attempt_uid],
-                                outcome="failed",
-                            )
-                        )
-                        attempt_event_seqs[attempt_rec.attempt_uid] += 1
-                except Exception:
-                    # Sink failure must not change the outcome (AC-11)
-                    pass
-
+            # Both attempts failed, or no retry seat was ever available:
+            # `rec` is the one attempt whose outcome has NOT been emitted
+            # yet (attempt 1 already got its row above if a retry ran).
+            await self._emit_outcome(ctx, attempt_rec=rec, task_id=task.task_id, outcome="failed")
+            self._latest_attempt[task.task_id] = rec
             return TaskResult(
                 task_id=task.task_id,
                 outcome="failed",
@@ -771,27 +865,16 @@ class SddCoderEngine:
         result = await self._consolidate(ctx, manager, task, branch=branch, path=path)
         final_result = result.model_copy(update={"attempts": attempts, "development_output": out})
 
-        # Emit outcome row for the successful attempt
-        if hasattr(self, "_sink") and self._sink is not None and attempts:
-            try:
-                last_attempt = attempts[-1]  # The attempt that produced the result
-                await self._sink.write_outcome(
-                    OutcomeRow(
-                        ts=datetime.now(timezone.utc).isoformat(),
-                        attempt_uid=last_attempt.attempt_uid,
-                        job_id=last_attempt.job_id,
-                        feature_id=ctx.feature_id,
-                        task_id=task.task_id,
-                        attempt=last_attempt.attempt,
-                        event_seq=attempt_event_seqs[last_attempt.attempt_uid],
-                        outcome=result.outcome,
-                        conflict_file_count=len(result.conflict_files),
-                        unexpected_file_count=len(result.unexpected_files),
-                    )
-                )
-            except Exception:
-                # Sink failure must not change the outcome (AC-11)
-                pass
+        last_attempt = attempts[-1]  # the attempt that produced the result
+        self._latest_attempt[task.task_id] = last_attempt
+        await self._emit_outcome(
+            ctx,
+            attempt_rec=last_attempt,
+            task_id=task.task_id,
+            outcome=result.outcome,
+            conflict_file_count=len(result.conflict_files),
+            unexpected_file_count=len(result.unexpected_files),
+        )
 
         return final_result
 
