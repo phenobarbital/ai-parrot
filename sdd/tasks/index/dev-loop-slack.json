@@ -230,7 +230,7 @@
       "feature_id": "FEAT-555",
       "feature": "dev-loop-slack",
       "spec": "sdd/specs/dev-loop-slack.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -240,8 +240,8 @@
       "parallelism_notes": "Extends blocks.py and registration from TASK-3206.",
       "assigned_to": null,
       "started_at": "2026-09-12T15:21:05+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3207-slack-devloop-gates-transport-and-identity.md"
+      "completed_at": "2026-09-12T16:15:39+00:00",
+      "file": "sdd/tasks/completed/TASK-3207-slack-devloop-gates-transport-and-identity.md"
     },
     {
       "id": "TASK-3208",
