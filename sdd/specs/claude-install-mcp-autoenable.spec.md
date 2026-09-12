@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-556
 **Date**: 2026-09-12
 **Author**: Jesus Lara (with Claude Opus 5)
-**Status**: draft
+**Status**: approved
 **Target version**: 1.0.1
 
 ---
@@ -78,6 +78,9 @@ files. Three concrete failures, all observed on 2026-09-12 while migrating the
 - A managed `.mcp.json` toolkit entry works from **any** cwd, worktrees
   included.
 - Authorization is **narrow**: only the servers the installer manages, by name.
+- The same seeding is reachable from `parrot codex install` and
+  `parrot google install` (§3 Module 5) — the seeder is tool-agnostic and the
+  three installers all read the same `load_toolkits_config`.
 - Every step stays **idempotent and ownership-aware**, matching FEAT-485's
   existing contract: never overwrite a foreign entry, never clobber operator
   edits, remove on uninstall exactly what was written.
@@ -88,10 +91,12 @@ files. Three concrete failures, all observed on 2026-09-12 while migrating the
   `enabledMcpjsonServers` alone connects exactly the listed servers and leaves
   unlisted ones pending — and it silently authorizes any future third-party
   entry in `.mcp.json`. It must not be written.
-- Wiring the seeding into `parrot codex install` / `parrot google install`.
-  Their installers read the same `load_toolkits_config` (`codex/installer.py:122,130`;
-  `google/installer.py:114,136`), so M1 is written tool-agnostic for them, but
-  their CLI surface is a follow-up.
+- Approval outside Claude Code. `enabledMcpjsonServers` is a Claude Code
+  concept; `parrot codex install` already writes `approval_policy`-style
+  automatic tool approval into its own managed block, and Antigravity has no
+  equivalent gate, so M3 stays Claude-only.
+- A `parrot claude uninstall --purge-toolkits` flag (§8 Q3): uninstall never
+  deletes seeded sections, because `.parrot/mcp-toolkits.yaml` is operator data.
 - Provisioning credentials. Seats whose keys are absent are dropped by the
   `sdd-coder` roster probe at `coder_plan` time; that stays runtime behavior.
 - Restarting the Claude Code session. MCP config is read at startup, so a
@@ -125,6 +130,14 @@ Three additions, in a fixed order inside `install_claude_integration`:
    `.claude/settings.local.json`, alongside the permission rules already
    written there. Uninstall removes exactly those names; `integration_status`
    reports both the approval state and the seeded YAML.
+
+4. **Share** (change): the same seeding flags are wired into
+   `parrot codex install` and `parrot google install`, and their entry
+   builders are pinned the same way. Google's entries already carry
+   `cwd` (`google/assets.py:90`) but no `--config`; codex's TOML tables carry
+   neither (`codex/assets.py:77-81`), so codex reproduces the Claude bug
+   exactly. Pinning `--config` in `args` fixes all three formats uniformly,
+   independently of whether a host honours `cwd`.
 
 Order matters and is part of the contract: seeding must precede reconciliation
 (so the new sections produce entries), and approval must follow it (so the name
@@ -160,6 +173,11 @@ parrot claude install
 | `integration_status` (`installer.py:769`) | extends | two new keys |
 | `load_toolkits_config` (`toolkit_config.py:105`) | uses | used to validate the seeded file by re-loading it |
 | `parrot claude install` CLI (`claude_code/cli.py:54-86`) | extends | new options, same `--flag/--no-flag` style as `--bookstore` / `--tool-guards` |
+| `codex.assets.toolkit_mcp_block` (`codex/assets.py:60`) | modifies | TOML table gains `--config` in `args`; no `cwd` key is added (format support unverified) |
+| `codex.installer._install_mcp` (`codex/installer.py:111`) | unchanged logic | regenerates its whole managed block from config, so the seeded sections appear with no detection change |
+| `google.assets.toolkit_mcp_entries` (`google/assets.py:81`) | modifies | entry gains `--config`; it already sets `cwd` (`google/assets.py:90`) |
+| `google.installer._is_managed_toolkit_entry` (`google/installer.py:73`) | modifies | accepts the legacy two-arg shape so pre-FEAT-556 entries are adopted |
+| `parrot codex install` / `parrot google install` CLIs (`codex/cli.py`, `google/cli.py`) | extends | same `--toolkits` / `--all-toolkits` options; no approval flag |
 
 ### Data Models
 
@@ -202,7 +220,8 @@ def seed_toolkit_sections(root: Path, names: Sequence[str]) -> SeedResult: ...
 | M1: packaged templates + seeder | yes | `ToolkitTemplate`/`SeedResult` fields fixed above; read via `importlib.resources.files("parrot.mcp") / "_toolkit_templates"` exactly as `conventions._package_rule` does (`conventions.py:48-50`); append-only merge; validate by re-loading with `load_toolkits_config`; package-data entry mirrors `"parrot.flows" = ["_rules_data/*.md"]` (`packages/ai-parrot/pyproject.toml:907`) | — |
 | M2: pinned managed entry shape | yes | entry dict and both accepted arg shapes fixed in the skeleton below | — |
 | M3: approval writer | yes | key name, merge semantics and removal semantics fixed below; `enableAllProjectMcpServers` forbidden | — |
-| M4: CLI + orchestration | no | default for `--toolkits` is §8 Q1 — an operator-facing policy call |
+| M4: CLI + orchestration | yes | §8 Q1 resolved: `--toolkits` defaults to empty (opt-in), `--all-toolkits` seeds everything, `--approve-mcp` defaults on; step order fixed in §2 |
+| M5: codex / google parity | yes | pin via `--config` in `args` for both; google also keeps its existing `cwd`; no approval step for either |
 
 ### Module 1: Packaged toolkit templates + seeder
 - **Path**: `packages/ai-parrot/src/parrot/mcp/toolkit_seed.py` (new),
@@ -359,6 +378,44 @@ def seed_toolkit_sections(root: Path, names: Sequence[str]) -> SeedResult: ...
       """..."""
   ```
 
+### Module 5: codex / google installer parity
+- **Path**: `packages/ai-parrot/src/parrot/knowledge/wiki/codex/assets.py`
+  (modifies `codex/assets.py:60`),
+  `packages/ai-parrot/src/parrot/knowledge/wiki/codex/cli.py` (modifies),
+  `packages/ai-parrot/src/parrot/knowledge/wiki/google/assets.py`
+  (modifies `google/assets.py:81`),
+  `packages/ai-parrot/src/parrot/knowledge/wiki/google/installer.py`
+  (modifies `google/installer.py:73`),
+  `packages/ai-parrot/src/parrot/knowledge/wiki/google/cli.py` (modifies)
+- **Responsibility**: give the other two hosts the same seeding entry point and
+  the same cwd-independent entry shape. No approval step — that is Claude-only.
+- **Depends on**: Module 1 (the seeder), Module 2 (the pinning rule it mirrors)
+- **Interface Skeleton**:
+  ```python
+  # packages/ai-parrot/src/parrot/knowledge/wiki/codex/assets.py  (modifies codex/assets.py:77-81)
+  def toolkit_mcp_block(root: Path, sections: dict[str, ToolkitSection]) -> str:
+      """Build one `[mcp_servers.parrot-<name>]` TOML table per name (FEAT-485, pinned by FEAT-556).
+
+      `args` becomes `["mcp-local", name, "--config", "<root>/.parrot/mcp-toolkits.yaml"]`.
+      No `cwd` key is emitted: `parrot mcp-local` resolves its root from
+      `Path.cwd()` (verified: parrot/mcp/local_cli.py:105), and an absolute
+      `--config` removes that dependency without relying on a TOML key whose
+      support in the codex config schema is unverified.
+      """
+
+  # packages/ai-parrot/src/parrot/knowledge/wiki/google/assets.py  (modifies google/assets.py:87-91)
+  def toolkit_mcp_entries(root: Path, sections: dict[str, ToolkitSection]) -> dict[str, dict[str, Any]]:
+      """Build `parrot-<name>` MCP entries for enabled toolkits (pinned by FEAT-556).
+
+      Adds `--config <root>/.parrot/mcp-toolkits.yaml` to `args`; the existing
+      `cwd` (google/assets.py:90) is kept unchanged.
+      """
+
+  # packages/ai-parrot/src/parrot/knowledge/wiki/google/installer.py  (modifies google/installer.py:73)
+  def _is_managed_toolkit_entry(entry: Any, root: Path, name: str) -> bool:
+      """Accept both the pinned and the pre-FEAT-556 two-arg `args` shapes."""
+  ```
+
 ---
 
 ## 4. Test Specification
@@ -389,6 +446,12 @@ Wiki/installer tests live in the repo-root `tests/knowledge/wiki/` tree (see
 | `test_status_reports_approval_and_seeded_yaml` | M3 | `integration_status` exposes both new keys |
 | `test_install_seeds_before_reconciliation` | M4 | `install_claude_integration(root, toolkits=["sdd-coder"])` yields a `parrot-sdd-coder` entry in one pass |
 | `test_install_no_approve_flag_skips_approval` | M4 | `approve_mcp=False` writes no `enabledMcpjsonServers` |
+| `test_toolkits_default_is_empty` | M4 | no `--toolkits`/`--all-toolkits` → no YAML is created (§8 Q1: opt-in) |
+| `test_all_toolkits_seeds_every_template` | M4 | `--all-toolkits` seeds exactly `available_templates()` |
+| `test_codex_table_pins_config` | M5 | the rendered TOML table's `args` carry `--config <abs>`; output still parses as TOML |
+| `test_google_entry_pins_config_keeps_cwd` | M5 | entry has both `--config` and the pre-existing `cwd` |
+| `test_google_legacy_entry_adopted` | M5 | a two-arg entry is recognized as managed and upgraded, not warned about |
+| `test_codex_google_install_seed_toolkits` | M5 | `--toolkits sdd-coder` on either installer seeds the YAML and emits that server |
 
 ### Integration Tests
 | Test | Description |
@@ -433,6 +496,16 @@ def repo_root(tmp_path):
 - [ ] Templates resolve from the installed wheel
       (`importlib.resources.files("parrot.mcp")`), verified by a test that does
       not read from the repository tree.
+- [ ] `parrot claude install` with no toolkit flag creates no
+      `.parrot/mcp-toolkits.yaml` (§8 Q1: opt-in), and its output names
+      `--toolkits` / `--all-toolkits` with the available template names.
+- [ ] `parrot codex install --toolkits <name>` and
+      `parrot google install --toolkits <name>` seed the same YAML and emit a
+      `parrot-<name>` server in their own config format.
+- [ ] A codex managed table and a Google managed entry both carry an absolute
+      `--config`; the codex `config.toml` still parses after the change.
+- [ ] A pre-FEAT-556 Google entry (`args == ["mcp-local", <name>]`) is adopted
+      and upgraded rather than skipped with a warning.
 - [ ] All tests pass: `pytest tests/knowledge/wiki/ -v` and
       `pytest packages/ai-parrot/tests/knowledge/wiki/ -v`.
 - [ ] `ruff check` and `black --check` clean on the touched files.
@@ -586,21 +659,19 @@ def _package_rule(name: str) -> str:                              # line 48
 
 ## 8. Open Questions
 
-- [ ] **Q1 — What does `--toolkits` default to?** Options: (a) empty, opt-in per
-      repo, `--all-toolkits` to seed everything; (b) seed every shipped
-      template by default. (a) keeps `parrot claude install` from silently
-      registering a model-seat orchestrator (`sdd-coder`) in an unrelated repo;
-      (b) is what "no manual copying" literally asks for. Recommendation: (a)
-      plus a one-line hint naming `--all-toolkits` in the install output —
-      *Owner: Jesus Lara*
-- [ ] **Q2 — Should seeding also be wired into `parrot codex install` and
-      `parrot google install` in this feature, or as a follow-up?** M1 is
-      tool-agnostic either way; only the CLI wiring and their managed-entry
-      shapes would change. Recommendation: follow-up, to keep this spec small —
-      *Owner: Jesus Lara*
-- [ ] **Q3 — Does `uninstall` deserve a `--purge-toolkits` flag** that also
-      removes the sections it seeded (currently: never touch the YAML)?
-      Recommendation: no flag in v1 — *Owner: Jesus Lara*
+- [x] **Q1 — What does `--toolkits` default to?** — *Resolved 2026-09-13*:
+      **(a) empty, opt-in**, with `--all-toolkits` to seed everything and a
+      one-line hint in the install output naming the available templates. This
+      keeps `parrot claude install` from registering a model-seat orchestrator
+      (`sdd-coder`) in an unrelated repo. Landed in §2 Overview step 1, §3
+      Module 4, and the §5 criterion "creates no `.parrot/mcp-toolkits.yaml`".
+- [x] **Q2 — codex / google wiring in this feature or a follow-up?** —
+      *Resolved 2026-09-13*: **in this feature**, as §3 Module 5. The seeder
+      stays tool-agnostic; both hosts get `--toolkits` / `--all-toolkits` and
+      the pinned entry shape. Approval stays Claude-only (§1 Non-Goals).
+- [x] **Q3 — `uninstall --purge-toolkits`?** — *Resolved 2026-09-13*: **no
+      flag in v1**; uninstall never deletes seeded sections. Landed in §1
+      Non-Goals and §5 ("leaves the seeded YAML").
 
 ---
 
@@ -621,12 +692,14 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 
 ## Worktree Strategy
 
-- Default isolation unit: **per-spec** — all four modules touch the same two
-  files (`installer.py`, `assets.py`) plus one new module; sequential tasks in
+- Default isolation unit: **per-spec** — M2/M3/M4 all touch the same two files
+  (`claude_code/installer.py`, `claude_code/assets.py`), so sequential tasks in
   one worktree avoid self-inflicted merge conflicts.
-- M1 (new module + templates + package-data) is the only task that could run in
-  parallel, but it is also the dependency of M2-M4, so the graph is effectively
-  linear: M1 → M2 → M3 → M4.
+- M1 (new module + templates + package-data) is the dependency of everything
+  else, so the Claude chain is linear: M1 → M2 → M3 → M4.
+- M5 touches a disjoint file set (`codex/`, `google/`) and depends only on M1
+  plus M2's decided pinning rule, so it is the one genuinely parallel task once
+  M2 has landed.
 - Cross-feature dependencies: none.
 
 ---
@@ -636,3 +709,4 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-09-12 | Jesus Lara (with Claude Opus 5) | Initial draft — FEAT-556 |
+| 0.2 | 2026-09-13 | Jesus Lara (with Claude Opus 5) | Approved; §8 Q1/Q2/Q3 resolved — opt-in seeding, codex/google parity pulled in as Module 5, no purge flag |
