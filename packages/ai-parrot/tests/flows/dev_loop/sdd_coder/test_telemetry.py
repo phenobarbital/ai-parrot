@@ -71,7 +71,7 @@ class TestDurableRoot:
         wt_base = tmp_path / "wt"
         wt_base.mkdir()
         inside = wt_base / "inside"
-        
+
         # Configured path inside worktree base
         with pytest.raises(ValueError, match="cannot be inside or equal to worktree base path"):
             resolve_durable_root(str(inside), worktree_base_path=str(wt_base))
@@ -89,7 +89,7 @@ class TestDurableRoot:
         # to a path outside the worktree base path.
         wt_base = tmp_path / "wt"
         wt_base.mkdir()
-        
+
         resolved = resolve_durable_root(None, worktree_base_path=str(wt_base))
         assert resolved.is_absolute()
         assert "artifacts/logs/sdd-coder-usage" in str(resolved)
@@ -135,7 +135,7 @@ class TestProjection:
 
         row = build_attempt_row(record, feature_id="FEAT-554", job_id="job-123", declared_files=5)
         serialized = row.model_dump_json()
-        
+
         assert "SECRET-TOKEN-XYZ" not in serialized
         assert "database connection failed" not in serialized
         assert row.error_class == "DatabaseError"
@@ -179,6 +179,7 @@ class TestSink:
         row = _row()
 
         import logging
+
         with caplog.at_level(logging.WARNING):
             for _ in range(10):
                 await sink.write_attempt(row)
@@ -193,8 +194,9 @@ class TestSink:
         sink = CoderTelemetrySink(tmp_path)
         # Create a row that exceeds MAX_LINE_BYTES
         row = _row(turn_series=[(i, 1000, 1000) for i in range(500)])
-        
+
         import logging
+
         with caplog.at_level(logging.WARNING):
             await sink.write_attempt(row)
 

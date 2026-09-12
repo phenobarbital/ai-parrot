@@ -9,6 +9,7 @@ engine. The DISPATCH side (`run_chunk`, `wait`, `_run_attempt`,
 `_research_for`, `_labels_for`, `AttemptTelemetryCollector`) is stubbed here
 and filled in by TASK-3121 — the signatures below are final.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -56,7 +57,9 @@ from parrot.flows.dev_loop.sdd_coder.models import (
 from parrot.flows.dev_loop.sdd_coder.roster import ChunkAssigner, RosterProbe, available_seats
 from parrot.flows.dev_loop.models.telemetry import AttemptTelemetry
 from parrot.flows.dev_loop.sdd_coder.telemetry import (
-    CoderTelemetrySink, OutcomeRow, build_attempt_row,
+    CoderTelemetrySink,
+    OutcomeRow,
+    build_attempt_row,
 )
 
 _ORPHANS_INDEX_NAME = "_orphans.json"
@@ -103,7 +106,9 @@ class AttemptTelemetryCollector:
     a no-op here.
     """
 
-    def __init__(self, *, attempt: int, seat: RosterSeat, attempt_uid: Optional[str] = None, job_id: Optional[str] = None) -> None:
+    def __init__(
+        self, *, attempt: int, seat: RosterSeat, attempt_uid: Optional[str] = None, job_id: Optional[str] = None
+    ) -> None:
         self.attempt, self.seat = attempt, seat
         self.attempt_uid = attempt_uid or ""
         self.job_id = job_id or ""
@@ -152,23 +157,20 @@ class AttemptTelemetryCollector:
         turns_with_unknown_usage = 0
         turn_series = []
         budget_report = {}
-        
+
         if self.telemetry is not None:
             error_class = self.telemetry.error_class
             resolved_model = self.telemetry.resolved_model
             turns = self.telemetry.turns
             terminal = self.telemetry.terminal
             turns_with_unknown_usage = self.telemetry.turns_with_unknown_usage
-            
+
             # Convert turn series to the expected format
-            turn_series = [
-                (tu.round_number, tu.input_tokens, tu.output_tokens) 
-                for tu in self.telemetry.turn_series
-            ]
-            
+            turn_series = [(tu.round_number, tu.input_tokens, tu.output_tokens) for tu in self.telemetry.turn_series]
+
             if self.telemetry.budget_report:
                 budget_report = self.telemetry.budget_report
-        
+
         return AttemptRecord(
             attempt=self.attempt,
             seat_label=self.seat.label,
@@ -222,17 +224,20 @@ class SddCoderEngine:
         self.seats: List[RosterSeat] = []
         self.probe_results: List[SeatProbeResult] = []
         self._assigner: Optional[ChunkAssigner] = None
-        self._plan_cache: Dict[str, CoderPlan] = {}  # feature_id -> most recently computed plan (see plan()/_cached_plan)
+        self._plan_cache: Dict[str, CoderPlan] = (
+            {}
+        )  # feature_id -> most recently computed plan (see plan()/_cached_plan)
         self._jobs = JobTable()
         self._merge_lock = asyncio.Lock()
         self._managers: Dict[str, SubWorktreeManager] = {}  # key: f"{task_id}.a{attempt}"
         self._job_worktrees: Dict[str, str] = {}  # job_id -> feature worktree, for re-journaling in wait()
         self._opened = False
-        
+
         # Telemetry setup
         self._sink: Optional[CoderTelemetrySink] = None
         if telemetry_dir is not None:
             from parrot.flows.dev_loop.sdd_coder.telemetry import CoderTelemetrySink, resolve_durable_root
+
             telemetry_root = resolve_durable_root(telemetry_dir, worktree_base_path=self._base_path)
             self._sink = CoderTelemetrySink(telemetry_root)
 
@@ -300,9 +305,7 @@ class SddCoderEngine:
         found = _match()
         if found is None:
             candidates = sorted({h.get("feature_id", "?") for _, h in headers})
-            raise CoderFailure(
-                "feature_not_found", f"no per-spec index matches {feature!r}", candidates=candidates
-            )
+            raise CoderFailure("feature_not_found", f"no per-spec index matches {feature!r}", candidates=candidates)
 
         index_path, header = found
         rc, out, _err = await _git("rev-parse", "--abbrev-ref", "HEAD", cwd=wt)
@@ -491,16 +494,16 @@ class SddCoderEngine:
             task_id=task_id, task_file=task_ref.file, title=task_ref.title, seat_label="", native=True
         )
         result = await self._consolidate(ctx, manager, planned, branch=branch, path=path)
-        
+
         # Emit outcome row for the re-merge with incremented event_seq
-        if hasattr(self, '_sink') and self._sink is not None and result.attempts:
+        if hasattr(self, "_sink") and self._sink is not None and result.attempts:
             try:
                 last_attempt = result.attempts[-1]  # The attempt being re-merged
                 # Find the next event sequence number for this attempt
                 # For simplicity, we'll use a fixed sequence number for re-merges
                 # In a real implementation, this would track the sequence per attempt
                 event_seq = len([a for a in result.attempts if a.attempt_uid == last_attempt.attempt_uid]) + 1
-                
+
                 await self._sink.write_outcome(
                     OutcomeRow(
                         ts=datetime.now(timezone.utc).isoformat(),
@@ -518,7 +521,7 @@ class SddCoderEngine:
             except Exception:
                 # Sink failure must not change the outcome (AC-11)
                 pass
-        
+
         return result
 
     async def cleanup(self, feature: str, worktree: str, keep_conflicted: bool = True) -> CleanupReport:
@@ -546,7 +549,7 @@ class SddCoderEngine:
         for branch in (b.strip() for b in out.splitlines() if b.strip()):
             if not branch.startswith(prefix):
                 continue
-            suffix = branch[len(prefix):]  # e.g. "TASK-0001-a1"
+            suffix = branch[len(prefix) :]  # e.g. "TASK-0001-a1"
             task_id, sep, _attempt = suffix.rpartition("-a")
             if not sep or not task_id:
                 continue
@@ -628,9 +631,7 @@ class SddCoderEngine:
         # invocation (line 592) and both attempts of a task share `job_id`, so
         # neither can key the telemetry join (spec §10 R3).
         attempt_uid = uuid.uuid4().hex
-        collector = AttemptTelemetryCollector(
-            attempt=attempt, seat=seat, attempt_uid=attempt_uid, job_id=job_id
-        )
+        collector = AttemptTelemetryCollector(attempt=attempt, seat=seat, attempt_uid=attempt_uid, job_id=job_id)
         # Read `task.task_file` and count `parse_task_files(...)` NOW,
         # while the worktree still exists — set declared_files /
         # declared_files_known on the collector. An unreadable file means
@@ -697,16 +698,18 @@ class SddCoderEngine:
             error = f"{type(exc).__name__}: {exc}"
             collector.error = error
             self.logger.warning("attempt %d of %s on %s failed: %s", attempt, task.task_id, seat.label, error)
-        
+
         record = collector.record()
         # Write the measurement BEFORE consolidation: if the server dies between
         # here and the outcome, the attempt row still survives and the analysis
         # reports an incomplete pair rather than losing the sample (spec §2).
-        if hasattr(self, '_sink'):
+        if hasattr(self, "_sink"):
             try:
                 await self._sink.write_attempt(
                     build_attempt_row(
-                        record, feature_id=ctx.feature_id, job_id=job_id,
+                        record,
+                        feature_id=ctx.feature_id,
+                        job_id=job_id,
                         declared_files=record.declared_files,
                     )
                 )
@@ -723,7 +726,7 @@ class SddCoderEngine:
         attempts.append(rec)
         # Track event sequence per attempt for outcome rows
         attempt_event_seqs = {rec.attempt_uid: 1}
-        
+
         if err:
             assert self._assigner is not None
             retry = self._assigner.retry_seat(seat.label, {seat.label})
@@ -733,10 +736,10 @@ class SddCoderEngine:
                 )
                 attempts.append(rec)
                 attempt_event_seqs[rec.attempt_uid] = 1
-        
+
         if err:
             # Both attempts failed - emit outcome rows for both
-            if hasattr(self, '_sink') and self._sink is not None:
+            if hasattr(self, "_sink") and self._sink is not None:
                 try:
                     for attempt_rec in attempts:
                         await self._sink.write_outcome(
@@ -755,7 +758,7 @@ class SddCoderEngine:
                 except Exception:
                     # Sink failure must not change the outcome (AC-11)
                     pass
-            
+
             return TaskResult(
                 task_id=task.task_id,
                 outcome="failed",
@@ -764,12 +767,12 @@ class SddCoderEngine:
                 attempts=attempts,
                 diagnostics="\n".join(a.error for a in attempts if a.error),
             )
-        
+
         result = await self._consolidate(ctx, manager, task, branch=branch, path=path)
         final_result = result.model_copy(update={"attempts": attempts, "development_output": out})
-        
+
         # Emit outcome row for the successful attempt
-        if hasattr(self, '_sink') and self._sink is not None and attempts:
+        if hasattr(self, "_sink") and self._sink is not None and attempts:
             try:
                 last_attempt = attempts[-1]  # The attempt that produced the result
                 await self._sink.write_outcome(
@@ -789,7 +792,7 @@ class SddCoderEngine:
             except Exception:
                 # Sink failure must not change the outcome (AC-11)
                 pass
-        
+
         return final_result
 
     async def run_chunk(self, feature: str, worktree: str, task_ids: List[str]) -> CoderJob:
@@ -806,9 +809,7 @@ class SddCoderEngine:
             if planned is None:
                 raise CoderFailure("task_not_in_plan", f"{task_id} is not in the current chunk plan")
             if planned.native:
-                raise CoderFailure(
-                    "task_not_in_plan", f"{task_id} is a native task — use coder_prepare_native"
-                )
+                raise CoderFailure("task_not_in_plan", f"{task_id} is a native task — use coder_prepare_native")
 
         seats = {s.label: s for s in self.seats}
 

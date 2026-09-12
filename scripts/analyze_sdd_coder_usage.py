@@ -8,6 +8,7 @@ outcome events, and reports consumption percentiles plus estimation error per
 Usage:
     python scripts/analyze_sdd_coder_usage.py --root artifacts/logs/sdd-coder-usage
 """
+
 from __future__ import annotations
 
 import argparse
@@ -82,18 +83,12 @@ def load_rows(root: Path) -> pd.DataFrame:
 
     # Deduplicate outcomes: keep the one with the highest event_seq per attempt_uid
     if not df_outcomes.empty:
-        df_outcomes = df_outcomes.sort_values("event_seq").drop_duplicates(
-            subset=["attempt_uid"], keep="last"
-        )
+        df_outcomes = df_outcomes.sort_values("event_seq").drop_duplicates(subset=["attempt_uid"], keep="last")
 
     # Left join outcomes onto attempts
     merged = df_attempts.copy()
     if not df_outcomes.empty:
-        merged = df_attempts.merge(
-            df_outcomes[["attempt_uid", "outcome"]],
-            on="attempt_uid",
-            how="left"
-        )
+        merged = df_attempts.merge(df_outcomes[["attempt_uid", "outcome"]], on="attempt_uid", how="left")
     else:
         merged["outcome"] = None
 
@@ -150,10 +145,7 @@ def recommend(df: pd.DataFrame, *, max_tokens: int) -> pd.DataFrame:
         return pd.DataFrame()
 
     # Add bucket column
-    df["bucket"] = df.apply(
-        lambda row: bucket_of(row.get("declared_files"), row.get("declared_files_known")),
-        axis=1
-    )
+    df["bucket"] = df.apply(lambda row: bucket_of(row.get("declared_files"), row.get("declared_files_known")), axis=1)
 
     # Compute total tokens
     def total_tokens(row):
@@ -233,19 +225,21 @@ def recommend(df: pd.DataFrame, *, max_tokens: int) -> pd.DataFrame:
             reserve_str = "N/A"
             reliable = f"unreliable ({n_consumption} samples)"
 
-        results.append({
-            "seat": seat,
-            "bucket": bucket,
-            "n_consumption": n_consumption,
-            "n_calibration": n_calibration,
-            "p50": f"{p50:.0f}",
-            "p95": f"{p95:.0f}",
-            "p99": f"{p99:.0f}",
-            "median_error": f"{median_error * 100:+.1f}%",
-            "ceiling": ceiling_str,
-            "final_answer_reserve": reserve_str,
-            "status": reliable,
-        })
+        results.append(
+            {
+                "seat": seat,
+                "bucket": bucket,
+                "n_consumption": n_consumption,
+                "n_calibration": n_calibration,
+                "p50": f"{p50:.0f}",
+                "p95": f"{p95:.0f}",
+                "p99": f"{p99:.0f}",
+                "median_error": f"{median_error * 100:+.1f}%",
+                "ceiling": ceiling_str,
+                "final_answer_reserve": reserve_str,
+                "status": reliable,
+            }
+        )
 
     return pd.DataFrame(results)
 
@@ -254,7 +248,9 @@ def main() -> int:
     """CLI entry point."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, required=True, help="telemetry root directory")
-    parser.add_argument("--max-tokens", type=int, default=8192, help="profile max_tokens, for the reserve recommendation")
+    parser.add_argument(
+        "--max-tokens", type=int, default=8192, help="profile max_tokens, for the reserve recommendation"
+    )
     args = parser.parse_args()
 
     frame = load_rows(args.root)

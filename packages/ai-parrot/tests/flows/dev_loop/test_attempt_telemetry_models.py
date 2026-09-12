@@ -31,14 +31,10 @@ class TestAttemptTelemetry:
     def test_series_cap(self):
         # MAX_TURN_SERIES + 1 turns should raise ValidationError
         with pytest.raises(ValidationError):
-            AttemptTelemetry(
-                turn_series=[TurnUsage(round_number=i) for i in range(1, MAX_TURN_SERIES + 2)]
-            )
+            AttemptTelemetry(turn_series=[TurnUsage(round_number=i) for i in range(1, MAX_TURN_SERIES + 2)])
 
         # MAX_TURN_SERIES turns should validate successfully
-        telemetry = AttemptTelemetry(
-            turn_series=[TurnUsage(round_number=i) for i in range(1, MAX_TURN_SERIES + 1)]
-        )
+        telemetry = AttemptTelemetry(turn_series=[TurnUsage(round_number=i) for i in range(1, MAX_TURN_SERIES + 1)])
         assert len(telemetry.turn_series) == MAX_TURN_SERIES
 
     def test_defaults_are_empty_not_zero(self):

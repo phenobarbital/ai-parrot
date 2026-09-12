@@ -6,6 +6,7 @@ rows written as the attempt's fate is decided. Rows carry counters, ids and
 timings ONLY — never prompt text, tool arguments or exception messages
 (spec §10 R5).
 """
+
 from __future__ import annotations
 
 import logging
@@ -133,9 +134,7 @@ def resolve_durable_root(configured: Optional[str], *, worktree_base_path: str) 
     wt_base = Path(worktree_base_path).resolve()
     # Reject when the resolved path == worktree_base_path or is under it
     if resolved == wt_base or wt_base in resolved.parents:
-        raise ValueError(
-            f"Telemetry root {resolved} cannot be inside or equal to worktree base path {wt_base}"
-        )
+        raise ValueError(f"Telemetry root {resolved} cannot be inside or equal to worktree base path {wt_base}")
 
     return resolved
 
@@ -158,10 +157,10 @@ def build_attempt_row(
     attempt_uid = getattr(record, "attempt_uid", "")
     # If attempt_uid is empty, we can generate or default it, but let's use getattr
     # with default.
-    
+
     # Let's read budget_report safely
     budget_report = getattr(record, "budget_report", {}) or {}
-    
+
     # Extract ledger_* fields from budget_report
     ledger_input_tokens = budget_report.get("ledger_input_tokens")
     ledger_output_tokens = budget_report.get("ledger_output_tokens")
@@ -171,13 +170,13 @@ def build_attempt_row(
     ledger_overrun_tokens = budget_report.get("ledger_overrun_tokens")
     ledger_counting_methods = budget_report.get("ledger_counting_methods", [])
     ledger_accounting_complete = budget_report.get("ledger_accounting_complete")
-    
+
     # Extract other fields
     turns_with_unknown_usage = getattr(record, "turns_with_unknown_usage", 0)
-    
+
     # Compute calibration_eligible
     calibration_eligible = bool(ledger_accounting_complete and turns_with_unknown_usage == 0)
-    
+
     # Build the row
     return AttemptUsageRow(
         ts=record.started_at,
@@ -267,6 +266,7 @@ class CoderTelemetrySink:
                     os.close(fd)
 
             import asyncio
+
             await asyncio.to_thread(_write)
 
         except Exception as e:

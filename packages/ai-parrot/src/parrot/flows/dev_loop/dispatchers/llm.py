@@ -646,6 +646,7 @@ class LLMCodeDispatcher:
                     )
                 finally:
                     import sys
+
                     exc_type, exc_val, exc_tb = sys.exc_info()
                     if exc_val is not None:
                         terminal = "failed"

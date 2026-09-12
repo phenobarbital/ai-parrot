@@ -500,9 +500,7 @@ def test_search_command_prefers_ripgrep(monkeypatch):
         lambda name: f"/usr/bin/{name}",
     )
 
-    command, backend = LLMCodeDispatcher._search_command(
-        query="needle", rel_path="packages", file_glob=None
-    )
+    command, backend = LLMCodeDispatcher._search_command(query="needle", rel_path="packages", file_glob=None)
 
     assert backend == "rg"
     assert command[0] == "rg"
@@ -515,9 +513,7 @@ def test_search_command_falls_back_to_git_grep_without_ripgrep(monkeypatch):
         lambda name: None if name == "rg" else "/usr/bin/git",
     )
 
-    command, backend = LLMCodeDispatcher._search_command(
-        query="-needle", rel_path="packages", file_glob="*.py"
-    )
+    command, backend = LLMCodeDispatcher._search_command(query="-needle", rel_path="packages", file_glob="*.py")
 
     assert backend == "git-grep"
     assert command[:2] == ["git", "grep"]
@@ -813,9 +809,7 @@ async def test_apply_patch_recovers_a_wrong_hunk_line_count(monkeypatch, tmp_pat
         " c = 3\n"
     )
 
-    result = await dispatcher._tool_apply_patch(
-        str(tmp_path), {"patch": patch}, LLMCodeDispatchProfile()
-    )
+    result = await dispatcher._tool_apply_patch(str(tmp_path), {"patch": patch}, LLMCodeDispatchProfile())
 
     assert result["ok"] is True
     assert result["flags"] == ["--recount"]
@@ -839,9 +833,7 @@ async def test_unsalvageable_patch_points_at_edit_file(monkeypatch, tmp_path):
         "+replacement\n"
     )
 
-    result = await dispatcher._tool_apply_patch(
-        str(tmp_path), {"patch": patch}, LLMCodeDispatchProfile()
-    )
+    result = await dispatcher._tool_apply_patch(str(tmp_path), {"patch": patch}, LLMCodeDispatchProfile())
 
     assert result["ok"] is False
     assert "edit_file" in result["hint"]
@@ -1072,9 +1064,7 @@ class _RawToolCall:
 
 def test_parse_tool_arguments_reports_size_not_payload():
     truncated = '{"path": "t.py", "content": "' + "x" * 5000
-    parsed, error = LLMCodeDispatcher._parse_tool_arguments(
-        _RawToolCall("call_1", "write_file", truncated)
-    )
+    parsed, error = LLMCodeDispatcher._parse_tool_arguments(_RawToolCall("call_1", "write_file", truncated))
 
     assert parsed is None
     assert "not valid JSON" in error
@@ -1146,9 +1136,7 @@ async def test_truncated_tool_call_is_fed_back_instead_of_killing_the_dispatch(
     assistant_msg = next(
         m
         for m in second_round
-        if m.get("role") == "assistant"
-        and m.get("tool_calls")
-        and m["tool_calls"][0]["id"] == "call_1"
+        if m.get("role") == "assistant" and m.get("tool_calls") and m["tool_calls"][0]["id"] == "call_1"
     )
     echoed = json.loads(assistant_msg["tool_calls"][0]["function"]["arguments"])
     assert "_discarded" in echoed
@@ -1158,9 +1146,7 @@ def test_write_file_append_mode_extends_the_file(monkeypatch, tmp_path):
     dispatcher = _dispatcher(monkeypatch, _FakeClient([]))
     profile = LLMCodeDispatchProfile()
 
-    first = dispatcher._tool_write_file(
-        str(tmp_path), {"path": "big.py", "content": "a = 1\n"}, profile
-    )
+    first = dispatcher._tool_write_file(str(tmp_path), {"path": "big.py", "content": "a = 1\n"}, profile)
     second = dispatcher._tool_write_file(
         str(tmp_path),
         {"path": "big.py", "content": "b = 2\n", "mode": "append"},
@@ -1269,15 +1255,7 @@ def test_completion_usage_payload_omits_unreported_tokens():
 @pytest.mark.asyncio
 async def test_queued_event_names_the_backend(monkeypatch, brief, _patch_worktree_base):
     """The run bundle's "Dispatcher" column read a key nobody set."""
-    client = _FakeClient(
-        [
-            _Message(
-                content=json.dumps(
-                    {"files_changed": [], "commit_shas": [], "summary": "done"}
-                )
-            )
-        ]
-    )
+    client = _FakeClient([_Message(content=json.dumps({"files_changed": [], "commit_shas": [], "summary": "done"}))])
     dispatcher = _dispatcher(monkeypatch, client)
 
     await dispatcher.dispatch(
@@ -1335,9 +1313,7 @@ async def test_run_command_hint_absent_when_the_failure_is_not_a_glob(monkeypatc
 async def test_run_command_success_never_carries_a_glob_hint(monkeypatch, tmp_path):
     dispatcher = _dispatcher(monkeypatch, _FakeClient([]))
 
-    result = await dispatcher._tool_run_command(
-        str(tmp_path), {"argv": ["pwd"]}, LLMCodeDispatchProfile()
-    )
+    result = await dispatcher._tool_run_command(str(tmp_path), {"argv": ["pwd"]}, LLMCodeDispatchProfile())
 
     assert result["ok"] is True
     assert "hint" not in result
@@ -1357,6 +1333,8 @@ async def test_run_command_success_never_carries_a_glob_hint(monkeypatch, tmp_pa
 )
 def test_unexpanded_glob_tokens_only_flags_path_shaped_wildcards(argv, expected):
     assert LLMCodeDispatcher._unexpanded_glob_tokens(argv) == expected
+
+
 # packages/ai-parrot/tests/flows/dev_loop/test_llm_code_dispatcher.py (append)
 
 
@@ -1553,6 +1531,7 @@ class TestTerminalTelemetry:
 
         host = _NoHookHost()
         from parrot.flows.dev_loop.dispatchers._shared import _SESSION_HOST_CTX
+
         token = _SESSION_HOST_CTX.set(host)  # type: ignore[arg-type]
 
         try:
@@ -1579,12 +1558,8 @@ from parrot.core.exceptions import BudgetRegistryFull  # noqa: E402
 
 class TestObservationalScope:
     def test_policy_shape(self, monkeypatch):
-        monkeypatch.setattr(
-            "parrot.flows.dev_loop.dispatchers.llm.conf.DEV_LOOP_CODER_TELEMETRY", True
-        )
-        monkeypatch.setattr(
-            "parrot.flows.dev_loop.dispatchers.llm.conf.DEV_LOOP_CODER_LEDGER", True
-        )
+        monkeypatch.setattr("parrot.flows.dev_loop.dispatchers.llm.conf.DEV_LOOP_CODER_TELEMETRY", True)
+        monkeypatch.setattr("parrot.flows.dev_loop.dispatchers.llm.conf.DEV_LOOP_CODER_LEDGER", True)
         profile = LLMCodeDispatchProfile(llm="nvidia:minimaxai/minimax-m3", max_turns=4)
         policy = LLMCodeDispatcher._observational_policy(profile)
         assert policy is not None
@@ -1596,9 +1571,7 @@ class TestObservationalScope:
         # Both switches default False/True but the master switch
         # (DEV_LOOP_CODER_TELEMETRY) still gates it — leave it at its
         # fallback (False) and assert no policy is built.
-        monkeypatch.setattr(
-            "parrot.flows.dev_loop.dispatchers.llm.conf.DEV_LOOP_CODER_TELEMETRY", False
-        )
+        monkeypatch.setattr("parrot.flows.dev_loop.dispatchers.llm.conf.DEV_LOOP_CODER_TELEMETRY", False)
         profile = LLMCodeDispatchProfile(llm="nvidia:minimaxai/minimax-m3", max_turns=4)
         assert LLMCodeDispatcher._observational_policy(profile) is None
 
@@ -1647,12 +1620,8 @@ class TestObservationalScope:
         # AC-2: every budgeted request in one attempt shares the SAME
         # ledger operation_id, across every turn (including the implicit
         # coverage of the salvage call — the scope wraps the whole loop).
-        monkeypatch.setattr(
-            "parrot.flows.dev_loop.dispatchers.llm.conf.DEV_LOOP_CODER_TELEMETRY", True
-        )
-        monkeypatch.setattr(
-            "parrot.flows.dev_loop.dispatchers.llm.conf.DEV_LOOP_CODER_LEDGER", True
-        )
+        monkeypatch.setattr("parrot.flows.dev_loop.dispatchers.llm.conf.DEV_LOOP_CODER_TELEMETRY", True)
+        monkeypatch.setattr("parrot.flows.dev_loop.dispatchers.llm.conf.DEV_LOOP_CODER_LEDGER", True)
         (_patch_worktree_base / "app.py").write_text("print('hello')\n", encoding="utf-8")
 
         seen_operation_ids: set[str] = set()
@@ -1710,12 +1679,8 @@ class TestObservationalScope:
         # AC-11: a full registry must never fail the dispatch — it falls
         # through to the unscoped path with budget_report=None and exactly
         # one WARNING.
-        monkeypatch.setattr(
-            "parrot.flows.dev_loop.dispatchers.llm.conf.DEV_LOOP_CODER_TELEMETRY", True
-        )
-        monkeypatch.setattr(
-            "parrot.flows.dev_loop.dispatchers.llm.conf.DEV_LOOP_CODER_LEDGER", True
-        )
+        monkeypatch.setattr("parrot.flows.dev_loop.dispatchers.llm.conf.DEV_LOOP_CODER_TELEMETRY", True)
+        monkeypatch.setattr("parrot.flows.dev_loop.dispatchers.llm.conf.DEV_LOOP_CODER_LEDGER", True)
         (_patch_worktree_base / "app.py").write_text("print('hello')\n", encoding="utf-8")
 
         class _FailingRegistry:

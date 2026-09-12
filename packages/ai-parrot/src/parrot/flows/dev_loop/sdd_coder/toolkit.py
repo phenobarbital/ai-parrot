@@ -1,4 +1,5 @@
 """`parrot mcp-local sdd-coder` — MCP surface of the sdd_coder kernel (FEAT-549, spec §3 M5)."""
+
 from __future__ import annotations
 
 import logging

@@ -359,7 +359,9 @@ class OpenAIBaseClient(AbstractClient):
         view = (
             self.client
             if scope.policy.enforcement == "observe"
-            else self.client.with_options(max_retries=0)  # request-local; shares transport, never closed here (spec §2.4)
+            else self.client.with_options(
+                max_retries=0
+            )  # request-local; shares transport, never closed here (spec §2.4)
         )
         # `.parse()` (installed openai SDK 3.3.1) has no `stream` parameter at
         # all — a streaming call (e.g. `_finalize_budgeted_chat(..., stream=True)`,

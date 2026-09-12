@@ -1,4 +1,5 @@
 """Pydantic payloads of the sdd_coder kernel (spec §2 "Data Models"). No logic, no I/O."""
+
 from __future__ import annotations
 
 import os
@@ -11,12 +12,27 @@ from parrot.flows.dev_loop.models import DevAgentBackend, DevelopmentOutput  # v
 
 SeatKind = Literal["mcp", "native"]
 TaskOutcome = Literal["queued", "running", "merged", "merge_conflict", "failed", "fidelity_violation", "retry_native"]
-ERROR_CODES: frozenset[str] = frozenset({
-    "feature_not_found", "index_unreadable", "dependency_cycle", "worktree_outside_base", "task_not_pending",
-    "task_not_in_plan", "task_already_running", "seat_unavailable", "roster_empty", "job_not_found",
-    "branch_not_found", "dirty_feature_worktree", "dirty_task_worktree", "merge_conflict", "fidelity_violation",
-    "invalid_arguments", "internal_error",
-})
+ERROR_CODES: frozenset[str] = frozenset(
+    {
+        "feature_not_found",
+        "index_unreadable",
+        "dependency_cycle",
+        "worktree_outside_base",
+        "task_not_pending",
+        "task_not_in_plan",
+        "task_already_running",
+        "seat_unavailable",
+        "roster_empty",
+        "job_not_found",
+        "branch_not_found",
+        "dirty_feature_worktree",
+        "dirty_task_worktree",
+        "merge_conflict",
+        "fidelity_violation",
+        "invalid_arguments",
+        "internal_error",
+    }
+)
 _TASK_ID_RE = re.compile(r"^TASK-\d{1,5}$")
 
 

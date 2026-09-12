@@ -6,6 +6,7 @@ only seven whitelisted scalars into the closed `DispatchCompleted` model and
 swallows validation failures by design (`dispatchers/_shared.py:118-124`), so
 extra keys would be dropped in silence (spec §10 R3).
 """
+
 from __future__ import annotations
 
 from typing import Any, Dict, List, Literal, Optional

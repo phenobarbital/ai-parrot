@@ -1,4 +1,5 @@
 """Fake-dispatcher tests for SddCoderEngine's dispatch/retry side (TASK-3121)."""
+
 from __future__ import annotations
 
 import asyncio
@@ -243,7 +244,9 @@ async def test_plan_then_dispatch_uses_consistent_seat_assignment(git_sandbox_fe
             RosterSeat(label="b", backend="codex"),
         ]
     )
-    engine = SddCoderEngine(roster=roster, probe=noop_probe, worktree_base_path=str(base_path), dispatcher_builder=builder)
+    engine = SddCoderEngine(
+        roster=roster, probe=noop_probe, worktree_base_path=str(base_path), dispatcher_builder=builder
+    )
 
     plan = await engine.plan("demo", str(worktree))
     assert len(plan.chunks) == 1
@@ -325,7 +328,7 @@ async def test_telemetry_collector_captures_usage():
 
 class TestAttemptIdentity:
     async def test_uid_unique_across_jobs(self, git_sandbox_feature, noop_probe):
-        """Test that two _run_task invocations for the same task in different jobs 
+        """Test that two _run_task invocations for the same task in different jobs
         both produce attempt=1 and DIFFERENT attempt_uids."""
         worktree, _feature_branch, base_path, _index_path = git_sandbox_feature
         builder = fake_builder_factory({})
@@ -335,18 +338,18 @@ class TestAttemptIdentity:
             worktree_base_path=str(base_path),
             dispatcher_builder=builder,
         )
-        
+
         # Run the same task twice with different job IDs
         job1 = await engine.run_chunk("demo", str(worktree), ["TASK-0001"])
         result1 = await engine.wait(job1.job_id, 5)
-        
+
         job2 = await engine.run_chunk("demo", str(worktree), ["TASK-0001"])
         result2 = await engine.wait(job2.job_id, 5)
-        
+
         # Both should have attempt=1
         assert result1.tasks[0].attempts[0].attempt == 1
         assert result2.tasks[0].attempts[0].attempt == 1
-        
+
         # But different attempt_uids
         assert result1.tasks[0].attempts[0].attempt_uid != result2.tasks[0].attempts[0].attempt_uid
 
@@ -395,7 +398,7 @@ class TestOutcomeEvents:
         assert task.attempts[1].attempt == 2
 
     async def test_conflict_then_remerge_increments_seq(self, git_sandbox_feature, noop_probe):
-        """Test that a merge_conflict followed by a repaired merge() yields two outcome rows 
+        """Test that a merge_conflict followed by a repaired merge() yields two outcome rows
         for one attempt_uid with increasing event_seq."""
         # This test would require simulating a merge conflict and then resolving it
         # For now, we'll test that the engine properly handles multiple outcomes
@@ -409,7 +412,7 @@ class TestOutcomeEvents:
         )
         job = await engine.run_chunk("demo", str(worktree), ["TASK-0001"])
         result = await engine.wait(job.job_id, 5)
-        
+
         # Test that merge can be called on a completed task
         merge_result = await engine.merge("demo", str(worktree), "TASK-0001")
         assert merge_result.task_id == "TASK-0001"
@@ -420,14 +423,14 @@ class TestDurableRootGuard:
         """Test that a telemetry_dir under worktree_base_path raises at engine construction."""
         from parrot.flows.dev_loop.sdd_coder.engine import SddCoderEngine
         from parrot.flows.dev_loop.sdd_coder.models import RosterConfig, RosterSeat
-        
+
         worktree_base = tmp_path / "worktrees"
         worktree_base.mkdir()
         telemetry_dir = worktree_base / "telemetry"
         telemetry_dir.mkdir()
-        
+
         roster = RosterConfig(seats=[RosterSeat(label="a", backend="nova")])
-        
+
         # This should raise a ValueError
         with pytest.raises(ValueError, match="cannot be inside or equal to worktree base path"):
             SddCoderEngine(

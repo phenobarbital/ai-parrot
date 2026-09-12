@@ -1,4 +1,5 @@
 """Unit tests for sdd-coder usage analysis (FEAT-554)."""
+
 from __future__ import annotations
 
 import json
@@ -214,27 +215,29 @@ class TestRecommendation:
 
         # Create 11 attempt rows with varying token counts
         for i in range(11):
-            rows.append({
-                "kind": "attempt",
-                "attempt_uid": f"uid-{i:03d}",
-                "job_id": "job-1",
-                "feature_id": "feat-1",
-                "task_id": "task-1",
-                "attempt": 1,
-                "seat_label": "seat-a",
-                "backend": "bedrock",
-                "configured_model": "claude-3-haiku",
-                "resolved_model": "claude-3-haiku",
-                "duration_s": 10.0,
-                "turns": 5,
-                "terminal": "completed",
-                "error_class": "",
-                "declared_files": 2,
-                "declared_files_known": True,
-                "ledger_input_tokens": 100 + i * 10,
-                "ledger_output_tokens": 50,
-                "calibration_eligible": True,
-            })
+            rows.append(
+                {
+                    "kind": "attempt",
+                    "attempt_uid": f"uid-{i:03d}",
+                    "job_id": "job-1",
+                    "feature_id": "feat-1",
+                    "task_id": "task-1",
+                    "attempt": 1,
+                    "seat_label": "seat-a",
+                    "backend": "bedrock",
+                    "configured_model": "claude-3-haiku",
+                    "resolved_model": "claude-3-haiku",
+                    "duration_s": 10.0,
+                    "turns": 5,
+                    "terminal": "completed",
+                    "error_class": "",
+                    "declared_files": 2,
+                    "declared_files_known": True,
+                    "ledger_input_tokens": 100 + i * 10,
+                    "ledger_output_tokens": 50,
+                    "calibration_eligible": True,
+                }
+            )
 
         root = _write(tmp_path, rows)
         df = load_rows(root)
@@ -251,27 +254,29 @@ class TestRecommendation:
         rows = []
 
         for i in range(12):
-            rows.append({
-                "kind": "attempt",
-                "attempt_uid": f"uid-{i:03d}",
-                "job_id": "job-1",
-                "feature_id": "feat-1",
-                "task_id": "task-1",
-                "attempt": 1,
-                "seat_label": "seat-a",
-                "backend": "bedrock",
-                "configured_model": "claude-3-haiku",
-                "resolved_model": "claude-3-haiku",
-                "duration_s": 10.0,
-                "turns": 5,
-                "terminal": "completed",
-                "error_class": "",
-                "declared_files": 2,
-                "declared_files_known": True,
-                "ledger_input_tokens": 100 + i * 10,
-                "ledger_output_tokens": 50,
-                "calibration_eligible": True,
-            })
+            rows.append(
+                {
+                    "kind": "attempt",
+                    "attempt_uid": f"uid-{i:03d}",
+                    "job_id": "job-1",
+                    "feature_id": "feat-1",
+                    "task_id": "task-1",
+                    "attempt": 1,
+                    "seat_label": "seat-a",
+                    "backend": "bedrock",
+                    "configured_model": "claude-3-haiku",
+                    "resolved_model": "claude-3-haiku",
+                    "duration_s": 10.0,
+                    "turns": 5,
+                    "terminal": "completed",
+                    "error_class": "",
+                    "declared_files": 2,
+                    "declared_files_known": True,
+                    "ledger_input_tokens": 100 + i * 10,
+                    "ledger_output_tokens": 50,
+                    "calibration_eligible": True,
+                }
+            )
 
         root = _write(tmp_path, rows)
         df = load_rows(root)
@@ -289,51 +294,55 @@ class TestRecommendation:
 
         # First 12 rows: calibration_eligible=True
         for i in range(12):
-            rows.append({
-                "kind": "attempt",
-                "attempt_uid": f"uid-{i:03d}",
-                "job_id": "job-1",
-                "feature_id": "feat-1",
-                "task_id": "task-1",
-                "attempt": 1,
-                "seat_label": "seat-a",
-                "backend": "bedrock",
-                "configured_model": "claude-3-haiku",
-                "resolved_model": "claude-3-haiku",
-                "duration_s": 10.0,
-                "turns": 5,
-                "terminal": "completed",
-                "error_class": "",
-                "declared_files": 2,
-                "declared_files_known": True,
-                "ledger_input_tokens": 100,
-                "ledger_output_tokens": 50,
-                "calibration_eligible": True,
-            })
+            rows.append(
+                {
+                    "kind": "attempt",
+                    "attempt_uid": f"uid-{i:03d}",
+                    "job_id": "job-1",
+                    "feature_id": "feat-1",
+                    "task_id": "task-1",
+                    "attempt": 1,
+                    "seat_label": "seat-a",
+                    "backend": "bedrock",
+                    "configured_model": "claude-3-haiku",
+                    "resolved_model": "claude-3-haiku",
+                    "duration_s": 10.0,
+                    "turns": 5,
+                    "terminal": "completed",
+                    "error_class": "",
+                    "declared_files": 2,
+                    "declared_files_known": True,
+                    "ledger_input_tokens": 100,
+                    "ledger_output_tokens": 50,
+                    "calibration_eligible": True,
+                }
+            )
 
         # Add 3 rows with calibration_eligible=False
         for i in range(12, 15):
-            rows.append({
-                "kind": "attempt",
-                "attempt_uid": f"uid-{i:03d}",
-                "job_id": "job-1",
-                "feature_id": "feat-1",
-                "task_id": "task-1",
-                "attempt": 1,
-                "seat_label": "seat-a",
-                "backend": "bedrock",
-                "configured_model": "claude-3-haiku",
-                "resolved_model": "claude-3-haiku",
-                "duration_s": 10.0,
-                "turns": 5,
-                "terminal": "completed",
-                "error_class": "",
-                "declared_files": 2,
-                "declared_files_known": True,
-                "ledger_input_tokens": 100,
-                "ledger_output_tokens": 50,
-                "calibration_eligible": False,
-            })
+            rows.append(
+                {
+                    "kind": "attempt",
+                    "attempt_uid": f"uid-{i:03d}",
+                    "job_id": "job-1",
+                    "feature_id": "feat-1",
+                    "task_id": "task-1",
+                    "attempt": 1,
+                    "seat_label": "seat-a",
+                    "backend": "bedrock",
+                    "configured_model": "claude-3-haiku",
+                    "resolved_model": "claude-3-haiku",
+                    "duration_s": 10.0,
+                    "turns": 5,
+                    "terminal": "completed",
+                    "error_class": "",
+                    "declared_files": 2,
+                    "declared_files_known": True,
+                    "ledger_input_tokens": 100,
+                    "ledger_output_tokens": 50,
+                    "calibration_eligible": False,
+                }
+            )
 
         root = _write(tmp_path, rows)
         df = load_rows(root)
@@ -350,27 +359,29 @@ class TestRecommendation:
         rows = []
 
         for i in range(12):
-            rows.append({
-                "kind": "attempt",
-                "attempt_uid": f"uid-{i:03d}",
-                "job_id": "job-1",
-                "feature_id": "feat-1",
-                "task_id": "task-1",
-                "attempt": 1,
-                "seat_label": "seat-a",
-                "backend": "bedrock",
-                "configured_model": "claude-3-haiku",
-                "resolved_model": "claude-3-haiku",
-                "duration_s": 10.0,
-                "turns": 5,
-                "terminal": "completed",
-                "error_class": "",
-                "declared_files": 2,
-                "declared_files_known": False,  # Not known!
-                "ledger_input_tokens": 100,
-                "ledger_output_tokens": 50,
-                "calibration_eligible": True,
-            })
+            rows.append(
+                {
+                    "kind": "attempt",
+                    "attempt_uid": f"uid-{i:03d}",
+                    "job_id": "job-1",
+                    "feature_id": "feat-1",
+                    "task_id": "task-1",
+                    "attempt": 1,
+                    "seat_label": "seat-a",
+                    "backend": "bedrock",
+                    "configured_model": "claude-3-haiku",
+                    "resolved_model": "claude-3-haiku",
+                    "duration_s": 10.0,
+                    "turns": 5,
+                    "terminal": "completed",
+                    "error_class": "",
+                    "declared_files": 2,
+                    "declared_files_known": False,  # Not known!
+                    "ledger_input_tokens": 100,
+                    "ledger_output_tokens": 50,
+                    "calibration_eligible": True,
+                }
+            )
 
         root = _write(tmp_path, rows)
         df = load_rows(root)
@@ -386,27 +397,29 @@ class TestRecommendation:
         rows = []
 
         for i in range(12):
-            rows.append({
-                "kind": "attempt",
-                "attempt_uid": f"uid-{i:03d}",
-                "job_id": "job-1",
-                "feature_id": "feat-1",
-                "task_id": "task-1",
-                "attempt": 1,
-                "seat_label": "seat-a",
-                "backend": "bedrock",
-                "configured_model": "claude-3-haiku",
-                "resolved_model": "claude-3-haiku",
-                "duration_s": 10.0,
-                "turns": 5,
-                "terminal": "completed",
-                "error_class": "",
-                "declared_files": 2,
-                "declared_files_known": True,
-                "ledger_input_tokens": 100,
-                "ledger_output_tokens": 50,
-                "calibration_eligible": True,
-            })
+            rows.append(
+                {
+                    "kind": "attempt",
+                    "attempt_uid": f"uid-{i:03d}",
+                    "job_id": "job-1",
+                    "feature_id": "feat-1",
+                    "task_id": "task-1",
+                    "attempt": 1,
+                    "seat_label": "seat-a",
+                    "backend": "bedrock",
+                    "configured_model": "claude-3-haiku",
+                    "resolved_model": "claude-3-haiku",
+                    "duration_s": 10.0,
+                    "turns": 5,
+                    "terminal": "completed",
+                    "error_class": "",
+                    "declared_files": 2,
+                    "declared_files_known": True,
+                    "ledger_input_tokens": 100,
+                    "ledger_output_tokens": 50,
+                    "calibration_eligible": True,
+                }
+            )
 
         root = _write(tmp_path, rows)
         df = load_rows(root)

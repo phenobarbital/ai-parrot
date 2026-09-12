@@ -65,9 +65,7 @@ class TestAttemptRecordTelemetryFields:
         assert rec.terminal == "completed"
 
     def test_turn_series_accepts_unknown_usage(self):
-        rec = AttemptRecord(
-            attempt=1, seat_label="qwen", started_at="t", turn_series=[(7, None, None)]
-        )
+        rec = AttemptRecord(attempt=1, seat_label="qwen", started_at="t", turn_series=[(7, None, None)])
         assert rec.turn_series[0] == (7, None, None)
 
     def test_nested_in_task_result(self):
