@@ -70,7 +70,7 @@
       "feature_id": "FEAT-555",
       "feature": "dev-loop-slack",
       "spec": "sdd/specs/dev-loop-slack.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "low",
       "effort": "M",
       "depends_on": [
@@ -80,8 +80,8 @@
       "parallelism_notes": "Depends on the builder from TASK-3197; optional drift-prevention refactor.",
       "assigned_to": null,
       "started_at": "2026-09-12T15:21:05+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3199-dev-console-delegates-to-runtime-builder.md"
+      "completed_at": "2026-09-12T15:40:26+00:00",
+      "file": "sdd/tasks/completed/TASK-3199-dev-console-delegates-to-runtime-builder.md"
     },
     {
       "id": "TASK-3200",
