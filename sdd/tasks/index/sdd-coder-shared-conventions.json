@@ -130,7 +130,7 @@
       "feature_id": "FEAT-553",
       "feature": "sdd-coder-shared-conventions",
       "spec": "sdd/specs/sdd-coder-shared-conventions.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -140,8 +140,8 @@
       "parallelism_notes": "Imports check_banned_imports from TASK-3182; owns every docs/ and sdd-worker.md edit of the feature.",
       "assigned_to": null,
       "started_at": "2026-09-12T00:21:57+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3183-engine-banned-import-gates.md"
+      "completed_at": "2026-09-12T00:44:44+00:00",
+      "file": "sdd/tasks/completed/TASK-3183-engine-banned-import-gates.md"
     },
     {
       "id": "TASK-3184",
