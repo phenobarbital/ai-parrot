@@ -827,6 +827,23 @@ FLOW_BOT_JIRA_ACCOUNT_ID: str = config.get("FLOW_BOT_JIRA_ACCOUNT_ID", fallback=
 # an absolute value is honored verbatim (R1 backward-compat).
 _wt: str = config.get("WORKTREE_BASE_PATH", fallback=str(BASE_DIR / ".claude/worktrees"))
 WORKTREE_BASE_PATH: str = os.path.normpath(_wt) if os.path.isabs(_wt) else os.path.normpath(str(BASE_DIR / _wt))
+# FEAT-554: sdd-coder token telemetry. Master switch: False means no budget
+# scope is bound, no rows are written and no new payload is produced.
+DEV_LOOP_CODER_TELEMETRY: bool = config.getboolean("DEV_LOOP_CODER_TELEMETRY", fallback=False)
+# With telemetry on: bind the OBSERVATIONAL ledger (True) or record provider
+# totals only (False). There is no ceiling setting — an observational ledger
+# admits everything, so a number would be decoration. When sizing a REAL
+# ceiling later, note that a coding attempt's cumulative question total is
+# measured in MILLIONS (~4.7M for 60 turns; see
+# artifacts/logs/sdd-coder-count-input-overhead-20260912.md), NOT in
+# context-window units.
+DEV_LOOP_CODER_LEDGER: bool = config.getboolean("DEV_LOOP_CODER_LEDGER", fallback=True)
+# Absolute durable directory for the telemetry dataset, or empty to derive the
+# git main checkout at startup. Deliberately NOT defaulted through BASE_DIR:
+# navconfig resolves a virtualenv's parent or an arbitrary SITE_ROOT/BASE_DIR
+# override (navconfig/project.py:129-161), so a feature checkout with its own
+# virtualenv would put the dataset inside the worktree /sdd-done deletes.
+SDD_CODER_TELEMETRY_DIR: str = config.get("SDD_CODER_TELEMETRY_DIR", fallback="")
 # Redis stream retention for both flow and dispatch streams (default 7 days).
 FLOW_STREAM_TTL_SECONDS: int = config.getint("FLOW_STREAM_TTL_SECONDS", fallback=604800)
 # Allow-list of command heads acceptable in ShellCriterion.command. The

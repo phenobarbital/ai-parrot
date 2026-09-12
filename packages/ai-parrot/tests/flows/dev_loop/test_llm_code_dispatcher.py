@@ -1571,3 +1571,192 @@ class TestTerminalTelemetry:
             _SESSION_HOST_CTX.reset(token)
 
         assert result.summary == "done"
+
+
+from parrot.clients.budget_scope import current_budget_scope  # noqa: E402
+from parrot.core.exceptions import BudgetRegistryFull  # noqa: E402
+
+
+class TestObservationalScope:
+    def test_policy_shape(self, monkeypatch):
+        monkeypatch.setattr(
+            "parrot.flows.dev_loop.dispatchers.llm.conf.DEV_LOOP_CODER_TELEMETRY", True
+        )
+        monkeypatch.setattr(
+            "parrot.flows.dev_loop.dispatchers.llm.conf.DEV_LOOP_CODER_LEDGER", True
+        )
+        profile = LLMCodeDispatchProfile(llm="nvidia:minimaxai/minimax-m3", max_turns=4)
+        policy = LLMCodeDispatcher._observational_policy(profile)
+        assert policy is not None
+        assert policy.enforcement == "observe"
+        assert policy.budget_mode == "estimated"
+        assert policy.final_answer_reserve == 0
+
+    def test_policy_shape_disabled_by_default(self, monkeypatch):
+        # Both switches default False/True but the master switch
+        # (DEV_LOOP_CODER_TELEMETRY) still gates it — leave it at its
+        # fallback (False) and assert no policy is built.
+        monkeypatch.setattr(
+            "parrot.flows.dev_loop.dispatchers.llm.conf.DEV_LOOP_CODER_TELEMETRY", False
+        )
+        profile = LLMCodeDispatchProfile(llm="nvidia:minimaxai/minimax-m3", max_turns=4)
+        assert LLMCodeDispatcher._observational_policy(profile) is None
+
+    @pytest.mark.asyncio
+    async def test_disabled_binds_no_scope(self, monkeypatch, brief, _patch_worktree_base):
+        # DEV_LOOP_CODER_TELEMETRY defaults to False — AC-1: no scope, no
+        # BudgetScope construction, current_budget_scope() stays None.
+        (_patch_worktree_base / "app.py").write_text("print('hello')\n", encoding="utf-8")
+
+        class _ScopeCheckingClient(_FakeClient):
+            async def _chat_completion(self, **kwargs: Any) -> _Response:
+                assert current_budget_scope() is None
+                return await super()._chat_completion(**kwargs)
+
+        client = _ScopeCheckingClient(
+            [
+                _Message(
+                    tool_calls=[
+                        _ToolCall(
+                            "call_1",
+                            "final_output",
+                            {
+                                "files_changed": ["app.py"],
+                                "commit_shas": ["abc1234"],
+                                "summary": "done",
+                            },
+                        )
+                    ]
+                ),
+            ]
+        )
+        dispatcher = _dispatcher(monkeypatch, client)
+
+        result = await dispatcher.dispatch(
+            brief=brief,
+            profile=LLMCodeDispatchProfile(llm="nvidia:minimaxai/minimax-m3", max_turns=4),
+            output_model=DevelopmentOutput,
+            run_id="r1",
+            node_id="development",
+            cwd=str(_patch_worktree_base),
+        )
+        assert result.summary == "done"
+
+    @pytest.mark.asyncio
+    async def test_one_operation_id_across_turns(self, monkeypatch, brief, _patch_worktree_base):
+        # AC-2: every budgeted request in one attempt shares the SAME
+        # ledger operation_id, across every turn (including the implicit
+        # coverage of the salvage call — the scope wraps the whole loop).
+        monkeypatch.setattr(
+            "parrot.flows.dev_loop.dispatchers.llm.conf.DEV_LOOP_CODER_TELEMETRY", True
+        )
+        monkeypatch.setattr(
+            "parrot.flows.dev_loop.dispatchers.llm.conf.DEV_LOOP_CODER_LEDGER", True
+        )
+        (_patch_worktree_base / "app.py").write_text("print('hello')\n", encoding="utf-8")
+
+        seen_operation_ids: set[str] = set()
+
+        class _ScopeRecordingClient(_FakeClient):
+            async def _chat_completion(self, **kwargs: Any) -> _Response:
+                scope = current_budget_scope()
+                assert scope is not None
+                seen_operation_ids.add(scope.operation_id)
+                return await super()._chat_completion(**kwargs)
+
+        client = _ScopeRecordingClient(
+            [
+                _Message(
+                    content="looking",
+                    tool_calls=[_ToolCall("call_1", "read_file", {"path": "app.py"})],
+                ),
+                _Message(
+                    tool_calls=[
+                        _ToolCall(
+                            "call_2",
+                            "final_output",
+                            {
+                                "files_changed": ["app.py"],
+                                "commit_shas": ["abc1234"],
+                                "summary": "done",
+                            },
+                        )
+                    ]
+                ),
+            ]
+        )
+        dispatcher = _dispatcher(monkeypatch, client)
+        host = _CapturingHost()
+
+        await dispatcher.dispatch(
+            brief=brief,
+            profile=LLMCodeDispatchProfile(llm="nvidia:minimaxai/minimax-m3", max_turns=4),
+            output_model=DevelopmentOutput,
+            run_id="r1",
+            node_id="development",
+            cwd=str(_patch_worktree_base),
+            session_host=host,
+        )
+
+        assert len(seen_operation_ids) == 1
+        assert len(host.telemetry) == 1
+        budget_report = host.telemetry[0].budget_report
+        assert budget_report is not None
+        assert "settled_estimate_input_tokens" in budget_report
+        assert "input_tokens" in budget_report
+
+    @pytest.mark.asyncio
+    async def test_registry_full_degrades(self, monkeypatch, brief, _patch_worktree_base):
+        # AC-11: a full registry must never fail the dispatch — it falls
+        # through to the unscoped path with budget_report=None and exactly
+        # one WARNING.
+        monkeypatch.setattr(
+            "parrot.flows.dev_loop.dispatchers.llm.conf.DEV_LOOP_CODER_TELEMETRY", True
+        )
+        monkeypatch.setattr(
+            "parrot.flows.dev_loop.dispatchers.llm.conf.DEV_LOOP_CODER_LEDGER", True
+        )
+        (_patch_worktree_base / "app.py").write_text("print('hello')\n", encoding="utf-8")
+
+        class _FailingRegistry:
+            async def create(self, policy):
+                raise BudgetRegistryFull("registry holds 1024 records")
+
+        monkeypatch.setattr(
+            "parrot.flows.dev_loop.dispatchers.llm.get_default_registry",
+            lambda: _FailingRegistry(),
+        )
+
+        client = _FakeClient(
+            [
+                _Message(
+                    tool_calls=[
+                        _ToolCall(
+                            "call_1",
+                            "final_output",
+                            {
+                                "files_changed": ["app.py"],
+                                "commit_shas": ["abc1234"],
+                                "summary": "done",
+                            },
+                        )
+                    ]
+                ),
+            ]
+        )
+        dispatcher = _dispatcher(monkeypatch, client)
+        host = _CapturingHost()
+
+        result = await dispatcher.dispatch(
+            brief=brief,
+            profile=LLMCodeDispatchProfile(llm="nvidia:minimaxai/minimax-m3", max_turns=4),
+            output_model=DevelopmentOutput,
+            run_id="r1",
+            node_id="development",
+            cwd=str(_patch_worktree_base),
+            session_host=host,
+        )
+
+        assert result.summary == "done"
+        assert len(host.telemetry) == 1
+        assert host.telemetry[0].budget_report is None
