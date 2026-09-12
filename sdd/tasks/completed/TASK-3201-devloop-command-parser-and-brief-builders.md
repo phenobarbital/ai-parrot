@@ -414,10 +414,24 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-12
+**Notes**: Verified TASK-3196's `DevRequestBrief.flow_type`/`.base_branch`
+landed before starting. Implemented `parser.py` (`USAGE`, `parse_command`
+— subcommand branch before argparse, unknown-`--flag` rejection, `--type`/
+`--base` validation, non-empty prompt requirement) and `briefs.py`
+(`build_bug_brief`, `build_feature_brief`, `brief_to_file`,
+`brief_summary_fields`, all four FILL INs completed per spec §7: summary
+padding prefixes `"bug: "` and pads from the prompt/description, feature
+title derives from the first `.`/`\n`-split sentence clipped to 80 chars).
+Extended `devloop/__init__.py` with the parser/briefs re-exports.
+`test_parser.py` (13 tests) and `test_briefs.py` (9 tests) cover every
+blueprint case plus the stubbed FILL INs (unknown flag, bad `--base`,
+prompt-after-flags, empty text, missing prompt, summary padding, both
+`brief_summary_fields` projections).
+`pytest packages/ai-parrot-integrations/tests/integrations/devloop -q`:
+33 passed. `ruff check` and `black --check` clean on all touched files.
+Imports verified: `from parrot.integrations.devloop import parse_command,
+build_bug_brief, build_feature_brief`.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.
