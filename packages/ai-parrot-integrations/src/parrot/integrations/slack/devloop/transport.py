@@ -1,20 +1,9 @@
-"""SlackDevLoopTransport — the only Slack-facing implementation of DevLoopTransport (FEAT-555 M11).
-
-FEAT-555 NOTE (written by TASK-3206): TASK-3207 had not landed yet when
-this file was created, so this is a **minimal stub** — just enough to
-satisfy the ``DevLoopTransport`` protocol and ``register_devloop()``'s
-wiring contract for the confirm-card flow (post_confirm/post_run_dispatched/
-post_run_started/post_spawn_failed/render_status/ephemeral/permalink are
-fully functional). ``post_gate``/``update_gate``/``update_confirm``/
-``post_terminal`` are simplified until TASK-3207 (which needs the
-``gate_blocks``/``gate_resolved_blocks``/``terminal_blocks`` builders it
-adds to ``blocks.py``) replaces this file with the full implementation.
-"""
+"""SlackDevLoopTransport — the only Slack-facing implementation of DevLoopTransport (FEAT-555 M11)."""
 
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, Dict, Optional, Tuple
 
 from aiohttp import ClientSession  # verified: slack/interactive.py:12 pattern
 
@@ -29,6 +18,10 @@ class SlackDevLoopTransport:
     def __init__(self, wrapper: SlackAgentWrapper) -> None:
         self.wrapper = wrapper
         self.logger = logging.getLogger(__name__)
+        # Card locations kept here (not on RunRecord/PendingConfirmation) — a Slack
+        # detail the channel-neutral core does not need to know about.
+        self._confirm_cards: Dict[str, Tuple[str, str]] = {}  # pending_id -> (channel, ts)
+        self._gate_cards: Dict[Tuple[str, str], Tuple[str, str]] = {}  # (run_id, gate_id) -> (channel, ts)
 
     # -- adapter helpers (used by commands.py / actions.py) ---------------------------------------------------
     async def ephemeral(self, response_url: str, text: str) -> None:
@@ -52,30 +45,50 @@ class SlackDevLoopTransport:
     def render_status(self, records: list[RunRecord]) -> str:
         return blocks.status_list_text(records, self.permalink)
 
-    async def _post_in_thread(self, record: RunRecord, text: str, kit: list[dict[str, Any]]) -> str | None:
+    async def _post_in_thread(self, record: RunRecord, text: str, kit: list[dict[str, Any]]) -> Optional[str]:
         return await self.wrapper.post_message(record.channel_id, text, blocks=kit, thread_ts=record.thread_ts or None)
 
     # -- DevLoopTransport protocol --------------------------------------------------------------------------
     async def post_run_dispatched(self, record: RunRecord) -> str:
-        """Thread root. TASK-3207 adds the DM fallback for ``not_in_channel``."""
-        ts = await self.wrapper.post_message(
-            record.channel_id,
-            f"Development flow dispatched — {record.run_id}",
-            blocks=blocks.dispatch_root_blocks(record),
-        )
+        """Thread root; falls back to a DM thread (open_dm) when the bot is not in the channel."""
+        text = f"Development flow dispatched — {record.run_id}"
+        kit = blocks.dispatch_root_blocks(record)
+        ts = await self.wrapper.post_message(record.channel_id, text, blocks=kit)
+        if ts is None:
+            dm_channel = await self.wrapper.open_dm(record.requester.user_id)
+            if dm_channel:
+                ts = await self.wrapper.post_message(dm_channel, text, blocks=kit)
+                if ts:
+                    record.channel_id = dm_channel
         return ts or ""
 
     async def post_confirm(
-        self, pending_id: str, kind: str, fields: dict[str, str], requester: Requester, channel_id: str
+        self, pending_id: str, kind: str, fields: Dict[str, str], requester: Requester, channel_id: str
     ) -> str:
         ts = await self.wrapper.post_message(
             channel_id, f"Confirm your {kind} request", blocks=blocks.confirm_blocks(pending_id, kind, fields)
         )
+        if ts:
+            self._confirm_cards[pending_id] = (channel_id, ts)
         return ts or ""
 
-    async def update_confirm(self, pending_id: str, outcome: str, record: RunRecord | None) -> None:
-        """FEAT-555 stub: TASK-3207 tracks the confirm card's (channel, ts) to edit it in place."""
-        self.logger.debug("update_confirm (stub): pending_id=%s outcome=%s", pending_id, outcome)
+    async def update_confirm(self, pending_id: str, outcome: str, record: Optional[RunRecord]) -> None:
+        """Edit the confirm card in place after confirm/discard/expiry."""
+        location = self._confirm_cards.pop(pending_id, None)
+        if location is None:
+            return
+        channel, ts = location
+        text = {
+            "confirmed": "Confirmed — dispatching…",
+            "discarded": "Cancelled.",
+        }.get(outcome, outcome)
+        if outcome == "confirmed" and record is not None:
+            text = f":white_check_mark: Confirmed — run `{record.run_id}` dispatching…"
+        elif outcome == "discarded":
+            text = ":no_entry_sign: Cancelled."
+        await self.wrapper.update_message(
+            channel, ts, text, blocks=[{"type": "section", "text": {"type": "mrkdwn", "text": text}}]
+        )
 
     async def post_run_started(self, record: RunRecord) -> None:
         await self._post_in_thread(record, f"Run {record.run_id} started", blocks.run_started_blocks(record))
@@ -88,21 +101,20 @@ class SlackDevLoopTransport:
         )
 
     async def post_gate(self, record: RunRecord, gate: GateView) -> None:
-        """FEAT-555 stub: TASK-3207 renders the real gate_blocks() card and remembers its ts."""
-        self.logger.debug("post_gate (stub): run=%s gate=%s", record.run_id, gate.gate_id)
+        ts = await self._post_in_thread(record, gate.title, blocks.gate_blocks(record, gate))
+        if ts:
+            self._gate_cards[(record.run_id, gate.gate_id)] = (record.channel_id, ts)
 
     async def update_gate(self, record: RunRecord, gate: GateView) -> None:
-        """FEAT-555 stub: TASK-3207 edits the gate card in place via gate_resolved_blocks()."""
-        self.logger.debug("update_gate (stub): run=%s gate=%s", record.run_id, gate.gate_id)
+        location = self._gate_cards.get((record.run_id, gate.gate_id))
+        if location is None:
+            return
+        channel, ts = location
+        await self.wrapper.update_message(channel, ts, gate.title, blocks=blocks.gate_resolved_blocks(record, gate))
 
-    async def update_status(self, record: RunRecord, state: dict[str, Any]) -> None:
+    async def update_status(self, record: RunRecord, state: Dict[str, Any]) -> None:
         """No-op until TASK-3209 (status card)."""
         return None
 
     async def post_terminal(self, record: RunRecord, event: RunEvent) -> None:
-        """FEAT-555 stub: TASK-3207 renders the real terminal_blocks() summary."""
-        await self._post_in_thread(
-            record,
-            f"Run {record.run_id} finished ({event.kind})",
-            [{"type": "section", "text": {"type": "mrkdwn", "text": f"Run `{record.run_id}` finished: {event.kind}"}}],
-        )
+        await self._post_in_thread(record, f"Run {record.run_id} finished", blocks.terminal_blocks(record, event))

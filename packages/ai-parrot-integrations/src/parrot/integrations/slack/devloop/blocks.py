@@ -2,11 +2,23 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any, Callable
 
-from parrot.integrations.devloop.models import RequestType, RunRecord  # verified: spec §2 Data Models (TASK-3200)
+from parrot.integrations.devloop.models import (  # verified: spec §2 Data Models (TASK-3200)
+    GateView,
+    RequestType,
+    RunEvent,
+    RunRecord,
+)
 
 _KIND_LABEL = {"feature": "Feature", "bug": "Bug"}
+_GATE_EMOJI = {
+    "pending": ":hourglass_flowing_sand:",
+    "approved": ":white_check_mark:",
+    "rejected": ":x:",
+    "expired": ":alarm_clock:",
+}
 
 # Field lists per kind for the Edit modal (spec §7 "Confirm card for both kinds").
 _EDIT_FIELDS: dict[str, list[tuple[str, str]]] = {
@@ -127,3 +139,134 @@ def status_list_text(records: list[RunRecord], permalink: Callable[[RunRecord], 
             line += f" · <{link}|thread>"
         lines.append(line)
     return "\n".join(lines)
+
+
+def gate_blocks(record: RunRecord, gate: GateView) -> list[dict[str, Any]]:
+    """Gate card body.
+
+    ``open_questions`` ⇒ numbered questions + Answer / Abort ideation;
+    other kinds ⇒ title/instructions/payload_ref + Approve / Reject.
+
+    Args:
+        record: The run the gate belongs to.
+        gate: The pending gate.
+
+    Returns:
+        The Block Kit blocks for the card.
+    """
+    suffix = f"{record.run_id}:{gate.gate_id}"
+    header = _section(f"{_GATE_EMOJI['pending']} *{gate.title}*\n{gate.instructions}".strip())
+    if gate.kind == "open_questions":
+        numbered = "\n".join(f"*{i}.* {q}" for i, q in enumerate(gate.questions, 1))
+        elements = [
+            _button("Answer", f"devloop_answer:{suffix}", suffix, "primary"),
+            _button("Abort ideation", f"devloop_reject:{suffix}", suffix, "danger"),
+        ]
+        return [header, _section(numbered), {"type": "actions", "elements": elements}]
+
+    elements = [
+        _button("Approve", f"devloop_approve:{suffix}", suffix, "primary"),
+        _button("Reject", f"devloop_reject:{suffix}", suffix, "danger"),
+    ]
+    blocks: list[dict[str, Any]] = [header]
+    if gate.payload_ref:
+        blocks.append({"type": "context", "elements": [{"type": "mrkdwn", "text": f"Evidence: {gate.payload_ref}"}]})
+    if gate.expires_at:
+        deadline = datetime.fromtimestamp(gate.expires_at, tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+        blocks.append({"type": "context", "elements": [{"type": "mrkdwn", "text": f"Deadline: {deadline}"}]})
+    return [*blocks, {"type": "actions", "elements": elements}]
+
+
+def answers_modal(record: RunRecord, gate: GateView) -> dict[str, Any]:
+    """form_definition for open_modal: callback_id devloop_answers.
+
+    One optional multiline text input per question (block_id ``q<N>``).
+
+    Args:
+        record: The run the gate belongs to.
+        gate: The ``open_questions`` gate.
+
+    Returns:
+        The form_definition dict.
+    """
+    fields = [
+        {
+            "id": f"q{i}",
+            "label": q[:150],
+            "type": "text",
+            "optional": True,
+            "multiline": True,
+            "hint": "Leave empty to keep the question open",
+        }
+        for i, q in enumerate(gate.questions, 1)
+    ]
+    return {
+        "id": "devloop_answers",
+        "title": "Answer questions",
+        "fields": fields,
+        "metadata": {"run_id": record.run_id, "gate_id": gate.gate_id},
+    }
+
+
+def gate_resolved_blocks(record: RunRecord, gate: GateView) -> list[dict[str, Any]]:
+    """Card body after resolution: 'Answered by <@user> (k of n)' / 'Rejected by …' / 'Expired'.
+
+    Args:
+        record: The run the gate belongs to.
+        gate: The resolved/expired gate.
+
+    Returns:
+        The Block Kit blocks for the updated card.
+    """
+    resolved_by_user = gate.resolved_by.rsplit(":", 1)[-1] if gate.resolved_by else ""
+    if gate.status == "expired":
+        text = f"{_GATE_EMOJI['expired']} *{gate.title}*\nExpired — no answer was received in time."
+    elif gate.status == "rejected":
+        who = f"<@{resolved_by_user}>" if resolved_by_user else "someone"
+        text = f"{_GATE_EMOJI['rejected']} *{gate.title}*\nRejected by {who}."
+    else:
+        who = f"<@{resolved_by_user}>" if resolved_by_user else "someone"
+        if gate.kind == "open_questions":
+            n = len(gate.questions)
+            k = len([v for v in gate.answers.values() if v])
+            text = f"{_GATE_EMOJI['approved']} *{gate.title}*\nAnswered by {who} ({k} of {n})."
+        else:
+            text = f"{_GATE_EMOJI['approved']} *{gate.title}*\nApproved by {who}."
+    return [_section(text)]
+
+
+def terminal_blocks(record: RunRecord, event: RunEvent) -> list[dict[str, Any]]:
+    """Terminal summary for the run thread.
+
+    ``run_closed`` ⇒ completed/failed summary (PR URL, Jira key);
+    ``run_cancelled`` ⇒ cancelled by; ``process_exited`` ⇒ exit code +
+    stderr tail.
+
+    Args:
+        record: The finished run.
+        event: The terminal :class:`RunEvent`.
+
+    Returns:
+        The Block Kit blocks for the terminal message.
+    """
+    state = event.state or {}
+    if event.kind == "run_closed":
+        outcome = state.get("outcome", "")
+        emoji = ":white_check_mark:" if outcome == "succeeded" else ":x:"
+        lines = [f"{emoji} *Run `{record.run_id}` {outcome}*"]
+        if state.get("pr_url"):
+            lines.append(f"PR: {state['pr_url']}")
+        if state.get("jira_issue_key"):
+            lines.append(f"Jira: `{state['jira_issue_key']}`")
+        return [_section("\n".join(lines))]
+    if event.kind == "run_cancelled":
+        requested_by = state.get("requested_by", "")
+        who = requested_by.rsplit(":", 1)[-1] if requested_by else ""
+        who_text = f"<@{who}>" if who else "the initiator"
+        return [_section(f":no_entry_sign: *Run `{record.run_id}` cancelled* by {who_text}.")]
+    # process_exited
+    tail = (event.stderr_tail or "")[-2000:]
+    text = f":boom: *Run `{record.run_id}` exited unexpectedly* (code {event.exit_code})."
+    if tail:
+        text += f"\n```{tail}```"
+    return [_section(text)]
