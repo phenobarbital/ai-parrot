@@ -63,6 +63,26 @@ def _block(agent: str) -> str:
     return f"{begin}\n## Codebase Knowledge Graph (LLM Wiki)\n\n{NUDGE}\n\n{end}\n"
 
 
+# FEAT-553: conventions block, keyed by the canonical instruction-file owner so `gemini` and
+# `google` (both GEMINI.md) share ONE block with the google/ installer. No entry for `claude`:
+# Claude Code already reads .claude/rules/ and this module has no uninstaller.
+_CONVENTIONS_AGENT: dict[str, str] = {"codex": "codex", "gemini": "google", "google": "google"}
+
+
+def _conventions_markers(agent: str) -> tuple[str, str] | None:
+    canonical = _CONVENTIONS_AGENT.get(agent)
+    if canonical is None:
+        return None
+    return f"<!-- parrot:conventions:{canonical}:begin -->", f"<!-- parrot:conventions:{canonical}:end -->"
+
+
+def _conventions_block(agent: str, root: Path) -> str:
+    from parrot.flows.conventions import load_project_conventions  # stdlib-only leaf; local import keeps this module cheap
+
+    begin, end = _conventions_markers(agent)  # type: ignore[misc]  # caller checked for None
+    return f"{begin}\n## Project conventions\n\n{load_project_conventions(root)}\n\n{end}\n"
+
+
 def _upsert(text: str, block: str, begin: str, end: str) -> str:
     if begin in text:
         head, _, rest = text.partition(begin)
@@ -97,6 +117,9 @@ def install(agent: str, root: Path = Path.cwd()) -> list[str]:
     before = instruction_path.read_text(encoding="utf-8") if instruction_path.exists() else ""
     begin, end = _markers(agent)
     after = _upsert(before, _block(agent), begin, end)
+    conv = _conventions_markers(agent)
+    if conv is not None:
+        after = _upsert(after, _conventions_block(agent, root), *conv)
     if after != before:
         instruction_path.write_text(after, encoding="utf-8")
     changes.append(instruction)
