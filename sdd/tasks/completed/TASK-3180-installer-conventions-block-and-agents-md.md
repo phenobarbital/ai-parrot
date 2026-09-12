@@ -276,10 +276,42 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (orchestrated via parrot-sdd-coder MCP)
+**Date**: 2026-09-12
+**Notes**: Added `CONVENTIONS_BEGIN`/`CONVENTIONS_END` markers +
+`conventions_section(root)` to both `codex/assets.py` and
+`google/assets.py`; `_install_agents`/`_install_gemini_md` now upsert the
+wiki block then the conventions block (idempotent, ordered); both
+uninstallers remove the conventions block too. `AGENTS.md` pruned
+(Frontend/Mobile section, isort/prettier/camelCase lines, the stale
+"Rules:" pointer, `@RTK.md`) and regenerated; `GEMINI.md` regenerated.
+5 tests across two new test modules pass; `ruff check` clean.
 
-**Completed by**: 
-**Date**: 
-**Notes**: 
+Orchestrator follow-up (two issues found during verification, both fixed
+before merging): (1) the sub-worktree's committed `AGENTS.md`/`GEMINI.md`
+had been regenerated while `.agent/rules/*.md` were transiently corrupted
+with sentinel placeholder content by an ad hoc manual test script the
+attempt ran (never intended to be committed) — the orchestrator restored
+the real rule files and regenerated both target files correctly. (2) two
+pre-existing test bugs: `_REPO_ROOT` used `parents[4]` (resolves to
+`packages/`) instead of `parents[5]`; both `"created" in first` assertions
+ignored `_install_agents`/`_install_gemini_md`'s PRE-EXISTING (unchanged by
+this task) created-vs-updated semantics — keyed on whether the file
+existed at all before the call, not whether the markers did — so the
+seeded (non-empty) AGENTS.md/GEMINI.md correctly report "updated"; fixed
+both assertions to match.
 
-**Deviations from spec**: none
+Unrelated but discovered here: attempt 1 on this task's OTHER seat
+(qwen/nova) had left the shared venv's core `ai-parrot` editable `.pth`
+pointing at a since-removed sub-worktree (from an `uv sync` its scratch
+testing ran), breaking `import parrot.knowledge` repo-wide via plain
+`python -c`. The orchestrator repointed the `.pth` back at the main
+checkout; pytest-driven verification was unaffected throughout (the
+repo's root `conftest.py` already forces worktree-local sources ahead of
+the `.pth`), only ad hoc `python -c` scripts were exposed.
+
+**Deviations from spec**: none in the merged code; two test-file bugs in
+the original scaffold were corrected (see Notes) — no acceptance criterion
+was loosened.
+
+Seat: qwen (attempt 2, after codex-spark attempt 1 failed on a CLI flag mismatch) · Backend: nova · Model: qwen.qwen3-coder-480b-a35b-instruct · Attempts: 2 · Duration: 1.5s (failed) + 183.0s · Tokens: n/a (attempt 1) + 1859716 in / 8681 out (attempt 2)

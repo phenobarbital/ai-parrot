@@ -20,7 +20,7 @@ class LLMCodeDispatchProfile(BaseModel):
     sandbox: Literal["workspace-write"] = "workspace-write"
     approval_policy: Literal["never"] = "never"
     timeout_seconds: int = Field(default=1800, ge=60, le=7200)
-    max_turns: int = Field(default=24, ge=1, le=100)
+    max_turns: int = Field(default=40, ge=1, le=100)  # FEAT-553: a real SDD task measured 35 turns; 24 was too small
     max_tokens: int = Field(default=8192, ge=256, le=32768)
     temperature: float = Field(default=0.0, ge=0.0, le=2.0)
     command_timeout_seconds: int = Field(default=300, ge=1, le=3600)

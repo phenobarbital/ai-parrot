@@ -212,10 +212,17 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: 
-**Date**: 
-**Notes**: 
+**Completed by**: sdd-worker (orchestrated via parrot-sdd-coder MCP)
+**Date**: 2026-09-12
+**Notes**: Created `.agent/rules/codebase-conventions.md` (five sections:
+Stack, Forbidden table, Repository layout, Tooling in two modes, Code
+standards) and its `.claude/rules/` twin; edited CRITICAL RULE 2 of
+`python-development.md` (both copies) to add the tool-driven-coder-with-no-
+shell clause. Verified: byte-parity (`diff -q`) clean on both pairs,
+combined size 5885 bytes (< 8000, AC-3), exactly 5 `##` sections, `black`
+named only as formatter, `cython-development.md`/`rust-development.md`
+untouched.
 
 **Deviations from spec**: none
+
+Seat: qwen · Backend: nova · Model: qwen.qwen3-coder-480b-a35b-instruct · Attempts: 1 · Duration: 93.9s · Tokens: 671558 in / 4654 out

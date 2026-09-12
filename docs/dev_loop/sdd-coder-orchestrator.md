@@ -122,7 +122,7 @@ availability and reason, and `sdd-worker` prints it.
 |---|---|---|
 | `merged` | Clean merge, fidelity passed | Run the task's acceptance criteria in this worktree, then step (g) with a Completion Note ending `Seat: … Backend: … Model: … Attempts: … Duration: … Tokens: …` from `attempts[*]` |
 | `merge_conflict` | Content conflict against the feature branch | Resolve manually in this worktree, commit, call `coder_merge` again |
-| `fidelity_violation` | The coder touched `sdd/` or a file not on its task's list | Treated as `failed` — never merged by hand |
+| `fidelity_violation` | The coder touched `sdd/` or a file not on its task's list, **or** its diff adds a banned import (`diagnostics` starts with `BannedImport:`) | Treated as `failed` — never merged by hand |
 | `failed` | Both attempts (assigned seat, then a different seat) errored | Attempt 3 is `sdd-worker`'s own: implement the task itself (Fallback loop steps c–f), then (g) |
 
 Every task gets at most two coder attempts before `sdd-worker` takes over —
@@ -137,6 +137,18 @@ Orphan branches (left by an earlier crash, or a `fidelity_violation` that
 was never adopted) are **listed** by every `coder_plan` call and **never
 auto-merged** — `sdd-worker` decides per orphan whether to `coder_merge` it
 or drop it with `coder_cleanup`.
+
+## Conventions & lint backstop (FEAT-553)
+
+Every MCP seat receives the repo's coder rules (`.agent/rules/codebase-conventions.md`
++ `python-development.md`, via `parrot.flows.conventions.load_project_conventions`)
+inline in its prompt, right after the `sdd-coder` body. The native seat reads the same
+files from `.claude/rules/`. Prompts are advisory; the guarantee is ruff rule `TID251`
+(`ruff.toml`, `[lint.flake8-tidy-imports.banned-api]`): `requests`, `httpx`, `starlette`,
+`fastapi`, `uvicorn` and every `langchain*`/`langgraph`/`langsmith` import fail
+`ruff check`, and the engine runs the same check after every attempt (attempt error →
+retry on another seat) and again at the merge boundary (`fidelity_violation`, also for
+native tasks and re-merges).
 
 ## Telemetry
 
@@ -193,6 +205,9 @@ as the unbudgeted comparison baseline.
 - **Redis warnings** — dispatch telemetry to Redis is best-effort; a single
   startup warning when `REDIS_URL` is unreachable is expected and harmless.
   Set `REDIS_URL` to enable live event streams.
+- **`LLM code dispatch exceeded max_turns=…`** — the in-process seats' library default is 40 turns
+  (`LLMCodeDispatchProfile.max_turns`, FEAT-553); the roster path sets 60 via `build_dispatcher`
+  (`DEV_LOOP_LLM_MAX_TURNS`). The effective value is in the `dispatch.completed` payload.
 
 ## Related
 

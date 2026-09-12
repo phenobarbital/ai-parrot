@@ -151,10 +151,20 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (orchestrated via parrot-sdd-coder MCP)
+**Date**: 2026-09-12
+**Notes**: `max_turns` default raised 24 → 40 in both `LLMCodeDispatchProfile`
+(`models/llm.py:23`) and `GrokCodeDispatchProfile` (`models/grok.py:22`);
+`agent_builder.py` comment reworded; `test_profile_turn_budget.py` created
+asserting both defaults are 40 and `DEFAULT_LLM_MAX_TURNS` stays 60.
+Orchestrator follow-up: `test_agent_builder.py::TestLLMTurnBudget::
+test_default_is_sixty_not_the_library_default` hardcoded the old library
+default (24) in its second assertion — updated to 40 (this test file was
+not in TASK-3184's file list, but the assertion directly tests the value
+this task changes and the task's own AC requires this exact test module
+to pass). `ruff check` clean on all three modified files.
 
-**Completed by**: 
-**Date**: 
-**Notes**: 
+**Deviations from spec**: none (one out-of-list test assertion fixed as a
+direct, necessary consequence of this task's own change — see Notes)
 
-**Deviations from spec**: none
+Seat: gemini · Backend: google-compat · Model: gemini-3.5-flash · Attempts: 1 · Duration: 90.6s · Tokens: 784721 in / 2783 out

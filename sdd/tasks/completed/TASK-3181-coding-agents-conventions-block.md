@@ -196,10 +196,32 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (orchestrated via parrot-sdd-coder MCP; qwen attempt merged, orchestrator fixed a discovered idempotency bug before completion)
+**Date**: 2026-09-12
+**Notes**: Added `_CONVENTIONS_AGENT`, `_conventions_markers`, `_conventions_block`
+to `coding_agents.py`; `install()` upserts the conventions block (keyed by
+the canonical instruction-file owner — `gemini`→`google`) right after the
+wiki-block upsert, for codex/gemini/google only (`claude` gets none). 7
+tests pass (3 new: per-agent write+idempotency, no-block-for-claude,
+one-shared-block-for-gemini-and-google); import-time check confirms
+`dev_loop` never lands in `sys.modules`; `ruff check` clean.
 
-**Completed by**: 
-**Date**: 
-**Notes**: 
+Orchestrator follow-up: the merged attempt's own new test,
+`test_install_writes_conventions_block`, failed on its idempotency
+assertion (3 of 3 parametrizations) — a SECOND `install()` call silently
+ate the blank-line separator between the wiki block and the conventions
+block. Root cause: `_upsert()` (pre-existing, listed in the task's
+Codebase Contract as "reuse as-is") has two code paths whose separator
+width disagreed — inserting a brand-new second block used a two-newline
+separator, while replacing an existing block normalized to one newline —
+harmless when only one marker section ever existed in a file, but exposed
+the moment `install()` chains two upserts in the same call, which is
+exactly what this task adds. Fixed both paths to agree on one newline;
+verified against the existing `test_install_is_idempotent_and_preserves_settings`
+(still passes) and this task's 3 new tests.
 
-**Deviations from spec**: none
+**Deviations from spec**: none in the feature behavior; one pre-existing
+helper bug in the same file, exposed by (and blocking) this task's own
+acceptance criterion, was fixed — see Notes.
+
+Seat: codex-spark (attempt 1, CLI flag mismatch, failed) → qwen (attempt 2, merged) + orchestrator fix · Backend: codex → nova · Model: gpt-5.3-codex-spark → qwen.qwen3-coder-480b-a35b-instruct · Attempts: 2 · Duration: 1.1s (failed) + 91.0s · Tokens: n/a (attempt 1) + 848341 in / 4475 out (attempt 2)
