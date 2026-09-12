@@ -37,7 +37,7 @@ from parrot.flows.dev_loop.worktree_manager import (  # verified: worktree_manag
     SubWorktreeManager,
     SubWorktreeMergeError,
 )
-from parrot.flows.dev_loop.sdd_coder.fidelity import check_fidelity, parse_task_files
+from parrot.flows.dev_loop.sdd_coder.fidelity import check_banned_imports, check_fidelity, parse_task_files
 from parrot.flows.dev_loop.sdd_coder.jobs import JobTable
 from parrot.flows.dev_loop.sdd_coder.models import (
     AttemptRecord,
@@ -371,7 +371,8 @@ class SddCoderEngine:
                 diagnostics=f"task_file {task.task_file!r} resolves outside the feature worktree",
             )
         task_md = await asyncio.to_thread(task_md_path.read_text, "utf-8")
-        report = check_fidelity(parse_task_files(task_md), [p for p in diff.splitlines() if p.strip()])
+        changed = [p for p in diff.splitlines() if p.strip()]
+        report = check_fidelity(parse_task_files(task_md), changed)
         if not report.ok:
             return TaskResult(
                 task_id=task.task_id,
@@ -379,6 +380,19 @@ class SddCoderEngine:
                 branch=branch,
                 worktree_path=path,
                 unexpected_files=report.unexpected + report.sdd_touched,
+            )
+        # FEAT-553 (spec §10 R1): the shared merge boundary — `merge()` reaches here directly
+        # for native tasks and re-merges, so the banned-import gate lives HERE, not only in
+        # `_run_attempt`. Nothing with a banned import can merge no matter which entry point
+        # produced the branch.
+        violations = await check_banned_imports(path, changed)
+        if violations:
+            return TaskResult(
+                task_id=task.task_id,
+                outcome="fidelity_violation",
+                branch=branch,
+                worktree_path=path,
+                diagnostics="BannedImport: " + "; ".join(violations),
             )
         async with self._merge_lock:
             try:
@@ -577,6 +591,14 @@ class SddCoderEngine:
                 session_host=collector,
                 labels=self._labels_for(task, seat, attempt),
             )
+            # FEAT-553: a banned import is an attempt error (not a fidelity outcome) so the
+            # retry ladder below gives a different seat a shot at the same task.
+            _rc, diff, _err = await _git("diff", "--name-only", f"{ctx.feature_branch}...HEAD", cwd=path)
+            violations = await check_banned_imports(path, [p for p in diff.splitlines() if p.strip()])
+            if violations:
+                error = "BannedImport: " + "; ".join(violations)
+                collector.error = error
+                output = None
         except Exception as exc:  # noqa: BLE001 — DispatchExecutionError/DispatchOutputValidationError/
             # asyncio.TimeoutError all subclass Exception; every failure becomes an attempt error, the
             # ladder (attempt 2 on a different seat, then "failed") decides what happens next.

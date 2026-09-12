@@ -220,3 +220,26 @@ async def test_engine_journals_job_snapshot(git_sandbox_feature, three_seat_rost
     journal_path = worktree / ".sdd-coder" / "jobs" / "job-abc123.json"
     assert journal_path.is_file()
     assert json.loads(journal_path.read_text())["job_id"] == "job-abc123"
+
+
+_BANNED_CFG = (
+    '[lint]\nselect = ["TID251"]\n[lint.flake8-tidy-imports.banned-api]\n'
+    '"requests".msg = "use aiohttp"\n"httpx".msg = "use aiohttp"\n'
+)
+
+
+async def test_consolidate_rejects_banned_import(git_sandbox_feature, noop_probe):
+    worktree, feature_branch, base_path, _index_path = git_sandbox_feature
+    await _write_and_commit(worktree, "ruff.toml", _BANNED_CFG, "ruff config")  # on the feature branch, so sub-worktrees inherit it
+    engine = SddCoderEngine(roster=RosterConfig(seats=[RosterSeat(label="h", kind="native")]), probe=noop_probe,
+                            worktree_base_path=str(base_path))
+    ctx = await engine._resolve_feature("demo", str(worktree))
+    manager = engine._manager_for(ctx, "TASK-0003", 1)
+    path = Path(await manager.create("TASK-0003.a1"))
+    await _write_and_commit(path, "pkg/t3.py", "import requests\n", "banned import")
+
+    result = await engine.merge("demo", str(worktree), "TASK-0003")
+    assert result.outcome == "fidelity_violation" and result.diagnostics.startswith("BannedImport:")
+
+    _rc, log, _err = await _git("log", "--oneline", feature_branch, cwd=worktree)
+    assert "banned import" not in log
