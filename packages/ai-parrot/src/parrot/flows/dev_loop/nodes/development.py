@@ -48,9 +48,11 @@ from parrot.flows.dev_loop.models import (
     DispatchLabels,
     QAReport,
     ResearchOutput,
+    SeatUsageSummary,
     TaskScopedBrief,
     WorkerSummary,
 )
+from parrot.flows.dev_loop.nodes._changeset import record_changeset
 from parrot.flows.dev_loop.nodes.base import (
     DevLoopNode,
     condense_qa_failure,
@@ -207,7 +209,114 @@ class DevelopmentNode(DevLoopNode):
         research = self._with_repair_feedback(shared, research)
 
         dev_out = await self._dispatch(shared, research)
-        return await self._reconcile_files_changed(shared, research, dev_out)
+        dev_out = await self._reconcile_files_changed(shared, research, dev_out)
+        # Git-measured "what changed" (+/- per file) for the run summary —
+        # separate from files_changed reconciliation so `dev_out`'s identity
+        # is untouched; the handoff re-measures right before the PR.
+        changeset = await record_changeset(
+            shared, research.worktree_path, research.base_branch, branch=research.branch_name
+        )
+        seat_usage = await self._record_seat_usage(shared, research, dev_out)
+        tasks_done = sorted({t for w in dev_out.worker_summaries for t in w.tasks_completed})
+        self.report_progress(
+            ctx,
+            "finished",
+            f"{len(dev_out.files_changed)} file(s) changed · {len(dev_out.commit_shas)} commit(s)"
+            + (f" · +{changeset.total_additions} −{changeset.total_deletions}" if changeset is not None else "")
+            + (f" · {len(tasks_done)} task(s) done" if tasks_done else "")
+            + (f" · {len(dev_out.incomplete_tasks)} incomplete" if dev_out.incomplete_tasks else "")
+            + (f" · {len(seat_usage)} seat(s)" if seat_usage else ""),
+            dev_out.summary,
+        )
+        return dev_out
+
+    async def _record_seat_usage(
+        self,
+        shared: Dict[str, Any],
+        research: ResearchOutput,
+        dev_out: DevelopmentOutput,
+    ) -> List[SeatUsageSummary]:
+        """Publish the per-seat roll-up (``shared["seat_usage"]`` + session state).
+
+        Two deterministic sources, in order of fidelity:
+
+        1. The ``sdd-coder`` job journals under ``<worktree>/.sdd-coder/jobs/``
+           — one ``AttemptRecord`` per attempt with seat, backend, model,
+           duration and provider usage. Present only when the single-agent
+           ``sdd-worker`` orchestrated MCP seats; read here, right after the
+           dispatch, because ``/sdd-done`` removes the worktree later.
+        2. Otherwise the pool's own ``WorkerSummary`` list joined with the
+           per-seat ``SeatState`` counters the session host folded from
+           ``dispatch/completed`` (tokens when the backend reported them).
+
+        Best-effort: any failure logs at DEBUG and records nothing.
+
+        Args:
+            shared: The flow's shared state.
+            research: Upstream output (worktree path).
+            dev_out: The reconciled development output.
+
+        Returns:
+            The recorded summaries (possibly empty).
+        """
+        try:
+            from parrot.flows.dev_loop.sdd_coder.summary import load_jobs, summarize_job_seats
+
+            # Journal reads are file I/O — off the event loop.
+            seats = summarize_job_seats(await asyncio.to_thread(load_jobs, research.worktree_path))
+            if not seats:
+                seats = self._seat_usage_from_pool(shared, dev_out)
+            if not seats:
+                return []
+            shared["seat_usage"] = seats
+            host = shared.get("session_host")
+            if host is not None:
+                from parrot.flows.dev_loop.session_state import SeatUsageRecorded
+
+                host.apply(SeatUsageRecorded(seats=seats))
+            return seats
+        except Exception:  # noqa: BLE001 - a summary must never fail development
+            self.logger.debug("seat usage roll-up skipped", exc_info=True)
+            return []
+
+    def _seat_usage_from_pool(self, shared: Dict[str, Any], dev_out: DevelopmentOutput) -> List[SeatUsageSummary]:
+        """Derive seat rows from ``worker_summaries`` + the host's ``SeatState``."""
+        host = shared.get("session_host")
+        state_node = None
+        try:
+            state_node = host.state.nodes.get(self.name) if host is not None else None
+        except Exception:  # noqa: BLE001 - a fake host in tests may lack .state
+            state_node = None
+        seat_states = (state_node.dispatch.seats if state_node and state_node.dispatch else {}) or {}
+
+        rows: List[SeatUsageSummary] = []
+        for worker in dev_out.worker_summaries:
+            seat_state = seat_states.get(worker.worker_id)
+            tasks = [*worker.tasks_completed, *worker.tasks_failed]
+            duration_s = 0.0
+            if seat_state is not None:
+                if seat_state.duration_ms is not None:
+                    duration_s = seat_state.duration_ms / 1000.0
+                elif seat_state.started_at and seat_state.finished_at:
+                    duration_s = max(0.0, seat_state.finished_at - seat_state.started_at)
+            input_tokens = seat_state.input_tokens if seat_state is not None else None
+            output_tokens = seat_state.output_tokens if seat_state is not None else None
+            rows.append(
+                SeatUsageSummary(
+                    seat=worker.worker_id,
+                    backend=worker.agent,
+                    model=worker.model,
+                    tasks_handled=list(dict.fromkeys(tasks)),
+                    tasks_merged=len(worker.tasks_completed),
+                    attempts=(seat_state.completed_count if seat_state is not None else 0) or len(tasks),
+                    failures=len(worker.tasks_failed),
+                    duration_s=round(duration_s, 3),
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    usage_known=input_tokens is not None or output_tokens is not None,
+                )
+            )
+        return rows
 
     async def _dispatch(
         self,
@@ -1056,6 +1165,14 @@ class DevelopmentNode(DevLoopNode):
             setting_sources=["project"],
         )
 
+        self.report_progress(
+            shared,
+            "started",
+            f"Dispatching 1 dev agent ({spec.agent + '/' if spec is not None else ''}"
+            f"{self._resolver_label_model(profile) or 'backend default'}) for {research.feat_id or research.jira_issue_key}",
+            f"subagent {getattr(profile, 'subagent', '') or 'inline prompt'} · worktree {research.worktree_path}",
+        )
+
         # FEAT-496: label the single-agent (non-pool) path too — best-effort,
         # never lets a labelling failure affect the dispatch itself.
         try:
@@ -1300,6 +1417,18 @@ class DevelopmentNode(DevLoopNode):
             len(todo),
             ", ".join(self._task_label(t) for t in todo) or "(none)",
         )
+        self.report_progress(
+            shared,
+            "started",
+            f"{len(todo)} task(s) to run on {len(pool.workers)} seat(s) for {research.feat_id}"
+            + (f" · {len(done_ids)} already done" if done_ids else ""),
+            "seats: "
+            + ", ".join(
+                f"{worker.worker_id.rsplit('.', 1)[-1]}={worker.spec.agent}:{worker.spec.model or 'default'}"
+                for worker in pool.workers
+            )
+            + f" · isolation {pool_cfg.isolation_mode}",
+        )
 
         run_id = shared["run_id"]
 
@@ -1355,6 +1484,13 @@ class DevelopmentNode(DevLoopNode):
                     research.feat_id,
                     wave_number,
                     len(wave),
+                    ", ".join(self._task_label(t) for t in wave),
+                )
+                self.report_progress(
+                    shared,
+                    "working",
+                    f"Wave {wave_number}: {len(wave)} task(s) on {min(len(wave), len(pool.workers))} seat(s)"
+                    + (f" · {len(scheduler.pending())} still pending" if scheduler.pending() else ""),
                     ", ".join(self._task_label(t) for t in wave),
                 )
 

@@ -74,7 +74,7 @@ from typing import (
     Union,
 )
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 # ─────────────────────────────────────────────────────────────────────
 # Channel URIs — neutral scheme. Mirrors AHP's channel *model* without
@@ -238,6 +238,42 @@ class SeatState(_Frozen):
     last_tool: str = ""
     last_summary: str = ""
     last_error: str = ""
+    # Latest (throttled) reasoning snippet the seat published — claude-code
+    # seats with extended thinking only; every other backend leaves it "".
+    last_thinking: str = ""
+    # Per-seat usage, accumulated from the seat's own dispatch/completed
+    # actions (None = never reported; a pool seat may complete several).
+    input_tokens: Optional[int] = None
+    output_tokens: Optional[int] = None
+    duration_ms: Optional[int] = None
+    completed_count: int = 0
+
+
+#: Narrative phases a node reports through :class:`NodeProgress`.
+ProgressPhase = Literal["started", "working", "finished"]
+
+#: Upper bound on ``NodeState.progress`` — the narrative is a bounded
+#: projection (AHP lazy-loading rule), never a history of every message.
+PROGRESS_MAX = 50
+PROGRESS_HEADLINE_MAX = 160
+PROGRESS_DETAIL_MAX = 400
+
+
+class NodeProgressEntry(_Frozen):
+    """One node-authored narrative line (what it is about to do / did).
+
+    Written by ``DevLoopNode.report_progress`` via :class:`NodeProgress`;
+    ``headline`` is the one-liner the console shows, ``detail`` an optional
+    second line. Both are clamped at the action boundary, so the projection
+    can never grow past its display budget.
+    """
+
+    phase: ProgressPhase
+    headline: str
+    detail: str = ""
+    ts: float = 0.0
+    seat: str = ""
+    task_id: str = ""
 
 
 class NodeState(_Frozen):
@@ -252,6 +288,10 @@ class NodeState(_Frozen):
     # Small, display-ready result summary (e.g. QAReport.passed, PR URL).
     # Full Pydantic results stay in FlowContext; state holds the projection.
     summary: Dict[str, str] = Field(default_factory=dict)
+    # Human-readable narrative (bounded to PROGRESS_MAX entries): the
+    # node's own "starting X" / "wave 2/3" / "finished: N files" lines.
+    # Additive — pre-existing persisted envelopes never carry it.
+    progress: List[NodeProgressEntry] = Field(default_factory=list)
 
 
 class ApprovalGate(_Frozen):
@@ -327,6 +367,80 @@ class DocsArtifact(_Frozen):
     ts: float = 0.0
 
 
+# -- run-summary projections (changeset + per-seat usage) --------------
+# Defined HERE (stdlib + pydantic only) and re-exported by ``models/base.py``,
+# because this module must stay transport- and package-free while the
+# bundle, the nodes and the console all need the same two shapes.
+
+
+class ChangedFile(_Frozen):
+    """One file in a run's :class:`ChangeSet` — the PR-style ``+/-`` row.
+
+    ``status`` follows ``git diff --name-status`` letters (``A`` added,
+    ``M`` modified, ``D`` deleted, ``R`` renamed, ``C`` copied, ``T`` type
+    change) plus ``?`` for an untracked, not-yet-committed file. Binary
+    files carry no line counts (``git diff --numstat`` prints ``-``), so
+    ``binary=True`` with zero additions/deletions is an honest row, not an
+    empty one.
+    """
+
+    path: str = Field(..., description="Repo-relative path (the NEW path for a rename).")
+    additions: int = Field(default=0, ge=0)
+    deletions: int = Field(default=0, ge=0)
+    status: Literal["A", "M", "D", "R", "C", "T", "?"] = "M"
+    binary: bool = False
+
+
+class ChangeSet(_Frozen):
+    """What a run touched, measured by git in the worktree — never self-reported.
+
+    Computed by ``parrot.flows.dev_loop.nodes._changeset.compute_changeset``
+    after development (and again by the handoff nodes right before the PR,
+    so the docs-artifact commit is included). Lives in ``shared["changeset"]``
+    and session state (``run/changesetRecorded``) rather than on
+    ``DevelopmentOutput``, whose JSON schema is part of the coding
+    sub-agent's prompt contract.
+    """
+
+    base_ref: str = Field(default="", description="Upstream the diff was taken against, e.g. 'origin/dev'.")
+    head_ref: str = "HEAD"
+    branch: str = ""
+    worktree_path: str = ""
+    files: List[ChangedFile] = Field(default_factory=list)
+    total_additions: int = 0
+    total_deletions: int = 0
+    commits: int = Field(default=0, description="Commits on the branch beyond base_ref (`git rev-list --count`).")
+    uncommitted: int = Field(default=0, description="Files with uncommitted (or untracked) changes at compute time.")
+    computed_at: float = Field(default_factory=time.time)
+
+
+class SeatUsageSummary(_Frozen):
+    """One agent seat's roll-up for the run summary: tasks, retries, time, tokens.
+
+    Built deterministically from the ``sdd-coder`` job journals
+    (``<worktree>/.sdd-coder/jobs/*.json``, one ``AttemptRecord`` per
+    attempt) by ``parrot.flows.dev_loop.sdd_coder.summary.summarize_job_seats``,
+    or from the dev-agent pool's per-seat ``SeatState`` counters. Token
+    fields stay ``None`` — and ``usage_known`` ``False`` — when no attempt on
+    the seat reported usage (``codex`` CLI, native ``haiku`` seats); a
+    fabricated ``0`` would read as "free".
+    """
+
+    seat: str = Field(..., description="Seat label ('qwen', 'codex-spark') or pool worker id ('development.w1').")
+    backend: str = ""
+    model: str = ""
+    tasks_handled: List[str] = Field(default_factory=list, description="Distinct TASK ids the seat attempted.")
+    tasks_merged: int = Field(default=0, description="Tasks whose final outcome on this seat was merged.")
+    attempts: int = 0
+    retries: int = Field(default=0, description="Attempts beyond the first for a task (attempt > 1).")
+    failures: int = Field(default=0, description="Attempts that ended terminal='failed'.")
+    duration_s: float = 0.0
+    input_tokens: Optional[int] = None
+    output_tokens: Optional[int] = None
+    cost_usd: Optional[float] = None
+    usage_known: bool = Field(default=False, description="At least one attempt reported provider token usage.")
+
+
 class DevLoopSessionState(_Frozen):
     """Authoritative, immutable state tree for one dev-loop run.
 
@@ -357,6 +471,12 @@ class DevLoopSessionState(_Frozen):
     # QaAttemptRecorded so the attempt count is replayable via ``view=state``.
     qa_attempts: int = 0
     qa_notes: str = ""
+    # Run-summary projections: what git says the run changed (recorded by
+    # development, refreshed by the handoff right before the PR) and the
+    # per-seat usage roll-up. Both additive/optional so every earlier
+    # persisted envelope re-validates.
+    changeset: Optional[ChangeSet] = None
+    seat_usage: List[SeatUsageSummary] = Field(default_factory=list)
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -418,6 +538,34 @@ class NodeSkipped(_ActionBase):
     node_id: NodeId
 
 
+class NodeProgress(_ActionBase):
+    """A node narrates what it is about to do, is doing, or concluded.
+
+    Authored by the node itself (``DevLoopNode.report_progress``), never
+    derived from the SDK stream — so it says "Generating spec + task index
+    from X" rather than "AssistantMessage". Text is clamped at validation
+    so a careless caller cannot bloat the persisted envelope.
+    """
+
+    type: Literal["node/progress"] = "node/progress"
+    node_id: NodeId
+    phase: ProgressPhase = "working"
+    headline: str = ""
+    detail: str = ""
+    seat: str = ""
+    task_id: str = ""
+
+    @field_validator("headline", mode="before")
+    @classmethod
+    def _clamp_headline(cls, value: Any) -> str:
+        return " ".join(str(value or "").split())[:PROGRESS_HEADLINE_MAX]
+
+    @field_validator("detail", mode="before")
+    @classmethod
+    def _clamp_detail(cls, value: Any) -> str:
+        return str(value or "").strip()[:PROGRESS_DETAIL_MAX]
+
+
 # -- dispatch lifecycle (maps DispatchEvent) --------------------------
 
 
@@ -447,11 +595,26 @@ class DispatchStarted(_DispatchAction):
     terminal: str = ""  # terminal channel URI
 
 
+#: What a ``dispatch/delta`` message actually carried, so a console can
+#: filter without guessing from raw keys: ``text``/``thinking`` are the
+#: assistant's own words, ``system``/``result`` are SDK lifecycle frames,
+#: ``empty`` is a content-less envelope (a bare UserMessage, for instance).
+DeltaContentKind = Literal["text", "thinking", "system", "result", "empty"]
+
+
 class DispatchDelta(_DispatchAction):
     """One SDK message arrived. Content lives on the terminal channel;
-    the session state only bumps the counter (lazy loading)."""
+    the session state only bumps the counter (lazy loading).
+
+    ``content_kind`` classifies the message (additive; every pre-existing
+    envelope reads as ``"empty"``) and ``thinking`` carries the throttled
+    reasoning snippet for claude-code seats — the ONE piece of message
+    content the narrative view is allowed to keep, clamped to 400 chars.
+    """
 
     type: Literal["dispatch/delta"] = "dispatch/delta"
+    content_kind: DeltaContentKind = "empty"
+    thinking: str = ""
 
 
 class DispatchToolUse(_DispatchAction):
@@ -527,6 +690,29 @@ class PullRequestLinked(_ActionBase):
     changeset: str = ""  # changeset channel URI
 
 
+class ChangesetRecorded(_ActionBase):
+    """Git-measured file list for the run (``+/-`` per file, commits).
+
+    Recorded once development reconciles ``files_changed`` and again by
+    the handoff node right before the PR (so the docs-artifact commit is
+    in). The reducer REPLACES — the latest measurement is the truth.
+    """
+
+    type: Literal["run/changesetRecorded"] = "run/changesetRecorded"
+    changeset: ChangeSet
+
+
+class SeatUsageRecorded(_ActionBase):
+    """Per-seat roll-up (tasks, retries, duration, tokens) for the summary.
+
+    Emitted by ``DevelopmentNode`` from the ``sdd-coder`` job journals or
+    the pool's seat counters. The reducer REPLACES the list.
+    """
+
+    type: Literal["development/seatUsageRecorded"] = "development/seatUsageRecorded"
+    seats: List[SeatUsageSummary] = Field(default_factory=list)
+
+
 # -- feature-mode projections (new capability, FEAT-378) ---------------
 
 
@@ -588,6 +774,7 @@ DevLoopAction = Annotated[
         NodeCompleted,
         NodeFailed,
         NodeSkipped,
+        NodeProgress,
         DispatchQueued,
         DispatchStarted,
         DispatchDelta,
@@ -601,6 +788,8 @@ DevLoopAction = Annotated[
         GateExpired,
         JiraLinked,
         PullRequestLinked,
+        ChangesetRecorded,
+        SeatUsageRecorded,
         QaAttemptRecorded,
         JudgeVerdictRecorded,
         FeedbackDecisionRecorded,
@@ -823,6 +1012,9 @@ def _fold_seat_from_action(
     error = getattr(action, "error", "") or ""
     if error:
         changes["last_error"] = error[:500]
+    thinking = getattr(action, "thinking", "") or ""
+    if thinking:
+        changes["last_thinking"] = thinking[:PROGRESS_DETAIL_MAX]
 
     t = action.type
     if t == "dispatch/queued":
@@ -838,6 +1030,10 @@ def _fold_seat_from_action(
     elif t == "dispatch/completed":
         changes["status"] = "completed"
         changes["finished_at"] = action.ts
+        changes["completed_count"] = prior.completed_count + 1
+        changes["input_tokens"] = _add_optional(prior.input_tokens, getattr(action, "input_tokens", None))
+        changes["output_tokens"] = _add_optional(prior.output_tokens, getattr(action, "output_tokens", None))
+        changes["duration_ms"] = _add_optional(prior.duration_ms, getattr(action, "duration_ms", None))
     if message_delta:
         changes["message_count"] = prior.message_count + 1
     if tool_use_delta:
@@ -946,6 +1142,18 @@ def reduce(  # noqa: C901 — a flat, exhaustive match is the point
         return new.model_copy(update={"error": action.error})
     if t == "node/skipped":
         return _with_node(state, action.node_id, status="skipped")
+    if t == "node/progress":
+        node = state.nodes.get(action.node_id)
+        prior = list(node.progress) if node else []
+        entry = NodeProgressEntry(
+            phase=action.phase,
+            headline=action.headline,
+            detail=action.detail,
+            ts=action.ts,
+            seat=action.seat,
+            task_id=action.task_id,
+        )
+        return _with_node(state, action.node_id, progress=[*prior, entry][-PROGRESS_MAX:])
 
     # -- dispatch lifecycle
     if t == "dispatch/queued":
@@ -1042,6 +1250,10 @@ def reduce(  # noqa: C901 — a flat, exhaustive match is the point
         return state.model_copy(update={"jira_issue_key": action.issue_key})
     if t == "run/prLinked":
         return state.model_copy(update={"pr_url": action.pr_url})
+    if t == "run/changesetRecorded":
+        return state.model_copy(update={"changeset": action.changeset})
+    if t == "development/seatUsageRecorded":
+        return state.model_copy(update={"seat_usage": list(action.seats)})
 
     # -- feature-mode projections (FEAT-378)
     if t == "feature/judgeVerdictRecorded":
@@ -1454,6 +1666,36 @@ def action_from_flow_event(
     return NodeSkipped(node_id=node_id, ts=ts)  # type: ignore[arg-type]
 
 
+def classify_delta_content(payload: dict) -> DeltaContentKind:
+    """Classify a ``dispatch.message`` payload (:data:`DeltaContentKind`).
+
+    Single source of truth for "does this message carry anything worth a
+    narrative row": the dispatchers stamp its result onto the raw event
+    payload (``normalize_payload``), the state shim copies it onto
+    :class:`DispatchDelta`, and the consoles read the field instead of
+    guessing from raw keys.
+
+    Precedence: visible assistant text, then a thinking snippet, then the
+    SDK lifecycle frames (``ResultMessage`` → ``"result"``, a
+    ``SystemMessage``/``subtype`` init frame → ``"system"``); anything
+    else — the bare ``UserMessage`` envelopes that made the console
+    unreadable — is ``"empty"``.
+    """
+    stamped = payload.get("content_kind")
+    if stamped in ("text", "thinking", "system", "result", "empty"):
+        return stamped  # type: ignore[return-value]
+    if payload.get("text"):
+        return "text"
+    if payload.get("thinking"):
+        return "thinking"
+    message_class = str(payload.get("message_class") or "")
+    if message_class == "ResultMessage" or payload.get("num_turns") is not None:
+        return "result"
+    if message_class == "SystemMessage" or payload.get("subtype"):
+        return "system"
+    return "empty"
+
+
 def action_from_dispatch_event(
     kind: str,
     node_id: str,
@@ -1504,6 +1746,11 @@ def action_from_dispatch_event(
         kwargs["error"] = str(payload.get("error", ""))[:500]
     if cls is DispatchToolUse:
         kwargs["tool_name"] = str(payload.get("tool_name", ""))
+    if cls is DispatchDelta:
+        kwargs["content_kind"] = classify_delta_content(payload)
+        thinking = payload.get("thinking")
+        if thinking:
+            kwargs["thinking"] = " ".join(str(thinking).split())[:PROGRESS_DETAIL_MAX]
     if cls is DispatchQueued:
         kwargs["dispatcher"] = str(payload.get("dispatcher", ""))
     if cls is DispatchCompleted:
@@ -1530,6 +1777,11 @@ __all__ = [
     "ActionEnvelope",
     "ActionOrigin",
     "ApprovalGate",
+    "ChangeSet",
+    "ChangedFile",
+    "ChangesetRecorded",
+    "SeatUsageRecorded",
+    "SeatUsageSummary",
     "DevLoopAction",
     "DevLoopSessionState",
     "DispatchCompleted",
@@ -1550,13 +1802,18 @@ __all__ = [
     "GateResolved",
     "GateStatus",
     "JiraLinked",
+    "DeltaContentKind",
     "NodeCompleted",
     "NodeFailed",
     "NodeId",
+    "NodeProgress",
+    "NodeProgressEntry",
     "NodeSkipped",
     "NodeStarted",
     "NodeState",
     "NodeStatus",
+    "PROGRESS_MAX",
+    "ProgressPhase",
     "PullRequestLinked",
     "QaAttemptRecorded",
     "ROOT_CHANNEL",
@@ -1577,6 +1834,7 @@ __all__ = [
     "action_from_dispatch_event",
     "action_from_flow_event",
     "changeset_channel",
+    "classify_delta_content",
     "reduce",
     "reduce_root",
     "session_channel",

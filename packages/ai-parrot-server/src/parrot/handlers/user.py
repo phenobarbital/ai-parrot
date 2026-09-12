@@ -9,6 +9,7 @@ with features for:
 - Channel-based messaging
 - Direct user-to-user messaging
 """
+
 import json
 import asyncio
 import logging
@@ -19,7 +20,7 @@ from aiohttp import web
 import redis.asyncio as aioredis
 from navigator_auth.conf import exclude_list
 from navigator.services.ws import WebSocketManager
-from datamodel.parsers.json import json_encoder, json_decoder  # pylint: disable=E0611
+from datamodel.parsers.json import json_encoder  # pylint: disable=E0611
 
 from ..conf import REDIS_SERVICES_URL
 
@@ -64,8 +65,8 @@ class UserSocketManager(WebSocketManager):
         app: web.Application,
         redis_url: str = None,
         default_channels: Optional[List[str]] = None,
-        route_prefix: str = '/ws/user',
-        **kwargs
+        route_prefix: str = "/ws/user",
+        **kwargs,
     ):
         """
         Initialize the UserSocketManager.
@@ -86,6 +87,7 @@ class UserSocketManager(WebSocketManager):
         # is closed to anonymous callers (first-class WS auth is deferred
         # to S1 — spec §8 open question).
         from parrot.conf import PARROT_SAAS_MODE
+
         if not PARROT_SAAS_MODE and route_prefix not in exclude_list:
             exclude_list.append(route_prefix)
         self.redis_url = redis_url or REDIS_SERVICES_URL
@@ -97,7 +99,7 @@ class UserSocketManager(WebSocketManager):
 
         # User management
         self.authenticated_users: Dict[web.WebSocketResponse, Dict[str, Any]] = {}
-        self.user_sockets: Dict[str, web.WebSocketResponse] = {}  # username -> ws
+        self.user_sockets: Dict[str, Set[web.WebSocketResponse]] = {}
         self.pending_auth: Set[web.WebSocketResponse] = set()
 
         # PubSub management
@@ -107,8 +109,8 @@ class UserSocketManager(WebSocketManager):
         # Custom message handlers
         self.custom_message_handlers: List[Callable] = []
 
-        self.logger = logging.getLogger('UserSocketManager')
-        self.logger.info(':: User WebSocket Manager initialized ::')
+        self.logger = logging.getLogger("UserSocketManager")
+        self.logger.info(":: User WebSocket Manager initialized ::")
 
     async def _on_startup(self, app: web.Application):
         """Initialize Redis connection on application startup."""
@@ -116,14 +118,11 @@ class UserSocketManager(WebSocketManager):
 
         try:
             self.pool = aioredis.ConnectionPool.from_url(
-                self.redis_url,
-                encoding='utf8',
-                decode_responses=True,
-                max_connections=5000
+                self.redis_url, encoding="utf8", decode_responses=True, max_connections=5000
             )
             self.redis = aioredis.Redis(connection_pool=self.pool)
             await self.redis.ping()
-            self.logger.info(':: Redis connection established ::')
+            self.logger.info(":: Redis connection established ::")
 
             # Register default channels
             for channel in self.default_channels:
@@ -131,7 +130,7 @@ class UserSocketManager(WebSocketManager):
                 self.channel_subscriptions[channel] = []
 
         except Exception as e:
-            self.logger.error(f'Failed to connect to Redis: {e}')
+            self.logger.error(f"Failed to connect to Redis: {e}")
             self.redis = None
 
     async def _on_shutdown(self, app: web.Application):
@@ -157,9 +156,9 @@ class UserSocketManager(WebSocketManager):
                 await asyncio.wait_for(self.redis.close(), timeout=2.0)
                 if self.pool:
                     await self.pool.disconnect(inuse_connections=True)
-                self.logger.info(':: Redis connection closed ::')
+                self.logger.info(":: Redis connection closed ::")
             except Exception as e:
-                self.logger.error(f'Error closing Redis: {e}')
+                self.logger.error(f"Error closing Redis: {e}")
 
     def register_message_handler(self, handler: Callable):
         """
@@ -199,35 +198,25 @@ class UserSocketManager(WebSocketManager):
             try:
                 payload = jwt.decode(token, SECRET_KEY, algorithms=[AUTH_JWT_ALGORITHM])
                 return {
-                    'user_id': payload.get('user_id', payload.get('sub')),
-                    'username': payload.get('username', payload.get('preferred_username', 'user')),
-                    'email': payload.get('email', ''),
-                    'roles': payload.get('roles', []),
-                    'raw_payload': payload
+                    "user_id": payload.get("user_id", payload.get("sub")),
+                    "username": payload.get("username", payload.get("preferred_username", "user")),
+                    "email": payload.get("email", ""),
+                    "roles": payload.get("roles", []),
+                    "raw_payload": payload,
                 }
             except jwt.ExpiredSignatureError:
-                self.logger.warning('Token expired')
+                self.logger.warning("Token expired")
                 return None
             except jwt.InvalidTokenError as e:
-                self.logger.warning(f'Invalid token: {e}')
+                self.logger.warning(f"Invalid token: {e}")
                 return None
 
         except ImportError:
             # Fallback: accept any non-empty token for testing
-            self.logger.warning('navigator_auth not available, using fallback validation')
-            return {
-                'user_id': 'test_user',
-                'username': f'user_{token[:8]}',
-                'email': 'test@example.com',
-                'roles': []
-            }
+            self.logger.warning("navigator_auth not available, using fallback validation")
+            return {"user_id": "test_user", "username": f"user_{token[:8]}", "email": "test@example.com", "roles": []}
 
-    async def _handle_auth(
-        self,
-        ws: web.WebSocketResponse,
-        data: Dict[str, Any],
-        client_info: Dict[str, Any]
-    ) -> bool:
+    async def _handle_auth(self, ws: web.WebSocketResponse, data: Dict[str, Any], client_info: Dict[str, Any]) -> bool:
         """
         Handle authentication message.
 
@@ -239,27 +228,23 @@ class UserSocketManager(WebSocketManager):
         Returns:
             True if authentication successful
         """
-        token = data.get('token', '')
+        if ws in self.authenticated_users:
+            self.logger.debug("Ignoring repeated authentication for an existing socket")
+            return True
+
+        token = data.get("token", "")
         # Remove 'Bearer ' prefix if present
-        if token.startswith('Bearer '):
+        if token.startswith("Bearer "):
             token = token[7:]
 
         user_info = await self._validate_token(token)
 
         if user_info:
-            username = user_info['username']
-
-            # Ensure unique username
-            base_username = username
-            counter = 1
-            while username in self.user_sockets:
-                username = f"{base_username}_{counter}"
-                counter += 1
-            user_info['username'] = username
+            username = user_info["username"]
 
             # Store authenticated user
             self.authenticated_users[ws] = user_info
-            self.user_sockets[username] = ws
+            self.user_sockets.setdefault(username, set()).add(ws)
             self.pending_auth.discard(ws)
 
             # Store user info in Redis
@@ -272,27 +257,17 @@ class UserSocketManager(WebSocketManager):
                 subscribed_channels.append(channel)
 
             # Send success response
-            await ws.send_str(json_encoder({
-                'type': 'auth_success',
-                'username': username,
-                'channels': subscribed_channels
-            }))
+            await ws.send_str(
+                json_encoder({"type": "auth_success", "username": username, "channels": subscribed_channels})
+            )
 
-            self.logger.info(f'User {username} authenticated successfully')
+            self.logger.info(f"User {username} authenticated successfully")
             return True
         else:
-            await ws.send_str(json_encoder({
-                'type': 'auth_error',
-                'message': 'Invalid or expired token'
-            }))
+            await ws.send_str(json_encoder({"type": "auth_error", "message": "Invalid or expired token"}))
             return False
 
-    async def _store_user_info(
-        self,
-        username: str,
-        user_info: Dict[str, Any],
-        client_info: Dict[str, Any]
-    ):
+    async def _store_user_info(self, username: str, user_info: Dict[str, Any], client_info: Dict[str, Any]):
         """Store user info in Redis."""
         if not self.redis:
             return
@@ -300,18 +275,18 @@ class UserSocketManager(WebSocketManager):
         try:
             key = f"user_socket:{username}"
             data = {
-                'user_id': str(user_info.get('user_id', '')),
-                'username': username,
-                'email': user_info.get('email', ''),
-                'connected_at': datetime.now(timezone.utc).isoformat(),
-                'ip': client_info.get('ip', ''),
-                'channels': json.dumps(self.default_channels)
+                "user_id": str(user_info.get("user_id", "")),
+                "username": username,
+                "email": user_info.get("email", ""),
+                "connected_at": datetime.now(timezone.utc).isoformat(),
+                "ip": client_info.get("ip", ""),
+                "channels": json.dumps(self.default_channels),
             }
             await self.redis.hset(key, mapping=data)
             # Set TTL of 24 hours
             await self.redis.expire(key, 86400)
         except Exception as e:
-            self.logger.error(f'Error storing user info: {e}')
+            self.logger.error(f"Error storing user info: {e}")
 
     async def _remove_user_info(self, username: str):
         """Remove user info from Redis."""
@@ -322,7 +297,7 @@ class UserSocketManager(WebSocketManager):
             await self.redis.delete(f"user_socket:{username}")
             await self.redis.delete(f"user_location:{username}")
         except Exception as e:
-            self.logger.error(f'Error removing user info: {e}')
+            self.logger.error(f"Error removing user info: {e}")
 
     # -------------------------------------------------------------------------
     # Channel Management
@@ -343,8 +318,8 @@ class UserSocketManager(WebSocketManager):
             self.channel_subscriptions[channel_name].append(ws)
 
         user_info = self.authenticated_users.get(ws, {})
-        username = user_info.get('username', 'Unknown')
-        self.logger.debug(f'User {username} subscribed to channel {channel_name}')
+        username = user_info.get("username", "Unknown")
+        self.logger.debug(f"User {username} subscribed to channel {channel_name}")
 
     async def _unsubscribe_from_channel(self, ws: web.WebSocketResponse, channel_name: str):
         """
@@ -359,14 +334,11 @@ class UserSocketManager(WebSocketManager):
                 self.channel_subscriptions[channel_name].remove(ws)
 
         user_info = self.authenticated_users.get(ws, {})
-        username = user_info.get('username', 'Unknown')
-        self.logger.debug(f'User {username} unsubscribed from channel {channel_name}')
+        username = user_info.get("username", "Unknown")
+        self.logger.debug(f"User {username} unsubscribed from channel {channel_name}")
 
     async def broadcast_to_channel(
-        self,
-        channel: str,
-        message: Dict[str, Any],
-        exclude_ws: Optional[web.WebSocketResponse] = None
+        self, channel: str, message: Dict[str, Any], exclude_ws: Optional[web.WebSocketResponse] = None
     ):
         """
         Broadcast a message to all subscribers of a channel.
@@ -385,13 +357,9 @@ class UserSocketManager(WebSocketManager):
                 try:
                     await ws.send_str(message_str)
                 except Exception as e:
-                    self.logger.error(f'Error broadcasting to channel {channel}: {e}')
+                    self.logger.error(f"Error broadcasting to channel {channel}: {e}")
 
-    async def broadcast_to_all(
-        self,
-        message: Dict[str, Any],
-        exclude_ws: Optional[web.WebSocketResponse] = None
-    ):
+    async def broadcast_to_all(self, message: Dict[str, Any], exclude_ws: Optional[web.WebSocketResponse] = None):
         """
         Broadcast a message to all authenticated users.
 
@@ -405,18 +373,13 @@ class UserSocketManager(WebSocketManager):
                 try:
                     await ws.send_str(message_str)
                 except Exception as e:
-                    self.logger.error(f'Error broadcasting: {e}')
+                    self.logger.error(f"Error broadcasting: {e}")
 
     # -------------------------------------------------------------------------
     # Direct Messaging
     # -------------------------------------------------------------------------
 
-    async def send_direct_message(
-        self,
-        from_username: str,
-        to_username: str,
-        content: Any
-    ) -> bool:
+    async def send_direct_message(self, from_username: str, to_username: str, content: Any) -> bool:
         """
         Send a direct message to a specific user.
 
@@ -428,25 +391,34 @@ class UserSocketManager(WebSocketManager):
         Returns:
             True if message was sent successfully
         """
-        target_ws = self.user_sockets.get(to_username)
-        if not target_ws or target_ws.closed:
+        target_sockets = self.user_sockets.get(to_username, set())
+        open_sockets = [ws for ws in target_sockets if not ws.closed]
+        if not open_sockets:
             return False
 
-        try:
-            await target_ws.send_str(json_encoder({
-                'type': 'direct',
-                'from': from_username,
-                'content': content,
-                'timestamp': datetime.now(timezone.utc).isoformat()
-            }))
-            return True
-        except Exception as e:
-            self.logger.error(f'Error sending direct message: {e}')
-            return False
+        message = json_encoder(
+            {
+                "type": "direct",
+                "from": from_username,
+                "content": content,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+        )
+        delivered = False
+        for target_ws in open_sockets:
+            try:
+                await target_ws.send_str(message)
+                delivered = True
+            except Exception as e:
+                self.logger.error(f"Error sending direct message: {e}")
+        return delivered
 
     def get_user_by_username(self, username: str) -> Optional[web.WebSocketResponse]:
-        """Get WebSocket for a user by username."""
-        return self.user_sockets.get(username)
+        """Get one open WebSocket for a user by username."""
+        return next(
+            (ws for ws in self.user_sockets.get(username, set()) if not ws.closed),
+            None,
+        )
 
     def get_online_users(self) -> List[str]:
         """Get list of all online usernames."""
@@ -456,12 +428,7 @@ class UserSocketManager(WebSocketManager):
     # Geolocation
     # -------------------------------------------------------------------------
 
-    async def user_geolocation(
-        self,
-        username: str,
-        latitude: float,
-        longitude: float
-    ):
+    async def user_geolocation(self, username: str, latitude: float, longitude: float):
         """
         Process and store user geolocation update.
 
@@ -471,23 +438,23 @@ class UserSocketManager(WebSocketManager):
             longitude: Longitude coordinate
         """
         if not self.redis:
-            self.logger.warning('Redis not available for geolocation storage')
+            self.logger.warning("Redis not available for geolocation storage")
             return
 
         try:
             key = f"user_location:{username}"
             data = {
-                'latitude': str(latitude),
-                'longitude': str(longitude),
-                'updated_at': datetime.now(timezone.utc).isoformat()
+                "latitude": str(latitude),
+                "longitude": str(longitude),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
             }
             await self.redis.hset(key, mapping=data)
             # Set TTL of 1 hour for location data
             await self.redis.expire(key, 3600)
 
-            self.logger.info('📍 Location update received for %s', username)
+            self.logger.info("📍 Location update received for %s", username)
         except Exception as e:
-            self.logger.error(f'Error storing geolocation: {e}')
+            self.logger.error(f"Error storing geolocation: {e}")
 
     async def get_user_location(self, username: str) -> Optional[Dict[str, Any]]:
         """
@@ -506,12 +473,12 @@ class UserSocketManager(WebSocketManager):
             data = await self.redis.hgetall(f"user_location:{username}")
             if data:
                 return {
-                    'latitude': float(data.get('latitude', 0)),
-                    'longitude': float(data.get('longitude', 0)),
-                    'updated_at': data.get('updated_at')
+                    "latitude": float(data.get("latitude", 0)),
+                    "longitude": float(data.get("longitude", 0)),
+                    "updated_at": data.get("updated_at"),
                 }
         except Exception as e:
-            self.logger.error(f'Error getting user location: {e}')
+            self.logger.error(f"Error getting user location: {e}")
 
         return None
 
@@ -519,13 +486,7 @@ class UserSocketManager(WebSocketManager):
     # Message Handling Overrides
     # -------------------------------------------------------------------------
 
-    async def on_connect(
-        self,
-        ws: web.WebSocketResponse,
-        channel: str,
-        client_info: Dict[str, Any],
-        session: Any
-    ):
+    async def on_connect(self, ws: web.WebSocketResponse, channel: str, client_info: Dict[str, Any], session: Any):
         """
         Handle new WebSocket connection.
 
@@ -535,10 +496,11 @@ class UserSocketManager(WebSocketManager):
         self.pending_auth.add(ws)
 
         # Send auth required message
-        await ws.send_str(json_encoder({
-            'type': 'auth_required',
-            'message': 'Please authenticate with msg_type="auth" and your bearer token'
-        }))
+        await ws.send_str(
+            json_encoder(
+                {"type": "auth_required", "message": 'Please authenticate with msg_type="auth" and your bearer token'}
+            )
+        )
 
     async def on_message(
         self,
@@ -548,7 +510,7 @@ class UserSocketManager(WebSocketManager):
         msg_content: Any,
         username: str,
         client_info: Dict[str, Any],
-        session: Any
+        session: Any,
     ):
         """
         Handle incoming WebSocket messages.
@@ -566,48 +528,41 @@ class UserSocketManager(WebSocketManager):
             True if message was handled
         """
         # Handle authentication
-        if msg_type == 'auth':
+        if msg_type == "auth":
             if isinstance(msg_content, dict):
                 data = msg_content
             else:
-                data = {'token': msg_content}
+                data = {"token": msg_content}
             return await self._handle_auth(ws, data, client_info)
 
         # All other messages require authentication
         if ws not in self.authenticated_users:
-            await ws.send_str(json_encoder({
-                'type': 'error',
-                'message': 'Authentication required'
-            }))
+            await ws.send_str(json_encoder({"type": "error", "message": "Authentication required"}))
             return True
 
         user_info = self.authenticated_users[ws]
-        auth_username = user_info['username']
+        auth_username = user_info["username"]
 
         # Handle location update
-        if msg_type == 'location':
+        if msg_type == "location":
             if isinstance(msg_content, dict):
-                lat = msg_content.get('latitude')
-                lon = msg_content.get('longitude')
+                lat = msg_content.get("latitude")
+                lon = msg_content.get("longitude")
                 if lat is not None and lon is not None:
                     await self.user_geolocation(auth_username, float(lat), float(lon))
-                    await ws.send_str(json_encoder({
-                        'type': 'location_ack',
-                        'status': 'received'
-                    }))
+                    await ws.send_str(json_encoder({"type": "location_ack", "status": "received"}))
                     return True
 
-            await ws.send_str(json_encoder({
-                'type': 'error',
-                'message': 'Invalid location data. Expected {latitude, longitude}'
-            }))
+            await ws.send_str(
+                json_encoder({"type": "error", "message": "Invalid location data. Expected {latitude, longitude}"})
+            )
             return True
 
         # Handle channel message
-        if msg_type == 'message':
+        if msg_type == "message":
             if isinstance(msg_content, dict):
-                target_channel = msg_content.get('channel', channel)
-                content = msg_content.get('content', msg_content)
+                target_channel = msg_content.get("channel", channel)
+                content = msg_content.get("content", msg_content)
             else:
                 target_channel = channel
                 content = msg_content
@@ -615,138 +570,113 @@ class UserSocketManager(WebSocketManager):
             await self.broadcast_to_channel(
                 target_channel,
                 {
-                    'type': 'message',
-                    'channel': target_channel,
-                    'from': auth_username,
-                    'content': content,
-                    'timestamp': datetime.now(timezone.utc).isoformat()
+                    "type": "message",
+                    "channel": target_channel,
+                    "from": auth_username,
+                    "content": content,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
                 },
-                exclude_ws=ws
+                exclude_ws=ws,
             )
             return True
 
         # Handle broadcast
-        if msg_type == 'broadcast':
+        if msg_type == "broadcast":
             if isinstance(msg_content, dict):
-                content = msg_content.get('content', msg_content)
+                content = msg_content.get("content", msg_content)
             else:
                 content = msg_content
 
             await self.broadcast_to_all(
                 {
-                    'type': 'broadcast',
-                    'from': auth_username,
-                    'content': content,
-                    'timestamp': datetime.now(timezone.utc).isoformat()
+                    "type": "broadcast",
+                    "from": auth_username,
+                    "content": content,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
                 },
-                exclude_ws=ws
+                exclude_ws=ws,
             )
             return True
 
         # Handle direct message
-        if msg_type == 'direct':
+        if msg_type == "direct":
             if isinstance(msg_content, dict):
-                target = msg_content.get('target')
-                content = msg_content.get('content')
+                target = msg_content.get("target")
+                content = msg_content.get("content")
             else:
-                await ws.send_str(json_encoder({
-                    'type': 'error',
-                    'message': 'Direct message requires {target, content}'
-                }))
+                await ws.send_str(
+                    json_encoder({"type": "error", "message": "Direct message requires {target, content}"})
+                )
                 return True
 
             if target and content:
                 success = await self.send_direct_message(auth_username, target, content)
                 if success:
-                    await ws.send_str(json_encoder({
-                        'type': 'direct_sent',
-                        'to': target,
-                        'status': 'delivered'
-                    }))
+                    await ws.send_str(json_encoder({"type": "direct_sent", "to": target, "status": "delivered"}))
                 else:
-                    await ws.send_str(json_encoder({
-                        'type': 'direct_failed',
-                        'to': target,
-                        'status': 'user_offline'
-                    }))
+                    await ws.send_str(json_encoder({"type": "direct_failed", "to": target, "status": "user_offline"}))
             return True
 
         # Handle subscribe
-        if msg_type == 'subscribe':
+        if msg_type == "subscribe":
             if isinstance(msg_content, dict):
-                channel_name = msg_content.get('channel')
+                channel_name = msg_content.get("channel")
             else:
                 channel_name = str(msg_content)
 
             if channel_name:
                 await self._subscribe_to_channel(ws, channel_name)
-                await ws.send_str(json_encoder({
-                    'type': 'subscribed',
-                    'channel': channel_name
-                }))
+                await ws.send_str(json_encoder({"type": "subscribed", "channel": channel_name}))
             return True
 
         # Handle unsubscribe
-        if msg_type == 'unsubscribe':
+        if msg_type == "unsubscribe":
             if isinstance(msg_content, dict):
-                channel_name = msg_content.get('channel')
+                channel_name = msg_content.get("channel")
             else:
                 channel_name = str(msg_content)
 
             if channel_name:
                 await self._unsubscribe_from_channel(ws, channel_name)
-                await ws.send_str(json_encoder({
-                    'type': 'unsubscribed',
-                    'channel': channel_name
-                }))
+                await ws.send_str(json_encoder({"type": "unsubscribed", "channel": channel_name}))
             return True
 
         # Handle get_users (list online users)
-        if msg_type == 'get_users':
+        if msg_type == "get_users":
             users = self.get_online_users()
-            await ws.send_str(json_encoder({
-                'type': 'users_list',
-                'users': users
-            }))
+            await ws.send_str(json_encoder({"type": "users_list", "users": users}))
             return True
 
         # Try custom message handlers
         for handler in self.custom_message_handlers:
             try:
-                result = await handler(
-                    ws, channel, msg_type, msg_content, auth_username, client_info
-                )
+                result = await handler(ws, channel, msg_type, msg_content, auth_username, client_info)
                 if result is True:
                     return True
             except Exception as e:
-                self.logger.error(f'Error in custom message handler: {e}')
+                self.logger.error(f"Error in custom message handler: {e}")
 
         # Unknown message type
-        await ws.send_str(json_encoder({
-            'type': 'error',
-            'message': f'Unknown message type: {msg_type}'
-        }))
+        await ws.send_str(json_encoder({"type": "error", "message": f"Unknown message type: {msg_type}"}))
         return True
 
-    async def on_disconnect(
-        self,
-        ws: web.WebSocketResponse,
-        channel: str,
-        client_info: Dict[str, Any]
-    ):
+    async def on_disconnect(self, ws: web.WebSocketResponse, channel: str, client_info: Dict[str, Any]):
         """Handle client disconnection."""
         # Clean up authenticated user
         if ws in self.authenticated_users:
             user_info = self.authenticated_users[ws]
-            username = user_info.get('username')
+            username = user_info.get("username")
 
-            # Remove from user sockets
+            # Remove this socket and preserve presence while another tab remains.
             if username and username in self.user_sockets:
-                del self.user_sockets[username]
-                await self._remove_user_info(username)
+                sockets = self.user_sockets[username]
+                sockets.discard(ws)
+                if not sockets:
+                    del self.user_sockets[username]
+                    await self._remove_user_info(username)
 
             del self.authenticated_users[ws]
-            self.logger.info(f'User {username} disconnected')
+            self.logger.info(f"User {username} disconnected")
 
         # Remove from pending auth
         self.pending_auth.discard(ws)
@@ -755,29 +685,25 @@ class UserSocketManager(WebSocketManager):
         for channel, channel_subs in list(self.channel_subscriptions.items()):
             if ws in channel_subs:
                 channel_subs.remove(ws)
-            
+
             # Clean up empty channels (except defaults)
             if not channel_subs and channel not in self.default_channels:
                 del self.channel_subscriptions[channel]
-                self.logger.debug(f'Cleaned up empty channel: {channel}')
+                self.logger.debug(f"Cleaned up empty channel: {channel}")
 
-    async def notify_channel(
-        self,
-        channel_name: str,
-        message: Dict[str, Any]
-    ) -> bool:
+    async def notify_channel(self, channel_name: str, message: Dict[str, Any]) -> bool:
         """
         Send a notification to a specific channel (for external use by AgentTalk).
-        
+
         Args:
             channel_name: Channel to notify
             message: Message payload
-            
+
         Returns:
             True if channel exists and message sent, False otherwise
         """
         if channel_name not in self.channel_subscriptions:
             return False
-            
+
         await self.broadcast_to_channel(channel_name, message)
         return True

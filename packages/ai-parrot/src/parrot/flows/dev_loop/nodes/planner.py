@@ -26,6 +26,7 @@ Sequence (per spec §3 Module 2):
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 from pathlib import Path
 from typing import Any, Dict, Literal, Optional, Union
@@ -127,6 +128,12 @@ class PlannerNode(DevLoopNode):
         shared = self.shared_state(ctx)
         brief: FeatureBrief = shared["feature_brief"]
 
+        self.report_progress(
+            ctx,
+            "started",
+            f"Generating spec + task index from {brief.document_kind} {brief.document_path}",
+            "sdd-planner runs /sdd-spec and /sdd-task, creates the feature worktree and sizes the dev pool",
+        )
         graph_context = await self._build_graph_context(brief.document_path)
 
         planner_brief = _PlannerBrief(
@@ -198,7 +205,32 @@ class PlannerNode(DevLoopNode):
             worktree_path=planner_out.worktree_path,
             repo_path=planner_out.repo_path,
         )
+        task_count = await asyncio.to_thread(self._count_index_tasks, planner_out.task_index_path)
+        seats = (
+            ", ".join(f"{a.agent}:{a.model or 'default'}x{a.count}" for a in pool_cfg.agents)
+            if pool_cfg is not None
+            else "single agent"
+        )
+        self.report_progress(
+            ctx,
+            "finished",
+            f"Spec {planner_out.spec_path} · "
+            f"{f'{task_count} tasks' if task_count is not None else 'task index'} · "
+            f"branch {planner_out.branch_name}",
+            f"worktree {planner_out.worktree_path} · pool: {seats}",
+        )
         return planner_out
+
+    @staticmethod
+    def _count_index_tasks(task_index_path: str) -> Optional[int]:
+        """Best-effort count of ``tasks[]`` in the per-spec index (narrative only)."""
+        try:
+            with open(task_index_path, encoding="utf-8") as fh:
+                data = json.load(fh)
+            tasks = data.get("tasks") if isinstance(data, dict) else None
+            return len(tasks) if isinstance(tasks, list) else None
+        except Exception:  # noqa: BLE001 - narrative must never break planning
+            return None
 
     # ------------------------------------------------------------------
     # Internal — graph context (FEAT-377/B, optional)

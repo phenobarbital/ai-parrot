@@ -238,15 +238,19 @@ class SlackSocketHandler:
         if not text:
             return
 
-        # Check channel authorization
+        # Check channel + user authorization (FEAT-555: user-level whitelist parity with the webhook path).
         channel = event.get("channel")
-        if not channel or not self.wrapper._is_authorized(channel):
+        user = event.get("user") or "unknown"
+        if not channel or not self.wrapper._is_authorized(channel, user):
             return
 
-        user = event.get("user") or "unknown"
         thread_ts = event.get("thread_ts") or event.get("ts")
         files = event.get("files")
         session_id = f"{channel}:{user}"
+
+        # FEAT-555 M9: a registered interceptor (e.g. a dev-loop run thread) may consume the event.
+        if await self.wrapper._run_interceptors(event):
+            return
 
         # Process in background using the wrapper's safe_answer
         task = asyncio.create_task(
@@ -275,8 +279,8 @@ class SlackSocketHandler:
         text = (payload.get("text") or "").strip()
         response_url = payload.get("response_url")
 
-        # Check channel authorization
-        if channel and not self.wrapper._is_authorized(channel):
+        # Check channel + user authorization (FEAT-555: parity with the webhook path).
+        if channel and not self.wrapper._is_authorized(channel, user):
             if response_url:
                 await self._send_response(
                     response_url,
@@ -355,6 +359,16 @@ class SlackSocketHandler:
         Args:
             payload: The interactive payload from Slack (buttons, menus, modals).
         """
+        # Check channel + user authorization (FEAT-555: Socket Mode had NO auth on
+        # this path at all — view_submission payloads carry no channel, so those
+        # are authorized on user only).
+        channel = (payload.get("channel") or {}).get("id")
+        user = (payload.get("user") or {}).get("id")
+        authorized = self.wrapper._is_authorized(channel, user) if channel else self.wrapper._is_user_authorized(user)
+        if not authorized:
+            logger.warning("Unauthorized interactive attempt: user=%s, channel=%s", user, channel)
+            return
+
         # Check if wrapper has an interactive handler
         if hasattr(self.wrapper, "_interactive_handler"):
             handler = getattr(self.wrapper, "_interactive_handler")

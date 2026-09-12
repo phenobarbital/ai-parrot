@@ -32,10 +32,12 @@ from parrot.bots.flows.core.types import DependencyResults
 from parrot.flows.dev_loop.dispatchers.nova import summarize_pr_changes
 from parrot.flows.dev_loop.models import (
     BugBrief,
+    ChangeSet,
     DevelopmentOutput,
     QAReport,
     ResearchOutput,
 )
+from parrot.flows.dev_loop.nodes._changeset import files_changed_markdown, record_changeset
 from parrot.flows.dev_loop.nodes.base import (
     BaseBranchMismatch,
     DevLoopNode,
@@ -155,6 +157,12 @@ class DeploymentHandoffNode(DevLoopNode):
             await self._mark_blocked(issue_key, error)
             return {"status": "blocked", "error": error}
         object.__setattr__(self, "_base_branch", base)
+        self.report_progress(
+            ctx,
+            "started",
+            f"Opening draft PR for {research.branch_name} → {base}",
+            f"push · base-branch guard · PR{' · Jira ' + issue_key if issue_key else ''}",
+        )
 
         # 1. Push.
         try:
@@ -163,6 +171,9 @@ class DeploymentHandoffNode(DevLoopNode):
             self.logger.error("git push failed: %s", exc)
             await self._mark_blocked(issue_key, str(exc))
             return {"status": "blocked", "error": f"push: {exc}"}
+        # Final git-measured file list for the run summary AND the PR body
+        # (the worktree is still alive here; /sdd-done removes it later).
+        changeset = await record_changeset(shared, research.worktree_path, base, branch=research.branch_name)
 
         # FEAT-466: sibling-overlap guard — the backstop. Blocks before any
         # PR is opened when the branch carries commits that already live on
@@ -181,7 +192,7 @@ class DeploymentHandoffNode(DevLoopNode):
 
         # 2. Open PR with retry-once.
         title = self._build_title(brief, research)
-        body = await self._build_body_async(research, dev_out, qa_report)
+        body = await self._build_body_async(research, dev_out, qa_report, changeset)
         pr_url: Optional[str] = None
         last_error: Optional[str] = None
         for attempt in range(2):
@@ -266,6 +277,12 @@ class DeploymentHandoffNode(DevLoopNode):
             except Exception as exc:  # noqa: BLE001 - degraded path
                 self.logger.warning("Jira add_comment failed: %s", exc)
 
+        self.report_progress(
+            ctx,
+            "finished",
+            f"Draft PR {pr_url}",
+            "a human reviews and merges; the flow never merges",
+        )
         return {
             "status": "ready_to_deploy",
             "pr_url": pr_url,
@@ -495,6 +512,7 @@ class DeploymentHandoffNode(DevLoopNode):
         research: ResearchOutput,
         dev_out: Optional[DevelopmentOutput],
         qa_report: Optional[QAReport],
+        changeset: Optional[ChangeSet] = None,
     ) -> str:
         """``_build_body()`` plus an optional Haiku "Summary of changes"
         section (FEAT-405 Module 8, [R2] "enrich, never replace").
@@ -506,7 +524,7 @@ class DeploymentHandoffNode(DevLoopNode):
         but this call site also swallows — PR creation must never break
         because of the mechanical seat.
         """
-        body = self._build_body(research, dev_out, qa_report)
+        body = self._build_body(research, dev_out, qa_report, changeset)
         try:
             summary = await summarize_pr_changes(body, logger=self.logger)
         except Exception:  # noqa: BLE001 - enrichment must never break handoff
@@ -527,8 +545,9 @@ class DeploymentHandoffNode(DevLoopNode):
         research: ResearchOutput,
         dev_out: Optional[DevelopmentOutput],
         qa_report: Optional[QAReport],
+        changeset: Optional[ChangeSet] = None,
     ) -> str:
-        files = ", ".join(dev_out.files_changed[:10]) if dev_out else "(none)"
+        files = files_changed_markdown(dev_out.files_changed if dev_out else [], changeset)
         criteria = (
             "\n".join(
                 f"- {r.name}: {'PASS' if r.passed else 'FAIL'}"

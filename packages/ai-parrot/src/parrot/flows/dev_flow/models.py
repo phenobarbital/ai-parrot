@@ -26,7 +26,7 @@ from __future__ import annotations
 
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from parrot.flows.dev_flow.model_plan import (
     DevFlowModelPlan,
@@ -120,6 +120,24 @@ class DevRequestBrief(BaseModel):
             "Optional QA judge-panel override, passed through to the " "``FeatureBrief`` that ``IdeationNode`` emits."
         ),
     )
+    flow_type: Literal["feature", "hotfix"] | None = Field(
+        default=None,
+        description="FEAT-555 per-run SDD flow type. None ⇒ 'feature'.",
+    )
+    base_branch: str | None = Field(
+        default=None,
+        description=(
+            "FEAT-555 per-run base branch, written by sdd-ideation into the document "
+            "frontmatter. None ⇒ 'dev'. flow_type='hotfix' requires 'main'."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def _hotfix_requires_main(self) -> "DevRequestBrief":
+        """Reject a hotfix that does not base on main (FEAT-466 rule, mirrored from WorkBrief)."""
+        if self.flow_type == "hotfix" and self.base_branch not in (None, "main"):
+            raise ValueError("flow_type='hotfix' requires base_branch='main'")
+        return self
 
 
 # Discriminated brief union on ``kind`` — mirrors ``dev_loop.models.Brief``.

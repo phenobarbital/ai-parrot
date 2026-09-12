@@ -1,4 +1,5 @@
 """`parrot mcp-local sdd-coder` — MCP surface of the sdd_coder kernel (FEAT-549, spec §3 M5)."""
+
 from __future__ import annotations
 
 import logging
@@ -12,6 +13,8 @@ from parrot.flows.dev_loop.sdd_coder.engine import CoderFailure, SddCoderEngine
 from parrot.flows.dev_loop.sdd_coder.models import (
     CoderCleanupArgs,
     CoderError,
+    CoderJob,
+    CoderJobView,
     CoderMergeArgs,
     CoderPlanArgs,
     CoderPrepareNativeArgs,
@@ -21,6 +24,13 @@ from parrot.flows.dev_loop.sdd_coder.models import (
     CoderWaitArgs,
     RosterConfig,
 )
+
+
+def _with_seats(job: CoderJob) -> CoderJobView:
+    """Attach the per-seat roll-up to a job snapshot (read-time only, never journaled)."""
+    from parrot.flows.dev_loop.sdd_coder.summary import summarize_job_seats
+
+    return CoderJobView(**job.model_dump(), seats=summarize_job_seats([job]))
 
 
 class SddCoderToolkit(AbstractToolkit):
@@ -44,6 +54,7 @@ class SddCoderToolkit(AbstractToolkit):
         roster: Union[List[Dict[str, Any]], RosterConfig],
         redis_url: Optional[str] = None,
         worktree_base_path: Optional[str] = None,
+        telemetry_dir: Optional[str] = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
@@ -53,7 +64,12 @@ class SddCoderToolkit(AbstractToolkit):
             if isinstance(roster, RosterConfig)
             else RosterConfig(seats=roster)  # type: ignore[arg-type]  # yaml kwargs arrive as list[dict]; pydantic coerces at runtime
         )
-        self._engine = SddCoderEngine(roster=cfg, redis_url=redis_url, worktree_base_path=worktree_base_path)
+        self._engine = SddCoderEngine(
+            roster=cfg,
+            redis_url=redis_url,
+            worktree_base_path=worktree_base_path,
+            telemetry_dir=telemetry_dir,
+        )
 
     async def _pre_execute(self, tool_name: str, /, **kwargs: Any) -> None:
         """Validate against arg_models (extra='forbid'); adapter.py:79 does not validate (S6)."""
@@ -140,14 +156,18 @@ class SddCoderToolkit(AbstractToolkit):
         return await self._run("coder_merge", self._engine.merge(feature, worktree, task_id))
 
     async def coder_wait(self, job_id: str, timeout_seconds: int = 120) -> CoderResult:
-        """Block up to timeout_seconds (≤ 300) and return the job snapshot."""
-        return await self._run("coder_wait", self._engine.wait(job_id, timeout_seconds))
+        """Block up to timeout_seconds (≤ 300) and return the job snapshot plus its per-seat `seats` roll-up."""
+
+        async def _w() -> BaseModel:
+            return _with_seats(await self._engine.wait(job_id, timeout_seconds))
+
+        return await self._run("coder_wait", _w())
 
     async def coder_status(self, job_id: str) -> CoderResult:
-        """Non-blocking job snapshot."""
+        """Non-blocking job snapshot plus its per-seat `seats` roll-up (tasks, retries, duration, tokens)."""
 
         async def _s() -> BaseModel:
-            return self._engine.status(job_id)
+            return _with_seats(self._engine.status(job_id))
 
         return await self._run("coder_status", _s())
 

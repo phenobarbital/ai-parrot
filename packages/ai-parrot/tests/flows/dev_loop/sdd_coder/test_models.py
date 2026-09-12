@@ -8,6 +8,7 @@ from parrot.flows.dev_loop.sdd_coder import (
     CoderWaitArgs,
     RosterSeat,
 )
+from parrot.flows.dev_loop.sdd_coder.models import AttemptRecord, TaskResult
 
 
 def test_roster_config_requires_backend_for_mcp():
@@ -51,3 +52,22 @@ def test_wait_args_cap():
     with pytest.raises(ValidationError):
         CoderWaitArgs(job_id="j", timeout_seconds=900)
     assert CoderWaitArgs(job_id="j").timeout_seconds == 120
+
+
+class TestAttemptRecordTelemetryFields:
+    def test_pre_feat554_kwargs_still_validate(self):
+        rec = AttemptRecord(attempt=1, seat_label="qwen", started_at="2026-09-12T00:00:00+00:00")
+        assert rec.attempt_uid == ""
+        assert rec.turn_series == []
+        assert rec.budget_report == {}
+        assert rec.declared_files is None
+        assert rec.declared_files_known is False
+        assert rec.terminal == "completed"
+
+    def test_turn_series_accepts_unknown_usage(self):
+        rec = AttemptRecord(attempt=1, seat_label="qwen", started_at="t", turn_series=[(7, None, None)])
+        assert rec.turn_series[0] == (7, None, None)
+
+    def test_nested_in_task_result(self):
+        rec = AttemptRecord(attempt=1, seat_label="qwen", started_at="t")
+        assert TaskResult(task_id="TASK-1", outcome="merged", attempts=[rec]).attempts[0] is rec

@@ -269,8 +269,11 @@ class CodexCodeDispatcher:
             profile.model,
             "--sandbox",
             profile.sandbox,
-            "--ask-for-approval",
-            profile.approval_policy,
+            # ``--ask-for-approval`` is a top-level ``codex`` flag only; ``codex exec``
+            # rejects it (clap: "unexpected argument") on every release since 0.145.0,
+            # so the policy goes through the config override instead.
+            "-c",
+            f"approval_policy={profile.approval_policy}",
             "--output-schema",
             schema_path,
             "-o",

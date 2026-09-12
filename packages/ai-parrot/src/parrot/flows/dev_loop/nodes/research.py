@@ -307,6 +307,14 @@ class ResearchNode(DevLoopNode):
         shared = self.shared_state(ctx)
         brief: BugBrief = shared["bug_brief"]
 
+        self.report_progress(
+            ctx,
+            "started",
+            f"Researching {getattr(brief, 'kind', 'bug')}: {brief.summary}",
+            f"component {brief.affected_component or '-'} · {len(brief.log_sources)} log source(s) · "
+            "sdd-research triages, files Jira, scaffolds the spec + tasks and creates the worktree",
+        )
+
         # 1. Fetch logs first — cheap, deterministic, and the excerpts
         # become part of the Jira description. Remote sources are gated by
         # ``log_fetch_mode``: a non-bug run has no incident to triage, so by
@@ -550,6 +558,13 @@ class ResearchNode(DevLoopNode):
         research_out = research_out.model_copy(update={"base_branch": self._resolve_base_branch(research_out, brief)})
 
         shared["research_output"] = research_out
+        self.report_progress(
+            ctx,
+            "finished",
+            f"{research_out.feat_id or research_out.jira_issue_key}: spec {research_out.spec_path} · "
+            f"base {research_out.base_branch or '?'} · {len(research_out.log_excerpts)} log excerpt(s)",
+            f"branch {research_out.branch_name} · worktree {research_out.worktree_path}",
+        )
         return research_out
 
     def _resolve_base_branch(self, research_out: ResearchOutput, brief: WorkBrief) -> str:

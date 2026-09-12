@@ -204,3 +204,32 @@ class TestPRBody:
         )
         assert "OPS-1" in body
         assert "sdd/specs/x.spec.md" in body
+
+
+def test_bug_mode_pr_body_renders_the_git_measured_file_table():
+    """Bug-mode PRs get the same +/- table as feature-mode ones, and the same fallback."""
+    from parrot.flows.dev_loop.models import ChangedFile, ChangeSet, DevelopmentOutput, ResearchOutput
+    from parrot.flows.dev_loop.nodes.deployment_handoff import DeploymentHandoffNode
+
+    research = ResearchOutput(
+        jira_issue_key="OPS-1",
+        spec_path="s.md",
+        feat_id="FEAT-1",
+        branch_name="fix-1",
+        worktree_path="/wt",
+        log_excerpts=[],
+        base_branch="main",
+    )
+    dev_out = DevelopmentOutput(files_changed=["src/a.py"], commit_shas=["abc"], summary="s")
+    changeset = ChangeSet(
+        base_ref="origin/main",
+        commits=1,
+        total_additions=3,
+        total_deletions=1,
+        files=[ChangedFile(path="src/a.py", additions=3, deletions=1)],
+    )
+    body = DeploymentHandoffNode._build_body(research, dev_out, None, changeset)
+    assert "1 file(s), **+3 −1**, 1 commit(s) vs `origin/main`" in body
+    assert "| M | `src/a.py` | 3 | 1 |" in body
+    fallback = DeploymentHandoffNode._build_body(research, dev_out, None)
+    assert "src/a.py" in fallback and "| M |" not in fallback

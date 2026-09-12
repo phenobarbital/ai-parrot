@@ -38,15 +38,16 @@ def ctx(planner_out) -> dict:
         "development_output": DevelopmentOutput(
             files_changed=["a.py", "b.py"], commit_shas=["abc"], summary="implemented"
         ),
-        "synthesis_report": SynthesisReport(
-            consistent=True, adjustments=["fixed import"], summary="clean"
-        ),
+        "synthesis_report": SynthesisReport(consistent=True, adjustments=["fixed import"], summary="clean"),
         "qa_report": QAReport(
             passed=True,
             criterion_results=[
                 CriterionResult(
-                    name="c1", kind="shell", exit_code=0,
-                    duration_seconds=0.1, passed=True,
+                    name="c1",
+                    kind="shell",
+                    exit_code=0,
+                    duration_seconds=0.1,
+                    passed=True,
                 )
             ],
             lint_passed=True,
@@ -73,9 +74,7 @@ def _patch_instant_sleep(monkeypatch):
     async def _instant_sleep(delay):
         return None
 
-    monkeypatch.setattr(
-        "parrot.flows.dev_loop.nodes.feature_handoff.asyncio.sleep", _instant_sleep
-    )
+    monkeypatch.setattr("parrot.flows.dev_loop.nodes.feature_handoff.asyncio.sleep", _instant_sleep)
 
 
 async def test_happy_path_draft_pr_and_docs(ctx, monkeypatch):
@@ -228,9 +227,7 @@ async def test_jira_transition_and_comment_when_ticket_present(ctx, monkeypatch)
 
     monkeypatch.setattr(FeatureHandoffNode, "_create_pr_with_gh", _fake_gh_create)
 
-    ctx["planner_output"] = ctx["planner_output"].model_copy(
-        update={"jira_issue_key": "OPS-1"}
-    )
+    ctx["planner_output"] = ctx["planner_output"].model_copy(update={"jira_issue_key": "OPS-1"})
     jira = MagicMock()
     jira.jira_transition_issue = AsyncMock(return_value={"ok": True})
     jira.jira_transition_to = AsyncMock(return_value={"ok": True})
@@ -300,9 +297,7 @@ async def test_accept_notes_in_pr_body(ctx, monkeypatch):
 
     monkeypatch.setattr(FeatureHandoffNode, "_create_pr_with_gh", _fake_gh_create)
 
-    ctx["feedback_decision"] = FeedbackDecision(
-        decision="accept_with_notes", notes="two nit findings accepted"
-    )
+    ctx["feedback_decision"] = FeedbackDecision(decision="accept_with_notes", notes="two nit findings accepted")
 
     node = _node()
     await node.execute(ctx)
@@ -329,6 +324,13 @@ async def test_decision_recorded_action(ctx, monkeypatch):
     artifact = host.state.docs_artifacts[0]
     assert artifact.docs_path == result["docs_path"]
     assert artifact.pr_url == result["pr_url"]
+
+    # Narrative: the node tells the operator what it is doing and what it did.
+    phases = [p.phase for p in host.state.nodes["feature_handoff"].progress]
+    assert phases == ["started", "finished"]
+    finished = host.state.nodes["feature_handoff"].progress[-1]
+    assert result["pr_url"] in finished.headline
+    assert result["docs_path"] in finished.headline
 
 
 async def test_graph_memory_publishes_run_outcome(ctx, monkeypatch):
@@ -362,3 +364,28 @@ async def test_graph_memory_publishes_run_outcome(ctx, monkeypatch):
     assert report is ctx["qa_report"]
     assert outcome == "succeeded"
     assert "FEAT-999" in summary and "pull/7" in summary
+
+
+def test_pr_body_renders_the_git_measured_file_table(planner_out):
+    """With a ChangeSet the PR body carries the reviewer's +/- table; without one, the old name list."""
+    from parrot.flows.dev_loop.models import ChangedFile, ChangeSet, DevelopmentOutput
+
+    development = DevelopmentOutput(files_changed=["src/a.py"], commit_shas=["abc"], summary="s")
+    changeset = ChangeSet(
+        base_ref="origin/dev",
+        commits=2,
+        total_additions=11,
+        total_deletions=3,
+        files=[
+            ChangedFile(path="src/a.py", additions=9, deletions=3),
+            ChangedFile(path="tests/test_a.py", additions=2, status="A"),
+        ],
+    )
+    body = FeatureHandoffNode._build_body(planner_out, development, None, None, "", changeset)
+    assert "## Files changed" in body
+    assert "2 file(s), **+11 −3**, 2 commit(s) vs `origin/dev`" in body
+    assert "| M | `src/a.py` | 9 | 3 |" in body
+    assert "| A | `tests/test_a.py` | 2 | 0 |" in body
+
+    fallback = FeatureHandoffNode._build_body(planner_out, development, None, None, "")
+    assert "## Files changed\n\nsrc/a.py\n" in fallback

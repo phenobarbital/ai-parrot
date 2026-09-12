@@ -66,26 +66,33 @@ class RevisionHandoffNode(DevLoopNode):
         repository = shared.get("repository")
         feedback = shared.get("feedback", "")
 
+        self.report_progress(
+            ctx,
+            "started",
+            f"Pushing revision of {branch} and commenting on PR #{pr_number}",
+        )
+
         # 1. Push to the EXISTING branch.
         try:
             await self._push_branch(branch, repo_path)
         except RuntimeError as exc:
             self.logger.error("revision git push failed: %s", exc)
+            self.report_progress(ctx, "finished", f"blocked — push failed: {exc}")
             return {"status": "blocked", "error": f"push: {exc}", "branch": branch}
 
         # 2. Comment on the SAME PR — never open a new one.
         body = (
             "flow-bot: applied the requested revision and re-ran QA on the "
             f"existing branch `{branch}`.\n\nReviewer feedback addressed:\n"
-            f"> {feedback}" if feedback else
-            f"flow-bot: applied the requested revision and re-ran QA on `{branch}`."
+            f"> {feedback}"
+            if feedback
+            else f"flow-bot: applied the requested revision and re-ran QA on `{branch}`."
         )
         try:
-            await self._git.add_pr_comment(
-                pr_number, body=body, repository=repository
-            )
+            await self._git.add_pr_comment(pr_number, body=body, repository=repository)
         except Exception as exc:  # noqa: BLE001 - terminal node, never raises
             self.logger.exception("revision add_pr_comment failed: %s", exc)
+            self.report_progress(ctx, "finished", f"pushed {branch}, but the PR comment failed: {exc}")
             return {
                 "status": "comment_failed",
                 "pr_number": pr_number,
@@ -93,6 +100,7 @@ class RevisionHandoffNode(DevLoopNode):
                 "error": str(exc),
             }
 
+        self.report_progress(ctx, "finished", f"Revision pushed to {branch} · commented on PR #{pr_number}")
         return {"status": "revised", "pr_number": pr_number, "branch": branch}
 
     # ------------------------------------------------------------------
@@ -112,9 +120,7 @@ class RevisionHandoffNode(DevLoopNode):
         )
         _stdout, stderr = await proc.communicate()
         if proc.returncode != 0:
-            raise RuntimeError(
-                f"git push failed: {scrub_git_output(stderr.decode(errors='replace'))}"
-            )
+            raise RuntimeError(f"git push failed: {scrub_git_output(stderr.decode(errors='replace'))}")
 
 
 __all__ = ["RevisionHandoffNode"]
