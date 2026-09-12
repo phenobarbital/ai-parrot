@@ -323,10 +323,23 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-coder (codex-spark attempt 1 failed on CLI arg incompatibility; qwen seat attempt 2 succeeded) via parrot-sdd-coder orchestrator, merged by sdd-worker
+**Date**: 2026-09-12
+**Notes**: Wired attempt identity, telemetry capture and outcome events
+into `SddCoderEngine`: `AttemptTelemetryCollector` now accepts
+`attempt_uid`/`job_id` and receives `on_attempt_telemetry`;
+`_run_attempt` mints a unique `attempt_uid` per attempt and captures
+`declared_files` while the worktree still exists; `_run_task` and
+`merge()` both emit `outcome` rows (including the failed-both-attempts
+path that never reaches `_consolidate`, and repeated `merge()` calls with
+increasing `event_seq`); `SddCoderToolkit` passes `telemetry_dir` through;
+a `telemetry_dir` under `worktree_base_path` raises at construction. Full
+`sdd_coder/` suite (171 tests) plus `test_llm_code_dispatcher.py` (66
+tests) pass together; `ruff check` clean. Attempt 1 on codex-spark failed
+before any model call (`codex exec` rejected `--ask-for-approval` — a
+CLI/dispatcher argument mismatch, not a code issue); attempt 2 on qwen
+succeeded.
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Deviations from spec**: none
 
-**Deviations from spec**: none | describe if any
+Seat: codex-spark→qwen (retry) · Backend: codex (failed)→nova · Model: gpt-5.3-codex-spark (failed)→qwen.qwen3-coder-480b-a35b-instruct · Attempts: 2 · Duration: 262.9s · Tokens: 2048316/12151

@@ -91,7 +91,7 @@
       "feature_id": "FEAT-554",
       "feature": "sdd-coder-bedrock-token-telemetry",
       "spec": "sdd/specs/sdd-coder-bedrock-token-telemetry.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -101,8 +101,8 @@
       "parallelism_notes": "Imports the TASK-3188 models and edits dispatchers/llm.py, which TASK-3190 also edits.",
       "assigned_to": null,
       "started_at": "2026-09-12T00:22:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3189-terminal-telemetry-emission.md"
+      "completed_at": "2026-09-12T00:45:21+00:00",
+      "file": "sdd/tasks/completed/TASK-3189-terminal-telemetry-emission.md"
     },
     {
       "id": "TASK-3190",
@@ -168,7 +168,7 @@
       "feature_id": "FEAT-554",
       "feature": "sdd-coder-bedrock-token-telemetry",
       "spec": "sdd/specs/sdd-coder-bedrock-token-telemetry.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -180,8 +180,8 @@
       "parallelism_notes": "Consumes the transport, the sink and the record fields; edits engine.py and toolkit.py.",
       "assigned_to": null,
       "started_at": "2026-09-12T00:22:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3193-engine-telemetry-wiring.md"
+      "completed_at": "2026-09-12T00:45:21+00:00",
+      "file": "sdd/tasks/completed/TASK-3193-engine-telemetry-wiring.md"
     },
     {
       "id": "TASK-3194",
@@ -190,7 +190,7 @@
       "feature_id": "FEAT-554",
       "feature": "sdd-coder-bedrock-token-telemetry",
       "spec": "sdd/specs/sdd-coder-bedrock-token-telemetry.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -200,8 +200,8 @@
       "parallelism_notes": "Own new file under scripts/; needs only the row schema, so it can run alongside TASK-3193.",
       "assigned_to": null,
       "started_at": "2026-09-12T00:22:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3194-usage-analysis-script.md"
+      "completed_at": "2026-09-12T00:45:21+00:00",
+      "file": "sdd/tasks/completed/TASK-3194-usage-analysis-script.md"
     },
     {
       "id": "TASK-3195",

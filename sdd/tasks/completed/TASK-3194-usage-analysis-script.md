@@ -298,10 +298,20 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-coder (haiku, native seat) via parrot-sdd-coder orchestrator, merged by sdd-worker
+**Date**: 2026-09-12
+**Notes**: Implemented `scripts/analyze_sdd_coder_usage.py`: `load_rows()`
+joins `attempt`/`outcome` JSONL lines on `attempt_uid`, taking the
+highest-`event_seq` outcome as effective and reporting orphaned outcomes
+and duplicate `attempt_uid`s (raises, naming the uid); `bucket_of()` maps
+`declared_files` into the `1-2`/`3-4`/`5+`/`unknown` buckets;
+`recommend()` groups by `(seat_label, bucket)`, reports `n_consumption`
+and `n_calibration` separately, computes p50/p95/p99, gates the ceiling on
+`MIN_SAMPLES=12`, derives the safety margin from calibration-eligible
+rows' median estimation error, excludes `unknown` from any
+recommendation, and prints `final_answer_reserve` next to each ceiling.
+13 tests pass; `ruff check` clean.
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Deviations from spec**: none
 
-**Deviations from spec**: none | describe if any
+Seat: haiku (native) · Backend: n/a · Model: haiku · Attempts: 1 · Duration: 324.4s · Tokens: n/a (subagent_tokens: 90241)
