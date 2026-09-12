@@ -67,3 +67,13 @@ async def test_check_banned_imports_fails_closed_without_ruff(tmp_path):
     (root / "pkg" / "a.py").write_text("x = 1\n")
     lines = await check_banned_imports(str(root), ["pkg/a.py"], ruff_bin="/nonexistent/ruff")
     assert lines and lines[0].startswith("ruff:")
+
+
+async def test_check_banned_imports_ignores_noqa_suppression(tmp_path):
+    """A bare `# noqa: TID251` must NOT defeat the gate (spec G5: deterministic backstop
+    that does not depend on any model reading anything, or on it NOT adding a suppression
+    comment)."""
+    root = _sandbox(tmp_path)
+    (root / "pkg" / "a.py").write_text("import requests  # noqa: TID251\n")
+    lines = await check_banned_imports(str(root), ["pkg/a.py"])
+    assert len(lines) == 1 and lines[0].startswith("pkg/a.py:1:")

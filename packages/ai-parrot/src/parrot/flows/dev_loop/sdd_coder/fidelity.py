@@ -73,6 +73,11 @@ async def check_banned_imports(cwd: str, changed: List[str], *, ruff_bin: str = 
     Returns one ``"<path>:<row>: <message>"`` line per finding; ``[]`` when clean or when
     ``changed`` holds no ``.py`` file (ruff is not spawned then). Fails closed: a missing ruff
     or an exit code >= 2 yields a single ``"ruff: <reason>"`` line. Never raises.
+
+    ``--ignore-noqa`` is deliberate (spec G5: "a deterministic backstop that does not depend
+    on any model reading anything"): without it, a bare ``# noqa: TID251`` comment silently
+    defeats this gate — the same comment a coder might add while blanket-suppressing lint
+    noise, or use deliberately to sneak a banned import past the merge boundary.
     """
     py_files = [p for p in changed if p.endswith(".py")]
     if not py_files:
@@ -84,6 +89,7 @@ async def check_banned_imports(cwd: str, changed: List[str], *, ruff_bin: str = 
             "--select",
             "TID251",
             "--no-fix",
+            "--ignore-noqa",
             "--output-format",
             "json",
             *py_files,

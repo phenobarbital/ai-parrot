@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -9,6 +10,9 @@ from pathlib import Path
 import pytest
 
 from parrot.flows.conventions import CODER_RULE_NAMES, load_project_conventions
+
+# packages/ai-parrot/tests/flows/test_conventions.py -> packages/ai-parrot/src
+_AI_PARROT_SRC = Path(__file__).resolve().parents[2] / "src"
 
 
 @pytest.fixture
@@ -49,5 +53,19 @@ def test_conventions_reject_unknown_name():
 
 
 def test_conventions_module_is_import_light():
+    """`import parrot.flows.conventions` must never pull in `parrot.flows.dev_loop`.
+
+    The subprocess is spawned with a bare environment (no ambient `sys.path`
+    manipulation this repo's root `conftest.py` applies in-process for pytest
+    runs), so its own `PYTHONPATH` must point at THIS worktree's package
+    source explicitly — otherwise, in a multi-worktree shared-venv setup, the
+    subprocess can resolve `parrot` via whichever checkout the shared venv's
+    editable install happens to point at (which may not have this module at
+    all), turning a false ModuleNotFoundError into a spurious test failure
+    unrelated to the import-lightness property under test.
+    """
     code = "import sys, parrot.flows.conventions; assert 'parrot.flows.dev_loop' not in sys.modules"
-    assert subprocess.run([sys.executable, "-c", code], check=False).returncode == 0
+    env = dict(os.environ)
+    env["PYTHONPATH"] = os.pathsep.join(filter(None, [str(_AI_PARROT_SRC), env.get("PYTHONPATH", "")]))
+    result = subprocess.run([sys.executable, "-c", code], check=False, env=env, capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
