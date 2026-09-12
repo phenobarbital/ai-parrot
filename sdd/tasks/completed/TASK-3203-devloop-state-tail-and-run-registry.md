@@ -419,10 +419,30 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-12
+**Notes**: Implemented `_frame_to_event` covering the full M7 mapping table
+(snapshot, gate_opened/resolved/expired, node_changed for all four node
+action types, jira_linked, run_closed, run_cancelled; everything else
+returns `None`). `RunStateTail.events()` replays then tails on the same
+`FlowStreamMultiplexer` instance, dedupes by `seq`, stops on a terminal
+kind, and reconnects with exponential backoff (1→30s) by rebuilding the
+multiplexer and resuming via a fresh `state_replay(last_seen=...)` — never
+a bare `state_tail()` on a new instance, which would start at `"$"` and
+drop the outage window. Implemented `RunRegistry` (memory-first
+`save`/`get`/`list_for`/`live`/`mark_terminal`, Redis mirror via one JSON
+hash field + a live set, every Redis call wrapped so a mirror failure
+never raises). Test design note: two mapping tests seed no terminal
+action (gate_opened/gate_resolved only, or a lone snapshot) — since
+`events()` legitimately never stops without one (it keeps live-tailing),
+a plain `[e async for e in ...]` would hang forever; added a bounded
+`_collect(agen, n)` helper that pulls exactly `n` items via `__anext__()`
+with a timeout and then `aclose()`s the generator. Extended `FakeRedis`
+was not needed — TASK-3200's fixture already covered every method used.
+`pytest packages/ai-parrot-integrations/tests/integrations/devloop -q`:
+55 passed (~15s, includes TASK-3202's real-subprocess tests). `ruff
+check` and `black --check` clean. Imports verified: `from
+parrot.integrations.devloop import RunStateTail, RunRegistry`. No changes
+to `streaming.py` or `session_state.py`.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.
