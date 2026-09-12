@@ -1,0 +1,109 @@
+{
+  "feature": "claude-install-mcp-autoenable",
+  "feature_id": "FEAT-556",
+  "spec": "sdd/specs/claude-install-mcp-autoenable.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-09-12T23:26:21.207203+00:00",
+  "completed_at": null,
+  "tasks": [
+    {
+      "feature_id": "FEAT-556",
+      "feature": "claude-install-mcp-autoenable",
+      "spec": "sdd/specs/claude-install-mcp-autoenable.spec.md",
+      "status": "pending",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "id": "TASK-3211",
+      "slug": "toolkit-seed-templates",
+      "title": "Packaged toolkit templates + .parrot/mcp-toolkits.yaml seeder",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Dependency of every other task: creates parrot/mcp/toolkit_seed.py and the packaged templates that M2-M5 consume.",
+      "file": "sdd/tasks/active/TASK-3211-toolkit-seed-templates.md"
+    },
+    {
+      "feature_id": "FEAT-556",
+      "feature": "claude-install-mcp-autoenable",
+      "spec": "sdd/specs/claude-install-mcp-autoenable.spec.md",
+      "status": "pending",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "id": "TASK-3212",
+      "slug": "pin-managed-entry",
+      "title": "Pin the managed .mcp.json toolkit entry to an absolute config path",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-3211"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Shares claude_code/installer.py and claude_code/assets.py with TASK-3213 and TASK-3214; must land before them.",
+      "file": "sdd/tasks/active/TASK-3212-pin-managed-entry.md"
+    },
+    {
+      "feature_id": "FEAT-556",
+      "feature": "claude-install-mcp-autoenable",
+      "spec": "sdd/specs/claude-install-mcp-autoenable.spec.md",
+      "status": "pending",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "id": "TASK-3213",
+      "slug": "mcp-approval",
+      "title": "Authorize the managed MCP servers in .claude/settings.local.json",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-3212"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Same two files as TASK-3212/3214 (installer.py); sequential in the shared worktree.",
+      "file": "sdd/tasks/active/TASK-3213-mcp-approval.md"
+    },
+    {
+      "feature_id": "FEAT-556",
+      "feature": "claude-install-mcp-autoenable",
+      "spec": "sdd/specs/claude-install-mcp-autoenable.spec.md",
+      "status": "pending",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "id": "TASK-3214",
+      "slug": "install-cli-orchestration",
+      "title": "Wire seeding + approval into parrot claude install (CLI and step order)",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-3213"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Calls the functions added by TASK-3211/3213 and edits the same installer.py; last of the Claude chain.",
+      "file": "sdd/tasks/active/TASK-3214-install-cli-orchestration.md"
+    },
+    {
+      "feature_id": "FEAT-556",
+      "feature": "claude-install-mcp-autoenable",
+      "spec": "sdd/specs/claude-install-mcp-autoenable.spec.md",
+      "status": "pending",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "id": "TASK-3215",
+      "slug": "codex-google-parity",
+      "title": "codex / google installer parity \u2014 seeding flag and pinned entry shape",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-3212"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Touches only knowledge/wiki/codex/ and knowledge/wiki/google/ \u2014 a file set disjoint from TASK-3213/3214 \u2014 so it can run in its own worktree once TASK-3212 has fixed the pinning rule it mirrors.",
+      "file": "sdd/tasks/active/TASK-3215-codex-google-parity.md"
+    }
+  ]
+}
