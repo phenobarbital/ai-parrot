@@ -298,10 +298,32 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker directly (both automated attempts failed)
+**Date**: 2026-09-12
+**Notes**: Both parrot-sdd-coder attempts (codex-spark, then qwen) failed
+on this task — codex-spark on a CLI arg incompatibility before any model
+call, qwen with a genuine Python `SyntaxError` in `llm.py` from a botched
+re-indentation of the ~330-line loop `try/finally`. sdd-worker implemented
+it directly per the blueprint: `conf.py` gained the three settings exactly
+as specified; `_observational_policy` builds the non-enforcing policy
+(`enforcement="observe"`, `budget_mode="estimated"`,
+`final_answer_reserve=0`, reference `token_budget=10_000_000` — chosen
+comfortably above the measured ~4.7M/60-turn ceiling, documented as
+display-only since observe mode never denies) or returns `None` when
+either switch is off; the existing loop `try/finally` is now enclosed in
+`async with AsyncExitStack() as _budget_stack`, entering the root
+`BudgetScope` only when a policy exists (AC-1), degrading
+`BudgetRegistryFull` to an unscoped attempt with one WARNING and
+`budget_report=None` (AC-11) instead of failing the dispatch, and
+capturing `(await scope.ledger.report()).model_dump()` inside the
+existing `finally` — before `AsyncExitStack.__aexit__` closes the ledger —
+threaded into `AttemptTelemetry.budget_report`. Added
+`TestObservationalScope` (5 tests, all passed first run): policy shape
+enabled/disabled, no-scope-when-disabled, one `operation_id` across every
+turn (AC-2), and registry-full degradation (AC-11). All 71 tests in
+`test_llm_code_dispatcher.py` pass, plus both FEAT-550 regression suites;
+`ruff check` clean on all three files.
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Deviations from spec**: none — implemented per the blueprint verbatim (no ceiling knob, no `_min_safe_ceiling`)
 
-**Deviations from spec**: none | describe if any
+Seat: codex-spark (failed, CLI)→qwen (failed, SyntaxError)→sdd-worker (direct) · Backend: codex/nova/n-a · Model: gpt-5.3-codex-spark/qwen.qwen3-coder-480b-a35b-instruct/n-a · Attempts: 3 (2 automated failed + 1 direct) · Duration: 138.1s (automated attempts only) · Tokens: n/a (attempt 2 usage not reported)

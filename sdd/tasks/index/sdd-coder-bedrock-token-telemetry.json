@@ -111,7 +111,7 @@
       "feature_id": "FEAT-554",
       "feature": "sdd-coder-bedrock-token-telemetry",
       "spec": "sdd/specs/sdd-coder-bedrock-token-telemetry.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -122,8 +122,8 @@
       "parallelism_notes": "Edits the same dispatchers/llm.py region as TASK-3189 and threads the report into its telemetry call.",
       "assigned_to": null,
       "started_at": "2026-09-12T00:22:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3190-observational-scope-binding.md"
+      "completed_at": "2026-09-12T01:12:15+00:00",
+      "file": "sdd/tasks/completed/TASK-3190-observational-scope-binding.md"
     },
     {
       "id": "TASK-3191",
