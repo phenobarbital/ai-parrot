@@ -261,3 +261,37 @@ async def test_consolidate_rejects_banned_import(git_sandbox_feature, noop_probe
 
     _rc, log, _err = await _git("log", "--oneline", feature_branch, cwd=worktree)
     assert "banned import" not in log
+
+
+async def test_consolidate_rechecks_banned_import_after_manual_remerge(git_sandbox_feature, noop_probe):
+    """Code-review fix: `sdd-worker.md`'s documented `merge_conflict` recovery —
+    resolve manually with `git merge <branch>` directly in the feature worktree,
+    commit, then call `coder_merge` (-> `_consolidate`) again — must not let a
+    banned import slip through on the SECOND `_consolidate` call just because
+    `branch` is now an ancestor of `feature_branch` (which collapses a plain
+    `git merge-base` to `branch`'s own tip and would otherwise produce an empty
+    diff)."""
+    worktree, feature_branch, base_path, _index_path = git_sandbox_feature
+    await _write_and_commit(worktree, "ruff.toml", _BANNED_CFG, "ruff config")
+    engine = SddCoderEngine(
+        roster=RosterConfig(seats=[RosterSeat(label="h", kind="native")]),
+        probe=noop_probe,
+        worktree_base_path=str(base_path),
+    )
+    ctx = await engine._resolve_feature("demo", str(worktree))
+    manager = engine._manager_for(ctx, "TASK-0003", 1)
+    path = Path(await manager.create("TASK-0003.a1"))
+    branch = f"{feature_branch}--TASK-0003-a1"
+    await _write_and_commit(path, "pkg/t3.py", "import requests\n", "banned import")
+
+    # Diverge feature_branch so the manual merge below cannot fast-forward — mirrors
+    # a realistic merge_conflict (something else changed on feature_branch meanwhile).
+    await _write_and_commit(worktree, "pkg/unrelated.py", "# unrelated\n", "unrelated change")
+
+    # Simulate sdd-worker.md's documented recovery: merge `branch` directly into the
+    # feature worktree and commit, bypassing `manager.merge_sequential()` entirely.
+    rc, _out, err = await _git("merge", "--no-ff", branch, "-m", f"merge {branch}", cwd=worktree)
+    assert rc == 0, err
+
+    result = await engine.merge("demo", str(worktree), "TASK-0003")
+    assert result.outcome == "fidelity_violation" and result.diagnostics.startswith("BannedImport:")

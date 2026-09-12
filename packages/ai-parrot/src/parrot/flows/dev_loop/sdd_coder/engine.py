@@ -76,6 +76,63 @@ async def _git(*args: str, cwd: str) -> Tuple[int, str, str]:
     return proc.returncode or 0, out.decode(errors="replace"), err.decode(errors="replace")
 
 
+async def _consolidate_diff_base(feature_branch: str, branch: str, *, cwd: str) -> str:
+    """Resolve the correct diff base for `branch`'s own changes against `feature_branch`.
+
+    Normally this is `git merge-base feature_branch branch` (spec-review R1 / the
+    triple-dot rationale in `_consolidate`): `branch` has not been merged into
+    `feature_branch` yet, so the merge-base IS the commit `branch` forked from, and
+    diffing from there sees only `branch`'s own commits — not a sibling task's merge
+    that landed on `feature_branch` first under the same `_merge_lock`.
+
+    FEAT-553 code-review finding: `sdd-worker.md`'s documented `merge_conflict`
+    recovery — resolve the conflict manually with `git merge <branch>` directly in the
+    feature worktree, commit, then call `coder_merge` (→ `_consolidate`) again — makes
+    `branch` an ANCESTOR of `feature_branch` by the second `_consolidate` call. At that
+    point `merge-base(feature_branch, branch)` collapses to `branch`'s own tip (it is
+    now fully contained in `feature_branch`'s history), so a `feature_branch...branch`
+    diff comes back EMPTY and silently skips both `check_fidelity` and
+    `check_banned_imports` for whatever the manual resolution introduced.
+
+    When that happens, find the merge commit in `feature_branch`'s history whose
+    parents include `branch`'s tip, and return its OTHER parent (the pre-merge
+    `feature_branch` tip) instead — diffing from there sees exactly what merging
+    `branch` in introduced, including any manual conflict-resolution edits. If no such
+    merge commit exists (e.g. an unexpected fast-forward, which `merge_sequential`'s
+    `--no-ff` and a genuinely conflicted manual merge both rule out in practice),
+    `branch`'s own tip is returned — the same (empty-diff) behavior as before this fix,
+    never a regression.
+    """
+    _rc, merge_base, _err = await _git("merge-base", feature_branch, branch, cwd=cwd)
+    merge_base = merge_base.strip()
+    _rc, branch_tip, _err = await _git("rev-parse", branch, cwd=cwd)
+    branch_tip = branch_tip.strip()
+    if merge_base != branch_tip:
+        return merge_base
+    # `branch` is already an ancestor of `feature_branch` — find the specific merge
+    # commit that incorporated it. `--merges` bounds the scan to merge commits only,
+    # not the entire (potentially large) history.
+    _rc, out, _err = await _git("log", "--merges", "--format=%H %P", feature_branch, cwd=cwd)
+    for line in out.splitlines():
+        parts = line.split()
+        if not parts:
+            continue
+        parents = parts[1:]
+        if branch_tip in parents:
+            others = [p for p in parents if p != branch_tip]
+            if others:
+                # `others[0]` (the merge's other parent — feature_branch's tip right
+                # before this merge) is a SIBLING of `branch`, not necessarily its
+                # ancestor: both typically descend from the same earlier fork point,
+                # so a plain double-dot diff against it would also pick up whatever
+                # else landed on feature_branch in between (a false unexpected-file
+                # / false banned-import positive). One more merge-base resolves back
+                # to that true, shared fork point.
+                _rc, base2, _err = await _git("merge-base", others[0], branch, cwd=cwd)
+                return base2.strip()
+    return branch_tip
+
+
 @dataclass(frozen=True)
 class _FeatureCtx:
     """Resolved per-call context: which feature, which worktree, which branch."""
@@ -348,13 +405,16 @@ class SddCoderEngine:
                 worktree_path=path,
                 diagnostics="dirty_task_worktree: uncommitted/untracked changes:\n" + status,
             )
-        # Triple-dot (merge-base-relative), NOT double-dot (direct tree comparison): `git diff
-        # A..B` is a literal two-tree diff, so if `ctx.feature_branch` has advanced since `branch`
-        # was created (e.g. a sibling task's attempt merged first, under the SAME `_merge_lock`
-        # but in an EARLIER `_consolidate` call), a two-dot diff would list every file the other
-        # merge introduced too — this branch would then fail fidelity for files it never touched.
-        # `A...B` restricts the diff to `branch`'s own changes since it forked from `feature_branch`.
-        _rc, diff, _err = await _git("diff", "--name-only", f"{ctx.feature_branch}...{branch}", cwd=ctx.worktree)
+        # Triple-dot semantics (merge-base-relative), NOT double-dot (direct tree comparison):
+        # `git diff A..B` is a literal two-tree diff, so if `ctx.feature_branch` has advanced
+        # since `branch` was created (e.g. a sibling task's attempt merged first, under the SAME
+        # `_merge_lock` but in an EARLIER `_consolidate` call), a two-dot diff would list every
+        # file the other merge introduced too — this branch would then fail fidelity for files
+        # it never touched. `_consolidate_diff_base` resolves the equivalent of `A...B`'s merge
+        # base, but ALSO covers the re-merge case (`branch` already an ancestor of
+        # `ctx.feature_branch` — see its docstring) that a plain `git merge-base` gets wrong.
+        diff_base = await _consolidate_diff_base(ctx.feature_branch, branch, cwd=ctx.worktree)
+        _rc, diff, _err = await _git("diff", "--name-only", f"{diff_base}..{branch}", cwd=ctx.worktree)
         # Code-review fix (FEAT-549, IMPORTANT): resolve + verify containment before reading.
         # `os.path.join(ctx.worktree, task.task_file)` silently discards `ctx.worktree` if
         # `task.task_file` were ever absolute (`os.path.join` semantics), reading an arbitrary
