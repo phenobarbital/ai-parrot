@@ -88,7 +88,15 @@ def _upsert(text: str, block: str, begin: str, end: str) -> str:
         head, _, rest = text.partition(begin)
         tail = rest.partition(end)[2] if end in rest else "\n"
         return f"{head}{block.rstrip()}\n{tail.lstrip(chr(10))}"
-    return f"{text.rstrip(chr(10)) + chr(10) if text else ''}\n{block}"
+    # FEAT-553: a single newline separator here — matching the "begin in text"
+    # branch above — keeps a second, chained upsert() call in the SAME
+    # install() (wiki block, then conventions block) idempotent. Two
+    # newlines here (one from rstrip+chr(10), one from the literal "\n{block}")
+    # used to insert a blank-line separator on the FIRST install() that the
+    # replace-branch above then collapsed to one on every SUBSEQUENT
+    # install(), making two chained marker blocks non-idempotent.
+    stripped = text.rstrip(chr(10))
+    return f"{stripped}\n{block}" if stripped else f"\n{block}"
 
 
 def _json(path: Path) -> dict[str, Any]:
