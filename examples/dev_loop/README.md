@@ -441,7 +441,7 @@ subagent refuses to touch it and returns the collision as an open question.
 | `/api/flow/{run_id}/gates/{gate_id}/resolve` | POST | **The HITL write path** — resolve a gate. `server.py` never mounts this. |
 | `/api/flow/{run_id}/cancel` | POST | Cancel a run |
 | `/api/flow/{run_id}/ws` | GET | `flow_stream_ws` — `?view=flow\|dispatch\|both\|state` |
-| `/api/flow/{run_id}/bundle` | GET | Finished run's bundle (`?format=md` for the report) |
+| `/api/flow/{run_id}/bundle` | GET | Finished run's artifacts: `?format=md` (the report), `?format=json` (the `RunBundle`, incl. `developed.changeset` and `developed.seat_usage`), `?format=usage` (the per-seat `UsageReport`) |
 | `/api/flow/{run_id}/replay` | GET | JSON dump of stored events |
 
 ### Run payloads
@@ -726,6 +726,59 @@ Related (FEAT-482/486): the ops console now also honours
 (`DEV_LOOP_DEV_AGENTS`) now also reaches the ops console's **feature**
 topology, so `PlannerNode` suggests the operator's real backends there
 too.
+
+## What the console shows per node — narrative vs raw log
+
+Both consoles (`dev.html`, `index.html`) open two sockets: the raw event
+log (`?view=both`) and the folded session state (`?view=state`). The
+**Events** toggle in the Execution header picks how the per-node log is
+rendered:
+
+- **Narrative** (default) — the rows an operator actually reads:
+  - `node/progress` lines the nodes author themselves through
+    `DevLoopNode.report_progress()` — `▶ started` ("Generating spec + task
+    index from …", "3 tasks to run on 2 seats…"), `… working` (one per
+    development wave / ideation question round), `✔ finished` with the
+    node's conclusions ("PASSED: 4/4 criteria · lint ok · review ok",
+    "7 file(s) changed · 3 commit(s) · +212 −18");
+  - tool calls (`Read a/foo.py`, `Bash pytest …`), failed tool results,
+    dispatch failures/completions, and the assistant's own words — visible
+    text or a **throttled thinking snippet** (claude-code seats with
+    extended thinking; at most one per `THINKING_THROTTLE_SECONDS`, the
+    latest one also sits in the seat table's *thinking* column);
+  - content-less SDK frames (bare `UserMessage`/`SystemMessage`/
+    `ResultMessage` envelopes, successful tool results, the queued
+    handshake) are hidden. They still count in `Msgs`.
+- **Raw log** — every envelope verbatim with its expandable JSON, exactly
+  the FEAT-496 rendering; use it for replay and debugging. The choice is
+  remembered per browser.
+
+Server-side, `dispatch/delta` actions carry `content_kind`
+(`text|thinking|system|result|empty`) and the throttled `thinking`
+snippet, so the filter is a field test, not a heuristic over raw keys.
+
+### The job summary
+
+When the run terminates the console fetches `bundle?format=json` and
+`?format=usage` (retrying while `_close_host` is still writing them) and
+renders, below the PR/agents cards:
+
+- **Files changed** — the PR-style list git measured in the worktree
+  (`nodes/_changeset.py`: `git diff --numstat/--name-status` against the
+  resolved base, plus uncommitted/untracked work): status letter, path,
+  `+/-` per file with bars, grouped by top-level directory, with branch →
+  base, commit count and totals in the header. Recorded by
+  `DevelopmentNode` (`run/changesetRecorded`) and re-measured by the
+  handoff right before the PR — the same table goes into the draft PR
+  body and into `report.md` (`## Files changed`).
+- **Per-agent** — one row per seat: backend/model, tasks handled
+  (merged), attempts, retries/failures, wall-clock and tokens in/out.
+  Sourced deterministically from the `sdd-coder` job journals
+  (`<worktree>/.sdd-coder/jobs/*.json`, `sdd_coder/summary.py`) or, for
+  a dev-agent pool, from `worker_summaries` + the per-seat counters
+  (`development/seatUsageRecorded`); the FEAT-479 usage ledger fills in
+  tokens for seats that reported none. `n/a` means the backend reports no
+  usage (codex CLI, native haiku) — never a fabricated 0.
 
 ## Stream layout (for reference)
 

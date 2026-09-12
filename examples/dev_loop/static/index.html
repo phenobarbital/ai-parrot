@@ -298,6 +298,8 @@ textarea.input { resize: vertical; }
       <span class="rule"></span>
       <span class="micro">View</span>
       <div class="seg" id="view-picker" style="flex:0 0 auto"></div>
+      <span class="micro">Events</span>
+      <div class="seg" id="evmode-picker" style="flex:0 0 auto"></div>
     </div>
     <div id="exec-body"></div>
   </section>
@@ -388,8 +390,19 @@ function emptyState() {
   return {
     phase: "created", nodes: {}, gates: {}, prUrl: "", jiraKey: "",
     judgeVerdicts: {}, feedback: [], docs: [], qaAttempts: 0,
+    changeset: null, seatUsage: [],
     createdAt: null, finishedAt: null, error: "",
   };
+}
+
+/** Bounded narrative per node — mirrors session_state.PROGRESS_MAX. */
+const PROGRESS_MAX = 50;
+const EVMODE_KEY = "afd-evmode";
+function readEvMode() {
+  try { return localStorage.getItem(EVMODE_KEY) === "raw" ? "raw" : "narrative"; } catch { return "narrative"; }
+}
+function persistEvMode() {
+  try { localStorage.setItem(EVMODE_KEY, app.evMode); } catch { /* private mode — fine */ }
 }
 
 const app = {
@@ -400,6 +413,13 @@ const app = {
   runId: null,
   wsEvents: null, wsState: null, connected: false,
   view: "rail",
+  // Narrative (node/progress + tool calls + thinking + failures) vs the
+  // raw envelope log. Raw is the FEAT-496 rendering, kept verbatim for
+  // replay/debug; narrative is the default an operator reads.
+  evMode: readEvMode(),
+  // Run artifacts fetched once the run terminates (bundle.json / usage.json);
+  // the summary prefers them over the folded state when present.
+  bundle: null, usage: null,
   selected: null,
   advOpen: true,
   advTab: "criteria",
@@ -446,6 +466,7 @@ function fmtNum(n) {
 /** One-line gist of an event payload, for the collapsed event row. */
 function briefOf(kind, p) {
   if (!p || typeof p !== "object") return "";
+  if (p.thinking && !p.text) return "thinking: " + String(p.thinking).slice(0, 150);
   if (p.summary) return String(p.summary).slice(0, 160);
   if (p.decision) return String(p.decision);
   if (p.command || p.cmd) {
@@ -486,12 +507,14 @@ function adoptSnapshot(snap) {
   s.judgeVerdicts = { ...(st.judge_verdicts || {}) };
   s.feedback = [...(st.feedback_decisions || [])];
   s.docs = [...(st.docs_artifacts || [])];
+  s.changeset = st.changeset || null;
+  s.seatUsage = [...(st.seat_usage || [])];
   app.s = s;
 }
 
 function node(id) {
   if (!app.s.nodes[id]) {
-    app.s.nodes[id] = { node_id: id, status: "idle", dispatch: null, summary: {} };
+    app.s.nodes[id] = { node_id: id, status: "idle", dispatch: null, summary: {}, progress: [] };
   }
   return app.s.nodes[id];
 }
@@ -518,6 +541,7 @@ function foldSeat(n, a) {
   if (a.summary) next.last_summary = String(a.summary).slice(0, 160);
   if (a.tool_name) next.last_tool = a.tool_name;
   if (a.error) next.last_error = String(a.error).slice(0, 500);
+  if (a.thinking) next.last_thinking = String(a.thinking).slice(0, 400);
   switch (a.type) {
     case "dispatch/queued":  next.status = "queued"; break;
     case "dispatch/started": next.status = "running"; next.started_at = a.ts; break;
@@ -554,6 +578,10 @@ function foldAction(a) {
     case "node/failed":    { const n = node(a.node_id); n.status = "failed"; n.finished_at = a.ts;
                              n.error = a.error || ""; break; }
     case "node/skipped":   { node(a.node_id).status = "skipped"; break; }
+    case "node/progress":  { const n = node(a.node_id);
+                             n.progress = [...(n.progress || []), { phase: a.phase, headline: a.headline,
+                               detail: a.detail, ts: a.ts, seat: a.seat, task_id: a.task_id }].slice(-PROGRESS_MAX);
+                             break; }
 
     case "dispatch/queued":  { const n = node(a.node_id);
       // FEAT-496: merge into any existing DispatchState rather than
@@ -630,6 +658,8 @@ function foldAction(a) {
       s.docs.push({ docs_path: a.docs_path, wiki_page_id: a.wiki_page_id, pr_url: a.pr_url });
       if (a.pr_url && !s.prUrl) s.prUrl = a.pr_url;
       break;
+    case "run/changesetRecorded":         s.changeset = a.changeset || null; break;
+    case "development/seatUsageRecorded": s.seatUsage = [...(a.seats || [])]; break;
     default: break;
   }
 }
@@ -698,6 +728,31 @@ function closeSockets() {
 function finish() {
   app.phase = "done";
   $("summary-section").classList.remove("hidden");
+  loadBundle();
+}
+
+/** Fetch the run's persisted bundle + per-seat usage report once the run
+ * has terminated. `_close_host` writes them AFTER the terminal action, so a
+ * 404 right after `run/closed` is expected — retry with backoff, then give
+ * up quietly (the folded state still renders the summary). */
+async function loadBundle(attempt = 0) {
+  if (!app.runId || app.phase !== "done") return;
+  const runId = app.runId;
+  const fetchJson = async (fmt) => {
+    const res = await fetch(`/api/flow/${runId}/bundle?format=${fmt}`);
+    if (!res.ok) return null;
+    return res.json();
+  };
+  try {
+    const [bundle, usage] = await Promise.all([fetchJson("json"), fetchJson("usage")]);
+    if (runId !== app.runId) return;  // a new run started meanwhile
+    if (bundle) app.bundle = bundle;
+    if (usage) app.usage = usage;
+    if (!bundle && attempt < 5) { setTimeout(() => loadBundle(attempt + 1), 1500 * (attempt + 1)); return; }
+  } catch {
+    if (attempt < 5) { setTimeout(() => loadBundle(attempt + 1), 1500 * (attempt + 1)); return; }
+  }
+  scheduleRender();
 }
 
 function markNodesTerminal() {
@@ -846,7 +901,7 @@ function nodesForRender() {
     return {
       ...n, num: String(i + 1).padStart(2, "0"),
       status: st.status || "idle", error: st.error || "",
-      dispatch: st.dispatch || null, summary: st.summary || {},
+      dispatch: st.dispatch || null, summary: st.summary || {}, progress: st.progress || [],
       events, startedAt: st.started_at, finishedAt: st.finished_at, elapsed,
     };
   });
@@ -855,18 +910,72 @@ function nodesForRender() {
 /** Short seat suffix ("development.w1" -> "w1") for the row badge. */
 const shortSeat = (seat) => String(seat || "").split(".").pop();
 
+/** Narrative filter: which raw envelopes still deserve a row when the
+ * operator is NOT reading the raw log. Tool calls, failures, the assistant's
+ * own words (text / throttled thinking) and node lifecycle survive; the
+ * content-less SDK frames (bare UserMessage / SystemMessage / ResultMessage
+ * envelopes, tool results that succeeded, the queued handshake) do not. */
+function narrativeWorthy(e) {
+  const p = e.payload || {};
+  switch (e.kind) {
+    case "dispatch.tool_use": return true;
+    case "dispatch.tool_result": return !!p.is_error;
+    case "dispatch.message": return !!(p.text || p.thinking);
+    case "dispatch.queued": return false;
+    case "dispatch.started": case "dispatch.failed":
+    case "dispatch.output_invalid": case "dispatch.completed": return true;
+    default: return String(e.kind).startsWith("flow.") && !/node_started|node_completed/.test(e.kind);
+  }
+}
+
+/** The node's own narrative (`node/progress`, folded from view=state) as
+ * pseudo-events so it interleaves chronologically with the filtered log. */
+function progressEvents(nodeId) {
+  const n = app.s.nodes[nodeId];
+  return ((n && n.progress) || []).map((pr, i) => ({
+    ts: pr.ts, kind: "progress", payload: pr, progressKey: `${nodeId}:p${i}`,
+  }));
+}
+
+const PHASE_GLYPH = { started: "▶", working: "…", finished: "✔" };
+
 function eventRowsHtml(nodeId, events) {
   const hasSeats = !!(app.s.nodes[nodeId] && app.s.nodes[nodeId].dispatch &&
                       app.s.nodes[nodeId].dispatch.seats &&
                       Object.keys(app.s.nodes[nodeId].dispatch.seats).length);
-  if (!events.length) {
+  const raw = app.evMode === "raw";
+  let rows = raw ? events : events.filter(narrativeWorthy).concat(progressEvents(nodeId));
+  if (!raw) rows.sort((a, b) => a.ts - b.ts);
+  if (!rows.length) {
     if (hasSeats) return "";  // seat table above already shows activity
-    return `<p class="muted" style="font-size:12.5px;padding:10px 0 2px">This node has not been dispatched yet.</p>`;
+    const nodeSt = app.s.nodes[nodeId];
+    const msg = nodeSt && nodeSt.status === "running"
+      ? "Running — waiting for the node to report."
+      : raw || !events.length ? "This node has not been dispatched yet."
+      : `Nothing narrative-worthy yet — ${events.length} raw envelope(s), switch to "Raw log" to see them.`;
+    return `<p class="muted" style="font-size:12.5px;padding:10px 0 2px">${esc(msg)}</p>`;
   }
-  return events.slice().reverse().map((e, j) => {
-    const key = `${nodeId}:${events.length - 1 - j}`;
-    const open = app.openEvents.has(key);
+  return rows.slice().reverse().map((e) => {
     const p = e.payload || {};
+    if (e.kind === "progress") {
+      // Node-authored line: phase glyph + headline, detail as a second line.
+      const open = app.openEvents.has(e.progressKey);
+      const badgeParts = [];
+      if (p.seat) badgeParts.push(shortSeat(p.seat));
+      if (p.task_id) badgeParts.push(p.task_id);
+      return `<div class="ev-row">
+        <div class="ev-head" data-ev="${esc(e.progressKey)}">
+          <span class="caret muted">${open ? "▾" : "▸"}</span>
+          <span class="muted">${esc(fmtClock(e.ts))}</span>
+          <span style="color:var(--color-accent-700)">${esc(PHASE_GLYPH[p.phase] || "•")} ${esc(p.phase)}</span>
+          ${badgeParts.length ? `<span class="mono muted" style="font-size:11px">[${esc(badgeParts.join(" · "))}]</span>` : ""}
+          <span style="flex:1;min-width:0">${esc(p.headline)}</span>
+        </div>
+        ${p.detail ? `<div class="muted" style="font-size:12px;padding:2px 0 4px 19px;white-space:${open ? "normal" : "nowrap"};overflow:hidden;text-overflow:ellipsis">${esc(p.detail)}</div>` : ""}
+      </div>`;
+    }
+    const key = `${nodeId}:${e.ts}:${e.kind}`;
+    const open = app.openEvents.has(key);
     // FEAT-496: seat + task badge for pooled dev-agent rows, judge_id
     // badge for the QA panel (same node_id="qa" for every judge — identity
     // rides in the label, not the node id).
@@ -877,11 +986,12 @@ function eventRowsHtml(nodeId, events) {
     const badge = badgeParts.length
       ? `<span class="mono muted" style="font-size:11px">[${esc(badgeParts.join(" · "))}]</span>`
       : "";
+    const kindLabel = raw ? e.kind : String(e.kind).replace(/^dispatch\./, "").replace(/^flow\./, "");
     return `<div class="ev-row">
       <div class="ev-head" data-ev="${esc(key)}">
         <span class="caret muted">${open ? "▾" : "▸"}</span>
         <span class="muted">${esc(fmtClock(e.ts))}</span>
-        <span style="color:var(--color-accent-700)">${esc(e.kind)}</span>
+        <span style="color:var(--color-accent-700)">${esc(kindLabel)}</span>
         ${badge}
         <span class="rule"></span>
         <span class="muted">${esc(briefOf(e.kind, e.payload))}</span>
@@ -901,6 +1011,9 @@ function nodeMetaHtml(n) {
   if (d.dispatcher) bits.push(d.dispatcher);
   if (d.message_count) bits.push(`${d.message_count} msgs`);
   if (d.tool_use_count) bits.push(`${d.tool_use_count} tools`);
+  const progress = n.progress || [];
+  const last = progress[progress.length - 1];
+  if (last) bits.push(last.headline);
   return bits.join(" · ");
 }
 
@@ -925,10 +1038,11 @@ function nodeSeatsHtml(n) {
       <td><span class="pill ${esc(s.status || "queued")}">${esc(s.status || "queued")}</span></td>
       <td class="mono muted">${s.message_count || 0}m/${s.tool_use_count || 0}t</td>
       <td class="muted" style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.last_summary || s.last_error || "")}</td>
+      <td class="muted" style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-style:italic">${esc(s.last_thinking || "")}</td>
     </tr>`;
   }).join("");
   return `<table class="seat-table" style="width:100%;font-size:12px;border-collapse:collapse;margin:8px 0">
-    <thead><tr class="muted" style="text-align:left"><th>seat</th><th>task</th><th>agent/model</th><th>status</th><th>counts</th><th>last</th></tr></thead>
+    <thead><tr class="muted" style="text-align:left"><th>seat</th><th>task</th><th>agent/model</th><th>status</th><th>counts</th><th>last</th><th>thinking</th></tr></thead>
     <tbody>${rows}</tbody>
   </table>`;
 }
@@ -937,7 +1051,7 @@ function renderExecution() {
   if (app.phase === "idle") return;
   const nodes = nodesForRender();
   $("exec-progress").textContent =
-    `${app.eventCount} envelopes` +
+    `${app.eventCount} envelopes` + (app.evMode === "raw" ? " (raw)" : " (narrative)") +
     (app.s.qaAttempts ? ` · QA attempt ${app.s.qaAttempts + 1}` : "") +
     (app.phase === "done" ? " · stream closed" : " · streaming");
 
@@ -1080,6 +1194,124 @@ function effectiveJudges() {
     return j;
   }
   return app.config?.default_judge_panel || [];
+}
+
+/** The run's git-measured changeset: the persisted bundle wins over the
+ * folded state (same data, but the bundle is what report.md was rendered
+ * from). */
+function effectiveChangeset() {
+  const fromBundle = app.bundle && app.bundle.developed && app.bundle.developed.changeset;
+  return fromBundle || app.s.changeset || null;
+}
+
+function effectiveSeatUsage() {
+  const fromBundle = app.bundle && app.bundle.developed && app.bundle.developed.seat_usage;
+  return (fromBundle && fromBundle.length ? fromBundle : app.s.seatUsage) || [];
+}
+
+/** Per-seat rows of the FEAT-479 usage ledger (`{run}.usage.json`), keyed by seat. */
+function usageAgents() {
+  const agents = (app.usage && app.usage.agents) || [];
+  const byName = {};
+  for (const a of agents) byName[a.seat] = a;
+  return byName;
+}
+
+const STATUS_LABEL = { A: "added", M: "modified", D: "deleted", R: "renamed", C: "copied", T: "type", "?": "untracked" };
+
+/** PR-style "Files changed" card: header (branch vs base, commits, totals),
+ * then one row per file grouped by top-level directory with +/- bars. */
+function filesChangedCard(cs) {
+  if (!cs) {
+    return `<div class="blueprint" style="margin-top:18px;padding:16px 18px">
+      <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+      <span class="micro">Files changed</span>
+      <p class="hint" style="margin:6px 0 0">No git-measured changeset was recorded for this run (the worktree was not a git checkout, or the run stopped before development).</p>
+    </div>`;
+  }
+  const files = cs.files || [];
+  const maxLines = Math.max(1, ...files.map((f) => (f.additions || 0) + (f.deletions || 0)));
+  const groups = {};
+  for (const f of files) {
+    const dir = f.path.includes("/") ? f.path.split("/")[0] : ".";
+    (groups[dir] = groups[dir] || []).push(f);
+  }
+  const rows = Object.keys(groups).sort().map((dir) => `
+    <tr><td colspan="4" class="mono muted" style="padding-top:10px;font-size:11px;letter-spacing:.06em">${esc(dir)}/</td></tr>
+    ${groups[dir].map((f) => {
+      const addW = Math.round(((f.additions || 0) / maxLines) * 100);
+      const delW = Math.round(((f.deletions || 0) / maxLines) * 100);
+      return `<tr>
+        <td><span class="tag tag-outline" title="${esc(STATUS_LABEL[f.status] || f.status)}">${esc(f.status)}</span></td>
+        <td class="mono" style="font-size:12.5px;word-break:break-all">${esc(f.path)}</td>
+        <td class="mono" style="text-align:right;white-space:nowrap">${f.binary ? "<span class=\"muted\">binary</span>"
+          : `<span style="color:var(--color-accent-700)">+${f.additions || 0}</span> <span style="color:var(--color-accent-900)">−${f.deletions || 0}</span>`}</td>
+        <td style="min-width:120px"><span style="display:flex;height:8px;gap:1px">
+          <span style="width:${addW}%;background:var(--color-accent)"></span>
+          <span style="width:${delW}%;background:var(--color-accent-900)"></span></span></td>
+      </tr>`;
+    }).join("")}`).join("");
+  return `<div class="blueprint" style="margin-top:18px;padding:0">
+    <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+    <div style="display:flex;align-items:baseline;gap:12px;padding:14px 18px;border-bottom:1px solid var(--color-divider);flex-wrap:wrap">
+      <span class="micro">Files changed</span>
+      <span style="font-family:var(--font-heading);font-size:20px;line-height:1">${files.length} file${files.length === 1 ? "" : "s"}</span>
+      <span class="mono" style="font-size:13px"><span style="color:var(--color-accent-700)">+${cs.total_additions || 0}</span> <span style="color:var(--color-accent-900)">−${cs.total_deletions || 0}</span></span>
+      <span class="rule"></span>
+      <span class="mono muted" style="font-size:12px">${esc(cs.branch || "HEAD")} → ${esc(cs.base_ref || "?")} · ${cs.commits || 0} commit${cs.commits === 1 ? "" : "s"}${cs.uncommitted ? ` · ${cs.uncommitted} uncommitted` : ""}</span>
+    </div>
+    ${cs.worktree_path ? `<div class="mono muted" style="font-size:11.5px;padding:8px 18px;border-bottom:1px solid var(--color-divider)">worktree ${esc(cs.worktree_path)}</div>` : ""}
+    <div class="scroll" style="max-height:480px;padding:4px 18px 14px">
+      ${files.length ? `<table class="table" style="width:100%"><tbody>${rows}</tbody></table>`
+        : `<p class="hint" style="margin:8px 0 0">No files differ from ${esc(cs.base_ref || "the base branch")}.</p>`}
+    </div>
+  </div>`;
+}
+
+/** Per-agent table: one row per seat — tasks handled, retries/failures,
+ * wall-clock, tokens. The sdd-coder / pool roll-up is the row source; the
+ * usage ledger (usage.json) fills in tokens when the seat's own attempts
+ * did not report them. */
+function seatsCard(seats, ledger) {
+  const rows = (seats || []).map((s) => {
+    const led = ledger[s.seat];
+    const tokIn = s.usage_known ? s.input_tokens : (led ? led.input_tokens : null);
+    const tokOut = s.usage_known ? s.output_tokens : (led ? led.output_tokens : null);
+    const tokens = tokIn == null && tokOut == null ? "n/a" : `${fmtNum(tokIn || 0)} / ${fmtNum(tokOut || 0)}`;
+    const duration = s.duration_s ? fmtDuration(s.duration_s) : (led && led.duration_seconds ? fmtDuration(led.duration_seconds) : "—");
+    return `<tr>
+      <td class="mono">${esc(shortSeat(s.seat))}</td>
+      <td class="muted">${esc([s.backend, s.model].filter(Boolean).join(" / ") || "—")}</td>
+      <td class="mono" style="text-align:right" title="${esc((s.tasks_handled || []).join(", "))}">${(s.tasks_handled || []).length}${s.tasks_merged ? ` <span class="muted">(${s.tasks_merged} merged)</span>` : ""}</td>
+      <td class="mono" style="text-align:right">${s.attempts || 0}</td>
+      <td class="mono" style="text-align:right">${s.retries || 0}${s.failures ? ` <span style="color:var(--color-accent-900)">/ ${s.failures} failed</span>` : ""}</td>
+      <td class="mono" style="text-align:right">${esc(duration)}</td>
+      <td class="mono" style="text-align:right">${esc(tokens)}</td>
+    </tr>`;
+  }).join("");
+  const ledgerOnly = Object.values(ledger).filter((a) => !(seats || []).some((s) => s.seat === a.seat));
+  const extra = ledgerOnly.map((a) => `<tr>
+      <td class="mono">${esc(shortSeat(a.seat))}</td>
+      <td class="muted">${esc([a.backend, a.model].filter(Boolean).join(" / ") || "—")}</td>
+      <td class="mono muted" style="text-align:right">—</td>
+      <td class="mono" style="text-align:right">${a.rounds == null ? "—" : a.rounds}</td>
+      <td class="mono muted" style="text-align:right">—</td>
+      <td class="mono" style="text-align:right">${esc(a.duration_seconds ? fmtDuration(a.duration_seconds) : "—")}</td>
+      <td class="mono" style="text-align:right">${a.input_tokens == null && a.output_tokens == null ? "n/a" : `${fmtNum(a.input_tokens || 0)} / ${fmtNum(a.output_tokens || 0)}`}</td>
+    </tr>`).join("");
+  if (!rows && !extra) return "";
+  return `<div class="blueprint" style="margin-top:18px;padding:16px 18px">
+    <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+    <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap">
+      <span class="micro">Per-agent</span>
+      <span class="rule"></span>
+      <span class="muted" style="font-size:12px">tokens are "n/a" when a seat's backend reports none (codex CLI, native haiku) — never a fabricated 0${app.usage && app.usage.partial ? " · usage ledger partial: " + esc(app.usage.partial_reason || "") : ""}</span>
+    </div>
+    <table class="table" style="margin-top:8px">
+      <thead><tr><th>Seat</th><th>Backend / model</th><th style="text-align:right">Tasks</th><th style="text-align:right">Attempts</th><th style="text-align:right">Retries</th><th style="text-align:right">Wall-clock</th><th style="text-align:right">Tokens in / out</th></tr></thead>
+      <tbody>${rows}${extra}</tbody>
+    </table>
+  </div>`;
 }
 
 function renderSummary() {
@@ -1227,7 +1459,8 @@ function renderSummary() {
     </div>`;
 
   $("summary-body").innerHTML =
-    `<div class="cols-2" style="display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:18px;align-items:start">${prCard}${side}</div>`;
+    `<div class="cols-2" style="display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:18px;align-items:start">${prCard}${side}</div>`
+    + filesChangedCard(effectiveChangeset()) + seatsCard(effectiveSeatUsage(), usageAgents());
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -1492,6 +1725,8 @@ function renderKindPicker() {
     `<label class="seg-opt ${app.form.documentKind === v ? "on" : ""}" data-dockind="${v}">${esc(v)}</label>`).join("");
   $("document-kind-hint").textContent = DOC_KIND_HINTS[app.form.documentKind] || "";
 
+  $("evmode-picker").innerHTML = [["narrative", "Narrative"], ["raw", "Raw log"]]
+    .map(([v, l]) => `<label class="seg-opt ${app.evMode === v ? "on" : ""}" data-evmode="${v}">${esc(l)}</label>`).join("");
   $("view-picker").innerHTML = [["panels", "Panels"], ["rail", "Focus rail"], ["spine", "Spine"]]
     .map(([v, l]) => `<label class="seg-opt ${app.view === v ? "on" : ""}" data-view="${v}">${esc(l)}</label>`).join("");
 }
@@ -1593,6 +1828,7 @@ async function submit(ev) {
     app.selected = null;
     app.s = emptyState();
     app.telemetry = { input: 0, output: 0, cost: 0, turns: 0, reported: 0 };
+    app.bundle = null; app.usage = null;
     app.requestOpen = false;
     applyRequestCollapse();
     $("exec-section").classList.remove("hidden");
@@ -1633,6 +1869,7 @@ function restart() {
   app.openEvents = new Set();
   app.s = emptyState();
   app.telemetry = { input: 0, output: 0, cost: 0, turns: 0, reported: 0 };
+  app.bundle = null; app.usage = null;
   app.requestOpen = true;
   applyRequestCollapse();
   $("exec-section").classList.add("hidden");
@@ -1678,6 +1915,8 @@ document.addEventListener("click", (e) => {
   if (dk) { app.form.documentKind = dk.dataset.dockind; renderKindPicker(); renderReady(); return; }
   const view = t.closest("[data-view]");
   if (view) { app.view = view.dataset.view; renderKindPicker(); renderExecution(); return; }
+  const evmode = t.closest("[data-evmode]");
+  if (evmode) { app.evMode = evmode.dataset.evmode; persistEvMode(); renderKindPicker(); renderExecution(); return; }
   const flowSeg = t.closest('[data-seg="flowType"] [data-val]');
   if (flowSeg) {
     app.form.flowType = flowSeg.dataset.val;

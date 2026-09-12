@@ -13,6 +13,8 @@ from parrot.flows.dev_loop.sdd_coder.engine import CoderFailure, SddCoderEngine
 from parrot.flows.dev_loop.sdd_coder.models import (
     CoderCleanupArgs,
     CoderError,
+    CoderJob,
+    CoderJobView,
     CoderMergeArgs,
     CoderPlanArgs,
     CoderPrepareNativeArgs,
@@ -22,6 +24,13 @@ from parrot.flows.dev_loop.sdd_coder.models import (
     CoderWaitArgs,
     RosterConfig,
 )
+
+
+def _with_seats(job: CoderJob) -> CoderJobView:
+    """Attach the per-seat roll-up to a job snapshot (read-time only, never journaled)."""
+    from parrot.flows.dev_loop.sdd_coder.summary import summarize_job_seats
+
+    return CoderJobView(**job.model_dump(), seats=summarize_job_seats([job]))
 
 
 class SddCoderToolkit(AbstractToolkit):
@@ -147,14 +156,18 @@ class SddCoderToolkit(AbstractToolkit):
         return await self._run("coder_merge", self._engine.merge(feature, worktree, task_id))
 
     async def coder_wait(self, job_id: str, timeout_seconds: int = 120) -> CoderResult:
-        """Block up to timeout_seconds (≤ 300) and return the job snapshot."""
-        return await self._run("coder_wait", self._engine.wait(job_id, timeout_seconds))
+        """Block up to timeout_seconds (≤ 300) and return the job snapshot plus its per-seat `seats` roll-up."""
+
+        async def _w() -> BaseModel:
+            return _with_seats(await self._engine.wait(job_id, timeout_seconds))
+
+        return await self._run("coder_wait", _w())
 
     async def coder_status(self, job_id: str) -> CoderResult:
-        """Non-blocking job snapshot."""
+        """Non-blocking job snapshot plus its per-seat `seats` roll-up (tasks, retries, duration, tokens)."""
 
         async def _s() -> BaseModel:
-            return self._engine.status(job_id)
+            return _with_seats(self._engine.status(job_id))
 
         return await self._run("coder_status", _s())
 

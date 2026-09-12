@@ -85,6 +85,20 @@ _WRITE_CAPABLE_TOOLS = frozenset({"Edit", "Write", "MultiEdit", "NotebookEdit"})
 # dispatch() alongside _SESSION_HOST_CTX/_DISPATCH_LABELS_CTX — NEVER instance
 # state on self, since one dispatcher instance is shared across concurrent
 # pool seats and a plain dict would cross-contaminate their tool results.
+#: Minimum spacing between two ``thinking`` snippets published by ONE
+#: dispatch. Extended thinking emits a ThinkingBlock on nearly every
+#: assistant turn; the narrative wants "what is it reasoning about right
+#: now", not a transcript, so intermediate snippets are stripped from the
+#: payload (the event itself is still published — counters are unaffected).
+THINKING_THROTTLE_SECONDS = 5.0
+
+#: Per-dispatch ``[last_thinking_monotonic_ts]`` cell backing the throttle
+#: — bound in ``dispatch()`` next to ``_TOOL_NAMES_CTX`` so concurrent seats
+#: on one dispatcher instance throttle independently.
+_THINKING_TS_CTX: "contextvars.ContextVar[Optional[List[float]]]" = contextvars.ContextVar(
+    "dev_loop_claude_thinking_ts", default=None
+)
+
 _TOOL_NAMES_CTX: "contextvars.ContextVar[Optional[Dict[str, str]]]" = contextvars.ContextVar(
     "dev_loop_claude_tool_names", default=None
 )
@@ -237,6 +251,7 @@ class ClaudeCodeDispatcher:
         # correlation map alongside the session host, same discipline.
         _labels_token = bind_labels(labels)
         _tools_token = _TOOL_NAMES_CTX.set({})
+        _thinking_token = _THINKING_TS_CTX.set([float("-inf")])
         try:
             # Spec §7 R4 — defense in depth. Waived for read-only (plan-mode,
             # no-edit) dispatches such as the sdd-codereview gate, which may
@@ -259,6 +274,7 @@ class ClaudeCodeDispatcher:
             _SESSION_HOST_CTX.reset(_host_token)
             _DISPATCH_LABELS_CTX.reset(_labels_token)
             _TOOL_NAMES_CTX.reset(_tools_token)
+            _THINKING_TS_CTX.reset(_thinking_token)
             raise
 
         async with self._semaphore:
@@ -486,6 +502,7 @@ class ClaudeCodeDispatcher:
                 _SESSION_HOST_CTX.reset(_host_token)
                 _DISPATCH_LABELS_CTX.reset(_labels_token)
                 _TOOL_NAMES_CTX.reset(_tools_token)
+                _THINKING_TS_CTX.reset(_thinking_token)
 
     # ------------------------------------------------------------------
     # Internal helpers (underscored — but accessible to unit tests)
@@ -1177,6 +1194,29 @@ class ClaudeCodeDispatcher:
             return ""
 
     @staticmethod
+    def _throttle_thinking(payload: Dict[str, Any]) -> None:
+        """Strip ``thinking`` from ``payload`` when the last one was too recent.
+
+        Keeps at most one reasoning snippet per :data:`THINKING_THROTTLE_SECONDS`
+        per dispatch (the cell is bound per ``dispatch()`` call; a direct
+        caller without one — unit tests — is never throttled). The event
+        still publishes with every other key, so ``message_count`` and the
+        raw stream are unchanged; only the narrative projection thins out.
+        """
+        if not payload.get("thinking"):
+            return
+        cell = _THINKING_TS_CTX.get()
+        if cell is None:
+            return
+        now = time.monotonic()
+        if now - cell[0] < THINKING_THROTTLE_SECONDS:
+            payload.pop("thinking", None)
+            if payload.get("block_type") == "thinking":
+                payload.pop("block_type", None)
+            return
+        cell[0] = now
+
+    @staticmethod
     def _extract_message_blocks(content: List[Any], payload: Dict[str, Any]) -> str:
         """Walk one message's content blocks and enrich ``payload`` in place.
 
@@ -1192,7 +1232,13 @@ class ClaudeCodeDispatcher:
         unpaired id (e.g. a resumed session) degrades gracefully — no
         exception, just no ``tool_name``.
 
-        ``TextBlock`` / ``ThinkingBlock`` → a clamped ``text`` snippet.
+        ``TextBlock`` → a clamped ``text`` snippet. ``ThinkingBlock`` → a
+        clamped ``thinking`` snippet, read from the SDK's ``thinking``
+        attribute (the dataclass carries ``thinking`` + ``signature``, never
+        ``text`` — reading ``text`` silently dropped every thought). The
+        first block of each kind wins; ``block_type`` names which of the two
+        the message carried (``"text"`` when both are present, so the
+        assistant's visible answer outranks its reasoning in the summary).
 
         Every attribute access is duck-typed (``getattr`` with a default) —
         the ``claude_agent_sdk`` types are never imported here.
@@ -1209,6 +1255,7 @@ class ClaudeCodeDispatcher:
         kind = "dispatch.message"
         tool_names: List[str] = []
         text_snippet = ""
+        thinking_snippet = ""
         # Lazily initialise the correlation map when no dispatch() call
         # bound one (e.g. a unit test driving this method directly) so
         # tool-use/tool-result pairing still works within one asyncio Task.
@@ -1249,16 +1296,24 @@ class ClaudeCodeDispatcher:
                         "result_snippet",
                         ClaudeCodeDispatcher._snippet(getattr(block, "content", None)),
                     )
-                elif cls_name in ("TextBlock", "ThinkingBlock") and not text_snippet:
+                elif cls_name == "TextBlock" and not text_snippet:
                     raw = getattr(block, "text", "") or ""
                     if raw:
-                        text_snippet = raw[:TEXT_MAX_CHARS]
+                        text_snippet = str(raw)[:TEXT_MAX_CHARS]
+                elif cls_name == "ThinkingBlock" and not thinking_snippet:
+                    raw = getattr(block, "thinking", None) or getattr(block, "text", "") or ""
+                    if raw:
+                        thinking_snippet = str(raw)[:TEXT_MAX_CHARS]
             except Exception:  # noqa: BLE001 - one bad block must not sink the rest
                 continue
         if tool_names:
             payload["tools"] = tool_names
         if text_snippet:
             payload["text"] = text_snippet
+        if thinking_snippet:
+            payload["thinking"] = thinking_snippet
+        if text_snippet or thinking_snippet:
+            payload["block_type"] = "text" if text_snippet else "thinking"
         return kind
 
     async def _publish_message_event(
@@ -1290,6 +1345,7 @@ class ClaudeCodeDispatcher:
             content = getattr(message, "content", None)
             if isinstance(content, list):
                 kind = self._extract_message_blocks(content, payload)
+                self._throttle_thinking(payload)
 
             # SystemMessage enrichment — carries the session's resolved
             # model, cwd, tools, mcp_servers, session_id. ResultMessage

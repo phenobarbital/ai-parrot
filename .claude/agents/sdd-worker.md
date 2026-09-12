@@ -384,6 +384,15 @@ After all tasks are done:
      codex-spark    2      0        1        17m40s       n/a
      haiku(native)  1      0        0         6m03s       n/a
 
+   Do NOT compute the Seats rows by hand from `attempts[*]`: every
+   `coder_status` / `coder_wait` result carries a `seats` array (one
+   `SeatUsageSummary` per seat — `tasks_handled`, `attempts`, `retries`,
+   `failures`, `duration_s`, `input_tokens`/`output_tokens`,
+   `usage_known`), already aggregated over the job by the engine. Print
+   those rows verbatim (`n/a` when `usage_known` is false), and add ONE
+   `haiku(native)` row yourself for the tasks you ran natively — the engine
+   never sees those attempts.
+
    Worktree: .claude/worktrees/<worktree-name>
    Branch: <branch-name>
    Commits: <N>

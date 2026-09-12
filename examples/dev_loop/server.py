@@ -1425,7 +1425,9 @@ async def handle_bundle(request: web.Request) -> web.Response:
 
     Query parameters:
 
-    * ``format`` — ``md`` (default) or ``json``.
+    * ``format`` — ``md`` (default), ``json`` (the ``RunBundle``) or
+      ``usage`` (the per-seat ``UsageReport`` JSON the console's summary
+      merges with the bundle's ``developed.seat_usage``).
     * ``download`` — truthy forces a ``Content-Disposition: attachment``.
 
     Returns:
@@ -1437,10 +1439,11 @@ async def handle_bundle(request: web.Request) -> web.Response:
         return web.json_response({"error": "invalid run_id"}, status=400)
 
     fmt = (request.query.get("format") or "md").strip().lower()
-    if fmt not in {"md", "json"}:
-        return web.json_response({"error": "format must be 'md' or 'json'"}, status=400)
+    suffixes = {"md": "report.md", "json": "bundle.json", "usage": "usage.json"}
+    if fmt not in suffixes:
+        return web.json_response({"error": "format must be 'md', 'json' or 'usage'"}, status=400)
 
-    suffix = "report.md" if fmt == "md" else "bundle.json"
+    suffix = suffixes[fmt]
     path = (RUN_ARTIFACT_DIR / f"{run_id}.{suffix}").resolve()
     # Security: verify resolved path stays within RUN_ARTIFACT_DIR
     _artifact_base = RUN_ARTIFACT_DIR.resolve()

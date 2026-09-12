@@ -239,6 +239,14 @@ class IdeationNode(DevLoopNode):
         )
         max_rounds = self._resolve_max_rounds()
 
+        self.report_progress(
+            ctx,
+            "started",
+            f"Ideation ({mode}) for '{brief.title}'",
+            f"sdd-ideation writes sdd/proposals/<slug>.{ 'brainstorm' if mode == 'brainstorm' else 'proposal'}.md, "
+            f"asking you its open questions over up to {max_rounds} round(s)"
+            + (" · research partner findings attached" if partner_findings else ""),
+        )
         self.logger.info(
             "Ideation starting: kind=%s -> mode=%s, title=%s, max_rounds=%d",
             brief.kind,
@@ -273,6 +281,12 @@ class IdeationNode(DevLoopNode):
         rounds_used = 0
         while output.open_questions and host is not None and rounds_used < max_rounds:
             rounds_used += 1
+            self.report_progress(
+                ctx,
+                "working",
+                f"Round {rounds_used}/{max_rounds}: {len(output.open_questions)} open question(s) — waiting for your answers",
+                output.document_path,
+            )
             answers = await self._run_question_round(
                 host=host,
                 output=output,
@@ -326,6 +340,12 @@ class IdeationNode(DevLoopNode):
 
         shared["ideation_output"] = output
         shared["feature_brief"] = feature_brief
+        self.report_progress(
+            ctx,
+            "finished",
+            f"{'Extended' if output.resumed_existing else 'Wrote'} {output.document_kind} {document_path}",
+            f"{rounds_used} question round(s) · {len(output.open_questions)} question(s) left open for the spec's §8",
+        )
         self.logger.info(
             "Ideation complete: %s (kind=%s, resumed_existing=%s, rounds=%d)",
             document_path,
@@ -490,9 +510,7 @@ class IdeationNode(DevLoopNode):
         # to pre-seam behavior.
         mcp_servers: dict[str, Any] = dict(self._extra_mcp_servers or {})
         if "wikitoolkit" in mcp_servers:
-            self.logger.warning(
-                "extra_mcp_servers supplied a 'wikitoolkit' entry; the built-in one takes precedence."
-            )
+            self.logger.warning("extra_mcp_servers supplied a 'wikitoolkit' entry; the built-in one takes precedence.")
         mcp_servers["wikitoolkit"] = wikitoolkit_mcp_entry()
         allowed_tools = ["Read", "Grep", "Glob", "Bash", "Write", "Edit", *WIKI_MCP_TOOLS]
         if self._extra_mcp_servers:

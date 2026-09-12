@@ -30,6 +30,13 @@ class TextBlock:
         self.text = text
 
 
+class ThinkingBlock:
+    """Mirror of ``claude_agent_sdk.ThinkingBlock``: ``thinking`` + ``signature``, no ``text``."""
+
+    def __init__(self, thinking, signature=""):
+        self.thinking, self.signature = thinking, signature
+
+
 class AssistantMessage:
     def __init__(self, content):
         self.content = content
@@ -134,6 +141,48 @@ class TestClaudeEventExtraction:
             await d._publish_message_event("k", msg, "run-1", "n")
         for _kind, p in captured:
             assert set(p) - {"message_class"}, f"uninformative payload: {p}"
+
+    async def test_thinking_block_is_forwarded(self, captured):
+        """The SDK's ThinkingBlock carries ``thinking``, not ``text`` — it used to be dropped."""
+        d = _dispatcher()
+        await d._publish_message_event(
+            "k", AssistantMessage([ThinkingBlock("I should read the spec first")]), "run-1", "development.w1"
+        )
+        kind, p = captured[-1]
+        assert kind == "dispatch.message"
+        assert p["thinking"] == "I should read the spec first"
+        assert p["block_type"] == "thinking"
+        assert "text" not in p
+        assert p["summary"].endswith("thinking: I should read the spec first")
+
+    async def test_text_outranks_thinking_in_one_message(self, captured):
+        d = _dispatcher()
+        await d._publish_message_event("k", AssistantMessage([ThinkingBlock("hmm"), TextBlock("Done.")]), "run-1", "n")
+        _, p = captured[-1]
+        assert p["text"] == "Done."
+        assert p["thinking"] == "hmm"
+        assert p["block_type"] == "text"
+        assert "Done." in p["summary"]
+
+    async def test_thinking_is_throttled_per_dispatch(self, captured, monkeypatch):
+        """Inside a dispatch, only one thinking snippet per THINKING_THROTTLE_SECONDS survives."""
+        from parrot.flows.dev_loop.dispatchers import claude as claude_module
+
+        clock = [100.0]
+        monkeypatch.setattr(claude_module.time, "monotonic", lambda: clock[0])
+        token = claude_module._THINKING_TS_CTX.set([float("-inf")])
+        try:
+            d = _dispatcher()
+            for text, advance in (("first", 0.0), ("too soon", 1.0), ("later", 6.0)):
+                clock[0] += advance
+                await d._publish_message_event("k", AssistantMessage([ThinkingBlock(text)]), "run-1", "n")
+        finally:
+            claude_module._THINKING_TS_CTX.reset(token)
+        kinds = [k for k, _ in captured]
+        assert kinds == ["dispatch.message"] * 3  # every event still published
+        thoughts = [p.get("thinking") for _, p in captured]
+        assert thoughts == ["first", None, "later"]
+        assert "block_type" not in captured[1][1]
 
     async def test_correlation_map_is_per_dispatch(self, monkeypatch):
         """Concurrent seats on ONE dispatcher instance must not cross-resolve."""

@@ -335,8 +335,11 @@ def _build_summary(kind: str, payload: Dict[str, Any]) -> str:
             body = f"{tool_name} → {outcome}"
     elif kind == "dispatch.message":
         text = str(payload.get("text") or "").strip()
+        thinking = str(payload.get("thinking") or "").strip()
         if text:
             body = " ".join(text.split())
+        elif thinking:
+            body = "thinking: " + " ".join(thinking.split())
     elif kind in ("dispatch.failed", "dispatch.output_invalid"):
         err = str(payload.get("error") or payload.get("error_message") or "").strip()
         if err:

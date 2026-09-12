@@ -8,7 +8,11 @@ from typing import Any, Dict, List, Literal, Optional, Tuple
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from parrot.flows.dev_loop.models import DevAgentBackend, DevelopmentOutput  # verified: models/base.py:407, :497
+from parrot.flows.dev_loop.models import (  # verified: models/base.py:407, :497
+    DevAgentBackend,
+    DevelopmentOutput,
+    SeatUsageSummary,
+)
 
 SeatKind = Literal["mcp", "native"]
 TaskOutcome = Literal["queued", "running", "merged", "merge_conflict", "failed", "fidelity_violation", "retry_native"]
@@ -205,6 +209,17 @@ class CoderJob(BaseModel):
     ended_at: str = ""
     tasks: List[TaskResult] = Field(default_factory=list)
     error: str = ""
+
+
+class CoderJobView(CoderJob):
+    """A `CoderJob` snapshot plus its per-seat roll-up, as `coder_status`/`coder_wait` return it.
+
+    `seats` is computed by `summary.summarize_job_seats` over this one job at
+    read time — never journaled — so the orchestrator prints the Seats table
+    from data instead of re-deriving it from `tasks[*].attempts[*]` by hand.
+    """
+
+    seats: List[SeatUsageSummary] = Field(default_factory=list)
 
 
 class CleanupReport(BaseModel):

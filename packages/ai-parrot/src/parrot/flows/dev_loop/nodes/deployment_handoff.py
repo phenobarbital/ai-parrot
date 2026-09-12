@@ -36,6 +36,7 @@ from parrot.flows.dev_loop.models import (
     QAReport,
     ResearchOutput,
 )
+from parrot.flows.dev_loop.nodes._changeset import record_changeset
 from parrot.flows.dev_loop.nodes.base import (
     BaseBranchMismatch,
     DevLoopNode,
@@ -155,6 +156,12 @@ class DeploymentHandoffNode(DevLoopNode):
             await self._mark_blocked(issue_key, error)
             return {"status": "blocked", "error": error}
         object.__setattr__(self, "_base_branch", base)
+        self.report_progress(
+            ctx,
+            "started",
+            f"Opening draft PR for {research.branch_name} → {base}",
+            f"push · base-branch guard · PR{' · Jira ' + issue_key if issue_key else ''}",
+        )
 
         # 1. Push.
         try:
@@ -163,6 +170,9 @@ class DeploymentHandoffNode(DevLoopNode):
             self.logger.error("git push failed: %s", exc)
             await self._mark_blocked(issue_key, str(exc))
             return {"status": "blocked", "error": f"push: {exc}"}
+        # Final git-measured file list for the run summary (the worktree is
+        # still alive here; /sdd-done removes it later).
+        await record_changeset(shared, research.worktree_path, base, branch=research.branch_name)
 
         # FEAT-466: sibling-overlap guard — the backstop. Blocks before any
         # PR is opened when the branch carries commits that already live on
@@ -266,6 +276,12 @@ class DeploymentHandoffNode(DevLoopNode):
             except Exception as exc:  # noqa: BLE001 - degraded path
                 self.logger.warning("Jira add_comment failed: %s", exc)
 
+        self.report_progress(
+            ctx,
+            "finished",
+            f"Draft PR {pr_url}",
+            "a human reviews and merges; the flow never merges",
+        )
         return {
             "status": "ready_to_deploy",
             "pr_url": pr_url,

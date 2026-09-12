@@ -115,9 +115,7 @@ def _output(**over) -> IdeationOutput:
 async def _answer_gate(host: SessionHost, answers: dict[str, str]) -> None:
     """Approve the single pending gate with `answers`."""
     await asyncio.sleep(0.01)
-    gate_id = next(
-        g for g, gate in host.state.gates.items() if gate.status == "pending"
-    )
+    gate_id = next(g for g, gate in host.state.gates.items() if gate.status == "pending")
     host.resolve_gate(gate_id, "approved", resolved_by="alice", answers=answers)
 
 
@@ -213,7 +211,9 @@ async def test_dispatch_runs_at_project_root_with_the_waiver(doc):
     assert call["profile"].allow_project_root_cwd is True
     # And the real guard accepts exactly that pairing.
     ClaudeCodeDispatcher._enforce_cwd_under_worktree_base(
-        object.__new__(ClaudeCodeDispatcher), call["cwd"], call["profile"],
+        object.__new__(ClaudeCodeDispatcher),
+        call["cwd"],
+        call["profile"],
     )
 
 
@@ -260,9 +260,7 @@ async def test_resumed_existing_flag_passthrough(doc):
 @pytest.mark.asyncio
 async def test_gate_roundtrip_answers_reach_redispatch(doc):
     """Round 1 asks 2 questions; the answers land in the round-2 payload."""
-    dispatcher = ScriptedDispatcher(
-        [_output(open_questions=[Q1, Q2], committed=True), _output()]
-    )
+    dispatcher = ScriptedDispatcher([_output(open_questions=[Q1, Q2], committed=True), _output()])
     node = IdeationNode(dispatcher=dispatcher)
     host = SessionHost(RUN_ID)
     ctx = {"run_id": RUN_ID, "dev_brief": _brief(), "session_host": host}
@@ -290,6 +288,11 @@ async def test_gate_roundtrip_answers_reach_redispatch(doc):
     assert second.round == 2
     assert isinstance(result, FeatureBrief)
 
+    # Narrative: started → one "working" line per question round → finished.
+    phases = [p.phase for p in host.state.nodes["ideation"].progress]
+    assert phases == ["started", "working", "finished"]
+    assert "sdd/proposals/telemetry.brainstorm.md" in host.state.nodes["ideation"].progress[-1].headline
+
 
 @pytest.mark.asyncio
 async def test_partial_answers_are_accepted(doc):
@@ -298,9 +301,7 @@ async def test_partial_answers_are_accepted(doc):
     host = SessionHost(RUN_ID)
 
     resolver = asyncio.ensure_future(_answer_gate(host, {Q1: "pgvector"}))
-    await node.execute(
-        {"run_id": RUN_ID, "dev_brief": _brief(), "session_host": host}
-    )
+    await node.execute({"run_id": RUN_ID, "dev_brief": _brief(), "session_host": host})
     await resolver
 
     assert dispatcher.calls[1]["brief"].answers == {Q1: "pgvector"}
@@ -313,9 +314,7 @@ async def test_no_questions_means_no_gate(doc):
     host = SessionHost(RUN_ID)
 
     await asyncio.wait_for(
-        node.execute(
-            {"run_id": RUN_ID, "dev_brief": _brief(), "session_host": host}
-        ),
+        node.execute({"run_id": RUN_ID, "dev_brief": _brief(), "session_host": host}),
         timeout=2,
     )
 
@@ -337,9 +336,7 @@ async def test_rounds_bounded(doc):
 
     resolver = asyncio.ensure_future(_answer_all())
     result = await asyncio.wait_for(
-        node.execute(
-            {"run_id": RUN_ID, "dev_brief": _brief(), "session_host": host}
-        ),
+        node.execute({"run_id": RUN_ID, "dev_brief": _brief(), "session_host": host}),
         timeout=5,
     )
     await resolver
@@ -358,9 +355,7 @@ async def test_max_rounds_zero_opens_no_gate(doc):
     host = SessionHost(RUN_ID)
 
     result = await asyncio.wait_for(
-        node.execute(
-            {"run_id": RUN_ID, "dev_brief": _brief(), "session_host": host}
-        ),
+        node.execute({"run_id": RUN_ID, "dev_brief": _brief(), "session_host": host}),
         timeout=2,
     )
 
@@ -379,9 +374,7 @@ async def test_max_rounds_reads_conf_when_not_overridden(doc, monkeypatch):
 
     resolver = asyncio.ensure_future(_answer_gate(host, {Q1: "a"}))
     await asyncio.wait_for(
-        node.execute(
-            {"run_id": RUN_ID, "dev_brief": _brief(), "session_host": host}
-        ),
+        node.execute({"run_id": RUN_ID, "dev_brief": _brief(), "session_host": host}),
         timeout=5,
     )
     await resolver
@@ -405,15 +398,11 @@ async def test_gate_rejected_raises(doc):
     async def _reject():
         await asyncio.sleep(0.01)
         gate_id = next(iter(host.state.gates))
-        host.resolve_gate(
-            gate_id, "rejected", resolved_by="bob", comment="wrong document"
-        )
+        host.resolve_gate(gate_id, "rejected", resolved_by="bob", comment="wrong document")
 
     resolver = asyncio.ensure_future(_reject())
     with pytest.raises(RuntimeError, match="rejected by bob"):
-        await node.execute(
-            {"run_id": RUN_ID, "dev_brief": _brief(), "session_host": host}
-        )
+        await node.execute({"run_id": RUN_ID, "dev_brief": _brief(), "session_host": host})
     await resolver
 
     # No re-dispatch happened.
@@ -435,9 +424,7 @@ async def test_gate_expired_raises(doc):
 
     resolver = asyncio.ensure_future(_expire())
     with pytest.raises(RuntimeError, match="expired"):
-        await node.execute(
-            {"run_id": RUN_ID, "dev_brief": _brief(), "session_host": host}
-        )
+        await node.execute({"run_id": RUN_ID, "dev_brief": _brief(), "session_host": host})
     await resolver
 
 
@@ -460,9 +447,7 @@ async def test_unreadable_document_raises(tmp_path, monkeypatch):
     from parrot import conf
 
     monkeypatch.setattr(conf, "PROJECT_ROOT", tmp_path, raising=False)
-    dispatcher = ScriptedDispatcher(
-        [_output(document_path="sdd/proposals/ghost.brainstorm.md")]
-    )
+    dispatcher = ScriptedDispatcher([_output(document_path="sdd/proposals/ghost.brainstorm.md")])
     node = IdeationNode(dispatcher=dispatcher)
 
     with pytest.raises(RuntimeError, match="no.*readable document"):
@@ -480,9 +465,7 @@ async def test_wrong_brief_type_raises(doc, tmp_path):
         await node.execute(
             {
                 "run_id": RUN_ID,
-                "dev_brief": FeatureBrief(
-                    document_path=str(fb_doc), document_kind="spec"
-                ),
+                "dev_brief": FeatureBrief(document_path=str(fb_doc), document_kind="spec"),
             }
         )
 
@@ -508,9 +491,7 @@ async def test_no_host_runs_gateless(doc, caplog):
     node = IdeationNode(dispatcher=dispatcher)
 
     with caplog.at_level(logging.WARNING):
-        result = await asyncio.wait_for(
-            node.execute({"run_id": RUN_ID, "dev_brief": _brief()}), timeout=2
-        )
+        result = await asyncio.wait_for(node.execute({"run_id": RUN_ID, "dev_brief": _brief()}), timeout=2)
 
     assert isinstance(result, FeatureBrief)
     assert len(dispatcher.calls) == 1  # no re-dispatch without answers
@@ -589,8 +570,11 @@ async def test_qa_node_survives_a_briefless_dev_flow_run():
         "skip_qa": True,
         # Exactly what PlannerNode bridges — and nothing else.
         "research_output": ResearchOutput(
-            jira_issue_key="", spec_path="sdd/specs/x.spec.md",
-            feat_id="FEAT-412", branch_name="b", worktree_path="/tmp/x",
+            jira_issue_key="",
+            spec_path="sdd/specs/x.spec.md",
+            feat_id="FEAT-412",
+            branch_name="b",
+            worktree_path="/tmp/x",
             repo_path="",
         ),
     }
@@ -608,8 +592,12 @@ async def test_briefless_summary_prefers_the_feature_document(tmp_path):
     from parrot.flows.dev_loop.nodes.qa import QANode
 
     research = ResearchOutput(
-        jira_issue_key="", spec_path="sdd/specs/x.spec.md", feat_id="FEAT-412",
-        branch_name="b", worktree_path="/tmp/x", repo_path="",
+        jira_issue_key="",
+        spec_path="sdd/specs/x.spec.md",
+        feat_id="FEAT-412",
+        branch_name="b",
+        worktree_path="/tmp/x",
+        repo_path="",
     )
     doc = tmp_path / "idea.proposal.md"
     doc.write_text("# p", encoding="utf-8")
@@ -618,6 +606,4 @@ async def test_briefless_summary_prefers_the_feature_document(tmp_path):
     assert QANode._briefless_summary({"feature_brief": fb}, research) == str(doc)
     # Falls back to the spec path, then the feat id — never raises.
     assert QANode._briefless_summary({}, research) == "sdd/specs/x.spec.md"
-    assert QANode._briefless_summary(
-        {}, research.model_copy(update={"spec_path": ""})
-    ) == "FEAT-412"
+    assert QANode._briefless_summary({}, research.model_copy(update={"spec_path": ""})) == "FEAT-412"

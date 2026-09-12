@@ -1,4 +1,5 @@
 """Tests for SddCoderToolkit — MCP surface, arg validation, error mapping (TASK-3122)."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -47,9 +48,7 @@ async def test_toolkit_pre_execute_ignores_permission_context(three_seat_roster)
     toolkit.py:176-182) even for toolkits that don't use it — `_pre_execute`
     must not reject valid args just because that key is present."""
     toolkit = _toolkit(three_seat_roster)
-    await toolkit._pre_execute(
-        "coder_plan", feature="f", worktree="/abs", _permission_context=None
-    )  # must not raise
+    await toolkit._pre_execute("coder_plan", feature="f", worktree="/abs", _permission_context=None)  # must not raise
 
 
 async def test_toolkit_pre_execute_via_full_execute_path_never_reaches_engine(three_seat_roster, monkeypatch):
@@ -144,3 +143,48 @@ def test_mcp_local_serves_sdd_coder(monkeypatch, tmp_path):
         "coder_status",
         "coder_cleanup",
     }
+
+
+async def test_toolkit_status_and_wait_carry_the_per_seat_rollup(three_seat_roster, monkeypatch):
+    """`coder_status` / `coder_wait` return `seats` so sdd-worker prints the table instead of computing it."""
+    from parrot.flows.dev_loop.sdd_coder.models import AttemptRecord, CoderJob, TaskResult
+
+    toolkit = _toolkit(three_seat_roster)
+    job = CoderJob(
+        job_id="j",
+        feature_id="F",
+        chunk_task_ids=["TASK-1"],
+        state="done",
+        started_at="now",
+        tasks=[
+            TaskResult(
+                task_id="TASK-1",
+                outcome="merged",
+                attempts=[
+                    AttemptRecord(
+                        attempt=1,
+                        seat_label="a",
+                        backend="nova",
+                        model="m",
+                        started_at="now",
+                        duration_s=4.0,
+                        usage={"input_tokens": 10, "output_tokens": 2},
+                    )
+                ],
+            )
+        ],
+    )
+    monkeypatch.setattr(toolkit._engine, "status", lambda job_id: job)
+
+    async def _wait(job_id, timeout_seconds):
+        return job
+
+    monkeypatch.setattr(toolkit._engine, "wait", _wait)
+
+    for result in (await toolkit.coder_status(job_id="j"), await toolkit.coder_wait(job_id="j")):
+        assert result.status == "ok"
+        assert result.data["job_id"] == "j" and result.data["tasks"][0]["task_id"] == "TASK-1"
+        (seat,) = result.data["seats"]
+        assert seat["seat"] == "a" and seat["backend"] == "nova"
+        assert seat["tasks_handled"] == ["TASK-1"] and seat["tasks_merged"] == 1
+        assert seat["input_tokens"] == 10 and seat["usage_known"] is True
