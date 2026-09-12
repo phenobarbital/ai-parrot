@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-12T15:06:30+00:00",
-  "completed_at": "2026-09-12T16:48:22+00:00",
+  "completed_at": "2026-09-12T18:03:07+00:00",
   "tasks": [
     {
       "id": "TASK-3196",
@@ -23,7 +23,8 @@
       "assigned_to": null,
       "started_at": "2026-09-12T15:21:05+00:00",
       "completed_at": "2026-09-12T15:25:59+00:00",
-      "file": "sdd/tasks/completed/TASK-3196-dev-flow-base-branch-threading.md"
+      "file": "sdd/tasks/completed/TASK-3196-dev-flow-base-branch-threading.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3197",
@@ -41,7 +42,8 @@
       "assigned_to": null,
       "started_at": "2026-09-12T15:21:05+00:00",
       "completed_at": "2026-09-12T15:30:58+00:00",
-      "file": "sdd/tasks/completed/TASK-3197-devloop-bootstrap-topology-and-dev-flow-runtime.md"
+      "file": "sdd/tasks/completed/TASK-3197-devloop-bootstrap-topology-and-dev-flow-runtime.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3198",
@@ -61,7 +63,8 @@
       "assigned_to": null,
       "started_at": "2026-09-12T15:21:05+00:00",
       "completed_at": "2026-09-12T15:33:58+00:00",
-      "file": "sdd/tasks/completed/TASK-3198-devloop-headless-cli-mode.md"
+      "file": "sdd/tasks/completed/TASK-3198-devloop-headless-cli-mode.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3199",
@@ -81,7 +84,8 @@
       "assigned_to": null,
       "started_at": "2026-09-12T15:21:05+00:00",
       "completed_at": "2026-09-12T15:40:26+00:00",
-      "file": "sdd/tasks/completed/TASK-3199-dev-console-delegates-to-runtime-builder.md"
+      "file": "sdd/tasks/completed/TASK-3199-dev-console-delegates-to-runtime-builder.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3200",
@@ -99,7 +103,8 @@
       "assigned_to": null,
       "started_at": "2026-09-12T15:21:05+00:00",
       "completed_at": "2026-09-12T15:43:23+00:00",
-      "file": "sdd/tasks/completed/TASK-3200-devloop-integration-models-and-config.md"
+      "file": "sdd/tasks/completed/TASK-3200-devloop-integration-models-and-config.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3201",
@@ -120,7 +125,8 @@
       "assigned_to": null,
       "started_at": "2026-09-12T15:21:05+00:00",
       "completed_at": "2026-09-12T15:46:00+00:00",
-      "file": "sdd/tasks/completed/TASK-3201-devloop-command-parser-and-brief-builders.md"
+      "file": "sdd/tasks/completed/TASK-3201-devloop-command-parser-and-brief-builders.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3202",
@@ -140,7 +146,8 @@
       "assigned_to": null,
       "started_at": "2026-09-12T15:21:05+00:00",
       "completed_at": "2026-09-12T15:50:21+00:00",
-      "file": "sdd/tasks/completed/TASK-3202-devloop-subprocess-and-command-channel.md"
+      "file": "sdd/tasks/completed/TASK-3202-devloop-subprocess-and-command-channel.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3203",
@@ -160,7 +167,8 @@
       "assigned_to": null,
       "started_at": "2026-09-12T15:21:05+00:00",
       "completed_at": "2026-09-12T15:55:52+00:00",
-      "file": "sdd/tasks/completed/TASK-3203-devloop-state-tail-and-run-registry.md"
+      "file": "sdd/tasks/completed/TASK-3203-devloop-state-tail-and-run-registry.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3204",
@@ -182,7 +190,8 @@
       "assigned_to": null,
       "started_at": "2026-09-12T15:21:05+00:00",
       "completed_at": "2026-09-12T16:02:26+00:00",
-      "file": "sdd/tasks/completed/TASK-3204-devloop-dispatch-service-and-transport-protocol.md"
+      "file": "sdd/tasks/completed/TASK-3204-devloop-dispatch-service-and-transport-protocol.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3205",
@@ -200,7 +209,8 @@
       "assigned_to": null,
       "started_at": "2026-09-12T15:21:05+00:00",
       "completed_at": "2026-09-12T16:07:41+00:00",
-      "file": "sdd/tasks/completed/TASK-3205-slack-wrapper-hooks-and-ingress-hardening.md"
+      "file": "sdd/tasks/completed/TASK-3205-slack-wrapper-hooks-and-ingress-hardening.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3206",
@@ -221,7 +231,8 @@
       "assigned_to": null,
       "started_at": "2026-09-12T15:21:05+00:00",
       "completed_at": "2026-09-12T16:11:11+00:00",
-      "file": "sdd/tasks/completed/TASK-3206-slack-devloop-commands-and-confirm-cards.md"
+      "file": "sdd/tasks/completed/TASK-3206-slack-devloop-commands-and-confirm-cards.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3207",
@@ -241,7 +252,8 @@
       "assigned_to": null,
       "started_at": "2026-09-12T15:21:05+00:00",
       "completed_at": "2026-09-12T16:15:39+00:00",
-      "file": "sdd/tasks/completed/TASK-3207-slack-devloop-gates-transport-and-identity.md"
+      "file": "sdd/tasks/completed/TASK-3207-slack-devloop-gates-transport-and-identity.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3208",
@@ -262,7 +274,8 @@
       "assigned_to": null,
       "started_at": "2026-09-12T15:21:05+00:00",
       "completed_at": "2026-09-12T16:19:50+00:00",
-      "file": "sdd/tasks/completed/TASK-3208-slack-devloop-manager-wiring-packaging-docs.md"
+      "file": "sdd/tasks/completed/TASK-3208-slack-devloop-manager-wiring-packaging-docs.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3209",
@@ -282,7 +295,8 @@
       "assigned_to": null,
       "started_at": "2026-09-12T15:21:05+00:00",
       "completed_at": "2026-09-12T16:22:59+00:00",
-      "file": "sdd/tasks/completed/TASK-3209-slack-devloop-status-card.md"
+      "file": "sdd/tasks/completed/TASK-3209-slack-devloop-status-card.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3210",
@@ -303,7 +317,8 @@
       "assigned_to": null,
       "started_at": "2026-09-12T15:21:05+00:00",
       "completed_at": "2026-09-12T16:48:18+00:00",
-      "file": "sdd/tasks/completed/TASK-3210-devloop-slack-e2e-integration-tests.md"
+      "file": "sdd/tasks/completed/TASK-3210-devloop-slack-e2e-integration-tests.md",
+      "verification": "verified"
     }
   ]
 }
