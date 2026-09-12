@@ -270,3 +270,53 @@ def terminal_blocks(record: RunRecord, event: RunEvent) -> list[dict[str, Any]]:
     if tail:
         text += f"\n```{tail}```"
     return [_section(text)]
+
+
+_NODE_GLYPH = {
+    "completed": ":white_check_mark:",
+    "running": ":arrows_counterclockwise:",
+    "idle": ":white_circle:",
+    "failed": ":x:",
+    "skipped": ":next_track_button:",
+}
+_NODE_ORDER = [
+    "dev_intake",
+    "ideation",
+    "planner",
+    "research",
+    "intent_classifier",
+    "bug_intake",
+    "development",
+    "synthesis",
+    "qa",
+    "feedback_router",
+    "feature_handoff",
+    "deployment_handoff",
+    "close",
+]
+
+
+def status_card_blocks(record: RunRecord, nodes: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    """One line per node in graph order.
+
+    ``<glyph> `node_id``` — completed green, running spinning, remaining
+    idle. Failed nodes append their error, truncated to 120 characters.
+
+    Args:
+        record: The run the status card belongs to.
+        nodes: ``DevLoopSessionState.model_dump()["nodes"]`` — ``{node_id: {"status": ..., "error": ...}}``.
+
+    Returns:
+        The Block Kit blocks for the status card.
+    """
+    ordered = [n for n in _NODE_ORDER if n in nodes] + [n for n in nodes if n not in _NODE_ORDER]
+    lines = []
+    for node_id in ordered:
+        node = nodes[node_id]
+        status = node.get("status", "idle")
+        glyph = _NODE_GLYPH.get(status, ":white_circle:")
+        line = f"{glyph} `{node_id}`"
+        if status == "failed" and node.get("error"):
+            line += f" — {node['error'][:120]}"
+        lines.append(line)
+    return [_section(f"*Run `{record.run_id}` — {record.phase}*\n" + "\n".join(lines))]

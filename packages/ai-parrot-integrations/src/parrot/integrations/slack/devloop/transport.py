@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import time
 from typing import Any, Dict, Optional, Tuple
 
 from aiohttp import ClientSession  # verified: slack/interactive.py:12 pattern
@@ -22,6 +24,11 @@ class SlackDevLoopTransport:
         # detail the channel-neutral core does not need to know about.
         self._confirm_cards: Dict[str, Tuple[str, str]] = {}  # pending_id -> (channel, ts)
         self._gate_cards: Dict[Tuple[str, str], Tuple[str, str]] = {}  # (run_id, gate_id) -> (channel, ts)
+        # TASK-3209: status-card debounce state, keyed by run_id.
+        self._status_pending: Dict[str, Tuple[RunRecord, Dict[str, Any]]] = {}
+        self._status_timers: Dict[str, "asyncio.Task"] = {}
+        self._status_backoff_until: Dict[str, float] = {}
+        self.status_debounce_seconds = 2.0
 
     # -- adapter helpers (used by commands.py / actions.py) ---------------------------------------------------
     async def ephemeral(self, response_url: str, text: str) -> None:
@@ -113,8 +120,59 @@ class SlackDevLoopTransport:
         await self.wrapper.update_message(channel, ts, gate.title, blocks=blocks.gate_resolved_blocks(record, gate))
 
     async def update_status(self, record: RunRecord, state: Dict[str, Any]) -> None:
-        """No-op until TASK-3209 (status card)."""
-        return None
+        """Create-or-update the run's status card.
+
+        Debounced to at most one ``chat.update`` per
+        ``status_debounce_seconds`` (trailing edge) per run, gated by
+        ``config.status_card``. Best-effort: never raises. Terminal
+        phases flush immediately instead of waiting for the debounce
+        window, so the last state is always shown.
+
+        Args:
+            record: The run the status update belongs to.
+            state: The folded ``DevLoopSessionState.model_dump()``.
+        """
+        cfg = getattr(self.wrapper.config, "devloop", None)
+        if cfg is None or not getattr(cfg, "status_card", True):
+            return
+        nodes = dict(state.get("nodes") or {})
+        self._status_pending[record.run_id] = (record, nodes)
+        if record.phase in ("completed", "failed", "cancelled"):
+            timer = self._status_timers.pop(record.run_id, None)
+            if timer is not None:
+                timer.cancel()
+            await self._flush_status(record.run_id)  # terminal: flush now
+            return
+        if record.run_id not in self._status_timers:
+            self._status_timers[record.run_id] = asyncio.create_task(self._flush_status_later(record.run_id))
+
+    async def _flush_status_later(self, run_id: str) -> None:
+        await asyncio.sleep(self.status_debounce_seconds)
+        self._status_timers.pop(run_id, None)
+        await self._flush_status(run_id)
+
+    async def _flush_status(self, run_id: str) -> None:
+        pending = self._status_pending.pop(run_id, None)
+        if pending is None or time.monotonic() < self._status_backoff_until.get(run_id, 0.0):
+            return
+        record, nodes = pending
+        kit = blocks.status_card_blocks(record, nodes)
+        try:
+            if record.status_message_ts:
+                ok = await self.wrapper.update_message(
+                    record.channel_id, record.status_message_ts, f"Run {run_id} status", blocks=kit
+                )
+                if not ok:
+                    # wrapper.update_message returns a plain bool — it does not
+                    # expose the Slack `retry_after` header (see TASK-3205's
+                    # _slack_api), so every failure (including rate-limiting)
+                    # gets the same fixed 5s backoff rather than a retry-storm.
+                    self._status_backoff_until[run_id] = time.monotonic() + 5.0
+                    self.logger.debug("status card update failed for %s; backing off 5s", run_id)
+            else:
+                record.status_message_ts = await self._post_in_thread(record, f"Run {run_id} status", kit) or ""
+        except Exception:  # noqa: BLE001 — the card is best-effort
+            self.logger.debug("status card update failed for %s", run_id, exc_info=True)
 
     async def post_terminal(self, record: RunRecord, event: RunEvent) -> None:
         await self._post_in_thread(record, f"Run {record.run_id} finished", blocks.terminal_blocks(record, event))
