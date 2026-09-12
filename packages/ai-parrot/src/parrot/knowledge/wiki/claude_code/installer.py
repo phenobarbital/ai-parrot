@@ -304,18 +304,35 @@ def _install_permissions(root: Path) -> list[str]:
 def _is_managed_toolkit_entry(entry: Any, root: Path, name: str) -> bool:
     """Whether a ``parrot-<name>`` ``.mcp.json`` entry was written by us.
 
-    Managed-entry detection rule (FEAT-485): an entry is "ours" iff its
-    ``command`` ends with the resolved ``parrot`` binary name AND its
-    ``args`` match the managed toolkit shape ``["mcp-local", name]``. A
+    Managed-entry detection rule (FEAT-485, updated FEAT-556): an entry is
+    "ours" iff its ``command`` ends with the resolved ``parrot`` binary name
+    AND its ``args`` start with ``["mcp-local", name]``. This accepts both
+    the pinned shape (FEAT-556) ``["mcp-local", name, "--config", <path>]``
+    and the pre-FEAT-556 legacy shape ``["mcp-local", name]``. A
     ``parrot-<name>`` key whose content does not match this shape is a
     foreign entry with a colliding name — it must never be overwritten or
-    removed by reconciliation.
+    removed by reconciliation. A pinned entry whose ``--config`` points
+    outside ``root`` is treated as foreign (operator override).
     """
     if not isinstance(entry, dict):
         return False
     command = entry.get("command")
     bin_name = PurePosixPath(assets.resolve_parrot_bin(root)).name
-    return isinstance(command, str) and command.endswith(bin_name) and entry.get("args") == ["mcp-local", name]
+    if not isinstance(command, str) or not command.endswith(bin_name):
+        return False
+    args = entry.get("args")
+    if not isinstance(args, list) or args[:2] != ["mcp-local", name]:
+        return False
+    # Accept the pinned shape (["mcp-local", name, "--config", <path>]) and the
+    # pre-FEAT-556 two-arg shape, so an entry written by an older install — or
+    # by an operator following examples/sdd-coder-mcp.yaml — is ADOPTED and
+    # upgraded in place rather than warned about and skipped (installer.py:374-382).
+    # A trailing "--config" with a path outside `root` is a foreign override.
+    if len(args) >= 4 and args[2] == "--config":
+        config_path = Path(args[3])
+        if not config_path.is_absolute() or not str(config_path).startswith(str(root)):
+            return False
+    return True
 
 
 def _install_mcp_json(root: Path) -> str:

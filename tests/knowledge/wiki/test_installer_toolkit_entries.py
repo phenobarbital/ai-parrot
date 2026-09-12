@@ -60,7 +60,8 @@ def test_install_writes_toolkit_entries(tmp_root_with_config):
     assert "wikitoolkit" in servers
     assert servers["parrot-stub"] == {
         "command": assets.resolve_parrot_bin(root),
-        "args": ["mcp-local", "stub"],
+        "args": ["mcp-local", "stub", "--config", str(root / ".parrot" / "mcp-toolkits.yaml")],
+        "cwd": str(root),
         "env": {"FOO": "bar"},
     }
     assert "parrot-scraping" not in servers
@@ -132,6 +133,61 @@ def test_wikitoolkit_entry_unchanged(tmp_root_with_config):
     _install_mcp_json(root)
 
     assert _servers(root)["wikitoolkit"] == assets.mcp_json_entry(root)
+
+
+def test_toolkit_entry_pins_config_and_cwd(tmp_root_with_config):
+    """Pinned entries include --config and cwd for worktree compatibility."""
+    _install_mcp_json(tmp_root_with_config)
+    servers = _servers(tmp_root_with_config)
+    entry = servers["parrot-stub"]
+    assert entry["args"][:2] == ["mcp-local", "stub"]
+    assert entry["args"][2:] == ["--config", str(tmp_root_with_config / ".parrot" / "mcp-toolkits.yaml")]
+    assert entry["cwd"] == str(tmp_root_with_config)
+
+
+def test_legacy_entry_is_adopted_and_upgraded(tmp_root_with_config, capsys):
+    """A two-arg entry from an older install is upgraded, not skipped."""
+    root = tmp_root_with_config
+    # Write a legacy (pre-FEAT-556) entry
+    legacy_entry = {
+        "command": assets.resolve_parrot_bin(root),
+        "args": ["mcp-local", "stub"],
+        "env": {"FOO": "bar"},
+    }
+    (root / ".mcp.json").write_text(
+        json.dumps({"mcpServers": {"wikitoolkit": assets.mcp_json_entry(root), "parrot-stub": legacy_entry}}),
+        encoding="utf-8",
+    )
+
+    _install_mcp_json(root)
+
+    # Entry should be upgraded to pinned shape
+    servers = _servers(root)
+    entry = servers["parrot-stub"]
+    assert entry["args"][:2] == ["mcp-local", "stub"]
+    assert entry["args"][2:] == ["--config", str(root / ".parrot" / "mcp-toolkits.yaml")]
+    assert entry["cwd"] == str(root)
+    # No warning should be emitted
+    captured = capsys.readouterr()
+    assert "Warning" not in captured.err
+    assert "not written by" not in captured.err
+
+
+def test_foreign_entry_untouched(tmp_root_with_config, capsys):
+    """Existing FEAT-485 behaviour must not regress."""
+    root = tmp_root_with_config
+    foreign = {"command": "some-other-cli", "args": ["serve"], "env": {}}
+    (root / ".mcp.json").write_text(
+        json.dumps({"mcpServers": {"parrot-stub": foreign}}),
+        encoding="utf-8",
+    )
+
+    _install_mcp_json(root)
+
+    assert _servers(root)["parrot-stub"] == foreign
+    captured = capsys.readouterr()
+    assert "parrot-stub" in captured.err
+    assert "not written by" in captured.err
 
 
 def test_uninstall_removes_managed_only(tmp_root_with_config):
