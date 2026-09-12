@@ -112,8 +112,9 @@ class TestProjection:
             error="SECRET-TOKEN-XYZ: database connection failed",
         )
         # Set extra attributes that build_attempt_row expects
+        # (task_id is NOT a record field — it is supplied by the caller
+        # via the row constructor at the engine layer, not by build_attempt_row).
         record.attempt_uid = "a" * 32
-        record.task_id = "TASK-1"
         record.resolved_model = "anthropic.claude-3-resolved"
         record.turns = 3
         record.terminal = "failed"
@@ -130,7 +131,6 @@ class TestProjection:
             "ledger_counting_methods": ["exact"],
             "ledger_accounting_complete": True,
         }
-        record.enforcement = "observe"
         record.turn_series = [(1, 50, 25)]
 
         row = build_attempt_row(record, feature_id="FEAT-554", job_id="job-123", declared_files=5)
@@ -148,8 +148,7 @@ class TestProjection:
             started_at="2026-09-12T00:00:00+00:00",
         )
         record.attempt_uid = "a" * 32
-        record.task_id = "TASK-1"
-        
+
         # Case 1: accounting incomplete
         record.turns_with_unknown_usage = 0
         record.budget_report = {"ledger_accounting_complete": False}
@@ -210,7 +209,7 @@ class TestSink:
     @pytest.mark.asyncio
     async def test_concurrent_appends(self, tmp_path):
         sink = CoderTelemetrySink(tmp_path)
-        rows = [_row(attempt_uid=f"uid-{i:02d}") for i in range(20)]
+        rows = [_row(attempt_uid=f"concurrent-uid-{i:02d}") for i in range(20)]
 
         # Run 20 concurrent writes
         await asyncio.gather(*(sink.write_attempt(r) for r in rows))
@@ -228,4 +227,4 @@ class TestSink:
             uids.add(data["attempt_uid"])
 
         assert len(uids) == 20
-        assert uids == {f"uid-{i:02d}" for i in range(20)}
+        assert uids == {f"concurrent-uid-{i:02d}" for i in range(20)}
