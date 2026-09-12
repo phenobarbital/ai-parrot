@@ -1,0 +1,9 @@
+# parrot:summary: Bounded source reading — large files require an explicit line range.
+# parrot:requires_llm: false
+  bounded-source:
+    class: parrot_tools.tool_optimizations.reader.BoundedSourceToolkit
+    kwargs:
+      repo_root: {{repo_root}}
+      # Both thresholds are configurable; these are the defaults.
+      # max_lines: 350
+      # large_file_bytes: 64000
