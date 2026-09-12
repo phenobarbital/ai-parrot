@@ -42,38 +42,22 @@ You are a Senior Principal Engineer. You prioritize safety, correctness, plannin
 
 ## DYNAMIC TECH STACK & STANDARDS
 
-### Frontend / Mobile (If React/Web detected)
-- **Framework:** Svelte 5 + Sveltekit (Web), Capacitor (Mobile Wrapper).
-- **Styling:** Tailwind CSS is ALLOWED and preferred.
-- **Testing:**
-  - Unit Tests: Use Vitest.
-  - E2E Tests: Use Playwright.
-  - Python Tests: Use pytest with pytest-asyncio
-- **Localization:**
-  - Do not manually edit JSON translation files if a script exists.
-  - Always check for synchronization scripts before modifying strings.
+
 
 ### Python / Backend
-- **Framework:** aiohttp + navigator-api.
-- **Type Hinting:** Strictly enforce Python type hints.
-- **Linter:** Follow `black` formatting standards.
-- **Rules:** are specific rules for python development, use it.
+- See **Project conventions** below (managed block) — stack, forbidden libraries, layout, tooling.
 
 ### Rust Development
-- **Integration**: For Rust modules in Python projects, use **PyO3** and **Maturin**.
+- PyO3 + Maturin; see `.agent/rules/rust-development.md`.
 
 ## CODING STANDARDS
 
 **Code Style:**
 - Use `black` for Python formatting.
-- Use `prettier` for JavaScript/TypeScript formatting.
-- Use `isort` for Python import sorting.
 - Use 4-space indent, one statement per line, keep lines readable.
 - prefer f-strings for interpolation; keep quote style consistent, don't use f-strings for strings that contain f-strings.
 - Use snake_case for Python variables and functions.
 - Use PascalCase for Python classes.
-- Use camelCase for JavaScript/TypeScript variables and functions.
-- Use PascalCase for JavaScript/TypeScript classes.
 
 **Completeness:**
 - Always produce complete, working files.
@@ -100,4 +84,17 @@ This repository has an ai-parrot LLM-wiki. Before scanning source files, run `wi
 
 <!-- parrot:wiki:codex:end -->
 
-@RTK.md
+<!-- parrot:conventions:codex:begin -->
+## Project conventions
+
+## Project rule: codebase-conventions
+
+RULE-ONE
+
+---
+
+## Project rule: python-development
+
+RULE-TWO
+
+<!-- parrot:conventions:codex:end -->
