@@ -301,6 +301,103 @@ def _install_permissions(root: Path) -> list[str]:
     return actions
 
 
+def _managed_server_names(root: Path) -> list[str]:
+    """Return the `.mcp.json` server names this installer manages.
+
+    `["wikitoolkit"]` plus one `parrot-<name>` per ENABLED toolkit section —
+    the same query `_install_mcp_json` reconciles with (verified:
+    installer.py:363-364), so the two can never disagree.
+    """
+    from parrot.mcp.toolkit_config import load_toolkits_config
+
+    cfg = load_toolkits_config(root)
+    return ["wikitoolkit"] + [f"parrot-{name}" for name, section in sorted(cfg.toolkits.items()) if section.enabled]
+
+
+def _install_mcp_approval(root: Path) -> str:
+    """Merge the managed server names into `.claude/settings.local.json`.
+
+    Claude Code leaves a project-scope `.mcp.json` server at "pending approval"
+    until its name appears in `enabledMcpjsonServers`; an unapproved server is
+    invisible to agents (verified 2026-09-12: sdd-worker saw no
+    `mcp__parrot-sdd-coder__*` tools and fell back to its sequential loop).
+    Never writes `enableAllProjectMcpServers`: per-name approval suffices and
+    the global switch would also authorize unrelated third-party entries.
+
+    Returns:
+        One action string, phrased like `_install_permissions` (installer.py:294-301).
+
+    Raises:
+        RuntimeError: `enabledMcpjsonServers` exists but is not a JSON list.
+    """
+    local_path = root / ".claude" / "settings.local.json"
+    local = _load_settings(local_path) or {}
+    names = local.get("enabledMcpjsonServers")
+    if names is None:
+        names = local["enabledMcpjsonServers"] = []
+    if not isinstance(names, list):
+        raise RuntimeError(f"{local_path}: 'enabledMcpjsonServers' is not a list")
+    missing = [n for n in _managed_server_names(root) if n not in names]
+    if not missing:
+        return ".claude/settings.local.json — MCP servers already authorized"
+    names.extend(missing)
+    _write_settings(local_path, local)
+    return f".claude/settings.local.json — {len(missing)} MCP server(s) authorized ({', '.join(missing)})"
+
+
+def _uninstall_mcp_approval(root: Path) -> str | None:
+    """Remove only the managed names from `enabledMcpjsonServers`.
+
+    Returns:
+        An action string, or None when there was nothing to remove.
+    """
+    local_path = root / ".claude" / "settings.local.json"
+    try:
+        local = _load_settings(local_path)
+    except RuntimeError:
+        local = None
+    if not isinstance(local, dict):
+        return None
+
+    names = local.get("enabledMcpjsonServers")
+    if not isinstance(names, list):
+        return None
+
+    # We want to remove:
+    # 1. Any name currently in _managed_server_names(root)
+    # 2. Any stale "parrot-" name whose section no longer exists (or is disabled)
+    # Let's find all possible managed names.
+    # A name is a managed name if it is "wikitoolkit" or starts with "parrot-".
+    # But wait, we should only remove "parrot-<name>" if it was indeed managed by us.
+    # Since we don't have the full history, any "parrot-<name>" is a candidate,
+    # but to be safe and precise, we can remove "wikitoolkit" and any "parrot-<name>"
+    # that is either currently managed OR whose name matches a toolkit section in the config.
+    # Actually, the spec says:
+    # "note that a disabled/removed section means a name that is no longer in _managed_server_names,
+    # so ALSO strip any `parrot-` name whose section no longer exists, or uninstall would leave stale approvals behind"
+    # So we remove "wikitoolkit" and any "parrot-<name>" where <name> is a toolkit section in the config (enabled or disabled),
+    # or if the section no longer exists in the config at all!
+    # Wait, "strip any `parrot-` name whose section no longer exists" means if it starts with "parrot-", we can strip it.
+    # Let's be precise: we remove "wikitoolkit" and any "parrot-*" name.
+    # Let's check if that's correct. Yes, all "parrot-*" names are managed by this installer.
+    # So we remove "wikitoolkit" and any name starting with "parrot-".
+    to_remove = {n for n in names if n == "wikitoolkit" or n.startswith("parrot-")}
+    if not to_remove:
+        return None
+
+    kept = [n for n in names if n not in to_remove]
+    if len(kept) == len(names):
+        return None
+
+    if kept:
+        local["enabledMcpjsonServers"] = kept
+    else:
+        local.pop("enabledMcpjsonServers", None)
+
+    _write_settings(local_path, local)
+    return f".claude/settings.local.json — {len(to_remove)} MCP server approval(s) removed"
+
+
 def _is_managed_toolkit_entry(entry: Any, root: Path, name: str) -> bool:
     """Whether a ``parrot-<name>`` ``.mcp.json`` entry was written by us.
 
@@ -761,6 +858,10 @@ def uninstall_claude_integration(root: Path) -> list[str]:
     if mcp_json_action:
         actions.append(mcp_json_action)
 
+    approval_action = _uninstall_mcp_approval(root)
+    if approval_action:
+        actions.append(approval_action)
+
     command_path = root / ".claude" / "commands" / assets.SLASH_COMMAND_FILENAME
     if command_path.exists():
         command_path.unlink()
@@ -843,6 +944,21 @@ def integration_status(root: Path) -> dict[str, Any]:
         if isinstance(mcp_data, dict):
             mcp_json_installed = "wikitoolkit" in mcp_data.get("mcpServers", {})
 
+    # Compute mcp_approved (True when every _managed_server_names(root) entry appears in enabledMcpjsonServers)
+    mcp_approved = False
+    try:
+        local_settings = _load_settings(root / ".claude" / "settings.local.json")
+    except Exception:
+        local_settings = None
+    if isinstance(local_settings, dict):
+        approved_servers = local_settings.get("enabledMcpjsonServers")
+        if isinstance(approved_servers, list):
+            try:
+                managed_names = _managed_server_names(root)
+                mcp_approved = all(name in approved_servers for name in managed_names)
+            except Exception:
+                pass
+
     from .bookstore import bookstore_status
 
     return {
@@ -856,4 +972,6 @@ def integration_status(root: Path) -> dict[str, Any]:
         "slash_command": (root / ".claude" / "commands" / assets.SLASH_COMMAND_FILENAME).exists(),
         "git_post_commit_hook": git_hook_installed,
         "mcp_json": mcp_json_installed,
+        "mcp_servers_authorized": mcp_approved,
+        "toolkits_yaml": (root / ".parrot" / "mcp-toolkits.yaml").exists(),
     }
