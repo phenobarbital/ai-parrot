@@ -103,10 +103,11 @@ class TestBuildDispatcher:
 class TestLLMTurnBudget:
     """The in-process coding loop's turn budget (``DEV_LOOP_LLM_MAX_TURNS``).
 
-    Regression: `LLMCodeDispatchProfile`'s library default of 24 turns was
-    unreachable from config, and every seat of an 8-task run hit it — one
-    chat completion per turn is simply not the budget an agentic CLI spends.
-    The dev-loop wiring defaults to 60 and stays overridable.
+    Regression: `LLMCodeDispatchProfile`'s library default (24, raised to 40
+    by FEAT-553) was unreachable from config, and every seat of an 8-task
+    run hit it — one chat completion per turn is simply not the budget an
+    agentic CLI spends. The dev-loop wiring defaults to 60 and stays
+    overridable.
     """
 
     LOOP_BACKENDS = ("nvidia", "grok", "zai", "moonshot", "nova")
@@ -121,7 +122,7 @@ class TestLLMTurnBudget:
             config_getter=fake_getter({}),
         )
         assert profile.max_turns == DEFAULT_LLM_MAX_TURNS == 60
-        assert LLMCodeDispatchProfile.model_fields["max_turns"].default == 24
+        assert LLMCodeDispatchProfile.model_fields["max_turns"].default == 40
 
     @pytest.mark.parametrize("backend", LOOP_BACKENDS)
     def test_env_key_overrides(self, backend):
