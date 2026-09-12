@@ -314,4 +314,22 @@ recommendation, and prints `final_answer_reserve` next to each ceiling.
 
 **Deviations from spec**: none
 
+**Post-merge adversarial review addendum**: a full-feature code review after
+all 11 tasks landed found two defects in this script, both fixed with new
+regression tests (each verified to fail against the pre-fix code):
+1. `total_tokens()`/`estimation_error()` used `is not None` on values read
+   from a pandas row; a missing value in a mixed-null numeric column is
+   `NaN` (a float), and `NaN is not None` is `True` in Python — the
+   `gemini` seat's absent `ledger_*` fields were silently treated as
+   present, computed to `NaN`, and dropped from every percentile instead
+   of falling through to the provider-total fallback (AC-15). Fixed with
+   `pd.notna(...)`.
+2. `recommend()`'s `MIN_SAMPLES` gate counted every row in a (seat,
+   bucket) group regardless of `outcome`, contradicting both AC-13
+   ("withholds a recommendation below 12 MERGED attempts") and the
+   function's own docstring ("n_consumption: all merged rows"). Fixed to
+   filter to `outcome == "merged"` before computing `n_consumption`/
+   percentiles.
+See FEAT-554's final commit for full detail.
+
 Seat: haiku (native) · Backend: n/a · Model: haiku · Attempts: 1 · Duration: 324.4s · Tokens: n/a (subagent_tokens: 90241)

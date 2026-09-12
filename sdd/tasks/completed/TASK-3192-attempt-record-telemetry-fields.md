@@ -317,4 +317,13 @@ tests pass; `ruff check` clean.
 
 **Deviations from spec**: none
 
+**Post-merge adversarial review addendum**: a full-feature code review after
+all 11 tasks landed found `AttemptTelemetryCollector.record()` (engine.py,
+TASK-3193's scope) defaulted `terminal="completed"` for a pre-dispatch
+failure and never copied `AttemptTelemetry.provider_*_tokens` into a failed
+attempt's `usage` — losing exactly the data Goal 6 calls out ("record a
+failed attempt's consumption too"). This model's own fields were correct;
+the bugs were in how the collector populated them. See FEAT-554's final
+commit for full detail.
+
 Seat: codex-spark→qwen (retry) · Backend: codex (failed)→nova · Model: gpt-5.3-codex-spark (failed)→qwen.qwen3-coder-480b-a35b-instruct · Attempts: 2 · Duration: 75.1s · Tokens: 335118/2778

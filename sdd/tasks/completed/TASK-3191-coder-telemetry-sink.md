@@ -452,4 +452,16 @@ check` clean.
 
 **Deviations from spec**: none (test-only fixup, see note above)
 
+**Post-merge adversarial review addendum**: a full-feature code review after
+all 11 tasks landed found `build_attempt_row` read `budget_report.get(
+"ledger_input_tokens")` etc., but `BudgetReport.model_dump()`'s real fields
+are UNPREFIXED — no `"ledger_"`-prefixed key exists anywhere in that model.
+Every `ledger_*` field on every row, and `calibration_eligible`, were always
+`None`/`False` for every attempt ever recorded. `task_id` was also read via
+`getattr(record, "task_id", "")` from a field `AttemptRecord` doesn't have,
+so it was always `""`. Both fixed in `build_attempt_row` (unprefixed field
+mapping; `task_id` promoted to a required parameter) with regression
+assertions added to this task's own test. See FEAT-554's final commit for
+full detail.
+
 Seat: gemini · Backend: google-compat · Model: gemini-3.5-flash · Attempts: 1 · Duration: 141.6s · Tokens: 1408386/8374

@@ -342,4 +342,29 @@ succeeded.
 
 **Deviations from spec**: none
 
+**Post-merge adversarial review addendum**: a full-feature code review after
+all 11 tasks landed found four defects in this task's own delivered scope,
+all fixed by sdd-worker with new sink-backed regression tests (each
+verified to fail against the pre-fix code):
+1. `SddCoderEngine.__init__` never read `conf.DEV_LOOP_CODER_TELEMETRY`/
+   `conf.SDD_CODER_TELEMETRY_DIR` — unlike `redis_url`/`worktree_base_path`
+   in the same constructor, `telemetry_dir` had no conf fallback, so the
+   documented env-var workflow enabled the observational ledger but wrote
+   ZERO telemetry rows. Fixed with the same conf-fallback pattern.
+2. `_run_task` only emitted an outcome row for the LAST attempt — the
+   "failed-then-merged" scenario AC-19 names by name left attempt 1's
+   failure permanently unpaired when a retry later succeeded.
+3. `_consolidate` never set `attempts=` on any `TaskResult`, so `merge()`'s
+   re-emit condition was always false (dead code) and its `event_seq` was
+   a hardcoded placeholder the author's own comment admitted was not real
+   tracking. Fixed with a shared `_emit_outcome` helper backed by
+   persistent `self._event_seq_counters`/`self._latest_attempt` state.
+4. The `write_attempt` call site used `hasattr(self, "_sink")` (always
+   True) instead of `self._sink is not None`, so every attempt with
+   telemetry off called `None.write_attempt(...)` and silently swallowed
+   the `AttributeError` with a bare `except: pass` — no log line,
+   contradicting AC-11.
+See FEAT-554's final commit for full detail and the 3 new
+sink-reading integration tests in `TestOutcomeEvents`.
+
 Seat: codex-spark→qwen (retry) · Backend: codex (failed)→nova · Model: gpt-5.3-codex-spark (failed)→qwen.qwen3-coder-480b-a35b-instruct · Attempts: 2 · Duration: 262.9s · Tokens: 2048316/12151
