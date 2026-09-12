@@ -39,6 +39,7 @@ the protocol and the service with fakes for process/channel/tail/transport.
 | `packages/ai-parrot-integrations/src/parrot/integrations/devloop/transport.py` | CREATE | `DevLoopTransport` protocol, `NullTransport` |
 | `packages/ai-parrot-integrations/src/parrot/integrations/devloop/service.py` | CREATE | `DevLoopDispatchService` (uses `PendingConfirmation` from `models.py`) |
 | `packages/ai-parrot-integrations/src/parrot/integrations/devloop/__init__.py` | MODIFY | re-exports |
+| `packages/ai-parrot-integrations/src/parrot/integrations/devloop/registry.py` | MODIFY | additive sync `peek(run_id)` / `all_records()` (memory only) |
 | `packages/ai-parrot-integrations/tests/integrations/devloop/test_service.py` | CREATE | lifecycle, ownership, cancel escalation, re-attach |
 
 ---
@@ -56,9 +57,11 @@ import asyncio, logging, os, secrets, tempfile, time, uuid
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Protocol
 from pydantic import BaseModel, ValidationError
 from parrot.cli.devloop.bootstrap import default_identities        # verified: packages/ai-parrot/src/parrot/cli/devloop/bootstrap.py:378 — async (jira_toolkit) -> Tuple[str, str]
+from parrot.flows.dev_flow.models import DevRequestBrief         # verified: packages/ai-parrot/src/parrot/flows/dev_flow/models.py:61
+from parrot.flows.dev_loop import WorkBrief                        # verified: packages/ai-parrot/src/parrot/flows/dev_loop/__init__.py:73
 from parrot.integrations.devloop.models import (                    # TASK-3200
-    BridgeResult, DevLoopCommand, DevLoopIntegrationConfig, GateView, NotRunOwnerError, Requester, RequestType,
-    RunEvent, RunNotFoundError, RunRecord, SpawnError,
+    BridgeResult, DevLoopCommand, DevLoopIntegrationConfig, GateView, NotRunOwnerError, PendingConfirmation,
+    Requester, RequestType, RunEvent, RunNotFoundError, RunRecord, SpawnError,
 )
 from parrot.integrations.devloop.briefs import (                    # TASK-3201
     brief_summary_fields, brief_to_file, build_bug_brief, build_feature_brief,
@@ -94,6 +97,9 @@ class LoopbackRestChannel(endpoint, *, token, timeout=10.0): resolve_gate(...), 
 # TASK-3203 tail.py / registry.py
 class RunStateTail(redis, run_id): async def events(*, last_seen=None) -> AsyncIterator[RunEvent] ; async def close()
 class RunRegistry(redis, *, retention_seconds, namespace="devloop"): save, get, list_for(actor), live(), mark_terminal(run_id)
+#   + ADDED HERE (additive MODIFY of registry.py): def peek(self, run_id) -> RunRecord | None ; def all_records(self) -> list[RunRecord]  (memory only, sync)
+class PendingConfirmation(BaseModel): pending_id, kind, brief: dict, fields: dict[str,str], requester, channel_id, message_ts, created_at, expires_at   # TASK-3200
+class NotRunOwnerError(owner_user_id: str): .owner_user_id                                                                                          # TASK-3200
 ```
 
 ### Does NOT Exist
@@ -277,14 +283,14 @@ class DevLoopDispatchService:
     # -- cross-lane read accessors (used by the Slack handlers, TASK-3206/3207) ----
     def record(self, run_id: str) -> Optional[RunRecord]:
         """In-memory lookup only (no Redis) — safe inside a Slack 3 s ack / trigger_id window."""
-        return self.registry._records.get(run_id)  # FILL IN: expose a public RunRegistry.peek(run_id) in TASK-3203 style instead of touching _records
+        return self.registry.peek(run_id)  # additive sync accessor added to RunRegistry in this task (see Does NOT Exist)
 
     def pending(self, pending_id: str) -> Optional[PendingConfirmation]:
         return self._pending.get(pending_id)
 
     def record_by_thread(self, channel_id: str, thread_ts: str) -> Optional[RunRecord]:
         """Match RunRecord.channel_id + thread_ts (thread-reply interceptor)."""
-        return next((r for r in self.registry._records.values() if r.channel_id == channel_id and r.thread_ts == thread_ts), None)
+        return next((r for r in self.registry.all_records() if r.channel_id == channel_id and r.thread_ts == thread_ts), None)
 
     async def confirm(self, pending_id: str, requester: Requester, overrides: Optional[Dict[str, Any]] = None) -> RunRecord:
         """Ownership check; re-validate with Edit-modal overrides; launch; update the card."""
@@ -466,6 +472,7 @@ async def test_dispatch_confirms_before_spawn(service):
 - [ ] `service.py::_handle_event` — event folding + transport calls; bounded by AC7/AC9/AC16.
 - [ ] `service.py::_supervise` — S8 bounds; bounded by AC14.
 - [ ] `service.py::_check_capacity` — optional cap; `None` = unlimited.
+- [ ] `registry.py::peek` / `all_records` — additive sync memory accessors (MODIFY: append below `mark_terminal`; occurrences: 1 after TASK-3203 — verify with `grep -c 'async def mark_terminal' registry.py`).
 - [ ] Test fakes for tail/channel and the stubbed scenarios.
 
 ---
@@ -476,6 +483,7 @@ async def test_dispatch_confirms_before_spawn(service):
 - [ ] All tests pass: `pytest packages/ai-parrot-integrations/tests/integrations/devloop -v`
 - [ ] No linting errors: `ruff check packages/ai-parrot-integrations/src/parrot/integrations/devloop`
 - [ ] Imports work: `from parrot.integrations.devloop import DevLoopDispatchService, DevLoopTransport, NullTransport`
+- [ ] Cross-lane accessors exist with these exact names: `service.record(run_id)`, `service.pending(pending_id)`, `service.record_by_thread(channel_id, thread_ts)`; `NotRunOwnerError(...).owner_user_id` is the initiator's user id
 - [ ] Spec AC8 (ownership), AC10 (confirm card for both kinds, identities never a Slack id), AC13 (re-attach), AC14 (process_exited), AC21 (cancel escalation) are covered by tests; `stop()` never terminates a child (G7)
 
 ---
