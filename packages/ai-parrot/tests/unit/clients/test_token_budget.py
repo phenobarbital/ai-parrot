@@ -565,3 +565,89 @@ class TestReportEstimateFields:
         )
         assert report.settled_estimate_input_tokens == 0
         assert report.released_estimate_tokens == 0
+
+
+def _estimate(n: int = 5000, method: str = "tiktoken:o200k_base") -> TokenEstimate:
+    return TokenEstimate(input_tokens=n, method=method, quality="estimated", request_fingerprint="fp")
+
+
+@pytest.fixture
+def observing_ledger() -> QuestionBudget:
+    """A ledger whose ceiling is absurdly below demand, in observe mode."""
+    return QuestionBudget(TokenBudgetPolicy(token_budget=1, enforcement="observe"), "op-observe")
+
+
+class TestObservationalReserve:
+    async def test_never_denies_and_preserves_cap(self, observing_ledger):
+        for round_no in range(1, 11):
+            res = await observing_ledger.reserve(
+                _estimate(), max_output_tokens=8192, min_output_tokens=1,
+                call_id="c1", round_number=round_no, attempt_number=1, phase="work",
+            )
+            assert res.output_cap == 8192
+
+    async def test_does_not_consult_available(self, observing_ledger, monkeypatch):
+        # Monkeypatch QuestionBudget._available to raise, then assert a
+        # reserve() still succeeds — bounded by AC "never calls _available()"
+        def raise_on_available(self, phase):
+            raise RuntimeError("_available should not be called in observe mode")
+
+        monkeypatch.setattr(QuestionBudget, "_available", raise_on_available)
+        # Should not raise
+        await observing_ledger.reserve(
+            _estimate(), max_output_tokens=8192, min_output_tokens=1,
+            call_id="c1", round_number=1, attempt_number=1, phase="work",
+        )
+
+    async def test_state_stays_active_past_the_ceiling(self, observing_ledger):
+        # Reserve + settle usage far above token_budget, then assert
+        # state == "active"
+        for i in range(10):
+            res = await observing_ledger.reserve(
+                _estimate(10000), max_output_tokens=8192, min_output_tokens=1,
+                call_id="c1", round_number=i + 1, attempt_number=1, phase="work",
+            )
+            await observing_ledger.settle(res.reservation_id, _usage(10000, 8000))
+
+        rep = await observing_ledger.report()
+        assert rep.state == "active"
+
+
+class TestSettledEstimateReporting:
+    async def test_released_excluded_from_calibration(self):
+        # One settled reservation (estimate=100, usage=100) and one
+        # released (estimate=1000); assert settled_estimate_input_tokens == 100,
+        # released_estimate_tokens == 1000, input_tokens == 100 — the exact
+        # scenario spec §10 R5 describes
+        q = QuestionBudget(TokenBudgetPolicy(token_budget=100000, enforcement="enforce"), "op-test")
+        r1 = await q.reserve(
+            _est(100), max_output_tokens=100, min_output_tokens=1,
+            call_id="c", round_number=1, attempt_number=1, phase="work",
+        )
+        await q.settle(r1.reservation_id, _usage(100, 50))
+
+        r2 = await q.reserve(
+            _est(1000), max_output_tokens=100, min_output_tokens=1,
+            call_id="c", round_number=2, attempt_number=1, phase="work",
+        )
+        await q.release_unspent(r2.reservation_id)
+
+        rep = await q.report()
+        assert rep.settled_estimate_input_tokens == 100
+        assert rep.released_estimate_tokens == 1000
+        assert rep.input_tokens == 100
+
+    async def test_uncertain_counted_in_neither(self):
+        # Mark_uncertain a reservation; assert it appears in neither
+        # estimate total — bounded by AC "an uncertain one appears in neither"
+        q = QuestionBudget(TokenBudgetPolicy(token_budget=100000, enforcement="enforce"), "op-test")
+        r1 = await q.reserve(
+            _est(100), max_output_tokens=100, min_output_tokens=1,
+            call_id="c", round_number=1, attempt_number=1, phase="work",
+        )
+        await q.mark_uncertain(r1.reservation_id, "timeout")
+
+        rep = await q.report()
+        assert rep.settled_estimate_input_tokens == 0
+        assert rep.released_estimate_tokens == 0
+        assert rep.uncertain_tokens == 100
