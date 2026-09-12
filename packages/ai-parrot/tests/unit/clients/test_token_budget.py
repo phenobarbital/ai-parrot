@@ -650,4 +650,8 @@ class TestSettledEstimateReporting:
         rep = await q.report()
         assert rep.settled_estimate_input_tokens == 0
         assert rep.released_estimate_tokens == 0
-        assert rep.uncertain_tokens == 100
+        # uncertain_tokens is a pre-existing operational counter keyed on
+        # `.total` (input + output), not on the input-only estimate the two
+        # NEW settled/released totals track — see the established assertion
+        # `rep.uncertain_tokens == r.total` above in TestBasicFlow.
+        assert rep.uncertain_tokens == r1.total
