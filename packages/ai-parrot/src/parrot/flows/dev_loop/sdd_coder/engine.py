@@ -17,6 +17,7 @@ import logging
 import os
 import re
 import time
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -53,6 +54,10 @@ from parrot.flows.dev_loop.sdd_coder.models import (
     TaskResult,
 )
 from parrot.flows.dev_loop.sdd_coder.roster import ChunkAssigner, RosterProbe, available_seats
+from parrot.flows.dev_loop.models.telemetry import AttemptTelemetry
+from parrot.flows.dev_loop.sdd_coder.telemetry import (
+    CoderTelemetrySink, OutcomeRow, build_attempt_row,
+)
 
 _ORPHANS_INDEX_NAME = "_orphans.json"
 _CONFLICT_LINE = re.compile(r"^CONFLICT \([^)]*\):.* in (.+)$", re.M)
@@ -98,12 +103,28 @@ class AttemptTelemetryCollector:
     a no-op here.
     """
 
-    def __init__(self, *, attempt: int, seat: RosterSeat) -> None:
+    def __init__(self, *, attempt: int, seat: RosterSeat, attempt_uid: Optional[str] = None, job_id: Optional[str] = None) -> None:
         self.attempt, self.seat = attempt, seat
+        self.attempt_uid = attempt_uid or ""
+        self.job_id = job_id or ""
         self.started = time.monotonic()
         self.started_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
         self.usage: Dict[str, Any] = {}
         self.error = ""
+        self.telemetry: Optional[Any] = None
+        self.declared_files: Optional[int] = None
+        self.declared_files_known: bool = False
+
+    def on_attempt_telemetry(self, telemetry: AttemptTelemetry) -> None:
+        """Receive the dispatcher's terminal telemetry (FEAT-554, spec §10 R3).
+
+        Called by `LLMCodeDispatcher._emit_attempt_telemetry` through the bound
+        session host. Separate from `apply()` because this payload deliberately
+        does NOT travel as a `DispatchCompleted` action: that projection copies
+        only seven whitelisted `usage` scalars and swallows validation errors,
+        so a per-turn series or a budget report would vanish in silence.
+        """
+        self.telemetry = telemetry
 
     def apply(self, action: Any, origin: Any = None) -> None:
         """Called by _apply_to_session_host for every dispatch event. Keep only usage from 'dispatch/completed'."""
@@ -123,6 +144,31 @@ class AttemptTelemetryCollector:
                 self.usage[field] = value
 
     def record(self) -> AttemptRecord:
+        # Extract telemetry data if available
+        error_class = ""
+        resolved_model = ""
+        turns = 0
+        terminal = "completed"
+        turns_with_unknown_usage = 0
+        turn_series = []
+        budget_report = {}
+        
+        if self.telemetry is not None:
+            error_class = self.telemetry.error_class
+            resolved_model = self.telemetry.resolved_model
+            turns = self.telemetry.turns
+            terminal = self.telemetry.terminal
+            turns_with_unknown_usage = self.telemetry.turns_with_unknown_usage
+            
+            # Convert turn series to the expected format
+            turn_series = [
+                (tu.round_number, tu.input_tokens, tu.output_tokens) 
+                for tu in self.telemetry.turn_series
+            ]
+            
+            if self.telemetry.budget_report:
+                budget_report = self.telemetry.budget_report
+        
         return AttemptRecord(
             attempt=self.attempt,
             seat_label=self.seat.label,
@@ -133,6 +179,17 @@ class AttemptTelemetryCollector:
             duration_s=round(time.monotonic() - self.started, 3),
             usage=self.usage,
             error=self.error,
+            attempt_uid=self.attempt_uid,
+            job_id=self.job_id,
+            resolved_model=resolved_model,
+            turns=turns,
+            terminal=terminal,
+            error_class=error_class,
+            declared_files=self.declared_files,
+            declared_files_known=self.declared_files_known,
+            turns_with_unknown_usage=turns_with_unknown_usage,
+            turn_series=turn_series,
+            budget_report=budget_report,
         )
 
 
@@ -155,6 +212,7 @@ class SddCoderEngine:
         worktree_base_path: Optional[str] = None,
         dispatcher_builder: Callable[..., Any] = build_dispatcher,
         stream_ttl_seconds: int = 3600,
+        telemetry_dir: Optional[str] = None,
     ) -> None:
         self.logger = logging.getLogger(__name__)
         self.roster, self._probe = roster, probe or RosterProbe(smoke_timeout_s=roster.smoke_timeout_s)
@@ -170,6 +228,13 @@ class SddCoderEngine:
         self._managers: Dict[str, SubWorktreeManager] = {}  # key: f"{task_id}.a{attempt}"
         self._job_worktrees: Dict[str, str] = {}  # job_id -> feature worktree, for re-journaling in wait()
         self._opened = False
+        
+        # Telemetry setup
+        self._sink: Optional[CoderTelemetrySink] = None
+        if telemetry_dir is not None:
+            from parrot.flows.dev_loop.sdd_coder.telemetry import CoderTelemetrySink, resolve_durable_root
+            telemetry_root = resolve_durable_root(telemetry_dir, worktree_base_path=self._base_path)
+            self._sink = CoderTelemetrySink(telemetry_root)
 
     async def open(self) -> None:
         """Probe once; cache seats/assigner. Idempotent. Raises roster_empty when nothing is available."""
@@ -425,7 +490,36 @@ class SddCoderEngine:
         planned = PlannedTask(
             task_id=task_id, task_file=task_ref.file, title=task_ref.title, seat_label="", native=True
         )
-        return await self._consolidate(ctx, manager, planned, branch=branch, path=path)
+        result = await self._consolidate(ctx, manager, planned, branch=branch, path=path)
+        
+        # Emit outcome row for the re-merge with incremented event_seq
+        if hasattr(self, '_sink') and self._sink is not None and result.attempts:
+            try:
+                last_attempt = result.attempts[-1]  # The attempt being re-merged
+                # Find the next event sequence number for this attempt
+                # For simplicity, we'll use a fixed sequence number for re-merges
+                # In a real implementation, this would track the sequence per attempt
+                event_seq = len([a for a in result.attempts if a.attempt_uid == last_attempt.attempt_uid]) + 1
+                
+                await self._sink.write_outcome(
+                    OutcomeRow(
+                        ts=datetime.now(timezone.utc).isoformat(),
+                        attempt_uid=last_attempt.attempt_uid,
+                        job_id=last_attempt.job_id,
+                        feature_id=ctx.feature_id,
+                        task_id=task_id,
+                        attempt=last_attempt.attempt,
+                        event_seq=event_seq,
+                        outcome=result.outcome,
+                        conflict_file_count=len(result.conflict_files),
+                        unexpected_file_count=len(result.unexpected_files),
+                    )
+                )
+            except Exception:
+                # Sink failure must not change the outcome (AC-11)
+                pass
+        
+        return result
 
     async def cleanup(self, feature: str, worktree: str, keep_conflicted: bool = True) -> CleanupReport:
         """Remove finished sub-worktrees this engine created; never touches orphan branches it never adopted."""
@@ -530,7 +624,27 @@ class SddCoderEngine:
         # code-review fix note on the `try:` block having moved to cover
         # worktree-creation and dispatcher-construction too.
         path = str(Path(self._base_path) / f"{ctx.feature_branch}--pool" / f"{task.task_id}-a{attempt}")
-        collector = AttemptTelemetryCollector(attempt=attempt, seat=seat)
+        # A unique id per attempt: `attempt` restarts at 1 on every _run_task
+        # invocation (line 592) and both attempts of a task share `job_id`, so
+        # neither can key the telemetry join (spec §10 R3).
+        attempt_uid = uuid.uuid4().hex
+        collector = AttemptTelemetryCollector(
+            attempt=attempt, seat=seat, attempt_uid=attempt_uid, job_id=job_id
+        )
+        # Read `task.task_file` and count `parse_task_files(...)` NOW,
+        # while the worktree still exists — set declared_files /
+        # declared_files_known on the collector. An unreadable file means
+        # known=False, never 0.
+        try:
+            task_md_path = Path(ctx.worktree, task.task_file).resolve()
+            worktree_root = Path(ctx.worktree).resolve()
+            if task_md_path == worktree_root or str(task_md_path).startswith(str(worktree_root) + os.sep):
+                task_md = await asyncio.to_thread(task_md_path.read_text, "utf-8")
+                collector.declared_files = len(parse_task_files(task_md))
+                collector.declared_files_known = True
+        except Exception:
+            # File unreadable or parsing failed - set known=False
+            collector.declared_files_known = False
         output: Optional[DevelopmentOutput] = None
         error = ""
         try:
@@ -583,7 +697,23 @@ class SddCoderEngine:
             error = f"{type(exc).__name__}: {exc}"
             collector.error = error
             self.logger.warning("attempt %d of %s on %s failed: %s", attempt, task.task_id, seat.label, error)
-        return collector.record(), output, error, manager, branch, path
+        
+        record = collector.record()
+        # Write the measurement BEFORE consolidation: if the server dies between
+        # here and the outcome, the attempt row still survives and the analysis
+        # reports an incomplete pair rather than losing the sample (spec §2).
+        if hasattr(self, '_sink'):
+            try:
+                await self._sink.write_attempt(
+                    build_attempt_row(
+                        record, feature_id=ctx.feature_id, job_id=job_id,
+                        declared_files=record.declared_files,
+                    )
+                )
+            except Exception:
+                # Sink failure must not change the outcome (AC-11)
+                pass
+        return record, output, error, manager, branch, path
 
     async def _run_task(self, ctx: _FeatureCtx, task: PlannedTask, seat: RosterSeat, *, job_id: str) -> TaskResult:
         """Attempt 1 on the assigned seat; on failure attempt 2 on a different seat in a NEW sub-worktree;
@@ -591,6 +721,9 @@ class SddCoderEngine:
         attempts: List[AttemptRecord] = []
         rec, out, err, manager, branch, path = await self._run_attempt(ctx, task, seat, attempt=1, job_id=job_id)
         attempts.append(rec)
+        # Track event sequence per attempt for outcome rows
+        attempt_event_seqs = {rec.attempt_uid: 1}
+        
         if err:
             assert self._assigner is not None
             retry = self._assigner.retry_seat(seat.label, {seat.label})
@@ -599,7 +732,30 @@ class SddCoderEngine:
                     ctx, task, retry, attempt=2, job_id=job_id
                 )
                 attempts.append(rec)
+                attempt_event_seqs[rec.attempt_uid] = 1
+        
         if err:
+            # Both attempts failed - emit outcome rows for both
+            if hasattr(self, '_sink') and self._sink is not None:
+                try:
+                    for attempt_rec in attempts:
+                        await self._sink.write_outcome(
+                            OutcomeRow(
+                                ts=datetime.now(timezone.utc).isoformat(),
+                                attempt_uid=attempt_rec.attempt_uid,
+                                job_id=attempt_rec.job_id,
+                                feature_id=ctx.feature_id,
+                                task_id=task.task_id,
+                                attempt=attempt_rec.attempt,
+                                event_seq=attempt_event_seqs[attempt_rec.attempt_uid],
+                                outcome="failed",
+                            )
+                        )
+                        attempt_event_seqs[attempt_rec.attempt_uid] += 1
+                except Exception:
+                    # Sink failure must not change the outcome (AC-11)
+                    pass
+            
             return TaskResult(
                 task_id=task.task_id,
                 outcome="failed",
@@ -608,8 +764,33 @@ class SddCoderEngine:
                 attempts=attempts,
                 diagnostics="\n".join(a.error for a in attempts if a.error),
             )
+        
         result = await self._consolidate(ctx, manager, task, branch=branch, path=path)
-        return result.model_copy(update={"attempts": attempts, "development_output": out})
+        final_result = result.model_copy(update={"attempts": attempts, "development_output": out})
+        
+        # Emit outcome row for the successful attempt
+        if hasattr(self, '_sink') and self._sink is not None and attempts:
+            try:
+                last_attempt = attempts[-1]  # The attempt that produced the result
+                await self._sink.write_outcome(
+                    OutcomeRow(
+                        ts=datetime.now(timezone.utc).isoformat(),
+                        attempt_uid=last_attempt.attempt_uid,
+                        job_id=last_attempt.job_id,
+                        feature_id=ctx.feature_id,
+                        task_id=task.task_id,
+                        attempt=last_attempt.attempt,
+                        event_seq=attempt_event_seqs[last_attempt.attempt_uid],
+                        outcome=result.outcome,
+                        conflict_file_count=len(result.conflict_files),
+                        unexpected_file_count=len(result.unexpected_files),
+                    )
+                )
+            except Exception:
+                # Sink failure must not change the outcome (AC-11)
+                pass
+        
+        return final_result
 
     async def run_chunk(self, feature: str, worktree: str, task_ids: List[str]) -> CoderJob:
         """Validate, register, RETURN. Everything slow happens inside the job (S4, AC-21)."""
