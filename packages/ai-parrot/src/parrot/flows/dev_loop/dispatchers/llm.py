@@ -38,6 +38,11 @@ from parrot.flows.dev_loop.dispatchers._shared import (
     DispatchExecutionError,
     DispatchOutputValidationError,
 )
+from parrot.flows.dev_loop.models.telemetry import (
+    MAX_TURN_SERIES,
+    AttemptTelemetry,
+    TurnUsage,
+)
 from parrot.flows.dev_loop.dispatchers.claude import ClaudeCodeDispatcher
 from parrot.flows.dev_loop.models import DispatchEvent, DispatchLabels, LLMCodeDispatchProfile
 from parrot.flows.dev_loop.session_state import SessionHost
@@ -292,6 +297,8 @@ class LLMCodeDispatcher:
             tc = self._safe_emit_before_call(client, model=model, has_tools=bool(tools))
             loop_t0 = time.perf_counter()
             accumulated: Optional[CompletionUsage] = None  # LOCAL, never self.*
+            turn_series: List[TurnUsage] = []  # LOCAL, same rule as `accumulated`
+            turns_with_unknown_usage = 0
             # Remaining-turn counts at which the model gets told how much
             # budget is left; consumed head-first. See _budget_nudge.
             budget_marks = self._budget_marks(profile.max_turns)
@@ -331,6 +338,20 @@ class LLMCodeDispatcher:
                     usage, raw_usage = self._extract_usage(response)
                     if usage is not None:
                         accumulated = usage if accumulated is None else accumulated + usage
+                    # Record EVERY turn, including one the provider reported no
+                    # usage for: the `if usage is not None` guard above keeps the
+                    # subtotal honest but hides the gap, so a non-null aggregate
+                    # alone cannot prove complete reporting (spec §10 R5).
+                    if len(turn_series) < MAX_TURN_SERIES:
+                        turn_series.append(
+                            TurnUsage(
+                                round_number=turn_index + 1,
+                                input_tokens=usage.prompt_tokens if usage is not None else None,
+                                output_tokens=usage.completion_tokens if usage is not None else None,
+                            )
+                        )
+                    if usage is None:
+                        turns_with_unknown_usage += 1
                     self._safe_emit_round_event(
                         client,
                         tc,
@@ -565,6 +586,27 @@ class LLMCodeDispatcher:
                 )
                 if salvage_usage is not None:
                     accumulated = salvage_usage if accumulated is None else accumulated + salvage_usage
+                    # Record salvage turn usage in turn_series if we have space
+                    if len(turn_series) < MAX_TURN_SERIES:
+                        turn_series.append(
+                            TurnUsage(
+                                round_number=len(turn_series) + 1,
+                                input_tokens=salvage_usage.prompt_tokens,
+                                output_tokens=salvage_usage.completion_tokens,
+                            )
+                        )
+                elif salvaged is not None or salvage_error is not None:
+                    # Salvage was attempted but reported no usage
+                    if len(turn_series) < MAX_TURN_SERIES:
+                        turn_series.append(
+                            TurnUsage(
+                                round_number=len(turn_series) + 1,
+                                input_tokens=None,
+                                output_tokens=None,
+                            )
+                        )
+                    turns_with_unknown_usage += 1
+
                 if salvaged is not None:
                     return salvaged
                 raise DispatchExecutionError(
@@ -572,6 +614,31 @@ class LLMCodeDispatcher:
                     f"the forced final_output turn did not recover a result ({salvage_error})"
                 )
             finally:
+                import sys
+                exc_type, exc_val, exc_tb = sys.exc_info()
+                if exc_val is not None:
+                    terminal = "failed"
+                    error_class = type(exc_val).__name__
+                elif salvaged is not None:
+                    terminal = "salvaged"
+                    error_class = ""
+                else:
+                    terminal = "completed"
+                    error_class = ""
+
+                self._emit_attempt_telemetry(
+                    AttemptTelemetry(
+                        resolved_model=model,
+                        turns=len(turn_series),
+                        terminal=terminal,
+                        error_class=error_class,
+                        provider_input_tokens=accumulated.prompt_tokens if accumulated else None,
+                        provider_output_tokens=accumulated.completion_tokens if accumulated else None,
+                        turn_series=turn_series,
+                        turns_with_unknown_usage=turns_with_unknown_usage,
+                    )
+                )
+
                 await self._safe_emit_after_call(
                     client,
                     tc,
@@ -580,6 +647,30 @@ class LLMCodeDispatcher:
                     input_tokens=accumulated.prompt_tokens if accumulated else None,
                     output_tokens=accumulated.completion_tokens if accumulated else None,
                 )
+
+    def _emit_attempt_telemetry(self, telemetry: AttemptTelemetry) -> None:
+        """Hand terminal telemetry to the bound session host, at most once.
+
+        Reads the host from `_SESSION_HOST_CTX` (verified:
+        parrot/flows/dev_loop/dispatchers/_shared.py:64) and calls its OPTIONAL
+        `on_attempt_telemetry`; a host without that method is a no-op, so every
+        pre-FEAT-554 host and test double is unaffected.
+
+        Deliberately not a `DispatchEvent`: `action_from_dispatch_event` copies
+        only seven whitelisted `usage` scalars into the closed
+        `DispatchCompleted` model and `_apply_to_session_host` swallows the
+        validation error, so a payload key would vanish in silence (spec §10 R3).
+
+        Every failure is swallowed and logged at DEBUG — telemetry must never
+        change a dispatch result.
+        """
+        try:
+            host = _SESSION_HOST_CTX.get()
+            hook = getattr(host, "on_attempt_telemetry", None) if host is not None else None
+            if hook is not None:
+                hook(telemetry)
+        except Exception:  # noqa: BLE001 - telemetry must never break a dispatch
+            self.logger.debug("attempt telemetry hook failed", exc_info=True)
 
     @staticmethod
     def _completion_usage_payload(

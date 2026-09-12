@@ -1357,3 +1357,224 @@ async def test_run_command_success_never_carries_a_glob_hint(monkeypatch, tmp_pa
 )
 def test_unexpanded_glob_tokens_only_flags_path_shaped_wildcards(argv, expected):
     assert LLMCodeDispatcher._unexpanded_glob_tokens(argv) == expected
+# packages/ai-parrot/tests/flows/dev_loop/test_llm_code_dispatcher.py (append)
+
+
+class _CapturingHost:
+    """Duck-typed session host that records terminal telemetry."""
+
+    def __init__(self) -> None:
+        self.telemetry: list = []
+
+    def apply(self, action, origin=None) -> None:  # the existing SessionHost duck type
+        pass
+
+    def on_attempt_telemetry(self, telemetry) -> None:
+        self.telemetry.append(telemetry)
+
+
+class TestTerminalTelemetry:
+    @pytest.mark.asyncio
+    async def test_clean_dispatch_emits_once(self, monkeypatch, brief, _patch_worktree_base):
+        (_patch_worktree_base / "app.py").write_text("print('hello')\n", encoding="utf-8")
+        client = _FakeClient(
+            [
+                _Message(
+                    content="I will inspect the file.",
+                    tool_calls=[_ToolCall("call_1", "read_file", {"path": "app.py"})],
+                ),
+                _Message(
+                    tool_calls=[
+                        _ToolCall(
+                            "call_2",
+                            "final_output",
+                            {
+                                "files_changed": ["app.py"],
+                                "commit_shas": ["abc1234"],
+                                "summary": "implemented the spec",
+                            },
+                        )
+                    ]
+                ),
+            ]
+        )
+        dispatcher = _dispatcher(monkeypatch, client)
+        host = _CapturingHost()
+        from parrot.flows.dev_loop.dispatchers._shared import _SESSION_HOST_CTX
+        token = _SESSION_HOST_CTX.set(host)
+
+        try:
+            await dispatcher.dispatch(
+                brief=brief,
+                profile=LLMCodeDispatchProfile(
+                    llm="nvidia:minimaxai/minimax-m3",
+                    max_turns=4,
+                ),
+                output_model=DevelopmentOutput,
+                run_id="r1",
+                node_id="development",
+                cwd=str(_patch_worktree_base),
+            )
+        finally:
+            _SESSION_HOST_CTX.reset(token)
+
+        assert len(host.telemetry) == 1
+        telemetry = host.telemetry[0]
+        assert telemetry.terminal == "completed"
+        assert telemetry.turns == 2
+        assert len(telemetry.turn_series) == 2
+        assert telemetry.resolved_model == "minimaxai/minimax-m3"
+        assert telemetry.error_class == ""
+
+    @pytest.mark.asyncio
+    async def test_failed_dispatch_carries_partial_usage(self, monkeypatch, brief, _patch_worktree_base):
+        (_patch_worktree_base / "app.py").write_text("print('hello')\n", encoding="utf-8")
+
+        class _FailingClient(_FakeClient):
+            async def _chat_completion(self, **kwargs: Any) -> _Response:
+                self.calls.append(kwargs)
+                if len(self.calls) == 3:
+                    raise RuntimeError("API connection failed")
+                message = self.responses.pop(0)
+                return _UsageResponse(message, prompt=100, completion=25)
+
+        client = _FailingClient(
+            [
+                _Message(tool_calls=[_ToolCall("call_1", "read_file", {"path": "app.py"})]),
+                _Message(tool_calls=[_ToolCall("call_2", "read_file", {"path": "app.py"})]),
+            ]
+        )
+        dispatcher = _dispatcher(monkeypatch, client)
+        host = _CapturingHost()
+        from parrot.flows.dev_loop.dispatchers._shared import _SESSION_HOST_CTX
+        token = _SESSION_HOST_CTX.set(host)
+
+        with pytest.raises(DispatchExecutionError):
+            try:
+                await dispatcher.dispatch(
+                    brief=brief,
+                    profile=LLMCodeDispatchProfile(
+                        llm="nvidia:minimaxai/minimax-m3",
+                        max_turns=4,
+                    ),
+                    output_model=DevelopmentOutput,
+                    run_id="r1",
+                    node_id="development",
+                    cwd=str(_patch_worktree_base),
+                )
+            finally:
+                _SESSION_HOST_CTX.reset(token)
+
+        assert len(host.telemetry) == 1
+        telemetry = host.telemetry[0]
+        assert telemetry.terminal == "failed"
+        assert telemetry.error_class == "RuntimeError"
+        assert telemetry.turns == 2
+        assert telemetry.provider_input_tokens == 200
+        assert telemetry.provider_output_tokens == 50
+
+    @pytest.mark.asyncio
+    async def test_missing_round_usage_is_a_gap_not_a_zero(self, monkeypatch, brief, _patch_worktree_base):
+        (_patch_worktree_base / "app.py").write_text("print('hello')\n", encoding="utf-8")
+
+        class _MixedUsageClient(_FakeClient):
+            async def _chat_completion(self, **kwargs: Any) -> _Response:
+                self.calls.append(kwargs)
+                message = self.responses.pop(0)
+                if len(self.calls) == 1:
+                    return _UsageResponse(message, prompt=100, completion=25)
+                else:
+                    # No usage reported
+                    return _Response(message)
+
+        client = _MixedUsageClient(
+            [
+                _Message(tool_calls=[_ToolCall("call_1", "read_file", {"path": "app.py"})]),
+                _Message(
+                    tool_calls=[
+                        _ToolCall(
+                            "call_2",
+                            "final_output",
+                            {
+                                "files_changed": ["app.py"],
+                                "commit_shas": ["abc1234"],
+                                "summary": "done",
+                            },
+                        )
+                    ]
+                ),
+            ]
+        )
+        dispatcher = _dispatcher(monkeypatch, client)
+        host = _CapturingHost()
+        from parrot.flows.dev_loop.dispatchers._shared import _SESSION_HOST_CTX
+        token = _SESSION_HOST_CTX.set(host)
+
+        try:
+            await dispatcher.dispatch(
+                brief=brief,
+                profile=LLMCodeDispatchProfile(
+                    llm="nvidia:minimaxai/minimax-m3",
+                    max_turns=4,
+                ),
+                output_model=DevelopmentOutput,
+                run_id="r1",
+                node_id="development",
+                cwd=str(_patch_worktree_base),
+            )
+        finally:
+            _SESSION_HOST_CTX.reset(token)
+
+        assert len(host.telemetry) == 1
+        telemetry = host.telemetry[0]
+        assert telemetry.turns == 2
+        assert telemetry.turns_with_unknown_usage == 1
+        assert telemetry.turn_series[0].input_tokens == 100
+        assert telemetry.turn_series[1].input_tokens is None
+
+    @pytest.mark.asyncio
+    async def test_host_without_hook_is_unaffected(self, monkeypatch, brief, _patch_worktree_base):
+        (_patch_worktree_base / "app.py").write_text("print('hello')\n", encoding="utf-8")
+        client = _FakeClient(
+            [
+                _Message(
+                    tool_calls=[
+                        _ToolCall(
+                            "call_1",
+                            "final_output",
+                            {
+                                "files_changed": ["app.py"],
+                                "commit_shas": ["abc1234"],
+                                "summary": "done",
+                            },
+                        )
+                    ]
+                ),
+            ]
+        )
+        dispatcher = _dispatcher(monkeypatch, client)
+
+        class _NoHookHost:
+            def apply(self, action, origin=None) -> None:
+                pass
+
+        host = _NoHookHost()
+        from parrot.flows.dev_loop.dispatchers._shared import _SESSION_HOST_CTX
+        token = _SESSION_HOST_CTX.set(host)  # type: ignore[arg-type]
+
+        try:
+            result = await dispatcher.dispatch(
+                brief=brief,
+                profile=LLMCodeDispatchProfile(
+                    llm="nvidia:minimaxai/minimax-m3",
+                    max_turns=4,
+                ),
+                output_model=DevelopmentOutput,
+                run_id="r1",
+                node_id="development",
+                cwd=str(_patch_worktree_base),
+            )
+        finally:
+            _SESSION_HOST_CTX.reset(token)
+
+        assert result.summary == "done"
