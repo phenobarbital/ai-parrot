@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-12T00:00:42+00:00",
-  "completed_at": "2026-09-12T01:03:10+00:00",
+  "completed_at": "2026-09-12T01:45:46+00:00",
   "tasks": [
     {
       "id": "TASK-3177",
@@ -23,7 +23,8 @@
       "assigned_to": null,
       "started_at": "2026-09-12T00:21:57+00:00",
       "completed_at": "2026-09-12T00:32:01+00:00",
-      "file": "sdd/tasks/completed/TASK-3177-codebase-conventions-rule.md"
+      "file": "sdd/tasks/completed/TASK-3177-codebase-conventions-rule.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3178",
@@ -43,7 +44,8 @@
       "assigned_to": null,
       "started_at": "2026-09-12T00:21:57+00:00",
       "completed_at": "2026-09-12T00:39:50+00:00",
-      "file": "sdd/tasks/completed/TASK-3178-conventions-module-and-parity.md"
+      "file": "sdd/tasks/completed/TASK-3178-conventions-module-and-parity.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3179",
@@ -63,7 +65,8 @@
       "assigned_to": null,
       "started_at": "2026-09-12T00:21:57+00:00",
       "completed_at": "2026-09-12T00:58:27+00:00",
-      "file": "sdd/tasks/completed/TASK-3179-inject-conventions-into-prompt-builders.md"
+      "file": "sdd/tasks/completed/TASK-3179-inject-conventions-into-prompt-builders.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3180",
@@ -83,7 +86,8 @@
       "assigned_to": null,
       "started_at": "2026-09-12T00:21:57+00:00",
       "completed_at": "2026-09-12T00:54:26+00:00",
-      "file": "sdd/tasks/completed/TASK-3180-installer-conventions-block-and-agents-md.md"
+      "file": "sdd/tasks/completed/TASK-3180-installer-conventions-block-and-agents-md.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3181",
@@ -103,7 +107,8 @@
       "assigned_to": null,
       "started_at": "2026-09-12T00:21:57+00:00",
       "completed_at": "2026-09-12T01:03:10+00:00",
-      "file": "sdd/tasks/completed/TASK-3181-coding-agents-conventions-block.md"
+      "file": "sdd/tasks/completed/TASK-3181-coding-agents-conventions-block.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3182",
@@ -121,7 +126,8 @@
       "assigned_to": null,
       "started_at": "2026-09-12T00:21:57+00:00",
       "completed_at": "2026-09-12T00:35:00+00:00",
-      "file": "sdd/tasks/completed/TASK-3182-ruff-tid251-and-banned-import-check.md"
+      "file": "sdd/tasks/completed/TASK-3182-ruff-tid251-and-banned-import-check.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3183",
@@ -141,7 +147,8 @@
       "assigned_to": null,
       "started_at": "2026-09-12T00:21:57+00:00",
       "completed_at": "2026-09-12T00:44:44+00:00",
-      "file": "sdd/tasks/completed/TASK-3183-engine-banned-import-gates.md"
+      "file": "sdd/tasks/completed/TASK-3183-engine-banned-import-gates.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3184",
@@ -159,7 +166,8 @@
       "assigned_to": null,
       "started_at": "2026-09-12T00:21:57+00:00",
       "completed_at": "2026-09-12T00:32:01+00:00",
-      "file": "sdd/tasks/completed/TASK-3184-max-turns-library-default-40.md"
+      "file": "sdd/tasks/completed/TASK-3184-max-turns-library-default-40.md",
+      "verification": "verified"
     }
   ]
 }
