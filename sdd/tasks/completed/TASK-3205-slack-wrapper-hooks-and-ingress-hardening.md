@@ -423,10 +423,44 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-12
+**Notes**: Added `MessageInterceptor` alias, `_message_interceptors` list,
+`add_message_interceptor`/`_run_interceptors`, `_slack_api` (shared Slack
+Web API POST helper, surfaces `ratelimited`/`retry_after` at WARNING),
+`post_message`/`update_message`/`open_dm`, and `_handle_interactive`
+(verifies the Slack signature exactly like `_handle_events`/
+`_handle_command`, parses the urlencoded `payload` field, authorizes on
+channel+user when a channel is present — `view_submission` payloads carry
+none, so those are user-only — then delegates to
+`_interactive_handler.handle`). Replaced the direct interactive-route
+mount with `self._handle_interactive`. `_post_message` is now a thin
+wrapper over `post_message` with the return discarded, byte-compatible
+for existing callers. Added the interceptor consult in `_handle_events`
+right before the background-task dispatch. In `socket_handler.py`: moved
+`user = event.get(...)` above the `_handle_event` authorization check and
+passed it to `_is_authorized`; passed `user` in `_handle_slash_command`'s
+check; added the interceptor consult in `_handle_event`; added
+channel+user authorization to `_handle_interactive` (previously **no
+auth at all** on that Socket Mode path). Fixed a regression in the
+pre-existing `test_slack_whitelist_integration.py` (not in this task's
+file list, but a required one-line fix): its `_make_wrapper` helper
+builds a `SlackAgentWrapper` via `__new__` bypassing `__init__`, so it
+never picked up the new `_message_interceptors` attribute my
+`_handle_events` change now unconditionally reads — added
+`wrapper._message_interceptors = []` there, matching the precedent
+already established this run for keeping AC19 green. `black --check`
+flags pre-existing, unrelated formatting drift across the whole of
+`wrapper.py`/`socket_handler.py` (quote style, line wrapping) that
+predates this task; left untouched per the minimal-diff rule — my own
+added/modified lines are already black-clean (verified: two multi-line
+logger calls collapsed to fit one line). `test_slack_wrapper_hooks.py`
+(9 tests) covers interceptor consumption on both transports,
+`post_message`/`update_message`/`open_dm`, the `_post_message` wrapper
+contract, the interactive route's signature rejection and successful
+delegation, and Socket Mode's user whitelist across events/slash/
+interactive.
+`pytest packages/ai-parrot-integrations/tests/integrations/slack -q`:
+66 passed. `ruff check` clean.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.

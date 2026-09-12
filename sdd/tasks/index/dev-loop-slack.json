@@ -191,7 +191,7 @@
       "feature_id": "FEAT-555",
       "feature": "dev-loop-slack",
       "spec": "sdd/specs/dev-loop-slack.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -199,8 +199,8 @@
       "parallelism_notes": "Touches only slack/wrapper.py and slack/socket_handler.py; independent of both other lanes.",
       "assigned_to": null,
       "started_at": "2026-09-12T15:21:05+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3205-slack-wrapper-hooks-and-ingress-hardening.md"
+      "completed_at": "2026-09-12T16:07:41+00:00",
+      "file": "sdd/tasks/completed/TASK-3205-slack-wrapper-hooks-and-ingress-hardening.md"
     },
     {
       "id": "TASK-3206",
