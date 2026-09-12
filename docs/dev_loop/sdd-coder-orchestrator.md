@@ -156,16 +156,19 @@ To collect and analyze token usage:
    - `SDD_CODER_TELEMETRY_DIR=/absolute/path` (durable dir, "" = derive from main checkout)
 
 2. Run features normally with `parrot sdd-worker <feature>` — every attempt
-   writes one append-only JSONL row per turn plus one outcome row.
+   writes exactly one `attempt` row when it returns (success or failure),
+   plus one or more `outcome` rows from `_run_task`/`merge()` (a
+   `merge_conflict` followed by a repaired `merge()` legitimately produces
+   two `outcome` rows for the same attempt; the highest `event_seq` wins).
 
 3. Analyze with `python scripts/analyze_sdd_coder_usage.py --root <telemetry_dir>`
    to get consumption percentiles and budget recommendations.
 
-Dataset schema (joins on `attempt_uid`):
+Dataset schema (`<FEAT-ID>.jsonl`, one file per feature, joined on `attempt_uid`):
 | Row kind | Key fields | Description |
 |---|---|---|
-| `turn` | `seat_label`, `turn`, `ledger_input_tokens`, `ledger_output_tokens` | Per-turn token counts from the budget ledger |
-| `outcome` | `seat_label`, `status`, `duration_s`, `provider_input_tokens`, `provider_output_tokens` | Final outcome with provider-reported totals |
+| `attempt` | `seat_label`, `backend`, `duration_s`, `turns`, `terminal`, `turn_series`, `provider_input_tokens`, `provider_output_tokens`, `ledger_input_tokens`, `ledger_output_tokens`, `ledger_settled_estimate_input_tokens`, `calibration_eligible` | Terminal per-attempt telemetry — provider usage AND the ledger's estimated admission side by side, plus the full `turn_series` |
+| `outcome` | `event_seq`, `outcome`, `conflict_file_count`, `unexpected_file_count` | One event per attempt outcome (`merged`, `failed`, `merge_conflict`, ...); the highest `event_seq` per `attempt_uid` is effective |
 
 Note: The `gemini` seat records provider totals only, with no `ledger_*` fields,
 because `GeminiOpenAICompatClient` defines no budget adapter, so that seat serves
