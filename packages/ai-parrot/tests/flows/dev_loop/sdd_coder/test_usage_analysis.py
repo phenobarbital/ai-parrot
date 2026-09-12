@@ -572,9 +572,7 @@ class TestRecommendation:
                     "calibration_eligible": True,
                 }
             )
-        outcomes = [
-            _outcome_for(r, outcome="merged" if idx < 5 else "failed") for idx, r in enumerate(rows)
-        ]
+        outcomes = [_outcome_for(r, outcome="merged" if idx < 5 else "failed") for idx, r in enumerate(rows)]
         rows = rows + outcomes
 
         root = _write(tmp_path, rows)

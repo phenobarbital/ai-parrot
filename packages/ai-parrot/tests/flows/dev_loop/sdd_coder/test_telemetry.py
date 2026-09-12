@@ -137,9 +137,7 @@ class TestProjection:
         }
         record.turn_series = [(1, 50, 25)]
 
-        row = build_attempt_row(
-            record, feature_id="FEAT-554", job_id="job-123", task_id="TASK-1", declared_files=5
-        )
+        row = build_attempt_row(record, feature_id="FEAT-554", job_id="job-123", task_id="TASK-1", declared_files=5)
         serialized = row.model_dump_json()
 
         assert "SECRET-TOKEN-XYZ" not in serialized

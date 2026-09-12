@@ -459,9 +459,7 @@ class TestOutcomeEvents:
         # Force the FIRST consolidation (inside run_chunk) to hit the
         # merge_conflict branch, exactly like a real content conflict would,
         # without needing to engineer one at the git level.
-        manager = engine._manager_for(
-            await engine._resolve_feature("demo", str(worktree)), "TASK-0001", 1
-        )
+        manager = engine._manager_for(await engine._resolve_feature("demo", str(worktree)), "TASK-0001", 1)
         original_merge_sequential = manager.merge_sequential
         calls = {"n": 0}
 
