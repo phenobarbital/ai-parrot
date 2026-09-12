@@ -47,6 +47,12 @@ from __future__ import annotations
 
 from importlib.resources import files
 
+from parrot.flows.conventions import (  # FEAT-553 re-export; the loader lives in a stdlib-only leaf module
+    CODER_RULE_NAMES,
+    CONVENTIONS_PREAMBLE,
+    load_project_conventions,
+)
+
 _VALID_NAMES: frozenset[str] = frozenset(
     {
         "sdd-research",
@@ -114,4 +120,4 @@ def load_subagent_definition(name: str) -> str:
     return _strip_frontmatter(text)
 
 
-__all__ = ["load_subagent_definition"]
+__all__ = ["load_subagent_definition", "load_project_conventions", "CODER_RULE_NAMES", "CONVENTIONS_PREAMBLE"]

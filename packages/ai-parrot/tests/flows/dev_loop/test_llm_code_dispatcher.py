@@ -724,6 +724,15 @@ def test_system_prompt_names_the_working_directory(monkeypatch, brief, tmp_path)
     assert "no pipes, no `>` redirection" in system
 
 
+def test_system_prompt_carries_the_conventions(monkeypatch, brief, tmp_path):
+    dispatcher = _dispatcher(monkeypatch, _FakeClient([]))
+    messages = dispatcher._initial_messages(LLMCodeDispatchProfile(), brief, DevelopmentOutput, cwd=str(tmp_path))
+    system = messages[0]["content"]
+    assert "Project conventions" in system
+    assert "## Project rule: codebase-conventions" in system
+    assert system.index("Subagent instructions:") < system.index("## Project rule: codebase-conventions")
+
+
 def test_edit_file_replaces_a_unique_match(monkeypatch, tmp_path):
     dispatcher = _dispatcher(monkeypatch, _FakeClient([]))
     target = tmp_path / "mod.py"
