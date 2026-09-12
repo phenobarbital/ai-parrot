@@ -1,0 +1,40 @@
+The dev-loop / dev-flow orchestration can today be started from exactly two
+front-ends: the example HTML console (`examples/dev_loop/server_dev.py` +
+`static/dev.html`) and the experimental `parrot devloop` terminal console.
+Both require the operator to be at a workstation with the repo checked out,
+Redis reachable and the coding CLIs installed. A developer who wants to say
+"fix this bug" or "build this feature" from their phone, from a stand-up, or
+from a conversation that is already happening in Slack has no way to hand
+the request to the pipeline.
+
+The dev-flow topology (FEAT-412) also has a human-in-the-loop step that is
+*designed* for chat: the `sdd-ideation` subagent writes a brainstorm and
+opens one `open_questions` gate per round with the questions it could not
+answer alone. Today those questions are only answerable from the HTML
+Open-Questions panel. Slack is where the requester already is, so it is the
+natural place to answer them.
+
+**Who is affected**: developers and tech leads who kick off dev-loop runs
+(the "requester"), and the operator who hosts the integration server.
+
+**Why now**: the dev-flow ideation gates (FEAT-412), the per-run session
+state on Redis (FEAT-322) and the REST gate-resolve contract (FEAT-322 /
+FEAT-412) already exist and are stable. The Slack integration already has a
+command router (FEAT-225), Block Kit modals and a bot token that can push
+messages on demand. Every primitive exists; only the glue is missing.
+
+### Decisions taken during discovery (Rounds 0–3)
+
+| Topic | Decision |
+|---|---|
+| Flow type / base | `feature` → `dev` |
+| Execution model | Dev-loop runs in a **subprocess**; the integration talks to it through a REST/Redis bridge (bridge shape weighed below) |
+| Intake surface | Slack **slash command** `/devloop` registered on the existing `SlackCommandRouter` |
+| Open-Questions UX | Message + "Answer" button → **Block Kit modal** (primary) **and** threaded free-text reply (fallback) |
+| Request types (v1) | `--type feature` (dev-flow `new_feature` → brainstorm + Open Questions) and `--type bug` (dev-loop `WorkBrief` topology). `enhancement` and document intake deferred |
+| Bug intake | Build the `WorkBrief` from defaults, post a **confirm card** (Confirm / Edit / Cancel); Edit opens a modal |
+| Status card | **In v1 as the last, optional task** — one message per run edited on node lifecycle events |
+| Authorization | Existing `allowed_user_ids` whitelist gates dispatch; **only the initiator** may answer gates or cancel their run |
+| Telegram | **Slack-only in v1**, on top of a transport-agnostic core so a Telegram adapter is a follow-up spec |
+| Concurrency | **Unlimited** — every request spawns a subprocess (a soft, optional cap may be added by config) |
+| Extra flags | `--jira KEY`, `--base dev\|staging`, subcommands `status` / `cancel` / `help` |

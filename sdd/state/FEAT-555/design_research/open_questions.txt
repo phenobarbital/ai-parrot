@@ -1,0 +1,5 @@
+- [ ] Should **feature** runs also get a confirm card before dispatch (title/description/jira/base preview), or dispatch immediately as decided for the "defaults" path? — *Owner: Jesus Lara*
+- [ ] Identity for `WorkBrief.reporter` / `escalation_assignee`: request `users:read.email` and map Slack email → Jira, or always fall back to `bootstrap.default_identities()` (the Jira toolkit's current user)? — *Owner: Jesus Lara*
+- [ ] Default acceptance criterion for bug runs: a single configured `ShellCriterion` (must pass `ACCEPTANCE_CRITERION_ALLOWLIST`), or require `--ac "<command>"` and refuse otherwise? — *Owner: Jesus Lara*
+- [ ] Should the headless mode also be exposed for the `enhancement` kind (light proposal) at zero extra cost, even though Slack v1 does not expose `--type enhancement`? — *Owner: Jesus Lara*
+- [ ] Where should the `build_dev_flow_runtime()` builder live: `parrot/cli/devloop/bootstrap.py` (next to `build_runtime`) or `parrot/flows/dev_flow/bootstrap.py` (importable without the CLI)? — *Owner: Claude / spec author*

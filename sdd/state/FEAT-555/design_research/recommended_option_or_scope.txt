@@ -1,0 +1,93 @@
+**Option A** is recommended because:
+
+- It honours every hard constraint from discovery: subprocess isolation, no
+  new public surface, the existing gate contract reused verbatim, and a
+  transport-agnostic core.
+- It is the **smallest change to the hot code**: nothing in `runner.py` or
+  `session_state.py` moves. The only core-package additions are a headless
+  mode on an existing Click command and lifting the dev-flow wiring out of
+  an example file into an importable builder — a change that also pays back
+  by de-duplicating `server_dev.py`.
+- Option B's multi-host benefit is real but speculative for v1 (the Slack
+  bot and the runs share one workstation today), and it costs a new control
+  protocol in the most churned module of the repo. Option A should therefore
+  define the integration-side bridge behind a small interface
+  (`RunCommandChannel` with `resolve_gate()` / `cancel()`) so that a Redis
+  implementation (Option B) can be dropped in later without touching the
+  Slack adapter.
+- Option D is attractive as a *future* consolidation (one service, many
+  front-ends) but promotes a development-only example into production
+  infrastructure, which is a separate spec.
+
+**What we trade off**: single-host deployment for v1, and one small aiohttp
+listener per run (Unix socket, filesystem-permissioned). Both are acceptable
+for the stated use case (a team workstation / build box hosting the bot).
+
+---
+
+### Option A (recommended) — body
+The integration spawns one headless process per run:
+`parrot devloop run --brief <tmpfile> --yes --headless --command-socket <path>`
+(a new headless mode of the existing Click command). The child process boots
+the runtime exactly like the CLI console does today (`bootstrap.build_runtime`
+for `--type bug`; a new, library-level `build_dev_flow_runtime` — extracted
+from `server_dev.py::_on_startup` — for `--type feature`), mounts the
+already-existing `register_command_routes(app, runner)` on a tiny aiohttp
+server bound to a Unix domain socket (or a loopback TCP port when sockets are
+unavailable), prints a one-line JSON handshake on stdout
+(`{"event": "ready", "run_id": ..., "command_endpoint": ...}`), then awaits
+`runner.run(brief, run_id=...)` and exits with the run's status.
+
+The integration tails `flow:{run_id}:actions` through
+`FlowStreamMultiplexer(redis, run_id=..., view="state").state_tail()`. A
+`gate/opened` action becomes a Slack message in the run thread; the user's
+answer (modal submission or thread reply) becomes a
+`POST /runs/{run_id}/gates/{gate_id}/resolve` on the child's command
+endpoint with the existing `ResolveGateRequest` body; `node/*` actions feed
+the status card; `run/closed` / `run/cancelled` (or the child exiting) close
+the run with a summary.
+
+✅ **Pros:**
+- Reuses the **proven REST contract** (`ResolveGateRequest`, 200/400/404/409
+  semantics) verbatim; zero new gate logic.
+- Reuses the **existing Redis state stream** the HTML console already
+  consumes; the integration is just another `view="state"` client.
+- The child is the same `parrot devloop` entry operators already know; the
+  headless mode is also useful for CI / cron kick-offs, not only Slack.
+- Crash isolation: a dying run just ends a thread with "failed".
+- Unix socket = filesystem permissions = no token to manage; no listening
+  TCP port.
+
+❌ **Cons:**
+- Single-host only: the integration server must run on the same machine as
+  the subprocesses (socket / loopback). Multi-host needs Option B later.
+- Needs a new library-level dev-flow runtime builder (today the wiring lives
+  only in `examples/dev_loop/server_dev.py`).
+- One aiohttp server per run (cheap, but N of them).
+- If the bot process restarts, its in-memory run registry is lost; runs keep
+  going but Slack stops receiving updates unless the registry is persisted
+  (see Open Questions).
+
+📊 **Effort:** Medium
+
+📦 **Libraries / Tools:**
+| Package | Purpose | Notes |
+|---|---|---|
+| `aiohttp` | child command server (`web.UnixSite` / `web.TCPSite`) + client (`UnixConnector`) | already a core dependency |
+| `redis>=5.0` (`redis.asyncio`) | `FlowStreamMultiplexer` state tail | already an optional dep of `ai-parrot-integrations` (`[devloop]` extra to add it) |
+| `asyncio.create_subprocess_exec` (stdlib) | spawn/monitor the headless child | no new dep |
+| `shlex` + `argparse` (stdlib) | parse `/devloop --type bug --jira KEY <prompt>` | no new dep; `click` is not needed on the parsing side |
+| `slack-sdk>=3.27` | Socket Mode only (already optional) | unchanged |
+
+🔗 **Existing Code to Reuse:**
+- `packages/ai-parrot/src/parrot/cli/devloop/__init__.py` — `run_cmd` (`--brief`, `--yes`) gains `--headless` / `--command-socket`.
+- `packages/ai-parrot/src/parrot/cli/devloop/bootstrap.py` — `preflight()`, `build_runtime()`, `default_identities()`, `DevLoopRuntime`.
+- `packages/ai-parrot/src/parrot/flows/dev_loop/commands.py` — `register_command_routes`, `ResolveGateRequest`, `CancelRunRequest`.
+- `packages/ai-parrot/src/parrot/flows/dev_loop/streaming.py` — `FlowStreamMultiplexer.state_replay()` / `state_tail()`.
+- `packages/ai-parrot/src/parrot/flows/dev_loop/session_state.py` — `ApprovalGate`, `NodeState`, `GateOpened`, `GateResolved`, `GateExpired`.
+- `examples/dev_loop/server_dev.py` — `_on_startup` (source of the dev-flow wiring to lift into the package), `_build_dev_brief_from_form` (brief-building precedent).
+- `packages/ai-parrot-integrations/src/parrot/integrations/slack/commands/__init__.py` — `SlackCommandRouter`; `jira_commands.register_jira_commands` as the registration pattern.
+- `packages/ai-parrot-integrations/src/parrot/integrations/slack/interactive.py` — `SlackInteractiveHandler.open_modal`, `extract_form_values`, `ActionRegistry.register_prefix`.
+- `packages/ai-parrot-integrations/src/parrot/integrations/slack/oauth_callback.py` — `SlackOAuthNotifier` (bot-token DM push pattern).
+
+---
