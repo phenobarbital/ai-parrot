@@ -273,4 +273,33 @@ async def record_changeset(
     return changeset
 
 
-__all__ = ["compute_changeset", "record_changeset", "resolve_base_ref"]
+def files_changed_markdown(files_changed: List[str], changeset: Optional[ChangeSet]) -> str:
+    """The ``## Files changed`` body of a handoff PR.
+
+    With a git-measured :class:`ChangeSet` this is the same table a reviewer
+    sees on the PR (status, path, ``+``/``−`` per file, and a totals line);
+    without one it degrades to the agent's self-reported names — the
+    pre-changeset rendering, byte-identical (first ten names, comma-joined).
+
+    Args:
+        files_changed: ``DevelopmentOutput.files_changed`` (the fallback).
+        changeset: The recorded changeset, or ``None``.
+
+    Returns:
+        Markdown for the section body.
+    """
+    if changeset is None or not changeset.files:
+        return ", ".join(files_changed[:10]) if files_changed else "(none)"
+    rows = ["| Status | File | + | − |", "|---|---|---|---|"]
+    for f in changeset.files:
+        plus = "bin" if f.binary else str(f.additions)
+        minus = "bin" if f.binary else str(f.deletions)
+        rows.append(f"| {f.status} | `{f.path}` | {plus} | {minus} |")
+    totals = (
+        f"{len(changeset.files)} file(s), **+{changeset.total_additions} −{changeset.total_deletions}**, "
+        f"{changeset.commits} commit(s) vs `{changeset.base_ref}`"
+    )
+    return totals + "\n\n" + "\n".join(rows)
+
+
+__all__ = ["compute_changeset", "files_changed_markdown", "record_changeset", "resolve_base_ref"]

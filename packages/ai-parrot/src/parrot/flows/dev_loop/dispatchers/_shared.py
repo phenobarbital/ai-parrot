@@ -18,7 +18,7 @@ from typing import Any, Dict, Optional, Protocol, Type, TypeVar
 from pydantic import BaseModel
 
 from parrot.flows.dev_loop.models import DispatchEvent, DispatchLabels
-from parrot.flows.dev_loop.session_state import SessionHost, action_from_dispatch_event
+from parrot.flows.dev_loop.session_state import SessionHost, action_from_dispatch_event, classify_delta_content
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -391,6 +391,11 @@ def normalize_payload(kind: str, payload: Any) -> Dict[str, Any]:
             out["summary"] = _clamp(str(existing_summary), SUMMARY_MAX_CHARS)
         else:
             out["summary"] = _build_summary(kind, out)
+
+        # Stamp the message classification the consoles' narrative filter
+        # and the DispatchDelta action both read — computed ONCE, here.
+        if kind == "dispatch.message":
+            out.setdefault("content_kind", classify_delta_content(out))
 
         return out
     except Exception:  # noqa: BLE001 - telemetry must never break a dispatch

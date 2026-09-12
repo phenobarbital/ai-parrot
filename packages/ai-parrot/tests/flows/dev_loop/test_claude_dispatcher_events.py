@@ -222,3 +222,27 @@ class TestClaudeEventExtraction:
         w2_result = [p for k, p in seen["development.w2"] if k == "dispatch.tool_result"][-1]
         assert w1_result["tool_name"] == "Read"
         assert w2_result["tool_name"] == "Bash"
+
+
+class TestContentKindStamp:
+    async def test_message_payloads_carry_the_classification(self, captured):
+        d = _dispatcher()
+        for msg in (
+            SystemMessage(),
+            AssistantMessage([TextBlock("hi")]),
+            AssistantMessage([ThinkingBlock("hmm")]),
+            UserMessage([]),
+            ResultMessage(),
+        ):
+            await d._publish_message_event("k", msg, "run-1", "n")
+        kinds = [p["content_kind"] for k, p in captured if k == "dispatch.message"]
+        assert kinds == ["system", "text", "thinking", "empty", "result"]
+
+    async def test_stamped_kind_reaches_the_state_action(self, captured):
+        from parrot.flows.dev_loop.session_state import action_from_dispatch_event
+
+        d = _dispatcher()
+        await d._publish_message_event("k", AssistantMessage([ThinkingBlock("plan")]), "run-1", "n")
+        kind, payload = captured[-1]
+        action = action_from_dispatch_event(kind, "development", 1.0, payload)
+        assert action.content_kind == "thinking" and action.thinking == "plan"

@@ -46,7 +46,7 @@ from parrot.flows.dev_loop.models import (
     QAReport,
     SynthesisReport,
 )
-from parrot.flows.dev_loop.nodes._changeset import record_changeset
+from parrot.flows.dev_loop.nodes._changeset import files_changed_markdown, record_changeset
 from parrot.flows.dev_loop.nodes.base import (
     BaseBranchMismatch,
     DevLoopNode,
@@ -709,18 +709,7 @@ class FeatureHandoffNode(DevLoopNode):
         totals line); without one it degrades to the agent's self-reported
         names — the pre-changeset rendering, byte-identical.
         """
-        if changeset is None or not changeset.files:
-            return ", ".join(development.files_changed[:10]) if development else "(none)"
-        rows = ["| Status | File | + | − |", "|---|---|---|---|"]
-        for f in changeset.files:
-            plus = "bin" if f.binary else str(f.additions)
-            minus = "bin" if f.binary else str(f.deletions)
-            rows.append(f"| {f.status} | `{f.path}` | {plus} | {minus} |")
-        totals = (
-            f"{len(changeset.files)} file(s), **+{changeset.total_additions} −{changeset.total_deletions}**, "
-            f"{changeset.commits} commit(s) vs `{changeset.base_ref}`"
-        )
-        return totals + "\n\n" + "\n".join(rows)
+        return files_changed_markdown(development.files_changed if development else [], changeset)
 
     @staticmethod
     def _build_body(

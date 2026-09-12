@@ -173,3 +173,28 @@ def test_summary_fetches_bundle_and_usage_and_renders_every_field(console):
         "usage_known",
     ):
         assert field in SeatUsageSummary.model_fields and f"s.{field}" in source, f"{console}: s.{field}"
+
+
+@pytest.mark.parametrize("console", _CONSOLES)
+def test_seat_fold_mirrors_dispatch_completed_accumulation(console):
+    """`foldSeat`'s dispatch/completed arm folds the same SeatState fields the reducer does."""
+    from parrot.flows.dev_loop.session_state import SeatState
+
+    source = _console(console)
+    start = source.index("function foldSeat(n, a)")
+    arm = source[source.index('case "dispatch/completed":', start) :]
+    arm = arm[: arm.index("break;")]
+    for field in ("completed_count", "input_tokens", "output_tokens", "duration_ms"):
+        assert field in SeatState.model_fields
+        assert f"next.{field}" in arm, f"{console}: foldSeat completed arm ignores {field}"
+    assert "function addOptional(" in source
+
+
+@pytest.mark.parametrize("console", _CONSOLES)
+def test_narrative_filter_reads_the_stamped_content_kind_and_bundle_retry_waits_for_both(console):
+    source = _console(console)
+    assert "p.content_kind" in source
+    assert 'p.content_kind === "text" || p.content_kind === "thinking"' in source
+    assert "if ((!bundle || !usage) && attempt < 5)" in source
+    # Progress rows are keyed by content, not by array position (rollover-safe).
+    assert "progressKey: `${nodeId}:p:${pr.ts}:${pr.phase}" in source

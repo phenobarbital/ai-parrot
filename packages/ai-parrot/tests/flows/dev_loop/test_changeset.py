@@ -158,3 +158,34 @@ def test_numstat_parser_handles_binary_and_rename_spellings():
 def test_porcelain_parser_statuses():
     parsed = _parse_porcelain("?? new.py\n M edited.py\nD  gone.py\nA  staged.py\nR  a.py -> b.py\n")
     assert parsed == {"new.py": "?", "edited.py": "M", "gone.py": "D", "staged.py": "A", "b.py": "R"}
+
+
+@pytest.mark.asyncio
+async def test_base_branch_with_remote_prefix_is_used_verbatim(repo):
+    assert await resolve_base_ref(str(repo), "origin/dev") == "origin/dev"
+
+
+@pytest.mark.asyncio
+async def test_renamed_file_with_working_tree_edits_folds_into_one_row(repo):
+    _git(repo, "mv", "old_name.py", "new_name.py")
+    _git(repo, "commit", "-qam", "rename")
+    (repo / "new_name.py").write_text("x = 1\ny = 2\n")  # +1 uncommitted on the renamed path
+
+    cs = await compute_changeset(str(repo), "dev")
+
+    by_path = {f.path: f for f in cs.files}
+    assert "old_name.py" not in by_path
+    assert by_path["new_name.py"].status == "R" and by_path["new_name.py"].additions == 1
+    assert cs.uncommitted == 1
+
+
+def test_files_changed_markdown_fallback_and_table():
+    from parrot.flows.dev_loop.models import ChangedFile
+    from parrot.flows.dev_loop.nodes._changeset import files_changed_markdown
+
+    assert files_changed_markdown(["a.py", "b.py"], None) == "a.py, b.py"
+    assert files_changed_markdown([], None) == "(none)"
+    cs = ChangeSet(base_ref="origin/main", commits=1, total_additions=2, files=[ChangedFile(path="a.py", additions=2)])
+    body = files_changed_markdown(["a.py"], cs)
+    assert "1 file(s), **+2 −0**, 1 commit(s) vs `origin/main`" in body
+    assert "| M | `a.py` | 2 | 0 |" in body

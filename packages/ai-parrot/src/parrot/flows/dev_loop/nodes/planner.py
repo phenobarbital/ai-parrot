@@ -205,7 +205,7 @@ class PlannerNode(DevLoopNode):
             worktree_path=planner_out.worktree_path,
             repo_path=planner_out.repo_path,
         )
-        task_count = self._count_index_tasks(planner_out.task_index_path)
+        task_count = await asyncio.to_thread(self._count_index_tasks, planner_out.task_index_path)
         seats = (
             ", ".join(f"{a.agent}:{a.model or 'default'}x{a.count}" for a in pool_cfg.agents)
             if pool_cfg is not None

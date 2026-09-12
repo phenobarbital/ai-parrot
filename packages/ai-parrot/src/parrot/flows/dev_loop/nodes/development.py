@@ -262,7 +262,8 @@ class DevelopmentNode(DevLoopNode):
         try:
             from parrot.flows.dev_loop.sdd_coder.summary import load_jobs, summarize_job_seats
 
-            seats = summarize_job_seats(load_jobs(research.worktree_path))
+            # Journal reads are file I/O — off the event loop.
+            seats = summarize_job_seats(await asyncio.to_thread(load_jobs, research.worktree_path))
             if not seats:
                 seats = self._seat_usage_from_pool(shared, dev_out)
             if not seats:

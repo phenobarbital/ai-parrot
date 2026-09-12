@@ -570,6 +570,12 @@ function node(id) {
  * node (FEAT-496) — the browser-side twin of session_state.py's
  * `_fold_seat_from_action`. No-op when the action carries no `seat`
  * (every pre-FEAT-496 action and every single-agent dispatch). */
+/** Sum two optional numbers keeping "unreported" (null) distinct from 0 — twin of `_add_optional`. */
+function addOptional(previous, incoming) {
+  if (incoming == null) return previous == null ? null : previous;
+  return previous == null ? incoming : previous + incoming;
+}
+
 function foldSeat(n, a) {
   const seat = a.seat;
   if (!seat) return;
@@ -594,7 +600,12 @@ function foldSeat(n, a) {
     case "dispatch/started": next.status = "running"; next.started_at = a.ts; break;
     case "dispatch/failed":  next.status = "failed"; next.finished_at = a.ts; break;
     case "dispatch/output_invalid": next.status = "output_invalid"; break;
-    case "dispatch/completed": next.status = "completed"; next.finished_at = a.ts; break;
+    case "dispatch/completed": next.status = "completed"; next.finished_at = a.ts;
+      next.completed_count = (prior.completed_count || 0) + 1;
+      next.input_tokens = addOptional(prior.input_tokens, a.input_tokens);
+      next.output_tokens = addOptional(prior.output_tokens, a.output_tokens);
+      next.duration_ms = addOptional(prior.duration_ms, a.duration_ms);
+      break;
     case "dispatch/delta": next.message_count = (prior.message_count || 0) + 1; break;
     case "dispatch/tool_use": next.tool_use_count = (prior.tool_use_count || 0) + 1; break;
     default: break;
@@ -795,7 +806,7 @@ async function loadBundle(attempt = 0) {
     if (runId !== app.runId) return;  // a new run started meanwhile
     if (bundle) app.bundle = bundle;
     if (usage) app.usage = usage;
-    if (!bundle && attempt < 5) { setTimeout(() => loadBundle(attempt + 1), 1500 * (attempt + 1)); return; }
+    if ((!bundle || !usage) && attempt < 5) { setTimeout(() => loadBundle(attempt + 1), 1500 * (attempt + 1)); return; }
   } catch {
     if (attempt < 5) { setTimeout(() => loadBundle(attempt + 1), 1500 * (attempt + 1)); return; }
   }
@@ -1141,7 +1152,9 @@ function narrativeWorthy(e) {
   switch (e.kind) {
     case "dispatch.tool_use": return true;
     case "dispatch.tool_result": return !!p.is_error;
-    case "dispatch.message": return !!(p.text || p.thinking);
+    case "dispatch.message":
+      // Server-stamped classification (normalize_payload); raw-key fallback for pre-stamp events.
+      return p.content_kind ? (p.content_kind === "text" || p.content_kind === "thinking") : !!(p.text || p.thinking);
     case "dispatch.queued": return false;
     case "dispatch.started": case "dispatch.failed":
     case "dispatch.output_invalid": case "dispatch.completed": return true;
@@ -1154,7 +1167,7 @@ function narrativeWorthy(e) {
 function progressEvents(nodeId) {
   const n = app.s.nodes[nodeId];
   return ((n && n.progress) || []).map((pr, i) => ({
-    ts: pr.ts, kind: "progress", payload: pr, progressKey: `${nodeId}:p${i}`,
+    ts: pr.ts, kind: "progress", payload: pr, progressKey: `${nodeId}:p:${pr.ts}:${pr.phase}:${i}`,
   }));
 }
 

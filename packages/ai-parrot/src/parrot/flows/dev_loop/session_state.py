@@ -1666,8 +1666,14 @@ def action_from_flow_event(
     return NodeSkipped(node_id=node_id, ts=ts)  # type: ignore[arg-type]
 
 
-def _delta_content_kind(payload: dict) -> DeltaContentKind:
-    """Classify a ``dispatch.message`` payload for :class:`DispatchDelta`.
+def classify_delta_content(payload: dict) -> DeltaContentKind:
+    """Classify a ``dispatch.message`` payload (:data:`DeltaContentKind`).
+
+    Single source of truth for "does this message carry anything worth a
+    narrative row": the dispatchers stamp its result onto the raw event
+    payload (``normalize_payload``), the state shim copies it onto
+    :class:`DispatchDelta`, and the consoles read the field instead of
+    guessing from raw keys.
 
     Precedence: visible assistant text, then a thinking snippet, then the
     SDK lifecycle frames (``ResultMessage`` → ``"result"``, a
@@ -1675,6 +1681,9 @@ def _delta_content_kind(payload: dict) -> DeltaContentKind:
     else — the bare ``UserMessage`` envelopes that made the console
     unreadable — is ``"empty"``.
     """
+    stamped = payload.get("content_kind")
+    if stamped in ("text", "thinking", "system", "result", "empty"):
+        return stamped  # type: ignore[return-value]
     if payload.get("text"):
         return "text"
     if payload.get("thinking"):
@@ -1738,7 +1747,7 @@ def action_from_dispatch_event(
     if cls is DispatchToolUse:
         kwargs["tool_name"] = str(payload.get("tool_name", ""))
     if cls is DispatchDelta:
-        kwargs["content_kind"] = _delta_content_kind(payload)
+        kwargs["content_kind"] = classify_delta_content(payload)
         thinking = payload.get("thinking")
         if thinking:
             kwargs["thinking"] = " ".join(str(thinking).split())[:PROGRESS_DETAIL_MAX]
@@ -1825,6 +1834,7 @@ __all__ = [
     "action_from_dispatch_event",
     "action_from_flow_event",
     "changeset_channel",
+    "classify_delta_content",
     "reduce",
     "reduce_root",
     "session_channel",

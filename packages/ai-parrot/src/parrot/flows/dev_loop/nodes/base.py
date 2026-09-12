@@ -532,7 +532,7 @@ class DevLoopNode(Node):
             )
         except Exception:  # noqa: BLE001 - narrative must never break a run
             logging.getLogger(__name__).debug(
-                "node/progress dropped for node=%s phase=%s", getattr(self, "node_id", "?"), phase, exc_info=True
+                "node/progress dropped for node=%s phase=%s", getattr(self, "name", "?"), phase, exc_info=True
             )
 
     @staticmethod
