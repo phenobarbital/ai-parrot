@@ -5,6 +5,7 @@ package owns parsing, brief building, subprocess lifecycle, state tailing and
 the dispatch service.
 """
 
+from .bridge import LoopbackRestChannel, RunCommandChannel
 from .briefs import brief_summary_fields, brief_to_file, build_bug_brief, build_feature_brief
 from .models import (
     BridgeResult,
@@ -23,6 +24,7 @@ from .models import (
     SpawnError,
 )
 from .parser import USAGE, parse_command
+from .process import HeadlessHandshakeView, HeadlessRunProcess
 
 __all__ = [
     "USAGE",
@@ -32,10 +34,14 @@ __all__ = [
     "DevLoopError",
     "DevLoopIntegrationConfig",
     "GateView",
+    "HeadlessHandshakeView",
+    "HeadlessRunProcess",
+    "LoopbackRestChannel",
     "NotRunOwnerError",
     "PendingConfirmation",
     "Requester",
     "RequestType",
+    "RunCommandChannel",
     "RunEvent",
     "RunNotFoundError",
     "RunRecord",
