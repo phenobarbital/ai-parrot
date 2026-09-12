@@ -218,6 +218,62 @@ For example, `PDFRenderer` inherits `SSRHTMLRenderer`'s primitive set minus
 `Video`/`AudioPlayer` (a rasterized PDF cannot play media — both degrade to a
 link).
 
+## Forms from FormDesigner (FEAT-544)
+
+`parrot-formdesigner`'s `A2UIFormRenderer` (its own `renderers/a2ui.py`,
+`ai-parrot` is an OPTIONAL extra of that package) lowers a `FormSchema` into
+a single `createSurface` envelope composed EXCLUSIVELY of Basic Catalog
+primitives — no `Form` catalog component exists or is ever emitted (spec G6:
+a form is a composition, not a registered component, exactly like
+`catalog.parrot.form.build_form()`). The renderer never calls `build_form()`
+itself (that helper's `FormField` only expresses 6 input kinds); it has its
+own `FIELD_LOWERING` table covering all of `FieldType`.
+
+**Layout**: root `Column` → optional title/description `Text`s → one `Card`
+per section (wrapping a `Column` of the section's fields/subsections) → an
+always-present `root-status` `Text` placeholder → a `Row` of submit/cancel
+`Button`s. Every input binds at `/answers/<RFC-6901-escaped field_id>` in
+`dataModel`; a `FieldType` Basic cannot express degrades to a `Text` notice
+plus a `RenderWarning` — rendering never raises.
+
+**Extension keys** (add to the `metadata.extensions` table above): the root
+component carries `parrot_variant: "form"`, `parrot_form_uid`,
+`parrot_form_id`, `parrot_form_version`, `parrot_tenant`,
+`parrot_submit_url`; every field component carries `parrot_field_id`,
+`parrot_field_uid`, `parrot_field_type`, `parrot_section_id` (and
+`parrot_subsection_id` when nested), plus `parrot_anchor_labels` for
+scale fields (NPS/LIKERT/RANKING) and `parrot_read_only` when the field is
+read-only. `parrot_role` gains four form-specific values on top of the
+ones already listed above: `"description"` (the form's own description
+`Text`, alongside the existing `"title"`), `"status"` (the confirmation
+placeholder), `"notice"` (a degraded field), and `"error"` (a per-field
+validation-error sibling `Text`); a `"status"` `Text` additionally carries
+`parrot_state: "submitted"` once a submission is confirmed.
+
+**Submit contract**: the submit `Button`'s `action.event` is
+`{name: "form.submit", context: {form_uid, form_id, tenant, submit_url,
+method: "POST", answers: {"path": "/answers"}}}`, where `submit_url` is the
+form's own `POST /api/v1/{tenant}/forms/{form_uid}/data` — there is no
+dedicated `/a2ui` route; the existing answer endpoint is dual-wire instead
+(decision U1). Cancel dispatches `{name: "form.cancel", context:
+{form_uid}}`.
+
+**Dual-wire reply shapes** — `POST .../data` and `POST .../validate` detect
+an inbound v1.0 `action` envelope (`Content-Type: application/a2ui+json` or
+a `{"version": "v1.0", "action": {...}}` body) and reply in kind: 422 → one
+`error{code: "VALIDATION_FAILED", surfaceId, path: "/answers/<field_id>"}`
+per invalid field plus a trailing `updateDataModel{path: "/errors"}`; 200 →
+`updateDataModel{path: "/submission"}` plus `updateComponents` replacing
+`root-status` with a confirmation message (`parrot_state: "submitted"`).
+Envelope framing mirrors `A2UIHandler`: one envelope is the response body
+(`application/a2ui+json`); several are wrapped as
+`{"messages": [...]}` (`application/json`). Legacy field_id-keyed JSON
+callers see byte-identical behaviour — the A2UI branch only changes what
+happens before validation (unwrap) and after it (reply shaping).
+
+See `packages/parrot-formdesigner/docs/a2ui-renderer.md` for the full
+FieldType coverage table, usage examples, and the `[a2ui]` optional extra.
+
 ## `Graph` — the viz-core workflow/state-machine component (FEAT-529)
 
 `Graph` renders a workflow, state machine, dependency graph, or call
@@ -474,3 +530,9 @@ response shapes.
   page summarizes.
 - `packages/ai-parrot/tests/outputs/a2ui/conformance/` — the conformance
   suite validating every emission point against the vendored wire schemas.
+- `packages/parrot-formdesigner/docs/a2ui-renderer.md` (FEAT-544) — the
+  `A2UIFormRenderer` usage guide, FieldType coverage table, and dual-wire
+  `/data`+`/validate` contract for parrot-formdesigner users.
+- `sdd/specs/a2ui-form-output-renderer.spec.md` (FEAT-544) and
+  `sdd/proposals/a2ui-form-output-renderer.proposal.md` — the full design
+  spec/proposal for the FormDesigner A2UI renderer.

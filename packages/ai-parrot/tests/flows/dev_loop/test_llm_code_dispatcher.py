@@ -500,9 +500,7 @@ def test_search_command_prefers_ripgrep(monkeypatch):
         lambda name: f"/usr/bin/{name}",
     )
 
-    command, backend = LLMCodeDispatcher._search_command(
-        query="needle", rel_path="packages", file_glob=None
-    )
+    command, backend = LLMCodeDispatcher._search_command(query="needle", rel_path="packages", file_glob=None)
 
     assert backend == "rg"
     assert command[0] == "rg"
@@ -515,9 +513,7 @@ def test_search_command_falls_back_to_git_grep_without_ripgrep(monkeypatch):
         lambda name: None if name == "rg" else "/usr/bin/git",
     )
 
-    command, backend = LLMCodeDispatcher._search_command(
-        query="-needle", rel_path="packages", file_glob="*.py"
-    )
+    command, backend = LLMCodeDispatcher._search_command(query="-needle", rel_path="packages", file_glob="*.py")
 
     assert backend == "git-grep"
     assert command[:2] == ["git", "grep"]
@@ -724,6 +720,15 @@ def test_system_prompt_names_the_working_directory(monkeypatch, brief, tmp_path)
     assert "no pipes, no `>` redirection" in system
 
 
+def test_system_prompt_carries_the_conventions(monkeypatch, brief, tmp_path):
+    dispatcher = _dispatcher(monkeypatch, _FakeClient([]))
+    messages = dispatcher._initial_messages(LLMCodeDispatchProfile(), brief, DevelopmentOutput, cwd=str(tmp_path))
+    system = messages[0]["content"]
+    assert "Project conventions" in system
+    assert "## Project rule: codebase-conventions" in system
+    assert system.index("Subagent instructions:") < system.index("## Project rule: codebase-conventions")
+
+
 def test_edit_file_replaces_a_unique_match(monkeypatch, tmp_path):
     dispatcher = _dispatcher(monkeypatch, _FakeClient([]))
     target = tmp_path / "mod.py"
@@ -813,9 +818,7 @@ async def test_apply_patch_recovers_a_wrong_hunk_line_count(monkeypatch, tmp_pat
         " c = 3\n"
     )
 
-    result = await dispatcher._tool_apply_patch(
-        str(tmp_path), {"patch": patch}, LLMCodeDispatchProfile()
-    )
+    result = await dispatcher._tool_apply_patch(str(tmp_path), {"patch": patch}, LLMCodeDispatchProfile())
 
     assert result["ok"] is True
     assert result["flags"] == ["--recount"]
@@ -839,9 +842,7 @@ async def test_unsalvageable_patch_points_at_edit_file(monkeypatch, tmp_path):
         "+replacement\n"
     )
 
-    result = await dispatcher._tool_apply_patch(
-        str(tmp_path), {"patch": patch}, LLMCodeDispatchProfile()
-    )
+    result = await dispatcher._tool_apply_patch(str(tmp_path), {"patch": patch}, LLMCodeDispatchProfile())
 
     assert result["ok"] is False
     assert "edit_file" in result["hint"]
@@ -1072,9 +1073,7 @@ class _RawToolCall:
 
 def test_parse_tool_arguments_reports_size_not_payload():
     truncated = '{"path": "t.py", "content": "' + "x" * 5000
-    parsed, error = LLMCodeDispatcher._parse_tool_arguments(
-        _RawToolCall("call_1", "write_file", truncated)
-    )
+    parsed, error = LLMCodeDispatcher._parse_tool_arguments(_RawToolCall("call_1", "write_file", truncated))
 
     assert parsed is None
     assert "not valid JSON" in error
@@ -1146,9 +1145,7 @@ async def test_truncated_tool_call_is_fed_back_instead_of_killing_the_dispatch(
     assistant_msg = next(
         m
         for m in second_round
-        if m.get("role") == "assistant"
-        and m.get("tool_calls")
-        and m["tool_calls"][0]["id"] == "call_1"
+        if m.get("role") == "assistant" and m.get("tool_calls") and m["tool_calls"][0]["id"] == "call_1"
     )
     echoed = json.loads(assistant_msg["tool_calls"][0]["function"]["arguments"])
     assert "_discarded" in echoed
@@ -1158,9 +1155,7 @@ def test_write_file_append_mode_extends_the_file(monkeypatch, tmp_path):
     dispatcher = _dispatcher(monkeypatch, _FakeClient([]))
     profile = LLMCodeDispatchProfile()
 
-    first = dispatcher._tool_write_file(
-        str(tmp_path), {"path": "big.py", "content": "a = 1\n"}, profile
-    )
+    first = dispatcher._tool_write_file(str(tmp_path), {"path": "big.py", "content": "a = 1\n"}, profile)
     second = dispatcher._tool_write_file(
         str(tmp_path),
         {"path": "big.py", "content": "b = 2\n", "mode": "append"},
@@ -1269,15 +1264,7 @@ def test_completion_usage_payload_omits_unreported_tokens():
 @pytest.mark.asyncio
 async def test_queued_event_names_the_backend(monkeypatch, brief, _patch_worktree_base):
     """The run bundle's "Dispatcher" column read a key nobody set."""
-    client = _FakeClient(
-        [
-            _Message(
-                content=json.dumps(
-                    {"files_changed": [], "commit_shas": [], "summary": "done"}
-                )
-            )
-        ]
-    )
+    client = _FakeClient([_Message(content=json.dumps({"files_changed": [], "commit_shas": [], "summary": "done"}))])
     dispatcher = _dispatcher(monkeypatch, client)
 
     await dispatcher.dispatch(
@@ -1335,9 +1322,7 @@ async def test_run_command_hint_absent_when_the_failure_is_not_a_glob(monkeypatc
 async def test_run_command_success_never_carries_a_glob_hint(monkeypatch, tmp_path):
     dispatcher = _dispatcher(monkeypatch, _FakeClient([]))
 
-    result = await dispatcher._tool_run_command(
-        str(tmp_path), {"argv": ["pwd"]}, LLMCodeDispatchProfile()
-    )
+    result = await dispatcher._tool_run_command(str(tmp_path), {"argv": ["pwd"]}, LLMCodeDispatchProfile())
 
     assert result["ok"] is True
     assert "hint" not in result

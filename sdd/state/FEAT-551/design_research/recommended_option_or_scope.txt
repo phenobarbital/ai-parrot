@@ -1,0 +1,46 @@
+### What's New
+
+- **`TeamsFormRenderer(AdaptiveCardRenderer)`** — new module `parrot_formdesigner/renderers/teams.py`; constructor takes a public base URL (settings/env, e.g. `FORMDESIGNER_PUBLIC_URL`) and optional upload-page URL template. Overrides `_build_form_actions` / `_build_wizard_actions` so the Submit action's `data` is:
+  ```json
+  {"_action": "submit",
+   "_formdesigner": {"v": 1, "form_uid": "<uuid>", "tenant": "<tenant>",
+                     "form_version": <n>, "submit_url": "https://…/api/v1/<tenant>/forms/<uuid>/data",
+                     "wire": "legacy"}}
+  ```
+  Underscore-prefixed so the in-dialog presets keep ignoring it. Overrides the upload branch: `RenderWarning` + `Action.OpenUrl` to the web upload page for FILE/IMAGE/IMAGE_DROPZONE/MULTI_UPLOAD (two-step; the answer carries the returned `FileEnvelope` reference). `RenderedForm.metadata` records `{"channel": "msteams", "submit_url": …, "envelope_version": 1}`. Optionally builds elements via the typed `parrot.outputs.cards` models. *Evidence*: F004, F005, F013, F020
+- **Format key `teams`** — `register_renderer("teams", TeamsFormRenderer(...))` in `api/render.py::_seed_default_renderers`, so `GET …/forms/{uid}/render/teams` returns the card JSON (`application/vnd.microsoft.card.adaptive`). *Evidence*: F011
+- **Bot receiver branch** — `_formdesigner` branch in `MSTeamsAgentWrapper._handle_card_submission`, inserted after the `a2ui_action` branch and before `command`: strip `_`-prefixed keys, coerce Teams string values (toggle → bool, multi-select → list, number → int/float) against the envelope, `POST submit_url` with the legacy JSON body via aiohttp, then reply with a confirmation card (200) or `render_error`-style card (422 field errors). Never falls through to `dialog_context.continue_dialog()`. *Evidence*: F009, F017, F023
+- **Tests** — renderer: envelope shape, `adaptive` output unchanged, upload-field posture and warnings, Teams v1.6 ceiling; wrapper: `activity.value` with `_formdesigner` → POST body/URL, coercion, 422 → error card, no fall-through (same harness as `tests/msteams/test_a2ui_submit.py`). *Evidence*: F015, F013
+- **Docs** — `docs/formdesigner-msteams-renderer.md` (envelope contract, upload limitation, bot setup).
+
+### What Changes
+
+- **`renderers/__init__.py`** — export `TeamsFormRenderer`. *Evidence*: F006
+- **`api/render.py::_seed_default_renderers`** — register `teams` (config-driven base URL; skip/log if unset). *Evidence*: F011
+- **`msteams/wrapper.py::_handle_card_submission`** — new branch (additive). *Evidence*: F009
+- **`renderers/adaptive_card.py`** — at most: make the upload branch and action builders overridable hooks (no output change for `adaptive`). *Evidence*: F004, F021
+
+### What's Untouched (Non-Goals)
+
+- `AdaptiveCardRenderer` output under `adaptive` — byte-identical (dialog presets depend on it). *Evidence*: F021
+- `submit_data` / `validate` handlers, persistence, forwarding, lifecycle events — unchanged; the bot is just another legacy JSON client. *Evidence*: F017
+- A2UI wire on `/data` (FEAT-544 TASK-3074/3075) — the envelope is versioned (`wire: "legacy"`) so an A2UI variant can be added later; no dependency now. *Evidence*: F016
+- In-card image upload — impossible on Teams; bot-side "send the photo as a chat attachment" intake is a **follow-up feature**, not this one. *Evidence*: F020, F022
+- Proactive delivery of the card to users/channels (Graph / ProactiveMessenger) — the renderer only returns JSON; posting it is the caller's job.
+- Wizard (`render_section`) multi-step flow over the standalone path — v1 covers the single complete-form card; wizard keeps working only inside dialogs.
+
+### Patterns to Follow
+
+- Envelope-in-`Action.Submit.data` + wrapper branch that unwraps it — `a2ui_renderers/adaptive_cards.py::_render_Button` and `wrapper.py` L413-443. *Evidence*: F013, F009
+- Correlation key in every Submit `data` — `hitl_cards.py::TeamsCardRenderer` (`interaction_id`). *Evidence*: F008
+- Table-driven FieldType mapping + explicit degraded set with `RenderWarning` — `adaptive_card.py` L70-118. *Evidence*: F004
+- Format registration — `api/render.py::register_renderer`. *Evidence*: F011
+- Typed AC models — `parrot.outputs.cards` (`InputText`, `ActionSubmit`, `ActionOpenUrl`, `build_attachment`). *Evidence*: F008
+
+### Integration Risks
+
+- **Teams value coercion**: toggles/multi-select arrive as strings; wrong coercion → 422 from the validator. *Mitigation*: coerce by field type using the form schema fetched from `GET …/forms/{uid}/schema` or a type map embedded in the envelope; test against recorded `activity.value` samples. *Evidence*: F009, F017 (low confidence — verify)
+- **Auth on `POST …/data`**: private forms require tenant membership; the bot has no user token. *Mitigation*: v1 targets public forms, or the bot carries a service credential/header; decide in spec. *Evidence*: F017
+- **Absolute URL correctness**: the renderer needs a reachable public base URL at render time. *Mitigation*: settings-driven; `render/teams` returns 503 with a clear error when unset. *Evidence*: F011, F023
+- **Card size / Teams v1.6 ceiling**: long forms may exceed Teams card limits. *Mitigation*: reuse the size guard in `parrot.outputs.cards.renderer` or emit a warning. *Evidence*: F008, F020
+- **Two-step upload UX**: `Action.OpenUrl` leaves Teams; the user must come back and submit. *Mitigation*: explicit helper text on the card; bot-attachment intake as follow-up. *Evidence*: F020

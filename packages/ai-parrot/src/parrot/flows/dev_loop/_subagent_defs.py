@@ -18,6 +18,8 @@ The dev-loop flow binds one of several subagents per dispatch:
   read-only, proposes ``retry``/``escalate``/``accept_with_notes`` over a
   QAReport + judge-panel verdicts; the deterministic envelope and stop
   rule are enforced in Python, never trusted from the proposal alone.
+* ``sdd-coder`` — task-scoped, code-only coder used by every FEAT-549
+  seat; dual-sourced (repo twin at ``.claude/agents/sdd-coder.md``).
 
 ``load_subagent_definition`` reads **only** the package-shipped copy at
 ``_subagent_data/<name>.md`` — this is the canonical, always-available
@@ -45,6 +47,12 @@ from __future__ import annotations
 
 from importlib.resources import files
 
+from parrot.flows.conventions import (  # FEAT-553 re-export; the loader lives in a stdlib-only leaf module
+    CODER_RULE_NAMES,
+    CONVENTIONS_PREAMBLE,
+    load_project_conventions,
+)
+
 _VALID_NAMES: frozenset[str] = frozenset(
     {
         "sdd-research",
@@ -54,6 +62,7 @@ _VALID_NAMES: frozenset[str] = frozenset(
         "sdd-secondopinion",
         "sdd-planner",
         "sdd-feedback",
+        "sdd-coder",
     }
 )
 
@@ -79,7 +88,7 @@ def _strip_frontmatter(text: str) -> str:
         # Malformed frontmatter — return text unchanged rather than
         # silently dropping the whole file.
         return text
-    body = "\n".join(lines[closing + 1:]).lstrip("\n")
+    body = "\n".join(lines[closing + 1 :]).lstrip("\n")
     return body
 
 
@@ -89,7 +98,7 @@ def load_subagent_definition(name: str) -> str:
     Args:
         name: One of ``"sdd-research"``, ``"sdd-worker"``, ``"sdd-qa"``,
             ``"sdd-codereview"``, ``"sdd-secondopinion"``, ``"sdd-planner"``,
-            ``"sdd-feedback"``.
+            ``"sdd-feedback"``, ``"sdd-coder"``.
 
     Returns:
         The Markdown body of the subagent definition with the YAML
@@ -101,14 +110,11 @@ def load_subagent_definition(name: str) -> str:
             (indicates a packaging error).
     """
     if name not in _VALID_NAMES:
-        raise ValueError(
-            f"Unknown subagent name {name!r}. Expected one of "
-            f"{sorted(_VALID_NAMES)}."
-        )
+        raise ValueError(f"Unknown subagent name {name!r}. Expected one of " f"{sorted(_VALID_NAMES)}.")
     data_dir = files("parrot.flows.dev_loop") / "_subagent_data"
     target = data_dir / f"{name}.md"
     text = target.read_text(encoding="utf-8")
     return _strip_frontmatter(text)
 
 
-__all__ = ["load_subagent_definition"]
+__all__ = ["load_subagent_definition", "load_project_conventions", "CODER_RULE_NAMES", "CONVENTIONS_PREAMBLE"]

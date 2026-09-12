@@ -18,6 +18,20 @@ All notable changes to `parrot-formdesigner` will be documented in this file.
 
 ### Added
 
+- **FEAT-544 — A2UI v1.0 Form Renderer**: a new `a2ui` render format
+  (`GET /api/v1/{tenant}/forms/{form_uid}/render/a2ui`) lowers a
+  `FormSchema` into a Basic-Catalog-only A2UI v1.0 `createSurface`
+  envelope (`renderers/a2ui.py::A2UIFormRenderer`; no `Form` catalog
+  component, per A2UI dialect spec G6) — see the new
+  `docs/a2ui-renderer.md` for the full `FieldType` coverage table and
+  usage. `POST /data` and `POST /validate` are now **dual-wire**: both
+  accept a v1.0 renderer→agent `action` envelope (in addition to the
+  existing field_id-keyed JSON body) and reply with A2UI envelopes
+  (per-field `error` + `updateDataModel` on 422; `updateDataModel` +
+  `updateComponents` confirmation on 200) — legacy JSON callers are
+  byte-identical. Requires the optional `ai-parrot` extra
+  (`pip install parrot-formdesigner[a2ui]`); without it, `"a2ui"` is
+  simply absent from `supported_formats()`.
 - **FEAT-456 — Relational Field Cardinality**: a new orthogonal
   `FormField.relation: RelationSpec | None` aspect expresses Many2one,
   Many2many, and One2many semantics without new `FieldType` enum members

@@ -1,0 +1,79 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-551",
+  "feature_slug": "msteams-formdesigner-renderer",
+  "started_at": "2026-09-10T22:19:37Z",
+  "updated_at": "2026-09-10T22:39:57Z",
+  "source": {
+    "kind": "inline",
+    "raw_path": "sdd/state/FEAT-551/source.md",
+    "fetched_at": "2026-09-10T22:19:37Z",
+    "summary_oneline": "Renderer exporting a FormDesigner Form/Survey definition as an MS Teams-compatible Adaptive Card JSON."
+  },
+  "mode": "enrichment",
+  "wiki_available": true,
+  "phase": "committed",
+  "phases": {
+    "source": {
+      "status": "completed"
+    },
+    "plan": {
+      "status": "completed",
+      "approved_by_user": true,
+      "plan_path": "sdd/state/FEAT-551/research_plan.json"
+    },
+    "research": {
+      "status": "completed",
+      "files_read": 22,
+      "grep_calls": 12,
+      "git_calls": 2,
+      "wiki_calls": 5,
+      "web_calls": 1,
+      "depth_reached": 1,
+      "truncated": false,
+      "truncation_reason": null
+    },
+    "synthesis": {
+      "status": "completed",
+      "synthesis_path": "sdd/state/FEAT-551/synthesis.json",
+      "overall_confidence": "high",
+      "claims_total": 9,
+      "claims_high_conf": 6,
+      "claims_medium_conf": 2,
+      "claims_low_conf": 1,
+      "unknowns_count": 5,
+      "lint_passed": true,
+      "lint_iterations": 2
+    },
+    "qa": {
+      "status": "completed",
+      "questions_total": 5,
+      "questions_answered": 5
+    },
+    "output": {
+      "status": "completed",
+      "proposal_path": "sdd/proposals/msteams-formdesigner-renderer.proposal.md",
+      "commit_sha": "af9057053761bef31bbcd4945d642b373d6a0c02",
+      "next_command_recommended": "sdd-spec",
+      "next_command_rationale": "Localization high; all 5 unknowns resolved; extension of shipped code."
+    }
+  },
+  "budget": {
+    "profile": "default",
+    "max_files_read": 40,
+    "max_grep_calls": 25,
+    "max_git_calls": 10,
+    "max_depth": 2,
+    "max_wall_seconds": 300
+  },
+  "consumed": {
+    "files_read": 22,
+    "grep_calls": 13,
+    "git_calls": 2,
+    "wall_seconds": 280
+  },
+  "resume_hint": {
+    "next_phase": "committed",
+    "next_action": "Run /sdd-spec FEAT-551 (or accept the proposal first)"
+  }
+}

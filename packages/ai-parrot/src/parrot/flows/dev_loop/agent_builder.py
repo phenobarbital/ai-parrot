@@ -45,6 +45,8 @@ from parrot.flows.dev_loop import (
     DevLoopCodeDispatcher,
     GeminiCodeDispatcher,
     GeminiCodeDispatchProfile,
+    GoogleCompatCodeDispatcher,
+    GoogleCompatCodeDispatchProfile,
     GrokCodeDispatcher,
     GrokCodeDispatchProfile,
     LLMCodeDispatcher,
@@ -124,7 +126,7 @@ def _get_int(getter: ConfigGetter, key: str, fallback: int) -> int:
 #: nova/zai/moonshot/grok subclasses). Those backends are chat models, not
 #: agentic CLIs: one turn is one chat completion, and a real SDD task — read,
 #: patch, run pytest, commit, then call ``final_output`` — routinely needs
-#: more than the profile's conservative library default of 24. Every seat of
+#: more than the profile's conservative library default of 40 (24 before FEAT-553). Every seat of
 #: an 8-task run hit that ceiling and the whole flow ended PARTIAL, so this
 #: wiring is opinionated where the library stays conservative (the same
 #: posture as the dev console's default dev pool).
@@ -176,39 +178,27 @@ def build_dispatcher(
 
     if spec.agent == "claude-code":
         dispatcher: DevLoopCodeDispatcher = ClaudeCodeDispatcher(**common)
-        profile: BaseModel = ClaudeCodeDispatchProfile(
-            model=spec.model or "claude-sonnet-4-6"
-        )
+        profile: BaseModel = ClaudeCodeDispatchProfile(model=spec.model or "claude-sonnet-4-6")
         return dispatcher, profile
 
     if spec.agent == "codex":
         dispatcher = CodexCodeDispatcher(**common)
-        profile = CodexCodeDispatchProfile(
-            model=spec.model or config_getter("DEV_LOOP_CODEX_MODEL", "gpt-5.5")
-        )
+        profile = CodexCodeDispatchProfile(model=spec.model or config_getter("DEV_LOOP_CODEX_MODEL", "gpt-5.5"))
         return dispatcher, profile
 
     if spec.agent == "gemini":
         dispatcher = GeminiCodeDispatcher(**common)
-        profile = GeminiCodeDispatchProfile(
-            model=spec.model or config_getter("DEV_LOOP_GEMINI_MODEL", "auto")
-        )
+        profile = GeminiCodeDispatchProfile(model=spec.model or config_getter("DEV_LOOP_GEMINI_MODEL", "auto"))
         return dispatcher, profile
 
     if spec.agent == "nvidia":
         dispatcher = LLMCodeDispatcher(**common)
-        nvidia_model = spec.model or config_getter(
-            "DEV_LOOP_NVIDIA_CODE_MODEL", "minimaxai/minimax-m3"
-        )
+        nvidia_model = spec.model or config_getter("DEV_LOOP_NVIDIA_CODE_MODEL", "minimaxai/minimax-m3")
         profile = LLMCodeDispatchProfile(
             llm=f"nvidia:{nvidia_model}",
             max_turns=llm_max_turns,
-            enable_thinking=_get_bool(
-                config_getter, "DEV_LOOP_NVIDIA_ENABLE_THINKING", False
-            ),
-            clear_thinking=_get_bool(
-                config_getter, "DEV_LOOP_NVIDIA_CLEAR_THINKING", False
-            ),
+            enable_thinking=_get_bool(config_getter, "DEV_LOOP_NVIDIA_ENABLE_THINKING", False),
+            clear_thinking=_get_bool(config_getter, "DEV_LOOP_NVIDIA_CLEAR_THINKING", False),
         )
         return dispatcher, profile
 
@@ -225,9 +215,7 @@ def build_dispatcher(
         profile = ZaiCodeDispatchProfile(
             model=spec.model or config_getter("DEV_LOOP_ZAI_MODEL", "glm-5.2"),
             max_turns=llm_max_turns,
-            enable_thinking=_get_bool(
-                config_getter, "DEV_LOOP_ZAI_ENABLE_THINKING", True
-            ),
+            enable_thinking=_get_bool(config_getter, "DEV_LOOP_ZAI_ENABLE_THINKING", True),
             reasoning_effort=config_getter("DEV_LOOP_ZAI_REASONING_EFFORT", "max"),
         )
         return dispatcher, profile
@@ -237,25 +225,31 @@ def build_dispatcher(
         profile = MoonshotCodeDispatchProfile(
             model=spec.model or config_getter("DEV_LOOP_MOONSHOT_MODEL", "kimi-k3"),
             max_turns=llm_max_turns,
-            reasoning_effort=config_getter(
-                "DEV_LOOP_MOONSHOT_REASONING_EFFORT", "max"
-            ),
+            reasoning_effort=config_getter("DEV_LOOP_MOONSHOT_REASONING_EFFORT", "max"),
         )
         return dispatcher, profile
 
     if spec.agent == "google_coding":
         dispatcher = GoogleCodingDispatcher(**common)
-        profile = GoogleCodingDispatchProfile(
-            model=spec.model or config_getter("DEV_LOOP_GOOGLE_CODING_MODEL", "auto")
-        )
+        profile = GoogleCodingDispatchProfile(model=spec.model or config_getter("DEV_LOOP_GOOGLE_CODING_MODEL", "auto"))
         return dispatcher, profile
 
     if spec.agent == "nova":
         dispatcher = NovaCodeDispatcher(**common)
         profile = NovaCodeDispatchProfile(
-            model=spec.model
-            or config_getter("DEV_LOOP_NOVA_CODE_MODEL", "minimax.minimax-m2.5"),
+            model=spec.model or config_getter("DEV_LOOP_NOVA_CODE_MODEL", "minimax.minimax-m2.5"),
             max_turns=llm_max_turns,
+        )
+        return dispatcher, profile
+
+    if spec.agent == "google-compat":
+        dispatcher = GoogleCompatCodeDispatcher(**common)
+        compat_model = spec.model or config_getter("DEV_LOOP_GOOGLE_COMPAT_MODEL", "gemini-3.5-flash")
+        profile = GoogleCompatCodeDispatchProfile(
+            model=compat_model,
+            llm=f"google-compat:{compat_model}",
+            max_turns=llm_max_turns,
+            reasoning_effort=config_getter("DEV_LOOP_GOOGLE_COMPAT_REASONING_EFFORT", "none"),
         )
         return dispatcher, profile
 
@@ -287,9 +281,7 @@ def parse_pool_env(config_getter: ConfigGetter) -> Optional[DevAgentPoolConfig]:
             kwargs["isolation_mode"] = isolation
         return DevAgentPoolConfig(**kwargs)
     except (json.JSONDecodeError, TypeError, ValidationError, ValueError) as exc:
-        logger.warning(
-            "DEV_LOOP_DEV_AGENTS is malformed (%s); ignoring pool config.", exc
-        )
+        logger.warning("DEV_LOOP_DEV_AGENTS is malformed (%s); ignoring pool config.", exc)
         return None
 
 

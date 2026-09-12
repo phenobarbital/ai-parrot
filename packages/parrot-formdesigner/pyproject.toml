@@ -33,6 +33,9 @@ classifiers = [
 dependencies = [
     "pydantic>=2.0",
     "aiohttp>=3.9",
+    "yarl>=1.9",  # FEAT-459: services/sandbox/broker.py builds URLs via yarl.URL.build()
+    # directly (SSRF-safe host/path separation) — was previously only a transitive
+    # aiohttp dependency; declared explicitly since it is now imported directly.
     "asyncdb>=2.0",
     "PyYAML>=6.0",
     "jinja2>=3.1",
@@ -48,6 +51,11 @@ dependencies = [
 
 [project.optional-dependencies]
 ai-parrot = [
+    "ai-parrot>=1.0.0",
+]
+# FEAT-544: alias for the "a2ui" render format — same pin as `ai-parrot`,
+# named for discoverability (`pip install parrot-formdesigner[a2ui]`).
+a2ui = [
     "ai-parrot>=1.0.0",
 ]
 redis = [

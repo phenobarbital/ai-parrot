@@ -1,0 +1,41 @@
+FEAT-550 gave `AbstractClient`/`AbstractBot` a cumulative per-question
+`token_budget` covering Bedrock Converse and Bedrock Mantle. FEAT-549 runs the
+`sdd-coder` agent on those same Mantle seats (`qwen` →
+`qwen.qwen3-coder-480b-a35b-instruct`). **Nobody can pick a number for
+`token_budget` on a coding seat, because nothing measures what a coding attempt
+actually consumes.**
+
+A coding attempt is not a chat question. It is a loop of up to
+`LLMCodeDispatchProfile.max_turns` rounds (default 24, configured higher for
+coder profiles), each one re-sending the full history — so consumption grows
+super-linearly with turns and is dominated by *input* tokens, not output. The
+right ceiling is therefore a property of the *task*, not of the model.
+
+What exists today falls short in a specific way:
+
+- Per-attempt usage **is** collected: `AttemptTelemetryCollector`
+  (`sdd_coder/engine.py:91-136`) folds the `dispatch.completed` payload built by
+  `LLMCodeDispatcher._completion_usage_payload` (`dispatchers/llm.py:584-617`)
+  into `AttemptRecord.usage` (`sdd_coder/models.py:114-125`).
+- It **is** written to disk: `SddCoderEngine._journal`
+  (`sdd_coder/engine.py:472-488`) snapshots the whole `CoderJob` — including
+  `tasks[*].attempts[*].usage` — to `<worktree>/.sdd-coder/jobs/<job_id>.json`.
+
+But that journal **dies with the feature worktree** (`/sdd-done` runs
+`git worktree remove`), is keyed by job rather than by task, carries no per-turn
+detail, no task-size correlate, no outcome-linked view, and — most importantly —
+no reading from the FEAT-550 ledger, so it cannot tell us how wrong the
+`estimated` admission mode is. It is a debugging snapshot, not a longitudinal
+dataset.
+
+**Who is affected**: the operator configuring the `sdd-coder` roster; the
+`sdd-worker` orchestrator that would surface a budget-exhausted attempt; and
+anyone who wants to switch FEAT-550 enforcement on for a coding seat.
+
+**Why now**: FEAT-550 landed on 2026-09-11 with `token_budget` defaulting to
+`None` (disabled). Turning it on for a coder seat without data is guesswork, and
+the failure mode is asymmetric: a mis-sized ceiling on a chat answer truncates
+text, while a mis-sized ceiling on a coder leaves a **half-finished git
+worktree** that `sdd-worker` must then adopt or discard.
+
+---

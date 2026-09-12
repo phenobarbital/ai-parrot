@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import json
 import logging
+import shlex
 import stat
 import sys
 from pathlib import Path, PurePosixPath
@@ -124,12 +125,35 @@ def _hook_entry(root: Path) -> dict[str, Any]:
     }
 
 
+def _is_our_command(command: Any) -> bool:
+    """Whether a hook command invokes our ``wikitoolkit claude-hook``.
+
+    Matching is done on parsed shell tokens, not on the literal
+    ``HOOK_COMMAND`` substring: the installed command carries an absolute
+    path, and an equivalent hand-written spelling — a quoted path, or one
+    built from ``$CLAUDE_PROJECT_DIR`` — puts a quote between the binary
+    and the subcommand. A substring check misses those and the caller
+    appends a second, duplicate entry instead of upgrading the first.
+
+    Args:
+        command: The ``command`` field of a hook handler.
+
+    Returns:
+        True when the command runs our hook under any spelling.
+    """
+    text = str(command or "")
+    try:
+        tokens = shlex.split(text)
+    except ValueError:  # unbalanced quotes — fall back to the raw needle
+        return assets.HOOK_COMMAND in text
+    if assets.HOOK_SUBCOMMAND not in tokens:
+        return False
+    return any(PurePosixPath(token).name == assets.HOOK_BIN_NAME for token in tokens)
+
+
 def _is_our_hook(entry: dict[str, Any]) -> bool:
     """Whether a settings hook entry was installed by us."""
-    for hook in entry.get("hooks", []):
-        if assets.HOOK_COMMAND in str(hook.get("command", "")):
-            return True
-    return False
+    return any(_is_our_command(hook.get("command")) for hook in entry.get("hooks", []))
 
 
 def _load_settings(path: Path) -> Optional[dict[str, Any]]:
@@ -180,8 +204,9 @@ def _install_settings_hook(root: Path) -> str:
 
     resolved_cmd = assets.hook_command(root)
 
-    existing = next((e for e in pre if isinstance(e, dict) and _is_our_hook(e)), None)
-    if existing is not None:
+    ours = [e for e in pre if isinstance(e, dict) and _is_our_hook(e)]
+    if ours:
+        existing, *duplicates = ours
         # Upgrade an older install in place when the matcher or command
         # changed (e.g. bare → absolute path, or Grep|Glob|Read →
         # Grep|Glob|Read|Bash) so a re-run picks up the fix instead of
@@ -191,11 +216,31 @@ def _install_settings_hook(root: Path) -> str:
             existing["matcher"] = assets.HOOK_MATCHER
             dirty = True
         for hook in existing.get("hooks", []):
-            if assets.HOOK_COMMAND in str(hook.get("command", "")) and hook.get("command") != resolved_cmd:
+            if _is_our_command(hook.get("command")) and hook.get("command") != resolved_cmd:
                 hook["command"] = resolved_cmd
                 dirty = True
+
+        # Collapse copies left behind by an earlier install that failed to
+        # recognise its own hook under a different spelling and appended a
+        # second entry. A duplicate sharing an entry with someone else's
+        # handler loses only our handler — the entry itself is not ours to
+        # delete.
+        dropped: list[int] = []
+        for dup in duplicates:
+            foreign = [h for h in dup.get("hooks", []) if not _is_our_command(h.get("command"))]
+            if foreign:
+                dup["hooks"] = foreign
+            else:
+                dropped.append(id(dup))
+            dirty = True
+        if dropped:
+            pre[:] = [e for e in pre if id(e) not in dropped]
+
         if dirty:
             _write_settings(path, settings)
+            if duplicates:
+                noun = "duplicate" if len(duplicates) == 1 else "duplicates"
+                return f".claude/settings.json — PreToolUse hook updated ({len(duplicates)} {noun} removed)"
             return ".claude/settings.json — PreToolUse hook updated"
         return ".claude/settings.json — PreToolUse hook already installed"
     pre.append(_hook_entry(root))
@@ -633,8 +678,23 @@ def uninstall_claude_integration(root: Path) -> list[str]:
         hooks = settings.get("hooks")
         pre = hooks.get("PreToolUse", []) if isinstance(hooks, dict) else []
         if isinstance(pre, list):
-            kept = [e for e in pre if not (isinstance(e, dict) and _is_our_hook(e))]
-            if len(kept) != len(pre):
+            # Strip our handler rather than the whole entry: a user may have
+            # added their own command alongside it, and that is not ours to
+            # remove.
+            kept = []
+            removed = False
+            for entry in pre:
+                if not (isinstance(entry, dict) and _is_our_hook(entry)):
+                    kept.append(entry)
+                    continue
+                removed = True
+                foreign = [h for h in entry.get("hooks", []) if not _is_our_command(h.get("command"))]
+                if foreign:
+                    # Entries are mutated in place, so `kept` and `pre` can
+                    # stay equal even here — hence the explicit flag.
+                    entry["hooks"] = foreign
+                    kept.append(entry)
+            if removed:
                 settings["hooks"]["PreToolUse"] = kept
                 if not kept:
                     settings["hooks"].pop("PreToolUse")

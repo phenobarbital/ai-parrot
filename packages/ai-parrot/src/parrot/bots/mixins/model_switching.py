@@ -35,6 +35,7 @@ Usage::
 Limitations (v1): only non-streaming calls (``ask``) are switched;
 ``ask_stream`` always uses the primary client.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -43,6 +44,7 @@ from enum import Enum
 from typing import Any, Dict, Optional, Union
 
 from ...clients.base import AbstractClient
+from ...core.exceptions import BudgetError
 from ...exceptions import ConfigError
 from ...models.basic import CompletionUsage
 
@@ -131,15 +133,12 @@ class ModelSwitchingMixin:
             return
         try:
             if isinstance(self.secondary_llm, dict):
-                self._secondary_client = self.configure_llm(
-                    model_config=self.secondary_llm
-                )
+                self._secondary_client = self.configure_llm(model_config=self.secondary_llm)
             else:
                 self._secondary_client = self.configure_llm(llm=self.secondary_llm)
         except Exception as exc:
             raise ConfigError(
-                f"ModelSwitchingMixin: cannot resolve secondary_llm "
-                f"{self.secondary_llm!r}: {exc}"
+                f"ModelSwitchingMixin: cannot resolve secondary_llm " f"{self.secondary_llm!r}: {exc}"
             ) from exc
         self.logger.info(
             "Model switching enabled (%s): primary=%s secondary=%s",
@@ -162,6 +161,9 @@ class ModelSwitchingMixin:
         Returns:
             ``True`` to retry the call on the secondary client.
         """
+        if isinstance(error, BudgetError):
+            # FEAT-550 §3 M3: never fall back on budget control.
+            return False
         return not isinstance(error, asyncio.CancelledError)
 
     # ── Core override ────────────────────────────────────────────────────
@@ -185,11 +187,7 @@ class ModelSwitchingMixin:
         Returns:
             The (possibly merged/annotated) ``AIMessage``.
         """
-        switching_active = (
-            self.enable_model_switching
-            and self._secondary_client is not None
-            and method == "ask"
-        )
+        switching_active = self.enable_model_switching and self._secondary_client is not None and method == "ask"
         if not switching_active:
             return await super().execute_llm_call(client, method, **llm_kwargs)
 
@@ -212,6 +210,8 @@ class ModelSwitchingMixin:
             response = await super().execute_llm_call(client, method, **llm_kwargs)
         except asyncio.CancelledError:
             raise
+        except BudgetError:
+            raise  # FEAT-550: budget control never triggers cross-provider fallback
         except Exception as primary_err:
             if not self.should_switch_on(primary_err):
                 raise
@@ -234,24 +234,30 @@ class ModelSwitchingMixin:
                     secondary_err,
                 )
                 raise primary_err from secondary_err
-            self._annotate(response, {
-                "mode": ModelSwitchMode.FALLBACK.value,
-                "switched": True,
-                "primary": {
-                    **primary_info,
-                    "error_type": type(primary_err).__name__,
-                    "error": str(primary_err),
+            self._annotate(
+                response,
+                {
+                    "mode": ModelSwitchMode.FALLBACK.value,
+                    "switched": True,
+                    "primary": {
+                        **primary_info,
+                        "error_type": type(primary_err).__name__,
+                        "error": str(primary_err),
+                    },
+                    "served_by": self._response_info(response),
                 },
-                "served_by": self._response_info(response),
-            })
+            )
             self._emit_switch_event(primary_err, response)
             return response
 
-        self._annotate(response, {
-            "mode": ModelSwitchMode.FALLBACK.value,
-            "switched": False,
-            "served_by": self._response_info(response),
-        })
+        self._annotate(
+            response,
+            {
+                "mode": ModelSwitchMode.FALLBACK.value,
+                "switched": False,
+                "served_by": self._response_info(response),
+            },
+        )
         return response
 
     # ── Contrastive mode ─────────────────────────────────────────────────
@@ -273,6 +279,17 @@ class ModelSwitchingMixin:
             raise primary_res
         if isinstance(secondary_res, asyncio.CancelledError):
             raise secondary_res
+
+        # FEAT-550 §3 M3: an exhausted branch cannot be bypassed via the other branch —
+        # surface budget control to the root, which performs the single finalization.
+        for _label, _res in (("primary", primary_res), ("secondary", secondary_res)):
+            if isinstance(_res, BudgetError):
+                self.logger.warning(
+                    "Contrastive call: %s branch raised %s — propagating budget control",
+                    _label,
+                    type(_res).__name__,
+                )
+                raise _res
 
         primary_failed = isinstance(primary_res, BaseException)
         secondary_failed = isinstance(secondary_res, BaseException)
@@ -298,10 +315,13 @@ class ModelSwitchingMixin:
                 "Contrastive call: %s model failed — returning the surviving answer",
                 "primary" if primary_failed else "secondary",
             )
-            self._annotate(survivor, {
-                "mode": ModelSwitchMode.CONTRASTIVE.value,
-                "responses": entries,
-            })
+            self._annotate(
+                survivor,
+                {
+                    "mode": ModelSwitchMode.CONTRASTIVE.value,
+                    "responses": entries,
+                },
+            )
             return survivor
 
         # Both succeeded: primary AIMessage is the carrier so downstream
@@ -313,10 +333,13 @@ class ModelSwitchingMixin:
         self._aggregate_usage(primary_res, secondary_res)
         if primary_res.response_time is not None:
             primary_res.response_time = time.perf_counter() - started
-        self._annotate(primary_res, {
-            "mode": ModelSwitchMode.CONTRASTIVE.value,
-            "responses": entries,
-        })
+        self._annotate(
+            primary_res,
+            {
+                "mode": ModelSwitchMode.CONTRASTIVE.value,
+                "responses": entries,
+            },
+        )
         return primary_res
 
     async def _call_secondary(self, method: str, **llm_kwargs: Any) -> Any:
@@ -453,8 +476,6 @@ class ModelSwitchingMixin:
                     if asyncio.iscoroutine(result):
                         await result
                 except Exception as exc:
-                    self.logger.error(
-                        "Error closing secondary LLM client: %s", exc
-                    )
+                    self.logger.error("Error closing secondary LLM client: %s", exc)
             self._secondary_client = None
         await super().cleanup()

@@ -29,7 +29,9 @@ Decompose an approved Feature Specification into atomic, assignable implementati
   dev-loop planner dispatches) can silently allocate the same number to
   different features. See §4 below.
 - **Must run on the spec's `base_branch`** (read from frontmatter — `dev` for features, `main` for hotfixes). Not inside a worktree.
-- **Always commit task files and per-spec index to `base_branch`** before creating the worktree.
+- **Always commit task files and per-spec index to `base_branch`** — they are
+  versioned artifacts, and the machine that implements the feature pulls them
+  from there. This command creates no worktree (FEAT-552).
 
 ## Steps
 
@@ -314,24 +316,16 @@ git diff --cached --name-only
 git commit -m "sdd: add <N> tasks for FEAT-<ID> — <feature-name>"
 ```
 
-### 6. Create the Worktree
+### 6. Output
 
-After committing to `<BASE>`, create the worktree so it inherits the tasks.
-Naming and base ref depend on `TYPE` (FEAT-466 — a hotfix has no reserved
-id, so it is named from its Jira key, and always branches from
-`origin/main`, never `HEAD`):
+Before printing the summary, count the delegation-eligible tasks. This is the
+number the targeted writer will actually receive when the worker runs, so it
+is worth seeing up front:
 
 ```bash
-# type: feature
-git worktree add -b feat-<FEAT-ID>-<slug> \
-  .claude/worktrees/feat-<FEAT-ID>-<slug> HEAD
-
-# type: hotfix (the rare case /sdd-task ran directly against a hotfix spec)
-git worktree add -b hotfix-<JIRA-KEY>-<slug> \
-  .claude/worktrees/hotfix-<JIRA-KEY>-<slug> origin/main
+grep -l '^## Delegation Contract' sdd/tasks/active/TASK-*.md | wc -l
 ```
 
-### 7. Output
 ```
 ✅ Generated and committed <N> tasks for FEAT-<ID> — <feature-name>
    (hotfix: for Jira <KEY> — <feature-name>, no FEAT-<NNN>/TASK-<NNN> reserved)
@@ -341,14 +335,16 @@ Tasks created:
   HOTFIX-<JIRA-KEY>-<N> — <title> [<priority>/<effort>]  # hotfix
 
 Blueprints: <N>/<N> tasks carry an Implementation Blueprint
+Delegated:  <D>/<N> tasks carry a Delegation Contract (targeted writer)
+            TASK-<NNN>, TASK-<NNN>          # list them, or "none"
 
-Worktree created:
-  .claude/worktrees/feat-<FEAT-ID>-<slug>              # feature
-  .claude/worktrees/hotfix-<JIRA-KEY>-<slug>           # hotfix
+Worktree: not created. /sdd-task produces versioned artifacts only — the
+          worktree is created by whoever implements, on the machine that
+          implements (FEAT-552).
 
 Next:
-  cd .claude/worktrees/<worktree-name>
-  /sdd-start <task-id>   # begin first task
+  /sdd-start <task-id>        # creates the worktree, then begins the task
+  # or, unattended:  claude --agent sdd-worker --model sonnet --verbose
 ```
 
 ## Reference

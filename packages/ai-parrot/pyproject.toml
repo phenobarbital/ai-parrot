@@ -903,6 +903,8 @@ parrot = ["py.typed", "templates/*.tpl", "**/*.pyx", "**/*.pxd"]
 # importlib.resources by parrot.knowledge.wiki.languages.astgrep.RuleSet.
 "parrot.knowledge.wiki.languages.rules" = ["*.yaml"]
 "parrot.forms.renderers" = ["templates/*.j2"]
+# FEAT-553: coder rule files read via importlib.resources by parrot.flows.conventions.
+"parrot.flows" = ["_rules_data/*.md"]
 "parrot.flows.dev_loop" = ["_subagent_data/*.md"]
 # FEAT-412: dev_flow ships its own prompt set (sdd-ideation); the loader
 # reads it via importlib.resources, so it MUST be in the wheel.
@@ -966,6 +968,7 @@ asyncio_mode = "auto"
 markers = [
     "real_llm: mark a test as requiring a live LLM provider",
     "network: mark a test as requiring live network access (e.g. spec drift checks)",
+    "live: needs provider credentials; opt-in with -m live",
 ]
 
 [tool.cibuildwheel]

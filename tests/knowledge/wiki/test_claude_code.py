@@ -19,6 +19,7 @@ from parrot.knowledge.wiki.claude_code.hook import (
     run_pre_tool_use_hook,
 )
 from parrot.knowledge.wiki.claude_code.installer import (
+    _is_our_command,
     install_claude_integration,
     integration_status,
     uninstall_claude_integration,
@@ -110,6 +111,111 @@ class TestInstaller:
         install_claude_integration(repo)
         for path, before in snapshot.items():
             assert path.read_text(encoding="utf-8") == before
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "wikitoolkit claude-hook",
+            "/abs/path/.venv/bin/wikitoolkit claude-hook",
+            '"$CLAUDE_PROJECT_DIR/.venv/bin/wikitoolkit" claude-hook',
+            "'$CLAUDE_PROJECT_DIR/.venv/bin/wikitoolkit' claude-hook",
+            "$CLAUDE_PROJECT_DIR/.venv/bin/wikitoolkit claude-hook",
+        ],
+    )
+    def test_recognises_every_spelling_of_our_command(self, command):
+        assert _is_our_command(command)
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "",
+            None,
+            "echo hi",
+            "wikitoolkit query 'something'",
+            "wikitoolkit mcp",
+            # Another tool that happens to take a 'claude-hook' argument.
+            "/usr/bin/other-tool claude-hook",
+        ],
+    )
+    def test_does_not_claim_foreign_commands(self, command):
+        assert not _is_our_command(command)
+
+    def test_reinstall_collapses_a_quoted_duplicate(self, repo):
+        """A hand-spelled copy is absorbed, not duplicated.
+
+        Regression: ``_is_our_hook`` used to look for the literal
+        ``"wikitoolkit claude-hook"`` substring, which a quoted or
+        ``$CLAUDE_PROJECT_DIR`` path splits apart. The installer then
+        failed to recognise its own hook and appended a second entry,
+        so the hook ran twice on every matched tool call.
+        """
+        install_claude_integration(repo)
+        settings_path = repo / ".claude" / "settings.json"
+        settings = json.loads(settings_path.read_text(encoding="utf-8"))
+        pre = settings["hooks"]["PreToolUse"]
+        pre.insert(
+            0,
+            {
+                "matcher": assets.HOOK_MATCHER,
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": '"$CLAUDE_PROJECT_DIR/.venv/bin/wikitoolkit" claude-hook',
+                        "timeout": 10,
+                    }
+                ],
+            },
+        )
+        settings_path.write_text(json.dumps(settings), encoding="utf-8")
+
+        actions = install_claude_integration(repo)
+
+        after = json.loads(settings_path.read_text(encoding="utf-8"))["hooks"]["PreToolUse"]
+        ours = [e for e in after if any("claude-hook" in h["command"] for h in e["hooks"])]
+        assert len(ours) == 1
+        assert ours[0]["hooks"][0]["command"] == assets.hook_command(repo)
+        assert any("1 duplicate removed" in a for a in actions)
+
+        # And a further re-run is a no-op again.
+        actions = install_claude_integration(repo)
+        assert any("already installed" in a for a in actions)
+
+    def test_duplicate_sharing_an_entry_keeps_the_foreign_hook(self, repo):
+        install_claude_integration(repo)
+        settings_path = repo / ".claude" / "settings.json"
+        settings = json.loads(settings_path.read_text(encoding="utf-8"))
+        settings["hooks"]["PreToolUse"].append(
+            {
+                "matcher": "Bash",
+                "hooks": [
+                    {"type": "command", "command": '"/opt/wikitoolkit" claude-hook'},
+                    {"type": "command", "command": "echo mine"},
+                ],
+            }
+        )
+        settings_path.write_text(json.dumps(settings), encoding="utf-8")
+
+        install_claude_integration(repo)
+
+        after = json.loads(settings_path.read_text(encoding="utf-8"))["hooks"]["PreToolUse"]
+        commands = [h["command"] for e in after for h in e["hooks"]]
+        assert commands.count(assets.hook_command(repo)) == 1
+        assert '"/opt/wikitoolkit" claude-hook' not in commands
+        assert "echo mine" in commands
+
+    def test_uninstall_keeps_a_foreign_hook_sharing_our_entry(self, repo):
+        install_claude_integration(repo)
+        settings_path = repo / ".claude" / "settings.json"
+        settings = json.loads(settings_path.read_text(encoding="utf-8"))
+        our_entry = next(e for e in settings["hooks"]["PreToolUse"] if _is_our_command(e["hooks"][0]["command"]))
+        our_entry["hooks"].append({"type": "command", "command": "echo mine"})
+        settings_path.write_text(json.dumps(settings), encoding="utf-8")
+
+        uninstall_claude_integration(repo)
+
+        after = json.loads(settings_path.read_text(encoding="utf-8"))
+        commands = [h["command"] for e in after["hooks"]["PreToolUse"] for h in e["hooks"]]
+        assert commands == ["echo mine"]
 
     def test_reinstall_upgrades_hook_matcher(self, repo):
         # Simulate an older install whose matcher predates Bash coverage.

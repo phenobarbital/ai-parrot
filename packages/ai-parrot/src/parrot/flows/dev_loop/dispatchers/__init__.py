@@ -24,6 +24,7 @@ from parrot.flows.dev_loop.dispatchers.claude import ClaudeCodeDispatcher
 from parrot.flows.dev_loop.dispatchers.codex import CodexCodeDispatcher
 from parrot.flows.dev_loop.dispatchers.gemini import GeminiCodeDispatcher
 from parrot.flows.dev_loop.dispatchers.google_coding import GoogleCodingDispatcher
+from parrot.flows.dev_loop.dispatchers.google_compat import GoogleCompatCodeDispatcher
 from parrot.flows.dev_loop.dispatchers.grok import GrokCodeDispatcher
 from parrot.flows.dev_loop.dispatchers.llm import LLMCodeDispatcher
 from parrot.flows.dev_loop.dispatchers.mantle import MantleAdversarialReviewDispatcher
@@ -41,6 +42,7 @@ __all__ = [
     "GeminiCodeDispatcher",
     "LLMCodeDispatcher",
     "MantleAdversarialReviewDispatcher",
+    "GoogleCompatCodeDispatcher",
     "GrokCodeDispatcher",
     "MoonshotCodeDispatcher",
     "NovaAdversarialReviewDispatcher",

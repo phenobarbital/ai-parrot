@@ -1,0 +1,35 @@
+- **No behavior change by default.** Instrumentation is opt-in via an
+  environment variable; a normal run must not route through the budgeted funnel.
+- **One change, two seats.** The instrumentation belongs in
+  `LLMCodeDispatcher`, so both in-process seats — `nova` (Mantle/Bedrock) and
+  `google-compat` (Gemini) — are measured by the same code. The `codex` (CLI)
+  and `haiku` (native Claude Code sub-agent) seats are **out of scope**: their
+  usage arrives by a different path.
+- **Shadow mode must not change what is sent.** The budgeted funnel overwrites
+  the output cap with `reservation.output_cap`
+  (`clients/openai_base.py:388`). With a deliberately huge ceiling this must
+  resolve to exactly `profile.max_tokens` — a shadow run that silently shrinks
+  the output cap would corrupt the very measurement it exists to take.
+- **Counters only, never content.** No prompt text, no tool arguments, no
+  diff bodies in the dataset — token counts, ids, timings and outcomes.
+- **The dataset must outlive the worktree.** It is written to the **main
+  repository's** `artifacts/logs/` (git-ignored at `.gitignore:283`, so it stays
+  local unless the operator explicitly `git add -f`s a curated snapshot), never
+  inside the ephemeral sub-worktree.
+- **Append-only and concurrency-safe.** Up to `len(roster)` seats run
+  concurrently inside one MCP-server process. Partitioning the dataset **one
+  file per feature** removes the cross-process case entirely — a second
+  `sdd-worker` in another terminal is working another feature, hence another
+  file — leaving only single-process asyncio appends, handled with single-line
+  `O_APPEND` writes and no read-modify-write.
+- **Telemetry must never break a dispatch.** Every failure swallowed and logged
+  at DEBUG — the same discipline `_apply_to_session_host`
+  (`dispatchers/_shared.py:91-124`) already applies to its own shim.
+- **Failed attempts are data too.** `failed` and `fidelity_violation` attempts
+  must be recorded and distinguishable, because a ceiling is sized on
+  *successful* attempts while the failures characterise the degenerate tail.
+- **Zero new runtime dependencies.** `tiktoken` is already pulled in by the
+  FEAT-550 adapters; `pandas` is already a project dependency for the analysis
+  script.
+
+---

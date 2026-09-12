@@ -27,7 +27,11 @@ from pydantic import BaseModel, ValidationError
 
 from parrot import conf
 from parrot.clients.factory import LLMFactory
-from parrot.flows.dev_loop._subagent_defs import load_subagent_definition
+from parrot.flows.dev_loop._subagent_defs import (
+    CONVENTIONS_PREAMBLE,
+    load_project_conventions,
+    load_subagent_definition,
+)
 from parrot.flows.dev_loop.dispatchers._shared import (
     T,
     _DISPATCH_LABELS_CTX,
@@ -937,7 +941,8 @@ class LLMCodeDispatcher:
                     )
                     + f"- `run_command` only runs: "
                     f"{', '.join(profile.allowed_commands)}.\n\n"
-                    f"Subagent instructions:\n{body}"
+                    f"Subagent instructions:\n{body}\n\n"
+                    f"{CONVENTIONS_PREAMBLE}\n{load_project_conventions(cwd or None)}"
                 ),
             },
             {
