@@ -1,6 +1,9 @@
 """File-fidelity gate for coder branches (spec G7/AC-7, design research S5)."""
 from __future__ import annotations
 
+import asyncio
+import json
+import os
 import re
 from typing import List
 
@@ -61,3 +64,37 @@ def check_fidelity(expected: List[str], changed: List[str]) -> FidelityReport:
         unexpected=unexpected,
         sdd_touched=sdd_touched,
     )
+
+
+async def check_banned_imports(cwd: str, changed: List[str], *, ruff_bin: str = "ruff") -> List[str]:
+    """Banned-import findings (ruff TID251, `ruff.toml` banned-api) for the changed `.py` files in `cwd`.
+
+    Returns one ``"<path>:<row>: <message>"`` line per finding; ``[]`` when clean or when
+    ``changed`` holds no ``.py`` file (ruff is not spawned then). Fails closed: a missing ruff
+    or an exit code >= 2 yields a single ``"ruff: <reason>"`` line. Never raises.
+    """
+    py_files = [p for p in changed if p.endswith(".py")]
+    if not py_files:
+        return []
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            ruff_bin, "check", "--select", "TID251", "--no-fix", "--output-format", "json", *py_files,
+            cwd=cwd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        )
+        out, err = await proc.communicate()
+    except (FileNotFoundError, OSError) as exc:
+        return [f"ruff: {exc}"]
+    if proc.returncode not in (0, 1):
+        return [f"ruff: exit {proc.returncode}: {err.decode('utf-8', 'replace').strip()}"]
+    # Parse JSON output
+    try:
+        findings = json.loads(out or b"[]")
+    except json.JSONDecodeError:
+        return ["ruff: unparseable output"]
+    results: List[str] = []
+    for item in findings:
+        filename = os.path.relpath(item["filename"], cwd)
+        row = item["location"]["row"]
+        message = item["message"]
+        results.append(f"{filename}:{row}: {message}")
+    return results
