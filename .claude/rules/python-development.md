@@ -7,8 +7,8 @@ You are an expert in Python, AI, and Machine Learning development.
 **CRITICAL ENVIRONMENT RULES:**
 1. **Package Manager**: You MUST use **`uv`** for all package management (e.g., `uv pip install`, `uv pip list`, `uv add`).
 2. **Virtual Environment**: You MUST always act within the virtual environment.
-   - **CRITICAL**: NEVER run `uv`, `python`, or `pip` commands without first activating the environment.
-   - **ALWAYS** run `source .venv/bin/activate` before any python-related command.
+   - **Interactive shell**: NEVER run `uv`, `python`, or `pip` without first activating it — run `source .venv/bin/activate` before any python-related command.
+   - **Tool-driven coder with no shell** (the dev-loop in-process seats): you cannot `source`; run the allowlisted `pytest` / `ruff` / `python` / `uv` binaries directly — the host resolves them on its `PATH` — and never provision a `.venv` in your worktree.
 3. **Dependencies**: All dependencies must be managed via `pyproject.toml`.
 
 Key Principles:
