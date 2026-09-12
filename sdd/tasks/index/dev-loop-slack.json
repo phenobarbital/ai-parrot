@@ -14,7 +14,7 @@
       "feature_id": "FEAT-555",
       "feature": "dev-loop-slack",
       "spec": "sdd/specs/dev-loop-slack.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Touches only dev_flow/models.py, nodes/ideation.py and sdd-ideation.md; no shared files with other tasks.",
       "assigned_to": null,
       "started_at": "2026-09-12T15:21:05+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3196-dev-flow-base-branch-threading.md"
+      "completed_at": "2026-09-12T15:25:59+00:00",
+      "file": "sdd/tasks/completed/TASK-3196-dev-flow-base-branch-threading.md"
     },
     {
       "id": "TASK-3197",

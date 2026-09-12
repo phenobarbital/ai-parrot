@@ -298,10 +298,24 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-12
+**Notes**: Added `flow_type`/`base_branch` + `_hotfix_requires_main` validator to
+`DevRequestBrief`; added `base_branch` to `_IdeationBrief` and threaded
+`brief.base_branch or "dev"` into the dispatch payload; updated
+`sdd-ideation.md` (input table row + frontmatter instruction, replacing the
+hard-coded `base_branch: dev` line) — including its repo-level twin at
+`.claude/agents/sdd-ideation.md`, required by the pre-existing
+`test_prompt_parity_with_repo_twin` guard (not listed in the task's file
+list, but keeping it in sync was required to keep that test green). Wrote
+`test_base_branch_threading.py` per the blueprint, including the
+`test_ideation_payload_carries_base_branch` FILL IN using the
+`ScriptedDispatcher` pattern from `test_ideation_node.py`.
+`pytest packages/ai-parrot/tests/flows/dev_flow -q` passes except 9
+pre-existing `test_research_partner.py` failures caused by the sandbox
+having no DNS/network access (unrelated to this task, not touched by it).
+`ruff check` clean; `black --check` clean on all touched files (one
+pre-existing, unrelated formatting drift a few hundred lines away in
+`ideation.py` predates this change).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.
