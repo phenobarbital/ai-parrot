@@ -25,6 +25,8 @@ from .models import (
 )
 from .parser import USAGE, parse_command
 from .process import HeadlessHandshakeView, HeadlessRunProcess
+from .registry import RunRegistry
+from .tail import RunStateTail
 
 __all__ = [
     "USAGE",
@@ -45,6 +47,8 @@ __all__ = [
     "RunEvent",
     "RunNotFoundError",
     "RunRecord",
+    "RunRegistry",
+    "RunStateTail",
     "SpawnError",
     "brief_summary_fields",
     "brief_to_file",
