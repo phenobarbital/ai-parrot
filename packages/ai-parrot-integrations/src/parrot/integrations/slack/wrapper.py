@@ -7,7 +7,7 @@ import asyncio
 import json
 import logging
 import re
-from typing import Any, Dict, List, Optional, TYPE_CHECKING
+from typing import Any, Awaitable, Callable, Dict, List, Optional, TYPE_CHECKING
 
 from aiohttp import web, ClientSession
 
@@ -22,6 +22,9 @@ from .security import verify_slack_signature_raw
 from ..parser import parse_response, ParsedResponse
 from ...models.outputs import OutputMode
 from ...memory import InMemoryConversation
+
+MessageInterceptor = Callable[[Dict[str, Any]], Awaitable[bool]]
+"""Async callable given the raw Slack event dict; returns True when it consumed the event (no LLM answer)."""
 
 
 def convert_markdown_to_mrkdwn(text: str) -> str:
@@ -114,6 +117,9 @@ class SlackAgentWrapper:
         # Background tasks tracking (for graceful shutdown)
         self._background_tasks: set[asyncio.Task] = set()
 
+        # Pre-LLM message interceptors (FEAT-555 M9): consulted in _handle_events and SlackSocketHandler._handle_event.
+        self._message_interceptors: List[MessageInterceptor] = []
+
         # Command router (Jira commands delegated here before built-in dispatch)
         self._command_router = SlackCommandRouter()
         if oauth_manager is not None:
@@ -141,7 +147,7 @@ class SlackAgentWrapper:
 
         # Interactive handler (Block Kit buttons, modals, etc.)
         self._interactive_handler = SlackInteractiveHandler(self)
-        app.router.add_post(self.interactive_route, self._interactive_handler.handle)
+        app.router.add_post(self.interactive_route, self._handle_interactive)
 
         # Assistant handler (Agents & AI Apps)
         self._assistant_handler: Optional[SlackAssistantHandler] = None
@@ -303,6 +309,10 @@ class SlackAgentWrapper:
         thread_ts = event.get("thread_ts") or event.get("ts")
         session_id = f"{channel}:{user}"
         files = event.get("files")
+
+        # FEAT-555 M9: a registered interceptor (e.g. a dev-loop run thread) may consume the event.
+        if await self._run_interceptors(event):
+            return web.json_response({"ok": True})
 
         # 8. Process in background — return 200 immediately
         task = asyncio.create_task(
@@ -582,6 +592,162 @@ class SlackAgentWrapper:
             "Commands: help, clear, commands"
         )
 
+    def add_message_interceptor(self, interceptor: MessageInterceptor) -> None:
+        """Register a pre-LLM interceptor; interceptors run in registration order, first ``True`` wins.
+
+        Args:
+            interceptor: Async callable given the raw Slack event dict;
+                returns ``True`` when it consumed the event.
+        """
+        self._message_interceptors.append(interceptor)
+
+    async def _run_interceptors(self, event: Dict[str, Any]) -> bool:
+        """Return True when a registered interceptor consumed ``event``.
+
+        Interceptor errors are logged and count as "not consumed" — a
+        buggy interceptor must never break normal chat.
+        """
+        for interceptor in list(self._message_interceptors):
+            try:
+                if await interceptor(event):
+                    return True
+            except Exception:  # noqa: BLE001 - an interceptor bug must not break normal chat
+                self.logger.exception("message interceptor failed")
+        return False
+
+    async def _slack_api(self, method: str, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """POST ``payload`` to ``https://slack.com/api/<method>``.
+
+        Args:
+            method: The Slack Web API method name (e.g. ``"chat.postMessage"``).
+            payload: The JSON body.
+
+        Returns:
+            The parsed JSON body on success, or ``None`` on a transport
+            error or an ``"ok": false`` API response (never raises).
+        """
+        if not self.config.bot_token:
+            self.logger.warning("Slack bot token is not configured; cannot call %s", method)
+            return None
+        headers = {
+            "Authorization": f"Bearer {self.config.bot_token}",
+            "Content-Type": "application/json; charset=utf-8",
+        }
+        try:
+            async with ClientSession() as session:
+                async with session.post(
+                    f"https://slack.com/api/{method}", headers=headers, data=json.dumps(payload)
+                ) as resp:
+                    data = await resp.json()
+        except Exception as exc:  # noqa: BLE001 - transport error, never raise
+            self.logger.error("Slack API %s transport error: %s", method, exc)
+            return None
+        if not data.get("ok"):
+            error = data.get("error")
+            if error == "ratelimited":
+                self.logger.warning("Slack API %s rate-limited; retry_after=%s", method, data.get("retry_after"))
+            else:
+                self.logger.error("Slack API %s error: %s", method, error)
+            return None
+        return data
+
+    async def post_message(
+        self,
+        channel: str,
+        text: str,
+        blocks: Optional[List[Dict[str, Any]]] = None,
+        thread_ts: Optional[str] = None,
+    ) -> Optional[str]:
+        """``chat.postMessage``; return the new message ``ts`` or ``None`` on failure (never raises).
+
+        Args:
+            channel: Channel ID to post to.
+            text: Fallback text for notifications.
+            blocks: Optional Block Kit blocks.
+            thread_ts: Optional thread timestamp for replies.
+
+        Returns:
+            The posted message's ``ts``, or ``None`` on failure.
+        """
+        payload: Dict[str, Any] = {"channel": channel, "text": text}
+        if blocks:
+            payload["blocks"] = blocks
+        if thread_ts:
+            payload["thread_ts"] = thread_ts
+        data = await self._slack_api("chat.postMessage", payload)
+        return data.get("ts") if data else None
+
+    async def update_message(
+        self, channel: str, ts: str, text: str, blocks: Optional[List[Dict[str, Any]]] = None
+    ) -> bool:
+        """``chat.update``; ``False`` on failure (rate-limit ⇒ log + ``False``, never raise).
+
+        Args:
+            channel: Channel ID the message lives in.
+            ts: The message's ``ts``.
+            text: New fallback text.
+            blocks: Optional new Block Kit blocks.
+
+        Returns:
+            ``True`` on success, ``False`` otherwise.
+        """
+        payload: Dict[str, Any] = {"channel": channel, "ts": ts, "text": text}
+        if blocks:
+            payload["blocks"] = blocks
+        return (await self._slack_api("chat.update", payload)) is not None
+
+    async def open_dm(self, user_id: str) -> Optional[str]:
+        """``conversations.open`` ⇒ DM channel id, or ``None``.
+
+        Used as the fallback thread root when the bot is not in a channel
+        (``not_in_channel``).
+
+        Args:
+            user_id: The Slack user id to open a DM with.
+
+        Returns:
+            The DM channel id, or ``None`` on failure.
+        """
+        data = await self._slack_api("conversations.open", {"users": user_id})
+        return (data or {}).get("channel", {}).get("id")
+
+    async def _handle_interactive(self, request: web.Request) -> web.Response:
+        """Signed webhook target for ``self.interactive_route``.
+
+        Verifies the Slack signature exactly like ``_handle_events``/
+        ``_handle_command``, checks authorization, then delegates the
+        parsed payload dict to ``self._interactive_handler.handle``.
+        """
+        if not self.config.signing_secret:
+            self.logger.error("Slack signing_secret not configured — rejecting request")
+            return web.Response(status=401, text="Unauthorized")
+        raw_body = await request.read()
+        if not verify_slack_signature_raw(raw_body, request.headers, self.config.signing_secret):
+            self.logger.warning("Slack signature verification failed on /interactive")
+            return web.Response(status=401, text="Unauthorized")
+
+        import urllib.parse
+
+        data = dict(urllib.parse.parse_qsl(raw_body.decode("utf-8")))
+        raw_payload = data.get("payload")
+        if not raw_payload:
+            return web.Response(status=400, text="Missing payload")
+        try:
+            payload = json.loads(raw_payload)
+        except json.JSONDecodeError as exc:
+            self.logger.warning("Invalid JSON in Slack interactive payload: %s", exc)
+            return web.Response(status=400, text="Invalid JSON")
+
+        # view_submission payloads carry no channel — authorize on user only in that case.
+        channel = (payload.get("channel") or {}).get("id")
+        user = (payload.get("user") or {}).get("id")
+        if channel and not self._is_authorized(channel, user):
+            self.logger.warning("Unauthorized interactive attempt: user=%s, channel=%s", user, channel)
+            return web.json_response({"ok": True})
+
+        result = await self._interactive_handler.handle(payload)
+        return web.json_response(result or {"ok": True})
+
     async def _post_message(
         self,
         channel: str,
@@ -591,39 +757,16 @@ class SlackAgentWrapper:
     ) -> None:
         """Send a message to Slack.
 
+        Kept for existing callers (``_answer``, ``assistant.py``); thin
+        wrapper over :meth:`post_message` that discards the returned ``ts``.
+
         Args:
             channel: Channel ID to post to.
             text: Fallback text for notifications.
             blocks: Optional Block Kit blocks.
             thread_ts: Optional thread timestamp for replies.
         """
-        if not self.config.bot_token:
-            self.logger.warning("Slack bot token is not configured; cannot send message")
-            return
-
-        payload: Dict[str, Any] = {"channel": channel, "text": text}
-        if blocks:
-            payload["blocks"] = blocks
-        if thread_ts:
-            payload["thread_ts"] = thread_ts
-
-        headers = {
-            "Authorization": f"Bearer {self.config.bot_token}",
-            "Content-Type": "application/json; charset=utf-8",
-        }
-
-        async with ClientSession() as session:
-            async with session.post(
-                "https://slack.com/api/chat.postMessage",
-                headers=headers,
-                data=json.dumps(payload),
-            ) as resp:
-                if resp.status >= 400:
-                    self.logger.error(
-                        "Slack API error: status=%s body=%s",
-                        resp.status,
-                        await resp.text(),
-                    )
+        await self.post_message(channel, text, blocks=blocks, thread_ts=thread_ts)
 
     async def _send_typing_indicator(
         self,
