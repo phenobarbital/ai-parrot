@@ -29,10 +29,10 @@
       "feature_id": "FEAT-556",
       "feature": "claude-install-mcp-autoenable",
       "spec": "sdd/specs/claude-install-mcp-autoenable.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "assigned_to": null,
       "started_at": "2026-09-12T23:42:33+00:00",
-      "completed_at": null,
+      "completed_at": "2026-09-12T23:53:38+00:00",
       "id": "TASK-3212",
       "slug": "pin-managed-entry",
       "title": "Pin the managed .mcp.json toolkit entry to an absolute config path",
@@ -43,7 +43,7 @@
       ],
       "parallel": false,
       "parallelism_notes": "Shares claude_code/installer.py and claude_code/assets.py with TASK-3213 and TASK-3214; must land before them.",
-      "file": "sdd/tasks/active/TASK-3212-pin-managed-entry.md"
+      "file": "sdd/tasks/completed/TASK-3212-pin-managed-entry.md"
     },
     {
       "feature_id": "FEAT-556",

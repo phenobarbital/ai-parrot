@@ -255,10 +255,23 @@ def test_foreign_entry_untouched(tmp_root_with_config, capsys):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-coder (dispatched by sdd-worker orchestrator, FEAT-549)
+**Date**: 2026-09-12
+**Notes**: `assets.toolkit_mcp_json_entry` now emits `--config <root>/.parrot/mcp-toolkits.yaml`
+in `args` plus `cwd: <root>`. `_is_managed_toolkit_entry` widened to accept both
+the pinned shape and the pre-FEAT-556 legacy two-arg shape, so a hand-written
+entry is adopted and upgraded in place with no stderr warning; foreign entries
+(different command) are still left untouched and still warn. All 9 tests in
+`tests/knowledge/wiki/test_installer_toolkit_entries.py` pass; `ruff check` on
+`claude_code/` is clean. The task also required
+`pytest packages/ai-parrot/tests/knowledge/wiki/test_installer_mcp.py -v`:
+that file errors at collection in THIS worktree with
+`ModuleNotFoundError: parrot.utils.types` — a known pre-existing environment
+issue (the Cython-compiled `parrot.utils.types` .so only exists in the main
+checkout's shared venv, not in git worktrees; confirmed the same import
+succeeds cleanly in the main checkout, and the failure is present at
+collection time, unrelated to this task's diff).
+**Deviations from spec**: none — see note above on the worktree-only test
+collection failure, unrelated to the change.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+Seat: minimax · Backend: nova · Model: minimax.minimax-m2.5 · Attempts: 1 · Duration: 290.521s · Tokens: 448423 in / 5408 out
