@@ -445,10 +445,48 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-12
+**Notes**: Created `blocks.py` (`confirm_blocks`, `edit_modal` with
+per-kind field lists — bug: summary/description/component/jira/base,
+feature: title/description/context/jira/base, `multiline` for
+description/context per `_build_form_blocks`'s support, verified on
+disk — `dispatch_root_blocks`, `run_started_blocks`, `status_list_text`).
+Created `commands.py` (`devloop_command_handler` — ephemeral ack
+returned synchronously, dispatch/cancel work in a tracked background
+task; `_run_async` maps `BridgeResult.reason` for cancel — ok/not_found/
+unreachable/other — and `NotRunOwnerError`/`RunNotFoundError` to
+ephemeral text). Created `__init__.py::register_devloop` wiring the
+router, action-registry prefix, both modal callback ids and the thread
+interceptor in one call.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**TASK-3207 had not landed yet** (sequential execution order), so per
+this task's own explicit instruction ("create thin stubs only if
+TASK-3207 has not landed, and say so in the Completion Note") I created
+minimal stub `actions.py` and `transport.py` — clearly labeled as FEAT-555
+stubs in their module docstrings. `devloop_confirm`/`devloop_discard`
+block actions and `post_confirm`/`post_run_dispatched`/`post_run_started`/
+`post_spawn_failed`/`render_status`/`ephemeral`/`permalink` transport
+methods are fully functional (everything the confirm-card flow this task
+ships needs); gate answer/approve/reject, the answers/edit modal
+submissions, the thread-reply interceptor, `update_confirm`, `post_gate`/
+`update_gate`, and the real `post_terminal` rendering are stubbed with
+`TASK-3207 pending` log lines, to be replaced by TASK-3207's own CREATE
+of those two files (its table lists them as CREATE — I am treating my
+stubs as the starting point it overwrites, since the spec explicitly
+anticipated this ordering).
 
-**Deviations from spec**: none | describe if any
+`test_slack_devloop_commands.py` (6 tests) covers help/status/dispatch
+ack shapes (asserting `dispatch()` is not awaited synchronously — only
+after the tracked background task is drained), the unauthorized path,
+confirm-card action ids, both kinds' edit-modal field lists, and the
+`register_devloop` wiring contract (router command name, action prefix,
+both modal ids, one interceptor).
+`pytest packages/ai-parrot-integrations/tests/integrations/slack -q`:
+72 passed. `ruff check` clean; `black` applied cleanly to all five new
+files (no pre-existing files touched, so no drift concern here).
+Imports verified: `from parrot.integrations.slack.devloop import
+register_devloop`.
+
+**Deviations from spec**: none — the `actions.py`/`transport.py` stubs
+are the task's own explicitly-permitted contingency, not a deviation.

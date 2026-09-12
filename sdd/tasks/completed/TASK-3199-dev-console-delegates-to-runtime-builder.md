@@ -232,10 +232,39 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-12
+**Notes**: `_on_startup` now calls `build_dev_flow_runtime()` (catching
+`SystemExit` from a failed preflight and re-raising as `RuntimeError` so
+aiohttp startup logs it instead of exiting silently), copies
+`runtime.dev_loop_flow_kwargs`, and layers only the five console-only
+overrides (`model_plan`, `codereview_dispatcher`, `research_mcp_servers`,
+`research_mcp_tools`, `name`) before calling `build_dev_flow`/
+`DevFlowRunner`. Removed the now-redundant local construction of
+`graph_memory`/`wiki_search` and `jira_toolkit`/`git_toolkit`/
+`wiki_toolkit` (`app["jira_toolkit"]`/`app["wiki_search"]` are now sourced
+from the merged kwargs, per the task's own instruction), the now-dead
+`development_dispatcher_builder` local and its `functools` import, and the
+now-unused `skip_qa` local (resolved identically inside the package
+builder). Kept `_build_optional_jira_toolkit` (still exercised by the
+existing `test_jira_is_optional`) even though `_on_startup` no longer
+calls it. **Behavior note for the reviewer** (task-directed, not a
+deviation): `_on_startup`'s `jira_toolkit` now comes from
+`bootstrap._build_jira_toolkit()` (unconditional construction, catches
+exceptions) instead of the console's own `_build_optional_jira_toolkit()`
+(gated on `JIRA_INSTANCE`+`JIRA_USERNAME`) — this is exactly what the
+task's blueprint specifies ("take them from dev_loop_flow_kwargs").
+Verified with a direct `_on_startup` invocation (patching only
+`build_dev_flow_runtime`/`build_dev_flow`/`DevFlowRunner`) before writing
+the test. Added `test_on_startup_kwargs_parity_with_package_builder`
+driving `_on_startup` for real with a stub `DevFlowRuntime`, asserting the
+captured `build_dev_flow` kwargs equal the runtime's kwargs plus exactly
+the five console overrides, and that `DevFlowRunner` receives
+`runtime.dispatcher` and the same merged kwargs.
+`pytest packages/ai-parrot/tests/flows/dev_flow/test_server_dev.py
+test_server_dev_model_plan.py -q`: 112 passed;
+`pytest packages/ai-parrot/tests/flows/dev_flow -q`: 460 passed (only the
+pre-existing, unrelated `test_research_partner.py` network failures).
+`ruff check` and `black --check` clean.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.

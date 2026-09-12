@@ -43,6 +43,12 @@ agentd = []
 agentd-scheduler = [
     "ai-parrot-server[scheduler]",
 ]
+# FEAT-555 — dev-loop kick-off from chat. The Slack adapter tails the run's
+# Redis state stream and persists run records; `redis` is otherwise only
+# reachable through the `msteams` / `broadcast` extras (design research S12).
+devloop = [
+    "redis>=5.0",
+]
 slack = [
     "slack-sdk>=3.27",
     "slack-bolt>=1.18",

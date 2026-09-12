@@ -437,10 +437,27 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-12
+**Notes**: Added `Topology` literal + `_redis_ping` (3s timeout, `aclose()`
+with `close()` fallback) and wired both into `preflight()` (dev_flow makes
+`jira` advisory, both topologies now PING). Added `DevFlowRuntime`,
+`_build_git_toolkit`/`_build_wiki_toolkit` (mirroring the example's private
+helpers), `build_dev_flow_runtime()` with the decided defaults
+(`codereview_dispatcher=None`, `name="dev-flow-headless"`, resolved model
+plan, dispatcher/toolkit wiring identical in shape to `build_runtime()`),
+and `load_headless_brief()` (YAML-then-JSON, `kind` routing). No import
+from `examples/` (AC5 verified via grep). Existing `test_bootstrap.py`
+(16 tests) stays green unmodified — the real `conf.REDIS_URL` in this
+environment points at an unreachable host, so `_redis_ping` fails fast
+(DNS `gaierror`) rather than hanging, well under pytest's timeout. New
+`test_bootstrap_dev_flow.py` (12 tests) covers preflight topology/PING
+behaviour, the runtime wiring (patching `_build_jira_toolkit` /
+`_build_git_toolkit` / `_build_wiki_toolkit` / `DevLoopWikiSearch.from_project`
+to keep it hermetic — this environment's live Jira credentials would
+otherwise make a real HTTPS call during construction), and
+`load_headless_brief` kind-routing (new_feature/enhancement/feature/bug,
+YAML, missing file). `pytest packages/ai-parrot/tests/cli/devloop -q`:
+89 passed. `ruff check` and `black --check` clean on both touched files.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.

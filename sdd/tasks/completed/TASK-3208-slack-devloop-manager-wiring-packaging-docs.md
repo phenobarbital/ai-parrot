@@ -365,10 +365,43 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-12
+**Notes**: Added `devloop = ["redis>=5.0"]` to
+`ai-parrot-integrations`'s optional-dependencies (placed next to `slack`
+rather than above `whatsapp` as the blueprint's anchor suggested — same
+effect, TOML table key order is not significant). Added
+`self._devloop_services` / `self._devloop_redis` to
+`IntegrationBotManager.__init__` and the full wiring block in
+`_start_slack_bot` right after `await wrapper.start()`: builds a Redis
+client, a `SlackDevLoopTransport`, a `DevLoopDispatchService` (identity
+resolver = `SlackIdentityResolver(wrapper, jira_toolkit=None)` — building
+a real Jira toolkit here is a documented follow-up, not this task),
+`register_devloop(wrapper, service)`, then `await service.start()`
+(re-attach), all guarded by `getattr(config, "devloop", None)` +
+`try/except` so a dev-loop wiring failure only logs a warning and never
+prevents the Slack bot itself from starting. In `shutdown()`, added the
+dev-loop stop loop (service.stop() for tails, then closes each Redis
+client via `aclose()`/`close()` fallback resolved through `getattr` rather
+than an except-driven retry) positioned before the existing Slack-bot
+stop loop, so tails and their terminal messages finish before
+`wrapper.stop()` cancels the wrapper's own background tasks. Wrote
+`docs/integrations/slack-devloop.md` (install line, manifest scopes,
+full `devloop:` YAML with every `DevLoopIntegrationConfig` key explained,
+command syntax, the headless child's handshake/exit-code/preflight
+contract, and limitations) and linked it from
+`examples/dev_loop/README.md` in a new "Kick-off from Slack" section
+before Troubleshooting.
+`test_slack_devloop_manager.py` (4 tests, one more than the blueprint's
+three) covers wiring when enabled, skipping when `devloop` is `None` or
+`enabled=False`, a dev-loop construction failure never blocking bot
+startup, and the shutdown ordering (service.stop() before wrapper.stop(),
+registries cleared, redis client closed).
+`pytest packages/ai-parrot-integrations/tests/integrations/slack -q`:
+88 passed. `ruff check` clean; `black --check` clean on the new test file
+and the new doc (pre-existing `manager.py` has unrelated quote-style
+drift throughout, left untouched per the minimal-diff rule — my own
+inserted lines are already black-compliant, verified via `git diff`).
+`devloop` extra resolves via `tomllib` to `['redis>=5.0']`.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.

@@ -14,7 +14,7 @@ import logging
 import os
 import shutil
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Literal, Optional, Tuple
 
 from pydantic import BaseModel, Field
 from rich.console import Console
@@ -81,14 +81,50 @@ class DevLoopRuntime:
     graph_memory: Any = None  # Optional[DevLoopGraphMemory] (FEAT-377 G2)
 
 
-async def preflight(*, console: Optional[Console] = None) -> PreflightResult:
+#: Topology preflight runs for — dev_loop (bug/enhancement/feature CLI runs)
+#: or dev_flow (FEAT-412/555 natural-language intake). See FEAT-555 S3.
+Topology = Literal["dev_loop", "dev_flow"]
+
+
+async def _redis_ping(redis_url: str) -> Tuple[bool, str]:
+    """PING ``redis_url`` with a 3 s timeout.
+
+    Args:
+        redis_url: The Redis connection URL to probe.
+
+    Returns:
+        ``(True, "")`` on a successful PONG, ``(False, hint)`` otherwise.
+        Never raises.
+    """
+    import asyncio  # noqa: PLC0415
+
+    try:
+        import redis.asyncio as aioredis  # noqa: PLC0415
+
+        client = aioredis.from_url(redis_url, decode_responses=True)
+        try:
+            await asyncio.wait_for(client.ping(), timeout=3.0)
+            return True, ""
+        finally:
+            try:
+                await client.aclose()
+            except AttributeError:
+                await client.close()
+    except Exception as exc:  # noqa: BLE001 - preflight never raises
+        return False, f"Redis at {redis_url} did not answer PING: {exc}"
+
+
+async def preflight(*, console: Optional[Console] = None, topology: Topology = "dev_loop") -> PreflightResult:
     """Run preflight checks and render results.
 
     Never raises — returns a PreflightResult with ``ok=False`` on failure.
+    FEAT-555 (S3): ``topology="dev_flow"`` makes the ``jira`` check
+    advisory (the dev-flow never creates issues); both topologies PING
+    Redis (3 s timeout) instead of only checking that a URL is configured.
     """
     checks: List[PreflightCheck] = []
 
-    # 1. Redis URL
+    # 1. Redis URL + PING
     try:
         from parrot import conf  # noqa: PLC0415
 
@@ -96,9 +132,7 @@ async def preflight(*, console: Optional[Console] = None) -> PreflightResult:
     except Exception:
         redis_url = os.environ.get("REDIS_URL", "")
 
-    if redis_url:
-        checks.append(PreflightCheck(name="redis", passed=True))
-    else:
+    if not redis_url:
         checks.append(
             PreflightCheck(
                 name="redis",
@@ -106,6 +140,9 @@ async def preflight(*, console: Optional[Console] = None) -> PreflightResult:
                 hint="Set REDIS_URL in environment or parrot.conf",
             )
         )
+    else:
+        redis_ok, redis_hint = await _redis_ping(redis_url)
+        checks.append(PreflightCheck(name="redis", passed=redis_ok, hint=redis_hint))
 
     # 2. Development-agent backend check — backend-aware (FEAT-388 G6).
     # Hard-fails only when the resolved backend is claude-code (byte-
@@ -200,6 +237,9 @@ async def preflight(*, console: Optional[Console] = None) -> PreflightResult:
             jira_hint = "Set JIRA_URL + JIRA_USERNAME/JIRA_API_TOKEN in parrot.conf"
     except Exception:
         jira_hint = "Configure Jira credentials in parrot.conf"
+    if topology == "dev_flow" and not jira_ok:
+        jira_hint = f"(advisory for dev-flow) {jira_hint}"
+        jira_ok = True
     checks.append(PreflightCheck(name="jira", passed=jira_ok, hint=jira_hint))
 
     # 4. Worktree base path
@@ -425,6 +465,245 @@ def _build_jira_toolkit() -> Any:
     except Exception:
         logger.warning("JiraToolkit not available; Jira features disabled.", exc_info=True)
         return None
+
+
+@dataclass
+class DevFlowRuntime:
+    """Wired dev-flow runtime (FEAT-412 topology) — mirror of DevLoopRuntime.
+
+    Captures every dependency ``build_dev_flow_runtime()`` assembled, so the
+    headless child (FEAT-555) can drive ``DevFlowRunner.run(...)`` and the
+    example console can inspect the exact kwargs the flow was built with.
+    """
+
+    runner: Any  # DevFlowRunner
+    flow: Any  # AgentsFlow
+    dispatcher: Any
+    dev_loop_flow_kwargs: Dict[str, Any] = field(default_factory=dict)
+    jira_toolkit: Any = None
+    redis_url: str = ""
+    model_plan: Any = None
+    graph_memory: Any = None
+
+
+def _build_git_toolkit() -> Any:
+    """Build the ``GitToolkit`` for repo clone/pull operations.
+
+    Mirrors ``examples/dev_loop/server.py::_build_git_toolkit`` (not
+    importable from the package). Reads ``GITHUB_TOKEN`` /
+    ``GIT_DEFAULT_BRANCH`` from config.
+
+    Returns:
+        A ready ``GitToolkit``, or ``None`` (with a warning) when it
+        cannot be constructed.
+    """
+    try:
+        from parrot import conf  # noqa: PLC0415
+        from parrot_tools.gittoolkit import GitToolkit  # noqa: PLC0415
+
+        return GitToolkit(
+            github_token=conf.config.get("GITHUB_TOKEN", fallback=None),
+            default_branch=conf.config.get("GIT_DEFAULT_BRANCH", fallback="main"),
+        )
+    except Exception:
+        logger.warning("GitToolkit not available; git features disabled.", exc_info=True)
+        return None
+
+
+def _build_wiki_toolkit() -> Any:
+    """Build the optional ``LLMWikiToolkit`` for feature-mode handoff.
+
+    Mirrors ``examples/dev_loop/server.py::_build_wiki_toolkit`` (not
+    importable from the package). Best-effort: any failure to locate a
+    wiki project or construct the toolkit degrades to ``None``.
+
+    Returns:
+        A wired ``LLMWikiToolkit``, or ``None`` when unavailable.
+    """
+    try:
+        from pathlib import Path  # noqa: PLC0415
+
+        from parrot import conf  # noqa: PLC0415
+
+        if not getattr(conf, "DEV_LOOP_WIKI_PAGE_INGEST", False):
+            return None
+
+        from parrot.knowledge.wiki.models import WikiConfig  # noqa: PLC0415
+        from parrot.knowledge.wiki.project import (  # noqa: PLC0415
+            find_project_root,
+            load_project_config,
+        )
+        from parrot.knowledge.wiki.toolkit import LLMWikiToolkit  # noqa: PLC0415
+
+        root = find_project_root(Path.cwd())
+        project = load_project_config(root)
+        wiki_config = WikiConfig(
+            wiki_name=project.wiki_name,
+            storage_dir=project.storage_path(root),
+            storage_backend=project.backend,
+            sync_graph=False,
+        )
+        return LLMWikiToolkit(None, None, None, wiki_config, agent_id="dev-flow-headless")
+    except Exception:
+        logger.warning("LLMWikiToolkit not available; wiki page ingest disabled.", exc_info=True)
+        return None
+
+
+async def build_dev_flow_runtime(*, console: Optional[Console] = None) -> DevFlowRuntime:
+    """Preflight (dev_flow topology), then wire the FEAT-412 dev-flow runtime.
+
+    Applies the FEAT-555 decided defaults (spec §3 Module 2): the
+    model-plan review pair (``codereview_dispatcher=None``), the resolved
+    ``DevFlowModelPlan``, and the same dispatcher/toolkit wiring
+    ``build_runtime()`` uses for the dev-loop topology. Never imports from
+    ``examples/`` (AC5).
+
+    Args:
+        console: Optional Rich console for preflight rendering.
+
+    Returns:
+        A fully wired :class:`DevFlowRuntime`.
+
+    Raises:
+        SystemExit: If preflight fails (same contract as ``build_runtime``).
+    """
+    import functools  # noqa: PLC0415
+
+    con = console or Console()
+    result = await preflight(console=con, topology="dev_flow")
+    if not result.ok:
+        raise SystemExit(1)
+
+    from parrot import conf  # noqa: PLC0415
+    from parrot.flows.dev_flow.flow import build_dev_flow  # noqa: PLC0415
+    from parrot.flows.dev_flow.model_plan import resolve_model_plan  # noqa: PLC0415
+    from parrot.flows.dev_flow.runner import DevFlowRunner  # noqa: PLC0415
+    from parrot.flows.dev_loop.agent_builder import (  # noqa: PLC0415
+        build_dispatcher,
+        resolve_pool_max,
+    )
+    from parrot.flows.dev_loop.graph_memory import DevLoopGraphMemory  # noqa: PLC0415
+    from parrot.flows.dev_loop.models import DevAgentSpec  # noqa: PLC0415
+    from parrot.flows.dev_loop.wiki_search import DevLoopWikiSearch  # noqa: PLC0415
+
+    redis_url = conf.config.get("REDIS_URL", fallback="redis://localhost:6379/0")
+    backend_id = (
+        str(conf.config.get("DEV_LOOP_DEVELOPMENT_AGENT", fallback="claude-code") or "claude-code").strip().lower()
+    )
+    max_concurrent = conf.config.get("CLAUDE_CODE_MAX_CONCURRENT_DISPATCHES", fallback=3)
+    stream_ttl = conf.config.get("FLOW_STREAM_TTL_SECONDS", fallback=604800)
+
+    dispatcher, _profile = build_dispatcher(
+        DevAgentSpec(agent=backend_id),
+        redis_url=redis_url,
+        max_concurrent=max_concurrent,
+        stream_ttl_seconds=stream_ttl,
+    )
+    development_dispatcher_builder = functools.partial(
+        build_dispatcher,
+        redis_url=redis_url,
+        max_concurrent=max_concurrent,
+        stream_ttl_seconds=stream_ttl,
+    )
+
+    jira_toolkit = _build_jira_toolkit()
+    git_toolkit = _build_git_toolkit()
+    wiki_toolkit = _build_wiki_toolkit()
+    graph_memory = await DevLoopGraphMemory.from_config()
+    wiki_search = DevLoopWikiSearch.from_project()
+    model_plan = resolve_model_plan(None)
+
+    dev_loop_flow_kwargs: Dict[str, Any] = {
+        "dispatcher": dispatcher,
+        "redis_url": redis_url,
+        "jira_toolkit": jira_toolkit,
+        "git_toolkit": git_toolkit,
+        "wiki_toolkit": wiki_toolkit,
+        # FEAT-555 §8 Q5 resolved: the headless default is the model-plan
+        # review pair, not the example console's judge panel.
+        "codereview_dispatcher": None,
+        "development_dispatcher_builder": development_dispatcher_builder,
+        "development_pool_max": resolve_pool_max(conf.config.get),
+        "graph_memory": graph_memory,
+        "wiki_search": wiki_search,
+        "skip_qa": bool(getattr(conf, "DEV_LOOP_SKIP_QA", False)),
+        "require_plan_approval": bool(getattr(conf, "DEV_LOOP_REQUIRE_PLAN_APPROVAL", False)),
+        "model_plan": model_plan,
+        "research_mcp_servers": None,
+        "research_mcp_tools": None,
+        "name": "dev-flow-headless",
+    }
+    flow = build_dev_flow(**dev_loop_flow_kwargs)
+
+    runner = DevFlowRunner(
+        flow,
+        dispatcher=dispatcher,
+        jira_toolkit=jira_toolkit,
+        git_toolkit=git_toolkit,
+        wiki_toolkit=wiki_toolkit,
+        redis_url=redis_url,
+        codereview_dispatcher=None,
+        graph_memory=graph_memory,
+        checkpoint_store=None,
+        dev_loop_flow_kwargs=dev_loop_flow_kwargs,
+    )
+
+    return DevFlowRuntime(
+        runner=runner,
+        flow=flow,
+        dispatcher=dispatcher,
+        dev_loop_flow_kwargs=dev_loop_flow_kwargs,
+        jira_toolkit=jira_toolkit,
+        redis_url=redis_url,
+        model_plan=model_plan,
+        graph_memory=graph_memory,
+    )
+
+
+def load_headless_brief(path: str) -> Any:
+    """Load a YAML/JSON brief for the headless child, routing on ``kind``.
+
+    ``new_feature``/``enhancement`` route through
+    :func:`~parrot.flows.dev_flow.models.parse_dev_brief` (``DevRequestBrief``);
+    ``feature``/``bug``/absent route through
+    :func:`~parrot.flows.dev_loop.models.parse_brief` (``FeatureBrief`` /
+    ``WorkBrief``). Mirrors ``DevLoopConsole._read_brief_data``'s YAML/JSON
+    detection (try YAML first, fall back to JSON).
+
+    Args:
+        path: Path to the brief file.
+
+    Returns:
+        A validated ``DevRequestBrief``, ``FeatureBrief``, or ``WorkBrief``.
+
+    Raises:
+        FileNotFoundError: If ``path`` does not resolve to a file.
+        ValueError: If ``kind`` is not one of the recognized values.
+    """
+    from pathlib import Path  # noqa: PLC0415
+
+    from parrot.flows.dev_flow.models import parse_dev_brief  # noqa: PLC0415
+    from parrot.flows.dev_loop.models import parse_brief  # noqa: PLC0415
+
+    p = Path(path).expanduser()
+    if not p.is_file():
+        raise FileNotFoundError(path)
+    text = p.read_text(encoding="utf-8")
+    try:
+        import yaml  # noqa: PLC0415
+
+        data = yaml.safe_load(text)
+    except Exception:
+        import json  # noqa: PLC0415
+
+        data = json.loads(text)
+
+    kind = data.get("kind")
+    if kind in ("new_feature", "enhancement"):
+        return parse_dev_brief(data)
+    if kind in ("feature", "bug", None):
+        return parse_brief(data)
+    raise ValueError(f"unknown brief kind {kind!r}; expected bug, feature, enhancement or new_feature")
 
 
 def _build_log_toolkits() -> Dict[str, Any]:

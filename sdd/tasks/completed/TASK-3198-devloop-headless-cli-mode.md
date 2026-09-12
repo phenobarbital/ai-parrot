@@ -432,10 +432,26 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-12
+**Notes**: Created `headless.py` with `HeadlessHandshake`, `HeadlessExit`,
+`_bearer_middleware`, `mount_command_endpoint` (routes registered by hand
+so the cancel route can be wrapped; bearer token required in both Unix
+socket and TCP modes; `site.port` — a documented public aiohttp property —
+used for the ephemeral-TCP-port case instead of a private attribute), and
+`run_headless` (stdout handshake discipline, cancel via `asyncio.Event` +
+task cancellation with `cancel_grace`, exit-code mapping via `FlowStatus`,
+socket cleanup in `finally`). Added the five Click options and the
+headless branch to `run_cmd` in `__init__.py`, placed before the
+`DevLoopConsole` import so the interactive path is untouched.
+`packages/ai-parrot/tests/cli/devloop/test_headless.py` (5 tests) covers
+bearer enforcement on both transports, ephemeral TCP port resolution,
+missing-token/completed/failed/raised/bootstrap-failure exit codes with a
+single validated handshake line on stdout, and a real cross-process-style
+cancel over a live Unix socket that stops a hung run task within
+`cancel_grace`. `pytest packages/ai-parrot/tests/cli/devloop -q`: 94
+passed. `parrot devloop run --help` lists all 5 new options and returns in
+~0.1s (no heavy import at CLI-parse time). `ruff check` and `black --check`
+clean on all three touched/created files.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.

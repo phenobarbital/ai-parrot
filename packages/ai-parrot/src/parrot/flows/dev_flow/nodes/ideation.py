@@ -126,6 +126,8 @@ class _IdeationBrief(BaseModel):
     # carries an inert, empty partner section.
     partner_findings: str = ""
     partner_findings_path: str = ""
+    # FEAT-555: base branch the subagent must write into the document frontmatter.
+    base_branch: str = "dev"
 
 
 @register_dev_loop_node("dev_flow.ideation")
@@ -503,6 +505,7 @@ class IdeationNode(DevLoopNode):
             round=round_,
             partner_findings=partner_findings,
             partner_findings_path=partner_findings_path,
+            base_branch=brief.base_branch or "dev",
         )
         # Extra caller-supplied servers (e.g. FEAT-485 `parrot mcp-local`
         # toolkits) merge UNDER the built-in wikitoolkit entry: with no

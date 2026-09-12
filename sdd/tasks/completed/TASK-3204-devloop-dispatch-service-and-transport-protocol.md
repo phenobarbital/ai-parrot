@@ -517,10 +517,53 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-12
+**Notes**: Implemented `transport.py` (`DevLoopTransport` Protocol,
+`NullTransport` recording double) and `service.py`
+(`DevLoopDispatchService` with `start`/`stop`/`dispatch`/`confirm`/
+`discard`/`answer_gate`/`resolve_gate`/`cancel`/`status`/`pending_gate`
+plus the three cross-lane read accessors `record`/`pending`/
+`record_by_thread`). Added `RunRegistry.peek`/`all_records` (additive,
+sync, memory-only). Bugs caught by my own tests during implementation:
+(1) `confirm`/`discard` originally popped the pending entry before the
+ownership check, so a non-owner's rejected attempt destroyed it for the
+real owner — fixed to peek-then-check-then-pop; (2) an expired pending
+confirmation was never actually rejected by `confirm`/`discard` (only
+`dispatch`'s housekeeping swept expired entries) — added
+`_get_pending_or_raise` to check `expires_at` on every read. `_launch`
+follows the spec M8 order exactly (mint ids → brief file → spawn →
+handshake → thread root → registry save → tail/supervise tasks →
+post_run_started), with `SpawnError` handling that saves a failed record,
+calls `post_spawn_failed`, cleans up, and re-raises. `_handle_event` folds
+every `RunEvent` kind into the record (gate open/resolve/expire, node
+status, jira link, terminal kinds including the supervisor-only
+`process_exited`) and calls the matching transport method through a
+`_safe_call` wrapper that logs and swallows any transport exception.
+`_supervise` waits for the child's exit, sleeps `tail_drain_seconds`, and
+only synthesizes `process_exited` if the tail did not already close the
+run out. `_escalate_cancel` sleeps `cancel_grace_seconds` and calls
+`process.terminate()` only if the run is still non-terminal (S7). `start()`
+probes every live record's endpoint and either resumes its tail from
+`last_seen_seq` or marks it failed with a `process_exited` terminal
+message (AC13). `test_service.py` (14 tests) uses fakes for
+`HeadlessRunProcess.spawn`, `RunStateTail` (asyncio.Queue-backed, so tests
+can push `RunEvent`s into a running background tail task) and
+`LoopbackRestChannel`, covering AC8 (ownership), AC10 (both kinds through
+one confirm path, identities via resolver), AC13 (re-attach, both
+reachable and unreachable), AC14 (process exit without a terminal tail
+event), AC21 (cancel escalation), pending-confirmation TTL expiry, the
+`max_concurrent_runs` cap (`None` = unlimited, and enforced when set), and
+`stop()` never touching a child process. One implementation note: used
+`asyncio.Event` rather than a bare `asyncio.Future` for the fake process's
+exit signal — a `Future` built via `get_event_loop().create_future()`
+inside a sync pytest fixture can bind to the wrong event loop.
+`pytest packages/ai-parrot-integrations/tests/integrations/devloop -q`:
+69 passed (~15s). `ruff check` and `black --check` clean. Imports
+verified: `from parrot.integrations.devloop import
+DevLoopDispatchService, DevLoopTransport, NullTransport`; cross-lane
+accessor names match exactly (`service.record`, `service.pending`,
+`service.record_by_thread`); `NotRunOwnerError(...).owner_user_id` is the
+initiator's user id, never the `slack:T:U` actor string.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.

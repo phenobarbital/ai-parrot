@@ -511,10 +511,48 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-12
+**Notes**: Extended `blocks.py` (MODIFY, per TASK-3206's placeholders)
+with `gate_blocks` (open_questions → numbered questions + Answer/Abort;
+other kinds → Approve/Reject + payload_ref/deadline context lines),
+`answers_modal` (one optional multiline input per question),
+`gate_resolved_blocks` (answered/rejected/expired text, resolver rendered
+as `<@user>` from the `slack:T:U` actor string), and `terminal_blocks`
+(run_closed/run_cancelled/process_exited, stderr tail in a fenced block
+≤2000 chars). Replaced TASK-3206's `transport.py` stub with the full
+`SlackDevLoopTransport`: `post_run_dispatched` retries via `open_dm` on
+any `post_message` failure (not just `not_in_channel` specifically —
+`_slack_api` doesn't expose the distinct error string to the caller, so
+"any None" is the practical trigger, matching the blueprint's own FILL IN
+wording); `update_confirm`/`post_gate`/`update_gate` track card
+(channel, ts) locations in instance dicts (not on `RunRecord`, per the
+task's own rationale — a Slack-only detail the core model doesn't need).
+Replaced `actions.py`'s stub with the full `handle_block_action` (routes
+all six verbs; edit/answer modals open as the first await after the
+click, per Slack's ~3s trigger_id window), `handle_answers_submission`
+and `handle_edit_submission` (both map validation/ownership failures to
+Slack `errors` responses), `thread_answer_interceptor`, and
+`SlackIdentityResolver` (users.info → Jira accountId via
+`hasattr`-guarded `resolve_account_id`, `("", "")` on no email, 3600s
+cache). Design note: the thread interceptor receives only the raw event
+dict (no team info), so instead of rebuilding a `Requester` from it (which
+would produce a mismatched `actor` string and break the ownership check
+for legitimate owners), it compares `user_id` directly against
+`record.requester.user_id` and reuses `record.requester` — already the
+correct identity — when calling `answer_gate`.
+`test_slack_devloop_gates.py` (9 tests) and
+`test_slack_identity_resolver.py` (5 tests) cover gate card/modal action
+ids for both gate kinds, partial/empty answers submission, the thread
+interceptor's four paths (no thread, unknown thread, non-owner, owner
+with valid `N:`/`N)` lines), the regex itself, transport thread-posting
+and uncaught-failure propagation (documented: the "never raises"
+guarantee is the service's `_safe_call`, not the transport itself — the
+task's own blueprint code has no try/except in the individual protocol
+methods), and the identity resolver's email/Jira/cache/TTL/fallback paths.
+`pytest packages/ai-parrot-integrations/tests/integrations/slack -q`:
+84 passed. `ruff check` and `black --check` clean on all touched files.
+Import verified: `from parrot.integrations.slack.devloop.transport import
+SlackDevLoopTransport`.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.

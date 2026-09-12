@@ -541,10 +541,23 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-12
+**Notes**: Created `parrot.integrations.devloop` (`__init__.py` + `models.py`)
+with the config dataclass (`DevLoopIntegrationConfig` — env fallbacks,
+`from_dict`, `validate()` gated on `enabled`/criteria/allowlist), the six
+Pydantic contracts verbatim from spec §2, the five-error exception
+hierarchy, and `PendingConfirmation`. Added `SlackAgentConfig.devloop`
+(via a `TYPE_CHECKING`-only forward ref, kept `parrot.integrations.devloop`
+out of the module's real import graph) and `_parse_devloop()` wired into
+`from_dict`. Created the test package with `conftest.py::FakeRedis`
+(streams/hash/set/expire, extending the core dev-loop tests'
+`_FakeStreamsRedis` pattern for TASK-3203/3204 reuse) and `test_models.py`
+(11 tests, all six blueprint FILL INs completed). Verified
+`parrot.integrations.devloop.models` imports without pulling in
+`parrot.flows` or booting `parrot.conf` (checked via `sys.modules`).
+`pytest packages/ai-parrot-integrations/tests/integrations/devloop
+packages/ai-parrot-integrations/tests/integrations/slack -q`: 68 passed.
+`ruff check` and `black --check` clean on all touched/created files.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.

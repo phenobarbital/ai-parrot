@@ -457,10 +457,121 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (sequential fallback, Sonnet)
+**Date**: 2026-09-12
+**Notes**:
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+Implemented all nine tests across the four files, plus the `conftest.py`
+fixtures, exactly as scoped:
 
-**Deviations from spec**: none | describe if any
+- `test_headless_contract.py` + `_stub_runner.py`: a real
+  `parrot devloop run --headless` child (spawned via
+  `python -c "import _stub_runner; from parrot.cli import cli; cli()"`)
+  over a real Unix socket. `_stub_runner.py` monkeypatches
+  `bootstrap.build_runtime`/`build_dev_flow_runtime` to a `StubRunner`
+  that opens ONE real `SessionHost` `open_questions` gate, so
+  `resolve_gate`'s first-writer-wins 409 semantics are genuine. All three
+  tests pass: 401 (no bearer) → 200 (resolve with answers) → 409 (second
+  resolve) → exit 0 + socket removed; cancel over the socket → exit 2;
+  `proc.kill()` mid-run → non-zero exit.
+- `conftest.py` (MODIFY, not CREATE — TASK-3200 already created it):
+  added `slack_api` (`SlackApiRecorder` monkeypatched over
+  `SlackAgentWrapper._slack_api`, the single seam `post_message`/
+  `update_message`/`open_dm` all funnel through), `devloop_config`, and
+  `fake_child` (path to the existing `fake_child.py`, built by TASK-3202).
+  Also added `FakeRedis.fail_next_xread` and fixed the existing
+  `xread`'s `"$"` handling (see Bugs Found below).
+- `test_e2e_service.py`: `test_tail_survives_redis_loss` drives the real
+  `DevLoopDispatchService._tail()` + `RunStateTail` + `FlowStreamMultiplexer`
+  against `fake_redis`, injecting one `ConnectionError` via
+  `fail_next_xread` — `state_tail()`'s own internal 0.5s retry
+  (streaming.py:436-439) absorbs it with no lost/duplicated events.
+  `test_restart_reattach` spawns a real `fake_child.py` via
+  `HeadlessRunProcess`, stops the first service instance (tail/supervise
+  tasks only — the child keeps running, G7), then a second
+  `DevLoopDispatchService` sharing the same `fake_redis` re-attaches via
+  `start()` and drives the run to `post_terminal` once a `RunClosed`
+  action is published on the stream.
+- `test_e2e_slack.py`: `test_slack_feature_run_thread_flow` and
+  `test_slack_bug_confirm_then_run` build a REAL `SlackAgentWrapper`
+  (real `__init__`, real aiohttp routes) and a REAL
+  `DevLoopDispatchService` wired via `register_devloop`, driving
+  `_handle_command`/`_handle_interactive` directly with hand-built
+  request mocks (Slack signature verification bypassed the same way
+  `test_slack_whitelist_integration.py` already does) — dispatch →
+  confirm card → Confirm → real `fake_child.py` spawn → thread root →
+  gate card → answers modal submission → real gate resolve over the
+  child's own socket → terminal. `test_slack_auth_parity_webhook_vs_socket`
+  compares the webhook path against a real `SlackSocketHandler` for two
+  rejection scenarios (non-whitelisted user on the slash command, and on
+  a block action); both reject identically and never call the service.
+- `test_packaging.py`: confirms `[devloop]` still declares `redis>=5.0`.
+
+All nine tests pass, plus the full existing suites with zero regressions:
+`pytest packages/ai-parrot-integrations/tests/integrations/devloop
+packages/ai-parrot-integrations/tests/integrations/slack` → 168 passed;
+`pytest packages/ai-parrot/tests/cli/devloop` → 97 passed. `ruff check`
+and `black --check` are clean on every file this task touched.
+
+**Bugs found and fixed (in this task's own new fixture code only — no
+production files touched)**:
+
+1. `FakeRedis.xread`'s `"$"` cursor handling (`conftest.py`, TASK-3200's
+   original code) was hardcoded to `if cursor == "$": continue` — i.e.
+   it NEVER returns anything for that cursor. Real
+   `FlowStreamMultiplexer.state_replay()` only ever leaves the
+   multiplexer's cursor at `"$"` when the stream was completely empty at
+   connect time (otherwise it always advances to a real last-entry id —
+   `streaming.py:317`), so a freshly-launched run's very first live tail
+   could never observe ANY event, no matter how long the test waited.
+   Fixed by resolving `"$"` to `""` (accept anything) per call, which is
+   safe precisely because of that invariant, and is what let
+   `test_e2e_slack.py`'s gate-and-answer flow work against a real launch.
+   Verified this does not affect any of TASK-3203's existing `test_tail.py`
+   assertions (none of them reach a live `state_tail()` xread call with
+   an unresolved `"$"` cursor — they either pass an explicit numeric
+   `last_seen`, or bound their consumption before the generator gets
+   there).
+
+**Discovered issue (documented, NOT fixed — out of this task's scope,
+worth a follow-up)**:
+
+`run_headless`'s child process can print its own startup logging (the
+navconfig/`parrot.conf` bootstrap "STARTING APP: Navigator" banner, and
+similar lines from tool/codec/transformer registration) to **stdout**
+before `run_headless()` itself reconfigures logging to stderr — this
+happens purely from importing `parrot.cli`/`parrot.bots.flows.core.types`
+at module load, before any of `run_headless`'s own code runs. This
+violates the "stdout is reserved for the single handshake line" framing
+in TASK-3198's docstring taken literally, but it is **not actually a
+production bug**: `HeadlessRunProcess._drain` (process.py:87-117,
+TASK-3202) already tolerates exactly this — it validates every line
+against `HeadlessHandshakeView` and only resolves on the first one that
+parses, logging earlier lines at DEBUG and dropping them. This was
+observed directly in this task's own `test_slack_feature_run_thread_flow`
+/ `test_restart_reattach` runs (which spawn `fake_child.py`, which also
+imports the same `parrot.flows.dev_loop` chain) — the pre-handshake
+banner shows up there too, and `_drain` absorbs it cleanly every time.
+`test_headless_contract.py`'s `_spawn()` helper was written to do the
+same line-by-line validation (rather than assuming the first stdout line
+is always the handshake) specifically because of this. No fix needed in
+`headless.py` — this is TASK-3198's contract working as designed; the
+one gap was that TASK-3198's own unit tests never exercised a real
+subprocess import chain to observe it. Flagging here in case a future
+task wants an explicit regression test for `_drain`'s pre-handshake
+tolerance in the core `ai-parrot` package itself (TASK-3202 already
+covers it structurally via `fake_child.py`, but not via a real
+`parrot.cli` import chain the way this task's `_stub_runner.py` does).
+
+**Deviations from spec**: none in behavior. Minor structural deviations,
+all necessary and documented above: `conftest.py` was MODIFIED (already
+existed from TASK-3200) rather than CREATEd; a small `asyncio.sleep(0.2)`
+settle window was added in `test_slack_feature_run_thread_flow` between
+the run reaching `phase == "running"` and seeding the gate action, to
+avoid a genuine (but out-of-scope-to-fix) race where a gate opened
+before the background tail's first connect would be folded into an
+unhandled `snapshot` event instead of surfacing as `gate_opened`; and
+`StubRunner`/`fake_child.py`'s single gate stays open for a short
+`asyncio.sleep(0.5)` after resolution so a duplicate-resolve test can
+observe the real 409 against the still-live socket before the child
+exits.

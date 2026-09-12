@@ -14,7 +14,7 @@ import asyncio
 import importlib.util
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from aiohttp import web
@@ -49,9 +49,7 @@ class _StubFlow:
 
     async def run_flow(self, ctx, **kwargs) -> FlowResult:
         self.contexts.append(ctx)
-        return FlowResult(
-            output=ctx.shared_data["run_id"], status=FlowStatus.COMPLETED
-        )
+        return FlowResult(output=ctx.shared_data["run_id"], status=FlowStatus.COMPLETED)
 
 
 class _GateFlow:
@@ -66,16 +64,17 @@ class _GateFlow:
         run_id = ctx.shared_data["run_id"]
         host = ctx.shared_data["session_host"]
         gate_id, _ = host.open_gate(
-            kind="open_questions", node_id="ideation",
+            kind="open_questions",
+            node_id="ideation",
             title="Open questions — sdd/proposals/x.brainstorm.md",
-            questions=["Which store?"], ttl_seconds=None, on_expiry="fail",
+            questions=["Which store?"],
+            ttl_seconds=None,
+            on_expiry="fail",
         )
         self.gate_ids[run_id] = gate_id
         gate = await host.wait_gate(gate_id)
         self.answers = dict(gate.answers)
-        status = (
-            FlowStatus.COMPLETED if gate.status == "approved" else FlowStatus.FAILED
-        )
+        status = FlowStatus.COMPLETED if gate.status == "approved" else FlowStatus.FAILED
         return FlowResult(output=run_id, status=status)
 
 
@@ -153,7 +152,9 @@ async def test_config_shape_no_ops_keys(make_client):
 
     # The three dev intents, and only those.
     assert [k["value"] for k in data["kinds"]] == [
-        "enhancement", "new_feature", "feature",
+        "enhancement",
+        "new_feature",
+        "feature",
     ]
     # No observability / mandatory-Jira defaults anywhere.
     defaults = data["defaults"]
@@ -169,9 +170,7 @@ async def test_config_shape_no_ops_keys(make_client):
     assert data["document_kinds"] == ["brainstorm", "proposal", "spec"]
     assert data["nl_kinds"] == ["enhancement", "new_feature"]
     # The gate-resolution route is advertised to the UI.
-    assert data["gate_resolve_url_template"] == (
-        "/api/flow/{run_id}/gates/{gate_id}/resolve"
-    )
+    assert data["gate_resolve_url_template"] == ("/api/flow/{run_id}/gates/{gate_id}/resolve")
 
 
 # ---------------------------------------------------------------------------
@@ -180,18 +179,14 @@ async def test_config_shape_no_ops_keys(make_client):
 
 
 def test_build_dev_brief_enhancement(server_dev):
-    brief = server_dev._build_dev_brief_from_form(
-        {"kind": "enhancement", "title": "t", "description": "d"}
-    )
+    brief = server_dev._build_dev_brief_from_form({"kind": "enhancement", "title": "t", "description": "d"})
     assert isinstance(brief, DevRequestBrief)
     assert brief.kind == "enhancement"
 
 
 def test_build_dev_brief_normalises_labels(server_dev):
     for label in ("New Feature", "new feature", "NEW_FEATURE", "new-feature"):
-        brief = server_dev._build_dev_brief_from_form(
-            {"kind": label, "title": "t", "description": "d"}
-        )
+        brief = server_dev._build_dev_brief_from_form({"kind": label, "title": "t", "description": "d"})
         assert brief.kind == "new_feature"
 
 
@@ -211,20 +206,14 @@ def test_build_dev_brief_feature_delegates(server_dev, tmp_path):
 
 def test_build_dev_brief_requires_title_and_description(server_dev):
     with pytest.raises(ValueError, match="title is required"):
-        server_dev._build_dev_brief_from_form(
-            {"kind": "enhancement", "description": "d"}
-        )
+        server_dev._build_dev_brief_from_form({"kind": "enhancement", "description": "d"})
     with pytest.raises(ValueError, match="description is required"):
-        server_dev._build_dev_brief_from_form(
-            {"kind": "enhancement", "title": "t"}
-        )
+        server_dev._build_dev_brief_from_form({"kind": "enhancement", "title": "t"})
 
 
 def test_build_dev_brief_rejects_bug_kind(server_dev):
     with pytest.raises(ValueError, match="kind must be"):
-        server_dev._build_dev_brief_from_form(
-            {"kind": "bug", "title": "t", "description": "d"}
-        )
+        server_dev._build_dev_brief_from_form({"kind": "bug", "title": "t", "description": "d"})
 
 
 def test_build_dev_brief_optional_fields(server_dev):
@@ -249,10 +238,13 @@ def test_dev_brief_builder_ignores_bug_fields(server_dev):
     """affected_component/log_sources/reporter have no effect here."""
     brief = server_dev._build_dev_brief_from_form(
         {
-            "kind": "enhancement", "title": "t", "description": "d",
+            "kind": "enhancement",
+            "title": "t",
+            "description": "d",
             "affected_component": "etl/x.yaml",
             "log_sources": [{"kind": "cloudwatch", "locator": "/etl/x"}],
-            "reporter": "a@b.c", "escalation_assignee": "d@e.f",
+            "reporter": "a@b.c",
+            "escalation_assignee": "d@e.f",
         }
     )
     assert not hasattr(brief, "affected_component")
@@ -311,9 +303,7 @@ async def test_run_feature_brief_built(make_client, tmp_path):
 @pytest.mark.asyncio
 async def test_run_missing_description_400(make_client):
     client = await make_client()
-    resp = await client.post(
-        "/api/flow/run", json={"kind": "enhancement", "title": "t"}
-    )
+    resp = await client.post("/api/flow/run", json={"kind": "enhancement", "title": "t"})
     assert resp.status == 400
     assert "description is required" in (await resp.json())["error"]
 
@@ -331,9 +321,7 @@ async def test_run_rejects_bug_kind_400(make_client):
 @pytest.mark.asyncio
 async def test_run_invalid_body_400(make_client):
     client = await make_client()
-    assert (
-        await client.post("/api/flow/run", data="not json")
-    ).status == 400
+    assert (await client.post("/api/flow/run", data="not json")).status == 400
     assert (await client.post("/api/flow/run", json=["a"])).status == 400
 
 
@@ -348,7 +336,9 @@ async def test_plan_approval_flag_in_extra_shared(make_client):
     await client.post(
         "/api/flow/run",
         json={
-            "kind": "enhancement", "title": "t", "description": "d",
+            "kind": "enhancement",
+            "title": "t",
+            "description": "d",
             "require_plan_approval": True,
         },
     )
@@ -363,7 +353,9 @@ async def test_plan_approval_false_is_forwarded(make_client):
     await client.post(
         "/api/flow/run",
         json={
-            "kind": "enhancement", "title": "t", "description": "d",
+            "kind": "enhancement",
+            "title": "t",
+            "description": "d",
             "require_plan_approval": False,
         },
     )
@@ -389,8 +381,11 @@ async def test_skip_flags_forwarded(make_client):
     await client.post(
         "/api/flow/run",
         json={
-            "kind": "enhancement", "title": "t", "description": "d",
-            "skip_qa": True, "skip_jira": True,
+            "kind": "enhancement",
+            "title": "t",
+            "description": "d",
+            "skip_qa": True,
+            "skip_jira": True,
         },
     )
     ctx = await _wait_for_context(client.app_flow)
@@ -477,8 +472,7 @@ async def test_gate_resolve_unknown_run_404(make_client):
     client = await make_client()
     resp = await client.post(
         "/api/flow/no-such-run/gates/g1/resolve",
-        json={"resolution": "approved", "resolved_by": "alice",
-              "answers": {"q": "a"}},
+        json={"resolution": "approved", "resolved_by": "alice", "answers": {"q": "a"}},
     )
     assert resp.status == 404
 
@@ -490,10 +484,7 @@ async def test_gate_resolve_unknown_run_404(make_client):
 
 def test_route_inventory(server_dev):
     app = server_dev.build_app(redis_url="redis://x")
-    routes = {
-        (r.method, getattr(r.resource, "canonical", ""))
-        for r in app.router.routes()
-    }
+    routes = {(r.method, getattr(r.resource, "canonical", "")) for r in app.router.routes()}
     assert ("GET", "/") in routes
     assert ("GET", "/api/config") in routes
     assert ("POST", "/api/flow/run") in routes
@@ -565,11 +556,7 @@ def test_uses_dev_flow_runner_and_builder(server_dev):
     import inspect
 
     tree = ast.parse(inspect.getsource(server_dev._on_startup).lstrip())
-    called = {
-        node.func.id
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
-    }
+    called = {node.func.id for node in ast.walk(tree) if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)}
     assert "build_dev_flow" in called
     assert "DevFlowRunner" in called
     assert "build_dev_loop_flow" not in called
@@ -589,6 +576,60 @@ def test_jira_is_optional(server_dev, monkeypatch):
 
     monkeypatch.setattr(conf.config, "get", _fake_get)
     assert server_dev._build_optional_jira_toolkit() is None
+
+
+@pytest.mark.asyncio
+async def test_on_startup_kwargs_parity_with_package_builder(server_dev):
+    """FEAT-555 TASK-3199: the console delegates its base wiring to
+    ``build_dev_flow_runtime()`` and only layers its own console-only
+    overrides on top — the drift-prevention guard for design research S2 /
+    Known Risk "build_dev_flow_runtime drift"."""
+    import inspect
+
+    src = inspect.getsource(server_dev._on_startup)
+    assert "build_dev_flow_runtime" in src
+
+    sentinel_kwargs = {
+        "dispatcher": MagicMock(name="pkg-dispatcher"),
+        "redis_url": "redis://x",
+        "jira_toolkit": MagicMock(name="jira"),
+        "git_toolkit": MagicMock(name="git"),
+        "wiki_toolkit": MagicMock(name="wiki"),
+        "codereview_dispatcher": None,
+        "development_dispatcher_builder": MagicMock(name="dev-dispatcher-builder"),
+        "development_pool_max": 4,
+        "graph_memory": MagicMock(name="graph-memory"),
+        "wiki_search": MagicMock(name="wiki-search"),
+        "skip_qa": False,
+        "require_plan_approval": False,
+        "model_plan": MagicMock(name="pkg-model-plan"),
+        "research_mcp_servers": None,
+        "research_mcp_tools": None,
+        "name": "dev-flow-headless",
+    }
+    stub_runtime = MagicMock()
+    stub_runtime.dispatcher = sentinel_kwargs["dispatcher"]
+    stub_runtime.dev_loop_flow_kwargs = dict(sentinel_kwargs)
+
+    app = web.Application()
+    app["redis_url"] = "redis://x"
+
+    with (
+        patch("parrot.cli.devloop.bootstrap.build_dev_flow_runtime", AsyncMock(return_value=stub_runtime)),
+        patch.object(server_dev, "build_dev_flow") as build_mock,
+        patch.object(server_dev, "DevFlowRunner") as runner_cls,
+    ):
+        build_mock.return_value = MagicMock()
+        await server_dev._on_startup(app)
+
+    captured = build_mock.call_args.kwargs
+    console_only = {"model_plan", "codereview_dispatcher", "research_mcp_servers", "research_mcp_tools", "name"}
+    assert set(captured) == set(sentinel_kwargs)
+    assert captured["name"] == "dev-flow-console"
+    for key in set(sentinel_kwargs) - console_only:
+        assert captured[key] is sentinel_kwargs[key], key
+    assert runner_cls.call_args.kwargs["dispatcher"] is stub_runtime.dispatcher
+    assert runner_cls.call_args.kwargs["dev_loop_flow_kwargs"] == captured
 
 
 def test_reuses_ops_helpers_without_modifying_them(server_dev):
@@ -615,9 +656,7 @@ def test_reuses_ops_helpers_without_modifying_them(server_dev):
 
 @pytest.fixture(scope="module")
 def dev_html() -> str:
-    return (_REPO_ROOT / "examples" / "dev_loop" / "static" / "dev.html").read_text(
-        encoding="utf-8"
-    )
+    return (_REPO_ROOT / "examples" / "dev_loop" / "static" / "dev.html").read_text(encoding="utf-8")
 
 
 def test_dev_html_exists_and_is_served(dev_html, server_dev):
@@ -628,14 +667,14 @@ def test_dev_html_exists_and_is_served(dev_html, server_dev):
 @pytest.mark.parametrize(
     "forbidden",
     [
-        "affected_component",      # bug intake
-        "log_group",               # CloudWatch
+        "affected_component",  # bug intake
+        "log_group",  # CloudWatch
         "time_window",
         "CloudWatch",
-        "bug_intake",              # ops node
-        "acceptance_criteria",     # bug-mode criteria
+        "bug_intake",  # ops node
+        "acceptance_criteria",  # bug-mode criteria
         "existing_issue_key",
-        "afd-theme",               # must not share the ops console's theme key
+        "afd-theme",  # must not share the ops console's theme key
     ],
 )
 def test_dev_html_has_no_ops_surface(dev_html, forbidden):
@@ -645,13 +684,13 @@ def test_dev_html_has_no_ops_surface(dev_html, forbidden):
 @pytest.mark.parametrize(
     "required",
     [
-        "open_questions",              # the HITL gate kind
-        "hitl-submit",                 # the answer-submit control
-        "hitl-reject",                 # the abort control
-        "require_plan_approval",        # the per-run plan-gate toggle
-        "gate_resolve_url_template",   # route taken from /api/config
-        "devflow-theme",               # its own theme key
-        "dev_intake",                  # dev-flow topology
+        "open_questions",  # the HITL gate kind
+        "hitl-submit",  # the answer-submit control
+        "hitl-reject",  # the abort control
+        "require_plan_approval",  # the per-run plan-gate toggle
+        "gate_resolve_url_template",  # route taken from /api/config
+        "devflow-theme",  # its own theme key
+        "dev_intake",  # dev-flow topology
         "ideation",
         "feature_handoff",
     ],
@@ -682,10 +721,8 @@ def test_dev_html_does_not_mutate_state_after_resolve(dev_html):
 
 def test_index_html_untouched(dev_html):
     """dev.html is a copy-and-trim; index.html must remain the ops console."""
-    index = (
-        _REPO_ROOT / "examples" / "dev_loop" / "static" / "index.html"
-    ).read_text(encoding="utf-8")
-    assert "bug_intake" in index          # still the ops console
+    index = (_REPO_ROOT / "examples" / "dev_loop" / "static" / "index.html").read_text(encoding="utf-8")
+    assert "bug_intake" in index  # still the ops console
     assert "CloudWatch" in index
     assert "afd-theme" in index
     assert index != dev_html
@@ -714,7 +751,9 @@ async def test_plan_approval_false_reaches_extra_shared_and_suppresses(make_clie
     await client.post(
         "/api/flow/run",
         json={
-            "kind": "enhancement", "title": "t", "description": "d",
+            "kind": "enhancement",
+            "title": "t",
+            "description": "d",
             "require_plan_approval": False,
         },
     )
