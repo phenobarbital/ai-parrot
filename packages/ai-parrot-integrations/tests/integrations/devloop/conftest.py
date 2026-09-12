@@ -10,9 +10,12 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
 import pytest
+
+if TYPE_CHECKING:
+    from parrot.integrations.devloop.models import DevLoopIntegrationConfig  # TASK-3200
 
 
 class FakeRedis:
@@ -29,6 +32,9 @@ class FakeRedis:
         self._sets: Dict[str, set] = {}
         self.expirations: Dict[str, int] = {}
         self._counter = 0
+        # TASK-3210: >0 ⇒ the next N calls to xread raise ConnectionError,
+        # simulating a transient Redis blip mid-tail (test_tail_survives_redis_loss).
+        self.fail_next_xread = 0
 
     # -- streams ----------------------------------------------------------
 
@@ -50,18 +56,33 @@ class FakeRedis:
         block: Optional[int] = None,
         count: Optional[int] = None,
     ) -> List[Tuple[str, List[Tuple[str, Dict[str, str]]]]]:
-        result: List[Tuple[str, List[Tuple[str, Dict[str, str]]]]] = []
-        for key, cursor in streams.items():
-            entries = self._streams.get(key, [])
-            if cursor == "$":
-                continue
-            collected = [(entry_id, fields) for entry_id, fields in entries if entry_id > cursor]
-            if count:
-                collected = collected[:count]
-            if collected:
-                result.append((key, collected))
+        if self.fail_next_xread > 0:
+            self.fail_next_xread -= 1
+            raise ConnectionError("simulated redis blip (fail_next_xread)")
+        # "$" only ever reaches xread here when state_replay() found the
+        # stream completely empty (it otherwise always rewrites the
+        # multiplexer's cursor to a real last-entry id first — streaming.py
+        # state_replay:317) — so resolving it to "" (accept anything) is
+        # safe and lets a freshly-launched run's first live tail observe
+        # events added after it started, instead of never returning
+        # anything (TASK-3210 e2e Slack flow needs this to be observable).
+        resolved: Dict[str, str] = {key: ("" if cursor == "$" else cursor) for key, cursor in streams.items()}
+
+        def _collect() -> List[Tuple[str, List[Tuple[str, Dict[str, str]]]]]:
+            out: List[Tuple[str, List[Tuple[str, Dict[str, str]]]]] = []
+            for key, cursor in resolved.items():
+                entries = self._streams.get(key, [])
+                collected = [(entry_id, fields) for entry_id, fields in entries if entry_id > cursor]
+                if count:
+                    collected = collected[:count]
+                if collected:
+                    out.append((key, collected))
+            return out
+
+        result = _collect()
         if not result and block:
             await asyncio.sleep(block / 1000.0)
+            result = _collect()  # entries added during the "block" wait are still observed
         return result
 
     async def keys(self, pattern: str) -> List[str]:
@@ -130,3 +151,62 @@ class FakeRedis:
 def fake_redis() -> FakeRedis:
     """Fresh fake Redis per test."""
     return FakeRedis()
+
+
+class SlackApiRecorder:
+    """Records every ``SlackAgentWrapper._slack_api`` call; returns canned Web API responses.
+
+    Installed via the ``slack_api`` fixture, which monkeypatches the
+    single seam ``SlackAgentWrapper._slack_api`` uses for every outbound
+    call (``post_message``/``update_message``/``open_dm`` all funnel
+    through it — wrapper.py:618) so no test ever hits the real network.
+    """
+
+    def __init__(self) -> None:
+        self.calls: List[Tuple[str, Dict[str, Any]]] = []
+
+    async def __call__(self, method: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+        self.calls.append((method, payload))
+        if method == "conversations.open":
+            return {"ok": True, "channel": {"id": "D1"}}
+        return {"ok": True, "ts": f"1.{len(self.calls)}", "channel": payload.get("channel", "C1")}
+
+
+@pytest.fixture
+def slack_api(monkeypatch) -> SlackApiRecorder:
+    """Recorder installed over ``SlackAgentWrapper._slack_api`` — no test ever calls slack.com."""
+    from parrot.integrations.slack.wrapper import SlackAgentWrapper  # verified: slack/wrapper.py:75
+
+    rec = SlackApiRecorder()
+    monkeypatch.setattr(SlackAgentWrapper, "_slack_api", rec)
+    return rec
+
+
+@pytest.fixture
+def devloop_config(tmp_path) -> "DevLoopIntegrationConfig":
+    """A minimal, valid ``devloop:`` config rooted at a per-test tmp dir."""
+    from parrot.integrations.devloop.models import DevLoopIntegrationConfig as _DevLoopIntegrationConfig
+
+    return _DevLoopIntegrationConfig(
+        name="t",
+        enabled=True,
+        repo_path=str(tmp_path),
+        socket_dir=str(tmp_path / "sock"),
+        cancel_grace_seconds=0.2,
+        tail_drain_seconds=0.2,
+        handshake_timeout_seconds=20.0,
+        default_acceptance_criteria=[{"kind": "shell", "name": "unit", "command": "pytest -q"}],
+    )
+
+
+@pytest.fixture
+def fake_child() -> str:
+    """Path to ``fake_child.py`` — a tiny real headless-child stand-in (TASK-3202 pattern).
+
+    Prints the ``HeadlessHandshake`` line, serves the real
+    ``register_command_routes`` over a Unix socket with a stub runner,
+    and exits when cancelled or after ``FAKE_CHILD_EXIT`` (env-configurable).
+    """
+    from pathlib import Path as _Path
+
+    return str(_Path(__file__).parent / "fake_child.py")
