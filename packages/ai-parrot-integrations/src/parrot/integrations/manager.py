@@ -80,6 +80,9 @@ class IntegrationBotManager:
         self.msteams_bots: Dict[str, 'MSTeamsAgentWrapper'] = {}
         self.whatsapp_bots: Dict[str, 'WhatsAppAgentWrapper'] = {}
         self.slack_bots: Dict[str, 'SlackAgentWrapper'] = {}
+        # FEAT-555: dev-loop dispatch services, one per Slack bot with `devloop.enabled` (+ their redis clients).
+        self._devloop_services: Dict[str, Any] = {}
+        self._devloop_redis: Dict[str, Any] = {}
         self.msagentsdk_bots: Dict[str, 'MSAgentSDKWrapper'] = {}
         self.a2a_bots: Dict[str, Any] = {}
         self.msagent_bots: Dict[str, Any] = {}
@@ -908,6 +911,33 @@ class IntegrationBotManager:
         # Start the wrapper's background cleanup
         await wrapper.start()
 
+        # FEAT-555: dev-loop kick-off from Slack (spec §3 M12) — optional, never fatal for the chat bot.
+        devloop_cfg = getattr(config, "devloop", None)
+        if devloop_cfg is not None and getattr(devloop_cfg, "enabled", False):
+            try:
+                import redis.asyncio as aioredis  # optional extra: ai-parrot-integrations[devloop]
+
+                from .devloop.service import DevLoopDispatchService
+                from .slack.devloop import register_devloop
+                from .slack.devloop.actions import SlackIdentityResolver
+                from .slack.devloop.transport import SlackDevLoopTransport
+
+                redis_client = aioredis.from_url(devloop_cfg.redis_url or REDIS_URL, decode_responses=True)
+                transport = SlackDevLoopTransport(wrapper)
+                service = DevLoopDispatchService(
+                    config=devloop_cfg,
+                    transport=transport,
+                    redis=redis_client,
+                    identity_resolver=SlackIdentityResolver(wrapper, jira_toolkit=None),
+                )
+                register_devloop(wrapper, service)  # binds /devloop, devloop_* actions, modals, thread interceptor
+                await service.start()  # re-attaches live runs from the Redis registry (spec G7)
+                self._devloop_services[name] = service
+                self._devloop_redis[name] = redis_client
+                self.logger.info("Slack bot '%s': dev-loop kick-off enabled", name)
+            except Exception as exc:  # noqa: BLE001 — the chat bot must still start
+                self.logger.warning("Slack bot '%s': dev-loop integration disabled: %s", name, exc, exc_info=True)
+
         # Check connection mode
         if config.connection_mode == "socket":
             from .slack.socket_handler import SlackSocketHandler
@@ -985,6 +1015,22 @@ class IntegrationBotManager:
                 await wrapper.stop()
             except Exception as e:
                 self.logger.error("Error stopping MSAgent bot '%s': %s", name, e)
+
+        # FEAT-555: stop dev-loop services first (cancels state tails only — children keep running by decision).
+        for name, service in self._devloop_services.items():
+            try:
+                await service.stop()
+            except Exception as e:  # noqa: BLE001
+                self.logger.error("Error stopping dev-loop service for '%s': %s", name, e)
+        for name, client in self._devloop_redis.items():
+            try:
+                closer = getattr(client, "aclose", None) or getattr(client, "close", None)
+                if closer is not None:
+                    await closer()
+            except Exception as e:  # noqa: BLE001
+                self.logger.debug("Error closing dev-loop redis for '%s': %s", name, e)
+        self._devloop_services.clear()
+        self._devloop_redis.clear()
 
         # Stop Slack bots (including Socket Mode handlers)
         for name, wrapper in self.slack_bots.items():

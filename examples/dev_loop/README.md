@@ -746,6 +746,14 @@ the UI consumes verbatim:
  "ts": 1714388261.42, "payload": {"output_model": "QAReport", ...}}
 ```
 
+## Kick-off from Slack (FEAT-555)
+
+A Slack bot can dispatch the same flows with `/devloop --type feature|bug …`;
+each run executes as a headless child (`parrot devloop run --headless …`)
+and Open Questions are answered in the run thread. See
+[`docs/integrations/slack-devloop.md`](../../docs/integrations/slack-devloop.md)
+for the Slack app manifest, YAML config, command syntax and limitations.
+
 ## Troubleshooting
 
 * **UI stuck on "idle"** → check the server logs; `IntentClassifierNode` raises
