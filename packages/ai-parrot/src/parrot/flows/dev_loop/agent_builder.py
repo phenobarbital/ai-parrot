@@ -126,7 +126,7 @@ def _get_int(getter: ConfigGetter, key: str, fallback: int) -> int:
 #: nova/zai/moonshot/grok subclasses). Those backends are chat models, not
 #: agentic CLIs: one turn is one chat completion, and a real SDD task — read,
 #: patch, run pytest, commit, then call ``final_output`` — routinely needs
-#: more than the profile's conservative library default of 24. Every seat of
+#: more than the profile's conservative library default of 40 (24 before FEAT-553). Every seat of
 #: an 8-task run hit that ceiling and the whole flow ended PARTIAL, so this
 #: wiring is opinionated where the library stays conservative (the same
 #: posture as the dev console's default dev pool).
