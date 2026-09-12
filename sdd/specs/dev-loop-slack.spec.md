@@ -812,9 +812,9 @@ def register_devloop(wrapper: SlackAgentWrapper, service: DevLoopDispatchService
 | `test_spawn_reads_handshake` | M6 | fake child script prints handshake; `wait_ready` returns it |
 | `test_spawn_timeout_kills_child` | M6 | no handshake → `SpawnError`, process terminated |
 | `test_bridge_status_mapping` | M6 | 200/400(answers_required)/404/409/401/unreachable → `BridgeResult.reason` |
-| `test_tail_maps_actions_to_events` | M7 | fakeredis stream with gate/opened, node/*, run/closed → expected `RunEvent`s; terminal stops |
+| `test_tail_maps_actions_to_events` | M7 | in-repo fake streams Redis with gate/opened, node/*, run/closed → expected `RunEvent`s; terminal stops |
 | `test_tail_resumes_from_last_seen` | M7 | `state_replay(last_seen=N)` skips ≤N |
-| `test_registry_roundtrip_and_live_set` | M7 | save/get/list_for/live/mark_terminal with fakeredis |
+| `test_registry_roundtrip_and_live_set` | M7 | save/get/list_for/live/mark_terminal with the in-repo fake Redis (hash/set/expire) |
 | `test_service_dispatch_feature` | M8 | brief file written, spawn called, thread root posted, record saved, tail started |
 | `test_service_confirm_flow_both_kinds` | M8 | dispatch (bug and feature) returns a pending id and spawns nothing; confirm launches; discard drops; TTL expiry; non-owner rejected |
 | `test_identity_resolver_email_fallback` | M11 | users.info email → Jira id; missing scope / API error → ("", "") → default_identities used |
@@ -839,7 +839,7 @@ def register_devloop(wrapper: SlackAgentWrapper, service: DevLoopDispatchService
 ### Integration Tests
 | Test | Description |
 |---|---|
-| `test_headless_child_end_to_end_stub_runner` | Spawn `parrot devloop run --headless` with a stub runner (env `PARROT_DEVLOOP_STUB_RUNNER=1`, see fixtures) that opens an `open_questions` gate, publishes to fakeredis-compatible Redis; integration answers via `LoopbackRestChannel`; child exits 0 |
+| `test_headless_child_end_to_end_stub_runner` | Spawn `parrot devloop run --headless` with a stub runner (env `PARROT_DEVLOOP_STUB_RUNNER=1`, see fixtures) that opens an `open_questions` gate, publishes to a real or in-repo fake Redis; integration answers via `LoopbackRestChannel`; child exits 0 |
 | `test_slack_feature_run_thread_flow` | Slash command → thread root → gate card → modal submission → gate resolved → terminal summary, with mocked Slack Web API and a fake child |
 | `test_slack_bug_confirm_then_run` | `/devloop --type bug` → confirm card → Confirm → run started |
 | `test_restart_reattach` | Service stopped and restarted with a live child keeps delivering events |
@@ -858,7 +858,7 @@ def fake_child(tmp_path):
 
 @pytest.fixture
 def fake_redis():
-    """fakeredis.aioredis.FakeRedis(decode_responses=True) pre-loaded with flow:{run_id}:actions envelopes."""
+    """Copy of the in-repo `_FakeStreamsRedis` (tests/flows/dev_loop/test_streaming.py:26) extended with hash/set/expire ops, pre-loaded with flow:{run_id}:actions envelopes."""
 
 @pytest.fixture
 def slack_api(monkeypatch):
@@ -948,7 +948,7 @@ from parrot.integrations.models import IntegrationBotConfig                     
 # Third party (already declared)
 import redis.asyncio as aioredis      # verified: examples/dev_loop/server_dev.py:59; ai-parrot-integrations/pyproject.toml:56,104 (optional extras)
 from aiohttp import web, ClientSession, UnixConnector       # core dependency
-import fakeredis                      # verified in tests: packages/ai-parrot/tests/flows/dev_loop/test_streaming_state_view.py
+# Redis fakes in tests: the in-repo `_FakeStreamsRedis` (packages/ai-parrot/tests/flows/dev_loop/test_streaming.py:26, mirrored at test_streaming_state_view.py:31) — `fakeredis` is NOT a declared dependency (verified: no pyproject mentions it)
 ```
 
 ### Existing Class Signatures
@@ -1170,7 +1170,7 @@ class IntegrationBotConfig: from_dict(data) — kind == 'slack' → SlackAgentCo
 - ~~Proactive Slack modals~~ — `views.open` needs a `trigger_id` from a user interaction (`interactive.py:315`).
 - ~~`SlackInteractiveHandler` support for `response_action: errors` on view_submission~~ — the handler returns whatever dict the modal handler returns (`interactive.py:150-156`); the errors dict shape is Slack's, not a wrapper helper.
 - ~~`examples/dev_loop/server.py::_build_judge_panel_dispatcher` importable from the package~~ — example-only; M2 deliberately uses `codereview_dispatcher=None` (model-plan review pair) instead.
-- ~~`fakeredis` as a runtime dependency~~ — test-only.
+- ~~`fakeredis`~~ — not a declared dependency anywhere (runtime or test); the dev-loop tests use an in-repo `_FakeStreamsRedis`.
 
 ---
 
@@ -1346,7 +1346,7 @@ class IntegrationBotConfig: from_dict(data) — kind == 'slack' → SlackAgentCo
 | `redis` (`redis.asyncio`) | `>=5.0` (existing optional; new `[devloop]` extra in `ai-parrot-integrations`) | `FlowStreamMultiplexer` tail, run registry |
 | `slack-sdk` | `>=3.27` (existing optional `[slack]`) | Socket Mode only; unchanged |
 | `click`, `pydantic` | existing | CLI options, models |
-| `fakeredis` | test-only (already used by dev_loop tests) | tail/registry tests |
+| in-repo `_FakeStreamsRedis` | test-only, copied/extended from `tests/flows/dev_loop/test_streaming.py:26` | tail/registry tests — `fakeredis` is NOT introduced |
 | stdlib `shlex`, `argparse`, `secrets`, `asyncio.subprocess` | — | parser, token, child lifecycle |
 
 ---
@@ -1423,7 +1423,7 @@ Summary: **11** confirmed · **1** rejected · **0** escalated.
      in its own worktree; only M1 depends on M2.
   2. **Integration-core lane** — M4 → M5 → M6/M7 (parallel) → M8 (all under
      `packages/ai-parrot-integrations/…/devloop/`): testable against a fake
-     child script and fakeredis, independent of lane 1 at build time.
+     child script and the in-repo fake Redis, independent of lane 1 at build time.
   3. **Slack lane** — M9 → M10 → M11 → M12 → M13 (`…/slack/…`, manager,
      docs): depends on M4/M8 models; sequential within one worktree.
 - **Merge order**: lane 1 and lane 2 can merge in either order; lane 3
