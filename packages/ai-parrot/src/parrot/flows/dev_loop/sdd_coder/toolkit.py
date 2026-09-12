@@ -44,6 +44,7 @@ class SddCoderToolkit(AbstractToolkit):
         roster: Union[List[Dict[str, Any]], RosterConfig],
         redis_url: Optional[str] = None,
         worktree_base_path: Optional[str] = None,
+        telemetry_dir: Optional[str] = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
@@ -53,7 +54,12 @@ class SddCoderToolkit(AbstractToolkit):
             if isinstance(roster, RosterConfig)
             else RosterConfig(seats=roster)  # type: ignore[arg-type]  # yaml kwargs arrive as list[dict]; pydantic coerces at runtime
         )
-        self._engine = SddCoderEngine(roster=cfg, redis_url=redis_url, worktree_base_path=worktree_base_path)
+        self._engine = SddCoderEngine(
+            roster=cfg,
+            redis_url=redis_url,
+            worktree_base_path=worktree_base_path,
+            telemetry_dir=telemetry_dir,
+        )
 
     async def _pre_execute(self, tool_name: str, /, **kwargs: Any) -> None:
         """Validate against arg_models (extra='forbid'); adapter.py:79 does not validate (S6)."""
