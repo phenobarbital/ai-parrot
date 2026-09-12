@@ -10,7 +10,7 @@ base_branch: dev
 
 **Date**: 2026-09-12
 **Author**: Jesus Lara + Claude (Fable 5.1)
-**Status**: exploration
+**Status**: accepted
 **Recommended Option**: A
 
 ---
@@ -915,11 +915,11 @@ from aiohttp import web, ClientSession  # core dependency
 - [x] Telegram? — *Owner: Jesus Lara*: Slack-only v1 on a transport-agnostic core; Telegram adapter is a follow-up spec.
 - [x] Concurrency? — *Owner: Jesus Lara*: unlimited (optional soft cap in config).
 - [x] Extra flags? — *Owner: Jesus Lara*: `--jira KEY`, `--base dev|staging`, subcommands `status` / `cancel` / `help`.
-- [ ] Bridge transport for the child's command endpoint: Unix domain socket (recommended on Linux, permission-based) vs loopback TCP + per-run bearer token (portable)? Support both with socket as default? — *Owner: Jesus Lara*
-- [ ] `--base` for **feature** runs: add `flow_type` / `base_branch` to `DevRequestBrief` (and thread them to the `FeatureBrief` ideation emits) in this spec, or accept that `--base` is bug-only in v1 and document it? — *Owner: Jesus Lara*
+- [x] Bridge transport for the child's command endpoint? — *Owner: Jesus Lara*: Unix domain socket by default (`--command-socket`, filesystem permissions); loopback TCP + per-run bearer token (`--command-port`) as fallback.
+- [x] `--base` for **feature** runs? — *Owner: Jesus Lara*: add `flow_type` / `base_branch` to `DevRequestBrief` in this spec and thread them into the `FeatureBrief` that ideation emits.
 - [ ] Should **feature** runs also get a confirm card before dispatch (title/description/jira/base preview), or dispatch immediately as decided for the "defaults" path? — *Owner: Jesus Lara*
-- [ ] Run registry persistence: keep `RunRecord`s only in memory (lost on bot restart; children keep running headless) or persist them in Redis (`devloop:slack:runs:{run_id}`) so tails re-attach via `state_replay()` after a restart? — *Owner: Jesus Lara*
-- [ ] Orphan policy: when the bot stops, should children be left running (`start_new_session=True`) or cancelled via their command endpoint during shutdown? — *Owner: Jesus Lara*
+- [x] Run registry persistence? — *Owner: Jesus Lara*: Redis-persisted registry (`devloop:runs:{run_id}`, TTL = retention); on bot startup live records are re-attached via `state_replay()`.
+- [x] Orphan policy? — *Owner: Jesus Lara*: children keep running (`start_new_session=True`); the bot never cancels them on shutdown.
 - [ ] Identity for `WorkBrief.reporter` / `escalation_assignee`: request `users:read.email` and map Slack email → Jira, or always fall back to `bootstrap.default_identities()` (the Jira toolkit's current user)? — *Owner: Jesus Lara*
 - [ ] Default acceptance criterion for bug runs: a single configured `ShellCriterion` (must pass `ACCEPTANCE_CRITERION_ALLOWLIST`), or require `--ac "<command>"` and refuse otherwise? — *Owner: Jesus Lara*
 - [ ] Should the headless mode also be exposed for the `enhancement` kind (light proposal) at zero extra cost, even though Slack v1 does not expose `--type enhancement`? — *Owner: Jesus Lara*
