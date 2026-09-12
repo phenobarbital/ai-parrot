@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-12T00:08:00+00:00",
-  "completed_at": "2026-09-12T01:15:49+00:00",
+  "completed_at": "2026-09-12T02:07:04+00:00",
   "tasks": [
     {
       "id": "TASK-3185",
@@ -23,7 +23,8 @@
       "assigned_to": null,
       "started_at": "2026-09-12T00:22:32+00:00",
       "completed_at": "2026-09-12T00:32:57+00:00",
-      "file": "sdd/tasks/completed/TASK-3185-budget-policy-observe-flag.md"
+      "file": "sdd/tasks/completed/TASK-3185-budget-policy-observe-flag.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3186",
@@ -43,7 +44,8 @@
       "assigned_to": null,
       "started_at": "2026-09-12T00:22:32+00:00",
       "completed_at": "2026-09-12T00:51:13+00:00",
-      "file": "sdd/tasks/completed/TASK-3186-ledger-observational-semantics.md"
+      "file": "sdd/tasks/completed/TASK-3186-ledger-observational-semantics.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3187",
@@ -64,7 +66,8 @@
       "assigned_to": null,
       "started_at": "2026-09-12T00:22:32+00:00",
       "completed_at": "2026-09-12T01:03:16+00:00",
-      "file": "sdd/tasks/completed/TASK-3187-funnel-observe-sdk-view.md"
+      "file": "sdd/tasks/completed/TASK-3187-funnel-observe-sdk-view.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3188",
@@ -82,7 +85,8 @@
       "assigned_to": null,
       "started_at": "2026-09-12T00:22:32+00:00",
       "completed_at": "2026-09-12T00:32:57+00:00",
-      "file": "sdd/tasks/completed/TASK-3188-attempt-telemetry-models.md"
+      "file": "sdd/tasks/completed/TASK-3188-attempt-telemetry-models.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3189",
@@ -102,7 +106,8 @@
       "assigned_to": null,
       "started_at": "2026-09-12T00:22:32+00:00",
       "completed_at": "2026-09-12T00:45:21+00:00",
-      "file": "sdd/tasks/completed/TASK-3189-terminal-telemetry-emission.md"
+      "file": "sdd/tasks/completed/TASK-3189-terminal-telemetry-emission.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3190",
@@ -123,7 +128,8 @@
       "assigned_to": null,
       "started_at": "2026-09-12T00:22:32+00:00",
       "completed_at": "2026-09-12T01:12:15+00:00",
-      "file": "sdd/tasks/completed/TASK-3190-observational-scope-binding.md"
+      "file": "sdd/tasks/completed/TASK-3190-observational-scope-binding.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3191",
@@ -141,7 +147,8 @@
       "assigned_to": null,
       "started_at": "2026-09-12T00:22:32+00:00",
       "completed_at": "2026-09-12T00:32:57+00:00",
-      "file": "sdd/tasks/completed/TASK-3191-coder-telemetry-sink.md"
+      "file": "sdd/tasks/completed/TASK-3191-coder-telemetry-sink.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3192",
@@ -159,7 +166,8 @@
       "assigned_to": null,
       "started_at": "2026-09-12T00:22:32+00:00",
       "completed_at": "2026-09-12T00:32:57+00:00",
-      "file": "sdd/tasks/completed/TASK-3192-attempt-record-telemetry-fields.md"
+      "file": "sdd/tasks/completed/TASK-3192-attempt-record-telemetry-fields.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3193",
@@ -181,7 +189,8 @@
       "assigned_to": null,
       "started_at": "2026-09-12T00:22:32+00:00",
       "completed_at": "2026-09-12T00:45:21+00:00",
-      "file": "sdd/tasks/completed/TASK-3193-engine-telemetry-wiring.md"
+      "file": "sdd/tasks/completed/TASK-3193-engine-telemetry-wiring.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3194",
@@ -201,7 +210,8 @@
       "assigned_to": null,
       "started_at": "2026-09-12T00:22:32+00:00",
       "completed_at": "2026-09-12T00:45:21+00:00",
-      "file": "sdd/tasks/completed/TASK-3194-usage-analysis-script.md"
+      "file": "sdd/tasks/completed/TASK-3194-usage-analysis-script.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3195",
@@ -224,7 +234,8 @@
       "assigned_to": null,
       "started_at": "2026-09-12T00:22:32+00:00",
       "completed_at": "2026-09-12T01:15:28+00:00",
-      "file": "sdd/tasks/completed/TASK-3195-telemetry-documentation.md"
+      "file": "sdd/tasks/completed/TASK-3195-telemetry-documentation.md",
+      "verification": "verified"
     }
   ]
 }
