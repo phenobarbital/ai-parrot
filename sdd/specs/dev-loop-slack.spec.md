@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-555
 **Date**: 2026-09-12
 **Author**: Jesus Lara + Claude (Fable 5.1)
-**Status**: draft
+**Status**: approved
 **Target version**: next minor of `ai-parrot` / `ai-parrot-integrations`
 **Brainstorm**: `sdd/proposals/dev-loop-slack.brainstorm.md` (accepted, Option A)
 
@@ -67,8 +67,10 @@ only the glue is missing.
   answer, approve, reject or cancel their run.
 - **G7 — Restart-safe.** Run records are mirrored in Redis; children keep
   running when the bot stops; on bot startup live runs are re-attached.
-- **G8 — Bug intake without friction.** `--type bug` builds a `WorkBrief`
-  from defaults and asks for confirmation on a card (Confirm / Edit / Cancel).
+- **G8 — Intake without friction.** Both kinds build their brief from
+  defaults (`WorkBrief` for `bug`, `DevRequestBrief` for `feature`) and ask
+  for confirmation on a card (Confirm / Edit / Cancel) before anything is
+  spawned.
 - **G9 — Progress visibility.** Dispatch, gate, terminal messages always;
   a live node status card as the last, optional module.
 - **G10 — `--base` is honoured for both kinds**, including feature runs,
@@ -130,11 +132,16 @@ renders those into a **run thread** (root = the public dispatch message).
 Resolved-question decisions that shape this design (brainstorm §Open
 Questions, all `[x]`): feature → `dev`; subprocess + bridge; `/devloop`
 slash command; modal + threaded `N:` fallback; `feature` and `bug` types
-only; bug defaults + confirm card; status card last/optional; whitelist +
+only; defaults + confirm card for both kinds; status card last/optional; whitelist +
 initiator-only ownership; Slack-only on a channel-neutral core; unlimited
 concurrency; flags `--jira`, `--base`, subcommands `status`/`cancel`/`help`;
 Unix socket default with TCP fallback; `--base` threaded for feature runs;
-Redis-persisted registry with children kept running on shutdown.
+Redis-persisted registry with children kept running on shutdown. Resolved at
+spec review (2026-09-12): confirm card for both kinds; configured
+`ShellCriterion` list as the bug default; Slack email → Jira identity with
+`default_identities()` fallback; headless accepts `enhancement`; model-plan
+review pair as the headless QA reviewer; builder lives in
+`cli/devloop/bootstrap.py`; no outage marker in v1.
 
 ### Component Diagram
 
@@ -612,7 +619,9 @@ def register_devloop(wrapper: SlackAgentWrapper, service: DevLoopDispatchService
   class DevLoopTransport(Protocol):
       """What a channel adapter must render. Every method is best-effort: exceptions are logged, never propagated to the run."""
       async def post_run_dispatched(self, record: RunRecord) -> str: """Post the thread root; return its message id (Slack ts)."""
-      async def post_bug_confirm(self, pending_id: str, fields: dict[str, str], requester: Requester, channel_id: str) -> str: ...
+      async def post_confirm(self, pending_id: str, kind: RequestType, fields: dict[str, str], requester: Requester, channel_id: str) -> str:
+          """Confirm card for BOTH kinds (Q1): preview fields + Confirm / Edit / Cancel; returns its message id."""
+      async def update_confirm(self, pending_id: str, outcome: str, record: RunRecord | None) -> None: """Edit the card after confirm/discard/expiry."""
       async def post_run_started(self, record: RunRecord) -> None: ...
       async def post_spawn_failed(self, record: RunRecord, error: str) -> None: ...
       async def post_gate(self, record: RunRecord, gate: GateView) -> None: ...
@@ -623,15 +632,19 @@ def register_devloop(wrapper: SlackAgentWrapper, service: DevLoopDispatchService
   # service.py
   class DevLoopDispatchService:
       def __init__(self, *, config: DevLoopIntegrationConfig, transport: DevLoopTransport, redis: Any,
-                   identity_resolver: Callable[[Requester], Awaitable[tuple[str, str]]] | None = None) -> None: ...
+                   identity_resolver: Callable[[Requester], Awaitable[tuple[str, str]]] | None = None) -> None:
+          """identity_resolver(requester) -> (reporter, escalation_assignee) for WorkBrief (Q3). When None or when it raises /
+          returns empty, the service falls back to bootstrap.default_identities(jira_toolkit) — never a raw Slack user id."""
       async def start(self) -> None:
           """Load registry.live(); for each record with a reachable endpoint restart RunStateTail from last_seen_seq;
           unreachable ⇒ mark failed + post_terminal(process_exited)."""
       async def stop(self) -> None: """Cancel tail tasks only; children keep running (decision)."""
-      async def dispatch(self, command: DevLoopCommand, requester: Requester, channel_id: str) -> RunRecord | str:
-          """type=feature ⇒ build brief, _launch(). type=bug ⇒ build brief, store PendingConfirmation (TTL 15 min),
-          transport.post_bug_confirm, return pending_id. Enforces config.max_concurrent_runs when set."""
-      async def confirm(self, pending_id: str, requester: Requester, overrides: dict[str, Any] | None = None) -> RunRecord: ...
+      async def dispatch(self, command: DevLoopCommand, requester: Requester, channel_id: str) -> str:
+          """Both kinds (Q1): build the brief (bug ⇒ WorkBrief via identity_resolver; feature ⇒ DevRequestBrief), store a
+          PendingConfirmation (in memory, TTL 15 min), transport.post_confirm, return pending_id. Nothing is spawned yet.
+          Enforces config.max_concurrent_runs when set (None = unlimited)."""
+      async def confirm(self, pending_id: str, requester: Requester, overrides: dict[str, Any] | None = None) -> RunRecord:
+          """Ownership check; re-validate the brief with overrides from the Edit modal; _launch(); transport.update_confirm."""
       async def discard(self, pending_id: str, requester: Requester) -> None: ...
       async def answer_gate(self, run_id: str, gate_id: str, requester: Requester, answers: dict[str, str]) -> BridgeResult:
           """Ownership check (NotRunOwnerError) then channel.resolve_gate(resolution="approved", answers=answers)."""
@@ -688,7 +701,7 @@ def register_devloop(wrapper: SlackAgentWrapper, service: DevLoopDispatchService
   # slack/devloop/__init__.py
   def register_devloop(wrapper: SlackAgentWrapper, service: DevLoopDispatchService) -> SlackDevLoopTransport:
       """router.register("devloop", …) ; action_registry.register_prefix("devloop_", …) ;
-      action_registry.register("modal:devloop_answers", …) ; register("modal:devloop_bug_edit", …) ;
+      action_registry.register("modal:devloop_answers", …) ; register("modal:devloop_edit", …) ;
       wrapper.add_message_interceptor(thread_answer_interceptor). Returns the transport bound to wrapper."""
       # SlackCommandRouter.register verified: slack/commands/__init__.py:50 ; ActionRegistry.register_prefix :48 ; modal routing :192-213
 
@@ -701,8 +714,8 @@ def register_devloop(wrapper: SlackAgentWrapper, service: DevLoopDispatchService
 
   # blocks.py  (pure functions → Block Kit JSON)
   def dispatch_root_blocks(record: RunRecord) -> list[dict]: ...
-  def bug_confirm_blocks(pending_id: str, fields: dict[str, str]) -> list[dict]:   # actions: devloop_confirm:<id>, devloop_edit:<id>, devloop_discard:<id>
-  def bug_edit_modal(pending_id: str, fields: dict[str, str]) -> dict:              # callback_id devloop_bug_edit, private_metadata=pending_id
+  def confirm_blocks(pending_id: str, kind: RequestType, fields: dict[str, str]) -> list[dict]:   # both kinds (Q1); actions: devloop_confirm:<id>, devloop_edit:<id>, devloop_discard:<id>
+  def edit_modal(pending_id: str, kind: RequestType, fields: dict[str, str]) -> dict:            # callback_id devloop_edit, private_metadata=pending_id; bug: summary/description/component/criteria/jira/base — feature: title/description/context/jira/base
   def run_started_blocks(record: RunRecord) -> list[dict]: ...
   def status_list_text(records: list[RunRecord], permalink: Callable[[RunRecord], str]) -> str: ...
   ```
@@ -731,7 +744,15 @@ def register_devloop(wrapper: SlackAgentWrapper, service: DevLoopDispatchService
   async def handle_answers_submission(payload: dict, *, service, transport) -> dict | None:
       """extract_form_values (interactive.py:554) → {question: answer} for non-empty inputs → service.answer_gate.
       answers_required ⇒ return {"response_action": "errors", "errors": {"q1": "Answer at least one question"}}."""
-  async def handle_bug_edit_submission(payload: dict, *, service, transport) -> dict | None: ...
+  async def handle_edit_submission(payload: dict, *, service, transport) -> dict | None:
+      """modal:devloop_edit → service.confirm(pending_id, requester, overrides); validation errors map to {"response_action":"errors"}."""
+
+  class SlackIdentityResolver:
+      """Q3: identity_resolver for the service. users.info(user) → profile.email (needs users:read.email); resolved to a Jira
+      accountId through jira_toolkit.resolve_account_id when available. Returns ("", "") on missing scope / API error so the
+      service falls back to bootstrap.default_identities(); results cached per user for 1 h."""
+      def __init__(self, wrapper: SlackAgentWrapper, jira_toolkit: Any | None) -> None: ...
+      async def __call__(self, requester: Requester) -> tuple[str, str]: ...
   async def thread_answer_interceptor(event: dict, *, service, transport) -> bool:
       """True (consumed) iff event.thread_ts matches a RunRecord.thread_ts. Owner + pending open_questions gate + ≥1 THREAD_ANSWER_RE
       match ⇒ answer_gate; otherwise ephemeral hint. Never forwards run-thread messages to the LLM."""
@@ -795,7 +816,9 @@ def register_devloop(wrapper: SlackAgentWrapper, service: DevLoopDispatchService
 | `test_tail_resumes_from_last_seen` | M7 | `state_replay(last_seen=N)` skips ≤N |
 | `test_registry_roundtrip_and_live_set` | M7 | save/get/list_for/live/mark_terminal with fakeredis |
 | `test_service_dispatch_feature` | M8 | brief file written, spawn called, thread root posted, record saved, tail started |
-| `test_service_bug_confirm_flow` | M8 | dispatch returns pending id; confirm launches; discard drops; non-owner rejected |
+| `test_service_confirm_flow_both_kinds` | M8 | dispatch (bug and feature) returns a pending id and spawns nothing; confirm launches; discard drops; TTL expiry; non-owner rejected |
+| `test_identity_resolver_email_fallback` | M11 | users.info email → Jira id; missing scope / API error → ("", "") → default_identities used |
+| `test_parser_rejects_enhancement_on_slack` | M5 | `--type enhancement` → usage error naming the two supported types (headless loader still accepts the kind) |
 | `test_service_ownership_on_answer_cancel` | M8 | `NotRunOwnerError` for other actors |
 | `test_service_start_reattaches_live_runs` | M8 | live record with reachable endpoint → tail restarted from `last_seen_seq` |
 | `test_wrapper_interceptor_consumes_event` | M9 | interceptor returning True prevents `_safe_answer` in both webhook and socket paths |
@@ -863,11 +886,11 @@ Tests live at `packages/ai-parrot/tests/cli/devloop/test_headless.py`,
 - [ ] AC3 `ruff check` and `black --check --line-length 120` pass on every touched file (TID251 import bans included).
 - [ ] AC4 `parrot devloop run --brief b.yaml --yes --headless --command-socket /tmp/x.sock` prints exactly one `HeadlessHandshake` JSON line on stdout before any run output and exits 0/1/2/3 per outcome; the socket file is gone afterwards.
 - [ ] AC5 A `kind: new_feature` brief runs the dev-flow topology headless (ideation → planner → …) via `build_dev_flow_runtime()`; no import from `examples/` anywhere in the package.
-- [ ] AC6 `/devloop --type feature <prompt>` from a whitelisted user posts a public thread root within the Slack ack window and a "started" message after the handshake; a non-whitelisted user gets "Unauthorized." and nothing is spawned.
+- [ ] AC6 `/devloop --type feature <prompt>` from a whitelisted user gets an ephemeral ack within the Slack ack window and a confirm card in the channel; pressing Confirm posts the public thread root and, after the handshake, a "started" message; a non-whitelisted user gets "Unauthorized." and nothing is spawned.
 - [ ] AC7 An `open_questions` gate appears in the run thread with **Answer**/**Abort** buttons; a modal submission with ≥1 answer resolves the gate (`ResolveGateRequest.answers`) and the message is edited to "Answered by @user (k of n)"; an empty submission shows a validation error; a `N:` thread reply by the owner resolves it too.
 - [ ] AC8 Non-initiator clicks/replies never resolve a gate and receive an ephemeral ownership notice.
 - [ ] AC9 A second resolve (409) or an expired gate updates the card to the real state without error.
-- [ ] AC10 `/devloop --type bug <prompt>` posts a confirm card; Confirm dispatches, Edit opens a pre-filled modal, Cancel discards; the resulting `WorkBrief` validates with the defaults in M5.
+- [ ] AC10 Both `--type bug` and `--type feature` post a confirm card; Confirm dispatches, Edit opens a pre-filled modal whose submission re-validates the brief, Cancel discards, and an unconfirmed card expires after 15 min; the resulting `WorkBrief` / `DevRequestBrief` validates with the defaults in M5, and `WorkBrief.reporter` / `escalation_assignee` come from the Slack email → Jira resolver or the `default_identities()` fallback, never a raw Slack id.
 - [ ] AC11 `--base staging` on a feature run yields `base_branch: staging` in the ideation document frontmatter (verified by inspecting the `_IdeationBrief` payload and the subagent instructions); on a bug run it sets `WorkBrief.base_branch="staging"` and `flow_type="feature"`.
 - [ ] AC12 `/devloop status` lists only the caller's runs; `/devloop cancel <id>` cancels only the caller's run.
 - [ ] AC13 Run records survive a bot restart: after `service.stop()` + `service.start()` with a live child, gate and terminal messages still arrive; children are spawned with `start_new_session=True` and are never terminated by shutdown.
@@ -1200,12 +1223,24 @@ class IntegrationBotConfig: from_dict(data) — kind == 'slack' → SlackAgentCo
   exception or phase `failed` ⇒ 1; `run/cancelled` ⇒ 2; preflight/bootstrap
   failure (before the handshake) ⇒ 3. The parent treats "exit without a
   terminal action" as `process_exited` regardless of code.
-- **Identity**: `resolved_by` / `requested_by` = `Requester.actor` =
-  `slack:<team_id>:<user_id>` (stable, auditable in session state).
-  `WorkBrief.reporter` / `escalation_assignee`: `identity_resolver` (Slack
-  `users.info` email when the `users:read.email` scope is granted) with
+- **Identity** (Q3 resolved): `resolved_by` / `requested_by` =
+  `Requester.actor` = `slack:<team_id>:<user_id>` (stable, auditable in
+  session state). `WorkBrief.reporter` / `escalation_assignee`:
+  `SlackIdentityResolver` (`users.info` email when the `users:read.email`
+  scope is granted, resolved to a Jira accountId via the toolkit) with
   fallback to `bootstrap.default_identities(jira_toolkit)` — never a raw
-  Slack user id (open question Q3 keeps the exact precedence adjustable).
+  Slack user id.
+- **Confirm card for both kinds** (Q1 resolved): `dispatch()` never spawns;
+  it stores a `PendingConfirmation` and posts the card. Confirm → launch,
+  Edit → pre-filled modal → re-validate → launch, Cancel → discard; the
+  card is edited to its outcome and expires after 15 min. The card, not the
+  slash ack, is where a brief validation error is shown.
+- **Bug acceptance criteria** (Q2 resolved): `config.default_acceptance_criteria`
+  is mandatory when `enabled` (validated at startup against
+  `ACCEPTANCE_CRITERION_ALLOWLIST`, `conf.py:851`); `--ac` overrides per run.
+- **`enhancement` kind** (Q4 resolved): `load_headless_brief` accepts
+  `kind: enhancement` (routes through `parse_dev_brief`); the Slack parser
+  rejects `--type enhancement` with a usage error naming `feature|bug`.
 - **Bug defaults** (M5): summary = first line of the prompt, clipped to 255;
   if shorter than 10 chars, prefixed with `"bug: "` and padded from the
   description; `affected_component = --component or config.default_component`;
@@ -1294,10 +1329,11 @@ class IntegrationBotConfig: from_dict(data) — kind == 'slack' → SlackAgentCo
   wiring; M2's optional refactor of `server_dev.py` is the mitigation. If
   it is skipped, add a test asserting both call `build_dev_flow` with the
   same key set.
-- **Dev-flow review dispatcher choice**: the headless default uses the
-  model-plan review pair (`codereview_dispatcher=None`) rather than the
-  example's judge panel; the two differ in QA behaviour. Recorded as the
-  decided default; revisit in Q5 if operators need the judge panel headless.
+- **Dev-flow review dispatcher choice** (Q5 resolved): the headless default
+  uses the model-plan review pair (`codereview_dispatcher=None`) rather than
+  the example's judge panel; the two differ in QA behaviour. Documented in
+  `docs/integrations/slack-devloop.md`; re-homing the judge panel is a
+  possible follow-up, not part of this feature.
 - **`--dev-agent` is not exposed** in v1 Slack flags; the child accepts the
   brief's `dev_agents` if a future flag sets it.
 - **Socket path length**: AF_UNIX paths are limited (~108 bytes); keep
@@ -1334,13 +1370,15 @@ class IntegrationBotConfig: from_dict(data) — kind == 'slack' → SlackAgentCo
 - [x] `--base` for feature runs — *Resolved in brainstorm*: add `flow_type` / `base_branch` to `DevRequestBrief` in this spec and thread them into the `FeatureBrief` that ideation emits. *Spec note*: realised through the ideation document frontmatter (M3) — the FeatureBrief's base branch is read from the committed document (`feature_handoff.py:348`), so no `FeatureBrief` field is added.
 - [x] Run registry persistence — *Resolved in brainstorm*: Redis-persisted registry (`devloop:runs:{run_id}`, TTL = retention); on bot startup live records are re-attached via `state_replay()`.
 - [x] Orphan policy — *Resolved in brainstorm*: children keep running (`start_new_session=True`); the bot never cancels them on shutdown.
-- [ ] Q1 Should **feature** runs also get a confirm card before dispatch (title/description/jira/base preview), or dispatch immediately? Spec default: dispatch immediately (M8); flipping to a card reuses M10's confirm machinery. — *Owner: Jesus Lara*
-- [ ] Q2 Default acceptance criterion for bug runs: a configured `ShellCriterion` list (spec default, `config.default_acceptance_criteria`, must pass `ACCEPTANCE_CRITERION_ALLOWLIST`) or require `--ac` and refuse otherwise? — *Owner: Jesus Lara*
-- [ ] Q3 Identity for `WorkBrief.reporter` / `escalation_assignee`: request `users:read.email` and map Slack email → Jira (spec default when the scope is present) or always fall back to `bootstrap.default_identities()`? — *Owner: Jesus Lara*
-- [ ] Q4 Expose the headless mode for the `enhancement` kind (light proposal) at zero extra cost, even though Slack v1 does not expose `--type enhancement`? Spec default: `load_headless_brief` accepts it (it is free); Slack rejects it. — *Owner: Jesus Lara*
-- [ ] Q5 Headless dev-flow review dispatcher: keep the model-plan review pair as the default (spec decision, M2) or re-home the judge-panel helper from `examples/dev_loop/server.py:580` into the package so the child matches the console? — *Owner: Jesus Lara*
-- [ ] Q6 Where should `build_dev_flow_runtime()` live: `parrot/cli/devloop/bootstrap.py` (spec choice, next to `build_runtime`) or a new `parrot/flows/dev_flow/bootstrap.py` importable without the CLI? — *Owner: Claude / spec author* (spec choice stands unless objected)
-- [ ] Q7 Should `IntegrationBotManager.shutdown` also persist a "bot going down" marker so `status` can tell "unobserved since" for runs that were live during the outage? — *Owner: Jesus Lara*
+- [x] Q1 Confirm card for feature runs? — *Owner: Jesus Lara*: yes — confirm card for **both** kinds (Confirm / Edit / Cancel); `dispatch()` never spawns directly (M8, M10, AC6, AC10).
+- [x] Q2 Default acceptance criterion for bug runs? — *Owner: Jesus Lara*: configured `ShellCriterion` list (`devloop.default_acceptance_criteria`, validated against `ACCEPTANCE_CRITERION_ALLOWLIST` at startup); `--ac` overrides per run (M5, §7).
+- [x] Q3 Identity for `WorkBrief.reporter` / `escalation_assignee`? — *Owner: Jesus Lara*: Slack email → Jira via `users.info` (`users:read.email`), fallback `bootstrap.default_identities()` (M11 `SlackIdentityResolver`, §7).
+- [x] Q4 Headless `enhancement` kind? — *Owner: Jesus Lara*: yes — `load_headless_brief` accepts it; Slack rejects `--type enhancement` until a follow-up adds the flag (M2, M5).
+- [x] Q5 Headless dev-flow review dispatcher? — *Owner: Jesus Lara*: model-plan review pair (`codereview_dispatcher=None`); judge-panel re-homing is a possible follow-up (M2, §7).
+- [x] Q6 Where does `build_dev_flow_runtime()` live? — *Owner: Jesus Lara*: `parrot/cli/devloop/bootstrap.py`, next to `build_runtime()` / `preflight()` (M2).
+- [x] Q7 Outage marker on shutdown? — *Owner: Jesus Lara*: no — v1 relies on re-attach from `last_seen_seq`; no bookkeeping.
+
+No open questions remain; the spec is ready for approval.
 
 ---
 
@@ -1403,3 +1441,4 @@ Summary: **11** confirmed · **1** rejected · **0** escalated.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-09-12 | Jesus Lara + Claude (Fable 5.1) | Initial draft from accepted brainstorm (Option A); 4 open questions resolved at spec time; codex design research (gpt-5.6-luna) folded: 11 confirmed / 1 rejected |
+| 0.2 | 2026-09-12 | Jesus Lara + Claude (Fable 5.1) | §8 Q1–Q7 resolved: confirm card for both kinds, configured criteria, Slack email → Jira identity, headless `enhancement`, review pair, builder location, no outage marker |

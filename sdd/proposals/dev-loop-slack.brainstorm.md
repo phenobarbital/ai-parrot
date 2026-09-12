@@ -917,10 +917,10 @@ from aiohttp import web, ClientSession  # core dependency
 - [x] Extra flags? — *Owner: Jesus Lara*: `--jira KEY`, `--base dev|staging`, subcommands `status` / `cancel` / `help`.
 - [x] Bridge transport for the child's command endpoint? — *Owner: Jesus Lara*: Unix domain socket by default (`--command-socket`, filesystem permissions); loopback TCP + per-run bearer token (`--command-port`) as fallback.
 - [x] `--base` for **feature** runs? — *Owner: Jesus Lara*: add `flow_type` / `base_branch` to `DevRequestBrief` in this spec and thread them into the `FeatureBrief` that ideation emits.
-- [ ] Should **feature** runs also get a confirm card before dispatch (title/description/jira/base preview), or dispatch immediately as decided for the "defaults" path? — *Owner: Jesus Lara*
+- [x] Should **feature** runs also get a confirm card before dispatch? — *Owner: Jesus Lara*: yes — confirm card for both kinds (Confirm / Edit / Cancel).
 - [x] Run registry persistence? — *Owner: Jesus Lara*: Redis-persisted registry (`devloop:runs:{run_id}`, TTL = retention); on bot startup live records are re-attached via `state_replay()`.
 - [x] Orphan policy? — *Owner: Jesus Lara*: children keep running (`start_new_session=True`); the bot never cancels them on shutdown.
-- [ ] Identity for `WorkBrief.reporter` / `escalation_assignee`: request `users:read.email` and map Slack email → Jira, or always fall back to `bootstrap.default_identities()` (the Jira toolkit's current user)? — *Owner: Jesus Lara*
-- [ ] Default acceptance criterion for bug runs: a single configured `ShellCriterion` (must pass `ACCEPTANCE_CRITERION_ALLOWLIST`), or require `--ac "<command>"` and refuse otherwise? — *Owner: Jesus Lara*
-- [ ] Should the headless mode also be exposed for the `enhancement` kind (light proposal) at zero extra cost, even though Slack v1 does not expose `--type enhancement`? — *Owner: Jesus Lara*
-- [ ] Where should the `build_dev_flow_runtime()` builder live: `parrot/cli/devloop/bootstrap.py` (next to `build_runtime`) or `parrot/flows/dev_flow/bootstrap.py` (importable without the CLI)? — *Owner: Claude / spec author*
+- [x] Identity for `WorkBrief.reporter` / `escalation_assignee`? — *Owner: Jesus Lara*: Slack email → Jira via `users.info` (`users:read.email`), fallback `bootstrap.default_identities()`.
+- [x] Default acceptance criterion for bug runs? — *Owner: Jesus Lara*: configured `ShellCriterion` list (validated against `ACCEPTANCE_CRITERION_ALLOWLIST`); `--ac` overrides per run.
+- [x] Headless mode for the `enhancement` kind? — *Owner: Jesus Lara*: yes, the headless loader accepts it; Slack v1 rejects `--type enhancement`.
+- [x] Where should `build_dev_flow_runtime()` live? — *Owner: Jesus Lara*: `parrot/cli/devloop/bootstrap.py`, next to `build_runtime`.
