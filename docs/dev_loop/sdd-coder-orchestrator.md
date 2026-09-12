@@ -140,12 +140,36 @@ or drop it with `coder_cleanup`.
 
 ## Telemetry
 
-Every attempt records `seat_label`, `backend`, `model`, `duration_s`, and a
-best-effort `usage` dict (token counts, cost, turns — whatever the
-dispatch's `dispatch.completed` event carried). The Completion Note for
-every merged task includes these fields, and the final feature summary
-prints a per-model table: `seat · tasks · retries · failures · wall-clock ·
-tokens`.
+> **A coding attempt's cumulative token budget is measured in MILLIONS.** A
+> 60-turn attempt whose history grows to ~148k tokens consumes ~4.7M cumulative
+> tokens (~5.1M if every turn saturates `max_tokens`), because the full history
+> is re-sent every turn and the MCP roster path runs at `max_turns=60`
+> (`agent_builder.py:134`), not the profile default of 24. `token_budget` is
+> NOT a context-window setting: 200,000 would kill every attempt around turn 11.
+> Measurements: `artifacts/logs/sdd-coder-count-input-overhead-20260912.md`.
+
+To collect and analyze token usage:
+
+1. Enable telemetry by setting these environment variables:
+   - `DEV_LOOP_CODER_TELEMETRY=true` (master switch, default False)
+   - `DEV_LOOP_CODER_LEDGER=true` (bind the observational ledger, default True)
+   - `SDD_CODER_TELEMETRY_DIR=/absolute/path` (durable dir, "" = derive from main checkout)
+
+2. Run features normally with `parrot sdd-worker <feature>` — every attempt
+   writes one append-only JSONL row per turn plus one outcome row.
+
+3. Analyze with `python scripts/analyze_sdd_coder_usage.py --root <telemetry_dir>`
+   to get consumption percentiles and budget recommendations.
+
+Dataset schema (joins on `attempt_uid`):
+| Row kind | Key fields | Description |
+|---|---|---|
+| `turn` | `seat_label`, `turn`, `ledger_input_tokens`, `ledger_output_tokens` | Per-turn token counts from the budget ledger |
+| `outcome` | `seat_label`, `status`, `duration_s`, `provider_input_tokens`, `provider_output_tokens` | Final outcome with provider-reported totals |
+
+Note: The `gemini` seat records provider totals only, with no `ledger_*` fields,
+because `GeminiOpenAICompatClient` defines no budget adapter, so that seat serves
+as the unbudgeted comparison baseline.
 
 ## Troubleshooting
 
