@@ -32,7 +32,7 @@
       "feature_id": "FEAT-553",
       "feature": "sdd-coder-shared-conventions",
       "spec": "sdd/specs/sdd-coder-shared-conventions.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Copies TASK-3177's files into _rules_data and tests their parity.",
       "assigned_to": null,
       "started_at": "2026-09-12T00:21:57+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3178-conventions-module-and-parity.md"
+      "completed_at": "2026-09-12T00:39:50+00:00",
+      "file": "sdd/tasks/completed/TASK-3178-conventions-module-and-parity.md"
     },
     {
       "id": "TASK-3179",

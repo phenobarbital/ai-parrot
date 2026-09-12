@@ -316,10 +316,19 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: 
-**Date**: 
-**Notes**: 
+**Completed by**: sdd-worker (orchestrated via parrot-sdd-coder MCP)
+**Date**: 2026-09-12
+**Notes**: Created the stdlib-only leaf module `parrot/flows/conventions.py`
+(`CODER_RULE_NAMES`, `RULES_DIRNAME`, `CONVENTIONS_PREAMBLE`,
+`_strip_frontmatter`, `load_project_conventions` — worktree copy wins,
+falls back to the package copy, never raises for a missing worktree
+file); byte-identical `_rules_data/{codebase-conventions,python-development}.md`;
+`pyproject.toml` package-data entry `"parrot.flows" = ["_rules_data/*.md"]`;
+`test_conventions.py` (5 tests) and `test_rules_parity.py` (5
+parametrized/plain tests) — all 10 pass. Verified: `CODER_RULE_NAMES`
+prints correctly, `ruff check` clean on all three files, import-light
+(`parrot.flows.dev_loop` absent from `sys.modules`).
 
 **Deviations from spec**: none
+
+Seat: minimax · Backend: nova · Model: minimax.minimax-m2.5 · Attempts: 1 · Duration: 168.4s · Tokens: 568029 in / 6955 out
