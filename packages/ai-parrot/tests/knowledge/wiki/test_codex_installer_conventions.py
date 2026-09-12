@@ -7,7 +7,7 @@ from pathlib import Path
 from parrot.knowledge.wiki.codex import assets
 from parrot.knowledge.wiki.codex.installer import _install_agents, _remove_marker_block, uninstall_codex_integration
 
-_REPO_ROOT = Path(__file__).resolve().parents[4]   # verify parents[N] lands on the repo root (has AGENTS.md) — bounded by this test file's location
+_REPO_ROOT = Path(__file__).resolve().parents[5]   # .../wiki/knowledge/tests/ai-parrot/packages/<root> — verified: has AGENTS.md
 
 
 def _seed(root: Path) -> None:
@@ -21,7 +21,10 @@ def test_install_agents_upserts_conventions_block(tmp_path):
     (tmp_path / "AGENTS.md").write_text("# Persona\nkeep me\n")
     first = _install_agents(tmp_path)
     text = (tmp_path / "AGENTS.md").read_text()
-    assert "created" in first and text.index(assets.AGENTS_BEGIN) < text.index(assets.CONVENTIONS_BEGIN)
+    # "created" vs "updated" mirrors the file's PRE-EXISTING semantics (unchanged by this task):
+    # it reflects whether AGENTS.md existed at all before the call, not whether the markers did.
+    # AGENTS.md is seeded with content above, so this call reports "updated".
+    assert "updated" in first and text.index(assets.AGENTS_BEGIN) < text.index(assets.CONVENTIONS_BEGIN)
     assert "RULE-ONE" in text and "RULE-TWO" in text and "keep me" in text
     assert "already current" in _install_agents(tmp_path)
 

@@ -18,7 +18,10 @@ def test_install_gemini_md_upserts_conventions_block(tmp_path):
     (tmp_path / "GEMINI.md").write_text("# Gemini\nkeep me\n")
     first = _install_gemini_md(tmp_path)
     text = (tmp_path / "GEMINI.md").read_text()
-    assert "created" in first and text.index(assets.AGENTS_BEGIN) < text.index(assets.CONVENTIONS_BEGIN)
+    # "created" vs "updated" mirrors the file's PRE-EXISTING semantics (unchanged by this task):
+    # it reflects whether GEMINI.md existed at all before the call, not whether the markers did.
+    # GEMINI.md is seeded with content above, so this call reports "updated".
+    assert "updated" in first and text.index(assets.AGENTS_BEGIN) < text.index(assets.CONVENTIONS_BEGIN)
     assert "RULE-ONE" in text and "RULE-TWO" in text and "keep me" in text
     assert "already current" in _install_gemini_md(tmp_path)
 
