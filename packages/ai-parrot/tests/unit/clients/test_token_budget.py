@@ -523,3 +523,45 @@ class TestConcurrency:
         gate.set()
         results = await asyncio.gather(*tasks)
         assert sum(results) == 1
+
+
+class TestEnforcementFlag:
+    def test_defaults_to_enforce(self):
+        assert TokenBudgetPolicy(token_budget=1000).enforcement == "enforce"
+
+    def test_observe_is_accepted(self):
+        assert TokenBudgetPolicy(token_budget=1000, enforcement="observe").enforcement == "observe"
+
+    def test_unknown_mode_rejected(self):
+        with pytest.raises(ValidationError):
+            TokenBudgetPolicy(token_budget=1000, enforcement="advisory")
+
+
+class TestReportEstimateFields:
+    def test_defaults_when_absent(self):
+        # Build a BudgetReport with exactly the kwargs _report_locked
+        # passes today (parrot/clients/budget.py:340-358) and assert the three
+        # new fields default — bounded by AC: "a report built without the new
+        # fields still validates"
+        report = BudgetReport(
+            operation_id="op_1",
+            policy=TokenBudgetPolicy(token_budget=1000),
+            state="active",
+            revision=1,
+            input_tokens=100,
+            output_tokens=50,
+            total_tokens=150,
+            uncertain_tokens=0,
+            in_flight_tokens=0,
+            remaining_work_tokens=850,
+            remaining_total_tokens=850,
+            counting_methods=("method1", "method2"),
+            overrun_tokens=0,
+            accounting_complete=True,
+            budget_exhausted=False,
+            finalization_attempted=False,
+            finalized=False,
+            answer_complete=False,
+        )
+        assert report.settled_estimate_input_tokens == 0
+        assert report.released_estimate_tokens == 0

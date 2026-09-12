@@ -30,6 +30,18 @@ class TokenBudgetPolicy(BaseModel):
     token_budget: int = Field(..., ge=0, description="Cumulative ceiling B; 0 admits no inference")
     budget_mode: BudgetMode = "estimated"
     final_answer_reserve: int | float = Field(0.15, description="int = absolute tokens; float = fraction of B")
+    enforcement: Literal["enforce", "observe"] = "enforce"
+    """Whether this ledger may refuse work, or only account for it.
+
+    ``"observe"`` means: admit every request without consulting available
+    funds, and return ``output_cap = max_output_tokens`` verbatim so no
+    caller's output cap is ever rewritten. It exists so a long agent loop can
+    be measured with the same machinery that would enforce, without the
+    measurement perturbing the run it measures (spec §2, §10 R1-R2).
+
+    Defaults to ``"enforce"`` — every policy written before FEAT-554 keeps
+    today's behaviour exactly.
+    """
 
     @model_validator(mode="after")
     def _validate_reserve(self) -> "TokenBudgetPolicy":
@@ -124,6 +136,19 @@ class BudgetReport(BaseModel):
     remaining_work_tokens: int = Field(..., ge=0)
     remaining_total_tokens: int = Field(..., ge=0)
     counting_methods: tuple[str, ...] = ()
+    settled_estimate_input_tokens: int = Field(0, ge=0)
+    """Sum of admission estimates for SETTLED reservations only.
+
+    ``settled_estimate_input_tokens - input_tokens`` is the estimation error of
+    ``budget_mode="estimated"``: both sides describe the same requests.
+    Released reservations are excluded on purpose — ``release_unspent`` means
+    the request was proven never dispatched (parrot/clients/budget.py:244), so
+    its estimate has no provider counterpart and would manufacture error out of
+    a request that never happened (spec §10 R5).
+    """
+    released_estimate_tokens: int = Field(0, ge=0)
+    """Estimates of released reservations. An operational counter, NEVER part
+    of the calibration comparison above."""
     overrun_tokens: int = Field(0, ge=0)
     accounting_complete: bool
     budget_exhausted: bool
