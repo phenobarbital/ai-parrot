@@ -148,12 +148,17 @@ def toolkit_mcp_json_entry(root: Path, name: str, section: ToolkitSection) -> di
             mapping.
 
     Returns:
-        ``{"command": <abs parrot bin>, "args": ["mcp-local", name],
+        ``{"command": <abs parrot bin>, "args": ["mcp-local", name,
+        "--config", <abs path to mcp-toolkits.yaml>], "cwd": <abs root>,
         "env": dict(section.env)}``.
     """
     return {
         "command": resolve_parrot_bin(root),
-        "args": ["mcp-local", name],
+        # Pinned (FEAT-556): `parrot mcp-local` resolves its project root from
+        # Path.cwd() (verified: parrot/mcp/local_cli.py:105), so an unpinned
+        # entry resolves no toolkit when the host starts it from a worktree.
+        "args": ["mcp-local", name, "--config", str(root / ".parrot" / "mcp-toolkits.yaml")],
+        "cwd": str(root),
         "env": dict(section.env),
     }
 
