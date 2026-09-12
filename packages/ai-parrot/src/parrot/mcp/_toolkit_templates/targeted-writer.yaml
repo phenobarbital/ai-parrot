@@ -1,0 +1,16 @@
+# parrot:summary: Patch generation for work whose design is already decided in a TASK file.
+# parrot:requires_llm: true
+  targeted-writer:
+    class: parrot_tools.tool_optimizations.writer.TargetedWriterToolkit
+    # Seeded disabled: this toolkit needs a model you choose. Set `llm` to a
+    # provider:model you have credentials for, add `llm_kwargs.fallback_model:
+    # null` (the writer refuses a client that still permits a fallback), then
+    # set `enabled: true` and re-run `parrot claude install`.
+    enabled: false
+    # llm: <provider:model>
+    # llm_kwargs:
+    #   fallback_model: null
+    #   max_retries: 1
+    #   read_timeout: 120
+    kwargs:
+      repo_root: {{repo_root}}

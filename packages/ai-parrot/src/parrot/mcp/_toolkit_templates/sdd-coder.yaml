@@ -1,0 +1,16 @@
+# parrot:summary: FEAT-549 sdd-coder orchestration kernel (heterogeneous model seats).
+# parrot:requires_llm: false
+  sdd-coder:
+    class: parrot.flows.dev_loop.sdd_coder.toolkit.SddCoderToolkit
+    # The roster is pure config. Seats whose credentials or CLI are missing are
+    # dropped by the probe on the first `coder_plan` call and reported there:
+    #   nova          -> BEDROCK_MANTLE_API_KEY / AWS_NOVA_API_KEY
+    #   google-compat -> GEMINI_API_KEY / GOOGLE_API_KEY
+    #   codex         -> the `codex` CLI's own login
+    #   haiku         -> native Claude Code sub-agent, no credentials
+    kwargs:
+      roster:
+        - {label: qwen,        kind: mcp,    backend: nova,          model: qwen.qwen3-coder-480b-a35b-instruct}
+        - {label: gemini,      kind: mcp,    backend: google-compat, model: gemini-3.5-flash}
+        - {label: codex-spark, kind: mcp,    backend: codex,         model: gpt-5.3-codex-spark}
+        - {label: haiku,       kind: native, model: haiku}
