@@ -460,8 +460,13 @@ def build_attempt_row(
       """
       released_estimate_tokens: int = Field(0, ge=0)
       """Operational counter, NOT part of the calibration comparison."""
-      estimate_methods: tuple[str, ...] = ()
-      """Distinct `TokenEstimate.method` values seen (e.g. `("tiktoken:o200k_base",)`)."""
+      # NO `estimate_methods` field: `reserve()` already does
+      # `self._counting_methods.add(estimate.method)` (verified:
+      # parrot/clients/budget.py:128), so the existing `counting_methods` IS the
+      # estimate-method set. A second field would be duplicate, driftable state.
+      # Both new totals are DERIVED in `_report_locked` from
+      # `self._attempts.values()` (each `_Attempt` holds `reservation.input_allowance`
+      # == the estimate, plus its `status`) — no new mutable counters.
 
   # parrot/clients/budget.py  (modifies parrot/clients/budget.py:117 and :327)
   class QuestionBudget:
