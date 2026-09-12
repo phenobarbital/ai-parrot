@@ -686,6 +686,26 @@ class _RecordingClient:
         return self
 
 
+def _bind_client(client_instance, rec_client) -> None:
+    """Inject `rec_client` into the loop-local client cache.
+
+    `AbstractClient.client` is a loop-local property (per-loop cache keyed
+    on ``id(asyncio.get_running_loop())``); direct assignment
+    (``client_instance.client = rec_client``) raises `AttributeError` by
+    design (base.py:900-911). Tests must populate `_clients_by_loop`
+    directly instead, the same way `test_per_loop_cache_integration.py`
+    does.
+    """
+    import weakref
+
+    from parrot.clients.base import _LoopClientEntry
+
+    loop = asyncio.get_running_loop()
+    client_instance._clients_by_loop[id(loop)] = _LoopClientEntry(
+        client=rec_client, loop_ref=weakref.ref(loop), metadata={}
+    )
+
+
 class TestObserveRetryRegime:
     async def test_observe_does_not_swap_the_view(self, monkeypatch):
         # Bind an observe scope, call the funnel, assert client.with_options_calls == []
@@ -695,25 +715,30 @@ class TestObserveRetryRegime:
         # Mock ledger.reserve to return a dummy reservation
         dummy_res = BudgetReservation(
             reservation_id="res_1",
+            operation_id="op_1",
             call_id="c1",
             round_number=1,
             attempt_number=1,
             phase="work",
-            input_estimate=10,
+            input_allowance=10,
             output_cap=50,
-            total=60,
-            state="active",
+            request_fingerprint="fp",
         )
         ledger.reserve = AsyncMock(return_value=dummy_res)
         ledger.settle = AsyncMock()
+        ledger.mark_uncertain = AsyncMock()
         
-        scope = BudgetScope(policy=policy, ledger=ledger)
+        # `BudgetScope.policy` is a read-only property that reads
+        # `self.ledger.policy` — the constructor takes `ledger` positionally
+        # plus `registry`/`is_root`, never a `policy=` kwarg.
+        ledger.policy = policy
+        scope = BudgetScope(ledger, registry=MagicMock(), is_root=True)
         
         # Create a dummy client subclassing the base client
         from parrot.clients.openai_base import OpenAIBaseClient
         client_instance = OpenAIBaseClient()
         rec_client = _RecordingClient()
-        client_instance.client = rec_client
+        _bind_client(client_instance, rec_client)
         
         # Mock budget_adapter_factory
         mock_adapter = MagicMock()
@@ -739,24 +764,29 @@ class TestObserveRetryRegime:
         
         dummy_res = BudgetReservation(
             reservation_id="res_1",
+            operation_id="op_1",
             call_id="c1",
             round_number=1,
             attempt_number=1,
             phase="work",
-            input_estimate=10,
+            input_allowance=10,
             output_cap=50,
-            total=60,
-            state="active",
+            request_fingerprint="fp",
         )
         ledger.reserve = AsyncMock(return_value=dummy_res)
         ledger.settle = AsyncMock()
+        ledger.mark_uncertain = AsyncMock()
         
-        scope = BudgetScope(policy=policy, ledger=ledger)
+        # `BudgetScope.policy` is a read-only property that reads
+        # `self.ledger.policy` — the constructor takes `ledger` positionally
+        # plus `registry`/`is_root`, never a `policy=` kwarg.
+        ledger.policy = policy
+        scope = BudgetScope(ledger, registry=MagicMock(), is_root=True)
         
         from parrot.clients.openai_base import OpenAIBaseClient
         client_instance = OpenAIBaseClient()
         rec_client = _RecordingClient()
-        client_instance.client = rec_client
+        _bind_client(client_instance, rec_client)
         
         mock_adapter = MagicMock()
         mock_adapter.count_input = AsyncMock(return_value=TokenEstimate(input_tokens=10, method="test", quality="estimated", request_fingerprint="fp"))
@@ -781,19 +811,24 @@ class TestObserveRetryRegime:
         
         dummy_res = BudgetReservation(
             reservation_id="res_1",
+            operation_id="op_1",
             call_id="c1",
             round_number=1,
             attempt_number=1,
             phase="work",
-            input_estimate=10,
+            input_allowance=10,
             output_cap=50,
-            total=60,
-            state="active",
+            request_fingerprint="fp",
         )
         ledger.reserve = AsyncMock(return_value=dummy_res)
         ledger.settle = AsyncMock()
+        ledger.mark_uncertain = AsyncMock()
         
-        scope = BudgetScope(policy=policy, ledger=ledger)
+        # `BudgetScope.policy` is a read-only property that reads
+        # `self.ledger.policy` — the constructor takes `ledger` positionally
+        # plus `registry`/`is_root`, never a `policy=` kwarg.
+        ledger.policy = policy
+        scope = BudgetScope(ledger, registry=MagicMock(), is_root=True)
         
         from parrot.clients.openai_base import OpenAIBaseClient
         client_instance = OpenAIBaseClient()
@@ -806,11 +841,12 @@ class TestObserveRetryRegime:
         mock_response.usage.prompt_tokens = 10
         mock_response.usage.completion_tokens = 20
         
-        # We raise APIError twice
+        # We raise APIError twice. `APIError.__init__(message, request, *,
+        # body)` takes no `response=` kwarg (openai SDK 3.3.1).
         from openai import APIError
         mock_request = MagicMock()
         mock_request.url = "https://api.openai.com"
-        err = APIError("Transient error", response=MagicMock(status_code=503), body=None, request=mock_request)
+        err = APIError("Transient error", mock_request, body=None)
         
         call_count = 0
         async def mock_create(*args, **kwargs):
@@ -820,17 +856,23 @@ class TestObserveRetryRegime:
                 raise err
             return mock_response
             
+        # `_chat_completion_budgeted` prefers `.parse` over `.create` when
+        # neither `use_tools` nor `stream` is set (openai_base.py:369-372);
+        # both must be overridden or the call is served by `_RecordingClient`
+        # .__init__'s own default `.parse` mock instead of `mock_create`.
         rec_client.chat.completions.create = AsyncMock(side_effect=mock_create)
-        client_instance.client = rec_client
+        rec_client.chat.completions.parse = AsyncMock(side_effect=mock_create)
+        _bind_client(client_instance, rec_client)
         
         mock_adapter = MagicMock()
         mock_adapter.count_input = AsyncMock(return_value=TokenEstimate(input_tokens=10, method="test", quality="estimated", request_fingerprint="fp"))
         mock_adapter.normalize_usage = MagicMock(return_value=MagicMock())
         client_instance.budget_adapter_factory = MagicMock(return_value=mock_adapter)
         
-        # Temporarily monkeypatch wait_exponential to avoid sleeping in tests
-        import tenacity
-        monkeypatch.setattr(tenacity, "nap_ops", [AsyncMock()])
+        # Skip the real `wait_exponential` delay between retries: `tenacity`
+        # has no `nap_ops` attribute (that line never worked); the actual
+        # AsyncRetrying sleep hook is `asyncio.sleep`.
+        monkeypatch.setattr(asyncio, "sleep", AsyncMock())
         
         res = await client_instance._chat_completion_budgeted(
             scope,
