@@ -346,7 +346,23 @@ class OpenAIBaseClient(AbstractClient):
         )
         cap_key = "max_completion_tokens" if "max_completion_tokens" in kwargs else "max_tokens"
         max_out = kwargs.get(cap_key) or self._resolve_max_tokens(None)
-        view = self.client.with_options(max_retries=0)  # request-local; shares transport, never closed here (spec §2.4)
+        # Enforcement reserves per PHYSICAL request, so it must see every one:
+        # `max_retries=0` hands the SDK's retries up to the tenacity loop above.
+        # Observation cannot deny anything, so that exactness buys nothing and
+        # would cost the run its retry budget — the ordinary funnel allows up to
+        # 3 tenacity x 3 SDK attempts (openai_base.py:273, SDK
+        # DEFAULT_MAX_RETRIES=2), the no-retry view only 3. A provider that
+        # recovers on the 4th physical request would then succeed uninstrumented
+        # and fail instrumented (spec §10 R2). In observe mode one reservation
+        # may therefore cover several physical requests; that is intended —
+        # failed requests are not billed and report no usage.
+        view = (
+            self.client
+            if scope.policy.enforcement == "observe"
+            else self.client.with_options(
+                max_retries=0
+            )  # request-local; shares transport, never closed here (spec §2.4)
+        )
         # `.parse()` (installed openai SDK 3.3.1) has no `stream` parameter at
         # all — a streaming call (e.g. `_finalize_budgeted_chat(..., stream=True)`,
         # which always dispatches with `use_tools=False`) must always use

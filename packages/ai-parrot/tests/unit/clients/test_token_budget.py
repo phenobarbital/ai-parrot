@@ -523,3 +523,407 @@ class TestConcurrency:
         gate.set()
         results = await asyncio.gather(*tasks)
         assert sum(results) == 1
+
+
+class TestEnforcementFlag:
+    def test_defaults_to_enforce(self):
+        assert TokenBudgetPolicy(token_budget=1000).enforcement == "enforce"
+
+    def test_observe_is_accepted(self):
+        assert TokenBudgetPolicy(token_budget=1000, enforcement="observe").enforcement == "observe"
+
+    def test_unknown_mode_rejected(self):
+        with pytest.raises(ValidationError):
+            TokenBudgetPolicy(token_budget=1000, enforcement="advisory")
+
+
+class TestReportEstimateFields:
+    def test_defaults_when_absent(self):
+        # Build a BudgetReport with exactly the kwargs _report_locked
+        # passes today (parrot/clients/budget.py:340-358) and assert the three
+        # new fields default — bounded by AC: "a report built without the new
+        # fields still validates"
+        report = BudgetReport(
+            operation_id="op_1",
+            policy=TokenBudgetPolicy(token_budget=1000),
+            state="active",
+            revision=1,
+            input_tokens=100,
+            output_tokens=50,
+            total_tokens=150,
+            uncertain_tokens=0,
+            in_flight_tokens=0,
+            remaining_work_tokens=850,
+            remaining_total_tokens=850,
+            counting_methods=("method1", "method2"),
+            overrun_tokens=0,
+            accounting_complete=True,
+            budget_exhausted=False,
+            finalization_attempted=False,
+            finalized=False,
+            answer_complete=False,
+        )
+        assert report.settled_estimate_input_tokens == 0
+        assert report.released_estimate_tokens == 0
+
+
+def _estimate(n: int = 5000, method: str = "tiktoken:o200k_base") -> TokenEstimate:
+    return TokenEstimate(input_tokens=n, method=method, quality="estimated", request_fingerprint="fp")
+
+
+@pytest.fixture
+def observing_ledger() -> QuestionBudget:
+    """A ledger whose ceiling is absurdly below demand, in observe mode."""
+    return QuestionBudget(TokenBudgetPolicy(token_budget=1, enforcement="observe"), "op-observe")
+
+
+class TestObservationalReserve:
+    async def test_never_denies_and_preserves_cap(self, observing_ledger):
+        for round_no in range(1, 11):
+            res = await observing_ledger.reserve(
+                _estimate(),
+                max_output_tokens=8192,
+                min_output_tokens=1,
+                call_id="c1",
+                round_number=round_no,
+                attempt_number=1,
+                phase="work",
+            )
+            assert res.output_cap == 8192
+
+    async def test_does_not_consult_available(self, observing_ledger, monkeypatch):
+        # Monkeypatch QuestionBudget._available to raise, then assert a
+        # reserve() still succeeds — bounded by AC "never calls _available()"
+        def raise_on_available(self, phase):
+            raise RuntimeError("_available should not be called in observe mode")
+
+        monkeypatch.setattr(QuestionBudget, "_available", raise_on_available)
+        # Should not raise
+        await observing_ledger.reserve(
+            _estimate(),
+            max_output_tokens=8192,
+            min_output_tokens=1,
+            call_id="c1",
+            round_number=1,
+            attempt_number=1,
+            phase="work",
+        )
+
+    async def test_state_stays_active_past_the_ceiling(self, observing_ledger):
+        # Reserve + settle usage far above token_budget, then assert
+        # state == "active"
+        for i in range(10):
+            res = await observing_ledger.reserve(
+                _estimate(10000),
+                max_output_tokens=8192,
+                min_output_tokens=1,
+                call_id="c1",
+                round_number=i + 1,
+                attempt_number=1,
+                phase="work",
+            )
+            await observing_ledger.settle(res.reservation_id, _usage(10000, 8000))
+
+        rep = await observing_ledger.report()
+        assert rep.state == "active"
+
+
+class TestSettledEstimateReporting:
+    async def test_released_excluded_from_calibration(self):
+        # One settled reservation (estimate=100, usage=100) and one
+        # released (estimate=1000); assert settled_estimate_input_tokens == 100,
+        # released_estimate_tokens == 1000, input_tokens == 100 — the exact
+        # scenario spec §10 R5 describes
+        q = QuestionBudget(TokenBudgetPolicy(token_budget=100000, enforcement="enforce"), "op-test")
+        r1 = await q.reserve(
+            _est(100),
+            max_output_tokens=100,
+            min_output_tokens=1,
+            call_id="c",
+            round_number=1,
+            attempt_number=1,
+            phase="work",
+        )
+        await q.settle(r1.reservation_id, _usage(100, 50))
+
+        r2 = await q.reserve(
+            _est(1000),
+            max_output_tokens=100,
+            min_output_tokens=1,
+            call_id="c",
+            round_number=2,
+            attempt_number=1,
+            phase="work",
+        )
+        await q.release_unspent(r2.reservation_id)
+
+        rep = await q.report()
+        assert rep.settled_estimate_input_tokens == 100
+        assert rep.released_estimate_tokens == 1000
+        assert rep.input_tokens == 100
+
+    async def test_uncertain_counted_in_neither(self):
+        # Mark_uncertain a reservation; assert it appears in neither
+        # estimate total — bounded by AC "an uncertain one appears in neither"
+        q = QuestionBudget(TokenBudgetPolicy(token_budget=100000, enforcement="enforce"), "op-test")
+        r1 = await q.reserve(
+            _est(100),
+            max_output_tokens=100,
+            min_output_tokens=1,
+            call_id="c",
+            round_number=1,
+            attempt_number=1,
+            phase="work",
+        )
+        await q.mark_uncertain(r1.reservation_id, "timeout")
+
+        rep = await q.report()
+        assert rep.settled_estimate_input_tokens == 0
+        assert rep.released_estimate_tokens == 0
+        # uncertain_tokens is a pre-existing operational counter keyed on
+        # `.total` (input + output), not on the input-only estimate the two
+        # NEW settled/released totals track — see the established assertion
+        # `rep.uncertain_tokens == r.total` above in TestBasicFlow.
+        assert rep.uncertain_tokens == r1.total
+
+
+# packages/ai-parrot/tests/unit/clients/test_token_budget.py  (append)
+from unittest.mock import AsyncMock, MagicMock  # noqa: E402
+from parrot.clients.openai_base import _BUDGET_CALL_CTX  # noqa: E402
+from parrot.clients.budget_scope import BudgetScope  # noqa: E402
+from parrot.models.token_budget import TokenBudgetPolicy, TokenEstimate, BudgetReservation  # noqa: E402
+from parrot.core.exceptions import BudgetExhausted  # noqa: E402
+from openai import APIError  # noqa: E402
+
+
+class _RecordingClient:
+    """Minimal OpenAI-shaped double that records `with_options` calls."""
+
+    def __init__(self) -> None:
+        self.with_options_calls: list[dict] = []
+        self.chat = MagicMock()
+        self.chat.completions = MagicMock()
+
+        # We mock both create and parse to return a mock response with usage
+        mock_response = MagicMock()
+        mock_response.usage = MagicMock()
+        mock_response.usage.prompt_tokens = 10
+        mock_response.usage.completion_tokens = 20
+
+        self.chat.completions.create = AsyncMock(return_value=mock_response)
+        self.chat.completions.parse = AsyncMock(return_value=mock_response)
+
+    def with_options(self, **kwargs):
+        self.with_options_calls.append(kwargs)
+        return self
+
+
+def _bind_client(client_instance, rec_client) -> None:
+    """Inject `rec_client` into the loop-local client cache.
+
+    `AbstractClient.client` is a loop-local property (per-loop cache keyed
+    on ``id(asyncio.get_running_loop())``); direct assignment
+    (``client_instance.client = rec_client``) raises `AttributeError` by
+    design (base.py:900-911). Tests must populate `_clients_by_loop`
+    directly instead, the same way `test_per_loop_cache_integration.py`
+    does.
+    """
+    import weakref
+
+    from parrot.clients.base import _LoopClientEntry
+
+    loop = asyncio.get_running_loop()
+    client_instance._clients_by_loop[id(loop)] = _LoopClientEntry(
+        client=rec_client, loop_ref=weakref.ref(loop), metadata={}
+    )
+
+
+class TestObserveRetryRegime:
+    async def test_observe_does_not_swap_the_view(self, monkeypatch):
+        # Bind an observe scope, call the funnel, assert client.with_options_calls == []
+        policy = TokenBudgetPolicy(token_budget=10000, enforcement="observe")
+        ledger = MagicMock()
+
+        # Mock ledger.reserve to return a dummy reservation
+        dummy_res = BudgetReservation(
+            reservation_id="res_1",
+            operation_id="op_1",
+            call_id="c1",
+            round_number=1,
+            attempt_number=1,
+            phase="work",
+            input_allowance=10,
+            output_cap=50,
+            request_fingerprint="fp",
+        )
+        ledger.reserve = AsyncMock(return_value=dummy_res)
+        ledger.settle = AsyncMock()
+        ledger.mark_uncertain = AsyncMock()
+
+        # `BudgetScope.policy` is a read-only property that reads
+        # `self.ledger.policy` — the constructor takes `ledger` positionally
+        # plus `registry`/`is_root`, never a `policy=` kwarg.
+        ledger.policy = policy
+        scope = BudgetScope(ledger, registry=MagicMock(), is_root=True)
+
+        # Create a dummy client subclassing the base client
+        from parrot.clients.openai_base import OpenAIBaseClient
+
+        client_instance = OpenAIBaseClient()
+        rec_client = _RecordingClient()
+        _bind_client(client_instance, rec_client)
+
+        # Mock budget_adapter_factory
+        mock_adapter = MagicMock()
+        mock_adapter.count_input = AsyncMock(
+            return_value=TokenEstimate(input_tokens=10, method="test", quality="estimated", request_fingerprint="fp")
+        )
+        mock_adapter.normalize_usage = MagicMock(return_value=MagicMock())
+        client_instance.budget_adapter_factory = MagicMock(return_value=mock_adapter)
+
+        # Call _chat_completion_budgeted
+        await client_instance._chat_completion_budgeted(
+            scope,
+            model="gpt-4",
+            messages=[{"role": "user", "content": "hello"}],
+            use_tools=False,
+            stream=False,
+        )
+
+        assert rec_client.with_options_calls == []
+
+    async def test_enforce_still_swaps_the_view(self, monkeypatch):
+        # Same with enforcement="enforce"; assert [{"max_retries": 0}]
+        policy = TokenBudgetPolicy(token_budget=10000, enforcement="enforce")
+        ledger = MagicMock()
+
+        dummy_res = BudgetReservation(
+            reservation_id="res_1",
+            operation_id="op_1",
+            call_id="c1",
+            round_number=1,
+            attempt_number=1,
+            phase="work",
+            input_allowance=10,
+            output_cap=50,
+            request_fingerprint="fp",
+        )
+        ledger.reserve = AsyncMock(return_value=dummy_res)
+        ledger.settle = AsyncMock()
+        ledger.mark_uncertain = AsyncMock()
+
+        # `BudgetScope.policy` is a read-only property that reads
+        # `self.ledger.policy` — the constructor takes `ledger` positionally
+        # plus `registry`/`is_root`, never a `policy=` kwarg.
+        ledger.policy = policy
+        scope = BudgetScope(ledger, registry=MagicMock(), is_root=True)
+
+        from parrot.clients.openai_base import OpenAIBaseClient
+
+        client_instance = OpenAIBaseClient()
+        rec_client = _RecordingClient()
+        _bind_client(client_instance, rec_client)
+
+        mock_adapter = MagicMock()
+        mock_adapter.count_input = AsyncMock(
+            return_value=TokenEstimate(input_tokens=10, method="test", quality="estimated", request_fingerprint="fp")
+        )
+        mock_adapter.normalize_usage = MagicMock(return_value=MagicMock())
+        client_instance.budget_adapter_factory = MagicMock(return_value=mock_adapter)
+
+        await client_instance._chat_completion_budgeted(
+            scope,
+            model="gpt-4",
+            messages=[{"role": "user", "content": "hello"}],
+            use_tools=False,
+            stream=False,
+        )
+
+        assert rec_client.with_options_calls == [{"max_retries": 0}]
+
+    async def test_transient_failure_recovers_identically(self, monkeypatch):
+        # A client failing twice with a retryable APIError then succeeding;
+        # assert the observed result equals the unscoped result
+        policy = TokenBudgetPolicy(token_budget=10000, enforcement="observe")
+        ledger = MagicMock()
+
+        dummy_res = BudgetReservation(
+            reservation_id="res_1",
+            operation_id="op_1",
+            call_id="c1",
+            round_number=1,
+            attempt_number=1,
+            phase="work",
+            input_allowance=10,
+            output_cap=50,
+            request_fingerprint="fp",
+        )
+        ledger.reserve = AsyncMock(return_value=dummy_res)
+        ledger.settle = AsyncMock()
+        ledger.mark_uncertain = AsyncMock()
+
+        # `BudgetScope.policy` is a read-only property that reads
+        # `self.ledger.policy` — the constructor takes `ledger` positionally
+        # plus `registry`/`is_root`, never a `policy=` kwarg.
+        ledger.policy = policy
+        scope = BudgetScope(ledger, registry=MagicMock(), is_root=True)
+
+        from parrot.clients.openai_base import OpenAIBaseClient
+
+        client_instance = OpenAIBaseClient()
+
+        # Setup a client that fails twice then succeeds
+        rec_client = _RecordingClient()
+
+        mock_response = MagicMock()
+        mock_response.usage = MagicMock()
+        mock_response.usage.prompt_tokens = 10
+        mock_response.usage.completion_tokens = 20
+
+        # We raise APIError twice. `APIError.__init__(message, request, *,
+        # body)` takes no `response=` kwarg (openai SDK 3.3.1).
+        from openai import APIError
+
+        mock_request = MagicMock()
+        mock_request.url = "https://api.openai.com"
+        err = APIError("Transient error", mock_request, body=None)
+
+        call_count = 0
+
+        async def mock_create(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count < 3:
+                raise err
+            return mock_response
+
+        # `_chat_completion_budgeted` prefers `.parse` over `.create` when
+        # neither `use_tools` nor `stream` is set (openai_base.py:369-372);
+        # both must be overridden or the call is served by `_RecordingClient`
+        # .__init__'s own default `.parse` mock instead of `mock_create`.
+        rec_client.chat.completions.create = AsyncMock(side_effect=mock_create)
+        rec_client.chat.completions.parse = AsyncMock(side_effect=mock_create)
+        _bind_client(client_instance, rec_client)
+
+        mock_adapter = MagicMock()
+        mock_adapter.count_input = AsyncMock(
+            return_value=TokenEstimate(input_tokens=10, method="test", quality="estimated", request_fingerprint="fp")
+        )
+        mock_adapter.normalize_usage = MagicMock(return_value=MagicMock())
+        client_instance.budget_adapter_factory = MagicMock(return_value=mock_adapter)
+
+        # Skip the real `wait_exponential` delay between retries: `tenacity`
+        # has no `nap_ops` attribute (that line never worked); the actual
+        # AsyncRetrying sleep hook is `asyncio.sleep`.
+        monkeypatch.setattr(asyncio, "sleep", AsyncMock())
+
+        res = await client_instance._chat_completion_budgeted(
+            scope,
+            model="gpt-4",
+            messages=[{"role": "user", "content": "hello"}],
+            use_tools=False,
+            stream=False,
+        )
+
+        assert res == mock_response
+        assert call_count == 3

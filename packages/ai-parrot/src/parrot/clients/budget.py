@@ -126,6 +126,33 @@ class QuestionBudget:
         """Reserve I+O or raise typed denial; final requires the owner claim."""
         async with self._lock:
             self._counting_methods.add(estimate.method)
+            if self._policy.enforcement == "observe":
+                # Observational ledger: account, never refuse, never resize.
+                # Deliberately does NOT consult `_available()` (line 146) nor
+                # compute `min(max_output_tokens, available - estimate.input_tokens)`
+                # (line 147) — a measurement must not change the request it
+                # measures (spec §2, §10 R1).
+                self._revision += 1
+                reservation = BudgetReservation(
+                    reservation_id=str(uuid.uuid4()),
+                    operation_id=self._operation_id,
+                    call_id=call_id,
+                    round_number=round_number,
+                    attempt_number=attempt_number,
+                    phase=phase,
+                    input_allowance=estimate.input_tokens,
+                    output_cap=max_output_tokens,
+                    request_fingerprint=estimate.request_fingerprint,
+                )
+                self._attempts[reservation.reservation_id] = _Attempt(reservation)
+                self.logger.debug(
+                    "reserve %s phase=%s I=%d O=%d (observe)",
+                    reservation.reservation_id,
+                    phase,
+                    estimate.input_tokens,
+                    max_output_tokens,
+                )
+                return reservation
             if self._state == "closed" or self._strict_violated:
                 raise BudgetExhausted(
                     "operation cannot admit inference",
@@ -350,6 +377,12 @@ class QuestionBudget:
             remaining_work_tokens=remaining_work_tokens,
             remaining_total_tokens=remaining_total_tokens,
             counting_methods=tuple(self._counting_methods),
+            settled_estimate_input_tokens=sum(
+                a.reservation.input_allowance for a in self._attempts.values() if a.status == "settled"
+            ),
+            released_estimate_tokens=sum(
+                a.reservation.input_allowance for a in self._attempts.values() if a.status == "released"
+            ),
             overrun_tokens=overrun_tokens,
             accounting_complete=accounting_complete,
             budget_exhausted=budget_exhausted,

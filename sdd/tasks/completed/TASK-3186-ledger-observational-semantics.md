@@ -260,10 +260,25 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-coder (minimax seat) via parrot-sdd-coder orchestrator; fidelity violation and a test-assertion bug repaired by sdd-worker
+**Date**: 2026-09-12
+**Notes**: Added the `enforcement="observe"` branch to `QuestionBudget.reserve()`
+(never consults `_available()`, returns `output_cap == max_output_tokens`
+verbatim, `state` stays `"active"` past the ceiling) and the
+`settled_estimate_input_tokens`/`released_estimate_tokens` derived totals
+to `_report_locked()`. The first merge attempt was refused by the
+orchestrator's fidelity gate (`dirty_task_worktree`): the coder left an
+UNTRACKED scratch script (`packages/ai-parrot/test_observational.py`,
+never committed) in its sub-worktree. sdd-worker deleted the stray file
+(a working-tree cleanup, not a code change) and the merge succeeded on
+retry. Verification then found one test-authoring bug in the coder's own
+new test — `test_uncertain_counted_in_neither` asserted
+`uncertain_tokens == 100` (input-only), but that pre-existing counter is
+keyed on `.total` (input+output), per the established assertion elsewhere
+in the same file; corrected to `r1.total`. All 34 tests in
+`test_token_budget.py` pass, plus both FEAT-550 regression suites
+(30 tests); `ruff check` clean.
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Deviations from spec**: none (fidelity cleanup + test-assertion fix, see note above)
 
-**Deviations from spec**: none | describe if any
+Seat: minimax · Backend: nova · Model: minimax.minimax-m2.5 · Attempts: 1 · Duration: 289.1s · Tokens: 1752420/10468

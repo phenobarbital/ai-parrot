@@ -321,10 +321,29 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-coder (gemini seat) via parrot-sdd-coder orchestrator; two production/test bugs repaired and merge verified by sdd-worker
+**Date**: 2026-09-12
+**Notes**: Wired exactly-once terminal `AttemptTelemetry` emission into
+`LLMCodeDispatcher._dispatch_loop` on every exit path (completed/failed/
+salvaged), with turn-series accumulation and `turns_with_unknown_usage`
+tracking, via the optional `on_attempt_telemetry` hook read off
+`_SESSION_HOST_CTX`. During verification two bugs surfaced and were fixed
+by sdd-worker, both confined to this task's own two files:
+1. **Production bug**: the `finally` block referenced the local `salvaged`
+   unconditionally to pick the terminal state, but `salvaged` is only
+   assigned inside the post-loop salvage branch — the ordinary
+   normal-completion `return` inside the `for` loop never reaches it, so
+   every non-salvage dispatch raised `UnboundLocalError`. Fixed by
+   initializing `salvaged = None` alongside the other loop locals.
+2. **Test bug**: 3 of the 4 `TestTerminalTelemetry` tests pre-bound
+   `_SESSION_HOST_CTX` directly via `.set()` and expected it to survive
+   into `dispatch()`, but `dispatch()` always overwrites the ContextVar
+   from its own `session_host` kwarg (default `None`) — production
+   callers (`agent_pool.py:337`) pass `session_host=` to `dispatch()`
+   instead. Fixed the 3 tests to do the same.
 
-**Completed by**:
-**Date**:
-**Notes**:
+All 66 tests in `test_llm_code_dispatcher.py` pass; `ruff check` clean.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none (production + test fixups, see note above)
+
+Seat: gemini · Backend: google-compat · Model: gemini-3.5-flash · Attempts: 1 · Duration: 89.2s · Tokens: 1995755/6680

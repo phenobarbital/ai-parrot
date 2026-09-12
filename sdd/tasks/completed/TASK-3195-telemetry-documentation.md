@@ -157,10 +157,23 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-coder (codex-spark attempt 1 failed on CLI arg incompatibility; qwen seat attempt 2 succeeded) via parrot-sdd-coder orchestrator; a schema-accuracy bug repaired by sdd-worker
+**Date**: 2026-09-12
+**Notes**: Documented the `## Telemetry` section of
+`docs/dev_loop/sdd-coder-orchestrator.md`: the millions-not-thousands
+scale warning with the measured figures and evidence-file citation, the
+three environment variables with defaults and no ceiling knob, the
+campaign workflow (enable/run/analyze), and the `gemini` seat's
+provider-totals-only baseline behaviour. Verification found the dataset-
+schema table and step 2 fabricated a "turn" row kind ("one row per turn")
+and misattributed fields to `outcome` that only exist on the attempt row
+— the real row kinds are `attempt` (one per attempt, carrying the full
+embedded `turn_series`) and `outcome` (one or more per attempt, keyed by
+`event_seq`), verified against `sdd_coder/telemetry.py:39-88`. sdd-worker
+corrected the table and the workflow step to match the real models; every
+other AC-required fact (scale warning, settings, gemini note,
+`--help` invocation) was already accurate.
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Deviations from spec**: none (doc-accuracy fixup, see note above)
 
-**Deviations from spec**: none | describe if any
+Seat: codex-spark→qwen (retry) · Backend: codex (failed)→nova · Model: gpt-5.3-codex-spark (failed)→qwen.qwen3-coder-480b-a35b-instruct · Attempts: 2 · Duration: 49.3s · Tokens: 454605/2418
