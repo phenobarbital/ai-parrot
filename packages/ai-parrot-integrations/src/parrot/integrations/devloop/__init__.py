@@ -26,20 +26,25 @@ from .models import (
 from .parser import USAGE, parse_command
 from .process import HeadlessHandshakeView, HeadlessRunProcess
 from .registry import RunRegistry
+from .service import DevLoopDispatchService
 from .tail import RunStateTail
+from .transport import DevLoopTransport, NullTransport
 
 __all__ = [
     "USAGE",
     "BridgeResult",
     "CommandSyntaxError",
     "DevLoopCommand",
+    "DevLoopDispatchService",
     "DevLoopError",
     "DevLoopIntegrationConfig",
+    "DevLoopTransport",
     "GateView",
     "HeadlessHandshakeView",
     "HeadlessRunProcess",
     "LoopbackRestChannel",
     "NotRunOwnerError",
+    "NullTransport",
     "PendingConfirmation",
     "Requester",
     "RequestType",

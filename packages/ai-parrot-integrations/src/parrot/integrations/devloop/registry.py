@@ -120,3 +120,26 @@ class RunRegistry:
             await self._redis.expire(self._key(run_id), self._retention)
         except Exception:  # noqa: BLE001 - Redis mirror is best-effort
             self.logger.warning("RunRegistry.mark_terminal: Redis update failed for %s", run_id, exc_info=True)
+
+    def peek(self, run_id: str) -> Optional[RunRecord]:
+        """Synchronous, memory-only lookup (FEAT-555 TASK-3204).
+
+        Safe to call inside a Slack 3s ack / ``trigger_id`` window, where
+        an ``await`` on Redis would be too slow or simply unnecessary —
+        the service always ``save()``s to memory first.
+
+        Args:
+            run_id: The run to look up.
+
+        Returns:
+            The record if held in memory, else ``None`` (never hits Redis).
+        """
+        return self._records.get(run_id)
+
+    def all_records(self) -> List[RunRecord]:
+        """Every record currently held in memory (FEAT-555 TASK-3204).
+
+        Returns:
+            All in-memory records, in no particular order.
+        """
+        return list(self._records.values())
