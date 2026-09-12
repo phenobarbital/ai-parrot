@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import os
 import re
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, Tuple
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -124,6 +124,34 @@ class AttemptRecord(BaseModel):
     duration_s: float = 0.0
     usage: Dict[str, Any] = Field(default_factory=dict)
     error: str = ""
+    attempt_uid: str = ""
+    """Globally unique id for this attempt, minted by the engine.
+
+    The telemetry join key. `attempt` cannot serve: it restarts at 1 on every
+    `_run_task` invocation (engine.py:592) while each chunk gets a fresh job id
+    (jobs.py:30), so a task re-dispatched in a later job reuses the same
+    number. Defaults empty; the engine sets it.
+    """
+    job_id: str = ""
+    resolved_model: str = ""
+    """The model the dispatcher actually resolved, which can differ from the
+    roster seat's configured `model` via `_resolve_model`'s client fallbacks
+    (dispatchers/llm.py:879)."""
+    turns: int = 0
+    terminal: str = "completed"
+    """One of "completed", "failed" or "salvaged"."""
+    error_class: str = ""
+    """Exception type name only. The full message stays in `error` and never
+    reaches the dataset."""
+    declared_files: Optional[int] = None
+    """Count of files the task declared, captured DURING the attempt: the task
+    file lives in the worktree that /sdd-done removes."""
+    declared_files_known: bool = False
+    turns_with_unknown_usage: int = 0
+    turn_series: List[Tuple[int, Optional[int], Optional[int]]] = Field(default_factory=list)
+    """Per turn: (round_number, input_tokens or None, output_tokens or None)."""
+    budget_report: Dict[str, Any] = Field(default_factory=dict)
+    """BudgetReport.model_dump() when an observational ledger was bound."""
 
 
 class TaskResult(BaseModel):
