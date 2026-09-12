@@ -11,10 +11,10 @@
       "feature_id": "FEAT-556",
       "feature": "claude-install-mcp-autoenable",
       "spec": "sdd/specs/claude-install-mcp-autoenable.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "assigned_to": null,
       "started_at": "2026-09-12T23:42:33+00:00",
-      "completed_at": null,
+      "completed_at": "2026-09-12T23:46:58+00:00",
       "id": "TASK-3211",
       "slug": "toolkit-seed-templates",
       "title": "Packaged toolkit templates + .parrot/mcp-toolkits.yaml seeder",
@@ -23,7 +23,7 @@
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Dependency of every other task: creates parrot/mcp/toolkit_seed.py and the packaged templates that M2-M5 consume.",
-      "file": "sdd/tasks/active/TASK-3211-toolkit-seed-templates.md"
+      "file": "sdd/tasks/completed/TASK-3211-toolkit-seed-templates.md"
     },
     {
       "feature_id": "FEAT-556",
