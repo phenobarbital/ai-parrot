@@ -32,7 +32,8 @@ def _cmd(dispatcher, profile):
 def test_legacy_shape_unchanged(dispatcher):
     cmd = _cmd(dispatcher, CodexCodeDispatchProfile())
     assert cmd[:3] == ["codex", "exec", "--json"] and "review" not in cmd
-    assert "--ask-for-approval" in cmd
+    assert "--ask-for-approval" not in cmd
+    assert cmd[cmd.index("-c") + 1] == "approval_policy=never"
     assert "--sandbox" in cmd
 
 
