@@ -1,4 +1,5 @@
 """Fake-dispatcher tests for SddCoderEngine's dispatch/retry side (TASK-3121)."""
+
 from __future__ import annotations
 
 import asyncio
@@ -21,6 +22,7 @@ class FakeDispatcher:
       - "fail": raises RuntimeError.
       - "block": awaits an injected asyncio.Event before returning ok.
       - "extra": also writes an unlisted file (for fidelity-violation coverage elsewhere).
+      - "banned": writes a banned import (`import httpx`) into the task's listed file (FEAT-553).
     """
 
     def __init__(self, behaviour: str = "ok", *, gate: asyncio.Event | None = None) -> None:
@@ -48,7 +50,8 @@ class FakeDispatcher:
         n = task_id.rsplit("-", 1)[-1].lstrip("0") or "0"
         filename = f"pkg/t{int(n)}.py"
         (Path(cwd) / "pkg").mkdir(parents=True, exist_ok=True)
-        (Path(cwd) / filename).write_text(f"# {task_id}\n")
+        content = "import httpx\n" if self.behaviour == "banned" else f"# {task_id}\n"
+        (Path(cwd) / filename).write_text(content)
         await _git("add", filename, cwd=cwd)
         await _git("commit", "-m", f"impl {task_id}", cwd=cwd)
         return DevelopmentOutput(files_changed=[filename], commit_shas=["deadbeef"], summary=task_id)
@@ -243,7 +246,9 @@ async def test_plan_then_dispatch_uses_consistent_seat_assignment(git_sandbox_fe
             RosterSeat(label="b", backend="codex"),
         ]
     )
-    engine = SddCoderEngine(roster=roster, probe=noop_probe, worktree_base_path=str(base_path), dispatcher_builder=builder)
+    engine = SddCoderEngine(
+        roster=roster, probe=noop_probe, worktree_base_path=str(base_path), dispatcher_builder=builder
+    )
 
     plan = await engine.plan("demo", str(worktree))
     assert len(plan.chunks) == 1
@@ -308,6 +313,34 @@ async def test_engine_merges_serialised_across_jobs(git_sandbox_feature, noop_pr
 
     _rc, log, _err = await _git("log", "--oneline", feature_branch, cwd=worktree)
     assert "impl TASK-0001" in log and "impl TASK-0002" in log
+
+
+_BANNED_CFG = (
+    '[lint]\nselect = ["TID251"]\n[lint.flake8-tidy-imports.banned-api]\n'
+    '"requests".msg = "use aiohttp"\n"httpx".msg = "use aiohttp"\n'
+)
+
+
+async def test_run_attempt_turns_banned_import_into_attempt_error(git_sandbox_feature, noop_probe):
+    worktree, _feature_branch, base_path, _index_path = git_sandbox_feature
+    (worktree / "ruff.toml").write_text(_BANNED_CFG)
+    await _git("add", "ruff.toml", cwd=str(worktree))
+    await _git("commit", "-m", "ruff config", cwd=str(worktree))
+
+    builder = fake_builder_factory({"nova": "banned"})
+    engine = SddCoderEngine(
+        roster=_roster(("a", "nova"), ("b", "codex")),
+        probe=noop_probe,
+        worktree_base_path=str(base_path),
+        dispatcher_builder=builder,
+    )
+    job = await engine.run_chunk("demo", str(worktree), ["TASK-0001"])
+    result = await engine.wait(job.job_id, 5)
+
+    task = result.tasks[0]
+    assert task.attempts[0].error.startswith("BannedImport:")
+    assert task.attempts[1].seat_label == "b"
+    assert task.outcome == "merged"
 
 
 async def test_telemetry_collector_captures_usage():

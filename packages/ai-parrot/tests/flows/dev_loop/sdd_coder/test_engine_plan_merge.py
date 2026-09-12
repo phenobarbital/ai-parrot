@@ -1,4 +1,5 @@
 """Git-sandbox integration tests for SddCoderEngine's read/consolidation side (TASK-3120)."""
+
 from __future__ import annotations
 
 import asyncio
@@ -125,8 +126,11 @@ async def test_engine_native_prepare_then_merge(git_sandbox_feature, noop_probe)
 
 async def test_engine_rejects_dirty_task_worktree(git_sandbox_feature, noop_probe):
     worktree, feature_branch, base_path, _index_path = git_sandbox_feature
-    engine = SddCoderEngine(roster=RosterConfig(seats=[RosterSeat(label="h", kind="native")]), probe=noop_probe,
-                            worktree_base_path=str(base_path))
+    engine = SddCoderEngine(
+        roster=RosterConfig(seats=[RosterSeat(label="h", kind="native")]),
+        probe=noop_probe,
+        worktree_base_path=str(base_path),
+    )
     ctx = await engine._resolve_feature("demo", str(worktree))
     manager = engine._manager_for(ctx, "TASK-0002", 1)
     path = Path(await manager.create("TASK-0002.a1"))
@@ -140,8 +144,11 @@ async def test_engine_rejects_dirty_task_worktree(git_sandbox_feature, noop_prob
 
 async def test_engine_fidelity_violation_keeps_branch(git_sandbox_feature, noop_probe):
     worktree, feature_branch, base_path, _index_path = git_sandbox_feature
-    engine = SddCoderEngine(roster=RosterConfig(seats=[RosterSeat(label="h", kind="native")]), probe=noop_probe,
-                            worktree_base_path=str(base_path))
+    engine = SddCoderEngine(
+        roster=RosterConfig(seats=[RosterSeat(label="h", kind="native")]),
+        probe=noop_probe,
+        worktree_base_path=str(base_path),
+    )
     ctx = await engine._resolve_feature("demo", str(worktree))
     manager = engine._manager_for(ctx, "TASK-0003", 1)
     path = Path(await manager.create("TASK-0003.a1"))
@@ -157,8 +164,11 @@ async def test_engine_fidelity_violation_keeps_branch(git_sandbox_feature, noop_
 
 async def test_engine_merge_conflict_reported_and_aborted(git_sandbox_feature, noop_probe):
     worktree, feature_branch, base_path, _index_path = git_sandbox_feature
-    engine = SddCoderEngine(roster=RosterConfig(seats=[RosterSeat(label="h", kind="native")]), probe=noop_probe,
-                            worktree_base_path=str(base_path))
+    engine = SddCoderEngine(
+        roster=RosterConfig(seats=[RosterSeat(label="h", kind="native")]),
+        probe=noop_probe,
+        worktree_base_path=str(base_path),
+    )
     ctx = await engine._resolve_feature("demo", str(worktree))
 
     manager1 = engine._manager_for(ctx, "TASK-0001", 1)
@@ -172,9 +182,7 @@ async def test_engine_merge_conflict_reported_and_aborted(git_sandbox_feature, n
     planned = PlannedTask(
         task_id="TASK-0001", task_file="sdd/tasks/active/TASK-0001-demo.md", seat_label="h", native=True
     )
-    first = await engine._consolidate(
-        ctx, manager1, planned, branch=f"{feature_branch}--TASK-0001-a1", path=str(path1)
-    )
+    first = await engine._consolidate(ctx, manager1, planned, branch=f"{feature_branch}--TASK-0001-a1", path=str(path1))
     assert first.outcome == "merged"
 
     second = await engine.merge("demo", str(worktree), "TASK-0001")
@@ -212,11 +220,78 @@ async def test_engine_journals_job_snapshot(git_sandbox_feature, three_seat_rost
 
     worktree, _feature_branch, base_path, _index_path = git_sandbox_feature
     engine = SddCoderEngine(roster=three_seat_roster, probe=noop_probe, worktree_base_path=str(base_path))
-    job = CoderJob(job_id="job-abc123", feature_id="FEAT-549", chunk_task_ids=["TASK-0001"], state="done",
-                  started_at="2026-09-10T00:00:00+00:00")
+    job = CoderJob(
+        job_id="job-abc123",
+        feature_id="FEAT-549",
+        chunk_task_ids=["TASK-0001"],
+        state="done",
+        started_at="2026-09-10T00:00:00+00:00",
+    )
 
     await engine._journal(str(worktree), job)
 
     journal_path = worktree / ".sdd-coder" / "jobs" / "job-abc123.json"
     assert journal_path.is_file()
     assert json.loads(journal_path.read_text())["job_id"] == "job-abc123"
+
+
+_BANNED_CFG = (
+    '[lint]\nselect = ["TID251"]\n[lint.flake8-tidy-imports.banned-api]\n'
+    '"requests".msg = "use aiohttp"\n"httpx".msg = "use aiohttp"\n'
+)
+
+
+async def test_consolidate_rejects_banned_import(git_sandbox_feature, noop_probe):
+    worktree, feature_branch, base_path, _index_path = git_sandbox_feature
+    await _write_and_commit(
+        worktree, "ruff.toml", _BANNED_CFG, "ruff config"
+    )  # on the feature branch, so sub-worktrees inherit it
+    engine = SddCoderEngine(
+        roster=RosterConfig(seats=[RosterSeat(label="h", kind="native")]),
+        probe=noop_probe,
+        worktree_base_path=str(base_path),
+    )
+    ctx = await engine._resolve_feature("demo", str(worktree))
+    manager = engine._manager_for(ctx, "TASK-0003", 1)
+    path = Path(await manager.create("TASK-0003.a1"))
+    await _write_and_commit(path, "pkg/t3.py", "import requests\n", "banned import")
+
+    result = await engine.merge("demo", str(worktree), "TASK-0003")
+    assert result.outcome == "fidelity_violation" and result.diagnostics.startswith("BannedImport:")
+
+    _rc, log, _err = await _git("log", "--oneline", feature_branch, cwd=worktree)
+    assert "banned import" not in log
+
+
+async def test_consolidate_rechecks_banned_import_after_manual_remerge(git_sandbox_feature, noop_probe):
+    """Code-review fix: `sdd-worker.md`'s documented `merge_conflict` recovery —
+    resolve manually with `git merge <branch>` directly in the feature worktree,
+    commit, then call `coder_merge` (-> `_consolidate`) again — must not let a
+    banned import slip through on the SECOND `_consolidate` call just because
+    `branch` is now an ancestor of `feature_branch` (which collapses a plain
+    `git merge-base` to `branch`'s own tip and would otherwise produce an empty
+    diff)."""
+    worktree, feature_branch, base_path, _index_path = git_sandbox_feature
+    await _write_and_commit(worktree, "ruff.toml", _BANNED_CFG, "ruff config")
+    engine = SddCoderEngine(
+        roster=RosterConfig(seats=[RosterSeat(label="h", kind="native")]),
+        probe=noop_probe,
+        worktree_base_path=str(base_path),
+    )
+    ctx = await engine._resolve_feature("demo", str(worktree))
+    manager = engine._manager_for(ctx, "TASK-0003", 1)
+    path = Path(await manager.create("TASK-0003.a1"))
+    branch = f"{feature_branch}--TASK-0003-a1"
+    await _write_and_commit(path, "pkg/t3.py", "import requests\n", "banned import")
+
+    # Diverge feature_branch so the manual merge below cannot fast-forward — mirrors
+    # a realistic merge_conflict (something else changed on feature_branch meanwhile).
+    await _write_and_commit(worktree, "pkg/unrelated.py", "# unrelated\n", "unrelated change")
+
+    # Simulate sdd-worker.md's documented recovery: merge `branch` directly into the
+    # feature worktree and commit, bypassing `manager.merge_sequential()` entirely.
+    rc, _out, err = await _git("merge", "--no-ff", branch, "-m", f"merge {branch}", cwd=worktree)
+    assert rc == 0, err
+
+    result = await engine.merge("demo", str(worktree), "TASK-0003")
+    assert result.outcome == "fidelity_violation" and result.diagnostics.startswith("BannedImport:")

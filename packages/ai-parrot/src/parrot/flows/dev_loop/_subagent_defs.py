@@ -47,6 +47,12 @@ from __future__ import annotations
 
 from importlib.resources import files
 
+from parrot.flows.conventions import (  # FEAT-553 re-export; the loader lives in a stdlib-only leaf module
+    CODER_RULE_NAMES,
+    CONVENTIONS_PREAMBLE,
+    load_project_conventions,
+)
+
 _VALID_NAMES: frozenset[str] = frozenset(
     {
         "sdd-research",
@@ -82,7 +88,7 @@ def _strip_frontmatter(text: str) -> str:
         # Malformed frontmatter — return text unchanged rather than
         # silently dropping the whole file.
         return text
-    body = "\n".join(lines[closing + 1:]).lstrip("\n")
+    body = "\n".join(lines[closing + 1 :]).lstrip("\n")
     return body
 
 
@@ -104,14 +110,11 @@ def load_subagent_definition(name: str) -> str:
             (indicates a packaging error).
     """
     if name not in _VALID_NAMES:
-        raise ValueError(
-            f"Unknown subagent name {name!r}. Expected one of "
-            f"{sorted(_VALID_NAMES)}."
-        )
+        raise ValueError(f"Unknown subagent name {name!r}. Expected one of " f"{sorted(_VALID_NAMES)}.")
     data_dir = files("parrot.flows.dev_loop") / "_subagent_data"
     target = data_dir / f"{name}.md"
     text = target.read_text(encoding="utf-8")
     return _strip_frontmatter(text)
 
 
-__all__ = ["load_subagent_definition"]
+__all__ = ["load_subagent_definition", "load_project_conventions", "CODER_RULE_NAMES", "CONVENTIONS_PREAMBLE"]

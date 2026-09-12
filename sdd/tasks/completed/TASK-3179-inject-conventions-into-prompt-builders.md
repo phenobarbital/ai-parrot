@@ -283,10 +283,34 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (orchestrator, attempt 2 — direct implementation after the MCP attempt ran out of turns)
+**Date**: 2026-09-12
+**Notes**: Re-exported `CODER_RULE_NAMES`/`CONVENTIONS_PREAMBLE`/
+`load_project_conventions` from `_subagent_defs.py`. `LLMCodeDispatcher.
+_initial_messages`, `CodexCodeDispatcher._build_codex_prompt` and
+`GoogleCodingDispatcher._build_agy_prompt` all append the preamble +
+conventions block right after `Subagent instructions:\n{body}`, before the
+output prompt (codex/agy) or as the tail of the system content (llm); both
+builder methods gained a keyword-only `cwd: str = ""` and their two call
+sites pass `cwd=cwd`. `nova`/`google-compat` inherit `_initial_messages`
+unchanged (verified: 93 tests pass under `-k "nova or google_compat"`).
+66 new/extended tests pass; `ruff check` clean on all four modified
+source files.
 
-**Completed by**: 
-**Date**: 
-**Notes**: 
+Orchestrator note: attempt 1 (gemini/google-compat) exhausted its turn
+budget partway through — its uncommitted diff touched only
+`_subagent_defs.py` and `llm.py`'s import line, matching the blueprint
+exactly. The orchestrator reproduced those two edits and completed the
+rest (codex.py, google_coding.py, all three test files) directly.
+Separately, one Codebase Contract anchor in the task was stale: it
+claimed `"TASK BRIEF"` is the first line of BOTH `_build_prompt` outputs,
+but only `google_coding._build_prompt` uses that string —
+`codex._build_prompt` actually starts with `"Input brief:"`. The new
+`test_codex_prompt_carries_the_conventions` asserts the correct string;
+no functional change was needed.
 
-**Deviations from spec**: none
+**Deviations from spec**: none in the merged code; one stale Codebase
+Contract anchor (codex's output-prompt marker string) corrected in the
+test that depends on it — see Notes.
+
+Seat: gemini (attempt 1, exhausted turn budget, no commit) → orchestrator direct (attempt 2) · Backend: google-compat → n/a · Model: gemini-3.5-flash → n/a · Attempts: 1 (failed) + 1 direct · Duration: 77.1s (failed attempt) + orchestrator time · Tokens: 1285254 in / 6928 out (attempt 1, discarded)

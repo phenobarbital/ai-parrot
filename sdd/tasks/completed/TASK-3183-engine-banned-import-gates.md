@@ -257,10 +257,33 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (orchestrator, attempt 3 — direct implementation after the MCP attempt failed)
+**Date**: 2026-09-12
+**Notes**: Added the two banned-import gates to `engine.py`: `_consolidate`
+(after the existing `check_fidelity` report, before the merge lock) runs
+`check_banned_imports(path, changed)` and returns `fidelity_violation` with
+`BannedImport:` diagnostics on a finding — reached by `merge()` for native
+tasks and re-merges, per spec §10 R1; `_run_attempt` runs the same check
+after a successful `dispatcher.dispatch()` and turns a finding into an
+attempt error (`collector.error`, `output = None`) so `_run_task`'s retry
+ladder gives a different seat a shot. Both `sdd-worker.md` copies extended
+identically (parity test passes); `sdd-coder-orchestrator.md` gained the
+outcome-row wording, a new "Conventions & lint backstop" section, and a
+40-turn Troubleshooting bullet. Added
+`test_consolidate_rejects_banned_import` (via the public `merge()` entry
+point) and `test_run_attempt_turns_banned_import_into_attempt_error` (a new
+`FakeDispatcher` "banned" behaviour). All 142 tests in
+`tests/flows/dev_loop/sdd_coder/` pass; `ruff check` clean on `engine.py`
+and both test files.
 
-**Completed by**: 
-**Date**: 
-**Notes**: 
+Orchestrator note: attempt 1 (gemini/google-compat) left the sub-worktree
+dirty with no commit — its own summary said the new
+`test_run_attempt_turns_banned_import_into_attempt_error` test could not
+be made to trigger the retry ladder. Nothing was salvageable, so the
+orchestrator implemented the task directly from the blueprint in this
+worktree (steps c–f of the fallback loop) rather than retrying a third MCP
+seat.
 
 **Deviations from spec**: none
+
+Seat: gemini (attempt 1, failed) → orchestrator direct (attempt 2) · Backend: google-compat → n/a · Model: gemini-3.5-flash → n/a · Attempts: 1 (failed, uncommitted) + 1 direct · Duration: 221.3s (failed attempt) + orchestrator time · Tokens: n/a (attempt 1 usage not captured)

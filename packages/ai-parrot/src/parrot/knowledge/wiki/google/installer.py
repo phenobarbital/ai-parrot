@@ -81,16 +81,14 @@ def _is_managed_toolkit_entry(entry: Any, root: Path, name: str) -> bool:
 def _install_gemini_md(root: Path) -> str:
     path = root / assets.GEMINI_PATH
     before = path.read_text(encoding="utf-8") if path.exists() else ""
+    after = _upsert_marker_block(before, assets.GEMINI_SECTION, assets.AGENTS_BEGIN, assets.AGENTS_END)
     after = _upsert_marker_block(
-        before,
-        assets.GEMINI_SECTION,
-        assets.AGENTS_BEGIN,
-        assets.AGENTS_END,
+        after, assets.conventions_section(root), assets.CONVENTIONS_BEGIN, assets.CONVENTIONS_END
     )
     if after != before:
         path.write_text(after, encoding="utf-8")
-        return f"{assets.GEMINI_PATH} — wiki section {'updated' if before else 'created'}"
-    return f"{assets.GEMINI_PATH} — wiki section already current"
+        return f"{assets.GEMINI_PATH} — wiki + conventions sections {'updated' if before else 'created'}"
+    return f"{assets.GEMINI_PATH} — wiki + conventions sections already current"
 
 
 def _install_skills(root: Path) -> list[str]:
@@ -260,12 +258,13 @@ def uninstall_google_integration(
     if gemini_path.exists():
         before = gemini_path.read_text(encoding="utf-8")
         after = _remove_marker_block(before, assets.AGENTS_BEGIN, assets.AGENTS_END)
+        after = _remove_marker_block(after, assets.CONVENTIONS_BEGIN, assets.CONVENTIONS_END)
         if after != before:
             if after.strip():
                 gemini_path.write_text(after, encoding="utf-8")
             else:
                 gemini_path.unlink()
-            actions.append(f"{assets.GEMINI_PATH} — wiki section removed")
+            actions.append(f"{assets.GEMINI_PATH} — wiki + conventions sections removed")
 
     # 3. Skills
     targets = [assets.SKILL_PATH, assets.ALT_SKILL_PATH]

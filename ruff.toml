@@ -98,7 +98,21 @@ extend-exclude = [
 # pyflakes (undefined names, unused imports, redefinitions, f-string
 # mistakes). These catch real defects rather than style opinions — the value
 # of pinning is that a NEW finding in changed code is now unambiguous.
-select = ["E4", "E7", "E9", "F"]
+select = ["E4", "E7", "E9", "F", "TID251"]
+
+# FEAT-553: forbidden modules (TID251). Substitutes are named in .agent/rules/codebase-conventions.md.
+# One entry per top-level name — banned-api has no globs, so `langchain` does NOT cover `langchain_core`.
+[lint.flake8-tidy-imports.banned-api]
+"requests".msg            = "Use aiohttp (parrot.interfaces.http) — requests is synchronous and banned."
+"httpx".msg               = "Use aiohttp — httpx is banned in this repository."
+"starlette".msg           = "The HTTP stack is aiohttp + navigator-api behind gunicorn — starlette is banned."
+"fastapi".msg             = "The HTTP stack is aiohttp + navigator-api behind gunicorn — fastapi is banned."
+"uvicorn".msg             = "Serve with gunicorn (aiohttp worker) — uvicorn is banned."
+"langchain".msg           = "LangChain was removed; use parrot primitives (AbstractClient, AbstractTool, …)."
+"langchain_core".msg      = "LangChain was removed; use parrot primitives."
+"langchain_community".msg = "LangChain was removed; use parrot primitives."
+"langgraph".msg           = "LangGraph is banned; use AgentsFlow / AgentCrew (parrot.bots.flows)."
+"langsmith".msg           = "LangSmith is banned; use parrot observability."
 
 [lint.per-file-ignores]
 # PEP 420 namespace packages and deliberate re-export surfaces: these
@@ -115,3 +129,28 @@ select = ["E4", "E7", "E9", "F"]
 
 # Examples are illustrative snippets, not shipped code.
 "examples/**/*.py" = ["F401", "F841", "E402"]
+
+# FEAT-553: files that imported a banned module BEFORE the ban (17, measured 2026-09-12).
+# Grandfathered so the rule bites only new code. NEVER add a file to this list.
+"packages/ai-parrot/src/parrot/flows/dev_loop/replication.py" = ["TID251"]
+"packages/ai-parrot/src/parrot/interfaces/http.py" = ["TID251"]
+"packages/ai-parrot/src/parrot/interfaces/jira/client.py" = ["TID251"]
+"packages/ai-parrot/src/parrot/interfaces/onedrive.py" = ["TID251"]
+"packages/ai-parrot/src/parrot/interfaces/sharepoint.py" = ["TID251"]
+"packages/ai-parrot/src/parrot/interfaces/soap.py" = ["TID251"]
+"packages/ai-parrot/src/parrot/tools/openapitoolkit.py" = ["TID251"]
+"packages/ai-parrot-tools/src/parrot_tools/bingsearch.py" = ["TID251"]
+"packages/ai-parrot-tools/src/parrot_tools/gittoolkit.py" = ["TID251"]
+"packages/ai-parrot-tools/src/parrot_tools/massive/client.py" = ["TID251"]
+"packages/ai-parrot-tools/src/parrot_tools/o365/delta.py" = ["TID251"]
+"packages/ai-parrot-tools/src/parrot_tools/powerbi.py" = ["TID251"]
+"packages/ai-parrot-tools/src/parrot_tools/research/academic.py" = ["TID251"]
+"packages/ai-parrot-tools/src/parrot_tools/research/open_data.py" = ["TID251"]
+"packages/ai-parrot-tools/src/parrot_tools/serpapi.py" = ["TID251"]
+"packages/ai-parrot-tools/src/parrot_tools/zipcode.py" = ["TID251"]
+"packages/ai-parrot-client-openai/src/parrot/clients/openai/codex_tool_bridge.py" = ["TID251"]
+"packages/ai-parrot-tools/tests/test_bingsearch.py" = ["TID251"]
+"packages/ai-parrot-tools/tests/test_o365_delta_protocol.py" = ["TID251"]
+"packages/ai-parrot-tools/tests/test_serpapi.py" = ["TID251"]
+"packages/ai-parrot/tests/test_doc_converter_loader.py" = ["TID251"]
+"packages/ai-parrot/tests/test_massive_client.py" = ["TID251"]
