@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -82,122 +83,143 @@ def ensure(
     Raises:
         EnsureWorktreeError: On any refusal above, or a failing git command.
     """
-    # `Path(x) / y` silently discards `x` when `y` is absolute, which would
-    # make the Step 5 verification below report success for a path that was
-    # never actually inside the new worktree. require_paths is documented as
-    # repo-relative — enforce that instead of failing open.
-    for req in require_paths:
-        if Path(req).is_absolute():
-            raise EnsureWorktreeError(f"require_paths entries must be repo-relative, got absolute path: {req!r}")
-
+    _reject_absolute_paths(require_paths)
     target_path = (repo_root / plan.path).resolve()
 
-    # Step 1: Reuse check
-    # git worktree list --porcelain outputs blocks like:
-    # worktree /path/to/worktree
-    # branch refs/heads/branch-name
-    # (or bare worktree line for the main worktree)
-    wt_list_out = _git("worktree", "list", "--porcelain", cwd=repo_root)
-    current_wt_path = None
-    wt_to_branch = {}
-    for line in wt_list_out.splitlines():
-        line = line.strip()
-        if line.startswith("worktree "):
-            current_wt_path = Path(line[9:]).resolve()
-        elif line.startswith("branch ") and current_wt_path is not None:
-            branch_ref = line[7:]
-            if branch_ref.startswith("refs/heads/"):
-                wt_to_branch[current_wt_path] = branch_ref[11:]
-
-    # Check if any existing worktree has the target path or basename plan.name
-    reused_path = None
-    for wt_path, branch_name in wt_to_branch.items():
-        if wt_path == target_path or wt_path.name == plan.name:
-            if branch_name != plan.name:
-                raise EnsureWorktreeError(
-                    f"Worktree at {wt_path} is checked out on branch {branch_name!r}, "
-                    f"but expected branch {plan.name!r}."
-                )
-            reused_path = wt_path
-            break
-
+    # Step 1: Reuse
+    reused_path = _find_reusable_worktree(plan, target_path, repo_root=repo_root)
     if reused_path is not None:
-        # Verify require_paths in the reused worktree
-        for req in require_paths:
-            if not (reused_path / req).exists():
-                raise EnsureWorktreeError(f"Required path {req!r} does not exist in reused worktree {reused_path}.")
+        missing = _missing_paths(reused_path, require_paths)
+        if missing:
+            raise EnsureWorktreeError(f"Required path {missing[0]!r} does not exist in reused worktree {reused_path}.")
         return reused_path, False
 
     if dry_run:
         return target_path, True
 
-    # Step 2: Sync
+    # Step 2: Sync — base_ref is origin/<base_branch>
     if sync:
-        # base_ref is origin/<base_branch>
-        base_branch = plan.base_ref.split("/", 1)[1]
-        _git("fetch", "origin", base_branch, cwd=repo_root)
+        _git("fetch", "origin", plan.base_ref.split("/", 1)[1], cwd=repo_root)
 
-    # Step 3: Refuse when a branch named plan.name exists but is checked out nowhere
-    # git branch --list plan.name
-    branch_list_out = _git("branch", "--list", plan.name, cwd=repo_root)
-    has_branch = False
-    for line in branch_list_out.splitlines():
-        if line.strip().replace("*", "").strip() == plan.name:
-            has_branch = True
-            break
-
-    if has_branch:
-        # It exists, but we already checked all active worktrees and none of them checked it out.
+    # Step 3: Refuse a branch that exists but is checked out nowhere. Step 1
+    # already walked every active worktree, so none of them holds it.
+    if _branch_exists(plan.name, repo_root=repo_root):
         raise EnsureWorktreeError(f"Branch {plan.name!r} already exists but is not checked out in any worktree.")
 
     # Step 4: Create
-    # git worktree add -b <name> <path> <base_ref>
-    # We must ensure the parent directory of target_path exists
-    target_path.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        _git("worktree", "add", "-b", plan.name, str(target_path), plan.base_ref, cwd=repo_root)
-    except EnsureWorktreeError as e:
-        # Clean up target_path if it was created but git worktree add failed
-        if target_path.exists():
-            try:
-                _git("worktree", "prune", cwd=repo_root)
-            except Exception:
-                pass
-        raise e
+    _create_worktree(plan, target_path, repo_root=repo_root)
 
     # Step 5: Verify
-    missing_paths = []
-    for req in require_paths:
-        if not (target_path / req).exists():
-            missing_paths.append(req)
-
-    if missing_paths:
-        # Clean up the worktree we just created: delete the directory and let
-        # `git worktree prune` drop the now-stale registration, then remove
-        # the branch we created (a plain, non-forced delete of an unpushed
-        # branch that carries no commits of its own — never a forced delete
-        # of a branch that might hold real work). `prune` is repo-wide by
-        # git's own design, but it is intentionally harmless here: it only
-        # forgets registrations whose directory is already gone from disk,
-        # so a concurrent process's still-live worktree is never touched —
-        # this was verified empirically (an unrelated live worktree/branch
-        # survives a run that hits this cleanup path).
-        try:
-            import shutil
-
-            if target_path.is_dir():
-                shutil.rmtree(target_path)
-            _git("worktree", "prune", cwd=repo_root)
-            # Also delete the branch we created
-            _git("branch", "-d", plan.name, cwd=repo_root)
-        except Exception as cleanup_err:
-            logger.warning("Failed to clean up worktree/branch after verification failure: %s", cleanup_err)
+    missing = _missing_paths(target_path, require_paths)
+    if missing:
+        _discard_new_worktree(plan, target_path, repo_root=repo_root)
         raise EnsureWorktreeError(
             f"Verification failed: the following required paths were missing from the new worktree: "
-            f"{', '.join(missing_paths)}"
+            f"{', '.join(missing)}"
         )
 
     return target_path, True
+
+
+def _reject_absolute_paths(require_paths: Sequence[str]) -> None:
+    """Refuse absolute ``require_paths`` entries.
+
+    ``Path(x) / y`` silently discards ``x`` when ``y`` is absolute, which would
+    make the Step 5 verification report success for a path that was never
+    inside the new worktree. ``require_paths`` is documented as repo-relative —
+    enforce that instead of failing open.
+    """
+    for req in require_paths:
+        if Path(req).is_absolute():
+            raise EnsureWorktreeError(f"require_paths entries must be repo-relative, got absolute path: {req!r}")
+
+
+def _worktree_branches(repo_root: Path) -> dict[Path, str]:
+    """Map every registered worktree path to its checked-out local branch.
+
+    Parses ``git worktree list --porcelain``, whose blocks look like::
+
+        worktree /path/to/worktree
+        branch refs/heads/branch-name
+
+    A worktree with no ``branch`` line (detached HEAD, bare) is left out.
+    """
+    out = _git("worktree", "list", "--porcelain", cwd=repo_root)
+    current: Path | None = None
+    branches: dict[Path, str] = {}
+    for raw in out.splitlines():
+        line = raw.strip()
+        if line.startswith("worktree "):
+            current = Path(line[len("worktree ") :]).resolve()
+        elif line.startswith("branch refs/heads/") and current is not None:
+            branches[current] = line[len("branch refs/heads/") :]
+    return branches
+
+
+def _find_reusable_worktree(plan: WorktreePlan, target_path: Path, *, repo_root: Path) -> Path | None:
+    """Return the existing worktree for ``plan``, ``None`` when there is none.
+
+    A registered worktree matches by exact path or by basename ``plan.name``.
+    One that is checked out on a DIFFERENT branch is an error, never a silent
+    reuse.
+    """
+    for wt_path, branch_name in _worktree_branches(repo_root).items():
+        if wt_path != target_path and wt_path.name != plan.name:
+            continue
+        if branch_name != plan.name:
+            raise EnsureWorktreeError(
+                f"Worktree at {wt_path} is checked out on branch {branch_name!r}, "
+                f"but expected branch {plan.name!r}."
+            )
+        return wt_path
+    return None
+
+
+def _missing_paths(root: Path, require_paths: Sequence[str]) -> list[str]:
+    """Return the ``require_paths`` entries that do not exist under ``root``."""
+    return [req for req in require_paths if not (root / req).exists()]
+
+
+def _branch_exists(name: str, *, repo_root: Path) -> bool:
+    """True when a local branch called ``name`` exists (checked out or not)."""
+    out = _git("branch", "--list", name, cwd=repo_root)
+    return any(line.strip().replace("*", "").strip() == name for line in out.splitlines())
+
+
+def _create_worktree(plan: WorktreePlan, target_path: Path, *, repo_root: Path) -> None:
+    """``git worktree add -b <name> <path> <base_ref>``, pruning on failure."""
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        _git("worktree", "add", "-b", plan.name, str(target_path), plan.base_ref, cwd=repo_root)
+    except EnsureWorktreeError:
+        # Drop the half-registered entry git may have left behind.
+        if target_path.exists():
+            try:
+                _git("worktree", "prune", cwd=repo_root)
+            except Exception:  # noqa: BLE001 — best effort, the original error is what matters
+                pass
+        raise
+
+
+def _discard_new_worktree(plan: WorktreePlan, target_path: Path, *, repo_root: Path) -> None:
+    """Undo a worktree ``_create_worktree`` just made, after verification failed.
+
+    Delete the directory and let ``git worktree prune`` drop the now-stale
+    registration, then remove the branch we created — a plain, non-forced
+    delete of an unpushed branch that carries no commits of its own, never a
+    forced delete of a branch that might hold real work. ``prune`` is
+    repo-wide by git's own design but harmless here: it only forgets
+    registrations whose directory is already gone from disk, so a concurrent
+    process's still-live worktree is never touched (verified empirically — an
+    unrelated live worktree/branch survives a run that hits this path).
+    """
+    try:
+        if target_path.is_dir():
+            shutil.rmtree(target_path)
+        _git("worktree", "prune", cwd=repo_root)
+        _git("branch", "-d", plan.name, cwd=repo_root)
+    except Exception as cleanup_err:  # noqa: BLE001 — never mask the verification error
+        logger.warning("Failed to clean up worktree/branch after verification failure: %s", cleanup_err)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
