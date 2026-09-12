@@ -77,16 +77,14 @@ def _remove_toml_table(text: str, table: str) -> str:
 def _install_agents(root: Path) -> str:
     path = root / "AGENTS.md"
     before = path.read_text(encoding="utf-8") if path.exists() else ""
+    after = _upsert_marker_block(before, assets.AGENTS_SECTION, assets.AGENTS_BEGIN, assets.AGENTS_END)
     after = _upsert_marker_block(
-        before,
-        assets.AGENTS_SECTION,
-        assets.AGENTS_BEGIN,
-        assets.AGENTS_END,
+        after, assets.conventions_section(root), assets.CONVENTIONS_BEGIN, assets.CONVENTIONS_END
     )
     if after != before:
         path.write_text(after, encoding="utf-8")
-        return f"AGENTS.md — wiki section {'updated' if before else 'created'}"
-    return "AGENTS.md — wiki section already current"
+        return f"AGENTS.md — wiki + conventions sections {'updated' if before else 'created'}"
+    return "AGENTS.md — wiki + conventions sections already current"
 
 
 def _install_skill(root: Path) -> str:
@@ -244,9 +242,10 @@ def uninstall_codex_integration(root: Path) -> list[str]:
     if agents_path.exists():
         before = agents_path.read_text(encoding="utf-8")
         after = _remove_marker_block(before, assets.AGENTS_BEGIN, assets.AGENTS_END)
+        after = _remove_marker_block(after, assets.CONVENTIONS_BEGIN, assets.CONVENTIONS_END)
         if after != before:
             agents_path.write_text(after, encoding="utf-8")
-            actions.append("AGENTS.md — wiki section removed")
+            actions.append("AGENTS.md — wiki + conventions sections removed")
 
     skill_path = root / assets.SKILL_PATH
     if skill_path.exists() and skill_path.read_text(encoding="utf-8") == assets.SKILL:

@@ -20,6 +20,9 @@ MCP_TABLE = "mcp_servers.wikitoolkit"
 SKILL_PATH = Path(".codex/skills/parrot-wiki/SKILL.md")
 RULES_PATH = Path(".codex/rules/parrot-wiki.rules")
 
+CONVENTIONS_BEGIN = "<!-- parrot:conventions:codex:begin -->"
+CONVENTIONS_END = "<!-- parrot:conventions:codex:end -->"
+
 AGENTS_SECTION = f"""{AGENTS_BEGIN}
 ## Codebase Knowledge Graph (LLM Wiki)
 
@@ -128,3 +131,10 @@ def rules_block(root: Path) -> str:
         )
     rules.append(RULES_END)
     return "\n".join(rules) + "\n"
+
+
+def conventions_section(root: Path) -> str:
+    """Managed `## Project conventions` block rendered from the repo's `.agent/rules/` (FEAT-553)."""
+    from parrot.flows.conventions import load_project_conventions  # local import: keeps module import order unchanged
+
+    return f"{CONVENTIONS_BEGIN}\n## Project conventions\n\n{load_project_conventions(root)}\n\n{CONVENTIONS_END}\n"
