@@ -432,10 +432,24 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-coder (gemini seat) via parrot-sdd-coder orchestrator; test-fixture bugs repaired and merge verified by sdd-worker
+**Date**: 2026-09-12
+**Notes**: Implemented `AttemptUsageRow`/`OutcomeRow`, `feature_file_name`,
+`resolve_durable_root` (with worktree-containment refusal) and
+`build_attempt_row` (explicit allowlist projection, never `model_dump()`)
+in `parrot/flows/dev_loop/sdd_coder/telemetry.py`, plus `CoderTelemetrySink`
+(append-only, `O_APPEND`, `MAX_LINE_BYTES` enforced at write time, never
+raises). During verification, 3 of the coder's own tests in
+`test_telemetry.py` failed because they set `record.task_id` /
+`record.enforcement` on `AttemptRecord`, which has neither field (per the
+spec's own `build_attempt_row(record, *, feature_id, job_id,
+declared_files)` signature, `task_id` is not sourced from the record), and
+because a concurrent-write fixture used a 6-character `attempt_uid` below
+`AttemptUsageRow`'s 8-character minimum. sdd-worker fixed the test fixture
+only (removed the two invalid attribute sets, lengthened the fixture uid);
+production `telemetry.py` was not touched. All 14 tests now pass; `ruff
+check` clean.
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Deviations from spec**: none (test-only fixup, see note above)
 
-**Deviations from spec**: none | describe if any
+Seat: gemini · Backend: google-compat · Model: gemini-3.5-flash · Attempts: 1 · Duration: 141.6s · Tokens: 1408386/8374

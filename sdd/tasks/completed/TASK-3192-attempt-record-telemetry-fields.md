@@ -301,10 +301,20 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-coder (codex-spark attempt 1 failed on CLI arg incompatibility; qwen seat attempt 2 succeeded) via parrot-sdd-coder orchestrator, merged by sdd-worker
+**Date**: 2026-09-12
+**Notes**: Added the ten telemetry fields to `AttemptRecord`
+(`attempt_uid`, `job_id`, `resolved_model`, `turns`, `terminal`,
+`error_class`, `declared_files`, `declared_files_known`,
+`turns_with_unknown_usage`, `turn_series`, `budget_report`), all purely
+additive with documented defaults; `attempt_uid` defaults to `""` (not a
+generated uuid), and `turn_series` uses `List[Tuple[int, Optional[int],
+Optional[int]]]` so a turn with unknown usage is representable. Attempt 1
+on the codex-spark seat failed before any model call
+(`codex exec` rejected `--ask-for-approval` — a CLI/dispatcher argument
+mismatch, not a code issue); attempt 2 on the qwen seat succeeded. All 11
+tests pass; `ruff check` clean.
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Deviations from spec**: none
 
-**Deviations from spec**: none | describe if any
+Seat: codex-spark→qwen (retry) · Backend: codex (failed)→nova · Model: gpt-5.3-codex-spark (failed)→qwen.qwen3-coder-480b-a35b-instruct · Attempts: 2 · Duration: 75.1s · Tokens: 335118/2778

@@ -218,10 +218,16 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-coder (qwen seat) via parrot-sdd-coder orchestrator, merged by sdd-worker
+**Date**: 2026-09-12
+**Notes**: Added `enforcement: Literal["enforce", "observe"] = "enforce"` to
+`TokenBudgetPolicy` and `settled_estimate_input_tokens` /
+`released_estimate_tokens` to `BudgetReport`, both additive with defaults
+that preserve every existing FEAT-550 consumer. All 29 tests in
+`test_token_budget.py` pass, plus the pre-existing FEAT-550 regression
+suites (`test_question_token_budget.py`, `test_token_budget_mantle.py`, 30
+tests total) pass unmodified. `ruff check` clean.
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Deviations from spec**: none
 
-**Deviations from spec**: none | describe if any
+Seat: qwen · Backend: nova · Model: qwen.qwen3-coder-480b-a35b-instruct · Attempts: 1 · Duration: 89.9s · Tokens: 538483/3468

@@ -14,7 +14,7 @@
       "feature_id": "FEAT-554",
       "feature": "sdd-coder-bedrock-token-telemetry",
       "spec": "sdd/specs/sdd-coder-bedrock-token-telemetry.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Own file (models/token_budget.py); no other task in this feature touches it before TASK-3186 depends on it.",
       "assigned_to": null,
       "started_at": "2026-09-12T00:22:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3185-budget-policy-observe-flag.md"
+      "completed_at": "2026-09-12T00:32:57+00:00",
+      "file": "sdd/tasks/completed/TASK-3185-budget-policy-observe-flag.md"
     },
     {
       "id": "TASK-3186",
@@ -73,7 +73,7 @@
       "feature_id": "FEAT-554",
       "feature": "sdd-coder-bedrock-token-telemetry",
       "spec": "sdd/specs/sdd-coder-bedrock-token-telemetry.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -81,8 +81,8 @@
       "parallelism_notes": "New standalone file with no parrot imports; safely parallel with the whole ledger lane.",
       "assigned_to": null,
       "started_at": "2026-09-12T00:22:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3188-attempt-telemetry-models.md"
+      "completed_at": "2026-09-12T00:32:57+00:00",
+      "file": "sdd/tasks/completed/TASK-3188-attempt-telemetry-models.md"
     },
     {
       "id": "TASK-3189",
@@ -132,7 +132,7 @@
       "feature_id": "FEAT-554",
       "feature": "sdd-coder-bedrock-token-telemetry",
       "spec": "sdd/specs/sdd-coder-bedrock-token-telemetry.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -140,8 +140,8 @@
       "parallelism_notes": "New standalone file; only reads AttemptRecord defensively, so it does not need TASK-3192 first.",
       "assigned_to": null,
       "started_at": "2026-09-12T00:22:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3191-coder-telemetry-sink.md"
+      "completed_at": "2026-09-12T00:32:57+00:00",
+      "file": "sdd/tasks/completed/TASK-3191-coder-telemetry-sink.md"
     },
     {
       "id": "TASK-3192",
@@ -150,7 +150,7 @@
       "feature_id": "FEAT-554",
       "feature": "sdd-coder-bedrock-token-telemetry",
       "spec": "sdd/specs/sdd-coder-bedrock-token-telemetry.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -158,8 +158,8 @@
       "parallelism_notes": "Own file (sdd_coder/models.py), purely additive; carries a Delegation Contract.",
       "assigned_to": null,
       "started_at": "2026-09-12T00:22:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3192-attempt-record-telemetry-fields.md"
+      "completed_at": "2026-09-12T00:32:57+00:00",
+      "file": "sdd/tasks/completed/TASK-3192-attempt-record-telemetry-fields.md"
     },
     {
       "id": "TASK-3193",
