@@ -250,7 +250,7 @@
       "feature_id": "FEAT-555",
       "feature": "dev-loop-slack",
       "spec": "sdd/specs/dev-loop-slack.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -261,8 +261,8 @@
       "parallelism_notes": "Wires the complete Slack adapter and documents the headless child from the core lane.",
       "assigned_to": null,
       "started_at": "2026-09-12T15:21:05+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3208-slack-devloop-manager-wiring-packaging-docs.md"
+      "completed_at": "2026-09-12T16:19:50+00:00",
+      "file": "sdd/tasks/completed/TASK-3208-slack-devloop-manager-wiring-packaging-docs.md"
     },
     {
       "id": "TASK-3209",
