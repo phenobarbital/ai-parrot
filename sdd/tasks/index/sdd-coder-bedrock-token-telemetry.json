@@ -52,7 +52,7 @@
       "feature_id": "FEAT-554",
       "feature": "sdd-coder-bedrock-token-telemetry",
       "spec": "sdd/specs/sdd-coder-bedrock-token-telemetry.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -63,8 +63,8 @@
       "parallelism_notes": "Needs both the flag and the ledger semantics to be testable end to end.",
       "assigned_to": null,
       "started_at": "2026-09-12T00:22:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3187-funnel-observe-sdk-view.md"
+      "completed_at": "2026-09-12T01:03:16+00:00",
+      "file": "sdd/tasks/completed/TASK-3187-funnel-observe-sdk-view.md"
     },
     {
       "id": "TASK-3188",

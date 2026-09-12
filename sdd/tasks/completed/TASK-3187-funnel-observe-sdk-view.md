@@ -228,10 +228,25 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-coder (gemini seat) via parrot-sdd-coder orchestrator; 7 test-setup bugs in the coder's own new test class repaired by sdd-worker
+**Date**: 2026-09-12
+**Notes**: `_chat_completion_budgeted` now selects `self.client` (ordinary
+SDK view, default retries) under `enforcement="observe"` and
+`self.client.with_options(max_retries=0)` under `enforcement="enforce"`
+(unchanged). Verification found the new `TestObserveRetryRegime` class
+(3 tests) failed for 7 distinct test-authoring reasons — none in
+`openai_base.py` itself: a nonexistent `BudgetScope(policy=...)`
+constructor kwarg, a `BudgetReservation` built with fields from an
+earlier draft (`input_estimate`/`total`/`state`) instead of the real
+`operation_id`/`input_allowance`/`request_fingerprint`, a forbidden
+direct `client_instance.client =` assignment (loop-local property),
+an `APIError(response=...)` kwarg the SDK doesn't accept, a
+`tenacity.nap_ops` monkeypatch target that never existed, only `.create`
+overridden while the funnel prefers `.parse`, and `ledger.mark_uncertain`
+never mocked as async. All fixed test-side only; the production diff is
+untouched. All 37 tests in `test_token_budget.py` pass, plus both
+FEAT-550 regression suites; `ruff check` clean.
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Deviations from spec**: none (test-only fixups, see note above)
 
-**Deviations from spec**: none | describe if any
+Seat: gemini · Backend: google-compat · Model: gemini-3.5-flash · Attempts: 1 · Duration: 132.8s · Tokens: 1929674/5408
