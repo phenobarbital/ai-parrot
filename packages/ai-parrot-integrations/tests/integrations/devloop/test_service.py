@@ -322,6 +322,33 @@ async def test_pending_confirmation_expires_after_ttl(service, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_pending_confirmation_proactively_flips_card_on_expiry(service, monkeypatch):
+    """Code review fix (FEAT-555): expiry used to be lazy-only (next dispatch(),
+    or a stale click) — the card itself now flips to "Expired" unprompted."""
+    monkeypatch.setattr(svc, "_PENDING_TTL", 0.05)
+    s, proc = service
+    pid = await s.dispatch(DevLoopCommand(action="dispatch", type="feature", prompt="Build the thing. Now"), _REQ, "C1")
+    assert pid in s._pending
+
+    await _wait_until(lambda: pid not in s._pending, timeout=2.0)
+    assert any(c == ("update_confirm", (pid, "expired")) for c in s.transport.calls)
+
+
+@pytest.mark.asyncio
+async def test_confirming_before_ttl_cancels_the_expiry_watcher(service, monkeypatch):
+    """A confirm before the TTL elapses must not have the watcher fire an
+    "expired" update afterwards — confirm() already popped the pending id."""
+    monkeypatch.setattr(svc, "_PENDING_TTL", 0.2)
+    s, proc = service
+    pid = await s.dispatch(DevLoopCommand(action="dispatch", type="feature", prompt="Build the thing. Now"), _REQ, "C1")
+    await s.confirm(pid, _REQ)
+    assert any(c[0] == "update_confirm" and c[1][1] == "confirmed" for c in s.transport.calls)
+
+    await asyncio.sleep(0.3)  # let the (now no-op) watcher run past the original TTL
+    assert not any(c[0] == "update_confirm" and c[1][1] == "expired" for c in s.transport.calls)
+
+
+@pytest.mark.asyncio
 async def test_max_concurrent_runs_none_never_blocks(service):
     s, proc = service
     assert s.config.max_concurrent_runs is None

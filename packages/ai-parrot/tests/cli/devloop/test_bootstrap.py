@@ -110,7 +110,7 @@ async def test_build_runtime_wires_graph_memory_and_plan_approval():
              AsyncMock(return_value=("reporter", "escalation")),
          ), \
          patch("parrot.conf.DEV_LOOP_REQUIRE_PLAN_APPROVAL", True, create=True), \
-         patch("parrot.flows.dev_loop.ClaudeCodeDispatcher") as MockDispatcher, \
+         patch("parrot.flows.dev_loop.agent_builder.ClaudeCodeDispatcher") as MockDispatcher, \
          patch(
              "parrot.flows.dev_loop.build_dev_loop_flow",
              return_value=sentinel_flow,
@@ -159,7 +159,7 @@ async def test_build_runtime_graph_memory_disabled_by_default():
          ), \
          patch("parrot.conf.DEV_LOOP_REQUIRE_PLAN_APPROVAL", False, create=True), \
          patch("parrot.conf.DEV_LOOP_GRAPH_MEMORY_PATH", "", create=True), \
-         patch("parrot.flows.dev_loop.ClaudeCodeDispatcher"), \
+         patch("parrot.flows.dev_loop.agent_builder.ClaudeCodeDispatcher"), \
          patch(
              "parrot.flows.dev_loop.build_dev_loop_flow", return_value=MagicMock(),
          ) as mock_build_flow, \

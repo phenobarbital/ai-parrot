@@ -88,11 +88,17 @@ class SlackDevLoopTransport:
         text = {
             "confirmed": "Confirmed — dispatching…",
             "discarded": "Cancelled.",
+            "expired": "Expired.",
         }.get(outcome, outcome)
         if outcome == "confirmed" and record is not None:
             text = f":white_check_mark: Confirmed — run `{record.run_id}` dispatching…"
         elif outcome == "discarded":
             text = ":no_entry_sign: Cancelled."
+        elif outcome == "expired":
+            # Code review fix (FEAT-555): the card used to stay live forever
+            # with clickable Confirm/Edit/Cancel buttons past its 15-minute
+            # TTL — the service now proactively schedules this flush.
+            text = ":hourglass_flowing_sand: This request expired (15 min timeout)."
         await self.wrapper.update_message(
             channel, ts, text, blocks=[{"type": "section", "text": {"type": "mrkdwn", "text": text}}]
         )

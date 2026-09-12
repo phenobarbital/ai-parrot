@@ -151,6 +151,15 @@ class DevLoopDispatchService:
             )
             or ""
         )
+        # Code review fix (FEAT-555): expiry used to be enforced only
+        # lazily (on the NEXT dispatch(), or on a stale click/submit) —
+        # an unconfirmed card in Slack would silently keep live Confirm/
+        # Edit/Cancel buttons forever until someone clicked one. Schedule
+        # a proactive watcher so the card itself flips to "Expired" once
+        # the TTL elapses, unprompted.
+        self._track(
+            self._expire_pending_after_ttl(pending.pending_id), name=f"devloop-pending-expiry-{pending.pending_id}"
+        )
         return pending.pending_id
 
     # -- cross-lane read accessors (used by the Slack handlers, TASK-3206/3207) ----
@@ -467,6 +476,25 @@ class DevLoopDispatchService:
         now = time.time()
         for pid in [p for p, pc in self._pending.items() if now > pc.expires_at]:
             self._pending.pop(pid, None)
+
+    async def _expire_pending_after_ttl(self, pending_id: str) -> None:
+        """Proactively flip the confirm card to "Expired" once its TTL elapses.
+
+        One task per pending confirmation, started from :meth:`dispatch`.
+        A no-op if the pending confirmation was already confirmed/discarded
+        (popped) before its TTL — the ``pop`` below returns ``None`` and
+        nothing is rendered.
+
+        Args:
+            pending_id: The pending confirmation this watcher owns.
+        """
+        pending = self._pending.get(pending_id)
+        if pending is None:
+            return
+        delay = max(0.0, pending.expires_at - time.time())
+        await asyncio.sleep(delay)
+        if self._pending.pop(pending_id, None) is not None:
+            await self._safe_call(self.transport.update_confirm, pending_id, "expired", None)
 
     def _get_pending_or_raise(self, pending_id: str) -> PendingConfirmation:
         """Look up a pending confirmation, treating an expired one as not-found."""

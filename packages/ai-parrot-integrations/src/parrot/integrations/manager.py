@@ -47,6 +47,34 @@ if TYPE_CHECKING:
 ENV_DIR = BASE_DIR.joinpath('env')
 
 
+def _build_jira_toolkit() -> Any:
+    """Build the JiraToolkit if Jira credentials are configured, else None.
+
+    Mirrors ``parrot.cli.devloop.bootstrap._build_jira_toolkit()`` (kept
+    as a small local copy rather than importing that underscore-private
+    function cross-package) so the Slack dev-loop path's
+    ``SlackIdentityResolver`` has the same Jira-account resolution
+    capability the CLI headless path already has (code review fix,
+    FEAT-555 — this used to be hardcoded to ``None`` unconditionally).
+
+    Returns:
+        A constructed ``JiraToolkit``, or ``None`` when Jira is not
+        configured or the optional dependency import fails.
+    """
+    try:
+        from parrot import conf  # noqa: PLC0415
+        from parrot_tools.jiratoolkit import JiraToolkit  # noqa: PLC0415
+
+        return JiraToolkit(
+            server_url=conf.JIRA_URL or None,
+            username=getattr(conf, "JIRA_USERNAME", "") or None,
+            token=getattr(conf, "JIRA_API_TOKEN", "") or None,
+        )
+    except Exception:  # noqa: BLE001 - Jira is optional; never fatal for the Slack bot
+        logging.getLogger(__name__).warning("JiraToolkit not available; Slack dev-loop identity resolution degraded.")
+        return None
+
+
 async def handle_a2a_directory(request: web.Request) -> web.Response:
     """GET /a2a/directory — returns JSON array of all registered AgentCards.
 
@@ -928,7 +956,14 @@ class IntegrationBotManager:
                     config=devloop_cfg,
                     transport=transport,
                     redis=redis_client,
-                    identity_resolver=SlackIdentityResolver(wrapper, jira_toolkit=None),
+                    # Code review fix (FEAT-555): this used to hardcode
+                    # jira_toolkit=None unconditionally, permanently disabling
+                    # SlackIdentityResolver's Jira-account resolution branch
+                    # even when Jira is fully configured. Mirrors
+                    # parrot.cli.devloop.bootstrap._build_jira_toolkit() so the
+                    # Slack path has the same identity-resolution capability
+                    # as the CLI path, never worse.
+                    identity_resolver=SlackIdentityResolver(wrapper, jira_toolkit=_build_jira_toolkit()),
                 )
                 register_devloop(wrapper, service)  # binds /devloop, devloop_* actions, modals, thread interceptor
                 await service.start()  # re-attaches live runs from the Redis registry (spec G7)

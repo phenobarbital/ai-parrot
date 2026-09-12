@@ -58,6 +58,11 @@ async def test_manager_wires_service_when_enabled():
         patch("parrot.integrations.slack.devloop.register_devloop") as register_devloop,
         patch("parrot.integrations.slack.devloop.actions.SlackIdentityResolver"),
         patch("parrot.integrations.slack.devloop.transport.SlackDevLoopTransport"),
+        # TASK-3208's own wiring test must never build a real JiraToolkit
+        # (code review fix, FEAT-555: manager.py no longer hardcodes
+        # jira_toolkit=None — a real toolkit would attempt a live Jira
+        # call in this sandbox's configured credentials).
+        patch("parrot.integrations.manager._build_jira_toolkit", return_value=None),
     ):
         await manager._start_slack_bot("bot1", config)
 
@@ -66,6 +71,37 @@ async def test_manager_wires_service_when_enabled():
     register_devloop.assert_called_once_with(wrapper, fake_service)
     fake_service.start.assert_awaited_once()
     assert manager._devloop_services["bot1"] is fake_service
+
+
+@pytest.mark.asyncio
+async def test_manager_wires_a_real_jira_toolkit_into_the_identity_resolver():
+    """Code review fix (FEAT-555): jira_toolkit is no longer hardcoded to None.
+
+    Before this fix, ``SlackIdentityResolver(wrapper, jira_toolkit=None)``
+    was unconditional, so the Jira-account-resolution branch in
+    ``actions.SlackIdentityResolver.__call__`` was permanently dead code
+    even when Jira was fully configured.
+    """
+    manager = _manager()
+    wrapper = _fake_wrapper()
+    devloop_cfg = SimpleNamespace(enabled=True, redis_url="")
+    config = _config(devloop=devloop_cfg)
+    sentinel_toolkit = MagicMock()
+    fake_service = MagicMock()
+    fake_service.start = AsyncMock()
+
+    with (
+        patch("parrot.integrations.slack.wrapper.SlackAgentWrapper", return_value=wrapper),
+        patch("redis.asyncio.from_url", return_value=MagicMock()),
+        patch("parrot.integrations.devloop.service.DevLoopDispatchService", return_value=fake_service),
+        patch("parrot.integrations.slack.devloop.register_devloop"),
+        patch("parrot.integrations.slack.devloop.actions.SlackIdentityResolver") as mock_resolver_cls,
+        patch("parrot.integrations.slack.devloop.transport.SlackDevLoopTransport"),
+        patch("parrot.integrations.manager._build_jira_toolkit", return_value=sentinel_toolkit),
+    ):
+        await manager._start_slack_bot("bot1", config)
+
+    mock_resolver_cls.assert_called_once_with(wrapper, jira_toolkit=sentinel_toolkit)
 
 
 @pytest.mark.asyncio
