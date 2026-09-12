@@ -272,10 +272,36 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-12
+**Notes**: Added `status_card_blocks` to `blocks.py` (graph-ordered node
+lines with the five glyphs, unknown nodes last, failed-node error text
+truncated to 120 chars). Replaced the `update_status` no-op in
+`transport.py` with the full debounce implementation: `_status_pending`/
+`_status_timers`/`_status_backoff_until` dicts + `status_debounce_seconds`
+(2.0) added to `__init__`; `update_status` gates on
+`config.devloop.status_card`, flushes immediately on a terminal phase
+(cancelling any pending timer first) and otherwise schedules a single
+trailing-edge flush per `run_id`; `_flush_status` creates the card via
+`_post_in_thread` (first call) or edits it via `update_message`
+(subsequent calls), applying a fixed 5s backoff on any failure — since
+`wrapper.update_message` returns a plain `bool` and (per TASK-3205's own
+implementation) never exposes the Slack `retry_after` value to the
+caller, every failure (rate-limited or not) gets the same fixed backoff
+rather than a distinct one, exactly as the task's own "Does NOT Exist"
+section anticipated. `test_slack_devloop_status_card.py` (5 tests, two
+more than the blueprint's three) covers glyph/order rendering with
+truncation, the debounce/coalesce behavior (fixed my own first draft: the
+*first* `update_status` call also goes through the debounce — it does not
+post synchronously — my initial test assumed otherwise and had to be
+corrected to match the actual, correct implementation), immediate flush
+on a terminal phase even with the debounce window at 60s, the
+`status_card=False` disable switch, and a missing `devloop` config
+treated as disabled.
+`pytest packages/ai-parrot-integrations/tests/integrations/slack -q`:
+93 passed. `ruff check` and `black --check` clean on all three files
+(only new/modified-by-me sections; no pre-existing drift in these files
+since TASK-3207 wrote them fresh). Import verified: `from
+parrot.integrations.slack.devloop.blocks import status_card_blocks`.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.
