@@ -72,7 +72,7 @@
       "feature_id": "FEAT-553",
       "feature": "sdd-coder-shared-conventions",
       "spec": "sdd/specs/sdd-coder-shared-conventions.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -82,8 +82,8 @@
       "parallelism_notes": "Imports load_project_conventions; independent of TASK-3179 files but ordered after 3178. Could run in parallel with 3179 (disjoint files).",
       "assigned_to": null,
       "started_at": "2026-09-12T00:21:57+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3180-installer-conventions-block-and-agents-md.md"
+      "completed_at": "2026-09-12T00:54:26+00:00",
+      "file": "sdd/tasks/completed/TASK-3180-installer-conventions-block-and-agents-md.md"
     },
     {
       "id": "TASK-3181",
