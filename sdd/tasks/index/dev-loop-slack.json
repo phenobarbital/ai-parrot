@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-12T15:06:30+00:00",
-  "completed_at": null,
+  "completed_at": "2026-09-12T16:48:22+00:00",
   "tasks": [
     {
       "id": "TASK-3196",
@@ -291,7 +291,7 @@
       "feature_id": "FEAT-555",
       "feature": "dev-loop-slack",
       "spec": "sdd/specs/dev-loop-slack.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -302,8 +302,8 @@
       "parallelism_notes": "Exercises the real headless child and the fully wired Slack adapter.",
       "assigned_to": null,
       "started_at": "2026-09-12T15:21:05+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3210-devloop-slack-e2e-integration-tests.md"
+      "completed_at": "2026-09-12T16:48:18+00:00",
+      "file": "sdd/tasks/completed/TASK-3210-devloop-slack-e2e-integration-tests.md"
     }
   ]
 }
