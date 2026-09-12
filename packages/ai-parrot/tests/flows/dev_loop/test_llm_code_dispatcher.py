@@ -1400,23 +1400,24 @@ class TestTerminalTelemetry:
         )
         dispatcher = _dispatcher(monkeypatch, client)
         host = _CapturingHost()
-        from parrot.flows.dev_loop.dispatchers._shared import _SESSION_HOST_CTX
-        token = _SESSION_HOST_CTX.set(host)
 
-        try:
-            await dispatcher.dispatch(
-                brief=brief,
-                profile=LLMCodeDispatchProfile(
-                    llm="nvidia:minimaxai/minimax-m3",
-                    max_turns=4,
-                ),
-                output_model=DevelopmentOutput,
-                run_id="r1",
-                node_id="development",
-                cwd=str(_patch_worktree_base),
-            )
-        finally:
-            _SESSION_HOST_CTX.reset(token)
+        # `dispatch()` is the entry point that binds `_SESSION_HOST_CTX` —
+        # it always does `_SESSION_HOST_CTX.set(session_host)` from its own
+        # `session_host` kwarg (default None), so a caller must pass the
+        # host THROUGH `dispatch(session_host=...)` rather than pre-binding
+        # the ContextVar itself, which `dispatch()` would just clobber.
+        await dispatcher.dispatch(
+            brief=brief,
+            profile=LLMCodeDispatchProfile(
+                llm="nvidia:minimaxai/minimax-m3",
+                max_turns=4,
+            ),
+            output_model=DevelopmentOutput,
+            run_id="r1",
+            node_id="development",
+            cwd=str(_patch_worktree_base),
+            session_host=host,
+        )
 
         assert len(host.telemetry) == 1
         telemetry = host.telemetry[0]
@@ -1446,24 +1447,20 @@ class TestTerminalTelemetry:
         )
         dispatcher = _dispatcher(monkeypatch, client)
         host = _CapturingHost()
-        from parrot.flows.dev_loop.dispatchers._shared import _SESSION_HOST_CTX
-        token = _SESSION_HOST_CTX.set(host)
 
         with pytest.raises(DispatchExecutionError):
-            try:
-                await dispatcher.dispatch(
-                    brief=brief,
-                    profile=LLMCodeDispatchProfile(
-                        llm="nvidia:minimaxai/minimax-m3",
-                        max_turns=4,
-                    ),
-                    output_model=DevelopmentOutput,
-                    run_id="r1",
-                    node_id="development",
-                    cwd=str(_patch_worktree_base),
-                )
-            finally:
-                _SESSION_HOST_CTX.reset(token)
+            await dispatcher.dispatch(
+                brief=brief,
+                profile=LLMCodeDispatchProfile(
+                    llm="nvidia:minimaxai/minimax-m3",
+                    max_turns=4,
+                ),
+                output_model=DevelopmentOutput,
+                run_id="r1",
+                node_id="development",
+                cwd=str(_patch_worktree_base),
+                session_host=host,
+            )
 
         assert len(host.telemetry) == 1
         telemetry = host.telemetry[0]
@@ -1507,23 +1504,19 @@ class TestTerminalTelemetry:
         )
         dispatcher = _dispatcher(monkeypatch, client)
         host = _CapturingHost()
-        from parrot.flows.dev_loop.dispatchers._shared import _SESSION_HOST_CTX
-        token = _SESSION_HOST_CTX.set(host)
 
-        try:
-            await dispatcher.dispatch(
-                brief=brief,
-                profile=LLMCodeDispatchProfile(
-                    llm="nvidia:minimaxai/minimax-m3",
-                    max_turns=4,
-                ),
-                output_model=DevelopmentOutput,
-                run_id="r1",
-                node_id="development",
-                cwd=str(_patch_worktree_base),
-            )
-        finally:
-            _SESSION_HOST_CTX.reset(token)
+        await dispatcher.dispatch(
+            brief=brief,
+            profile=LLMCodeDispatchProfile(
+                llm="nvidia:minimaxai/minimax-m3",
+                max_turns=4,
+            ),
+            output_model=DevelopmentOutput,
+            run_id="r1",
+            node_id="development",
+            cwd=str(_patch_worktree_base),
+            session_host=host,
+        )
 
         assert len(host.telemetry) == 1
         telemetry = host.telemetry[0]

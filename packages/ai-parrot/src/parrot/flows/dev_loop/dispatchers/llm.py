@@ -299,6 +299,12 @@ class LLMCodeDispatcher:
             accumulated: Optional[CompletionUsage] = None  # LOCAL, never self.*
             turn_series: List[TurnUsage] = []  # LOCAL, same rule as `accumulated`
             turns_with_unknown_usage = 0
+            # `salvaged` is only assigned inside the post-loop salvage branch
+            # (after `max_turns` is exhausted); the normal-completion `return`
+            # inside the `for` loop never reaches it. The `finally` block
+            # below reads it unconditionally to decide terminal state, so it
+            # must exist on every path or that read raises UnboundLocalError.
+            salvaged: Optional[T] = None
             # Remaining-turn counts at which the model gets told how much
             # budget is left; consumed head-first. See _budget_nudge.
             budget_marks = self._budget_marks(profile.max_turns)
