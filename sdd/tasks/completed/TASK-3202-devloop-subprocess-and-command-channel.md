@@ -484,10 +484,32 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-12
+**Notes**: Implemented `process.py` (`HeadlessHandshakeView`,
+`HeadlessRunProcess.spawn`/`wait_ready`/`wait`/`stderr_tail`/`terminate`/
+`cleanup`) — `_drain` validates every pre-handshake line as
+`HeadlessHandshakeView` JSON (logs non-matching lines at DEBUG and keeps
+reading, rather than resolving on the very first line unconditionally, to
+tolerate startup log noise from the real child), with a byte-bounded ring
+buffer that also truncates a single oversized line to its tail.
+`wait_ready` races the handshake future against `proc.wait()` and maps
+EOF/exit/timeout to `SpawnError`; `terminate` signals only the child's own
+pid (SIGTERM → SIGKILL after `grace`), never a process group. Implemented
+`bridge.py` (`RunCommandChannel` Protocol, `LoopbackRestChannel` with the
+exact status→reason mapping, bodies built from the library's own
+`ResolveGateRequest`/`CancelRunRequest`). `fake_child.py`'s `_StubRunner`
+reproduces the three `resolve_gate_handler` error branches (already
+resolved, `answers_required` for `oq-`-prefixed gates) and its `get_host`
+returns `None` so the handler's 409 branch degrades safely. Discovered
+during testing: pre-creating the socket path before spawn breaks the real
+child's `UnixSite.start()` (bind fails against an existing regular file)
+— fixed the test to assert the socket's existence only after the real
+child creates it, not before.
+`pytest packages/ai-parrot-integrations/tests/integrations/devloop -q`:
+43 passed (test_process.py exercises real subprocesses end to end,
+~15s). `ruff check` and `black --check` clean on all touched/created
+files. Imports verified: `from parrot.integrations.devloop import
+HeadlessRunProcess, LoopbackRestChannel, RunCommandChannel`.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.

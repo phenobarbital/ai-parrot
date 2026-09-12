@@ -129,7 +129,7 @@
       "feature_id": "FEAT-555",
       "feature": "dev-loop-slack",
       "spec": "sdd/specs/dev-loop-slack.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -139,8 +139,8 @@
       "parallelism_notes": "Imports models from TASK-3200; no files shared with 3201/3203 so seats may run concurrently in one worktree.",
       "assigned_to": null,
       "started_at": "2026-09-12T15:21:05+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3202-devloop-subprocess-and-command-channel.md"
+      "completed_at": "2026-09-12T15:50:21+00:00",
+      "file": "sdd/tasks/completed/TASK-3202-devloop-subprocess-and-command-channel.md"
     },
     {
       "id": "TASK-3203",
