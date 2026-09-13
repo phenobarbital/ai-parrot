@@ -49,10 +49,10 @@
       "feature_id": "FEAT-556",
       "feature": "claude-install-mcp-autoenable",
       "spec": "sdd/specs/claude-install-mcp-autoenable.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "assigned_to": null,
       "started_at": "2026-09-12T23:42:33+00:00",
-      "completed_at": null,
+      "completed_at": "2026-09-13T00:30:12+00:00",
       "id": "TASK-3213",
       "slug": "mcp-approval",
       "title": "Authorize the managed MCP servers in .claude/settings.local.json",
@@ -63,7 +63,7 @@
       ],
       "parallel": false,
       "parallelism_notes": "Same two files as TASK-3212/3214 (installer.py); sequential in the shared worktree.",
-      "file": "sdd/tasks/active/TASK-3213-mcp-approval.md"
+      "file": "sdd/tasks/completed/TASK-3213-mcp-approval.md"
     },
     {
       "feature_id": "FEAT-556",
