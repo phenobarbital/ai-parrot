@@ -79,14 +79,21 @@ def wikitoolkit_mcp_entry(root: Path) -> dict[str, Any]:
 
 
 def toolkit_mcp_entries(root: Path, sections: dict[str, ToolkitSection]) -> dict[str, dict[str, Any]]:
-    """Build dictionary of parrot-<name> MCP server entries for enabled toolkits."""
+    """Build dictionary of parrot-<name> MCP server entries for enabled toolkits.
+
+    Each entry's ``args`` pins an absolute ``--config`` pointing at
+    ``<root>/.parrot/mcp-toolkits.yaml`` (FEAT-556), alongside the
+    pre-existing ``cwd``, so ``parrot mcp-local`` resolves the toolkit
+    independently of the host's cwd handling.
+    """
     entries: dict[str, dict[str, Any]] = {}
     parrot_bin = resolve_binary(root, "parrot")
+    config_path = str(root.resolve() / ".parrot" / "mcp-toolkits.yaml")
     for name in sorted(sections):
         section = sections[name]
         entry: dict[str, Any] = {
             "command": parrot_bin,
-            "args": ["mcp-local", name],
+            "args": ["mcp-local", name, "--config", config_path],
             "cwd": str(root.resolve()),
         }
         if section.env:
