@@ -89,10 +89,10 @@
       "feature_id": "FEAT-556",
       "feature": "claude-install-mcp-autoenable",
       "spec": "sdd/specs/claude-install-mcp-autoenable.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "assigned_to": null,
       "started_at": "2026-09-12T23:42:33+00:00",
-      "completed_at": null,
+      "completed_at": "2026-09-13T00:35:29+00:00",
       "id": "TASK-3215",
       "slug": "codex-google-parity",
       "title": "codex / google installer parity — seeding flag and pinned entry shape",
@@ -103,7 +103,7 @@
       ],
       "parallel": true,
       "parallelism_notes": "Touches only knowledge/wiki/codex/ and knowledge/wiki/google/ — a file set disjoint from TASK-3213/3214 — so it can run in its own worktree once TASK-3212 has fixed the pinning rule it mirrors.",
-      "file": "sdd/tasks/active/TASK-3215-codex-google-parity.md"
+      "file": "sdd/tasks/completed/TASK-3215-codex-google-parity.md"
     }
   ]
 }
