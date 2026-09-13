@@ -295,3 +295,47 @@ async def test_consolidate_rechecks_banned_import_after_manual_remerge(git_sandb
 
     result = await engine.merge("demo", str(worktree), "TASK-0003")
     assert result.outcome == "fidelity_violation" and result.diagnostics.startswith("BannedImport:")
+
+
+async def test_engine_cleanup_keeps_native_task_until_merged(git_sandbox_feature, noop_probe):
+    """Regression (FEAT-555 incident): `coder_cleanup` removed a native seat's sub-worktree while the
+    background `Agent` was still working in it. A `prepare_native` worktree must survive cleanup
+    until `merge()` has consolidated it."""
+    worktree, feature_branch, base_path, _index_path = git_sandbox_feature
+    roster = RosterConfig(seats=[RosterSeat(label="h", kind="native")])
+    engine = SddCoderEngine(roster=roster, probe=noop_probe, worktree_base_path=str(base_path))
+
+    prep = await engine.prepare_native("demo", str(worktree), "TASK-0001")
+    sub_worktree = Path(prep.worktree_path)
+
+    report = await engine.cleanup("demo", str(worktree))
+    assert prep.branch in report.kept
+    assert prep.branch not in report.removed
+    assert sub_worktree.exists()
+
+    await _write_and_commit(sub_worktree, "pkg/t1.py", "# t1\n", "implement TASK-0001")
+    merged = await engine.merge("demo", str(worktree), "TASK-0001")
+    assert merged.outcome == "merged"
+
+    report = await engine.cleanup("demo", str(worktree))
+    assert prep.branch in report.removed
+    assert not sub_worktree.exists()
+
+
+async def test_engine_merge_never_reports_merged_when_nothing_landed(git_sandbox_feature, noop_probe):
+    """Regression (FEAT-555 incident): after the manager forgot its worktree, `merge()` iterated an empty
+    map, merged nothing, and still answered `merged`. The outcome must reflect the feature branch."""
+    worktree, feature_branch, base_path, _index_path = git_sandbox_feature
+    roster = RosterConfig(seats=[RosterSeat(label="h", kind="native")])
+    engine = SddCoderEngine(roster=roster, probe=noop_probe, worktree_base_path=str(base_path))
+
+    prep = await engine.prepare_native("demo", str(worktree), "TASK-0001")
+    await _write_and_commit(Path(prep.worktree_path), "pkg/t1.py", "# t1\n", "implement TASK-0001")
+    engine._managers["TASK-0001.a1"]._created.clear()  # noqa: SLF001 — reproduce the post-cleanup state
+
+    result = await engine.merge("demo", str(worktree), "TASK-0001")
+
+    assert result.outcome == "failed"
+    assert "branch_not_merged" in result.diagnostics
+    _rc, log, _err = await _git("log", "--oneline", feature_branch, cwd=worktree)
+    assert "implement TASK-0001" not in log
