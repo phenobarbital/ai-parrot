@@ -28,7 +28,7 @@ import shlex
 import stat
 import sys
 from pathlib import Path, PurePosixPath
-from typing import Any, Optional
+from typing import Any, Optional, Sequence
 
 from parrot.knowledge.wiki.claude_code import assets
 from parrot.knowledge.wiki.project import (
@@ -706,6 +706,8 @@ def install_claude_integration(
     git_hook: bool = True,
     gitignore: bool = True,
     bookstore: bool = True,
+    toolkits: Sequence[str] = (),
+    approve_mcp: bool = True,
 ) -> list[str]:
     """Install the wiki ↔ Claude Code integration into a repository.
 
@@ -716,6 +718,11 @@ def install_claude_integration(
         gitignore: Add ``.parrot/`` to .gitignore.
         bookstore: Install the Bookstore MCP server and skill when an
             indexed library exists (no indexing performed).
+        toolkits: Toolkit template names to seed into
+            `.parrot/mcp-toolkits.yaml` before `.mcp.json` reconciliation.
+            Empty seeds nothing (spec §8 Q1: opt-in).
+        approve_mcp: Authorize the managed servers in
+            `.claude/settings.local.json` after reconciliation.
 
     Returns:
         Human-readable list of actions performed.
@@ -741,7 +748,26 @@ def install_claude_integration(
     actions.append(_install_claude_md(root))
     actions.append(_install_settings_hook(root))
     actions.extend(_install_permissions(root))
+    if toolkits:
+        from parrot.mcp.toolkit_seed import seed_toolkit_sections
+
+        seeded = seed_toolkit_sections(root, toolkits)
+        if seeded.created_file:
+            actions.append(".parrot/mcp-toolkits.yaml — created")
+        if seeded.added:
+            actions.append(
+                f".parrot/mcp-toolkits.yaml — added {len(seeded.added)} section(s) ({', '.join(seeded.added)})"
+            )
+        if seeded.skipped:
+            actions.append(
+                f".parrot/mcp-toolkits.yaml — {len(seeded.skipped)} section(s) already present "
+                f"({', '.join(seeded.skipped)})"
+            )
+        if seeded.unknown:
+            actions.append(f".parrot/mcp-toolkits.yaml — unknown template(s) skipped ({', '.join(seeded.unknown)})")
     actions.append(_install_mcp_json(root))
+    if approve_mcp:
+        actions.append(_install_mcp_approval(root))
     actions.append(_install_slash_command(root))
     if git_hook:
         actions.append(_install_git_hook(root))
