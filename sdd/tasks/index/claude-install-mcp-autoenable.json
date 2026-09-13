@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-12T23:26:21.207203+00:00",
-  "completed_at": null,
+  "completed_at": "2026-09-13T01:22:07+00:00",
   "tasks": [
     {
       "feature_id": "FEAT-556",
@@ -69,10 +69,10 @@
       "feature_id": "FEAT-556",
       "feature": "claude-install-mcp-autoenable",
       "spec": "sdd/specs/claude-install-mcp-autoenable.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "assigned_to": null,
       "started_at": "2026-09-12T23:42:33+00:00",
-      "completed_at": null,
+      "completed_at": "2026-09-13T01:22:07+00:00",
       "id": "TASK-3214",
       "slug": "install-cli-orchestration",
       "title": "Wire seeding + approval into parrot claude install (CLI and step order)",
@@ -83,7 +83,7 @@
       ],
       "parallel": false,
       "parallelism_notes": "Calls the functions added by TASK-3211/3213 and edits the same installer.py; last of the Claude chain.",
-      "file": "sdd/tasks/active/TASK-3214-install-cli-orchestration.md"
+      "file": "sdd/tasks/completed/TASK-3214-install-cli-orchestration.md"
     },
     {
       "feature_id": "FEAT-556",

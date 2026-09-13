@@ -313,10 +313,34 @@ error) follows the `click.testing.CliRunner` style already used for
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5), after a fidelity_violation from the
+automated `parrot-sdd-coder` dispatch (qwen/nova seat) — that attempt correctly
+implemented installer.py/cli.py per the blueprint but also modified an unlisted
+file (`tests/knowledge/wiki/test_claude_code.py`), so it was not merged. This
+implementation was written directly in the worktree, using that attempt's
+installer.py/cli.py diff as a verified-correct reference.
+**Date**: 2026-09-13
+**Notes**: `install_claude_integration` gained `toolkits: Sequence[str] = ()` and
+`approve_mcp: bool = True`, seeding `.parrot/mcp-toolkits.yaml` before
+`_install_mcp_json` and calling `_install_mcp_approval` after it. `parrot claude
+install` gained `--toolkits`, `--all-toolkits` and `--approve-mcp/--no-approve-mcp`,
+plus a discoverability hint (available template names) when no toolkit flag is
+given and a "restart Claude Code session" note. All 10 new tests in
+`test_installer_mcp.py` (TestSeedingAndApproval, TestInstallCLIToolkitOptions)
+pass; `ruff check` clean; `black` applied.
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Deviations from spec**: `approve_mcp=True` by default (per spec) changes the
+action count of every `install_claude_integration()` call, which broke a
+pre-existing assertion in `tests/knowledge/wiki/test_claude_code.py`
+(`test_fresh_install_writes_all_artifacts`, `len(actions) == 8`) — a file NOT
+in this task's Files-to-Modify list. Updated the one assertion (8 → 9) to keep
+the suite green; no other change was made to that file. Flagging per Cardinal
+Rule 4 rather than silently expanding scope.
 
-**Deviations from spec**: none | describe if any
+Pre-existing, unrelated failures observed in both the pre-task baseline and
+after this change (confirmed via `git stash`): `test_install_creates_mcp_json`,
+`test_install_idempotent`, `test_install_updates_stale_entry` in
+`test_installer_mcp.py::TestMCPJsonInstall` — caused by a global
+`~/.parrot/mcp-toolkits.yaml` on this machine seeding `browsing`/`memory`/
+`scraping` toolkit sections and resolving `wikitoolkit`'s command to an
+absolute venv path. Not touched; out of this task's scope.
