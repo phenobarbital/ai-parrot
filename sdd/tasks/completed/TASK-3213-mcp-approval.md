@@ -336,10 +336,16 @@ Reuse the `tmp_root_with_config` fixture from
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-coder (dispatched by sdd-worker orchestrator, FEAT-549)
+**Date**: 2026-09-12
+**Notes**: Added `_managed_server_names`, `_install_mcp_approval`, and
+`_uninstall_mcp_approval` to `installer.py`; wired the uninstall step into
+`uninstall_claude_integration`; exposed `mcp_servers_authorized` and
+`toolkits_yaml` in `integration_status`. `enableAllProjectMcpServers` is
+never written. All 52 tests across
+`tests/knowledge/wiki/test_installer_mcp_approval.py` (7) and
+`tests/knowledge/wiki/test_claude_code.py` (45) pass; `ruff check` on
+`installer.py` is clean.
+**Deviations from spec**: none
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+Seat: gemini · Backend: google-compat · Model: gemini-3.5-flash · Attempts: 1 · Duration: 60.354s · Tokens: 564014 in / 4887 out

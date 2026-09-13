@@ -54,11 +54,57 @@ def test_install_writes_toolkit_entries(tmp_root_with_config: Path, mcp_config_p
     assert "wikitoolkit" in servers
     stub = servers["parrot-stub"]
     assert stub["command"] == assets.resolve_binary(root, "parrot")
-    assert stub["args"] == ["mcp-local", "stub"]
+    assert stub["args"] == ["mcp-local", "stub", "--config", str(root.resolve() / ".parrot" / "mcp-toolkits.yaml")]
+    assert stub["cwd"] == str(root.resolve())
     assert stub["env"] == {"FOO": "bar"}
     assert "parrot-scraping" not in servers
     assert "parrot-browsing" not in servers
     assert "parrot-memory" not in servers
+
+
+def test_google_entry_pins_config_keeps_cwd(tmp_root_with_config: Path):
+    """`toolkit_mcp_entries` carries both --config and the pre-existing cwd."""
+    root = tmp_root_with_config
+    from parrot.mcp.toolkit_config import load_toolkits_config
+
+    cfg = load_toolkits_config(root)
+    entries = assets.toolkit_mcp_entries(root, {"stub": cfg.toolkits["stub"]})
+
+    entry = entries["parrot-stub"]
+    assert "--config" in entry["args"]
+    assert entry["args"][-1] == str(root.resolve() / ".parrot" / "mcp-toolkits.yaml")
+    assert entry["cwd"] == str(root.resolve())
+
+
+def test_google_legacy_entry_adopted(tmp_root_with_config: Path, mcp_config_path: Path, capsys):
+    """A pre-FEAT-556 two-arg entry is recognized as managed and upgraded, with no stderr warning."""
+    root = tmp_root_with_config
+    mcp_config_path.write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "parrot-stub": {
+                        "command": assets.resolve_binary(root, "parrot"),
+                        "args": ["mcp-local", "stub"],
+                        "cwd": str(root.resolve()),
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    _install_mcp(root, mcp_path=mcp_config_path)
+
+    servers = _config(mcp_config_path)["mcpServers"]
+    assert servers["parrot-stub"]["args"] == [
+        "mcp-local",
+        "stub",
+        "--config",
+        str(root.resolve() / ".parrot" / "mcp-toolkits.yaml"),
+    ]
+    stderr = capsys.readouterr().err
+    assert "Warning:" not in stderr
 
 
 def test_install_is_idempotent(tmp_root_with_config: Path, mcp_config_path: Path):

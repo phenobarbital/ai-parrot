@@ -23,6 +23,7 @@ from parrot.knowledge.wiki.claude_code.installer import (
     integration_status,
     uninstall_claude_integration,
 )
+from parrot.mcp.toolkit_seed import available_templates
 from parrot.knowledge.wiki.project import (
     WikiConfigError,
     find_project_root,
@@ -84,6 +85,25 @@ def claude() -> None:
     show_default=True,
     help="Install the opt-in PreToolUse read guard (FEAT-543) that denies unbounded reads of large files.",
 )
+@click.option(
+    "--toolkits",
+    "toolkits_",
+    default="",
+    help="Comma-separated toolkit sections to seed into .parrot/mcp-toolkits.yaml (e.g. sdd-coder,bounded-source).",
+)
+@click.option(
+    "--all-toolkits",
+    "all_toolkits",
+    is_flag=True,
+    default=False,
+    help="Seed every toolkit template shipped with this release.",
+)
+@click.option(
+    "--approve-mcp/--no-approve-mcp",
+    default=True,
+    show_default=True,
+    help="Authorize the managed MCP servers in .claude/settings.local.json.",
+)
 def install(
     path_: Optional[str],
     git_hook: bool,
@@ -91,6 +111,9 @@ def install(
     build_now: bool,
     bookstore: bool,
     tool_guards: bool,
+    toolkits_: str,
+    all_toolkits: bool,
+    approve_mcp: bool,
 ) -> None:
     """Install the wiki toolkit as Claude Code infrastructure.
 
@@ -100,14 +123,36 @@ def install(
     files — and keeps the graph fresh on every git commit.
     """
     root = _resolve_root(path_)
+    names = sorted(
+        {n.strip() for n in toolkits_.split(",") if n.strip()} | (set(available_templates()) if all_toolkits else set())
+    )
     try:
         config = load_effective_config(root).config
-        actions = install_claude_integration(root, config, git_hook=git_hook, gitignore=gitignore, bookstore=bookstore)
-    except (RuntimeError, WikiConfigError) as exc:
+        actions = install_claude_integration(
+            root,
+            config,
+            git_hook=git_hook,
+            gitignore=gitignore,
+            bookstore=bookstore,
+            toolkits=names,
+            approve_mcp=approve_mcp,
+        )
+    except (RuntimeError, WikiConfigError, ValueError) as exc:
         raise click.ClickException(str(exc)) from exc
 
     for action in actions:
         click.echo(f"  ✓ {action}")
+
+    if not names:
+        templates = available_templates()
+        if templates:
+            click.echo(
+                f"  ℹ Use --toolkits=<name,...> or --all-toolkits to seed MCP toolkit servers. "
+                f"Available: {', '.join(templates)}"
+            )
+
+    if names or approve_mcp:
+        click.echo("  ℹ Start a new Claude Code session for the MCP servers to appear.")
 
     if tool_guards:
         # Lazy import: core must not hard-depend on ai-parrot-tools.

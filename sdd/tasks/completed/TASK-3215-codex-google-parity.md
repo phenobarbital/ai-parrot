@@ -308,10 +308,34 @@ def test_google_legacy_entry_adopted(tmp_path, capsys):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (orchestrator itself — attempt 3, after two
+dispatched coder attempts failed: codex-spark hit the 1800s wall-clock cap,
+qwen's retry left the sub-worktree dirty/uncommitted)
+**Date**: 2026-09-13
+**Notes**: Pinned `--config <root>/.parrot/mcp-toolkits.yaml` into codex's
+TOML `args` (`toolkit_mcp_block`) and google's entry `args`
+(`toolkit_mcp_entries`, keeping its pre-existing `cwd`). Widened google's
+`_is_managed_toolkit_entry` to accept both the pinned and pre-FEAT-556
+two-arg shapes (mirrors TASK-3212 exactly; codex needs no such change since
+it regenerates its whole managed block). Threaded a
+`toolkits: Sequence[str] = ()` kwarg through `install_codex_integration` /
+`install_google_integration` that seeds `.parrot/mcp-toolkits.yaml` via
+`seed_toolkit_sections` immediately before each host's own `_install_mcp`
+call. Added matching `--toolkits` / `--all-toolkits` CLI options to both
+`parrot codex install` and `parrot google install` (verbatim help text from
+the spec's Module 4 skeleton); no approval flag on either (Claude-only).
+Updated the two existing entry-shape assertions in
+`test_codex_installer_toolkit_entries.py` /
+`test_google_installer_toolkit_entries.py` that asserted the old unpinned
+`args`, and added the blueprint's new tests
+(`test_codex_table_pins_config`, `test_codex_install_seeds_toolkits`,
+`test_google_entry_pins_config_keeps_cwd`, `test_google_legacy_entry_adopted`).
+All 28 tests across the 4 required test files pass
+(`test_codex_installer_toolkit_entries.py` 10,
+`test_google_installer_toolkit_entries.py` 6,
+`test_codex_integration.py` 6, `test_google_integration.py` 6); `ruff check`
+on `codex/`, `google/`, and both touched test files is clean.
+**Deviations from spec**: none
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+Seat: sdd-worker (native, attempt 3) · Backend: n/a · Model: n/a · Attempts: 1 · Duration: n/a · Tokens: n/a
+(Prior failed dispatches: codex-spark/gpt-5.3-codex-spark 1801.7s wall-clock-cap failure; qwen/qwen.qwen3-coder-480b-a35b-instruct 306.96s dirty_task_worktree failure — 2726395 in / 11413 out tokens, not merged)

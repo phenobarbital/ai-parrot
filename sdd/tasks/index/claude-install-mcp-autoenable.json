@@ -5,16 +5,16 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-12T23:26:21.207203+00:00",
-  "completed_at": null,
+  "completed_at": "2026-09-13T02:22:02+00:00",
   "tasks": [
     {
       "feature_id": "FEAT-556",
       "feature": "claude-install-mcp-autoenable",
       "spec": "sdd/specs/claude-install-mcp-autoenable.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "assigned_to": null,
       "started_at": "2026-09-12T23:42:33+00:00",
-      "completed_at": null,
+      "completed_at": "2026-09-12T23:46:58+00:00",
       "id": "TASK-3211",
       "slug": "toolkit-seed-templates",
       "title": "Packaged toolkit templates + .parrot/mcp-toolkits.yaml seeder",
@@ -23,16 +23,17 @@
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Dependency of every other task: creates parrot/mcp/toolkit_seed.py and the packaged templates that M2-M5 consume.",
-      "file": "sdd/tasks/active/TASK-3211-toolkit-seed-templates.md"
+      "file": "sdd/tasks/completed/TASK-3211-toolkit-seed-templates.md",
+      "verification": "verified"
     },
     {
       "feature_id": "FEAT-556",
       "feature": "claude-install-mcp-autoenable",
       "spec": "sdd/specs/claude-install-mcp-autoenable.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "assigned_to": null,
       "started_at": "2026-09-12T23:42:33+00:00",
-      "completed_at": null,
+      "completed_at": "2026-09-12T23:53:38+00:00",
       "id": "TASK-3212",
       "slug": "pin-managed-entry",
       "title": "Pin the managed .mcp.json toolkit entry to an absolute config path",
@@ -43,16 +44,17 @@
       ],
       "parallel": false,
       "parallelism_notes": "Shares claude_code/installer.py and claude_code/assets.py with TASK-3213 and TASK-3214; must land before them.",
-      "file": "sdd/tasks/active/TASK-3212-pin-managed-entry.md"
+      "file": "sdd/tasks/completed/TASK-3212-pin-managed-entry.md",
+      "verification": "verified"
     },
     {
       "feature_id": "FEAT-556",
       "feature": "claude-install-mcp-autoenable",
       "spec": "sdd/specs/claude-install-mcp-autoenable.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "assigned_to": null,
       "started_at": "2026-09-12T23:42:33+00:00",
-      "completed_at": null,
+      "completed_at": "2026-09-13T00:30:12+00:00",
       "id": "TASK-3213",
       "slug": "mcp-approval",
       "title": "Authorize the managed MCP servers in .claude/settings.local.json",
@@ -63,16 +65,17 @@
       ],
       "parallel": false,
       "parallelism_notes": "Same two files as TASK-3212/3214 (installer.py); sequential in the shared worktree.",
-      "file": "sdd/tasks/active/TASK-3213-mcp-approval.md"
+      "file": "sdd/tasks/completed/TASK-3213-mcp-approval.md",
+      "verification": "verified"
     },
     {
       "feature_id": "FEAT-556",
       "feature": "claude-install-mcp-autoenable",
       "spec": "sdd/specs/claude-install-mcp-autoenable.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "assigned_to": null,
       "started_at": "2026-09-12T23:42:33+00:00",
-      "completed_at": null,
+      "completed_at": "2026-09-13T01:22:07+00:00",
       "id": "TASK-3214",
       "slug": "install-cli-orchestration",
       "title": "Wire seeding + approval into parrot claude install (CLI and step order)",
@@ -83,16 +86,17 @@
       ],
       "parallel": false,
       "parallelism_notes": "Calls the functions added by TASK-3211/3213 and edits the same installer.py; last of the Claude chain.",
-      "file": "sdd/tasks/active/TASK-3214-install-cli-orchestration.md"
+      "file": "sdd/tasks/completed/TASK-3214-install-cli-orchestration.md",
+      "verification": "verified"
     },
     {
       "feature_id": "FEAT-556",
       "feature": "claude-install-mcp-autoenable",
       "spec": "sdd/specs/claude-install-mcp-autoenable.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "assigned_to": null,
       "started_at": "2026-09-12T23:42:33+00:00",
-      "completed_at": null,
+      "completed_at": "2026-09-13T00:35:29+00:00",
       "id": "TASK-3215",
       "slug": "codex-google-parity",
       "title": "codex / google installer parity — seeding flag and pinned entry shape",
@@ -103,7 +107,8 @@
       ],
       "parallel": true,
       "parallelism_notes": "Touches only knowledge/wiki/codex/ and knowledge/wiki/google/ — a file set disjoint from TASK-3213/3214 — so it can run in its own worktree once TASK-3212 has fixed the pinning rule it mirrors.",
-      "file": "sdd/tasks/active/TASK-3215-codex-google-parity.md"
+      "file": "sdd/tasks/completed/TASK-3215-codex-google-parity.md",
+      "verification": "verified"
     }
   ]
 }

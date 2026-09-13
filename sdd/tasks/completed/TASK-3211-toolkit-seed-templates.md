@@ -427,10 +427,15 @@ def test_unknown_name_reported_not_raised(tmp_path):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-coder (dispatched by sdd-worker orchestrator, FEAT-549)
+**Date**: 2026-09-12
+**Notes**: Implemented `parrot/mcp/toolkit_seed.py` with `ToolkitTemplate`/
+`SeedResult` Pydantic models, `available_templates()`, `load_template()`, and
+`seed_toolkit_sections()`. Added three packaged templates under
+`_toolkit_templates/` (`sdd-coder.yaml`, `bounded-source.yaml` seeded enabled,
+`targeted-writer.yaml` seeded `enabled: false` per `requires_llm`). Added
+package-data entry to `packages/ai-parrot/pyproject.toml`. All 10 tests in
+`tests/mcp/test_toolkit_seed.py` pass; `ruff check` on the new module is clean.
+**Deviations from spec**: none
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+Seat: qwen · Backend: nova · Model: qwen.qwen3-coder-480b-a35b-instruct · Attempts: 1 · Duration: 156.033s · Tokens: 1142695 in / 8694 out

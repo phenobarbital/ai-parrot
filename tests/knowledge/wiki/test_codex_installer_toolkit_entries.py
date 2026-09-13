@@ -63,11 +63,38 @@ def test_install_writes_toolkit_tables(tmp_root_with_config):
     assert "wikitoolkit" in servers
     stub = servers["parrot-stub"]
     assert stub["command"] == assets.resolve_binary(root, "parrot")
-    assert stub["args"] == ["mcp-local", "stub"]
+    assert stub["args"] == ["mcp-local", "stub", "--config", str(root / ".parrot" / "mcp-toolkits.yaml")]
     assert stub["env"] == {"FOO": "bar"}
     assert "parrot-scraping" not in servers
     assert "parrot-browsing" not in servers
     assert "parrot-memory" not in servers
+
+
+def test_codex_table_pins_config(tmp_root_with_config):
+    """The rendered table carries an absolute --config and still parses as TOML."""
+    root = tmp_root_with_config
+    from parrot.mcp.toolkit_config import load_toolkits_config
+
+    cfg = load_toolkits_config(root)
+    sections = {"stub": cfg.toolkits["stub"]}
+
+    block = assets.toolkit_mcp_block(root, sections)
+
+    doc = tomllib.loads(block)
+    entry = doc["mcp_servers"]["parrot-stub"]
+    assert entry["args"][-2:] == ["--config", str(root / ".parrot" / "mcp-toolkits.yaml")]
+
+
+def test_codex_install_seeds_toolkits(tmp_path):
+    """`install_codex_integration(toolkits=[...])` seeds the YAML and emits the entry in one pass."""
+    from parrot.knowledge.wiki.codex.installer import install_codex_integration
+
+    root = tmp_path
+    install_codex_integration(root, gitignore=False, bookstore=False, toolkits=["bounded-source"])
+
+    assert (root / ".parrot" / "mcp-toolkits.yaml").exists()
+    doc = _config(root)
+    assert "parrot-bounded-source" in doc["mcp_servers"]
 
 
 def test_install_is_idempotent(tmp_root_with_config):
