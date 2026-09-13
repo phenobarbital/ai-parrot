@@ -342,7 +342,8 @@ moves the lock wait to a single, busy-handler-governed point and is what lets `W
    connection with `isolation_level=None`, executes `BEGIN IMMEDIATE`, yields, then `COMMIT`; on any exception
    `ROLLBACK` and re-raise. A busy error at `BEGIN IMMEDIATE` becomes `WikiStoreBusy` with the operation name and
    the configured wait. The seven write methods use `_write()`; `replace_source_slice` keeps its per-source
-   granularity so the lock window stays at one slice.
+   granularity so the lock window stays at one slice, and `build` sleeps a few milliseconds after each slice commit
+   (politeness pause) so concurrent writers are not starved by back-to-back lock re-acquisition.
 6. **Checkpoint.** `checkpoint(truncate=True)` runs `PRAGMA wal_checkpoint(TRUNCATE)` through `_write`-less
    autocommit (checkpoints are not transactional) and inspects the `busy` column; if readers block truncation it
    logs and retries once as `PASSIVE`. `build` calls it after `_write_build_stats`, still inside `wiki_write_lock`.
@@ -378,8 +379,9 @@ moves the lock wait to a single, busy-handler-governed point and is what lets `W
 - **Two stores on the same file in one process** (federation local + generation store) → each has its own latch and
   policy; harmless duplication of the read-first probe.
 - **`sqlite_busy_timeout` set to 0 or negative in `wiki.json`** → Pydantic `ge=1` rejects at load with the field name.
-- **Writer starvation under a tight build loop** → mitigated by the longer bounded wait; not eliminated (SQLite has
-  no fairness). Recorded as an open question (build politeness pause between slices).
+- **Writer starvation under a tight build loop** → SQLite has no fairness, so `build` yields a few milliseconds
+  after every slice commit (politeness pause) in addition to the longer bounded wait; a waiter's busy handler then
+  gets a real window to acquire the lock.
 
 ---
 
@@ -613,9 +615,9 @@ import sqlite3     # SQLite 3.45.1, threadsafety=3, THREADSAFE=1; OperationalErr
 - [x] Migrated-state cache granularity — *Owner: Jesus*: per store instance (`asyncio.Event`) plus read-first probe in `_migrate()`; no process-global cache.
 - [x] Config surface — *Owner: Jesus*: `WikiProjectConfig.sqlite_busy_timeout` + `sqlite_performance_pragmas` in `.parrot/wiki.json`, propagated as constructor kwargs; `synchronous=NORMAL` + `journal_size_limit` always, mmap/cache/temp_store opt-in.
 - [x] Acceptance evidence — *Owner: Jesus*: multiprocess pytest stress test (slow, timed), reproducible `artifacts/` script with saved log, `wikitoolkit status` showing effective pragmas. `checkpoint()` as a store method was not selected as *evidence* but is part of the design (Option B).
-- [ ] Default value of `sqlite_busy_timeout`: proposed 15 s (owner's range 10–30 s for the ledger). Confirm, or pick 30 s for the wiki plane where `build` slices are back-to-back. — *Owner: Jesus*
-- [ ] Build politeness: should `build` sleep a few ms after each `replace_source_slice` commit so waiting writers get the lock (SQLite has no fairness)? Cost: ~hundreds of ms per build. Alternative: leave to the timeout only. — *Owner: Jesus*
-- [ ] `journal_size_limit` default: owner's table says 64 MB. Confirm 64 MB (`67108864`) as the constant. — *Owner: Jesus*
-- [ ] Should `SourceCollectionManager` write methods also raise `WikiStoreBusy` (sync mirror), or keep raw `sqlite3.OperationalError` since its callers run under `asyncio.to_thread`? Proposal: same exception class for consistency. — *Owner: Jesus*
-- [ ] Federated namespaces: a foreign namespace's read-only store (`federation.py:277`) is created from the *foreign* repo's plane — should its `busy_timeout` come from the local config (simple) or from the foreign `.parrot/wiki.json` (correct but requires reading it)? Proposal: local config. — *Owner: Jesus*
-- [ ] `checkpoint()` after `ingest` and after `upsert --changed` too, or only after `build`? Proposal: `build` and `ingest`; `upsert` is per-commit and small. — *Owner: Jesus*
+- [x] Default value of `sqlite_busy_timeout` — *Owner: Jesus*: 15 s (`sqlite_busy_timeout: float = 15.0`, `ge=1`, `le=120`).
+- [x] Build politeness pause after each `replace_source_slice` commit — *Owner: Jesus*: yes. `build` yields a few milliseconds (constant, e.g. 5 ms, `asyncio.sleep`) after every slice commit so a waiting writer's busy handler can win the lock; cost is well under a second per build.
+- [x] `journal_size_limit` default — *Owner: Jesus*: 64 MB (`67108864`). Rationale (2026-09-14 measurement: `wiki.db` 578 MB, live WAL 8.9 MB, 4 KiB pages, `wal_autocheckpoint` 1000 pages ≈ 4 MB): the pragma does not cap WAL growth during a build — the WAL grows as far as open reader snapshots force it — it only sets how large the file is left after a checkpoint resets it. With `checkpoint(TRUNCATE)` at the end of `build`/`ingest` the WAL returns to 0 anyway, and between builds the 4 MB autocheckpoint keeps it small, so the limit only matters when a non-truncating checkpoint completes after a large build. 128 MB would just retain twice the disk for a marginal saving in file-growth syscalls on the next build; 64 MB (~11 % of the plane) is the right default and stays a constant, not a config field.
+- [x] `SourceCollectionManager` write methods raise `WikiStoreBusy` too — *Owner: Jesus*: yes, same exception class from both the async store and the sync manager; the `asyncio.to_thread` bridge propagates it unchanged.
+- [x] Federated namespaces' read-only stores — *Owner: Jesus*: local config. `open_namespace_store` passes the local `SQLitePragmaPolicy` (read-safe subset) to `SQLiteWikiStore(..., read_only=True)`; the foreign `.parrot/wiki.json` is not read.
+- [x] Where `checkpoint()` runs — *Owner: Jesus* (asked "what is better"): after `build` and after `ingest` only, never in `upsert --changed`. Both long commands write hundreds of slices under `wiki_write_lock`, so their end is the one moment the WAL is large and a writer already holds exclusivity. `upsert` runs per git commit, is sub-second and small (autocheckpoint covers it), and a `TRUNCATE` there would add latency to the post-commit hook and can be blocked by resident MCP readers.
