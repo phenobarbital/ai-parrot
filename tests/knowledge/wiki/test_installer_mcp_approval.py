@@ -57,9 +57,7 @@ def test_approval_never_writes_enable_all(tmp_root_with_config):
 def test_approval_preserves_foreign_names(tmp_root_with_config):
     local_dir = tmp_root_with_config / ".claude"
     local_dir.mkdir(parents=True, exist_ok=True)
-    (local_dir / "settings.local.json").write_text(
-        json.dumps({"enabledMcpjsonServers": ["some-other-server"]})
-    )
+    (local_dir / "settings.local.json").write_text(json.dumps({"enabledMcpjsonServers": ["some-other-server"]}))
     _install_mcp_approval(tmp_root_with_config)
     servers = _local(tmp_root_with_config)["enabledMcpjsonServers"]
     assert "some-other-server" in servers
@@ -78,9 +76,7 @@ def test_approval_idempotent(tmp_root_with_config):
 def test_approval_rejects_non_list_key(tmp_root_with_config):
     local_dir = tmp_root_with_config / ".claude"
     local_dir.mkdir(parents=True, exist_ok=True)
-    (local_dir / "settings.local.json").write_text(
-        json.dumps({"enabledMcpjsonServers": "not-a-list"})
-    )
+    (local_dir / "settings.local.json").write_text(json.dumps({"enabledMcpjsonServers": "not-a-list"}))
     with pytest.raises(RuntimeError) as exc_info:
         _install_mcp_approval(tmp_root_with_config)
     assert "enabledMcpjsonServers" in str(exc_info.value)

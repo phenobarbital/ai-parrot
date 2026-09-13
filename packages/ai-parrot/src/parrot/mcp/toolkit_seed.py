@@ -42,12 +42,12 @@ def available_templates() -> tuple[str, ...]:
     template_dir = files(TEMPLATE_PACKAGE) / TEMPLATE_DIR
     if not template_dir.is_dir():
         return ()
-    
+
     templates = []
     for resource in template_dir.iterdir():
         if resource.name.endswith(".yaml"):
             templates.append(resource.name[:-5])  # Remove .yaml extension
-    
+
     return tuple(sorted(templates))
 
 
@@ -59,41 +59,36 @@ def load_template(name: str) -> ToolkitTemplate:
     """
     template_dir = files(TEMPLATE_PACKAGE) / TEMPLATE_DIR
     template_path = template_dir / f"{name}.yaml"
-    
+
     if not template_path.is_file():
         raise KeyError(f"No template named {name!r} found in {template_dir}")
-    
+
     content = template_path.read_text(encoding="utf-8")
     lines = content.splitlines()
-    
+
     # Parse metadata from header lines
     summary = ""
     requires_llm = False
     body_start = 0
-    
+
     for i, line in enumerate(lines):
         if not line.startswith(_META_PREFIX):
             body_start = i
             break
-        
+
         # Parse metadata
-        meta_content = line[len(_META_PREFIX):].strip()
+        meta_content = line[len(_META_PREFIX) :].strip()
         if meta_content.startswith("summary:"):
             summary = meta_content[8:].strip()  # Remove "summary:" prefix
         elif meta_content.startswith("requires_llm:"):
             requires_llm_str = meta_content[13:].strip()  # Remove "requires_llm:" prefix
             requires_llm = requires_llm_str.lower() == "true"
-    
+
     # Extract body (remaining lines)
     body_lines = lines[body_start:]
     body = "\n".join(body_lines)
-    
-    return ToolkitTemplate(
-        name=name,
-        body=body,
-        requires_llm=requires_llm,
-        summary=summary
-    )
+
+    return ToolkitTemplate(name=name, body=body, requires_llm=requires_llm, summary=summary)
 
 
 def seed_toolkit_sections(root: Path, names: Sequence[str]) -> SeedResult:
@@ -116,12 +111,12 @@ def seed_toolkit_sections(root: Path, names: Sequence[str]) -> SeedResult:
     root_path = Path(root)
     path = root_path / ".parrot" / "mcp-toolkits.yaml"
     result = SeedResult(created_file=not path.exists())
-    
+
     # Resolve requested names against available templates
     available = set(available_templates())
     result.unknown = [name for name in names if name not in available]
     valid_names = [name for name in names if name in available]
-    
+
     # Determine already-present section keys
     existing_sections = set()
     if path.exists():
@@ -141,11 +136,11 @@ def seed_toolkit_sections(root: Path, names: Sequence[str]) -> SeedResult:
         except ValueError:
             # If the file is malformed, we'll handle it when we try to re-load after writing
             pass
-    
+
     # Ensure .parrot directory exists
     parrot_dir = root_path / ".parrot"
     parrot_dir.mkdir(exist_ok=True)
-    
+
     # Check which sections need to be added
     sections_to_add = []
     for name in valid_names:
@@ -153,19 +148,19 @@ def seed_toolkit_sections(root: Path, names: Sequence[str]) -> SeedResult:
             result.skipped.append(name)
         else:
             sections_to_add.append(name)
-    
+
     # If file doesn't exist or doesn't have toolkits root, create/add it
     needs_toolkits_root = not path.exists()
     if path.exists():
         content = path.read_text(encoding="utf-8")
         needs_toolkits_root = "toolkits:" not in content
-    
+
     # Write/append sections
     if sections_to_add:
         with open(path, "a" if path.exists() else "w", encoding="utf-8") as f:
             if needs_toolkits_root:
                 f.write("toolkits:\n")
-            
+
             for name in sections_to_add:
                 template = load_template(name)
                 rendered_body = template.body.replace(REPO_ROOT_PLACEHOLDER, str(root))
@@ -174,7 +169,7 @@ def seed_toolkit_sections(root: Path, names: Sequence[str]) -> SeedResult:
                 if not rendered_body.endswith("\n"):
                     f.write("\n")
                 result.added.append(name)
-    
+
     # Re-load with load_toolkits_config(root) and raise ValueError if seeded names are not all present
     if result.added:
         try:
@@ -184,7 +179,7 @@ def seed_toolkit_sections(root: Path, names: Sequence[str]) -> SeedResult:
                 raise ValueError(f"Failed to load seeded sections {missing} from {path}")
         except Exception as e:
             raise ValueError(f"Failed to re-load seeded config from {path}: {e}") from e
-    
+
     if result.added or result.skipped:
         logger.info("seeded %s: added=%s skipped=%s", path, result.added, result.skipped)
     return result

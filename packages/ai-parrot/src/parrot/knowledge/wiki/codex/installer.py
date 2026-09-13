@@ -234,9 +234,13 @@ def install_codex_integration(
         if seeded.created_file:
             actions.append(".parrot/mcp-toolkits.yaml — created")
         if seeded.added:
-            actions.append(f".parrot/mcp-toolkits.yaml — seeded {len(seeded.added)} section(s): {', '.join(seeded.added)}")
+            actions.append(
+                f".parrot/mcp-toolkits.yaml — seeded {len(seeded.added)} section(s): {', '.join(seeded.added)}"
+            )
         if seeded.skipped:
-            actions.append(f".parrot/mcp-toolkits.yaml — {len(seeded.skipped)} section(s) already present: {', '.join(seeded.skipped)}")
+            actions.append(
+                f".parrot/mcp-toolkits.yaml — {len(seeded.skipped)} section(s) already present: {', '.join(seeded.skipped)}"
+            )
         if seeded.unknown:
             actions.append(f".parrot/mcp-toolkits.yaml — unknown toolkit name(s) skipped: {', '.join(seeded.unknown)}")
 
