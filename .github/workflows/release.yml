@@ -468,30 +468,18 @@ jobs:
           - ai-parrot-client-meta
           - ai-parrot-client-nvidia
           - ai-parrot-client-openai
-          # TEMPORARILY REMOVED for the 1.0.0 release (2026-09-07).
-          #
-          # These eight distributions do not exist on PyPI yet. Trusted
-          # publishing can only upload to a project that already exists (or
-          # has a pending publisher), and `skip-existing: true` does NOT
-          # cover a 403 for a non-existent project — it only skips files
-          # that are already there. Leaving them in the matrix means the
-          # deploy job builds their wheels, `twine` hits eight 403s in one
-          # sequential upload, and the whole publish can fail AFTER some
-          # packages have already landed on PyPI (which can never be
-          # re-uploaded).
-          #
-          # PyPI caps new-project creation at ~4/day, so bootstrapping all
-          # of them with `make build-clients publish-clients` takes two
-          # days. RESTORE these lines once each name exists on PyPI:
-          #
-          #   - ai-parrot-client-groq
-          #   - ai-parrot-client-hf
-          #   - ai-parrot-client-local
-          #   - ai-parrot-client-moonshot
-          #   - ai-parrot-client-openrouter
-          #   - ai-parrot-client-vllm
-          #   - ai-parrot-client-zai
-          #   - ai-parrot-openlit-bridge
+          # Restored 2026-09-13: these eight were left out of 1.0.0 because they
+          # did not exist on PyPI yet (trusted publishing 403s on an unknown
+          # project, and `skip-existing` does not cover that). All eight were
+          # bootstrapped at 0.2.0 by hand, so they ship from here again.
+          - ai-parrot-client-groq
+          - ai-parrot-client-hf
+          - ai-parrot-client-local
+          - ai-parrot-client-moonshot
+          - ai-parrot-client-openrouter
+          - ai-parrot-client-vllm
+          - ai-parrot-client-zai
+          - ai-parrot-openlit-bridge
     steps:
       - uses: actions/checkout@v6
 
