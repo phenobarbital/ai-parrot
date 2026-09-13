@@ -1,4 +1,5 @@
 """Prompt-contract tests for the sdd-worker Orchestrator Loop (FEAT-549, TASK-3124)."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -57,3 +58,16 @@ def test_worker_prompt_has_new_stop_conditions():
     assert "roster_empty" in stop_section
     assert "dependency_cycle" in stop_section
     assert "merge_conflict" in stop_section
+
+
+def test_orchestrator_loop_describes_background_native_agents():
+    """Regression (FEAT-555 incident): the loop must tell the orchestrator that a native `Agent`
+    runs in the background, that its result arrives as a notification, that it must never be
+    re-dispatched, and that `coder_cleanup` waits for every native task to go through `coder_merge`."""
+    body = load_subagent_definition("sdd-worker")
+    loop = body.split("\n## Orchestrator Loop (FEAT-549)", 1)[1].split("\n## Fallback: Sequential Loop", 1)[0]
+    assert "background" in loop
+    assert "notification" in loop
+    assert "Never call `Agent` again for the same task" in loop
+    assert "branch_not_merged" in loop
+    assert "every native task of the chunk has gone through `coder_merge`" in loop

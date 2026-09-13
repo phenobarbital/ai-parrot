@@ -230,18 +230,29 @@ consolidate, and own SDD state. Coders (`sdd-coder`) run one task each in their 
    with `native: true`, `coder_prepare_native(task_id)` followed in the same message by
    `Agent(subagent_type="sdd-coder", model="haiku", prompt="Implement <task_file> in worktree <worktree_path> (branch <branch>). Work only there.")`.
    The chunk only runs in parallel if all of these are issued together.
+   `Agent` returns immediately with an id: the native coder runs in the **background** and its result reaches
+   you later as a task **notification** (its final message is the coder's DevelopmentOutput). Nothing in your
+   toolset can query a running agent. **Never call `Agent` again for the same task** — no `"continue"`, no
+   status probe, no call without a `prompt`: that spawns a second, context-less coder that fights the first one.
 3. **Wait.** Loop `coder_wait(job_id, timeout_seconds=120)` until `data.state != "running"`. Never call `coder_status` or
    any other tool in the same message as `coder_wait` — the server handles requests one at a time. When a native
-   `Agent` returns, call `coder_merge(task_id)` for it.
+   coder's completion notification arrives, call `coder_merge(task_id)` for it. If the job is done but native
+   coders are still out, do NOT busy-wait with `sleep` loops in Bash: print one line
+   (`⏳ waiting for native TASK-NNN …`) and end your message — the notification wakes you and the loop resumes there.
 4. **Consolidate each task by outcome** (`data.tasks[*].outcome`, or the `coder_merge` result):
    - `merged` → run THAT task's acceptance criteria in this worktree (integration with sibling merges can break them);
      green → step (g) of the Fallback loop for this task, with a Completion Note that ends with
      `Seat: <seat_label> · Backend: <backend> · Model: <model> · Attempts: <n> · Duration: <sum duration_s> · Tokens: <usage>`
      taken from `attempts[*]`; red → treat as `failed`.
    - `merge_conflict` → `git merge <branch>` in this worktree, resolve, commit, then `coder_merge(task_id)` again.
+   - `failed` with `diagnostics` starting `branch_not_merged:` → the engine merged nothing (it never answers
+     `merged` unless the branch is an ancestor of the feature branch). Run
+     `git merge --no-ff <branch>` in this worktree yourself, then continue as `merged`.
    - `fidelity_violation` → treat as `failed` (a coder touched `sdd/` or unlisted files, OR its diff adds a banned import — `diagnostics` starts with `BannedImport:`; never merge it by hand, fix it yourself in attempt 3).
    - `failed` → attempt 3 is yours: implement the task in THIS worktree with steps c)–f) of the Fallback loop, then (g).
-5. `coder_cleanup(keep_conflicted=true)`, then go to 1. Stop when `chunks` is empty AND `pending` is empty.
+5. `coder_cleanup(keep_conflicted=true)` — only once every native task of the chunk has gone through `coder_merge`
+   (the engine refuses to remove a native sub-worktree that was never merged and lists it under `kept`; a
+   still-running coder must never lose its worktree). Then go to 1. Stop when `chunks` is empty AND `pending` is empty.
 6. Continue with "## Completion" (code review, push, summary with the per-model table).
 
 ## Fallback: Sequential Loop (no parrot-sdd-coder server)

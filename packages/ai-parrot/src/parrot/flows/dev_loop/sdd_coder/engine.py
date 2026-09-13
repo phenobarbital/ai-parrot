@@ -329,6 +329,12 @@ class SddCoderEngine:
         # spec's non-goal: no telemetry rows for the native/codex seats), so
         # `merge()` on a native task correctly emits nothing.
         self._latest_attempt: Dict[str, AttemptRecord] = {}
+        # Manager keys (f"{task_id}.a{attempt}") handed out by `prepare_native` whose
+        # background `Agent` has not been consolidated through `merge()` yet. The engine
+        # never sees a native attempt run (no job row, so `_jobs.running_task_ids()` is
+        # blind to it); `cleanup()` must not remove these worktrees while the coder may
+        # still be working inside them (FEAT-555 incident: TASK-230-a1 was deleted mid-run).
+        self._native_inflight: set[str] = set()
 
         # Telemetry setup (FEAT-554). `conf.DEV_LOOP_CODER_TELEMETRY` is the
         # master switch — mirrors the same conf-fallback pattern `redis_url`/
@@ -498,6 +504,7 @@ class SddCoderEngine:
         if planned is None or not planned.native:
             raise CoderFailure("task_not_in_plan", f"{task_id} is not a native task of the current chunk plan")
         path = await self._manager_for(ctx, task_id, 1).create(f"{task_id}.a1")
+        self._native_inflight.add(f"{task_id}.a1")
         return NativePrep(
             task_id=task_id,
             task_file=planned.task_file,
@@ -591,6 +598,23 @@ class SddCoderEngine:
                     conflict_files=conflict_files,
                     diagnostics=exc.stderr,
                 )
+            # `merge_sequential` only merges branches the manager still remembers in
+            # `_created`; if that map was emptied (a `cleanup()` ran first, FEAT-555
+            # incident) it silently merges nothing. Never answer `merged` on trust —
+            # ask git whether `branch` is now part of the feature branch.
+            rc, _out, err = await _git("merge-base", "--is-ancestor", branch, ctx.feature_branch, cwd=ctx.worktree)
+        if rc != 0:
+            return TaskResult(
+                task_id=task.task_id,
+                outcome="failed",
+                branch=branch,
+                worktree_path=path,
+                diagnostics=(
+                    f"branch_not_merged: {branch} is not an ancestor of {ctx.feature_branch} after "
+                    f"merge_sequential (nothing landed); merge it manually with `git merge --no-ff {branch}`. "
+                    + err.strip()
+                ),
+            )
         return TaskResult(task_id=task.task_id, outcome="merged", branch=branch, worktree_path=path)
 
     async def merge(self, feature: str, worktree: str, task_id: str) -> TaskResult:
@@ -615,6 +639,10 @@ class SddCoderEngine:
             task_id=task_id, task_file=task_ref.file, title=task_ref.title, seat_label="", native=True
         )
         result = await self._consolidate(ctx, manager, planned, branch=branch, path=path)
+        # The orchestrator calls `merge()` only after the native `Agent` returned, so
+        # whatever the outcome the sub-worktree is no longer in use and `cleanup()` may
+        # reclaim it (conflicts are still protected by `keep_conflicted`).
+        self._native_inflight.discard(f"{task_id}.a{attempt}")
 
         # Emit an outcome row for the re-merge, attributed to the SAME
         # attempt_uid the original (pre-repair) outcome used. `_consolidate`
@@ -644,7 +672,11 @@ class SddCoderEngine:
         await self._resolve_feature(feature, worktree)
         removed: List[str] = []
         kept: List[str] = []
-        for manager in self._managers.values():
+        for key, manager in self._managers.items():
+            if key in self._native_inflight:
+                # A native coder may still be running in there — see `_native_inflight`.
+                kept.extend(branch for _path, branch in manager._created.values())  # noqa: SLF001
+                continue
             before = dict(manager._created)  # noqa: SLF001 — no public API to enumerate created worktrees
             await manager.cleanup(keep_on_conflict=keep_conflicted)
             after = manager._created  # noqa: SLF001
