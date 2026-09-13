@@ -304,14 +304,37 @@ def _install_permissions(root: Path) -> list[str]:
 def _managed_server_names(root: Path) -> list[str]:
     """Return the `.mcp.json` server names this installer manages.
 
-    `["wikitoolkit"]` plus one `parrot-<name>` per ENABLED toolkit section —
-    the same query `_install_mcp_json` reconciles with (verified:
-    installer.py:363-364), so the two can never disagree.
+    Always includes ``"wikitoolkit"`` (unconditionally reconciled by
+    `_install_mcp_json`, never subject to a foreign-collision check) plus
+    one `parrot-<name>` per ENABLED toolkit section whose *current*
+    `.mcp.json` entry is confirmed ours via `_is_managed_toolkit_entry`.
+
+    A name derived purely from the enabled toolkit config (the pre-FEAT-556
+    behavior) can disagree with what `_install_mcp_json` actually wrote: a
+    foreign `parrot-<name>` entry that collides with an enabled section's
+    name is deliberately left untouched (installer.py:490-496, warning
+    emitted) — approving that name here would silently authorize a
+    third-party server the operator never wrote, with no approval prompt.
+    Must be called AFTER `_install_mcp_json` has reconciled `.mcp.json` so
+    the entry-shape check reflects the final state.
     """
     from parrot.mcp.toolkit_config import load_toolkits_config
 
+    path = root / ".mcp.json"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+    except (OSError, ValueError):
+        data = {}
+    servers = data.get("mcpServers") if isinstance(data, dict) else None
+    servers = servers if isinstance(servers, dict) else {}
+
     cfg = load_toolkits_config(root)
-    return ["wikitoolkit"] + [f"parrot-{name}" for name, section in sorted(cfg.toolkits.items()) if section.enabled]
+    names = ["wikitoolkit"]
+    for name, section in sorted(cfg.toolkits.items()):
+        key = f"parrot-{name}"
+        if section.enabled and _is_managed_toolkit_entry(servers.get(key), root, name):
+            names.append(key)
+    return names
 
 
 def _install_mcp_approval(root: Path) -> str:
@@ -345,8 +368,21 @@ def _install_mcp_approval(root: Path) -> str:
     return f".claude/settings.local.json — {len(missing)} MCP server(s) authorized ({', '.join(missing)})"
 
 
-def _uninstall_mcp_approval(root: Path) -> str | None:
+def _uninstall_mcp_approval(root: Path, removed_toolkit_names: Sequence[str] = ()) -> str | None:
     """Remove only the managed names from `enabledMcpjsonServers`.
+
+    Always strips ``"wikitoolkit"`` (unambiguous, always ours) plus exactly
+    the ``parrot-<name>`` names in ``removed_toolkit_names`` — the entries
+    `_uninstall_mcp_json` just confirmed and deleted from `.mcp.json` via
+    `_is_managed_toolkit_entry`. Never blanket-strips every `parrot-*` name:
+    an operator's own unrelated `parrot-<name>` server, approved by hand and
+    never touched by reconciliation, must survive `parrot claude uninstall`.
+
+    Args:
+        root: Repository root.
+        removed_toolkit_names: The managed keys `_uninstall_mcp_json` just
+            removed from `.mcp.json` (must be captured before that call, or
+            passed empty when `.mcp.json` was absent/unparseable).
 
     Returns:
         An action string, or None when there was nothing to remove.
@@ -363,25 +399,8 @@ def _uninstall_mcp_approval(root: Path) -> str | None:
     if not isinstance(names, list):
         return None
 
-    # We want to remove:
-    # 1. Any name currently in _managed_server_names(root)
-    # 2. Any stale "parrot-" name whose section no longer exists (or is disabled)
-    # Let's find all possible managed names.
-    # A name is a managed name if it is "wikitoolkit" or starts with "parrot-".
-    # But wait, we should only remove "parrot-<name>" if it was indeed managed by us.
-    # Since we don't have the full history, any "parrot-<name>" is a candidate,
-    # but to be safe and precise, we can remove "wikitoolkit" and any "parrot-<name>"
-    # that is either currently managed OR whose name matches a toolkit section in the config.
-    # Actually, the spec says:
-    # "note that a disabled/removed section means a name that is no longer in _managed_server_names,
-    # so ALSO strip any `parrot-` name whose section no longer exists, or uninstall would leave stale approvals behind"
-    # So we remove "wikitoolkit" and any "parrot-<name>" where <name> is a toolkit section in the config (enabled or disabled),
-    # or if the section no longer exists in the config at all!
-    # Wait, "strip any `parrot-` name whose section no longer exists" means if it starts with "parrot-", we can strip it.
-    # Let's be precise: we remove "wikitoolkit" and any "parrot-*" name.
-    # Let's check if that's correct. Yes, all "parrot-*" names are managed by this installer.
-    # So we remove "wikitoolkit" and any name starting with "parrot-".
-    to_remove = {n for n in names if n == "wikitoolkit" or n.startswith("parrot-")}
+    candidates = {"wikitoolkit", *removed_toolkit_names}
+    to_remove = {n for n in names if n in candidates}
     if not to_remove:
         return None
 
@@ -425,9 +444,17 @@ def _is_managed_toolkit_entry(entry: Any, root: Path, name: str) -> bool:
     # by an operator following examples/sdd-coder-mcp.yaml — is ADOPTED and
     # upgraded in place rather than warned about and skipped (installer.py:374-382).
     # A trailing "--config" with a path outside `root` is a foreign override.
+    # Uses real path containment (resolved `parents`), not a string prefix: a
+    # sibling directory like `root=/repo/worktree` vs.
+    # `config_path=/repo/worktree2/...` shares the `startswith` prefix but is
+    # NOT inside `root` — a naive substring check would misclassify it as ours.
     if len(args) >= 4 and args[2] == "--config":
         config_path = Path(args[3])
-        if not config_path.is_absolute() or not str(config_path).startswith(str(root)):
+        if not config_path.is_absolute():
+            return False
+        resolved_config = config_path.resolve()
+        resolved_root = root.resolve()
+        if resolved_config != resolved_root and resolved_root not in resolved_config.parents:
             return False
     return True
 
@@ -522,54 +549,60 @@ def _install_mcp_json(root: Path) -> str:
     return ".mcp.json — " + "; ".join(parts)
 
 
-def _uninstall_mcp_json(root: Path) -> str | None:
+def _uninstall_mcp_json(root: Path) -> tuple[str | None, list[str]]:
     """Remove the wikitoolkit entry and all managed toolkit entries.
 
     Preserves any other MCP server entries (including foreign
     ``parrot-<name>`` entries that do not match the managed shape);
-    removes the file entirely only when it becomes empty. Returns
-    ``None`` (nothing to report) when the file is absent or already
-    carries no managed entries — mirrors every other uninstall step in
-    this module, which only appends to ``actions`` when something was
-    actually removed.
+    removes the file entirely only when it becomes empty.
+
+    Returns:
+        A tuple of (action string or ``None`` when nothing was removed —
+        mirrors every other uninstall step in this module, which only
+        appends to ``actions`` when something was actually removed —, and
+        the list of ``parrot-<name>`` keys confirmed managed and removed,
+        for `_uninstall_mcp_approval` to strip the matching approvals
+        without blanket-stripping every `parrot-*` name).
     """
     path = root / ".mcp.json"
     if not path.exists():
-        return None
+        return None, []
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return ".mcp.json — could not parse, skipping"
+        return ".mcp.json — could not parse, skipping", []
     if not isinstance(data, dict):
-        return None
+        return None, []
 
     servers = data.get("mcpServers", {})
     if not isinstance(servers, dict):
-        return None
+        return None, []
 
     removed: list[str] = []
     if "wikitoolkit" in servers:
         del servers["wikitoolkit"]
         removed.append("wikitoolkit")
 
+    toolkit_names_removed: list[str] = []
     for key in [k for k in servers if k != "wikitoolkit" and k.startswith("parrot-")]:
         name = key[len("parrot-") :]
         if _is_managed_toolkit_entry(servers[key], root, name):
             del servers[key]
             removed.append(key)
+            toolkit_names_removed.append(key)
 
     if not removed:
-        return None
+        return None, []
 
     if not servers:
         data.pop("mcpServers", None)
     if not data:
         path.unlink()
-        return ".mcp.json — removed (was empty)"
+        return ".mcp.json — removed (was empty)", toolkit_names_removed
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
     if removed == ["wikitoolkit"]:
-        return ".mcp.json — wikitoolkit entry removed"
-    return f".mcp.json — managed entries removed ({', '.join(removed)})"
+        return ".mcp.json — wikitoolkit entry removed", toolkit_names_removed
+    return f".mcp.json — managed entries removed ({', '.join(removed)})", toolkit_names_removed
 
 
 def _install_slash_command(root: Path) -> str:
@@ -880,11 +913,11 @@ def uninstall_claude_integration(root: Path) -> list[str]:
                 _write_settings(local_path, local)
                 actions.append(".claude/settings.local.json — wikitoolkit " "permissions removed")
 
-    mcp_json_action = _uninstall_mcp_json(root)
+    mcp_json_action, removed_toolkit_names = _uninstall_mcp_json(root)
     if mcp_json_action:
         actions.append(mcp_json_action)
 
-    approval_action = _uninstall_mcp_approval(root)
+    approval_action = _uninstall_mcp_approval(root, removed_toolkit_names)
     if approval_action:
         actions.append(approval_action)
 

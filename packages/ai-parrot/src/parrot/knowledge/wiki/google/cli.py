@@ -82,16 +82,16 @@ def install(
 ) -> None:
     """Install WikiToolkit and Bookstore MCP servers and skills for Google Antigravity."""
     root = _resolve_root(path_)
-    if all_toolkits:
-        from parrot.mcp.toolkit_seed import available_templates
+    from parrot.mcp.toolkit_seed import available_templates
 
-        toolkits = available_templates()
-    else:
-        toolkits = tuple(name.strip() for name in toolkits_.split(",") if name.strip())
+    names = {n.strip() for n in toolkits_.split(",") if n.strip()}
+    if all_toolkits:
+        names |= set(available_templates())
+    toolkits = sorted(names)
     try:
         config = load_effective_config(root).config
         actions = install_google_integration(root, config, gitignore=gitignore, bookstore=bookstore, toolkits=toolkits)
-    except (RuntimeError, WikiConfigError) as exc:
+    except (RuntimeError, WikiConfigError, ValueError) as exc:
         raise click.ClickException(str(exc)) from exc
 
     for action in actions:

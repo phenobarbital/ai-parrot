@@ -201,9 +201,10 @@ def test_uninstall_removes_managed_only(tmp_root_with_config):
     data["mcpServers"]["other-tool"] = foreign
     mcp_json.write_text(json.dumps(data), encoding="utf-8")
 
-    status = _uninstall_mcp_json(root)
+    status, removed_toolkit_names = _uninstall_mcp_json(root)
 
     assert status is not None
+    assert removed_toolkit_names == ["parrot-stub"]
     servers = _servers(root)
     assert "wikitoolkit" not in servers
     assert "parrot-stub" not in servers

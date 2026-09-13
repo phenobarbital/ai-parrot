@@ -4,8 +4,10 @@ from pathlib import Path
 import pytest
 from parrot.knowledge.wiki.claude_code.installer import (
     _install_mcp_approval,
+    _install_mcp_json,
     _managed_server_names,
     _uninstall_mcp_approval,
+    _uninstall_mcp_json,
     integration_status,
 )
 
@@ -43,10 +45,14 @@ def _local(root):
 
 
 def test_approval_adds_managed_names(tmp_root_with_config):
+    # `_managed_server_names` only confirms a `parrot-<name>` entry via its
+    # current `.mcp.json` shape (FEAT-556 fix) — reconcile first, exactly
+    # like `install_claude_integration` orders these two calls.
+    _install_mcp_json(tmp_root_with_config)
     _install_mcp_approval(tmp_root_with_config)
-    assert set(_managed_server_names(tmp_root_with_config)) <= set(
-        _local(tmp_root_with_config)["enabledMcpjsonServers"]
-    )
+    managed = _managed_server_names(tmp_root_with_config)
+    assert "parrot-stub" in managed
+    assert set(managed) <= set(_local(tmp_root_with_config)["enabledMcpjsonServers"])
 
 
 def test_approval_never_writes_enable_all(tmp_root_with_config):
@@ -83,15 +89,49 @@ def test_approval_rejects_non_list_key(tmp_root_with_config):
 
 
 def test_uninstall_removes_only_managed_names(tmp_root_with_config):
+    _install_mcp_json(tmp_root_with_config)
     _install_mcp_approval(tmp_root_with_config)
     local_dir = tmp_root_with_config / ".claude"
     local = json.loads((local_dir / "settings.local.json").read_text())
     local["enabledMcpjsonServers"].append("some-other-server")
     (local_dir / "settings.local.json").write_text(json.dumps(local))
 
-    _uninstall_mcp_approval(tmp_root_with_config)
+    # Mirrors `uninstall_claude_integration`'s order: capture the confirmed
+    # managed names `.mcp.json` reconciliation just removed, then feed them
+    # to approval-uninstall — never blanket-strip every `parrot-*` name.
+    _, removed_toolkit_names = _uninstall_mcp_json(tmp_root_with_config)
+    _uninstall_mcp_approval(tmp_root_with_config, removed_toolkit_names)
     servers = _local(tmp_root_with_config)["enabledMcpjsonServers"]
     assert servers == ["some-other-server"]
+
+
+def test_approval_never_authorizes_foreign_collision(tmp_root_with_config):
+    """FEAT-556 CRITICAL fix: a foreign `parrot-stub` entry must never be
+    silently authorized just because a `stub` toolkit section is enabled.
+    """
+    mcp_json = tmp_root_with_config / ".mcp.json"
+    mcp_json.write_text(json.dumps({"mcpServers": {"parrot-stub": {"command": "some-other-cli", "args": ["serve"]}}}))
+
+    _install_mcp_json(tmp_root_with_config)  # skips the foreign entry, warns
+    _install_mcp_approval(tmp_root_with_config)
+
+    managed = _managed_server_names(tmp_root_with_config)
+    assert "parrot-stub" not in managed
+    servers = _local(tmp_root_with_config)["enabledMcpjsonServers"]
+    assert "parrot-stub" not in servers
+    assert "wikitoolkit" in servers
+
+
+def test_uninstall_preserves_foreign_parrot_prefixed_name(tmp_root_with_config):
+    """A hand-approved, unrelated `parrot-<name>` server survives uninstall."""
+    local_dir = tmp_root_with_config / ".claude"
+    local_dir.mkdir(parents=True, exist_ok=True)
+    (local_dir / "settings.local.json").write_text(json.dumps({"enabledMcpjsonServers": ["parrot-unrelated-server"]}))
+
+    _, removed_toolkit_names = _uninstall_mcp_json(tmp_root_with_config)  # no .mcp.json — nothing removed
+    _uninstall_mcp_approval(tmp_root_with_config, removed_toolkit_names)
+    servers = _local(tmp_root_with_config)["enabledMcpjsonServers"]
+    assert servers == ["parrot-unrelated-server"]
 
 
 def test_status_reports_approval_and_seeded_yaml(tmp_root_with_config):

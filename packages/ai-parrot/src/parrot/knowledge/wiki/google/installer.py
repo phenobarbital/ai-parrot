@@ -73,11 +73,17 @@ def _is_managed_wikitoolkit_entry(entry: Any, root: Path) -> bool:
 def _is_managed_toolkit_entry(entry: Any, root: Path, name: str) -> bool:
     """Whether a `parrot-<name>` entry was written by us.
 
-    Accepts the pinned shape `["mcp-local", name, "--config", <any path>]`
+    Accepts the pinned shape `["mcp-local", name, "--config", <path>]`
     (FEAT-556) and the pre-FEAT-556 shape `["mcp-local", name]`; the
     `command` check is unchanged. Accepting the legacy shape lets
     reconciliation upgrade an operator's hand-written entry in place
     instead of skipping it with a warning.
+
+    A pinned entry whose `--config` points outside `root` is treated as a
+    foreign operator override and never overwritten — mirrors
+    `claude_code/installer.py::_is_managed_toolkit_entry` (FEAT-556 fix):
+    without this check, reconciliation would unconditionally clobber any
+    hand-pinned `--config`/`cwd`/extra args on every install.
     """
     if not isinstance(entry, dict):
         return False
@@ -86,7 +92,17 @@ def _is_managed_toolkit_entry(entry: Any, root: Path, name: str) -> bool:
     if not isinstance(command, str) or not command.endswith(bin_name):
         return False
     args = entry.get("args")
-    return isinstance(args, list) and args[:2] == ["mcp-local", name]
+    if not isinstance(args, list) or args[:2] != ["mcp-local", name]:
+        return False
+    if len(args) >= 4 and args[2] == "--config":
+        config_path = Path(args[3])
+        if not config_path.is_absolute():
+            return False
+        resolved_config = config_path.resolve()
+        resolved_root = root.resolve()
+        if resolved_config != resolved_root and resolved_root not in resolved_config.parents:
+            return False
+    return True
 
 
 def _install_gemini_md(root: Path) -> str:

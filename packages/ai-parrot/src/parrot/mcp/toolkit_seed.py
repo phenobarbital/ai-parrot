@@ -112,10 +112,19 @@ def seed_toolkit_sections(root: Path, names: Sequence[str]) -> SeedResult:
     path = root_path / ".parrot" / "mcp-toolkits.yaml"
     result = SeedResult(created_file=not path.exists())
 
-    # Resolve requested names against available templates
+    # Resolve requested names against available templates, deduping while
+    # preserving order — a caller passing "foo,foo" (e.g. an un-deduped
+    # `--toolkits` value) must not queue "foo" twice, which would otherwise
+    # write a literal duplicate `foo:` YAML key.
     available = set(available_templates())
-    result.unknown = [name for name in names if name not in available]
-    valid_names = [name for name in names if name in available]
+    seen: set[str] = set()
+    deduped_names: list[str] = []
+    for name in names:
+        if name not in seen:
+            seen.add(name)
+            deduped_names.append(name)
+    result.unknown = [name for name in deduped_names if name not in available]
+    valid_names = [name for name in deduped_names if name in available]
 
     # Determine already-present section keys
     existing_sections = set()
@@ -151,15 +160,23 @@ def seed_toolkit_sections(root: Path, names: Sequence[str]) -> SeedResult:
 
     # If file doesn't exist or doesn't have toolkits root, create/add it
     needs_toolkits_root = not path.exists()
+    needs_leading_newline = False
     if path.exists():
         content = path.read_text(encoding="utf-8")
         needs_toolkits_root = "toolkits:" not in content
+        # A hand-edited file missing a trailing newline would otherwise have
+        # the first appended section's key concatenated onto its last line
+        # (e.g. "enabled: true  bounded-source:") before re-load validation
+        # even runs — corrupting the file with no rollback on failure.
+        needs_leading_newline = bool(content) and not content.endswith("\n")
 
     # Write/append sections
     if sections_to_add:
         with open(path, "a" if path.exists() else "w", encoding="utf-8") as f:
             if needs_toolkits_root:
                 f.write("toolkits:\n")
+            elif needs_leading_newline:
+                f.write("\n")
 
             for name in sections_to_add:
                 template = load_template(name)
