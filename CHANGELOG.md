@@ -9,6 +9,95 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [1.0.1] — 2026-09-13
+
+Everything in this release is additive or opt-in. No public API was removed.
+Twelve core-line distributions move to `1.0.1`. The sixteen satellites
+(`ai-parrot-client-*`, `ai-parrot-openlit-bridge`) move to `0.2.1` and are
+re-pinned to `ai-parrot>=1.0.1`.
+
+### Added
+
+- **FEAT-550: Token budgets for Bedrock and Mantle.** New `parrot.clients.budget`
+  entry module: an atomic `QuestionBudget` ledger, `BudgetScope` / `BudgetRegistry`,
+  and an `AbstractClient` budget gate. Also adds `BedrockBudgetAdapter` and
+  `MantleBudgetAdapter` (opt-in), with per-attempt reservation, a no-retry
+  transport and tools-disabled finalization. When the budget runs out, the caller
+  gets a partial `AIMessage` instead of an exception.
+  `InvokeResult.budget_report` is new. Calls without a budget are unaffected.
+- **FEAT-542: LanceDB vector store** (`ai-parrot-embeddings[lancedb]`). Exact
+  cosine search, model-free full-text search and native hybrid search. Mutations
+  are process-safe. Includes a fully offline local-agent profile.
+- **FEAT-539: Contracts card ontology.** Typed contract cards in a Postgres
+  catalog, O365 SharePoint/OneDrive delta ingestion, and GraphIndex temporal
+  publishing. Answers go through a citation and claim verification gate. Adds a
+  ReAct `ContractsAgent`, renewal and obligation reports, and an operator CLI.
+- **FEAT-538: Durable task memory for `WorkingMemoryToolkit`.** Opt-in. Task,
+  plan and decision journals, versioned artifacts and evidence pins, bounded
+  recall injected into Stage 2 rendering, and a PostgreSQL durable backend with
+  retention.
+- **FEAT-459: Custom code in form builder** (`parrot-formdesigner`). Snippet and
+  manifest models; git and tenant-DB snippet sources with a tenant approval
+  service; a tier router over subprocess (tiers 1–2) and gVisor (tiers 3–4)
+  worker pools; a `HostBroker`; a Web Worker runtime with a TS bundler; and an
+  LLM authoring surface. Existing `@register_form_event` handlers are unchanged.
+- **FEAT-544: A2UI form output renderer.** `A2UIFormRenderer` is registered as
+  the `a2ui` render format. The form `.../data` and `.../validate` endpoints are
+  now dual-wire: they accept A2UI action envelopes as well as the existing format.
+- **FEAT-535: Tenant visibility for UI surfaces.** New `SurfaceScope` /
+  `SurfaceScopeResolver`, scope-aware listing, and a visibility `PATCH`. Existing
+  rows read as `private`.
+- **FEAT-536 / FEAT-537: VoiceBot avatars.** LiveAvatar dual output (Gemini/Nova
+  through real tools) in the Voice UI. Multi-room HeyGen broadcast mode:
+  `BroadcastSession`, a Redis-backed cross-worker registry, floor control, and
+  the voice-broadcast HTTP/WebSocket API.
+- **FEAT-543: Tool optimizations.** New toolkits `LocalGitToolkit`,
+  `BoundedSourceToolkit` and `TargetedWriterToolkit` (hash-gated `writer_apply`
+  with a journal and rollback). Adds opt-in PreToolUse read guards for Claude Code
+  and Codex, and `ToolkitSection.llm_kwargs`.
+- **FEAT-555: Dev-loop in Slack.** New `/devloop` Slack command, confirm and gate
+  cards, a live status card, and a headless `parrot devloop run --headless` child
+  mode. Installable via the `devloop` extra.
+- **FEAT-549: `sdd-coder` orchestrator** behind the `parrot-sdd-coder` MCP server.
+  It dispatches one task per sub-agent across a roster of different model seats.
+  Adds `GeminiOpenAICompatClient` and the `google-compat` dev-loop backend.
+- **FEAT-554: sdd-coder attempt telemetry.** An append-only telemetry sink, an
+  observational token-budget mode, and an analysis script for tuning budgets.
+- **FEAT-553: Shared coder conventions.** New `codebase-conventions.md`, injected
+  into every dispatch prompt. A ruff `TID251` banned-import gate now runs on sdd-coder
+  attempts.
+- **FEAT-556: `parrot claude install` enables MCP servers automatically.** It
+  seeds `.parrot/mcp-toolkits.yaml` (opt-in via `--toolkits` / `--all-toolkits`)
+  and approves managed servers in `.claude/settings.local.json`. Codex and Google
+  installers get the same behaviour.
+- **FEAT-548: Observability.** Ships an AI-Parrot usage and cost Grafana dashboard.
+  The `[observability]` env block now targets Prometheus instead of OpenLIT.
+- **FEAT-494:** Fable models in the catalog, plus a `research_primary` model role.
+
+### Changed
+
+- **Dev-loop:** the default in-process turn budget rises from 24 to 40 (FEAT-553).
+- **SDD tooling:** `/sdd-task` no longer creates worktrees. The implementing lane
+  creates them through `python -m scripts.sdd.ensure_worktree` (FEAT-552).
+  `/sdd-spec` gains an optional Codex design-research cross-check (FEAT-545,
+  hardened in FEAT-546).
+
+### Fixed
+
+- `ClientCallFailedEvent` is now emitted on every client error path (FEAT-548).
+- Voice: reply text is no longer duplicated, Gemini Live token usage is reported,
+  and playback is gapless. A participant who leaves no longer strands their seat.
+- `ui_surfaces` jsonb columns are no longer double-encoded. Hyphenated A2UI
+  renderer ids now resolve to the right module.
+- Wiki: `~` is escaped in ArangoDB document keys.
+- The missing `ContractsToolkit` entry is now registered.
+- The TASK-ID collision checker no longer crashes on hotfix ids.
+- sdd-coder: native sub-worktrees are kept until they are merged, and a merge that
+  did not land is never reported as done.
+- `codex exec` no longer receives the unsupported `--ask-for-approval` flag.
+
+---
+
 ## [1.0.0] — 2026-09-07 — First stable release
 
 **First stable release.** `ai-parrot` and its eleven sibling distributions —
