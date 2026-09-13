@@ -6,7 +6,7 @@ import json
 import logging
 import sys
 from pathlib import Path, PurePosixPath
-from typing import Any, Optional
+from typing import Any, Optional, Sequence
 
 from parrot.knowledge.wiki.google import assets
 from parrot.knowledge.wiki.google.bookstore import bookstore_status, install_bookstore, uninstall_bookstore
@@ -71,11 +71,22 @@ def _is_managed_wikitoolkit_entry(entry: Any, root: Path) -> bool:
 
 
 def _is_managed_toolkit_entry(entry: Any, root: Path, name: str) -> bool:
+    """Whether a `parrot-<name>` entry was written by us.
+
+    Accepts the pinned shape `["mcp-local", name, "--config", <any path>]`
+    (FEAT-556) and the pre-FEAT-556 shape `["mcp-local", name]`; the
+    `command` check is unchanged. Accepting the legacy shape lets
+    reconciliation upgrade an operator's hand-written entry in place
+    instead of skipping it with a warning.
+    """
     if not isinstance(entry, dict):
         return False
     command = entry.get("command")
     bin_name = PurePosixPath(assets.resolve_binary(root, "parrot")).name
-    return isinstance(command, str) and command.endswith(bin_name) and entry.get("args") == ["mcp-local", name]
+    if not isinstance(command, str) or not command.endswith(bin_name):
+        return False
+    args = entry.get("args")
+    return isinstance(args, list) and args[:2] == ["mcp-local", name]
 
 
 def _install_gemini_md(root: Path) -> str:
@@ -215,8 +226,15 @@ def install_google_integration(
     gitignore: bool = True,
     bookstore: bool = True,
     mcp_config_path: Optional[Path] = None,
+    toolkits: Sequence[str] = (),
 ) -> list[str]:
-    """Install Google Antigravity / Gemini CLI instructions, skills, and MCP configuration."""
+    """Install Google Antigravity / Gemini CLI instructions, skills, and MCP configuration.
+
+    Args:
+        toolkits: Names to seed into `.parrot/mcp-toolkits.yaml` before MCP
+            reconciliation (FEAT-556); `()` seeds nothing. Seeding runs BEFORE
+            `_install_mcp` so the new sections produce entries in this pass.
+    """
     root = root.resolve()
     config = config or load_effective_config(root).config
     existed = config_path(root).exists()
@@ -231,6 +249,20 @@ def install_google_integration(
         _install_gemini_md(root),
     ]
     actions.extend(_install_skills(root))
+
+    if toolkits:
+        from parrot.mcp.toolkit_seed import seed_toolkit_sections
+
+        seeded = seed_toolkit_sections(root, toolkits)
+        if seeded.created_file:
+            actions.append(".parrot/mcp-toolkits.yaml — created")
+        if seeded.added:
+            actions.append(f".parrot/mcp-toolkits.yaml — seeded {len(seeded.added)} section(s): {', '.join(seeded.added)}")
+        if seeded.skipped:
+            actions.append(f".parrot/mcp-toolkits.yaml — {len(seeded.skipped)} section(s) already present: {', '.join(seeded.skipped)}")
+        if seeded.unknown:
+            actions.append(f".parrot/mcp-toolkits.yaml — unknown toolkit name(s) skipped: {', '.join(seeded.unknown)}")
+
     actions.extend(_install_mcp(root, mcp_path=mcp_config_path))
 
     if gitignore:
