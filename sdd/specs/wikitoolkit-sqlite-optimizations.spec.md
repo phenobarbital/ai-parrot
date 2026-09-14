@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-557
 **Date**: 2026-09-14
 **Author**: Jesus Lara (brainstorm drafted with Claude; spec drafted with Codex)
-**Status**: draft
+**Status**: approved
 **Target version**: next minor (release assignment pending)
 
 ---
