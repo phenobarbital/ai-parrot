@@ -234,11 +234,14 @@ class SDDGraphIngest:
                 
                 pages.append(page)
                 
-                # Create edges for dependencies
+                # Create edges for dependencies. "blocks" is directed from the
+                # blocker to the blocked task: dep_concept_id must complete
+                # before task_concept_id can start, so the dependency blocks
+                # the dependent — not the other way around.
                 for dep_id in depends_on:
                     if dep_id.startswith("TASK-"):
                         dep_concept_id = f"task:{dep_id}"
-                        edges.append((task_concept_id, dep_concept_id, "blocks", "asserted"))
+                        edges.append((dep_concept_id, task_concept_id, "blocks", "asserted"))
                 
                 # Create edge to spec if available
                 if spec_path:
