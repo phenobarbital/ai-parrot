@@ -113,7 +113,7 @@
       "feature_id": "FEAT-557",
       "feature": "wikitoolkit-sqlite-optimizations",
       "spec": "sdd/specs/wikitoolkit-sqlite-optimizations.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -123,8 +123,8 @@
       "parallelism_notes": "PARALLEL-SAFE: touches only sources.py plus its own new test file. Shares no file with the store.py chain; needs only TASK-3216's WikiStoreBusy type.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3221-source-manager-sqlite-policy.md"
+      "completed_at": "2026-09-14T00:55:38+00:00",
+      "file": "sdd/tasks/completed/TASK-3221-source-manager-sqlite-policy.md"
     },
     {
       "id": "TASK-3222",
