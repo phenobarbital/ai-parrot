@@ -115,6 +115,23 @@ def kpi_unit_html(node: BasicNode) -> str:
     return f'<span class="kpi-unit">{_esc(unit)}</span>'
 
 
+def humanize_key(name: str) -> str:
+    """``in_progress`` -> "In progress": a column key made readable.
+
+    A chart's series are named by the data column they came from, and both
+    the legend and the metric toggles printed that key verbatim — a report's
+    key read ``scheduled | in_progress | completed | unfulfilled``, which is
+    a schema, not a label.
+
+    First word capitalised only: "In progress", not "In Progress". These sit
+    in a legend, not in a heading.
+    """
+    words = str(name).replace("_", " ").replace("-", " ").split()
+    if not words:
+        return str(name)
+    return " ".join([words[0].capitalize()] + [w.lower() for w in words[1:]])
+
+
 def kpi_value_display(node: BasicNode, raw: Any) -> str:
     """The display string for a ``value``-role Text, honouring ``parrot_value_format``.
 

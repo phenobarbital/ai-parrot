@@ -538,3 +538,85 @@ class TestHtmlDocumentSandboxedIframe:
         out = art.content.decode()
         assert 'sandbox="allow-scripts"' in out
         assert "Nested Doc" in out
+
+
+class TestChartKeyIsReadableAndSingular:
+    """The chart key used to be a schema printed twice.
+
+    "Events by week" showed a row of buttons reading `scheduled | in_progress
+    | completed | missed | unfulfilled | cancelled` and, directly under it,
+    Chart.js' own legend with the same six words — one of them a column key
+    with an underscore in it.
+    """
+
+    pytestmark = pytest.mark.asyncio
+
+    @staticmethod
+    def _weekly_chart() -> CreateSurface:
+        return CreateSurface(
+            surfaceId="s",
+            catalogId="c",
+            components=[
+                Component(
+                    id="root",
+                    component="Chart",
+                    type="bar",
+                    x="week",
+                    y=["scheduled", "in_progress", "completed"],
+                    title="Events by week",
+                    data=[{"week": "2026-W36", "scheduled": 8, "in_progress": 1, "completed": 27}],
+                )
+            ],
+            dataModel={},
+        )
+
+    async def test_a_series_is_named_not_keyed(self):
+        doc = (await InteractiveHTMLRenderer().render(self._weekly_chart())).content.decode()
+        assert ">In progress</button>" in doc
+        # The raw key must not survive as the button's visible text. It still
+        # appears inside the embedded config (it is how a row is looked up),
+        # so this checks the RENDERED label, not the whole document.
+        assert ">in_progress</button>" not in doc
+
+    async def test_the_datasets_carry_the_same_names(self):
+        # The toggles and the plot must not disagree about what a series is
+        # called, so the readable names travel in the config beside `y`.
+        doc = (await InteractiveHTMLRenderer().render(self._weekly_chart())).content.decode()
+        assert "yLabels" in doc
+        assert "In progress" in doc
+
+    async def test_only_one_key_is_drawn(self):
+        # The toggles carry the colours and the names, so Chart.js' built-in
+        # legend would be a second key saying the same words.
+        doc = (await InteractiveHTMLRenderer().render(self._weekly_chart())).content.decode()
+        assert "&quot;showLegend&quot;: false" in doc or '"showLegend": false' in doc
+
+    async def test_a_single_series_keeps_the_built_in_legend(self):
+        # No toggles render for one y column, so nothing would name the series
+        # if the legend were off too.
+        envelope = CreateSurface(
+            surfaceId="s",
+            catalogId="c",
+            components=[
+                Component(
+                    id="root",
+                    component="Chart",
+                    type="line",
+                    x="week",
+                    y=["completed"],
+                    data=[{"week": "2026-W36", "completed": 27}],
+                )
+            ],
+            dataModel={},
+        )
+        doc = (await InteractiveHTMLRenderer().render(envelope)).content.decode()
+        # The MARKUP, not the string: the runtime's own JS contains the
+        # selector `[data-metric-toggle-for="...]` and the stylesheet contains
+        # `.a2ui-metric-toggle`, both inlined into every document, so a bare
+        # substring is true with no toggles rendered at all.
+        assert '<div class="a2ui-metric-toggle"' not in doc
+        assert "&quot;showLegend&quot;: true" in doc or '"showLegend": true' in doc
+
+    async def test_the_key_sits_below_the_chart(self):
+        doc = (await InteractiveHTMLRenderer().render(self._weekly_chart())).content.decode()
+        assert doc.index("<canvas") < doc.index('<div class="a2ui-metric-toggle"')

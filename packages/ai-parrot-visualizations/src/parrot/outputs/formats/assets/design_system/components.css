@@ -84,6 +84,26 @@
 
 /* The baseline the delta compares against. Muted and beside the delta, not
    under it: it qualifies that number, it is not a third fact. */
+/* The chart key: a colour dot beside each series name. The buttons are the
+   legend now (Chart.js' own is off whenever they render), so they have to
+   carry the colour or nothing maps a name to a bar. The dot is painted by
+   the runtime from the resolved series colour; with no colour it stays
+   transparent and the button is still a working toggle. */
+.metricbtn-dot {
+    display: inline-block;
+    width: 0.6rem;
+    height: 0.6rem;
+    margin-right: 0.4rem;
+    border-radius: 9999px;
+    background: transparent;
+    vertical-align: baseline;
+}
+
+/* A metric switched off reads as switched off. */
+.metricbtn:not(.active) .metricbtn-dot {
+    opacity: 0.25;
+}
+
 .kpi-comparison {
     display: inline-block;
     margin-top: 0.15rem;

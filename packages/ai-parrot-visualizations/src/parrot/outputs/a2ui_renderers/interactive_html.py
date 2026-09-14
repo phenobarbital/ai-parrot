@@ -98,6 +98,7 @@ from parrot.outputs.formats.assets.design_system import DesignSystem
 from ._graph_svg import render_graph_svg
 from ._intercept import intercepts
 from ._semantics import (
+    humanize_key,
     is_kpi_row,
     kpi_comparison_html,
     kpi_unit_html,
@@ -243,8 +244,9 @@ _BEHAVIOR_JS = r"""
   reportData(); // parsed for validation / future generic $bind use; charts embed their own config.
 
   function buildDatasets(cfg, rows) {
-    return (cfg.y || []).map(function (col) {
-      return { label: col, data: rows.map(function (r) { return r[col]; }) };
+    var names = cfg.yLabels || [];
+    return (cfg.y || []).map(function (col, i) {
+      return { label: names[i] || col, data: rows.map(function (r) { return r[col]; }) };
     });
   }
 
@@ -298,6 +300,21 @@ _BEHAVIOR_JS = r"""
     var toggleGroup = document.querySelector('[data-metric-toggle-for="' + chartId + '"]');
     if (toggleGroup) {
       toggleGroup.querySelectorAll("[data-metric-index]").forEach(function (btn) {
+        // The buttons ARE the key now (the built-in legend is off whenever
+        // they render), so each one carries its series' colour. Chart.js
+        // resolves those itself, and the accessor has moved between major
+        // versions — a swatch that cannot be coloured simply stays blank
+        // rather than throwing and killing the click handler below.
+        var dot = btn.querySelector("[data-metric-dot]");
+        if (dot) {
+          try {
+            var meta = chart.getDatasetMeta(parseInt(btn.getAttribute("data-metric-index"), 10));
+            var style = meta && meta.controller && meta.controller.getStyle
+              ? meta.controller.getStyle(0, false) : null;
+            var colour = style && (style.backgroundColor || style.borderColor);
+            if (colour) dot.style.background = colour;
+          } catch (e) { /* no swatch, still a working toggle */ }
+        }
         btn.addEventListener("click", function () {
           btn.classList.toggle("active");
           var idx = parseInt(btn.getAttribute("data-metric-index"), 10);
@@ -1115,12 +1132,21 @@ class InteractiveHTMLRenderer(AbstractA2UIRenderer):
                 '<p class="a2ui-notice">'
                 f"rendered as bar (no {html.escape(str(original_type))} support in this surface)</p>"
             )
+        # More than one y column means the metric toggles render, and those
+        # carry the colours and the names — so Chart.js' own legend would be
+        # a SECOND key saying the same six words. One key, and it is the one
+        # you can click.
+        has_toggles = len(y_columns) > 1
         config: dict[str, Any] = {
             "type": "bar" if original_type in _UNSUPPORTED_CHART_TYPES else original_type,
             "x": props.get("x"),
             "y": y_columns,
+            # Parallel to `y`: the readable name for each series, so the
+            # legend and the toggles never disagree about what a series is
+            # called.
+            "yLabels": [humanize_key(col) for col in y_columns],
             "data": rows,
-            "showLegend": bool(props.get("showLegend", True)),
+            "showLegend": bool(props.get("showLegend", True)) and not has_toggles,
         }
         if isinstance(tabs, list) and tabs:
             config["tabs"] = tabs
@@ -1140,19 +1166,22 @@ class InteractiveHTMLRenderer(AbstractA2UIRenderer):
             tabs_html = f'<div class="a2ui-tabs" data-tabs-for="{chart_id}">{buttons}</div>'
 
         toggle_html = ""
-        if len(y_columns) > 1:
+        if has_toggles:
             buttons = "".join(
                 f'<button type="button" class="metricbtn active" data-metric-index="{i}">'
-                f"{html.escape(str(col))}</button>"
+                f'<span class="metricbtn-dot" data-metric-dot></span>'
+                f"{html.escape(humanize_key(col))}</button>"
                 for i, col in enumerate(y_columns)
             )
             toggle_html = f'<div class="a2ui-metric-toggle" data-metric-toggle-for="{chart_id}">' f"{buttons}</div>"
 
         config_attr = html.escape(_safe_json(config), quote=True)
+        # The key goes UNDER the chart: it explains what was just drawn, and
+        # above the canvas it pushed the plot down and read as a toolbar.
         return (
-            f'<div class="a2ui-card a2ui-chart-wrap">{title_html}{tabs_html}{toggle_html}'
+            f'<div class="a2ui-card a2ui-chart-wrap">{title_html}{tabs_html}'
             f'<canvas data-chart="{chart_id}" data-chart-config="{config_attr}"></canvas>'
-            "</div>"
+            f"{toggle_html}</div>"
         )
 
     def _render_datatable(self, props: dict[str, Any]) -> str:
