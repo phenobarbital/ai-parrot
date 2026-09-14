@@ -78,6 +78,33 @@ def _reject_foreign_id(store: BaseWikiStore, page_id: str) -> str | None:
     )
 
 
+_LEDGER_KIND_PREFIXES = ("issue:", "task:", "spec:", "insight:")
+
+
+def _qualify_ledger_target(target: str) -> str:
+    """Foreign-qualify a provenance target that names a ledger kind.
+
+    Ledger kinds (``issue:``, ``task:``, ``spec:``, ``insight:``) live in
+    the ledger's overlay namespace (FEAT-566), not this ``wiki.db`` plane —
+    an edge pointing at one must carry the ``ledger::`` qualifier so
+    :meth:`~parrot.knowledge.wiki.federation.FederatedWikiStore._assert_local_or_foreign_destination`
+    stores it verbatim instead of mistaking it for a local page id.
+    Already-qualified ids (containing ``::``) and code-plane targets
+    (``sym:``, ``file:``, ...) pass through unchanged.
+
+    Args:
+        target: Raw provenance target, e.g. ``"task:TASK-3200"``.
+
+    Returns:
+        The target, foreign-qualified when it names a ledger kind.
+    """
+    if "::" in target:
+        return target
+    if target.startswith(_LEDGER_KIND_PREFIXES):
+        return f"ledger::{target}"
+    return target
+
+
 def _unknown_namespace_error(store: BaseWikiStore, namespace: str) -> str:
     """Message for a ``namespace`` argument the store does not serve."""
     known = ", ".join(sorted(getattr(store, "namespaces", {}))) or "(none)"
@@ -134,8 +161,8 @@ class WikiRememberInput(BaseModel):
     title: str | None = Field(default=None, description="Short title")
     link_page_id: str | None = Field(default=None, description="Page to link to")
     rel: str | None = Field(default="references", description="Relation type")
-    derived_from: str | None = Field(default=None, description="Page this knowledge was derived from")
-    about: str | None = Field(default=None, description="Subject this knowledge is about")
+    derived_from: str | None = Field(default=None, description="Originating task, review, or spec id")
+    about: list[str] | None = Field(default=None, description="Target symbol or file ids")
 
 
 class WikiNoteInput(BaseModel):
@@ -296,7 +323,7 @@ class WikiRememberTool(AbstractTool):
         link_page_id: str | None = None,
         rel: str | None = "references",
         derived_from: str | None = None,
-        about: str | None = None,
+        about: list[str] | None = None,
     ) -> ToolResult:
         # Validate the link target BEFORE the first write: a namespaced
         # id would otherwise fail at add_edges, leaving the memory page
@@ -332,25 +359,17 @@ class WikiRememberTool(AbstractTool):
         if link_page_id:
             edges.append((page_id, link_page_id, rel or "references", "asserted"))
             linked = True
-            
-        # Add provenance edges
+
+        # Add provenance edges. A target naming a ledger kind (task:, spec:,
+        # issue:, insight:) is foreign to this wiki.db plane and must be
+        # qualified so `_assert_local_or_foreign_destination` (federation.py)
+        # stores it verbatim instead of treating it as a local reference;
+        # code-plane targets (sym:, file:, ...) stay unqualified.
         if derived_from:
-            # For ledger targets, store foreign-qualified; for code targets, store locally
-            if derived_from.startswith(("issue:", "task:", "spec:", "insight:")):
-                # Foreign ledger target - should be qualified
-                edges.append((page_id, derived_from, "derived-from", "asserted"))
-            else:
-                # Local code target
-                edges.append((page_id, derived_from, "derived-from", "asserted"))
-                
-        if about:
-            # For ledger targets, store foreign-qualified; for code targets, store locally
-            if about.startswith(("issue:", "task:", "spec:", "insight:")):
-                # Foreign ledger target - should be qualified
-                edges.append((page_id, about, "about", "asserted"))
-            else:
-                # Local code target
-                edges.append((page_id, about, "about", "asserted"))
+            edges.append((page_id, _qualify_ledger_target(derived_from), "derived-from", "asserted"))
+
+        for target in about or []:
+            edges.append((page_id, _qualify_ledger_target(target), "about", "asserted"))
 
         if edges:
             await self._store.add_edges(edges)
@@ -576,6 +595,7 @@ class VaultIngestTool(AbstractTool):
 if TYPE_CHECKING:
     from parrot.knowledge.wiki.ledger.service import LedgerService
 
+
 class LedgerOpenInput(BaseModel):
     title: str = Field(..., description="Issue title")
     body: str = Field(..., description="Issue description")
@@ -653,6 +673,7 @@ class LedgerReadyTool(AbstractTool):
         try:
             # Convert string kind to IssueKind enum if provided
             from parrot.knowledge.wiki.ledger.events import IssueKind
+
             kind_enum = IssueKind(kind) if kind else None  # type: ignore
             issues = await self._ledger_service.ready_work(kind_enum)
             return ToolResult(result={"issues": issues})
@@ -748,15 +769,17 @@ def create_wiki_tools(
         WikiNoteTool(store, storage_dir=storage_dir),
         WikiStatusTool(store),
     ]
-    
+
     # Add ledger tools when ledger_service is provided
     if ledger_service is not None:
-        tools.extend([
-            LedgerOpenTool(ledger_service),
-            LedgerReadyTool(ledger_service),
-            LedgerClaimTool(ledger_service),
-            LedgerCloseTool(ledger_service),
-            LedgerContextTool(ledger_service),
-        ])
-    
+        tools.extend(
+            [
+                LedgerOpenTool(ledger_service),
+                LedgerReadyTool(ledger_service),
+                LedgerClaimTool(ledger_service),
+                LedgerCloseTool(ledger_service),
+                LedgerContextTool(ledger_service),
+            ]
+        )
+
     return tools

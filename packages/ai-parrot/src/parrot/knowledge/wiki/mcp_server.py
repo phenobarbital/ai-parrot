@@ -150,36 +150,53 @@ def create_wiki_mcp_server(root: Path) -> StdioMCPServer:
         except Exception as exc:  # noqa: BLE001 — namespaces are optional
             logging.getLogger(__name__).warning("Could not resolve wiki namespaces: %s", exc)
             handles, skipped = [], []
-            
-    # FEAT-566: Initialize ledger service for ledger tools
+
+    # FEAT-566: Initialize ledger service for ledger tools — only when `root`
+    # resolves to a real, git-backed shared root. `LedgerService.from_root`
+    # tolerates the absence of one by falling back to `root`/CWD (so the
+    # service itself never raises), which would otherwise make every
+    # `create_wiki_mcp_server` call on a bare directory (most unit-test
+    # fixtures included) silently grow a `.parrot/ledger/` and mount an
+    # extra namespace — changing tool counts with no wiki project involved.
     ledger_service = None
     with contextlib.redirect_stdout(sys.stderr):
-        try:
-            from parrot.knowledge.wiki.ledger.service import LedgerService
-            ledger_service = LedgerService.from_root(root)
-        except Exception as exc:  # noqa: BLE001 — ledger is optional
-            logging.getLogger(__name__).warning("Could not initialize ledger service: %s", exc)
-            
-    # FEAT-566: Mount ledger as a read-only overlay namespace
+        from parrot.knowledge.wiki.project import find_shared_root
+
+        if find_shared_root(root) is not None:
+            try:
+                from parrot.knowledge.wiki.ledger.service import LedgerService
+
+                ledger_service = LedgerService.from_root(root)
+            except Exception as exc:  # noqa: BLE001 — ledger is optional
+                logging.getLogger(__name__).warning("Could not initialize ledger service: %s", exc)
+
+    # FEAT-566: Mount ledger as a read-only overlay namespace. The config's
+    # `store` field is set only to satisfy WikiNamespaceConfig's "exactly
+    # one source" validator — resolve_namespaces() is never asked to open
+    # this entry; the NamespaceHandle wraps the already-open LedgerStore
+    # directly.
     if ledger_service is not None:
         with contextlib.redirect_stdout(sys.stderr):
             from parrot.knowledge.wiki.project import WikiNamespaceConfig
+            from parrot.knowledge.wiki.federation import NamespaceHandle
+
+            ledger_dir = ledger_service.shared_root / ".parrot" / "ledger"
             ledger_config = WikiNamespaceConfig(
-                name="ledger",
-                path=str(ledger_service.shared_root / ".parrot" / "ledger" / "ledger.db"),
+                store=str(ledger_dir),
                 description="SDD work ledger (issues, tasks, specs, insights)",
-                weight=0.5,  # Lower priority than local
+                weight=0.5,
                 overlay_prefixes=["issue", "task", "spec", "insight"],
             )
-            # Create a namespace handle for the ledger
-            from parrot.knowledge.wiki.federation import NamespaceHandle
-            ledger_handle = NamespaceHandle(
-                name="ledger",
-                store=ledger_service.store,
-                config=ledger_config,
+            handles.append(
+                NamespaceHandle(
+                    name="ledger",
+                    store=ledger_service.store,
+                    config=ledger_config,
+                    storage_dir=ledger_dir,
+                    read_only=True,
+                )
             )
-            handles.append(ledger_handle)
-            
+
     if handles or skipped:
         read_store = FederatedWikiStore(store, config.wiki_name, handles, skipped)
     tools = create_wiki_tools(read_store, root=root, config=config, ledger_service=ledger_service)
