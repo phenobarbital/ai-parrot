@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-566 — SDD Work Ledger
 **Spec**: `sdd/specs/sdd-work-ledger.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-3226, TASK-3227, TASK-3229, TASK-3231
@@ -44,13 +44,43 @@ Spec §3 Module 6. `LedgerService` is the application facade for commands, tools
 
 ## Acceptance Criteria
 
-- [ ] The service targets the shared ledger directory from a linked worktree.
-- [ ] Non-human acknowledgement is refused and leaves status open.
-- [ ] Critical blockers are limited to the requested feature's spec/tasks/reviews.
-- [ ] Same-state snapshots are byte-identical and report unchanged on second export.
-- [ ] `pytest tests/knowledge/wiki/test_ledger_service.py -q` passes.
+- [x] The service targets the shared ledger directory from a linked worktree.
+- [x] Non-human acknowledgement is refused and leaves status open.
+- [x] Critical blockers are limited to the requested feature's spec/tasks/reviews.
+- [x] Same-state snapshots are byte-identical and report unchanged on second export.
+- [x] `pytest tests/knowledge/wiki/test_ledger_service.py -q` passes.
 
 ## Test Specification
 
 Use a temporary shared root and `.parrot/wiki.json` policy injection; never add a custom ledger SQLite key.
+
+### Completion Note
+
+The automated attempt (gemini/google-compat) exhausted its turn budget
+before committing anything: `service.py` and `test_ledger_service.py`
+were left as untracked files in its sub-worktree, with one reported
+failing test (`export_snapshot` assertion mismatch). That sub-worktree
+was removed by `coder_cleanup` before it could be reviewed or salvaged
+(never committed, so nothing was lost from history) — implemented from
+scratch directly against the spec instead.
+
+Design notes: `from_root()` is verified against a real simulated linked
+worktree (a `.git` *file* with `gitdir:` pointing at a
+`worktrees/<name>/` dir carrying `commondir`), not just a bare tmp_path,
+so "targets the shared ledger directory from a linked worktree" is an
+actual assertion, not an assumption. `merge_blockers` resolves the
+target feature's task ids by reading its own `sdd/tasks/index/*.json`
+from the shared root (matched on `feature_id`) rather than trusting a
+caller-supplied list, so cross-feature isolation is enforced by the
+service itself.
+
+16 tests pass (`pytest tests/knowledge/wiki/test_ledger_service.py -q`),
+plus all 58 ledger-suite tests across `test_ledger_events/log/store/
+index/sdd_ingest/service.py` re-verified green as a group. `ruff check`
+and `black --check` clean.
+
+Seat: sonnet (sdd-worker fallback, attempt 2 after the gemini dev-loop
+attempt exhausted its turn budget uncommitted) · Backend: none (direct
+implementation in the feature worktree) · Attempts: 1 (this
+implementation).
 

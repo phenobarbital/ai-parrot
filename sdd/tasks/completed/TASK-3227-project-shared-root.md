@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-566 — SDD Work Ledger
 **Spec**: `sdd/specs/sdd-work-ledger.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-3226
@@ -53,12 +53,24 @@ def load_project_config(root: Path) -> WikiProjectConfig: ...
 
 ## Acceptance Criteria
 
-- [ ] Plain and linked worktrees resolve the same main root without CWD assumptions.
-- [ ] Environment override is honored only for an existing directory.
-- [ ] `ledger_path()` is deterministic and creates no files.
-- [ ] `pytest tests/knowledge/wiki/test_project_shared_root.py -q` passes.
+- [x] Plain and linked worktrees resolve the same main root without CWD assumptions.
+- [x] Environment override is honored only for an existing directory.
+- [x] `ledger_path()` is deterministic and creates no files.
+- [x] `pytest tests/knowledge/wiki/test_project_shared_root.py -q` passes.
 
 ## Test Specification
 
 Use temporary Git metadata fixtures; never mutate the repository `.git` directory.
+
+### Completion Note
+
+Implemented `resolve_git_common_dir`, `is_linked_worktree`, and `find_shared_root`
+(failure-tolerant, honors `PARROT_SHARED_ROOT` only when the directory exists),
+plus `WikiProjectConfig.ledger_path(root)`. Verified: `pytest
+tests/knowledge/wiki/test_project_shared_root.py -q` → 11 passed, 1 skipped
+(pre-existing placeholder skip unrelated to this task, "Skipping complex
+absolute path test for now"). No files touched outside the task's list.
+
+Seat: qwen · Backend: nova · Model: qwen.qwen3-coder-480b-a35b-instruct ·
+Attempts: 1 · Duration: 780.2s · Tokens: 986937/7001
 

@@ -9,6 +9,10 @@ Use this skill when the user asks to run `sdd-task`, decompose an approved spec,
 or create SDD task artifacts.
 
 Codex invocation: `$sdd-task sdd/specs/<feature-slug>.spec.md`.
+Optional (FEAT-566): `$sdd-task sdd/specs/<feature-slug>.spec.md --from-issue <issue-id>`
+seeds one task from an open ledger issue (`wikitoolkit ledger ready`) instead
+of writing its Context/Scope from scratch. Promotion is always explicit —
+no ledger issue is ever auto-promoted.
 
 ## Purpose
 
@@ -89,6 +93,12 @@ complete. `design_complete: true` is a declaration the task author signs.
    - Stop if reservation fails.
    - For `type: hotfix`, do not reserve `TASK-NNN`; use local IDs
      `HOTFIX-<JIRA-KEY>-1`, `HOTFIX-<JIRA-KEY>-2`, and so on.
+   - `--from-issue <issue-id>` (FEAT-566): the promoted task still gets a
+     normally-reserved `TASK-NNN` here — a ledger issue id is never used as
+     a task id. Seed Context/Scope from `wikitoolkit ledger context
+     <issue-id>`; record `discovered_from: <issue-id>` in the task so
+     `wikitoolkit ledger close <issue-id>` can be run as a separate,
+     explicit step once the task is filed.
 8. Create task files:
    - directory: `sdd/tasks/active/`
    - template: `sdd/templates/task.md`

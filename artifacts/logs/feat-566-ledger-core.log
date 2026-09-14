@@ -1,0 +1,12 @@
+FEAT-566 Module 5 core integration + wiki regression gate
+command: pytest tests/knowledge/wiki/test_federation.py tests/knowledge/wiki/test_federation_overlay.py tests/knowledge/wiki/test_ledger_tools.py tests/knowledge/wiki/test_mcp_server_ledger.py tests/knowledge/wiki/test_mcp_server_structural.py tests/knowledge/wiki/test_cli_ledger.py tests/knowledge/wiki/test_cli_symbols.py tests/knowledge/wiki/test_project_shared_root.py tests/knowledge/wiki/test_project_namespaces.py tests/knowledge/wiki/test_devloop_ledger_context.py -q -m 'not slow'
+exit_code: 0
+
+--- stdout (tail) ---
+........................................................................ [ 48%]
+........................................................................ [ 96%]
+......                                                                   [100%]
+150 passed in 14.28s
+
+--- stderr (tail) ---
+

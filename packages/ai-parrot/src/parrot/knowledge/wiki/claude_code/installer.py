@@ -616,11 +616,17 @@ def _install_slash_command(root: Path) -> str:
     return ".claude/commands/parrotwiki.md — " + ("updated" if existing is not None else "created")
 
 
-def _git_hook_path(root: Path) -> Optional[Path]:
-    """Locate .git/hooks/post-commit, or None when not a git repo."""
+def _git_hook_path(root: Path, hook_name: str = "post-commit") -> Optional[Path]:
+    """Locate .git/hooks/<hook_name>, or None when not a git repo.
+
+    Args:
+        root: Repository root.
+        hook_name: Hook filename under ``hooks/`` — ``"post-commit"``
+            (default) or ``"post-merge"`` (FEAT-566 Module 10).
+    """
     git_dir = root / ".git"
     if git_dir.is_dir():
-        return git_dir / "hooks" / "post-commit"
+        return git_dir / "hooks" / hook_name
     if git_dir.is_file():  # worktree: `gitdir: <path>` pointer
         try:
             content = git_dir.read_text(encoding="utf-8").strip()
@@ -640,7 +646,7 @@ def _git_hook_path(root: Path) -> Optional[Path]:
                 except OSError:
                     return None
                 target = (target / rel).resolve()
-            return target / "hooks" / "post-commit"
+            return target / "hooks" / hook_name
     return None
 
 
@@ -680,36 +686,64 @@ def _shebang_is_sh_compatible(first_line: str) -> bool:
     return interpreter in _SH_FAMILY
 
 
-def _install_git_hook(root: Path) -> str:
-    """Install (or chain into) the git post-commit auto-upsert hook."""
-    hook_path = _git_hook_path(root)
+def _install_managed_git_hook(root: Path, hook_name: str, label: str) -> str:
+    """Install (or chain into) a managed git hook running the wiki upsert.
+
+    Shared body for the ``post-commit`` (:func:`_install_git_hook`) and
+    ``post-merge`` (:func:`_install_post_merge_hook`, FEAT-566 Module 10)
+    installers — both write the same guarded :func:`assets.git_hook_block`
+    content, just to a different hook file.
+
+    Args:
+        root: Repository root.
+        hook_name: Hook filename under ``hooks/`` (``"post-commit"`` or
+            ``"post-merge"``).
+        label: Human-readable hook name used in the returned action string
+            (``"post-commit"`` or ``"post-merge"``).
+    """
+    hook_path = _git_hook_path(root, hook_name)
     if hook_path is None:
-        return "git hook — skipped (not a git repository)"
+        return f"git {label} hook — skipped (not a git repository)"
     block = assets.git_hook_block(root)
     new_file = assets.git_hook_new_file(root)
     if hook_path.exists():
         text = hook_path.read_text(encoding="utf-8")
         if assets.GIT_HOOK_BEGIN in text:
-            return "git post-commit hook — already installed"
+            return f"git {label} hook — already installed"
         first_line = text.splitlines()[0] if text.strip() else ""
         if not _shebang_is_sh_compatible(first_line):
             # Appending sh syntax to a python/node/csh hook would break it.
             return (
-                "git post-commit hook — skipped (existing hook is not a "
+                f"git {label} hook — skipped (existing hook is not a "
                 "shell script; add `wikitoolkit upsert --changed --quiet` "
                 "to it manually)"
             )
         if not text.endswith("\n"):
             text += "\n"
         hook_path.write_text(text + block, encoding="utf-8")
-        action = "git post-commit hook — chained into existing hook"
+        action = f"git {label} hook — chained into existing hook"
     else:
         hook_path.parent.mkdir(parents=True, exist_ok=True)
         hook_path.write_text(new_file, encoding="utf-8")
-        action = "git post-commit hook — created"
+        action = f"git {label} hook — created"
     mode = hook_path.stat().st_mode
     hook_path.chmod(mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
     return action
+
+
+def _install_git_hook(root: Path) -> str:
+    """Install (or chain into) the git post-commit auto-upsert hook."""
+    return _install_managed_git_hook(root, "post-commit", "post-commit")
+
+
+def _install_post_merge_hook(root: Path) -> str:
+    """Install (or chain into) the git post-merge auto-upsert hook.
+
+    FEAT-566 Module 10: keeps the shared structural wiki plane in sync
+    right after a merge (e.g. a feature branch landing on the base
+    branch), not just after each individual commit.
+    """
+    return _install_managed_git_hook(root, "post-merge", "post-merge")
 
 
 def _install_gitignore(root: Path) -> str:
@@ -803,7 +837,12 @@ def install_claude_integration(
         actions.append(_install_mcp_approval(root))
     actions.append(_install_slash_command(root))
     if git_hook:
-        actions.append(_install_git_hook(root))
+        # Post-commit and post-merge are installed together under the same
+        # flag; folded into one action entry (FEAT-566 Module 10) so the
+        # count of returned actions is unchanged for existing callers.
+        commit_action = _install_git_hook(root)
+        merge_action = _install_post_merge_hook(root)
+        actions.append(f"{commit_action}; {merge_action}")
     if gitignore:
         actions.append(_install_gitignore(root))
     if bookstore:

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-566 — SDD Work Ledger
 **Spec**: `sdd/specs/sdd-work-ledger.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-3226, TASK-3228
@@ -55,12 +55,26 @@ class SQLiteWikiStore(BaseWikiStore):
 
 ## Acceptance Criteria
 
-- [ ] Writes run through FEAT-557 `_write(operation)` and raw busy errors are not caught.
-- [ ] Reads issue no schema-creating statements when `ledger_state` is absent.
-- [ ] Cursor state is transactionally initialized and readable after commit.
-- [ ] `pytest tests/knowledge/wiki/test_ledger_store.py -q` passes after FEAT-557 merges.
+- [x] Writes run through FEAT-557 `_write(operation)` and raw busy errors are not caught.
+- [x] Reads issue no schema-creating statements when `ledger_state` is absent.
+- [x] Cursor state is transactionally initialized and readable after commit.
+- [x] `pytest tests/knowledge/wiki/test_ledger_store.py -q` passes after FEAT-557 merges.
 
 ## Test Specification
 
 Use FEAT-557's read-path SQL-trace approach; do not duplicate its generic SQLite contention suite.
+
+### Completion Note
+
+Implemented `LedgerStore(SQLiteWikiStore)` with `ledger_transaction`, cursor
+reads (fresh reads return `(0, None)` with no DDL), and connection-scoped
+page/edge helpers, all forwarding to FEAT-557's `_write`/`sqlite_policy`
+unchanged. Attempt 1 (codex-spark) exceeded the 1800s wall-clock dispatch cap
+and was retried; attempt 2 (qwen) completed and merged. Verified: `pytest
+tests/knowledge/wiki/test_ledger_store.py -q` → 11 passed (log+store combined
+run). Only the two listed files were touched.
+
+Seat: qwen · Backend: nova · Model: qwen.qwen3-coder-480b-a35b-instruct ·
+Attempts: 2 (attempt 1 codex-spark/gpt-5.3-codex-spark timed out at 1800s) ·
+Duration: 216.99s (successful attempt) · Tokens: 1535570/4889
 

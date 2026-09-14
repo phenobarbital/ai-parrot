@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-566 — SDD Work Ledger
 **Spec**: `sdd/specs/sdd-work-ledger.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-3226
@@ -48,12 +48,23 @@ from pydantic import BaseModel, Field
 
 ## Acceptance Criteria
 
-- [ ] Every literal event kind in spec §2 is represented and invalid values fail validation.
-- [ ] Canonical payload serialization makes equal logical inputs produce equal IDs.
-- [ ] Issue IDs are deterministic for the same kind, title, and discovery source.
-- [ ] `pytest tests/knowledge/wiki/test_ledger_events.py -q` passes.
+- [x] Every literal event kind in spec §2 is represented and invalid values fail validation.
+- [x] Canonical payload serialization makes equal logical inputs produce equal IDs.
+- [x] Issue IDs are deterministic for the same kind, title, and discovery source.
+- [x] `pytest tests/knowledge/wiki/test_ledger_events.py -q` passes.
 
 ## Test Specification
 
 Test timestamp/payload ordering determinism and validation failures without a ledger directory.
+
+### Completion Note
+
+Created the `parrot.knowledge.wiki.ledger` package with Pydantic v2 event/payload
+models covering every literal event kind in spec §2, canonical payload
+serialization, deterministic SHA-1 `compute_event_id`, and issue-deduplication
+ID helpers. Verified: `pytest tests/knowledge/wiki/test_ledger_events.py -q` →
+9 passed. No files touched outside the task's list.
+
+Seat: gemini · Backend: google-compat · Model: gemini-3.5-flash · Attempts: 1 ·
+Duration: 31.7s · Tokens: 189220/3039
 
