@@ -1306,30 +1306,83 @@ class SQLiteWikiStore(BaseWikiStore):
                 self._db_path,
             )
 
-    async def _migrate(self, conn: aiosqlite.Connection) -> None:
-        """Add columns that post-date the original schema when missing.
+    async def _migration_needed(
+        self,
+        conn: aiosqlite.Connection,
+    ) -> tuple[list[tuple[str, str, str]], bool]:
+        """Probe the plane for pending migration work, writing nothing.
 
-        ``CREATE TABLE IF NOT EXISTS`` never alters existing tables, so
-        wiki databases created before the origin/asserted_by columns
-        shipped are upgraded here via idempotent ``ALTER TABLE``.
+        Pure reads only: ``PRAGMA table_info`` per migrated table and one
+        ``SELECT`` of the recorded schema version. This is what lets a
+        read on an already-current plane take no writer lock (AC-4).
+
+        Args:
+            conn: An open connection; not mutated.
+
+        Returns:
+            ``(missing_columns, version_is_stale)`` where each missing
+            column is ``(table, name, col_type)``.
         """
+        missing: list[tuple[str, str, str]] = []
         for table, columns in _MIGRATION_COLUMNS.items():
             async with conn.execute(f"PRAGMA table_info({table})") as cur:
                 existing = {row["name"] for row in await cur.fetchall()}
             for name, col_type in columns:
                 if name not in existing:
-                    await conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {col_type}")
+                    missing.append((table, name, col_type))
+        async with conn.execute("SELECT value FROM meta WHERE key = 'schema_version'") as cur:
+            row = await cur.fetchone()
+        # A plane with no recorded version predates the meta row and
+        # counts as stale — never as current.
+        version_stale = row is None or row[0] != SCHEMA_VERSION
+        return missing, version_stale
 
+    async def _migrate(self, conn: aiosqlite.Connection) -> None:
+        """Add post-schema columns and bump the version, only if needed.
+
+        Read-first: on a current plane this issues ZERO write statements
+        and does not commit (AC-4). ``CREATE TABLE IF NOT EXISTS`` never
+        alters existing tables, so planes created before the
+        origin/asserted_by/content_hash columns shipped are upgraded here
+        via idempotent ``ALTER TABLE``.
+
+        Args:
+            conn: An open connection.
+        """
+        # _migrate_fts self-guards and is read-first: on a current plane it
+        # issues two PRAGMA table_info calls and one sqlite_master SELECT,
+        # then returns. Calling it unconditionally therefore costs no write
+        # and keeps a legacy plane's FTS migration intact. It must NOT move
+        # below the early return — see the box at the top of this file.
         await self._migrate_fts(conn)
 
-        # FEAT-498: bump a pre-existing plane's recorded schema version once
-        # the symbols/symbols_fts tables and content_hash column above are
-        # in place (INSERT OR IGNORE in _connect() never touches an
-        # existing row, so a v1 plane would otherwise keep reporting "1").
-        await conn.execute(
-            "UPDATE meta SET value = ? WHERE key = 'schema_version' AND value != ?",
-            (SCHEMA_VERSION, SCHEMA_VERSION),
+        missing, version_stale = await self._migration_needed(conn)
+        if not missing and not version_stale:
+            # Nothing to do — return WITHOUT writing or committing. This
+            # early return is the point of the whole task; do not add a
+            # commit() here "for safety".
+            return
+        self.logger.debug(
+            "migrating wiki plane %s: %d column(s), version_stale=%s",
+            self._db_path,
+            len(missing),
+            version_stale,
         )
+        for table, name, col_type in missing:
+            await conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {col_type}")
+        if version_stale:
+            # FEAT-498: bump a pre-existing plane's recorded version once
+            # the symbols/symbols_fts tables and content_hash column are
+            # in place. `INSERT OR IGNORE ... ON CONFLICT DO UPDATE` also
+            # covers the plane where the `schema_version` row is entirely
+            # absent (predates the `INSERT OR IGNORE` at schema-replay
+            # time) — a bare `UPDATE` would silently never insert it,
+            # leaving the plane permanently "stale".
+            await conn.execute(
+                "INSERT INTO meta (key, value) VALUES ('schema_version', ?)"
+                " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                (SCHEMA_VERSION,),
+            )
         await conn.commit()
 
     async def _migrate_fts(self, conn: aiosqlite.Connection) -> None:

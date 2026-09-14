@@ -6,16 +6,21 @@ tests and no store coverage.
 """
 from __future__ import annotations
 
+import shutil
 import sqlite3
 from pathlib import Path
 
 import pytest
 
 from parrot.knowledge.wiki.store import (
+    SCHEMA_VERSION,
+    WIKI_SCHEMA_SQL,
     SQLitePragmaPolicy,
     SQLiteWikiStore,
     WikiStoreBusy,
 )
+
+FIXTURE = Path(__file__).parent / "fixtures" / "wiki_v1.db"
 
 
 @pytest.fixture
@@ -117,3 +122,89 @@ class TestWriteTransaction:
             async with store._write("bad_sql") as conn:
                 await conn.execute("SELECT * FROM this_table_does_not_exist")
         assert not isinstance(exc_info.value, WikiStoreBusy)
+
+
+class TestReadFirstMigration:
+    async def test_current_plane_needs_no_migration(self, store: SQLiteWikiStore) -> None:
+        """The probe reports nothing pending on a freshly built plane."""
+        async with store._open(writable=True) as conn:
+            missing, stale = await store._migration_needed(conn)
+        assert missing == []
+        assert stale is False
+
+    async def test_migrate_writes_nothing_on_current_plane(self, store: SQLiteWikiStore) -> None:
+        """`_migrate` issues no DML/DDL when there is nothing to do (AC-4)."""
+        write_prefixes = ("ALTER", "UPDATE", "INSERT", "DELETE", "COMMIT", "CREATE", "DROP")
+        statements: list[str] = []
+        async with store._open(writable=True) as conn:
+            original_execute = conn.execute
+
+            def _spy(sql, *args, **kwargs):
+                statements.append(sql)
+                return original_execute(sql, *args, **kwargs)
+
+            conn.execute = _spy
+            await store._migrate(conn)
+
+        for sql in statements:
+            assert not sql.strip().upper().startswith(write_prefixes), sql
+
+    async def test_legacy_plane_migrates_once_and_bumps_version(self, tmp_path: Path) -> None:
+        """A legacy plane gains its columns and reaches SCHEMA_VERSION."""
+        db_path = tmp_path / "wiki.db"
+        shutil.copyfile(FIXTURE, db_path)
+        store = SQLiteWikiStore(db_path, wiki_name="v1-fixture")
+        # Trigger the presence-probe + _migrate() path via any read, exactly
+        # as the pre-existing test_store_migration_v2.py suite does — `_write`
+        # does not (yet) create missing tables; that unification is TASK-3219.
+        await store.list_pages(limit=100)
+
+        with sqlite3.connect(str(db_path)) as check_conn:
+            columns = {row[1] for row in check_conn.execute("PRAGMA table_info(pages)")}
+            version = check_conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()[0]
+        assert "content_hash" in columns
+        assert version == SCHEMA_VERSION
+
+    async def test_absent_version_row_is_treated_as_stale(self, tmp_path: Path) -> None:
+        """A plane with no schema_version row migrates and gains the row."""
+        db_path = tmp_path / "wiki.db"
+        conn = sqlite3.connect(str(db_path))
+        try:
+            conn.executescript(WIKI_SCHEMA_SQL)
+            conn.execute("DELETE FROM meta WHERE key = 'schema_version'")
+            conn.commit()
+        finally:
+            conn.close()
+
+        store = SQLiteWikiStore(db_path, wiki_name="no-version")
+        async with store._write("touch"):
+            pass
+
+        with sqlite3.connect(str(db_path)) as check_conn:
+            row = check_conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()
+        assert row is not None
+        assert row[0] == SCHEMA_VERSION
+
+    async def test_migration_latch_suppresses_second_probe(self, store: SQLiteWikiStore) -> None:
+        """`self._migrated` stops the per-connection probe after the first write."""
+        async with store._write("first"):
+            pass
+        assert store._migrated.is_set()
+
+        async def _boom(conn):
+            raise AssertionError("_migration_needed should not run once the latch is set")
+
+        store._migration_needed = _boom  # type: ignore[method-assign]
+        async with store._write("second"):
+            pass
+
+    async def test_latch_is_per_store_not_global(self, tmp_path: Path) -> None:
+        """Two stores on two planes do not share the latch (spec §2)."""
+        store_a = SQLiteWikiStore(tmp_path / "a.db", wiki_name="a")
+        store_b = SQLiteWikiStore(tmp_path / "b.db", wiki_name="b")
+        await store_a.stats()
+        await store_b.stats()
+        async with store_a._write("touch"):
+            pass
+        assert store_a._migrated.is_set()
+        assert not store_b._migrated.is_set()
