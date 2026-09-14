@@ -436,6 +436,31 @@ _BEHAVIOR_JS = r"""
     }
   });
 
+  // A chart is drawn at the width of the screen and then rasterised; the
+  // printer scales that bitmap down to the page, taking the type with it, so
+  // a 14px axis label lands near six. Re-measuring on `beforeprint` makes
+  // Chart.js redraw the canvas at the PAGE's width instead — the type comes
+  // out the size it was asked for, and the shorter panel leaves room for
+  // what follows it on the sheet. `afterprint` puts the screen back.
+  function resizeCharts() {
+    Object.keys(chartRegistry).forEach(function (id) {
+      try {
+        chartRegistry[id].resize();
+      } catch (e) {
+        /* a chart that is already gone is not a print failure */
+      }
+    });
+  }
+
+  if (window.matchMedia) {
+    var printQuery = window.matchMedia("print");
+    if (printQuery.addEventListener) {
+      printQuery.addEventListener("change", resizeCharts);
+    }
+  }
+  window.addEventListener("beforeprint", resizeCharts);
+  window.addEventListener("afterprint", resizeCharts);
+
   document.querySelectorAll("[data-sort-table]").forEach(function (table) {
     var state = {};
     var headers = table.querySelectorAll("th[data-sort-key]");

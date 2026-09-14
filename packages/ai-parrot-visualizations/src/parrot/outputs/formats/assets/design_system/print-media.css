@@ -111,9 +111,13 @@
     }
 
     /* Chart.js sizes its canvas to the screen box it was created in. Held
-       to the page width it prints whole instead of running off the edge. */
+       to the page width it prints whole instead of running off the edge, and
+       capped in height so one chart does not take half a sheet — the runtime
+       re-measures on `beforeprint`, so what gets drawn is sized for paper
+       rather than scaled down from a screenshot of the screen. */
     canvas {
         max-width: 100% !important;
+        max-height: 70mm !important;
         height: auto !important;
     }
 }

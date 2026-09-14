@@ -998,3 +998,38 @@ class TestChartsPrintSolid:
         # width, taking its type with it: axis labels landed around seven
         # points.
         assert "Chart.defaults.font.size = 14" in await self._doc()
+
+
+class TestChartsAreRedrawnForPaper:
+    """A chart is drawn at screen width and rasterised; the printer scales
+    that bitmap down to the page and takes the type with it.
+    """
+
+    async def _doc(self) -> str:
+        env = _envelope(
+            Component(
+                id="root", component="Chart", type="bar", x="day", y=["a"],
+                data={"path": "/rows"},
+            ),
+            data_model={"rows": [{"day": "Mon", "a": 1}]},
+        )
+        return (await InteractiveHTMLRenderer().render(env)).content.decode()
+
+    async def test_the_runtime_remeasures_before_printing(self):
+        doc = await self._doc()
+        assert 'window.addEventListener("beforeprint", resizeCharts)' in doc
+        # And puts the screen back afterwards, so printing does not leave the
+        # page looking like a print preview.
+        assert 'window.addEventListener("afterprint", resizeCharts)' in doc
+
+    async def test_a_missing_chart_does_not_break_the_print(self):
+        # `resize()` on a destroyed chart throws; a print is not the moment
+        # to discover that.
+        doc = await self._doc()
+        block = doc[doc.index("function resizeCharts()"):][:300]
+        assert "try {" in block and "catch" in block
+
+    async def test_a_chart_is_capped_so_it_does_not_eat_a_sheet(self):
+        doc = await self._doc()
+        block = doc[re.search(r"@media print\s*\{", doc).end():]
+        assert "max-height: 70mm" in block
