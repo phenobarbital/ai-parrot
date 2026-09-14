@@ -328,8 +328,44 @@ If a test needs changing to pass, STOP: that is a behaviour change this task for
 
 ## Completion Note
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-14
+**Notes**: Converted all 6 writers to `self._write("<method_name>")` (deleting each
+redundant `await conn.commit()`) and all 15 readers to `self._read()`, exactly per the
+verified call-site map (re-derived with the task's own `awk` one-liner — 21 sites, same
+6 writers / 15 readers, only line numbers had moved). Rehomed the schema-replay block
+into a new `_ensure_schema(conn)` helper called from `_open` when `writable=True`, then
+deleted `_connect()` entirely (verified zero `self._connect()` references first). All
+of TASK-3219's own acceptance-criteria greps (0 `self._connect()`, 0
+`async def _connect(self)`, 6 `_write(`, 15 `_read()`, exactly 3 remaining
+`conn.commit()` — `_ensure_schema`/`_migrate`/`_migrate_fts`) pass. `ruff check` clean.
+Full `tests/knowledge/wiki/` suite: 1666 passed, 11 skipped (unrelated), 1 pre-existing
+failure (`test_open_v1_db_migrates_to_v2`, SCHEMA_VERSION "2" vs "3", noted since
+TASK-3217/3218). `packages/ai-parrot/tests/knowledge/wiki/`: 314 passed, same 11
+pre-existing failures noted since TASK-3216.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Two required, both discovered only by this task's own
+"full suite green" acceptance criterion (the two prior tasks' unit tests did not
+exercise them):
+1. **`_read()`/`_write()` now share a new `_maybe_migrate(conn)` helper**, and `_read()`
+   calls it too (previously, per the TASK-3217 blueprint, only `_write()` called
+   `_migrate`). Without this, a plane accessed read-only-first (e.g. `get_page` before
+   any write) never got its legacy columns/version migrated, breaking ~30 existing
+   tests (`test_authoring.py`, `test_federation.py`, `test_namespaces_e2e.py`,
+   `test_cli.py` namespace tests, etc.) with `no such column: origin`/`content_hash` or
+   silent namespace-open failures. Because `_migrate` is read-first (TASK-3218), this
+   costs only the probe on an already-current plane (AC-4 is unaffected) and applies the
+   idempotent migration on a legacy one — restoring the exact guarantee the deleted
+   `_connect()` gave every caller unconditionally.
+2. **`packages/ai-parrot/src/parrot/knowledge/wiki/federation.py:161`** called
+   `store._connect()` directly (a private cross-module reuse of the read-only ladder,
+   documented in its own comment). This external call site is invisible to the task's
+   own verification grep (`self\._connect()`, anchored to `self.`) since it accesses the
+   attribute through a different variable name. Updated the one line to
+   `store._read()` — behaviourally identical for a `read_only=True` store (same
+   immutable/`mode=ro` ladder, no migration attempted).
+
+Also fixed, as bookkeeping only: the previous five task completions (TASK-3216/3217/
+3218/3221/3222) had `git mv`'d their task files from `active/` to `completed/` but never
+`git add`ed the resulting deletion at the old `active/` path, leaving it unstaged since
+each of those commits. Staged and included in this task's completion commit.
