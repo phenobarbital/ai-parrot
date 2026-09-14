@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-566 — SDD Work Ledger
 **Spec**: `sdd/specs/sdd-work-ledger.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-3226, TASK-3227
@@ -44,9 +44,9 @@ Spec §3 Module 10. Linked worktrees must not update structural `wiki.db` from u
 
 ## Acceptance Criteria
 
-- [ ] Linked hook exits before upsert; main hook retains upsert behavior.
-- [ ] Installer uses common hook directory and manages post-merge idempotently.
-- [ ] `pytest tests/knowledge/wiki/test_installer_worktree_guard.py -q` passes.
+- [x] Linked hook exits before upsert; main hook retains upsert behavior.
+- [x] Installer uses common hook directory and manages post-merge idempotently.
+- [x] `pytest tests/knowledge/wiki/test_installer_worktree_guard.py -q` passes.
 
 ## Test Specification
 

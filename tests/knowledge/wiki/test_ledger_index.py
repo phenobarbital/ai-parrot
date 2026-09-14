@@ -297,6 +297,47 @@ class TestAtomicClaim:
 
         assert claimed is True
 
+    async def test_claim_never_skips_an_event_appended_in_the_race_window(self, ledger_index):
+        """Regression test: a concurrent writer's event landing between
+        claim_issue's initial sync and its own append must still be applied,
+        not silently and permanently skipped by the cursor advance.
+
+        LedgerLog.append()'s returned offset for the CLAIM event is only
+        accurate about the claim event's own position — it says nothing
+        about whether some OTHER event landed just before it that was
+        never itself applied. Advancing the cursor straight to "the claim
+        event's position" (the old, buggy behavior) would leave that other
+        event physically in the log but permanently unapplied, since a
+        later sync() would resume scanning from after it.
+        """
+        e1 = _opened_event("Claimable during race")
+        ledger_index.log.append(e1)
+        await ledger_index.sync()
+
+        e2 = _opened_event("Concurrent open during claim", discovered_from="task:TASK-9999")
+        original_append = ledger_index.log.append
+
+        def racy_append(event):
+            # Simulate another writer's event landing in the file BETWEEN
+            # claim_issue's initial sync and its own append call.
+            original_append(e2)
+            return original_append(event)
+
+        ledger_index.log.append = racy_append
+        try:
+            claimed = await ledger_index.claim_issue(e1.subject, "task:TASK-1")
+        finally:
+            ledger_index.log.append = original_append
+
+        assert claimed is True
+        async with ledger_index.store.ledger_transaction("read") as conn:
+            e2_state = await ledger_index._read_issue(conn, e2.subject)
+        assert e2_state is not None, "concurrently-appended event was silently skipped"
+        assert e2_state["status"] == "open"
+
+        # A later sync() finds nothing new — everything already applied.
+        assert await ledger_index.sync() == 0
+
 
 @pytest.mark.slow
 class TestBusyBehaviour:

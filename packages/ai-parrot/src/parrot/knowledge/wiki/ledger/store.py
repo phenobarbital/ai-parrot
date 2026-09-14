@@ -88,21 +88,17 @@ class LedgerStore(SQLiteWikiStore):
                     row = await cur.fetchone()
                     if not row or row[0] == 0:
                         return (0, None)
-                
+
                 # Read cursor state
-                async with conn.execute(
-                    "SELECT value FROM ledger_state WHERE key = 'cursor_offset'"
-                ) as cur:
+                async with conn.execute("SELECT value FROM ledger_state WHERE key = 'cursor_offset'") as cur:
                     offset_row = await cur.fetchone()
-                    
-                async with conn.execute(
-                    "SELECT value FROM ledger_state WHERE key = 'last_event_id'"
-                ) as cur:
+
+                async with conn.execute("SELECT value FROM ledger_state WHERE key = 'last_event_id'") as cur:
                     event_id_row = await cur.fetchone()
-                    
+
                 offset = int(offset_row[0]) if offset_row else 0
                 event_id = event_id_row[0] if event_id_row else None
-                
+
                 return (offset, event_id)
             except Exception:
                 # If anything fails, return default state

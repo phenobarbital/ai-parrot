@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-566 — SDD Work Ledger
 **Spec**: `sdd/specs/sdd-work-ledger.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-3226
@@ -53,10 +53,10 @@ def load_project_config(root: Path) -> WikiProjectConfig: ...
 
 ## Acceptance Criteria
 
-- [ ] Plain and linked worktrees resolve the same main root without CWD assumptions.
-- [ ] Environment override is honored only for an existing directory.
-- [ ] `ledger_path()` is deterministic and creates no files.
-- [ ] `pytest tests/knowledge/wiki/test_project_shared_root.py -q` passes.
+- [x] Plain and linked worktrees resolve the same main root without CWD assumptions.
+- [x] Environment override is honored only for an existing directory.
+- [x] `ledger_path()` is deterministic and creates no files.
+- [x] `pytest tests/knowledge/wiki/test_project_shared_root.py -q` passes.
 
 ## Test Specification
 

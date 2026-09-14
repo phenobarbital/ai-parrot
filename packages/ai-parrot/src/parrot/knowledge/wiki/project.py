@@ -504,6 +504,18 @@ class WikiProjectConfig(BaseModel):
         """Directory of the project's GraphIndex plane (``.parrot/graph``)."""
         return root / PARROT_DIR / "graph"
 
+    def ledger_path(self, root: Path) -> Path:
+        """Directory of the shared SDD work ledger (``.parrot/ledger``, FEAT-566).
+
+        Args:
+            root: Shared root (main checkout), not necessarily a linked
+                worktree's own root — see ``find_shared_root``.
+
+        Returns:
+            ``<root>/.parrot/ledger``.
+        """
+        return root / PARROT_DIR / "ledger"
+
     def storage_path(self, root: Path) -> Path:
         """Resolve the wiki storage directory against the repo root."""
         storage = Path(self.storage_dir)
@@ -1110,19 +1122,19 @@ def resolve_entry_base(origin: str, root: Path) -> Path:
 
 def resolve_git_common_dir(git_dir: Path) -> Path:
     """Resolve the common directory for a Git repository or worktree.
-    
+
     For a main checkout, returns the .git directory itself.
     For a linked worktree, follows the commondir file to the shared .git directory.
-    
+
     Args:
         git_dir: Path to the .git directory (may be a file in worktrees).
-        
+
     Returns:
         Path to the common Git directory containing the objects and refs.
     """
     if not git_dir.exists():
         raise FileNotFoundError(f"Git directory does not exist: {git_dir}")
-        
+
     if git_dir.is_file():
         # This is a linked worktree - the file contains "gitdir: <path>"
         # We need to extract the actual git directory path
@@ -1138,7 +1150,7 @@ def resolve_git_common_dir(git_dir: Path) -> Path:
         else:
             # Assume the file directly contains the git directory path
             actual_git_dir = Path(content)
-            
+
         # Now read the commondir file from the actual git directory
         commondir_file = actual_git_dir / "commondir"
         if commondir_file.exists():
@@ -1159,10 +1171,10 @@ def resolve_git_common_dir(git_dir: Path) -> Path:
 
 def is_linked_worktree(git_dir: Path) -> bool:
     """Check if a .git path belongs to a linked worktree.
-    
+
     Args:
         git_dir: Path to the .git directory or file.
-        
+
     Returns:
         True if this is a linked worktree, False otherwise.
     """
@@ -1171,30 +1183,30 @@ def is_linked_worktree(git_dir: Path) -> bool:
 
 def find_shared_root(start: Path | None = None) -> Path | None:
     """Find the shared root directory for parrot state, tolerating failures.
-    
+
     Walks upward from start to find the Git root, then resolves to the
     main checkout's .git directory even in linked worktrees.
-    
+
     Args:
         start: Directory to start from (defaults to CWD).
-        
+
     Returns:
         The shared root directory, or None if no Git repository is found.
     """
     try:
         current = (start or Path.cwd()).resolve()
         git_root: Path | None = None
-        
+
         # First, find the nearest git root
         for candidate in (current, *current.parents):
             git_path = candidate / ".git"
             if git_path.exists():
                 git_root = candidate
                 break
-                
+
         if git_root is None:
             return None
-            
+
         # Resolve the common git directory
         git_dir = git_root / ".git"
         try:
@@ -1204,27 +1216,7 @@ def find_shared_root(start: Path | None = None) -> Path | None:
         except (FileNotFoundError, OSError):
             # Fallback to the git root if we can't resolve the common dir
             return git_root
-            
+
     except Exception:
         # Tolerate all failures and return None
         return None
-
-
-# Add the ledger_path method to WikiProjectConfig class
-def _add_ledger_path_method():
-    """Add ledger_path method to WikiProjectConfig class."""
-    
-    def ledger_path(self, root: Path) -> Path:
-        """Path to the shared ledger directory for this project.
-        
-        Args:
-            root: Repository root directory.
-            
-        Returns:
-            Path to the ledger directory: <shared-root>/.parrot/ledger
-        """
-        return root / PARROT_DIR / "ledger"
-    
-    WikiProjectConfig.ledger_path = ledger_path
-
-_add_ledger_path_method()

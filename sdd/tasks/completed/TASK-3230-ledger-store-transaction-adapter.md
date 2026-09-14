@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-566 — SDD Work Ledger
 **Spec**: `sdd/specs/sdd-work-ledger.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-3226, TASK-3228
@@ -55,10 +55,10 @@ class SQLiteWikiStore(BaseWikiStore):
 
 ## Acceptance Criteria
 
-- [ ] Writes run through FEAT-557 `_write(operation)` and raw busy errors are not caught.
-- [ ] Reads issue no schema-creating statements when `ledger_state` is absent.
-- [ ] Cursor state is transactionally initialized and readable after commit.
-- [ ] `pytest tests/knowledge/wiki/test_ledger_store.py -q` passes after FEAT-557 merges.
+- [x] Writes run through FEAT-557 `_write(operation)` and raw busy errors are not caught.
+- [x] Reads issue no schema-creating statements when `ledger_state` is absent.
+- [x] Cursor state is transactionally initialized and readable after commit.
+- [x] `pytest tests/knowledge/wiki/test_ledger_store.py -q` passes after FEAT-557 merges.
 
 ## Test Specification
 

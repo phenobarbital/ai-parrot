@@ -678,7 +678,7 @@ class FederatedWikiStore(BaseWikiStore):
         # FEAT-566 M13: validate overlay prefix ownership — no two overlays
         # may claim the same prefix.
         self._prefix_to_namespace: dict[str, str] = {}
-        for handle in (handles or []):
+        for handle in handles or []:
             for prefix in handle.config.overlay_prefixes:
                 if prefix in self._prefix_to_namespace:
                     existing = self._prefix_to_namespace[prefix]
@@ -1039,10 +1039,22 @@ class FederatedWikiStore(BaseWikiStore):
         # incoming edges (edges WHERE the overlay's node points AT the
         # local seed). This happens for unqualified local ids where
         # namespace is None but we still want to see what overlay nodes
-        # reference the local seed.
-        if not handle and direction in ("in", "both"):  # seed is local
+        # reference the local seed. Gated on an overlay actually being
+        # configured (and on it finding something) so plain, non-overlay
+        # federation — the common case — never pays for or is affected by
+        # this: `_dedup_by_concept_id` dedupes purely by concept_id,
+        # ignoring `rel`, so applying it unconditionally would silently
+        # drop a legitimate row whenever a local seed already had two
+        # edges to the same neighbor concept_id under different `rel`
+        # values, even with zero overlays mounted.
+        if (
+            not handle
+            and direction in ("in", "both")
+            and any(h.config.overlay_prefixes for h in self.namespaces.values())
+        ):
             overlay_in = await self._overlay_incoming_edges(concept_id, rel=rel)
-            qualified = _dedup_by_concept_id(qualified + overlay_in)
+            if overlay_in:
+                qualified = _dedup_by_concept_id(qualified + overlay_in)
 
         return qualified
 
@@ -1189,8 +1201,7 @@ class FederatedWikiStore(BaseWikiStore):
                 rows = await handle.store.neighbors(local_id, rel=rel, direction="in")
             except Exception as exc:  # noqa: BLE001 — a broken overlay is a note, not fatal
                 self.logger.debug(
-                    "Overlay namespace %s failed incoming-edge lookup for %s: %s",
-                    handle.name, local_id, exc
+                    "Overlay namespace %s failed incoming-edge lookup for %s: %s", handle.name, local_id, exc
                 )
                 continue
             # Qualify edges with the overlay namespace name

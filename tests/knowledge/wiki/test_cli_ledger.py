@@ -266,15 +266,15 @@ def test_ledger_sync_command(runner: CliRunner, mock_ledger_service: MagicMock) 
     assert "synced" in result.output
 
 
-def test_ledger_sync_busy_soft_success(runner: CliRunner, mock_ledger_service: MagicMock) -> None:
-    """Test that WikiStoreBusy during sync is a soft success."""
+def test_ledger_sync_busy_exits_2(runner: CliRunner, mock_ledger_service: MagicMock) -> None:
+    """WikiStoreBusy during sync exits 2 (Module 2 SS2.2: sync/rebuild/ingest-sdd/compact all do)."""
     service = mock_ledger_service
     service.index.sync = AsyncMock(side_effect=WikiStoreBusy("ledger.db", "write", 1.5))
 
     with patch("parrot.knowledge.wiki.cli.LedgerService.from_root", return_value=service):
         result = runner.invoke(ledger, ["sync"])
-    assert result.exit_code == 0
-    assert "skipped" in result.output
+    assert result.exit_code == 2
+    assert "failed" in result.output
 
 
 def test_ledger_rebuild_calls_checkpoint(runner: CliRunner, mock_ledger_service: MagicMock) -> None:
@@ -297,6 +297,22 @@ def test_ledger_rebuild_checkpoint_busy_nonfatal(runner: CliRunner, mock_ledger_
     assert "rebuilt" in result.output
 
 
+def test_ledger_rebuild_re_ingests_sdd_graph(runner: CliRunner, mock_ledger_service: MagicMock) -> None:
+    """rebuild() replays only events.jsonl; spec:/task: pages/edges from
+    `ledger ingest-sdd` are NOT event-sourced, so a plain rebuild would
+    silently and permanently wipe them without a re-ingest right after."""
+    mock_ingester = MagicMock()
+    mock_ingester.ingest_all = AsyncMock(return_value={"specs": 1, "tasks": 5, "edges": 3})
+
+    with patch("parrot.knowledge.wiki.cli.LedgerService.from_root", return_value=mock_ledger_service):
+        with patch("parrot.knowledge.wiki.cli.SDDGraphIngest", return_value=mock_ingester) as mock_cls:
+            result = runner.invoke(ledger, ["rebuild"])
+
+    assert result.exit_code == 0
+    mock_cls.assert_called_once_with(mock_ledger_service.store, mock_ledger_service.shared_root)
+    mock_ingester.ingest_all.assert_awaited_once()
+
+
 def test_ledger_ingest_sdd_calls_checkpoint(runner: CliRunner, mock_ledger_service: MagicMock) -> None:
     """Test that ingest-sdd calls checkpoint after success."""
     mock_ingester = MagicMock()
@@ -312,6 +328,29 @@ def test_ledger_ingest_sdd_calls_checkpoint(runner: CliRunner, mock_ledger_servi
     mock_ledger_service.store.checkpoint.assert_called_with(truncate=True)
 
 
+def test_ledger_rebuild_busy_exits_2(runner: CliRunner, mock_ledger_service: MagicMock) -> None:
+    """WikiStoreBusy during the rebuild itself (not just its checkpoint) exits 2."""
+    service = mock_ledger_service
+    service.index.rebuild = AsyncMock(side_effect=WikiStoreBusy("ledger.db", "write", 1.5))
+
+    with patch("parrot.knowledge.wiki.cli.LedgerService.from_root", return_value=service):
+        result = runner.invoke(ledger, ["rebuild"])
+    assert result.exit_code == 2
+    assert "failed" in result.output
+
+
+def test_ledger_ingest_sdd_busy_exits_2(runner: CliRunner, mock_ledger_service: MagicMock) -> None:
+    """WikiStoreBusy during ingest-sdd itself exits 2."""
+    mock_ingester = MagicMock()
+    mock_ingester.ingest_all = AsyncMock(side_effect=WikiStoreBusy("ledger.db", "write", 1.5))
+
+    with patch("parrot.knowledge.wiki.cli.LedgerService.from_root", return_value=mock_ledger_service):
+        with patch("parrot.knowledge.wiki.cli.SDDGraphIngest", return_value=mock_ingester):
+            result = runner.invoke(ledger, ["ingest-sdd"])
+    assert result.exit_code == 2
+    assert "failed" in result.output
+
+
 def test_ledger_compact_command(runner: CliRunner, mock_ledger_service: MagicMock) -> None:
     """Test ledger compact command."""
     service = mock_ledger_service
@@ -320,7 +359,18 @@ def test_ledger_compact_command(runner: CliRunner, mock_ledger_service: MagicMoc
     with patch("parrot.knowledge.wiki.cli.LedgerService.from_root", return_value=service):
         result = runner.invoke(ledger, ["compact"])
     assert result.exit_code == 0
-    assert "5 events removed" in result.output
+    assert "5 issue(s) folded" in result.output
+
+
+def test_ledger_compact_busy_exits_2(runner: CliRunner, mock_ledger_service: MagicMock) -> None:
+    """WikiStoreBusy during compact exits 2 instead of raising an unhandled traceback."""
+    service = mock_ledger_service
+    service.compact = AsyncMock(side_effect=WikiStoreBusy("ledger.db", "write", 1.5))
+
+    with patch("parrot.knowledge.wiki.cli.LedgerService.from_root", return_value=service):
+        result = runner.invoke(ledger, ["compact"])
+    assert result.exit_code == 2
+    assert "failed" in result.output
 
 
 def test_ledger_audit_command(runner: CliRunner, mock_ledger_service: MagicMock) -> None:

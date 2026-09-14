@@ -6,6 +6,7 @@ from parrot.knowledge.wiki.ledger.events import LedgerEvent
 
 logger = logging.getLogger(__name__)
 
+
 class LedgerLog:
     """Durable, append-only, single-line JSONL event log."""
 
@@ -20,12 +21,23 @@ class LedgerLog:
     def append(self, event: LedgerEvent) -> tuple[str, int]:
         """Append a single event to the log atomically.
 
+        The write itself is atomic and race-free across processes (a single
+        ``os.write()`` under ``O_APPEND``, capped at 4 KiB — within the
+        kernel's atomic-append guarantee). The *reported* ``byte_offset``
+        is not: it is read via a separate ``lseek`` before the write, so a
+        concurrent process's own append can land in the gap between that
+        `lseek` and this `write`, making the returned offset earlier than
+        this line's true file position. Treat it as informational/
+        best-effort only — never as a precise cursor position under
+        concurrent writers. (``LedgerIndex.claim_issue`` deliberately does
+        not use it for exactly this reason; it re-derives the cursor by
+        scanning the log itself instead.)
+
         Args:
             event: The LedgerEvent to append.
 
         Returns:
-            A tuple of (event_id, byte_offset) where byte_offset is the start position
-            of the appended line in the file.
+            A tuple of (event_id, byte_offset) — see the offset caveat above.
 
         Raises:
             ValueError: If the serialized line exceeds 4 KiB (4096 bytes).
@@ -46,7 +58,7 @@ class LedgerLog:
             # the exact byte offset where this write starts.
             # Let's use os.lseek(fd, 0, os.SEEK_END) to find the current end of file (start of our write).
             start_offset = os.lseek(fd, 0, os.SEEK_END)
-            
+
             # Write exactly once
             written = os.write(fd, encoded)
             if written != len(encoded):

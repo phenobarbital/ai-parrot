@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-566 — SDD Work Ledger
 **Spec**: `sdd/specs/sdd-work-ledger.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-3226, TASK-3228
@@ -51,10 +51,10 @@ class LedgerLog:
 
 ## Acceptance Criteria
 
-- [ ] Oversized serialized lines are rejected without partial records.
-- [ ] Valid lines replay in order with cursor-safe byte offsets.
-- [ ] Eight-process append testing proves no interleaved JSON lines.
-- [ ] `pytest tests/knowledge/wiki/test_ledger_log.py -q` passes.
+- [x] Oversized serialized lines are rejected without partial records.
+- [x] Valid lines replay in order with cursor-safe byte offsets.
+- [x] Eight-process append testing proves no interleaved JSON lines.
+- [x] `pytest tests/knowledge/wiki/test_ledger_log.py -q` passes.
 
 ## Test Specification
 

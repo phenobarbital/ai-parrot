@@ -19,40 +19,47 @@ class TestGitCommonDirResolution:
         """Test resolving common dir for a regular repository."""
         git_dir = tmp_path / ".git"
         git_dir.mkdir()
-        
+
         result = resolve_git_common_dir(git_dir)
         assert result == git_dir
 
-    def test_resolve_git_common_dir_linked_worktree_with_relative_commondir(
-        self, tmp_path: Path
-    ) -> None:
+    def test_resolve_git_common_dir_linked_worktree_with_relative_commondir(self, tmp_path: Path) -> None:
         """Test resolving common dir for a linked worktree with relative commondir."""
         # Create worktree directory structure
         worktree_dir = tmp_path / "feature"
         worktree_dir.mkdir()
         worktree_git = worktree_dir / ".git"
         worktree_git.write_text("gitdir: ../main/.git/worktrees/feature\n", encoding="utf-8")
-        
+
         # Create main repository structure
         main_dir = tmp_path / "main"
         main_dir.mkdir()
         main_git = main_dir / ".git"
         main_git.mkdir()
-        
+
         # Create worktree git directory with commondir file
         worktree_git_dir = main_git / "worktrees" / "feature"
         worktree_git_dir.mkdir(parents=True)
         commondir = worktree_git_dir / "commondir"
         commondir.write_text("../..\n", encoding="utf-8")
-        
+
         result = resolve_git_common_dir(worktree_git)
         assert result == main_git
 
-    def test_resolve_git_common_dir_linked_worktree_with_absolute_commondir(
-        self, tmp_path: Path
-    ) -> None:
-        """Test resolving common dir for a linked worktree with absolute commondir."""
-        pytest.skip("Skipping complex absolute path test for now")
+    def test_resolve_git_common_dir_linked_worktree_with_absolute_commondir(self, tmp_path: Path) -> None:
+        """A worktree's `commondir` file may hold an absolute path to the main .git dir."""
+        main_git_dir = tmp_path / "main" / ".git"
+        main_git_dir.mkdir(parents=True)
+
+        worktree_git_dir = main_git_dir / "worktrees" / "feature"
+        worktree_git_dir.mkdir(parents=True)
+        (worktree_git_dir / "commondir").write_text(str(main_git_dir) + "\n", encoding="utf-8")
+
+        linked_git_file = tmp_path / "worktree" / ".git"
+        linked_git_file.parent.mkdir(parents=True)
+        linked_git_file.write_text(f"gitdir: {worktree_git_dir}\n", encoding="utf-8")
+
+        assert resolve_git_common_dir(linked_git_file) == main_git_dir
 
     def test_resolve_git_common_dir_nonexistent(self, tmp_path: Path) -> None:
         """Test resolving common dir for a nonexistent path."""
@@ -66,14 +73,14 @@ class TestIsLinkedWorktree:
         """Test detecting a linked worktree (git dir is a file)."""
         git_file = tmp_path / ".git"
         git_file.write_text("gitdir: ../main/.git/worktrees/feature\n", encoding="utf-8")
-        
+
         assert is_linked_worktree(git_file) is True
 
     def test_is_linked_worktree_with_directory(self, tmp_path: Path) -> None:
         """Test detecting a regular repository (git dir is a directory)."""
         git_dir = tmp_path / ".git"
         git_dir.mkdir()
-        
+
         assert is_linked_worktree(git_dir) is False
 
     def test_is_linked_worktree_nonexistent(self, tmp_path: Path) -> None:
@@ -89,7 +96,7 @@ class TestFindSharedRoot:
         repo_root.mkdir()
         git_dir = repo_root / ".git"
         git_dir.mkdir()
-        
+
         # Change to the repo directory to test
         original_cwd = os.getcwd()
         try:
@@ -103,7 +110,7 @@ class TestFindSharedRoot:
         """Test finding shared root when no git repo exists."""
         repo_root = tmp_path / "repo"
         repo_root.mkdir()
-        
+
         original_cwd = os.getcwd()
         try:
             os.chdir(str(repo_root))
@@ -118,7 +125,7 @@ class TestFindSharedRoot:
         repo_root.mkdir()
         git_dir = repo_root / ".git"
         git_dir.mkdir()
-        
+
         result = find_shared_root(repo_root)
         assert result == repo_root
 
@@ -133,11 +140,11 @@ class TestFindSharedRoot:
 def test_ledger_path_method_exists() -> None:
     """Test that WikiProjectConfig has the ledger_path method."""
     from parrot.knowledge.wiki.project import PARROT_DIR, WikiProjectConfig
-    
+
     config = WikiProjectConfig()
     # Create a mock root path
     root = Path("/test/root")
-    
+
     # Check that the method exists and works
     assert hasattr(config, "ledger_path")
     ledger_path = config.ledger_path(root)

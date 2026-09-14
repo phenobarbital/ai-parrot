@@ -2791,23 +2791,37 @@ def ledger_sync() -> None:
         _run(service.index.sync())
         click.echo("Ledger index synced")
     except WikiStoreBusy as exc:
-        click.echo(f"Ledger index is busy ({exc.operation}); sync skipped (index_pending)")
+        # Module 2 SS2.2: sync/rebuild/ingest-sdd/compact all exit 2 on busy
+        # (unlike open/close's soft index_pending success) — the cursor is
+        # unchanged, the whole batch rolled back, nothing to report as done.
+        click.echo(f"Ledger index is busy ({exc.operation}); sync failed")
+        raise SystemExit(2)
 
 
 @ledger.command("rebuild")
 def ledger_rebuild() -> None:
-    """Rebuild the ledger index from scratch and checkpoint."""
+    """Rebuild the ledger index from scratch and checkpoint.
+
+    `spec:`/`task:` pages and edges from `ledger ingest-sdd` are not
+    event-sourced (Module 7 writes directly into ledger.db, with no
+    corresponding events.jsonl entries), so a plain replay-from-log
+    rebuild would silently and permanently wipe the SDD spec/task graph.
+    Re-running SDD ingestion right after the event replay restores it —
+    ingestion is idempotent (upsert semantics), so this is safe to run
+    even when nothing in sdd/ actually changed.
+    """
     service = LedgerService.from_root()
     try:
         _run(service.index.rebuild())
+        _run(SDDGraphIngest(service.store, service.shared_root).ingest_all())
         try:
             _run(service.store.checkpoint(truncate=True))
         except WikiStoreBusy:
             _cli_logger.warning("Could not checkpoint after rebuild: index busy")
-        click.echo("Ledger index rebuilt")
+        click.echo("Ledger index rebuilt (SDD spec/task graph re-ingested)")
     except WikiStoreBusy as exc:
         click.echo(f"Ledger index is busy ({exc.operation}); rebuild failed")
-        raise SystemExit(1)
+        raise SystemExit(2)
 
 
 @ledger.command("ingest-sdd")
@@ -2826,7 +2840,7 @@ def ledger_ingest_sdd() -> None:
         )
     except WikiStoreBusy as exc:
         click.echo(f"Ledger index is busy ({exc.operation}); ingest failed")
-        raise SystemExit(1)
+        raise SystemExit(2)
 
 
 @ledger.command("compact")
@@ -2834,8 +2848,12 @@ def ledger_ingest_sdd() -> None:
 def ledger_compact(older_than: int) -> None:
     """Compact the ledger index (index-only; manual only)."""
     service = LedgerService.from_root()
-    removed = _run(service.compact(older_than_days=older_than))
-    click.echo(f"Compacted: {removed} events removed")
+    try:
+        folded = _run(service.compact(older_than_days=older_than))
+    except WikiStoreBusy as exc:
+        click.echo(f"Ledger index is busy ({exc.operation}); compact failed")
+        raise SystemExit(2)
+    click.echo(f"Compacted: {folded} issue(s) folded (events.jsonl untouched)")
 
 
 @ledger.command("audit")

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-566 — SDD Work Ledger
 **Spec**: `sdd/specs/sdd-work-ledger.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-3226, TASK-3227
@@ -47,10 +47,10 @@ Spec §3 Module 13. Ledger is an overlay namespace: bare ledger IDs route there,
 
 ## Acceptance Criteria
 
-- [ ] Bare overlay IDs route to exactly one overlay and returned ledger rows stay qualified.
-- [ ] Ledger-to-code neighbors are local/unqualified and local inbound lookup includes qualified ledger sources.
-- [ ] Prefix collisions fail construction and federation tests pass unchanged without overlays.
-- [ ] `pytest tests/knowledge/wiki/test_federation_overlay.py tests/knowledge/wiki/test_federation.py -q` passes.
+- [x] Bare overlay IDs route to exactly one overlay and returned ledger rows stay qualified.
+- [x] Ledger-to-code neighbors are local/unqualified and local inbound lookup includes qualified ledger sources.
+- [x] Prefix collisions fail construction and federation tests pass unchanged without overlays.
+- [x] `pytest tests/knowledge/wiki/test_federation_overlay.py tests/knowledge/wiki/test_federation.py -q` passes.
 
 ## Test Specification
 

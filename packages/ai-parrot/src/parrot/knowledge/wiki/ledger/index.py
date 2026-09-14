@@ -252,13 +252,42 @@ class LedgerIndex:
             Number of events applied.
         """
         if conn is not None:
-            return await self._sync_locked(conn)
+            applied, _offset, _event_id = await self._sync_locked(conn)
+            return applied
         async with self.store.ledger_transaction("ledger.sync") as new_conn:
-            return await self._sync_locked(new_conn)
+            applied, _offset, _event_id = await self._sync_locked(new_conn)
+            return applied
 
-    async def _sync_locked(self, conn: "aiosqlite.Connection") -> int:
-        """Do the actual sync work inside an already-open write transaction."""
+    async def _sync_locked(self, conn: "aiosqlite.Connection") -> tuple[int, int, str | None]:
+        """Read the persisted cursor and apply forward from it to the log tip.
+
+        Returns:
+            ``(applied_count, cursor_offset, cursor_event_id)`` reflecting
+            where replay stopped — always the current tip, whether or not
+            anything was actually applied (unchanged cursor when nothing
+            new was found). The cursor is already persisted for this
+            connection's transaction when ``applied_count > 0``.
+        """
         offset, last_event_id = await self.store.read_cursor()
+        return await self._apply_from(conn, offset, last_event_id)
+
+    async def _apply_from(
+        self, conn: "aiosqlite.Connection", offset: int, last_event_id: str | None
+    ) -> tuple[int, int, str | None]:
+        """Validate ``(offset, last_event_id)`` against the log, then apply forward to the tip.
+
+        Never re-reads the cursor from storage — callers (like
+        :meth:`claim_issue`) that need to continue a scan from a position
+        established earlier IN THE SAME transaction pass it in directly,
+        since ``read_cursor()`` uses a separate connection that cannot see
+        this transaction's own uncommitted cursor advance.
+
+        Returns:
+            ``(applied_count, cursor_offset, cursor_event_id)``. The
+            cursor is persisted (via ``_write_cursor``) only when
+            ``applied_count > 0``; callers doing a second, chained pass
+            (``claim_issue``) persist the final combined result themselves.
+        """
         events: Iterator[tuple[LedgerEvent, int]] = self.log.iter_events(from_offset=offset)
 
         if last_event_id is not None:
@@ -269,11 +298,15 @@ class LedgerIndex:
             if first_event is None or first_event.event_id != last_event_id:
                 # The event the cursor points at is gone or changed — the log
                 # is no longer contiguous with what we last saw. Full rebuild.
-                return await self._rebuild_locked(conn)
+                # `_rebuild_locked` returns its own resulting cursor directly
+                # rather than this reading it back via `read_cursor()`, which
+                # uses a separate connection and cannot see `conn`'s own
+                # still-uncommitted write.
+                return await self._rebuild_locked_with_cursor(conn)
             # first_event matches what we last applied; it is not reapplied.
         elif offset != 0:
             # A stored offset without a last_event_id is not a valid cursor.
-            return await self._rebuild_locked(conn)
+            return await self._rebuild_locked_with_cursor(conn)
 
         applied = 0
         cursor_line_start = offset
@@ -286,7 +319,7 @@ class LedgerIndex:
 
         if applied:
             await self._write_cursor(conn, cursor_line_start, cursor_event_id)
-        return applied
+        return applied, cursor_line_start, cursor_event_id
 
     async def rebuild(self) -> int:
         """Wipe pages/edges/ledger_state and replay the entire event log from offset 0.
@@ -299,6 +332,17 @@ class LedgerIndex:
 
     async def _rebuild_locked(self, conn: "aiosqlite.Connection") -> int:
         """Do the actual rebuild work inside an already-open write transaction."""
+        applied, _offset, _event_id = await self._rebuild_locked_with_cursor(conn)
+        return applied
+
+    async def _rebuild_locked_with_cursor(self, conn: "aiosqlite.Connection") -> tuple[int, int, str | None]:
+        """Do the rebuild work and return the resulting cursor directly.
+
+        Used by :meth:`_apply_from` so a caller chaining a second pass in
+        the same transaction (``claim_issue``) never has to read the
+        cursor back through a separate connection, which cannot see this
+        transaction's own still-uncommitted write.
+        """
         await conn.execute("DELETE FROM pages")
         await conn.execute("DELETE FROM edges")
         await conn.execute("DELETE FROM ledger_state")
@@ -314,7 +358,7 @@ class LedgerIndex:
 
         if applied:
             await self._write_cursor(conn, cursor_line_start, cursor_event_id)
-        return applied
+        return applied, cursor_line_start, cursor_event_id
 
     # ------------------------------------------------------------------
     # Atomic claim
@@ -330,11 +374,25 @@ class LedgerIndex:
         2. Check ``status == "open"`` — otherwise return ``False`` without
            appending anything (first claim in log order wins).
         3. Append ``issue.claimed`` to the log.
-        4. Apply the event on ``conn`` and advance the cursor directly to it,
-           then commit.
+        4. Apply forward from where step 1 stopped, all the way to
+           whatever is now the log tip, and advance the cursor to that —
+           never to just this event's own reported offset (see note below)
+           — then commit.
 
         A ``WikiStoreBusy`` raised while acquiring the transaction propagates
         unchanged and unwinds before step 3 — a busy claim appends nothing.
+
+        Step 4 deliberately does not trust ``LedgerLog.append()``'s own
+        returned offset as the new cursor position. That offset is computed
+        via a separate ``lseek`` then ``write``, which is not atomic across
+        processes — a concurrent writer's own append can land in between,
+        so this event's *reported* offset can be earlier than another
+        event's *actual* file position. Setting the cursor from a single
+        event's self-reported offset could then jump the cursor past that
+        concurrent event without ever applying it. Re-scanning forward from
+        step 1's stopping point to the tip instead means "the tip" is
+        whatever is physically in the file when we look, including any
+        such concurrent append — nothing is skipped.
 
         Args:
             issue_id: Issue to claim, e.g. ``issue:3f8a1c9e``.
@@ -345,7 +403,7 @@ class LedgerIndex:
             already claimed or closed/superseded.
         """
         async with self.store.ledger_transaction("ledger.claim") as conn:
-            await self._sync_locked(conn)
+            _applied, offset, last_event_id = await self._sync_locked(conn)
 
             state = await self._read_issue(conn, issue_id)
             if state is None or state.get("status") != "open":
@@ -357,9 +415,8 @@ class LedgerIndex:
                 actor=claimed_by,
                 payload={"claimed_by": claimed_by},
             )
-            event_id, line_start = self.log.append(event)
-            await self.apply_event(event, conn)
-            await self._write_cursor(conn, line_start, event_id)
+            self.log.append(event)
+            await self._apply_from(conn, offset, last_event_id)
             return True
 
     # ------------------------------------------------------------------

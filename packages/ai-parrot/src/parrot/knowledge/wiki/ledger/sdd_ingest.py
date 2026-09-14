@@ -47,33 +47,33 @@ class SDDGraphIngest:
             Stats dict: {'specs': N, 'tasks': M, 'edges': E}.
         """
         stats = {"specs": 0, "tasks": 0, "edges": 0}
-        
+
         # Ingest specs
         spec_stats = await self._ingest_specs()
         stats["specs"] += spec_stats["specs"]
         stats["edges"] += spec_stats["edges"]
-        
+
         # Ingest tasks
         task_stats = await self._ingest_tasks()
         stats["tasks"] += task_stats["tasks"]
         stats["edges"] += task_stats["edges"]
-        
+
         return stats
 
     async def _ingest_specs(self) -> dict[str, int]:
         """Ingest all SDD specifications."""
         stats = {"specs": 0, "edges": 0}
-        
+
         if not self.specs_dir.exists():
             logger.warning("Specs directory does not exist: %s", self.specs_dir)
             return stats
-            
+
         spec_files = list(self.specs_dir.glob("*.spec.md"))
         logger.info("Found %d spec files to ingest", len(spec_files))
-        
+
         pages = []
         edges = []
-        
+
         for spec_path in spec_files:
             try:
                 spec_data = await self._process_spec_file(spec_path)
@@ -86,13 +86,13 @@ class SDDGraphIngest:
             except Exception as e:
                 logger.error("Failed to process spec file %s: %s", spec_path, e)
                 continue
-                
+
         if pages:
             async with self.store.ledger_transaction("ledger.ingest.specs") as conn:
                 await self.store.upsert_pages_in(conn, pages)
                 if edges:
                     await self.store.add_edges_in(conn, edges)
-                    
+
         return stats
 
     async def _process_spec_file(self, spec_path: Path) -> tuple[WikiPageRecord, list[tuple]] | None:
@@ -101,13 +101,13 @@ class SDDGraphIngest:
             # Get spec ID from filename
             spec_filename = spec_path.stem  # removes .md extension
             spec_id = f"spec:{spec_filename}"
-            
+
             # Parse spec metadata
             meta = parse_spec_meta(spec_path)
-            
+
             # Read file content
             content = spec_path.read_text(encoding="utf-8")
-            
+
             # Create spec page
             page = WikiPageRecord(
                 concept_id=spec_id,
@@ -120,13 +120,13 @@ class SDDGraphIngest:
                 origin="sdd-spec",
                 asserted_by="agent:sdd-ingest",
             )
-            
+
             # For now, we don't create edges from specs in this basic implementation
             # More sophisticated edge creation would happen in a fuller implementation
             edges = []
-            
+
             return page, edges
-            
+
         except Exception as e:
             logger.error("Error processing spec file %s: %s", spec_path, e)
             return None
@@ -134,17 +134,17 @@ class SDDGraphIngest:
     async def _ingest_tasks(self) -> dict[str, int]:
         """Ingest all task indexes."""
         stats = {"tasks": 0, "edges": 0}
-        
+
         if not self.tasks_index_dir.exists():
             logger.warning("Tasks index directory does not exist: %s", self.tasks_index_dir)
             return stats
-            
+
         index_files = list(self.tasks_index_dir.glob("*.json"))
         logger.info("Found %d task index files to ingest", len(index_files))
-        
+
         pages = []
         edges = []
-        
+
         for index_path in index_files:
             try:
                 task_data = await self._process_task_index_file(index_path)
@@ -157,13 +157,13 @@ class SDDGraphIngest:
             except Exception as e:
                 logger.error("Failed to process task index file %s: %s", index_path, e)
                 continue
-                
+
         if pages:
             async with self.store.ledger_transaction("ledger.ingest.tasks") as conn:
                 await self.store.upsert_pages_in(conn, pages)
                 if edges:
                     await self.store.add_edges_in(conn, edges)
-                    
+
         return stats
 
     async def _process_task_index_file(self, index_path: Path) -> tuple[list[WikiPageRecord], list[tuple]] | None:
@@ -172,21 +172,21 @@ class SDDGraphIngest:
             # Read and parse the index file
             with open(index_path, "r", encoding="utf-8") as f:
                 index_data = json.load(f)
-                
+
             feature_id = index_data.get("feature", "unknown")
             spec_path = index_data.get("spec", "")
-            
+
             pages = []
             edges = []
-            
+
             # Process each task in the index
             for task_entry in index_data.get("tasks", []):
                 task_id = task_entry.get("id")
                 if not task_id:
                     continue
-                    
+
                 task_concept_id = f"task:{task_id}"
-                
+
                 # Create task page
                 title = task_entry.get("title", f"Task {task_id}")
                 file_path = task_entry.get("file", "")
@@ -194,7 +194,7 @@ class SDDGraphIngest:
                 priority = task_entry.get("priority", "medium")
                 effort = task_entry.get("effort", "M")
                 depends_on = task_entry.get("depends_on", [])
-                
+
                 # Build task body with metadata
                 body_parts = [
                     f"# {title}",
@@ -205,21 +205,15 @@ class SDDGraphIngest:
                     f"**Priority**: {priority}",
                     f"**Effort**: {effort}",
                 ]
-                
+
                 if spec_path:
-                    body_parts.extend([
-                        f"**Spec**: {spec_path}",
-                        ""
-                    ])
-                
+                    body_parts.extend([f"**Spec**: {spec_path}", ""])
+
                 if file_path:
-                    body_parts.extend([
-                        f"**File**: {file_path}",
-                        ""
-                    ])
-                
+                    body_parts.extend([f"**File**: {file_path}", ""])
+
                 body = "\n".join(body_parts)
-                
+
                 page = WikiPageRecord(
                     concept_id=task_concept_id,
                     title=title,
@@ -231,9 +225,9 @@ class SDDGraphIngest:
                     origin="sdd-task",
                     asserted_by="agent:sdd-ingest",
                 )
-                
+
                 pages.append(page)
-                
+
                 # Create edges for dependencies. "blocks" is directed from the
                 # blocker to the blocked task: dep_concept_id must complete
                 # before task_concept_id can start, so the dependency blocks
@@ -242,13 +236,13 @@ class SDDGraphIngest:
                     if dep_id.startswith("TASK-"):
                         dep_concept_id = f"task:{dep_id}"
                         edges.append((dep_concept_id, task_concept_id, "blocks", "asserted"))
-                
+
                 # Create edge to spec if available
                 if spec_path:
                     spec_name = Path(spec_path).stem.replace(".spec", "")
                     spec_concept_id = f"spec:{spec_name}"
                     edges.append((task_concept_id, spec_concept_id, "implements", "asserted"))
-                
+
                 # Create edges for file scope if available
                 # In a more complete implementation, we would parse the task file
                 # to extract the exact files it touches, but for now we'll use
@@ -257,9 +251,9 @@ class SDDGraphIngest:
                     # Convert file path to a file concept ID
                     file_concept_id = f"file:{file_path}"
                     edges.append((task_concept_id, file_concept_id, "touches", "asserted"))
-            
+
             return pages, edges
-            
+
         except Exception as e:
             logger.error("Error processing task index file %s: %s", index_path, e)
             return None

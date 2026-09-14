@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-566 — SDD Work Ledger
 **Spec**: `sdd/specs/sdd-work-ledger.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-3226
@@ -48,10 +48,10 @@ from pydantic import BaseModel, Field
 
 ## Acceptance Criteria
 
-- [ ] Every literal event kind in spec §2 is represented and invalid values fail validation.
-- [ ] Canonical payload serialization makes equal logical inputs produce equal IDs.
-- [ ] Issue IDs are deterministic for the same kind, title, and discovery source.
-- [ ] `pytest tests/knowledge/wiki/test_ledger_events.py -q` passes.
+- [x] Every literal event kind in spec §2 is represented and invalid values fail validation.
+- [x] Canonical payload serialization makes equal logical inputs produce equal IDs.
+- [x] Issue IDs are deterministic for the same kind, title, and discovery source.
+- [x] `pytest tests/knowledge/wiki/test_ledger_events.py -q` passes.
 
 ## Test Specification
 

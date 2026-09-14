@@ -211,13 +211,17 @@ not block this feature's merge.
 
 ```bash
 if [[ "$MERGE_FLAG" == "--merge" ]]; then
-    BLOCKERS=$(wikitoolkit ledger blockers "$FEAT_ID" 2>/dev/null || echo "[]")
-    if [[ "$BLOCKERS" != "[]" ]] && [[ "$BLOCKERS" != "" ]]; then
+    # `ledger blockers <FEAT-ID>` prints plain text lines (one per blocker) and
+    # exits 1 when any exist, exit 0 otherwise — it never emits JSON, so the
+    # gate below checks the EXIT CODE, not the (human-readable) output shape.
+    BLOCKERS_OUTPUT=$(wikitoolkit ledger blockers "$FEAT_ID" 2>&1)
+    BLOCKERS_EXIT=$?
+    if [[ $BLOCKERS_EXIT -ne 0 ]]; then
         echo "⚠️  Merge blocked by critical unacknowledged issues:"
-        echo "$BLOCKERS" | jq -r '.[] | "   • \(.title) (\(.issue_id))"'
+        echo "$BLOCKERS_OUTPUT"
         echo ""
         echo "Resolve these issues or acknowledge them as accepted risks before merging."
-        echo "To acknowledge an issue: wikitoolkit ledger ack <ISSUE-ID> \"reason\""
+        echo "To acknowledge an issue: wikitoolkit ledger acknowledge <ISSUE-ID> --reason \"...\" --actor human:<name>"
         if [[ "$FORCE_FLAG" != "--force" ]]; then
             echo ""
             echo "Use --force to bypass blocker checks (not recommended)."
@@ -232,29 +236,46 @@ fi
 
 ### 9.1. Snapshot Ledger Issues (FEAT-566)
 
-For feature flows (not hotfixes), snapshot changed ledger issues from a throwaway
-detached worktree at `origin/<BASE_BRANCH>` to capture the base branch state
-without touching active worktrees.
+For feature flows (not hotfixes), regenerate `sdd/ledger/issues.jsonl` from a
+throwaway worktree at `origin/<BASE_BRANCH>` and commit/push it directly to
+`base_branch` when it changed — never from an active worktree, never on the
+feature branch. Bounded retry on a rejected push; never fails `/sdd-done`.
 
 ```bash
 if [[ "$TYPE" != "hotfix" ]]; then
-    # Create a temporary detached worktree at origin/<BASE_BRANCH>
-    TEMP_WORKTREE="$(mktemp -d)"
-    trap 'rm -rf "$TEMP_WORKTREE"' EXIT
-    
-    # Clone a detached HEAD at origin/<BASE_BRANCH>
-    git clone --no-checkout "file://$(pwd)" "$TEMP_WORKTREE" >/dev/null 2>&1
-    git -C "$TEMP_WORKTREE" checkout "origin/$BASE_BRANCH" >/dev/null 2>&1
-    
-    # Export ledger snapshot
-    LEDGER_SNAPSHOT_CHANGED=$(cd "$TEMP_WORKTREE" && wikitoolkit ledger export 2>&1 | grep -q "changed" && echo "true" || echo "false")
-    
-    if [[ "$LEDGER_SNAPSHOT_CHANGED" == "true" ]]; then
-        echo "📝 Ledger snapshot updated with changed issues"
-    fi
-    
-    # Clean up
-    rm -rf "$TEMP_WORKTREE"
+    git fetch origin "$BASE_BRANCH" >/dev/null 2>&1
+
+    TEMP_WORKTREE=".claude/worktrees/_ledger-snapshot-$$"
+    git worktree add --detach "$TEMP_WORKTREE" "origin/$BASE_BRANCH" >/dev/null 2>&1
+    cleanup_snapshot_worktree() { git worktree remove --force "$TEMP_WORKTREE" >/dev/null 2>&1 || true; }
+    trap cleanup_snapshot_worktree EXIT
+
+    ATTEMPT=1
+    MAX_ATTEMPTS=3
+    while (( ATTEMPT <= MAX_ATTEMPTS )); do
+        EXPORT_OUTPUT=$(cd "$TEMP_WORKTREE" && wikitoolkit ledger export 2>&1)
+        if [[ "$EXPORT_OUTPUT" != *"(changed)"* ]]; then
+            echo "📝 Ledger snapshot unchanged — nothing to commit."
+            break
+        fi
+
+        git -C "$TEMP_WORKTREE" add sdd/ledger/issues.jsonl
+        git -C "$TEMP_WORKTREE" commit -q -m "sdd: ledger snapshot for $FEAT_ID"
+        if git -C "$TEMP_WORKTREE" push origin "HEAD:$BASE_BRANCH" >/dev/null 2>&1; then
+            echo "📝 Ledger snapshot updated with changed issues."
+            break
+        fi
+
+        # Rejected push: re-sync the throwaway worktree only, re-export, retry.
+        git fetch origin "$BASE_BRANCH" >/dev/null 2>&1
+        git -C "$TEMP_WORKTREE" reset --hard "origin/$BASE_BRANCH" >/dev/null 2>&1
+        ATTEMPT=$((ATTEMPT + 1))
+        if (( ATTEMPT > MAX_ATTEMPTS )); then
+            echo "⚠️  Ledger snapshot push failed after $MAX_ATTEMPTS attempts — continuing without failing /sdd-done."
+        fi
+    done
+
+    cleanup_snapshot_worktree
     trap - EXIT
 fi
 ```

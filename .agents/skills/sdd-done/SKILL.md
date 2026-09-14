@@ -76,16 +76,25 @@ when safe.
 9. Push feature branch:
    - `git -C <worktree> push origin <branch>`
 10. Check merge blockers (feature flows only):
-    - If `--merge` flag is set and not a hotfix, check for critical unacknowledged
-      issues discovered by this feature using `wikitoolkit ledger blockers <FEAT-ID>`
-    - If blockers found and not `--force`, refuse merge and list blockers
+    - If `--merge` flag is set and not a hotfix, run `wikitoolkit ledger blockers <FEAT-ID>`
+    - The command prints plain-text blocker lines (never JSON) and exits non-zero
+      exactly when blockers exist — gate on the **exit code**, not on parsing its output
+    - If blockers found and not `--force`, refuse merge and list the blockers
+      (`wikitoolkit ledger acknowledge <ISSUE-ID> --reason "..." --actor human:<name>`
+      is how a human resolves one)
     - If `--force`, warn but proceed with merge
 
 11. Snapshot ledger issues (feature flows only):
-    - For features (not hotfixes), create a throwaway detached worktree at
-      `origin/<BASE_BRANCH>` to snapshot changed ledger issues
-    - Run `wikitoolkit ledger export` in the throwaway worktree
-    - Skip snapshot for hotfixes
+    - For features (not hotfixes), `git fetch origin <BASE_BRANCH>` then create a
+      throwaway detached worktree at `origin/<BASE_BRANCH>` (`git worktree add --detach`)
+    - Run `wikitoolkit ledger export` there; only when its output contains `(changed)`:
+      `git add sdd/ledger/issues.jsonl`, commit `sdd: ledger snapshot for <FEAT-ID>`,
+      and `git push origin HEAD:<BASE_BRANCH>`
+    - On a rejected push, `git fetch` + `git reset --hard origin/<BASE_BRANCH>` inside
+      the throwaway worktree only, re-export, commit, push again — up to 3 attempts,
+      then warn and continue without failing `/sdd-done`
+    - Always `git worktree remove --force` the throwaway worktree afterward
+    - Skip the snapshot entirely for hotfixes
 
 12. Integrate:
     - If `base_branch == main`, refuse automatic merge or PR creation. Print
