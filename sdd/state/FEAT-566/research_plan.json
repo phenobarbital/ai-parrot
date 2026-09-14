@@ -1,0 +1,174 @@
+{
+  "schema_version": "1.0",
+  "mode_hint": "enrichment",
+  "rationale": "The source proposes a new shared, event-sourced work ledger. Research will validate the current wiki-plane contracts, concurrent SQLite behavior, federation and existing SDD integration surfaces before assessing the proposed design.",
+  "queries": [
+    {
+      "id": "Q001",
+      "intent": "Map the wiki package before locating the project, store, federation and CLI contracts the ledger would extend.",
+      "type": "tree",
+      "priority": 1,
+      "params": {"path": "packages/ai-parrot/src/parrot/knowledge/wiki", "max_depth": 2}
+    },
+    {
+      "id": "Q002",
+      "intent": "Locate current project-root and storage-resolution APIs, including any linked-worktree handling already implemented.",
+      "type": "grep",
+      "priority": 1,
+      "params": {
+        "pattern": "find_(project|shared)_root|resolve_git_common_dir|is_linked_worktree|storage_path|db_path",
+        "path": "packages/ai-parrot/src/parrot/knowledge/wiki",
+        "case_sensitive": true,
+        "max_results": 100,
+        "include": "*.py"
+      }
+    },
+    {
+      "id": "Q003",
+      "intent": "Read the project configuration and root-resolution implementation after Q002 identifies its current API surface.",
+      "type": "read",
+      "priority": 1,
+      "params": {"path": "packages/ai-parrot/src/parrot/knowledge/wiki/project.py", "lines": null}
+    },
+    {
+      "id": "Q004",
+      "intent": "Locate SQLite connection, migration, transaction and edge-query behavior relevant to an independently rebuildable ledger index.",
+      "type": "grep",
+      "priority": 1,
+      "params": {
+        "pattern": "aiosqlite\\.connect|BEGIN|busy_timeout|_migrate|upsert_pages|neighbors|broken_edges|search_fts",
+        "path": "packages/ai-parrot/src/parrot/knowledge/wiki",
+        "case_sensitive": true,
+        "max_results": 150,
+        "include": "*.py"
+      }
+    },
+    {
+      "id": "Q005",
+      "intent": "Read the SQLite store implementation to verify write-lock, migration and page-edge contracts.",
+      "type": "read",
+      "priority": 1,
+      "params": {"path": "packages/ai-parrot/src/parrot/knowledge/wiki/store.py", "lines": null}
+    },
+    {
+      "id": "Q006",
+      "intent": "Locate the current federation API and namespace configuration surface that a ledger plane could reuse.",
+      "type": "grep",
+      "priority": 1,
+      "params": {
+        "pattern": "FederatedWikiStore|namespace|add_namespace|ns add",
+        "path": "packages/ai-parrot/src/parrot/knowledge/wiki",
+        "case_sensitive": false,
+        "max_results": 100,
+        "include": "*.py"
+      }
+    },
+    {
+      "id": "Q007",
+      "intent": "Read the federation implementation to validate cross-plane identifiers and query composition limits.",
+      "type": "read",
+      "priority": 2,
+      "params": {"path": "packages/ai-parrot/src/parrot/knowledge/wiki/federation.py", "lines": null}
+    },
+    {
+      "id": "Q008",
+      "intent": "Locate wiki-memory, MCP and CLI extension points for provenance-aware insights and ledger commands.",
+      "type": "grep",
+      "priority": 2,
+      "params": {
+        "pattern": "WikiRememberTool|wiki_remember|@.*tool|click\\.group|def main",
+        "path": "packages/ai-parrot/src/parrot/knowledge/wiki",
+        "case_sensitive": false,
+        "max_results": 150,
+        "include": "*.py"
+      }
+    },
+    {
+      "id": "Q009",
+      "intent": "Read wiki tools to establish the existing tool input and output conventions a ledger tool must follow.",
+      "type": "read",
+      "priority": 2,
+      "params": {"path": "packages/ai-parrot/src/parrot/knowledge/wiki/tools.py", "lines": null}
+    },
+    {
+      "id": "Q010",
+      "intent": "Read the wiki CLI to confirm how command groups and store access are registered.",
+      "type": "read",
+      "priority": 2,
+      "params": {"path": "packages/ai-parrot/src/parrot/knowledge/wiki/cli.py", "lines": null}
+    },
+    {
+      "id": "Q011",
+      "intent": "Read installer and managed hook assets to verify current worktree and post-commit integration behavior.",
+      "type": "read",
+      "priority": 2,
+      "params": {"path": "packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/installer.py", "lines": null}
+    },
+    {
+      "id": "Q012",
+      "intent": "Read managed hook assets to verify the current generated post-commit behavior and binary resolution.",
+      "type": "read",
+      "priority": 2,
+      "params": {"path": "packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/assets.py", "lines": null}
+    },
+    {
+      "id": "Q013",
+      "intent": "Map SDD command documents that currently calculate readiness, start tasks, close tasks, review work, or land features.",
+      "type": "glob",
+      "priority": 2,
+      "params": {"pattern": ".claude/commands/sdd-*.md", "max_results": 50}
+    },
+    {
+      "id": "Q014",
+      "intent": "Read the task-start command to identify task lifecycle emission and context-injection seams.",
+      "type": "read",
+      "priority": 3,
+      "params": {"path": ".claude/commands/sdd-start.md", "lines": null}
+    },
+    {
+      "id": "Q015",
+      "intent": "Read the next, review and done commands to verify how discovered work and merge gates would integrate.",
+      "type": "read",
+      "priority": 3,
+      "params": {"path": ".claude/commands/sdd-next.md", "lines": null}
+    },
+    {
+      "id": "Q016",
+      "intent": "Inspect recent history of the wiki package for prior concurrency, worktree or federation decisions that constrain the design.",
+      "type": "git_log",
+      "priority": 3,
+      "params": {
+        "path": "packages/ai-parrot/src/parrot/knowledge/wiki",
+        "since": "180.days.ago",
+        "max_results": 30,
+        "with_diff": false
+      }
+    },
+    {
+      "id": "Q017",
+      "intent": "Inspect recent history of SDD command and script assets to determine whether the proposed integration points are stable.",
+      "type": "git_log",
+      "priority": 3,
+      "params": {
+        "path": ".claude/commands",
+        "since": "180.days.ago",
+        "max_results": 30,
+        "with_diff": false
+      }
+    }
+  ],
+  "expected_findings": [
+    "Verified shared-root behavior for normal checkouts and linked worktrees.",
+    "SQLite write, migration and query contracts relevant to ledger durability and recovery.",
+    "Federation and wiki-tool seams that can expose a separate ledger plane.",
+    "Current SDD command lifecycle and review surfaces that can emit or consume work-ledger records."
+  ],
+  "meta": {
+    "source_signals": {
+      "named_entities": ["LLM Wiki", "SQLite", "wikitoolkit", "SDD", "worktree", "ledger"],
+      "verbs": ["record", "claim", "close", "ingest", "compact", "audit"],
+      "polarity": "positive"
+    },
+    "estimated_budget_use": {"files_read": 9, "grep_calls": 7, "git_calls": 2}
+  }
+}
