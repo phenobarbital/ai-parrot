@@ -307,8 +307,13 @@ AC-8 asks for — write it first.
 
 ## Completion Note
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: sdd-worker (orchestrated via parrot-sdd-coder)
+**Date**: 2026-09-14
+**Notes**: `sqlite_settings()` added to `SQLiteWikiStore`, folded into `status`'s payload
+under a new `"sqlite"` key (JSON + human render), guarded to SQLite backends only.
+Verified: 6/6 new tests pass (`test_cli_status_sqlite.py`), 95/95 regression tests pass
+(`test_cli.py`), `ruff check` clean on both touched files.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.
+
+Seat: qwen · Backend: nova · Model: qwen.qwen3-coder-480b-a35b-instruct · Attempts: 1 · Duration: 851.9s · Tokens: 2454921/11687

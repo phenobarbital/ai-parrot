@@ -194,7 +194,7 @@
       "feature_id": "FEAT-557",
       "feature": "wikitoolkit-sqlite-optimizations",
       "spec": "sdd/specs/wikitoolkit-sqlite-optimizations.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -204,8 +204,8 @@
       "parallelism_notes": "cli.py + store.py. Serial with 3224 (same file, adjacent regions).",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3225-status-sqlite-block.md"
+      "completed_at": "2026-09-14T02:09:38+00:00",
+      "file": "sdd/tasks/completed/TASK-3225-status-sqlite-block.md"
     },
     {
       "id": "TASK-3226",
