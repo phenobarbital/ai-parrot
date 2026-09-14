@@ -14,7 +14,7 @@
       "feature_id": "FEAT-557",
       "feature": "wikitoolkit-sqlite-optimizations",
       "spec": "sdd/specs/wikitoolkit-sqlite-optimizations.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Dependency root: adds two new module-level symbols to store.py and a new test file. Nothing else exists yet, so it shares no edit region with any other task.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3216-sqlite-pragma-policy-and-busy-error.md"
+      "completed_at": "2026-09-14T00:45:08+00:00",
+      "file": "sdd/tasks/completed/TASK-3216-sqlite-pragma-policy-and-busy-error.md"
     },
     {
       "id": "TASK-3217",
@@ -160,7 +160,7 @@
         "TASK-3222"
       ],
       "parallel": false,
-      "parallelism_notes": "Touches store.py, project.py, cli.py, mcp_server.py, structural/toolkit.py, sync.py, federation.py \u2014 the widest file span in the feature. Must follow the three tasks whose signatures it forwards.",
+      "parallelism_notes": "Touches store.py, project.py, cli.py, mcp_server.py, structural/toolkit.py, sync.py, federation.py — the widest file span in the feature. Must follow the three tasks whose signatures it forwards.",
       "assigned_to": null,
       "started_at": null,
       "completed_at": null,
