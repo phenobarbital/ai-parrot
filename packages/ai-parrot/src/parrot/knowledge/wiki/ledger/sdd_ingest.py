@@ -9,6 +9,7 @@ Implements spec §3 Module 7.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from pathlib import Path
@@ -62,21 +63,39 @@ class SDDGraphIngest:
 
     async def _ingest_specs(self) -> dict[str, int]:
         """Ingest all SDD specifications."""
+        # Directory listing + per-file parsing/reading is all blocking
+        # filesystem I/O (`Path.glob`/`Path.read_text`) — run it off-thread
+        # so this coroutine never blocks the event loop other concurrent
+        # agent sessions share (e.g. via the MCP server). Only the actual
+        # SQLite write below stays on the loop, via LedgerStore's own
+        # async transaction.
+        pages, edges, stats = await asyncio.to_thread(self._collect_spec_pages)
+
+        if pages:
+            async with self.store.ledger_transaction("ledger.ingest.specs") as conn:
+                await self.store.upsert_pages_in(conn, pages)
+                if edges:
+                    await self.store.add_edges_in(conn, edges)
+
+        return stats
+
+    def _collect_spec_pages(self) -> tuple[list[WikiPageRecord], list[tuple], dict[str, int]]:
+        """Blocking half of :meth:`_ingest_specs` — run via ``asyncio.to_thread``."""
         stats = {"specs": 0, "edges": 0}
 
         if not self.specs_dir.exists():
             logger.warning("Specs directory does not exist: %s", self.specs_dir)
-            return stats
+            return [], [], stats
 
         spec_files = list(self.specs_dir.glob("*.spec.md"))
         logger.info("Found %d spec files to ingest", len(spec_files))
 
-        pages = []
-        edges = []
+        pages: list[WikiPageRecord] = []
+        edges: list[tuple] = []
 
         for spec_path in spec_files:
             try:
-                spec_data = await self._process_spec_file(spec_path)
+                spec_data = self._process_spec_file(spec_path)
                 if spec_data:
                     page, spec_edges = spec_data
                     pages.append(page)
@@ -87,16 +106,15 @@ class SDDGraphIngest:
                 logger.error("Failed to process spec file %s: %s", spec_path, e)
                 continue
 
-        if pages:
-            async with self.store.ledger_transaction("ledger.ingest.specs") as conn:
-                await self.store.upsert_pages_in(conn, pages)
-                if edges:
-                    await self.store.add_edges_in(conn, edges)
+        return pages, edges, stats
 
-        return stats
+    def _process_spec_file(self, spec_path: Path) -> tuple[WikiPageRecord, list[tuple]] | None:
+        """Process a single spec file and return its page and edges.
 
-    async def _process_spec_file(self, spec_path: Path) -> tuple[WikiPageRecord, list[tuple]] | None:
-        """Process a single spec file and return its page and edges."""
+        Sync (not ``async def``): it does nothing but blocking file I/O and
+        is only ever called from :meth:`_collect_spec_pages`, itself run
+        via ``asyncio.to_thread``.
+        """
         try:
             # Get spec ID from filename
             spec_filename = spec_path.stem  # removes .md extension
@@ -133,21 +151,35 @@ class SDDGraphIngest:
 
     async def _ingest_tasks(self) -> dict[str, int]:
         """Ingest all task indexes."""
+        # See `_ingest_specs`'s comment: directory listing + per-file
+        # read/parse is blocking filesystem I/O, run off-thread.
+        pages, edges, stats = await asyncio.to_thread(self._collect_task_pages)
+
+        if pages:
+            async with self.store.ledger_transaction("ledger.ingest.tasks") as conn:
+                await self.store.upsert_pages_in(conn, pages)
+                if edges:
+                    await self.store.add_edges_in(conn, edges)
+
+        return stats
+
+    def _collect_task_pages(self) -> tuple[list[WikiPageRecord], list[tuple], dict[str, int]]:
+        """Blocking half of :meth:`_ingest_tasks` — run via ``asyncio.to_thread``."""
         stats = {"tasks": 0, "edges": 0}
 
         if not self.tasks_index_dir.exists():
             logger.warning("Tasks index directory does not exist: %s", self.tasks_index_dir)
-            return stats
+            return [], [], stats
 
         index_files = list(self.tasks_index_dir.glob("*.json"))
         logger.info("Found %d task index files to ingest", len(index_files))
 
-        pages = []
-        edges = []
+        pages: list[WikiPageRecord] = []
+        edges: list[tuple] = []
 
         for index_path in index_files:
             try:
-                task_data = await self._process_task_index_file(index_path)
+                task_data = self._process_task_index_file(index_path)
                 if task_data:
                     task_pages, task_edges = task_data
                     pages.extend(task_pages)
@@ -158,16 +190,15 @@ class SDDGraphIngest:
                 logger.error("Failed to process task index file %s: %s", index_path, e)
                 continue
 
-        if pages:
-            async with self.store.ledger_transaction("ledger.ingest.tasks") as conn:
-                await self.store.upsert_pages_in(conn, pages)
-                if edges:
-                    await self.store.add_edges_in(conn, edges)
+        return pages, edges, stats
 
-        return stats
+    def _process_task_index_file(self, index_path: Path) -> tuple[list[WikiPageRecord], list[tuple]] | None:
+        """Process a single task index file and return its pages and edges.
 
-    async def _process_task_index_file(self, index_path: Path) -> tuple[list[WikiPageRecord], list[tuple]] | None:
-        """Process a single task index file and return its pages and edges."""
+        Sync (not ``async def``): it does nothing but blocking file I/O and
+        is only ever called from :meth:`_collect_task_pages`, itself run
+        via ``asyncio.to_thread``.
+        """
         try:
             # Read and parse the index file
             with open(index_path, "r", encoding="utf-8") as f:

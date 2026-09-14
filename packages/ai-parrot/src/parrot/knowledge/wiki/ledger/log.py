@@ -19,7 +19,7 @@ class LedgerLog:
         self.path = path
 
     def append(self, event: LedgerEvent) -> tuple[str, int]:
-        """Append a single event to the log atomically.
+        """Append a single event to the log atomically and durably.
 
         The write itself is atomic and race-free across processes (a single
         ``os.write()`` under ``O_APPEND``, capped at 4 KiB — within the
@@ -32,6 +32,12 @@ class LedgerLog:
         concurrent writers. (``LedgerIndex.claim_issue`` deliberately does
         not use it for exactly this reason; it re-derives the cursor by
         scanning the log itself instead.)
+
+        The write is followed by ``os.fsync()`` before the fd is closed —
+        this is the "durable source of truth" plane (spec §2), so a caller
+        that already reported an event to a user/actor must survive not
+        just this process crashing, but the OS crashing or losing power
+        before the page cache would otherwise have flushed it.
 
         Args:
             event: The LedgerEvent to append.
@@ -64,6 +70,11 @@ class LedgerLog:
             if written != len(encoded):
                 # In case of partial write (extremely rare for < 4KB on local filesystems, but good practice)
                 raise OSError("Failed to write the complete event line atomically.")
+
+            # Force the write to durable storage before returning — a
+            # crash-only-safe (page-cache-only) append is not enough for
+            # the log this feature bills as its durable source of truth.
+            os.fsync(fd)
         finally:
             os.close(fd)
 

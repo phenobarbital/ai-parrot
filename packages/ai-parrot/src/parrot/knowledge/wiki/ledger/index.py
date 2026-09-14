@@ -12,10 +12,11 @@ this module never issues ``BEGIN``/``COMMIT``/``ROLLBACK`` itself.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING, Any, Iterator
+from typing import TYPE_CHECKING, Any
 
 from parrot.knowledge.wiki.ledger.events import (
     IssueAcknowledgedPayload,
@@ -288,7 +289,17 @@ class LedgerIndex:
             ``applied_count > 0``; callers doing a second, chained pass
             (``claim_issue``) persist the final combined result themselves.
         """
-        events: Iterator[tuple[LedgerEvent, int]] = self.log.iter_events(from_offset=offset)
+        # `LedgerLog.iter_events` does blocking file I/O (plain `open()` +
+        # `readline()`) — reading it off-thread keeps this coroutine from
+        # blocking the event loop other concurrent agent sessions share
+        # (e.g. via the MCP server). The whole tail is materialized in one
+        # thread hop rather than per-line, since the loop below interleaves
+        # each event with `await self.apply_event(...)` (async DB work) and
+        # can't run inside the same thread-pool call.
+        events_list: list[tuple[LedgerEvent, int]] = await asyncio.to_thread(
+            lambda: list(self.log.iter_events(from_offset=offset))
+        )
+        events = iter(events_list)
 
         if last_event_id is not None:
             try:
@@ -347,10 +358,16 @@ class LedgerIndex:
         await conn.execute("DELETE FROM edges")
         await conn.execute("DELETE FROM ledger_state")
 
+        # See `_apply_from`'s comment: materialize off-thread, then apply
+        # in-loop so each event can still `await` its DB write.
+        events_list: list[tuple[LedgerEvent, int]] = await asyncio.to_thread(
+            lambda: list(self.log.iter_events(from_offset=0))
+        )
+
         applied = 0
         cursor_line_start = 0
         cursor_event_id: str | None = None
-        for event, line_start in self.log.iter_events(from_offset=0):
+        for event, line_start in events_list:
             await self.apply_event(event, conn)
             applied += 1
             cursor_line_start = line_start
@@ -415,7 +432,10 @@ class LedgerIndex:
                 actor=claimed_by,
                 payload={"claimed_by": claimed_by},
             )
-            self.log.append(event)
+            # LedgerLog.append() is a blocking syscall sequence
+            # (open/lseek/write/fsync) — off-thread so it never blocks the
+            # event loop while this transaction is held open.
+            await asyncio.to_thread(self.log.append, event)
             await self._apply_from(conn, offset, last_event_id)
             return True
 
