@@ -133,7 +133,7 @@
       "feature_id": "FEAT-557",
       "feature": "wikitoolkit-sqlite-optimizations",
       "spec": "sdd/specs/wikitoolkit-sqlite-optimizations.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -141,8 +141,8 @@
       "parallelism_notes": "PARALLEL-SAFE: touches only project.py's field block plus its own new test file. No dependencies at all; can run first or alongside anything.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3222-wiki-project-config-sqlite-fields.md"
+      "completed_at": "2026-09-14T00:46:52+00:00",
+      "file": "sdd/tasks/completed/TASK-3222-wiki-project-config-sqlite-fields.md"
     },
     {
       "id": "TASK-3223",
