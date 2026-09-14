@@ -65,6 +65,11 @@ _COMPONENTS_CSS: str = _read_asset("components.css") or ""
 #: asset constant here), never crashes the import.
 _TAILWIND_CSS: str = _read_asset("tailwind.generated.css") or ""
 
+#: The document's voice — masthead, section marks, KPI cards, tables.
+#: Composed AFTER the generated Tailwind primitives (which it refines) and
+#: BEFORE the layout sheet (which may still override it).
+_EDITORIAL_CSS: str = _read_asset("editorial.css") or ""
+
 #: What a SCREEN surface does when the reader presses Ctrl+P: an
 #: `@media print` block, inert until then. Composed for every layout EXCEPT
 #: `print`, which is the PDF renderer's own paged layout and already carries
@@ -127,6 +132,7 @@ class DesignSystem:
                 _BASE_CSS,
                 _COMPONENTS_CSS,
                 _TAILWIND_CSS,
+                _EDITORIAL_CSS,
                 layout_css or "",
                 "" if layout_key == "print" else _PRINT_MEDIA_CSS,
             )

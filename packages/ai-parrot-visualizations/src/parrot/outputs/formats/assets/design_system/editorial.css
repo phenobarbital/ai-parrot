@@ -1,0 +1,226 @@
+/* ─────────────────────────────────────────────
+ * Design system — editorial.css
+ *
+ * The document's voice. Composed AFTER `tailwind.generated.css` (which
+ * carries the base `.a2ui-*` primitives) and before the layout sheet, so a
+ * layout can still override it.
+ *
+ * Four principles, in case a later change has to argue with one of them:
+ *
+ * 1. The period is the anchor. A report states the window it covers, once,
+ *    at the top. Until the masthead existed no date appeared anywhere on the
+ *    page — the cards said "vs previous 14 days" and nothing said which.
+ * 2. Colour is reserved for verdicts. Green and red appear ONLY inside a
+ *    delta, so those two colours mean exactly one thing everywhere in the
+ *    document. Structure is ink and a single accent.
+ * 3. The numbers are the subject. They get the size, the tabular figures and
+ *    the tightest tracking. They are NOT set in a monospace face: that makes
+ *    a measurement look like source code.
+ * 4. Nothing shouts. No shadows, no gradients, no everything-rounded. A
+ *    hairline and some space do the work. This is a document, not a
+ *    screenshot of a dashboard.
+ *
+ * Labels are sentence case, not tracked-out capitals. A wall of small caps
+ * reads as a form to fill in rather than a report to read.
+ * ───────────────────────────────────────────── */
+
+/* ---------- The sheet ---------- */
+/* The whole report arrives wrapped in one Card. Stripped of its chrome, so
+ * the page reads as a sheet of paper rather than a card holding cards. */
+.a2ui-card[data-variant="infographic"] {
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    padding: 0;
+}
+
+/* ---------- Masthead ---------- */
+.a2ui-title {
+    font-size: 1.75rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1.15;
+    color: var(--neutral-text);
+    margin: 0 0 0.35rem;
+}
+
+/* The period, written as a sentence. Not "Epson · 1–14 Sep · 14d": a string
+ * of fragments joined by dots is faster to write and slower to read. */
+.a2ui-subtitle {
+    font-size: 0.95rem;
+    font-weight: 400;
+    color: var(--neutral-muted);
+    margin: 0 0 1.25rem;
+    padding-bottom: 1.25rem;
+    border-bottom: 3px solid var(--primary);
+    max-width: 62ch;
+}
+
+/* A report with no subtitle still gets the rule, so the masthead never
+ * collapses into the first section. */
+.a2ui-title:last-child {
+    padding-bottom: 1.1rem;
+    margin-bottom: 1.25rem;
+    border-bottom: 3px solid var(--primary);
+}
+
+/* ---------- Sections ---------- */
+.a2ui-section {
+    margin-bottom: 2rem;
+}
+
+/* The accent bar marks where a section starts. It replaces the tracked-out
+ * capital eyebrow that used to sit here and says the same thing in less. */
+.a2ui-heading {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    font-size: 1.05rem;
+    font-weight: 650;
+    letter-spacing: -0.01em;
+    color: var(--neutral-text);
+    margin: 0 0 0.9rem;
+}
+
+.a2ui-heading::before {
+    content: "";
+    flex: none;
+    width: 3px;
+    height: 1.05em;
+    background: var(--primary);
+    border-radius: 2px;
+}
+
+/* A chart or table panel's own title is a level down from the section it
+ * sits in — no bar, lighter, so the hierarchy is legible at a glance. */
+.a2ui-chart-wrap .a2ui-heading,
+.a2ui-table-wrap .a2ui-heading,
+.a2ui-graph-wrap .a2ui-heading {
+    font-size: 0.92rem;
+    font-weight: 600;
+    color: var(--neutral-muted);
+    margin-bottom: 0.75rem;
+}
+
+.a2ui-chart-wrap .a2ui-heading::before,
+.a2ui-table-wrap .a2ui-heading::before,
+.a2ui-graph-wrap .a2ui-heading::before {
+    display: none;
+}
+
+/* ---------- Panels ---------- */
+.a2ui-card,
+.a2ui-chart-wrap,
+.a2ui-table-wrap,
+.a2ui-graph-wrap {
+    box-shadow: none;
+    border: 1px solid var(--neutral-border);
+    border-radius: 6px;
+}
+
+/* ---------- KPI cards ---------- */
+.kpi-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    padding: 0.9rem 1rem 0.8rem;
+}
+
+.kpi-card > .a2ui-col {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.kpi-label {
+    display: block;
+    font-size: 0.8rem;
+    font-weight: 500;
+    letter-spacing: 0;
+    text-transform: none;
+    color: var(--neutral-muted);
+    margin: 0;
+}
+
+/* The figure is the subject of the card: the largest thing on it, tracked
+ * tight, in tabular figures so a column of them lines up digit for digit. */
+.kpi-value {
+    font-family: var(--font-family);
+    font-size: 2.1rem;
+    font-weight: 700;
+    line-height: 1.05;
+    letter-spacing: -0.03em;
+    color: var(--neutral-text);
+    font-variant-numeric: tabular-nums;
+    margin: 0;
+}
+
+.kpi-unit {
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--neutral-muted);
+    margin-left: 0.3rem;
+    letter-spacing: 0;
+}
+
+/* The delta is a chip, not a line of text: it is a verdict about the figure
+ * above it and should read as attached to it. The tint is the sentiment
+ * colour at a whisper; engines without `color-mix` keep the flat fallback
+ * declared first. */
+.kpi-delta {
+    align-self: flex-start;
+    display: inline-flex;
+    align-items: center;
+    font-size: 0.78rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    margin: 0.15rem 0 0;
+    padding: 0.12rem 0.4rem;
+    border-radius: 4px;
+    background: var(--neutral-bg);
+}
+
+.kpi-delta[data-sentiment="good"] {
+    background: color-mix(in srgb, var(--accent-green) 12%, transparent);
+}
+
+.kpi-delta[data-sentiment="bad"] {
+    background: color-mix(in srgb, var(--accent-red) 12%, transparent);
+}
+
+/* Said once in the masthead, so on the card it is a footnote — small enough
+ * that eight of them do not read as eight lines of content. */
+.kpi-comparison {
+    font-size: 0.68rem;
+    color: var(--neutral-muted);
+    margin: 0;
+}
+
+/* ---------- Tables ---------- */
+/* A header band in a filled colour competes with the data under it. A rule
+ * in the accent marks the same boundary and leaves the ink to the numbers. */
+thead th {
+    background: transparent;
+    color: var(--neutral-text);
+    font-weight: 600;
+    font-size: 0.78rem;
+    letter-spacing: 0;
+    text-transform: none;
+    border-bottom: 2px solid var(--primary);
+    padding: 0.5rem 0.6rem;
+}
+
+tbody td {
+    padding: 0.45rem 0.6rem;
+    font-variant-numeric: tabular-nums;
+    border-bottom: 1px solid var(--neutral-border);
+}
+
+tbody tr:nth-child(even) {
+    background: var(--neutral-bg);
+}
+
+tbody tr:last-child td {
+    border-bottom: 0;
+}
