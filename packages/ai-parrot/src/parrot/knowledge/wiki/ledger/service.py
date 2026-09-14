@@ -27,7 +27,7 @@ from parrot.knowledge.wiki.ledger.log import LedgerLog
 from parrot.knowledge.wiki.ledger.store import LedgerStore
 from parrot.knowledge.wiki.project import (
     find_shared_root,
-    load_project_config,
+    load_effective_config,
     sqlite_policy_from_config,
 )
 from parrot.knowledge.wiki.store import WikiStoreBusy, estimate_tokens
@@ -87,7 +87,10 @@ class LedgerService:
             A ready-to-use ``LedgerService``.
         """
         shared_root = find_shared_root(root) or (root or Path.cwd()).resolve()
-        config = load_project_config(shared_root)
+        # Consumers must go through load_effective_config (env-overlay
+        # merge), never the raw load_project_config directly — enforced
+        # project-wide by test_env_call_sites.py's call-site guard.
+        config = load_effective_config(shared_root).config
         ledger_dir = config.ledger_path(shared_root)
         ledger_dir.mkdir(parents=True, exist_ok=True)
 
