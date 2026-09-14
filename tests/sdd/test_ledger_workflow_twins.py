@@ -116,5 +116,55 @@ class TestDoneTwins:
             assert "hotfix" in content.lower(), path
 
 
+# --------------------------------------------------------------------------
+# TASK-3241 — Start, next, and issue-promotion workflow twins
+# --------------------------------------------------------------------------
+
+
+class TestStartNextTwins:
+    START = {
+        "claude": ".claude/commands/sdd-start.md",
+        "antigravity": ".agent/workflows/sdd-start.md",
+        "codex": ".agents/skills/sdd-start/SKILL.md",
+    }
+    NEXT = {
+        "claude": ".claude/commands/sdd-next.md",
+        "antigravity": ".agent/workflows/sdd-next.md",
+        "codex": ".agents/skills/sdd-next/SKILL.md",
+    }
+    TASK = {
+        "claude": ".claude/commands/sdd-task.md",
+        "antigravity": ".agent/workflows/sdd-task.md",
+        "codex": ".agents/skills/sdd-task/SKILL.md",
+    }
+
+    def test_all_nine_workflow_files_exist(self):
+        for group in (self.START, self.NEXT, self.TASK):
+            for path in group.values():
+                assert (_WORKTREE_ROOT / path).exists(), f"Missing workflow file: {path}"
+
+    def test_start_primes_ledger_context_and_records_task_started(self):
+        """Start primes before implementation and records task.started best-effort."""
+        for platform, path in self.START.items():
+            content = read_workflow_file(path)
+            assert "ledger context" in content, (platform, path)
+            assert "task.started" in content, (platform, path)
+
+    def test_next_displays_ready_tasks_and_ledger_issues(self):
+        """Next displays ready tasks and ledger issues."""
+        for platform, path in self.NEXT.items():
+            content = read_workflow_file(path)
+            assert "ledger ready" in content, (platform, path)
+            assert "Ready ledger issues" in content or "ready ledger issues" in content, (platform, path)
+
+    def test_task_promotion_preserves_id_discipline_and_links_source_issue(self):
+        """Promotion preserves ID/dependency discipline and links source issue."""
+        for platform, path in self.TASK.items():
+            content = read_workflow_file(path)
+            assert "--from-issue" in content, (platform, path)
+            assert "reserve_ids" in content, (platform, path)
+            assert "discovered_from" in content, (platform, path)
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
