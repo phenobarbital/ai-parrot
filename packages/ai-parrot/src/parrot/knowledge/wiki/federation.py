@@ -158,7 +158,7 @@ async def _assert_plane_readable(store: BaseWikiStore) -> None:
     try:
         # Private, but this is the only way to reuse the immutable /
         # mode=ro ladder the read-only guarantee depends on.
-        async with store._connect() as conn:
+        async with store._read() as conn:
             for table, columns in _MIGRATION_COLUMNS.items():
                 async with conn.execute(f"PRAGMA table_info({table})") as cur:
                     present = {row["name"] for row in await cur.fetchall()}

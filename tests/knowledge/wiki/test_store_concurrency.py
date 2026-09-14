@@ -199,11 +199,14 @@ class TestReadFirstMigration:
             pass
 
     async def test_latch_is_per_store_not_global(self, tmp_path: Path) -> None:
-        """Two stores on two planes do not share the latch (spec §2)."""
+        """Two stores on two planes do not share the latch (spec §2).
+
+        Neither store has had any `_read`/`_write` call before this, so
+        `_migrated` starts unset for both — `_open`'s `_ensure_schema`
+        creates `store_a`'s schema as part of the write itself.
+        """
         store_a = SQLiteWikiStore(tmp_path / "a.db", wiki_name="a")
         store_b = SQLiteWikiStore(tmp_path / "b.db", wiki_name="b")
-        await store_a.stats()
-        await store_b.stats()
         async with store_a._write("touch"):
             pass
         assert store_a._migrated.is_set()

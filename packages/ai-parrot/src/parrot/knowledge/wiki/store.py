@@ -988,16 +988,76 @@ class SQLiteWikiStore(BaseWikiStore):
         ) as conn:
             conn.row_factory = aiosqlite.Row
             await self._apply_pragmas(conn, writable=writable)
+            if writable:
+                await self._ensure_schema(conn)
             yield conn
+
+    async def _ensure_schema(self, conn: aiosqlite.Connection) -> None:
+        """Replay the schema when a cheap presence probe shows it missing.
+
+        A new plane, or one externally replaced, has none of the eight
+        tables in ``_SCHEMA_TABLES``. The probe is a pure read, so an
+        already-built plane pays only one SELECT here. The DDL is
+        idempotent; ``self._init_lock`` only prevents concurrent tasks of
+        this instance from racing into spurious lock errors.
+
+        Args:
+            conn: An open, write-capable connection.
+        """
+        placeholders = ", ".join("?" * len(_SCHEMA_TABLES))
+        cur = await conn.execute(
+            "SELECT count(*) FROM sqlite_master" f" WHERE type = 'table' AND name IN ({placeholders})",
+            sorted(_SCHEMA_TABLES),
+        )
+        if (await cur.fetchone())[0] < len(_SCHEMA_TABLES):
+            # Serialize first-time init across concurrent tasks of this
+            # instance; the DDL is idempotent, so the lock only avoids
+            # spurious cross-task lock errors.
+            async with self._init_lock:
+                await conn.executescript(WIKI_SCHEMA_SQL)
+                await conn.execute(
+                    "INSERT OR IGNORE INTO meta (key, value)" " VALUES (?, ?)",
+                    ("schema_version", SCHEMA_VERSION),
+                )
+                if self._wiki_name:
+                    await conn.execute(
+                        "INSERT OR IGNORE INTO meta (key, value)" " VALUES (?, ?)",
+                        ("wiki_name", self._wiki_name),
+                    )
+                await conn.commit()
+
+    async def _maybe_migrate(self, conn: aiosqlite.Connection) -> None:
+        """Run the read-first migration probe/apply at most once per store.
+
+        Shared by :meth:`_read` and :meth:`_write` so a plane opened
+        read-only-first (e.g. ``get_page`` before any write ever
+        happens) still converges on the current schema — the read-first
+        design of :meth:`_migrate` (TASK-3218) means this costs only the
+        probe on an already-current plane (AC-4), and applies the
+        idempotent column/version migration on a legacy one, matching
+        the migration guarantee the deleted ``_connect()`` used to give
+        every caller unconditionally.
+
+        Args:
+            conn: An open, write-capable connection.
+        """
+        if self._migrated.is_set():
+            return
+        async with self._init_lock:
+            if not self._migrated.is_set():
+                await self._migrate(conn)
+                self._migrated.set()
 
     @asynccontextmanager
     async def _read(self) -> AsyncIterator[aiosqlite.Connection]:
-        """Yield a read-safe connection; never migrate, never write.
+        """Yield a read-safe connection; never begins a write transaction.
 
         The only route for pure reads. On an already-migrated plane this
-        issues zero DML/DDL (AC-4). Preserves the existing read-only
-        ladder: an explicitly read-only store, or a plane that turns out
-        to be unwritable, degrades exactly as :meth:`_connect` does today.
+        issues zero DML/DDL (AC-4) — the one-time migration probe (see
+        :meth:`_maybe_migrate`) is itself read-first. Preserves the
+        existing read-only ladder: an explicitly read-only store, or a
+        plane that turns out to be unwritable, degrades to
+        :meth:`_connect_readonly`.
 
         Yields:
             A connection safe to SELECT from.
@@ -1028,6 +1088,7 @@ class SQLiteWikiStore(BaseWikiStore):
         yielded = False
         try:
             async with self._open(writable=True) as conn:
+                await self._maybe_migrate(conn)
                 yielded = True
                 yield conn
             return
@@ -1056,11 +1117,7 @@ class SQLiteWikiStore(BaseWikiStore):
         """
         self._assert_writable()
         async with self._open(writable=True) as conn:
-            if not self._migrated.is_set():
-                async with self._init_lock:
-                    if not self._migrated.is_set():
-                        await self._migrate(conn)
-                        self._migrated.set()
+            await self._maybe_migrate(conn)
             try:
                 await conn.execute("BEGIN IMMEDIATE")
             except sqlite3.OperationalError as exc:
@@ -1079,97 +1136,6 @@ class SQLiteWikiStore(BaseWikiStore):
                     self.logger.debug("rollback failed after %s", operation, exc_info=True)
                 raise
             await conn.execute("COMMIT")
-
-    @asynccontextmanager
-    async def _connect(self) -> AsyncIterator[aiosqlite.Connection]:
-        """Open the database, ensure schema, and yield a connection.
-
-        The caller is responsible for committing before exiting.
-
-        The schema is replayed only when a cheap presence probe shows it
-        missing (new or externally replaced database) — the probe also
-        forces SQLite's lazy file open, and on an unwritable WAL plane
-        it is what raises the read-only error (the reader cannot create
-        the ``-shm`` sidecar). In that case the store degrades to the
-        read-only ladder in :meth:`_connect_readonly` instead of dying.
-        The fallback is attempted only for exact result codes that
-        positively identify a read-only environment (see
-        ``_READONLY_ENV_CODES``) raised before the connection was
-        handed to the caller — transient locks, disk-full and caller
-        statement errors propagate untouched. The write path is retried
-        on every connection (degradation is never sticky), so a
-        misclassified error cannot permanently disable writes and an
-        environment that becomes writable again heals automatically.
-        """
-        if self._read_only:
-            # Opt-in read-only (FEAT-450): never probe/replay/migrate —
-            # the write-first path is what creates sidecars and mutates
-            # a foreign plane. On a quiescent plane, ``immutable=1`` is
-            # tried BEFORE the ``mode=ro`` ladder: a WAL reader in
-            # ``mode=ro`` creates the ``-shm``/``-wal`` sidecars when
-            # the directory is writable, and a foreign namespace must
-            # leave no trace at all. A live sidecar means a writer is
-            # around, so the ladder (which locks and sees their commits)
-            # is used instead.
-            if self._sidecars_quiescent():
-                yielded = False
-                try:
-                    async with self._connect_immutable() as conn:
-                        # Re-check AFTER the open: ``immutable=1`` promises
-                        # SQLite the file cannot change, so a writer that
-                        # started between the probe and the open would make
-                        # this connection read torn data. Narrow that window
-                        # by confirming the plane is still quiescent before
-                        # handing the connection out; if it is not, fall
-                        # through to the locking ``mode=ro`` ladder, which
-                        # sees the writer's commits correctly.
-                        if self._sidecars_quiescent():
-                            yielded = True
-                            yield conn
-                            return
-                except sqlite3.OperationalError:
-                    if yielded:
-                        raise
-            async with self._connect_readonly() as conn:
-                yield conn
-            return
-        placeholders = ", ".join("?" * len(_SCHEMA_TABLES))
-        yielded = False
-        try:
-            async with aiosqlite.connect(str(self._db_path)) as conn:
-                conn.row_factory = aiosqlite.Row
-                cur = await conn.execute(
-                    "SELECT count(*) FROM sqlite_master" f" WHERE type = 'table' AND name IN ({placeholders})",
-                    sorted(_SCHEMA_TABLES),
-                )
-                if (await cur.fetchone())[0] < len(_SCHEMA_TABLES):
-                    # Serialize first-time init across concurrent tasks
-                    # of this instance; the DDL is idempotent, so the
-                    # lock only avoids spurious cross-task lock errors.
-                    async with self._init_lock:
-                        await conn.executescript(WIKI_SCHEMA_SQL)
-                        await conn.execute(
-                            "INSERT OR IGNORE INTO meta (key, value)" " VALUES (?, ?)",
-                            ("schema_version", SCHEMA_VERSION),
-                        )
-                        if self._wiki_name:
-                            await conn.execute(
-                                "INSERT OR IGNORE INTO meta (key, value)" " VALUES (?, ?)",
-                                ("wiki_name", self._wiki_name),
-                            )
-                        await conn.commit()
-                # Column migrations run on every connection — the probe
-                # only proves the table exists, not that post-schema
-                # columns (origin/asserted_by) are present.
-                await self._migrate(conn)
-                yielded = True
-                yield conn
-            return
-        except sqlite3.OperationalError as exc:
-            if yielded or not self._db_path.is_file() or not self._is_readonly_env_error(exc):
-                raise
-        async with self._connect_readonly() as conn:
-            yield conn
 
     def _sidecars_quiescent(self) -> bool:
         """Whether the plane has no live ``-wal`` / ``-journal`` sidecar.
@@ -1553,9 +1519,8 @@ class SQLiteWikiStore(BaseWikiStore):
         self._assert_writable()
         if not pages:
             return 0
-        async with self._connect() as conn:
+        async with self._write("upsert_pages") as conn:
             await self._upsert_pages_conn(conn, pages)
-            await conn.commit()
         return len(pages)
 
     async def add_edges(self, edges: list[tuple]) -> int:
@@ -1575,9 +1540,8 @@ class SQLiteWikiStore(BaseWikiStore):
         self._assert_writable()
         if not edges:
             return 0
-        async with self._connect() as conn:
+        async with self._write("add_edges") as conn:
             await self._insert_edges_conn(conn, edges)
-            await conn.commit()
         return len(edges)
 
     async def replace_source_slice(
@@ -1612,7 +1576,7 @@ class SQLiteWikiStore(BaseWikiStore):
         self._assert_writable()
         edges = edges or []
         new_ids = {page.concept_id for page in pages}
-        async with self._connect() as conn:
+        async with self._write("replace_source_slice") as conn:
             async with conn.execute(
                 "SELECT concept_id FROM pages WHERE source_id = ?",
                 (source_id,),
@@ -1654,7 +1618,6 @@ class SQLiteWikiStore(BaseWikiStore):
             await self._insert_edges_conn(conn, edges)
             if preserved:
                 await self._insert_edges_conn(conn, preserved)
-            await conn.commit()
 
         self.logger.debug(
             "replace_source_slice: source=%s deleted=%d written=%d",
@@ -1681,7 +1644,7 @@ class SQLiteWikiStore(BaseWikiStore):
             PermissionError: When the store is read-only.
         """
         self._assert_writable()
-        async with self._connect() as conn:
+        async with self._write("delete_page") as conn:
             cur = await conn.execute("DELETE FROM pages WHERE concept_id = ?", (concept_id,))
             deleted = cur.rowcount > 0
             await conn.execute("DELETE FROM embeddings WHERE concept_id = ?", (concept_id,))
@@ -1689,7 +1652,6 @@ class SQLiteWikiStore(BaseWikiStore):
                 "DELETE FROM edges WHERE src = ? OR dst = ?",
                 (concept_id, concept_id),
             )
-            await conn.commit()
         return deleted
 
     async def upsert_embedding(
@@ -1709,12 +1671,11 @@ class SQLiteWikiStore(BaseWikiStore):
             PermissionError: When the store is read-only.
         """
         self._assert_writable()
-        async with self._connect() as conn:
+        async with self._write("upsert_embedding") as conn:
             await conn.execute(
                 "INSERT OR REPLACE INTO embeddings (concept_id, vector, model)" " VALUES (?, ?, ?)",
                 (concept_id, _pack_vector(vector), model),
             )
-            await conn.commit()
 
     async def upsert_symbols(
         self,
@@ -1767,7 +1728,7 @@ class SQLiteWikiStore(BaseWikiStore):
                     source_id,
                 )
             )
-        async with self._connect() as conn:
+        async with self._write("upsert_symbols") as conn:
             await conn.executemany(
                 "INSERT INTO symbols"
                 " (concept_id, rel_path, language, kind, name, qualname, parent,"
@@ -1785,7 +1746,6 @@ class SQLiteWikiStore(BaseWikiStore):
                 "  source_id=excluded.source_id",
                 rows,
             )
-            await conn.commit()
         return len(rows)
 
     async def symbols_for(self, rel_path: str) -> list[SymbolRecord]:
@@ -1797,7 +1757,7 @@ class SQLiteWikiStore(BaseWikiStore):
         Returns:
             Symbol records for ``rel_path``, ordered by ``start_line``.
         """
-        async with self._connect() as conn:
+        async with self._read() as conn:
             async with conn.execute(
                 "SELECT * FROM symbols WHERE rel_path = ? ORDER BY start_line",
                 (rel_path,),
@@ -1850,7 +1810,7 @@ class SQLiteWikiStore(BaseWikiStore):
             sql += " WHERE " + " AND ".join(clauses)
         sql += " ORDER BY rel_path, qualname LIMIT ?"
         params = [*params, limit]
-        async with self._connect() as conn:
+        async with self._read() as conn:
             async with conn.execute(sql, params) as cur:
                 return [_row_to_symbol_record(row) for row in await cur.fetchall()]
 
@@ -1867,7 +1827,7 @@ class SQLiteWikiStore(BaseWikiStore):
         match_expr = _fts_query(query)
         if not match_expr:
             return []
-        async with self._connect() as conn:
+        async with self._read() as conn:
             join = (
                 "SELECT s.* FROM symbols_fts JOIN symbols s ON s.concept_id = symbols_fts.concept_id"
                 if await self._uses_legacy_fts(conn, "symbols_fts")
@@ -1894,7 +1854,7 @@ class SQLiteWikiStore(BaseWikiStore):
             return {}
         out: dict[str, Optional[str]] = {cid: None for cid in concept_ids}
         placeholders = ",".join("?" for _ in concept_ids)
-        async with self._connect() as conn:
+        async with self._read() as conn:
             async with conn.execute(
                 f"SELECT concept_id, content_hash FROM pages WHERE concept_id IN ({placeholders})",
                 concept_ids,
@@ -1925,7 +1885,7 @@ class SQLiteWikiStore(BaseWikiStore):
         )
         if include_body:
             cols += ", body"
-        async with self._connect() as conn:
+        async with self._read() as conn:
             for key_col in ("concept_id", "node_id"):
                 async with conn.execute(
                     f"SELECT {cols} FROM pages WHERE {key_col} = ? LIMIT 1",  # noqa: S608
@@ -1970,7 +1930,7 @@ class SQLiteWikiStore(BaseWikiStore):
             sql += " WHERE " + " AND ".join(clauses)
         sql += " ORDER BY updated_at DESC LIMIT ?"
         params += (limit,)
-        async with self._connect() as conn:
+        async with self._read() as conn:
             async with conn.execute(sql, params) as cur:
                 return [dict(row) for row in await cur.fetchall()]
 
@@ -2000,7 +1960,7 @@ class SQLiteWikiStore(BaseWikiStore):
         match_expr = _fts_query(query)
         if not match_expr:
             return []
-        async with self._connect() as conn:
+        async with self._read() as conn:
             join = (
                 " FROM pages_fts JOIN pages p ON p.concept_id = pages_fts.concept_id"
                 if await self._uses_legacy_fts(conn, "pages_fts")
@@ -2042,7 +2002,7 @@ class SQLiteWikiStore(BaseWikiStore):
         Returns:
             Stub dicts with a ``score`` key in [-1, 1] (cosine).
         """
-        async with self._connect() as conn:
+        async with self._read() as conn:
             async with conn.execute(
                 "SELECT e.concept_id, e.vector, p.node_id, p.title,"
                 " p.category, p.summary, p.source_id, p.token_count"
@@ -2091,7 +2051,7 @@ class SQLiteWikiStore(BaseWikiStore):
             clauses.append(("dst", "src"))
 
         results: list[dict[str, Any]] = []
-        async with self._connect() as conn:
+        async with self._read() as conn:
             for anchor, other in clauses:
                 sql = (
                     f"SELECT e.{other} AS concept_id, e.rel, e.provenance,"  # noqa: S608
@@ -2116,7 +2076,7 @@ class SQLiteWikiStore(BaseWikiStore):
         Returns:
             Full page dicts ordered by ``concept_id``.
         """
-        async with self._connect() as conn:
+        async with self._read() as conn:
             async with conn.execute(
                 "SELECT concept_id, node_id, title, category, summary, body,"
                 " source_id, token_count, created_at, updated_at, content_hash"
@@ -2126,7 +2086,7 @@ class SQLiteWikiStore(BaseWikiStore):
 
     async def dump_edges(self) -> list[dict[str, Any]]:
         """Return every edge row (bulk export path)."""
-        async with self._connect() as conn:
+        async with self._read() as conn:
             async with conn.execute("SELECT src, dst, rel FROM edges ORDER BY src, dst, rel") as cur:
                 return [dict(row) for row in await cur.fetchall()]
 
@@ -2137,7 +2097,7 @@ class SQLiteWikiStore(BaseWikiStore):
             ``{"pages": N, "edges": M, "sources": S, "embeddings": E,
             "total_tokens": T, "categories": {...}}``
         """
-        async with self._connect() as conn:
+        async with self._read() as conn:
             out: dict[str, Any] = {}
             for key, sql in (
                 ("pages", "SELECT COUNT(*) FROM pages"),
@@ -2160,7 +2120,7 @@ class SQLiteWikiStore(BaseWikiStore):
 
     async def orphan_sources(self) -> list[str]:
         """Sources that produced no pages (zero rows in ``pages``)."""
-        async with self._connect() as conn:
+        async with self._read() as conn:
             async with conn.execute(
                 "SELECT s.source_id FROM sources s"
                 " LEFT JOIN pages p ON p.source_id = s.source_id"
@@ -2170,7 +2130,7 @@ class SQLiteWikiStore(BaseWikiStore):
 
     async def broken_edges(self) -> list[dict[str, Any]]:
         """Edges whose destination is neither a page nor a source."""
-        async with self._connect() as conn:
+        async with self._read() as conn:
             async with conn.execute(
                 "SELECT e.src, e.dst, e.rel FROM edges e"
                 " WHERE e.dst NOT IN (SELECT concept_id FROM pages)"
@@ -2180,7 +2140,7 @@ class SQLiteWikiStore(BaseWikiStore):
 
     async def missing_bodies(self) -> list[str]:
         """Pages with an empty body (stub rows without content)."""
-        async with self._connect() as conn:
+        async with self._read() as conn:
             async with conn.execute("SELECT concept_id FROM pages WHERE body = ''") as cur:
                 return [row["concept_id"] for row in await cur.fetchall()]
 
