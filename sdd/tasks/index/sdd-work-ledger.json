@@ -279,7 +279,7 @@
       "feature_id": "FEAT-566",
       "feature": "sdd-work-ledger",
       "spec": "sdd/specs/sdd-work-ledger.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -290,8 +290,8 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": "2026-09-14T03:14:34+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3239-close-task-ledger-event.md"
+      "completed_at": "2026-09-14T11:05:44+00:00",
+      "file": "sdd/tasks/completed/TASK-3239-close-task-ledger-event.md"
     },
     {
       "id": "TASK-3240",
@@ -300,7 +300,7 @@
       "feature_id": "FEAT-566",
       "feature": "sdd-work-ledger",
       "spec": "sdd/specs/sdd-work-ledger.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -312,8 +312,8 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": "2026-09-14T03:14:34+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3240-codereview-ledger-twins.md"
+      "completed_at": "2026-09-14T11:05:44+00:00",
+      "file": "sdd/tasks/completed/TASK-3240-codereview-ledger-twins.md"
     },
     {
       "id": "TASK-3241",
@@ -344,7 +344,7 @@
       "feature_id": "FEAT-566",
       "feature": "sdd-work-ledger",
       "spec": "sdd/specs/sdd-work-ledger.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -355,8 +355,8 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": "2026-09-14T03:14:34+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3242-done-ledger-gate-and-snapshot-twins.md"
+      "completed_at": "2026-09-14T11:05:44+00:00",
+      "file": "sdd/tasks/completed/TASK-3242-done-ledger-gate-and-snapshot-twins.md"
     },
     {
       "id": "TASK-3243",
