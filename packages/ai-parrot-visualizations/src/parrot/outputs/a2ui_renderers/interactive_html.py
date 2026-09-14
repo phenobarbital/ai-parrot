@@ -257,6 +257,34 @@ _BEHAVIOR_JS = r"""
   // dark card without ever borrowing a colour that means something.
   var TREND_COLOR = "#94a3b8";
 
+  // Series colours, chosen rather than left to Chart.js. Its default plugin
+  // fills with alpha, which survives a screen and washes out on paper —
+  // printed, the bars read as ghosts of themselves. These are solid and at a
+  // weight that holds on white.
+  //
+  // No red and no green in the set, on purpose: those two belong to the
+  // deltas, where they mean good news and bad. Here colour is identity — the
+  // reader gets the series from the legend, not from the hue — and a chart
+  // borrowing the verdict colours would make "Missed" look like a judgement
+  // the chart is not making.
+  var SERIES_COLORS = [
+    "#2563eb", "#d97706", "#0d9488", "#7c3aed", "#db2777", "#475569",
+    "#0891b2", "#a16207",
+  ];
+
+  function seriesColor(cfg, i) {
+    var palette = (cfg.palette && cfg.palette.length) ? cfg.palette : SERIES_COLORS;
+    return palette[i % palette.length];
+  }
+
+  // Chart.js sizes its text for a screen. The canvas is then rasterised and
+  // scaled down to the page width, taking the type with it — axis labels and
+  // the legend came out at around seven points. Bigger here so they land
+  // legible on paper, and darker so they are read as labels rather than as
+  // grid furniture.
+  Chart.defaults.font.size = 14;
+  Chart.defaults.color = "#334155";
+
   // Least squares over the first y column, drawn dashed and without markers
   // so nobody reads the fitted line as measured data. Returns null when
   // there is nothing to fit: fewer than two numbers, or every x the same.
@@ -282,7 +310,15 @@ _BEHAVIOR_JS = r"""
   function buildDatasets(cfg, rows) {
     var names = cfg.yLabels || [];
     var datasets = (cfg.y || []).map(function (col, i) {
-      return { label: names[i] || col, data: rows.map(function (r) { return r[col]; }) };
+      var color = seriesColor(cfg, i);
+      return {
+        label: names[i] || col,
+        data: rows.map(function (r) { return r[col]; }),
+        backgroundColor: color,
+        borderColor: color,
+        borderWidth: cfg.type === "line" || cfg.type === "area" ? 2.5 : 0,
+        pointRadius: cfg.type === "line" || cfg.type === "area" ? 2.5 : undefined,
+      };
     });
     // Whether a fit makes sense for this chart type was decided once, in
     // Python, where the FINAL type is known (an unsupported type arrives here
@@ -1222,6 +1258,11 @@ class InteractiveHTMLRenderer(AbstractA2UIRenderer):
             "data": rows,
             "showLegend": bool(props.get("showLegend", True)) and not has_toggles,
         }
+        # An author-chosen palette wins over the built-in one, the same
+        # precedent the static ECharts surface already set.
+        palette = props.get("palette")
+        if isinstance(palette, (list, tuple)) and palette:
+            config["palette"] = [str(colour) for colour in palette]
         if isinstance(tabs, list) and tabs:
             config["tabs"] = tabs
         # Only when asked for AND only where a straight line means something:

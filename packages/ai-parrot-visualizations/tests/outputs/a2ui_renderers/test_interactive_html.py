@@ -951,3 +951,50 @@ class TestPageBreaksDoNotWasteSheets:
 
     async def test_a_heading_is_never_the_last_line_of_a_page(self):
         assert "break-after: avoid" in await self._print_block()
+
+
+class TestChartsPrintSolid:
+    """Chart.js fills with alpha when nothing says otherwise. That survives a
+    screen and washes out on paper — printed, the bars read as ghosts.
+    """
+
+    async def _doc(self, **props) -> str:
+        env = _envelope(
+            Component(
+                id="root", component="Chart", type="bar", x="day", y=["a", "b"],
+                data={"path": "/rows"}, **props,
+            ),
+            data_model={"rows": [{"day": "Mon", "a": 1, "b": 2}]},
+        )
+        return (await InteractiveHTMLRenderer().render(env)).content.decode()
+
+    async def test_series_colours_are_chosen_not_defaulted(self):
+        doc = await self._doc()
+        assert "var SERIES_COLORS" in doc
+        assert "backgroundColor: color," in doc
+
+    async def test_the_palette_holds_no_red_and_no_green(self):
+        # Those two belong to the deltas, where they mean good news and bad.
+        # In a chart colour is identity, and borrowing the verdict pair would
+        # make "Missed" look like a judgement the chart is not making.
+        doc = await self._doc()
+        palette = re.search(r"var SERIES_COLORS = \[(.*?)\]", doc, re.S).group(1)
+        for verdict in ("#dc2626", "#ef4444", "#10b981", "#059669", "#16a34a"):
+            assert verdict not in palette
+
+    async def test_an_author_palette_wins(self):
+        doc = await self._doc(palette=["#111111", "#222222"])
+        config = json.loads(html.unescape(re.search(r'data-chart-config="([^"]*)"', doc).group(1)))
+        assert config["palette"] == ["#111111", "#222222"]
+
+    async def test_a_chart_with_no_palette_carries_none(self):
+        config = json.loads(
+            html.unescape(re.search(r'data-chart-config="([^"]*)"', await self._doc()).group(1))
+        )
+        assert "palette" not in config
+
+    async def test_chart_type_is_sized_for_paper(self):
+        # The canvas is rasterised at screen size and scaled down to the page
+        # width, taking its type with it: axis labels landed around seven
+        # points.
+        assert "Chart.defaults.font.size = 14" in await self._doc()
