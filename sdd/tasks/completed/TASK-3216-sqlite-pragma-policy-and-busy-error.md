@@ -266,10 +266,14 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-14
+**Notes**: Added `SQLitePragmaPolicy` and `WikiStoreBusy` exactly per the blueprint,
+immediately after `_SCHEMA_TABLES` and before `_FTS_TOKEN_RE` in store.py. Wrote
+`test_sqlite_policy.py` with all 10 tests passing, completing the single FILL IN
+(message assertion checks path, operation, and timeout substrings). Ran the full
+`tests/knowledge/wiki/` suite: 314 passed, 11 pre-existing failures unrelated to
+this task (verified identical failures on `dev` before this change — installer/mcp
+tests, ingest model resolution). `ruff check` clean on both touched files.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

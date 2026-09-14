@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-14T00:25:23+00:00",
-  "completed_at": null,
+  "completed_at": "2026-09-14T03:12:00+00:00",
   "tasks": [
     {
       "id": "TASK-3216",
@@ -14,16 +14,17 @@
       "feature_id": "FEAT-557",
       "feature": "wikitoolkit-sqlite-optimizations",
       "spec": "sdd/specs/wikitoolkit-sqlite-optimizations.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Dependency root: adds two new module-level symbols to store.py and a new test file. Nothing else exists yet, so it shares no edit region with any other task.",
       "assigned_to": null,
-      "started_at": "2026-09-14T00:42:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3216-sqlite-pragma-policy-and-busy-error.md"
+      "started_at": null,
+      "completed_at": "2026-09-14T00:45:08+00:00",
+      "file": "sdd/tasks/completed/TASK-3216-sqlite-pragma-policy-and-busy-error.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3217",
@@ -32,7 +33,7 @@
       "feature_id": "FEAT-557",
       "feature": "wikitoolkit-sqlite-optimizations",
       "spec": "sdd/specs/wikitoolkit-sqlite-optimizations.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -41,9 +42,10 @@
       "parallel": false,
       "parallelism_notes": "store.py core. Serial with 3218/3219/3220 (same file, overlapping regions).",
       "assigned_to": null,
-      "started_at": "2026-09-14T00:42:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3217-open-read-write-connection-policy.md"
+      "started_at": null,
+      "completed_at": "2026-09-14T00:52:45+00:00",
+      "file": "sdd/tasks/completed/TASK-3217-open-read-write-connection-policy.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3218",
@@ -52,7 +54,7 @@
       "feature_id": "FEAT-557",
       "feature": "wikitoolkit-sqlite-optimizations",
       "spec": "sdd/specs/wikitoolkit-sqlite-optimizations.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -61,9 +63,10 @@
       "parallel": false,
       "parallelism_notes": "Rewrites _migrate in store.py; needs 3217's _migrated latch. Serial with the rest of the store.py chain. HAZARD: collides with PR #1381 (schema v3) if that lands first.",
       "assigned_to": null,
-      "started_at": "2026-09-14T00:42:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3218-read-first-latched-migration.md"
+      "started_at": null,
+      "completed_at": "2026-09-14T00:59:19+00:00",
+      "file": "sdd/tasks/completed/TASK-3218-read-first-latched-migration.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3219",
@@ -72,7 +75,7 @@
       "feature_id": "FEAT-557",
       "feature": "wikitoolkit-sqlite-optimizations",
       "spec": "sdd/specs/wikitoolkit-sqlite-optimizations.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -82,9 +85,10 @@
       "parallel": false,
       "parallelism_notes": "Mechanical sweep across all 21 call sites in store.py; must follow both 3217 and 3218. HAZARD: PR #1381 changes the pages_fts maintenance statements inside three of the six writers.",
       "assigned_to": null,
-      "started_at": "2026-09-14T00:42:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3219-migrate-call-sites-to-read-write.md"
+      "started_at": null,
+      "completed_at": "2026-09-14T01:32:07+00:00",
+      "file": "sdd/tasks/completed/TASK-3219-migrate-call-sites-to-read-write.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3220",
@@ -93,7 +97,7 @@
       "feature_id": "FEAT-557",
       "feature": "wikitoolkit-sqlite-optimizations",
       "spec": "sdd/specs/wikitoolkit-sqlite-optimizations.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -102,9 +106,10 @@
       "parallel": false,
       "parallelism_notes": "Appends a new method to store.py. Technically independent of 3218/3219 but same file, so run it serially within the store.py chain to avoid conflicts.",
       "assigned_to": null,
-      "started_at": "2026-09-14T00:42:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3220-wal-checkpoint.md"
+      "started_at": null,
+      "completed_at": "2026-09-14T01:35:40+00:00",
+      "file": "sdd/tasks/completed/TASK-3220-wal-checkpoint.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3221",
@@ -113,7 +118,7 @@
       "feature_id": "FEAT-557",
       "feature": "wikitoolkit-sqlite-optimizations",
       "spec": "sdd/specs/wikitoolkit-sqlite-optimizations.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -122,9 +127,10 @@
       "parallel": true,
       "parallelism_notes": "PARALLEL-SAFE: touches only sources.py plus its own new test file. Shares no file with the store.py chain; needs only TASK-3216's WikiStoreBusy type.",
       "assigned_to": null,
-      "started_at": "2026-09-14T00:42:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3221-source-manager-sqlite-policy.md"
+      "started_at": null,
+      "completed_at": "2026-09-14T00:55:38+00:00",
+      "file": "sdd/tasks/completed/TASK-3221-source-manager-sqlite-policy.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3222",
@@ -133,16 +139,17 @@
       "feature_id": "FEAT-557",
       "feature": "wikitoolkit-sqlite-optimizations",
       "spec": "sdd/specs/wikitoolkit-sqlite-optimizations.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "PARALLEL-SAFE: touches only project.py's field block plus its own new test file. No dependencies at all; can run first or alongside anything.",
       "assigned_to": null,
-      "started_at": "2026-09-14T00:42:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3222-wiki-project-config-sqlite-fields.md"
+      "started_at": null,
+      "completed_at": "2026-09-14T00:46:52+00:00",
+      "file": "sdd/tasks/completed/TASK-3222-wiki-project-config-sqlite-fields.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3223",
@@ -151,7 +158,7 @@
       "feature_id": "FEAT-557",
       "feature": "wikitoolkit-sqlite-optimizations",
       "spec": "sdd/specs/wikitoolkit-sqlite-optimizations.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -162,9 +169,10 @@
       "parallel": false,
       "parallelism_notes": "Touches store.py, project.py, cli.py, mcp_server.py, structural/toolkit.py, sync.py, federation.py — the widest file span in the feature. Must follow the three tasks whose signatures it forwards.",
       "assigned_to": null,
-      "started_at": "2026-09-14T00:42:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3223-config-and-factory-plumbing.md"
+      "started_at": null,
+      "completed_at": "2026-09-14T01:42:21+00:00",
+      "file": "sdd/tasks/completed/TASK-3223-config-and-factory-plumbing.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3224",
@@ -173,7 +181,7 @@
       "feature_id": "FEAT-557",
       "feature": "wikitoolkit-sqlite-optimizations",
       "spec": "sdd/specs/wikitoolkit-sqlite-optimizations.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -183,9 +191,10 @@
       "parallel": false,
       "parallelism_notes": "cli.py. Serial with 3225 (same file). Carries a verified spec correction: ingest has NO writer lock.",
       "assigned_to": null,
-      "started_at": "2026-09-14T00:42:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3224-cli-checkpoint-and-busy-handling.md"
+      "started_at": null,
+      "completed_at": "2026-09-14T01:52:12+00:00",
+      "file": "sdd/tasks/completed/TASK-3224-cli-checkpoint-and-busy-handling.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3225",
@@ -194,7 +203,7 @@
       "feature_id": "FEAT-557",
       "feature": "wikitoolkit-sqlite-optimizations",
       "spec": "sdd/specs/wikitoolkit-sqlite-optimizations.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -203,9 +212,10 @@
       "parallel": false,
       "parallelism_notes": "cli.py + store.py. Serial with 3224 (same file, adjacent regions).",
       "assigned_to": null,
-      "started_at": "2026-09-14T00:42:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3225-status-sqlite-block.md"
+      "started_at": null,
+      "completed_at": "2026-09-14T02:09:38+00:00",
+      "file": "sdd/tasks/completed/TASK-3225-status-sqlite-block.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3226",
@@ -214,7 +224,7 @@
       "feature_id": "FEAT-557",
       "feature": "wikitoolkit-sqlite-optimizations",
       "spec": "sdd/specs/wikitoolkit-sqlite-optimizations.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -227,9 +237,10 @@
       "parallel": false,
       "parallelism_notes": "Final verification gate; needs the whole feature in place. Also registers the 'slow' pytest marker.",
       "assigned_to": null,
-      "started_at": "2026-09-14T00:42:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3226-concurrency-and-regression-tests.md"
+      "started_at": null,
+      "completed_at": "2026-09-14T02:39:57+00:00",
+      "file": "sdd/tasks/completed/TASK-3226-concurrency-and-regression-tests.md",
+      "verification": "verified"
     }
   ]
 }
