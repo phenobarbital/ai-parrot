@@ -236,7 +236,7 @@
       "feature_id": "FEAT-566",
       "feature": "sdd-work-ledger",
       "spec": "sdd/specs/sdd-work-ledger.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -247,8 +247,8 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": "2026-09-14T03:14:34+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3237-worktree-hook-guard.md"
+      "completed_at": "2026-09-14T04:12:54+00:00",
+      "file": "sdd/tasks/completed/TASK-3237-worktree-hook-guard.md"
     },
     {
       "id": "TASK-3238",
