@@ -2114,6 +2114,66 @@ class SQLiteWikiStore(BaseWikiStore):
                 out["categories"] = {row["category"]: row["n"] for row in await cur.fetchall()}
         return out
 
+    async def checkpoint(self, truncate: bool = True) -> dict[str, int | bool]:
+        """Fold the WAL back into the database; never raise for live readers.
+
+        A single live reader can block ``TRUNCATE`` indefinitely. That is
+        normal, observable maintenance — not an error — so this method
+        falls back to ``PASSIVE``, logs the outcome, and reports it. It
+        must never turn an otherwise successful build or ingest into a
+        failure (AC-7).
+
+        Args:
+            truncate: Attempt ``TRUNCATE`` first. When False, only
+                ``PASSIVE`` is run.
+
+        Returns:
+            A report with keys ``ok`` (the checkpoint ran at all),
+            ``mode`` (the mode that actually took effect), ``busy``
+            (truncation was blocked by a reader), ``log`` (pages left in
+            the WAL) and ``checkpointed`` (pages moved).
+        """
+        if self._read_only:
+            self.logger.debug("checkpoint skipped: %s is read-only", self._db_path)
+            return {"ok": False, "mode": "skipped", "busy": False, "log": -1, "checkpointed": -1}
+        try:
+            async with self._open(writable=True) as conn:
+                mode = "TRUNCATE" if truncate else "PASSIVE"
+                async with conn.execute(f"PRAGMA wal_checkpoint({mode})") as cur:
+                    row = await cur.fetchone()
+                busy, log, checkpointed = (int(row[0]), int(row[1]), int(row[2]))
+                if busy and truncate:
+                    # A reader holds a snapshot. PASSIVE cannot block and
+                    # still reclaims what it can.
+                    self.logger.warning(
+                        "WAL TRUNCATE on %s was blocked by a live reader —"
+                        " falling back to PASSIVE (%d page(s) still in WAL)",
+                        self._db_path,
+                        log,
+                    )
+                    mode = "PASSIVE"
+                    async with conn.execute(f"PRAGMA wal_checkpoint({mode})") as cur:
+                        row = await cur.fetchone()
+                    busy, log, checkpointed = (int(row[0]), int(row[1]), int(row[2]))
+                self.logger.info(
+                    "WAL checkpoint(%s) on %s: %d page(s) checkpointed, %d left",
+                    mode,
+                    self._db_path,
+                    checkpointed,
+                    log,
+                )
+                return {
+                    "ok": True,
+                    "mode": mode,
+                    "busy": bool(busy),
+                    "log": log,
+                    "checkpointed": checkpointed,
+                }
+        except sqlite3.OperationalError as exc:
+            # AC-7: maintenance failure must never fail the caller's build.
+            self.logger.warning("WAL checkpoint on %s failed: %s", self._db_path, exc)
+            return {"ok": False, "mode": "failed", "busy": False, "log": -1, "checkpointed": -1}
+
     # ------------------------------------------------------------------
     # Lint API (fast SQL checks)
     # ------------------------------------------------------------------

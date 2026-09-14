@@ -211,3 +211,65 @@ class TestReadFirstMigration:
             pass
         assert store_a._migrated.is_set()
         assert not store_b._migrated.is_set()
+
+
+class TestCheckpoint:
+    async def test_checkpoint_reports_success(self, store: SQLiteWikiStore) -> None:
+        """A quiet plane checkpoints in TRUNCATE mode."""
+        async with store._write("seed") as conn:
+            await conn.execute(
+                "INSERT OR IGNORE INTO meta (key, value) VALUES (?, ?)",
+                ("checkpoint_seed", "1"),
+            )
+        report = await store.checkpoint()
+        assert report["ok"] is True
+        assert report["mode"] == "TRUNCATE"
+        assert report["busy"] is False
+
+    async def test_reader_blocked_truncate_falls_back_to_passive(self, store: SQLiteWikiStore) -> None:
+        """A live reader forces PASSIVE and never raises (AC-7)."""
+        # Enough rows that the WAL is non-trivial by the time the reader
+        # opens its snapshot — a single tiny INSERT can leave the WAL at
+        # 0 pages already, which would never report `busy` regardless of
+        # any reader.
+        async with store._write("seed") as conn:
+            await conn.executemany(
+                "INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)",
+                [(f"checkpoint_seed_{i}", "x" * 200) for i in range(500)],
+            )
+        reader = sqlite3.connect(str(store.db_path))
+        try:
+            reader.execute("BEGIN")
+            reader.execute("SELECT * FROM meta").fetchall()
+
+            # A second write grows the WAL further while the reader's
+            # snapshot pins the earlier frames — otherwise TRUNCATE can
+            # have nothing left to move and never reports busy.
+            async with store._write("seed_more") as conn:
+                await conn.executemany(
+                    "INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)",
+                    [(f"checkpoint_seed_more_{i}", "x" * 200) for i in range(500)],
+                )
+
+            report = await store.checkpoint()
+            assert report["ok"] is True
+            assert report["mode"] == "PASSIVE"
+        finally:
+            reader.execute("ROLLBACK")
+            reader.close()
+
+    async def test_read_only_store_skips(self, tmp_path: Path) -> None:
+        """A read-only store never writes, so it never checkpoints."""
+        db_path = tmp_path / "wiki.db"
+        writable_store = SQLiteWikiStore(db_path, wiki_name="ro-source")
+        async with writable_store._write("seed"):
+            pass
+        ro_store = SQLiteWikiStore(db_path, read_only=True)
+        report = await ro_store.checkpoint()
+        assert report == {"ok": False, "mode": "skipped", "busy": False, "log": -1, "checkpointed": -1}
+
+    async def test_checkpoint_is_not_on_the_base_contract(self) -> None:
+        """`checkpoint` stays concrete to SQLiteWikiStore (spec §2)."""
+        from parrot.knowledge.wiki.store import BaseWikiStore
+
+        assert not hasattr(BaseWikiStore, "checkpoint")
