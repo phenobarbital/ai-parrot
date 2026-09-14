@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-14T00:25:23+00:00",
-  "completed_at": "2026-09-14T02:39:57+00:00",
+  "completed_at": "2026-09-14T03:12:00+00:00",
   "tasks": [
     {
       "id": "TASK-3216",
@@ -23,7 +23,8 @@
       "assigned_to": null,
       "started_at": null,
       "completed_at": "2026-09-14T00:45:08+00:00",
-      "file": "sdd/tasks/completed/TASK-3216-sqlite-pragma-policy-and-busy-error.md"
+      "file": "sdd/tasks/completed/TASK-3216-sqlite-pragma-policy-and-busy-error.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3217",
@@ -43,7 +44,8 @@
       "assigned_to": null,
       "started_at": null,
       "completed_at": "2026-09-14T00:52:45+00:00",
-      "file": "sdd/tasks/completed/TASK-3217-open-read-write-connection-policy.md"
+      "file": "sdd/tasks/completed/TASK-3217-open-read-write-connection-policy.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3218",
@@ -63,7 +65,8 @@
       "assigned_to": null,
       "started_at": null,
       "completed_at": "2026-09-14T00:59:19+00:00",
-      "file": "sdd/tasks/completed/TASK-3218-read-first-latched-migration.md"
+      "file": "sdd/tasks/completed/TASK-3218-read-first-latched-migration.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3219",
@@ -84,7 +87,8 @@
       "assigned_to": null,
       "started_at": null,
       "completed_at": "2026-09-14T01:32:07+00:00",
-      "file": "sdd/tasks/completed/TASK-3219-migrate-call-sites-to-read-write.md"
+      "file": "sdd/tasks/completed/TASK-3219-migrate-call-sites-to-read-write.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3220",
@@ -104,7 +108,8 @@
       "assigned_to": null,
       "started_at": null,
       "completed_at": "2026-09-14T01:35:40+00:00",
-      "file": "sdd/tasks/completed/TASK-3220-wal-checkpoint.md"
+      "file": "sdd/tasks/completed/TASK-3220-wal-checkpoint.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3221",
@@ -124,7 +129,8 @@
       "assigned_to": null,
       "started_at": null,
       "completed_at": "2026-09-14T00:55:38+00:00",
-      "file": "sdd/tasks/completed/TASK-3221-source-manager-sqlite-policy.md"
+      "file": "sdd/tasks/completed/TASK-3221-source-manager-sqlite-policy.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3222",
@@ -142,7 +148,8 @@
       "assigned_to": null,
       "started_at": null,
       "completed_at": "2026-09-14T00:46:52+00:00",
-      "file": "sdd/tasks/completed/TASK-3222-wiki-project-config-sqlite-fields.md"
+      "file": "sdd/tasks/completed/TASK-3222-wiki-project-config-sqlite-fields.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3223",
@@ -164,7 +171,8 @@
       "assigned_to": null,
       "started_at": null,
       "completed_at": "2026-09-14T01:42:21+00:00",
-      "file": "sdd/tasks/completed/TASK-3223-config-and-factory-plumbing.md"
+      "file": "sdd/tasks/completed/TASK-3223-config-and-factory-plumbing.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3224",
@@ -185,7 +193,8 @@
       "assigned_to": null,
       "started_at": null,
       "completed_at": "2026-09-14T01:52:12+00:00",
-      "file": "sdd/tasks/completed/TASK-3224-cli-checkpoint-and-busy-handling.md"
+      "file": "sdd/tasks/completed/TASK-3224-cli-checkpoint-and-busy-handling.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3225",
@@ -205,7 +214,8 @@
       "assigned_to": null,
       "started_at": null,
       "completed_at": "2026-09-14T02:09:38+00:00",
-      "file": "sdd/tasks/completed/TASK-3225-status-sqlite-block.md"
+      "file": "sdd/tasks/completed/TASK-3225-status-sqlite-block.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3226",
@@ -229,7 +239,8 @@
       "assigned_to": null,
       "started_at": null,
       "completed_at": "2026-09-14T02:39:57+00:00",
-      "file": "sdd/tasks/completed/TASK-3226-concurrency-and-regression-tests.md"
+      "file": "sdd/tasks/completed/TASK-3226-concurrency-and-regression-tests.md",
+      "verification": "verified"
     }
   ]
 }
