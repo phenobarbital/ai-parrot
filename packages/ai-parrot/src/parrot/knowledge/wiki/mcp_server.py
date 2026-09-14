@@ -150,9 +150,39 @@ def create_wiki_mcp_server(root: Path) -> StdioMCPServer:
         except Exception as exc:  # noqa: BLE001 — namespaces are optional
             logging.getLogger(__name__).warning("Could not resolve wiki namespaces: %s", exc)
             handles, skipped = [], []
+            
+    # FEAT-566: Initialize ledger service for ledger tools
+    ledger_service = None
+    with contextlib.redirect_stdout(sys.stderr):
+        try:
+            from parrot.knowledge.wiki.ledger.service import LedgerService
+            ledger_service = LedgerService.from_root(root)
+        except Exception as exc:  # noqa: BLE001 — ledger is optional
+            logging.getLogger(__name__).warning("Could not initialize ledger service: %s", exc)
+            
+    # FEAT-566: Mount ledger as a read-only overlay namespace
+    if ledger_service is not None:
+        with contextlib.redirect_stdout(sys.stderr):
+            from parrot.knowledge.wiki.project import WikiNamespaceConfig
+            ledger_config = WikiNamespaceConfig(
+                name="ledger",
+                path=str(ledger_service.shared_root / ".parrot" / "ledger" / "ledger.db"),
+                description="SDD work ledger (issues, tasks, specs, insights)",
+                weight=0.5,  # Lower priority than local
+                overlay_prefixes=["issue", "task", "spec", "insight"],
+            )
+            # Create a namespace handle for the ledger
+            from parrot.knowledge.wiki.federation import NamespaceHandle
+            ledger_handle = NamespaceHandle(
+                name="ledger",
+                store=ledger_service.store,
+                config=ledger_config,
+            )
+            handles.append(ledger_handle)
+            
     if handles or skipped:
         read_store = FederatedWikiStore(store, config.wiki_name, handles, skipped)
-    tools = create_wiki_tools(read_store, root=root, config=config)
+    tools = create_wiki_tools(read_store, root=root, config=config, ledger_service=ledger_service)
 
     # FEAT-498: symbol-plane tools (wiki_symbol_lookup, wiki_code_outline,
     # wiki_blast_radius) share the same read_store, so they honour the
