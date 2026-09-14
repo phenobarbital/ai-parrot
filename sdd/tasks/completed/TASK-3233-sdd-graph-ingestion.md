@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-566 — SDD Work Ledger
 **Spec**: `sdd/specs/sdd-work-ledger.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-3226, TASK-3227, TASK-3230, TASK-3231
@@ -44,11 +44,31 @@ Spec §3 Module 7. Specs and per-spec indexes become queryable `spec:` and `task
 
 ## Acceptance Criteria
 
-- [ ] Specs/tasks have stable `spec:`/`task:` IDs.
-- [ ] Dependency/file-scope edges are queryable and repeated ingest is idempotent.
-- [ ] Linked worktrees read only shared-checkout artifacts.
-- [ ] `pytest tests/knowledge/wiki/test_ledger_sdd_ingest.py -q` passes.
+- [x] Specs/tasks have stable `spec:`/`task:` IDs.
+- [x] Dependency/file-scope edges are queryable and repeated ingest is idempotent.
+- [x] Linked worktrees read only shared-checkout artifacts.
+- [x] `pytest tests/knowledge/wiki/test_ledger_sdd_ingest.py -q` passes.
 
 ## Test Specification
 
 Use small temporary SDD fixtures and assert exact pages and edges.
+
+### Completion Note
+
+Dispatched via the `parrot-sdd-coder` pool. The first attempt (codex-spark)
+hit the dispatcher's 1800s wall-clock cap with no output; the retry (qwen)
+completed and merged cleanly (`merge feat-FEAT-566-sdd-work-ledger--TASK-3233-a2`,
+files exactly as declared, no unlisted files).
+
+Post-merge review found the dependency `"blocks"` edge emitted backwards
+(`task --blocks--> dependency` instead of `dependency --blocks--> task`) —
+the existing tests only assert edge *counts*, not direction, so this
+would have slipped through silently and produced wrong results for any
+future "what does X block" traversal (e.g. a merge-blocker query). Fixed
+directly in `sdd_ingest.py` (still the only file this task owns); all 9
+tests remain green, `ruff check` clean.
+
+Seat: qwen (nova) · Backend: nova · Model: qwen.qwen3-coder-480b-a35b-instruct
+· Attempts: 2 (codex-spark timeout, qwen success) · Duration: 1801.1s + 325.0s
+· Tokens: n/a (codex-spark) + 2,577,696 in / 11,329 out (qwen). Post-merge
+edge-direction fix applied by sdd-worker (sonnet).

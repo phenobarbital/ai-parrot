@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-566 — SDD Work Ledger
 **Spec**: `sdd/specs/sdd-work-ledger.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-3226, TASK-3235, TASK-3236
@@ -45,11 +45,36 @@ Use `wikitoolkit ledger open` from TASK-3236 and MCP `ledger_open` semantics fro
 
 ## Acceptance Criteria
 
-- [ ] Every twin mandates durable filing of out-of-scope major/critical findings.
-- [ ] Parity tests verify equivalent fields and no-findings outcome.
-- [ ] `pytest tests/sdd/test_ledger_workflow_twins.py -q` passes.
+- [x] Every twin mandates durable filing of out-of-scope major/critical findings.
+- [x] Parity tests verify equivalent fields and no-findings outcome.
+- [x] `pytest tests/sdd/test_ledger_workflow_twins.py -q` passes.
 
 ## Test Specification
 
 Assert semantic tokens and ordering, not byte-identical complete files.
+
+### Completion Note
+
+Merged clean (qwen, files exactly as declared). Post-merge integration
+found that TASK-3242 — dispatched in parallel, declaring the SAME shared
+test file as its own MODIFY target — landed afterward and silently
+clobbered this task's entire test file with its own from-scratch
+rewrite (git reported no conflict since both branches rewrote the file
+wholesale from a common "doesn't exist yet" base). Reconciled into one
+file with a `TestCodereviewTwins` class owning this task's tests
+alongside TASK-3242's `TestDoneTwins`, and fixed a CWD-fragility bug
+shared by both original versions (bare relative paths silently read the
+MAIN checkout's stale files under pytest, due to an unrelated navconfig
+chdir side-effect — see the fix commit for detail). Strengthened the
+"parity" checks from bare `len() > 1000` into real content assertions
+("Deferred findings", "ledger open").
+
+`pytest tests/sdd/test_ledger_workflow_twins.py -q` → 8 passed (4 for
+this task's own `TestCodereviewTwins`). `ruff check` / `black --check`
+clean.
+
+Seat: qwen (nova) · Backend: nova · Model: qwen.qwen3-coder-480b-a35b-instruct
+· Attempts: 1 · Duration: 282.4s · Tokens: 2,205,152 in / 11,050 out.
+Post-merge reconciliation applied by sdd-worker (sonnet), shared with
+TASK-3242's fix commit.
 

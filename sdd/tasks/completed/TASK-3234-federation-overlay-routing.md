@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-566 — SDD Work Ledger
 **Spec**: `sdd/specs/sdd-work-ledger.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-3226, TASK-3227
@@ -47,12 +47,43 @@ Spec §3 Module 13. Ledger is an overlay namespace: bare ledger IDs route there,
 
 ## Acceptance Criteria
 
-- [ ] Bare overlay IDs route to exactly one overlay and returned ledger rows stay qualified.
-- [ ] Ledger-to-code neighbors are local/unqualified and local inbound lookup includes qualified ledger sources.
-- [ ] Prefix collisions fail construction and federation tests pass unchanged without overlays.
-- [ ] `pytest tests/knowledge/wiki/test_federation_overlay.py tests/knowledge/wiki/test_federation.py -q` passes.
+- [x] Bare overlay IDs route to exactly one overlay and returned ledger rows stay qualified.
+- [x] Ledger-to-code neighbors are local/unqualified and local inbound lookup includes qualified ledger sources.
+- [x] Prefix collisions fail construction and federation tests pass unchanged without overlays.
+- [x] `pytest tests/knowledge/wiki/test_federation_overlay.py tests/knowledge/wiki/test_federation.py -q` passes.
 
 ## Test Specification
 
 Use in-memory fake namespace stores; no ledger database is required.
+
+### Completion Note
+
+Implemented bare-id overlay routing, outgoing-neighbor re-qualification
+(overlay → code plane returns unqualified), and incoming-edge folding
+(local seeds see qualified inbound ledger edges) in `federation.py`, plus
+`overlay_prefixes` on `WikiNamespaceConfig` (`project.py`) and the `issue`/
+`task`/`spec`/`insight` id kinds in `context.py`.
+
+**Consolidation fixes** (native haiku dispatch, orchestrator-applied
+after the fact — see git log for both commits):
+1. The sub-worktree's branch ref was reset to an earlier commit by
+   unrelated pool cleanup after the agent finished; its actual commit
+   (`5394d603f`) was recovered by SHA and merged with `git merge --no-ff`
+   directly (clean auto-merge on `project.py`, no conflicts).
+2. `tests/knowledge/wiki/test_federation_overlay.py` had been created at
+   `packages/ai-parrot/tests/knowledge/wiki/` instead of the declared
+   repo-root `tests/knowledge/wiki/` path — relocated.
+3. `TestOverlayPrefixCollisions`'s three tests opened a read-only
+   `SQLiteWikiStore` right after `upsert_pages([])` (empty), which never
+   creates the underlying file, so the read-only open raised
+   `FileNotFoundError` before the collision check under test ever ran —
+   fixed by giving each store one placeholder page.
+
+Verified: `pytest tests/knowledge/wiki/test_federation_overlay.py
+tests/knowledge/wiki/test_federation.py -q` → 56 passed. `ruff check`
+clean on all four files. Only the four listed files were touched (after
+the path-relocation fix).
+
+Seat: haiku (native) · Attempts: 1 (dispatch) + orchestrator consolidation
+fixes · Duration: ~9m42s (agent) · Tokens: 135296 total (subagent-reported)
 

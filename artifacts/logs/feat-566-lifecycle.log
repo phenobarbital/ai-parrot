@@ -1,0 +1,10 @@
+FEAT-566 end-to-end SDD ledger lifecycle acceptance gate
+command: pytest tests/sdd/test_close_task_ledger.py tests/sdd/test_ledger_workflow_twins.py tests/knowledge/wiki/test_cli_ledger.py -q
+exit_code: 0
+
+--- stdout (tail) ---
+...........................................                              [100%]
+43 passed in 1.64s
+
+--- stderr (tail) ---
+

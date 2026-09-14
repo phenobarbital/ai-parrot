@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-566 — SDD Work Ledger
 **Spec**: `sdd/specs/sdd-work-ledger.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-3226, TASK-3228
@@ -51,12 +51,24 @@ class LedgerLog:
 
 ## Acceptance Criteria
 
-- [ ] Oversized serialized lines are rejected without partial records.
-- [ ] Valid lines replay in order with cursor-safe byte offsets.
-- [ ] Eight-process append testing proves no interleaved JSON lines.
-- [ ] `pytest tests/knowledge/wiki/test_ledger_log.py -q` passes.
+- [x] Oversized serialized lines are rejected without partial records.
+- [x] Valid lines replay in order with cursor-safe byte offsets.
+- [x] Eight-process append testing proves no interleaved JSON lines.
+- [x] `pytest tests/knowledge/wiki/test_ledger_log.py -q` passes.
 
 ## Test Specification
 
 Use multiprocessing synchronization rather than timing sleeps.
+
+### Completion Note
+
+Implemented `LedgerLog` in `ledger/log.py`: POSIX `O_APPEND|O_WRONLY|O_CREAT`
+single-write `append()`, a 4 KiB pre-write line-size guard, and a streaming
+`iter_events(from_offset=0)` that tolerates a malformed/partial tail and
+returns byte end-offsets. Verified: `pytest
+tests/knowledge/wiki/test_ledger_log.py -q` → 11 passed (log+store combined
+run). Only the two listed files were touched.
+
+Seat: gemini · Backend: google-compat · Model: gemini-3.5-flash · Attempts: 1 ·
+Duration: 87.1s · Tokens: 576316/5731
 

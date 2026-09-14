@@ -6,7 +6,13 @@ Decompose an approved Feature Specification into atomic, assignable implementati
 ## Usage
 ```
 /sdd-task sdd/specs/<feature-name>.spec.md
+/sdd-task sdd/specs/<feature-name>.spec.md --from-issue <issue-id>
 ```
+
+`--from-issue <issue-id>` (FEAT-566, optional): seed one generated task from
+an open ledger issue (`wikitoolkit ledger ready` / `/sdd-next`'s "Ready
+ledger issues" section) instead of writing its Context/Scope from scratch.
+Promotion is always explicit — no ledger issue is ever auto-promoted.
 
 ## Guardrails
 - Only decompose specs with `status: approved`.
@@ -196,6 +202,17 @@ file, the task is too big.
    task. Use each id verbatim for both the filename and every `id` field
    in the per-spec index; never invent, recompute, or reuse a `TASK-<NNN>`
    number outside of what `reserve_ids.py` returned.
+
+   **`--from-issue <issue-id>` (FEAT-566):** the promoted task still gets a
+   normally-reserved `TASK-<NNN>` from `reserve_ids.py` above — a ledger
+   issue id is never used as (or in place of) a task id. Seed the task's
+   Context/Scope from `wikitoolkit ledger context <issue-id>` (title, body,
+   `about` targets), and link back to the source issue by including
+   `discovered_from: <issue-id>` in the generated task's frontmatter/notes
+   so `wikitoolkit ledger close <issue-id> --reason "promoted to TASK-<NNN>"`
+   can be run once the task is filed. Promotion never runs `ledger close`
+   automatically — that stays an explicit, separate step for the human/agent
+   doing the promotion.
    Fill the template's `## Implementation Blueprint` section for every task
    per §3's rules; a task without one is incomplete.
 

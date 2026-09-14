@@ -91,6 +91,25 @@ After the unblocked list, show a brief summary of what's currently running:
   TASK-021 — Trivy Toolkit  [in task-021-trivy-toolkit]
 ```
 
+### 7. Show Ready Ledger Issues (FEAT-566, best-effort)
+
+Alongside unblocked tasks, surface open, unclaimed ledger issues — discovered
+work that has no `TASK-<NNN>` yet. Never fatal (a missing/unbuilt ledger
+prints nothing here, it does not block the rest of `/sdd-next`):
+
+```bash
+wikitoolkit ledger ready 2>/dev/null || true
+```
+
+```
+🗒  Ready ledger issues (not yet promoted to a task):
+  issue:3f8a1c9e [major] Leak in connection pool (bug)
+     → /sdd-task --from-issue issue:3f8a1c9e <spec.md>  (promote, keeps ID/dependency discipline)
+```
+
+If the command prints nothing (or fails), omit this section entirely —
+do not print an empty header.
+
 ## Reference
 - Per-spec index files: `sdd/tasks/index/*.json` (excluding `_orphans.json`)
 - Active worktrees: `git worktree list`

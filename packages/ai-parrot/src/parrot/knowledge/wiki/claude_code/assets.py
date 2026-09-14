@@ -164,20 +164,34 @@ def toolkit_mcp_json_entry(root: Path, name: str, section: ToolkitSection) -> di
 
 
 def git_hook_block(root: Path) -> str:
-    """Build the ``post-commit`` hook block with an absolute path."""
+    """Build the managed wiki-upsert hook block with an absolute path.
+
+    Shared by the ``post-commit`` and ``post-merge`` hooks (FEAT-566
+    Module 10): the structural upsert must no-op inside a linked worktree,
+    since indexing unmerged code into the shared, base-branch-snapshot
+    ``wiki.db`` would corrupt it. The guard mirrors
+    :func:`parrot.knowledge.wiki.project.is_linked_worktree` — a linked
+    worktree's ``.git`` is a file, never a directory — as a plain POSIX
+    ``sh`` test, so the hook never has to invoke Python (and can't fail
+    because the venv isn't on ``$PATH``) just to decide whether to run.
+    """
     wt_bin = resolve_wikitoolkit_bin(root)
     return (
         f"{GIT_HOOK_BEGIN}\n"
         f"# Keep the LLM-wiki knowledge graph in sync with the last commit.\n"
         f"# Installed by `parrot claude install`; "
         f"remove with `parrot claude uninstall`.\n"
-        f"{wt_bin} upsert --changed --quiet >/dev/null 2>&1 || true\n"
+        f"# FEAT-566: skip the structural upsert inside a linked worktree\n"
+        f"# (a worktree's .git is a file, never a directory).\n"
+        f"if [ ! -f .git ]; then\n"
+        f"    {wt_bin} upsert --changed --quiet >/dev/null 2>&1 || true\n"
+        f"fi\n"
         f"{GIT_HOOK_END}\n"
     )
 
 
 def git_hook_new_file(root: Path) -> str:
-    """Build a fresh ``post-commit`` hook file with an absolute path."""
+    """Build a fresh managed hook file with an absolute path."""
     return f"#!/bin/sh\n{git_hook_block(root)}"
 
 
