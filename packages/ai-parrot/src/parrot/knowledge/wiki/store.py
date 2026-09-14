@@ -14,7 +14,8 @@ Design (mirrors ``graphindex/persist_sqlite.py`` patterns):
 - ``edges`` — typed relations (``summarizes``, ``references``, …).
 - ``sources`` — absorbs the former ``.manifest.json`` manifest
   (SHA-1 + mtime staleness detection).
-- ``pages_fts`` — FTS5/BM25 lexical index over title/summary/body.
+- ``pages_fts`` — FTS5/BM25 lexical index over title/summary/body
+  (external-content, mirrors ``pages`` by rowid, trigger-maintained).
 - ``embeddings`` — optional per-page vectors for cosine re-ranking.
 - ``meta`` — schema version + wiki name.
 
@@ -46,11 +47,11 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = "2"
+SCHEMA_VERSION = "3"
 
 # Shared between WikiStore (async) and SourceCollectionManager (sync
 # sqlite3 connection to the same file) — WAL mode allows both.
-WIKI_SCHEMA_SQL = """
+WIKI_TABLES_SQL = """
 PRAGMA journal_mode = WAL;
 
 CREATE TABLE IF NOT EXISTS meta (
@@ -118,10 +119,6 @@ CREATE TABLE IF NOT EXISTS edges (
 CREATE INDEX IF NOT EXISTS idx_edges_rel_src ON edges(rel, src);
 CREATE INDEX IF NOT EXISTS idx_edges_dst     ON edges(dst);
 
-CREATE VIRTUAL TABLE IF NOT EXISTS pages_fts USING fts5(
-    concept_id UNINDEXED, title, summary, body, tokenize = 'unicode61'
-);
-
 CREATE TABLE IF NOT EXISTS embeddings (
     concept_id TEXT PRIMARY KEY,
     vector     BLOB NOT NULL,
@@ -155,10 +152,76 @@ CREATE TABLE IF NOT EXISTS symbols (
 CREATE INDEX IF NOT EXISTS idx_symbols_name   ON symbols(name);
 CREATE INDEX IF NOT EXISTS idx_symbols_path   ON symbols(rel_path);
 CREATE INDEX IF NOT EXISTS idx_symbols_source ON symbols(source_id);
-CREATE VIRTUAL TABLE IF NOT EXISTS symbols_fts USING fts5(
-    concept_id UNINDEXED, name, qualname, doc, signature, tokenize = 'unicode61'
-);
 """
+
+#: FTS5 lexical indexes + the triggers that keep them in sync.
+#:
+#: Both are **external-content** tables: the index stores only the
+#: inverted index and mirrors ``pages``/``symbols`` by ``rowid``, so the
+#: bodies live in exactly one place and every delete/update is a rowid
+#: operation.
+#:
+#: They used to be standalone FTS5 tables carrying ``concept_id
+#: UNINDEXED``, maintained by hand with ``DELETE FROM <fts> WHERE
+#: concept_id = ?``. ``concept_id`` is not an indexed FTS column, so
+#: SQLite answered each of those deletes with a FULL SCAN of the index —
+#: once per page, inside an ``executemany``. Re-ingesting a repository
+#: therefore cost O(pages x sources) and a full ``wikitoolkit build``
+#: over a 100k-page plane took hours. Triggers make the scanning delete
+#: structurally impossible: the column no longer exists.
+WIKI_FTS_SQL = """
+CREATE VIRTUAL TABLE IF NOT EXISTS pages_fts USING fts5(
+    title, summary, body,
+    content = 'pages', content_rowid = 'rowid', tokenize = 'unicode61'
+);
+
+CREATE TRIGGER IF NOT EXISTS pages_ai AFTER INSERT ON pages BEGIN
+    INSERT INTO pages_fts (rowid, title, summary, body)
+    VALUES (new.rowid, new.title, new.summary, new.body);
+END;
+CREATE TRIGGER IF NOT EXISTS pages_ad AFTER DELETE ON pages BEGIN
+    INSERT INTO pages_fts (pages_fts, rowid, title, summary, body)
+    VALUES ('delete', old.rowid, old.title, old.summary, old.body);
+END;
+CREATE TRIGGER IF NOT EXISTS pages_au AFTER UPDATE ON pages BEGIN
+    INSERT INTO pages_fts (pages_fts, rowid, title, summary, body)
+    VALUES ('delete', old.rowid, old.title, old.summary, old.body);
+    INSERT INTO pages_fts (rowid, title, summary, body)
+    VALUES (new.rowid, new.title, new.summary, new.body);
+END;
+
+CREATE VIRTUAL TABLE IF NOT EXISTS symbols_fts USING fts5(
+    name, qualname, doc, signature,
+    content = 'symbols', content_rowid = 'rowid', tokenize = 'unicode61'
+);
+
+CREATE TRIGGER IF NOT EXISTS symbols_ai AFTER INSERT ON symbols BEGIN
+    INSERT INTO symbols_fts (rowid, name, qualname, doc, signature)
+    VALUES (new.rowid, new.name, new.qualname, new.doc, new.signature);
+END;
+CREATE TRIGGER IF NOT EXISTS symbols_ad AFTER DELETE ON symbols BEGIN
+    INSERT INTO symbols_fts (symbols_fts, rowid, name, qualname, doc, signature)
+    VALUES ('delete', old.rowid, old.name, old.qualname, old.doc, old.signature);
+END;
+CREATE TRIGGER IF NOT EXISTS symbols_au AFTER UPDATE ON symbols BEGIN
+    INSERT INTO symbols_fts (symbols_fts, rowid, name, qualname, doc, signature)
+    VALUES ('delete', old.rowid, old.name, old.qualname, old.doc, old.signature);
+    INSERT INTO symbols_fts (rowid, name, qualname, doc, signature)
+    VALUES (new.rowid, new.name, new.qualname, new.doc, new.signature);
+END;
+"""
+
+#: Full plane DDL — base tables first, then the FTS mirrors that depend
+#: on them (a trigger cannot be created before its table).
+WIKI_SCHEMA_SQL = WIKI_TABLES_SQL + WIKI_FTS_SQL
+
+#: Trigger names ``WIKI_FTS_SQL`` creates. ``_migrate_fts`` re-runs the
+#: DDL when any of them is missing, so a plane can never end up with an
+#: external-content index nothing keeps in sync.
+_FTS_TRIGGERS = frozenset({"pages_ai", "pages_ad", "pages_au", "symbols_ai", "symbols_ad", "symbols_au"})
+
+#: FTS tables and the content tables they mirror.
+_FTS_TABLES = ("pages_fts", "symbols_fts")
 
 # Columns added after the original FEAT-260 schema shipped.  ``CREATE TABLE
 # IF NOT EXISTS`` silently skips existing databases, so ``_migrate`` ALTERs
@@ -765,6 +828,11 @@ class SQLiteWikiStore(BaseWikiStore):
     ) -> None:
         self._db_path = Path(db_path)
         self._read_only = read_only
+        # FTS shape per table, probed lazily. A read-only plane (FEAT-450
+        # federation) is never migrated, so it may still carry the legacy
+        # ``concept_id``-keyed index and must be READ through the legacy
+        # join. ``_migrate_fts`` invalidates this when it upgrades a plane.
+        self._legacy_fts: dict[str, bool] = {}
         if read_only:
             # An unbuilt plane must fail here, not on the first query,
             # so the namespace resolver can classify it as "unbuilt".
@@ -1052,6 +1120,8 @@ class SQLiteWikiStore(BaseWikiStore):
                 if name not in existing:
                     await conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {col_type}")
 
+        await self._migrate_fts(conn)
+
         # FEAT-498: bump a pre-existing plane's recorded schema version once
         # the symbols/symbols_fts tables and content_hash column above are
         # in place (INSERT OR IGNORE in _connect() never touches an
@@ -1062,12 +1132,104 @@ class SQLiteWikiStore(BaseWikiStore):
         )
         await conn.commit()
 
+    async def _migrate_fts(self, conn: aiosqlite.Connection) -> None:
+        """Bring the plane's FTS indexes onto the external-content shape.
+
+        A plane built before this migration carries ``pages_fts`` /
+        ``symbols_fts`` as standalone FTS5 tables with a ``concept_id
+        UNINDEXED`` column, kept in sync by hand. ``concept_id`` is not
+        an indexed FTS column, so every ``DELETE ... WHERE concept_id =
+        ?`` cost a FULL SCAN of the index — which is what made a full
+        rebuild quadratic in the number of pages. Such a table is
+        dropped and recreated as an external-content mirror of its
+        content table, then reindexed once via FTS5's ``'rebuild'``.
+
+        Also self-heals a plane whose sync triggers went missing: the
+        DDL is replayed whenever any of them is absent, so an
+        external-content index can never be left unmaintained.
+
+        Idempotent, and cheap on an already-migrated plane — two
+        ``PRAGMA table_info`` calls and one ``sqlite_master`` probe.
+
+        Args:
+            conn: Open connection to migrate, before it is handed to the
+                caller.
+        """
+        legacy: list[str] = []
+        for table in _FTS_TABLES:
+            async with conn.execute(f"PRAGMA table_info({table})") as cur:
+                columns = {row["name"] for row in await cur.fetchall()}
+            if columns and "concept_id" in columns:
+                legacy.append(table)
+
+        placeholders = ", ".join("?" * len(_FTS_TRIGGERS))
+        async with conn.execute(
+            f"SELECT count(*) FROM sqlite_master WHERE type = 'trigger' AND name IN ({placeholders})",
+            sorted(_FTS_TRIGGERS),
+        ) as cur:
+            live_triggers = (await cur.fetchone())[0]
+
+        if not legacy and live_triggers == len(_FTS_TRIGGERS):
+            return
+
+        # Triggers are dropped first: recreating a table out from under a
+        # live trigger would leave writes failing against a table that no
+        # longer exists. ``WIKI_FTS_SQL`` recreates both.
+        for name in sorted(_FTS_TRIGGERS):
+            await conn.execute(f"DROP TRIGGER IF EXISTS {name}")
+        for table in legacy:
+            await conn.execute(f"DROP TABLE {table}")
+        await conn.executescript(WIKI_FTS_SQL)
+        for table in legacy:
+            await conn.execute(f"INSERT INTO {table}({table}) VALUES('rebuild')")
+        await conn.commit()
+        self._legacy_fts.clear()
+        if legacy:
+            self.logger.info(
+                "Migrated %s to external-content FTS5 and reindexed (plane: %s)",
+                ", ".join(legacy),
+                self._db_path,
+            )
+
+    async def _uses_legacy_fts(self, conn: aiosqlite.Connection, table: str) -> bool:
+        """Whether ``table`` is still a ``concept_id``-keyed FTS index.
+
+        Writable planes are upgraded by :meth:`_migrate_fts` before any
+        query runs, so this is ``False`` for them. A plane opened
+        ``read_only=True`` is deliberately never written to — a foreign
+        namespace must leave no trace — so it keeps whatever shape it
+        was built with and has to be READ accordingly. Answering a
+        legacy plane with the rowid join would silently return nothing.
+
+        Probed once per store instance and cached; ``_migrate_fts``
+        clears the cache when it changes a plane's shape.
+
+        Args:
+            conn: Open connection to probe.
+            table: FTS table name.
+
+        Returns:
+            ``True`` when the table still exposes ``concept_id``.
+        """
+        cached = self._legacy_fts.get(table)
+        if cached is not None:
+            return cached
+        async with conn.execute(f"PRAGMA table_info({table})") as cur:
+            columns = {row["name"] for row in await cur.fetchall()}
+        legacy = "concept_id" in columns
+        self._legacy_fts[table] = legacy
+        return legacy
+
     async def _upsert_pages_conn(
         self,
         conn: aiosqlite.Connection,
         pages: list[WikiPageRecord],
     ) -> None:
-        """Upsert page rows + FTS entries on an open connection."""
+        """Upsert page rows on an open connection.
+
+        The ``pages_ai``/``pages_au`` triggers mirror every row into
+        ``pages_fts`` — this must never touch the FTS table itself.
+        """
         now = _now_iso()
         await conn.executemany(
             "INSERT INTO pages"
@@ -1100,14 +1262,6 @@ class SQLiteWikiStore(BaseWikiStore):
                 )
                 for p in pages
             ],
-        )
-        await conn.executemany(
-            "DELETE FROM pages_fts WHERE concept_id = ?",
-            [(p.concept_id,) for p in pages],
-        )
-        await conn.executemany(
-            "INSERT INTO pages_fts (concept_id, title, summary, body)" " VALUES (?, ?, ?, ?)",
-            [(p.concept_id, p.title, p.summary, p.body) for p in pages],
         )
 
     async def _insert_edges_conn(
@@ -1228,10 +1382,6 @@ class SQLiteWikiStore(BaseWikiStore):
                         if row["src"] not in old_set and row["dst"] in new_ids
                     ]
                 await conn.executemany(
-                    "DELETE FROM pages_fts WHERE concept_id = ?",
-                    [(cid,) for cid in old_ids],
-                )
-                await conn.executemany(
                     "DELETE FROM embeddings WHERE concept_id = ?",
                     [(cid,) for cid in old_ids],
                 )
@@ -1241,16 +1391,10 @@ class SQLiteWikiStore(BaseWikiStore):
                 )
                 await conn.execute("DELETE FROM pages WHERE source_id = ?", (source_id,))
 
-            # FEAT-498: symbols/symbols_fts rows for this source are
-            # cleared in the same transaction as the file/sym: pages
-            # above, so a re-scan never accumulates stale symbol rows.
-            async with conn.execute("SELECT concept_id FROM symbols WHERE source_id = ?", (source_id,)) as cur:
-                old_symbol_ids = [row["concept_id"] for row in await cur.fetchall()]
-            if old_symbol_ids:
-                await conn.executemany(
-                    "DELETE FROM symbols_fts WHERE concept_id = ?",
-                    [(cid,) for cid in old_symbol_ids],
-                )
+            # FEAT-498: symbols rows for this source are cleared in the
+            # same transaction as the file/sym: pages above, so a re-scan
+            # never accumulates stale symbol rows. The ``symbols_ad``
+            # trigger evicts each row's FTS entry by rowid.
             await conn.execute("DELETE FROM symbols WHERE source_id = ?", (source_id,))
 
             await self._upsert_pages_conn(conn, pages)
@@ -1287,7 +1431,6 @@ class SQLiteWikiStore(BaseWikiStore):
         async with self._connect() as conn:
             cur = await conn.execute("DELETE FROM pages WHERE concept_id = ?", (concept_id,))
             deleted = cur.rowcount > 0
-            await conn.execute("DELETE FROM pages_fts WHERE concept_id = ?", (concept_id,))
             await conn.execute("DELETE FROM embeddings WHERE concept_id = ?", (concept_id,))
             await conn.execute(
                 "DELETE FROM edges WHERE src = ? OR dst = ?",
@@ -1325,7 +1468,10 @@ class SQLiteWikiStore(BaseWikiStore):
         symbols: list[SymbolRecord],
         source_id: Optional[str] = None,
     ) -> int:
-        """Insert or update rows in the native ``symbols`` table + FTS.
+        """Insert or update rows in the native ``symbols`` table.
+
+        The ``symbols_ai``/``symbols_au`` triggers mirror every row into
+        ``symbols_fts`` — this must never touch the FTS table itself.
 
         Args:
             symbols: Symbol records to persist.
@@ -1385,14 +1531,6 @@ class SQLiteWikiStore(BaseWikiStore):
                 "  node_kind=excluded.node_kind, content_hash=excluded.content_hash,"
                 "  source_id=excluded.source_id",
                 rows,
-            )
-            await conn.executemany(
-                "DELETE FROM symbols_fts WHERE concept_id = ?",
-                [(r[0],) for r in rows],
-            )
-            await conn.executemany(
-                "INSERT INTO symbols_fts (concept_id, name, qualname, doc, signature)" " VALUES (?, ?, ?, ?, ?)",
-                [(r[0], r[4], r[5], r[8], r[7]) for r in rows],
             )
             await conn.commit()
         return len(rows)
@@ -1477,9 +1615,13 @@ class SQLiteWikiStore(BaseWikiStore):
         if not match_expr:
             return []
         async with self._connect() as conn:
-            async with conn.execute(
+            join = (
                 "SELECT s.* FROM symbols_fts JOIN symbols s ON s.concept_id = symbols_fts.concept_id"
-                " WHERE symbols_fts MATCH ? ORDER BY bm25(symbols_fts) LIMIT ?",
+                if await self._uses_legacy_fts(conn, "symbols_fts")
+                else "SELECT s.* FROM symbols_fts JOIN symbols s ON s.rowid = symbols_fts.rowid"
+            )
+            async with conn.execute(
+                join + " WHERE symbols_fts MATCH ? ORDER BY bm25(symbols_fts) LIMIT ?",
                 (match_expr, limit),
             ) as cur:
                 return [_row_to_symbol_record(row) for row in await cur.fetchall()]
@@ -1605,25 +1747,28 @@ class SQLiteWikiStore(BaseWikiStore):
         match_expr = _fts_query(query)
         if not match_expr:
             return []
-        sql = (
-            "SELECT p.concept_id, p.node_id, p.title, p.category, p.summary,"
-            " p.source_id, p.token_count, -bm25(pages_fts) AS score"
-            " FROM pages_fts JOIN pages p ON p.concept_id = pages_fts.concept_id"
-            " WHERE pages_fts MATCH ?"
-        )
-        params: tuple[Any, ...] = (match_expr,)
-        if category is not None:
-            sql += " AND p.category = ?"
-            params += (category,)
-        else:
-            # FEAT-402: default ranking excludes the archive category.
-            # `category` is an open string in this machine plane (see
-            # module docstring) — no enum import needed here.
-            sql += " AND (p.category IS NULL OR p.category != ?)"
-            params += ("archive",)
-        sql += " ORDER BY bm25(pages_fts) LIMIT ?"
-        params += (limit,)
         async with self._connect() as conn:
+            join = (
+                " FROM pages_fts JOIN pages p ON p.concept_id = pages_fts.concept_id"
+                if await self._uses_legacy_fts(conn, "pages_fts")
+                else " FROM pages_fts JOIN pages p ON p.rowid = pages_fts.rowid"
+            )
+            sql = (
+                "SELECT p.concept_id, p.node_id, p.title, p.category, p.summary,"
+                " p.source_id, p.token_count, -bm25(pages_fts) AS score" + join + " WHERE pages_fts MATCH ?"
+            )
+            params: tuple[Any, ...] = (match_expr,)
+            if category is not None:
+                sql += " AND p.category = ?"
+                params += (category,)
+            else:
+                # FEAT-402: default ranking excludes the archive category.
+                # `category` is an open string in this machine plane (see
+                # module docstring) — no enum import needed here.
+                sql += " AND (p.category IS NULL OR p.category != ?)"
+                params += ("archive",)
+            sql += " ORDER BY bm25(pages_fts) LIMIT ?"
+            params += (limit,)
             async with conn.execute(sql, params) as cur:
                 return [dict(row) for row in await cur.fetchall()]
 
