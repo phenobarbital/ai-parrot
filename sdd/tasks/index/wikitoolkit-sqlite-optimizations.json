@@ -151,7 +151,7 @@
       "feature_id": "FEAT-557",
       "feature": "wikitoolkit-sqlite-optimizations",
       "spec": "sdd/specs/wikitoolkit-sqlite-optimizations.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -163,8 +163,8 @@
       "parallelism_notes": "Touches store.py, project.py, cli.py, mcp_server.py, structural/toolkit.py, sync.py, federation.py — the widest file span in the feature. Must follow the three tasks whose signatures it forwards.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3223-config-and-factory-plumbing.md"
+      "completed_at": "2026-09-14T01:42:21+00:00",
+      "file": "sdd/tasks/completed/TASK-3223-config-and-factory-plumbing.md"
     },
     {
       "id": "TASK-3224",
