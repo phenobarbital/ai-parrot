@@ -8,6 +8,10 @@ Reads the task file from `sdd/tasks/completed/`, loads every referenced file, ap
 `code-reviewer` rule, and runs an adversarial cross-check (`codex`) before
 producing a structured review report.
 
+**Mandatory Deferred Findings Table**: Every CONFIRMED 🔴/🟡 finding not fixed in-review MUST be filed 
+with `wikitoolkit ledger open` and listed in the report's Deferred findings table. Reviews with 
+unfixed confirmed findings and an empty Deferred table are invalid.
+
 ## Usage
 ```
 /sdd-codereview sdd/tasks/completed/TASK-001-music-generation-model.md
@@ -138,6 +142,17 @@ Output a structured markdown report:
 
 ### 🟢 Minor / Suggestions
 - **[file:line]** <description>
+
+## Deferred Findings
+Every CONFIRMED 🔴/🟡 finding not fixed in-review MUST be filed with `wikitoolkit ledger open` 
+and listed below. Use `ledger open` with `--kind bug --severity major|critical --discovered-from task:TASK-NNN 
+--about "sym:<rel>#<qualname>" --title … --body …` for each finding.
+
+| Severity | Title | Issue ID | Filed By |
+|----------|-------|----------|----------|
+| none     | n/a   | n/a      | n/a      |
+
+> **Note**: Reviews with unfixed confirmed findings and an empty Deferred table are invalid.
 
 ## Acceptance Criteria Check
 | Criterion | Status | Notes |
