@@ -30,6 +30,9 @@ the vendored Chart.js UMD bundle):
   (``type``/``x``/``y``/``data``/``title``/``showLegend``, plus an optional
   ``tabs`` array of ``{"label", "data"}`` day-slices). Chart.js is
   instantiated from this on page load.
+* ``trendline`` inside that config — a least-squares line over the first y
+  column, fitted IN THE BROWSER so it follows the rows a day-tab or a filter
+  leaves on screen, drawn dashed and kept out of the hover readout.
 * ``[data-tabs-for="<chart-id>"]`` + ``[data-tab-index]`` buttons — day-tab
   switching: clicking a tab swaps the chart's active data slice
   (``config.tabs[index].data``). Rendered only when the Chart's properties
@@ -131,6 +134,13 @@ _SURFACE_NAME = "interactive-html"
 #: viz-core-only and resolved catalog-aware via `_GRAPH_INTERCEPT_TABLE`
 #: below, not this set).
 _INTERCEPTED = {"Chart", "DataTable", "Infographic", "Map", "HtmlDocument"}
+
+#: Chart types a least-squares line can be drawn over. Cartesian, category
+#: x-axis: the fit runs over row ORDER, so a pie, a donut or a radar has no
+#: axis for it to mean anything along. Scatter is left out for a different
+#: reason -- its x is a value, not a position, so fitting over the index
+#: would draw a line that is not the regression a reader would expect.
+_TRENDABLE_CHART_TYPES = {"bar", "line", "area"}
 
 #: The one (catalog_id, name) pair intercepted as a native Graph — used
 #: with the shared catalog-aware `intercepts()` helper (FEAT-529).
@@ -243,11 +253,54 @@ _BEHAVIOR_JS = r"""
   }
   reportData(); // parsed for validation / future generic $bind use; charts embed their own config.
 
+  // Least squares over the first y column, drawn dashed and without markers
+  // so nobody reads the fitted line as measured data. Returns null when
+  // there is nothing to fit: fewer than two numbers, or every x the same.
+  function trendData(rows, col) {
+    var n = 0, sumX = 0, sumY = 0, sumXY = 0, sumXX = 0;
+    rows.forEach(function (r, i) {
+      var y = Number(r[col]);
+      if (r[col] === null || r[col] === undefined || isNaN(y)) return;
+      n += 1; sumX += i; sumY += y; sumXY += i * y; sumXX += i * i;
+    });
+    if (n < 2) return null;
+    var denominator = n * sumXX - sumX * sumX;
+    if (denominator === 0) return null;
+    var slope = (n * sumXY - sumX * sumY) / denominator;
+    var intercept = (sumY - slope * sumX) / n;
+    return rows.map(function (_, i) { return slope * i + intercept; });
+  }
+
+  // A regression over whichever rows are on screen. It is computed HERE and
+  // not once in Python because this function runs again on every day-tab
+  // switch and every FilterBar change: a line baked server-side would keep
+  // the slope of data the reader is no longer looking at.
   function buildDatasets(cfg, rows) {
     var names = cfg.yLabels || [];
-    return (cfg.y || []).map(function (col, i) {
+    var datasets = (cfg.y || []).map(function (col, i) {
       return { label: names[i] || col, data: rows.map(function (r) { return r[col]; }) };
     });
+    // Whether a fit makes sense for this chart type was decided once, in
+    // Python, where the FINAL type is known (an unsupported type arrives here
+    // already degraded to bar). Re-deciding it here would be a second copy of
+    // the same rule, free to drift.
+    if (cfg.trendline && datasets.length) {
+      var col = (cfg.y || [])[0];
+      var fitted = trendData(rows, col);
+      if (fitted) {
+        datasets.push({
+          label: (names[0] || col) + " trend",
+          data: fitted,
+          type: "line",
+          borderDash: [6, 4],
+          borderWidth: 2,
+          pointRadius: 0,
+          fill: false,
+          isTrend: true,
+        });
+      }
+    }
+    return datasets;
   }
 
   // FEAT-527: donut/radar are Chart.js natives; the 5 new types with no
@@ -275,7 +328,14 @@ _BEHAVIOR_JS = r"""
       },
       // Bottom, like the pill key a multi-series chart gets: which side the
       // key sits on should not depend on how many series there happen to be.
-      options: { plugins: { legend: { display: !!cfg.showLegend, position: "bottom" } } },
+      options: {
+        plugins: {
+          legend: { display: !!cfg.showLegend, position: "bottom" },
+          // The fitted line has no value AT a point -- it is the shape of the
+          // whole series -- so it stays out of the hover readout.
+          tooltip: { filter: function (item) { return !(item.dataset || {}).isTrend; } },
+        },
+      },
     });
 
     var chartId = canvas.getAttribute("data-chart");
@@ -1154,6 +1214,14 @@ class InteractiveHTMLRenderer(AbstractA2UIRenderer):
         }
         if isinstance(tabs, list) and tabs:
             config["tabs"] = tabs
+        # Only when asked for AND only where a straight line means something:
+        # a regression through a pie or a radar is nonsense. The type tested
+        # is the FINAL one -- a degraded chart is a bar by the time it gets
+        # here, and a bar can carry a trend. The flag rides in the embedded
+        # config; the line itself is fitted in the browser, over whichever
+        # rows a day-tab or a FilterBar leaves on screen.
+        if props.get("trendline") and config["type"] in _TRENDABLE_CHART_TYPES:
+            config["trendline"] = True
 
         title = props.get("title")
         title_html = f'<p class="a2ui-heading">{html.escape(str(title))}</p>' if title else ""

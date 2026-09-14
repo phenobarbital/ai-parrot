@@ -219,6 +219,23 @@ class TestGoldensUntouched:
             "catalog/__init__.py",
             "catalog/export.py",
         )
+        # 2026-09-14: two of the FROZEN goldens above DID drift, and the
+        # claim in point 1 -- "none actually changed byte-for-byte" -- was an
+        # observation that stopped being true. FEAT-527 emits
+        # `parrot_value_format` on every KPI value node and `parrot_sentiment`
+        # on every delta node, neither gated on a property being present (the
+        # sibling `parrot_unit` has always been emitted as null too), so the
+        # recorded output moved the moment those shipped. Both golden TESTS
+        # were failing on this branch until the files were refreshed; this
+        # guard and those tests could not both be satisfied.
+        #
+        # Refreshed, not exempted: the diff was read first and is exactly
+        # those two keys, no structural change. A future drift here still
+        # fails, which is what the guard is for.
+        _FEAT_527_REFRESHED_GOLDENS = (
+            "golden/kpicard_lowered.json",
+            "golden/infographic_lowered.json",
+        )
         assert all(
             "filterbar" in c
             or "htmldocument" in c
@@ -228,6 +245,7 @@ class TestGoldensUntouched:
             or c.endswith(_FEAT_527_FROZEN_LOWER_FILES)
             or c.endswith(_FEAT_527_TOOL_ONLY_GATE_FILES)
             or c.endswith(_FEAT_529_VIZ_CORE_SHELL_FILES)
+            or c.endswith(_FEAT_527_REFRESHED_GOLDENS)
             for c in changed
         ), changed
 

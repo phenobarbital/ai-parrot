@@ -639,3 +639,93 @@ class TestChartKeyIsReadableAndSingular:
         assert ".metricbtn," in doc or ".metricbtn {" in doc
         assert ".metricbtn:not(.active)" in doc
         assert ".metricbtn:focus-visible" in doc or ".metricbtn:focus-visible," in doc
+
+
+class TestInteractiveChartTrendline:
+    """The trendline the app draws and this surface used to drop.
+
+    `StructuredChartConfig.trendline` reached the static ECharts renderer and
+    the Svelte canvas, but the interactive surface ignored it — the same
+    report showed a fitted line in the app and none in the exported HTML.
+    """
+
+    def _doc_and_config(self, doc: str) -> dict:
+        raw = re.search(r'data-chart-config="([^"]*)"', doc).group(1)
+        return json.loads(html.unescape(raw))
+
+    async def test_a_requested_trendline_reaches_the_embedded_config(self):
+        env = _envelope(
+            Component(
+                id="root",
+                component="Chart",
+                type="line",
+                x="day",
+                y=["actual"],
+                data={"path": "/rows"},
+                trendline=True,
+            ),
+            data_model={"rows": [{"day": "Mon", "actual": 10}, {"day": "Tue", "actual": 14}]},
+        )
+        art = await InteractiveHTMLRenderer().render(env)
+        doc = art.content.decode()
+        assert self._doc_and_config(doc)["trendline"] is True
+
+    async def test_a_chart_that_asked_for_nothing_carries_nothing(self):
+        env = _envelope(
+            Component(
+                id="root", component="Chart", type="line", x="day", y=["actual"],
+                data={"path": "/rows"},
+            ),
+            data_model={"rows": [{"day": "Mon", "actual": 10}]},
+        )
+        art = await InteractiveHTMLRenderer().render(env)
+        assert "trendline" not in self._doc_and_config(art.content.decode())
+
+    @pytest.mark.parametrize("chart_type", ["pie", "donut", "radar"])
+    async def test_a_line_through_a_pie_is_never_drawn(self, chart_type):
+        # The fit runs over row ORDER, and these have no axis for that to
+        # mean anything along. Decided here, in Python, so the browser
+        # runtime does not carry a second copy of the rule.
+        env = _envelope(
+            Component(
+                id="root", component="Chart", type=chart_type, x="day", y=["actual"],
+                data={"path": "/rows"}, trendline=True,
+            ),
+            data_model={"rows": [{"day": "Mon", "actual": 10}, {"day": "Tue", "actual": 14}]},
+        )
+        art = await InteractiveHTMLRenderer().render(env)
+        assert "trendline" not in self._doc_and_config(art.content.decode())
+
+    async def test_a_degraded_chart_is_a_bar_and_a_bar_can_carry_a_trend(self):
+        # `waterfall` has no Chart.js equivalent and arrives as a bar. The
+        # type tested is the final one, so the trend survives the degradation.
+        env = _envelope(
+            Component(
+                id="root", component="Chart", type="waterfall", x="day", y=["actual"],
+                data={"path": "/rows"}, trendline=True,
+            ),
+            data_model={"rows": [{"day": "Mon", "actual": 10}, {"day": "Tue", "actual": 14}]},
+        )
+        art = await InteractiveHTMLRenderer().render(env)
+        config = self._doc_and_config(art.content.decode())
+        assert config["type"] == "bar"
+        assert config["trendline"] is True
+
+    async def test_the_fit_is_computed_in_the_browser_not_baked_in(self):
+        # The point of fitting client-side: `buildDatasets` runs again on
+        # every day-tab switch and every FilterBar change, so the line must be
+        # recomputed from the rows on screen. A server-baked array of points
+        # would keep the slope of data the reader stopped looking at.
+        env = _envelope(
+            Component(
+                id="root", component="Chart", type="bar", x="day", y=["actual"],
+                data={"path": "/rows"}, trendline=True,
+            ),
+            data_model={"rows": [{"day": "Mon", "actual": 10}, {"day": "Tue", "actual": 14}]},
+        )
+        art = await InteractiveHTMLRenderer().render(env)
+        doc = art.content.decode()
+        assert "function trendData(" in doc
+        # The config carries the FLAG and the rows, never fitted points.
+        config = self._doc_and_config(doc)
+        assert set(config["data"][0]) == {"day", "actual"}
