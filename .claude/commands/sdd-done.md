@@ -1,13 +1,14 @@
 ---
 model: haiku
-description: Verify that a feature's tasks were implemented, push the branch, optionally resolve the linked Jira ticket, and clean up the worktree.
+description: Verify that a feature's tasks were implemented, check for merge blockers, snapshot ledger issues, push the branch, optionally resolve the linked Jira ticket, and clean up the worktree.
 ---
 
-# /sdd-done — Verify, Push, and Cleanup a Feature
+# /sdd-done — Verify, Check Blockers, Snapshot, Push, and Cleanup a Feature
 
-Verify that a feature's tasks were implemented in its worktree, ensure the branch is
-pushed, and clean up the worktree. Optionally transitions the linked Jira ticket to
-"Done" / "Resolved".
+Verify that a feature's tasks were implemented in its worktree, check for merge
+blockers scoped to the current feature, snapshot ledger issues on base branch,
+ensure the branch is pushed, and clean up the worktree. Optionally transitions
+the linked Jira ticket to "Done" / "Resolved".
 
 **This command runs on the spec's `base_branch`** — read from the spec's
 YAML frontmatter (FEAT-145). For `type: feature` that is `dev` (default)
@@ -20,8 +21,8 @@ modifies state only on `base_branch`.
 /sdd-done FEAT-014
 /sdd-done videoreel-visual-changes
 /sdd-done FEAT-014 --dry-run           # show what would change, don't change anything
-/sdd-done FEAT-014 --merge             # direct merge into base_branch (old behavior)
-/sdd-done FEAT-014 --force             # mark done even if some checks fail
+/sdd-done FEAT-014 --merge             # direct merge into base_branch (checks blockers)
+/sdd-done FEAT-014 --force             # mark done even if some checks fail, bypass blockers
 /sdd-done FEAT-014 --resolve-jira      # also transition the Jira ticket to Done
 /sdd-done FEAT-014 --sync-down         # for hotfixes: after the user merges the PR
                                        # to main, propagate the change to staging + dev
@@ -203,7 +204,63 @@ If the worktree branch hasn't been pushed yet:
 git -C <worktree-path> push origin feat-<FEAT-ID>-<slug>
 ```
 
-### 9. Integrate Feature Branch (FEAT-145, flow-aware)
+### 9. Check Merge Blockers (FEAT-566)
+
+Before integrating the feature branch, check for critical unacknowledged issues
+(blockers) that were discovered by this feature. Issues from other features do
+not block this feature's merge.
+
+```bash
+if [[ "$MERGE_FLAG" == "--merge" ]]; then
+    BLOCKERS=$(wikitoolkit ledger blockers "$FEAT_ID" 2>/dev/null || echo "[]")
+    if [[ "$BLOCKERS" != "[]" ]] && [[ "$BLOCKERS" != "" ]]; then
+        echo "⚠️  Merge blocked by critical unacknowledged issues:"
+        echo "$BLOCKERS" | jq -r '.[] | "   • \(.title) (\(.issue_id))"'
+        echo ""
+        echo "Resolve these issues or acknowledge them as accepted risks before merging."
+        echo "To acknowledge an issue: wikitoolkit ledger ack <ISSUE-ID> \"reason\""
+        if [[ "$FORCE_FLAG" != "--force" ]]; then
+            echo ""
+            echo "Use --force to bypass blocker checks (not recommended)."
+            exit 1
+        else
+            echo ""
+            echo "⚠️  Proceeding with --force despite blockers."
+        fi
+    fi
+fi
+```
+
+### 9.1. Snapshot Ledger Issues (FEAT-566)
+
+For feature flows (not hotfixes), snapshot changed ledger issues from a throwaway
+detached worktree at `origin/<BASE_BRANCH>` to capture the base branch state
+without touching active worktrees.
+
+```bash
+if [[ "$TYPE" != "hotfix" ]]; then
+    # Create a temporary detached worktree at origin/<BASE_BRANCH>
+    TEMP_WORKTREE="$(mktemp -d)"
+    trap 'rm -rf "$TEMP_WORKTREE"' EXIT
+    
+    # Clone a detached HEAD at origin/<BASE_BRANCH>
+    git clone --no-checkout "file://$(pwd)" "$TEMP_WORKTREE" >/dev/null 2>&1
+    git -C "$TEMP_WORKTREE" checkout "origin/$BASE_BRANCH" >/dev/null 2>&1
+    
+    # Export ledger snapshot
+    LEDGER_SNAPSHOT_CHANGED=$(cd "$TEMP_WORKTREE" && wikitoolkit ledger export 2>&1 | grep -q "changed" && echo "true" || echo "false")
+    
+    if [[ "$LEDGER_SNAPSHOT_CHANGED" == "true" ]]; then
+        echo "📝 Ledger snapshot updated with changed issues"
+    fi
+    
+    # Clean up
+    rm -rf "$TEMP_WORKTREE"
+    trap - EXIT
+fi
+```
+
+### 9.2. Integrate Feature Branch (FEAT-145, flow-aware)
 
 > **CRITICAL**: This is the step that brings the implementation code into the
 > base branch. The default is to open a PR; pass `--merge` to merge directly.
