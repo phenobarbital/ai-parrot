@@ -239,6 +239,53 @@ _MIGRATION_COLUMNS: dict[str, list[tuple[str, str]]] = {
 #: replacement, or a partial legacy database), not just ``pages``.
 _SCHEMA_TABLES = frozenset({"meta", "sources", "pages", "edges", "pages_fts", "embeddings", "symbols", "symbols_fts"})
 
+
+class SQLitePragmaPolicy(BaseModel):
+    """Validated SQLite connection policy for one wiki plane.
+
+    Attributes:
+        busy_timeout_s: Seconds a connection waits for the writer lock
+            before SQLite gives up. Installed both as the connect-time
+            ``timeout=`` (which registers the busy handler) and as
+            ``PRAGMA busy_timeout`` (which makes the setting readable
+            back for diagnostics).
+        performance_pragmas: Opt-in memory-oriented tuning (mmap, cache,
+            temp-store). Off by default so that N concurrent agents do
+            not each map excessive memory.
+        journal_size_limit: Bytes of WAL retained after a successful
+            checkpoint. Defaults to 64 MiB.
+    """
+
+    busy_timeout_s: float = Field(default=15.0, ge=1.0, le=120.0)
+    performance_pragmas: bool = False
+    journal_size_limit: int = Field(default=67_108_864, ge=0)
+
+
+class WikiStoreBusy(sqlite3.OperationalError):
+    """Writer lock was not acquired within the configured busy timeout.
+
+    Subclasses :class:`sqlite3.OperationalError` so existing handlers
+    keep working; raised ONLY at the ``BEGIN IMMEDIATE`` boundary, never
+    for an arbitrary later statement error.
+
+    Attributes:
+        db_path: Plane whose writer lock was contended.
+        operation: Logical write operation that was waiting.
+        waited_seconds: Configured busy timeout that was exhausted.
+    """
+
+    def __init__(self, db_path: Path, operation: str, waited_seconds: float) -> None:
+        self.db_path = db_path
+        self.operation = operation
+        self.waited_seconds = waited_seconds
+        super().__init__(
+            f"wiki plane {db_path} is busy: could not acquire the SQLite writer "
+            f"lock for {operation!r} within {waited_seconds:g}s. Another build, "
+            f"ingest or agent write is holding it; retry, or raise "
+            f"sqlite_busy_timeout in .parrot/wiki.json."
+        )
+
+
 _FTS_TOKEN_RE = re.compile(r"\w+", re.UNICODE)
 
 
