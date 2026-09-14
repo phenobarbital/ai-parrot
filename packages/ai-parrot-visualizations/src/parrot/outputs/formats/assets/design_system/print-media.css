@@ -51,16 +51,41 @@
         display: none !important;
     }
 
-    /* Nothing that reads as one thing should be split in two. */
     .a2ui-card,
-    .kpi-card,
     .a2ui-chart-wrap,
     .a2ui-graph-wrap,
-    .a2ui-table-wrap,
-    .a2ui-section {
+    .a2ui-table-wrap {
         box-shadow: none;
+    }
+
+    /* Only what FITS on a page may refuse to be split. Asking a block taller
+     * than the page to stay whole does not shrink it — the browser gives up,
+     * pushes the whole thing to the next sheet and leaves the rest of the
+     * current one blank. `.a2ui-card` covered the report's own outer card, a
+     * section of two full-height charts and a forty-row table, which is how
+     * a report with seven pages of content printed a half-empty first page
+     * and a third page holding nothing but a heading. */
+    .kpi-card,
+    .a2ui-chart-wrap,
+    .a2ui-graph-wrap {
         break-inside: avoid;
         page-break-inside: avoid;
+    }
+
+    .a2ui-card[data-variant="infographic"],
+    .a2ui-section,
+    .a2ui-table-wrap {
+        break-inside: auto;
+        page-break-inside: auto;
+    }
+
+    /* A heading is the first line of what follows it, never the last line of
+     * the page before. */
+    .a2ui-heading,
+    .a2ui-title,
+    .a2ui-subtitle {
+        break-after: avoid;
+        page-break-after: avoid;
     }
 
     /* A fixed count, never the responsive track function the analytics

@@ -918,3 +918,36 @@ class TestTableHeadersReadLikeAReport:
         )
         doc = (await InteractiveHTMLRenderer().render(env)).content.decode()
         assert "background: var(--panel-bg)" in doc
+
+
+class TestPageBreaksDoNotWasteSheets:
+    """Only what fits on a page may refuse to be split.
+
+    Asking a block taller than the page to stay whole does not shrink it:
+    the browser pushes the whole thing to the next sheet and leaves the
+    current one blank. A seven-page report printed a half-empty first page
+    and a third page holding nothing but a heading.
+    """
+
+    async def _print_block(self) -> str:
+        env = _envelope(
+            Component(id="root", component="Text", text="x"),
+        )
+        doc = (await InteractiveHTMLRenderer().render(env)).content.decode()
+        return doc[re.search(r"@media print\s*\{", doc).end():]
+
+    async def test_a_section_and_a_table_may_break_across_pages(self):
+        block = await self._print_block()
+        allowed = block[block.index('.a2ui-card[data-variant="infographic"]'):][:220]
+        assert ".a2ui-section" in allowed
+        assert ".a2ui-table-wrap" in allowed
+        assert "break-inside: auto" in allowed
+
+    async def test_a_card_and_a_chart_still_stay_whole(self):
+        block = await self._print_block()
+        kept = block[block.index(".kpi-card,"):][:200]
+        assert ".a2ui-chart-wrap" in kept
+        assert "break-inside: avoid" in kept
+
+    async def test_a_heading_is_never_the_last_line_of_a_page(self):
+        assert "break-after: avoid" in await self._print_block()
