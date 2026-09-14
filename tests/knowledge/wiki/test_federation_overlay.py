@@ -283,16 +283,37 @@ class TestOverlayPrefixCollisions:
         """Two overlays claiming the same prefix raise ValueError."""
         # Create local store
         local = SQLiteWikiStore(tmp_path / "local" / "wiki.db")
-        await local.upsert_pages([])
+        await local.upsert_pages([
+            WikiPageRecord(
+                concept_id="sym:placeholder.py#Local",
+                title="Placeholder",
+                summary="Placeholder page so the SQLite plane exists on disk.",
+                body="placeholder",
+            )
+        ])
 
         # Create ledger1 store and read-only copy
         ledger1_w = SQLiteWikiStore(tmp_path / "ledger1" / "wiki.db")
-        await ledger1_w.upsert_pages([])
+        await ledger1_w.upsert_pages([
+            WikiPageRecord(
+                concept_id="issue:placeholder-1",
+                title="Placeholder",
+                summary="Placeholder page so the SQLite plane exists on disk.",
+                body="placeholder",
+            )
+        ])
         ledger1 = SQLiteWikiStore(tmp_path / "ledger1" / "wiki.db", read_only=True)
 
         # Create ledger2 store and read-only copy
         ledger2_w = SQLiteWikiStore(tmp_path / "ledger2" / "wiki.db")
-        await ledger2_w.upsert_pages([])
+        await ledger2_w.upsert_pages([
+            WikiPageRecord(
+                concept_id="issue:placeholder-2",
+                title="Placeholder",
+                summary="Placeholder page so the SQLite plane exists on disk.",
+                body="placeholder",
+            )
+        ])
         ledger2 = SQLiteWikiStore(tmp_path / "ledger2" / "wiki.db", read_only=True)
 
         # Both overlays claim "issue" - collision
@@ -329,16 +350,37 @@ class TestOverlayPrefixCollisions:
         """Non-overlapping prefixes do not raise."""
         # Create local store
         local = SQLiteWikiStore(tmp_path / "local" / "wiki.db")
-        await local.upsert_pages([])
+        await local.upsert_pages([
+            WikiPageRecord(
+                concept_id="sym:placeholder.py#Local",
+                title="Placeholder",
+                summary="Placeholder page so the SQLite plane exists on disk.",
+                body="placeholder",
+            )
+        ])
 
         # Create ledger1 store and read-only copy
         ledger1_w = SQLiteWikiStore(tmp_path / "ledger1" / "wiki.db")
-        await ledger1_w.upsert_pages([])
+        await ledger1_w.upsert_pages([
+            WikiPageRecord(
+                concept_id="issue:placeholder-1",
+                title="Placeholder",
+                summary="Placeholder page so the SQLite plane exists on disk.",
+                body="placeholder",
+            )
+        ])
         ledger1 = SQLiteWikiStore(tmp_path / "ledger1" / "wiki.db", read_only=True)
 
         # Create ledger2 store and read-only copy
         ledger2_w = SQLiteWikiStore(tmp_path / "ledger2" / "wiki.db")
-        await ledger2_w.upsert_pages([])
+        await ledger2_w.upsert_pages([
+            WikiPageRecord(
+                concept_id="issue:placeholder-2",
+                title="Placeholder",
+                summary="Placeholder page so the SQLite plane exists on disk.",
+                body="placeholder",
+            )
+        ])
         ledger2 = SQLiteWikiStore(tmp_path / "ledger2" / "wiki.db", read_only=True)
 
         # Different prefixes - no collision
@@ -375,16 +417,37 @@ class TestOverlayPrefixCollisions:
         """Overlays with empty prefixes do not affect collision detection."""
         # Create local store
         local = SQLiteWikiStore(tmp_path / "local" / "wiki.db")
-        await local.upsert_pages([])
+        await local.upsert_pages([
+            WikiPageRecord(
+                concept_id="sym:placeholder.py#Local",
+                title="Placeholder",
+                summary="Placeholder page so the SQLite plane exists on disk.",
+                body="placeholder",
+            )
+        ])
 
         # Create ledger1 store and read-only copy
         ledger1_w = SQLiteWikiStore(tmp_path / "ledger1" / "wiki.db")
-        await ledger1_w.upsert_pages([])
+        await ledger1_w.upsert_pages([
+            WikiPageRecord(
+                concept_id="issue:placeholder-1",
+                title="Placeholder",
+                summary="Placeholder page so the SQLite plane exists on disk.",
+                body="placeholder",
+            )
+        ])
         ledger1 = SQLiteWikiStore(tmp_path / "ledger1" / "wiki.db", read_only=True)
 
         # Create ledger2 store and read-only copy
         ledger2_w = SQLiteWikiStore(tmp_path / "ledger2" / "wiki.db")
-        await ledger2_w.upsert_pages([])
+        await ledger2_w.upsert_pages([
+            WikiPageRecord(
+                concept_id="issue:placeholder-2",
+                title="Placeholder",
+                summary="Placeholder page so the SQLite plane exists on disk.",
+                body="placeholder",
+            )
+        ])
         ledger2 = SQLiteWikiStore(tmp_path / "ledger2" / "wiki.db", read_only=True)
 
         # One overlay has empty prefixes (not an overlay)
