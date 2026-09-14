@@ -25,9 +25,7 @@
       "status": "in-progress",
       "priority": "high",
       "effort": "M",
-      "depends_on": [
-        "TASK-3226"
-      ],
+      "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Foundation after FEAT-557; project.py and a new test only.",
       "assigned_to": null,
@@ -46,9 +44,7 @@
       "status": "in-progress",
       "priority": "high",
       "effort": "M",
-      "depends_on": [
-        "TASK-3226"
-      ],
+      "depends_on": [],
       "parallel": true,
       "parallelism_notes": "New ledger package and tests only.",
       "assigned_to": null,
@@ -68,7 +64,6 @@
       "priority": "high",
       "effort": "M",
       "depends_on": [
-        "TASK-3226",
         "TASK-3228"
       ],
       "parallel": true,
@@ -90,7 +85,6 @@
       "priority": "high",
       "effort": "M",
       "depends_on": [
-        "TASK-3226",
         "TASK-3228"
       ],
       "parallel": true,
@@ -112,7 +106,6 @@
       "priority": "high",
       "effort": "L",
       "depends_on": [
-        "TASK-3226",
         "TASK-3228",
         "TASK-3229",
         "TASK-3230"
@@ -136,7 +129,6 @@
       "priority": "high",
       "effort": "L",
       "depends_on": [
-        "TASK-3226",
         "TASK-3227",
         "TASK-3229",
         "TASK-3231"
@@ -160,7 +152,6 @@
       "priority": "medium",
       "effort": "M",
       "depends_on": [
-        "TASK-3226",
         "TASK-3227",
         "TASK-3230",
         "TASK-3231"
@@ -184,7 +175,6 @@
       "priority": "high",
       "effort": "L",
       "depends_on": [
-        "TASK-3226",
         "TASK-3227"
       ],
       "parallel": true,
@@ -206,7 +196,6 @@
       "priority": "high",
       "effort": "L",
       "depends_on": [
-        "TASK-3226",
         "TASK-3232",
         "TASK-3234"
       ],
@@ -229,7 +218,6 @@
       "priority": "high",
       "effort": "L",
       "depends_on": [
-        "TASK-3226",
         "TASK-3232",
         "TASK-3233"
       ],
@@ -252,7 +240,6 @@
       "priority": "medium",
       "effort": "M",
       "depends_on": [
-        "TASK-3226",
         "TASK-3227"
       ],
       "parallel": true,
@@ -274,7 +261,6 @@
       "priority": "medium",
       "effort": "M",
       "depends_on": [
-        "TASK-3226",
         "TASK-3227",
         "TASK-3232"
       ],
@@ -297,7 +283,6 @@
       "priority": "high",
       "effort": "S",
       "depends_on": [
-        "TASK-3226",
         "TASK-3236"
       ],
       "parallel": true,
@@ -319,7 +304,6 @@
       "priority": "high",
       "effort": "M",
       "depends_on": [
-        "TASK-3226",
         "TASK-3235",
         "TASK-3236"
       ],
@@ -342,7 +326,6 @@
       "priority": "high",
       "effort": "M",
       "depends_on": [
-        "TASK-3226",
         "TASK-3232",
         "TASK-3236"
       ],
@@ -365,7 +348,6 @@
       "priority": "high",
       "effort": "L",
       "depends_on": [
-        "TASK-3226",
         "TASK-3236"
       ],
       "parallel": true,
@@ -387,7 +369,6 @@
       "priority": "high",
       "effort": "M",
       "depends_on": [
-        "TASK-3226",
         "TASK-3231",
         "TASK-3232",
         "TASK-3233",
@@ -416,7 +397,6 @@
       "priority": "high",
       "effort": "M",
       "depends_on": [
-        "TASK-3226",
         "TASK-3235",
         "TASK-3236",
         "TASK-3239",
