@@ -253,6 +253,10 @@ _BEHAVIOR_JS = r"""
   }
   reportData(); // parsed for validation / future generic $bind use; charts embed their own config.
 
+  // A mid-tone grey, so the fitted line holds up against either a light or a
+  // dark card without ever borrowing a colour that means something.
+  var TREND_COLOR = "#94a3b8";
+
   // Least squares over the first y column, drawn dashed and without markers
   // so nobody reads the fitted line as measured data. Returns null when
   // there is nothing to fit: fewer than two numbers, or every x the same.
@@ -292,6 +296,12 @@ _BEHAVIOR_JS = r"""
           label: (names[0] || col) + " trend",
           data: fitted,
           type: "line",
+          // Grey on purpose, not the next colour off the palette. In this
+          // report a colour is a judgement -- green is good news, red is bad
+          // -- and a regression is geometry, not a verdict. Left to Chart.js
+          // the line came out red, which reads as an alarm nobody raised.
+          borderColor: TREND_COLOR,
+          backgroundColor: TREND_COLOR,
           borderDash: [6, 4],
           borderWidth: 2,
           pointRadius: 0,

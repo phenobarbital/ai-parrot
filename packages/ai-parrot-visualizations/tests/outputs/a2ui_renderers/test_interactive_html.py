@@ -729,3 +729,19 @@ class TestInteractiveChartTrendline:
         # The config carries the FLAG and the rows, never fitted points.
         config = self._doc_and_config(doc)
         assert set(config["data"][0]) == {"day", "actual"}
+
+    async def test_the_fitted_line_never_borrows_a_meaningful_colour(self):
+        # Colour is a judgement in these reports -- green is good news, red is
+        # bad. Left to Chart.js the trend came out red, reading as an alarm
+        # nobody raised. Grey, and the same grey the other two renderers use.
+        env = _envelope(
+            Component(
+                id="root", component="Chart", type="line", x="day", y=["actual"],
+                data={"path": "/rows"}, trendline=True,
+            ),
+            data_model={"rows": [{"day": "Mon", "actual": 10}, {"day": "Tue", "actual": 14}]},
+        )
+        art = await InteractiveHTMLRenderer().render(env)
+        doc = art.content.decode()
+        assert 'var TREND_COLOR = "#94a3b8"' in doc
+        assert "borderColor: TREND_COLOR" in doc

@@ -80,3 +80,20 @@ async def test_echarts_defaults_without_new_props():
     assert "visualMap" not in option
     assert "grid" not in option
     assert len(option["series"]) == 2  # no trendline series appended
+
+
+async def test_the_trend_line_is_grey_not_the_next_palette_colour():
+    """A colour is a judgement in these reports; a regression is geometry.
+
+    Left to ECharts the fitted line took the next palette entry, which in the
+    FieldSync report came out red — an alarm nobody raised.
+    """
+    from parrot.outputs.a2ui_renderers.echarts import _TREND_COLOR
+
+    comp = _chart_component(trendline=True)
+    option = json.loads((await EChartsRenderer().render(_envelope(comp))).content)
+    trend = [s for s in option["series"] if str(s["name"]).endswith("Trend")]
+    assert len(trend) == 1
+    assert trend[0]["lineStyle"]["color"] == _TREND_COLOR
+    # The measured series keep whatever the palette gives them.
+    assert all("lineStyle" not in s for s in option["series"] if not str(s["name"]).endswith("Trend"))

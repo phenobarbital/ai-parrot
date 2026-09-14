@@ -38,6 +38,11 @@ from parrot.outputs.a2ui_renderers._intercept import intercepts
 
 logger = logging.getLogger(__name__)
 
+#: The fitted-trend line's colour, shared with the interactive surface and the
+#: Svelte canvas. A mid-tone grey: in these reports a colour is a judgement,
+#: and a regression line is geometry that must not borrow one.
+_TREND_COLOR = "#94a3b8"
+
 _SURFACE_NAME = "echarts"
 
 #: The one (catalog_id, name) pair this renderer intercepts as a native
@@ -279,6 +284,12 @@ class EChartsRenderer(AbstractA2UIRenderer):
                         "data": trend_values,
                         "smooth": True,
                         "symbol": "none",
+                        # Grey on purpose, not the next colour off the palette:
+                        # a colour is a judgement in these reports and a
+                        # regression is geometry. Same tone as the interactive
+                        # surface and the Svelte canvas draw it in.
+                        "lineStyle": {"type": "dashed", "color": _TREND_COLOR},
+                        "itemStyle": {"color": _TREND_COLOR},
                     }
                 )
 
