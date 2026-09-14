@@ -456,6 +456,27 @@ class WikiProjectConfig(BaseModel):
             "tree-sitter/heuristic tiers even if ast-grep-py is installed."
         ),
     )
+    sqlite_busy_timeout: float = Field(
+        default=15.0,
+        ge=1.0,
+        le=120.0,
+        description=(
+            "Seconds a SQLite connection waits for the writer lock before "
+            "giving up (FEAT-557). Bounds the wait for every wiki reader "
+            "and writer on this plane; an exhausted wait surfaces as a "
+            "typed WikiStoreBusy rather than 'database is locked'."
+        ),
+    )
+    sqlite_performance_pragmas: bool = Field(
+        default=False,
+        description=(
+            "Opt-in memory-oriented SQLite pragmas (mmap_size, cache_size, "
+            "temp_store) (FEAT-557). Off by default so that N concurrent "
+            "agents do not each map excessive memory. The safe pragmas "
+            "(busy_timeout, synchronous=NORMAL, 64 MiB journal_size_limit) "
+            "are always applied and are not gated by this flag."
+        ),
+    )
 
     @field_validator("namespaces")
     @classmethod
