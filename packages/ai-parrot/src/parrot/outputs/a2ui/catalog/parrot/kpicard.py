@@ -27,12 +27,17 @@ KPICARD_SCHEMA: dict[str, Any] = {
             "description": "Optional label for the baseline period the delta compares against (FEAT-527).",
         },
         "higherIsBetter": {
-            "type": "boolean",
+            "type": ["boolean", "null"],
             "description": (
-                "Whether a RISING value is good news. Default true. Set false for a "
-                "metric where up is worse (missed visits, defects, cost): the arrow "
-                "still points the way the number moved, but the colour reports what "
-                "that means."
+                "Whether a RISING value is good news. Three answers, not two. "
+                "Omitted: yes (the default). False: a metric where up is worse "
+                "(missed visits, defects, cost) -- the arrow still points the way "
+                "the number moved, but the colour reports what that means. NULL: "
+                "the question has no answer, so nothing is judged and the delta "
+                "renders neutral. Hours worked is the case: an input, not an "
+                "outcome, whose meaning depends on what was achieved with it -- "
+                "fewer hours is efficiency or under-coverage, and the card cannot "
+                "tell. Note that null and omitted differ ON PURPOSE."
             ),
         },
         "format": {
@@ -52,7 +57,9 @@ KPICARD_INSTRUCTIONS = (
     "Use KPICard to highlight a single headline metric. Provide `label` and `value`; "
     "optionally `unit`, `delta`, `trend` (up/down/flat), `icon`, `color`, "
     "`comparisonPeriod` (e.g. 'vs Q2'), `higherIsBetter` (false when up is bad "
-    "news, e.g. missed visits), and `format` (percent/currency/number — "
+    "news, e.g. missed visits; null when the metric has no good direction at "
+    "all, e.g. hours worked, and must not be judged) "
+    "and `format` (percent/currency/number — "
     "send a ratio as 0.683 with format='percent', never as the string '68.3%'). "
     "Display-only."
 )
@@ -74,6 +81,13 @@ def _as_text(value: Any) -> Any:
     return str(value)
 
 
+#: `higherIsBetter` absent. Distinct from an explicit null, which is the
+#: author saying the metric has no good direction — `.get()` alone cannot
+#: tell those apart, and collapsing them would silently judge a metric that
+#: asked not to be judged.
+_UNDECLARED = object()
+
+
 def _sentiment(trend: Any, higher_is_better: Any) -> str | None:
     """Is this movement good news? ``good`` | ``bad`` | ``neutral``.
 
@@ -82,12 +96,20 @@ def _sentiment(trend: Any, higher_is_better: Any) -> str | None:
     Without this a renderer has to assume the first, and paints a month with
     more missed events green.
 
-    ``None`` when there is no direction to judge, so a card that says nothing
-    keeps saying nothing.
+    Some metrics have no good direction at all. An explicit ``None`` says so
+    and the movement renders neutral: hours worked is an input, not an
+    outcome, and whether fewer of them is efficiency or under-coverage is a
+    question this card cannot answer. ``_UNDECLARED`` (the property absent)
+    keeps the old default — rising is good.
+
+    Returns ``None`` when there is no direction to judge at all, so a card
+    that says nothing keeps saying nothing.
     """
     if trend not in ("up", "down", "flat"):
         return None
     if trend == "flat":
+        return "neutral"
+    if higher_is_better is None:
         return "neutral"
     rising_is_good = higher_is_better is not False
     return "good" if (trend == "up") == rising_is_good else "bad"
@@ -144,7 +166,9 @@ class KPICardComponent:
                         "extensions": {
                             "parrot_role": "delta",
                             "parrot_trend": trend,
-                            "parrot_sentiment": _sentiment(trend, props.get("higherIsBetter")),
+                            "parrot_sentiment": _sentiment(
+                                trend, props.get("higherIsBetter", _UNDECLARED)
+                            ),
                         }
                     },
                 )
