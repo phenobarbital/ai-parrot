@@ -362,3 +362,41 @@ class TestKpiValueFormatting:
     async def test_a_card_with_no_baseline_gains_nothing(self, renderer_cls):
         doc = (await renderer_cls().render(_kpi_envelope())).content.decode()
         assert '<span class="kpi-comparison"' not in doc
+
+
+@pytest.mark.parametrize("renderer_cls", RENDERERS)
+class TestUpIsNotAlwaysGoodNews:
+    """More missed visits is an UP arrow and BAD news, and the card has to be
+    able to say both. With only `trend` to go on, a renderer paints every
+    rise green — so a worse month reported as an improvement."""
+
+    pytestmark = pytest.mark.asyncio
+
+    @staticmethod
+    def _missed(higher_is_better):
+        props = {"label": "Missed", "value": 5, "delta": "+66.7%", "trend": "up"}
+        if higher_is_better is not None:
+            props["higherIsBetter"] = higher_is_better
+        return CreateSurface(
+            surfaceId="kpi",
+            catalogId="c",
+            components=[Component(id="root", component="KPICard", **props)],
+            dataModel={},
+        )
+
+    async def test_a_rise_in_a_bad_metric_reads_as_bad(self, renderer_cls):
+        doc = (await renderer_cls().render(self._missed(False))).content.decode()
+        assert 'data-sentiment="bad"' in doc
+        # The arrow still points where the number went. Only the colour judges.
+        assert 'data-trend="up"' in doc
+
+    async def test_a_rise_in_a_good_metric_still_reads_as_good(self, renderer_cls):
+        doc = (await renderer_cls().render(self._missed(True))).content.decode()
+        assert 'data-sentiment="good"' in doc
+
+    async def test_a_card_that_never_declared_it_is_unchanged(self, renderer_cls):
+        # No `higherIsBetter`: rising is assumed to be good news, exactly as
+        # every card behaved before this existed.
+        doc = (await renderer_cls().render(self._missed(None))).content.decode()
+        assert 'data-trend="up"' in doc
+        assert 'data-sentiment="good"' in doc

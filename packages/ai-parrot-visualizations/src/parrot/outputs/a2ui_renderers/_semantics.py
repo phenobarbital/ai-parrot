@@ -188,13 +188,22 @@ def trend_attr_html(node: BasicNode) -> str:
 
     Returns:
         The leading-space-prefixed attribute string, or ``""`` (no
-        attribute) when no trend is set. ``components.css`` colours the
-        element based on this attribute's value.
+        attribute) when no trend is set. Carries ``data-sentiment`` too when
+        lowering supplied one; ``components.css`` colours by that and falls
+        back to ``data-trend``.
     """
-    trend = node_extensions(node).get("parrot_trend")
+    ext = node_extensions(node)
+    trend = ext.get("parrot_trend")
     if not trend:
         return ""
-    return f' data-trend="{_esc(trend)}"'
+    attrs = f' data-trend="{_esc(trend)}"'
+    # The direction is what the arrow shows; the sentiment is what the colour
+    # means. `components.css` prefers the sentiment and falls back to the
+    # direction, so a card lowered before this existed is unchanged.
+    sentiment = ext.get("parrot_sentiment")
+    if sentiment:
+        attrs += f' data-sentiment="{_esc(sentiment)}"'
+    return attrs
 
 
 def is_kpi_row(node: BasicNode) -> bool:

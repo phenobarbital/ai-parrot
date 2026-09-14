@@ -26,6 +26,15 @@ KPICARD_SCHEMA: dict[str, Any] = {
             "type": "string",
             "description": "Optional label for the baseline period the delta compares against (FEAT-527).",
         },
+        "higherIsBetter": {
+            "type": "boolean",
+            "description": (
+                "Whether a RISING value is good news. Default true. Set false for a "
+                "metric where up is worse (missed visits, defects, cost): the arrow "
+                "still points the way the number moved, but the colour reports what "
+                "that means."
+            ),
+        },
         "format": {
             "type": "string",
             "enum": ["percent", "currency", "number"],
@@ -42,7 +51,8 @@ KPICARD_SCHEMA: dict[str, Any] = {
 KPICARD_INSTRUCTIONS = (
     "Use KPICard to highlight a single headline metric. Provide `label` and `value`; "
     "optionally `unit`, `delta`, `trend` (up/down/flat), `icon`, `color`, "
-    "`comparisonPeriod` (e.g. 'vs Q2'), and `format` (percent/currency/number — "
+    "`comparisonPeriod` (e.g. 'vs Q2'), `higherIsBetter` (false when up is bad "
+    "news, e.g. missed visits), and `format` (percent/currency/number — "
     "send a ratio as 0.683 with format='percent', never as the string '68.3%'). "
     "Display-only."
 )
@@ -62,6 +72,25 @@ def _as_text(value: Any) -> Any:
     if value is None or isinstance(value, dict):
         return value
     return str(value)
+
+
+def _sentiment(trend: Any, higher_is_better: Any) -> str | None:
+    """Is this movement good news? ``good`` | ``bad`` | ``neutral``.
+
+    Direction and sentiment are the same thing for most metrics and exact
+    opposites for the ones where up is worse — missed visits, defects, cost.
+    Without this a renderer has to assume the first, and paints a month with
+    more missed events green.
+
+    ``None`` when there is no direction to judge, so a card that says nothing
+    keeps saying nothing.
+    """
+    if trend not in ("up", "down", "flat"):
+        return None
+    if trend == "flat":
+        return "neutral"
+    rising_is_good = higher_is_better is not False
+    return "good" if (trend == "up") == rising_is_good else "bad"
 
 
 @register_component("KPICard")
@@ -103,6 +132,10 @@ class KPICardComponent:
             # (itself meaningful text: "up"/"down"/"flat") and finally an
             # empty string, never an absent/None text (TASK-2548 conformance
             # sweep: a text-less Text node fails agent_to_renderer.json).
+            # `parrot_trend` is the DIRECTION the value moved; `parrot_sentiment`
+            # is whether that is good news. They are the same thing for most
+            # metrics and opposites for the ones where up is worse, and a
+            # renderer that only had the direction had to assume the first.
             children.append(
                 BasicNode(
                     component="Text",
@@ -111,6 +144,7 @@ class KPICardComponent:
                         "extensions": {
                             "parrot_role": "delta",
                             "parrot_trend": trend,
+                            "parrot_sentiment": _sentiment(trend, props.get("higherIsBetter")),
                         }
                     },
                 )

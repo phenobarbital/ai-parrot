@@ -173,9 +173,18 @@
     font-size: 0.75rem;
     color: var(--neutral-muted);
 }
+/* Direction, as a fallback: for a card lowered before sentiment existed,
+   rising is still assumed to be good news. */
 .kpi-delta[data-trend="up"] { color: var(--accent-green); }
 .kpi-delta[data-trend="down"] { color: var(--accent-red); }
 .kpi-delta[data-trend="flat"] { color: var(--neutral-muted); }
+
+/* Sentiment wins where it is declared. The ARROW keeps pointing the way the
+   number moved — more missed visits is still an up arrow — and only the
+   colour reports what that movement means. */
+.kpi-delta[data-sentiment="good"] { color: var(--accent-green); }
+.kpi-delta[data-sentiment="bad"] { color: var(--accent-red); }
+.kpi-delta[data-sentiment="neutral"] { color: var(--neutral-muted); }
 
 /* ---------- Semantic text roles (design-system equivalents) ---------- */
 .ds-title {
