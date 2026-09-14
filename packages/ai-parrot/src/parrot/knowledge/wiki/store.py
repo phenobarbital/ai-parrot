@@ -872,6 +872,8 @@ class SQLiteWikiStore(BaseWikiStore):
         wiki_name: str = "",
         *,
         read_only: bool = False,
+        sqlite_policy: SQLitePragmaPolicy | None = None,
+        persistent_writer: bool = False,
     ) -> None:
         self._db_path = Path(db_path)
         self._read_only = read_only
@@ -907,6 +909,13 @@ class SQLiteWikiStore(BaseWikiStore):
         self._warned_read_only = False
         self._init_lock = asyncio.Lock()
         self.logger = logging.getLogger(__name__)
+        self._policy = sqlite_policy or SQLitePragmaPolicy()
+        self._persistent_writer = persistent_writer
+        #: Latched once this store instance has proven the plane's schema
+        #: is current, so later writes skip the migration probe entirely.
+        #: Per-instance on purpose (spec §2): never process-global.
+        self._migrated = asyncio.Event()
+        self._writer_conn: Optional[aiosqlite.Connection] = None
 
     @property
     def db_path(self) -> Path:
@@ -930,6 +939,146 @@ class SQLiteWikiStore(BaseWikiStore):
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    async def _apply_pragmas(self, conn: aiosqlite.Connection, *, writable: bool) -> None:
+        """Apply the policy's pragmas to a freshly opened connection.
+
+        Args:
+            conn: Connection to configure.
+            writable: When False, only read-safe pragmas are issued — a
+                read-only plane must never receive a write-capable
+                pragma (AC-4).
+        """
+        # busy_timeout is read-safe: it only bounds how long THIS
+        # connection waits for a lock. Milliseconds, not seconds.
+        await conn.execute(f"PRAGMA busy_timeout = {int(self._policy.busy_timeout_s * 1000)}")
+        if writable:
+            await conn.execute("PRAGMA journal_mode = WAL")
+            await conn.execute("PRAGMA synchronous = NORMAL")
+            await conn.execute(f"PRAGMA journal_size_limit = {self._policy.journal_size_limit}")
+        if self._policy.performance_pragmas:
+            # Read-safe, memory-oriented tuning: opt-in only, so that N
+            # concurrent agents do not each map excessive memory by
+            # default (spec §2 non-goals). `mmap_size` and `cache_size`
+            # are read-safe on any connection; `temp_store = MEMORY`
+            # only affects this connection's own temp objects.
+            await conn.execute("PRAGMA mmap_size = 268435456")
+            await conn.execute("PRAGMA cache_size = -20000")
+            await conn.execute("PRAGMA temp_store = MEMORY")
+
+    @asynccontextmanager
+    async def _open(self, *, writable: bool) -> AsyncIterator[aiosqlite.Connection]:
+        """Open one policy-configured connection to this plane.
+
+        The single ``aiosqlite.connect`` call site for the read-write
+        path: ``timeout=`` installs SQLite's busy handler, and
+        ``isolation_level=None`` puts the driver in autocommit so that
+        :meth:`_write` owns every transaction boundary explicitly.
+
+        Args:
+            writable: Whether write-capable pragmas may be applied.
+
+        Yields:
+            A configured connection.
+        """
+        async with aiosqlite.connect(
+            str(self._db_path),
+            timeout=self._policy.busy_timeout_s,
+            isolation_level=None,
+        ) as conn:
+            conn.row_factory = aiosqlite.Row
+            await self._apply_pragmas(conn, writable=writable)
+            yield conn
+
+    @asynccontextmanager
+    async def _read(self) -> AsyncIterator[aiosqlite.Connection]:
+        """Yield a read-safe connection; never migrate, never write.
+
+        The only route for pure reads. On an already-migrated plane this
+        issues zero DML/DDL (AC-4). Preserves the existing read-only
+        ladder: an explicitly read-only store, or a plane that turns out
+        to be unwritable, degrades exactly as :meth:`_connect` does today.
+
+        Yields:
+            A connection safe to SELECT from.
+        """
+        if self._read_only:
+            if self._sidecars_quiescent():
+                yielded = False
+                try:
+                    async with self._connect_immutable() as conn:
+                        # Re-check AFTER the open: ``immutable=1`` promises
+                        # SQLite the file cannot change, so a writer that
+                        # started between the probe and the open would make
+                        # this connection read torn data. Narrow that window
+                        # by confirming the plane is still quiescent before
+                        # handing the connection out; if it is not, fall
+                        # through to the locking ``mode=ro`` ladder, which
+                        # sees the writer's commits correctly.
+                        if self._sidecars_quiescent():
+                            yielded = True
+                            yield conn
+                            return
+                except sqlite3.OperationalError:
+                    if yielded:
+                        raise
+            async with self._connect_readonly() as conn:
+                yield conn
+            return
+        yielded = False
+        try:
+            async with self._open(writable=True) as conn:
+                yielded = True
+                yield conn
+            return
+        except sqlite3.OperationalError as exc:
+            if yielded or not self._db_path.is_file() or not self._is_readonly_env_error(exc):
+                raise
+        async with self._connect_readonly() as conn:
+            yield conn
+
+    @asynccontextmanager
+    async def _write(self, operation: str) -> AsyncIterator[aiosqlite.Connection]:
+        """Acquire ``BEGIN IMMEDIATE``, then commit or roll back exactly once.
+
+        Args:
+            operation: Logical name of the write, used in the error and
+                in debug logs (e.g. ``"upsert_pages"``).
+
+        Yields:
+            A connection inside an open immediate transaction.
+
+        Raises:
+            WikiStoreBusy: The writer lock was not acquired within the
+                configured busy timeout. Raised ONLY at the begin
+                boundary.
+            PermissionError: The store was opened read-only.
+        """
+        self._assert_writable()
+        async with self._open(writable=True) as conn:
+            if not self._migrated.is_set():
+                async with self._init_lock:
+                    if not self._migrated.is_set():
+                        await self._migrate(conn)
+                        self._migrated.set()
+            try:
+                await conn.execute("BEGIN IMMEDIATE")
+            except sqlite3.OperationalError as exc:
+                # Codes, not message substrings (spec §7): 5 = SQLITE_BUSY,
+                # 517 = SQLITE_BUSY_SNAPSHOT. Anything else is a real
+                # error and keeps its own semantics.
+                if getattr(exc, "sqlite_errorcode", None) in (5, 517):
+                    raise WikiStoreBusy(self._db_path, operation, self._policy.busy_timeout_s) from exc
+                raise
+            try:
+                yield conn
+            except BaseException:
+                try:
+                    await conn.execute("ROLLBACK")
+                except sqlite3.Error:  # pragma: no cover - rollback best effort
+                    self.logger.debug("rollback failed after %s", operation, exc_info=True)
+                raise
+            await conn.execute("COMMIT")
 
     @asynccontextmanager
     async def _connect(self) -> AsyncIterator[aiosqlite.Connection]:
@@ -1055,7 +1204,9 @@ class SQLiteWikiStore(BaseWikiStore):
             A read-only connection.
         """
         base = f"file:{quote(str(self._db_path))}"
-        async with aiosqlite.connect(f"{base}?mode=ro&immutable=1", uri=True) as conn:
+        async with aiosqlite.connect(
+            f"{base}?mode=ro&immutable=1", uri=True, timeout=self._policy.busy_timeout_s
+        ) as conn:
             conn.row_factory = aiosqlite.Row
             # The file open is lazy — force it before yielding.
             await conn.execute("SELECT 1 FROM sqlite_master LIMIT 1")
@@ -1090,7 +1241,7 @@ class SQLiteWikiStore(BaseWikiStore):
         base = f"file:{quote(str(self._db_path))}"
         yielded = False
         try:
-            async with aiosqlite.connect(f"{base}?mode=ro", uri=True) as conn:
+            async with aiosqlite.connect(f"{base}?mode=ro", uri=True, timeout=self._policy.busy_timeout_s) as conn:
                 conn.row_factory = aiosqlite.Row
                 # The file open is lazy — force it before yielding.
                 await conn.execute("SELECT 1 FROM sqlite_master LIMIT 1")
@@ -1125,7 +1276,9 @@ class SQLiteWikiStore(BaseWikiStore):
                 ) from plain_ro_error
         yielded = False
         try:
-            async with aiosqlite.connect(f"{base}?mode=ro&immutable=1", uri=True) as conn:
+            async with aiosqlite.connect(
+                f"{base}?mode=ro&immutable=1", uri=True, timeout=self._policy.busy_timeout_s
+            ) as conn:
                 conn.row_factory = aiosqlite.Row
                 await conn.execute("SELECT 1 FROM sqlite_master LIMIT 1")
                 self._log_read_only_once()
