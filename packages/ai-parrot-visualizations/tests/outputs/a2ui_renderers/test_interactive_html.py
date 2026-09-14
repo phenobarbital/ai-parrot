@@ -863,3 +863,58 @@ class TestPrintingAnExportedReport:
 
         assert "@media print" not in DesignSystem.stylesheet(layout="print")
         assert "@media print" in DesignSystem.stylesheet(layout="analytics")
+
+
+class TestTableHeadersReadLikeAReport:
+    """A report handed to a client had `store_id | store_name | rate` across
+    the top of its tables: the database schema, read by someone who does not
+    have it.
+    """
+
+    async def _headers(self, columns) -> str:
+        env = _envelope(
+            Component(
+                id="root", component="DataTable", columns=columns,
+                data={"path": "/rows"},
+            ),
+            data_model={"rows": [{"store_id": "BBY1", "scheduled": 2}]},
+        )
+        doc = (await InteractiveHTMLRenderer().render(env)).content.decode()
+        return re.search(r"<thead><tr>(.*?)</tr></thead>", doc).group(1)
+
+    async def test_a_declared_title_is_used_verbatim(self):
+        head = await self._headers([{"name": "store_id", "title": "Store", "type": "string"}])
+        assert ">Store</th>" in head
+        assert "store_id</th>" not in head
+
+    async def test_a_column_with_no_title_is_humanised_not_printed_raw(self):
+        # The fallback of last resort, not the default: a recipe should name
+        # its columns. But a key is never shown to a reader as-is.
+        head = await self._headers([{"name": "open_clocks", "type": "integer"}])
+        assert ">Open clocks</th>" in head
+
+    async def test_a_numeric_header_aligns_with_its_figures(self):
+        # Left-aligned over right-aligned numbers, a header labels the white
+        # space beside its column rather than the column.
+        head = await self._headers(
+            [
+                {"name": "store_id", "title": "Store", "type": "string"},
+                {"name": "scheduled", "title": "Scheduled", "type": "integer"},
+            ]
+        )
+        assert 'class="num">Scheduled</th>' in head
+        assert 'class="num">Store</th>' not in head
+
+    async def test_the_sticky_header_stays_opaque(self):
+        # `position: sticky` plus a transparent background prints the header
+        # and the first row on top of each other while the reader scrolls.
+        env = _envelope(
+            Component(
+                id="root", component="DataTable",
+                columns=[{"name": "a", "title": "A", "type": "string"}],
+                data={"path": "/rows"},
+            ),
+            data_model={"rows": [{"a": "1"}]},
+        )
+        doc = (await InteractiveHTMLRenderer().render(env)).content.decode()
+        assert "background: var(--panel-bg)" in doc

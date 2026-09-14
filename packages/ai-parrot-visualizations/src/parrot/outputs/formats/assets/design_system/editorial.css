@@ -199,28 +199,46 @@
 
 /* ---------- Tables ---------- */
 /* A header band in a filled colour competes with the data under it. A rule
- * in the accent marks the same boundary and leaves the ink to the numbers. */
+ * in the accent marks the same boundary and leaves the ink to the numbers.
+ *
+ * The background stays OPAQUE, though: on the analytics layout the header is
+ * `position: sticky`, and a transparent one lets the rows scroll through it
+ * — the header and the first store end up printed on top of each other. */
 thead th {
-    background: transparent;
+    background: var(--panel-bg);
     color: var(--neutral-text);
     font-weight: 600;
     font-size: 0.78rem;
     letter-spacing: 0;
     text-transform: none;
     border-bottom: 2px solid var(--primary);
-    padding: 0.5rem 0.6rem;
+    padding: 0.55rem 0.6rem;
 }
 
+/* One device for row separation, not two. Rules under every row plus a tint
+ * behind every other one is a grid fighting a stripe; the stripe wins here
+ * because these tables are long and scanned across, not down. */
 tbody td {
-    padding: 0.45rem 0.6rem;
-    font-variant-numeric: tabular-nums;
-    border-bottom: 1px solid var(--neutral-border);
+    padding: 0.42rem 0.6rem;
+    border-bottom: 0;
 }
 
 tbody tr:nth-child(even) {
     background: var(--neutral-bg);
+    background: color-mix(in srgb, var(--neutral-text) 3.5%, transparent);
 }
 
-tbody tr:last-child td {
-    border-bottom: 0;
+/* A figure is not source code. Tabular figures already line the digits up
+ * column by column, which is the only thing the monospace face was buying —
+ * and it bought it at the cost of every table reading like a terminal. */
+table .num,
+.a2ui-cell.num {
+    font-family: var(--font-family);
+    font-variant-numeric: tabular-nums;
+}
+
+/* The header of a numeric column sits over its figures, not over the gap
+ * beside them. */
+thead th.num {
+    text-align: right;
 }

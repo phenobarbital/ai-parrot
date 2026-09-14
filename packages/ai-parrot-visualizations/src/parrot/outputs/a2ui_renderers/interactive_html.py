@@ -112,7 +112,7 @@ from ._semantics import (
     trend_attr_html,
 )
 from ._shell import document_shell
-from ._table_format import format_cell_html
+from ._table_format import format_cell_html, is_numeric_column
 
 # NOTE (post-review, FEAT-522): deliberately NOT a top-level `from .folium_map
 # import build_map_document`. `folium_map.py` builds its `_OFFLINE_URL_MAP`
@@ -1288,12 +1288,30 @@ class InteractiveHTMLRenderer(AbstractA2UIRenderer):
         table_id = f"table-{uuid.uuid4().hex[:8]}"
 
         title_html = f'<p class="a2ui-heading">{html.escape(str(title))}</p>' if title else ""
-        header_cells = "".join(
-            f'<th data-sort-key="{html.escape(str(col.get("name", "")), quote=True)}">'
-            f'{html.escape(str(col.get("title") or col.get("name", "")))}</th>'
-            for col in columns
-            if isinstance(col, dict)
-        )
+        # Two things a header row has to get right, and neither was free.
+        #
+        # A column with no `title` printed its DATA KEY: a report handed to a
+        # client read `store_id | store_name | rate` across the top. The key
+        # is the fallback of last resort now, humanised on the way out, the
+        # same treatment a chart's series names already got.
+        #
+        # And a numeric header carries `num`, so it right-aligns with the
+        # figures beneath it. Left-aligned over right-aligned numbers, a
+        # header labels the white space next to its column rather than the
+        # column.
+        header_parts: list[str] = []
+        for col in columns:
+            if not isinstance(col, dict):
+                continue
+            name = str(col.get("name", ""))
+            label = str(col.get("title") or humanize_key(name))
+            numeric = ' class="num"' if is_numeric_column(col.get("type")) else ""
+            header_parts.append(
+                f'<th data-sort-key="{html.escape(name, quote=True)}"{numeric}>'
+                f"{html.escape(label)}</th>"
+            )
+        header_cells = "".join(header_parts)
+
         body_rows = []
         for row in rows:
             if not isinstance(row, dict):
