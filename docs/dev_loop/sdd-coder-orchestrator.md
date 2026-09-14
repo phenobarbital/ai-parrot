@@ -101,12 +101,13 @@ availability and reason, and `sdd-worker` prints it.
    `coder_prepare_native` followed by `Agent(subagent_type="sdd-coder",
    model="haiku", …)` in the same message. This is the only way the native
    seat actually runs in parallel with the MCP seats.
-3. Poll `coder_wait(job_id, timeout_seconds=120)` until `state != "running"`.
+3. Poll `coder_wait(job_id, timeout_seconds=90)` until `state != "running"`.
    `timeout_seconds` is clamped to **300 s** server-side regardless of what
    is requested — a timeout never leaves a job unresolved: it simply
    returns the current `"running"` snapshot, and jobs persist until
-   `coder_cleanup` runs. **Never call `coder_status` or anything else in
-   the same message as `coder_wait`** — the stdio MCP server handles
+   `coder_cleanup` runs. The 90-second client poll leaves margin below Claude
+   Code's 120-second foreground MCP-call limit. **Never call `coder_status`
+   or anything else in the same message as `coder_wait`** — the stdio MCP server handles
    requests strictly sequentially, so a second call in the same turn would
    queue behind the blocking wait instead of running concurrently.
 4. Consolidate every task by outcome (see below), running acceptance

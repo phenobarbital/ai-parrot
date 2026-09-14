@@ -234,7 +234,7 @@ consolidate, and own SDD state. Coders (`sdd-coder`) run one task each in their 
    you later as a task **notification** (its final message is the coder's DevelopmentOutput). Nothing in your
    toolset can query a running agent. **Never call `Agent` again for the same task** — no `"continue"`, no
    status probe, no call without a `prompt`: that spawns a second, context-less coder that fights the first one.
-3. **Wait.** Loop `coder_wait(job_id, timeout_seconds=120)` until `data.state != "running"`. Never call `coder_status` or
+3. **Wait.** Loop `coder_wait(job_id, timeout_seconds=90)` until `data.state != "running"`. Never call `coder_status` or
    any other tool in the same message as `coder_wait` — the server handles requests one at a time. When a native
    coder's completion notification arrives, call `coder_merge(task_id)` for it. If the job is done but native
    coders are still out, do NOT busy-wait with `sleep` loops in Bash: print one line
