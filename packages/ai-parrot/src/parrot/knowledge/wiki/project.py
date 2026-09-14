@@ -235,6 +235,14 @@ class WikiNamespaceConfig(BaseModel):
     vault: str | None = Field(default=None, description="Obsidian vault root")
     description: str = Field(default="", description="Shown by `wikitoolkit ns list`")
     weight: float = Field(default=1.0, ge=0.0, le=1.0)
+    overlay_prefixes: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Id kinds owned by this namespace (FEAT-566 M13). Non-empty makes this an "
+            "overlay namespace where bare ids with these kinds route here. Bare-id routing "
+            "only works when no two overlays claim the same prefix. Examples: ['issue', 'task']"
+        ),
+    )
 
     #: Source fields, in :attr:`kind` resolution order.
     _SOURCE_FIELDS = ("path", "store", "database", "vault")
