@@ -1,0 +1,21 @@
+FEAT-566 Module 5 core integration + wiki regression gate
+command: pytest tests/knowledge/wiki/test_federation.py tests/knowledge/wiki/test_federation_overlay.py tests/knowledge/wiki/test_ledger_tools.py tests/knowledge/wiki/test_mcp_server_ledger.py tests/knowledge/wiki/test_mcp_server_structural.py tests/knowledge/wiki/test_cli_ledger.py tests/knowledge/wiki/test_cli_symbols.py tests/knowledge/wiki/test_project_shared_root.py tests/knowledge/wiki/test_project_namespaces.py tests/knowledge/wiki/test_devloop_ledger_context.py -q -m 'not slow'
+exit_code: 0
+
+--- stdout (tail) ---
+........................................................................ [ 49%]
+.................................s...................................... [ 98%]
+..                                                                       [100%]
+=============================== warnings summary ===============================
+tests/knowledge/wiki/test_project_shared_root.py::TestGitCommonDirResolution::test_resolve_git_common_dir_linked_worktree_with_absolute_commondir
+  /home/jesuslara/proyectos/ai-parrot/.venv/lib/python3.12/site-packages/_pytest/runner.py:250: PluggyTeardownRaisedWarning: A plugin raised an exception during an old-style hookwrapper teardown.
+  Plugin: /home/jesuslara/proyectos/ai-parrot/.claude/worktrees/feat-FEAT-566-sdd-work-ledger/conftest.py, Hook: pytest_runtest_call
+  Skipped: Skipping complex absolute path test for now
+  For more information see https://pluggy.readthedocs.io/en/stable/api_reference.html#pluggy.PluggyTeardownRaisedWarning
+    lambda: runtest_hook(item=item, **kwds),
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+145 passed, 1 skipped, 1 warning in 8.86s
+
+--- stderr (tail) ---
+
