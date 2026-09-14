@@ -34,7 +34,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
-from typing import Any, cast
+from typing import Any, Optional, cast
 
 import click
 from pydantic import ValidationError
@@ -2083,6 +2083,12 @@ def status(path_: str | None, ns_opt: str | None, as_json: bool) -> None:
     # reporting on.
     from parrot.knowledge.wiki.roblox.ingest import get_roblox_status
 
+    # FEAT-557: effective SQLite connection policy. Additive — every key
+    # already in `payload` is unchanged. Read from the LOCAL store, not
+    # from `read_store`, which may be a federated span.
+    if isinstance(store, SQLiteWikiStore):
+        payload["sqlite"] = _run(store.sqlite_settings())
+
     payload["roblox_api"] = get_roblox_status()
     if as_json:
         click.echo(json.dumps(payload, indent=2, default=str))
@@ -2121,6 +2127,21 @@ def status(path_: str | None, ns_opt: str | None, as_json: bool) -> None:
         click.echo(f"  {skip['name']:<16} {skip['reason']}{hint}")
     if stale:
         click.echo("Run `wikitoolkit build` to refresh stale sources.")
+    
+    # FEAT-557: render SQLite diagnostics block
+    sqlite_info = payload.get("sqlite")
+    if sqlite_info is not None:
+        click.echo(
+            f"\\nSQLite     : journal={sqlite_info['journal_mode']}, "
+            f"timeout={sqlite_info['busy_timeout_ms']}ms, "
+            f"sync={sqlite_info['synchronous']}, "
+            f"journal_limit={sqlite_info['journal_size_limit']}"
+        )
+        if sqlite_info["performance_pragmas"]:
+            click.echo("           : performance pragmas ENABLED")
+        else:
+            click.echo("           : performance pragmas disabled")
+
     roblox_api = payload.get("roblox_api")
     if roblox_api is None:
         click.echo("\nRoblox API : not downloaded — run `wikitoolkit ingest roblox-api --refresh`.")

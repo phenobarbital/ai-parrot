@@ -2174,6 +2174,33 @@ class SQLiteWikiStore(BaseWikiStore):
             self.logger.warning("WAL checkpoint on %s failed: %s", self._db_path, exc)
             return {"ok": False, "mode": "failed", "busy": False, "log": -1, "checkpointed": -1}
 
+    async def sqlite_settings(self) -> dict[str, Any]:
+        """Report the SQLite settings a live connection actually has.
+
+        Read back from the connection rather than echoed from the policy,
+        so what the operator sees is what SQLite is really doing (AC-5).
+
+        Returns:
+            ``journal_mode``, ``busy_timeout_ms``, ``synchronous``,
+            ``journal_size_limit`` and ``performance_pragmas``.
+        """
+        _SYNCHRONOUS_NAMES = {0: "OFF", 1: "NORMAL", 2: "FULL", 3: "EXTRA"}
+        async with self._open(writable=False) as conn:
+            async def _one(pragma: str) -> Any:
+                async with conn.execute(f"PRAGMA {pragma}") as cur:
+                    row = await cur.fetchone()
+                return row[0] if row else None
+
+            synchronous = await _one("synchronous")
+            return {
+                "journal_mode": await _one("journal_mode"),
+                "busy_timeout_ms": await _one("busy_timeout"),
+                # PRAGMA synchronous returns an INTEGER (0/1/2), not a name.
+                "synchronous": _SYNCHRONOUS_NAMES.get(int(synchronous), str(synchronous)),
+                "journal_size_limit": await _one("journal_size_limit"),
+                "performance_pragmas": self._policy.performance_pragmas,
+            }
+
     # ------------------------------------------------------------------
     # Lint API (fast SQL checks)
     # ------------------------------------------------------------------
