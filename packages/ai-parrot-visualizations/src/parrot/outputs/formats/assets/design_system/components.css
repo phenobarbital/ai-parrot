@@ -99,9 +99,72 @@
     vertical-align: baseline;
 }
 
-/* A metric switched off reads as switched off. */
+/* ---------- Chart key + chart tabs (interactive lane) ----------
+ * Neither `.metricbtn` nor `.daytab` had a single rule until now: browser
+ * default buttons, hard grey rectangles. Worse, `.active` painted NOTHING,
+ * so a series switched off looked exactly like one switched on — the
+ * control's whole purpose was invisible.
+ */
+.metricbtn,
+.daytab {
+    display: inline-flex;
+    align-items: center;
+    /* 28px: the mis-click fix is the target SIZE, not more spacing. */
+    min-height: 1.75rem;
+    padding: 0.25rem 0.7rem;
+    border: 1px solid var(--panel-border);
+    border-radius: 9999px;
+    background: var(--panel-bg);
+    color: var(--neutral-muted);
+    font: inherit;
+    font-size: 0.8rem;
+    line-height: 1.2;
+    cursor: pointer;
+    transition:
+        background-color 0.15s ease,
+        border-color 0.15s ease,
+        color 0.15s ease,
+        opacity 0.15s ease;
+}
+
+.metricbtn:hover,
+.daytab:hover {
+    border-color: var(--primary);
+    color: var(--neutral-text);
+}
+
+/* Keyboard users get the same affordance as the mouse. */
+.metricbtn:focus-visible,
+.daytab:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+}
+
+/* On: this series is on the plot, so its key reads as solid. */
+.metricbtn.active {
+    color: var(--neutral-text);
+    font-weight: 600;
+}
+
+/* Off: faded and struck through — the convention every chart legend uses,
+ * and the only way to tell at a glance which series is missing from the
+ * plot. The dot is `inline-block`, so the strike does not cross it. */
+.metricbtn:not(.active) {
+    opacity: 0.55;
+    text-decoration: line-through;
+}
+
 .metricbtn:not(.active) .metricbtn-dot {
-    opacity: 0.25;
+    opacity: 0.35;
+}
+
+/* The day tabs are ONE choice out of several, not a set of switches, so the
+ * chosen one is filled rather than merely darker. */
+.daytab.active {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: var(--on-primary, #fff);
+    font-weight: 600;
 }
 
 .kpi-comparison {

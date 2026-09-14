@@ -620,3 +620,19 @@ class TestChartKeyIsReadableAndSingular:
     async def test_the_key_sits_below_the_chart(self):
         doc = (await InteractiveHTMLRenderer().render(self._weekly_chart())).content.decode()
         assert doc.index("<canvas") < doc.index('<div class="a2ui-metric-toggle"')
+
+    async def test_a_toggle_says_out_loud_whether_it_is_on(self):
+        # The class paints the state; only aria-pressed reports it. Without
+        # it the control is a button whose entire purpose — "this series is
+        # currently hidden" — is visible and nothing else.
+        doc = (await InteractiveHTMLRenderer().render(self._weekly_chart())).content.decode()
+        assert 'aria-pressed="true"' in doc
+
+    async def test_the_key_is_styled_at_all(self):
+        # `.metricbtn` and `.daytab` carried no CSS whatsoever: browser
+        # default buttons, and `.active` painted nothing, so a series
+        # switched off looked exactly like one switched on.
+        doc = (await InteractiveHTMLRenderer().render(self._weekly_chart())).content.decode()
+        assert ".metricbtn," in doc or ".metricbtn {" in doc
+        assert ".metricbtn:not(.active)" in doc
+        assert ".metricbtn:focus-visible" in doc or ".metricbtn:focus-visible," in doc

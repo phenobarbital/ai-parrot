@@ -317,6 +317,8 @@ _BEHAVIOR_JS = r"""
         }
         btn.addEventListener("click", function () {
           btn.classList.toggle("active");
+          // The class paints it; aria-pressed is what says it out loud.
+          btn.setAttribute("aria-pressed", btn.classList.contains("active") ? "true" : "false");
           var idx = parseInt(btn.getAttribute("data-metric-index"), 10);
           var meta = chart.getDatasetMeta(idx);
           meta.hidden = !btn.classList.contains("active");
@@ -1168,7 +1170,8 @@ class InteractiveHTMLRenderer(AbstractA2UIRenderer):
         toggle_html = ""
         if has_toggles:
             buttons = "".join(
-                f'<button type="button" class="metricbtn active" data-metric-index="{i}">'
+                f'<button type="button" class="metricbtn active" aria-pressed="true" '
+                f'data-metric-index="{i}">'
                 f'<span class="metricbtn-dot" data-metric-dot></span>'
                 f"{html.escape(humanize_key(col))}</button>"
                 for i, col in enumerate(y_columns)
