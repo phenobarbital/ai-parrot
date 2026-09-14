@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-566 — SDD Work Ledger
 **Spec**: `sdd/specs/sdd-work-ledger.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-3226, TASK-3232, TASK-3236
@@ -52,12 +52,37 @@ The ID allocator remains `python -m scripts.sdd.reserve_ids`; promotion must not
 
 ## Acceptance Criteria
 
-- [ ] Start primes before implementation and records `task.started` best-effort.
-- [ ] Next displays ready tasks and ledger issues.
-- [ ] Promotion preserves ID/dependency discipline and links source issue.
-- [ ] Twin parity assertions pass.
+- [x] Start primes before implementation and records `task.started` best-effort.
+- [x] Next displays ready tasks and ledger issues.
+- [x] Promotion preserves ID/dependency discipline and links source issue.
+- [x] Twin parity assertions pass.
 
 ## Test Specification
 
 Assert shared-root ledger commands and equivalent ordered steps in each platform.
+
+### Completion Note
+
+The dispatched gemini attempt exhausted its turn budget after touching
+only 1 of the 10 declared files (`.claude/commands/sdd-start.md`) and
+never committed — flagged `failed` by the merge gate and discarded (never
+committed, so nothing was lost). Reimplemented directly across all 10
+files: `--from-issue`/ledger-context priming/`task.started` emission
+guidance added consistently to all three platform twins for
+start/next/task.
+
+Also reconciled the parallel-dispatch file-collision hazard from
+TASK-3240/TASK-3242 (see their Completion Notes): added this task's own
+tests as a third class, `TestStartNextTwins`, in the shared
+`tests/sdd/test_ledger_workflow_twins.py` alongside the two already
+reconciled there, rather than overwriting the file again.
+
+`pytest tests/sdd/ -q` → 17 passed (4 for this task's own
+`TestStartNextTwins`, plus the previously-reconciled 13). `ruff check` /
+`black --check` clean. File fidelity: exactly the 10 declared files
+touched, pure additions (0 deletions) in every one.
+
+Seat: gemini (google-compat) · Backend: none (dev-loop attempt exhausted
+budget uncommitted) · Attempts: 1 (failed, discarded) + 1 (sdd-worker
+rewrite). Native rewrite done directly in the feature worktree.
 
