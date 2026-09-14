@@ -119,6 +119,18 @@
     border-radius: 6px;
 }
 
+/* ---------- Charts ---------- */
+/* The box a chart is drawn into. Chart.js runs with
+ * `maintainAspectRatio: false`, so this height is the only thing deciding
+ * how tall a chart is — one place, the same rule on screen and in print,
+ * rather than a number derived from whatever width the canvas happened to
+ * be measured at. `position: relative` is what Chart.js needs to size a
+ * responsive canvas against it. */
+.a2ui-chart-canvas {
+    position: relative;
+    height: 320px;
+}
+
 /* ---------- KPI cards ---------- */
 .kpi-card {
     display: flex;

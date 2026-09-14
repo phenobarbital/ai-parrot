@@ -115,6 +115,14 @@
        the size it had just computed and left the drawing letterboxed inside
        its own box — a white band down the side of every chart. Width is the
        only thing worth holding here. */
+    /* Shorter on paper than on a screen: a page is a fixed budget and a
+       chart that takes two fifths of it leaves the rest of the sheet empty.
+       The wrapper owns the height in both media (see `editorial.css`), so
+       this is the only number that changes. */
+    .a2ui-chart-canvas {
+        height: 62mm;
+    }
+
     canvas {
         max-width: 100% !important;
     }

@@ -375,6 +375,12 @@ _BEHAVIOR_JS = r"""
       // Bottom, like the pill key a multi-series chart gets: which side the
       // key sits on should not depend on how many series there happen to be.
       options: {
+        // The canvas fills the box its wrapper defines, on screen and on
+        // paper, instead of deriving a height from whatever width it was
+        // measured at. Sizing that depends on WHEN it is measured is how a
+        // printed chart ended up drawn at three quarters of its panel with a
+        // white band down the side.
+        maintainAspectRatio: false,
         plugins: {
           legend: { display: !!cfg.showLegend, position: "bottom" },
           // The fitted line has no value AT a point -- it is the shape of the
@@ -1329,7 +1335,9 @@ class InteractiveHTMLRenderer(AbstractA2UIRenderer):
         # above the canvas it pushed the plot down and read as a toolbar.
         return (
             f'<div class="a2ui-card a2ui-chart-wrap">{title_html}{tabs_html}'
+            f'<div class="a2ui-chart-canvas">'
             f'<canvas data-chart="{chart_id}" data-chart-config="{config_attr}"></canvas>'
+            f"</div>"
             f"{toggle_html}</div>"
         )
 
