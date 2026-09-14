@@ -745,3 +745,75 @@ class TestInteractiveChartTrendline:
         doc = art.content.decode()
         assert 'var TREND_COLOR = "#94a3b8"' in doc
         assert "borderColor: TREND_COLOR" in doc
+
+
+class TestInteractiveKpiGrid:
+    """Eight KPIs came out as eight full-width blocks.
+
+    The stylesheet has always carried `.kpi-grid`, but the class was only
+    attached to a Row of kpi Cards — and an Infographic section is a COLUMN
+    whose first child is its heading, so the rule never fired.
+    """
+
+    def _section(self, *components) -> Component:
+        return Component(
+            id="root",
+            component="Infographic",
+            title="Report",
+            sections=[{"heading": "Hero", "components": list(components)}],
+        )
+
+    def _kpi(self, label: str) -> dict:
+        return {"component": "KPICard", "properties": {"label": label, "value": 1}}
+
+    async def test_consecutive_kpi_cards_become_one_grid(self):
+        env = _envelope(self._section(self._kpi("Events"), self._kpi("Completed"), self._kpi("Missed")))
+        doc = (await InteractiveHTMLRenderer().render(env)).content.decode()
+        assert doc.count('<div class="kpi-grid">') == 1
+        grid = doc.split('<div class="kpi-grid">')[1]
+        assert grid.count('class="a2ui-card kpi-card"') == 3
+
+    async def test_a_chart_between_them_starts_a_second_grid(self):
+        # Grouped by RUN, not by container: the same rule the Svelte canvas
+        # uses. Two KPIs, a chart, then one more KPI is two grids, not one.
+        chart = {
+            "component": "Chart",
+            "properties": {"type": "bar", "x": "day", "y": ["n"], "data": []},
+        }
+        env = _envelope(self._section(self._kpi("A"), self._kpi("B"), chart, self._kpi("C")))
+        doc = (await InteractiveHTMLRenderer().render(env)).content.decode()
+        assert doc.count('<div class="kpi-grid">') == 2
+        assert "<canvas" in doc
+
+    async def test_a_section_with_no_kpis_grows_no_grid(self):
+        chart = {
+            "component": "Chart",
+            "properties": {"type": "bar", "x": "day", "y": ["n"], "data": []},
+        }
+        env = _envelope(self._section(chart))
+        doc = (await InteractiveHTMLRenderer().render(env)).content.decode()
+        assert '<div class="kpi-grid">' not in doc
+
+
+class TestExportedDeltaReadsLikeTheApp:
+    async def _card_doc(self, **props) -> str:
+        env = _envelope(
+            Component(id="root", component="KPICard", label="Metric", value=10, **props)
+        )
+        return (await InteractiveHTMLRenderer().render(env)).content.decode()
+
+    async def test_the_direction_travels_and_is_now_drawn(self):
+        # `data-trend` always travelled and the stylesheet's own comment
+        # described an arrow — but nothing drew one, so the export reported
+        # direction by the sign alone while the app showed a glyph.
+        doc = await self._card_doc(delta="-55.4%", trend="down")
+        assert 'data-trend="down"' in doc
+        assert '.kpi-delta[data-trend="down"]::before' in doc
+
+    async def test_an_unjudged_delta_is_ordinary_text_not_muted(self):
+        # Same decision the Svelte card took: unjudged is not unimportant,
+        # and muted weighed exactly as much as the period beside it.
+        doc = await self._card_doc(delta="-55.4%", trend="down", higherIsBetter=None)
+        assert 'data-sentiment="neutral"' in doc
+        assert '.kpi-delta[data-sentiment="neutral"] { color: var(--neutral-text); }' in doc
+        assert '.kpi-delta[data-sentiment="neutral"] { color: var(--neutral-muted); }' not in doc

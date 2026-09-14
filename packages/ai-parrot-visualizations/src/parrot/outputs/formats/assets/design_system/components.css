@@ -184,7 +184,25 @@
    colour reports what that movement means. */
 .kpi-delta[data-sentiment="good"] { color: var(--accent-green); }
 .kpi-delta[data-sentiment="bad"] { color: var(--accent-red); }
-.kpi-delta[data-sentiment="neutral"] { color: var(--neutral-muted); }
+/* Ordinary text, not muted. `neutral` means the movement is not being
+   JUDGED — a metric with no good direction, or a flat delta — never that it
+   matters less: a 55% fall in hours worked is a fact worth reading, we just
+   cannot say whether it is good news. Muted also weighed exactly as much as
+   the comparison period printed beside it. */
+.kpi-delta[data-sentiment="neutral"] { color: var(--neutral-text); }
+
+/* The arrow the comment above describes. It was only ever a comment: the
+   direction travelled as `data-trend` and nothing drew it, so the export
+   reported direction by the sign alone while the app showed a glyph. Pure
+   presentation, so it belongs here and not in a renderer — and `::before`
+   keeps it out of the text a reader would copy. */
+.kpi-delta::before {
+    margin-right: 0.2rem;
+    font-weight: 700;
+}
+.kpi-delta[data-trend="up"]::before { content: "\2197"; }
+.kpi-delta[data-trend="down"]::before { content: "\2198"; }
+.kpi-delta[data-trend="flat"]::before { content: "\2192"; }
 
 /* ---------- Semantic text roles (design-system equivalents) ---------- */
 .ds-title {

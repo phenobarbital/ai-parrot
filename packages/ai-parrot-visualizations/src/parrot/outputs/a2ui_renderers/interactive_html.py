@@ -1369,9 +1369,32 @@ class InteractiveHTMLRenderer(AbstractA2UIRenderer):
             text = section.get("text")
             if text is not None:
                 section_parts.append(f'<p class="a2ui-text a2ui-body">{html.escape(str(text))}</p>')
+            # Consecutive KPI cards are a grid, the rest render in place. The
+            # stylesheet has always carried `.kpi-grid` (four columns, down to
+            # two on a phone) but nothing here ever applied it: the class was
+            # only attached to a Row of kpi Cards, and a section is a COLUMN
+            # whose first child is its heading -- so eight KPIs came out as
+            # eight full-width blocks, three screens of scrolling for what the
+            # app shows in two rows. Grouping by RUN, not by container, is the
+            # rule the Svelte canvas already uses (`Infographic.svelte`).
+            run: list[str] = []
+
+            def _flush() -> None:
+                if not run:
+                    return
+                section_parts.append(f'<div class="kpi-grid">{"".join(run)}</div>')
+                run.clear()
+
             for descriptor in section.get("components") or []:
-                if isinstance(descriptor, dict):
-                    section_parts.append(self._render_descriptor(descriptor, degradations))
+                if not isinstance(descriptor, dict):
+                    continue
+                fragment = self._render_descriptor(descriptor, degradations)
+                if descriptor.get("component") == "KPICard":
+                    run.append(fragment)
+                    continue
+                _flush()
+                section_parts.append(fragment)
+            _flush()
             parts.append(f'<div class="a2ui-col a2ui-section">{"".join(section_parts)}</div>')
 
         return f'<div class="a2ui-card" data-variant="infographic">{"".join(parts)}</div>'
