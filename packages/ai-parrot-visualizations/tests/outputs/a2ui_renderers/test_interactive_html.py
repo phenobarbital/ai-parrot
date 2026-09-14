@@ -1029,7 +1029,36 @@ class TestChartsAreRedrawnForPaper:
         block = doc[doc.index("function resizeCharts()"):][:300]
         assert "try {" in block and "catch" in block
 
-    async def test_a_chart_is_capped_so_it_does_not_eat_a_sheet(self):
-        doc = await self._doc()
+
+class TestPrintUndoesScreenOnlyPositioning:
+    async def test_the_table_header_is_not_sticky_on_paper(self):
+        # Sticky belongs to a scrolling viewport. Left on in print it cost the
+        # header its text — the accent rule printed and the column names did
+        # not — while `table-header-group` was already repeating it correctly.
+        env = _envelope(
+            Component(
+                id="root", component="DataTable",
+                columns=[{"name": "a", "title": "A", "type": "string"}],
+                data={"path": "/rows"},
+            ),
+            data_model={"rows": [{"a": "1"}]},
+        )
+        doc = (await InteractiveHTMLRenderer().render(env)).content.decode()
         block = doc[re.search(r"@media print\s*\{", doc).end():]
-        assert "max-height: 70mm" in block
+        assert "position: static !important" in block
+
+    async def test_print_does_not_force_a_canvas_height(self):
+        # The runtime already sized the canvas for the page; forcing a height
+        # on top of it letterboxed the drawing inside its own box.
+        env = _envelope(
+            Component(
+                id="root", component="Chart", type="bar", x="d", y=["a"],
+                data={"path": "/rows"},
+            ),
+            data_model={"rows": [{"d": "Mon", "a": 1}]},
+        )
+        doc = (await InteractiveHTMLRenderer().render(env)).content.decode()
+        block = doc[re.search(r"@media print\s*\{", doc).end():]
+        canvas_rule = block[block.index("canvas {"):][:160]
+        assert "max-width: 100%" in canvas_rule
+        assert "height" not in canvas_rule.replace("max-width", "")

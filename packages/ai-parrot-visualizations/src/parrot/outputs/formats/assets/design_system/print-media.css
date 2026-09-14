@@ -110,14 +110,20 @@
         page-break-inside: avoid;
     }
 
-    /* Chart.js sizes its canvas to the screen box it was created in. Held
-       to the page width it prints whole instead of running off the edge, and
-       capped in height so one chart does not take half a sheet — the runtime
-       re-measures on `beforeprint`, so what gets drawn is sized for paper
-       rather than scaled down from a screenshot of the screen. */
+    /* The runtime re-measures on `beforeprint`, so Chart.js has already
+       sized this canvas for the page. Forcing a height on top of that fought
+       the size it had just computed and left the drawing letterboxed inside
+       its own box — a white band down the side of every chart. Width is the
+       only thing worth holding here. */
     canvas {
         max-width: 100% !important;
-        max-height: 70mm !important;
-        height: auto !important;
+    }
+
+    /* Sticky belongs to a scrolling viewport. On paper the repeating-header
+       idiom is `thead { display: table-header-group }`, used above, and
+       leaving the header positioned as well cost it its text: the rule
+       printed and the column names did not. */
+    thead th {
+        position: static !important;
     }
 }
