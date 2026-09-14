@@ -11,6 +11,7 @@ through ``LedgerStore._read()`` (the same protected-but-in-package pattern
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from pathlib import Path
@@ -33,6 +34,45 @@ from parrot.knowledge.wiki.project import (
 from parrot.knowledge.wiki.store import WikiStoreBusy, estimate_tokens
 
 logger = logging.getLogger(__name__)
+
+
+def _write_snapshot_if_changed(dest: Path, new_content: str) -> bool:
+    """Blocking half of :meth:`LedgerService.export_snapshot` — run via ``asyncio.to_thread``."""
+    old_content = dest.read_text(encoding="utf-8") if dest.exists() else None
+    if old_content == new_content:
+        return False
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(new_content, encoding="utf-8")
+    return True
+
+
+def _scan_log_for_audit(log: LedgerLog, cursor_offset: int) -> tuple[dict[str, int], int, int, int]:
+    """Blocking half of :meth:`LedgerService.audit` — run via ``asyncio.to_thread``.
+
+    One pass over ``events.jsonl`` computes everything the audit report
+    needs from the log: per-kind counts, the total event count, the
+    number of events at-or-before ``cursor_offset`` (the replay lag
+    estimate), and the file's byte size.
+
+    Returns:
+        ``(event_counts, total_events, applied_count, log_size_bytes)``.
+    """
+    event_counts: dict[str, int] = {}
+    total_events = 0
+    applied_count = 0
+    still_applied = True
+    for event, line_start in log.iter_events(from_offset=0):
+        event_counts[event.kind] = event_counts.get(event.kind, 0) + 1
+        total_events += 1
+        if still_applied:
+            if line_start > cursor_offset:
+                still_applied = False
+            else:
+                applied_count += 1
+
+    log_path = Path(log.path)
+    log_size = log_path.stat().st_size if log_path.exists() else 0
+    return event_counts, total_events, applied_count, log_size
 
 
 def _issue_dict(issue_id: str, state: dict[str, Any]) -> dict[str, Any]:
@@ -152,7 +192,7 @@ class LedgerService:
             about=about or [],
         )
         event = LedgerEvent(kind="issue.opened", subject=issue_id, actor=actor, payload=payload.model_dump())
-        self.log.append(event)
+        await asyncio.to_thread(self.log.append, event)
         await self._sync_best_effort()
         return issue_id
 
@@ -188,7 +228,7 @@ class LedgerService:
             actor=actor,
             payload={"acknowledged_by": actor, "reason": reason},
         )
-        self.log.append(event)
+        await asyncio.to_thread(self.log.append, event)
         await self._sync_best_effort()
         return True
 
@@ -200,7 +240,7 @@ class LedgerService:
             actor=actor,
             payload={"reason": reason, "closed_by": actor},
         )
-        self.log.append(event)
+        await asyncio.to_thread(self.log.append, event)
         await self._sync_best_effort()
         return True
 
@@ -252,7 +292,7 @@ class LedgerService:
             Matching issue dicts (empty when the feature's index cannot be
             found, or nothing blocks it).
         """
-        task_ids = self._feature_task_ids(feature_id)
+        task_ids = await asyncio.to_thread(self._feature_task_ids, feature_id)
         valid_sources = {f"spec:{feature_id}"}
         valid_sources.update(f"task:{tid}" for tid in task_ids)
         valid_sources.update(f"review:{tid}" for tid in task_ids)
@@ -308,13 +348,7 @@ class LedgerService:
         rows.sort(key=lambda row: row["issue_id"])
         new_content = "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows)
 
-        old_content = dest.read_text(encoding="utf-8") if dest.exists() else None
-        if old_content == new_content:
-            return False
-
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_text(new_content, encoding="utf-8")
-        return True
+        return await asyncio.to_thread(_write_snapshot_if_changed, dest, new_content)
 
     async def compact(self, older_than_days: int = 30) -> int:
         """Delegate to :meth:`LedgerIndex.compact`."""
@@ -324,13 +358,12 @@ class LedgerService:
         """Return log size, per-kind event counts, cursor lag, broken edges, and SQLite settings."""
         offset, last_event_id = await self.store.read_cursor()
 
-        event_counts: dict[str, int] = {}
-        total_events = 0
-        for event, _line_start in self.log.iter_events(from_offset=0):
-            event_counts[event.kind] = event_counts.get(event.kind, 0) + 1
-            total_events += 1
-
-        lag = 0 if last_event_id is None and offset == 0 else max(0, total_events - self._applied_count(offset))
+        event_counts, total_events, applied_count, log_size = await asyncio.to_thread(
+            _scan_log_for_audit, self.log, offset
+        )
+        lag = 0 if last_event_id is None and offset == 0 else max(0, total_events - applied_count)
+        if log_size > 50 * 1024 * 1024:
+            logger.warning("events.jsonl is over 50 MiB (%d bytes); consider `ledger compact`.", log_size)
 
         async with self.store._read() as conn:
             async with conn.execute(
@@ -339,11 +372,6 @@ class LedgerService:
             ) as cur:
                 broken_row = await cur.fetchone()
         broken_edges = broken_row[0] if broken_row else 0
-
-        log_path = Path(self.log.path)
-        log_size = log_path.stat().st_size if log_path.exists() else 0
-        if log_size > 50 * 1024 * 1024:
-            logger.warning("events.jsonl is over 50 MiB (%d bytes); consider `ledger compact`.", log_size)
 
         return {
             "log_size_bytes": log_size,
@@ -354,12 +382,3 @@ class LedgerService:
             "broken_edges": broken_edges,
             "sqlite": await self.store.sqlite_settings(),
         }
-
-    def _applied_count(self, cursor_offset: int) -> int:
-        """Count events at or before ``cursor_offset`` (used for the audit's lag estimate)."""
-        count = 0
-        for _event, line_start in self.log.iter_events(from_offset=0):
-            if line_start > cursor_offset:
-                break
-            count += 1
-        return count

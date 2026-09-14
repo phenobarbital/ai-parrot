@@ -3,7 +3,6 @@
 from __future__ import annotations
 import json
 from typing import Any, Dict, List, Optional, Tuple, Callable, Union
-from duckdb import identifier
 from navconfig.logging import logging
 from datamodel.parsers.json import json_encoder, json_decoder  # pylint: disable=E0611 # noqa
 from redis.asyncio import Redis
