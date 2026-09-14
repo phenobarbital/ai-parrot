@@ -380,8 +380,6 @@ class TestReadPathIssuesNoWrites:
         await ro_store.get_page("intro")
 
 
-import multiprocessing
-
 def _peer_writer(db_path: str, ready, release, result) -> None:
     """Child process: hold an immediate writer transaction, then release.
 

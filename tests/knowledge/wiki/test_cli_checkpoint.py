@@ -104,6 +104,65 @@ class TestCheckpointCallSites:
         assert result.exit_code == 0, result.output
         assert calls == []
 
+    def test_checkpoint_call_site_policy_end_to_end(
+        self, runner: CliRunner, repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The three-way contract in one place (AC-7 / TASK-3226): `build` and
+        `ingest` checkpoint, `upsert --changed` does not (spec §1 non-goal)."""
+        from parrot.knowledge.wiki.review import ManifestReader
+
+        import tests.knowledge.wiki.test_cli as cli_tests
+
+        calls: list[str] = []
+        monkeypatch.setattr(cli_module, "_checkpoint_if_sqlite", lambda store, label: calls.append(label))
+
+        # 1. `build` checkpoints.
+        _build(runner, repo)
+        assert calls == ["build"]
+
+        # 2. `ingest` checkpoints.
+        light = cli_tests._FakeTriageAdapter()
+        heavy = cli_tests._FakeTriageAdapter()
+        monkeypatch.setattr(
+            cli_module, "_build_triage_adapters", lambda lightweight_model, model: (light, heavy, "fake-light", True)
+        )
+        monkeypatch.setattr(
+            cli_module, "_build_novelty_scorer", lambda root, config, store: cli_tests._FakeNoveltyScorer()
+        )
+        monkeypatch.setattr(cli_tests._pageindex_toolkit, "PageIndexToolkit", cli_tests._FakePageIndexToolkit)
+        monkeypatch.setenv("WIKI_LIGHTWEIGHT_MODEL", "stub:light")
+        monkeypatch.setenv("WIKI_MODEL", "stub:heavy")
+
+        charter_dir = repo / ".parrot"
+        charter_dir.mkdir(parents=True, exist_ok=True)
+        charter_path = charter_dir / "charter.yaml"
+        charter_path.write_text(cli_tests._CHARTER_YAML, encoding="utf-8")
+
+        # A distinct dirname (not "docs") — `repo.parent` is the shared pytest
+        # session tmp base, and `test_ingest_checkpoints` already claims "docs"
+        # there; colliding on the same name breaks whichever test runs second.
+        docs = repo.parent / "docs-combined"
+        docs.mkdir()
+        (docs / "decision.md").write_text(
+            "# Migration decision\n\nWe decided to migrate the graph store.",
+            encoding="utf-8",
+        )
+
+        result = runner.invoke(
+            wiki,
+            ["ingest", str(docs), "--path", str(repo), "--charter", str(charter_path), "--auto"],
+        )
+        assert result.exit_code == 0, result.output
+        assert calls == ["build", "ingest"]
+        _header, entries = ManifestReader(repo / ".parrot" / "wiki" / "ingest-manifest.jsonl").read()
+        assert all(e.decision == e.proposed_action for e in entries)
+
+        # 3. `upsert --changed` does NOT checkpoint.
+        (repo / "pkg" / "store.py").write_text(PY_STORE + "\n# v2\n", encoding="utf-8")
+        result = runner.invoke(wiki, ["upsert", "pkg/store.py", "--path", str(repo)])
+        assert result.exit_code == 0, result.output
+        assert calls == ["build", "ingest"]
+
     def test_checkpoint_failure_does_not_fail_build(
         self, runner: CliRunner, repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

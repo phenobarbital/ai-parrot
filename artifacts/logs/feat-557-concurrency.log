@@ -1,0 +1,322 @@
+=== FEAT-557 test suite (tests/knowledge/wiki/) ===
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.1.1, pluggy-1.6.0 -- /home/jesuslara/proyectos/ai-parrot/.venv/bin/python3
+cachedir: .pytest_cache
+hypothesis profile 'default'
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /home/jesuslara/proyectos/ai-parrot/.claude/worktrees/feat-FEAT-557-wikitoolkit-sqlite-optimizations
+configfile: pytest.ini (WARNING: ignoring pytest config in pyproject.toml!)
+plugins: anyio-4.14.2, xdist-3.3.1, aiohttp-1.1.1, assume-2.4.3, asyncio-1.4.0, mock-3.15.1, Faker-40.36.0, hypothesis-6.165.10, benchmark-5.2.3
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 62 items
+
+tests/knowledge/wiki/test_store_concurrency.py::TestOpenPolicy::test_busy_timeout_pragma_is_applied PASSED [  1%]
+tests/knowledge/wiki/test_store_concurrency.py::TestOpenPolicy::test_write_pragmas_only_on_writable_open PASSED [  3%]
+tests/knowledge/wiki/test_store_concurrency.py::TestWriteTransaction::test_write_begins_immediate_and_commits PASSED [  4%]
+tests/knowledge/wiki/test_store_concurrency.py::TestWriteTransaction::test_failed_body_rolls_back PASSED [  6%]
+tests/knowledge/wiki/test_store_concurrency.py::TestWriteTransaction::test_busy_at_begin_raises_wiki_store_busy PASSED [  8%]
+tests/knowledge/wiki/test_store_concurrency.py::TestWriteTransaction::test_non_busy_error_keeps_its_semantics PASSED [  9%]
+tests/knowledge/wiki/test_store_concurrency.py::TestReadFirstMigration::test_current_plane_needs_no_migration PASSED [ 11%]
+tests/knowledge/wiki/test_store_concurrency.py::TestReadFirstMigration::test_migrate_writes_nothing_on_current_plane PASSED [ 12%]
+tests/knowledge/wiki/test_store_concurrency.py::TestReadFirstMigration::test_legacy_plane_migrates_once_and_bumps_version PASSED [ 14%]
+tests/knowledge/wiki/test_store_concurrency.py::TestReadFirstMigration::test_absent_version_row_is_treated_as_stale PASSED [ 16%]
+tests/knowledge/wiki/test_store_concurrency.py::TestReadFirstMigration::test_migration_latch_suppresses_second_probe PASSED [ 17%]
+tests/knowledge/wiki/test_store_concurrency.py::TestReadFirstMigration::test_latch_is_per_store_not_global PASSED [ 19%]
+tests/knowledge/wiki/test_store_concurrency.py::TestCheckpoint::test_checkpoint_reports_success PASSED [ 20%]
+tests/knowledge/wiki/test_store_concurrency.py::TestCheckpoint::test_reader_blocked_truncate_falls_back_to_passive PASSED [ 22%]
+tests/knowledge/wiki/test_store_concurrency.py::TestCheckpoint::test_read_only_store_skips PASSED [ 24%]
+tests/knowledge/wiki/test_store_concurrency.py::TestCheckpoint::test_checkpoint_is_not_on_the_base_contract PASSED [ 25%]
+tests/knowledge/wiki/test_store_concurrency.py::TestReadPathIssuesNoWrites::test_reader_issues_no_write_statement[<lambda>0] PASSED [ 27%]
+tests/knowledge/wiki/test_store_concurrency.py::TestReadPathIssuesNoWrites::test_reader_issues_no_write_statement[<lambda>1] PASSED [ 29%]
+tests/knowledge/wiki/test_store_concurrency.py::TestReadPathIssuesNoWrites::test_reader_issues_no_write_statement[<lambda>2] PASSED [ 30%]
+tests/knowledge/wiki/test_store_concurrency.py::TestReadPathIssuesNoWrites::test_reader_issues_no_write_statement[<lambda>3] PASSED [ 32%]
+tests/knowledge/wiki/test_store_concurrency.py::TestReadPathIssuesNoWrites::test_reader_issues_no_write_statement[<lambda>4] PASSED [ 33%]
+tests/knowledge/wiki/test_store_concurrency.py::TestReadPathIssuesNoWrites::test_reader_issues_no_write_statement[<lambda>5] PASSED [ 35%]
+tests/knowledge/wiki/test_store_concurrency.py::TestReadPathIssuesNoWrites::test_read_only_ladder_sets_timeout_but_no_write_pragma PASSED [ 37%]
+tests/knowledge/wiki/test_store_concurrency.py::TestMultiprocessContention::test_peer_writer_yields_typed_busy_never_raw_lock_error PASSED [ 38%]
+tests/knowledge/wiki/test_store_concurrency.py::TestMultiprocessContention::test_write_completes_when_peer_releases_within_timeout PASSED [ 40%]
+tests/knowledge/wiki/test_store_concurrency.py::TestMultiprocessContention::test_source_manager_and_store_contend_safely PASSED [ 41%]
+tests/knowledge/wiki/test_sources_concurrency.py::TestSQLitePolicy::test_default_busy_timeout PASSED [ 43%]
+tests/knowledge/wiki/test_sources_concurrency.py::TestSQLitePolicy::test_connection_applies_busy_timeout_pragma PASSED [ 45%]
+tests/knowledge/wiki/test_sources_concurrency.py::TestSQLitePolicy::test_busy_at_begin_raises_wiki_store_busy PASSED [ 46%]
+tests/knowledge/wiki/test_sources_concurrency.py::TestSQLitePolicy::test_failed_write_rolls_back PASSED [ 48%]
+tests/knowledge/wiki/test_sources_concurrency.py::TestOtherBackendsUnchanged::test_json_backend_writes_no_sqlite PASSED [ 50%]
+tests/knowledge/wiki/test_project_sqlite_config.py::TestSQLiteConfigFields::test_defaults PASSED [ 51%]
+tests/knowledge/wiki/test_project_sqlite_config.py::TestSQLiteConfigFields::test_rejects_out_of_range[0.5] PASSED [ 53%]
+tests/knowledge/wiki/test_project_sqlite_config.py::TestSQLiteConfigFields::test_rejects_out_of_range[0.0] PASSED [ 54%]
+tests/knowledge/wiki/test_project_sqlite_config.py::TestSQLiteConfigFields::test_rejects_out_of_range[120.5] PASSED [ 56%]
+tests/knowledge/wiki/test_project_sqlite_config.py::TestSQLiteConfigFields::test_rejects_out_of_range[-1.0] PASSED [ 58%]
+tests/knowledge/wiki/test_project_sqlite_config.py::TestSQLiteConfigFields::test_accepts_bounds[1.0] PASSED [ 59%]
+tests/knowledge/wiki/test_project_sqlite_config.py::TestSQLiteConfigFields::test_accepts_bounds[120.0] PASSED [ 61%]
+tests/knowledge/wiki/test_project_sqlite_config.py::TestSQLiteConfigFields::test_legacy_config_loads_with_defaults PASSED [ 62%]
+tests/knowledge/wiki/test_project_sqlite_config.py::TestSQLiteConfigFields::test_round_trip_persists_both_fields PASSED [ 64%]
+tests/knowledge/wiki/test_project_sqlite_config.py::TestSQLiteConfigFields::test_invalid_persisted_value_raises_wiki_config_error PASSED [ 66%]
+tests/knowledge/wiki/test_sqlite_policy_plumbing.py::TestPolicyFromConfig::test_maps_both_fields PASSED [ 67%]
+tests/knowledge/wiki/test_sqlite_policy_plumbing.py::TestFactoryForwarding::test_sqlite_branch_receives_policy PASSED [ 69%]
+tests/knowledge/wiki/test_sqlite_policy_plumbing.py::TestFactoryForwarding::test_policy_does_not_leak_to_other_backends PASSED [ 70%]
+tests/knowledge/wiki/test_sqlite_policy_plumbing.py::TestFactoryForwarding::test_default_when_no_policy_passed PASSED [ 72%]
+tests/knowledge/wiki/test_sqlite_policy_plumbing.py::TestCliPlumbing::test_open_store_forwards_configured_timeout PASSED [ 74%]
+tests/knowledge/wiki/test_sqlite_policy_plumbing.py::TestCliPlumbing::test_open_sources_forwards_configured_timeout PASSED [ 75%]
+tests/knowledge/wiki/test_cli_checkpoint.py::TestCheckpointCallSites::test_build_checkpoints PASSED [ 77%]
+tests/knowledge/wiki/test_cli_checkpoint.py::TestCheckpointCallSites::test_ingest_checkpoints PASSED [ 79%]
+tests/knowledge/wiki/test_cli_checkpoint.py::TestCheckpointCallSites::test_upsert_does_not_checkpoint PASSED [ 80%]
+tests/knowledge/wiki/test_cli_checkpoint.py::TestCheckpointCallSites::test_checkpoint_call_site_policy_end_to_end PASSED [ 82%]
+tests/knowledge/wiki/test_cli_checkpoint.py::TestCheckpointCallSites::test_checkpoint_failure_does_not_fail_build PASSED [ 83%]
+tests/knowledge/wiki/test_cli_checkpoint.py::TestCheckpointHelper::test_swallows_a_raising_checkpoint PASSED [ 85%]
+tests/knowledge/wiki/test_cli_checkpoint.py::TestCheckpointHelper::test_non_sqlite_backend_is_skipped PASSED [ 87%]
+tests/knowledge/wiki/test_cli_checkpoint.py::TestUpsertBusySoftSkip::test_busy_upsert_is_not_an_error PASSED [ 88%]
+tests/knowledge/wiki/test_cli_checkpoint.py::TestUpsertBusySoftSkip::test_busy_upsert_is_silent_when_quiet PASSED [ 90%]
+tests/knowledge/wiki/test_cli_status_sqlite.py::TestSqliteSettings::test_reports_effective_policy PASSED [ 91%]
+tests/knowledge/wiki/test_cli_status_sqlite.py::TestSqliteSettings::test_read_is_not_a_write PASSED [ 93%]
+tests/knowledge/wiki/test_cli_status_sqlite.py::TestStatusPayload::test_json_contains_sqlite_block PASSED [ 95%]
+tests/knowledge/wiki/test_cli_status_sqlite.py::TestStatusPayload::test_existing_keys_are_unchanged PASSED [ 96%]
+tests/knowledge/wiki/test_cli_status_sqlite.py::TestStatusPayload::test_human_output_renders_the_block PASSED [ 98%]
+tests/knowledge/wiki/test_cli_status_sqlite.py::TestStatusPayload::test_non_sqlite_backend_has_no_block PASSED [100%]
+
+============================= 62 passed in 25.37s ==============================
+
+=== TASK-3216 policy/error unit tests (packages/ai-parrot/tests/knowledge/wiki/) ===
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.1.1, pluggy-1.6.0 -- /home/jesuslara/proyectos/ai-parrot/.venv/bin/python3
+cachedir: .pytest_cache
+hypothesis profile 'default'
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /home/jesuslara/proyectos/ai-parrot/.claude/worktrees/feat-FEAT-557-wikitoolkit-sqlite-optimizations/packages/ai-parrot
+configfile: pyproject.toml
+plugins: anyio-4.14.2, xdist-3.3.1, aiohttp-1.1.1, assume-2.4.3, asyncio-1.4.0, mock-3.15.1, Faker-40.36.0, hypothesis-6.165.10, benchmark-5.2.3
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 10 items
+
+packages/ai-parrot/tests/knowledge/wiki/test_sqlite_policy.py::TestSQLitePragmaPolicy::test_defaults PASSED [ 10%]
+packages/ai-parrot/tests/knowledge/wiki/test_sqlite_policy.py::TestSQLitePragmaPolicy::test_rejects_out_of_range_timeout[0.0] PASSED [ 20%]
+packages/ai-parrot/tests/knowledge/wiki/test_sqlite_policy.py::TestSQLitePragmaPolicy::test_rejects_out_of_range_timeout[0.999] PASSED [ 30%]
+packages/ai-parrot/tests/knowledge/wiki/test_sqlite_policy.py::TestSQLitePragmaPolicy::test_rejects_out_of_range_timeout[120.001] PASSED [ 40%]
+packages/ai-parrot/tests/knowledge/wiki/test_sqlite_policy.py::TestSQLitePragmaPolicy::test_rejects_out_of_range_timeout[-5.0] PASSED [ 50%]
+packages/ai-parrot/tests/knowledge/wiki/test_sqlite_policy.py::TestSQLitePragmaPolicy::test_accepts_boundary_timeouts[1.0] PASSED [ 60%]
+packages/ai-parrot/tests/knowledge/wiki/test_sqlite_policy.py::TestSQLitePragmaPolicy::test_accepts_boundary_timeouts[15.0] PASSED [ 70%]
+packages/ai-parrot/tests/knowledge/wiki/test_sqlite_policy.py::TestSQLitePragmaPolicy::test_accepts_boundary_timeouts[120.0] PASSED [ 80%]
+packages/ai-parrot/tests/knowledge/wiki/test_sqlite_policy.py::TestWikiStoreBusy::test_is_an_operational_error PASSED [ 90%]
+packages/ai-parrot/tests/knowledge/wiki/test_sqlite_policy.py::TestWikiStoreBusy::test_carries_actionable_attributes PASSED [100%]
+
+=============================== warnings summary ===============================
+../../../.venv/lib/python3.12/site-packages/uvloop/__init__.py:31
+../../../.venv/lib/python3.12/site-packages/uvloop/__init__.py:31
+../../../.venv/lib/python3.12/site-packages/uvloop/__init__.py:31
+../../../.venv/lib/python3.12/site-packages/uvloop/__init__.py:31
+../../../.venv/lib/python3.12/site-packages/uvloop/__init__.py:31
+  /home/jesuslara/proyectos/ai-parrot/.venv/lib/python3.12/site-packages/uvloop/__init__.py:31: DeprecationWarning: uvloop.install() is deprecated in favor of uvloop.run() starting with Python 3.12.
+    _warnings.warn(
+
+tests/knowledge/wiki/test_sqlite_policy.py::TestSQLitePragmaPolicy::test_defaults
+tests/knowledge/wiki/test_sqlite_policy.py::TestSQLitePragmaPolicy::test_defaults
+  /home/jesuslara/proyectos/ai-parrot/.venv/lib/python3.12/site-packages/pydantic/_internal/_generate_schema.py:319: PydanticDeprecatedSince20: `json_encoders` is deprecated. See https://docs.pydantic.dev/2.12/concepts/serialization/#custom-serializers for alternatives. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    warnings.warn(
+
+tests/knowledge/wiki/test_sqlite_policy.py::TestSQLitePragmaPolicy::test_defaults
+  /home/jesuslara/proyectos/ai-parrot/.claude/worktrees/feat-FEAT-557-wikitoolkit-sqlite-optimizations/packages/ai-parrot/src/parrot/mcp/client.py:28: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class AuthCredential(BaseModel):
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================== 10 passed, 8 warnings in 1.06s ========================
+
+=== ruff check ===
+F821 Undefined name `BaseService`
+ --> tests/knowledge/wiki/languages/fixtures/structural/sample.py:7:19
+  |
+7 | class UserService(BaseService):
+  |                   ^^^^^^^^^^^
+8 |     """Main service class."""
+  |
+
+E741 Ambiguous variable name: `l`
+  --> tests/knowledge/wiki/test_bookkeeper.py:86:28
+   |
+84 |             bk.log_operation(tmp_path, "OP", f"entry {i}")
+85 |         last3 = bk.read_log(tmp_path, last_n=3)
+86 |         non_empty = [l for l in last3.splitlines() if l.strip()]
+   |                            ^
+87 |         assert len(non_empty) == 3
+   |
+
+Found 2 errors.
+
+=== Full wiki suite regression gate (AC-9) ===
+........................................................................ [  4%]
+........................................................................ [  8%]
+........................................................................ [ 12%]
+........................................................................ [ 16%]
+........................................................................ [ 21%]
+........................................................................ [ 25%]
+......sssssss........................................................... [ 29%]
+........................................................................ [ 33%]
+........................................................................ [ 37%]
+........................................................................ [ 42%]
+........................................................................ [ 46%]
+........................................................................ [ 50%]
+........................................................................ [ 54%]
+........................................................................ [ 58%]
+........................................................................ [ 63%]
+........................................................................ [ 67%]
+........................................................................ [ 71%]
+........................................................................ [ 75%]
+........................................................................ [ 79%]
+........................................................................ [ 84%]
+...................................s.................s..s..s............ [ 88%]
+........................................................................ [ 92%]
+...................F.................................................... [ 96%]
+.........................................................                [100%]
+=================================== FAILURES ===================================
+________________________ test_open_v1_db_migrates_to_v2 ________________________
+
+v1_db = PosixPath('/tmp/pytest-of-jesuslara/pytest-84/test_open_v1_db_migrates_to_v20/wiki.db')
+
+    @pytest.mark.asyncio
+    async def test_open_v1_db_migrates_to_v2(v1_db: Path):
+        store = SQLiteWikiStore(v1_db, wiki_name="v1-fixture")
+        # Trigger the presence-probe + _migrate() path via any read.
+        pages = await store.list_pages(limit=100)
+        assert len(pages) == 3
+    
+        assert "content_hash" in _columns(v1_db, "pages")
+        assert "symbols" in _tables(v1_db)
+        assert "symbols_fts" in _tables(v1_db)
+    
+        conn = sqlite3.connect(str(v1_db))
+        try:
+            row = conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()
+        finally:
+            conn.close()
+>       assert row[0] == SCHEMA_VERSION == "2"
+E       AssertionError: assert '3' == '2'
+E         
+E         - 2
+E         + 3
+
+/home/jesuslara/proyectos/ai-parrot/.claude/worktrees/feat-FEAT-557-wikitoolkit-sqlite-optimizations/tests/knowledge/wiki/test_store_migration_v2.py:75: AssertionError
+----------------------------- Captured stderr call -----------------------------
+2026-09-14 04:34:52,956 parrot.knowledge.wiki.store INFO Migrated pages_fts to external-content FTS5 and reindexed (plane: /tmp/pytest-of-jesuslara/pytest-84/test_open_v1_db_migrates_to_v20/wiki.db)
+------------------------------ Captured log call -------------------------------
+INFO     parrot.knowledge.wiki.store:store.py:1407 Migrated pages_fts to external-content FTS5 and reindexed (plane: /tmp/pytest-of-jesuslara/pytest-84/test_open_v1_db_migrates_to_v20/wiki.db)
+=============================== warnings summary ===============================
+tests/knowledge/wiki/test_arango_integration.py::TestArangoBuildAndQuery::test_arango_build_and_query
+tests/knowledge/wiki/test_arango_integration.py::TestArangoIngestRoundtrip::test_arango_ingest_roundtrip
+tests/knowledge/wiki/test_arango_integration.py::TestArangoSourceTracking::test_source_stale_reingest_cycle
+tests/knowledge/wiki/test_arango_integration.py::TestArangoEdgesStatsAndLint::test_edge_traversal_neighbors
+tests/knowledge/wiki/test_arango_integration.py::TestArangoEdgesStatsAndLint::test_stats_counts
+tests/knowledge/wiki/test_arango_integration.py::TestArangoEdgesStatsAndLint::test_lint_orphan_and_broken_edges_and_missing_bodies
+tests/knowledge/wiki/test_arango_integration.py::TestArangoCLIBackend::test_arango_cli_backend
+  /home/jesuslara/proyectos/ai-parrot/.venv/lib/python3.12/site-packages/_pytest/runner.py:250: PluggyTeardownRaisedWarning: A plugin raised an exception during an old-style hookwrapper teardown.
+  Plugin: /home/jesuslara/proyectos/ai-parrot/.claude/worktrees/feat-FEAT-557-wikitoolkit-sqlite-optimizations/conftest.py, Hook: pytest_runtest_setup
+  Skipped: TEST_ARANGODB_HOST not set — skip ArangoDB integration tests
+  For more information see https://pluggy.readthedocs.io/en/stable/api_reference.html#pluggy.PluggyTeardownRaisedWarning
+    lambda: runtest_hook(item=item, **kwds),
+
+tests/knowledge/wiki/test_store.py::TestPagesCrud::test_delete_page_cleans_everything[postgres]
+tests/knowledge/wiki/test_store.py::TestVectorSearch::test_vector_ranking[postgres]
+tests/knowledge/wiki/test_store.py::TestVectorSearch::test_vector_empty_store[postgres]
+tests/knowledge/wiki/test_store.py::TestVectorSearch::test_vector_dimension_mismatch_skipped[postgres]
+  /home/jesuslara/proyectos/ai-parrot/.venv/lib/python3.12/site-packages/_pytest/runner.py:250: PluggyTeardownRaisedWarning: A plugin raised an exception during an old-style hookwrapper teardown.
+  Plugin: /home/jesuslara/proyectos/ai-parrot/.claude/worktrees/feat-FEAT-557-wikitoolkit-sqlite-optimizations/conftest.py, Hook: pytest_runtest_setup
+  Skipped: postgres backend enforces one fixed embedding dimension per deployment (spec U4) and raises on mismatch (TASK-2769's explicit dimension-guard AC) instead of this test's silently-skip-mismatched-vectors premise — see the module comment above _PG_DIMENSION_GUARD_INCOMPATIBLE
+  For more information see https://pluggy.readthedocs.io/en/stable/api_reference.html#pluggy.PluggyTeardownRaisedWarning
+    lambda: runtest_hook(item=item, **kwds),
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/knowledge/wiki/test_store_migration_v2.py::test_open_v1_db_migrates_to_v2
+1 failed, 1701 passed, 11 skipped, 11 warnings in 201.28s (0:03:21)
+
+=== slow tier deselectable ===
+........................................................................ [  4%]
+........................................................................ [  8%]
+........................................................................ [ 12%]
+........................................................................ [ 16%]
+........................................................................ [ 21%]
+........................................................................ [ 25%]
+......sssssss........................................................... [ 29%]
+........................................................................ [ 33%]
+........................................................................ [ 37%]
+........................................................................ [ 42%]
+........................................................................ [ 46%]
+........................................................................ [ 50%]
+........................................................................ [ 54%]
+........................................................................ [ 58%]
+........................................................................ [ 63%]
+........................................................................ [ 67%]
+........................................................................ [ 71%]
+........................................................................ [ 75%]
+........................................................................ [ 80%]
+........................................................................ [ 84%]
+...................................s.................s..s..s............ [ 88%]
+........................................................................ [ 92%]
+................F....................................................... [ 96%]
+......................................................                   [100%]
+=================================== FAILURES ===================================
+________________________ test_open_v1_db_migrates_to_v2 ________________________
+
+v1_db = PosixPath('/tmp/pytest-of-jesuslara/pytest-85/test_open_v1_db_migrates_to_v20/wiki.db')
+
+    @pytest.mark.asyncio
+    async def test_open_v1_db_migrates_to_v2(v1_db: Path):
+        store = SQLiteWikiStore(v1_db, wiki_name="v1-fixture")
+        # Trigger the presence-probe + _migrate() path via any read.
+        pages = await store.list_pages(limit=100)
+        assert len(pages) == 3
+    
+        assert "content_hash" in _columns(v1_db, "pages")
+        assert "symbols" in _tables(v1_db)
+        assert "symbols_fts" in _tables(v1_db)
+    
+        conn = sqlite3.connect(str(v1_db))
+        try:
+            row = conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()
+        finally:
+            conn.close()
+>       assert row[0] == SCHEMA_VERSION == "2"
+E       AssertionError: assert '3' == '2'
+E         
+E         - 2
+E         + 3
+
+/home/jesuslara/proyectos/ai-parrot/.claude/worktrees/feat-FEAT-557-wikitoolkit-sqlite-optimizations/tests/knowledge/wiki/test_store_migration_v2.py:75: AssertionError
+----------------------------- Captured stderr call -----------------------------
+2026-09-14 04:38:35,149 parrot.knowledge.wiki.store INFO Migrated pages_fts to external-content FTS5 and reindexed (plane: /tmp/pytest-of-jesuslara/pytest-85/test_open_v1_db_migrates_to_v20/wiki.db)
+------------------------------ Captured log call -------------------------------
+INFO     parrot.knowledge.wiki.store:store.py:1407 Migrated pages_fts to external-content FTS5 and reindexed (plane: /tmp/pytest-of-jesuslara/pytest-85/test_open_v1_db_migrates_to_v20/wiki.db)
+=============================== warnings summary ===============================
+tests/knowledge/wiki/test_arango_integration.py::TestArangoBuildAndQuery::test_arango_build_and_query
+tests/knowledge/wiki/test_arango_integration.py::TestArangoIngestRoundtrip::test_arango_ingest_roundtrip
+tests/knowledge/wiki/test_arango_integration.py::TestArangoSourceTracking::test_source_stale_reingest_cycle
+tests/knowledge/wiki/test_arango_integration.py::TestArangoEdgesStatsAndLint::test_edge_traversal_neighbors
+tests/knowledge/wiki/test_arango_integration.py::TestArangoEdgesStatsAndLint::test_stats_counts
+tests/knowledge/wiki/test_arango_integration.py::TestArangoEdgesStatsAndLint::test_lint_orphan_and_broken_edges_and_missing_bodies
+tests/knowledge/wiki/test_arango_integration.py::TestArangoCLIBackend::test_arango_cli_backend
+  /home/jesuslara/proyectos/ai-parrot/.venv/lib/python3.12/site-packages/_pytest/runner.py:250: PluggyTeardownRaisedWarning: A plugin raised an exception during an old-style hookwrapper teardown.
+  Plugin: /home/jesuslara/proyectos/ai-parrot/.claude/worktrees/feat-FEAT-557-wikitoolkit-sqlite-optimizations/conftest.py, Hook: pytest_runtest_setup
+  Skipped: TEST_ARANGODB_HOST not set — skip ArangoDB integration tests
+  For more information see https://pluggy.readthedocs.io/en/stable/api_reference.html#pluggy.PluggyTeardownRaisedWarning
+    lambda: runtest_hook(item=item, **kwds),
+
+tests/knowledge/wiki/test_store.py::TestPagesCrud::test_delete_page_cleans_everything[postgres]
+tests/knowledge/wiki/test_store.py::TestVectorSearch::test_vector_ranking[postgres]
+tests/knowledge/wiki/test_store.py::TestVectorSearch::test_vector_empty_store[postgres]
+tests/knowledge/wiki/test_store.py::TestVectorSearch::test_vector_dimension_mismatch_skipped[postgres]
+  /home/jesuslara/proyectos/ai-parrot/.venv/lib/python3.12/site-packages/_pytest/runner.py:250: PluggyTeardownRaisedWarning: A plugin raised an exception during an old-style hookwrapper teardown.
+  Plugin: /home/jesuslara/proyectos/ai-parrot/.claude/worktrees/feat-FEAT-557-wikitoolkit-sqlite-optimizations/conftest.py, Hook: pytest_runtest_setup
+  Skipped: postgres backend enforces one fixed embedding dimension per deployment (spec U4) and raises on mismatch (TASK-2769's explicit dimension-guard AC) instead of this test's silently-skip-mismatched-vectors premise — see the module comment above _PG_DIMENSION_GUARD_INCOMPATIBLE
+  For more information see https://pluggy.readthedocs.io/en/stable/api_reference.html#pluggy.PluggyTeardownRaisedWarning
+    lambda: runtest_hook(item=item, **kwds),
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/knowledge/wiki/test_store_migration_v2.py::test_open_v1_db_migrates_to_v2
+1 failed, 1698 passed, 11 skipped, 3 deselected, 11 warnings in 219.19s (0:03:39)
+
+=== Pre-existing failure triage ===
+test_store_migration_v2.py::test_open_v1_db_migrates_to_v2 fails
+(expects SCHEMA_VERSION == "2", actual "3"). Verified this predates
+FEAT-557: git show 830f87154:.../store.py (the FEAT-557 base commit,
+before any of TASK-3216..3226 ran) already has SCHEMA_VERSION = "3",
+introduced by commit a26ff2824 fix(wiki): external-content FTS5...
+(PR #1381, unrelated hotfix, ancestor of FEAT-557's start). Not a
+FEAT-557 regression; out of scope per TASK-3226 NOT-in-scope note.
