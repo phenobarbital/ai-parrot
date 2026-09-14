@@ -52,7 +52,7 @@
       "feature_id": "FEAT-557",
       "feature": "wikitoolkit-sqlite-optimizations",
       "spec": "sdd/specs/wikitoolkit-sqlite-optimizations.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "Rewrites _migrate in store.py; needs 3217's _migrated latch. Serial with the rest of the store.py chain. HAZARD: collides with PR #1381 (schema v3) if that lands first.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3218-read-first-latched-migration.md"
+      "completed_at": "2026-09-14T00:59:19+00:00",
+      "file": "sdd/tasks/completed/TASK-3218-read-first-latched-migration.md"
     },
     {
       "id": "TASK-3219",
