@@ -2248,8 +2248,16 @@ def create_wiki_store(
         ValueError: For an unknown ``backend`` value.
     """
     storage_dir = Path(storage_dir)
+    # Pop, never peek: `kwargs` is forwarded verbatim to satellite
+    # backends at the _EXTRA_BACKENDS branch, which would reject an
+    # unexpected `sqlite_policy` keyword.
+    sqlite_policy = kwargs.pop("sqlite_policy", None)
     if backend == "sqlite":
-        return SQLiteWikiStore(storage_dir / "wiki.db", wiki_name=wiki_name)
+        return SQLiteWikiStore(
+            storage_dir / "wiki.db",
+            wiki_name=wiki_name,
+            sqlite_policy=sqlite_policy,
+        )
     if backend == "memory":
         # Imported lazily — file_store imports export helpers which
         # import this module.

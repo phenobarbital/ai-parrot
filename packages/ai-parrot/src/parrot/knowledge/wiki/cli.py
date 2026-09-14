@@ -77,6 +77,7 @@ from parrot.knowledge.wiki.project import (
     save_env_overlay,
     save_global_registry,
     save_project_config,
+    sqlite_policy_from_config,
     validate_namespace_name,
     wiki_write_lock,
 )
@@ -418,7 +419,12 @@ def _open_store(root: Path, config: WikiProjectConfig) -> BaseWikiStore:
             text_analyzer=config.arango_text_analyzer,
         )
     storage.mkdir(parents=True, exist_ok=True)
-    return create_wiki_store(storage, wiki_name=config.wiki_name, backend=config.backend)
+    return create_wiki_store(
+        storage,
+        wiki_name=config.wiki_name,
+        backend=config.backend,
+        sqlite_policy=sqlite_policy_from_config(config),
+    )
 
 
 def _open_sources(
@@ -438,7 +444,11 @@ def _open_sources(
     """
     storage = config.storage_path(root)
     if config.backend == "sqlite":
-        return SourceCollectionManager(storage / "sources", db_path=storage / "wiki.db")
+        return SourceCollectionManager(
+            storage / "sources",
+            db_path=storage / "wiki.db",
+            busy_timeout=config.sqlite_busy_timeout,
+        )
     if config.backend == "arangodb":
         return SourceCollectionManager(storage / "sources", backend="arangodb", arango_store=store)
     return SourceCollectionManager(storage / "sources", backend="json")

@@ -21,9 +21,15 @@ import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+if TYPE_CHECKING:
+    # Import only for the annotation below — the real (runtime) import in
+    # sqlite_policy_from_config() is deferred to avoid a module-load cycle
+    # (store.py and project.py are mutually reachable).
+    from parrot.knowledge.wiki.store import SQLitePragmaPolicy
 
 try:  # POSIX only — see wiki_write_lock().
     import fcntl
@@ -651,6 +657,28 @@ def resolve_vault_dir(
         logger.warning("Configured Obsidian vault directory does not exist: %s", candidate)
         return None
     return candidate
+
+
+def sqlite_policy_from_config(config: "WikiProjectConfig") -> "SQLitePragmaPolicy":
+    """Build the SQLite connection policy a config asks for.
+
+    The single mapping from persisted settings to the connection policy;
+    every construction site that holds a config uses this rather than
+    building a policy inline.
+
+    Args:
+        config: The project's wiki config.
+
+    Returns:
+        A validated policy carrying the configured timeout and pragma
+        opt-in.
+    """
+    from parrot.knowledge.wiki.store import SQLitePragmaPolicy
+
+    return SQLitePragmaPolicy(
+        busy_timeout_s=config.sqlite_busy_timeout,
+        performance_pragmas=config.sqlite_performance_pragmas,
+    )
 
 
 def config_path(root: Path) -> Path:

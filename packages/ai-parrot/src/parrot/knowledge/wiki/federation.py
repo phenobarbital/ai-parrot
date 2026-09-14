@@ -50,7 +50,13 @@ from parrot.knowledge.wiki.project import (
     resolve_arango_params,
     resolve_entry_base,
 )
-from parrot.knowledge.wiki.store import BaseWikiStore, SQLiteWikiStore, WikiPageRecord, create_wiki_store
+from parrot.knowledge.wiki.store import (
+    BaseWikiStore,
+    SQLitePragmaPolicy,
+    SQLiteWikiStore,
+    WikiPageRecord,
+    create_wiki_store,
+)
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
@@ -274,7 +280,19 @@ def _open_local_plane(
         FileNotFoundError: When ``read_only`` and the plane is unbuilt.
     """
     if backend == "sqlite" and read_only:
-        return SQLiteWikiStore(storage_dir / "wiki.db", wiki_name=wiki_name, read_only=True)
+        # A foreign, read-only plane gets the bounded busy wait but never
+        # write or performance pragmas — `_read` on a read-only store
+        # never reaches `_apply_pragmas(writable=True)` anyway, so this
+        # is belt-and-braces. Federation resolves FOREIGN namespaces, so
+        # the local project config does not apply here; the policy's own
+        # defaults (15s, performance_pragmas=False) are what spec §2 asks
+        # for.
+        return SQLiteWikiStore(
+            storage_dir / "wiki.db",
+            wiki_name=wiki_name,
+            read_only=True,
+            sqlite_policy=SQLitePragmaPolicy(),
+        )
     if backend == "memory" and read_only and not (storage_dir / "pages").exists():
         raise FileNotFoundError(f"read-only wiki store has no plane at {storage_dir / 'pages'}")
     return create_wiki_store(storage_dir, wiki_name=wiki_name, backend=backend)

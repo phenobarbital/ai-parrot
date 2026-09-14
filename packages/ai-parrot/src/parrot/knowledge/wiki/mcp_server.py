@@ -22,6 +22,7 @@ from parrot.knowledge.wiki.project import (
     WikiConfigError,
     find_project_root,
     load_effective_config,
+    sqlite_policy_from_config,
 )
 from parrot.knowledge.wiki.store import create_wiki_store
 from parrot.knowledge.wiki.tools import create_wiki_tools
@@ -127,7 +128,12 @@ def create_wiki_mcp_server(root: Path) -> StdioMCPServer:
         )
     else:
         storage.mkdir(parents=True, exist_ok=True)
-        store = create_wiki_store(storage, wiki_name=config.wiki_name, backend=config.backend)
+        store = create_wiki_store(
+            storage,
+            wiki_name=config.wiki_name,
+            backend=config.backend,
+            sqlite_policy=sqlite_policy_from_config(config),
+        )
     # Federated namespaces (FEAT-450): the read tools inherit them
     # through the store they already hold. Resolution runs under the same
     # stdout-redirect discipline as every other import here — opening a
