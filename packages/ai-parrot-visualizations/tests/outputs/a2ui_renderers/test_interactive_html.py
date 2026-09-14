@@ -610,6 +610,9 @@ class TestChartKeyIsReadableAndSingular:
             dataModel={},
         )
         doc = (await InteractiveHTMLRenderer().render(envelope)).content.decode()
+        # ...and it sits at the bottom too, so the key is in the same place
+        # whether a chart has one series or six.
+        assert 'position: "bottom"' in doc
         # The MARKUP, not the string: the runtime's own JS contains the
         # selector `[data-metric-toggle-for="...]` and the stylesheet contains
         # `.a2ui-metric-toggle`, both inlined into every document, so a bare

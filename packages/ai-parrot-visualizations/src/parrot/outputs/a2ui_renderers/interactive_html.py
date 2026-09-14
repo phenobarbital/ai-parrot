@@ -273,7 +273,9 @@ _BEHAVIOR_JS = r"""
         labels: rows.map(function (r) { return r[cfg.x]; }),
         datasets: buildDatasets(cfg, rows),
       },
-      options: { plugins: { legend: { display: !!cfg.showLegend } } },
+      // Bottom, like the pill key a multi-series chart gets: which side the
+      // key sits on should not depend on how many series there happen to be.
+      options: { plugins: { legend: { display: !!cfg.showLegend, position: "bottom" } } },
     });
 
     var chartId = canvas.getAttribute("data-chart");
