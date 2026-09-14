@@ -817,3 +817,49 @@ class TestExportedDeltaReadsLikeTheApp:
         assert 'data-sentiment="neutral"' in doc
         assert '.kpi-delta[data-sentiment="neutral"] { color: var(--neutral-text); }' in doc
         assert '.kpi-delta[data-sentiment="neutral"] { color: var(--neutral-muted); }' not in doc
+
+
+class TestPrintingAnExportedReport:
+    """Ctrl+P on an exported report, which is how it becomes a PDF.
+
+    `layout-print.css` is a whole LAYOUT the PDF renderer selects
+    server-side; an interactive document ships as `[data-layout="analytics"]`
+    and never sees it. Until `print-media.css` the composed sheet carried no
+    `@media print` rule at all.
+    """
+
+    async def _doc(self) -> str:
+        env = _envelope(
+            Component(
+                id="root", component="Chart", type="bar", x="day", y=["a", "b"],
+                data={"path": "/rows"},
+            ),
+            data_model={"rows": [{"day": "Mon", "a": 1, "b": 2}]},
+        )
+        return (await InteractiveHTMLRenderer().render(env)).content.decode()
+
+    async def test_the_document_carries_print_rules(self):
+        doc = await self._doc()
+        assert "@media print" in doc
+
+    async def test_colour_is_asked_for_explicitly(self):
+        # Browsers drop background colours when printing unless the reader
+        # ticked "Background graphics". Everything meaningful in this report
+        # is a colour — the delta greens and reds, the table header band.
+        assert "print-color-adjust: exact" in await self._doc()
+
+    async def test_controls_that_do_nothing_on_paper_are_hidden(self):
+        doc = await self._doc()
+        # From the RULE, not from the prose: the stylesheet's own comment
+        # mentions `@media print` before the block opens.
+        block = doc[re.search(r"@media print\s*\{", doc).end():]
+        for selector in (".a2ui-metric-toggle", ".a2ui-table-pager", ".filter-bar"):
+            assert f"{selector},\n" in block or f"{selector} " in block
+
+    async def test_the_pdf_layout_does_not_get_a_second_page_rule(self):
+        # `layout-print.css` already owns the paged rules for WeasyPrint.
+        # Two sources deciding one margin is worse than one.
+        from parrot.outputs.formats.assets.design_system import DesignSystem
+
+        assert "@media print" not in DesignSystem.stylesheet(layout="print")
+        assert "@media print" in DesignSystem.stylesheet(layout="analytics")

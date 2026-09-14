@@ -1,0 +1,94 @@
+/* ─────────────────────────────────────────────
+ * Design system — print-media.css
+ *
+ * What a SCREEN surface does when the reader presses Ctrl+P. Not to be
+ * confused with `layout-print.css`, which is a whole layout the PDF
+ * renderer selects server-side (`[data-layout="print"]`, WeasyPrint): that
+ * one never applies here, because an interactive document ships as
+ * `[data-layout="analytics"]`. Until this file existed the composed sheet
+ * had no `@media print` rule at all, so printing an exported report to PDF
+ * gave screen chrome, dropped colour and charts cut across pages.
+ *
+ * Composed only for the screen layouts. The print LAYOUT already carries
+ * its own paged rules, and stacking a second `@page` on top of them would
+ * be two sources deciding one margin.
+ * ───────────────────────────────────────────── */
+
+@media print {
+    /* Margins only. Page SIZE is the reader's to choose in the print
+       dialog — forcing A4 on someone printing to US Letter crops the page
+       for no reason. */
+    @page {
+        margin: 12mm;
+    }
+
+    /* Browsers drop background colours when printing unless the reader has
+       ticked "Background graphics". Everything that carries meaning here is
+       a colour — the delta greens and reds, the table header band, the
+       status series in a chart — so ask for them explicitly. */
+    html,
+    body,
+    .ds-page {
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+        background: #fff;
+    }
+
+    .ds-page {
+        padding: 0;
+        --shadow: none;
+    }
+
+    /* Controls that do nothing on paper. A printed button is a reader
+       wondering why it will not press. */
+    .a2ui-tabs,
+    .a2ui-metric-toggle,
+    .a2ui-table-search,
+    .a2ui-table-pager,
+    .a2ui-button,
+    .a2ui-modal,
+    .filter-bar {
+        display: none !important;
+    }
+
+    /* Nothing that reads as one thing should be split in two. */
+    .a2ui-card,
+    .kpi-card,
+    .a2ui-chart-wrap,
+    .a2ui-graph-wrap,
+    .a2ui-table-wrap,
+    .a2ui-section {
+        box-shadow: none;
+        break-inside: avoid;
+        page-break-inside: avoid;
+    }
+
+    /* A fixed count, never the responsive track function the analytics
+       layout uses: on paper there is no viewport to respond to, and the
+       reader's paper size is not known here. */
+    .kpi-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 0.75rem;
+    }
+
+    /* A long table keeps flowing, but a row stays whole and the header
+       repeats on every page — the paged idiom, not sticky positioning. */
+    table {
+        break-inside: auto;
+    }
+    thead {
+        display: table-header-group;
+    }
+    tbody tr {
+        break-inside: avoid;
+        page-break-inside: avoid;
+    }
+
+    /* Chart.js sizes its canvas to the screen box it was created in. Held
+       to the page width it prints whole instead of running off the edge. */
+    canvas {
+        max-width: 100% !important;
+        height: auto !important;
+    }
+}

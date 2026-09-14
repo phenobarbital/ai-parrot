@@ -65,6 +65,13 @@ _COMPONENTS_CSS: str = _read_asset("components.css") or ""
 #: asset constant here), never crashes the import.
 _TAILWIND_CSS: str = _read_asset("tailwind.generated.css") or ""
 
+#: What a SCREEN surface does when the reader presses Ctrl+P: an
+#: `@media print` block, inert until then. Composed for every layout EXCEPT
+#: `print`, which is the PDF renderer's own paged layout and already carries
+#: paged rules of its own — two sources deciding one margin is worse than
+#: one. Missing file degrades to `""` like every other asset here.
+_PRINT_MEDIA_CSS: str = _read_asset("print-media.css") or ""
+
 #: One entry per declared layout name. A missing file is ``None`` here and
 #: handled as a warn-and-fall-back case by ``DesignSystem._resolve_layout``
 #: — this keeps the composer importable even if a layout asset is absent
@@ -121,6 +128,7 @@ class DesignSystem:
                 _COMPONENTS_CSS,
                 _TAILWIND_CSS,
                 layout_css or "",
+                "" if layout_key == "print" else _PRINT_MEDIA_CSS,
             )
             if part
         )
