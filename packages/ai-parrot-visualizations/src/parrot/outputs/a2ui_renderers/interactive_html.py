@@ -99,7 +99,9 @@ from ._graph_svg import render_graph_svg
 from ._intercept import intercepts
 from ._semantics import (
     is_kpi_row,
+    kpi_comparison_html,
     kpi_unit_html,
+    kpi_value_display,
     node_extensions,
     semantic_card_class,
     semantic_text_class,
@@ -867,7 +869,11 @@ class InteractiveHTMLRenderer(AbstractA2UIRenderer):
             cls = f"{cls} {semantic_cls}"
         extra = kpi_unit_html(node) if role == "value" else ""
         attrs = trend_attr_html(node) if role == "delta" else ""
-        return f'<p class="{cls}"{attrs}>{_esc(props.get("text"))}{extra}</p>'
+        if role == "value":
+            display = html.escape(kpi_value_display(node, props.get("text")))
+        else:
+            display = _esc(props.get("text"))
+        return f'<p class="{cls}"{attrs}>{display}{extra}</p>'
 
     def _render_prim_Image(self, node: BasicNode, degradations: list[dict[str, Any]]) -> str:
         props = node.model_extra or {}
@@ -977,7 +983,9 @@ class InteractiveHTMLRenderer(AbstractA2UIRenderer):
         variant_cls = semantic_card_class(node)
         if variant_cls:
             cls = f"{cls} {variant_cls}"
-        return f'<div class="{cls}">{inner}</div>'
+        # See `ssr_html._render_Card`: the baseline label qualifies the delta,
+        # so it follows it.
+        return f'<div class="{cls}">{inner}{kpi_comparison_html(node)}</div>'
 
     def _render_prim_Tabs(self, node: BasicNode, degradations: list[dict[str, Any]]) -> str:
         """A ``Tabs`` primitive -> a ``[data-tabs]`` nav + ``[data-tabs-panes]``

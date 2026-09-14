@@ -65,7 +65,9 @@ from ._graph_svg import render_graph_svg
 from ._intercept import intercepts
 from ._semantics import (
     is_kpi_row,
+    kpi_comparison_html,
     kpi_unit_html,
+    kpi_value_display,
     node_extensions,
     semantic_card_class,
     semantic_text_class,
@@ -550,6 +552,8 @@ class SSRHTMLRenderer(AbstractA2UIRenderer):
         attrs = trend_attr_html(node) if role == "delta" else ""
 
         raw_value = props.get("text")
+        if role == "value":
+            return f'<p class="{cls}">{html.escape(kpi_value_display(node, raw_value))}{extra}</p>'
         col = self._table_cell_columns.get(id(node)) if role == "cell" else None
         if col is not None:
             col_type, col_format = col
@@ -675,7 +679,9 @@ class SSRHTMLRenderer(AbstractA2UIRenderer):
         variant_cls = semantic_card_class(node)
         if variant_cls:
             cls = f"{cls} {variant_cls}"
-        return f'<div class="{cls}">{inner}</div>'
+        # After the delta, because it qualifies it: "+52.4%" then "vs the
+        # previous 14 days". Empty for a card that declares no baseline.
+        return f'<div class="{cls}">{inner}{kpi_comparison_html(node)}</div>'
 
     def _render_Tabs(self, node: BasicNode, degradations: list[dict[str, Any]]) -> str:
         panes = []

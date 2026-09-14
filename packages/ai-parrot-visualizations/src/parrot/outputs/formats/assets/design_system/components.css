@@ -81,6 +81,15 @@
     font-size: 0.85rem;
     font-weight: 600;
 }
+
+/* The baseline the delta compares against. Muted and beside the delta, not
+   under it: it qualifies that number, it is not a third fact. */
+.kpi-comparison {
+    display: inline-block;
+    margin-top: 0.15rem;
+    font-size: 0.75rem;
+    color: var(--neutral-muted);
+}
 .kpi-delta[data-trend="up"] { color: var(--accent-green); }
 .kpi-delta[data-trend="down"] { color: var(--accent-red); }
 .kpi-delta[data-trend="flat"] { color: var(--neutral-muted); }

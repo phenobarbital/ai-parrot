@@ -26,14 +26,25 @@ KPICARD_SCHEMA: dict[str, Any] = {
             "type": "string",
             "description": "Optional label for the baseline period the delta compares against (FEAT-527).",
         },
+        "format": {
+            "type": "string",
+            "enum": ["percent", "currency", "number"],
+            "description": (
+                "Optional display hint for `value`, mirroring `TableColumn.format`. "
+                "A ratio sent as 0.683 renders as '68.3%' only when this says so — "
+                "renderers never guess a number's meaning from its label."
+            ),
+        },
     },
     "required": ["label", "value"],
 }
 
 KPICARD_INSTRUCTIONS = (
     "Use KPICard to highlight a single headline metric. Provide `label` and `value`; "
-    "optionally `unit`, `delta`, `trend` (up/down/flat), `icon`, `color`, and "
-    "`comparisonPeriod` (e.g. 'vs Q2'). Display-only."
+    "optionally `unit`, `delta`, `trend` (up/down/flat), `icon`, `color`, "
+    "`comparisonPeriod` (e.g. 'vs Q2'), and `format` (percent/currency/number — "
+    "send a ratio as 0.683 with format='percent', never as the string '68.3%'). "
+    "Display-only."
 )
 
 
@@ -72,7 +83,17 @@ class KPICardComponent:
             BasicNode(
                 component="Text",
                 text=_as_text(props.get("value")),
-                metadata={"extensions": {"parrot_role": "value", "parrot_unit": props.get("unit")}},
+                metadata={
+                    "extensions": {
+                        "parrot_role": "value",
+                        "parrot_unit": props.get("unit"),
+                        # The raw value stays the Text's `text` (a renderer
+                        # that ignores this extension is unchanged); the hint
+                        # rides beside it so every renderer formats the same
+                        # number the same way.
+                        "parrot_value_format": props.get("format"),
+                    }
+                },
             ),
         ]
         delta, trend = props.get("delta"), props.get("trend")

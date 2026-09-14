@@ -294,3 +294,71 @@ class TestTailwindClassCoverage:
         sheet = DesignSystem.stylesheet()
         missing = sorted(cls for cls in classes if f".{cls}" not in sheet)
         assert not missing, f"Classes with no CSS rule in DesignSystem.stylesheet(): {missing}"
+
+
+def _report_kpi_envelope() -> CreateSurface:
+    """The shape the FieldSync programme report sends: a ratio as the number
+    it is, a declared format, and the baseline the delta compares against."""
+    return CreateSurface(
+        surfaceId="kpi",
+        catalogId="c",
+        components=[
+            Component(
+                id="root",
+                component="KPICard",
+                label="Completion rate",
+                value=0.6833333333333333,
+                delta="+12.2 pts",
+                trend="up",
+                comparisonPeriod="vs previous 14 days",
+                format="percent",
+            )
+        ],
+        dataModel={},
+    )
+
+
+@pytest.mark.parametrize("renderer_cls", RENDERERS)
+class TestKpiValueFormatting:
+    """A KPI value arrives as a number and used to print as one.
+
+    The programme report card read `0.6833333333333333` — sixteen digits of
+    float noise where a reader wanted three characters.
+    """
+
+    pytestmark = pytest.mark.asyncio
+
+    async def test_a_declared_percent_renders_as_one(self, renderer_cls):
+        doc = (await renderer_cls().render(_report_kpi_envelope())).content.decode()
+        assert "68.3%" in doc
+        assert "0.6833333333333333" not in doc
+
+    async def test_the_card_says_what_the_delta_compares_against(self, renderer_cls):
+        # `comparisonPeriod` has been lowered onto the Card since FEAT-527 and
+        # both renderers dropped it: the card showed "+12.2 pts" without ever
+        # saying more than WHAT.
+        #
+        # The ELEMENT, not the class name: the design system's stylesheet is
+        # inlined into every document, so `"kpi-comparison" in doc` is true
+        # from the CSS rule alone and would pass with the markup absent.
+        doc = (await renderer_cls().render(_report_kpi_envelope())).content.decode()
+        assert '<span class="kpi-comparison">vs previous 14 days</span>' in doc
+
+    async def test_an_undeclared_value_is_left_exactly_as_it_was(self, renderer_cls):
+        # No `format`: the renderer must not infer meaning from the number.
+        # Guessing would group a year as "2,026" and turn a version into a sum.
+        envelope = CreateSurface(
+            surfaceId="kpi",
+            catalogId="c",
+            components=[
+                Component(id="root", component="KPICard", label="Since", value=2026),
+            ],
+            dataModel={},
+        )
+        doc = (await renderer_cls().render(envelope)).content.decode()
+        assert "2026" in doc
+        assert "2,026" not in doc
+
+    async def test_a_card_with_no_baseline_gains_nothing(self, renderer_cls):
+        doc = (await renderer_cls().render(_kpi_envelope())).content.decode()
+        assert '<span class="kpi-comparison"' not in doc
