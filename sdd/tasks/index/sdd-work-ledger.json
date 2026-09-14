@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-14T03:20:00+00:00",
-  "completed_at": null,
+  "completed_at": "2026-09-14T13:12:02+00:00",
   "external_dependencies": [
     {
       "feature_id": "FEAT-557",
@@ -393,7 +393,7 @@
       "feature_id": "FEAT-566",
       "feature": "sdd-work-ledger",
       "spec": "sdd/specs/sdd-work-ledger.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -410,8 +410,8 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": "2026-09-14T03:14:34+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3244-ledger-sdd-lifecycle-integration.md"
+      "completed_at": "2026-09-14T13:12:02+00:00",
+      "file": "sdd/tasks/completed/TASK-3244-ledger-sdd-lifecycle-integration.md"
     }
   ]
 }
