@@ -32,7 +32,7 @@
       "feature_id": "FEAT-557",
       "feature": "wikitoolkit-sqlite-optimizations",
       "spec": "sdd/specs/wikitoolkit-sqlite-optimizations.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "store.py core. Serial with 3218/3219/3220 (same file, overlapping regions).",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3217-open-read-write-connection-policy.md"
+      "completed_at": "2026-09-14T00:52:45+00:00",
+      "file": "sdd/tasks/completed/TASK-3217-open-read-write-connection-policy.md"
     },
     {
       "id": "TASK-3218",
