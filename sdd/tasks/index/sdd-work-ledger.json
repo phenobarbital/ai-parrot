@@ -32,7 +32,8 @@
       "assigned_at": null,
       "started_at": "2026-09-14T03:14:34+00:00",
       "completed_at": "2026-09-14T03:29:49+00:00",
-      "file": "sdd/tasks/completed/TASK-3227-project-shared-root.md"
+      "file": "sdd/tasks/completed/TASK-3227-project-shared-root.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3228",
@@ -51,7 +52,8 @@
       "assigned_at": null,
       "started_at": "2026-09-14T03:14:34+00:00",
       "completed_at": "2026-09-14T03:29:49+00:00",
-      "file": "sdd/tasks/completed/TASK-3228-ledger-event-schema.md"
+      "file": "sdd/tasks/completed/TASK-3228-ledger-event-schema.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3229",
@@ -72,7 +74,8 @@
       "assigned_at": null,
       "started_at": "2026-09-14T03:14:34+00:00",
       "completed_at": "2026-09-14T04:05:19+00:00",
-      "file": "sdd/tasks/completed/TASK-3229-append-only-ledger-log.md"
+      "file": "sdd/tasks/completed/TASK-3229-append-only-ledger-log.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3230",
@@ -93,7 +96,8 @@
       "assigned_at": null,
       "started_at": "2026-09-14T03:14:34+00:00",
       "completed_at": "2026-09-14T04:05:19+00:00",
-      "file": "sdd/tasks/completed/TASK-3230-ledger-store-transaction-adapter.md"
+      "file": "sdd/tasks/completed/TASK-3230-ledger-store-transaction-adapter.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3231",
@@ -116,7 +120,8 @@
       "assigned_at": null,
       "started_at": "2026-09-14T03:14:34+00:00",
       "completed_at": "2026-09-14T08:44:09+00:00",
-      "file": "sdd/tasks/completed/TASK-3231-ledger-index-replay-and-claim.md"
+      "file": "sdd/tasks/completed/TASK-3231-ledger-index-replay-and-claim.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3232",
@@ -139,7 +144,8 @@
       "assigned_at": null,
       "started_at": "2026-09-14T03:14:34+00:00",
       "completed_at": "2026-09-14T09:28:12+00:00",
-      "file": "sdd/tasks/completed/TASK-3232-ledger-service-facade.md"
+      "file": "sdd/tasks/completed/TASK-3232-ledger-service-facade.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3233",
@@ -162,7 +168,8 @@
       "assigned_at": null,
       "started_at": "2026-09-14T03:14:34+00:00",
       "completed_at": "2026-09-14T09:22:30+00:00",
-      "file": "sdd/tasks/completed/TASK-3233-sdd-graph-ingestion.md"
+      "file": "sdd/tasks/completed/TASK-3233-sdd-graph-ingestion.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3234",
@@ -183,7 +190,8 @@
       "assigned_at": null,
       "started_at": "2026-09-14T03:14:34+00:00",
       "completed_at": "2026-09-14T04:17:43+00:00",
-      "file": "sdd/tasks/completed/TASK-3234-federation-overlay-routing.md"
+      "file": "sdd/tasks/completed/TASK-3234-federation-overlay-routing.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3235",
@@ -205,7 +213,8 @@
       "assigned_at": null,
       "started_at": "2026-09-14T03:14:34+00:00",
       "completed_at": "2026-09-14T10:15:44+00:00",
-      "file": "sdd/tasks/completed/TASK-3235-ledger-mcp-tools-and-provenance.md"
+      "file": "sdd/tasks/completed/TASK-3235-ledger-mcp-tools-and-provenance.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3236",
@@ -227,7 +236,8 @@
       "assigned_at": null,
       "started_at": "2026-09-14T03:14:34+00:00",
       "completed_at": "2026-09-14T10:15:44+00:00",
-      "file": "sdd/tasks/completed/TASK-3236-ledger-cli-group.md"
+      "file": "sdd/tasks/completed/TASK-3236-ledger-cli-group.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3237",
@@ -248,7 +258,8 @@
       "assigned_at": null,
       "started_at": "2026-09-14T03:14:34+00:00",
       "completed_at": "2026-09-14T04:12:54+00:00",
-      "file": "sdd/tasks/completed/TASK-3237-worktree-hook-guard.md"
+      "file": "sdd/tasks/completed/TASK-3237-worktree-hook-guard.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3238",
@@ -270,7 +281,8 @@
       "assigned_at": null,
       "started_at": "2026-09-14T03:14:34+00:00",
       "completed_at": "2026-09-14T10:15:44+00:00",
-      "file": "sdd/tasks/completed/TASK-3238-devloop-ledger-context.md"
+      "file": "sdd/tasks/completed/TASK-3238-devloop-ledger-context.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3239",
@@ -291,7 +303,8 @@
       "assigned_at": null,
       "started_at": "2026-09-14T03:14:34+00:00",
       "completed_at": "2026-09-14T11:05:44+00:00",
-      "file": "sdd/tasks/completed/TASK-3239-close-task-ledger-event.md"
+      "file": "sdd/tasks/completed/TASK-3239-close-task-ledger-event.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3240",
@@ -313,7 +326,8 @@
       "assigned_at": null,
       "started_at": "2026-09-14T03:14:34+00:00",
       "completed_at": "2026-09-14T11:05:44+00:00",
-      "file": "sdd/tasks/completed/TASK-3240-codereview-ledger-twins.md"
+      "file": "sdd/tasks/completed/TASK-3240-codereview-ledger-twins.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3241",
@@ -335,7 +349,8 @@
       "assigned_at": null,
       "started_at": "2026-09-14T03:14:34+00:00",
       "completed_at": "2026-09-14T11:13:20+00:00",
-      "file": "sdd/tasks/completed/TASK-3241-start-next-promotion-twins.md"
+      "file": "sdd/tasks/completed/TASK-3241-start-next-promotion-twins.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3242",
@@ -356,7 +371,8 @@
       "assigned_at": null,
       "started_at": "2026-09-14T03:14:34+00:00",
       "completed_at": "2026-09-14T11:05:44+00:00",
-      "file": "sdd/tasks/completed/TASK-3242-done-ledger-gate-and-snapshot-twins.md"
+      "file": "sdd/tasks/completed/TASK-3242-done-ledger-gate-and-snapshot-twins.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3243",
@@ -384,7 +400,8 @@
       "assigned_at": null,
       "started_at": "2026-09-14T03:14:34+00:00",
       "completed_at": "2026-09-14T12:27:33+00:00",
-      "file": "sdd/tasks/completed/TASK-3243-ledger-core-integration-regression.md"
+      "file": "sdd/tasks/completed/TASK-3243-ledger-core-integration-regression.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3244",
@@ -411,7 +428,8 @@
       "assigned_at": null,
       "started_at": "2026-09-14T03:14:34+00:00",
       "completed_at": "2026-09-14T13:12:02+00:00",
-      "file": "sdd/tasks/completed/TASK-3244-ledger-sdd-lifecycle-integration.md"
+      "file": "sdd/tasks/completed/TASK-3244-ledger-sdd-lifecycle-integration.md",
+      "verification": "verified"
     }
   ]
 }
