@@ -93,7 +93,7 @@
       "feature_id": "FEAT-557",
       "feature": "wikitoolkit-sqlite-optimizations",
       "spec": "sdd/specs/wikitoolkit-sqlite-optimizations.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -103,8 +103,8 @@
       "parallelism_notes": "Appends a new method to store.py. Technically independent of 3218/3219 but same file, so run it serially within the store.py chain to avoid conflicts.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3220-wal-checkpoint.md"
+      "completed_at": "2026-09-14T01:35:40+00:00",
+      "file": "sdd/tasks/completed/TASK-3220-wal-checkpoint.md"
     },
     {
       "id": "TASK-3221",
