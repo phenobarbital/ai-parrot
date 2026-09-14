@@ -173,7 +173,7 @@
       "feature_id": "FEAT-557",
       "feature": "wikitoolkit-sqlite-optimizations",
       "spec": "sdd/specs/wikitoolkit-sqlite-optimizations.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -184,8 +184,8 @@
       "parallelism_notes": "cli.py. Serial with 3225 (same file). Carries a verified spec correction: ingest has NO writer lock.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3224-cli-checkpoint-and-busy-handling.md"
+      "completed_at": "2026-09-14T01:52:12+00:00",
+      "file": "sdd/tasks/completed/TASK-3224-cli-checkpoint-and-busy-handling.md"
     },
     {
       "id": "TASK-3225",
