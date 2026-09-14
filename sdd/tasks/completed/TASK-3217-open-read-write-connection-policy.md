@@ -531,10 +531,31 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-14
+**Notes**: Implemented `_apply_pragmas`, `_open`, `_read`, `_write` exactly per blueprint,
+inserted before `_connect` (left fully intact and untouched). Extended `__init__` with
+`sqlite_policy`/`persistent_writer` and the `_migrated` asyncio.Event latch. Added
+`timeout=self._policy.busy_timeout_s` to all three read-only-ladder `aiosqlite.connect`
+calls (`_connect_immutable`, both rungs of `_connect_readonly`). Completed the
+`_apply_pragmas` opt-in performance-pragma FILL IN (mmap_size, cache_size, temp_store —
+all read-safe) and the verbatim `_read` read-only-branch FILL IN (reproduced from
+`_connect`'s read-only branch, same quiescent-sidecar/immutable/re-check/fallback logic).
+Wrote `test_store_concurrency.py` with all 5 FILL IN tests completed; one deviation
+required for the busy-at-begin test (see below). All 6 new tests pass; regression
+(`test_store.py` + `test_store_migration_v2.py`): 124 passed, 4 skipped (unrelated
+postgres-dimension-guard skips), 1 pre-existing failure (`test_open_v1_db_migrates_to_v2`
+asserts `SCHEMA_VERSION == "2"`, but PR #1381 bumped it to `"3"` — verified identical
+failure on `dev` before this change). `ruff check` clean on both touched files.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: The `test_busy_at_begin_raises_wiki_store_busy` blueprint
+implied a bare second `SQLiteWikiStore` instance pointed at an already-`stats()`-primed
+plane would hit `WikiStoreBusy` directly. In practice `_write`'s per-instance `_migrated`
+latch means a *new* instance still runs `_migrate()` before `BEGIN IMMEDIATE`, and
+`_migrate`'s unconditional `UPDATE meta ...` statement itself requires the writer lock —
+so contention during `_migrate` surfaces as a raw `sqlite3.OperationalError`, not
+`WikiStoreBusy` (correct per spec §7: only the begin boundary maps to busy). The test
+now explicitly primes `fast_store` (schema via `stats()`, latch via one uncontended
+`_write("prime")`) before the peer takes the lock, so the contended second `_write` call
+fails only at `BEGIN IMMEDIATE` as intended. No production code changed for this; it is
+a test-construction fix only.

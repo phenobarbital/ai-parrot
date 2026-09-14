@@ -400,8 +400,21 @@ for the JSON/Arango branches — do not change its expectations.
 
 ## Completion Note
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-14
+**Notes**: Added `busy_timeout` kwarg, updated `_connect` with `timeout=`/
+`isolation_level=None`/busy_timeout pragma, added `_write(operation)`, and routed all
+four SQLite write paths (`_upsert`, `_upsert_many`, `_migrate_sources_columns`, the
+`__init__` schema replay) through it exactly per blueprint. JSON/ArangoDB branches
+untouched. All 5 new tests pass; regression (`test_sources.py` + `test_sources_arango.py`)
+99 passed. `ruff check` clean.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: The `__init__` schema replay uses `conn.executescript(...)`,
+which stdlib `sqlite3` documents as implicitly issuing a `COMMIT` before running (even
+under `isolation_level=None`) — verified empirically. That means by the time `_write`'s
+normal exit tries its own `COMMIT`, no transaction may still be open, which would raise
+`cannot commit - no transaction is active`. Added a one-line guard,
+`if conn.in_transaction: conn.execute("COMMIT")`, so `_write` commits explicitly only
+when `executescript` did not already do so implicitly. This does not change `_write`'s
+observable contract (it still commits exactly once, on success, before returning) and
+does not affect the other three write paths, which never call `executescript`.

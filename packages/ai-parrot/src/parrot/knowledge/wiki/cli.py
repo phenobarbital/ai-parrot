@@ -34,7 +34,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
-from typing import Any, cast
+from typing import Any, Optional, cast
 
 import click
 from pydantic import ValidationError
@@ -77,6 +77,7 @@ from parrot.knowledge.wiki.project import (
     save_env_overlay,
     save_global_registry,
     save_project_config,
+    sqlite_policy_from_config,
     validate_namespace_name,
     wiki_write_lock,
 )
@@ -86,7 +87,7 @@ from parrot.knowledge.wiki.repo_scan import (
     scan_repository,
 )
 from parrot.knowledge.wiki.sources import SourceCollectionManager
-from parrot.knowledge.wiki.store import BaseWikiStore, create_wiki_store
+from parrot.knowledge.wiki.store import BaseWikiStore, SQLiteWikiStore, WikiStoreBusy, create_wiki_store
 from parrot.knowledge.wiki.symbols import SymbolKind, parse_sym_id
 
 _cli_logger = logging.getLogger("wikitoolkit.cli")
@@ -418,7 +419,34 @@ def _open_store(root: Path, config: WikiProjectConfig) -> BaseWikiStore:
             text_analyzer=config.arango_text_analyzer,
         )
     storage.mkdir(parents=True, exist_ok=True)
-    return create_wiki_store(storage, wiki_name=config.wiki_name, backend=config.backend)
+    return create_wiki_store(
+        storage,
+        wiki_name=config.wiki_name,
+        backend=config.backend,
+        sqlite_policy=sqlite_policy_from_config(config),
+    )
+
+
+def _checkpoint_if_sqlite(store: BaseWikiStore, label: str) -> None:
+    """Fold the WAL back after a long writer; never fail the command.
+
+    ``checkpoint()`` is concrete to :class:`SQLiteWikiStore` — the
+    memory, ArangoDB and Postgres backends have no such method — so the
+    call is guarded. A checkpoint is maintenance: a failure is logged
+    and swallowed, never surfaced as a non-zero exit (AC-7).
+
+    Args:
+        store: The store the long writer just used.
+        label: Command name, for the debug line.
+    """
+    if not isinstance(store, SQLiteWikiStore):
+        return
+    try:
+        report = _run(store.checkpoint())
+    except Exception:  # noqa: BLE001 - maintenance must never fail the command
+        _cli_logger.debug("%s: WAL checkpoint failed", label, exc_info=True)
+        return
+    _cli_logger.debug("%s: WAL checkpoint %s", label, report)
 
 
 def _open_sources(
@@ -438,7 +466,11 @@ def _open_sources(
     """
     storage = config.storage_path(root)
     if config.backend == "sqlite":
-        return SourceCollectionManager(storage / "sources", db_path=storage / "wiki.db")
+        return SourceCollectionManager(
+            storage / "sources",
+            db_path=storage / "wiki.db",
+            busy_timeout=config.sqlite_busy_timeout,
+        )
     if config.backend == "arangodb":
         return SourceCollectionManager(storage / "sources", backend="arangodb", arango_store=store)
     return SourceCollectionManager(storage / "sources", backend="json")
@@ -1541,6 +1573,16 @@ def build(
             counts.get("graph"),
         )
 
+        # Fold the WAL back now, still inside the writer lock — `store`
+        # itself is local to `_pipeline()` above, so a fresh handle is
+        # opened here (SQLite only — `_checkpoint_if_sqlite` guards on
+        # `SQLiteWikiStore`, and re-opening an ArangoDB store here would
+        # cost an unnecessary connection for no benefit). The
+        # schema/migration probe on the fresh handle is a cheap
+        # read-first no-op since the plane is already current.
+        if config.backend == "sqlite":
+            _checkpoint_if_sqlite(_open_store(root, config), "build")
+
         click.echo(
             f"Wiki '{config.wiki_name}' built at "
             f"{output_dir} — "
@@ -1728,6 +1770,17 @@ def upsert(
 
         try:
             counts = _run(_pipeline())
+        except WikiStoreBusy:
+            # Same non-failing skip as the file-lock-busy branch above:
+            # another writer holds the SQLite writer lock, so this
+            # upsert steps aside and the next build/upsert covers it.
+            if not quiet:
+                click.echo(
+                    "The wiki plane is busy (a build or another agent holds "
+                    "the SQLite writer lock) — skipping this upsert; the "
+                    "next build will cover these files."
+                )
+            return
         except Exception as exc:  # surfaced as a clear CLI error
             if config.backend == "arangodb":
                 raise click.ClickException(
@@ -2030,6 +2083,12 @@ def status(path_: str | None, ns_opt: str | None, as_json: bool) -> None:
     # reporting on.
     from parrot.knowledge.wiki.roblox.ingest import get_roblox_status
 
+    # FEAT-557: effective SQLite connection policy. Additive — every key
+    # already in `payload` is unchanged. Read from the LOCAL store, not
+    # from `read_store`, which may be a federated span.
+    if isinstance(store, SQLiteWikiStore):
+        payload["sqlite"] = _run(store.sqlite_settings())
+
     payload["roblox_api"] = get_roblox_status()
     if as_json:
         click.echo(json.dumps(payload, indent=2, default=str))
@@ -2068,6 +2127,21 @@ def status(path_: str | None, ns_opt: str | None, as_json: bool) -> None:
         click.echo(f"  {skip['name']:<16} {skip['reason']}{hint}")
     if stale:
         click.echo("Run `wikitoolkit build` to refresh stale sources.")
+    
+    # FEAT-557: render SQLite diagnostics block
+    sqlite_info = payload.get("sqlite")
+    if sqlite_info is not None:
+        click.echo(
+            f"\nSQLite     : journal={sqlite_info['journal_mode']}, "
+            f"timeout={sqlite_info['busy_timeout_ms']}ms, "
+            f"sync={sqlite_info['synchronous']}, "
+            f"journal_limit={sqlite_info['journal_size_limit']}"
+        )
+        if sqlite_info["performance_pragmas"]:
+            click.echo("           : performance pragmas ENABLED")
+        else:
+            click.echo("           : performance pragmas disabled")
+
     roblox_api = payload.get("roblox_api")
     if roblox_api is None:
         click.echo("\nRoblox API : not downloaded — run `wikitoolkit ingest roblox-api --refresh`.")
@@ -4217,6 +4291,7 @@ def ingest(
             storage_backend=config.backend,
         )
         _run(_apply_all(applied, wiki_config, header.charter_version))
+        _checkpoint_if_sqlite(store, "ingest")
         click.echo(f"Applied {len(applied)} decision(s) from {review_opt}.")
         return
 
@@ -4293,6 +4368,7 @@ def ingest(
         )
         ManifestWriter(manifest_path).write(header, entries)
         _run(_apply_all(entries, wiki_config, charter.version, acquired_by_uri))
+        _checkpoint_if_sqlite(store, "ingest")
         click.echo(
             f"Applied {len(entries)} interactive decision(s)," f" skipped {len(skipped)}. Manifest: {manifest_path}"
         )
@@ -4322,6 +4398,7 @@ def ingest(
     )
     ManifestWriter(manifest_path).write(header, entries)
     _run(_apply_all(entries, wiki_config, charter.version, acquired_by_uri))
+    _checkpoint_if_sqlite(store, "ingest")
     audited = [e for e in entries if e.audit_sample]
     click.echo(
         f"Applied {len(entries)} auto decision(s), skipped {len(skipped)}."

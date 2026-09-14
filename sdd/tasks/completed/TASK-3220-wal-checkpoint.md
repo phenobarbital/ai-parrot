@@ -276,8 +276,21 @@ unlucky concurrent reader.
 
 ## Completion Note
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-14
+**Notes**: Added `checkpoint(truncate=True)` to `SQLiteWikiStore` exactly per blueprint,
+appended after `stats()` and before the "Lint API" section comment. Completed the
+PASSIVE-fallback FILL IN (re-reads the three columns after re-running the PRAGMA in
+PASSIVE mode). Verified `BaseWikiStore` has no `checkpoint` attribute. Added the 4-test
+`TestCheckpoint` class. All 16 tests in `test_store_concurrency.py` pass; regression
+`test_store.py`: 121 passed, 4 skipped (unrelated). `ruff check` clean.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: The reader-blocked test needed more seed data than the
+blueprint's one-line FILL IN comment implied — a single small `INSERT` left the WAL at
+0 pages before the reader even attached (nothing to block), so `TRUNCATE` reported
+`busy=0` regardless of the live reader. Seeded 500 rows before opening the reader's
+snapshot, then wrote 500 more rows through a second `_write` while the reader's
+transaction was held open, so the WAL has real content pinned behind the reader's
+snapshot. No production code changed; test-data-size fix only, verified with a minimal
+sqlite3 repro script confirming `PRAGMA wal_checkpoint(TRUNCATE)` genuinely reports
+`busy=1` under those conditions.

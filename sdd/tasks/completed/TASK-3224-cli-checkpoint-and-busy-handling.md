@@ -396,10 +396,40 @@ See the blueprint. `tests/knowledge/wiki/test_cli.py` (69.8K) has the establishe
 
 ## Completion Note
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-14
+**Notes**: Added `_checkpoint_if_sqlite(store, label)` before `_open_sources`, guarded by
+`isinstance(store, SQLiteWikiStore)` and swallowing any exception. `build` checkpoints
+(SQLite backend only) inside its existing writer lock, right after `_write_build_stats`
+— since `store` is local to the nested `_pipeline()` closure, a fresh `_open_store(root,
+config)` handle is opened for the checkpoint call (cheap: the schema/migration probe on
+it is a read-first no-op since the plane is already current). `ingest` checkpoints once
+per apply-writing branch (`--review`, `--interactive`, `--auto` — NOT `--dry-run`, which
+writes nothing), using the `store` variable already bound in `ingest`'s outer scope, with
+no writer lock added (confirmed exactly 3 `wiki_write_lock(` sites remain: 1404/1651/2271,
+none in `ingest`). `upsert` gets an `except WikiStoreBusy` handler inserted BEFORE the
+existing `except Exception`, mirroring the file-lock-busy message/`quiet` handling exactly.
+All 8 new tests pass (2 unit tests for the helper's own swallow/guard behavior + 4
+call-site tests + 2 busy-soft-skip tests). Regression (`test_cli.py` + `test_ingest.py`):
+133 passed. Full `tests/knowledge/wiki/` suite: 1684 passed, 11 skipped (unrelated), 1
+pre-existing failure (noted since TASK-3217). `ruff check` clean on both touched files
+(pre-existing, unrelated `Optional` F821 in `cli.py:_open_sources`'s signature, verified
+identical on `dev`, left untouched).
 
 **Deviations from spec**: `ingest` has no writer lock, so its checkpoint runs unlocked —
 see the spec-correction box. AC-7's "under their existing writer lock" holds for `build`
-only.
+only. Additionally, the blueprint's `build` snippet assumed a `store` variable directly
+in scope at the insertion point; `store` is actually local to `_pipeline()`, so a fresh
+`_open_store(root, config)` call was used instead (SQLite-only, guarded by
+`config.backend == "sqlite"` to avoid an unnecessary ArangoDB reconnect). The blueprint's
+"one call near the end" preference for `ingest` was not achievable without a control-flow
+change: `--review`/`--interactive`/`--auto` each `return` from their own branch rather
+than converging on a single tail, so one call was placed in each of the three branches
+instead of one shared call site — noted as a follow-up candidate for a future refactor
+that unifies the three apply paths' tails, but out of this task's scope.
+
+**Follow-up candidate (not actioned, per the spec-correction box)**: `ingest` still has
+no writer lock at all — two concurrent `ingest` invocations (or an `ingest` racing a
+`build`) can interleave writes with no mutual exclusion. This is a pre-existing gap,
+unrelated to FEAT-557, and adding one is an explicit non-goal of this task; it deserves
+its own ticket.

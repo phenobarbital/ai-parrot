@@ -21,9 +21,15 @@ import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+if TYPE_CHECKING:
+    # Import only for the annotation below — the real (runtime) import in
+    # sqlite_policy_from_config() is deferred to avoid a module-load cycle
+    # (store.py and project.py are mutually reachable).
+    from parrot.knowledge.wiki.store import SQLitePragmaPolicy
 
 try:  # POSIX only — see wiki_write_lock().
     import fcntl
@@ -456,6 +462,27 @@ class WikiProjectConfig(BaseModel):
             "tree-sitter/heuristic tiers even if ast-grep-py is installed."
         ),
     )
+    sqlite_busy_timeout: float = Field(
+        default=15.0,
+        ge=1.0,
+        le=120.0,
+        description=(
+            "Seconds a SQLite connection waits for the writer lock before "
+            "giving up (FEAT-557). Bounds the wait for every wiki reader "
+            "and writer on this plane; an exhausted wait surfaces as a "
+            "typed WikiStoreBusy rather than 'database is locked'."
+        ),
+    )
+    sqlite_performance_pragmas: bool = Field(
+        default=False,
+        description=(
+            "Opt-in memory-oriented SQLite pragmas (mmap_size, cache_size, "
+            "temp_store) (FEAT-557). Off by default so that N concurrent "
+            "agents do not each map excessive memory. The safe pragmas "
+            "(busy_timeout, synchronous=NORMAL, 64 MiB journal_size_limit) "
+            "are always applied and are not gated by this flag."
+        ),
+    )
 
     @field_validator("namespaces")
     @classmethod
@@ -630,6 +657,28 @@ def resolve_vault_dir(
         logger.warning("Configured Obsidian vault directory does not exist: %s", candidate)
         return None
     return candidate
+
+
+def sqlite_policy_from_config(config: "WikiProjectConfig") -> "SQLitePragmaPolicy":
+    """Build the SQLite connection policy a config asks for.
+
+    The single mapping from persisted settings to the connection policy;
+    every construction site that holds a config uses this rather than
+    building a policy inline.
+
+    Args:
+        config: The project's wiki config.
+
+    Returns:
+        A validated policy carrying the configured timeout and pragma
+        opt-in.
+    """
+    from parrot.knowledge.wiki.store import SQLitePragmaPolicy
+
+    return SQLitePragmaPolicy(
+        busy_timeout_s=config.sqlite_busy_timeout,
+        performance_pragmas=config.sqlite_performance_pragmas,
+    )
 
 
 def config_path(root: Path) -> Path:

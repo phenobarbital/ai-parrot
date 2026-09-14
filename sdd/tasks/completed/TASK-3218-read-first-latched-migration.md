@@ -398,8 +398,26 @@ legacy-plane upgrade — run it as the regression guard and do NOT change its ex
 
 ## Completion Note
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-14
+**Notes**: Split `_migrate` into `_migration_needed` (pure-read probe: `PRAGMA table_info`
+per migrated column plus one `SELECT` of `meta.schema_version`) and a rewritten `_migrate`
+that calls `_migrate_fts` unconditionally (kept above the early return, per the box at the
+top of the task), then returns immediately with zero writes when nothing is pending.
+Completed the version-bump FILL IN with an `INSERT ... ON CONFLICT(key) DO UPDATE`
+(verified `meta.key` is `PRIMARY KEY`), covering both the stale-value and
+missing-row cases the plain `UPDATE` could not. Added all 6 `TestReadFirstMigration`
+tests to `test_store_concurrency.py`, completing every FILL IN. All 12 tests in the file
+pass (6 from TASK-3217 + 6 new). Regression (`test_store.py` + `test_store_migration_v2.py`):
+124 passed, 4 skipped (unrelated), 1 pre-existing failure (same `SCHEMA_VERSION` "2" vs "3"
+mismatch noted in TASK-3217, unrelated to this task). `ruff check` clean.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: `test_legacy_plane_migrates_once_and_bumps_version` triggers
+migration via `store.list_pages(...)` (i.e. through the still-untouched `_connect()`
+path), not through `_write()`, because `_write()` does not yet perform `_connect()`'s
+schema-presence-and-replay step (creating tables via `executescript(WIKI_SCHEMA_SQL)` on
+a plane missing them) — that unification is explicitly TASK-3219's scope. Testing the
+legacy-plane scenario through `_write()` directly would exercise not-yet-built behavior;
+routing it through the existing `_connect()`-based read mirrors exactly how
+`test_store_migration_v2.py` already validates this and keeps the test faithful to the
+current call graph. No production code changed for this; test-construction choice only.

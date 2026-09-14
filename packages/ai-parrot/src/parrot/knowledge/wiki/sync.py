@@ -28,6 +28,7 @@ from parrot.knowledge.wiki.project import (
     WikiProjectConfig,
     load_effective_config,
     resolve_arango_params,
+    sqlite_policy_from_config,
 )
 from parrot.knowledge.wiki.store import BaseWikiStore, WikiPageRecord, create_wiki_store
 
@@ -105,7 +106,12 @@ def _open_plane(root: Path, config: WikiProjectConfig) -> BaseWikiStore:
             text_analyzer=config.arango_text_analyzer,
         )
     storage.mkdir(parents=True, exist_ok=True)
-    return create_wiki_store(storage, wiki_name=config.wiki_name, backend=config.backend)
+    return create_wiki_store(
+        storage,
+        wiki_name=config.wiki_name,
+        backend=config.backend,
+        sqlite_policy=sqlite_policy_from_config(config),
+    )
 
 
 async def _open_remote(root: Path, target_env: str) -> tuple[BaseWikiStore, WikiProjectConfig]:

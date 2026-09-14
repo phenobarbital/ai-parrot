@@ -289,8 +289,16 @@ See the blueprint — the file is a complete scaffold with two `FILL IN` bodies.
 
 ## Completion Note
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-14
+**Notes**: Added `sqlite_busy_timeout` and `sqlite_performance_pragmas` fields to
+`WikiProjectConfig` exactly per blueprint, appended after `structural_backend` and
+before `@field_validator("namespaces")`. Created the test file at the exact path
+listed in the task's Files table (`tests/knowledge/wiki/test_project_sqlite_config.py`,
+the root-level legacy wiki test tree — distinct from `packages/ai-parrot/tests/...`
+used by TASK-3216; verified both trees are real and independently used by grepping
+existing imports/pytest config). Completed both FILL INs. All 10 new tests pass;
+regression suite (`test_env_config.py`, `test_config_arango.py`,
+`test_project_namespaces.py`) 63 passed. `ruff check` clean.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

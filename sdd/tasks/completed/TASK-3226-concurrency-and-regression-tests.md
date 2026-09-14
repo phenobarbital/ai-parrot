@@ -349,10 +349,33 @@ that file, not here.
 
 ## Completion Note
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: sdd-worker (orchestrated via parrot-sdd-coder; gemini seat attempt +
+Claude fixups)
+**Date**: 2026-09-14
+**Notes**: `slow` marker registered in `pytest.ini`. Read-path SQL trace test covers all
+six listed readers, none issue write statements. Multiprocess contention test (real OS
+processes via `multiprocessing.Event`) proves typed `WikiStoreBusy` on a held peer writer
+and success when released in time; `SourceCollectionManager` vs store contention covered
+too. Combined checkpoint call-site test added to `test_cli_checkpoint.py` (build/ingest
+checkpoint, `upsert --changed` does not) — this was missing from the initial merged
+attempt and added directly. A duplicate mid-file `import multiprocessing` (ruff E402) was
+also removed. Evidence saved to `artifacts/logs/feat-557-concurrency.log`: 62 + 10 = 72
+feature tests pass; full wiki suite 1701/1702 pass (one pre-existing, unrelated failure,
+see below); slow tier is cleanly deselectable (`-m "not slow"` → 3 deselected); `ruff
+check` clean on all FEAT-557-touched files.
+
+**Pre-existing failure (out of scope, not fixed here)**:
+`test_store_migration_v2.py::test_open_v1_db_migrates_to_v2` fails (expects
+`SCHEMA_VERSION == "2"`, actual `"3"`). Verified via `git show 830f87154:.../store.py`
+(FEAT-557's own base commit, before any of TASK-3216..3226 ran) that `SCHEMA_VERSION`
+was already `"3"` there — introduced by commit `a26ff2824` ("fix(wiki): external-content
+FTS5...", PR #1381), an ancestor of FEAT-557's start, unrelated to this feature. Left
+unfixed per this task's explicit "NOT in scope: changing any production code" /
+"Changing any existing test's expectations" boundary.
 
 **Deviations from spec**: test modules live in `tests/knowledge/wiki/`, not
 `packages/ai-parrot/tests/knowledge/wiki/` as spec §3 M5 states — the latter tree contains
-no store tests.
+no store tests (except the TASK-3216 unit tests, which predate this correction and were
+left as-is, out of this task's scope).
+
+Seat: gemini · Backend: google-compat · Model: gemini-3.5-flash · Attempts: 1 · Duration: 315.5s · Tokens: 2348496/16214 (plus a direct Claude fixup pass for the missing combined test, lint fix, and evidence log)
