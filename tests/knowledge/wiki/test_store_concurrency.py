@@ -45,19 +45,46 @@ class TestOpenPolicy:
             assert (await cur.fetchone())[0] == 15_000
 
     async def test_write_pragmas_only_on_writable_open(self, tmp_path: Path) -> None:
-        """A read-only open issues no write-capable pragma (AC-4)."""
+        """A read-only open sets the read-safe policy but never `journal_mode = WAL` (AC-4/AC-5).
+
+        `synchronous` and `journal_size_limit` are per-connection, read-safe
+        settings — AC-5 requires them visible on every connection, including
+        read-only opens (this is what `status`'s `sqlite_settings()` relies
+        on). Only `journal_mode = WAL` genuinely needs a writable connection,
+        so it alone stays gated on `writable=True`.
+        """
         plane = SQLiteWikiStore(tmp_path / "wiki.db", wiki_name="test-wiki")
-        await plane.stats()
+        await plane.stats()  # writable open: sets journal_mode = WAL once, persisted in the file header.
         async with plane._open(writable=False) as conn:
             cur = await conn.execute("PRAGMA synchronous")
             synchronous = (await cur.fetchone())[0]
             cur = await conn.execute("PRAGMA journal_size_limit")
             journal_size_limit = (await cur.fetchone())[0]
-        # `synchronous` default is FULL (2); NORMAL (1) is only applied on a
-        # writable open. `journal_size_limit` defaults to -1 (unset) until a
-        # writable open sets it — a read-only open must never touch it.
-        assert synchronous != 1 or journal_size_limit == -1
-        assert journal_size_limit != plane._policy.journal_size_limit
+        # Both read-safe settings ARE applied on a read-only open (AC-5).
+        assert synchronous == 1  # NORMAL
+        assert journal_size_limit == plane._policy.journal_size_limit
+
+    async def test_read_only_open_never_sets_journal_mode(self, tmp_path: Path) -> None:
+        """`_apply_pragmas(writable=False)` never issues `journal_mode` (AC-4).
+
+        Wraps `conn.execute` (same thread-safe pattern as
+        `TestReadPathIssuesNoWrites`, rather than a `sqlite3`
+        `set_trace_callback` — that must run on aiosqlite's worker thread)
+        to observe every statement the read-only pragma pass issues.
+        """
+        plane = SQLiteWikiStore(tmp_path / "wiki.db", wiki_name="test-wiki")
+        await plane.stats()  # create the schema via a writable open first.
+        traced: list[str] = []
+        async with plane._open(writable=False) as conn:
+            original_execute = conn.execute
+
+            def _spy_execute(sql, *a, **kw):
+                traced.append(sql)
+                return original_execute(sql, *a, **kw)
+
+            conn.execute = _spy_execute
+            await plane._apply_pragmas(conn, writable=False)
+        assert not any("journal_mode" in stmt.lower() for stmt in traced)
 
 
 class TestWriteTransaction:

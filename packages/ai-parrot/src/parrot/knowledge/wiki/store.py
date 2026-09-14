@@ -949,13 +949,20 @@ class SQLiteWikiStore(BaseWikiStore):
                 read-only plane must never receive a write-capable
                 pragma (AC-4).
         """
-        # busy_timeout is read-safe: it only bounds how long THIS
-        # connection waits for a lock. Milliseconds, not seconds.
+        # busy_timeout, synchronous, and journal_size_limit are all
+        # read-safe, per-connection settings — none of them requires
+        # write access to the file, so all three are unconditional (AC-5:
+        # "required safe policy is visible" on every connection, including
+        # the read-only opens `status`/`sqlite_settings()` use). Only
+        # `journal_mode = WAL` genuinely needs a writable connection (it
+        # rewrites the database header the first time it is set), so it
+        # stays gated on `writable` — once set, WAL is persisted in the
+        # file header and every later connection reports it correctly.
         await conn.execute(f"PRAGMA busy_timeout = {int(self._policy.busy_timeout_s * 1000)}")
+        await conn.execute("PRAGMA synchronous = NORMAL")
+        await conn.execute(f"PRAGMA journal_size_limit = {self._policy.journal_size_limit}")
         if writable:
             await conn.execute("PRAGMA journal_mode = WAL")
-            await conn.execute("PRAGMA synchronous = NORMAL")
-            await conn.execute(f"PRAGMA journal_size_limit = {self._policy.journal_size_limit}")
         if self._policy.performance_pragmas:
             # Read-safe, memory-oriented tuning: opt-in only, so that N
             # concurrent agents do not each map excessive memory by

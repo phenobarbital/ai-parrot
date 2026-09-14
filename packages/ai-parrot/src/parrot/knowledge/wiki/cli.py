@@ -2132,7 +2132,7 @@ def status(path_: str | None, ns_opt: str | None, as_json: bool) -> None:
     sqlite_info = payload.get("sqlite")
     if sqlite_info is not None:
         click.echo(
-            f"\\nSQLite     : journal={sqlite_info['journal_mode']}, "
+            f"\nSQLite     : journal={sqlite_info['journal_mode']}, "
             f"timeout={sqlite_info['busy_timeout_ms']}ms, "
             f"sync={sqlite_info['synchronous']}, "
             f"journal_limit={sqlite_info['journal_size_limit']}"

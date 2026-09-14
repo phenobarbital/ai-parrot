@@ -54,11 +54,17 @@ class TestSqliteSettings:
         # Check that synchronous renders as a name, not an integer
         assert isinstance(settings["synchronous"], str)
         assert settings["synchronous"] in ["OFF", "NORMAL", "FULL", "EXTRA"]
-        
-        # Check that we get some values (exact values may vary based on SQLite defaults)
-        assert settings["busy_timeout_ms"] is not None
+
+        # AC-5 pins these to the actual required-safe policy, not merely "some
+        # value" — a read-only open must still report the real applied
+        # settings (busy_timeout, synchronous, journal_size_limit are all
+        # per-connection and unconditional in `_apply_pragmas`; regression
+        # guard for the bug where a `writable=False` read-back silently fell
+        # back to SQLite's library defaults instead of the configured policy).
+        assert settings["busy_timeout_ms"] == int(store._policy.busy_timeout_s * 1000)
+        assert settings["synchronous"] == "NORMAL"
+        assert settings["journal_size_limit"] == store._policy.journal_size_limit
         assert settings["journal_mode"] is not None
-        assert settings["synchronous"] is not None
         assert settings["performance_pragmas"] is not None
 
     async def test_read_is_not_a_write(self, tmp_path: Path) -> None:
@@ -138,6 +144,12 @@ class TestStatusPayload:
         assert "timeout=" in result.output
         assert "sync=" in result.output
         assert "performance pragmas" in result.output
+        # Regression guard: an f-string literal `"\\nSQLite"` (double
+        # backslash) prints a stray `\n` instead of a real line break —
+        # confirm the line actually starts on its own line, not glued to
+        # whatever "stale sources" text preceded it.
+        assert "\\nSQLite" not in result.output
+        assert "\nSQLite" in result.output
 
     def test_non_sqlite_backend_has_no_block(self, runner, repo) -> None:
         """A memory/arango plane emits no `sqlite` key."""

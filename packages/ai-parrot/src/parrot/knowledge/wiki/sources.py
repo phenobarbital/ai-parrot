@@ -794,7 +794,10 @@ class SourceCollectionManager:
             if removed:
                 self.logger.debug("Source removed: source_id=%s", source_id)
             return removed
-        with self._connect() as conn:
+        # A real DML write — must go through the bounded `BEGIN IMMEDIATE`
+        # transaction like every other writer, so contention maps to a typed
+        # `WikiStoreBusy` instead of a raw `sqlite3.OperationalError` (AC-3).
+        with self._write("remove_source") as conn:
             cur = conn.execute("DELETE FROM sources WHERE source_id = ?", (source_id,))
         removed = cur.rowcount > 0
         if removed:

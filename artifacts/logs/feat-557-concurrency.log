@@ -320,3 +320,24 @@ before any of TASK-3216..3226 ran) already has SCHEMA_VERSION = "3",
 introduced by commit a26ff2824 fix(wiki): external-content FTS5...
 (PR #1381, unrelated hotfix, ancestor of FEAT-557's start). Not a
 FEAT-557 regression; out of scope per TASK-3226 NOT-in-scope note.
+
+=== Post-review fixups (code review, 2026-09-14T03:05:41Z) ===
+CRITICAL fixed: sqlite_settings()/status misreported synchronous/journal_size_limit
+on a writable=False read-back (_apply_pragmas only set them when writable=True).
+Made busy_timeout/synchronous/journal_size_limit unconditional (all three are
+read-safe, per-connection settings); only journal_mode=WAL stays gated on writable
+(it rewrites the file header). Fixes AC-5. Updated the pinned test that asserted
+the old (buggy) behavior, added a targeted journal_mode-only regression test, and
+tightened test_cli_status_sqlite.py to pin real values instead of 'any valid name'.
+
+IMPORTANT fixed: sources.py remove_source() used raw _connect() for a DELETE,
+bypassing the BEGIN IMMEDIATE / WikiStoreBusy mapping other writers get. Now uses
+_write(). IMPORTANT fixed: cli.py status human-render had a literal '\\n' (double
+backslash) instead of a newline before the SQLite block; fixed + regression-tested.
+
+Re-ran full suite after fixups:
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/knowledge/wiki/test_store_migration_v2.py::test_open_v1_db_migrates_to_v2
+1 failed, 1702 passed, 11 skipped, 11 warnings in 193.07s (0:03:13)
