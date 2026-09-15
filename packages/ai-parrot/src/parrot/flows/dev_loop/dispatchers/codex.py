@@ -105,8 +105,19 @@ class _BoundedStderrReader:
         Used during timeout/cancellation cleanup, where a descendant may
         keep the pipe open indefinitely. Never raises — the already
         captured tail is retained either way.
+
+        The reader task may already be done (or already cancelled) by the
+        time this runs: ``wait()``'s bare ``await self.task`` propagates an
+        outer cancellation (e.g. the dispatch timeout) to this task too, per
+        asyncio's task-cancellation-propagates-to-an-awaited-task semantics.
+        Awaiting an already-cancelled task raises ``CancelledError``
+        immediately, so that path must be handled explicitly rather than by
+        the ``Exception`` catch-all below (``CancelledError`` is not an
+        ``Exception`` subclass).
         """
         if self.task is None:
+            return
+        if self.task.done():
             return
         try:
             await asyncio.wait_for(asyncio.shield(self.task), timeout=timeout)
@@ -116,6 +127,8 @@ class _BoundedStderrReader:
                 await self.task
             except (asyncio.CancelledError, Exception):  # noqa: BLE001
                 pass
+        except asyncio.CancelledError:
+            pass
         except Exception:  # noqa: BLE001 - settling must never raise
             pass
 

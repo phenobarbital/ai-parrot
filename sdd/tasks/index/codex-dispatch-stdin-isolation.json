@@ -34,7 +34,7 @@
       "feature_id": "codex-dispatch-stdin-isolation",
       "feature": "codex-dispatch-stdin-isolation",
       "spec": "sdd/specs/codex-dispatch-stdin-isolation.spec.md",
-      "status": "pending",
+      "status": "done-with-issues",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -43,9 +43,9 @@
       "parallel": true,
       "parallelism_notes": "Tests the new stdin isolation, stderr tail and cleanup behavior from HOTFIX-codex-dispatch-stdin-isolation-1 (packages/ai-parrot/src/parrot/flows/dev_loop/dispatchers/codex.py).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/HOTFIX-codex-dispatch-stdin-isolation-2-offline-regressions.md"
+      "started_at": "2026-09-15T23:05:44+00:00",
+      "completed_at": "2026-09-15T23:05:44+00:00",
+      "file": "sdd/tasks/completed/HOTFIX-codex-dispatch-stdin-isolation-2-offline-regressions.md"
     }
   ]
 }
