@@ -238,6 +238,7 @@ Consider a mixed-wave scenario with the following tasks:
 
 ```json
 {
+  "parallel_semantics": "exclusive",
   "tasks": [
     {"id": "TASK-1001", "parallel": true},
     {"id": "TASK-1002", "parallel": false},
@@ -245,6 +246,11 @@ Consider a mixed-wave scenario with the following tasks:
   ]
 }
 ```
+
+The `"parallel_semantics": "exclusive"` header is required: `TaskScheduler.from_index_file`
+only honours a task's `parallel` field under this header — without it every
+task defaults to `parallel=True` regardless of what the index says, and none
+of the exclusive-round behavior below occurs.
 
 The planner schedules the tasks as follows:
 

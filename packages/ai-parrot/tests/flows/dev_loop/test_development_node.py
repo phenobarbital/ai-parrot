@@ -850,6 +850,120 @@ class TestExclusiveTasks:
         assert "TASK-3.py" in result.files_changed
         assert "TASK-1" in result.incomplete_tasks
 
+    async def test_execute_pool_dispatches_one_batch_per_round(self, tmp_path, monkeypatch):
+        """Regression guard for the exact bug this feature fixes.
+
+        Spies on ``DevAgentPool.run_wave`` directly (not just the aggregate
+        result) so a regression back to dispatching a combined batch — e.g.
+        the exclusive task sharing a round with another task — fails this
+        test: each round must receive exactly one partition_wave batch, and
+        the exclusive singleton must never share a round with another task.
+        """
+        _write_index(
+            tmp_path,
+            "FEAT-560",
+            "batch-composition-test",
+            [
+                {"id": "TASK-1", "status": "pending", "depends_on": [], "parallel": False},
+                {"id": "TASK-2", "status": "pending", "depends_on": [], "parallel": True},
+                {"id": "TASK-3", "status": "pending", "depends_on": [], "parallel": True},
+            ],
+            exclusive=True,
+        )
+        research = _research(str(tmp_path), feat_id="FEAT-560")
+
+        original_run_wave = development_module.DevAgentPool.run_wave
+        batch_calls: list[list[str]] = []
+
+        async def _spying_run_wave(self, tasks, **kwargs):
+            batch_calls.append([t.id for t in tasks])
+            return await original_run_wave(self, tasks, **kwargs)
+
+        monkeypatch.setattr(development_module.DevAgentPool, "run_wave", _spying_run_wave)
+
+        # AC-2 requires re-planning ("scheduler.next_wave()") after EVERY
+        # round, not once per wave with the resulting batches replayed from
+        # a cache. Spy on next_wave() itself: `execute()` calls it once
+        # up front for the fan-out decision, then `_execute_pool`'s loop
+        # must call it once per round (2, for the exclusive singleton then
+        # the parallel batch) plus once more for the final empty-wave check
+        # that ends the loop — 4 calls total. Caching `partition_wave(wave)`
+        # and replaying its batches from one `next_wave()` call would only
+        # trigger 3 (fan-out check + one for the whole wave + final check).
+        original_next_wave = development_module.TaskScheduler.next_wave
+        next_wave_call_count = 0
+
+        def _spying_next_wave(self):
+            nonlocal next_wave_call_count
+            next_wave_call_count += 1
+            return original_next_wave(self)
+
+        monkeypatch.setattr(development_module.TaskScheduler, "next_wave", _spying_next_wave)
+
+        d1, d2 = FakeDispatcher(), FakeDispatcher()
+        pool_config = DevAgentPoolConfig(agents=[DevAgentSpec(agent="claude-code", count=2)])
+        node = DevelopmentNode(
+            dispatcher=MagicMock(),
+            pool_config=pool_config,
+            dispatcher_builder=_dispatcher_builder_factory([d1, d2]),
+        )
+
+        ctx = {"run_id": "r1", "research_output": research}
+        result = await node.execute(ctx)
+
+        assert set(result.files_changed) == {"TASK-1.py", "TASK-2.py", "TASK-3.py"}
+        # Round 1: the exclusive task alone. Round 2: the parallel batch.
+        # Never combined into one run_wave call from a stale batch list.
+        assert batch_calls == [["TASK-1"], ["TASK-2", "TASK-3"]]
+        # Fan-out check (1) + one next_wave() call per round (2) + the
+        # final empty-wave check that ends the loop (1) = 4.
+        assert next_wave_call_count == 4
+
+    async def test_execute_pool_merges_after_exclusive_round(self, tmp_path, monkeypatch):
+        """AC-6: isolated mode merges/refreshes after EVERY round, including
+        the exclusive singleton round, before the next round dispatches —
+        not just once for the whole wave.
+        """
+        _write_index(
+            tmp_path,
+            "FEAT-560",
+            "isolated-exclusive-test",
+            [
+                {"id": "TASK-1", "status": "pending", "depends_on": [], "parallel": False},
+                {"id": "TASK-2", "status": "pending", "depends_on": [], "parallel": True},
+            ],
+            exclusive=True,
+        )
+        research = _research(str(tmp_path), feat_id="FEAT-560")
+        monkeypatch.setattr(conf, "WORKTREE_BASE_PATH", str(tmp_path))
+
+        created_managers: list[FakeManager] = []
+
+        def _manager_factory(**kwargs):
+            m = FakeManager(**kwargs)
+            created_managers.append(m)
+            return m
+
+        monkeypatch.setattr(development_module, "SubWorktreeManager", _manager_factory)
+
+        d1, d2 = FakeDispatcher(), FakeDispatcher()
+        pool_config = DevAgentPoolConfig(agents=[DevAgentSpec(agent="claude-code", count=2)], isolation_mode="isolated")
+        node = DevelopmentNode(
+            dispatcher=MagicMock(),
+            pool_config=pool_config,
+            dispatcher_builder=_dispatcher_builder_factory([d1, d2]),
+        )
+
+        ctx = {"run_id": "r1", "research_output": research}
+        result = await node.execute(ctx)
+
+        assert set(result.files_changed) == {"TASK-1.py", "TASK-2.py"}
+        assert len(created_managers) == 1
+        manager = created_managers[0]
+        # 2 rounds (exclusive TASK-1, then parallel TASK-2) -> 2 merges, 2 refreshes.
+        assert manager.merge_calls == 2
+        assert manager.refresh_calls == 2
+
 
 @pytest.mark.asyncio
 class TestPoolPath:
