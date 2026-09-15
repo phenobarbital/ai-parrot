@@ -210,6 +210,71 @@ derived wave width is spread over the configured backends round-robin
 (width 3 over 2 backends ⇒ 2 + 1). With nothing configured it still
 returns a single `claude-code` spec, so plain dev_loop runs are unchanged.
 
+The planner also respects the `parallel_width` of the first wave, capped by
+`development_pool_max`, while preserving explicit brief overrides. This
+ensures that the pool size is determined by the initial wave's requirements,
+providing flexibility for dynamic workloads.
+
+## Exclusive tasks
+
+Exclusive tasks are tasks marked with `parallel: false` in their metadata.
+These tasks are executed in singleton rounds, ensuring that no other tasks
+run concurrently. The planner schedules exclusive tasks first, in ascending
+ID order, and re-plans after every round to account for newly unblocked
+tasks.
+
+### Parallel semantics
+
+- **Exclusive-first order**: Tasks with `parallel: false` are scheduled first,
+  one at a time, in ascending ID order.
+- **Singleton rounds**: Each exclusive task runs alone in its own round,
+  ensuring no concurrent execution.
+- **Re-planning**: After each exclusive round, the planner re-evaluates the
+task graph to identify newly unblocked tasks and schedules them accordingly.
+
+### Example
+
+Consider a mixed-wave scenario with the following tasks:
+
+```json
+{
+  "tasks": [
+    {"id": "TASK-1001", "parallel": true},
+    {"id": "TASK-1002", "parallel": false},
+    {"id": "TASK-1003", "parallel": true}
+  ]
+}
+```
+
+The planner schedules the tasks as follows:
+
+1. **Round 1**: `TASK-1002` (exclusive, singleton)
+2. **Round 2**: `TASK-1001` and `TASK-1003` (parallel, if pool size allows)
+
+### Isolated mode
+
+In isolated mode, the planner performs a merge/refresh cycle after each
+exclusive round. This ensures that the task graph is up-to-date and that
+newly unblocked tasks are considered for the next round. The `sdd-coder`
+dispatch semantics remain identical to the shared mode, ensuring consistency
+across different execution environments.
+
+### Legacy behavior
+
+The legacy `parallel` flag interpretation remains unchanged. Tasks without
+the `parallel` flag or with `parallel: true` are scheduled concurrently,
+subject to pool size constraints.
+
+### Task graph rules
+
+The task graph rules are defined in [`.claude/commands/sdd-task.md`](../../.claude/commands/sdd-task.md)
+and enforced by the [`scripts/sdd/check_task_graph.py`](../../scripts/sdd/check_task_graph.py) script.
+These rules ensure that the task graph is acyclic, dependencies are met,
+and concurrent file overlaps are avoided.
+
+For more details, refer to the [Task graph rules](../../.claude/commands/sdd-task.md#task-graph-rules)
+and the [check_task_graph.py](../../scripts/sdd/check_task_graph.py) script.
+
 ## Per-run application (FEAT-490)
 
 `model_plan` selects the ideation model and the review pair **for the run
