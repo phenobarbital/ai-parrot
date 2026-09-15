@@ -5,7 +5,7 @@ base_branch: main
 
 # Feature Specification: Codex dispatch stdin isolation
 
-**Identity**: codex-dispatch-stdin-isolation (hotfix; no Jira key supplied)
+**Identity**: codex-dispatch-stdin-isolation (user-authorized slug identity; no Jira key)
 **Date**: 2026-09-15
 **Author**: Codex
 **Status**: approved
@@ -256,10 +256,10 @@ None added. Use Python asyncio/codecs and existing pytest/pytest-asyncio tooling
 Isolation: per-spec. Resolve flow with `resolve_flow(kind="bug")`, yielding
 `type: hotfix`, `base_branch: main`; no FEAT ID reservation is required.
 Implementation requires a separate worktree from synchronized `origin/main`.
-The skill permits a slug identity without Jira, but `plan_worktree()` currently
-requires a Jira key for hotfix naming (`scripts/sdd/sdd_meta.py:223`). Do not invent
-a Jira key: resolve that operational naming prerequisite when dispatching the
-implementation. It does not block authoring this slug-identified specification.
+The user explicitly authorized `codex-dispatch-stdin-isolation` as the hotfix
+identity. Use task IDs `HOTFIX-codex-dispatch-stdin-isolation-1` and `-2`, and
+branch/worktree `hotfix-codex-dispatch-stdin-isolation`. This is an authorized
+naming exception; do not pass a fabricated Jira key to `plan_worktree()`.
 Base synchronization was not performed during authoring because the current dev
 checkout contains unrelated changes. Verify the anchored dispatcher exists on
 main before implementation; report any base-contract mismatch before editing.
@@ -271,7 +271,7 @@ outside Git. The source artifact is ignored, so §1 preserves its essential evid
 - [x] Input mechanism: preserve argv prompt and provide DEVNULL stdin.
 - [x] Model: restore exactly gpt-5.3-codex-spark, with no fallback.
 - [x] Scope: include bounded timeout diagnostics and cleanup; defer readiness/quarantine.
-- [x] Flow: hotfix/main as resolved for bug work; author Codex, status review.
+- [x] Flow: hotfix/main as resolved for bug work; author Codex, status approved.
 
 No unresolved design questions. Release numbering is assigned by the release process.
 
