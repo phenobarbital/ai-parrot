@@ -15,7 +15,7 @@
       "feature_id": "FEAT-559",
       "feature": "sdd-coder-execution-pool-suspensions",
       "spec": "sdd/specs/sdd-coder-execution-pool-suspensions.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -23,8 +23,8 @@
       "parallelism_notes": "Root deliverable: only creates the new ledger module and its tests. No existing implementation file is shared with another root task.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3274-coder-suspension-ledger.md"
+      "completed_at": "2026-09-15T22:48:52+00:00",
+      "file": "sdd/tasks/completed/TASK-3274-coder-suspension-ledger.md"
     },
     {
       "id": "TASK-3275",

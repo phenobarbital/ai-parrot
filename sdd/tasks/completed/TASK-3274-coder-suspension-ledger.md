@@ -181,5 +181,55 @@ outside this task's scope, report it for the owning task instead of broadening f
 
 ## Completion Note
 
-Not completed. The executing worker must record its identity, date, implementation summary, verification evidence
-and deviations here before marking this task done.
+**Completed by**: sdd-worker (Sonnet 5, orchestrator direct implementation) — 2026-09-16.
+
+**Context**: The MCP coder pool dispatched this task to seat `glm` (nova:zai.glm-4.7-flash).
+The attempt exhausted its turn budget during codebase-contract verification without writing
+any file (`development_output.summary`: "Task not started - budget exhausted..."), yet the
+engine reported `outcome=merged`. Verified in the worktree: zero commits on the attempt branch
+beyond the feature branch, target files absent. Treated as a failed delivery (empty diff
+trivially "merges" clean) per the orchestrator's consolidation rules and implemented directly
+in this worktree (Fallback loop steps c–g). No model-lesson feedback recorded: this is a
+budget-exhaustion/environment failure, not a reviewed code defect.
+
+**Implementation summary**:
+- Created `coder_suspensions.py`: `ModelKey` (frozen backend/model), `SuspensionPolicy`
+  (cooldown_seconds=1800 [60..86400], history_max_tokens=1200 [0..4000]), `SuspensionRecord`
+  (schema_version=1, deterministic `suspension_id` hashed from execution_id/source/attempt-or-
+  probe-uid/reason, aware-UTC `occurred_at`/`expires_at`, probe-vs-attempt attribution
+  validation, bounded `explanation`/`evidence_ref`), `SuspensionReceipt`, and
+  `CoderSuspensionStore` (`from_root`, `record`, `recent`, `for_execution`) built on the
+  existing `LedgerService`/`LedgerLog`/`InsightRecordedPayload` (category=`coder_suspension`),
+  mirroring `coder_feedback.py`'s established pattern.
+- Added `iter_events_strict()`: a strict, off-loop-safe replay that raises `SuspensionHistoryError`
+  for any mid-file corruption or schema-invalid event, while tolerating only a genuine
+  last-line partial tail (a truncated final write, consistent with a crash before fsync) —
+  deliberately NOT reusing `LedgerLog.iter_events`'s permissive warn-and-skip behavior, per the
+  task's anti-hallucination note. Reusable by a future `coder_execution` category reader (M2).
+- Added `render_suspension_history()`: a pure, budget-bounded (default 1200 estimated tokens)
+  human-readable summary function, decoupled from `recent()`/`for_execution()` so a truncated
+  display can never silently narrow the structured exclusion set used for selection.
+- Kept the module independent of any `parrot.flows.dev_loop.sdd_coder` import (per scope, to
+  avoid a models/ledger import cycle) — the ExecutionPool runtime consuming this store is M2's
+  responsibility, out of scope here.
+
+**Verification evidence**:
+- `pytest packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_suspensions.py -q` → 6 passed
+  (`test_duplicate_incident_preserves_expiry`, `test_latest_real_incident_extends_exclusion`,
+  `test_cooldown_starts_at_failure_observation`, `test_summary_budget_does_not_limit_exclusion`,
+  `test_corrupt_history_is_not_empty_history`, `test_event_payload_and_redaction_bounds`).
+  Log: `artifacts/logs/task-3274-pytest.log`.
+- `ruff check` → clean. Log: `artifacts/logs/task-3274-ruff.log`.
+- `black --check` → clean (after one `black` reformat pass). Log: `artifacts/logs/task-3274-black.log`.
+- `git diff --check` → clean.
+
+**Deviations / notes for dependent tasks**:
+- Did not add a dedicated `coder_execution` (begin/close) record model/store method: the spec's
+  "Target interfaces" code block only lists the four `CoderSuspensionStore` methods above, and
+  the execution-lifecycle metadata explicitly belongs to M2 (pool.py) per the Integration Points
+  table. `iter_events_strict()` is exposed so M2 can reuse the same strict-replay guarantee for
+  its own `coder_execution` category without duplicating corruption-detection logic.
+- `pool_generation` on `SuspensionReceipt` defaults to `0` and is documented as enriched by the
+  execution pool runtime (M2), not read as global state here, per the task's explicit note.
+
+Seat: none (direct orchestrator implementation, not an MCP/native coder delivery) · Backend: n/a · Model: n/a (Sonnet 5 orchestrator) · Attempts: 1 (MCP, budget-exhausted, no delivery) + 1 (direct) · Duration: n/a · Tokens: n/a
