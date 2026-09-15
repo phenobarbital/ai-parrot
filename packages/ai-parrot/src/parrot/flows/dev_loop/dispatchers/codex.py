@@ -9,6 +9,7 @@ stdout events the same way the Claude dispatcher streams SDK events.
 from __future__ import annotations
 
 import asyncio
+import codecs
 import json
 import logging
 import os
@@ -42,6 +43,94 @@ from parrot.flows.dev_loop.models import (
     DispatchLabels,
 )
 from parrot.flows.dev_loop.session_state import SessionHost
+
+
+class _BoundedStderrReader:
+    """Per-dispatch incremental stderr tail collector (hotfix: stdin isolation).
+
+    Reads a Codex child's stderr pipe in bounded chunks and retains only the
+    last ``_MAX_TAIL_CHARS`` decoded characters, using an incremental UTF-8
+    decoder so a multi-byte sequence split across chunk boundaries is never
+    corrupted. Never accumulates a full stderr transcript in memory.
+
+    Local to a single ``dispatch()`` call — never shared dispatcher state,
+    because concurrent dispatches must retain only their own diagnostic tail.
+    """
+
+    _CHUNK_BYTES = 4096
+    _MAX_TAIL_CHARS = 4000
+
+    def __init__(self, stream: Any) -> None:
+        self._stream = stream
+        self._decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+        self._tail = ""
+        self.task: Optional[asyncio.Task] = asyncio.create_task(self._run()) if stream is not None else None
+
+    async def _read_next_chunk(self) -> Any:
+        # Real ``asyncio.StreamReader.read(n)`` bounds each read to at most
+        # ``n`` bytes. Some test doubles expose a no-argument ``read()`` that
+        # returns everything at once; fall back to that shape so existing
+        # fixtures keep working unmodified.
+        try:
+            return await self._stream.read(self._CHUNK_BYTES)
+        except TypeError:
+            return await self._stream.read()
+
+    async def _run(self) -> None:
+        while True:
+            chunk = await self._read_next_chunk()
+            if not chunk:
+                break
+            if isinstance(chunk, bytes):
+                decoded = self._decoder.decode(chunk)
+            else:
+                decoded = str(chunk)
+            self._tail = (self._tail + decoded)[-self._MAX_TAIL_CHARS :]
+        self._tail = (self._tail + self._decoder.decode(b"", final=True))[-self._MAX_TAIL_CHARS :]
+
+    @property
+    def tail(self) -> str:
+        """The bounded decoded tail captured so far."""
+        return self._tail
+
+    async def wait(self) -> str:
+        """Await natural completion (stream EOF) and return the tail."""
+        if self.task is not None:
+            await self.task
+        return self._tail
+
+    async def settle(self, timeout: float) -> None:
+        """Await the reader within ``timeout`` seconds, else cancel it.
+
+        Used during timeout/cancellation cleanup, where a descendant may
+        keep the pipe open indefinitely. Never raises — the already
+        captured tail is retained either way.
+
+        The reader task may already be done (or already cancelled) by the
+        time this runs: ``wait()``'s bare ``await self.task`` propagates an
+        outer cancellation (e.g. the dispatch timeout) to this task too, per
+        asyncio's task-cancellation-propagates-to-an-awaited-task semantics.
+        Awaiting an already-cancelled task raises ``CancelledError``
+        immediately, so that path must be handled explicitly rather than by
+        the ``Exception`` catch-all below (``CancelledError`` is not an
+        ``Exception`` subclass).
+        """
+        if self.task is None:
+            return
+        if self.task.done():
+            return
+        try:
+            await asyncio.wait_for(asyncio.shield(self.task), timeout=timeout)
+        except asyncio.TimeoutError:
+            self.task.cancel()
+            try:
+                await self.task
+            except (asyncio.CancelledError, Exception):  # noqa: BLE001
+                pass
+        except asyncio.CancelledError:
+            pass
+        except Exception:  # noqa: BLE001 - settling must never raise
+            pass
 
 
 class CodexCodeDispatcher:
@@ -93,6 +182,7 @@ class CodexCodeDispatcher:
         schema_path: Optional[str] = None
         output_path: Optional[str] = None
         process: Any = None
+        stderr_reader: Optional[_BoundedStderrReader] = None
         # FEAT-322 TASK-1852: see module-level _SESSION_HOST_CTX docstring.
         # try/except covers the narrow pre-semaphore window so an early
         # raise here still resets the var (the main finally: below only
@@ -144,7 +234,7 @@ class CodexCodeDispatcher:
                 try:
                     async with asyncio.timeout(profile.timeout_seconds):
                         process = await self._create_process(command)
-                        stderr_task = asyncio.create_task(self._read_stream(process.stderr))
+                        stderr_reader = _BoundedStderrReader(process.stderr)
                         await self._stream_stdout_events(
                             process.stdout,
                             stream_key=stream_key,
@@ -152,7 +242,7 @@ class CodexCodeDispatcher:
                             node_id=node_id,
                         )
                         return_code = await process.wait()
-                        stderr = await stderr_task
+                        stderr = await stderr_reader.wait()
                 except FileNotFoundError as exc:
                     await self._publish_event(
                         stream_key,
@@ -166,9 +256,8 @@ class CodexCodeDispatcher:
                     )
                     raise DispatchExecutionError(f"Codex CLI executable {self.codex_bin!r} was not found") from exc
                 except TimeoutError as exc:
-                    if process is not None:
-                        process.kill()
-                        await process.wait()
+                    await self._cleanup_process_and_reader(process, stderr_reader)
+                    tail = stderr_reader.tail if stderr_reader is not None else ""
                     await self._publish_event(
                         stream_key,
                         kind="dispatch.failed",
@@ -177,11 +266,19 @@ class CodexCodeDispatcher:
                         payload={
                             "error_class": "TimeoutError",
                             "error_message": (f"dispatch exceeded " f"{profile.timeout_seconds}s wall-clock cap"),
+                            "stderr_tail": tail[-4000:],
                         },
                     )
+                    suffix = f": {tail[-1000:]}" if tail else ""
                     raise DispatchExecutionError(
-                        f"Dispatch exceeded {profile.timeout_seconds}s " f"wall-clock cap"
+                        f"Dispatch exceeded {profile.timeout_seconds}s " f"wall-clock cap{suffix}"
                     ) from exc
+                except asyncio.CancelledError:
+                    # Caller cancellation (not our own deadline): reap the
+                    # child and settle the reader, then propagate as-is —
+                    # never translate cancellation into a dispatch failure.
+                    await self._cleanup_process_and_reader(process, stderr_reader)
+                    raise
 
                 if return_code != 0:
                     await self._publish_event(
@@ -368,13 +465,66 @@ class CodexCodeDispatcher:
         )
 
     async def _create_process(self, command: Sequence[str]) -> Any:
-        """Spawn the Codex CLI subprocess."""
+        """Spawn the Codex CLI subprocess.
+
+        ``stdin=DEVNULL`` ensures the child can never read or wait on this
+        MCP server's own stdin pipe (hotfix: codex-dispatch-stdin-isolation):
+        installed codex-cli reads inherited piped stdin as additional
+        context and blocks until EOF even though the prompt is already
+        supplied in argv.
+        """
         return await asyncio.create_subprocess_exec(
             *command,
+            stdin=asyncio.subprocess.DEVNULL,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             limit=8 * 1024 * 1024,
         )
+
+    async def _cleanup_process_and_reader(
+        self,
+        process: Any,
+        stderr_reader: Optional[_BoundedStderrReader],
+        *,
+        budget_seconds: float = 5.0,
+    ) -> None:
+        """Bound child-process/stderr-reader teardown to a shared budget.
+
+        Kills a still-running child (tolerating a lost-race
+        ``ProcessLookupError``), then waits for both the child and its
+        stderr reader to settle within ``budget_seconds`` total. Never
+        raises — cleanup failures must not replace the caller's original
+        timeout or cancellation.
+
+        Args:
+            process: The subprocess handle, or ``None`` if the timeout/
+                cancellation struck before ``_create_process()`` returned.
+            stderr_reader: The dispatch's bounded stderr reader, or ``None``.
+            budget_seconds: Total wall-clock budget shared by both the
+                process reap and the reader settle.
+        """
+        deadline = time.monotonic() + budget_seconds
+        if process is not None:
+            try:
+                if process.returncode is None:
+                    process.kill()
+            except ProcessLookupError:
+                pass
+            except Exception:  # noqa: BLE001 - cleanup must never mask the original error
+                pass
+            remaining = max(0.0, deadline - time.monotonic())
+            try:
+                await asyncio.wait_for(process.wait(), timeout=remaining)
+            except (asyncio.TimeoutError, ProcessLookupError):
+                pass
+            except Exception:  # noqa: BLE001
+                pass
+        if stderr_reader is not None:
+            remaining = max(0.0, deadline - time.monotonic())
+            try:
+                await stderr_reader.settle(remaining)
+            except Exception:  # noqa: BLE001
+                pass
 
     async def _stream_stdout_events(
         self,
@@ -499,14 +649,6 @@ class CodexCodeDispatcher:
         if event_type == "item.completed" and item_type in self._TOOL_ITEM_TYPES:
             return "dispatch.tool_result"
         return "dispatch.message"
-
-    async def _read_stream(self, stream: Any) -> str:
-        if stream is None:
-            return ""
-        data = await stream.read()
-        if isinstance(data, bytes):
-            return data.decode("utf-8", errors="replace")
-        return str(data or "")
 
     def _validate_output_file(
         self,
