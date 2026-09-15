@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-559
 **Date**: 2026-09-16
 **Author**: Codex
-**Status**: review
+**Status**: approved
 **Target version**: Next release containing the SDD coder pool lifecycle
 **Source consumable**: Confirmed discussion in this session; implementation research in `artifacts/plan_sdd_coder_execution_pool.md`.
 
