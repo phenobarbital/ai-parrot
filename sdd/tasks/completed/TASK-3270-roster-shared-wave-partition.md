@@ -106,4 +106,20 @@ ruff check packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/roster.py
 
 ## Completion Note
 
-Pending implementation.
+`ChunkAssigner.assign` in `roster.py` now imports and uses
+`partition_wave` from `task_scheduler.py` (TASK-3269) instead of its
+duplicated inline exclusive/shared classification. Each batch returned
+by `partition_wave` is subdivided into chunks of at most `len(seats)`
+tasks; singleton exclusive batches, chunk indexes, task-file fallback,
+seat mapping, native flags, and starting-seat rotation are all
+preserved. Attempt 1 (mistral) hit a `dirty_task_worktree` error from an
+unrelated modified `Cargo.lock` in its sub-worktree and was discarded;
+attempt 2 (qwen) delivered cleanly and merged.
+
+Code review: PASS. Re-ran
+`pytest packages/ai-parrot/tests/flows/dev_loop/test_task_scheduler.py
+packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_roster.py` in the
+full integration sweep (238 passed, 2 skipped) — no corrections needed
+for this task's own diff.
+
+Seat: qwen · Backend: nova · Model: qwen.qwen3-coder-480b-a35b-instruct · Attempts: 2 (1 discarded: dirty_task_worktree) · Duration: 131.9s · Tokens: 620383/4528

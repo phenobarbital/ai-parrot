@@ -70,12 +70,17 @@ def _feature_brief(tmp_path: Path, **overrides) -> FeatureBrief:
     return FeatureBrief(**defaults)
 
 
-def _write_index(worktree_path: Path, feat_id: str, feature_slug: str, tasks: list) -> None:
+def _write_index(worktree_path: Path, feat_id: str, feature_slug: str, tasks: list, exclusive: bool = False) -> None:
     index_dir = worktree_path / "sdd" / "tasks" / "index"
     index_dir.mkdir(parents=True, exist_ok=True)
-    (index_dir / f"{feature_slug}.json").write_text(
-        json.dumps({"feature": feature_slug, "feature_id": feat_id, "tasks": tasks})
-    )
+    payload = {"feature": feature_slug, "feature_id": feat_id, "tasks": tasks}
+    if exclusive:
+        # TaskScheduler.from_index_file only honours a task's ``parallel``
+        # field under this header (task_scheduler.py:170); without it every
+        # TaskRef defaults to parallel=True regardless of what the index
+        # says, and exclusive semantics never engage.
+        payload["parallel_semantics"] = "exclusive"
+    (index_dir / f"{feature_slug}.json").write_text(json.dumps(payload))
 
 
 class FakeDispatcher:
@@ -213,6 +218,42 @@ class TestShouldFanOut:
         wave = [_task_ref("TASK-1"), _task_ref("TASK-2")]
         pool_cfg = DevAgentPoolConfig(agents=[DevAgentSpec(agent="claude-code"), DevAgentSpec(agent="codex")])
         assert should_fan_out(wave, pool_cfg) is True
+
+    def test_exclusive_tasks_do_not_fan_out(self):
+        """Exclusive tasks (parallel=False) should not fan out even with multiple tasks."""
+
+        def _exclusive_task_ref(task_id: str) -> TaskRef:
+            return TaskRef(id=task_id, status="pending", depends_on=[], parallel=False)
+
+        wave = [_exclusive_task_ref("TASK-1"), _exclusive_task_ref("TASK-2")]
+        pool_cfg = DevAgentPoolConfig(agents=[DevAgentSpec(agent="claude-code", count=2)])
+        assert should_fan_out(wave, pool_cfg) is False
+
+    def test_mixed_exclusive_and_parallel_tasks_fan_out(self):
+        """Mixed exclusive and parallel tasks should fan out if there are enough parallel tasks."""
+
+        def _exclusive_task_ref(task_id: str) -> TaskRef:
+            return TaskRef(id=task_id, status="pending", depends_on=[], parallel=False)
+
+        def _parallel_task_ref(task_id: str) -> TaskRef:
+            return TaskRef(id=task_id, status="pending", depends_on=[], parallel=True)
+
+        wave = [_exclusive_task_ref("TASK-1"), _parallel_task_ref("TASK-2"), _parallel_task_ref("TASK-3")]
+        pool_cfg = DevAgentPoolConfig(agents=[DevAgentSpec(agent="claude-code", count=2)])
+        assert should_fan_out(wave, pool_cfg) is True
+
+    def test_single_parallel_task_with_exclusive_does_not_fan_out(self):
+        """With only one parallel task and some exclusive tasks, should not fan out."""
+
+        def _exclusive_task_ref(task_id: str) -> TaskRef:
+            return TaskRef(id=task_id, status="pending", depends_on=[], parallel=False)
+
+        def _parallel_task_ref(task_id: str) -> TaskRef:
+            return TaskRef(id=task_id, status="pending", depends_on=[], parallel=True)
+
+        wave = [_exclusive_task_ref("TASK-1"), _parallel_task_ref("TASK-2")]
+        pool_cfg = DevAgentPoolConfig(agents=[DevAgentSpec(agent="claude-code", count=2)])
+        assert should_fan_out(wave, pool_cfg) is False
 
 
 @pytest.mark.asyncio
@@ -655,6 +696,273 @@ class TestSingleAgentHonoursDeclaredAgent:
 
         assert result is not None
         assert pool_dispatcher.calls
+
+
+@pytest.mark.asyncio
+class TestExclusiveTasks:
+    """Tests for exclusive task dispatch behavior."""
+
+    async def test_exclusive_tasks_run_alone(self, tmp_path):
+        """Test that exclusive tasks (parallel=False) are dispatched alone."""
+        _write_index(
+            tmp_path,
+            "FEAT-560",
+            "exclusive-test",
+            [
+                {"id": "TASK-1", "status": "pending", "depends_on": [], "parallel": False},
+                {"id": "TASK-2", "status": "pending", "depends_on": [], "parallel": False},
+                {"id": "TASK-3", "status": "pending", "depends_on": [], "parallel": True},
+                {"id": "TASK-4", "status": "pending", "depends_on": [], "parallel": True},
+            ],
+            exclusive=True,
+        )
+        research = _research(str(tmp_path), feat_id="FEAT-560")
+
+        # Track calls to verify dispatch order
+        calls = []
+
+        class TrackingDispatcher(FakeDispatcher):
+            async def dispatch(self, *, brief, **kwargs):
+                task_id = getattr(brief, "task_id", None)
+                calls.append(task_id)
+                return await super().dispatch(brief=brief, **kwargs)
+
+        d1, d2, d3, d4 = TrackingDispatcher(), TrackingDispatcher(), TrackingDispatcher(), TrackingDispatcher()
+        pool_config = DevAgentPoolConfig(agents=[DevAgentSpec(agent="claude-code", count=2)])
+        node = DevelopmentNode(
+            dispatcher=MagicMock(),
+            pool_config=pool_config,
+            dispatcher_builder=_dispatcher_builder_factory([d1, d2, d3, d4]),
+        )
+
+        ctx = {"run_id": "r1", "research_output": research}
+        result = await node.execute(ctx)
+
+        # Should have dispatched 4 tasks total
+        assert set(result.files_changed) == {"TASK-1.py", "TASK-2.py", "TASK-3.py", "TASK-4.py"}
+
+        # Exclusive tasks should be dispatched one at a time
+        # The order should be: TASK-1 (exclusive), TASK-2 (exclusive), then TASK-3 & TASK-4 (parallel)
+        # But since we're tracking all dispatchers, we need to check the actual calls
+        assert len(calls) == 4
+        assert set(calls) == {"TASK-1", "TASK-2", "TASK-3", "TASK-4"}
+
+    async def test_exclusive_task_with_parallel_header(self, tmp_path):
+        """Test that exclusive tasks are properly identified when index has parallel_semantics: exclusive."""
+        index_dir = tmp_path / "sdd" / "tasks" / "index"
+        index_dir.mkdir(parents=True, exist_ok=True)
+
+        # Write index with parallel_semantics header
+        (index_dir / "exclusive-test.json").write_text(
+            json.dumps(
+                {
+                    "feature": "exclusive-test",
+                    "feature_id": "FEAT-560",
+                    "parallel_semantics": "exclusive",
+                    "tasks": [
+                        {"id": "TASK-1", "status": "pending", "depends_on": [], "parallel": False},
+                        {"id": "TASK-2", "status": "pending", "depends_on": [], "parallel": True},
+                    ],
+                }
+            )
+        )
+
+        research = _research(str(tmp_path), feat_id="FEAT-560")
+        d1, d2 = FakeDispatcher(), FakeDispatcher()
+        pool_config = DevAgentPoolConfig(agents=[DevAgentSpec(agent="claude-code", count=2)])
+        node = DevelopmentNode(
+            dispatcher=MagicMock(),
+            pool_config=pool_config,
+            dispatcher_builder=_dispatcher_builder_factory([d1, d2]),
+        )
+
+        ctx = {"run_id": "r1", "research_output": research}
+        result = await node.execute(ctx)
+
+        # Should have dispatched both tasks
+        assert set(result.files_changed) == {"TASK-1.py", "TASK-2.py"}
+
+    async def test_mixed_exclusive_and_parallel_tasks(self, tmp_path):
+        """Test that exclusive tasks run first, then parallel tasks in the same wave."""
+        _write_index(
+            tmp_path,
+            "FEAT-560",
+            "mixed-test",
+            [
+                {"id": "TASK-1", "status": "pending", "depends_on": [], "parallel": False},
+                {"id": "TASK-2", "status": "pending", "depends_on": [], "parallel": True},
+                {"id": "TASK-3", "status": "pending", "depends_on": [], "parallel": True},
+            ],
+            exclusive=True,
+        )
+        research = _research(str(tmp_path), feat_id="FEAT-560")
+        d1, d2, d3 = FakeDispatcher(), FakeDispatcher(), FakeDispatcher()
+        pool_config = DevAgentPoolConfig(agents=[DevAgentSpec(agent="claude-code", count=2)])
+        node = DevelopmentNode(
+            dispatcher=MagicMock(),
+            pool_config=pool_config,
+            dispatcher_builder=_dispatcher_builder_factory([d1, d2, d3]),
+        )
+
+        ctx = {"run_id": "r1", "research_output": research}
+        result = await node.execute(ctx)
+
+        # Should have dispatched all tasks
+        assert set(result.files_changed) == {"TASK-1.py", "TASK-2.py", "TASK-3.py"}
+
+    async def test_exclusive_task_failure_skips_dependents(self, tmp_path):
+        """Test that when an exclusive task fails, its dependents are skipped."""
+        _write_index(
+            tmp_path,
+            "FEAT-560",
+            "failure-test",
+            [
+                {"id": "TASK-1", "status": "pending", "depends_on": [], "parallel": False},
+                {"id": "TASK-2", "status": "pending", "depends_on": ["TASK-1"], "parallel": True},
+                {"id": "TASK-3", "status": "pending", "depends_on": [], "parallel": True},
+            ],
+            exclusive=True,
+        )
+        research = _research(str(tmp_path), feat_id="FEAT-560")
+        # Make TASK-1 fail on every worker it could land on: the pool
+        # retries a failed dispatch exactly once on the *next* worker
+        # (agent_pool.py's documented single-retry), so both workers that
+        # could receive this singleton exclusive round must fail it for
+        # the task to end up genuinely, terminally failed.
+        d1, d2, d3 = (
+            FakeDispatcher(fail_ids=["TASK-1"]),
+            FakeDispatcher(fail_ids=["TASK-1"]),
+            FakeDispatcher(),
+        )
+        pool_config = DevAgentPoolConfig(agents=[DevAgentSpec(agent="claude-code", count=2)])
+        node = DevelopmentNode(
+            dispatcher=MagicMock(),
+            pool_config=pool_config,
+            dispatcher_builder=_dispatcher_builder_factory([d1, d2, d3]),
+        )
+
+        ctx = {"run_id": "r1", "research_output": research}
+        result = await node.execute(ctx)
+
+        # TASK-1 should have failed, TASK-2 should be skipped (dependent), TASK-3 should succeed
+        assert "TASK-1.py" not in result.files_changed
+        assert "TASK-2.py" not in result.files_changed
+        assert "TASK-3.py" in result.files_changed
+        assert "TASK-1" in result.incomplete_tasks
+
+    async def test_execute_pool_dispatches_one_batch_per_round(self, tmp_path, monkeypatch):
+        """Regression guard for the exact bug this feature fixes.
+
+        Spies on ``DevAgentPool.run_wave`` directly (not just the aggregate
+        result) so a regression back to dispatching a combined batch — e.g.
+        the exclusive task sharing a round with another task — fails this
+        test: each round must receive exactly one partition_wave batch, and
+        the exclusive singleton must never share a round with another task.
+        """
+        _write_index(
+            tmp_path,
+            "FEAT-560",
+            "batch-composition-test",
+            [
+                {"id": "TASK-1", "status": "pending", "depends_on": [], "parallel": False},
+                {"id": "TASK-2", "status": "pending", "depends_on": [], "parallel": True},
+                {"id": "TASK-3", "status": "pending", "depends_on": [], "parallel": True},
+            ],
+            exclusive=True,
+        )
+        research = _research(str(tmp_path), feat_id="FEAT-560")
+
+        original_run_wave = development_module.DevAgentPool.run_wave
+        batch_calls: list[list[str]] = []
+
+        async def _spying_run_wave(self, tasks, **kwargs):
+            batch_calls.append([t.id for t in tasks])
+            return await original_run_wave(self, tasks, **kwargs)
+
+        monkeypatch.setattr(development_module.DevAgentPool, "run_wave", _spying_run_wave)
+
+        # AC-2 requires re-planning ("scheduler.next_wave()") after EVERY
+        # round, not once per wave with the resulting batches replayed from
+        # a cache. Spy on next_wave() itself: `execute()` calls it once
+        # up front for the fan-out decision, then `_execute_pool`'s loop
+        # must call it once per round (2, for the exclusive singleton then
+        # the parallel batch) plus once more for the final empty-wave check
+        # that ends the loop — 4 calls total. Caching `partition_wave(wave)`
+        # and replaying its batches from one `next_wave()` call would only
+        # trigger 3 (fan-out check + one for the whole wave + final check).
+        original_next_wave = development_module.TaskScheduler.next_wave
+        next_wave_call_count = 0
+
+        def _spying_next_wave(self):
+            nonlocal next_wave_call_count
+            next_wave_call_count += 1
+            return original_next_wave(self)
+
+        monkeypatch.setattr(development_module.TaskScheduler, "next_wave", _spying_next_wave)
+
+        d1, d2 = FakeDispatcher(), FakeDispatcher()
+        pool_config = DevAgentPoolConfig(agents=[DevAgentSpec(agent="claude-code", count=2)])
+        node = DevelopmentNode(
+            dispatcher=MagicMock(),
+            pool_config=pool_config,
+            dispatcher_builder=_dispatcher_builder_factory([d1, d2]),
+        )
+
+        ctx = {"run_id": "r1", "research_output": research}
+        result = await node.execute(ctx)
+
+        assert set(result.files_changed) == {"TASK-1.py", "TASK-2.py", "TASK-3.py"}
+        # Round 1: the exclusive task alone. Round 2: the parallel batch.
+        # Never combined into one run_wave call from a stale batch list.
+        assert batch_calls == [["TASK-1"], ["TASK-2", "TASK-3"]]
+        # Fan-out check (1) + one next_wave() call per round (2) + the
+        # final empty-wave check that ends the loop (1) = 4.
+        assert next_wave_call_count == 4
+
+    async def test_execute_pool_merges_after_exclusive_round(self, tmp_path, monkeypatch):
+        """AC-6: isolated mode merges/refreshes after EVERY round, including
+        the exclusive singleton round, before the next round dispatches —
+        not just once for the whole wave.
+        """
+        _write_index(
+            tmp_path,
+            "FEAT-560",
+            "isolated-exclusive-test",
+            [
+                {"id": "TASK-1", "status": "pending", "depends_on": [], "parallel": False},
+                {"id": "TASK-2", "status": "pending", "depends_on": [], "parallel": True},
+            ],
+            exclusive=True,
+        )
+        research = _research(str(tmp_path), feat_id="FEAT-560")
+        monkeypatch.setattr(conf, "WORKTREE_BASE_PATH", str(tmp_path))
+
+        created_managers: list[FakeManager] = []
+
+        def _manager_factory(**kwargs):
+            m = FakeManager(**kwargs)
+            created_managers.append(m)
+            return m
+
+        monkeypatch.setattr(development_module, "SubWorktreeManager", _manager_factory)
+
+        d1, d2 = FakeDispatcher(), FakeDispatcher()
+        pool_config = DevAgentPoolConfig(agents=[DevAgentSpec(agent="claude-code", count=2)], isolation_mode="isolated")
+        node = DevelopmentNode(
+            dispatcher=MagicMock(),
+            pool_config=pool_config,
+            dispatcher_builder=_dispatcher_builder_factory([d1, d2]),
+        )
+
+        ctx = {"run_id": "r1", "research_output": research}
+        result = await node.execute(ctx)
+
+        assert set(result.files_changed) == {"TASK-1.py", "TASK-2.py"}
+        assert len(created_managers) == 1
+        manager = created_managers[0]
+        # 2 rounds (exclusive TASK-1, then parallel TASK-2) -> 2 merges, 2 refreshes.
+        assert manager.merge_calls == 2
+        assert manager.refresh_calls == 2
 
 
 @pytest.mark.asyncio

@@ -113,4 +113,23 @@ ruff check packages/ai-parrot/src/parrot/flows/dev_loop/task_scheduler.py packag
 
 ## Completion Note
 
-Pending implementation.
+Added `partition_wave` and `parallel_width` as module-level pure helpers in
+`task_scheduler.py`, beside `TaskRef`. `partition_wave` sorts a copy of the
+input wave by `TaskRef.id`, returns one singleton batch per exclusive task
+(ascending id) followed by a single sorted parallel batch, and `[]` for an
+empty wave; the caller's input ordering is not mutated. `parallel_width`
+returns the count of parallel tasks, `1` for a nonempty exclusive-only wave,
+and `0` for an empty wave. `TaskScheduler` loading, dependency resolution
+and `TaskRef` fields are unchanged.
+
+Added 9 new tests in `test_task_scheduler.py` (`TestPartitionWave`,
+`TestParallelWidth`) covering all-parallel, exclusive-first, exclusive-only,
+empty, and input-order-preservation cases; all 24 tests in the module pass
+(15 pre-existing + 9 new). Validated with `black --line-length 120` and
+`ruff check` on both changed files.
+
+Code review: PASS. Re-ran
+`pytest packages/ai-parrot/tests/flows/dev_loop/test_task_scheduler.py -v`
+in this worktree (24/24 passed) — no corrections needed.
+
+Seat: glm · Backend: nova · Model: zai.glm-4.7-flash · Attempts: 1 · Duration: 222.8s · Tokens: 1527884/4127
