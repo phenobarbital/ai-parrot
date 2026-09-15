@@ -222,6 +222,24 @@
     margin: 0;
 }
 
+/* ---------- Containment ---------- */
+/* A table wider than the phone scrolls INSIDE its own card; the page never
+ * does. Horizontal page scroll is the one thing a report on a phone must not
+ * do — it drags the headings off the left edge and every section with them.
+ *
+ * And the canvas is held to its box on screen, not only in print: Chart.js
+ * writes an explicit pixel width, and a viewport that narrows faster than its
+ * resize fires leaves that width poking out of the card.
+ */
+.a2ui-table-wrap {
+    overflow-x: auto;
+}
+
+.a2ui-chart-canvas canvas,
+.a2ui-chart-wrap canvas {
+    max-width: 100%;
+}
+
 /* ---------- Tables ---------- */
 /* A header band in a filled colour competes with the data under it. A rule
  * in the accent marks the same boundary and leaves the ink to the numbers.
