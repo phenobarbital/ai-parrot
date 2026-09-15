@@ -372,6 +372,18 @@ _BEHAVIOR_JS = r"""
     donut: "doughnut", radar: "radar",
   };
 
+  // Wider than tall on a screen, where there is width to spare; closer to
+  // square on paper, where the page is a fixed budget and a flat strip wastes
+  // the width without showing the shape of anything.
+  //
+  // Declared ABOVE the construction loop, not beside the resize helpers that
+  // also use them: `var` hoists the declaration and not the assignment, so
+  // read from inside the loop they were `undefined` and every chart was built
+  // with Chart.js's own default proportion. The print path hid it, because
+  // PRINT_ASPECT is only ever read from inside a function that runs later.
+  var SCREEN_ASPECT = 3.2;
+  var PRINT_ASPECT = 2.2;
+
   // Chart types with no axes to name. Handing `scales` to a pie is not a
   // label, it is a configuration it cannot use.
   var CARTESIAN = { bar: true, line: true, area: true, scatter: true };
@@ -500,12 +512,6 @@ _BEHAVIOR_JS = r"""
   // Chart.js redraw the canvas at the PAGE's width instead — the type comes
   // out the size it was asked for, and the shorter panel leaves room for
   // what follows it on the sheet. `afterprint` puts the screen back.
-  // Wider than tall on a screen, where there is width to spare; closer to
-  // square on paper, where the page is a fixed budget and a flat strip wastes
-  // the width without showing the shape of anything.
-  var SCREEN_ASPECT = 3.2;
-  var PRINT_ASPECT = 2.2;
-
   function resizeCharts(aspect) {
     Object.keys(chartRegistry).forEach(function (id) {
       try {

@@ -1029,6 +1029,18 @@ class TestChartsAreRedrawnForPaper:
         assert "var SCREEN_ASPECT = 3.2" in doc
         assert "var PRINT_ASPECT = 2.2" in doc
 
+    async def test_the_screen_proportion_is_declared_before_it_is_read(self):
+        # `var` hoists the declaration and not the assignment. Declared below
+        # the construction loop, `SCREEN_ASPECT` read as `undefined` there and
+        # every chart was built with Chart.js's own default proportion — while
+        # the print path looked right, because `PRINT_ASPECT` is only read
+        # from inside a function that runs later. The previous test passes
+        # with that bug fully present: both constants are in the document, in
+        # the wrong order.
+        doc = await self._doc()
+        assert doc.index("var SCREEN_ASPECT") < doc.index("aspectRatio: SCREEN_ASPECT")
+        assert doc.index("var PRINT_ASPECT") < doc.index('querySelectorAll("[data-chart-config]")')
+
     async def test_a_missing_chart_does_not_break_the_print(self):
         # `resize()` on a destroyed chart throws; a print is not the moment
         # to discover that.
