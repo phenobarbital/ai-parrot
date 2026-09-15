@@ -4,7 +4,7 @@ title: QuerysourceToolkit — tenant-scoped toolkit that lists, describes and ex
 slug: querysource-toolkit-refactor
 type: feature
 mode: enrichment
-status: review
+status: accepted
 source:
   kind: inline
   jira_key: null
