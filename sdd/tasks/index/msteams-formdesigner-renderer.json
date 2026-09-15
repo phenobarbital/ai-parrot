@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-11T01:37:56+02:00",
-  "completed_at": "2026-09-15T12:53:09+00:00",
+  "completed_at": "2026-09-15T13:46:35+00:00",
   "parallelism_notes": "TASK-3146 and TASK-3147 are sequential. After TASK-3147, TASK-3148, TASK-3149, and TASK-3150 can proceed in parallel where their file scopes permit. TASK-3151 depends on TASK-3150; TASK-3152 closes the feature after TASK-3148, TASK-3149, and TASK-3151.",
   "tasks": [
     {
@@ -25,7 +25,8 @@
       "assigned_at": null,
       "started_at": "2026-09-15T11:49:26+00:00",
       "completed_at": "2026-09-15T12:00:10+00:00",
-      "file": "sdd/tasks/completed/TASK-3146-adaptive-card-renderer-hooks.md"
+      "file": "sdd/tasks/completed/TASK-3146-adaptive-card-renderer-hooks.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3147",
@@ -46,7 +47,8 @@
       "assigned_at": null,
       "started_at": "2026-09-15T11:49:26+00:00",
       "completed_at": "2026-09-15T12:08:53+00:00",
-      "file": "sdd/tasks/completed/TASK-3147-teams-renderer-and-envelope.md"
+      "file": "sdd/tasks/completed/TASK-3147-teams-renderer-and-envelope.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3148",
@@ -67,7 +69,8 @@
       "assigned_at": null,
       "started_at": "2026-09-15T11:49:26+00:00",
       "completed_at": "2026-09-15T12:34:29+00:00",
-      "file": "sdd/tasks/completed/TASK-3148-teams-upload-field-posture.md"
+      "file": "sdd/tasks/completed/TASK-3148-teams-upload-field-posture.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3149",
@@ -88,7 +91,8 @@
       "assigned_at": null,
       "started_at": "2026-09-15T11:49:26+00:00",
       "completed_at": "2026-09-15T12:26:31+00:00",
-      "file": "sdd/tasks/completed/TASK-3149-teams-format-registration-and-dispatcher.md"
+      "file": "sdd/tasks/completed/TASK-3149-teams-format-registration-and-dispatcher.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3150",
@@ -109,7 +113,8 @@
       "assigned_at": null,
       "started_at": "2026-09-15T11:49:26+00:00",
       "completed_at": "2026-09-15T12:27:04+00:00",
-      "file": "sdd/tasks/completed/TASK-3150-msteams-formdesigner-submit-helpers.md"
+      "file": "sdd/tasks/completed/TASK-3150-msteams-formdesigner-submit-helpers.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3151",
@@ -130,7 +135,8 @@
       "assigned_at": null,
       "started_at": "2026-09-15T11:49:26+00:00",
       "completed_at": "2026-09-15T12:41:57+00:00",
-      "file": "sdd/tasks/completed/TASK-3151-msteams-wrapper-formdesigner-branch.md"
+      "file": "sdd/tasks/completed/TASK-3151-msteams-wrapper-formdesigner-branch.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3152",
@@ -153,7 +159,8 @@
       "assigned_at": null,
       "started_at": "2026-09-15T11:49:26+00:00",
       "completed_at": "2026-09-15T12:53:09+00:00",
-      "file": "sdd/tasks/completed/TASK-3152-docs-and-teams-roundtrip-tests.md"
+      "file": "sdd/tasks/completed/TASK-3152-docs-and-teams-roundtrip-tests.md",
+      "verification": "verified"
     }
   ]
 }
