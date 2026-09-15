@@ -384,6 +384,16 @@ class StructuredChartConfig(BaseModel):
             "for the series read as a shape."
         ),
     )
+    y_axis_labels: Optional[List[Optional[str]]] = Field(
+        default=None,
+        alias="yAxisLabels",
+        description=(
+            "Axis names, parallel to the axes: [left, right]. `yAxisLabel` "
+            "names one axis, which is enough until a chart has two — and a "
+            "combination always does. An unnamed right-hand scale running 0 "
+            "to 80 beside counts of events is a number nobody can read."
+        ),
+    )
     series_axes: Optional[List[Optional[str]]] = Field(
         default=None,
         alias="seriesAxes",

@@ -358,8 +358,21 @@ class EChartsRenderer(AbstractA2UIRenderer):
                 # The second scale appears only if a series asked for it: a
                 # rate and a count do not share a floor, and on one axis the
                 # rate lies flat along the bottom saying nothing.
+                #
+                # `yAxisLabels` names them, [left, right]. `yAxisLabel` names
+                # one, which was enough until a chart had two.
+                axis_names = props.get("yAxisLabels") or []
+                if axis_names and axis_names[0]:
+                    y_axis["name"] = axis_names[0]
                 if "right" in series_axes:
-                    option["yAxis"] = [y_axis, {"type": "value", "position": "right", "splitLine": {"show": False}}]
+                    right_axis: dict[str, Any] = {
+                        "type": "value",
+                        "position": "right",
+                        "splitLine": {"show": False},
+                    }
+                    if len(axis_names) > 1 and axis_names[1]:
+                        right_axis["name"] = axis_names[1]
+                    option["yAxis"] = [y_axis, right_axis]
                 else:
                     option["yAxis"] = y_axis
         return option

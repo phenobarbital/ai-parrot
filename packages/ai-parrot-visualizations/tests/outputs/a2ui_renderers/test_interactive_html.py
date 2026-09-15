@@ -1115,9 +1115,10 @@ class TestInteractiveCombination:
             data_model={"rows": [{"week": "W1", "a": 1}]},
         )
         doc = (await InteractiveHTMLRenderer().render(env)).content.decode()
-        # Built only when a series asked: naming an axis on every dataset
-        # would put an empty ruler on the right of every chart.
-        assert 'indexOf("right") === -1 ? undefined' in doc
+        # Built only when a series asked: an unasked-for second scale is an
+        # empty ruler on the right of every chart.
+        assert 'var usesRight = (cfg.seriesAxes || []).indexOf("right") !== -1' in doc
+        assert "if (usesRight) {" in doc
 
 
 class TestThePrintedChartKeepsAKey:
@@ -1155,3 +1156,52 @@ class TestThePrintedChartKeepsAKey:
         # Gated on the flag: an author who asked for no legend still gets none.
         block = doc[doc.index("function legendForPrint(printing)"):][:520]
         assert "cfg.legendReplacedByToggles" in block
+
+
+class TestAxesAreNamed:
+    """`yAxisLabel` has been in the contract all along and only the static
+    renderers read it. Nobody missed it until a combination put a second,
+    unnamed scale on the right of a chart running 0 to 80 beside counts.
+    """
+
+    async def _config(self, **props) -> dict:
+        env = _envelope(
+            Component(
+                id="root", component="Chart", type="bar", x="week", y=["events", "rate"],
+                data={"path": "/rows"}, **props,
+            ),
+            data_model={"rows": [{"week": "W1", "events": 27, "rate": 62}]},
+        )
+        doc = (await InteractiveHTMLRenderer().render(env)).content.decode()
+        return json.loads(html.unescape(re.search(r'data-chart-config="([^"]*)"', doc).group(1)))
+
+    async def test_both_scales_can_be_named(self):
+        config = await self._config(
+            seriesTypes=[None, "line"],
+            seriesAxes=[None, "right"],
+            yAxisLabels=["Events", "Completion %"],
+        )
+        assert config["yAxisLabels"] == ["Events", "Completion %"]
+
+    async def test_the_single_label_still_reaches_this_surface(self):
+        config = await self._config(yAxisLabel="Events", xAxisLabel="Week")
+        assert config["yAxisLabel"] == "Events"
+        assert config["xAxisLabel"] == "Week"
+
+    async def test_a_chart_that_named_nothing_carries_nothing(self):
+        config = await self._config()
+        for key in ("yAxisLabels", "yAxisLabel", "xAxisLabel"):
+            assert key not in config
+
+    async def test_a_pie_is_given_no_scales_at_all(self):
+        # Handing `scales` to a pie is not a label, it is a configuration it
+        # cannot use.
+        env = _envelope(
+            Component(
+                id="root", component="Chart", type="pie", x="week", y=["events"],
+                data={"path": "/rows"}, yAxisLabel="Events",
+            ),
+            data_model={"rows": [{"week": "W1", "events": 27}]},
+        )
+        doc = (await InteractiveHTMLRenderer().render(env)).content.decode()
+        assert "if (!CARTESIAN[cfg.type]) return undefined;" in doc

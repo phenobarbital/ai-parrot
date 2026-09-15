@@ -372,6 +372,37 @@ _BEHAVIOR_JS = r"""
     donut: "doughnut", radar: "radar",
   };
 
+  // Chart types with no axes to name. Handing `scales` to a pie is not a
+  // label, it is a configuration it cannot use.
+  var CARTESIAN = { bar: true, line: true, area: true, scatter: true };
+
+  function axisTitle(text) {
+    return { display: !!text, text: text || "" };
+  }
+
+  // The second scale exists only if a series asked for it. A rate and a count
+  // do not share a floor: plotted on one axis the rate lies flat along the
+  // bottom and the chart says nothing about it. And an axis nobody named is a
+  // column of numbers the reader has to guess the units of — which is what an
+  // unlabelled 0-to-80 scale beside counts of events was.
+  function buildScales(cfg) {
+    if (!CARTESIAN[cfg.type]) return undefined;
+    var usesRight = (cfg.seriesAxes || []).indexOf("right") !== -1;
+    var labels = cfg.yAxisLabels || [];
+    var scales = {
+      x: { title: axisTitle(cfg.xAxisLabel) },
+      y: { position: "left", title: axisTitle(labels[0] || cfg.yAxisLabel) },
+    };
+    if (usesRight) {
+      scales.yRight = {
+        position: "right",
+        grid: { drawOnChartArea: false },
+        title: axisTitle(labels[1]),
+      };
+    }
+    return scales;
+  }
+
   // Populated as each chart is created below; consulted by the FilterBar
   // runtime (TASK-2716) to re-render a chart's ALREADY-embedded rows
   // in place — never a data re-fetch.
@@ -393,10 +424,7 @@ _BEHAVIOR_JS = r"""
         // The second scale exists only if a series asked for it. A rate and
         // a count do not share a floor: plotted on one axis the rate lies
         // flat along the bottom and the chart says nothing about it.
-        scales: (cfg.seriesAxes || []).indexOf("right") === -1 ? undefined : {
-          y: { position: "left" },
-          yRight: { position: "right", grid: { drawOnChartArea: false } },
-        },
+        scales: buildScales(cfg),
         // The PROPORTION is the thing to declare; the width comes from the
         // page. Sized against a box instead, a chart inherits whatever that
         // box happens to measure — a wrapper with no definite height gave a
@@ -1370,10 +1398,19 @@ class InteractiveHTMLRenderer(AbstractA2UIRenderer):
         # The combination. Both ride as lists parallel to `y`; absent, the
         # chart is what it always was, so nothing changes for a chart that
         # does not ask.
-        for key in ("seriesTypes", "seriesAxes"):
+        for key in ("seriesTypes", "seriesAxes", "yAxisLabels"):
             value = props.get(key)
             if isinstance(value, (list, tuple)) and value:
                 config[key] = [None if item is None else str(item) for item in value]
+
+        # Axis names. This surface has never drawn them — `yAxisLabel` has
+        # been in the contract all along and only the static renderers read
+        # it, which is why nobody missed it until a combination put a second,
+        # unnamed scale on the right of a chart.
+        for key in ("xAxisLabel", "yAxisLabel"):
+            value = props.get(key)
+            if isinstance(value, str) and value:
+                config[key] = value
         if isinstance(tabs, list) and tabs:
             config["tabs"] = tabs
         # Only when asked for AND only where a straight line means something:
