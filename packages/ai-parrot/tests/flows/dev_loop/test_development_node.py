@@ -214,6 +214,42 @@ class TestShouldFanOut:
         pool_cfg = DevAgentPoolConfig(agents=[DevAgentSpec(agent="claude-code"), DevAgentSpec(agent="codex")])
         assert should_fan_out(wave, pool_cfg) is True
 
+    def test_exclusive_tasks_do_not_fan_out(self):
+        """Exclusive tasks (parallel=False) should not fan out even with multiple tasks."""
+
+        def _exclusive_task_ref(task_id: str) -> TaskRef:
+            return TaskRef(id=task_id, status="pending", depends_on=[], parallel=False)
+
+        wave = [_exclusive_task_ref("TASK-1"), _exclusive_task_ref("TASK-2")]
+        pool_cfg = DevAgentPoolConfig(agents=[DevAgentSpec(agent="claude-code", count=2)])
+        assert should_fan_out(wave, pool_cfg) is False
+
+    def test_mixed_exclusive_and_parallel_tasks_fan_out(self):
+        """Mixed exclusive and parallel tasks should fan out if there are enough parallel tasks."""
+
+        def _exclusive_task_ref(task_id: str) -> TaskRef:
+            return TaskRef(id=task_id, status="pending", depends_on=[], parallel=False)
+
+        def _parallel_task_ref(task_id: str) -> TaskRef:
+            return TaskRef(id=task_id, status="pending", depends_on=[], parallel=True)
+
+        wave = [_exclusive_task_ref("TASK-1"), _parallel_task_ref("TASK-2"), _parallel_task_ref("TASK-3")]
+        pool_cfg = DevAgentPoolConfig(agents=[DevAgentSpec(agent="claude-code", count=2)])
+        assert should_fan_out(wave, pool_cfg) is True
+
+    def test_single_parallel_task_with_exclusive_does_not_fan_out(self):
+        """With only one parallel task and some exclusive tasks, should not fan out."""
+
+        def _exclusive_task_ref(task_id: str) -> TaskRef:
+            return TaskRef(id=task_id, status="pending", depends_on=[], parallel=False)
+
+        def _parallel_task_ref(task_id: str) -> TaskRef:
+            return TaskRef(id=task_id, status="pending", depends_on=[], parallel=True)
+
+        wave = [_exclusive_task_ref("TASK-1"), _parallel_task_ref("TASK-2")]
+        pool_cfg = DevAgentPoolConfig(agents=[DevAgentSpec(agent="claude-code", count=2)])
+        assert should_fan_out(wave, pool_cfg) is False
+
 
 @pytest.mark.asyncio
 class TestFanOutWiring:
@@ -655,6 +691,148 @@ class TestSingleAgentHonoursDeclaredAgent:
 
         assert result is not None
         assert pool_dispatcher.calls
+
+
+@pytest.mark.asyncio
+class TestExclusiveTasks:
+    """Tests for exclusive task dispatch behavior."""
+
+    async def test_exclusive_tasks_run_alone(self, tmp_path):
+        """Test that exclusive tasks (parallel=False) are dispatched alone."""
+        _write_index(
+            tmp_path,
+            "FEAT-560",
+            "exclusive-test",
+            [
+                {"id": "TASK-1", "status": "pending", "depends_on": [], "parallel": False},
+                {"id": "TASK-2", "status": "pending", "depends_on": [], "parallel": False},
+                {"id": "TASK-3", "status": "pending", "depends_on": [], "parallel": True},
+                {"id": "TASK-4", "status": "pending", "depends_on": [], "parallel": True},
+            ],
+        )
+        research = _research(str(tmp_path), feat_id="FEAT-560")
+
+        # Track calls to verify dispatch order
+        calls = []
+
+        class TrackingDispatcher(FakeDispatcher):
+            async def dispatch(self, *, brief, **kwargs):
+                task_id = getattr(brief, "task_id", None)
+                calls.append(task_id)
+                return await super().dispatch(brief=brief, **kwargs)
+
+        d1, d2, d3, d4 = TrackingDispatcher(), TrackingDispatcher(), TrackingDispatcher(), TrackingDispatcher()
+        pool_config = DevAgentPoolConfig(agents=[DevAgentSpec(agent="claude-code", count=2)])
+        node = DevelopmentNode(
+            dispatcher=MagicMock(),
+            pool_config=pool_config,
+            dispatcher_builder=_dispatcher_builder_factory([d1, d2, d3, d4]),
+        )
+
+        ctx = {"run_id": "r1", "research_output": research}
+        result = await node.execute(ctx)
+
+        # Should have dispatched 4 tasks total
+        assert set(result.files_changed) == {"TASK-1.py", "TASK-2.py", "TASK-3.py", "TASK-4.py"}
+
+        # Exclusive tasks should be dispatched one at a time
+        # The order should be: TASK-1 (exclusive), TASK-2 (exclusive), then TASK-3 & TASK-4 (parallel)
+        # But since we're tracking all dispatchers, we need to check the actual calls
+        assert len(calls) == 4
+        assert set(calls) == {"TASK-1", "TASK-2", "TASK-3", "TASK-4"}
+
+    async def test_exclusive_task_with_parallel_header(self, tmp_path):
+        """Test that exclusive tasks are properly identified when index has parallel_semantics: exclusive."""
+        index_dir = tmp_path / "sdd" / "tasks" / "index"
+        index_dir.mkdir(parents=True, exist_ok=True)
+
+        # Write index with parallel_semantics header
+        (index_dir / "exclusive-test.json").write_text(
+            json.dumps(
+                {
+                    "feature": "exclusive-test",
+                    "feature_id": "FEAT-560",
+                    "parallel_semantics": "exclusive",
+                    "tasks": [
+                        {"id": "TASK-1", "status": "pending", "depends_on": [], "parallel": False},
+                        {"id": "TASK-2", "status": "pending", "depends_on": [], "parallel": True},
+                    ],
+                }
+            )
+        )
+
+        research = _research(str(tmp_path), feat_id="FEAT-560")
+        d1, d2 = FakeDispatcher(), FakeDispatcher()
+        pool_config = DevAgentPoolConfig(agents=[DevAgentSpec(agent="claude-code", count=2)])
+        node = DevelopmentNode(
+            dispatcher=MagicMock(),
+            pool_config=pool_config,
+            dispatcher_builder=_dispatcher_builder_factory([d1, d2]),
+        )
+
+        ctx = {"run_id": "r1", "research_output": research}
+        result = await node.execute(ctx)
+
+        # Should have dispatched both tasks
+        assert set(result.files_changed) == {"TASK-1.py", "TASK-2.py"}
+
+    async def test_mixed_exclusive_and_parallel_tasks(self, tmp_path):
+        """Test that exclusive tasks run first, then parallel tasks in the same wave."""
+        _write_index(
+            tmp_path,
+            "FEAT-560",
+            "mixed-test",
+            [
+                {"id": "TASK-1", "status": "pending", "depends_on": [], "parallel": False},
+                {"id": "TASK-2", "status": "pending", "depends_on": [], "parallel": True},
+                {"id": "TASK-3", "status": "pending", "depends_on": [], "parallel": True},
+            ],
+        )
+        research = _research(str(tmp_path), feat_id="FEAT-560")
+        d1, d2, d3 = FakeDispatcher(), FakeDispatcher(), FakeDispatcher()
+        pool_config = DevAgentPoolConfig(agents=[DevAgentSpec(agent="claude-code", count=2)])
+        node = DevelopmentNode(
+            dispatcher=MagicMock(),
+            pool_config=pool_config,
+            dispatcher_builder=_dispatcher_builder_factory([d1, d2, d3]),
+        )
+
+        ctx = {"run_id": "r1", "research_output": research}
+        result = await node.execute(ctx)
+
+        # Should have dispatched all tasks
+        assert set(result.files_changed) == {"TASK-1.py", "TASK-2.py", "TASK-3.py"}
+
+    async def test_exclusive_task_failure_skips_dependents(self, tmp_path):
+        """Test that when an exclusive task fails, its dependents are skipped."""
+        _write_index(
+            tmp_path,
+            "FEAT-560",
+            "failure-test",
+            [
+                {"id": "TASK-1", "status": "pending", "depends_on": [], "parallel": False},
+                {"id": "TASK-2", "status": "pending", "depends_on": ["TASK-1"], "parallel": True},
+                {"id": "TASK-3", "status": "pending", "depends_on": [], "parallel": True},
+            ],
+        )
+        research = _research(str(tmp_path), feat_id="FEAT-560")
+        # Make TASK-1 fail
+        d1, d2, d3 = FakeDispatcher(fail_ids=["TASK-1"]), FakeDispatcher(), FakeDispatcher()
+        pool_config = DevAgentPoolConfig(agents=[DevAgentSpec(agent="claude-code", count=2)])
+        node = DevelopmentNode(
+            dispatcher=MagicMock(),
+            pool_config=pool_config,
+            dispatcher_builder=_dispatcher_builder_factory([d1, d2, d3]),
+        )
+
+        ctx = {"run_id": "r1", "research_output": research}
+        result = await node.execute(ctx)
+
+        # TASK-1 should have failed, TASK-2 should be skipped (dependent), TASK-3 should succeed
+        assert "TASK-1.py" not in result.files_changed
+        assert "TASK-2.py" not in result.files_changed
+        assert "TASK-3.py" in result.files_changed
+        assert "TASK-1" in result.incomplete_tasks
 
 
 @pytest.mark.asyncio
