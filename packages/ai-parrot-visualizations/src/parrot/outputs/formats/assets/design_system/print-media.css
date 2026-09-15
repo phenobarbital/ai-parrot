@@ -112,7 +112,10 @@
     .chart-grid {
         display: grid;
         grid-template-columns: 1fr;
-        gap: 0.75rem;
+        /* Wider than the KPI gap: these are two full-width panels stacked,
+           and 12px between them read as one block cut in half rather than as
+           two charts. */
+        gap: 1.4rem;
         break-inside: avoid;
         page-break-inside: avoid;
     }
