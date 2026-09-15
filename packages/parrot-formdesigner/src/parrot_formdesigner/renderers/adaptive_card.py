@@ -251,23 +251,26 @@ class AdaptiveCardRenderer(AbstractFormRenderer):
 
         card = self._wrap_card(body, actions)
 
-        # Emit RenderWarning for field types that used the text fallback
+        # Emit RenderWarning for field types that used the text fallback (walks
+        # subsections the same way _build_section_body does, above).
         warnings: list[RenderWarning] = []
         for section in form.sections:
-            for field in section.fields:
-                if field.field_type in _AC_FALLBACK_TYPES:
-                    warnings.append(
-                        RenderWarning(
-                            field_id=field.field_id,
-                            field_uid=field.field_uid,
-                            field_type=field.field_type.value,
-                            renderer=self.RENDERER_NAME,
-                            reason=(
-                                f"unsupported {field.field_type.value} in adaptive_card"
-                                " — rendered as text placeholder"
-                            ),
+            for item in section.fields:
+                fields = item.fields if isinstance(item, FormSubsection) else [item]
+                for field in fields:
+                    if field.field_type in _AC_FALLBACK_TYPES:
+                        warnings.append(
+                            RenderWarning(
+                                field_id=field.field_id,
+                                field_uid=field.field_uid,
+                                field_type=field.field_type.value,
+                                renderer=self.RENDERER_NAME,
+                                reason=(
+                                    f"unsupported {field.field_type.value} in adaptive_card"
+                                    " — rendered as text placeholder"
+                                ),
+                            )
                         )
-                    )
 
         return RenderedForm(
             content=card,

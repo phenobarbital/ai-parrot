@@ -1,7 +1,7 @@
-"""Unit tests for TeamsFormRenderer / TeamsSubmitEnvelope (FEAT-551 TASK-3147)."""
+"""Unit tests for TeamsFormRenderer / TeamsSubmitEnvelope (FEAT-551 TASK-3147/TASK-3148)."""
 import json
 import pytest
-from parrot_formdesigner.core import FormSchema, FormSection          # verified: test_renderers.py:4
+from parrot_formdesigner.core import FormSchema, FormSection, FormSubsection   # verified: test_renderers.py:4
 from parrot_formdesigner.core.schema import FormField                 # verified: test_renderers.py:5
 from parrot_formdesigner.core.types import FieldType
 from parrot_formdesigner.renderers import AdaptiveCardRenderer, TeamsFormRenderer, TeamsSubmitEnvelope
@@ -133,3 +133,98 @@ async def test_teams_wizard_last_step_only_has_envelope(form):
     submit_action = next((action for action in submit_actions if action["data"]["_action"] == "submit"), None)
     assert submit_action is not None
     assert ENVELOPE_KEY in submit_action["data"]
+
+def _walk(node):
+    """Yield every dict node in a nested Adaptive Card items/actions/body tree (TASK-3148)."""
+    if isinstance(node, dict):
+        yield node
+        for key in ("items", "actions", "body"):
+            for child in node.get(key) or []:
+                yield from _walk(child)
+    elif isinstance(node, list):
+        for child in node:
+            yield from _walk(child)
+
+
+@pytest.fixture
+def upload_form() -> FormSchema:
+    """Public form (tenant=navigator) with an IMAGE field at top level and a FILE field nested
+    inside a FormSubsection — exercises `_upload_warnings`' section+subsection walk (TASK-3148)."""
+    return FormSchema(
+        form_id="teams-upload-demo",
+        title="Teams Upload Demo",
+        tenant="navigator",
+        is_public=True,
+        sections=[
+            FormSection(
+                section_id="main",
+                title="Main",
+                fields=[
+                    FormField(field_id="photo", field_type=FieldType.IMAGE, label="Photo"),
+                    FormSubsection(
+                        subsection_id="attachments",
+                        title="Attachments",
+                        fields=[
+                            FormField(field_id="doc", field_type=FieldType.FILE, label="Document"),
+                        ],
+                    ),
+                ],
+            )
+        ],
+    )
+
+
+async def test_teams_upload_fields_openurl_and_warning(renderer, upload_form):
+    result = await renderer.render(upload_form, tenant="navigator")
+    opens = [n for n in _walk(result.content["body"]) if n.get("type") == "Action.OpenUrl"]
+    assert len(opens) == 2
+    assert all(
+        o["url"] == f"https://forms.test/navigator/forms/{upload_form.form_uid}" for o in opens
+    )
+    # Neither upload field's id shows up on an Input.* element — they render as
+    # Container + Action.OpenUrl instead (spec §3 M2).
+    upload_ids = {"photo", "doc"}
+    inputs = [
+        n for n in _walk(result.content["body"])
+        if str(n.get("type", "")).startswith("Input.") and n.get("id") in upload_ids
+    ]
+    assert inputs == []
+    teams_warnings = [w for w in result.warnings if w.renderer == "teams"]
+    assert sorted(w.field_type for w in teams_warnings) == ["file", "image"]
+
+
+@pytest.mark.parametrize(
+    "field_type",
+    [FieldType.FILE, FieldType.IMAGE, FieldType.IMAGE_DROPZONE, FieldType.MULTI_UPLOAD],
+)
+async def test_teams_upload_field_types_all_get_openurl_and_warning(renderer, field_type):
+    single_field_form = FormSchema(
+        form_id="teams-upload-single",
+        title="Teams Upload Single",
+        tenant="navigator",
+        is_public=True,
+        sections=[
+            FormSection(
+                section_id="main",
+                title="Main",
+                fields=[FormField(field_id="upload", field_type=field_type, label="Upload")],
+            )
+        ],
+    )
+    result = await renderer.render(single_field_form, tenant="navigator")
+    opens = [n for n in _walk(result.content["body"]) if n.get("type") == "Action.OpenUrl"]
+    assert len(opens) == 1
+    assert opens[0]["url"] == f"https://forms.test/navigator/forms/{single_field_form.form_uid}"
+    teams_warnings = [
+        w for w in result.warnings if w.renderer == "teams" and w.field_id == "upload"
+    ]
+    assert len(teams_warnings) == 1
+    assert teams_warnings[0].field_type == field_type.value
+
+
+async def test_adaptive_upload_fallback_unchanged(upload_form):
+    result = await AdaptiveCardRenderer().render(upload_form)
+    assert not [w for w in result.warnings if w.field_type in ("file", "image")]
+    inputs = {n["id"]: n for n in _walk(result.content["body"]) if n.get("type") == "Input.Text" and "id" in n}
+    assert inputs["photo"]["type"] == "Input.Text"
+    assert inputs["doc"]["type"] == "Input.Text"
