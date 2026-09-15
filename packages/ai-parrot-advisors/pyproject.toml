@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "ai-parrot-advisors"
 dynamic = ["version"]
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.14"
 description = "Product Advisor and selection matching components for AI-Parrot"
 readme = "README.md"
 authors = [

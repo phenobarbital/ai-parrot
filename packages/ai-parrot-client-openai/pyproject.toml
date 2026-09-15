@@ -4,16 +4,16 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ai-parrot-client-openai"
-version = "0.2.1"
+version = "0.2.2"
 description = "OpenAI LLM client for AI-Parrot (parrot.clients.openai)"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.14"
 license = "MIT"
 authors = [
     {name = "Jesus Lara", email = "jesuslara@phenobarbital.info"}
 ]
 dependencies = [
-    "ai-parrot>=1.0.1",
+    "ai-parrot>=1.0.2",
     # The `openai` SDK itself is a base `ai-parrot` dependency (FEAT-523/
     # TASK-2854 core-extras cleanup — OpenAIBaseClient, which stays in
     # core, is subclassed by seven satellites including this one), so

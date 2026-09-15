@@ -69,12 +69,47 @@ class RosterSeat(BaseModel):
         return self
 
 
+LintFormatter = Literal["auto", "black", "ruff", "none"]
+
+
+class LintConfig(BaseModel):
+    """Engine-owned per-task lint pass, run at the merge boundary instead of by the coder LLM.
+
+    Attributes:
+        autofix: Run ``ruff check --fix`` + the formatter on the task's changed ``.py`` files
+            and commit the result on the attempt branch before merging.
+        formatter: ``auto`` picks black when the repo's ``pyproject.toml`` has ``[tool.black]``,
+            ``ruff format`` when it has ruff format settings, and no formatter otherwise (so a
+            repo with no declared style is never reformatted to a default line length).
+        error_select: Correctness rules (syntax errors, undefined names) reported separately as
+            ``LintReport.errors`` so the orchestrator fixes them; everything else is residual
+            style debt left for the full pass in ``/sdd-done``. Never blocks the merge.
+    """
+
+    autofix: bool = True
+    formatter: LintFormatter = "auto"
+    error_select: List[str] = Field(default_factory=lambda: ["E9", "F63", "F7", "F82"])
+
+
+class LintReport(BaseModel):
+    """Outcome of the engine lint pass over one task branch."""
+
+    formatter: str = "none"
+    fixed_files: List[str] = Field(default_factory=list)
+    commit: str = ""
+    errors: List[str] = Field(default_factory=list)
+    residual_count: int = 0
+    residual: List[str] = Field(default_factory=list)
+    tool_error: str = ""
+
+
 class RosterConfig(BaseModel):
     """Ordered roster + engine bounds (spec: wait ≤ 300 s)."""
 
     seats: List[RosterSeat] = Field(..., min_length=1)
     wait_timeout_max_s: int = Field(default=300, ge=10, le=300)
     smoke_timeout_s: int = Field(default=60, ge=5, le=300)
+    lint: LintConfig = Field(default_factory=LintConfig)
 
 
 class SeatProbeResult(BaseModel):
@@ -186,6 +221,7 @@ class TaskResult(BaseModel):
     unexpected_files: List[str] = Field(default_factory=list)
     diagnostics: str = ""
     development_output: Optional[DevelopmentOutput] = None
+    lint: Optional[LintReport] = None
 
 
 class NativePrep(BaseModel):

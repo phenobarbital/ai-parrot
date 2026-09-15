@@ -244,6 +244,9 @@ consolidate, and own SDD state. Coders (`sdd-coder`) run one task each in their 
      green → step (g) of the Fallback loop for this task, with a Completion Note that ends with
      `Seat: <seat_label> · Backend: <backend> · Model: <model> · Attempts: <n> · Duration: <sum duration_s> · Tokens: <usage>`
      taken from `attempts[*]`; red → treat as `failed`.
+     The engine already ran `ruff check --fix` + the repo formatter and committed it (`lint.commit`). Fix ONLY
+     `lint.errors` (syntax errors / undefined names) in this worktree; ignore `lint.residual` — style debt is
+     fixed once, feature-wide, by `/sdd-done`. Never run `ruff`/`black` per task yourself.
    - `merge_conflict` → `git merge <branch>` in this worktree, resolve, commit, then `coder_merge(task_id)` again.
    - `failed` with `diagnostics` starting `branch_not_merged:` → the engine merged nothing (it never answers
      `merged` unless the branch is an ancestor of the feature branch). Run
@@ -296,7 +299,9 @@ VERIFICATION CHECKLIST for TASK-<NNN>:
 If ANY check fails, fix or STOP.
 
 ### e) Validate (in worktree)
-- Run linting and fix issues.
+- Lint mechanically, never by hand (this path has no engine to do it): `ruff check --fix <task .py files>`, then
+  `black <task .py files>` only if `pyproject.toml` has `[tool.black]`. Fix only syntax errors / undefined names
+  (`ruff check --select E9,F63,F7,F82`); leave remaining style findings to `/sdd-done`.
 - Run acceptance-criteria tests.
 - If stuck after 3 attempts, mark as `"done-with-issues"`.
 
@@ -370,6 +375,30 @@ After all tasks are done:
    - **SUGGESTION (🟡) / NITPICK (💡)**: Note in the completion summary. Do NOT fix.
    - If the code-reviewer agent is unavailable, log a warning and proceed.
 
+   **File every deferred finding in the SDD ledger.** A finding you verified against
+   the real code but did not fix — any severity, including ones out of this
+   feature's file scope — MUST be opened with `wikitoolkit ledger open` before you
+   push, so it survives the PR and shows up in `ledger ready` / `ledger context`
+   for future work. "Noted for PR" alone is not enough: `/sdd-done` only exports
+   what is already in the ledger. Rejected (false-positive) findings are not filed.
+   The ledger resolves to the main checkout, so running it from the worktree is fine.
+
+   ```bash
+   wikitoolkit ledger open \
+     --kind bug|tech_debt|feature_gap|vulnerability \
+     --severity critical|major|minor|low \
+     --discovered-from spec:FEAT-<ID> \
+     --about "sym:<repo-relative-file>#<qualname>" \
+     --title "<one-line defect>" \
+     --body "<what is wrong, where (file + symbol), why it matters, suggested fix>"
+   ```
+
+   Map 🟠 → `major`, 🟡 → `minor`, 💡 → `low` (🔴 is always fixed; if you ever
+   defer one, file it as `critical` — it blocks `/sdd-done`). Pass `--about` once per
+   affected file/symbol with the repo-relative path: `ledger context` matches on it.
+   Record each returned `issue:<id>` in the summary. If `wikitoolkit` is
+   unavailable, log a warning and list the findings with `(NOT filed)`.
+
 2. **Push the feature branch** (from worktree):
    ```bash
    git push origin HEAD
@@ -386,8 +415,9 @@ After all tasks are done:
 
    Code review:
      🔴 Critical: <N> (fixed)
-     🟠 Important: <N> (<M> fixed, <K> noted)
-     🟡 Suggestions: <N> (noted for PR)
+     🟠 Important: <N> (<M> fixed, <K> deferred)
+     🟡 Suggestions: <N> (deferred)
+     📒 Ledger: issue:<id> [<severity>] <title>   (one line per deferred finding)
 
    Seats:
      seat         tasks  retries  failures  wall-clock  tokens(in/out)

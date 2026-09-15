@@ -7,7 +7,7 @@ name = "ai-parrot-server"
 dynamic = ["version"]
 description = "Server infrastructure (handlers, MCP/A2A transports, scheduler, autonomous) for AI-Parrot"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.14"
 license = "MIT"
 authors = [
     {name = "Jesus Lara", email = "jesuslara@phenobarbital.info"}

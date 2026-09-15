@@ -8,7 +8,7 @@
 [project]
 name = "ai-parrot-workspace"
 version = "0.0.0"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.14"
 description = "AI-Parrot monorepo workspace"
 dependencies = [
     "ai-parrot",
@@ -77,9 +77,12 @@ dev = [
 [tool.uv]
 # Project is Linux-only (see classifiers). Restricting the lock to Linux
 # avoids non-Linux resolution splits that pull incompatible dep combos
-# (e.g. async-notify[all]>=1.5.2 ships no macOS wheels).
+# (e.g. async-notify[all]>=1.5.2 ships no macOS wheels). aarch64 is excluded
+# too: async-notify has never published a linux/aarch64 wheel (or an sdist)
+# for any version, so that fork is permanently unresolvable while
+# async-notify>=1.6.0 is required; all release/CI targets are x86_64 anyway.
 environments = [
-    "sys_platform == 'linux'",
+    "sys_platform == 'linux' and platform_machine != 'aarch64'",
 ]
 
 # gemma4 conflicts REMOVED — the gemma4 extra was dropped from

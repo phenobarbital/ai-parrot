@@ -116,6 +116,35 @@ test -f <worktree-path>/<filepath>
 its acceptance-criteria tests during `/sdd-start` or `sdd-worker` execution.
 Re-running them at close time adds latency without new signal.
 
+### 4.5. Full Lint Pass (once per feature)
+
+Per-task lint is engine-owned and only auto-fixes (`sdd-coder` engine, merge
+boundary). This step is the ONE place the repo's full ruff rule set is enforced
+for the feature — never per task. With `--dry-run`, run only the final
+`ruff check` and report; do not fix or commit.
+
+```bash
+WT="<worktree-path>"
+git -C "$WT" fetch origin <base_branch>
+mapfile -t PY < <(git -C "$WT" diff --name-only --diff-filter=ACMR "origin/<base_branch>...HEAD" -- '*.py')
+if [ ${#PY[@]} -gt 0 ]; then
+  (cd "$WT" && ruff check --fix --exit-zero --quiet "${PY[@]}")
+  if grep -q '^\[tool\.black\]' "$WT/pyproject.toml"; then (cd "$WT" && black -q "${PY[@]}"); fi
+  git -C "$WT" add -- "${PY[@]}"
+  git -C "$WT" diff --cached --quiet || git -C "$WT" commit -m "style(<slug>): FEAT-<ID> — full lint pass"
+  (cd "$WT" && ruff check --output-format concise "${PY[@]}")
+fi
+```
+
+Then fix what `ruff check` still reports, in those files only (pre-existing
+violations in a touched file included — that is deliberate code improvement):
+- Keep each fix behavior-neutral; when one is not (e.g. narrowing a blind
+  `except Exception`), run the tests of the touched module before committing.
+- Commit as `style(<slug>): FEAT-<ID> — lint fixes`.
+- A finding you cannot fix safely goes under **Lint residual** in the report.
+  Residual syntax errors / undefined names (`E9`, `F63`, `F7`, `F82`) are merge
+  blockers: they turn Step 6 into the "issues" branch. Other residue does not.
+
 ### 5. Build Verification Report
 Classify each task:
 
@@ -131,6 +160,7 @@ Worktree: .claude/worktrees/feat-<ID>-<slug>
 Branch: feat-<ID>-<slug>
 Commits found: <N>
 Tasks: <total> total, <verified> verified, <partial> partial, <missing> missing
+Lint: <autofixed files> auto-fixed, <fixed> hand-fixed, <residual> residual (<blocking> blocking)
 
   ✅ TASK-096 — Scene Editor Refactor
      Commits: feat(videoreel): TASK-096 — Scene Editor Refactor (abc1234)
@@ -248,7 +278,13 @@ if [[ "$TYPE" != "hotfix" ]]; then
 
     TEMP_WORKTREE=".claude/worktrees/_ledger-snapshot-$$"
     git worktree add --detach "$TEMP_WORKTREE" "origin/$BASE_BRANCH" >/dev/null 2>&1
-    cleanup_snapshot_worktree() { git worktree remove --force "$TEMP_WORKTREE" >/dev/null 2>&1 || true; }
+    # No --force: the throwaway checkout only ever touches issues.jsonl, so
+    # restoring that one file leaves it clean and a plain remove succeeds
+    # (a detached, unpushed snapshot commit does not block `worktree remove`).
+    cleanup_snapshot_worktree() {
+        git -C "$TEMP_WORKTREE" restore --staged --worktree -- sdd/ledger/issues.jsonl >/dev/null 2>&1
+        git worktree remove "$TEMP_WORKTREE" >/dev/null 2>&1 || true
+    }
     trap cleanup_snapshot_worktree EXIT
 
     ATTEMPT=1
@@ -269,7 +305,8 @@ if [[ "$TYPE" != "hotfix" ]]; then
 
         # Rejected push: re-sync the throwaway worktree only, re-export, retry.
         git fetch origin "$BASE_BRANCH" >/dev/null 2>&1
-        git -C "$TEMP_WORKTREE" reset --hard "origin/$BASE_BRANCH" >/dev/null 2>&1
+        git -C "$TEMP_WORKTREE" restore --staged --worktree -- sdd/ledger/issues.jsonl >/dev/null 2>&1
+        git -C "$TEMP_WORKTREE" checkout -q --detach "origin/$BASE_BRANCH" >/dev/null 2>&1
         ATTEMPT=$((ATTEMPT + 1))
         if (( ATTEMPT > MAX_ATTEMPTS )); then
             echo "⚠️  Ledger snapshot push failed after $MAX_ATTEMPTS attempts — continuing without failing /sdd-done."

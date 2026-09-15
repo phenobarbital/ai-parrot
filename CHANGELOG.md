@@ -9,6 +9,57 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [1.0.2] — 2026-09-15
+
+Twelve core-line distributions move to `1.0.2`. The sixteen satellites
+(`ai-parrot-client-*`, `ai-parrot-openlit-bridge`) move to `0.2.2` and are
+re-pinned to `ai-parrot>=1.0.2`.
+
+### Added
+
+- **FEAT-566: Shared SDD work ledger.** An append-only, atomic ledger log
+  (`wikitoolkit ledger` CLI group + MCP tools) that ingests SDD spec/task
+  graphs, reduces events with a replay cursor and atomic claim, and adds
+  federation overlay namespace routing so ledgers from different repos don't
+  collide. Wired into `/sdd-start`, `/sdd-next`, `/sdd-done`, and Claude/Codex/
+  Antigravity review twins; a worktree structural-hook guard installs it
+  post-merge. Retrofitted with async I/O and fsync durability.
+- **FEAT-557: SQLite reliability for wikitoolkit.** A `SQLitePragmaPolicy`
+  model and typed `WikiStoreBusy` error, a `_open`/`_read`/`_write` connection
+  policy using `BEGIN IMMEDIATE`, non-fatal WAL checkpoints, and a busy
+  timeout with explicit write transactions on `SourceCollectionManager`. All
+  21 store call sites migrated off the old `_connect` path. `wikitoolkit
+  status` gains a SQLite diagnostics block, and a multiprocess contention
+  test covers the read path.
+- **FEAT-551: MS Teams FormDesigner renderer.** New `TeamsFormRenderer` and
+  `TeamsSubmitEnvelope`, a `_formdesigner` branch in
+  `MSTeamsAgentWrapper._handle_card_submission`, bot-side pure submit
+  helpers, and Teams upload-field posture (`Action.OpenUrl` +
+  `RenderWarning`, since Teams cards can't accept file uploads directly).
+  Registered via `setup_form_api` with tenant pass-through. Existing
+  `AdaptiveCardRenderer` output is unchanged (verified via a byte-identical
+  golden fixture); its hooks are now overridable for renderer subclasses.
+- **A2UI / report charts.** Combined bar+line charts, a KPI card that states
+  what its number means (including "no good direction" metrics), and a
+  chart key rendered in words under the chart instead of only in color.
+
+### Fixed
+
+- **Printed/exported reports:** charts now size from a CSS box instead of
+  the measuring moment, keep their proportion instead of being boxed,
+  survive being printed, and no longer waste whole sheets or force
+  horizontal scrolling on a phone-width table. The trend line, KPI values,
+  and chart grid column count now match between the live app and the
+  exported/print surface.
+- **hotfix/WIKI-FTS-RESCAN:** external-content FTS5 indexing so re-ingesting
+  a wiki source no longer rescans the entire index.
+- **ci(release):** restored the eight client-satellite publish legs that had
+  dropped out of `release.yml`.
+- **stores/kb:** dropped an unused `duckdb` import and repaired the stale
+  tests it was masking.
+
+---
+
 ## [1.0.1] — 2026-09-13
 
 Everything in this release is additive or opt-in. No public API was removed.

@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-540
 **Date**: 2026-09-09
 **Author**: Jesus Lara (with Claude)
-**Status**: draft
+**Status**: approved
 **Target version**: 1.1.0
 
 > Phase 1 of 2. This spec cuts the seams *inside* `ai-parrot` core so that
