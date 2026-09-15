@@ -1258,7 +1258,10 @@ class TestChartsGroupLikeCards:
         # names and spills the legend out of its card.
         doc = await self._doc(self._chart("A"), self._chart("B"))
         block = doc[re.search(r"@media print\s*\{", doc).end():]
-        rule = block[block.index(".chart-grid {"):][:260]
+        # To the closing brace, not a fixed number of characters: a comment
+        # added inside the rule pushed the assertion out of the window once.
+        start = block.index(".chart-grid {")
+        rule = block[start:block.index("}", start)]
         assert "grid-template-columns: 1fr;" in rule
         # Together on one sheet rather than split across a page break. Two
         # full-width charts fit a page; the comment says why three would not.
