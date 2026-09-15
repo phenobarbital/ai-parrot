@@ -1,6 +1,8 @@
 """Unit tests for parrot-formdesigner renderers."""
 
+import json
 import pytest
+from pathlib import Path
 from parrot_formdesigner.core import FormSchema, FormSection
 from parrot_formdesigner.core.schema import FormField
 from parrot_formdesigner.core.types import FieldType
@@ -466,6 +468,120 @@ async def test_html5_new_types_render_without_error():
         result = await renderer.render(form)
         assert result.content is not None, f"HTML5Renderer returned None content for {ft}"
         assert len(result.content) > 0, f"HTML5Renderer returned empty content for {ft}"
+
+
+_GOLDEN = Path(__file__).parent / "fixtures" / "adaptive_card_golden.json"
+
+
+@pytest.mark.asyncio
+async def test_adaptive_default_output_golden(sample_schema):
+    """AdaptiveCardRenderer output is byte-identical to the committed golden fixture (FEAT-551 G5)."""
+    result = await AdaptiveCardRenderer().render(sample_schema)
+    assert json.dumps(result.content, sort_keys=True, indent=2) == _GOLDEN.read_text(encoding="utf-8")
+
+
+def test_submit_action_data_default():
+    r = AdaptiveCardRenderer()
+    assert r._submit_action_data(None, terminal=True) == {"_action": "submit"}
+    assert r._submit_action_data(None, terminal=False) == {"_action": "submit"}
+    assert r.RENDERER_NAME == "adaptive_card" and r.accepts_tenant is False
+
+
+@pytest.mark.asyncio
+async def test_wizard_non_terminal_actions_unchanged(sample_schema):
+    # Test that non-last step has Next action (not Submit) and other actions have the expected literals
+    # {"_action": "back"|"skip"|"cancel"|"next"}
+    result = await AdaptiveCardRenderer().render_section(sample_schema, 0, show_back=True, show_skip=True)
+    
+    # Check that there's no submit action (since it's not the last step)
+    actions = result.content.get("actions", [])
+    submit_actions = [action for action in actions if action.get("data", {}).get("_action") == "submit"]
+    assert len(submit_actions) == 0
+    
+    # Check that Next action exists (non-last step should have Next, not Submit)
+    next_actions = [action for action in actions if action.get("data", {}).get("_action") == "next"]
+    assert len(next_actions) == 1
+    
+    # Check that other actions have the expected literals
+    action_data_values = [action.get("data", {}).get("_action") for action in actions]
+    expected_literals = {"back", "skip", "cancel", "next"}
+    found_literals = {data for data in action_data_values if data in expected_literals}
+    assert found_literals == expected_literals
+
+
+@pytest.mark.asyncio
+async def test_wizard_terminal_action_uses_hook(sample_schema):
+    """Test that the last step's Submit action uses the _submit_action_data hook."""
+    # Create a form with multiple sections to test the last section
+    multi_section_form = FormSchema(
+        form_id="test_multi",
+        title="Test Multi-Section Form",
+        sections=[
+            FormSection(
+                section_id="sec1",
+                title="Section 1",
+                fields=[FormField(field_id="name", field_type=FieldType.TEXT, label="Name")],
+            ),
+            FormSection(
+                section_id="sec2",
+                title="Section 2",
+                fields=[FormField(field_id="email", field_type=FieldType.EMAIL, label="Email")],
+            )
+        ],
+    )
+    
+    # Render the last section (index 1)
+    result = await AdaptiveCardRenderer().render_section(multi_section_form, 1)
+    
+    # Check that Submit action exists and uses our hook
+    actions = result.content.get("actions", [])
+    submit_actions = [action for action in actions if action.get("data", {}).get("_action") == "submit"]
+    assert len(submit_actions) == 1
+    
+    # The data should be what our hook returns
+    submit_action = submit_actions[0]
+    assert submit_action["data"] == {"_action": "submit"}
+
+
+@pytest.mark.asyncio
+async def test_upload_element_default_matches_previous_fallback(sample_schema):
+    """An IMAGE field with a FileEnvelope-like dict value renders Input.Text with filename (thumbnail_url) — as before."""
+    # Create a form with an IMAGE field
+    image_field = FormField(
+        field_id="upload_test",
+        field_type=FieldType.IMAGE,
+        label="Upload Test"
+    )
+    
+    form_with_image = FormSchema(
+        form_id="test_image",
+        title="Test Image Form",
+        sections=[
+            FormSection(
+                section_id="main",
+                title="Main",
+                fields=[image_field],
+            )
+        ],
+    )
+    
+    # Test with a FileEnvelope-like dict value
+    file_value = {
+        "filename": "test.png",
+        "thumbnail_url": "https://example.com/thumb.png"
+    }
+    
+    renderer = AdaptiveCardRenderer()
+    result = await renderer.render(form_with_image, prefilled={"upload_test": file_value})
+    
+    # Find the input element for our field
+    body = result.content.get("body", [])
+    input_elements = [elem for elem in body if elem.get("id") == "upload_test" and elem.get("type") == "Input.Text"]
+    assert len(input_elements) == 1
+    
+    input_elem = input_elements[0]
+    # Should contain the filename and thumbnail_url as before
+    assert "test.png (https://example.com/thumb.png)" in input_elem.get("value", "")
 
 
 @pytest.mark.asyncio
