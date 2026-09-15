@@ -111,6 +111,44 @@ def supported_formats() -> list[str]:
     return sorted(_RENDERERS.keys())
 
 
+TEAMS_FORMAT_KEY: str = "teams"
+
+
+def register_teams_renderer(
+    *,
+    public_base_url: str | None = None,
+    api_base_path: str = "/api/v1",
+    ui_base_path: str = "",
+    signing_secret: str | None = None,
+    renderer: AbstractFormRenderer | None = None,
+) -> bool:
+    """Register the MS Teams renderer under ``"teams"`` when a public base URL is resolvable (FEAT-551 M3).
+
+    Returns:
+        ``True`` when registered; ``False`` (logged at INFO) when neither ``renderer`` nor a public
+        base URL (argument or env ``FORMDESIGNER_PUBLIC_URL``) is available — nothing is registered.
+    """
+    # Lazy import to keep `import parrot_formdesigner.api` light, same posture as _seed_default_renderers
+    import os
+
+    from ..renderers.teams import PUBLIC_URL_ENV, TeamsFormRenderer
+
+    if renderer is None:
+        if not (public_base_url or os.environ.get(PUBLIC_URL_ENV)):
+            logger.info(
+                "register_teams_renderer: no public base URL — 'teams' format not registered"
+            )
+            return False
+        renderer = TeamsFormRenderer(
+            public_base_url,
+            api_base_path=api_base_path,
+            ui_base_path=ui_base_path,
+            signing_secret=signing_secret,
+        )
+    register_renderer(TEAMS_FORMAT_KEY, renderer)
+    return True
+
+
 def _coerce_body(content: Any) -> bytes | str:
     """Normalise renderer output into something ``web.Response.body``/``text`` accepts.
 
@@ -171,7 +209,23 @@ async def handle_render(request: web.Request) -> web.Response:
     enforce_membership_unless_public(request, form, tenant)
 
     locale = request.query.get("locale", "en")
-    rendered = await renderer.render(form, locale=locale)
+    render_kwargs: dict[str, Any] = {"locale": locale}
+    if getattr(renderer, "accepts_tenant", False):
+        render_kwargs["tenant"] = tenant
+    try:
+        rendered = await renderer.render(form, **render_kwargs)
+    except ValueError as exc:  # TeamsRenderConfigError is a ValueError
+        logger.warning("render dispatcher: %s renderer refused: %s", format_key, exc)
+        return web.json_response({"error": str(exc)}, status=400)
+
+    # ?with_meta=true returns a JSON envelope with content, content_type, warnings, metadata
+    if request.query.get("with_meta", "").lower() in ("1", "true", "yes"):
+        return web.json_response({
+            "content": rendered.content,
+            "content_type": rendered.content_type,
+            "warnings": [w.model_dump(mode="json") for w in rendered.warnings],
+            "metadata": rendered.metadata,
+        })
 
     body = _coerce_body(rendered.content)
     if isinstance(body, str):

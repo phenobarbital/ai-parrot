@@ -301,3 +301,228 @@ async def test_dispatcher_404_when_form_unknown(aiohttp_client):
         "/api/v1/navigator/forms/00000000-0000-0000-0000-000000000000/render/html"
     )
     assert resp.status == 404
+
+
+# =============================================================================
+# FEAT-551 M3: Teams format registration and dispatcher extensions
+# =============================================================================
+
+
+def test_register_teams_renderer_noop_without_url(monkeypatch):
+    """When no public base URL is configured, teams format is not registered."""
+    monkeypatch.delenv("FORMDESIGNER_PUBLIC_URL", raising=False)
+    from parrot_formdesigner.api.render import register_teams_renderer, supported_formats
+
+    result = register_teams_renderer()
+    assert result is False
+    assert "teams" not in supported_formats()
+
+
+async def test_dispatcher_teams_415_when_unregistered(aiohttp_client, sample_form):
+    """When teams is not registered, render request returns 415."""
+    # Don't register teams - it should not be in supported formats
+    registry = FormRegistry()
+    await registry.register(sample_form)
+
+    app = web.Application()
+    app["form_registry"] = registry
+    app.router.add_get(
+        "/api/v1/{tenant}/forms/{form_uid}/render/{format}",
+        _tenant_wrapped_render,
+    )
+
+    client = await aiohttp_client(app)
+    resp = await client.get(
+        f"/api/v1/navigator/forms/{sample_form.form_uid}/render/teams"
+    )
+    assert resp.status == 415
+    body = await resp.json()
+    assert "supported" in body
+    assert "teams" not in body["supported"]
+
+
+async def test_dispatcher_teams_passes_tenant(aiohttp_client, sample_form):
+    """When renderer declares accepts_tenant, tenant is passed to render()."""
+    captured: dict[str, Any] = {}
+
+    class _TenantAwareRenderer(AbstractFormRenderer):
+        accepts_tenant = True
+
+        async def render(
+            self,
+            form: FormSchema,
+            style=None,
+            *,
+            locale: str = "en",
+            prefilled=None,
+            errors=None,
+            tenant=None,
+        ) -> RenderedForm:
+            captured["tenant"] = tenant
+            return RenderedForm(
+                content={"type": "AdaptiveCard"},
+                content_type="application/json",
+            )
+
+    register_renderer("teams", _TenantAwareRenderer())
+    registry = FormRegistry()
+    await registry.register(sample_form)
+
+    app = web.Application()
+    app["form_registry"] = registry
+    app.router.add_get(
+        "/api/v1/{tenant}/forms/{form_uid}/render/{format}",
+        _tenant_wrapped_render,
+    )
+
+    client = await aiohttp_client(app)
+    resp = await client.get(
+        f"/api/v1/navigator/forms/{sample_form.form_uid}/render/teams"
+    )
+    assert resp.status == 200
+    assert captured["tenant"] == "navigator"
+
+
+async def test_dispatcher_teams_without_accepts_tenant(aiohttp_client, sample_form):
+    """When renderer does NOT declare accepts_tenant, tenant is NOT passed."""
+    captured: dict[str, Any] = {}
+
+    class _PlainRenderer(AbstractFormRenderer):
+        # Does NOT have accepts_tenant = True
+
+        async def render(
+            self,
+            form: FormSchema,
+            style=None,
+            *,
+            locale: str = "en",
+            prefilled=None,
+            errors=None,
+            tenant=None,  # Should NOT be passed
+        ) -> RenderedForm:
+            captured["tenant"] = tenant
+            return RenderedForm(
+                content={"type": "AdaptiveCard"},
+                content_type="application/json",
+            )
+
+    register_renderer("teams", _PlainRenderer())
+    registry = FormRegistry()
+    await registry.register(sample_form)
+
+    app = web.Application()
+    app["form_registry"] = registry
+    app.router.add_get(
+        "/api/v1/{tenant}/forms/{form_uid}/render/{format}",
+        _tenant_wrapped_render,
+    )
+
+    client = await aiohttp_client(app)
+    resp = await client.get(
+        f"/api/v1/navigator/forms/{sample_form.form_uid}/render/teams"
+    )
+    assert resp.status == 200
+    assert captured["tenant"] is None  # Not passed
+
+
+async def test_dispatcher_with_meta_envelope(aiohttp_client, sample_form):
+    """With ?with_meta=true, response includes content, content_type, warnings, metadata."""
+    from parrot_formdesigner.core.schema import RenderWarning
+
+    class _MetaRenderer(AbstractFormRenderer):
+        async def render(
+            self,
+            form: FormSchema,
+            style=None,
+            *,
+            locale: str = "en",
+            prefilled=None,
+            errors=None,
+        ) -> RenderedForm:
+            return RenderedForm(
+                content={"type": "AdaptiveCard"},
+                content_type="application/json",
+                warnings=[
+                    RenderWarning(
+                        field_id="avatar",
+                        field_type="image",
+                        renderer="teams",
+                        reason="image fields not fully supported in Teams",
+                    )
+                ],
+                metadata={"channel": "msteams"},
+            )
+
+    register_renderer("teams", _MetaRenderer())
+    registry = FormRegistry()
+    await registry.register(sample_form)
+
+    app = web.Application()
+    app["form_registry"] = registry
+    app.router.add_get(
+        "/api/v1/{tenant}/forms/{form_uid}/render/{format}",
+        _tenant_wrapped_render,
+    )
+
+    client = await aiohttp_client(app)
+
+    # Test with_meta=true
+    resp = await client.get(
+        f"/api/v1/navigator/forms/{sample_form.form_uid}/render/teams?with_meta=true"
+    )
+    assert resp.status == 200
+    body = await resp.json()
+    assert "content" in body
+    assert "content_type" in body
+    assert "warnings" in body
+    assert "metadata" in body
+    assert body["content"]["type"] == "AdaptiveCard"
+    assert body["content_type"] == "application/json"
+    assert len(body["warnings"]) == 1
+    assert body["warnings"][0]["field_id"] == "avatar"
+    assert body["metadata"]["channel"] == "msteams"
+
+    # Test without with_meta - should return raw content
+    resp = await client.get(
+        f"/api/v1/navigator/forms/{sample_form.form_uid}/render/teams"
+    )
+    assert resp.status == 200
+    assert resp.content_type == "application/json"
+    body_raw = await resp.json()
+    assert body_raw["type"] == "AdaptiveCard"
+
+
+async def test_dispatcher_render_config_error_400(aiohttp_client, sample_form):
+    """When renderer raises ValueError, dispatcher returns 400 with error message."""
+
+    class _FailingRenderer(AbstractFormRenderer):
+        async def render(
+            self,
+            form: FormSchema,
+            style=None,
+            *,
+            locale: str = "en",
+            prefilled=None,
+            errors=None,
+        ) -> RenderedForm:
+            raise ValueError("no base url configured")
+
+    register_renderer("teams", _FailingRenderer())
+    registry = FormRegistry()
+    await registry.register(sample_form)
+
+    app = web.Application()
+    app["form_registry"] = registry
+    app.router.add_get(
+        "/api/v1/{tenant}/forms/{form_uid}/render/{format}",
+        _tenant_wrapped_render,
+    )
+
+    client = await aiohttp_client(app)
+    resp = await client.get(
+        f"/api/v1/navigator/forms/{sample_form.form_uid}/render/teams"
+    )
+    assert resp.status == 400
+    body = await resp.json()
+    assert "error" in body
+    assert body["error"] == "no base url configured"
