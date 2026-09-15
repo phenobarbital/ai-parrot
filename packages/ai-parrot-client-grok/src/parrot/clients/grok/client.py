@@ -225,7 +225,6 @@ class GrokClient(AbstractClient):
         _lc_t0_grok2 = _lc_time_grok2.perf_counter()
 
         # 3. Initialize Chat
-        chat_kwargs = {"model": model, "max_tokens": max_tokens, "temperature": temperature}
         if response_format is not None:
             chat_kwargs["response_format"] = response_format
 
@@ -332,6 +331,11 @@ class GrokClient(AbstractClient):
 
             except Exception as e:
                 self.logger.error(f"Error in GrokClient loop: {e}")
+                # FEAT-548 Finding #1: emit ClientCallFailedEvent
+                await self._emit_failed_call_safe(
+                    _lc_tc_grok2, client_name="grok", model=model,
+                    t0=_lc_t0_grok2, exc=e,
+                )
                 raise
 
         # 6. Parse Final Response
@@ -480,27 +484,34 @@ class GrokClient(AbstractClient):
         full_response = []
         final_sdk_response = None
 
-        async for response, chunk in chat.stream():
-            content = chunk.content
-            final_sdk_response = response
+        try:  # FEAT-548 Finding #1: emit ClientCallFailedEvent on error
+            async for response, chunk in chat.stream():
+                content = chunk.content
+                final_sdk_response = response
 
-            if content:
-                full_response.append(content)
-                # FEAT-176: per-chunk event
-                if _lc_has_chunk_subs_grok2:
-                    await self.events.emit(
-                        _GrokStreamChunkEvent(
-                            trace_context=_lc_tc_groks,
-                            client_name="grok",
-                            model=model,
-                            chunk_index=_lc_chunk_idx_grok2,
-                            chunk_size_bytes=len(content.encode("utf-8")),
-                            source_type="client",
-                            source_name="grok",
+                if content:
+                    full_response.append(content)
+                    # FEAT-176: per-chunk event
+                    if _lc_has_chunk_subs_grok2:
+                        await self.events.emit(
+                            _GrokStreamChunkEvent(
+                                trace_context=_lc_tc_groks,
+                                client_name="grok",
+                                model=model,
+                                chunk_index=_lc_chunk_idx_grok2,
+                                chunk_size_bytes=len(content.encode("utf-8")),
+                                source_type="client",
+                                source_name="grok",
+                            )
                         )
-                    )
-                    _lc_chunk_idx_grok2 += 1
-                yield content
+                        _lc_chunk_idx_grok2 += 1
+                    yield content
+        except BaseException as _lc_exc:
+            await self._emit_failed_call_safe(
+                _lc_tc_groks, client_name="grok", model=model,
+                t0=_lc_t0_groks, exc=_lc_exc,
+            )
+            raise
 
         # Build and yield final AIMessage
         final_text = final_sdk_response.content if final_sdk_response else "".join(full_response)

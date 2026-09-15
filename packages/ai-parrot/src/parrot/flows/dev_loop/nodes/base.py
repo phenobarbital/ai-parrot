@@ -476,6 +476,65 @@ class DevLoopNode(Node):
             return ctx
         raise TypeError(f"dev-loop nodes expect FlowContext or dict, got {type(ctx)!r}")
 
+    # ── Narrative (node/progress) ────────────────────────────────────────
+
+    def report_progress(
+        self,
+        ctx: Union[FlowContext, Dict[str, Any]],
+        phase: str,
+        headline: str,
+        detail: str = "",
+        *,
+        seat: str = "",
+        task_id: str = "",
+    ) -> None:
+        """Narrate what this node is about to do / is doing / concluded.
+
+        Applies a ``node/progress`` action on the run's ``SessionHost`` (when
+        one is bound under ``shared["session_host"]``), so the line reaches
+        the ``view=state`` stream, the persisted action log, the terminal
+        snapshot and the run bundle in one move — the same route
+        ``QaAttemptRecorded`` and ``DocsArtifactLinked`` already take. It
+        deliberately does NOT go through the raw ``flow:{run}:flow`` XADD
+        precedent, which only the legacy event views can see.
+
+        Best-effort by contract: a missing host, a non-``NodeId`` node
+        (pool seats), or a host that refuses the action must never break a
+        run — every failure is swallowed and logged at DEBUG.
+
+        Args:
+            ctx: The flow execution context (or the shared dict in tests).
+            phase: ``"started"``, ``"working"`` or ``"finished"``.
+            headline: One-line message (clamped to 160 chars by the action).
+            detail: Optional second line (clamped to 400 chars).
+            seat: Pool seat the line belongs to, if any.
+            task_id: Task the line belongs to, if any.
+        """
+        try:
+            shared = self.shared_state(ctx)
+            host = shared.get("session_host")
+            if host is None:
+                return
+            # Local import: session_state imports nothing from nodes/, but
+            # nodes/base is imported very early by the package — keep the
+            # dependency direction one-way at import time.
+            from parrot.flows.dev_loop.session_state import NodeProgress
+
+            host.apply(
+                NodeProgress(
+                    node_id=self.name,  # type: ignore[arg-type]
+                    phase=phase,  # type: ignore[arg-type]
+                    headline=headline,
+                    detail=detail,
+                    seat=seat,
+                    task_id=task_id,
+                )
+            )
+        except Exception:  # noqa: BLE001 - narrative must never break a run
+            logging.getLogger(__name__).debug(
+                "node/progress dropped for node=%s phase=%s", getattr(self, "name", "?"), phase, exc_info=True
+            )
+
     @staticmethod
     def initial_prompt(ctx: Union[FlowContext, Dict[str, Any]]) -> str:
         """Return the run's initial task/prompt string.

@@ -1,0 +1,104 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-566",
+  "feature_slug": "sdd-work-ledger",
+  "started_at": "2026-09-14T00:02:43Z",
+  "updated_at": "2026-09-14T00:11:00Z",
+  "source": {
+    "kind": "file",
+    "jira_key": null,
+    "jira_url": null,
+    "file_path": "sdd/proposals/sdd-work-ledger.brainstorm.md",
+    "raw_path": "sdd/state/FEAT-566/source.md",
+    "fetched_at": "2026-09-14T00:02:43Z",
+    "summary_oneline": "Create a shared, event-sourced SDD work ledger on the LLM Wiki plane."
+  },
+  "mode": "auto",
+  "phase": "committed",
+  "phases": {
+    "source": {
+      "status": "completed",
+      "started_at": "2026-09-14T00:02:43Z",
+      "completed_at": "2026-09-14T00:02:43Z",
+      "duration_seconds": 0
+    },
+    "plan": {
+      "status": "completed",
+      "started_at": "2026-09-14T00:05:00Z",
+      "completed_at": "2026-09-14T00:05:00Z",
+      "duration_seconds": 0,
+      "queries_total": 17,
+      "approved_by_user": true,
+      "edited_by_user": false,
+      "plan_path": "sdd/state/FEAT-566/research_plan.json"
+    },
+    "research": {
+      "status": "completed",
+      "started_at": "2026-09-14T00:05:00Z",
+      "completed_at": "2026-09-14T00:08:00Z",
+      "duration_seconds": 180,
+      "queries_executed": 17,
+      "queries_skipped": 0,
+      "depth_reached": 0,
+      "files_read": 13,
+      "grep_calls": 7,
+      "git_calls": 2,
+      "truncated": false,
+      "truncation_reason": null
+    },
+    "synthesis": {
+      "status": "completed",
+      "started_at": "2026-09-14T00:08:00Z",
+      "completed_at": "2026-09-14T00:08:00Z",
+      "duration_seconds": 0,
+      "synthesis_path": "sdd/state/FEAT-566/synthesis.json",
+      "thinking_path": null,
+      "overall_confidence": "medium",
+      "claims_total": 5,
+      "claims_high_conf": 3,
+      "claims_medium_conf": 2,
+      "claims_low_conf": 0,
+      "unknowns_count": 3,
+      "lint_passed": true,
+      "lint_iterations": 0
+    },
+    "qa": {
+      "status": "completed",
+      "started_at": "2026-09-14T00:09:00Z",
+      "completed_at": "2026-09-14T00:10:00Z",
+      "duration_seconds": 60,
+      "questions_total": 3,
+      "questions_answered": 3,
+      "skipped_reason": null
+    },
+    "output": {
+      "status": "completed",
+      "started_at": "2026-09-14T00:10:00Z",
+      "completed_at": "2026-09-14T00:10:00Z",
+      "duration_seconds": 0,
+      "proposal_path": "sdd/proposals/sdd-work-ledger.proposal.md",
+      "commit_sha": null,
+      "next_command_recommended": "sdd-spec",
+      "next_command_rationale": "Product decisions are resolved; the next artifact should formalize the spike and implementation contracts."
+    }
+  },
+  "budget": {
+    "profile": "default",
+    "max_files_read": 40,
+    "max_grep_calls": 25,
+    "max_git_calls": 10,
+    "max_depth": 2,
+    "max_wall_seconds": 300
+  },
+  "consumed": {
+    "files_read": 13,
+    "grep_calls": 7,
+    "git_calls": 2,
+    "wall_seconds": 180
+  },
+  "errors": [],
+  "resume_hint": {
+    "next_phase": "sdd-spec",
+    "next_action": "Use the accepted proposal to create the formal specification."
+  }
+}

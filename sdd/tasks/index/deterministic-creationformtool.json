@@ -8,7 +8,7 @@
   "completed_at": "2026-07-30T17:54:34+00:00",
   "tasks": [
     {
-      "id": "TASK-1968",
+      "id": "TASK-3127",
       "slug": "form-assembler-core",
       "title": "FormAssembler Core Class",
       "feature_id": "FEAT-388",
@@ -26,7 +26,7 @@
       "file": "sdd/tasks/completed/TASK-1968-form-assembler-core.md"
     },
     {
-      "id": "TASK-1969",
+      "id": "TASK-3128",
       "slug": "createformtool-deterministic-input",
       "title": "CreateFormTool Deterministic Input",
       "feature_id": "FEAT-388",
@@ -36,7 +36,7 @@
       "priority": "high",
       "effort": "M",
       "depends_on": [
-        "TASK-1968"
+        "TASK-3127"
       ],
       "parallel": true,
       "parallelism_notes": "Parallel with TASK-1970 — modifies create_form.py (no overlap with edit_toolkit.py)",
@@ -46,7 +46,7 @@
       "file": "sdd/tasks/completed/TASK-1969-createformtool-deterministic-input.md"
     },
     {
-      "id": "TASK-1970",
+      "id": "TASK-3129",
       "slug": "edit-toolkit-schema-methods",
       "title": "EditToolkit Schema-Aware Methods",
       "feature_id": "FEAT-388",
@@ -56,7 +56,7 @@
       "priority": "medium",
       "effort": "S",
       "depends_on": [
-        "TASK-1968"
+        "TASK-3127"
       ],
       "parallel": true,
       "parallelism_notes": "Parallel with TASK-1969 — modifies edit_toolkit.py (no overlap with create_form.py)",
@@ -66,7 +66,7 @@
       "file": "sdd/tasks/completed/TASK-1970-edit-toolkit-schema-methods.md"
     },
     {
-      "id": "TASK-1971",
+      "id": "TASK-3130",
       "slug": "integration-tests",
       "title": "Integration Tests",
       "feature_id": "FEAT-388",
@@ -76,9 +76,9 @@
       "priority": "medium",
       "effort": "S",
       "depends_on": [
-        "TASK-1968",
-        "TASK-1969",
-        "TASK-1970"
+        "TASK-3127",
+        "TASK-3128",
+        "TASK-3129"
       ],
       "parallel": false,
       "parallelism_notes": "Depends on all prior tasks — validates end-to-end integration",

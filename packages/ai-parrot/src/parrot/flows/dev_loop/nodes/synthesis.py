@@ -168,7 +168,19 @@ class SynthesisNode(DevLoopNode):
 
         worker_count = len(development.worker_summaries)
         if not development.merge_performed or worker_count <= 1:
+            self.report_progress(
+                ctx,
+                "finished",
+                f"Nothing to reconcile — {worker_count} worker(s), merge_performed={development.merge_performed}",
+            )
             return self._skip(shared, research, development, worker_count)
+
+        self.report_progress(
+            ctx,
+            "started",
+            f"Reconciling {len(development.files_changed)} file(s) merged from {worker_count} workers",
+            f"worktree {research.worktree_path}",
+        )
 
         profile = ClaudeCodeDispatchProfile(
             subagent=None,
@@ -192,9 +204,9 @@ class SynthesisNode(DevLoopNode):
         )
 
         self.logger.info(
-            "Dispatching synthesis reconciliation in %s (%d files changed "
-            "by %d worker(s))",
-            research.worktree_path, len(development.files_changed),
+            "Dispatching synthesis reconciliation in %s (%d files changed " "by %d worker(s))",
+            research.worktree_path,
+            len(development.files_changed),
             len(development.worker_summaries),
         )
 
@@ -212,16 +224,21 @@ class SynthesisNode(DevLoopNode):
         )
 
         shared["synthesis_report"] = report
+        self.report_progress(
+            ctx,
+            "finished",
+            ("consistent" if report.consistent else "INCONSISTENT")
+            + (f" · {len(report.adjustments)} adjustment(s)" if report.adjustments else ""),
+            report.summary,
+        )
 
         if not report.consistent:
             self.logger.error(
                 "Synthesis reconciliation reported inconsistent for %s: %s",
-                research.worktree_path, report.summary,
+                research.worktree_path,
+                report.summary,
             )
-            raise RuntimeError(
-                f"SynthesisNode: reconciliation left the worktree "
-                f"inconsistent — {report.summary}"
-            )
+            raise RuntimeError(f"SynthesisNode: reconciliation left the worktree " f"inconsistent — {report.summary}")
 
         return report
 
@@ -269,8 +286,7 @@ class SynthesisNode(DevLoopNode):
             # run executes no tests at all — say so instead of letting the
             # bundle read green.
             self.logger.warning(
-                "Synthesis skipped while skip_qa is enabled — this run "
-                "executes no test suite at all."
+                "Synthesis skipped while skip_qa is enabled — this run " "executes no test suite at all."
             )
         report = SynthesisReport(
             consistent=True,

@@ -201,6 +201,7 @@ class QANode(DevLoopNode):
                 runtime_skip,
                 research.jira_issue_key or research.feat_id,
             )
+            self.report_progress(ctx, "finished", "QA bypassed (skip_qa=True) — synthetic pass")
             report = QAReport(
                 passed=True,
                 criterion_results=[],
@@ -213,6 +214,13 @@ class QANode(DevLoopNode):
             )
             shared["qa_report"] = report
             return report
+
+        self.report_progress(
+            ctx,
+            "started",
+            f"QA attempt {shared.get('qa_attempt', 1)} for {research.feat_id or research.jira_issue_key}",
+            "acceptance criteria (sdd-qa) · lint · code review panel · adversarial second opinion",
+        )
 
         manual: List[ManualCriterion] = [c for c in brief.acceptance_criteria if isinstance(c, ManualCriterion)]
         # FEAT-322: per-criterion opt-in HITL gating. Default ``blocking=False``
@@ -406,6 +414,16 @@ class QANode(DevLoopNode):
             files_modified,
         )
         shared["qa_report"] = report
+        passed_n = sum(1 for r in report.criterion_results if r.passed)
+        self.report_progress(
+            ctx,
+            "finished",
+            f"{'PASSED' if report.passed else 'FAILED'}: {passed_n}/{len(report.criterion_results)} criteria · "
+            f"lint {'ok' if report.lint_passed else 'FAIL'} · "
+            f"review {'skipped' if cr_skipped else ('ok' if cr_passed else 'FAIL')}"
+            + (f" · {len(report.code_review_findings)} finding(s)" if report.code_review_findings else ""),
+            report.notes,
+        )
         return report
 
     # ------------------------------------------------------------------

@@ -35,7 +35,7 @@ Requirements
 ------------
 * **Python >= 3.12** — the voice path needs the Pre-Alpha AWS SDK::
 
-      pip install 'aws_sdk_bedrock_runtime==0.7.0'
+      pip install 'aws_sdk_bedrock_runtime[awscrt]==0.11.0'
 
   ``NovaClient`` itself imports fine on 3.11; the SDK is only required at the
   first ``stream_voice()`` call (see ``NovaAudio._require_voice_sdk``).

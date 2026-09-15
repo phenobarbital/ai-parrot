@@ -19,7 +19,7 @@ class GeminiCodeDispatchProfile(BaseModel):
     supporting tool calling and structured output extraction.
     """
 
-    subagent: Literal["sdd-worker"] = "sdd-worker"
+    subagent: Literal["sdd-worker", "sdd-coder"] = "sdd-worker"
     model: str = "auto"
     sandbox: bool = Field(
         default=True,

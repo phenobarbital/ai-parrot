@@ -20,6 +20,9 @@ MCP_TABLE = "mcp_servers.wikitoolkit"
 SKILL_PATH = Path(".codex/skills/parrot-wiki/SKILL.md")
 RULES_PATH = Path(".codex/rules/parrot-wiki.rules")
 
+CONVENTIONS_BEGIN = "<!-- parrot:conventions:codex:begin -->"
+CONVENTIONS_END = "<!-- parrot:conventions:codex:end -->"
+
 AGENTS_SECTION = f"""{AGENTS_BEGIN}
 ## Codebase Knowledge Graph (LLM Wiki)
 
@@ -65,16 +68,20 @@ def toolkit_mcp_block(root: Path, sections: dict[str, ToolkitSection]) -> str:
 
     Returns:
         The concatenated table strings (no enclosing markers), or ``""``
-        when ``sections`` is empty.
+        when ``sections`` is empty. Each table's ``args`` pins an absolute
+        ``--config`` pointing at ``<root>/.parrot/mcp-toolkits.yaml``
+        (FEAT-556), so ``parrot mcp-local`` resolves the toolkit regardless
+        of the cwd Codex starts the server from.
     """
     command = json.dumps(resolve_binary(root, "parrot"))
+    config_path = str(root / ".parrot" / "mcp-toolkits.yaml")
     tables = []
     for name in sorted(sections):
         section = sections[name]
         lines = [
             f"[mcp_servers.parrot-{name}]",
             f"command = {command}",
-            f"args = {json.dumps(['mcp-local', name])}",
+            f"args = {json.dumps(['mcp-local', name, '--config', config_path])}",
         ]
         if section.env:
             env_toml = ", ".join(f"{key} = {json.dumps(value)}" for key, value in section.env.items())
@@ -128,3 +135,10 @@ def rules_block(root: Path) -> str:
         )
     rules.append(RULES_END)
     return "\n".join(rules) + "\n"
+
+
+def conventions_section(root: Path) -> str:
+    """Managed `## Project conventions` block rendered from the repo's `.agent/rules/` (FEAT-553)."""
+    from parrot.flows.conventions import load_project_conventions  # local import: keeps module import order unchanged
+
+    return f"{CONVENTIONS_BEGIN}\n## Project conventions\n\n{load_project_conventions(root)}\n\n{CONVENTIONS_END}\n"

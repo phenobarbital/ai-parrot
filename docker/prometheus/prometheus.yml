@@ -1,0 +1,27 @@
+# Prometheus configuration for the local AI-Parrot stacks.
+#
+# Claude Code metrics are PUSHED here over OTLP (--enable-feature=
+# otlp-write-receiver), so they need no scrape job.
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # Codex delta metrics are accumulated by the collector before scraping.
+  - job_name: "codex"
+    static_configs:
+      - targets: ["otel-collector:8889"]
+
+  # The observability example stack (docker-compose.observability.yml) used
+  # to be scraped here, but OpenLIT's 4318 is an OTLP receiver, not a
+  # /metrics endpoint — the job 404'd there too. Re-enable it (through the
+  # host gateway, so the stacks stay independent) if OpenLIT ever exposes one.
+  # - job_name: "openlit"
+  #   static_configs:
+  #     - targets: ["host.docker.internal:4318"]
+  #   metrics_path: "/metrics"

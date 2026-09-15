@@ -182,6 +182,20 @@ codex exec --sandbox workspace-write -o <out.txt> \
   "Generate an image: <description>. Save as <name>.png"
 ```
 
+#### Design research at spec time (FEAT-545)
+
+The same codex seat gives an **independent design opinion** in `/sdd-spec`
+§3b, over the *accepted* brainstorm/proposal only — never over the spec
+draft. Model: `${SDD_DESIGN_RESEARCH_MODEL:-gpt-5.6-luna}` with
+`-c model_reasoning_effort=high` and `--ignore-user-config` (the operator's
+`~/.codex/config.toml` must not swap the model silently). The pass is
+**optional and never blocking**: no `codex`, failed probe, timeout or invalid
+output ⇒ spec §9 reads `Status: skipped (<reason>)` and the command continues
+(`sdd-planner` runs it unattended). Every suggestion is triaged
+`CONFIRM` / `REJECT` / `ESCALATE` in spec **§9 Design Research Cross-Check**;
+the transcript is committed under `sdd/state/<FEAT-ID>/design_research/`.
+The `agy` ban above applies to this seat too.
+
 ## Key References
 - Architecture & patterns: @.agent/CONTEXT.md
 - SDD workflow: @docs/sdd/WORKFLOW.md
@@ -226,7 +240,12 @@ the Action fails (or the user is offline), run
 should require PRs, passing CI, and signed commits. Not configured
 declaratively in this repo — set via GitHub repo settings.
 
-- **Worktrees branch from `base_branch`** (which `/sdd-task` and `sdd-worker` ensure HEAD is on before creating the worktree). Hotfix worktrees branch from `main`; feature worktrees branch from `dev` or `staging` (during a release freeze).
+- **Worktrees branch from `origin/<base_branch>`**, and are created by whoever
+  implements: `/sdd-start` and `sdd-worker` for the normal lanes, and the
+  dev-loop orchestrators (`sdd-planner`, `sdd-research`, `sdd-autopilot`) which
+  plan and dispatch in one run. `/sdd-task` creates none (FEAT-552). Naming and
+  base ref come from `scripts.sdd.sdd_meta.plan_worktree` via
+  `python -m scripts.sdd.ensure_worktree` — never hand-built.
 
 ## Worktree Creation
 
@@ -240,22 +259,21 @@ declaratively in this repo — set via GitHub repo settings.
 git worktree add -b <branch-name> .claude/worktrees/<worktree-name> HEAD
 ```
 
-> **Carve-out (FEAT-466): "from the current branch … `HEAD`" is shorthand,
-> not the rule.** The actual rule is **worktrees branch from `base_branch`**
-> (§ Git Configuration above). `HEAD` only works as shorthand when `HEAD`
-> already *is* the intended base — true for `/sdd-task` and `sdd-worker`,
-> which always `git checkout "$BASE_BRANCH"` immediately beforehand. It is
-> **not** true for a hotfix: `sdd-research.md` branches
-> `hotfix-<JIRA-KEY>-<slug>` explicitly from `origin/main`, regardless of
-> what branch happens to be checked out in the main repo at the time (a
-> hotfix must never inherit unreleased `dev` commits — this is the FEAT-466
-> root cause, PR #1250). When base and `HEAD` might differ, name the ref
-> explicitly:
+> **Carve-out (FEAT-466): a hotfix must never branch from `HEAD` or inherit
+> unreleased `dev` commits.** That used to depend on the caller already
+> being on the right branch when `HEAD` was used as shorthand for
+> `base_branch` — fragile, because whatever branch happened to be checked
+> out in the main repo at the time silently became the base (the FEAT-466
+> root cause, PR #1250). `plan_worktree` (`scripts/sdd/sdd_meta.py`) now
+> enforces the rule directly: it always resolves `base_ref` to
+> `origin/<base_branch>`, so a worktree can never inherit a local, unpushed
+> `HEAD` — for a hotfix that `base_ref` is `origin/main` by construction.
+> Use the shared CLI, never hand-build the `git worktree add` line:
 > ```bash
 > # Feature — from the base branch (dev, or staging during a freeze)
-> git worktree add -b feat-<id>-<slug> .claude/worktrees/feat-<id>-<slug> origin/dev
+> python -m scripts.sdd.ensure_worktree --slug <slug> --feature-id FEAT-<NNN>
 > # Hotfix — ALWAYS from origin/main, never from HEAD/dev
-> git worktree add -b hotfix-<JIRA-KEY>-<slug> .claude/worktrees/hotfix-<JIRA-KEY>-<slug> origin/main
+> python -m scripts.sdd.ensure_worktree --slug <slug> --jira-key <JIRA-KEY>
 > ```
 
 ### Quick reference
@@ -304,7 +322,7 @@ git worktree prune
 | `/sdd-brainstorm` | `sdd/proposals/<n>.brainstorm.md` (with frontmatter) | `base_branch` |
 | `/sdd-proposal`   | `sdd/proposals/<n>.proposal.md` (with frontmatter)  | `base_branch` |
 | `/sdd-spec`       | `sdd/specs/<n>.spec.md` (with frontmatter) + a `reserve_ids.py` FEAT-ID reservation commit to `sdd/tasks/.id_ledger.json` (FEAT-387) | `base_branch` |
-| `/sdd-task`       | `sdd/tasks/index/<feature>.json` + `sdd/tasks/active/TASK-*` + a `reserve_ids.py` TASK-ID reservation commit to `sdd/tasks/.id_ledger.json` (FEAT-387) | `base_branch` |
+| `/sdd-task`       | `sdd/tasks/index/<feature>.json` + `sdd/tasks/active/TASK-*` + a `reserve_ids.py` TASK-ID reservation commit to `sdd/tasks/.id_ledger.json` (FEAT-387) — and NO worktree (FEAT-552: it is created by the implementing lane) | `base_branch` |
 | `/sdd-start`      | Per-spec index status update + implementation code  | worktree (feature branch) |
 | `/sdd-done`       | Verification stamp on per-spec index (committed on feature branch); merges feature → `base_branch` | worktree (feature branch), merged to `base_branch` by Step 9 |
 
@@ -359,9 +377,8 @@ git checkout dev && git pull origin dev
 /sdd-spec videoreel-visual-changes -- ...
 /sdd-task sdd/specs/videoreel-visual-changes.spec.md
 
-# 3. Create worktree from dev
-git worktree add -b feat-014-videoreel-visual-changes \
-  .claude/worktrees/feat-014 HEAD
+# 3. Start a task — creates the worktree on this machine, idempotently
+/sdd-start TASK-069
 
 # 4. Enter worktree and work
 cd .claude/worktrees/feat-014
@@ -489,6 +506,16 @@ These same operations are also exposed as native MCP tools —
 this repo's `.mcp.json` (FEAT-403). If they appear in your tool list,
 prefer calling them directly; they have equal standing with Grep/Read
 at tool-selection time instead of competing via a Bash-invoked CLI.
+
+**Symbol lookup and blast radius (FEAT-498).** For a specific
+function/class/method — not a general question — prefer the structural
+tools over `wiki_query`: `wikitoolkit symbols lookup <name>`
+(`wiki_symbol_lookup` MCP tool) finds it by name/qualname directly;
+`wikitoolkit symbols outline <file>` (`wiki_code_outline`) lists a
+file's symbols before you read the whole thing; `wikitoolkit symbols
+blast <symbol>` (`wiki_blast_radius`) shows every symbol that
+transitively calls/extends/implements it — run this BEFORE editing a
+widely-used function or class to see what you might break.
 
 **Query discipline** (avoids the two most common ways the wiki
 "fails" — which are usually caller error, not missing coverage):

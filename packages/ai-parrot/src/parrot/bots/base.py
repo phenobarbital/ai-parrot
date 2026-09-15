@@ -16,6 +16,7 @@ import warnings
 from pydantic import BaseModel
 from ..memory import ConversationTurn
 from ..models import AIMessage, CompletionUsage, StructuredOutputConfig
+from ..core.exceptions import BudgetExhausted
 from ..models.outputs import OutputMode
 from ..outputs.a2ui.emission import finalize_a2ui_response  # FEAT-273 (TASK-1738)
 from ..utils.helpers import RequestContext, _current_ctx
@@ -325,7 +326,13 @@ class BaseBot(AbstractBot):
         routing_decision = kwargs.pop("routing_decision", None)
         routing_trace = kwargs.pop("routing_trace", None)
 
+        _task_turn = None  # FEAT-538: safe for the `finally` even if the try raises early
         try:
+            # FEAT-538: bracket the whole turn. Inert (returns None) when
+            # task memory is disabled; the matching reset lives in this
+            # method's existing `finally`, so scope cannot survive an
+            # exception or a cancelled stream.
+            _task_turn = self._enter_task_turn(user_id, session_id)
             # Get conversation history using unified memory
             conversation_history = None
             rendered_history = []
@@ -544,6 +551,11 @@ class BaseBot(AbstractBot):
                             user_id=user_id,
                             chatbot_id=self.memory_key_id,
                             context_used=vector_context if use_vector_context else None,
+                            # FEAT-538: when the turn was observed these
+                            # REPLACE the tool_calls conversion, so a call
+                            # is never listed twice. None keeps the legacy
+                            # derivation for an unobserved turn.
+                            tool_invocations=self.observed_tool_invocations(),
                         )
                         commit = None
                         if compaction_result is not None:
@@ -605,6 +617,7 @@ class BaseBot(AbstractBot):
             )
             raise
         finally:
+            self._exit_task_turn(_task_turn)
             self._current_trace_context = None
 
     # Alias for conversation method
@@ -643,12 +656,18 @@ class BaseBot(AbstractBot):
         # raised before the ContextVars are bound (they are bound AFTER the
         # id defaults, per the FEAT-525 binding-order fix, spec §7).
         _user_token = _session_token = _memkey_token = None
+        _task_turn = None  # FEAT-538: safe for the `finally` even if the try raises early
         try:
             if ctx is None:
                 ctx = _current_ctx.get()
             # Generate session ID if not provided
             session_id = session_id or str(uuid.uuid4())
             user_id = user_id or "anonymous"
+            # FEAT-538: bracket the whole turn. Inert (returns None) when
+            # task memory is disabled; the matching reset lives in this
+            # method's existing `finally`, so scope cannot survive an
+            # exception or a cancelled stream.
+            _task_turn = self._enter_task_turn(user_id, session_id)
             turn_id = str(uuid.uuid4())
             # FEAT-525: bind AFTER defaulting (binding-order hazard, spec §7) —
             # user_id/session_id ContextVars: per-user usage attribution in OTEL spans.
@@ -773,6 +792,8 @@ class BaseBot(AbstractBot):
                         user_id=user_id,
                         chatbot_id=self.memory_key_id,
                         context_used=None,  # invoke does not use vector context,
+                        # FEAT-538: see the note at the ordinary save site.
+                        tool_invocations=self.observed_tool_invocations(),
                     )
                     commit = None
                     if compaction_result is not None:
@@ -799,6 +820,7 @@ class BaseBot(AbstractBot):
             self._trigger_event(self.EVENT_TASK_FAILED, agent_name=self.name, error=str(e), session_id=session_id)
             raise
         finally:
+            self._exit_task_turn(_task_turn)
             self.status = AgentStatus.IDLE
             if _memkey_token is not None:
                 current_memory_key_id.reset(_memkey_token)
@@ -1027,6 +1049,7 @@ class BaseBot(AbstractBot):
         # replace the real exception with a misleading one.
         _trace_ctx = trace_context or TraceContext.new_root()
         _ask_started_ms = time.perf_counter()
+        _task_turn = None  # FEAT-538: safe for the `finally` even if the try raises early
         try:
             if ctx is None:
                 ctx = _current_ctx.get()
@@ -1046,6 +1069,11 @@ class BaseBot(AbstractBot):
             # Generate session ID if not provided
             session_id = session_id or str(uuid.uuid4())
             user_id = user_id or "anonymous"
+            # FEAT-538: bracket the whole turn. Inert (returns None) when
+            # task memory is disabled; the matching reset lives in this
+            # method's existing `finally`, so scope cannot survive an
+            # exception or a cancelled stream.
+            _task_turn = self._enter_task_turn(user_id, session_id)
             turn_id = str(uuid.uuid4())
             # FEAT-525: bind AFTER defaulting (binding-order hazard, spec §7) —
             # user_id/session_id ContextVars: per-user usage attribution in OTEL spans.
@@ -1321,49 +1349,74 @@ class BaseBot(AbstractBot):
 
                 _A2UI_SURFACE_STATE_VAR.set(a2ui_surface_state)
 
-                llm_kwargs = {
-                    "prompt": prompt_for_llm,
-                    "system_prompt": system_prompt,
-                    "temperature": kwargs.get("temperature", None),
-                    "history": rendered_history,
-                    "use_tools": use_tools,
-                }
+                # FEAT-550: bind the whole-question token budget scope before LLM
+                # kwargs are assembled (spec §2.1). Child (inherited) scopes re-raise
+                # BudgetExhausted to their owner; roots translate it (spec §2.3).
+                _budget_request = self._resolve_bot_budget(kwargs)
+                _budget_is_child = _budget_request.scope is not None
+                async with self._bind_question_scope(_budget_request) as _budget_scope:
 
-                if "tool_type" in kwargs:
-                    llm_kwargs["tool_type"] = kwargs["tool_type"]
+                    llm_kwargs = {
+                        "prompt": prompt_for_llm,
+                        "system_prompt": system_prompt,
+                        "temperature": kwargs.get("temperature", None),
+                        "history": rendered_history,
+                        "use_tools": use_tools,
+                    }
 
-                if max_tokens is not None:
-                    llm_kwargs["max_tokens"] = max_tokens
+                    if "tool_type" in kwargs:
+                        llm_kwargs["tool_type"] = kwargs["tool_type"]
 
-                # Forward max_iterations only when the active LLM client
-                # advertises it (currently only the Google client). Other
-                # backends (OpenAI, Groq, etc.) have no max_iterations param
-                # on ask(), so blindly forwarding would raise TypeError.
-                # FEAT-182: this is the primary enforcement path for the
-                # GitHubReviewer tool-call cap (max_review_tool_calls).
-                if "max_iterations" in kwargs:
+                    if max_tokens is not None:
+                        llm_kwargs["max_tokens"] = max_tokens
+
+                    # Forward max_iterations only when the active LLM client
+                    # advertises it (currently only the Google client). Other
+                    # backends (OpenAI, Groq, etc.) have no max_iterations param
+                    # on ask(), so blindly forwarding would raise TypeError.
+                    # FEAT-182: this is the primary enforcement path for the
+                    # GitHubReviewer tool-call cap (max_review_tool_calls).
+                    if "max_iterations" in kwargs:
+                        try:
+                            ask_params = inspect.signature(client.ask).parameters
+                        except (TypeError, ValueError):
+                            ask_params = {}
+                        if "max_iterations" in ask_params:
+                            llm_kwargs["max_iterations"] = kwargs["max_iterations"]
+
+                    if structured_output:
+                        if isinstance(structured_output, type) and issubclass(structured_output, BaseModel):
+                            llm_kwargs["structured_output"] = StructuredOutputConfig(output_type=structured_output)
+                        elif isinstance(structured_output, StructuredOutputConfig):
+                            llm_kwargs["structured_output"] = structured_output
+
+                    phase_started = time.perf_counter()
                     try:
-                        ask_params = inspect.signature(client.ask).parameters
-                    except (TypeError, ValueError):
-                        ask_params = {}
-                    if "max_iterations" in ask_params:
-                        llm_kwargs["max_iterations"] = kwargs["max_iterations"]
+                        response = await self.execute_llm_call(client, "ask", **llm_kwargs)
+                    except BudgetExhausted as _bx:
+                        if _budget_is_child:
+                            raise  # propagate budget control to the owner (spec §2.3)
+                        response = self._budget_partial_message(
+                            prompt_for_llm,
+                            _bx,
+                            model=str(getattr(client, "model", "")),
+                            provider=getattr(client, "client_type", ""),
+                        )
+                    if _budget_scope is not None and not response.metadata.get("token_budget"):
+                        # code-reviewer finding, FEAT-550 wrap-up: `_budget_partial_message`
+                        # ALWAYS sets metadata["token_budget"] (even to {} when the child
+                        # scope's BudgetExhausted.report carried nothing but partial_text),
+                        # so a bare `not in` presence check never fires and the real ledger
+                        # report was silently dropped for every bot-level exhaustion.
+                        response.metadata["token_budget"] = (await _budget_scope.ledger.report()).model_dump()
 
-                if structured_output:
-                    if isinstance(structured_output, type) and issubclass(structured_output, BaseModel):
-                        llm_kwargs["structured_output"] = StructuredOutputConfig(output_type=structured_output)
-                    elif isinstance(structured_output, StructuredOutputConfig):
-                        llm_kwargs["structured_output"] = structured_output
-
-                phase_started = time.perf_counter()
-                response = await self.execute_llm_call(client, "ask", **llm_kwargs)
-                self.logger.info(
-                    "[%s] ask timing: client.ask_ms=%.1f model=%s use_tools=%s",
-                    self.name,
-                    (time.perf_counter() - phase_started) * 1000,
-                    getattr(response, "model", None),
-                    use_tools,
-                )
+                    self.logger.info(
+                        "[%s] ask timing: client.ask_ms=%.1f model=%s use_tools=%s",
+                        self.name,
+                        (time.perf_counter() - phase_started) * 1000,
+                        getattr(response, "model", None),
+                        use_tools,
+                    )
 
                 # FEAT-396 code review fix: surface INPUT-stage FLAG reports
                 # (computed above by `_run_input_pipeline`, previously
@@ -1380,6 +1433,8 @@ class BaseBot(AbstractBot):
                         user_id=user_id,
                         chatbot_id=self.memory_key_id,
                         context_used=vector_context if use_vector_context else None,
+                        # FEAT-538: see the note at the ordinary save site.
+                        tool_invocations=self.observed_tool_invocations(),
                     )
                     commit = None
                     if compaction_result is not None:
@@ -1664,6 +1719,7 @@ class BaseBot(AbstractBot):
             self._trigger_event(self.EVENT_TASK_FAILED, agent_name=self.name, error=str(e), session_id=session_id)
             raise
         finally:
+            self._exit_task_turn(_task_turn)
             self.status = AgentStatus.IDLE
             self._current_trace_context = None
             if _memkey_token is not None:
@@ -1702,6 +1758,7 @@ class BaseBot(AbstractBot):
         # raised before the ContextVars are bound (they are bound AFTER the
         # id defaults, per the FEAT-525 binding-order fix, spec §7).
         _user_token = _session_token = _memkey_token = None
+        _task_turn = None  # FEAT-538: safe for the `finally` even if the try raises early
         try:
             if ctx is None:
                 ctx = _current_ctx.get()
@@ -1711,6 +1768,11 @@ class BaseBot(AbstractBot):
             output_mode = self._apply_default_output_mode(output_mode)
             session_id = session_id or str(uuid.uuid4())
             user_id = user_id or "anonymous"
+            # FEAT-538: bracket the whole turn. Inert (returns None) when
+            # task memory is disabled; the matching reset lives in this
+            # method's existing `finally`, so scope cannot survive an
+            # exception or a cancelled stream.
+            _task_turn = self._enter_task_turn(user_id, session_id)
             # FEAT-525: bind AFTER defaulting (binding-order hazard, spec §7) —
             # user_id/session_id ContextVars: per-user usage attribution in OTEL spans.
             _user_token = current_user_id.set(user_id)
@@ -1861,157 +1923,208 @@ class BaseBot(AbstractBot):
                 if permission_context is not None:
                     client._permission_context = permission_context
 
-                llm_kwargs = {
-                    "prompt": prompt_for_llm,
-                    "system_prompt": system_prompt,
-                    "model": kwargs.get("model", self._llm_model),
-                    "temperature": kwargs.get("temperature", 0),
-                    "history": rendered_history,
-                    "use_tools": kwargs.get("use_tools", True),
-                }
+                # FEAT-550: bind the whole-question token budget scope before LLM
+                # kwargs are assembled (spec §2.1). Child (inherited) scopes re-raise
+                # BudgetExhausted to their owner; roots translate it (spec §2.3).
+                _budget_request = self._resolve_bot_budget(kwargs)
+                _budget_is_child = _budget_request.scope is not None
+                async with self._bind_question_scope(_budget_request) as _budget_scope:
 
-                if "tool_type" in kwargs:
-                    llm_kwargs["tool_type"] = kwargs["tool_type"]
+                    llm_kwargs = {
+                        "prompt": prompt_for_llm,
+                        "system_prompt": system_prompt,
+                        "model": kwargs.get("model", self._llm_model),
+                        "temperature": kwargs.get("temperature", 0),
+                        "history": rendered_history,
+                        "use_tools": kwargs.get("use_tools", True),
+                    }
 
-                if max_tokens is not None:
-                    llm_kwargs["max_tokens"] = max_tokens
+                    if "tool_type" in kwargs:
+                        llm_kwargs["tool_type"] = kwargs["tool_type"]
 
-                if structured_output:
-                    if isinstance(structured_output, type) and issubclass(structured_output, BaseModel):
-                        llm_kwargs["structured_output"] = StructuredOutputConfig(output_type=structured_output)
-                    elif isinstance(structured_output, StructuredOutputConfig):
-                        llm_kwargs["structured_output"] = structured_output
+                    if max_tokens is not None:
+                        llm_kwargs["max_tokens"] = max_tokens
 
-                full_response = ""
-                ai_message = None
-                stream_error: Optional[Exception] = None
-                # FEAT-396 code review fix: OUTPUT_STREAM FLAG reports were
-                # computed per-chunk by `_feed_streaming_guardrails` and
-                # then discarded — accumulate them here and merge onto the
-                # final `ai_message.metadata['guardrails']` below, same as
-                # `_run_output_pipeline` already does for the OUTPUT stage.
-                _stream_flag_reports: dict[str, dict[str, Any]] = {}
-                try:
-                    _stream_blocked = False
-                    async for chunk in client.ask_stream(**llm_kwargs):
-                        if isinstance(chunk, AIMessage):
-                            ai_message = chunk
-                        else:
-                            # FEAT-396 (TASK-2029): wrap chunk yields through
-                            # registered StreamingGuardrail adapters + the
-                            # OUTPUT_STREAM GuardrailPipeline (both empty by
-                            # default today — zero-overhead passthrough; see
-                            # `_feed_streaming_guardrails`).
-                            transformed_chunk, _stream_blocked, _chunk_flags = await self._feed_streaming_guardrails(
-                                chunk
+                    if structured_output:
+                        if isinstance(structured_output, type) and issubclass(structured_output, BaseModel):
+                            llm_kwargs["structured_output"] = StructuredOutputConfig(output_type=structured_output)
+                        elif isinstance(structured_output, StructuredOutputConfig):
+                            llm_kwargs["structured_output"] = structured_output
+
+                    # Owner designation for streaming path
+                    from ..clients.budget_scope import current_budget_scope
+
+                    _scope = current_budget_scope()
+                    if _scope is not None and _scope.is_root and not _scope.owner_designated:
+                        _scope.designate_owner(_scope.owner_call_id)
+                        import inspect
+
+                        sig = inspect.signature(client.ask_stream)
+                        if "budget_scope" in sig.parameters:
+                            llm_kwargs["budget_scope"] = _scope
+
+                    full_response = ""
+                    ai_message = None
+                    stream_error: Optional[Exception] = None
+                    # FEAT-550: True only when this ask_stream() ended via the
+                    # BudgetExhausted->partial-AIMessage translation below —
+                    # NOT whenever `ai_message` merely holds a normal terminal
+                    # AIMessage sentinel (every successful stream sets that).
+                    # Conflating the two used to skip the streaming-guardrail
+                    # flush on every ordinary completion (regression fixed
+                    # here; see the code-reviewer finding at FEAT-550 wrap-up).
+                    _budget_exhausted_stream = False
+                    # FEAT-396 code review fix: OUTPUT_STREAM FLAG reports were
+                    # computed per-chunk by `_feed_streaming_guardrails` and
+                    # then discarded — accumulate them here and merge onto the
+                    # final `ai_message.metadata['guardrails']` below, same as
+                    # `_run_output_pipeline` already does for the OUTPUT stage.
+                    _stream_flag_reports: dict[str, dict[str, Any]] = {}
+                    try:
+                        _stream_blocked = False
+                        try:
+                            async for chunk in client.ask_stream(**llm_kwargs):
+                                if isinstance(chunk, AIMessage):
+                                    ai_message = chunk
+                                else:
+                                    # FEAT-396 (TASK-2029): wrap chunk yields through
+                                    # registered StreamingGuardrail adapters + the
+                                    # OUTPUT_STREAM GuardrailPipeline (both empty by
+                                    # default today — zero-overhead passthrough; see
+                                    # `_feed_streaming_guardrails`).
+                                    transformed_chunk, _stream_blocked, _chunk_flags = (
+                                        await self._feed_streaming_guardrails(chunk)
+                                    )
+                                    if _chunk_flags:
+                                        _stream_flag_reports.update(_chunk_flags)
+                                    if _stream_blocked:
+                                        break
+                                    full_response += transformed_chunk
+                                    if transformed_chunk:
+                                        yield transformed_chunk
+                        except BudgetExhausted as _bx:
+                            if _budget_is_child:
+                                raise
+                            # Translate BudgetExhausted raised by the stream into a terminal partial
+                            # AIMessage yielded exactly once (spec §2.4) — do NOT also yield its text
+                            # as a chunk here; the tail code below yields `ai_message` itself once.
+                            ai_message = self._budget_partial_message(
+                                prompt_for_llm,
+                                _bx,
+                                model=str(getattr(client, "model", "")),
+                                provider=getattr(client, "client_type", ""),
                             )
-                            if _chunk_flags:
-                                _stream_flag_reports.update(_chunk_flags)
-                            if _stream_blocked:
-                                break
-                            full_response += transformed_chunk
-                            if transformed_chunk:
-                                yield transformed_chunk
-                    if not _stream_blocked:
-                        # Flush any content a StreamingGuardrail adapter withheld.
-                        _stream_tail = self._flush_streaming_guardrails()
-                        if _stream_tail:
-                            full_response += _stream_tail
-                            yield _stream_tail
-                except asyncio.CancelledError:
-                    raise
-                except Exception as exc:
-                    # Capture so the partial text already yielded to the caller
-                    # is preserved as a fallback AIMessage instead of being lost.
-                    stream_error = exc
-                    self.logger.error(
-                        "ask_stream: client stream raised after %d chars; " "synthesizing fallback AIMessage: %s",
-                        len(full_response),
-                        exc,
+                            full_response = ai_message.output
+                            _budget_exhausted_stream = True
+                        if not _stream_blocked and not _budget_exhausted_stream:
+                            # Flush any content a StreamingGuardrail adapter withheld.
+                            _stream_tail = self._flush_streaming_guardrails()
+                            if _stream_tail:
+                                full_response += _stream_tail
+                                yield _stream_tail
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception as exc:
+                        # Capture so the partial text already yielded to the caller
+                        # is preserved as a fallback AIMessage instead of being lost.
+                        stream_error = exc
+                        self.logger.error(
+                            "ask_stream: client stream raised after %d chars; " "synthesizing fallback AIMessage: %s",
+                            len(full_response),
+                            exc,
+                        )
+
+                    # Save conversation turn — also runs on partial/error so the
+                    # accumulated text is not lost from memory.
+                    if use_conversation_history and memory and full_response:
+                        # FEAT-524: single writer here too. `full_response` — the text
+                        # actually streamed to the caller — stays authoritative, which
+                        # is what preserves the partial-save-on-error behaviour: this
+                        # runs even when the stream died before an AIMessage sentinel
+                        # arrived (`ai_message` may still be None).
+                        turn = ConversationTurn(
+                            turn_id=_turn_id,
+                            user_id=user_id,
+                            user_message=question,
+                            assistant_response=full_response,
+                            context_used=vector_context if use_vector_context else None,
+                            tools_used=[],
+                            metadata={"model": kwargs.get("model", self._llm_model)},
+                            chatbot_id=self.memory_key_id,
+                            # FEAT-538: this path builds the turn by hand, so
+                            # without this an observed stream would persist no
+                            # invocations at all. `or []` keeps the unobserved
+                            # shape exactly as it was.
+                            tool_invocations=self.observed_tool_invocations() or [],
+                        )
+                        await self.save_conversation_turn(user_id, session_id, turn)
+
+                    if ai_message is None:
+                        # Defensive fallback: client did not yield an AIMessage sentinel
+                        # (either because it errored mid-stream, because a
+                        # guardrail blocked the stream (FEAT-396 TASK-2029), or
+                        # because the client implementation forgot to yield the
+                        # final envelope).
+                        # Use prompt_for_llm (the actual text sent to the LLM) so that
+                        # ai_message.input is consistent with what client-yielded
+                        # AIMessages carry.
+                        ai_message = AIMessage(
+                            input=prompt_for_llm,
+                            output=full_response,
+                            response=full_response,
+                            model=kwargs.get("model", self._llm_model) or "",
+                            provider=getattr(client, "provider", "") or type(client).__name__,
+                            usage=CompletionUsage(
+                                prompt_tokens=0,
+                                completion_tokens=0,
+                                total_tokens=0,
+                            ),
+                            user_id=user_id,
+                            session_id=session_id,
+                            turn_id=_turn_id,
+                            finish_reason="blocked" if _stream_blocked else ("error" if stream_error else "completed"),
+                            stop_reason="blocked" if _stream_blocked else ("error" if stream_error else "completed"),
+                            metadata={"error": "security_block"} if _stream_blocked else {},
+                        )
+                    elif stream_error and not (ai_message.response or "").strip():
+                        # Client yielded an AIMessage but it carries no text (e.g.
+                        # validation built it before the chunks were attached).
+                        # Patch the accumulated text in so the final envelope still
+                        # reflects what was actually streamed to the caller.
+                        ai_message.response = full_response
+                        ai_message.output = ai_message.output or full_response
+                        ai_message.finish_reason = "error"
+                        ai_message.stop_reason = "error"
+
+                    if _budget_scope is not None and not ai_message.metadata.get("token_budget"):
+                        # Same fix as the ask() site above (code-reviewer finding, FEAT-550 wrap-up).
+                        ai_message.metadata["token_budget"] = (await _budget_scope.ledger.report()).model_dump()
+
+                    # FEAT-396 code review fix: surface INPUT-stage and
+                    # accumulated OUTPUT_STREAM-stage FLAG reports (previously
+                    # discarded) onto the final envelope, same as the OUTPUT
+                    # stage already gets via `_run_output_pipeline` below.
+                    self._merge_guardrail_reports(ai_message, _input_outcome.flag_reports)
+                    self._merge_guardrail_reports(ai_message, _stream_flag_reports)
+
+                    # FEAT-396 (TASK-2029): run the OUTPUT guardrail pipeline on
+                    # the final AIMessage at stream close (chunks were already
+                    # covered by the StreamingGuardrail adapters above).
+                    ai_message = await self._run_output_pipeline(ai_message, method="ask_stream")
+
+                    # FEAT-176: emit AfterInvokeEvent on success.
+                    _stream_duration_ms = (time.perf_counter() - _stream_started_ms) * 1000
+                    await self.events.emit(
+                        AfterInvokeEvent(
+                            trace_context=_trace_ctx_stream,
+                            agent_name=self.name,
+                            method="ask_stream",
+                            duration_ms=_stream_duration_ms,
+                            source_type="agent",
+                            source_name=self.name,
+                        )
                     )
-
-                # Save conversation turn — also runs on partial/error so the
-                # accumulated text is not lost from memory.
-                if use_conversation_history and memory and full_response:
-                    # FEAT-524: single writer here too. `full_response` — the text
-                    # actually streamed to the caller — stays authoritative, which
-                    # is what preserves the partial-save-on-error behaviour: this
-                    # runs even when the stream died before an AIMessage sentinel
-                    # arrived (`ai_message` may still be None).
-                    turn = ConversationTurn(
-                        turn_id=_turn_id,
-                        user_id=user_id,
-                        user_message=question,
-                        assistant_response=full_response,
-                        context_used=vector_context if use_vector_context else None,
-                        tools_used=[],
-                        metadata={"model": kwargs.get("model", self._llm_model)},
-                        chatbot_id=self.memory_key_id,
-                    )
-                    await self.save_conversation_turn(user_id, session_id, turn)
-
-                if ai_message is None:
-                    # Defensive fallback: client did not yield an AIMessage sentinel
-                    # (either because it errored mid-stream, because a
-                    # guardrail blocked the stream (FEAT-396 TASK-2029), or
-                    # because the client implementation forgot to yield the
-                    # final envelope).
-                    # Use prompt_for_llm (the actual text sent to the LLM) so that
-                    # ai_message.input is consistent with what client-yielded
-                    # AIMessages carry.
-                    ai_message = AIMessage(
-                        input=prompt_for_llm,
-                        output=full_response,
-                        response=full_response,
-                        model=kwargs.get("model", self._llm_model) or "",
-                        provider=getattr(client, "provider", "") or type(client).__name__,
-                        usage=CompletionUsage(
-                            prompt_tokens=0,
-                            completion_tokens=0,
-                            total_tokens=0,
-                        ),
-                        user_id=user_id,
-                        session_id=session_id,
-                        turn_id=_turn_id,
-                        finish_reason="blocked" if _stream_blocked else ("error" if stream_error else "completed"),
-                        stop_reason="blocked" if _stream_blocked else ("error" if stream_error else "completed"),
-                        metadata={"error": "security_block"} if _stream_blocked else {},
-                    )
-                elif stream_error and not (ai_message.response or "").strip():
-                    # Client yielded an AIMessage but it carries no text (e.g.
-                    # validation built it before the chunks were attached).
-                    # Patch the accumulated text in so the final envelope still
-                    # reflects what was actually streamed to the caller.
-                    ai_message.response = full_response
-                    ai_message.output = ai_message.output or full_response
-                    ai_message.finish_reason = "error"
-                    ai_message.stop_reason = "error"
-
-                # FEAT-396 code review fix: surface INPUT-stage and
-                # accumulated OUTPUT_STREAM-stage FLAG reports (previously
-                # discarded) onto the final envelope, same as the OUTPUT
-                # stage already gets via `_run_output_pipeline` below.
-                self._merge_guardrail_reports(ai_message, _input_outcome.flag_reports)
-                self._merge_guardrail_reports(ai_message, _stream_flag_reports)
-
-                # FEAT-396 (TASK-2029): run the OUTPUT guardrail pipeline on
-                # the final AIMessage at stream close (chunks were already
-                # covered by the StreamingGuardrail adapters above).
-                ai_message = await self._run_output_pipeline(ai_message, method="ask_stream")
-
-                # FEAT-176: emit AfterInvokeEvent on success.
-                _stream_duration_ms = (time.perf_counter() - _stream_started_ms) * 1000
-                await self.events.emit(
-                    AfterInvokeEvent(
-                        trace_context=_trace_ctx_stream,
-                        agent_name=self.name,
-                        method="ask_stream",
-                        duration_ms=_stream_duration_ms,
-                        source_type="agent",
-                        source_name=self.name,
-                    )
-                )
-                yield ai_message
+                    yield ai_message
 
         except asyncio.CancelledError:
             self.logger.info("Ask stream task was cancelled.")
@@ -2048,6 +2161,7 @@ class BaseBot(AbstractBot):
             )
             raise
         finally:
+            self._exit_task_turn(_task_turn)
             self._current_trace_context = None
             if _memkey_token is not None:
                 current_memory_key_id.reset(_memkey_token)

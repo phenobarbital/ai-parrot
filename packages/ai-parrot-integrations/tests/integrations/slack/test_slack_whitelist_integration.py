@@ -40,6 +40,8 @@ def _make_wrapper(config):
         wrapper.logger = MagicMock()
         wrapper.conversations = {}
         wrapper._background_tasks = set()
+        # FEAT-555 M9: _handle_events now consults registered interceptors.
+        wrapper._message_interceptors = []
         wrapper._safe_answer = AsyncMock()
         wrapper._bot_user_id = "B001"
         wrapper._web_client = MagicMock()

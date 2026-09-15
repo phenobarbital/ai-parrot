@@ -1,0 +1,40 @@
+`/sdd-spec` and `/sdd-task` already produce a task graph with explicit
+precedence (`depends_on`) and a `parallel` / `parallelism_notes` hint per
+task, precisely so that independent tasks can be executed concurrently. The
+interactive `sdd-worker` agent (`.claude/agents/sdd-worker.md`) ignores that
+graph: it topologically sorts the pending tasks and implements them **one after
+another, in its own execution block**, on a single Sonnet session. When it does
+"parallelise", it does so by unilaterally spawning a copy of itself through the
+Claude Code `Agent` tool — an undesigned behaviour with no model diversity,
+no isolation and no consolidation step.
+
+The server-side dev-loop already solved the scheduling half of this problem
+(FEAT-323 *Dev-Loop Multiple Dev Agents*): `TaskScheduler` computes
+dependency-respecting waves from the per-spec index, `DevAgentPool`
+dispatches a wave in parallel across heterogeneous backends with a
+retry-on-a-different-worker rule, and `SubWorktreeManager` isolates each
+worker in its own git worktree and merges sequentially. None of that is
+reachable from an interactive Claude Code session, because the Claude Code
+`Agent` tool can only launch **Anthropic** models (haiku/sonnet/opus).
+
+**Who is affected**
+
+- The maintainer running `/sdd-start` / `sdd-worker` interactively: features
+  with 8–20 tasks take hours of wall-clock time on a single Sonnet seat, and
+  all of it is billed at Sonnet rates even for mechanical tasks that FEAT-545
+  deliberately shaped so that a cheaper model can execute them nearly
+  verbatim (Implementation Blueprints).
+- The `sdd-done` / PR review stage, which today receives no record of *which*
+  model produced *which* task, so quality per model cannot be compared.
+
+**Expectation (as stated during discovery)**
+
+`sdd-worker` keeps running on Sonnet but becomes an **orchestrator**: it reads
+the task list and its precedence, assigns each task a model from a fixed
+roster of four (`bedrock:qwen3-coder`, `google:gemini-3.5-flash`,
+`openai:gpt-5.3-codex-spark`, `anthropic:haiku`), determines the execution
+flow (waves), dispatches `sdd-coder` sub-agents with that model + task,
+consolidates each finished coder's work, runs the `code-reviewer` sub-agent
+over the whole feature, applies the reviewer's fixes, and leaves the worktree
+ready for `/sdd-done`. Rule 1: **never the same model for two tasks running in
+parallel**.

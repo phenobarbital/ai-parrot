@@ -597,8 +597,19 @@ class AnthropicClient(AbstractClient):
                     )
                     payload["model"] = self._backend.translate_model(self._fallback_model)
                     used_fallback = True
-                    response = await self._sdk_create(payload)
+                    try:
+                        response = await self._sdk_create(payload)
+                    except Exception as fallback_exc:
+                        await self._emit_failed_call_safe(
+                            _lc_tc, self._telemetry_client_name, payload["model"],
+                            _lc_t0, fallback_exc,
+                        )
+                        raise
                 else:
+                    await self._emit_failed_call_safe(
+                        _lc_tc, self._telemetry_client_name, payload["model"],
+                        _lc_t0, e,
+                    )
                     raise
             # Convert Message object to dict for compatibility
             result = response.model_dump()
@@ -1087,6 +1098,10 @@ class AnthropicClient(AbstractClient):
                             yield "\n\n❌ **Server error. Max retries reached.**\n"
                             break
                     else:
+                        await self._emit_failed_call_safe(
+                            _lc_tc_s, self._telemetry_client_name,
+                            model, _lc_t0_s, e,
+                        )
                         raise
                 # Check if we reached max tokens
                 if max_tokens_reached:

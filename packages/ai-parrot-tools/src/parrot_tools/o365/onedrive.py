@@ -7,28 +7,28 @@ Tools for interacting with OneDrive:
 - Download files
 - Upload files
 """
+
 from typing import Dict, Any, Optional, List, Type
 from pathlib import Path
 import shutil
 from pydantic import BaseModel, Field
 from .base import O365Tool, O365ToolArgsSchema
+from .delta import DEFAULT_MAX_PAGES, DriveDeltaHelper
+from parrot.interfaces.o365 import O365Client
 from parrot.interfaces.onedrive import OneDriveClient
-
 
 # ============================================================================
 # LIST ONEDRIVE FILES TOOL
 # ============================================================================
 
+
 class ListOneDriveFilesArgs(O365ToolArgsSchema):
     """Arguments for listing OneDrive files."""
+
     folder_path: Optional[str] = Field(
-        default="",
-        description="Folder path in OneDrive (e.g., 'Documents/Projects'). Empty for root."
+        default="", description="Folder path in OneDrive (e.g., 'Documents/Projects'). Empty for root."
     )
-    recursive: bool = Field(
-        default=False,
-        description="Whether to list files recursively in subfolders"
-    )
+    recursive: bool = Field(default=False, description="Whether to list files recursively in subfolders")
 
 
 class ListOneDriveFilesTool(O365Tool):
@@ -55,17 +55,10 @@ class ListOneDriveFilesTool(O365Tool):
     """
 
     name: str = "list_onedrive_files"
-    description: str = (
-        "List files in OneDrive folder. "
-        "Returns file names, paths, sizes, and modification dates."
-    )
+    description: str = "List files in OneDrive folder. " "Returns file names, paths, sizes, and modification dates."
     args_schema: Type[BaseModel] = ListOneDriveFilesArgs
 
-    async def _execute_graph_operation(
-        self,
-        client: OneDriveClient,
-        **kwargs
-    ) -> Dict[str, Any]:
+    async def _execute_graph_operation(self, client: OneDriveClient, **kwargs) -> Dict[str, Any]:
         """
         List OneDrive files using the OneDriveClient.
 
@@ -76,8 +69,8 @@ class ListOneDriveFilesTool(O365Tool):
         Returns:
             Dict with file listing
         """
-        folder_path = kwargs.get('folder_path', '')
-        recursive = kwargs.get('recursive', False)
+        folder_path = kwargs.get("folder_path", "")
+        recursive = kwargs.get("recursive", False)
 
         try:
             self.logger.info(f"Listing OneDrive files in: {folder_path or 'root'}")
@@ -98,18 +91,14 @@ class ListOneDriveFilesTool(O365Tool):
                 "folder_path": folder_path or "root",
                 "total_items": len(files),
                 "files": files,
-                "recursive": recursive
+                "recursive": recursive,
             }
 
         except Exception as e:
             self.logger.error(f"Failed to list OneDrive files: {e}")
             raise
 
-    async def _list_recursive(
-        self,
-        client: OneDriveClient,
-        folder_path: str
-    ) -> List[Dict[str, Any]]:
+    async def _list_recursive(self, client: OneDriveClient, folder_path: str) -> List[Dict[str, Any]]:
         """Recursively list all files in a folder."""
         all_files = []
 
@@ -120,8 +109,8 @@ class ListOneDriveFilesTool(O365Tool):
             all_files.append(item)
 
             # Recurse into subfolders
-            if item.get('isFolder'):
-                subfolder_path = item.get('path', '')
+            if item.get("isFolder"):
+                subfolder_path = item.get("path", "")
                 if subfolder_path:
                     subfolder_files = await self._list_recursive(client, subfolder_path)
                     all_files.extend(subfolder_files)
@@ -133,15 +122,12 @@ class ListOneDriveFilesTool(O365Tool):
 # SEARCH ONEDRIVE FILES TOOL
 # ============================================================================
 
+
 class SearchOneDriveFilesArgs(O365ToolArgsSchema):
     """Arguments for searching OneDrive files."""
-    query: str = Field(
-        description="Search query (filename or content search)"
-    )
-    max_results: int = Field(
-        default=20,
-        description="Maximum number of results to return (1-100)"
-    )
+
+    query: str = Field(description="Search query (filename or content search)")
+    max_results: int = Field(default=20, description="Maximum number of results to return (1-100)")
 
 
 class SearchOneDriveFilesTool(O365Tool):
@@ -165,16 +151,11 @@ class SearchOneDriveFilesTool(O365Tool):
 
     name: str = "search_onedrive_files"
     description: str = (
-        "Search for files in OneDrive by name or content. "
-        "Returns matching files with their locations."
+        "Search for files in OneDrive by name or content. " "Returns matching files with their locations."
     )
     args_schema: Type[BaseModel] = SearchOneDriveFilesArgs
 
-    async def _execute_graph_operation(
-        self,
-        client: OneDriveClient,
-        **kwargs
-    ) -> Dict[str, Any]:
+    async def _execute_graph_operation(self, client: OneDriveClient, **kwargs) -> Dict[str, Any]:
         """
         Search OneDrive files using the OneDriveClient.
 
@@ -185,8 +166,8 @@ class SearchOneDriveFilesTool(O365Tool):
         Returns:
             Dict with search results
         """
-        query = kwargs.get('query')
-        max_results = min(kwargs.get('max_results', 20), 100)
+        query = kwargs.get("query")
+        max_results = min(kwargs.get("max_results", 20), 100)
 
         try:
             self.logger.info(f"Searching OneDrive for: {query}")
@@ -203,11 +184,7 @@ class SearchOneDriveFilesTool(O365Tool):
 
             self.logger.info(f"Found {len(search_results)} matching files")
 
-            return {
-                "query": query,
-                "total_results": len(search_results),
-                "files": search_results
-            }
+            return {"query": query, "total_results": len(search_results), "files": search_results}
 
         except Exception as e:
             self.logger.error(f"Failed to search OneDrive: {e}")
@@ -218,25 +195,19 @@ class SearchOneDriveFilesTool(O365Tool):
 # DOWNLOAD ONEDRIVE FILE TOOL
 # ============================================================================
 
+
 class DownloadOneDriveFileArgs(O365ToolArgsSchema):
     """Arguments for downloading OneDrive files."""
+
     file_path: Optional[str] = Field(
         default=None,
-        description="Path to file in OneDrive (e.g., 'Documents/report.pdf'). "
-                    "Use either file_path or file_id."
+        description="Path to file in OneDrive (e.g., 'Documents/report.pdf'). " "Use either file_path or file_id.",
     )
-    file_id: Optional[str] = Field(
-        default=None,
-        description="OneDrive file ID. Use either file_path or file_id."
-    )
+    file_id: Optional[str] = Field(default=None, description="OneDrive file ID. Use either file_path or file_id.")
     local_destination: Optional[str] = Field(
-        default=None,
-        description="Local directory to save file. If not provided, saves to current directory."
+        default=None, description="Local directory to save file. If not provided, saves to current directory."
     )
-    rename_as: Optional[str] = Field(
-        default=None,
-        description="Rename file when downloading"
-    )
+    rename_as: Optional[str] = Field(default=None, description="Rename file when downloading")
 
 
 class DownloadOneDriveFileTool(O365Tool):
@@ -272,16 +243,11 @@ class DownloadOneDriveFileTool(O365Tool):
 
     name: str = "download_onedrive_file"
     description: str = (
-        "Download a file from OneDrive to local storage. "
-        "Supports renaming and custom destination paths."
+        "Download a file from OneDrive to local storage. " "Supports renaming and custom destination paths."
     )
     args_schema: Type[BaseModel] = DownloadOneDriveFileArgs
 
-    async def _execute_graph_operation(
-        self,
-        client: OneDriveClient,
-        **kwargs
-    ) -> Dict[str, Any]:
+    async def _execute_graph_operation(self, client: OneDriveClient, **kwargs) -> Dict[str, Any]:
         """
         Download OneDrive file using the OneDriveClient.
 
@@ -292,10 +258,10 @@ class DownloadOneDriveFileTool(O365Tool):
         Returns:
             Dict with download details
         """
-        file_path = kwargs.get('file_path')
-        file_id = kwargs.get('file_id')
-        local_destination = kwargs.get('local_destination')
-        rename_as = kwargs.get('rename_as')
+        file_path = kwargs.get("file_path")
+        file_id = kwargs.get("file_id")
+        local_destination = kwargs.get("local_destination")
+        rename_as = kwargs.get("rename_as")
 
         try:
             if not file_path and not file_id:
@@ -318,8 +284,7 @@ class DownloadOneDriveFileTool(O365Tool):
 
                 # Get file info first
                 drive_info = await client._resolve_drive()
-                item = await client.graph_client.drives.by_drive_id(drive_info.id)\
-                    .items.by_drive_item_id(file_id).get()
+                item = await client.graph_client.drives.by_drive_id(drive_info.id).items.by_drive_item_id(file_id).get()
 
                 filename = rename_as or item.name
                 destination = dest_dir / filename
@@ -331,20 +296,20 @@ class DownloadOneDriveFileTool(O365Tool):
                 self.logger.info(f"Downloading OneDrive file: {file_path}")
 
                 # Search for the file
-                search_results = await client.file_search(file_path.split('/')[-1])
+                search_results = await client.file_search(file_path.split("/")[-1])
 
                 # Find exact match
                 matching_file = None
                 for result in search_results:
-                    if result.get('path', '').endswith(file_path):
+                    if result.get("path", "").endswith(file_path):
                         matching_file = result
                         break
 
                 if not matching_file:
                     raise FileNotFoundError(f"File not found: {file_path}")
 
-                file_id = matching_file['id']
-                filename = rename_as or matching_file['name']
+                file_id = matching_file["id"]
+                filename = rename_as or matching_file["name"]
                 destination = dest_dir / filename
 
                 downloaded_path = await client.file_download(file_id, destination)
@@ -357,7 +322,7 @@ class DownloadOneDriveFileTool(O365Tool):
                 "file_path": file_path,
                 "file_id": file_id,
                 "local_path": str(local_path),
-                "size": local_path.stat().st_size if local_path.exists() else 0
+                "size": local_path.stat().st_size if local_path.exists() else 0,
             }
 
         except Exception as e:
@@ -369,19 +334,15 @@ class DownloadOneDriveFileTool(O365Tool):
 # UPLOAD ONEDRIVE FILE TOOL
 # ============================================================================
 
+
 class UploadOneDriveFileArgs(O365ToolArgsSchema):
     """Arguments for uploading files to OneDrive."""
-    local_file_path: str = Field(
-        description="Local file path to upload"
-    )
+
+    local_file_path: str = Field(description="Local file path to upload")
     folder_path: Optional[str] = Field(
-        default="",
-        description="Target folder path in OneDrive (e.g., 'Documents/Projects')"
+        default="", description="Target folder path in OneDrive (e.g., 'Documents/Projects')"
     )
-    rename_as: Optional[str] = Field(
-        default=None,
-        description="Rename file when uploading"
-    )
+    rename_as: Optional[str] = Field(default=None, description="Rename file when uploading")
 
 
 class UploadOneDriveFileTool(O365Tool):
@@ -412,17 +373,10 @@ class UploadOneDriveFileTool(O365Tool):
     """
 
     name: str = "upload_onedrive_file"
-    description: str = (
-        "Upload a file to OneDrive. "
-        "Creates folders as needed and supports file renaming."
-    )
+    description: str = "Upload a file to OneDrive. " "Creates folders as needed and supports file renaming."
     args_schema: Type[BaseModel] = UploadOneDriveFileArgs
 
-    async def _execute_graph_operation(
-        self,
-        client: OneDriveClient,
-        **kwargs
-    ) -> Dict[str, Any]:
+    async def _execute_graph_operation(self, client: OneDriveClient, **kwargs) -> Dict[str, Any]:
         """
         Upload file to OneDrive using the OneDriveClient.
 
@@ -433,9 +387,9 @@ class UploadOneDriveFileTool(O365Tool):
         Returns:
             Dict with upload details
         """
-        local_file_path = kwargs.get('local_file_path')
-        folder_path = kwargs.get('folder_path', '')
-        rename_as = kwargs.get('rename_as')
+        local_file_path = kwargs.get("local_file_path")
+        folder_path = kwargs.get("folder_path", "")
+        rename_as = kwargs.get("rename_as")
 
         try:
             # Validate local file
@@ -461,10 +415,7 @@ class UploadOneDriveFileTool(O365Tool):
 
             try:
                 # Upload file
-                upload_result = await client.upload_file(
-                    upload_path,
-                    folder_path if folder_path else None
-                )
+                upload_result = await client.upload_file(upload_path, folder_path if folder_path else None)
             finally:
                 # Clean up temporary file if created
                 if cleanup_temp and temp_path.exists():
@@ -474,10 +425,10 @@ class UploadOneDriveFileTool(O365Tool):
 
             return {
                 "folder_path": folder_path or "root",
-                "uploaded_file": upload_result['name'],
-                "file_id": upload_result['id'],
-                "size": upload_result['size'],
-                "web_url": upload_result.get('webUrl', '')
+                "uploaded_file": upload_result["name"],
+                "file_id": upload_result["id"],
+                "size": upload_result["size"],
+                "web_url": upload_result.get("webUrl", ""),
             }
 
         except Exception as e:
@@ -486,12 +437,325 @@ class UploadOneDriveFileTool(O365Tool):
 
 
 # ============================================================================
+# DELTA ONEDRIVE FILES TOOL
+# ============================================================================
+
+
+def _validate_graph_identifier(value: str, field: str) -> str:
+    """Validate a configured Graph identifier before it becomes a URL segment.
+
+    Graph drive/user identifiers are opaque strings, but a model-supplied
+    value must never be allowed to expand into a different endpoint. Anything
+    that looks like a URL, carries whitespace/control characters or is
+    implausibly long is rejected outright.
+
+    Args:
+        value: The raw identifier.
+        field: Field name, used in the error message.
+
+    Returns:
+        The stripped, validated identifier.
+
+    Raises:
+        ValueError: If the identifier is empty or not a plain Graph id.
+    """
+    if not value or not str(value).strip():
+        raise ValueError(f"{field} must be a non-empty Microsoft Graph identifier")
+    candidate = str(value).strip()
+    if "://" in candidate or candidate.startswith("//"):
+        raise ValueError(f"{field} must be a Graph identifier, not a URL: {candidate!r}")
+    if any(ch.isspace() for ch in candidate) or any(ord(ch) < 32 for ch in candidate):
+        raise ValueError(f"{field} must not contain whitespace or control characters")
+    if len(candidate) > 512:
+        raise ValueError(f"{field} is implausibly long ({len(candidate)} chars)")
+    return candidate
+
+
+class DeltaOneDriveFilesArgs(O365ToolArgsSchema):
+    """Arguments for tracking OneDrive changes."""
+
+    drive_id: Optional[str] = Field(
+        default=None,
+        description=(
+            "Stable Graph drive identifier. When omitted, the drive of the "
+            "target user (or of the signed-in user) is resolved."
+        ),
+    )
+    folder_id: Optional[str] = Field(
+        default=None,
+        description=(
+            "Stable Graph item id of the folder to restrict results to. This "
+            "is the reliable folder filter (Graph delta reports "
+            "parentReference.id but omits its path), though it matches direct "
+            "children only."
+        ),
+    )
+    folder_path: Optional[str] = Field(
+        default=None,
+        description=(
+            "Drive-relative folder path to restrict results to (e.g. "
+            "'Documents/Contracts'). Best-effort only: the Graph v1.0 delta API omits "
+            "parentReference.path, so prefer folder_id. Items whose membership "
+            "cannot be decided are kept and counted in unresolved_parent."
+        ),
+    )
+    delta_link: Optional[str] = Field(
+        default=None,
+        description=(
+            "Opaque delta cursor returned by a previous call. Omit for a full "
+            "enumeration. The cursor is validated against the configured "
+            "Microsoft Graph origin — and confined to this drive's delta "
+            "endpoint — before any credential is forwarded."
+        ),
+    )
+    delta_token: Optional[str] = Field(
+        default=None,
+        description=(
+            "Alias of delta_link accepted for the contracts ingest job. " "delta_link wins when both are supplied."
+        ),
+    )
+    max_pages: Optional[int] = Field(
+        default=None, ge=1, le=DEFAULT_MAX_PAGES, description="Optional bound on delta pages followed in this call."
+    )
+
+
+class DeltaOneDriveFilesTool(O365Tool):
+    """
+    Tool for tracking changes in a OneDrive.
+
+    Wraps the drive-level Microsoft Graph ``/delta`` feed: it returns the
+    items that were added, modified, renamed or moved since the supplied
+    cursor, plus tombstones for deleted items, and hands back a new opaque
+    cursor to use on the next round.
+
+    The tool is read-only and stateless: it never stores the returned cursor
+    and never downloads file content. Persisting the cursor is the caller's
+    responsibility, and it must only be persisted once every item has been
+    durably processed.
+
+    Examples:
+        # First round: full enumeration of a folder subtree
+        result = await tool.run(folder_path="Documents/Contracts")
+
+        # Later rounds: incremental, resuming from the stored cursor
+        result = await tool.run(
+            folder_path="Documents/Contracts",
+            delta_link=stored_cursor
+        )
+
+        # App-only access to a specific user's drive
+        result = await tool.run(user_id="jane@contoso.com")
+    """
+
+    name: str = "delta_onedrive_files"
+    description: str = (
+        "Track changes (additions, edits, renames, moves and deletions) in a "
+        "OneDrive since a previous delta cursor. Returns changed items, "
+        "deleted-item tombstones and a new cursor."
+    )
+    args_schema: Type[BaseModel] = DeltaOneDriveFilesArgs
+
+    def __init__(
+        self,
+        *args,
+        delta_helper: Optional[DriveDeltaHelper] = None,
+        strict_folder_scope: bool = True,
+        **kwargs,
+    ):
+        """Initialize the OneDrive delta tool.
+
+        Args:
+            *args: Positional arguments forwarded to :class:`O365Tool`.
+            delta_helper: Optional pre-configured drive delta helper, useful
+                for tuning retry/backoff bounds or the trusted Graph origins.
+            strict_folder_scope: When True (default), refuse to return
+                results whose folder membership could not be decided under a
+                folder-scoped request, rather than silently widening the
+                scope to the whole drive.
+            **kwargs: Keyword arguments forwarded to :class:`O365Tool`.
+        """
+        super().__init__(*args, **kwargs)
+        self._delta_helper = delta_helper or DriveDeltaHelper()
+        self.strict_folder_scope = strict_folder_scope
+
+    async def _resolve_drive_id(self, client: O365Client, user_id: Optional[str]) -> str:
+        """Resolve the drive identifier for the target OneDrive.
+
+        Delegates identity selection to :meth:`O365Client.get_user_context`,
+        the same convention the mail and calendar tools use. That resolver
+        also honours a default target user configured in the credentials
+        (``user_id`` / ``user_principal_name`` / ``mailbox`` / ``username``)
+        and raises an actionable error for app-only auth with no identity,
+        instead of falling back to ``/me`` and failing obscurely.
+
+        Args:
+            client: Authenticated O365 client.
+            user_id: Per-call target user principal name / id, if any. It
+                takes precedence over the configured default.
+
+        Returns:
+            The stable drive identifier.
+
+        Raises:
+            ValueError: If no target identity can be resolved, or Graph
+                returned no usable drive.
+        """
+        validated_user = _validate_graph_identifier(user_id, "user_id") if user_id else None
+        owner = client.get_user_context(user_id=validated_user)
+
+        drive = await owner.drive.get()
+        drive_id = getattr(drive, "id", None)
+        if not drive_id:
+            raise ValueError("Could not resolve a OneDrive drive identifier")
+        return str(drive_id)
+
+    async def _resolve_folder_id(self, client: O365Client, drive_id: str, folder_path: str) -> Optional[str]:
+        """Resolve a drive-relative folder path to its stable item id.
+
+        Graph's delta feed omits ``parentReference.path`` but reports
+        ``parentReference.id``, so a path filter can only be applied exactly
+        once the path has been turned into an id. Doing that here — rather
+        than making every caller supply ``folder_id`` — is what keeps a
+        folder-scoped request both exact and usable.
+
+        Args:
+            client: Authenticated O365 client.
+            drive_id: Drive the folder lives in.
+            folder_path: Drive-relative folder path.
+
+        Returns:
+            The folder's item id, or None when it could not be resolved
+            (the caller then reports the scope as undecidable rather than
+            silently widening it).
+        """
+        cleaned = folder_path.strip("/")
+        if not cleaned:
+            return None
+        try:
+            item = await (
+                client.graph_client.drives.by_drive_id(drive_id).items.by_drive_item_id(f"root:/{cleaned}:").get()
+            )
+        except Exception as exc:  # noqa: BLE001 - undecidable, not fatal here
+            self.logger.warning(
+                "Could not resolve folder %r on drive %s: %s",
+                folder_path,
+                drive_id,
+                exc,
+            )
+            return None
+        resolved = getattr(item, "id", None)
+        if not resolved:
+            self.logger.warning("Folder %r on drive %s resolved to no item id", folder_path, drive_id)
+            return None
+        return str(resolved)
+
+    async def _execute_graph_operation(self, client: O365Client, **kwargs) -> Dict[str, Any]:
+        """Enumerate the drive's delta feed through the shared helper.
+
+        Args:
+            client: Authenticated O365Client instance.
+            **kwargs: Tool parameters.
+
+        Returns:
+            Dict describing the changed items, tombstones and the new cursor.
+        """
+        drive_id = kwargs.get("drive_id")
+        user_id = kwargs.get("user_id")
+        folder_path = kwargs.get("folder_path") or None
+        folder_id = kwargs.get("folder_id") or None
+        # `delta_token` is the name the contracts ingest job (TASK-3049)
+        # passes; accept it as an alias so that consumer resumes from its
+        # committed cursor instead of silently re-enumerating the whole
+        # drive on every run. This is a name, not a dependency: nothing in
+        # this lane imports that package.
+        delta_link = kwargs.get("delta_link") or kwargs.get("delta_token") or None
+        max_pages = kwargs.get("max_pages")
+
+        if drive_id:
+            resolved_drive_id = _validate_graph_identifier(drive_id, "drive_id")
+        else:
+            resolved_drive_id = await self._resolve_drive_id(client, user_id)
+
+        self.logger.info(
+            "Tracking OneDrive delta for drive %s (folder=%s, incremental=%s)",
+            resolved_drive_id,
+            folder_path or "(whole drive)",
+            delta_link is not None,
+        )
+
+        if folder_path and not folder_id:
+            # Turn the path into an id so membership becomes decidable;
+            # otherwise the delta feed gives us nothing to filter on.
+            folder_id = await self._resolve_folder_id(client, resolved_drive_id, folder_path)
+
+        enumeration = await self._delta_helper.enumerate(
+            client,
+            resolved_drive_id,
+            delta_link=delta_link,
+            folder_path=folder_path,
+            folder_id=folder_id,
+            max_pages=max_pages,
+        )
+
+        scope_requested = folder_path or folder_id
+        if scope_requested and self.strict_folder_scope and not enumeration.folder_filter_reliable:
+            # Graph omits parentReference.path from delta responses, so a
+            # path-only filter usually cannot decide membership. Returning
+            # the unfiltered drive under a folder-scoped request would let
+            # unrelated documents into the caller's corpus, and the caller
+            # cannot be relied on to inspect folder_filter_reliable. Fail
+            # loudly and tell the operator how to make it decidable.
+            raise ValueError(
+                f"Folder scope {scope_requested!r} could not be applied to "
+                f"{enumeration.unresolved_parent} of "
+                f"{len(enumeration.items)} item(s): the Microsoft Graph "
+                f"delta feed does not report a parent path. Pass folder_id "
+                f"(the folder's stable item id) instead, or drop the folder "
+                f"filter and scope the results in the caller. Set "
+                f"strict_folder_scope=False to accept the unfiltered set."
+            )
+
+        payload = enumeration.model_dump(mode="json")
+        # `path` is a derived property and `sha256` lives inside
+        # content_hashes, so model_dump() omits both — yet the contracts
+        # ingest job reads them per item (as a source-URI fallback and as
+        # the content hash it persists). Project them explicitly.
+        for serialized, item in zip(payload["items"], enumeration.items):
+            serialized["path"] = item.path
+            serialized["sha256"] = item.content_hashes.get("sha256Hash")
+        payload.update(
+            {
+                "source": "onedrive",
+                # Keys the contracts ingest job (TASK-3049) reads.
+                "tombstones": [i.item_id for i in enumeration.deleted_items],
+                "pages": enumeration.pages_fetched,
+                # Inverse of `complete`, kept as an explicit key for parity
+                # with the payload the core lane's tool emitted.
+                "truncated": not enumeration.complete,
+                # False by design: a 410 is recovered here by re-enumerating,
+                # so the caller gets a completed full rescan rather than being
+                # told to retry. `reset_performed` records that it happened.
+                "rescan_required": False,
+                # A @property, so model_dump() would otherwise drop it — tool
+                # consumers need it to know whether the folder filter applied.
+                "folder_filter_reliable": enumeration.folder_filter_reliable,
+                "user_id": user_id,
+                "total_items": len(enumeration.items),
+                "changed_count": len(enumeration.changed_items),
+                "deleted_count": len(enumeration.deleted_items),
+            }
+        )
+        return payload
+
+
+# ============================================================================
 # EXPORT ALL ONEDRIVE TOOLS
 # ============================================================================
 
 __all__ = [
-    'ListOneDriveFilesTool',
-    'SearchOneDriveFilesTool',
-    'DownloadOneDriveFileTool',
-    'UploadOneDriveFileTool'
+    "ListOneDriveFilesTool",
+    "SearchOneDriveFilesTool",
+    "DownloadOneDriveFileTool",
+    "UploadOneDriveFileTool",
+    "DeltaOneDriveFilesTool",
 ]

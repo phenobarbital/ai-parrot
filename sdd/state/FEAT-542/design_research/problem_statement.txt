@@ -1,0 +1,5 @@
+An autonomous agent running on a developer machine should be able to persist and search its knowledge without provisioning a PostgreSQL server or container. The requested alternative is LanceDB, usable for vector search alone and for combined vector, full-text and graph retrieval.
+
+The intended users are developers assembling local agents and their retrieval tools. Success means opening a local data directory, ingesting documents, retrieving relevant material, and reopening the same data after restart using existing AI-Parrot configuration and embedding providers. Whether the entire agent must run offline remains a separate user decision.
+
+The existing multi-store toolkit already federates vector and graph origins, but a call selects either each origin's normal search or its FTS method. A dedicated hybrid origin can place LanceDB's vector-plus-FTS results alongside graph results in one call. See Code Context R3–R5.

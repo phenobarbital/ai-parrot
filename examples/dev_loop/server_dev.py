@@ -46,7 +46,6 @@ Run it with::
 from __future__ import annotations
 
 import asyncio
-import functools
 import logging
 import os
 import re
@@ -82,9 +81,7 @@ from parrot.flows.dev_loop.agent_builder import (
 )
 from parrot.flows.dev_loop.checkpoint import RecoveredArtifactError
 from parrot.flows.dev_loop.commands import resolve_gate_handler
-from parrot.flows.dev_loop.graph_memory import DevLoopGraphMemory
 from parrot.flows.dev_loop.models import DevAgentSpec, JudgePanelConfig
-from parrot.flows.dev_loop.wiki_search import DevLoopWikiSearch
 from pydantic import BaseModel
 
 # Sibling-module imports, resolvable whether this file is launched as a
@@ -961,14 +958,13 @@ async def _on_startup(app: web.Application) -> None:
         )
 
     # -- dev-agent pool (FEAT-323) ---------------------------------------
+    # FEAT-555 (TASK-3199): the actual `development_dispatcher_builder` used
+    # by `build_dev_flow` now comes from `runtime.dev_loop_flow_kwargs`
+    # (the package builder) below; `development_pool_config` here is kept
+    # only for its informational log line, and `development_pool_max` for
+    # the `app["development_pool_max"]` key this console has always published.
     development_pool_config = parse_pool_env(conf.config.get)
     development_pool_max = resolve_pool_max(conf.config.get)
-    development_dispatcher_builder = functools.partial(
-        build_dispatcher,
-        redis_url=redis_url,
-        max_concurrent=conf.CLAUDE_CODE_MAX_CONCURRENT_DISPATCHES,
-        stream_ttl_seconds=conf.FLOW_STREAM_TTL_SECONDS,
-    )
     if development_pool_config is not None:
         # FEAT-486 superseded the old "NOT injected" note here: dev-flow now
         # HAS a pool path (`build_dev_flow(model_plan=...)`), fed by the
@@ -999,10 +995,6 @@ async def _on_startup(app: web.Application) -> None:
         "ENABLED" if model_plan.research_partner.enabled else "disabled",
     )
 
-    graph_memory = await DevLoopGraphMemory.from_config()
-    wiki_search = DevLoopWikiSearch.from_project()
-    app["wiki_search"] = wiki_search
-
     # FEAT-484/485: extra MCP servers for the ideation (research) seat —
     # the wikitoolkit graph-search server is BUILT IN to IdeationNode, so
     # only the `.parrot/mcp-toolkits.yaml` toolkit servers (e.g. the
@@ -1017,57 +1009,68 @@ async def _on_startup(app: web.Application) -> None:
             ", ".join(sorted(extra_mcp_servers)),
         )
 
-    jira_toolkit = _build_optional_jira_toolkit()
-    app["jira_toolkit"] = jira_toolkit
-    git_toolkit = ops_server._build_git_toolkit()
-    wiki_toolkit = ops_server._build_wiki_toolkit()
-
+    # FEAT-555 (TASK-3199): `require_plan_approval` still feeds
+    # `app["require_plan_approval"]` below; `skip_qa` is now resolved
+    # identically inside `build_dev_flow_runtime()` and reused from
+    # `runtime.dev_loop_flow_kwargs` instead of a second local computation.
     require_plan_approval = bool(getattr(conf, "DEV_LOOP_REQUIRE_PLAN_APPROVAL", False))
-    skip_qa = bool(getattr(conf, "DEV_LOOP_SKIP_QA", False))
 
-    # FEAT-480 (TASK-2628): same pattern as server.py's dev-loop wiring —
-    # captured once as the exact kwargs `build_dev_flow` is called with, then
-    # handed to `DevFlowRunner` as `dev_loop_flow_kwargs` (the attribute name
-    # is generic across both workflows per `DevFlowRunner`'s inherited
-    # `__init__`) so its checkpoint-recovery path builds a genuinely fresh,
-    # checkpoint-enabled `AgentsFlow` per run instead of reusing `app["flow"]`.
-    dev_loop_flow_kwargs: dict[str, Any] = {
-        "dispatcher": dispatcher,
-        "redis_url": redis_url,
-        "jira_toolkit": jira_toolkit,
-        "git_toolkit": git_toolkit,
-        "wiki_toolkit": wiki_toolkit,
-        "codereview_dispatcher": qa_review_dispatcher,
-        "development_dispatcher_builder": development_dispatcher_builder,
-        "development_pool_max": development_pool_max,
-        "graph_memory": graph_memory,
-        "wiki_search": wiki_search,
-        "skip_qa": skip_qa,
-        "require_plan_approval": require_plan_approval,
-        # FEAT-486: selects every LLM seat — the development pool (with
-        # `agent_builder.build_dispatcher` as its worker builder), the
-        # ideation model, and QANode's review pair. The plan's review pair
-        # only activates when `codereview_dispatcher` is None
-        # (DEV_FLOW_USE_REVIEW_PAIR=true); the default judge panel keeps
-        # precedence otherwise.
-        "model_plan": model_plan,
-        # FEAT-485: `.parrot/mcp-toolkits.yaml` servers for the ideation
-        # seat (its wikitoolkit server is built in). None keeps the
-        # dispatch byte-identical.
-        "research_mcp_servers": extra_mcp_servers or None,
-        "research_mcp_tools": extra_mcp_tools or None,
-        "name": "dev-flow-console",
-    }
+    # FEAT-555 (TASK-3199): delegate the base dev-flow wiring to the package
+    # builder (parrot.cli.devloop.bootstrap.build_dev_flow_runtime) so the
+    # console and the headless child (FEAT-555 Module 1) share one source of
+    # truth instead of drifting apart (design research S2, Known Risk
+    # "build_dev_flow_runtime drift"). Only the console-specific extras —
+    # the model plan, the judge-panel/review-pair QA reviewer choice, and the
+    # ideation-seat research MCP servers — are layered on top.
+    from parrot.cli.devloop.bootstrap import build_dev_flow_runtime  # noqa: PLC0415
+
+    try:
+        runtime = await build_dev_flow_runtime()
+    except SystemExit as exc:  # preflight failed — surface it, never exit the console silently
+        raise RuntimeError(f"dev-flow preflight failed (exit {exc.code}); see the checks above") from exc
+
+    # FEAT-480 (TASK-2628): captured once as the exact kwargs `build_dev_flow`
+    # is called with, then handed to `DevFlowRunner` as `dev_loop_flow_kwargs`
+    # (the attribute name is generic across both workflows per
+    # `DevFlowRunner`'s inherited `__init__`) so its checkpoint-recovery path
+    # builds a genuinely fresh, checkpoint-enabled `AgentsFlow` per run
+    # instead of reusing `app["flow"]`.
+    dev_loop_flow_kwargs: dict[str, Any] = dict(runtime.dev_loop_flow_kwargs)
+    dev_loop_flow_kwargs.update(
+        {
+            # console-only overrides — everything else comes from the
+            # package builder (dispatcher, toolkits, graph_memory,
+            # wiki_search, development pool wiring, skip_qa,
+            # require_plan_approval all already match this console's needs).
+            # FEAT-486: selects every LLM seat — the development pool (with
+            # `agent_builder.build_dispatcher` as its worker builder), the
+            # ideation model, and QANode's review pair. The plan's review
+            # pair only activates when `codereview_dispatcher` is None
+            # (DEV_FLOW_USE_REVIEW_PAIR=true); the default judge panel keeps
+            # precedence otherwise.
+            "model_plan": model_plan,
+            "codereview_dispatcher": qa_review_dispatcher,
+            # FEAT-485: `.parrot/mcp-toolkits.yaml` servers for the ideation
+            # seat (its wikitoolkit server is built in). None keeps the
+            # dispatch byte-identical.
+            "research_mcp_servers": extra_mcp_servers or None,
+            "research_mcp_tools": extra_mcp_tools or None,
+            "name": "dev-flow-console",
+        }
+    )
+    app["jira_toolkit"] = dev_loop_flow_kwargs["jira_toolkit"]
+    app["wiki_search"] = dev_loop_flow_kwargs["wiki_search"]
+
     app["flow"] = build_dev_flow(**dev_loop_flow_kwargs)
     runner = DevFlowRunner(
         app["flow"],
-        dispatcher=dispatcher,
-        jira_toolkit=jira_toolkit,
-        git_toolkit=git_toolkit,
-        wiki_toolkit=wiki_toolkit,
+        dispatcher=runtime.dispatcher,
+        jira_toolkit=dev_loop_flow_kwargs["jira_toolkit"],
+        git_toolkit=dev_loop_flow_kwargs["git_toolkit"],
+        wiki_toolkit=dev_loop_flow_kwargs["wiki_toolkit"],
         redis_url=redis_url,
         codereview_dispatcher=qa_review_dispatcher,
-        graph_memory=graph_memory,
+        graph_memory=dev_loop_flow_kwargs["graph_memory"],
         # FEAT-480 (TASK-2628): see server.py's identical wiring note — each
         # `handle_run` request below mints its own stable per-job `run_id`
         # (never shared across jobs), and `checkpoint_store=None` resolves

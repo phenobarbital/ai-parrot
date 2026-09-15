@@ -38,8 +38,10 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures
+import functools
 import logging
 import types
+import uuid
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:  # pragma: no cover - typing only, avoids a circular import
@@ -86,6 +88,10 @@ class InProcessHandle:
         self._inflight: asyncio.Future | None = None
         #: Names-only shadow of the namespace, mirroring ``WorkerHandle``.
         self.known_vars: list[str] = []
+        #: FEAT-538: generation identity, mirroring ``WorkerHandle``. A
+        #: ``reset()`` retires this handle exactly as a kill retires a
+        #: worker process, so a binding made against it must go stale too.
+        self._generation: str = uuid.uuid4().hex
 
     # ── lifecycle (WorkerHandle surface) ─────────────────────────────
 
@@ -213,8 +219,53 @@ class InProcessHandle:
         self._tool.globals[name] = value
         self.known_vars = sorted(set(self.known_vars) | {name})
 
-    async def inject_dataframe(self, name: str, df: Any) -> None:
-        """Bind a DataFrame — a plain assignment, no Arrow/shm hop needed."""
+    @property
+    def generation(self) -> str:
+        """Stable identity of this in-process generation (FEAT-538).
+
+        Mirrors :attr:`WorkerHandle.generation` so a REPL binding is
+        validated the same way in both modes.
+        """
+        return self._generation
+
+    async def inject_dataframe(
+        self,
+        name: str,
+        df: Any,
+        *,
+        strict: bool = False,
+        envelope: Any = None,
+        max_bytes: int | None = None,
+    ) -> None:
+        """Bind a DataFrame — a plain assignment, no Arrow/shm hop needed.
+
+        In strict evidence mode the *same* dtype check runs even though no
+        serialization is required. Skipping it here would make the
+        in-process adapter silently more permissive than the subprocess
+        one: a frame that a real worker would refuse as unverifiable
+        evidence would quietly succeed, and the two modes would disagree
+        about what counts as evidence.
+
+        Args:
+            name: Variable name to bind the DataFrame to.
+            df: The ``pandas.DataFrame`` to bind.
+            strict: FEAT-538 strict evidence mode.
+            envelope: Bounded runtime context. Accepted for signature
+                parity with :class:`WorkerHandle`; nothing crosses a
+                process boundary here, so there is nothing to revalidate.
+            max_bytes: Strict-mode ceiling for the encoded size.
+
+        Raises:
+            StrictTransportError: In strict mode, when Arrow could not
+                represent the frame or it exceeds ``max_bytes``.
+        """
+        if strict:
+            from .transport import validate_strict_dataframe
+
+            await asyncio.get_event_loop().run_in_executor(
+                self._executor,
+                functools.partial(validate_strict_dataframe, df, name, max_bytes=max_bytes),
+            )
         await self.set_var(name, df)
 
     async def list_vars(self) -> list[str]:

@@ -1,0 +1,65 @@
+# FEAT-543 — Claude Code / Codex tool optimizations, as local MCP toolkits.
+#
+# Serve with:
+#     parrot mcp-local <name> --config examples/tool-optimizations-mcp.yaml
+#
+# The three toolkits are independent, opt-in sections — none of them is a
+# globally enabled built-in. Only `targeted-writer` needs a model; the Git
+# and reader toolkits are fully deterministic and make no LLM calls, so a
+# server for them never even imports the client factory.
+#
+# NOTE ON `repo_root: .`
+#   Paths are resolved relative to the *MCP host's* working directory, which
+#   is not always the repository you think it is — hosts frequently start
+#   servers from their own cwd. Prefer an absolute path in a real
+#   installation, or start the server from the repository root.
+#
+# NOTE ON CREDENTIALS
+#   No secrets appear here. The Bedrock client uses the standard AWS
+#   credential/profile/environment chain; region and model access are
+#   deployment settings. This file names a model alias, which is not a claim
+#   that a given account or region can invoke it.
+
+toolkits:
+  # Deterministic Git workflows: bounded history, fetch with an explicit
+  # refspec, preflight checks, isolated-index staging, fast-forward-only
+  # pull and non-forced push. No LLM, no model configuration.
+  local-git:
+    class: parrot_tools.tool_optimizations.git.LocalGitToolkit
+    kwargs:
+      repo_root: .
+
+  # Bounded source reading: files above 350 lines or 64,000 bytes require an
+  # explicit inclusive line range; every result carries a SHA-256 revision
+  # and a continuation cursor.
+  bounded-source:
+    class: parrot_tools.tool_optimizations.reader.BoundedSourceToolkit
+    kwargs:
+      repo_root: .
+      # Both thresholds are configurable; these are the defaults.
+      # max_lines: 350
+      # large_file_bytes: 64000
+
+  # Patch generation for work whose design is ALREADY DECIDED in a TASK
+  # file's `## Delegation Contract`. The delegate never explores the
+  # repository and never resolves a design gap.
+  targeted-writer:
+    class: parrot_tools.tool_optimizations.writer.TargetedWriterToolkit
+    llm: bedrock-converse:qwen3-coder-480b-a35b
+    llm_kwargs:
+      # REQUIRED. BedrockConverseClient declares
+      # `_fallback_model = "claude-haiku-4-5"`
+      # (ai-parrot-client-amazon/.../bedrock.py:1669) and its constructor
+      # applies that default via `setdefault`, so without this explicit null
+      # the provider may silently answer with a different model. The writer's
+      # constructor REFUSES a client that still permits a fallback.
+      fallback_model: null
+      max_retries: 1
+      read_timeout: 120
+    kwargs:
+      repo_root: .
+      # Bedrock reports the *translated* model id rather than the alias
+      # (`qwen3-coder-480b-a35b` -> `qwen.qwen3-coder-480b-a35b-v1:0`,
+      # ai-parrot-client-amazon/.../models.py:130), so the identity check
+      # must be told which reported ids are legitimate.
+      expected_model_ids: ["qwen.qwen3-coder-480b-a35b-v1:0"]

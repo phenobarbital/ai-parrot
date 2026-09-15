@@ -93,7 +93,7 @@ class TestThinkingShapeSelection:
         client = BedrockConverseClient(model="us.anthropic.claude-opus-5")
         captured_payloads = []
 
-        async def fake_stream(payload):
+        async def fake_stream(payload, handle=None):
             captured_payloads.append(payload)
 
             async def _events():
@@ -115,7 +115,7 @@ class TestThinkingShapeSelection:
         client = BedrockConverseClient(model="us.amazon.nova-2-lite-v1:0")
         captured_payloads = []
 
-        async def fake_stream(payload):
+        async def fake_stream(payload, handle=None):
             captured_payloads.append(payload)
 
             async def _events():
@@ -162,7 +162,7 @@ class TestThinkingShapeSelection:
         client = BedrockConverseClient(model="us.anthropic.claude-opus-5")
         captured_payloads = []
 
-        async def fake_sdk_create(payload):
+        async def fake_sdk_create(payload, handle=None):
             captured_payloads.append(payload)
             return tool_response if len(captured_payloads) == 1 else final_response
 

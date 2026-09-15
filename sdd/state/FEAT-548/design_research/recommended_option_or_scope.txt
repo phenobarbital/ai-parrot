@@ -1,0 +1,127 @@
+### What's New
+
+- **A correct parrot Grafana dashboard** — provisioned into
+  `docker/grafana/provisioning/dashboards/` (parrot subdirectory) so the running
+  `parrot-grafana` auto-loads it within 30 s. Panels: total usage, tokens and
+  cost by agent, by model, by provider, request/error rate, latency quantiles.
+  *Evidence*: F002, F003, F008
+- **A second provisioning provider entry** in `dashboards.yml` creating an
+  `AI-Parrot` Grafana folder, so parrot dashboards do not land in the folder
+  named `Claude Code`. *Evidence*: F008
+- **A committed, secret-free `[observability]` reference** — an example env file
+  plus the matching block in the docs (resolved U5 = "Both").
+  *Evidence*: F004, F005
+- **A parrot section in `docker/grafana/README.md`**, mirroring the Codex
+  section's shape including the diagnostic `curl` commands for an empty
+  dashboard. *Evidence*: F011
+
+### What Changes
+
+- **`env/.env` `[observability]`** — the core of the feature; an operator action
+  on this host, moving the existing variables from OpenLIT to Prometheus:
+
+  ```ini
+  [observability]
+  OBSERVABILITY_ENABLED=true                                     # was: false
+  OBSERVABILITY_BACKEND=otel                                     # unchanged
+  OBSERVABILITY_SERVICE_NAME=parrot                              # unchanged
+  OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:9090/api/v1/otlp  # was: http://localhost:4318
+  OBSERVABILITY_SAMPLING=0.0                                     # new: silence traces (see below)
+  OBSERVABILITY_COST=True                                        # unchanged
+  # OBSERVABILITY_OPENLIT=true  -> DELETE: deprecated no-op since FEAT-462
+  ```
+
+  Three notes on this block. The endpoint is a **base URL** — the exporter
+  appends `/v1/metrics` itself, so it must not include that suffix.
+  `OBSERVABILITY_OPENLIT=true` is removed rather than flipped to `false`: since
+  FEAT-462 it does nothing except raise a `DeprecationWarning`.
+  `OBSERVABILITY_SAMPLING=0.0` is what keeps this a pure env move — see the
+  trace constraint below.
+  *Evidence*: F004, F005, F006, F013, F014
+- **`packages/ai-parrot/src/parrot/observability/examples/grafana-dashboards/parrot-overview.json`**
+  and **`parrot-usage.json`** — replaced with the corrected dashboard so the
+  package stops shipping queries for metrics that do not exist. *Evidence*: F009
+- **`docs/architecture/10-observability.md`** — env table and the "import the
+  dashboards" instructions updated away from `:4318` / `BACKEND=prometheus`.
+  *Evidence*: F012
+- **`packages/ai-parrot/src/parrot/observability/examples/README.md`** — reframed
+  now that metrics go to Prometheus and OpenLIT is the trace destination.
+  *Evidence*: F012
+
+### What's Untouched (Non-Goals)
+
+- Any change to `MetricsSubscriber` instruments, labels or buckets — the emitter
+  is complete and covered by 29 test modules. *Evidence*: F002, F012
+- Per-user / per-session dashboards — structurally unavailable in metrics by
+  design. *Evidence*: F002
+- Removing the OpenLIT stack, the `OpenLitUsageRecorder`, or the
+  `ai-parrot-openlit-bridge` distribution — `parrot-openlit-ui` keeps running,
+  it simply stops receiving parrot data. *Evidence*: F013
+- Any multi-destination export (`OTLP_TARGETS`), new collector service, or code
+  change to make `enable_traces` env-settable. Explicitly ruled out by the
+  requester: this is an env-variable move, not an architecture change.
+  *Evidence*: F006, F014
+- Alerting rules, recording rules, retention/long-term storage changes, or
+  auth/TLS on the local stack.
+- The `PrometheusUsageRecorder` (`OBSERVABILITY_BACKEND=prometheus`, port 9464)
+  path — it stays as-is; it simply is not what this dashboard targets.
+  *Evidence*: F006, F009
+
+### Patterns to Follow
+
+- **The Codex integration is the template.** `docker/grafana/README.md`'s Codex
+  section demonstrates the full shape: an ASCII topology diagram, the exact
+  producer config block, the delta-vs-cumulative caveat, a deep link to the
+  dashboard, and copy-paste `curl` diagnostics for an empty dashboard.
+  *Evidence*: F011
+- **Provisioning, not manual import.** File-based provider, `updateIntervalSeconds: 30`,
+  datasource referenced by the fixed uid `claudestats-prometheus`.
+  *Evidence*: F008
+- **Give the dashboard a stable `uid`.** `parrot-usage.json` currently has none,
+  so a provisioned copy gets a generated uid and cannot be deep-linked.
+  *Evidence*: F009
+
+### Integration Risks
+
+- **Delta vs cumulative temporality (the one low-confidence claim).** Prometheus
+  2.51 has no delta→cumulative conversion, and the Codex README documents Codex
+  breaking on exactly this path. The direct-push decision assumes OTel Python
+  exports cumulative by default. *Mitigation*: verify on the first export by
+  checking that counters increase monotonically rather than sawtooth; if not,
+  fall back to routing parrot through a collector with `deltatocumulative`
+  (the rejected U3 option, which stays available). *Evidence*: F011, F006
+- **Exact series names unknown until first export.** Write the PromQL only after
+  reading `__name__` values off the live TSDB. *Mitigation*: make "enumerate the
+  real `gen_ai_*`/`parrot_*` series names" an explicit first task before any
+  panel is authored. *Evidence*: F011, F002
+- **Re-enabling telemetry may reintroduce the shutdown hang.** The `.env` comment
+  records a ~10 s+ atexit flush block on CTRL+C when the endpoint was
+  unreachable. Pointing at a *healthy* endpoint is precisely the documented
+  precondition for re-enabling. *Mitigation*: confirm `:9090` is reachable before
+  flipping the switch; verify a CTRL+C after a crew run still exits promptly.
+  *Evidence*: F004
+
+- **Trace exports would 404 if sampling is left at 1.0.** Because the endpoint
+  move carries traces along with metrics (F006) and `enable_traces` is not
+  env-settable (F014), omitting `OBSERVABILITY_SAMPLING=0.0` produces a failed
+  trace POST per batch — log noise, retry backoff, and a slower atexit flush,
+  i.e. a milder version of the very symptom that got telemetry disabled in the
+  first place. *Mitigation*: set the sampling variable in the same edit; verify
+  no `/v1/traces` requests appear in the Prometheus access path.
+  *Evidence*: F014, F006, F004
+
+- **Losing trace visibility is a deliberate trade.** Sampling at 0.0 means no
+  per-call timelines and no per-user/session attribution anywhere — spans are
+  the only carrier for `user_id`/`session_id` (F002). The running
+  `parrot-openlit-ui` will simply stop receiving parrot data.
+  *Mitigation*: accepted as scoped; reversible with one variable.
+  *Evidence*: F002, F014
+- **Dirty `docker/` tree.** Uncommitted Codex collector work sits in the same
+  files this feature touches. *Mitigation*: land or stash that work first.
+  *Evidence*: F011
+- **No existing data to build against.** Prometheus holds zero parrot series, so
+  the dashboard cannot be validated against history — a real agent run is
+  required to produce the first series, and nothing appears for up to 60 s after
+  it. *Evidence*: F010, F005
+
+---

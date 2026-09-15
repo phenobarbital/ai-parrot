@@ -10,7 +10,7 @@ mirroring how :class:`~parrot.clients.google.generation.GoogleGeneration`
 is composed into :class:`~parrot.clients.google.client.GoogleGenAIClient`.
 
 .. warning::
-    **EXPERIMENTAL.** ``aws_sdk_bedrock_runtime==0.7.0`` is Pre-Alpha and its
+    **EXPERIMENTAL.** ``aws_sdk_bedrock_runtime[awscrt]==0.11.0`` is Pre-Alpha and its
     API may change before GA — every raw SDK call is isolated behind four
     thin wrappers (:meth:`NovaAudio._open_stream`,
     :meth:`NovaAudio._send_event`, :meth:`NovaAudio._iter_events`,
@@ -22,7 +22,7 @@ is composed into :class:`~parrot.clients.google.client.GoogleGenAIClient`.
     text/generation-only usage of ``NovaClient`` never requires it.
 
     The wrappers were verified against the real package on
-    ``aws_sdk_bedrock_runtime==0.7.0`` / Python 3.13. The SDK renames its
+    ``aws_sdk_bedrock_runtime[awscrt]==0.11.0`` / Python 3.12. The SDK renames its
     client class across minor releases (``BedrockRuntimeClient`` in 0.3.0
     and 0.7.0, ``AsyncBedrockRuntimeClient`` in 0.8.0), so
     :func:`_resolve_voice_client_class` looks the name up tolerantly rather
@@ -53,6 +53,7 @@ import json
 import time
 import uuid
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import TYPE_CHECKING, Any, AsyncIterator, Dict, List, Optional
 
 from ..models import translate as translate_bedrock_model
@@ -113,9 +114,9 @@ def _require_voice_sdk() -> None:
     except ImportError as exc:
         raise ImportError(
             "NovaClient.stream_voice() requires the Pre-Alpha "
-            "'aws_sdk_bedrock_runtime' package (==0.7.0, Python >= 3.12 "
+            "'aws_sdk_bedrock_runtime' package (==0.11.0, Python >= 3.12 "
             "only). This voice path is EXPERIMENTAL. Install with: "
-            "pip install 'aws_sdk_bedrock_runtime==0.7.0'"
+            "pip install 'aws_sdk_bedrock_runtime[awscrt]==0.11.0'"
         ) from exc
 
 
@@ -175,6 +176,7 @@ class _TurnState:
 
     role: Optional[str] = None
     generation_stage: Optional[str] = None
+    assistant_audio_contents: set[str] = field(default_factory=set)
     pending_tool: Optional[LiveToolCall] = None
     pending_tool_raw_input: Optional[str] = None
     # FEAT-416 (TASK-2148): completed (contentEnd-TOOL) tool calls queued
@@ -261,11 +263,18 @@ def _parse_tool_arguments(raw: Any) -> Dict[str, Any]:
     return parsed
 
 
-# Candidate key spellings, most-likely first. The Pre-Alpha samples do not
-# document usageEvent's schema (spec §8 Q1), so probe rather than assume.
-_USAGE_INPUT_KEYS = ("inputTokens", "promptTokens", "input_tokens")
-_USAGE_OUTPUT_KEYS = ("outputTokens", "completionTokens", "output_tokens")
+# Candidate key spellings, most-likely first. Nova Sonic / Nova 2 Sonic
+# actually send ``totalInputTokens``/``totalOutputTokens``/``totalTokens`` at
+# the top level plus a ``details`` breakdown (see _flatten_usage_event); the
+# remaining spellings are kept as tolerated fallbacks.
+_USAGE_INPUT_KEYS = ("totalInputTokens", "inputTokens", "promptTokens", "input_tokens")
+_USAGE_OUTPUT_KEYS = ("totalOutputTokens", "outputTokens", "completionTokens", "output_tokens")
 _USAGE_TOTAL_KEYS = ("totalTokens", "total_tokens")
+
+# Sub-objects that hold cumulative counts. Probed in order, so a ``total``
+# breakdown always wins over a per-frame ``delta`` one (usage frames are
+# treated as absolute, not accumulated).
+_USAGE_NESTED_KEYS = ("details", "totals", "total", "usage")
 
 
 def _first_int(source: Dict[str, Any], keys: tuple) -> Optional[int]:
@@ -281,9 +290,60 @@ def _first_int(source: Dict[str, Any], keys: tuple) -> Optional[int]:
     """
     for key in keys:
         value = source.get(key)
-        if isinstance(value, (int, float)):
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
             return int(value)
     return None
+
+
+def _sum_token_fields(section: Any) -> Optional[int]:
+    """Sum every ``*Tokens`` leaf of a usage breakdown sub-object.
+
+    Nova splits each side of the ledger by modality, e.g.
+    ``{"speechTokens": 812, "textTokens": 71}``; neither leaf alone is the
+    figure a caller wants, so they are summed.
+
+    Args:
+        section: A candidate ``input``/``output`` sub-object. Anything that
+            is not a dict yields ``None``.
+
+    Returns:
+        The summed token count, or ``None`` when *section* carries no
+        numeric ``*Tokens`` leaf.
+    """
+    if not isinstance(section, dict):
+        return None
+    total = 0
+    found = False
+    for key, value in section.items():
+        if key.lower().endswith("tokens") and isinstance(value, (int, float)) and not isinstance(value, bool):
+            total += int(value)
+            found = True
+    return total if found else None
+
+
+def _flatten_usage_event(usage_event: Dict[str, Any]) -> Dict[str, Any]:
+    """Flatten a usageEvent frame so token counts sit at one level.
+
+    Nova nests its breakdown two levels deep
+    (``details`` -> ``total``/``delta`` -> ``input``/``output``), so two
+    passes are made. Outer keys always win over pulled-up ones, and only
+    the cumulative sub-objects in :data:`_USAGE_NESTED_KEYS` are pulled up
+    — never ``delta``.
+
+    Args:
+        usage_event: The already-unwrapped ``usageEvent`` payload.
+
+    Returns:
+        A shallow copy with nested count keys merged in.
+    """
+    flat = {**usage_event}
+    for _pass in range(2):
+        for nested_key in _USAGE_NESTED_KEYS:
+            nested = flat.get(nested_key)
+            if isinstance(nested, dict):
+                for key, value in nested.items():
+                    flat.setdefault(key, value)
+    return flat
 
 
 class NovaAudio:
@@ -408,11 +468,18 @@ class NovaAudio:
             Note ``stream.output_stream`` is ``None`` until ``await_output()``
             has been awaited.
         """
-        from aws_sdk_bedrock_runtime.config import Config
+        from aws_sdk_bedrock_runtime import config as sdk_config
         from aws_sdk_bedrock_runtime.models import (
             InvokeModelWithBidirectionalStreamOperationInput,
         )
-        from smithy_aws_core.identity.chain import create_default_chain
+
+        try:
+            from smithy_http.aio.crt import AWSCRTHTTPClient
+        except ImportError as exc:
+            raise ImportError(
+                "Nova Sonic requires the CRT HTTP/2 transport. Install with: "
+                "pip install 'aws_sdk_bedrock_runtime[awscrt]==0.11.0'"
+            ) from exc
 
         from ._voice_protocol import NovaVoiceProtocol
 
@@ -439,18 +506,22 @@ class NovaAudio:
                 "aws_secret_key (or a named aws_id profile) for voice."
             )
 
-        config = Config(protocol=NovaVoiceProtocol(), **config_kwargs)
+        # 0.11 uses async configuration and defaults to an HTTP/1 transport.
+        # Nova requires the CRT transport for HTTP/2 duplex streaming. Modern
+        # resolve() installs a static resolver for explicit credentials; the
+        # client initializes the ambient chain only when no resolver was set.
+        if config_cls := getattr(sdk_config, "AsyncBedrockRuntimeConfig", None):
+            config = await config_cls.resolve(
+                protocol=NovaVoiceProtocol(), transport=AWSCRTHTTPClient(), **config_kwargs
+            )
+        else:
+            # Older installations (0.7) have synchronous Config and require
+            # explicitly installing their credential chain.
+            from smithy_aws_core.identity.chain import create_default_chain
 
-        # Setting the static key fields is NOT sufficient: the SDK leaves
-        # ``aws_credentials_identity_resolver`` at None by default, and SigV4
-        # signing then fails outright with
-        # "Attempted to use SigV4 auth, but aws_credentials_identity_resolver
-        # was not set on the config." There is no implicit default chain, so
-        # install the standard one explicitly — Static (reads the key fields
-        # set above) -> Environment -> IMDS — which covers both the explicit
-        # credentials case and ambient credentials.
-        if config.aws_credentials_identity_resolver is None:
-            config.aws_credentials_identity_resolver = create_default_chain(http_client=config.transport)
+            config = sdk_config.Config(protocol=NovaVoiceProtocol(), **config_kwargs)
+            if config.aws_credentials_identity_resolver is None:
+                config.aws_credentials_identity_resolver = create_default_chain(http_client=config.transport)
 
         client = client_cls(config=config)
         return await client.invoke_model_with_bidirectional_stream(
@@ -1334,6 +1405,16 @@ class NovaAudio:
         tool_calls_list: List[LiveToolCall] = []
         turn_state = _TurnState()
 
+        def _note_first_token() -> None:
+            """Stamp ``usage.first_token_time_ms`` on the first model output.
+
+            Mirrors the Gemini Live producer: without it the terminal frame
+            reports no timing at all, and the example UI hides its latency
+            counter (it renders only on a truthy ``response_time_ms``).
+            """
+            if not usage.first_token_time_ms:
+                usage.first_token_time_ms = (datetime.now() - turn_metadata.started_at).total_seconds() * 1000
+
         self.logger.info(
             "Starting Nova Sonic voice session %s, turn %s (model=%s)",
             session_id,
@@ -1850,6 +1931,9 @@ class NovaAudio:
                 if content_start:
                     turn_state.role = content_start.get("role")
                     turn_state.generation_stage = _parse_generation_stage(content_start.get("additionalModelFields"))
+                    if content_start.get("type") == "AUDIO" and turn_state.role == "ASSISTANT":
+                        if content_id := content_start.get("contentId"):
+                            turn_state.assistant_audio_contents.add(content_id)
                     continue
 
                 text_output = event.get("textOutput")
@@ -1891,6 +1975,7 @@ class NovaAudio:
                     if not suppressed:
                         if role == "ASSISTANT":
                             accumulated_text += chunk_text
+                            _note_first_token()
                         yield LiveVoiceResponse(
                             text=chunk_text,
                             # FEAT-418 (TASK-2170): canonical lowercase
@@ -1914,6 +1999,7 @@ class NovaAudio:
                     # as LiveVoiceResponse.audio_data (typed Optional[bytes]).
                     raw_content = audio_output.get("content")
                     audio_bytes = base64.b64decode(raw_content) if isinstance(raw_content, str) else raw_content
+                    _note_first_token()
                     yield LiveVoiceResponse(
                         text="",
                         audio_data=audio_bytes,
@@ -1926,17 +2012,22 @@ class NovaAudio:
 
                 usage_event = event.get("usageEvent")
                 if usage_event:
-                    # Nova may nest the counts under a "details"/"totals"
-                    # sub-object; flatten one level so both shapes work.
-                    flat = {**usage_event}
-                    for nested_key in ("details", "totals", "usage"):
-                        nested = usage_event.get(nested_key)
-                        if isinstance(nested, dict):
-                            flat.update(nested)
-                    if (value := _first_int(flat, _USAGE_INPUT_KEYS)) is not None:
-                        usage.prompt_tokens = value
-                    if (value := _first_int(flat, _USAGE_OUTPUT_KEYS)) is not None:
-                        usage.completion_tokens = value
+                    # Nova nests its breakdown under "details"; flatten it so
+                    # both the top-level totals and the modality split are
+                    # reachable by a single key probe.
+                    flat = _flatten_usage_event(usage_event)
+                    prompt = _first_int(flat, _USAGE_INPUT_KEYS)
+                    if prompt is None:
+                        prompt = _sum_token_fields(flat.get("input"))
+                    completion = _first_int(flat, _USAGE_OUTPUT_KEYS)
+                    if completion is None:
+                        completion = _sum_token_fields(flat.get("output"))
+                    if prompt is not None:
+                        # Keep the aliases in sync: __post_init__ only syncs
+                        # at construction, and consumers read either name.
+                        usage.prompt_tokens = usage.input_tokens = prompt
+                    if completion is not None:
+                        usage.completion_tokens = usage.output_tokens = completion
                     total = _first_int(flat, _USAGE_TOTAL_KEYS)
                     usage.total_tokens = total if total is not None else usage.prompt_tokens + usage.completion_tokens
                     # Keep the raw frame so the shape can be inspected from a
@@ -1982,7 +2073,28 @@ class NovaAudio:
                         yield overload_response
                     continue
 
-                if "completionEnd" in event or event.get("stopReason") == "END_TURN":
+                # Nova 2 Sonic can finish speaking with contentEnd(AUDIO,
+                # END_TURN) and leave the connection open without sending
+                # completionEnd. Waiting for the latter strands push-to-talk
+                # callers until the 55-second idle timeout. Correlate the
+                # audio block so another speaker's end cannot complete it.
+                audio_turn_ended = False
+                if content_end:
+                    content_id = content_end.get("contentId")
+                    assistant_audio = (
+                        content_id in turn_state.assistant_audio_contents
+                        if content_id
+                        else turn_state.role == "ASSISTANT"
+                    )
+                    audio_turn_ended = (
+                        content_end.get("type") == "AUDIO"
+                        and content_end.get("stopReason") == "END_TURN"
+                        and assistant_audio
+                    )
+                    if content_id:
+                        turn_state.assistant_audio_contents.discard(content_id)
+
+                if audio_turn_ended or "completionEnd" in event or event.get("stopReason") == "END_TURN":
                     # FEAT-536 TASK-2940 (spec §2): settle every admitted-
                     # but-unfinished tool call before the final snapshot —
                     # `tool_calls_list` already has every admitted call in
@@ -1991,7 +2103,11 @@ class NovaAudio:
                     # were still running, it does not reorder the list.
                     async for tool_response in _drain_admitted_tools():
                         yield tool_response
-                    turn_metadata.ended_at = None
+                    # Close the turn BEFORE the snapshot: `duration_ms` reads
+                    # `ended_at`, and leaving it None (as this line used to
+                    # set it) left `response_time_ms` at 0 forever.
+                    turn_metadata.ended_at = datetime.now()
+                    usage.response_time_ms = turn_metadata.duration_ms
                     yield LiveVoiceResponse(
                         text="",
                         is_complete=True,
@@ -2041,6 +2157,8 @@ class NovaAudio:
                             timeout=self._CLEANUP_TIMEOUT_SECONDS,
                         )
                     running_tasks.clear()
+                turn_metadata.ended_at = datetime.now()
+                usage.response_time_ms = turn_metadata.duration_ms
                 yield LiveVoiceResponse(
                     text="",
                     is_complete=True,

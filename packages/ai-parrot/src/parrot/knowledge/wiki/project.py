@@ -21,9 +21,15 @@ import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+if TYPE_CHECKING:
+    # Import only for the annotation below — the real (runtime) import in
+    # sqlite_policy_from_config() is deferred to avoid a module-load cycle
+    # (store.py and project.py are mutually reachable).
+    from parrot.knowledge.wiki.store import SQLitePragmaPolicy
 
 try:  # POSIX only — see wiki_write_lock().
     import fcntl
@@ -229,6 +235,14 @@ class WikiNamespaceConfig(BaseModel):
     vault: str | None = Field(default=None, description="Obsidian vault root")
     description: str = Field(default="", description="Shown by `wikitoolkit ns list`")
     weight: float = Field(default=1.0, ge=0.0, le=1.0)
+    overlay_prefixes: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Id kinds owned by this namespace (FEAT-566 M13). Non-empty makes this an "
+            "overlay namespace where bare ids with these kinds route here. Bare-id routing "
+            "only works when no two overlays claim the same prefix. Examples: ['issue', 'task']"
+        ),
+    )
 
     #: Source fields, in :attr:`kind` resolution order.
     _SOURCE_FIELDS = ("path", "store", "database", "vault")
@@ -456,6 +470,27 @@ class WikiProjectConfig(BaseModel):
             "tree-sitter/heuristic tiers even if ast-grep-py is installed."
         ),
     )
+    sqlite_busy_timeout: float = Field(
+        default=15.0,
+        ge=1.0,
+        le=120.0,
+        description=(
+            "Seconds a SQLite connection waits for the writer lock before "
+            "giving up (FEAT-557). Bounds the wait for every wiki reader "
+            "and writer on this plane; an exhausted wait surfaces as a "
+            "typed WikiStoreBusy rather than 'database is locked'."
+        ),
+    )
+    sqlite_performance_pragmas: bool = Field(
+        default=False,
+        description=(
+            "Opt-in memory-oriented SQLite pragmas (mmap_size, cache_size, "
+            "temp_store) (FEAT-557). Off by default so that N concurrent "
+            "agents do not each map excessive memory. The safe pragmas "
+            "(busy_timeout, synchronous=NORMAL, 64 MiB journal_size_limit) "
+            "are always applied and are not gated by this flag."
+        ),
+    )
 
     @field_validator("namespaces")
     @classmethod
@@ -468,6 +503,18 @@ class WikiProjectConfig(BaseModel):
     def graph_path(self, root: Path) -> Path:
         """Directory of the project's GraphIndex plane (``.parrot/graph``)."""
         return root / PARROT_DIR / "graph"
+
+    def ledger_path(self, root: Path) -> Path:
+        """Directory of the shared SDD work ledger (``.parrot/ledger``, FEAT-566).
+
+        Args:
+            root: Shared root (main checkout), not necessarily a linked
+                worktree's own root — see ``find_shared_root``.
+
+        Returns:
+            ``<root>/.parrot/ledger``.
+        """
+        return root / PARROT_DIR / "ledger"
 
     def storage_path(self, root: Path) -> Path:
         """Resolve the wiki storage directory against the repo root."""
@@ -630,6 +677,28 @@ def resolve_vault_dir(
         logger.warning("Configured Obsidian vault directory does not exist: %s", candidate)
         return None
     return candidate
+
+
+def sqlite_policy_from_config(config: "WikiProjectConfig") -> "SQLitePragmaPolicy":
+    """Build the SQLite connection policy a config asks for.
+
+    The single mapping from persisted settings to the connection policy;
+    every construction site that holds a config uses this rather than
+    building a policy inline.
+
+    Args:
+        config: The project's wiki config.
+
+    Returns:
+        A validated policy carrying the configured timeout and pragma
+        opt-in.
+    """
+    from parrot.knowledge.wiki.store import SQLitePragmaPolicy
+
+    return SQLitePragmaPolicy(
+        busy_timeout_s=config.sqlite_busy_timeout,
+        performance_pragmas=config.sqlite_performance_pragmas,
+    )
 
 
 def config_path(root: Path) -> Path:
@@ -1049,3 +1118,105 @@ def resolve_entry_base(origin: str, root: Path) -> Path:
         ones.
     """
     return root if origin == "repo" else parrot_home()
+
+
+def resolve_git_common_dir(git_dir: Path) -> Path:
+    """Resolve the common directory for a Git repository or worktree.
+
+    For a main checkout, returns the .git directory itself.
+    For a linked worktree, follows the commondir file to the shared .git directory.
+
+    Args:
+        git_dir: Path to the .git directory (may be a file in worktrees).
+
+    Returns:
+        Path to the common Git directory containing the objects and refs.
+    """
+    if not git_dir.exists():
+        raise FileNotFoundError(f"Git directory does not exist: {git_dir}")
+
+    if git_dir.is_file():
+        # This is a linked worktree - the file contains "gitdir: <path>"
+        # We need to extract the actual git directory path
+        content = git_dir.read_text(encoding="utf-8").strip()
+        if content.startswith("gitdir:"):
+            gitdir_path = content[7:].strip()  # Remove "gitdir:" prefix
+            if gitdir_path.startswith("/"):
+                # Absolute path
+                actual_git_dir = Path(gitdir_path)
+            else:
+                # Relative path from the worktree directory
+                actual_git_dir = git_dir.parent / gitdir_path
+        else:
+            # Assume the file directly contains the git directory path
+            actual_git_dir = Path(content)
+
+        # Now read the commondir file from the actual git directory
+        commondir_file = actual_git_dir / "commondir"
+        if commondir_file.exists():
+            commondir_content = commondir_file.read_text(encoding="utf-8").strip()
+            if commondir_content.startswith("/"):
+                # Absolute path
+                return Path(commondir_content)
+            else:
+                # Relative path from the actual git directory
+                return (actual_git_dir / commondir_content).resolve()
+        else:
+            # No commondir file, return the actual git directory
+            return actual_git_dir
+    else:
+        # Regular repository or main checkout
+        return git_dir
+
+
+def is_linked_worktree(git_dir: Path) -> bool:
+    """Check if a .git path belongs to a linked worktree.
+
+    Args:
+        git_dir: Path to the .git directory or file.
+
+    Returns:
+        True if this is a linked worktree, False otherwise.
+    """
+    return git_dir.is_file() and git_dir.exists()
+
+
+def find_shared_root(start: Path | None = None) -> Path | None:
+    """Find the shared root directory for parrot state, tolerating failures.
+
+    Walks upward from start to find the Git root, then resolves to the
+    main checkout's .git directory even in linked worktrees.
+
+    Args:
+        start: Directory to start from (defaults to CWD).
+
+    Returns:
+        The shared root directory, or None if no Git repository is found.
+    """
+    try:
+        current = (start or Path.cwd()).resolve()
+        git_root: Path | None = None
+
+        # First, find the nearest git root
+        for candidate in (current, *current.parents):
+            git_path = candidate / ".git"
+            if git_path.exists():
+                git_root = candidate
+                break
+
+        if git_root is None:
+            return None
+
+        # Resolve the common git directory
+        git_dir = git_root / ".git"
+        try:
+            common_dir = resolve_git_common_dir(git_dir)
+            # Return the parent of the .git directory as the shared root
+            return common_dir.parent
+        except (FileNotFoundError, OSError):
+            # Fallback to the git root if we can't resolve the common dir
+            return git_root
+
+    except Exception:
+        # Tolerate all failures and return None
+        return None

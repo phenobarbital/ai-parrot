@@ -9,15 +9,33 @@ from click.testing import CliRunner
 
 
 def test_devloop_help_no_conf_import():
-    """``parrot devloop --help`` renders without importing parrot.conf."""
-    sys.modules.pop("parrot.conf", None)
-    from parrot.cli.devloop import devloop
+    """``parrot devloop --help`` renders without importing parrot.conf.
 
-    runner = CliRunner()
-    result = runner.invoke(devloop, ["--help"])
-    assert result.exit_code == 0
-    assert "Interactive CLI console" in result.output
-    assert "parrot.conf" not in sys.modules
+    Restores the original ``sys.modules["parrot.conf"]`` afterward
+    (rather than leaving it popped, or letting it be re-imported fresh
+    later) — an unrestored pop leaves any module that already did
+    ``from parrot import conf`` before this test (e.g.
+    ``parrot.flows.dev_flow.nodes.ideation``) holding a stale reference
+    to the ORIGINAL module object, while a later ``monkeypatch.setattr``
+    that re-imports ``parrot.conf`` fresh (after the pop) mutates a
+    DIFFERENT object — the two never observe each other's changes again
+    for the rest of the pytest session. Found by the FEAT-555 code
+    review pass (cross-test pollution: every
+    ``test_ideation_node.py::doc``-fixture test failed with a spurious
+    ``conf.PROJECT_ROOT`` when collected alongside this test).
+    """
+    original = sys.modules.pop("parrot.conf", None)
+    try:
+        from parrot.cli.devloop import devloop
+
+        runner = CliRunner()
+        result = runner.invoke(devloop, ["--help"])
+        assert result.exit_code == 0
+        assert "Interactive CLI console" in result.output
+        assert "parrot.conf" not in sys.modules
+    finally:
+        if original is not None:
+            sys.modules["parrot.conf"] = original
 
 
 def test_devloop_run_help():

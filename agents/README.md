@@ -10,6 +10,7 @@ registers one or more `Agent` subclasses via `@register_agent`.
 | `odoo.py` | `odoo_agent` | Odoo ERP via toolkit |
 | `operator.py` | `operator` | Per-user Office365 assistant |
 | `expense_approval.py` | `expense_approval` | Human-in-the-loop expense/refund approval with **Tier 1 → Tier 2 escalation** |
+| `contracts_agent.py` | `contracts_agent` | Contract intelligence over the FEAT-539 catalog + ontology graph; every reply passes the citation/audit gate (see `docs/knowledge/contracts.md` §11) |
 
 ---
 

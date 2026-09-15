@@ -23,14 +23,19 @@ if TYPE_CHECKING:
 CLAUDE_MD_BEGIN = "<!-- parrot:wiki:begin -->"
 CLAUDE_MD_END = "<!-- parrot:wiki:end -->"
 
-#: Hook command written into .claude/settings.json — also the needle
-#: used to find (and remove) our hook entries when merging settings.
-#: When the installer can resolve an absolute path to the binary, the
-#: full path replaces the bare name (worktrees don't inherit the venv's
-#: ``$PATH``, so the bare name would fail there).  This constant is
-#: still the *identification needle* used by ``_is_our_hook`` — it is
-#: always a substring of the resolved command.
-HOOK_COMMAND = "wikitoolkit claude-hook"
+#: Binary name and subcommand that identify our hook. They are matched as
+#: separate tokens (see ``installer._is_our_command``) rather than as one
+#: literal needle: the installed command carries an absolute path and may
+#: be re-spelled by hand — quoted, or via ``$CLAUDE_PROJECT_DIR`` — and
+#: neither spelling contains ``HOOK_COMMAND`` as a substring.
+HOOK_BIN_NAME = "wikitoolkit"
+HOOK_SUBCOMMAND = "claude-hook"
+
+#: Hook command written into .claude/settings.json. When the installer can
+#: resolve an absolute path to the binary, the full path replaces the bare
+#: name (worktrees don't inherit the venv's ``$PATH``, so the bare name
+#: would fail there).
+HOOK_COMMAND = f"{HOOK_BIN_NAME} {HOOK_SUBCOMMAND}"
 
 #: Tool matcher for the PreToolUse nudge. Includes ``Bash`` so shell-based
 #: searches (``grep``/``rg``/``find`` run via the Bash tool) are nudged too —
@@ -143,31 +148,50 @@ def toolkit_mcp_json_entry(root: Path, name: str, section: ToolkitSection) -> di
             mapping.
 
     Returns:
-        ``{"command": <abs parrot bin>, "args": ["mcp-local", name],
+        ``{"command": <abs parrot bin>, "args": ["mcp-local", name,
+        "--config", <abs path to mcp-toolkits.yaml>], "cwd": <abs root>,
         "env": dict(section.env)}``.
     """
     return {
         "command": resolve_parrot_bin(root),
-        "args": ["mcp-local", name],
+        # Pinned (FEAT-556): `parrot mcp-local` resolves its project root from
+        # Path.cwd() (verified: parrot/mcp/local_cli.py:105), so an unpinned
+        # entry resolves no toolkit when the host starts it from a worktree.
+        "args": ["mcp-local", name, "--config", str(root / ".parrot" / "mcp-toolkits.yaml")],
+        "cwd": str(root),
         "env": dict(section.env),
     }
 
 
 def git_hook_block(root: Path) -> str:
-    """Build the ``post-commit`` hook block with an absolute path."""
+    """Build the managed wiki-upsert hook block with an absolute path.
+
+    Shared by the ``post-commit`` and ``post-merge`` hooks (FEAT-566
+    Module 10): the structural upsert must no-op inside a linked worktree,
+    since indexing unmerged code into the shared, base-branch-snapshot
+    ``wiki.db`` would corrupt it. The guard mirrors
+    :func:`parrot.knowledge.wiki.project.is_linked_worktree` — a linked
+    worktree's ``.git`` is a file, never a directory — as a plain POSIX
+    ``sh`` test, so the hook never has to invoke Python (and can't fail
+    because the venv isn't on ``$PATH``) just to decide whether to run.
+    """
     wt_bin = resolve_wikitoolkit_bin(root)
     return (
         f"{GIT_HOOK_BEGIN}\n"
         f"# Keep the LLM-wiki knowledge graph in sync with the last commit.\n"
         f"# Installed by `parrot claude install`; "
         f"remove with `parrot claude uninstall`.\n"
-        f"{wt_bin} upsert --changed --quiet >/dev/null 2>&1 || true\n"
+        f"# FEAT-566: skip the structural upsert inside a linked worktree\n"
+        f"# (a worktree's .git is a file, never a directory).\n"
+        f"if [ ! -f .git ]; then\n"
+        f"    {wt_bin} upsert --changed --quiet >/dev/null 2>&1 || true\n"
+        f"fi\n"
         f"{GIT_HOOK_END}\n"
     )
 
 
 def git_hook_new_file(root: Path) -> str:
-    """Build a fresh ``post-commit`` hook file with an absolute path."""
+    """Build a fresh managed hook file with an absolute path."""
     return f"#!/bin/sh\n{git_hook_block(root)}"
 
 

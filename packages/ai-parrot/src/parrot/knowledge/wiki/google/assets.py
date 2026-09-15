@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import os
 import shutil
 import sys
@@ -18,6 +17,9 @@ GEMINI_PATH = Path("GEMINI.md")
 SKILL_PATH = Path(".agents/skills/parrot-wiki/SKILL.md")
 ALT_SKILL_PATH = Path(".agent/skills/parrot-wiki/SKILL.md")
 PLUGIN_DIR = Path(".agents/plugins/parrot")
+
+CONVENTIONS_BEGIN = "<!-- parrot:conventions:google:begin -->"
+CONVENTIONS_END = "<!-- parrot:conventions:google:end -->"
 
 NUDGE = (
     "This repository has an ai-parrot LLM-wiki. Before scanning source files, "
@@ -77,14 +79,21 @@ def wikitoolkit_mcp_entry(root: Path) -> dict[str, Any]:
 
 
 def toolkit_mcp_entries(root: Path, sections: dict[str, ToolkitSection]) -> dict[str, dict[str, Any]]:
-    """Build dictionary of parrot-<name> MCP server entries for enabled toolkits."""
+    """Build dictionary of parrot-<name> MCP server entries for enabled toolkits.
+
+    Each entry's ``args`` pins an absolute ``--config`` pointing at
+    ``<root>/.parrot/mcp-toolkits.yaml`` (FEAT-556), alongside the
+    pre-existing ``cwd``, so ``parrot mcp-local`` resolves the toolkit
+    independently of the host's cwd handling.
+    """
     entries: dict[str, dict[str, Any]] = {}
     parrot_bin = resolve_binary(root, "parrot")
+    config_path = str(root.resolve() / ".parrot" / "mcp-toolkits.yaml")
     for name in sorted(sections):
         section = sections[name]
         entry: dict[str, Any] = {
             "command": parrot_bin,
-            "args": ["mcp-local", name],
+            "args": ["mcp-local", name, "--config", config_path],
             "cwd": str(root.resolve()),
         }
         if section.env:
@@ -122,3 +131,10 @@ def plugin_manifest() -> dict[str, Any]:
         "name": "parrot",
         "description": "ai-parrot knowledge base and MCP local tools",
     }
+
+
+def conventions_section(root: Path) -> str:
+    """Managed `## Project conventions` block rendered from the repo's `.agent/rules/` (FEAT-553)."""
+    from parrot.flows.conventions import load_project_conventions  # local import: keeps module import order unchanged
+
+    return f"{CONVENTIONS_BEGIN}\n## Project conventions\n\n{load_project_conventions(root)}\n\n{CONVENTIONS_END}\n"

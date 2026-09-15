@@ -45,6 +45,31 @@ class CollisionReport(BaseModel):
     sources: list[str]  # file paths where each was found
 
 
+def _id_sort_key(task_id: str) -> tuple[int, int, str]:
+    """Order ids for reporting, tolerating shapes other than ``TASK-<NNN>``.
+
+    Not every id in a per-spec index is ``TASK-<NNN>``: hotfix indexes use
+    ``HOTFIX-<slug>-<n>`` (e.g. ``HOTFIX-chromemanager-async-migration-1``)
+    and some legacy features use ``TASK-<NNN>-<NNN>``. The previous key,
+    ``int(t.split("-")[1])``, raised ValueError on the first hotfix id and
+    aborted the run — so this checker, whose entire job is to catch TASK-ID
+    collisions, was detecting nothing at all.
+
+    Ordering is presentational only; it never affects detection.
+
+    Args:
+        task_id: The identifier to order.
+
+    Returns:
+        A sort key placing numeric ids first (in numeric order), then any
+        other shape, deterministically by string.
+    """
+    parts = task_id.split("-")
+    if len(parts) > 1 and parts[1].isdigit():
+        return (0, int(parts[1]), task_id)
+    return (1, 0, task_id)
+
+
 def _slug_from_filename(path: Path) -> str | None:
     """Best-effort slug extraction from a `TASK-<NNN>-<slug>.md` filename."""
     match = _TASK_FILENAME_RE.match(path.name)
@@ -134,7 +159,7 @@ def find_collisions(
 
     all_task_ids = set(feature_owners) | set(file_slugs)
     reports: list[CollisionReport] = []
-    for task_id in sorted(all_task_ids, key=lambda t: int(t.split("-")[1])):
+    for task_id in sorted(all_task_ids, key=_id_sort_key):
         owners = feature_owners.get(task_id, {})
         if len(owners) > 1:
             # Authoritative: two different features' indexes both claim

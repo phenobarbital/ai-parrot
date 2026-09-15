@@ -29,6 +29,16 @@ from pydantic import (
     model_validator,
 )
 
+# Run-summary projections (git-measured changeset, per-seat usage) are
+# DEFINED in session_state.py — a stdlib+pydantic-only module, so this
+# re-export adds no transport dependency here — and shared with the
+# bundle, the nodes and the console through this package.
+from parrot.flows.dev_loop.session_state import (  # noqa: F401 - re-exported
+    ChangedFile,
+    ChangeSet,
+    SeatUsageSummary,
+)
+
 # ─────────────────────────────────────────────────────────────────────
 # Acceptance criteria (discriminated union)
 # ─────────────────────────────────────────────────────────────────────
@@ -405,7 +415,7 @@ class ResearchOutput(BaseModel):
 # ─────────────────────────────────────────────────────────────────────
 
 DevAgentBackend = Literal[
-    "claude-code", "codex", "gemini", "nvidia", "grok", "zai", "moonshot", "google_coding", "nova"
+    "claude-code", "codex", "gemini", "nvidia", "grok", "zai", "moonshot", "google_coding", "nova", "google-compat"
 ]
 
 

@@ -1,0 +1,37 @@
+- **Subprocess isolation is a hard requirement.** A run must never execute
+  inside the Slack bot process; a crashed or hung run must not take the
+  integration down.
+- **No new inbound-network surface on the bot for gate answers.** Whatever
+  bridge is chosen must be loopback / Redis only; the public Slack endpoints
+  stay the only externally reachable routes.
+- **Reuse the existing gate contract.** Answers must reach the run through
+  `SessionHost.resolve_gate(...)` semantics (first writer wins, 409 on
+  double-resolve, `answers` required for `open_questions`); the integration
+  must never re-implement gate arbitration.
+- **Reuse the Slack wrapper's extension points.** New commands register on
+  `SlackCommandRouter`; new buttons/modals register on
+  `SlackInteractiveHandler.action_registry`; no parallel Slack client.
+- **Both Slack connection modes must work** (webhook and Socket Mode) — both
+  already funnel slash commands and interactive payloads through the same
+  router / handler.
+- **Transport-agnostic core.** Everything that is not Slack-specific
+  (option parsing, brief building, subprocess lifecycle, state tailing, gate
+  bridging) lives in a channel-neutral module so Telegram can be added
+  without touching it.
+- **The dev-flow topology has no CLI today.** Only
+  `examples/dev_loop/server_dev.py` knows how to wire `DevFlowRunner`; that
+  wiring is in an *example*, not in the package, so the headless subprocess
+  entry must get a library-level runtime builder.
+- **Slack platform limits**: modals need a `trigger_id` from a user
+  interaction (never proactive); `chat.update` is rate-limited (Tier 3,
+  ~50/min per channel) so status-card refreshes must be debounced; slash
+  command acks must be returned within 3 s.
+- **Host prerequisites for the subprocess**: repo checkout, `.venv`, Redis,
+  the coding CLIs (`claude`, `codex`, …), Jira credentials — the same
+  preflight `parrot devloop` already runs (`bootstrap.preflight`).
+- No new third-party dependencies beyond what `ai-parrot-integrations[slack]`
+  and `redis>=5.0` already declare.
+- Async-first, Pydantic v2 models, `self.logger`, Google docstrings, `black`
+  line length 120, `ruff` TID251 import bans.
+
+---

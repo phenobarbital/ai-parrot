@@ -20,14 +20,22 @@ import re
 import shlex
 import shutil
 import time
+from contextlib import AsyncExitStack
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Sequence, Tuple, Type
 
 from pydantic import BaseModel, ValidationError
 
 from parrot import conf
+from parrot.clients.budget_scope import get_default_registry
 from parrot.clients.factory import LLMFactory
-from parrot.flows.dev_loop._subagent_defs import load_subagent_definition
+from parrot.core.exceptions import BudgetRegistryFull
+from parrot.models.token_budget import TokenBudgetPolicy
+from parrot.flows.dev_loop._subagent_defs import (
+    CONVENTIONS_PREAMBLE,
+    load_project_conventions,
+    load_subagent_definition,
+)
 from parrot.flows.dev_loop.dispatchers._shared import (
     T,
     _DISPATCH_LABELS_CTX,
@@ -37,6 +45,11 @@ from parrot.flows.dev_loop.dispatchers._shared import (
     normalize_payload,
     DispatchExecutionError,
     DispatchOutputValidationError,
+)
+from parrot.flows.dev_loop.models.telemetry import (
+    MAX_TURN_SERIES,
+    AttemptTelemetry,
+    TurnUsage,
 )
 from parrot.flows.dev_loop.dispatchers.claude import ClaudeCodeDispatcher
 from parrot.flows.dev_loop.models import DispatchEvent, DispatchLabels, LLMCodeDispatchProfile
@@ -292,6 +305,14 @@ class LLMCodeDispatcher:
             tc = self._safe_emit_before_call(client, model=model, has_tools=bool(tools))
             loop_t0 = time.perf_counter()
             accumulated: Optional[CompletionUsage] = None  # LOCAL, never self.*
+            turn_series: List[TurnUsage] = []  # LOCAL, same rule as `accumulated`
+            turns_with_unknown_usage = 0
+            # `salvaged` is only assigned inside the post-loop salvage branch
+            # (after `max_turns` is exhausted); the normal-completion `return`
+            # inside the `for` loop never reaches it. The `finally` block
+            # below reads it unconditionally to decide terminal state, so it
+            # must exist on every path or that read raises UnboundLocalError.
+            salvaged: Optional[T] = None
             # Remaining-turn counts at which the model gets told how much
             # budget is left; consumed head-first. See _budget_nudge.
             budget_marks = self._budget_marks(profile.max_turns)
@@ -303,177 +324,106 @@ class LLMCodeDispatcher:
                 profile.max_turns,
                 profile.timeout_seconds,
             )
-            try:
-                for turn_index in range(profile.max_turns):
-                    round_t0 = time.perf_counter()
-                    response = await self._chat_completion(
-                        client=client,
-                        model=model,
-                        messages=messages,
-                        args=args,
-                    )
-                    round_duration_ms = (time.perf_counter() - round_t0) * 1000
-                    message = self._response_message(response)
-                    content = self._message_content(message)
-                    tool_calls = self._message_tool_calls(message)
-                    finish_reason = self._finish_reason(response)
-                    if finish_reason == "length":
-                        # The round was cut off at `max_tokens`. Whatever
-                        # comes out of it is partial by construction — say
-                        # so once, here, so the operator does not have to
-                        # infer it from a downstream JSON parse error.
-                        self.logger.warning(
-                            "%s turn %d: response hit the output-token limit " "(max_tokens=%d) and was truncated",
-                            log_id,
-                            turn_index + 1,
-                            profile.max_tokens,
-                        )
-                    usage, raw_usage = self._extract_usage(response)
-                    if usage is not None:
-                        accumulated = usage if accumulated is None else accumulated + usage
-                    self._safe_emit_round_event(
-                        client,
-                        tc,
-                        model=model,
-                        round_number=turn_index + 1,
-                        usage=usage,
-                        raw_usage=raw_usage,
-                        tool_calls=[self._tool_call_name(call) for call in tool_calls],
-                        duration_ms=round_duration_ms,
-                    )
-                    # This loop used to log NOTHING per turn: every detail
-                    # went to the Redis stream, so an operator watching the
-                    # server saw a node start and then half an hour of
-                    # silence, indistinguishable from a hang. One line per
-                    # turn is the cheapest way to tell "working" from
-                    # "stuck", and makes a budget being burned on repeated
-                    # tool failures visible while it happens.
-                    self.logger.info(
-                        "%s turn %d/%d: %s (%.1fs)",
+            policy = self._observational_policy(profile)
+            scope = None
+            if policy is not None:
+                try:
+                    scope = await get_default_registry().create(policy)
+                except BudgetRegistryFull:
+                    self.logger.warning(
+                        "%s budget registry full; running attempt without an observational scope",
                         log_id,
-                        turn_index + 1,
-                        profile.max_turns,
-                        ", ".join(self._tool_call_name(call) for call in tool_calls) or "no tool call",
-                        round_duration_ms / 1000,
                     )
-
-                    if content:
-                        await self._publish_event(
-                            stream_key,
-                            kind="dispatch.message",
-                            run_id=run_id,
-                            node_id=node_id,
-                            payload={"turn": turn_index, "text": content[:4000]},
+                    scope = None
+            budget_report: Optional[Dict[str, Any]] = None
+            # ONE root scope per ATTEMPT, not per turn: every `_chat_completion`
+            # in the loop below consults `current_budget_scope()` (verified:
+            # parrot/clients/openai_base.py:262-264), so a scope per turn would
+            # reset the ledger ~60 times and measure nothing. `AsyncExitStack`
+            # enters it only when telemetry+ledger are enabled, encloses the
+            # salvage call too, and is a no-op otherwise (AC-1).
+            async with AsyncExitStack() as _budget_stack:
+                if scope is not None:
+                    await _budget_stack.enter_async_context(scope)
+                try:
+                    for turn_index in range(profile.max_turns):
+                        round_t0 = time.perf_counter()
+                        response = await self._chat_completion(
+                            client=client,
+                            model=model,
+                            messages=messages,
+                            args=args,
                         )
-
-                    if not tool_calls:
-                        result = self._validate_text_output(content, output_model)
-                        await self._publish_event(
-                            stream_key,
-                            kind="dispatch.completed",
-                            run_id=run_id,
-                            node_id=node_id,
-                            payload={
-                                "output_model": output_model.__name__,
-                                "usage": self._completion_usage_payload(
-                                    accumulated,
-                                    turns=turn_index + 1,
-                                    started_at=loop_t0,
-                                ),
-                            },
-                        )
-                        return result
-
-                    # Parse BEFORE echoing the assistant turn: the echo
-                    # itself used to re-parse (and therefore re-raise) —
-                    # so an unreadable payload killed the dispatch before
-                    # any feedback could be produced.
-                    parsed_calls = [(call, *self._parse_tool_arguments(call)) for call in tool_calls]
-
-                    messages.append(
-                        {
-                            "role": "assistant",
-                            "content": content,
-                            "tool_calls": [
-                                self._tool_call_to_openai_dict(
-                                    call,
-                                    parsed if parsed is not None else {"_discarded": arg_error},
-                                )
-                                for call, parsed, arg_error in parsed_calls
-                            ],
-                        }
-                    )
-
-                    for call, parsed_args, arg_error in parsed_calls:
-                        tool_call_id = self._tool_call_id(call)
-                        tool_name = self._tool_call_name(call)
-                        if parsed_args is None:
-                            # Recoverable: hand the model the reason and
-                            # the way out, spend the turn, keep the seat.
-                            feedback = self._truncated_call_feedback(
-                                tool_name=tool_name,
-                                reason=arg_error,
-                                finish_reason=finish_reason,
-                                max_tokens=profile.max_tokens,
-                            )
+                        round_duration_ms = (time.perf_counter() - round_t0) * 1000
+                        message = self._response_message(response)
+                        content = self._message_content(message)
+                        tool_calls = self._message_tool_calls(message)
+                        finish_reason = self._finish_reason(response)
+                        if finish_reason == "length":
+                            # The round was cut off at `max_tokens`. Whatever
+                            # comes out of it is partial by construction — say
+                            # so once, here, so the operator does not have to
+                            # infer it from a downstream JSON parse error.
                             self.logger.warning(
-                                "%s turn %d: %s call discarded - %s",
+                                "%s turn %d: response hit the output-token limit " "(max_tokens=%d) and was truncated",
                                 log_id,
                                 turn_index + 1,
-                                tool_name or "<unnamed>",
-                                arg_error,
+                                profile.max_tokens,
                             )
-                            truncated_result = {
-                                "ok": False,
-                                "error_class": "TruncatedToolCall",
-                                "error": feedback,
-                            }
-                            await self._publish_event(
-                                stream_key,
-                                kind="dispatch.tool_result",
-                                run_id=run_id,
-                                node_id=node_id,
-                                payload={
-                                    "tool_call_id": tool_call_id,
-                                    "tool_name": tool_name,
-                                    "result": truncated_result,
-                                },
+                        usage, raw_usage = self._extract_usage(response)
+                        if usage is not None:
+                            accumulated = usage if accumulated is None else accumulated + usage
+                        # Record EVERY turn, including one the provider reported no
+                        # usage for: the `if usage is not None` guard above keeps the
+                        # subtotal honest but hides the gap, so a non-null aggregate
+                        # alone cannot prove complete reporting (spec §10 R5).
+                        if len(turn_series) < MAX_TURN_SERIES:
+                            turn_series.append(
+                                TurnUsage(
+                                    round_number=turn_index + 1,
+                                    input_tokens=usage.prompt_tokens if usage is not None else None,
+                                    output_tokens=usage.completion_tokens if usage is not None else None,
+                                )
                             )
-                            messages.append(
-                                {
-                                    "role": "tool",
-                                    "tool_call_id": tool_call_id,
-                                    "name": tool_name,
-                                    "content": json.dumps(truncated_result, ensure_ascii=False),
-                                }
-                            )
-                            continue
-                        tool_args = parsed_args
-                        await self._publish_event(
-                            stream_key,
-                            kind="dispatch.tool_use",
-                            run_id=run_id,
-                            node_id=node_id,
-                            payload={
-                                "tool_call_id": tool_call_id,
-                                "tool_name": tool_name,
-                                "arguments": tool_args,
-                            },
+                        if usage is None:
+                            turns_with_unknown_usage += 1
+                        self._safe_emit_round_event(
+                            client,
+                            tc,
+                            model=model,
+                            round_number=turn_index + 1,
+                            usage=usage,
+                            raw_usage=raw_usage,
+                            tool_calls=[self._tool_call_name(call) for call in tool_calls],
+                            duration_ms=round_duration_ms,
+                        )
+                        # This loop used to log NOTHING per turn: every detail
+                        # went to the Redis stream, so an operator watching the
+                        # server saw a node start and then half an hour of
+                        # silence, indistinguishable from a hang. One line per
+                        # turn is the cheapest way to tell "working" from
+                        # "stuck", and makes a budget being burned on repeated
+                        # tool failures visible while it happens.
+                        self.logger.info(
+                            "%s turn %d/%d: %s (%.1fs)",
+                            log_id,
+                            turn_index + 1,
+                            profile.max_turns,
+                            ", ".join(self._tool_call_name(call) for call in tool_calls) or "no tool call",
+                            round_duration_ms / 1000,
                         )
 
-                        if tool_name == "final_output":
-                            result = self._validate_final_tool(tool_args, output_model)
+                        if content:
                             await self._publish_event(
                                 stream_key,
-                                kind="dispatch.tool_result",
+                                kind="dispatch.message",
                                 run_id=run_id,
                                 node_id=node_id,
-                                payload={
-                                    "tool_call_id": tool_call_id,
-                                    "tool_name": tool_name,
-                                    "result": {"ok": True},
-                                },
+                                payload={"turn": turn_index, "text": content[:4000]},
                             )
+
+                        if not tool_calls:
+                            result = self._validate_text_output(content, output_model)
                             await self._publish_event(
                                 stream_key,
                                 kind="dispatch.completed",
@@ -490,96 +440,320 @@ class LLMCodeDispatcher:
                             )
                             return result
 
-                        tool_result = await self._run_tool(
-                            tool_name=tool_name,
-                            tool_args=tool_args,
-                            cwd=cwd,
-                            profile=profile,
+                        # Parse BEFORE echoing the assistant turn: the echo
+                        # itself used to re-parse (and therefore re-raise) —
+                        # so an unreadable payload killed the dispatch before
+                        # any feedback could be produced.
+                        parsed_calls = [(call, *self._parse_tool_arguments(call)) for call in tool_calls]
+
+                        messages.append(
+                            {
+                                "role": "assistant",
+                                "content": content,
+                                "tool_calls": [
+                                    self._tool_call_to_openai_dict(
+                                        call,
+                                        parsed if parsed is not None else {"_discarded": arg_error},
+                                    )
+                                    for call, parsed, arg_error in parsed_calls
+                                ],
+                            }
                         )
-                        if tool_result.get("ok") is False:
-                            self.logger.warning(
-                                "%s turn %d: %s failed: %s",
+
+                        for call, parsed_args, arg_error in parsed_calls:
+                            tool_call_id = self._tool_call_id(call)
+                            tool_name = self._tool_call_name(call)
+                            if parsed_args is None:
+                                # Recoverable: hand the model the reason and
+                                # the way out, spend the turn, keep the seat.
+                                feedback = self._truncated_call_feedback(
+                                    tool_name=tool_name,
+                                    reason=arg_error,
+                                    finish_reason=finish_reason,
+                                    max_tokens=profile.max_tokens,
+                                )
+                                self.logger.warning(
+                                    "%s turn %d: %s call discarded - %s",
+                                    log_id,
+                                    turn_index + 1,
+                                    tool_name or "<unnamed>",
+                                    arg_error,
+                                )
+                                truncated_result = {
+                                    "ok": False,
+                                    "error_class": "TruncatedToolCall",
+                                    "error": feedback,
+                                }
+                                await self._publish_event(
+                                    stream_key,
+                                    kind="dispatch.tool_result",
+                                    run_id=run_id,
+                                    node_id=node_id,
+                                    payload={
+                                        "tool_call_id": tool_call_id,
+                                        "tool_name": tool_name,
+                                        "result": truncated_result,
+                                    },
+                                )
+                                messages.append(
+                                    {
+                                        "role": "tool",
+                                        "tool_call_id": tool_call_id,
+                                        "name": tool_name,
+                                        "content": json.dumps(truncated_result, ensure_ascii=False),
+                                    }
+                                )
+                                continue
+                            tool_args = parsed_args
+                            await self._publish_event(
+                                stream_key,
+                                kind="dispatch.tool_use",
+                                run_id=run_id,
+                                node_id=node_id,
+                                payload={
+                                    "tool_call_id": tool_call_id,
+                                    "tool_name": tool_name,
+                                    "arguments": tool_args,
+                                },
+                            )
+
+                            if tool_name == "final_output":
+                                result = self._validate_final_tool(tool_args, output_model)
+                                await self._publish_event(
+                                    stream_key,
+                                    kind="dispatch.tool_result",
+                                    run_id=run_id,
+                                    node_id=node_id,
+                                    payload={
+                                        "tool_call_id": tool_call_id,
+                                        "tool_name": tool_name,
+                                        "result": {"ok": True},
+                                    },
+                                )
+                                await self._publish_event(
+                                    stream_key,
+                                    kind="dispatch.completed",
+                                    run_id=run_id,
+                                    node_id=node_id,
+                                    payload={
+                                        "output_model": output_model.__name__,
+                                        "usage": self._completion_usage_payload(
+                                            accumulated,
+                                            turns=turn_index + 1,
+                                            started_at=loop_t0,
+                                        ),
+                                    },
+                                )
+                                return result
+
+                            tool_result = await self._run_tool(
+                                tool_name=tool_name,
+                                tool_args=tool_args,
+                                cwd=cwd,
+                                profile=profile,
+                            )
+                            if tool_result.get("ok") is False:
+                                self.logger.warning(
+                                    "%s turn %d: %s failed: %s",
+                                    log_id,
+                                    turn_index + 1,
+                                    tool_name,
+                                    str(tool_result.get("error") or tool_result.get("stderr") or "").strip()[:200],
+                                )
+                            await self._publish_event(
+                                stream_key,
+                                kind="dispatch.tool_result",
+                                run_id=run_id,
+                                node_id=node_id,
+                                payload={
+                                    "tool_call_id": tool_call_id,
+                                    "tool_name": tool_name,
+                                    "result": tool_result,
+                                },
+                            )
+                            messages.append(
+                                {
+                                    "role": "tool",
+                                    "tool_call_id": tool_call_id,
+                                    "name": tool_name,
+                                    "content": json.dumps(tool_result, ensure_ascii=False),
+                                }
+                            )
+
+                        remaining = profile.max_turns - (turn_index + 1)
+                        if budget_marks and remaining <= budget_marks[0]:
+                            budget_marks.pop(0)
+                            messages.append(
+                                {
+                                    "role": "user",
+                                    "content": self._budget_nudge(
+                                        used=turn_index + 1,
+                                        total=profile.max_turns,
+                                    ),
+                                }
+                            )
+                            self.logger.info(
+                                "%s budget warning issued: %d/%d turns used",
                                 log_id,
                                 turn_index + 1,
-                                tool_name,
-                                str(tool_result.get("error") or tool_result.get("stderr") or "").strip()[:200],
+                                profile.max_turns,
                             )
-                        await self._publish_event(
-                            stream_key,
-                            kind="dispatch.tool_result",
-                            run_id=run_id,
-                            node_id=node_id,
-                            payload={
-                                "tool_call_id": tool_call_id,
-                                "tool_name": tool_name,
-                                "result": tool_result,
-                            },
-                        )
-                        messages.append(
-                            {
-                                "role": "tool",
-                                "tool_call_id": tool_call_id,
-                                "name": tool_name,
-                                "content": json.dumps(tool_result, ensure_ascii=False),
-                            }
-                        )
 
-                    remaining = profile.max_turns - (turn_index + 1)
-                    if budget_marks and remaining <= budget_marks[0]:
-                        budget_marks.pop(0)
-                        messages.append(
-                            {
-                                "role": "user",
-                                "content": self._budget_nudge(
-                                    used=turn_index + 1,
-                                    total=profile.max_turns,
-                                ),
-                            }
-                        )
-                        self.logger.info(
-                            "%s budget warning issued: %d/%d turns used",
-                            log_id,
-                            turn_index + 1,
-                            profile.max_turns,
-                        )
+                    # The turn budget is spent, but the dispatch is not
+                    # necessarily wasted: the common failure of a chat model
+                    # driven through this loop is one that patched, ran the
+                    # tests and committed, then kept exploring instead of
+                    # calling `final_output`. Spend ONE more round with the
+                    # tool choice FORCED to `final_output` to close the books
+                    # on the work already done, rather than discarding a whole
+                    # task (and, in pool mode, burning the single retry).
+                    salvaged, salvage_usage, salvage_error = await self._salvage_final_output(
+                        client=client,
+                        model=model,
+                        messages=messages,
+                        args=args,
+                        output_model=output_model,
+                        profile=profile,
+                        run_id=run_id,
+                        node_id=node_id,
+                        stream_key=stream_key,
+                        tc=tc,
+                    )
+                    if salvage_usage is not None:
+                        accumulated = salvage_usage if accumulated is None else accumulated + salvage_usage
+                        # Record salvage turn usage in turn_series if we have space
+                        if len(turn_series) < MAX_TURN_SERIES:
+                            turn_series.append(
+                                TurnUsage(
+                                    round_number=len(turn_series) + 1,
+                                    input_tokens=salvage_usage.prompt_tokens,
+                                    output_tokens=salvage_usage.completion_tokens,
+                                )
+                            )
+                    elif salvaged is not None or salvage_error is not None:
+                        # Salvage was attempted but reported no usage
+                        if len(turn_series) < MAX_TURN_SERIES:
+                            turn_series.append(
+                                TurnUsage(
+                                    round_number=len(turn_series) + 1,
+                                    input_tokens=None,
+                                    output_tokens=None,
+                                )
+                            )
+                        turns_with_unknown_usage += 1
 
-                # The turn budget is spent, but the dispatch is not
-                # necessarily wasted: the common failure of a chat model
-                # driven through this loop is one that patched, ran the
-                # tests and committed, then kept exploring instead of
-                # calling `final_output`. Spend ONE more round with the
-                # tool choice FORCED to `final_output` to close the books
-                # on the work already done, rather than discarding a whole
-                # task (and, in pool mode, burning the single retry).
-                salvaged, salvage_usage, salvage_error = await self._salvage_final_output(
-                    client=client,
-                    model=model,
-                    messages=messages,
-                    args=args,
-                    output_model=output_model,
-                    profile=profile,
-                    run_id=run_id,
-                    node_id=node_id,
-                    stream_key=stream_key,
-                    tc=tc,
-                )
-                if salvage_usage is not None:
-                    accumulated = salvage_usage if accumulated is None else accumulated + salvage_usage
-                if salvaged is not None:
-                    return salvaged
-                raise DispatchExecutionError(
-                    f"LLM code dispatch exceeded max_turns={profile.max_turns}; "
-                    f"the forced final_output turn did not recover a result ({salvage_error})"
-                )
-            finally:
-                await self._safe_emit_after_call(
-                    client,
-                    tc,
-                    model=model,
-                    duration_ms=(time.perf_counter() - loop_t0) * 1000,
-                    input_tokens=accumulated.prompt_tokens if accumulated else None,
-                    output_tokens=accumulated.completion_tokens if accumulated else None,
-                )
+                    if salvaged is not None:
+                        return salvaged
+                    raise DispatchExecutionError(
+                        f"LLM code dispatch exceeded max_turns={profile.max_turns}; "
+                        f"the forced final_output turn did not recover a result ({salvage_error})"
+                    )
+                finally:
+                    import sys
+
+                    exc_type, exc_val, exc_tb = sys.exc_info()
+                    if exc_val is not None:
+                        terminal = "failed"
+                        error_class = type(exc_val).__name__
+                    elif salvaged is not None:
+                        terminal = "salvaged"
+                        error_class = ""
+                    else:
+                        terminal = "completed"
+                        error_class = ""
+
+                    # Capture the ledger's report while the scope is still
+                    # open (this `finally` runs BEFORE the enclosing
+                    # `AsyncExitStack` exits and closes the ledger). Never
+                    # let a report failure change the dispatch result —
+                    # telemetry must be side-effect-free (spec §10 R1).
+                    if scope is not None:
+                        try:
+                            budget_report = (await scope.ledger.report()).model_dump()
+                        except Exception:
+                            self.logger.debug("failed to capture budget report", exc_info=True)
+
+                    self._emit_attempt_telemetry(
+                        AttemptTelemetry(
+                            resolved_model=model,
+                            turns=len(turn_series),
+                            terminal=terminal,
+                            error_class=error_class,
+                            provider_input_tokens=accumulated.prompt_tokens if accumulated else None,
+                            provider_output_tokens=accumulated.completion_tokens if accumulated else None,
+                            turn_series=turn_series,
+                            turns_with_unknown_usage=turns_with_unknown_usage,
+                            budget_report=budget_report,
+                        )
+                    )
+
+                    await self._safe_emit_after_call(
+                        client,
+                        tc,
+                        model=model,
+                        duration_ms=(time.perf_counter() - loop_t0) * 1000,
+                        input_tokens=accumulated.prompt_tokens if accumulated else None,
+                        output_tokens=accumulated.completion_tokens if accumulated else None,
+                    )
+
+    def _emit_attempt_telemetry(self, telemetry: AttemptTelemetry) -> None:
+        """Hand terminal telemetry to the bound session host, at most once.
+
+        Reads the host from `_SESSION_HOST_CTX` (verified:
+        parrot/flows/dev_loop/dispatchers/_shared.py:64) and calls its OPTIONAL
+        `on_attempt_telemetry`; a host without that method is a no-op, so every
+        pre-FEAT-554 host and test double is unaffected.
+
+        Deliberately not a `DispatchEvent`: `action_from_dispatch_event` copies
+        only seven whitelisted `usage` scalars into the closed
+        `DispatchCompleted` model and `_apply_to_session_host` swallows the
+        validation error, so a payload key would vanish in silence (spec §10 R3).
+
+        Every failure is swallowed and logged at DEBUG — telemetry must never
+        change a dispatch result.
+        """
+        try:
+            host = _SESSION_HOST_CTX.get()
+            hook = getattr(host, "on_attempt_telemetry", None) if host is not None else None
+            if hook is not None:
+                hook(telemetry)
+        except Exception:  # noqa: BLE001 - telemetry must never break a dispatch
+            self.logger.debug("attempt telemetry hook failed", exc_info=True)
+
+    @staticmethod
+    def _observational_policy(profile: LLMCodeDispatchProfile) -> Optional[TokenBudgetPolicy]:
+        """Build the non-enforcing policy for one coding attempt, or None when disabled.
+
+        Three decisions, none of them re-derivable at the call site:
+
+        * ``enforcement="observe"`` — account without ever denying or resizing an
+          output cap. Non-interference is a property of this mode, not of a
+          large ceiling: no function of ``max_turns``/``max_tokens`` can bound
+          input, the post-loop salvage call, per-call retries or uncertain
+          debits (spec §10 R1).
+        * ``budget_mode="estimated"`` — Mantle has no strict qualification, so
+          strict would raise ``BudgetUnsupported``
+          (verified: packages/ai-parrot-client-amazon/.../budget.py:326-330).
+        * ``final_answer_reserve=0`` — an observational ledger never finalizes,
+          so a protected partition would only distort the report's
+          ``remaining_*`` fields. The absolute ``2 x max_tokens`` reserve is the
+          recommendation for the ENFORCING configuration a campaign produces
+          (spec §7), not for this one.
+        """
+        if not (conf.DEV_LOOP_CODER_TELEMETRY and conf.DEV_LOOP_CODER_LEDGER):
+            return None
+        # Reference `token_budget` only: observational mode can never deny, so
+        # this value exists purely to keep the report's `remaining_*` fields
+        # non-nonsensical. A measured 60-turn attempt consumes ~4.7M
+        # cumulative tokens (artifacts/logs/sdd-coder-count-input-overhead-
+        # 20260912.md); 10,000,000 stays comfortably above that with margin
+        # for a longer `max_turns` roster path (up to 100).
+        return TokenBudgetPolicy(
+            token_budget=10_000_000,
+            budget_mode="estimated",
+            enforcement="observe",
+            final_answer_reserve=0,
+        )
 
     @staticmethod
     def _completion_usage_payload(
@@ -937,7 +1111,8 @@ class LLMCodeDispatcher:
                     )
                     + f"- `run_command` only runs: "
                     f"{', '.join(profile.allowed_commands)}.\n\n"
-                    f"Subagent instructions:\n{body}"
+                    f"Subagent instructions:\n{body}\n\n"
+                    f"{CONVENTIONS_PREAMBLE}\n{load_project_conventions(cwd or None)}"
                 ),
             },
             {

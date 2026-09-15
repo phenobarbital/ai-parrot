@@ -1,0 +1,10 @@
+Scope questions are settled (see constraints above). The technical questions the
+exploration document left open are:
+- Which LanceDB SDK release provides the async API, native FTS and native hybrid search, and
+  what is its compatibility envelope with the pyarrow pin already declared by the workspace?
+- How should metadata filters and parent-document visibility be represented on this backend?
+- What is the store-to-origin hybrid result contract, including native score/rank provenance?
+- What index build and read-freshness lifecycle does the backend need (FTS index creation,
+  visibility of just-written rows, concurrent readers)?
+- What representative corpus should acceptance run against, given no latency/recall target was
+  supplied?

@@ -283,6 +283,19 @@ def _dispatch(namespace: WorkerNamespace, message: Any) -> Any:
         # WorkerNamespace already follows for pandas/numpy.
         from .transport import decode_dataframe_from_shm, decode_pickle_payload
 
+        if message.strict and message.format != "arrow":
+            # FEAT-538: the worker refuses independently of the host. A
+            # host-side bug (or a forged frame) must not be able to smuggle
+            # a pickle payload across under a task-memory evidence label —
+            # unpickling is exactly what strict mode exists to prevent, so
+            # the check has to live on the side that would do it.
+            return ErrorResponse(
+                message=(
+                    f"strict transport refused: inject_df for {message.name!r} declared "
+                    f"format={message.format!r}; strict task-memory evidence must be Arrow"
+                )
+            )
+
         if message.format == "arrow":
             df = decode_dataframe_from_shm(message.shm_name, message.size)
         else:

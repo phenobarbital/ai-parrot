@@ -1,0 +1,767 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-544",
+  "mode": "enrichment",
+  "summary_oneline": "A2UI v1.0 renderer for FormDesigner FormSchema covering render → validate → submit → response over A2UI envelopes",
+  "restated_ask": "Add an `a2ui` output format to parrot-formdesigner that lowers any FormSchema into an A2UI v1.0 `createSurface` envelope (Basic Catalog primitives + ai-parrot `parrot_*` metadata extensions, no `Form` component), whose submit Button action targets the form's own answer endpoint, and make that endpoint speak A2UI back (validation errors / confirmation) so a v1.0 renderer can drive the whole fill-and-submit cycle without an LLM agent in the loop.",
+  "localization": [
+    {
+      "path": "packages/parrot-formdesigner/src/parrot_formdesigner/renderers/base.py",
+      "symbol": "AbstractFormRenderer",
+      "lines": "57-89",
+      "role": "contract the new A2UIFormRenderer implements (render → RenderedForm)",
+      "evidence": [
+        "F005"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/parrot-formdesigner/src/parrot_formdesigner/renderers/__init__.py",
+      "symbol": "_LAZY_EXPORTS",
+      "lines": "9-44",
+      "role": "public export point; lazy slot fits an optional ai-parrot import",
+      "evidence": [
+        "F006",
+        "F019"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/parrot-formdesigner/src/parrot_formdesigner/api/render.py",
+      "symbol": "_seed_default_renderers / register_renderer",
+      "lines": "38-83",
+      "role": "format-keyed registry; add `\"a2ui\"` so GET .../render/a2ui serves the envelope",
+      "evidence": [
+        "F007"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/parrot-formdesigner/src/parrot_formdesigner/api/render.py",
+      "symbol": "handle_render",
+      "lines": "101-151",
+      "role": "passes only `locale`; serialises dict content via json.dumps with renderer content_type",
+      "evidence": [
+        "F007"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/parrot-formdesigner/src/parrot_formdesigner/api/routes.py",
+      "symbol": "render/validate/data routes",
+      "lines": "386-400",
+      "role": "the public-form globs the A2UI submit must target (`POST {tp}/forms/{form_uid}/data`)",
+      "evidence": [
+        "F008"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/parrot-formdesigner/src/parrot_formdesigner/api/handlers.py",
+      "symbol": "FormHandler.submit_data",
+      "lines": "1464-1615",
+      "role": "field_id-keyed submit pipeline (validate → lifecycle → persist → forward); the server half of the cycle to reuse",
+      "evidence": [
+        "F009"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/parrot-formdesigner/src/parrot_formdesigner/api/handlers.py",
+      "symbol": "FormHandler.validate",
+      "lines": "1003-1040",
+      "role": "dry-run validation returning {is_valid, errors}; candidate for A2UI `error` envelope mapping",
+      "evidence": [
+        "F009"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/parrot-formdesigner/src/parrot_formdesigner/renderers/adaptive_card.py",
+      "symbol": "FieldType → element map",
+      "lines": "71-119",
+      "role": "precedent for a dict-output renderer with an explicit FieldType mapping and unsupported set",
+      "evidence": [
+        "F014"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/parrot-formdesigner/src/parrot_formdesigner/renderers/html5.py",
+      "symbol": "submit script",
+      "lines": "570-598",
+      "role": "existing client submit behaviour (POST FormData to form action) and lifecycle bridge the A2UI cycle should mirror",
+      "evidence": [
+        "F015"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/parrot-formdesigner/src/parrot_formdesigner/core/types.py",
+      "symbol": "FieldType",
+      "lines": "16-70",
+      "role": "47 field types the renderer must map or degrade",
+      "evidence": [
+        "F018"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/parrot-formdesigner/src/parrot_formdesigner/core/schema.py",
+      "symbol": "FormSchema / FormField / SubmitAction / RenderedForm",
+      "lines": "65-143, 300-314, 401-475, 671-688",
+      "role": "input model (sections → fields, submit action_type/action_ref) and output wrapper",
+      "evidence": [
+        "F018"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/parrot-formdesigner/src/parrot_formdesigner/core/constraints.py",
+      "symbol": "FieldConstraints",
+      "lines": "21-68",
+      "role": "source of `checks` (min/max_length → length, pattern → regex, min/max_value → numeric, required)",
+      "evidence": [
+        "F018",
+        "F012"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/outputs/a2ui/catalog/parrot/form.py",
+      "symbol": "build_form / _lower_field",
+      "lines": "32-164",
+      "role": "existing 6-kind form composition helper; the lowering pattern (Column + inputs bound to dataModel + Button.action.event) to generalise",
+      "evidence": [
+        "F010"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/outputs/a2ui/models.py",
+      "symbol": "Component / Action / EventAction / CheckRule / DataBinding / CreateSurface / ActionMessage / ErrorMessage",
+      "lines": "155-292, 400-520, 585-690",
+      "role": "v1.0 wire models the renderer emits and the submit receiver parses",
+      "evidence": [
+        "F011"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/outputs/a2ui/catalog/basic/inputs.py",
+      "symbol": "TextField / CheckBox / ChoicePicker / DateTimeInput / Slider / Button",
+      "lines": "29",
+      "role": "the only input primitives available in v1.0",
+      "evidence": [
+        "F012"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/outputs/a2ui/catalog/basic/functions.py",
+      "symbol": "required / regex / length / numeric / email",
+      "lines": null,
+      "role": "check functions available for constraint lowering",
+      "evidence": [
+        "F012"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/outputs/a2ui/catalog/__init__.py",
+      "symbol": "validate_envelope / register_component",
+      "lines": "111-180, 455-520",
+      "role": "structural validation the renderer must pass (TOOL origin, exactly one root) and the hook for any new Parrot components",
+      "evidence": [
+        "F017"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/outputs/a2ui/runtime/dispatch.py",
+      "symbol": "A2UIRuntime._dispatch_action / _build_action_turn",
+      "lines": "365-412",
+      "role": "shows today's action sink is an LLM agent turn — the form cycle needs a form-scoped receiver instead",
+      "evidence": [
+        "F016"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot-server/src/parrot/handlers/a2ui.py",
+      "symbol": "A2UIHandler",
+      "lines": "1-60, 156-240",
+      "role": "agent-scoped A2UI transport (POST /api/v1/agents/{agent_id}/a2ui); pattern for parsing R→A envelopes and replying with A2UI media type",
+      "evidence": [
+        "F016"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/a2a/models.py",
+      "symbol": "A2UI_MEDIA_TYPE",
+      "lines": "336",
+      "role": "`application/a2ui+json` — content_type for RenderedForm and the submit receiver",
+      "evidence": [
+        "F016"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot-visualizations/src/parrot/outputs/a2ui_renderers/adaptive_cards.py",
+      "symbol": "Action.Submit{a2ui_action}",
+      "lines": "21-32, 216, 641",
+      "role": "only shipped renderer with supports_actions=True; the Teams wrapper unwraps a2ui_action — precedent for a channel submit path",
+      "evidence": [
+        "F022"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot-visualizations/src/parrot/outputs/a2ui_renderers/interactive_html.py",
+      "symbol": "RendererCapabilities(supports_actions=False)",
+      "lines": "603-628",
+      "role": "web renderers render inputs but do not dispatch actions today — a gap for the browser half of the cycle",
+      "evidence": [
+        "F022"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/parrot-formdesigner/pyproject.toml",
+      "symbol": "optional-dependencies.ai-parrot",
+      "lines": "48-52",
+      "role": "ai-parrot core is optional for parrot-formdesigner; A2UI models must be imported lazily",
+      "evidence": [
+        "F019"
+      ],
+      "confidence": "high"
+    }
+  ],
+  "constraints": [
+    {
+      "id": "K1",
+      "statement": "No `Form` catalog component: a form is a composition of Basic input primitives plus a `Button.action.event` (spec G6). The renderer must lower, never register a Form.",
+      "evidence": [
+        "F010",
+        "F023"
+      ],
+      "implication": "Reuse/generalise build_form's lowering; no new top-level Form schema."
+    },
+    {
+      "id": "K2",
+      "statement": "Envelopes carrying `action` are TOOL-origin only; `validate_envelope(origin=ProducerOrigin.LLM)` rejects them.",
+      "evidence": [
+        "F017",
+        "F010",
+        "F013"
+      ],
+      "implication": "Renderer validates its output with origin=TOOL; the envelope must never be re-emitted through an LLM-origin producer path."
+    },
+    {
+      "id": "K3",
+      "statement": "ai-parrot presentation semantics live under `metadata.extensions.parrot_*`, never as bare top-level props.",
+      "evidence": [
+        "F013"
+      ],
+      "implication": "Form/section/field identity (form_uid, field_id, field_uid, section_id, FieldType, dependency hints) ride in `parrot_*` extension keys."
+    },
+    {
+      "id": "K4",
+      "statement": "Only 5 input primitives (TextField, CheckBox, ChoicePicker, DateTimeInput, Slider) and 5 validation functions (required, regex, length, numeric, email) exist vs 47 FieldTypes and ~15 FieldConstraints.",
+      "evidence": [
+        "F012",
+        "F018"
+      ],
+      "implication": "A mapping table with an explicit degraded set is mandatory; renderers must record RenderedForm.warnings like other renderers."
+    },
+    {
+      "id": "K5",
+      "statement": "`DataBinding.path` must be a valid JSON Pointer; the submit wire contract is field_id-keyed.",
+      "evidence": [
+        "F011",
+        "F009"
+      ],
+      "implication": "field_ids containing `/` or `~` need RFC 6901 escaping in paths and un-escaping on receipt; dataModel keys map 1:1 to field_id."
+    },
+    {
+      "id": "K6",
+      "statement": "Today every A2UI `action` is routed into an LLM agent turn (A2UIRuntime) at an agent-scoped endpoint; no form-scoped action receiver exists, and web renderers declare supports_actions=False.",
+      "evidence": [
+        "F016",
+        "F022"
+      ],
+      "implication": "The 'submit points to the form endpoint' requirement needs the FormDesigner submit path to accept an A2UI action envelope (or a client that posts context to /data) — see U1."
+    },
+    {
+      "id": "K7",
+      "statement": "The render dispatcher passes only `locale` and serialises dict content with the renderer's content_type; unknown format keys return 415.",
+      "evidence": [
+        "F007"
+      ],
+      "implication": "Registering `\"a2ui\"` is enough for GET .../render/a2ui; prefilled/errors are not reachable through this route today."
+    },
+    {
+      "id": "K8",
+      "statement": "ai-parrot core is an optional extra of parrot-formdesigner; the audio renderer imports parrot.* lazily inside try/except ImportError.",
+      "evidence": [
+        "F019"
+      ],
+      "implication": "A2UIFormRenderer imports parrot.outputs.a2ui lazily and is skipped/raises a clear error when the extra is absent."
+    },
+    {
+      "id": "K9",
+      "statement": "Submit responses are plain JSON: 200 composite on success, 422 {is_valid:false, errors:{field_id:[..]}} on validation failure; lifecycle hooks and persistence run inside submit_data.",
+      "evidence": [
+        "F009"
+      ],
+      "implication": "An A2UI response must be produced by translating this result, not by bypassing submit_data."
+    }
+  ],
+  "recent_history": [
+    {
+      "commit": "1450dda35",
+      "when": "2026-09-05",
+      "author": "Jesus",
+      "message": "feat(infographic-a2ui-migration): TASK-2863 — HtmlDocument Parrot catalog component + build_html_document() builder",
+      "files": [
+        "packages/ai-parrot/src/parrot/outputs/a2ui/catalog/parrot"
+      ],
+      "evidence": [
+        "F020"
+      ]
+    },
+    {
+      "commit": "5efc51fa7",
+      "when": "2026-09-02",
+      "author": "Jesus Lara",
+      "message": "feat(formfield-content-type): make VoiceAnswerEnvelope enforceable, close review gaps",
+      "files": [
+        "packages/parrot-formdesigner/src/parrot_formdesigner/renderers"
+      ],
+      "evidence": [
+        "F020"
+      ]
+    },
+    {
+      "commit": "74384aba9",
+      "when": "2026-08-28",
+      "author": "Jesus Lara",
+      "message": "feat(a2ui-v1-dialect): TASK-2540 — build_form(), export_catalog_definition(), builders emit root + catalogId",
+      "files": [
+        "packages/ai-parrot/src/parrot/outputs/a2ui/catalog/parrot/form.py"
+      ],
+      "evidence": [
+        "F020"
+      ]
+    },
+    {
+      "commit": "2246eaa18",
+      "when": "2026-08-28",
+      "author": "Jesus Lara",
+      "message": "feat(a2ui-v1-dialect): TASK-2539 — parrot catalog moved to catalog/parrot/, lower() to v1.0 primitives",
+      "files": [
+        "packages/ai-parrot/src/parrot/outputs/a2ui/catalog/parrot"
+      ],
+      "evidence": [
+        "F020"
+      ]
+    },
+    {
+      "commit": "48227a5fd",
+      "when": "2026-08-25",
+      "author": "Jesus Lara",
+      "message": "feat(raw-upload-field-types): TASK-2449 — Other Renderers Update (html5/pdf/adaptive_card)",
+      "files": [
+        "packages/parrot-formdesigner/src/parrot_formdesigner/renderers"
+      ],
+      "evidence": [
+        "F020"
+      ]
+    }
+  ],
+  "scope": {
+    "whats_new": [
+      {
+        "item": "`A2UIFormRenderer` (parrot_formdesigner/renderers/a2ui.py)",
+        "role": "AbstractFormRenderer producing RenderedForm{content: v1.0 createSurface envelope dict, content_type: application/a2ui+json}; lazy import of parrot.outputs.a2ui",
+        "evidence": [
+          "F005",
+          "F010",
+          "F011",
+          "F019"
+        ]
+      },
+      {
+        "item": "FieldType → Basic-primitive mapping + FieldConstraints → CheckRule lowering",
+        "role": "table-driven like adaptive_card.py; explicit degraded set with RenderedForm.warnings and `parrot_role: notice` placeholders",
+        "evidence": [
+          "F012",
+          "F014",
+          "F018"
+        ]
+      },
+      {
+        "item": "Surface layout lowering",
+        "role": "FormSchema.title → Text(parrot_role=title); sections/subsections → Card/Column with Text headers; fields bound at `/answers/<field_id>` in dataModel (prefilled defaults); `sendDataModel: true`",
+        "evidence": [
+          "F010",
+          "F011",
+          "F013"
+        ]
+      },
+      {
+        "item": "Submit Button action",
+        "role": "`Button.action.event{name: 'form.submit', context: {form_uid, tenant, submit_url: /api/v1/{tenant}/forms/{form_uid}/data, answers: {field_id: binding}}}` — the 'submit points to the current endpoint' half",
+        "evidence": [
+          "F008",
+          "F010",
+          "F011"
+        ]
+      },
+      {
+        "item": "A2UI-aware submit receiver (server half)",
+        "role": "accept a v1.0 renderer→agent `action` envelope on the form's answer path, unwrap context/dataModel into field_id answers, run the existing submit pipeline, answer with A2UI envelopes (error with path per field on 422; updateComponents/createSurface confirmation on 200)",
+        "evidence": [
+          "F009",
+          "F011",
+          "F016"
+        ]
+      },
+      {
+        "item": "`\"a2ui\"` format registration",
+        "role": "register_renderer('a2ui', A2UIFormRenderer()) in api/render.py seed + export in renderers/__init__.py",
+        "evidence": [
+          "F006",
+          "F007"
+        ]
+      }
+    ],
+    "what_changes": [
+      {
+        "path": "packages/parrot-formdesigner/src/parrot_formdesigner/api/render.py",
+        "symbol": "_seed_default_renderers",
+        "change": "add `_RENDERERS.setdefault(\"a2ui\", A2UIFormRenderer())`",
+        "evidence": [
+          "F007"
+        ]
+      },
+      {
+        "path": "packages/parrot-formdesigner/src/parrot_formdesigner/renderers/__init__.py",
+        "symbol": "_LAZY_EXPORTS / __all__",
+        "change": "export A2UIFormRenderer (lazy, optional dep)",
+        "evidence": [
+          "F006",
+          "F019"
+        ]
+      },
+      {
+        "path": "packages/parrot-formdesigner/src/parrot_formdesigner/api/handlers.py",
+        "symbol": "FormHandler.submit_data / FormHandler.validate",
+        "change": "detect an A2UI action envelope body (or A2UI media type) and translate in/out; or delegate from a new sibling route — decision U1/U2",
+        "evidence": [
+          "F009",
+          "F011"
+        ]
+      },
+      {
+        "path": "packages/parrot-formdesigner/src/parrot_formdesigner/api/routes.py",
+        "symbol": "form routes",
+        "change": "only if U1 chooses a dedicated `POST {tp}/forms/{form_uid}/a2ui` route (public-form glob, same membership rule)",
+        "evidence": [
+          "F008"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/outputs/a2ui/catalog/parrot/form.py",
+        "symbol": "build_form",
+        "change": "optionally widen FormFieldInput / factor `_lower_field` so FormDesigner and tool-built forms share one lowering",
+        "evidence": [
+          "F010"
+        ]
+      },
+      {
+        "path": "docs/outputs/a2ui-v1.md",
+        "symbol": "docs",
+        "change": "document the form cycle and any new `parrot_form_*` extension keys",
+        "evidence": [
+          "F013"
+        ]
+      }
+    ],
+    "non_goals": [
+      "Registering a `Form` catalog component (spec G6 forbids it).",
+      "Routing form submissions through an LLM agent turn / A2UIRuntime — the form endpoint is the sink.",
+      "New browser-side A2UI renderer work in ai-parrot-visualizations (interactive_html stays supports_actions=False unless a later feature adds dispatch).",
+      "Binary uploads (FILE/IMAGE/MULTI_UPLOAD/SIGNATURE_PAD/AUDIO) through the A2UI data model — degraded with a link/notice in v1.",
+      "Partial saves, lifecycle-event bridge and conditional `depends_on` visibility unless U4 includes them."
+    ],
+    "patterns_to_follow": [
+      {
+        "pattern": "Table-driven FieldType mapping with an explicit unsupported set (adaptive_card.py)",
+        "evidence": [
+          "F014"
+        ]
+      },
+      {
+        "pattern": "build_form lowering: Column root, inputs bound to dataModel paths, required → CheckRule(required), Button.action.event with context bindings",
+        "evidence": [
+          "F010"
+        ]
+      },
+      {
+        "pattern": "`metadata.extensions.parrot_*` for presentation semantics; validate with validate_envelope(origin=TOOL)",
+        "evidence": [
+          "F013",
+          "F017"
+        ]
+      },
+      {
+        "pattern": "Lazy optional import of ai-parrot inside the renderer (audio.py)",
+        "evidence": [
+          "F019"
+        ]
+      },
+      {
+        "pattern": "A2UIHandler transport: parse JSON/JSONL envelopes, reply with A2UI_MEDIA_TYPE",
+        "evidence": [
+          "F016"
+        ]
+      },
+      {
+        "pattern": "Telegram renderer spec: renderer owns the full cycle, reuses existing handlers, states non-goals",
+        "evidence": [
+          "F021"
+        ]
+      }
+    ],
+    "integration_risks": [
+      {
+        "risk": "Action sink mismatch: standard A2UI clients POST actions to an agent endpoint; a form surface must tell the client where to send the action (context.submit_url) or FormDesigner must expose an A2UI-speaking receiver.",
+        "mitigation": "Decide U1; whichever is chosen, keep the standard `action` envelope shape so Adaptive Cards/Teams and deep-link paths keep working.",
+        "evidence": [
+          "F016",
+          "F022"
+        ]
+      },
+      {
+        "risk": "47 → 5 primitive coverage gap; complex types (GROUP/ARRAY/relations/uploads) cannot be expressed natively.",
+        "mitigation": "Explicit degraded set + warnings; consider Parrot-catalog form components later (U3).",
+        "evidence": [
+          "F012",
+          "F014",
+          "F018"
+        ]
+      },
+      {
+        "risk": "field_id → JSON Pointer escaping and dataModel size cap (A2UI_MAX_DATA_MODEL_BYTES) on large forms.",
+        "mitigation": "RFC 6901 escape helper with round-trip tests; keep dataModel to answers only.",
+        "evidence": [
+          "F011",
+          "F016"
+        ]
+      },
+      {
+        "risk": "Tenant/public auth: the render route is a public-form glob; an A2UI receiver must apply the same enforce_membership_unless_public rule.",
+        "mitigation": "Reuse the existing wrappers on any new route.",
+        "evidence": [
+          "F007",
+          "F008"
+        ]
+      },
+      {
+        "risk": "Optional dependency: parrot-formdesigner without the ai-parrot extra must not break at import.",
+        "mitigation": "Lazy import; seed registry only when import succeeds, log once.",
+        "evidence": [
+          "F019"
+        ]
+      }
+    ]
+  },
+  "claims": [
+    {
+      "id": "C1",
+      "claim": "Renderers plug in via AbstractFormRenderer + register_renderer(format_key); adding `a2ui` needs no new route for rendering.",
+      "evidence": [
+        "F005",
+        "F007"
+      ],
+      "confidence": "high",
+      "reasoning": "direct read of base.py and render.py"
+    },
+    {
+      "id": "C2",
+      "claim": "A2UI v1.0 forbids a Form component; forms are Basic-primitive compositions with Button.action.event (build_form is the in-repo precedent).",
+      "evidence": [
+        "F010",
+        "F023"
+      ],
+      "confidence": "high",
+      "reasoning": "spec G6 + form.py docstring"
+    },
+    {
+      "id": "C3",
+      "claim": "Only TextField/CheckBox/ChoicePicker/DateTimeInput/Slider inputs and required/regex/length/numeric/email checks exist to map 47 FieldTypes and FieldConstraints.",
+      "evidence": [
+        "F012",
+        "F018"
+      ],
+      "confidence": "high",
+      "reasoning": "grep of inputs.py/functions.py and types.py/constraints.py"
+    },
+    {
+      "id": "C4",
+      "claim": "The existing submit endpoint is `POST /api/v1/{tenant}/forms/{form_uid}/data` taking field_id-keyed JSON and returning 200/422 JSON.",
+      "evidence": [
+        "F008",
+        "F009"
+      ],
+      "confidence": "high",
+      "reasoning": "routes.py + submit_data docstring/returns"
+    },
+    {
+      "id": "C5",
+      "claim": "No A2UI action receiver exists outside the agent-scoped A2UIRuntime path; the runtime turns actions into LLM turns.",
+      "evidence": [
+        "F016",
+        "F022"
+      ],
+      "confidence": "high",
+      "reasoning": "dispatch.py _build_action_turn + handlers/a2ui.py"
+    },
+    {
+      "id": "C6",
+      "claim": "ai-parrot extensions belong in metadata.extensions.parrot_*; the renderer can carry form identity there without breaking official-schema validation.",
+      "evidence": [
+        "F013"
+      ],
+      "confidence": "high",
+      "reasoning": "docs section on extensions"
+    },
+    {
+      "id": "C7",
+      "claim": "parrot-formdesigner has zero A2UI code today and treats ai-parrot as an optional extra.",
+      "evidence": [
+        "F019"
+      ],
+      "confidence": "high",
+      "reasoning": "grep absence + pyproject"
+    },
+    {
+      "id": "C8",
+      "claim": "Adaptive Cards is the only shipped A2UI renderer that dispatches actions; browser renderers do not, so the browser half of the cycle depends on the consuming client.",
+      "evidence": [
+        "F022"
+      ],
+      "confidence": "high",
+      "reasoning": "RendererCapabilities flags"
+    },
+    {
+      "id": "C9",
+      "claim": "Prefilled values and per-field errors can ride in `dataModel` and `checks` respectively, but the render dispatcher does not pass prefilled/errors today.",
+      "evidence": [
+        "F007",
+        "F011"
+      ],
+      "confidence": "medium",
+      "reasoning": "inferred: models support it; handler signature omits it"
+    },
+    {
+      "id": "C10",
+      "claim": "A2UI `ErrorMessage` with surfaceId+path can express per-field 422 errors returned by submit_data.",
+      "evidence": [
+        "F011",
+        "F009"
+      ],
+      "confidence": "medium",
+      "reasoning": "model supports (surfaceId, path); mapping semantics not yet exercised in repo"
+    },
+    {
+      "id": "C11",
+      "claim": "Both code areas are actively changing (FEAT-527 catalog work on 2026-09-05; renderer content-type work 2026-09-02) but nothing in flight targets A2UI forms.",
+      "evidence": [
+        "F020",
+        "F019"
+      ],
+      "confidence": "high",
+      "reasoning": "git log 60 days + absence grep"
+    },
+    {
+      "id": "C12",
+      "claim": "build_form's `_lower_field` can be generalised to serve FormDesigner without duplicating lowering logic.",
+      "evidence": [
+        "F010"
+      ],
+      "confidence": "medium",
+      "reasoning": "inferred from structure; API widening not yet designed"
+    }
+  ],
+  "unknowns": [
+    {
+      "id": "U1",
+      "question": "Where does the A2UI submit action land? (the 'submit pointing to the current endpoint' requirement)",
+      "resolves_claims": [
+        "C4",
+        "C5"
+      ],
+      "plausible_answers": [
+        "a) Extend POST .../forms/{form_uid}/data to also accept a v1.0 `action` envelope (detected by body shape / application/a2ui+json) — one endpoint, dual wire",
+        "b) Add a sibling POST .../forms/{form_uid}/a2ui that speaks pure A2UI both ways and delegates to submit_data internally",
+        "c) Keep /data JSON-only; the Button context carries submit_url and the client posts plain field_id answers"
+      ],
+      "user_answer": "a) Dual-wire /data — extend POST /api/v1/{tenant}/forms/{form_uid}/data to also accept a v1.0 `action` envelope (detected by body shape or application/a2ui+json); Button.action.event.context carries the submit URL."
+    },
+    {
+      "id": "U2",
+      "question": "What should the endpoint answer after an A2UI submit?",
+      "resolves_claims": [
+        "C10"
+      ],
+      "plausible_answers": [
+        "a) Full A2UI cycle: 422 → `error` envelopes with surfaceId+path per field (+ updateDataModel), 200 → confirmation surface (createSurface/updateComponents)",
+        "b) Plain JSON as today; only the render half is A2UI",
+        "c) Content negotiation: A2UI envelopes when the request was an A2UI action / Accept: application/a2ui+json, JSON otherwise"
+      ],
+      "user_answer": "a) Full A2UI cycle — 422 → `error` envelopes with surfaceId+path per invalid field (plus updateDataModel); 200 → confirmation via updateComponents/createSurface; plain JSON stays for non-A2UI callers (content negotiation)."
+    },
+    {
+      "id": "U3",
+      "question": "How should FieldTypes with no Basic primitive be handled in v1?",
+      "resolves_claims": [
+        "C3"
+      ],
+      "plausible_answers": [
+        "a) Degrade to TextField/Text notice + RenderedForm.warnings (Basic-only, maximum renderer compatibility)",
+        "b) Add Parrot-catalog form components (e.g. FileUpload, Signature, Rating) with lower() fallbacks — 'extensions added by ai-parrot'",
+        "c) Hybrid: map everything Basic can express natively (NPS/LIKERT/RANKING → Slider, TAGS/MULTI_SELECT → multi ChoicePicker, HIDDEN → dataModel only), degrade the rest now, Parrot components in a follow-up"
+      ],
+      "user_answer": "c) Hybrid — map everything Basic can express natively (NPS/LIKERT/RANKING→Slider, MULTI_SELECT/TAGS→multi ChoicePicker, HIDDEN→dataModel only, EMAIL/URL/PHONE→TextField+email/regex checks); degrade the rest with a `parrot_role: notice` Text + RenderedForm.warnings; Parrot-catalog form components in a follow-up."
+    },
+    {
+      "id": "U4",
+      "question": "Which parts of the interaction cycle beyond render → validate → submit are in scope for v1?",
+      "resolves_claims": [
+        "C9"
+      ],
+      "plausible_answers": [
+        "a) None: partial saves, depends_on visibility and lifecycle-event bridge are explicit non-goals",
+        "b) Include partial saves as a second Button action (form.save_partial → POST .../partial)",
+        "c) Include depends_on as parrot_* dependency metadata (all fields rendered; client may hide) plus partial saves"
+      ],
+      "user_answer": "a) Core cycle only — partial saves, depends_on conditional visibility and the lifecycle-event bridge are explicit non-goals for v1."
+    }
+  ],
+  "overall_confidence": "high",
+  "recommended_next_command": {
+    "command": "sdd-spec",
+    "rationale": "Localization is high-confidence on both sides (renderer registry + submit pipeline; A2UI models + build_form); the remaining decisions (U1–U4) are product choices, not research gaps, and are answerable at spec time."
+  },
+  "budget_status": {
+    "files_read": 24,
+    "grep_calls": 22,
+    "git_calls": 1,
+    "wiki_calls": 6,
+    "truncated": false,
+    "truncation_reason": null
+  }
+}

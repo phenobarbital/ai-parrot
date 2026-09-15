@@ -1,4 +1,5 @@
 """WorkingMemoryToolkit: Intermediate result store for long-running analytical operations."""
+
 from __future__ import annotations
 
 import asyncio
@@ -14,6 +15,7 @@ from .models import (
     ComputeAndStoreInput,
     DropStoredInput,
     EntryType,
+    EnabledGetResultInput,
     GetResultInput,
     GetStoredInput,
     ImportFromToolInput,
@@ -28,6 +30,7 @@ from .models import (
     StoreResultInput,
     SummarizeStoredInput,
 )
+from .task_memory.tools import TASK_TOOL_METHODS, TaskMemoryToolsMixin
 from .internals import (
     CatalogEntry,
     GenericEntry,
@@ -41,7 +44,7 @@ if TYPE_CHECKING:
     from parrot.memory import AnswerMemory
 
 
-class WorkingMemoryToolkit(AbstractToolkit):
+class WorkingMemoryToolkit(TaskMemoryToolsMixin, AbstractToolkit):
     """
     Intermediate result store for long-running analytical operations.
 
@@ -108,6 +111,7 @@ class WorkingMemoryToolkit(AbstractToolkit):
         tool_locals_registry: Optional[dict[str, dict]] = None,
         answer_memory: Optional[Any] = None,
         thread_offload_cells: Optional[int] = None,
+        task_memory: Optional[Any] = None,
         **kwargs,
     ):
         """Initialise the WorkingMemoryToolkit.
@@ -134,17 +138,156 @@ class WorkingMemoryToolkit(AbstractToolkit):
                 thread. Defaults to :attr:`DEFAULT_THREAD_OFFLOAD_CELLS`.
         """
         super().__init__(**kwargs)
-        self._catalog = WorkingMemoryCatalog(session_id=session_id)
+        # FEAT-538: task memory is OPT-IN. `task_memory=None` (the default)
+        # leaves every path below on the legacy synchronous catalog, with
+        # the legacy schemas and the legacy raw-read behaviour — AC13.
+        self._task_memory: Optional[Any] = task_memory
+        if task_memory is None:
+            # AC13: the ten wm_* task tools are hidden ENTIRELY when task
+            # memory is off, so a disabled deployment publishes exactly
+            # the tool set it always did. Excluding by name is what makes
+            # this a guarantee rather than a convention: the methods are
+            # inherited unconditionally (they must be, to be discovered
+            # at all), and `_generate_tools` already honours this tuple.
+            # Set on the INSTANCE so one disabled toolkit cannot hide the
+            # tools of an enabled one sharing the class.
+            self.exclude_tools = (*type(self).exclude_tools, *TASK_TOOL_METHODS)
+        self._catalog = WorkingMemoryCatalog(
+            session_id=session_id,
+            backend=getattr(task_memory, "artifacts", None),
+            scope=getattr(task_memory, "scope", None),
+            task_id=getattr(task_memory, "task_id", None),
+        )
         self._executor = OperationExecutor()
         self._shape_limit = ShapeLimit(max_rows=max_rows, max_cols=max_cols)
         self._tool_locals: dict[str, dict] = tool_locals_registry or {}
         # AnswerMemory bridge — None means bridge tools are no-ops.
         self._answer_memory: Optional[Any] = answer_memory
         self._thread_offload_cells: int = (
-            thread_offload_cells
-            if thread_offload_cells is not None
-            else self.DEFAULT_THREAD_OFFLOAD_CELLS
+            thread_offload_cells if thread_offload_cells is not None else self.DEFAULT_THREAD_OFFLOAD_CELLS
         )
+
+    def _generate_tools(self) -> None:
+        """Generate tools, choosing the enabled ``wm_get_result`` schema.
+
+        The spec requires the DISABLED schema to stay byte-identical, so
+        the raw-read ceiling and tabular paging cannot simply be added to
+        :class:`GetResultInput`. The enabled model is selected here, at
+        generation time, which is what lets both requirements hold at
+        once — a caller with task memory off sees exactly the schema it
+        always saw.
+
+        ``@tool_schema`` stores the model on the *function*, so it is
+        shared by every instance; the swap therefore has to happen on the
+        generated tool object rather than on the method.
+        """
+        super()._generate_tools()
+        if not self._catalog.is_enabled:
+            return
+        for tool in self._tool_cache.values():
+            if getattr(tool, "_method_name", "") == "get_result":
+                tool.args_schema = EnabledGetResultInput
+
+    @classmethod
+    def from_runtime(cls, runtime: Any, scope: Any, **kwargs: Any) -> "WorkingMemoryToolkit":
+        """Build a toolkit over a runtime's ALREADY-CONNECTED stores.
+
+        The point of routing through the runtime is that the toolkit,
+        the observer and the plan factory then hold the *same* task store
+        and the *same* artifact store. Constructing a toolkit's backend
+        separately is how a deployment ends up with a sibling artifact
+        store: writes land in one, evidence is validated against the
+        other, and every completion is refused for reasons that make no
+        sense from the outside.
+
+        Args:
+            runtime: A started
+                :class:`~parrot.tools.working_memory.task_memory.config.TaskMemoryRuntime`.
+            scope: The trusted runtime scope for this toolkit.
+            **kwargs: Forwarded to the constructor.
+
+        Returns:
+            The toolkit, wired to the shared backends.
+        """
+        return cls(task_memory=runtime.task_memory(scope), **kwargs)
+
+    @property
+    def task_memory_enabled(self) -> bool:
+        """Whether task memory is configured for this toolkit."""
+        return self._catalog.is_enabled
+
+    async def _put(self, key: str, df: pd.DataFrame, **kwargs: Any):
+        """Register a DataFrame through the right catalog path.
+
+        One helper rather than a branch at each of the nine write sites
+        Phase 0 inventoried: with the decision in one place, an enabled
+        deployment cannot end up with a route that quietly stayed
+        synchronous and therefore unversioned.
+
+        Args:
+            key: Alias to publish under.
+            df: The frame.
+            **kwargs: Forwarded to the catalog.
+
+        Returns:
+            The catalog entry.
+        """
+        if self._catalog.is_enabled:
+            return await self._catalog.aput(key, df, **kwargs)
+        return self._catalog.put(key, df, **kwargs)
+
+    async def _put_generic(self, key: str, data: Any, **kwargs: Any):
+        """Register a generic value through the right catalog path.
+
+        Args:
+            key: Alias to publish under.
+            data: The value.
+            **kwargs: Forwarded to the catalog.
+
+        Returns:
+            The catalog entry.
+        """
+        if self._catalog.is_enabled:
+            return await self._catalog.aput_generic(key, data, **kwargs)
+        return self._catalog.put_generic(key, data, **kwargs)
+
+    async def _drop(self, key: str) -> bool:
+        """Drop an alias through the right catalog path.
+
+        Args:
+            key: The alias to drop.
+
+        Returns:
+            Whether it existed.
+        """
+        if self._catalog.is_enabled:
+            return await self._catalog.adrop(key)
+        return self._catalog.drop(key)
+
+    #: Fallback raw-read ceiling used when task memory is enabled but no
+    #: configuration object was supplied. Mirrors
+    #: ``TaskMemoryConfig.max_rehydrate_bytes``. Restated here rather than
+    #: read off the config class because the fallback exists precisely for
+    #: the case where there is no config object to read it from.
+    DEFAULT_MAX_REHYDRATE_BYTES: int = 2_000_000
+
+    def _resolve_raw_budget(self, requested: Optional[int]) -> int:
+        """Clamp a caller's raw-read budget to the configured ceiling.
+
+        The configuration is a HARD ceiling: a caller may lower it but
+        never raise it, and ``0`` means never rehydrate — no request can
+        reopen that.
+
+        Args:
+            requested: The caller's requested budget, or ``None``.
+
+        Returns:
+            The effective byte budget.
+        """
+        config = getattr(self._task_memory, "config", None)
+        if config is None:
+            return self.DEFAULT_MAX_REHYDRATE_BYTES if requested is None else requested
+        return config.resolve_rehydrate_bytes(requested)
 
     def _is_large_df(self, df: pd.DataFrame) -> bool:
         """Return True when ``df`` is large enough that copying or summarising
@@ -155,10 +298,7 @@ class WorkingMemoryToolkit(AbstractToolkit):
     def _has_large_entry(self) -> bool:
         """Return True when any stored DataFrame entry is large enough to
         warrant offloading a multi-entry summary pass to a worker thread."""
-        return any(
-            isinstance(e, CatalogEntry) and self._is_large_df(e.df)
-            for e in self._catalog._store.values()
-        )
+        return any(isinstance(e, CatalogEntry) and self._is_large_df(e.df) for e in self._catalog._store.values())
 
     def _summary(self, entry: CatalogEntry) -> dict:
         """Produce a compact summary for the LLM (DataFrame entries)."""
@@ -183,9 +323,7 @@ class WorkingMemoryToolkit(AbstractToolkit):
         mc = max_cols if max_cols is not None else self._shape_limit.max_cols
         df = getattr(entry, "df", None)
         if df is not None and self._is_large_df(df):
-            return await asyncio.to_thread(
-                entry.compact_summary, max_rows=mr, max_cols=mc
-            )
+            return await asyncio.to_thread(entry.compact_summary, max_rows=mr, max_cols=mc)
         return entry.compact_summary(max_rows=mr, max_cols=mc)
 
     # ─── Public async methods (auto-discovered by AbstractToolkit) ───
@@ -199,8 +337,11 @@ class WorkingMemoryToolkit(AbstractToolkit):
         turn_id: Optional[str] = None,
     ) -> dict:
         """Store a DataFrame directly into working memory."""
-        entry = self._catalog.put(
-            key, df, description=description, turn_id=turn_id,
+        entry = await self._put(
+            key,
+            df,
+            description=description,
+            turn_id=turn_id,
         )
         return {"status": "stored", "summary": await self._summary_async(entry)}
 
@@ -228,7 +369,7 @@ class WorkingMemoryToolkit(AbstractToolkit):
             except ValueError:
                 resolved_type = _detect_entry_type(data)
 
-        entry = self._catalog.put_generic(
+        entry = await self._put_generic(
             key,
             data,
             entry_type=resolved_type,
@@ -241,7 +382,7 @@ class WorkingMemoryToolkit(AbstractToolkit):
     @tool_schema(DropStoredInput)
     async def drop_stored(self, key: str) -> dict:
         """Remove a stored entry (DataFrame or generic) from working memory."""
-        dropped = self._catalog.drop(key)
+        dropped = await self._drop(key)
         return {"status": "dropped" if dropped else "not_found", "key": key}
 
     @tool_schema(GetStoredInput)
@@ -261,6 +402,9 @@ class WorkingMemoryToolkit(AbstractToolkit):
         key: str,
         max_length: int = 500,
         include_raw: bool = False,
+        max_rehydrate_bytes: Optional[int] = None,
+        offset: int = 0,
+        limit: Optional[int] = None,
     ) -> dict:
         """Retrieve a stored generic result with a type-aware compact summary.
 
@@ -271,21 +415,123 @@ class WorkingMemoryToolkit(AbstractToolkit):
                 under ``raw_data`` (non-serialisable objects are repr()-truncated).
         """
         entry = self._catalog.get(key)
-        summary = entry.compact_summary(max_length) if isinstance(entry, GenericEntry) else (
-            entry.compact_summary(
-                max_rows=self._shape_limit.max_rows,
-                max_cols=self._shape_limit.max_cols,
+        summary = (
+            entry.compact_summary(max_length)
+            if isinstance(entry, GenericEntry)
+            else (
+                entry.compact_summary(
+                    max_rows=self._shape_limit.max_rows,
+                    max_cols=self._shape_limit.max_cols,
+                )
             )
         )
         if include_raw and isinstance(entry, GenericEntry):
+            if self._catalog.is_enabled:
+                # FEAT-538 enabled ResultPolicy. Deliberately a separate
+                # branch: the legacy behaviour below must stay
+                # byte-identical when task memory is absent (AC13).
+                self._apply_raw_policy(
+                    summary,
+                    entry,
+                    max_length=max_length,
+                    max_rehydrate_bytes=max_rehydrate_bytes,
+                    offset=offset,
+                    limit=limit,
+                )
+                return summary
             try:
                 # Return raw data directly; fall back to repr for non-serialisable
                 import json as _json
+
                 _json.dumps(entry.data, default=str)  # test serializability
                 summary["raw_data"] = entry.data
             except Exception:
                 summary["raw_data"] = repr(entry.data)[:max_length]
         return summary
+
+    def _apply_raw_policy(
+        self,
+        summary: dict,
+        entry: GenericEntry,
+        *,
+        max_length: int,
+        max_rehydrate_bytes: Optional[int],
+        offset: int,
+        limit: Optional[int],
+    ) -> None:
+        """Attach a raw payload under the enabled byte ceiling, or refuse.
+
+        Two ceilings are enforced, and both matter:
+
+        * the **serialized** size of what would be returned, and
+        * for tabular values, the **decoded** page size.
+
+        An over-limit response carries **no raw payload at all** and
+        points at ``wm_compute_and_store`` instead. Truncating an opaque
+        object's ``repr`` after loading it does not make it safe — by then
+        the cost has already been paid — so the check happens before the
+        payload is attached, never after.
+
+        Args:
+            summary: The response being built, mutated in place.
+            entry: The stored entry.
+            max_length: Preview length for text/content.
+            max_rehydrate_bytes: Caller's requested ceiling, clamped to
+                the configured one.
+            offset: Row offset for a tabular page.
+            limit: Row count for a tabular page.
+        """
+        import json as _json
+
+        budget = self._resolve_raw_budget(max_rehydrate_bytes)
+        config = getattr(self._task_memory, "config", None)
+        page = config.resolve_page_limit(limit) if config is not None else (limit or 100)
+
+        data = entry.data
+        summary["raw_policy"] = {"max_rehydrate_bytes": budget}
+
+        if budget == 0:
+            summary["raw_omitted"] = "raw reads are disabled (max_rehydrate_bytes=0)"
+            summary["guidance"] = "use wm_compute_and_store to work with this value"
+            return
+
+        # Tabular values are paged WITHOUT materializing the whole table,
+        # so a small page of a large value stays readable.
+        if isinstance(data, list) and data and isinstance(data[0], dict):
+            window = data[offset : offset + page]
+            encoded = _json.dumps(window, default=str).encode("utf-8")
+            if len(encoded) > budget:
+                summary["raw_omitted"] = (
+                    f"page of {len(window)} rows serializes to {len(encoded)} bytes, "
+                    f"above the {budget}-byte ceiling"
+                )
+                summary["guidance"] = "request a smaller limit, or use wm_compute_and_store"
+                return
+            summary["raw_data"] = window
+            summary["page"] = {
+                "offset": offset,
+                "limit": page,
+                "returned_rows": len(window),
+                "total_rows": len(data),
+                "truncated": offset + len(window) < len(data),
+            }
+            summary["raw_bytes"] = len(encoded)
+            return
+
+        try:
+            encoded = _json.dumps(data, default=str).encode("utf-8")
+        except Exception:
+            summary["raw_omitted"] = "value is not serializable"
+            summary["guidance"] = "use wm_compute_and_store to work with this value"
+            return
+
+        if len(encoded) > budget:
+            summary["raw_omitted"] = f"raw payload is {len(encoded)} bytes, above the {budget}-byte ceiling"
+            summary["guidance"] = "use wm_compute_and_store instead of rehydrating this value"
+            return
+
+        summary["raw_data"] = data
+        summary["raw_bytes"] = len(encoded)
 
     @tool_schema(SearchStoredInput)
     async def search_stored(
@@ -318,9 +564,7 @@ class WorkingMemoryToolkit(AbstractToolkit):
 
         return {"count": len(matches), "matches": matches}
 
-    def _run_search(
-        self, query_lower: str, type_filter: Optional[EntryType]
-    ) -> list[dict]:
+    def _run_search(self, query_lower: str, type_filter: Optional[EntryType]) -> list[dict]:
         """Filter stored entries and build their compact summaries (sync).
 
         Extracted so the CPU-bound summarisation can be offloaded to a worker
@@ -420,7 +664,7 @@ class WorkingMemoryToolkit(AbstractToolkit):
 
         try:
             result_df = self._executor.execute(spec, self._catalog._store)
-            entry = self._catalog.put(
+            entry = await self._put(
                 key=spec.store_as,
                 df=result_df,
                 operation=spec,
@@ -432,7 +676,7 @@ class WorkingMemoryToolkit(AbstractToolkit):
         except Exception as exc:
             error_msg = f"{type(exc).__name__}: {exc}"
             error_df = pd.DataFrame()
-            self._catalog.put(
+            await self._put(
                 key=spec.store_as,
                 df=error_df,
                 operation=spec,
@@ -474,7 +718,7 @@ class WorkingMemoryToolkit(AbstractToolkit):
                 else:
                     result = pd.concat(dfs, axis=1)
 
-            entry = self._catalog.put(
+            entry = await self._put(
                 key=store_as,
                 df=result,
                 parent_keys=keys,
@@ -502,8 +746,10 @@ class WorkingMemoryToolkit(AbstractToolkit):
         try:
             tmp_key = f"_tmp_merge_{store_as}"
             merge_result = await self.merge_stored(
-                keys=keys, store_as=tmp_key,
-                merge_on=merge_on, turn_id=turn_id,
+                keys=keys,
+                store_as=tmp_key,
+                merge_on=merge_on,
+                turn_id=turn_id,
             )
             if merge_result["status"] == "error":
                 return merge_result
@@ -521,15 +767,12 @@ class WorkingMemoryToolkit(AbstractToolkit):
             if group_by:
                 result = merged_df.groupby(group_by, as_index=False).agg(resolved_agg)
             else:
-                result_data = {
-                    col: merged_df[col].agg(func_str)
-                    for col, func_str in resolved_agg.items()
-                }
+                result_data = {col: merged_df[col].agg(func_str) for col, func_str in resolved_agg.items()}
                 result = pd.DataFrame([result_data])
 
-            self._catalog.drop(tmp_key)
+            await self._drop(tmp_key)
 
-            entry = self._catalog.put(
+            entry = await self._put(
                 key=store_as,
                 df=result,
                 parent_keys=keys,
@@ -538,7 +781,7 @@ class WorkingMemoryToolkit(AbstractToolkit):
             )
             return {"status": "summarized", "summary": await self._summary_async(entry)}
         except Exception as exc:
-            self._catalog.drop(f"_tmp_merge_{store_as}")
+            await self._drop(f"_tmp_merge_{store_as}")
             return {"status": "error", "error": f"{type(exc).__name__}: {exc}"}
 
     @tool_schema(ImportFromToolInput)
@@ -562,14 +805,11 @@ class WorkingMemoryToolkit(AbstractToolkit):
 
         tool_ns = self._tool_locals[tool_name]
         if variable_name not in tool_ns:
-            available_dfs = [
-                k for k, v in tool_ns.items() if isinstance(v, pd.DataFrame)
-            ]
+            available_dfs = [k for k, v in tool_ns.items() if isinstance(v, pd.DataFrame)]
             return {
                 "status": "error",
                 "error": (
-                    f"Variable '{variable_name}' not found in {tool_name}. "
-                    f"Available DataFrames: {available_dfs}"
+                    f"Variable '{variable_name}' not found in {tool_name}. " f"Available DataFrames: {available_dfs}"
                 ),
             }
 
@@ -587,7 +827,7 @@ class WorkingMemoryToolkit(AbstractToolkit):
             df_copy = await asyncio.to_thread(obj.copy, deep=True)
         else:
             df_copy = obj.copy(deep=True)
-        entry = self._catalog.put(
+        entry = await self._put(
             key=store_as,
             df=df_copy,
             description=description or f"Imported from {tool_name}.{variable_name}",
@@ -635,14 +875,16 @@ class WorkingMemoryToolkit(AbstractToolkit):
                 if self._is_large_df(located)
                 else located.copy(deep=True)
             )
-            self._catalog.put(
+            await self._put(
                 key=key,
                 df=df_copy,
                 description=f"Auto-imported from {located_tool}.{key}",
             )
             self.logger.info(
                 "[WorkingMemory] Auto-imported '%s' from %s (shape=%s) for compute_and_store",
-                key, located_tool, df_copy.shape,
+                key,
+                located_tool,
+                df_copy.shape,
             )
         return still_missing
 
@@ -730,9 +972,7 @@ class WorkingMemoryToolkit(AbstractToolkit):
             # Fuzzy search — iterate AnswerMemory internals (same-framework coupling).
             # NOTE: Accesses _interactions (private) intentionally for performance.
             async with self._answer_memory._lock:
-                agent_turns: dict = self._answer_memory._interactions.get(
-                    self._answer_memory.agent_id, {}
-                )
+                agent_turns: dict = self._answer_memory._interactions.get(self._answer_memory.agent_id, {})
                 query_lower = query.lower()
                 for tid in reversed(list(agent_turns.keys())):
                     candidate = agent_turns[tid]
@@ -754,7 +994,7 @@ class WorkingMemoryToolkit(AbstractToolkit):
         }
 
         if import_as:
-            self._catalog.put_generic(
+            await self._put_generic(
                 import_as,
                 interaction,
                 entry_type=EntryType.JSON,

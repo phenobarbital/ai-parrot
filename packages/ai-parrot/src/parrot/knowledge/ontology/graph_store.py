@@ -8,6 +8,7 @@ for all database operations, consistent with ``parrot.stores.arango``.
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any, Optional
 
 from pydantic import BaseModel
@@ -29,6 +30,24 @@ class UpsertResult(BaseModel):
     inserted: int = 0
     updated: int = 0
     unchanged: int = 0
+
+
+#: ArangoDB only accepts *literal* attribute names in an UPSERT example
+#: object (ERR 1501 for a bind parameter, and for a computed name), so the
+#: key field is interpolated into the AQL text. It is an ontology-declared
+#: identifier, never request data; this guard makes that a hard rule.
+_ATTRIBUTE_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _literal_attribute(name: str) -> str:
+    """Return ``name`` if it is a safe AQL attribute name, else raise.
+
+    Raises:
+        ValueError: When the name is not a plain identifier.
+    """
+    if not isinstance(name, str) or not _ATTRIBUTE_NAME.match(name):
+        raise ValueError(f"key_field {name!r} is not a plain attribute name")
+    return name
 
 
 class OntologyGraphStore:
@@ -158,17 +177,35 @@ class OntologyGraphStore:
         try:
             if not await db.graph_exists(graph_name):
                 vertex_collections = ctx.ontology.get_entity_collections()
-                await db.create_graph(
-                    graph_name,
-                    edge_definitions=edge_definitions,
-                    orphan_collections=[
-                        c
-                        for c in vertex_collections
-                        if not any(
-                            c in ed["from_vertex_collections"] + ed["to_vertex_collections"] for ed in edge_definitions
-                        )
-                    ],
-                )
+                orphans = [
+                    c
+                    for c in vertex_collections
+                    if not any(
+                        c in ed["from_vertex_collections"] + ed["to_vertex_collections"] for ed in edge_definitions
+                    )
+                ]
+                try:
+                    await db.create_graph(graph_name, edge_definitions=edge_definitions, orphan_collections=orphans)
+                except Exception as first:
+                    # Drivers disagree on the edge-definition keys: python-arango
+                    # spells them ``edge_collection`` / ``from_vertex_collections``
+                    # / ``to_vertex_collections``, while arangoasync (vendored by
+                    # asyncdb) wants ``collection`` / ``from`` / ``to`` and fails
+                    # with ERR 1941 otherwise. Retry once with the other spelling.
+                    if "collection" not in str(first).lower():
+                        raise
+                    await db.create_graph(
+                        graph_name,
+                        edge_definitions=[
+                            {
+                                "collection": ed["edge_collection"],
+                                "from": ed["from_vertex_collections"],
+                                "to": ed["to_vertex_collections"],
+                            }
+                            for ed in edge_definitions
+                        ],
+                        orphan_collections=orphans,
+                    )
                 logger.info("Created named graph '%s'", graph_name)
         except Exception as e:
             logger.warning("Failed to create graph '%s': %s", graph_name, e)
@@ -300,26 +337,29 @@ class OntologyGraphStore:
         updated = 0
         unchanged = 0
 
-        # Batch upsert via AQL. INSERT explicitly copies key_field's value
+        # Batch upsert via AQL. ArangoDB requires a *literal* attribute
+        # name in the UPSERT example object (ERR 1501 for a bind parameter
+        # or a computed name), so the validated key field is interpolated
+        # into the query text. INSERT explicitly copies key_field's value
         # into ArangoDB's own `_key` so downstream `_key`-based lookups
         # (soft_delete_nodes, get_by_key, and declarative traversal
         # patterns like article_in_force's `FILTER a._key == @articulo_key`)
         # match — without this, ArangoDB would auto-generate `_key` on
         # insert instead of using the entity's declared identifier.
-        aql = """
+        key_attr = _literal_attribute(key_field)
+        aql = f"""
         FOR doc IN @nodes
-            UPSERT { @key_field: doc[@key_field] }
-            INSERT MERGE(doc, { _key: doc[@key_field], _active: true })
-            UPDATE MERGE(doc, { _active: true })
+            UPSERT {{ {key_attr}: doc.{key_attr} }}
+            INSERT MERGE(doc, {{ _key: doc.{key_attr}, _active: true }})
+            UPDATE MERGE(doc, {{ _active: true }})
             IN @@collection
-            RETURN { type: OLD ? (OLD == NEW ? 'unchanged' : 'updated') : 'inserted' }
+            RETURN {{ type: OLD ? (OLD == NEW ? 'unchanged' : 'updated') : 'inserted' }}
         """
         try:
             results = await db.execute_query(
                 aql,
                 bind_vars={
                     "nodes": nodes,
-                    "key_field": key_field,
                     "@collection": collection,
                 },
             )
@@ -338,14 +378,13 @@ class OntologyGraphStore:
             for node in nodes:
                 try:
                     await db.execute_query(
-                        """
-                        UPSERT { @key_field: @key_value }
-                        INSERT MERGE(@doc, { _key: @key_value, _active: true })
-                        UPDATE MERGE(@doc, { _active: true })
+                        f"""
+                        UPSERT {{ {key_attr}: @key_value }}
+                        INSERT MERGE(@doc, {{ _key: @key_value, _active: true }})
+                        UPDATE MERGE(@doc, {{ _active: true }})
                         IN @@collection
                         """,
                         bind_vars={
-                            "key_field": key_field,
                             "key_value": node.get(key_field),
                             "doc": node,
                             "@collection": collection,

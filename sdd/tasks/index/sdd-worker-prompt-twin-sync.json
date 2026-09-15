@@ -1,0 +1,30 @@
+{
+  "feature": "sdd-worker-prompt-twin-sync",
+  "feature_id": "FEAT-547",
+  "spec": "sdd/specs/sdd-worker-prompt-twin-sync.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-09-10T10:36:16+00:00",
+  "completed_at": "2026-09-10T10:57:55+00:00",
+  "tasks": [
+    {
+      "id": "TASK-3106",
+      "slug": "sync-sdd-worker-prompt-twin",
+      "title": "Sync _subagent_data/sdd-worker.md with its repo twin",
+      "feature_id": "FEAT-547",
+      "feature": "sdd-worker-prompt-twin-sync",
+      "spec": "sdd/specs/sdd-worker-prompt-twin-sync.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Single task, single file — no parallelism to coordinate.",
+      "assigned_to": null,
+      "started_at": "2026-09-10T10:50:12+00:00",
+      "completed_at": "2026-09-10T10:51:24+00:00",
+      "file": "sdd/tasks/completed/TASK-3106-sync-sdd-worker-prompt-twin.md",
+      "verification": "verified"
+    }
+  ]
+}

@@ -1,0 +1,63 @@
+{
+  "schema_version": "1.0",
+  "mode_hint": "enrichment",
+  "rationale": "The openlit->OTEL migration has already landed, so this is an enrichment run over existing telemetry code: locate the OTEL exporter/meter wiring and the metric names+attributes it emits, then map them onto the already-running parrot-prometheus/parrot-grafana stack and the example dashboard JSON. Wiki queries are run as free orientation alongside these (the plan schema's type enum predates the wiki query types).",
+  "queries": [
+    {"id": "Q001", "intent": "Locate the parrot observability/telemetry package and its OTEL entrypoints", "type": "grep", "priority": 1, "depth": 0,
+     "params": {"pattern": "opentelemetry|OTEL_EXPORTER|MeterProvider|get_meter", "path": "packages", "case_sensitive": false, "output_mode": "files_with_matches"}},
+    {"id": "Q002", "intent": "Find every OTEL metric instrument name emitted (counters/histograms) to know what the dashboard can query", "type": "grep", "priority": 1, "depth": 0,
+     "params": {"pattern": "create_counter|create_histogram|create_up_down_counter|create_observable", "path": "packages", "case_sensitive": false, "output_mode": "content"}},
+    {"id": "Q003", "intent": "Find the metric attribute keys (agent name, model, provider) attached to those instruments", "type": "grep", "priority": 1, "depth": 0,
+     "params": {"pattern": "gen_ai\\.|agent_name|chatbot_id|\"model\"|attributes=", "path": "packages", "case_sensitive": false, "output_mode": "files_with_matches"}},
+    {"id": "Q004", "intent": "Confirm residual openlit references — whether the migration is complete or partial", "type": "grep", "priority": 1, "depth": 0,
+     "params": {"pattern": "openlit|OpenLIT|OPENLIT", "path": ".", "case_sensitive": false, "output_mode": "files_with_matches"}},
+    {"id": "Q005", "intent": "Enumerate the env/.env* files and the OTEL-related variables they already define", "type": "grep", "priority": 1, "depth": 0,
+     "params": {"pattern": "OTEL_|OTLP|TELEMETRY|PROMETHEUS", "path": "env", "case_sensitive": true, "output_mode": "content"}},
+    {"id": "Q006", "intent": "Find where those env vars are read (navconfig settings) to know the authoritative variable names", "type": "grep", "priority": 1, "depth": 0,
+     "params": {"pattern": "OTEL_EXPORTER_OTLP|TELEMETRY_ENABLED|OTEL_SERVICE_NAME", "path": "packages", "case_sensitive": true, "output_mode": "content"}},
+    {"id": "Q007", "intent": "Read the observability module's main file(s) in full to understand exporter selection and export protocol", "type": "read", "priority": 1, "depth": 0,
+     "params": {"path": "PLACEHOLDER_RESOLVED_AT_RUNTIME"}},
+    {"id": "Q008", "intent": "Locate cost-tracking code — whether cost is computed in-process and emitted as a metric or must be derived in PromQL", "type": "grep", "priority": 1, "depth": 0,
+     "params": {"pattern": "cost|price|pricing|usd", "path": "packages/ai-parrot/src/parrot", "case_sensitive": false, "output_mode": "files_with_matches"}},
+    {"id": "Q009", "intent": "Locate the existing example Grafana dashboard JSON files that must be updated", "type": "glob", "priority": 1, "depth": 0,
+     "params": {"pattern": "**/*dashboard*.json"}},
+    {"id": "Q010", "intent": "Inspect the Grafana provisioning tree (datasources + dashboard providers) on the running stack", "type": "tree", "priority": 1, "depth": 0,
+     "params": {"path": "docker/grafana", "max_depth": 4}},
+    {"id": "Q011", "intent": "Read the prometheus docker-compose to learn container names, network, ports and OTLP receiver flags", "type": "read", "priority": 1, "depth": 0,
+     "params": {"path": "docker/prometheus/docker-compose.yml"}},
+    {"id": "Q012", "intent": "Read the grafana docker-compose + README for the running parrot-grafana container contract", "type": "read", "priority": 1, "depth": 0,
+     "params": {"path": "docker/grafana/docker-compose.yml"}},
+    {"id": "Q013", "intent": "Find any pre-existing observability compose stack that the example dashboard shipped with", "type": "glob", "priority": 2, "depth": 0,
+     "params": {"pattern": "**/docker-compose*observability*.yml"}},
+    {"id": "Q014", "intent": "Check recent git activity on the observability/telemetry source tree to date the migration", "type": "git_log", "priority": 2, "depth": 0,
+     "params": {"path": "packages", "since": "3 months ago", "max_count": 25}},
+    {"id": "Q015", "intent": "Check git history of the docker prometheus/grafana stack to see what it was built for", "type": "git_log", "priority": 2, "depth": 0,
+     "params": {"path": "docker", "since": "6 months ago", "max_count": 20}},
+    {"id": "Q016", "intent": "Find existing observability documentation that must be kept in sync", "type": "glob", "priority": 2, "depth": 0,
+     "params": {"pattern": "docs/**/*observability*"}},
+    {"id": "Q017", "intent": "Find tests covering the telemetry layer, to know the existing test contract", "type": "grep", "priority": 2, "depth": 0,
+     "params": {"pattern": "telemetry|observability|otel", "path": "tests", "case_sensitive": false, "output_mode": "files_with_matches"}},
+    {"id": "Q018", "intent": "Determine whether metrics are pushed via OTLP or pulled via a /metrics scrape endpoint", "type": "grep", "priority": 1, "depth": 0,
+     "params": {"pattern": "PrometheusMetricReader|start_http_server|PeriodicExportingMetricReader|OTLPMetricExporter", "path": "packages", "case_sensitive": true, "output_mode": "content"}},
+    {"id": "Q019", "intent": "Check whether prior SDD work already specified this observability migration", "type": "grep", "priority": 3, "depth": 0,
+     "params": {"pattern": "openlit|opentelemetry|grafana", "path": "sdd/specs", "case_sensitive": false, "output_mode": "files_with_matches"}},
+    {"id": "Q020", "intent": "Locate the aiohttp server hook that would expose a scrape endpoint if the pull model is used", "type": "grep", "priority": 3, "depth": 0,
+     "params": {"pattern": "/metrics", "path": "packages", "case_sensitive": true, "output_mode": "files_with_matches"}}
+  ],
+  "expected_findings": [
+    "Exact module path of the OTEL telemetry layer and its public API",
+    "The concrete metric instrument names and their attribute keys (agent, model, provider)",
+    "Whether export is push (OTLP) or pull (Prometheus scrape) — decides the .env variables and whether an otel-collector is needed",
+    "Whether cost is emitted as a metric or must be computed in PromQL from token counts",
+    "The path of the example Grafana dashboard JSON and how Grafana provisioning picks it up",
+    "The running parrot-prometheus/parrot-grafana container names, network and ports"
+  ],
+  "meta": {
+    "source_signals": {
+      "named_entities": ["openlit", "opentelemetry", "OTEL", "parrot-prometheus", "parrot-grafana", "env/.env", "Grafana dashboard"],
+      "verbs": ["migrated", "change", "point", "update", "render"],
+      "polarity": "neutral"
+    },
+    "estimated_budget_use": {"files_read": 20, "grep_calls": 12, "git_calls": 2}
+  }
+}

@@ -11,6 +11,7 @@ import asyncio
 import hashlib
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import TYPE_CHECKING, Union
 
 from pydantic import BaseModel, Field
 
@@ -77,6 +78,33 @@ def _reject_foreign_id(store: BaseWikiStore, page_id: str) -> str | None:
     )
 
 
+_LEDGER_KIND_PREFIXES = ("issue:", "task:", "spec:", "insight:")
+
+
+def _qualify_ledger_target(target: str) -> str:
+    """Foreign-qualify a provenance target that names a ledger kind.
+
+    Ledger kinds (``issue:``, ``task:``, ``spec:``, ``insight:``) live in
+    the ledger's overlay namespace (FEAT-566), not this ``wiki.db`` plane —
+    an edge pointing at one must carry the ``ledger::`` qualifier so
+    :meth:`~parrot.knowledge.wiki.federation.FederatedWikiStore._assert_local_or_foreign_destination`
+    stores it verbatim instead of mistaking it for a local page id.
+    Already-qualified ids (containing ``::``) and code-plane targets
+    (``sym:``, ``file:``, ...) pass through unchanged.
+
+    Args:
+        target: Raw provenance target, e.g. ``"task:TASK-3200"``.
+
+    Returns:
+        The target, foreign-qualified when it names a ledger kind.
+    """
+    if "::" in target:
+        return target
+    if target.startswith(_LEDGER_KIND_PREFIXES):
+        return f"ledger::{target}"
+    return target
+
+
 def _unknown_namespace_error(store: BaseWikiStore, namespace: str) -> str:
     """Message for a ``namespace`` argument the store does not serve."""
     known = ", ".join(sorted(getattr(store, "namespaces", {}))) or "(none)"
@@ -133,6 +161,8 @@ class WikiRememberInput(BaseModel):
     title: str | None = Field(default=None, description="Short title")
     link_page_id: str | None = Field(default=None, description="Page to link to")
     rel: str | None = Field(default="references", description="Relation type")
+    derived_from: str | None = Field(default=None, description="Originating task, review, or spec id")
+    about: list[str] | None = Field(default=None, description="Target symbol or file ids")
 
 
 class WikiNoteInput(BaseModel):
@@ -292,6 +322,8 @@ class WikiRememberTool(AbstractTool):
         title: str | None = None,
         link_page_id: str | None = None,
         rel: str | None = "references",
+        derived_from: str | None = None,
+        about: list[str] | None = None,
     ) -> ToolResult:
         # Validate the link target BEFORE the first write: a namespaced
         # id would otherwise fail at add_edges, leaving the memory page
@@ -322,10 +354,25 @@ class WikiRememberTool(AbstractTool):
             ]
         )
 
+        edges = []
         linked = False
         if link_page_id:
-            await self._store.add_edges([(page_id, link_page_id, rel or "references", "asserted")])
+            edges.append((page_id, link_page_id, rel or "references", "asserted"))
             linked = True
+
+        # Add provenance edges. A target naming a ledger kind (task:, spec:,
+        # issue:, insight:) is foreign to this wiki.db plane and must be
+        # qualified so `_assert_local_or_foreign_destination` (federation.py)
+        # stores it verbatim instead of treating it as a local reference;
+        # code-plane targets (sym:, file:, ...) stay unqualified.
+        if derived_from:
+            edges.append((page_id, _qualify_ledger_target(derived_from), "derived-from", "asserted"))
+
+        for target in about or []:
+            edges.append((page_id, _qualify_ledger_target(target), "about", "asserted"))
+
+        if edges:
+            await self._store.add_edges(edges)
 
         if self._storage_dir is not None:
             # The store write above already succeeded — a failure logging
@@ -541,12 +588,163 @@ class VaultIngestTool(AbstractTool):
         )
 
 
+# ------------------------------------------------------------------
+# Ledger MCP Tools (FEAT-566 Module 8)
+# ------------------------------------------------------------------
+
+if TYPE_CHECKING:
+    from parrot.knowledge.wiki.ledger.service import LedgerService
+
+
+class LedgerOpenInput(BaseModel):
+    title: str = Field(..., description="Issue title")
+    body: str = Field(..., description="Issue description")
+    kind: str = Field(default="bug", description="Issue kind: bug|task|insight|spec")
+    severity: str = Field(default="minor", description="Issue severity: minor|major|critical")
+    discovered_from: str = Field(default="", description="Source of discovery")
+    about: list[str] | None = Field(default=None, description="List of related page IDs")
+
+
+class LedgerReadyInput(BaseModel):
+    kind: str | None = Field(default=None, description="Filter by issue kind: bug|task|insight|spec")
+
+
+class LedgerClaimInput(BaseModel):
+    issue_id: str = Field(..., description="Issue ID to claim")
+
+
+class LedgerCloseInput(BaseModel):
+    issue_id: str = Field(..., description="Issue ID to close")
+    reason: str = Field(..., description="Reason for closing")
+
+
+class LedgerContextInput(BaseModel):
+    file_paths: list[str] = Field(..., description="File paths to scope context to")
+    max_tokens: int = Field(default=3000, description="Maximum tokens in response")
+
+
+class LedgerOpenTool(AbstractTool):
+    """Open a new issue in the SDD work ledger."""
+
+    name = "ledger_open"
+    description = "Open a new issue in the SDD work ledger."
+    args_schema = LedgerOpenInput
+
+    def __init__(self, ledger_service: "LedgerService"):
+        super().__init__(name=self.name, description=self.description)
+        self._ledger_service = ledger_service
+
+    async def _execute(
+        self,
+        title: str,
+        body: str,
+        kind: str = "bug",
+        severity: str = "minor",
+        discovered_from: str = "",
+        about: list[str] | None = None,
+    ) -> ToolResult:
+        try:
+            issue_id = await self._ledger_service.open_issue(
+                title=title,
+                body=body,
+                kind=kind,  # type: ignore
+                severity=severity,  # type: ignore
+                discovered_from=discovered_from,
+                about=about,
+                actor="agent:mcp",
+            )
+            return ToolResult(result={"issue_id": issue_id})
+        except Exception as exc:
+            return ToolResult(success=False, status="error", result=None, error=str(exc))
+
+
+class LedgerReadyTool(AbstractTool):
+    """Get ready (unclaimed) work from the SDD ledger."""
+
+    name = "ledger_ready"
+    description = "Get ready (unclaimed) work from the SDD ledger."
+    args_schema = LedgerReadyInput
+
+    def __init__(self, ledger_service: "LedgerService"):
+        super().__init__(name=self.name, description=self.description)
+        self._ledger_service = ledger_service
+
+    async def _execute(self, kind: str | None = None) -> ToolResult:
+        try:
+            # Convert string kind to IssueKind enum if provided
+            from parrot.knowledge.wiki.ledger.events import IssueKind
+
+            kind_enum = IssueKind(kind) if kind else None  # type: ignore
+            issues = await self._ledger_service.ready_work(kind_enum)
+            return ToolResult(result={"issues": issues})
+        except Exception as exc:
+            return ToolResult(success=False, status="error", result=None, error=str(exc))
+
+
+class LedgerClaimTool(AbstractTool):
+    """Claim an issue from the SDD ledger."""
+
+    name = "ledger_claim"
+    description = "Claim an issue from the SDD ledger."
+    args_schema = LedgerClaimInput
+
+    def __init__(self, ledger_service: "LedgerService"):
+        super().__init__(name=self.name, description=self.description)
+        self._ledger_service = ledger_service
+
+    async def _execute(self, issue_id: str) -> ToolResult:
+        try:
+            success = await self._ledger_service.claim(issue_id, "agent:mcp")
+            return ToolResult(result={"success": success})
+        except Exception as exc:
+            return ToolResult(success=False, status="error", result=None, error=str(exc))
+
+
+class LedgerCloseTool(AbstractTool):
+    """Close an issue in the SDD ledger."""
+
+    name = "ledger_close"
+    description = "Close an issue in the SDD ledger."
+    args_schema = LedgerCloseInput
+
+    def __init__(self, ledger_service: "LedgerService"):
+        super().__init__(name=self.name, description=self.description)
+        self._ledger_service = ledger_service
+
+    async def _execute(self, issue_id: str, reason: str) -> ToolResult:
+        try:
+            success = await self._ledger_service.close_issue(issue_id, reason, "agent:mcp")
+            return ToolResult(result={"success": success})
+        except Exception as exc:
+            return ToolResult(success=False, status="error", result=None, error=str(exc))
+
+
+class LedgerContextTool(AbstractTool):
+    """Get context from the SDD ledger for specific files."""
+
+    name = "ledger_context"
+    description = "Get context from the SDD ledger for specific files."
+    args_schema = LedgerContextInput
+
+    def __init__(self, ledger_service: "LedgerService"):
+        super().__init__(name=self.name, description=self.description)
+        self._ledger_service = ledger_service
+
+    async def _execute(self, file_paths: list[str], max_tokens: int = 3000) -> ToolResult:
+        try:
+            context = await self._ledger_service.get_context(file_paths, max_tokens)
+            return ToolResult(result={"context": context})
+        except Exception as exc:
+            return ToolResult(success=False, status="error", result=None, error=str(exc))
+
+
 def create_wiki_tools(
     store: BaseWikiStore,
     root: Path | None = None,
     config: WikiProjectConfig | None = None,
+    ledger_service: Union["LedgerService", None] = None,
 ) -> list[AbstractTool]:
-    """Create the six wiki tools bound to ``store``.
+    """Create the wiki tools bound to ``store``, plus ledger tools when ``ledger_service`` is provided.
 
     Args:
         store: Wiki retrieval-plane backend the tools call directly.
@@ -555,13 +753,15 @@ def create_wiki_tools(
             wiki's ``log.md`` audit trail (via `WikiBookkeeper`), matching
             the equivalent CLI commands (`cli.py:remember`/`note`).
         config: Wiki project config — see ``root``.
+        ledger_service: Optional ledger service for ledger tools.
 
     Returns:
         The six `AbstractTool` instances: wiki_query, wiki_page,
-        wiki_related, wiki_remember, wiki_note, wiki_status.
+        wiki_related, wiki_remember, wiki_note, wiki_status, plus
+        ledger tools when ledger_service is provided.
     """
     storage_dir = config.storage_path(root) if root is not None and config is not None else None
-    return [
+    tools = [
         WikiQueryTool(store),
         WikiPageTool(store),
         WikiRelatedTool(store),
@@ -569,3 +769,17 @@ def create_wiki_tools(
         WikiNoteTool(store, storage_dir=storage_dir),
         WikiStatusTool(store),
     ]
+
+    # Add ledger tools when ledger_service is provided
+    if ledger_service is not None:
+        tools.extend(
+            [
+                LedgerOpenTool(ledger_service),
+                LedgerReadyTool(ledger_service),
+                LedgerClaimTool(ledger_service),
+                LedgerCloseTool(ledger_service),
+                LedgerContextTool(ledger_service),
+            ]
+        )
+
+    return tools

@@ -15,7 +15,7 @@ class CodexCodeDispatchProfile(BaseModel):
     same SDD subagent prompt body used by the Claude Code path.
     """
 
-    subagent: Literal["sdd-worker", "sdd-secondopinion"] = "sdd-worker"
+    subagent: Literal["sdd-worker", "sdd-secondopinion", "sdd-coder"] = "sdd-worker"
     model: str = "gpt-5.5"
     sandbox: Literal["read-only", "workspace-write", "danger-full-access"] = "workspace-write"
     approval_policy: Literal["untrusted", "on-request", "never"] = "never"

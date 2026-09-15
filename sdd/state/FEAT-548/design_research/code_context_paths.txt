@@ -1,0 +1,13 @@
+env/.env
+packages/ai-parrot/src/parrot/observability/config.py
+packages/ai-parrot/src/parrot/observability/exporters.py
+/v1/metrics
+packages/ai-parrot/src/parrot/observability/setup.py
+packages/ai-parrot/src/parrot/observability/subscribers/metrics.py
+packages/ai-parrot/src/parrot/observability/examples/grafana-dashboards/parrot-overview.json
+packages/ai-parrot/src/parrot/observability/examples/grafana-dashboards/parrot-usage.json
+docker/grafana/provisioning/dashboards/dashboards.yml
+docker/grafana/provisioning/datasources/prometheus.yml
+docker/prometheus/docker-compose.yml
+docker/prometheus/prometheus.yml
+docs/architecture/10-observability.md

@@ -1141,6 +1141,13 @@ class AbstractTool(EventEmitterMixin, ABC):
             return tool_result
 
         except Exception as e:
+            # FEAT-550 §3 M3: budget control is never converted into a ToolResult —
+            # it propagates to the question's answer owner.
+            from ..core.exceptions import BudgetError
+
+            if isinstance(e, BudgetError):
+                raise
+
             # Let ``AuthorizationRequired`` bubble up to ``ToolManager`` so it
             # can be converted into a structured ``authorization_required``
             # ToolResult (FEAT-107, TASK-748).  Imported lazily to avoid a

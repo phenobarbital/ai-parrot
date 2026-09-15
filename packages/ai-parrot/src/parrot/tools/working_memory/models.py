@@ -1,11 +1,11 @@
 """Enums and Pydantic input models for WorkingMemoryToolkit DSL."""
+
 from __future__ import annotations
 
 from enum import Enum
 from typing import Any, Optional
 
 from pydantic import BaseModel, Field
-
 
 # ─────────────────────────────────────────────────────────────
 # Entry Type Enum (generic catalog entries)
@@ -20,11 +20,11 @@ class EntryType(str, Enum):
     """
 
     DATAFRAME = "dataframe"
-    TEXT = "text"       # plain str
-    JSON = "json"       # dict or list
-    MESSAGE = "message" # duck-typed: has .content and .role
-    BINARY = "binary"   # bytes
-    OBJECT = "object"   # fallback for any Python object
+    TEXT = "text"  # plain str
+    JSON = "json"  # dict or list
+    MESSAGE = "message"  # duck-typed: has .content and .role
+    BINARY = "binary"  # bytes
+    OBJECT = "object"  # fallback for any Python object
 
 
 # ─────────────────────────────────────────────────────────────
@@ -89,7 +89,7 @@ class FilterSpec(BaseModel):
     column: str = Field(description="Column name to filter on")
     op: str = Field(
         description="Filter operator: ==, !=, >, >=, <, <=, in, not_in, "
-                    "contains, startswith, is_null, not_null, between"
+        "contains, startswith, is_null, not_null, between"
     )
     value: Any = Field(default=None, description="Value to compare against")
 
@@ -118,10 +118,7 @@ class OperationSpecInput(BaseModel):
 
     # Aggregate
     group_by: list[str] = Field(default_factory=list, description="Columns to group by")
-    agg_rules: dict[str, AggFunc] = Field(
-        default_factory=dict,
-        description="Aggregation rules: {column: agg_function}"
-    )
+    agg_rules: dict[str, AggFunc] = Field(default_factory=dict, description="Aggregation rules: {column: agg_function}")
 
     # Join / Merge
     right_source: Optional[str] = Field(default=None, description="Key of right DataFrame for joins")
@@ -213,7 +210,7 @@ class SummarizeStoredInput(BaseModel):
     store_as: str = Field(description="Key for the summarized result")
     agg_rules: dict[str, str] = Field(
         description='Aggregation rules: {"column": "agg_func"} '
-                    'where agg_func is sum|mean|median|min|max|count|std|var|first|last|nunique'
+        "where agg_func is sum|mean|median|min|max|count|std|var|first|last|nunique"
     )
     group_by: Optional[list[str]] = Field(default=None, description="Group by columns")
     merge_on: Optional[str] = Field(default=None, description="Common column for merge step")
@@ -244,46 +241,70 @@ class StoreResultInput(BaseModel):
 
     key: str = Field(description="Unique name for this entry in working memory")
     data: Any = Field(
-        description=(
-            "The value to store: text, number, dict/JSON, list, message, or "
-            "bytes. Required."
-        ),
+        description=("The value to store: text, number, dict/JSON, list, message, or " "bytes. Required."),
     )
     data_type: str = Field(
         default="auto",
-        description=(
-            "Type hint: text, json, message, binary, or auto (auto-detect from the data)"
-        ),
+        description=("Type hint: text, json, message, binary, or auto (auto-detect from the data)"),
     )
     description: str = Field(default="", description="Human-readable description")
     metadata: Optional[dict] = Field(
         default=None,
         description="Optional arbitrary metadata dict to attach to this entry",
     )
-    turn_id: Optional[str] = Field(
-        default=None, description="Conversation turn identifier"
-    )
+    turn_id: Optional[str] = Field(default=None, description="Conversation turn identifier")
 
 
 class GetResultInput(BaseModel):
     """Input for retrieving a stored generic result."""
 
     key: str = Field(description="Key of the entry to retrieve")
-    max_length: int = Field(
-        default=500, description="Max chars in text/content preview"
-    )
+    max_length: int = Field(default=500, description="Max chars in text/content preview")
     include_raw: bool = Field(
         default=False,
         description="If True, include the raw data object in the response",
     )
 
 
+class EnabledGetResultInput(BaseModel):
+    """Input for ``wm_get_result`` when task memory is ENABLED (FEAT-538).
+
+    A separate model, deliberately. The spec requires the disabled path's
+    schema to stay byte-identical, so the raw-read ceiling and tabular
+    paging cannot be added to :class:`GetResultInput` — the enabled
+    schema is *chosen at tool-generation time* instead. That is what
+    resolves the conflict between "cap raw reads" and "disabled behaviour
+    unchanged".
+
+    The opt-in cap is an intentional behaviour change, documented as such.
+    """
+
+    key: str = Field(description="Key of the entry to retrieve")
+    max_length: int = Field(default=500, description="Max chars in text/content preview")
+    include_raw: bool = Field(
+        default=False,
+        description="If True, include the raw data object in the response",
+    )
+    max_rehydrate_bytes: Optional[int] = Field(
+        default=None,
+        ge=0,
+        description=(
+            "Byte ceiling for the raw payload. The configured value is a HARD ceiling: "
+            "a caller may lower it but never raise it. 0 means never rehydrate."
+        ),
+    )
+    offset: int = Field(default=0, ge=0, description="Row offset for a tabular page")
+    limit: Optional[int] = Field(
+        default=None,
+        ge=1,
+        description="Row count for a tabular page. Defaults to the configured page size.",
+    )
+
+
 class SearchStoredInput(BaseModel):
     """Input for searching stored entries by key/description substring or type."""
 
-    query: str = Field(
-        description="Case-insensitive substring to match against entry key or description"
-    )
+    query: str = Field(description="Case-insensitive substring to match against entry key or description")
     entry_type: Optional[EntryType] = Field(
         default=None,
         description="Filter results to a specific entry type (e.g. text, json, dataframe)",

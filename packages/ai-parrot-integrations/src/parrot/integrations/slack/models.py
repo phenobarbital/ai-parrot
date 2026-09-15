@@ -1,7 +1,28 @@
 """Data models for Slack bot configuration."""
+
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Any
+from typing import TYPE_CHECKING, Dict, List, Optional, Any
 from navconfig import config
+
+if TYPE_CHECKING:  # pragma: no cover - typing only, avoids a heavy runtime import
+    from parrot.integrations.devloop.models import DevLoopIntegrationConfig
+
+
+def _parse_devloop(name: str, raw: Optional[Dict[str, Any]]) -> Optional["DevLoopIntegrationConfig"]:
+    """Parse the optional ``devloop:`` mapping; ``None``/empty ⇒ disabled.
+
+    Args:
+        name: The owning bot's config name.
+        raw: The raw ``devloop:`` mapping, or ``None``.
+
+    Returns:
+        The parsed :class:`DevLoopIntegrationConfig`, or ``None``.
+    """
+    if not raw:
+        return None
+    from parrot.integrations.devloop.models import DevLoopIntegrationConfig  # noqa: PLC0415
+
+    return DevLoopIntegrationConfig.from_dict(name, dict(raw))
 
 
 @dataclass
@@ -53,6 +74,9 @@ class SlackAgentConfig:
     jira_client_secret: Optional[str] = None
     jira_redirect_uri: Optional[str] = None
 
+    # Dev-loop kick-off (FEAT-555). ``None`` ⇒ feature disabled for this bot.
+    devloop: Optional["DevLoopIntegrationConfig"] = None
+
     def __post_init__(self):
         """Initialize config with environment variable fallbacks and validation."""
         # Load tokens from environment if not provided
@@ -74,18 +98,14 @@ class SlackAgentConfig:
         if self.allowed_user_ids is None:
             env_val = config.get(f"{self.name.upper()}_SLACK_ALLOWED_USER_IDS")
             if env_val:
-                self.allowed_user_ids = [
-                    uid.strip() for uid in env_val.split(",") if uid.strip()
-                ]
+                self.allowed_user_ids = [uid.strip() for uid in env_val.split(",") if uid.strip()]
 
         # Validate Socket Mode requirements
         if self.connection_mode == "socket" and not self.app_token:
-            raise ValueError(
-                f"Socket Mode requires app-level token (xapp-...) for '{self.name}'."
-            )
+            raise ValueError(f"Socket Mode requires app-level token (xapp-...) for '{self.name}'.")
 
     @classmethod
-    def from_dict(cls, name: str, data: Dict[str, Any]) -> 'SlackAgentConfig':
+    def from_dict(cls, name: str, data: Dict[str, Any]) -> "SlackAgentConfig":
         """Create a SlackAgentConfig from a dictionary.
 
         Args:
@@ -115,4 +135,6 @@ class SlackAgentConfig:
             jira_client_id=data.get("jira_client_id"),
             jira_client_secret=data.get("jira_client_secret"),
             jira_redirect_uri=data.get("jira_redirect_uri"),
+            # FEAT-555
+            devloop=_parse_devloop(name, data.get("devloop")),
         )

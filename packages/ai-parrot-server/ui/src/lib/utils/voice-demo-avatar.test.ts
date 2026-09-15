@@ -394,3 +394,282 @@ describe("AvatarViewerController — generation guard and idempotent teardown", 
     expect(room.disconnectCalls).toBe(1);
   });
 });
+
+// ── FEAT-537 TASK-2964: broadcast mode ────────────────────────────────────
+//
+// In broadcast mode the *server's descriptor* decides which publisher is
+// audible; the viewer never infers it from whichever track arrives first.
+// These cases pin the four properties that follow from that: identity-scoped
+// attachment, monotonic state, a one-way cutover, and no local PCM fallback.
+
+const BROADCAST_CREDENTIALS = {
+  livekit_url: "wss://livekit.example.com",
+  client_token: "lease-token",
+  room: "bcast-1",
+};
+
+function avatarState(overrides: Record<string, unknown> = {}) {
+  return {
+    broadcast_id: "bc-1",
+    state: "avatar",
+    version: 5,
+    output_epoch: 2,
+    avatar_identity: "avatar-abc",
+    direct_identity: "direct-abc",
+    selected_identity: "avatar-abc",
+    media_ready: true,
+    ...overrides,
+  };
+}
+
+function audioOnlyState(overrides: Record<string, unknown> = {}) {
+  return avatarState({
+    state: "audio_only",
+    version: 6,
+    output_epoch: 3,
+    selected_identity: "direct-abc",
+    ...overrides,
+  });
+}
+
+function fakeParticipant(identity: string, tracks: Array<{ kind: string }> = []) {
+  return {
+    identity,
+    trackPublications: new Map(
+      tracks.map((track, index) => [`pub-${index}`, { track }]),
+    ),
+  };
+}
+
+describe("AvatarViewerController — broadcast mode", () => {
+  it("never plays local WebSocket audio in broadcast mode", async () => {
+    const { sdk } = createFakeSdk();
+    const { videoEl, audioEl } = makeElements();
+    const controller = new AvatarViewerController({ sdk, videoEl, audioEl, mode: "broadcast" });
+
+    await controller.joinBroadcast(BROADCAST_CREDENTIALS, avatarState());
+
+    // True in single mode with a browser source; always false here — the
+    // audience's fallback is the room's direct publisher, not local PCM.
+    expect(controller.audioSource).toBe(AudioSource.BROWSER);
+    expect(controller.shouldPlayLocalAudio()).toBe(false);
+    expect(controller.mode).toBe("broadcast");
+  });
+
+  it("attaches only tracks from the selected publisher", async () => {
+    const { sdk, rooms } = createFakeSdk();
+    const { videoEl, audioEl } = makeElements();
+    const controller = new AvatarViewerController({ sdk, videoEl, audioEl, mode: "broadcast" });
+    await controller.joinBroadcast(BROADCAST_CREDENTIALS, avatarState());
+    const room = rooms[0];
+
+    const strangerAudio = makeFakeTrack(TRACK_KIND.Audio);
+    room.emit(ROOM_EVENT.TrackSubscribed, strangerAudio, {}, fakeParticipant("some-viewer"));
+    expect(strangerAudio.attach).not.toHaveBeenCalled();
+
+    const avatarAudio = makeFakeTrack(TRACK_KIND.Audio);
+    room.emit(ROOM_EVENT.TrackSubscribed, avatarAudio, {}, fakeParticipant("avatar-abc"));
+    expect(avatarAudio.attach).toHaveBeenCalledTimes(1);
+  });
+
+  it("switches to direct audio once on audio_only and rejects late avatar tracks", async () => {
+    const { sdk, rooms } = createFakeSdk();
+    const { videoEl, audioEl } = makeElements();
+    const controller = new AvatarViewerController({ sdk, videoEl, audioEl, mode: "broadcast" });
+    await controller.joinBroadcast(BROADCAST_CREDENTIALS, avatarState());
+    const room = rooms[0];
+
+    const avatarVideo = makeFakeTrack(TRACK_KIND.Video);
+    const avatarAudio = makeFakeTrack(TRACK_KIND.Audio);
+    room.emit(ROOM_EVENT.TrackSubscribed, avatarVideo, {}, fakeParticipant("avatar-abc"));
+    room.emit(ROOM_EVENT.TrackSubscribed, avatarAudio, {}, fakeParticipant("avatar-abc"));
+    expect(avatarVideo.attach).toHaveBeenCalledTimes(1);
+
+    // The server cuts over.
+    expect(controller.applyBroadcastState(audioOnlyState())).toBe(true);
+    // Avatar media is detached BEFORE direct audio is selected, so the two are
+    // never audible together.
+    expect(avatarVideo.detach).toHaveBeenCalled();
+    expect(avatarAudio.detach).toHaveBeenCalled();
+
+    // The direct publisher is now the only accepted source.
+    const directAudio = makeFakeTrack(TRACK_KIND.Audio);
+    room.emit(ROOM_EVENT.TrackSubscribed, directAudio, {}, fakeParticipant("direct-abc"));
+    expect(directAudio.attach).toHaveBeenCalledTimes(1);
+
+    // A late avatar track — the vendor reconnecting after the cutover — must
+    // not become audible again.
+    const lateAvatarAudio = makeFakeTrack(TRACK_KIND.Audio);
+    room.emit(ROOM_EVENT.TrackSubscribed, lateAvatarAudio, {}, fakeParticipant("avatar-abc"));
+    expect(lateAvatarAudio.attach).not.toHaveBeenCalled();
+  });
+
+  it("ignores states with older version or output_epoch", async () => {
+    const { sdk } = createFakeSdk();
+    const { videoEl, audioEl } = makeElements();
+    const controller = new AvatarViewerController({ sdk, videoEl, audioEl, mode: "broadcast" });
+    await controller.joinBroadcast(BROADCAST_CREDENTIALS, avatarState());
+
+    controller.applyBroadcastState(audioOnlyState());
+    expect(controller.broadcastState.state).toBe("audio_only");
+
+    // A reordered poll carrying the pre-cutover state must not resurrect the
+    // avatar — audio_only is sticky.
+    expect(controller.applyBroadcastState(avatarState())).toBe(false);
+    expect(controller.broadcastState.state).toBe("audio_only");
+
+    // Same version but an older output epoch is also refused.
+    expect(
+      controller.applyBroadcastState(audioOnlyState({ version: 6, output_epoch: 1 })),
+    ).toBe(false);
+    expect(controller.broadcastState.outputEpoch).toBe(3);
+  });
+
+  it("mutes when state is stale for more than 3 seconds", async () => {
+    const { sdk } = createFakeSdk();
+    const { videoEl, audioEl } = makeElements();
+    let now = 1_000;
+    const staleEvents: boolean[] = [];
+    const controller = new AvatarViewerController({
+      sdk,
+      videoEl,
+      audioEl,
+      mode: "broadcast",
+      onStale: (value: boolean) => staleEvents.push(value),
+      now: () => now,
+    });
+    await controller.joinBroadcast(BROADCAST_CREDENTIALS, avatarState());
+
+    now += 2_000;
+    expect(controller.checkStateFreshness()).toBe(false);
+    expect(staleEvents).toEqual([]);
+
+    now += 2_000; // 4 s since the last state
+    expect(controller.checkStateFreshness()).toBe(true);
+    expect(controller.stale).toBe(true);
+    expect(audioEl.muted).toBe(true);
+    expect(videoEl.muted).toBe(true);
+    expect(staleEvents).toEqual([true]);
+
+    // A fresh observation clears it.
+    controller.markStateFresh();
+    expect(controller.stale).toBe(false);
+    expect(audioEl.muted).toBe(false);
+    expect(staleEvents).toEqual([true, false]);
+  });
+
+  it("counts a rejected out-of-order state as proof the server is reachable", async () => {
+    const { sdk } = createFakeSdk();
+    const { videoEl, audioEl } = makeElements();
+    let now = 1_000;
+    const controller = new AvatarViewerController({
+      sdk,
+      videoEl,
+      audioEl,
+      mode: "broadcast",
+      now: () => now,
+    });
+    await controller.joinBroadcast(BROADCAST_CREDENTIALS, avatarState());
+    controller.applyBroadcastState(audioOnlyState());
+
+    now += 5_000;
+    // The stale (older) state is rejected for source selection...
+    expect(controller.applyBroadcastState(avatarState())).toBe(false);
+    // ...but the page still marks freshness on every observation.
+    controller.markStateFresh();
+    expect(controller.checkStateFreshness()).toBe(false);
+  });
+
+  it("attaches already-published tracks on late join", async () => {
+    const { sdk, rooms } = createFakeSdk();
+    const { videoEl, audioEl } = makeElements();
+    const controller = new AvatarViewerController({ sdk, videoEl, audioEl, mode: "broadcast" });
+
+    const existingVideo = makeFakeTrack(TRACK_KIND.Video);
+    const existingAudio = makeFakeTrack(TRACK_KIND.Audio);
+    const strangerAudio = makeFakeTrack(TRACK_KIND.Audio);
+
+    // The room is already live when this viewer joins, so no TrackSubscribed
+    // event will ever fire for the media already flowing.
+    const { sdk: _unused } = { sdk };
+    const originalRoom = sdk.Room;
+    sdk.Room = function () {
+      const room = new (originalRoom as unknown as new () => FakeRoom)();
+      (room as unknown as { remoteParticipants: Map<string, unknown> }).remoteParticipants =
+        new Map([
+          ["p1", fakeParticipant("avatar-abc", [existingVideo, existingAudio])],
+          ["p2", fakeParticipant("some-viewer", [strangerAudio])],
+        ]);
+      return room;
+    } as unknown as new () => FakeRoom;
+
+    await controller.joinBroadcast(BROADCAST_CREDENTIALS, avatarState());
+    sdk.Room = originalRoom;
+
+    expect(existingVideo.attach).toHaveBeenCalledTimes(1);
+    expect(existingAudio.attach).toHaveBeenCalledTimes(1);
+    expect(strangerAudio.attach).not.toHaveBeenCalled();
+    expect(rooms.length).toBeGreaterThan(0);
+  });
+
+  it("does not restart a session on disconnect", async () => {
+    const { sdk, rooms } = createFakeSdk();
+    const { videoEl, audioEl } = makeElements();
+    const disconnects: number[] = [];
+    const controller = new AvatarViewerController({
+      sdk,
+      videoEl,
+      audioEl,
+      mode: "broadcast",
+      onDisconnected: () => disconnects.push(1),
+    });
+    await controller.joinBroadcast(BROADCAST_CREDENTIALS, avatarState());
+
+    rooms[0].emit(ROOM_EVENT.Disconnected);
+    // Only a notification: re-entry means asking the admission API for a fresh
+    // lease, never reconnecting on our own (which could over-admit the room).
+    expect(disconnects).toEqual([1]);
+    expect(controller.status).toBe(AvatarStatus.IDLE);
+    expect(rooms.length).toBe(1);
+  });
+
+  it("attaches nothing before a descriptor has been applied", async () => {
+    const { sdk, rooms } = createFakeSdk();
+    const { videoEl, audioEl } = makeElements();
+    const controller = new AvatarViewerController({ sdk, videoEl, audioEl, mode: "broadcast" });
+    await controller.joinBroadcast(BROADCAST_CREDENTIALS, null);
+
+    const someAudio = makeFakeTrack(TRACK_KIND.Audio);
+    rooms[0].emit(ROOM_EVENT.TrackSubscribed, someAudio, {}, fakeParticipant("avatar-abc"));
+    // A broadcast viewer must not play media it has not been told to play.
+    expect(someAudio.attach).not.toHaveBeenCalled();
+  });
+});
+
+describe("AvatarViewerController — single mode is unchanged by FEAT-537", () => {
+  it("defaults to single mode and keeps the local-audio fallback", async () => {
+    const { sdk, rooms } = createFakeSdk();
+    const { videoEl, audioEl } = makeElements();
+    const controller = new AvatarViewerController({ sdk, videoEl, audioEl });
+
+    expect(controller.mode).toBe("single");
+    await controller.join(CREDENTIALS);
+    expect(controller.shouldPlayLocalAudio()).toBe(true);
+
+    // Tracks attach without any identity, exactly as before.
+    const audio = makeFakeTrack(TRACK_KIND.Audio);
+    rooms[0].emit(ROOM_EVENT.TrackSubscribed, audio);
+    expect(audio.attach).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores broadcast state in single mode", async () => {
+    const { sdk } = createFakeSdk();
+    const { videoEl, audioEl } = makeElements();
+    const controller = new AvatarViewerController({ sdk, videoEl, audioEl });
+    await controller.join(CREDENTIALS);
+
+    expect(controller.applyBroadcastState(audioOnlyState())).toBe(false);
+    expect(controller.broadcastState).toBe(null);
+    expect(controller.checkStateFreshness()).toBe(false);
+  });
+});

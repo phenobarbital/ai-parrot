@@ -24,10 +24,11 @@ from __future__ import annotations
 
 import json
 import logging
+import shlex
 import stat
 import sys
 from pathlib import Path, PurePosixPath
-from typing import Any, Optional
+from typing import Any, Optional, Sequence
 
 from parrot.knowledge.wiki.claude_code import assets
 from parrot.knowledge.wiki.project import (
@@ -124,12 +125,35 @@ def _hook_entry(root: Path) -> dict[str, Any]:
     }
 
 
+def _is_our_command(command: Any) -> bool:
+    """Whether a hook command invokes our ``wikitoolkit claude-hook``.
+
+    Matching is done on parsed shell tokens, not on the literal
+    ``HOOK_COMMAND`` substring: the installed command carries an absolute
+    path, and an equivalent hand-written spelling — a quoted path, or one
+    built from ``$CLAUDE_PROJECT_DIR`` — puts a quote between the binary
+    and the subcommand. A substring check misses those and the caller
+    appends a second, duplicate entry instead of upgrading the first.
+
+    Args:
+        command: The ``command`` field of a hook handler.
+
+    Returns:
+        True when the command runs our hook under any spelling.
+    """
+    text = str(command or "")
+    try:
+        tokens = shlex.split(text)
+    except ValueError:  # unbalanced quotes — fall back to the raw needle
+        return assets.HOOK_COMMAND in text
+    if assets.HOOK_SUBCOMMAND not in tokens:
+        return False
+    return any(PurePosixPath(token).name == assets.HOOK_BIN_NAME for token in tokens)
+
+
 def _is_our_hook(entry: dict[str, Any]) -> bool:
     """Whether a settings hook entry was installed by us."""
-    for hook in entry.get("hooks", []):
-        if assets.HOOK_COMMAND in str(hook.get("command", "")):
-            return True
-    return False
+    return any(_is_our_command(hook.get("command")) for hook in entry.get("hooks", []))
 
 
 def _load_settings(path: Path) -> Optional[dict[str, Any]]:
@@ -180,8 +204,9 @@ def _install_settings_hook(root: Path) -> str:
 
     resolved_cmd = assets.hook_command(root)
 
-    existing = next((e for e in pre if isinstance(e, dict) and _is_our_hook(e)), None)
-    if existing is not None:
+    ours = [e for e in pre if isinstance(e, dict) and _is_our_hook(e)]
+    if ours:
+        existing, *duplicates = ours
         # Upgrade an older install in place when the matcher or command
         # changed (e.g. bare → absolute path, or Grep|Glob|Read →
         # Grep|Glob|Read|Bash) so a re-run picks up the fix instead of
@@ -191,11 +216,31 @@ def _install_settings_hook(root: Path) -> str:
             existing["matcher"] = assets.HOOK_MATCHER
             dirty = True
         for hook in existing.get("hooks", []):
-            if assets.HOOK_COMMAND in str(hook.get("command", "")) and hook.get("command") != resolved_cmd:
+            if _is_our_command(hook.get("command")) and hook.get("command") != resolved_cmd:
                 hook["command"] = resolved_cmd
                 dirty = True
+
+        # Collapse copies left behind by an earlier install that failed to
+        # recognise its own hook under a different spelling and appended a
+        # second entry. A duplicate sharing an entry with someone else's
+        # handler loses only our handler — the entry itself is not ours to
+        # delete.
+        dropped: list[int] = []
+        for dup in duplicates:
+            foreign = [h for h in dup.get("hooks", []) if not _is_our_command(h.get("command"))]
+            if foreign:
+                dup["hooks"] = foreign
+            else:
+                dropped.append(id(dup))
+            dirty = True
+        if dropped:
+            pre[:] = [e for e in pre if id(e) not in dropped]
+
         if dirty:
             _write_settings(path, settings)
+            if duplicates:
+                noun = "duplicate" if len(duplicates) == 1 else "duplicates"
+                return f".claude/settings.json — PreToolUse hook updated ({len(duplicates)} {noun} removed)"
             return ".claude/settings.json — PreToolUse hook updated"
         return ".claude/settings.json — PreToolUse hook already installed"
     pre.append(_hook_entry(root))
@@ -256,21 +301,162 @@ def _install_permissions(root: Path) -> list[str]:
     return actions
 
 
+def _managed_server_names(root: Path) -> list[str]:
+    """Return the `.mcp.json` server names this installer manages.
+
+    Always includes ``"wikitoolkit"`` (unconditionally reconciled by
+    `_install_mcp_json`, never subject to a foreign-collision check) plus
+    one `parrot-<name>` per ENABLED toolkit section whose *current*
+    `.mcp.json` entry is confirmed ours via `_is_managed_toolkit_entry`.
+
+    A name derived purely from the enabled toolkit config (the pre-FEAT-556
+    behavior) can disagree with what `_install_mcp_json` actually wrote: a
+    foreign `parrot-<name>` entry that collides with an enabled section's
+    name is deliberately left untouched (installer.py:490-496, warning
+    emitted) — approving that name here would silently authorize a
+    third-party server the operator never wrote, with no approval prompt.
+    Must be called AFTER `_install_mcp_json` has reconciled `.mcp.json` so
+    the entry-shape check reflects the final state.
+    """
+    from parrot.mcp.toolkit_config import load_toolkits_config
+
+    path = root / ".mcp.json"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+    except (OSError, ValueError):
+        data = {}
+    servers = data.get("mcpServers") if isinstance(data, dict) else None
+    servers = servers if isinstance(servers, dict) else {}
+
+    cfg = load_toolkits_config(root)
+    names = ["wikitoolkit"]
+    for name, section in sorted(cfg.toolkits.items()):
+        key = f"parrot-{name}"
+        if section.enabled and _is_managed_toolkit_entry(servers.get(key), root, name):
+            names.append(key)
+    return names
+
+
+def _install_mcp_approval(root: Path) -> str:
+    """Merge the managed server names into `.claude/settings.local.json`.
+
+    Claude Code leaves a project-scope `.mcp.json` server at "pending approval"
+    until its name appears in `enabledMcpjsonServers`; an unapproved server is
+    invisible to agents (verified 2026-09-12: sdd-worker saw no
+    `mcp__parrot-sdd-coder__*` tools and fell back to its sequential loop).
+    Never writes `enableAllProjectMcpServers`: per-name approval suffices and
+    the global switch would also authorize unrelated third-party entries.
+
+    Returns:
+        One action string, phrased like `_install_permissions` (installer.py:294-301).
+
+    Raises:
+        RuntimeError: `enabledMcpjsonServers` exists but is not a JSON list.
+    """
+    local_path = root / ".claude" / "settings.local.json"
+    local = _load_settings(local_path) or {}
+    names = local.get("enabledMcpjsonServers")
+    if names is None:
+        names = local["enabledMcpjsonServers"] = []
+    if not isinstance(names, list):
+        raise RuntimeError(f"{local_path}: 'enabledMcpjsonServers' is not a list")
+    missing = [n for n in _managed_server_names(root) if n not in names]
+    if not missing:
+        return ".claude/settings.local.json — MCP servers already authorized"
+    names.extend(missing)
+    _write_settings(local_path, local)
+    return f".claude/settings.local.json — {len(missing)} MCP server(s) authorized ({', '.join(missing)})"
+
+
+def _uninstall_mcp_approval(root: Path, removed_toolkit_names: Sequence[str] = ()) -> str | None:
+    """Remove only the managed names from `enabledMcpjsonServers`.
+
+    Always strips ``"wikitoolkit"`` (unambiguous, always ours) plus exactly
+    the ``parrot-<name>`` names in ``removed_toolkit_names`` — the entries
+    `_uninstall_mcp_json` just confirmed and deleted from `.mcp.json` via
+    `_is_managed_toolkit_entry`. Never blanket-strips every `parrot-*` name:
+    an operator's own unrelated `parrot-<name>` server, approved by hand and
+    never touched by reconciliation, must survive `parrot claude uninstall`.
+
+    Args:
+        root: Repository root.
+        removed_toolkit_names: The managed keys `_uninstall_mcp_json` just
+            removed from `.mcp.json` (must be captured before that call, or
+            passed empty when `.mcp.json` was absent/unparseable).
+
+    Returns:
+        An action string, or None when there was nothing to remove.
+    """
+    local_path = root / ".claude" / "settings.local.json"
+    try:
+        local = _load_settings(local_path)
+    except RuntimeError:
+        local = None
+    if not isinstance(local, dict):
+        return None
+
+    names = local.get("enabledMcpjsonServers")
+    if not isinstance(names, list):
+        return None
+
+    candidates = {"wikitoolkit", *removed_toolkit_names}
+    to_remove = {n for n in names if n in candidates}
+    if not to_remove:
+        return None
+
+    kept = [n for n in names if n not in to_remove]
+    if len(kept) == len(names):
+        return None
+
+    if kept:
+        local["enabledMcpjsonServers"] = kept
+    else:
+        local.pop("enabledMcpjsonServers", None)
+
+    _write_settings(local_path, local)
+    return f".claude/settings.local.json — {len(to_remove)} MCP server approval(s) removed"
+
+
 def _is_managed_toolkit_entry(entry: Any, root: Path, name: str) -> bool:
     """Whether a ``parrot-<name>`` ``.mcp.json`` entry was written by us.
 
-    Managed-entry detection rule (FEAT-485): an entry is "ours" iff its
-    ``command`` ends with the resolved ``parrot`` binary name AND its
-    ``args`` match the managed toolkit shape ``["mcp-local", name]``. A
+    Managed-entry detection rule (FEAT-485, updated FEAT-556): an entry is
+    "ours" iff its ``command`` ends with the resolved ``parrot`` binary name
+    AND its ``args`` start with ``["mcp-local", name]``. This accepts both
+    the pinned shape (FEAT-556) ``["mcp-local", name, "--config", <path>]``
+    and the pre-FEAT-556 legacy shape ``["mcp-local", name]``. A
     ``parrot-<name>`` key whose content does not match this shape is a
     foreign entry with a colliding name — it must never be overwritten or
-    removed by reconciliation.
+    removed by reconciliation. A pinned entry whose ``--config`` points
+    outside ``root`` is treated as foreign (operator override).
     """
     if not isinstance(entry, dict):
         return False
     command = entry.get("command")
     bin_name = PurePosixPath(assets.resolve_parrot_bin(root)).name
-    return isinstance(command, str) and command.endswith(bin_name) and entry.get("args") == ["mcp-local", name]
+    if not isinstance(command, str) or not command.endswith(bin_name):
+        return False
+    args = entry.get("args")
+    if not isinstance(args, list) or args[:2] != ["mcp-local", name]:
+        return False
+    # Accept the pinned shape (["mcp-local", name, "--config", <path>]) and the
+    # pre-FEAT-556 two-arg shape, so an entry written by an older install — or
+    # by an operator following examples/sdd-coder-mcp.yaml — is ADOPTED and
+    # upgraded in place rather than warned about and skipped (installer.py:374-382).
+    # A trailing "--config" with a path outside `root` is a foreign override.
+    # Uses real path containment (resolved `parents`), not a string prefix: a
+    # sibling directory like `root=/repo/worktree` vs.
+    # `config_path=/repo/worktree2/...` shares the `startswith` prefix but is
+    # NOT inside `root` — a naive substring check would misclassify it as ours.
+    if len(args) >= 4 and args[2] == "--config":
+        config_path = Path(args[3])
+        if not config_path.is_absolute():
+            return False
+        resolved_config = config_path.resolve()
+        resolved_root = root.resolve()
+        if resolved_config != resolved_root and resolved_root not in resolved_config.parents:
+            return False
+    return True
 
 
 def _install_mcp_json(root: Path) -> str:
@@ -363,54 +549,60 @@ def _install_mcp_json(root: Path) -> str:
     return ".mcp.json — " + "; ".join(parts)
 
 
-def _uninstall_mcp_json(root: Path) -> str | None:
+def _uninstall_mcp_json(root: Path) -> tuple[str | None, list[str]]:
     """Remove the wikitoolkit entry and all managed toolkit entries.
 
     Preserves any other MCP server entries (including foreign
     ``parrot-<name>`` entries that do not match the managed shape);
-    removes the file entirely only when it becomes empty. Returns
-    ``None`` (nothing to report) when the file is absent or already
-    carries no managed entries — mirrors every other uninstall step in
-    this module, which only appends to ``actions`` when something was
-    actually removed.
+    removes the file entirely only when it becomes empty.
+
+    Returns:
+        A tuple of (action string or ``None`` when nothing was removed —
+        mirrors every other uninstall step in this module, which only
+        appends to ``actions`` when something was actually removed —, and
+        the list of ``parrot-<name>`` keys confirmed managed and removed,
+        for `_uninstall_mcp_approval` to strip the matching approvals
+        without blanket-stripping every `parrot-*` name).
     """
     path = root / ".mcp.json"
     if not path.exists():
-        return None
+        return None, []
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return ".mcp.json — could not parse, skipping"
+        return ".mcp.json — could not parse, skipping", []
     if not isinstance(data, dict):
-        return None
+        return None, []
 
     servers = data.get("mcpServers", {})
     if not isinstance(servers, dict):
-        return None
+        return None, []
 
     removed: list[str] = []
     if "wikitoolkit" in servers:
         del servers["wikitoolkit"]
         removed.append("wikitoolkit")
 
+    toolkit_names_removed: list[str] = []
     for key in [k for k in servers if k != "wikitoolkit" and k.startswith("parrot-")]:
         name = key[len("parrot-") :]
         if _is_managed_toolkit_entry(servers[key], root, name):
             del servers[key]
             removed.append(key)
+            toolkit_names_removed.append(key)
 
     if not removed:
-        return None
+        return None, []
 
     if not servers:
         data.pop("mcpServers", None)
     if not data:
         path.unlink()
-        return ".mcp.json — removed (was empty)"
+        return ".mcp.json — removed (was empty)", toolkit_names_removed
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
     if removed == ["wikitoolkit"]:
-        return ".mcp.json — wikitoolkit entry removed"
-    return f".mcp.json — managed entries removed ({', '.join(removed)})"
+        return ".mcp.json — wikitoolkit entry removed", toolkit_names_removed
+    return f".mcp.json — managed entries removed ({', '.join(removed)})", toolkit_names_removed
 
 
 def _install_slash_command(root: Path) -> str:
@@ -424,11 +616,17 @@ def _install_slash_command(root: Path) -> str:
     return ".claude/commands/parrotwiki.md — " + ("updated" if existing is not None else "created")
 
 
-def _git_hook_path(root: Path) -> Optional[Path]:
-    """Locate .git/hooks/post-commit, or None when not a git repo."""
+def _git_hook_path(root: Path, hook_name: str = "post-commit") -> Optional[Path]:
+    """Locate .git/hooks/<hook_name>, or None when not a git repo.
+
+    Args:
+        root: Repository root.
+        hook_name: Hook filename under ``hooks/`` — ``"post-commit"``
+            (default) or ``"post-merge"`` (FEAT-566 Module 10).
+    """
     git_dir = root / ".git"
     if git_dir.is_dir():
-        return git_dir / "hooks" / "post-commit"
+        return git_dir / "hooks" / hook_name
     if git_dir.is_file():  # worktree: `gitdir: <path>` pointer
         try:
             content = git_dir.read_text(encoding="utf-8").strip()
@@ -448,7 +646,7 @@ def _git_hook_path(root: Path) -> Optional[Path]:
                 except OSError:
                     return None
                 target = (target / rel).resolve()
-            return target / "hooks" / "post-commit"
+            return target / "hooks" / hook_name
     return None
 
 
@@ -488,36 +686,64 @@ def _shebang_is_sh_compatible(first_line: str) -> bool:
     return interpreter in _SH_FAMILY
 
 
-def _install_git_hook(root: Path) -> str:
-    """Install (or chain into) the git post-commit auto-upsert hook."""
-    hook_path = _git_hook_path(root)
+def _install_managed_git_hook(root: Path, hook_name: str, label: str) -> str:
+    """Install (or chain into) a managed git hook running the wiki upsert.
+
+    Shared body for the ``post-commit`` (:func:`_install_git_hook`) and
+    ``post-merge`` (:func:`_install_post_merge_hook`, FEAT-566 Module 10)
+    installers — both write the same guarded :func:`assets.git_hook_block`
+    content, just to a different hook file.
+
+    Args:
+        root: Repository root.
+        hook_name: Hook filename under ``hooks/`` (``"post-commit"`` or
+            ``"post-merge"``).
+        label: Human-readable hook name used in the returned action string
+            (``"post-commit"`` or ``"post-merge"``).
+    """
+    hook_path = _git_hook_path(root, hook_name)
     if hook_path is None:
-        return "git hook — skipped (not a git repository)"
+        return f"git {label} hook — skipped (not a git repository)"
     block = assets.git_hook_block(root)
     new_file = assets.git_hook_new_file(root)
     if hook_path.exists():
         text = hook_path.read_text(encoding="utf-8")
         if assets.GIT_HOOK_BEGIN in text:
-            return "git post-commit hook — already installed"
+            return f"git {label} hook — already installed"
         first_line = text.splitlines()[0] if text.strip() else ""
         if not _shebang_is_sh_compatible(first_line):
             # Appending sh syntax to a python/node/csh hook would break it.
             return (
-                "git post-commit hook — skipped (existing hook is not a "
+                f"git {label} hook — skipped (existing hook is not a "
                 "shell script; add `wikitoolkit upsert --changed --quiet` "
                 "to it manually)"
             )
         if not text.endswith("\n"):
             text += "\n"
         hook_path.write_text(text + block, encoding="utf-8")
-        action = "git post-commit hook — chained into existing hook"
+        action = f"git {label} hook — chained into existing hook"
     else:
         hook_path.parent.mkdir(parents=True, exist_ok=True)
         hook_path.write_text(new_file, encoding="utf-8")
-        action = "git post-commit hook — created"
+        action = f"git {label} hook — created"
     mode = hook_path.stat().st_mode
     hook_path.chmod(mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
     return action
+
+
+def _install_git_hook(root: Path) -> str:
+    """Install (or chain into) the git post-commit auto-upsert hook."""
+    return _install_managed_git_hook(root, "post-commit", "post-commit")
+
+
+def _install_post_merge_hook(root: Path) -> str:
+    """Install (or chain into) the git post-merge auto-upsert hook.
+
+    FEAT-566 Module 10: keeps the shared structural wiki plane in sync
+    right after a merge (e.g. a feature branch landing on the base
+    branch), not just after each individual commit.
+    """
+    return _install_managed_git_hook(root, "post-merge", "post-merge")
 
 
 def _install_gitignore(root: Path) -> str:
@@ -547,6 +773,8 @@ def install_claude_integration(
     git_hook: bool = True,
     gitignore: bool = True,
     bookstore: bool = True,
+    toolkits: Sequence[str] = (),
+    approve_mcp: bool = True,
 ) -> list[str]:
     """Install the wiki ↔ Claude Code integration into a repository.
 
@@ -557,6 +785,11 @@ def install_claude_integration(
         gitignore: Add ``.parrot/`` to .gitignore.
         bookstore: Install the Bookstore MCP server and skill when an
             indexed library exists (no indexing performed).
+        toolkits: Toolkit template names to seed into
+            `.parrot/mcp-toolkits.yaml` before `.mcp.json` reconciliation.
+            Empty seeds nothing (spec §8 Q1: opt-in).
+        approve_mcp: Authorize the managed servers in
+            `.claude/settings.local.json` after reconciliation.
 
     Returns:
         Human-readable list of actions performed.
@@ -582,10 +815,34 @@ def install_claude_integration(
     actions.append(_install_claude_md(root))
     actions.append(_install_settings_hook(root))
     actions.extend(_install_permissions(root))
+    if toolkits:
+        from parrot.mcp.toolkit_seed import seed_toolkit_sections
+
+        seeded = seed_toolkit_sections(root, toolkits)
+        if seeded.created_file:
+            actions.append(".parrot/mcp-toolkits.yaml — created")
+        if seeded.added:
+            actions.append(
+                f".parrot/mcp-toolkits.yaml — added {len(seeded.added)} section(s) ({', '.join(seeded.added)})"
+            )
+        if seeded.skipped:
+            actions.append(
+                f".parrot/mcp-toolkits.yaml — {len(seeded.skipped)} section(s) already present "
+                f"({', '.join(seeded.skipped)})"
+            )
+        if seeded.unknown:
+            actions.append(f".parrot/mcp-toolkits.yaml — unknown template(s) skipped ({', '.join(seeded.unknown)})")
     actions.append(_install_mcp_json(root))
+    if approve_mcp:
+        actions.append(_install_mcp_approval(root))
     actions.append(_install_slash_command(root))
     if git_hook:
-        actions.append(_install_git_hook(root))
+        # Post-commit and post-merge are installed together under the same
+        # flag; folded into one action entry (FEAT-566 Module 10) so the
+        # count of returned actions is unchanged for existing callers.
+        commit_action = _install_git_hook(root)
+        merge_action = _install_post_merge_hook(root)
+        actions.append(f"{commit_action}; {merge_action}")
     if gitignore:
         actions.append(_install_gitignore(root))
     if bookstore:
@@ -633,8 +890,23 @@ def uninstall_claude_integration(root: Path) -> list[str]:
         hooks = settings.get("hooks")
         pre = hooks.get("PreToolUse", []) if isinstance(hooks, dict) else []
         if isinstance(pre, list):
-            kept = [e for e in pre if not (isinstance(e, dict) and _is_our_hook(e))]
-            if len(kept) != len(pre):
+            # Strip our handler rather than the whole entry: a user may have
+            # added their own command alongside it, and that is not ours to
+            # remove.
+            kept = []
+            removed = False
+            for entry in pre:
+                if not (isinstance(entry, dict) and _is_our_hook(entry)):
+                    kept.append(entry)
+                    continue
+                removed = True
+                foreign = [h for h in entry.get("hooks", []) if not _is_our_command(h.get("command"))]
+                if foreign:
+                    # Entries are mutated in place, so `kept` and `pre` can
+                    # stay equal even here — hence the explicit flag.
+                    entry["hooks"] = foreign
+                    kept.append(entry)
+            if removed:
                 settings["hooks"]["PreToolUse"] = kept
                 if not kept:
                     settings["hooks"].pop("PreToolUse")
@@ -680,9 +952,13 @@ def uninstall_claude_integration(root: Path) -> list[str]:
                 _write_settings(local_path, local)
                 actions.append(".claude/settings.local.json — wikitoolkit " "permissions removed")
 
-    mcp_json_action = _uninstall_mcp_json(root)
+    mcp_json_action, removed_toolkit_names = _uninstall_mcp_json(root)
     if mcp_json_action:
         actions.append(mcp_json_action)
+
+    approval_action = _uninstall_mcp_approval(root, removed_toolkit_names)
+    if approval_action:
+        actions.append(approval_action)
 
     command_path = root / ".claude" / "commands" / assets.SLASH_COMMAND_FILENAME
     if command_path.exists():
@@ -766,6 +1042,21 @@ def integration_status(root: Path) -> dict[str, Any]:
         if isinstance(mcp_data, dict):
             mcp_json_installed = "wikitoolkit" in mcp_data.get("mcpServers", {})
 
+    # Compute mcp_approved (True when every _managed_server_names(root) entry appears in enabledMcpjsonServers)
+    mcp_approved = False
+    try:
+        local_settings = _load_settings(root / ".claude" / "settings.local.json")
+    except Exception:
+        local_settings = None
+    if isinstance(local_settings, dict):
+        approved_servers = local_settings.get("enabledMcpjsonServers")
+        if isinstance(approved_servers, list):
+            try:
+                managed_names = _managed_server_names(root)
+                mcp_approved = all(name in approved_servers for name in managed_names)
+            except Exception:
+                pass
+
     from .bookstore import bookstore_status
 
     return {
@@ -779,4 +1070,6 @@ def integration_status(root: Path) -> dict[str, Any]:
         "slash_command": (root / ".claude" / "commands" / assets.SLASH_COMMAND_FILENAME).exists(),
         "git_post_commit_hook": git_hook_installed,
         "mcp_json": mcp_json_installed,
+        "mcp_servers_authorized": mcp_approved,
+        "toolkits_yaml": (root / ".parrot" / "mcp-toolkits.yaml").exists(),
     }

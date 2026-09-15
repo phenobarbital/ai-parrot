@@ -159,13 +159,16 @@ class TestImageLoaderLoad:
             loader._backend = mock_backend
             docs = await loader._load(img_path)
 
-        doc_meta = docs[0].metadata.get("document_meta", {})
-        assert "ocr_backend" in doc_meta
-        assert "layout_model" in doc_meta
-        assert "avg_confidence" in doc_meta
-        assert "image_dimensions" in doc_meta
-        assert "table_count" in doc_meta
-        assert "language" in doc_meta
+        meta = docs[0].metadata
+        # Loader-specific extras live at the top level of metadata
+        # (document_meta is a closed shape: source_type/category/type/language/title)
+        assert "ocr_backend" in meta
+        assert "layout_model" in meta
+        assert "avg_confidence" in meta
+        assert "image_dimensions" in meta
+        assert "table_count" in meta
+        # language lives inside document_meta (canonical key)
+        assert "language" in meta.get("document_meta", {})
 
     @pytest.mark.asyncio
     async def test_min_confidence_filters_blocks(self, tmp_path):
@@ -233,8 +236,7 @@ class TestImageLoaderLoad:
 
         assert len(docs) >= 1
         assert docs[0].page_content
-        doc_meta = docs[0].metadata.get("document_meta", {})
-        assert doc_meta.get("ocr_backend")
+        assert docs[0].metadata.get("ocr_backend")
 
 
 # ---------------------------------------------------------------------------

@@ -21,7 +21,11 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple, Type
 from pydantic import BaseModel, ValidationError
 
 from parrot import conf
-from parrot.flows.dev_loop._subagent_defs import load_subagent_definition
+from parrot.flows.dev_loop._subagent_defs import (
+    CONVENTIONS_PREAMBLE,
+    load_project_conventions,
+    load_subagent_definition,
+)
 from parrot.flows.dev_loop.dispatchers._shared import (
     T,
     _DISPATCH_LABELS_CTX,
@@ -168,7 +172,7 @@ class GoogleCodingDispatcher:
         async with self._semaphore:
             try:
                 schema_path = self._materialize_json_schema(output_model)
-                prompt = self._build_agy_prompt(profile, brief, output_model)
+                prompt = self._build_agy_prompt(profile, brief, output_model, cwd=cwd)
                 command = self._build_command(
                     profile=profile,
                     schema_path=schema_path,
@@ -319,12 +323,16 @@ class GoogleCodingDispatcher:
         profile: GoogleCodingDispatchProfile,
         brief: BaseModel,
         output_model: Type[BaseModel],
+        *,
+        cwd: str = "",
     ) -> str:
         body = load_subagent_definition(profile.subagent)
+        conventions = load_project_conventions(cwd or None)
         output_prompt = self._build_prompt(brief, output_model)
         return (
             f"You are the `{profile.subagent}` dev-loop subagent.\n\n"
             f"Subagent instructions:\n{body}\n\n"
+            f"{CONVENTIONS_PREAMBLE}\n{conventions}\n\n"
             f"{output_prompt}"
         )
 

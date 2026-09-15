@@ -23,6 +23,7 @@ class ClaudeCodeDispatchProfile(BaseModel):
             "sdd-codereview",
             "sdd-planner",
             "sdd-feedback",
+            "sdd-coder",
         ]
     ] = "sdd-worker"
     system_prompt_override: Optional[str] = None

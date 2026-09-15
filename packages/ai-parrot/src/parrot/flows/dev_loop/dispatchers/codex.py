@@ -19,7 +19,11 @@ from typing import Any, Dict, List, Optional, Sequence, Type
 from pydantic import BaseModel, ValidationError
 
 from parrot import conf
-from parrot.flows.dev_loop._subagent_defs import load_subagent_definition
+from parrot.flows.dev_loop._subagent_defs import (
+    CONVENTIONS_PREAMBLE,
+    load_project_conventions,
+    load_subagent_definition,
+)
 from parrot.flows.dev_loop.dispatchers._shared import (
     T,
     _DISPATCH_LABELS_CTX,
@@ -115,7 +119,7 @@ class CodexCodeDispatcher:
             try:
                 schema_path = self._materialize_json_schema(output_model)
                 output_path = self._reserve_output_path()
-                prompt = self._build_codex_prompt(profile, brief, output_model)
+                prompt = self._build_codex_prompt(profile, brief, output_model, cwd=cwd)
                 command = self._build_command(
                     profile=profile,
                     cwd=cwd,
@@ -265,8 +269,11 @@ class CodexCodeDispatcher:
             profile.model,
             "--sandbox",
             profile.sandbox,
-            "--ask-for-approval",
-            profile.approval_policy,
+            # ``--ask-for-approval`` is a top-level ``codex`` flag only; ``codex exec``
+            # rejects it (clap: "unexpected argument") on every release since 0.145.0,
+            # so the policy goes through the config override instead.
+            "-c",
+            f"approval_policy={profile.approval_policy}",
             "--output-schema",
             schema_path,
             "-o",
@@ -347,12 +354,16 @@ class CodexCodeDispatcher:
         profile: CodexCodeDispatchProfile,
         brief: BaseModel,
         output_model: Type[BaseModel],
+        *,
+        cwd: str = "",
     ) -> str:
         body = load_subagent_definition(profile.subagent)
+        conventions = load_project_conventions(cwd or None)
         output_prompt = self._build_prompt(brief, output_model)
         return (
             f"You are the `{profile.subagent}` dev-loop subagent.\n\n"
             f"Subagent instructions:\n{body}\n\n"
+            f"{CONVENTIONS_PREAMBLE}\n{conventions}\n\n"
             f"{output_prompt}"
         )
 

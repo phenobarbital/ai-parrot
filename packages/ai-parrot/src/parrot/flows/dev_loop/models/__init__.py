@@ -23,6 +23,8 @@ from parrot.flows.dev_loop.models.base import (
     AdversarialFinding,
     Brief,
     BugBrief,
+    ChangedFile,
+    ChangeSet,
     CodeReviewFinding,
     CodeReviewVerdict,
     CriterionResult,
@@ -46,6 +48,7 @@ from parrot.flows.dev_loop.models.base import (
     RepoSpec,
     ResearchOutput,
     RevisionBrief,
+    SeatUsageSummary,
     ShellCriterion,
     SynthesisReport,
     TaskScopedBrief,
@@ -72,6 +75,7 @@ from parrot.flows.dev_loop.models.gemini import (
 from parrot.flows.dev_loop.models.google_coding import (
     GoogleCodingDispatchProfile,
 )
+from parrot.flows.dev_loop.models.google_compat import GoogleCompatCodeDispatchProfile
 from parrot.flows.dev_loop.models.grok import GrokCodeDispatchProfile
 from parrot.flows.dev_loop.models.llm import LLMCodeDispatchProfile
 from parrot.flows.dev_loop.models.moonshot import MoonshotCodeDispatchProfile
@@ -89,6 +93,8 @@ __all__ = [
     "BugBrief",
     "ClaudeCodeDispatchProfile",
     "ClaudeCodeReviewProfile",
+    "ChangeSet",
+    "ChangedFile",
     "CodeReviewFinding",
     "CodeReviewVerdict",
     "CodexAdversarialReviewProfile",
@@ -106,6 +112,7 @@ __all__ = [
     "FlowtaskCriterion",
     "GeminiCodeDispatchProfile",
     "GoogleCodingDispatchProfile",
+    "GoogleCompatCodeDispatchProfile",
     "GrokCodeDispatchProfile",
     "JudgeBackend",
     "JudgePanelConfig",
@@ -123,6 +130,7 @@ __all__ = [
     "RepoSpec",
     "ResearchOutput",
     "RevisionBrief",
+    "SeatUsageSummary",
     "ShellCriterion",
     "SynthesisReport",
     "TaskScopedBrief",

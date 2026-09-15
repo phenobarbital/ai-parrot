@@ -500,9 +500,7 @@ def test_search_command_prefers_ripgrep(monkeypatch):
         lambda name: f"/usr/bin/{name}",
     )
 
-    command, backend = LLMCodeDispatcher._search_command(
-        query="needle", rel_path="packages", file_glob=None
-    )
+    command, backend = LLMCodeDispatcher._search_command(query="needle", rel_path="packages", file_glob=None)
 
     assert backend == "rg"
     assert command[0] == "rg"
@@ -515,9 +513,7 @@ def test_search_command_falls_back_to_git_grep_without_ripgrep(monkeypatch):
         lambda name: None if name == "rg" else "/usr/bin/git",
     )
 
-    command, backend = LLMCodeDispatcher._search_command(
-        query="-needle", rel_path="packages", file_glob="*.py"
-    )
+    command, backend = LLMCodeDispatcher._search_command(query="-needle", rel_path="packages", file_glob="*.py")
 
     assert backend == "git-grep"
     assert command[:2] == ["git", "grep"]
@@ -724,6 +720,15 @@ def test_system_prompt_names_the_working_directory(monkeypatch, brief, tmp_path)
     assert "no pipes, no `>` redirection" in system
 
 
+def test_system_prompt_carries_the_conventions(monkeypatch, brief, tmp_path):
+    dispatcher = _dispatcher(monkeypatch, _FakeClient([]))
+    messages = dispatcher._initial_messages(LLMCodeDispatchProfile(), brief, DevelopmentOutput, cwd=str(tmp_path))
+    system = messages[0]["content"]
+    assert "Project conventions" in system
+    assert "## Project rule: codebase-conventions" in system
+    assert system.index("Subagent instructions:") < system.index("## Project rule: codebase-conventions")
+
+
 def test_edit_file_replaces_a_unique_match(monkeypatch, tmp_path):
     dispatcher = _dispatcher(monkeypatch, _FakeClient([]))
     target = tmp_path / "mod.py"
@@ -813,9 +818,7 @@ async def test_apply_patch_recovers_a_wrong_hunk_line_count(monkeypatch, tmp_pat
         " c = 3\n"
     )
 
-    result = await dispatcher._tool_apply_patch(
-        str(tmp_path), {"patch": patch}, LLMCodeDispatchProfile()
-    )
+    result = await dispatcher._tool_apply_patch(str(tmp_path), {"patch": patch}, LLMCodeDispatchProfile())
 
     assert result["ok"] is True
     assert result["flags"] == ["--recount"]
@@ -839,9 +842,7 @@ async def test_unsalvageable_patch_points_at_edit_file(monkeypatch, tmp_path):
         "+replacement\n"
     )
 
-    result = await dispatcher._tool_apply_patch(
-        str(tmp_path), {"patch": patch}, LLMCodeDispatchProfile()
-    )
+    result = await dispatcher._tool_apply_patch(str(tmp_path), {"patch": patch}, LLMCodeDispatchProfile())
 
     assert result["ok"] is False
     assert "edit_file" in result["hint"]
@@ -1072,9 +1073,7 @@ class _RawToolCall:
 
 def test_parse_tool_arguments_reports_size_not_payload():
     truncated = '{"path": "t.py", "content": "' + "x" * 5000
-    parsed, error = LLMCodeDispatcher._parse_tool_arguments(
-        _RawToolCall("call_1", "write_file", truncated)
-    )
+    parsed, error = LLMCodeDispatcher._parse_tool_arguments(_RawToolCall("call_1", "write_file", truncated))
 
     assert parsed is None
     assert "not valid JSON" in error
@@ -1146,9 +1145,7 @@ async def test_truncated_tool_call_is_fed_back_instead_of_killing_the_dispatch(
     assistant_msg = next(
         m
         for m in second_round
-        if m.get("role") == "assistant"
-        and m.get("tool_calls")
-        and m["tool_calls"][0]["id"] == "call_1"
+        if m.get("role") == "assistant" and m.get("tool_calls") and m["tool_calls"][0]["id"] == "call_1"
     )
     echoed = json.loads(assistant_msg["tool_calls"][0]["function"]["arguments"])
     assert "_discarded" in echoed
@@ -1158,9 +1155,7 @@ def test_write_file_append_mode_extends_the_file(monkeypatch, tmp_path):
     dispatcher = _dispatcher(monkeypatch, _FakeClient([]))
     profile = LLMCodeDispatchProfile()
 
-    first = dispatcher._tool_write_file(
-        str(tmp_path), {"path": "big.py", "content": "a = 1\n"}, profile
-    )
+    first = dispatcher._tool_write_file(str(tmp_path), {"path": "big.py", "content": "a = 1\n"}, profile)
     second = dispatcher._tool_write_file(
         str(tmp_path),
         {"path": "big.py", "content": "b = 2\n", "mode": "append"},
@@ -1269,15 +1264,7 @@ def test_completion_usage_payload_omits_unreported_tokens():
 @pytest.mark.asyncio
 async def test_queued_event_names_the_backend(monkeypatch, brief, _patch_worktree_base):
     """The run bundle's "Dispatcher" column read a key nobody set."""
-    client = _FakeClient(
-        [
-            _Message(
-                content=json.dumps(
-                    {"files_changed": [], "commit_shas": [], "summary": "done"}
-                )
-            )
-        ]
-    )
+    client = _FakeClient([_Message(content=json.dumps({"files_changed": [], "commit_shas": [], "summary": "done"}))])
     dispatcher = _dispatcher(monkeypatch, client)
 
     await dispatcher.dispatch(
@@ -1335,9 +1322,7 @@ async def test_run_command_hint_absent_when_the_failure_is_not_a_glob(monkeypatc
 async def test_run_command_success_never_carries_a_glob_hint(monkeypatch, tmp_path):
     dispatcher = _dispatcher(monkeypatch, _FakeClient([]))
 
-    result = await dispatcher._tool_run_command(
-        str(tmp_path), {"argv": ["pwd"]}, LLMCodeDispatchProfile()
-    )
+    result = await dispatcher._tool_run_command(str(tmp_path), {"argv": ["pwd"]}, LLMCodeDispatchProfile())
 
     assert result["ok"] is True
     assert "hint" not in result
@@ -1357,3 +1342,395 @@ async def test_run_command_success_never_carries_a_glob_hint(monkeypatch, tmp_pa
 )
 def test_unexpanded_glob_tokens_only_flags_path_shaped_wildcards(argv, expected):
     assert LLMCodeDispatcher._unexpanded_glob_tokens(argv) == expected
+
+
+# packages/ai-parrot/tests/flows/dev_loop/test_llm_code_dispatcher.py (append)
+
+
+class _CapturingHost:
+    """Duck-typed session host that records terminal telemetry."""
+
+    def __init__(self) -> None:
+        self.telemetry: list = []
+
+    def apply(self, action, origin=None) -> None:  # the existing SessionHost duck type
+        pass
+
+    def on_attempt_telemetry(self, telemetry) -> None:
+        self.telemetry.append(telemetry)
+
+
+class TestTerminalTelemetry:
+    @pytest.mark.asyncio
+    async def test_clean_dispatch_emits_once(self, monkeypatch, brief, _patch_worktree_base):
+        (_patch_worktree_base / "app.py").write_text("print('hello')\n", encoding="utf-8")
+        client = _FakeClient(
+            [
+                _Message(
+                    content="I will inspect the file.",
+                    tool_calls=[_ToolCall("call_1", "read_file", {"path": "app.py"})],
+                ),
+                _Message(
+                    tool_calls=[
+                        _ToolCall(
+                            "call_2",
+                            "final_output",
+                            {
+                                "files_changed": ["app.py"],
+                                "commit_shas": ["abc1234"],
+                                "summary": "implemented the spec",
+                            },
+                        )
+                    ]
+                ),
+            ]
+        )
+        dispatcher = _dispatcher(monkeypatch, client)
+        host = _CapturingHost()
+
+        # `dispatch()` is the entry point that binds `_SESSION_HOST_CTX` —
+        # it always does `_SESSION_HOST_CTX.set(session_host)` from its own
+        # `session_host` kwarg (default None), so a caller must pass the
+        # host THROUGH `dispatch(session_host=...)` rather than pre-binding
+        # the ContextVar itself, which `dispatch()` would just clobber.
+        await dispatcher.dispatch(
+            brief=brief,
+            profile=LLMCodeDispatchProfile(
+                llm="nvidia:minimaxai/minimax-m3",
+                max_turns=4,
+            ),
+            output_model=DevelopmentOutput,
+            run_id="r1",
+            node_id="development",
+            cwd=str(_patch_worktree_base),
+            session_host=host,
+        )
+
+        assert len(host.telemetry) == 1
+        telemetry = host.telemetry[0]
+        assert telemetry.terminal == "completed"
+        assert telemetry.turns == 2
+        assert len(telemetry.turn_series) == 2
+        assert telemetry.resolved_model == "minimaxai/minimax-m3"
+        assert telemetry.error_class == ""
+
+    @pytest.mark.asyncio
+    async def test_failed_dispatch_carries_partial_usage(self, monkeypatch, brief, _patch_worktree_base):
+        (_patch_worktree_base / "app.py").write_text("print('hello')\n", encoding="utf-8")
+
+        class _FailingClient(_FakeClient):
+            async def _chat_completion(self, **kwargs: Any) -> _Response:
+                self.calls.append(kwargs)
+                if len(self.calls) == 3:
+                    raise RuntimeError("API connection failed")
+                message = self.responses.pop(0)
+                return _UsageResponse(message, prompt=100, completion=25)
+
+        client = _FailingClient(
+            [
+                _Message(tool_calls=[_ToolCall("call_1", "read_file", {"path": "app.py"})]),
+                _Message(tool_calls=[_ToolCall("call_2", "read_file", {"path": "app.py"})]),
+            ]
+        )
+        dispatcher = _dispatcher(monkeypatch, client)
+        host = _CapturingHost()
+
+        with pytest.raises(DispatchExecutionError):
+            await dispatcher.dispatch(
+                brief=brief,
+                profile=LLMCodeDispatchProfile(
+                    llm="nvidia:minimaxai/minimax-m3",
+                    max_turns=4,
+                ),
+                output_model=DevelopmentOutput,
+                run_id="r1",
+                node_id="development",
+                cwd=str(_patch_worktree_base),
+                session_host=host,
+            )
+
+        assert len(host.telemetry) == 1
+        telemetry = host.telemetry[0]
+        assert telemetry.terminal == "failed"
+        assert telemetry.error_class == "RuntimeError"
+        assert telemetry.turns == 2
+        assert telemetry.provider_input_tokens == 200
+        assert telemetry.provider_output_tokens == 50
+
+    @pytest.mark.asyncio
+    async def test_missing_round_usage_is_a_gap_not_a_zero(self, monkeypatch, brief, _patch_worktree_base):
+        (_patch_worktree_base / "app.py").write_text("print('hello')\n", encoding="utf-8")
+
+        class _MixedUsageClient(_FakeClient):
+            async def _chat_completion(self, **kwargs: Any) -> _Response:
+                self.calls.append(kwargs)
+                message = self.responses.pop(0)
+                if len(self.calls) == 1:
+                    return _UsageResponse(message, prompt=100, completion=25)
+                else:
+                    # No usage reported
+                    return _Response(message)
+
+        client = _MixedUsageClient(
+            [
+                _Message(tool_calls=[_ToolCall("call_1", "read_file", {"path": "app.py"})]),
+                _Message(
+                    tool_calls=[
+                        _ToolCall(
+                            "call_2",
+                            "final_output",
+                            {
+                                "files_changed": ["app.py"],
+                                "commit_shas": ["abc1234"],
+                                "summary": "done",
+                            },
+                        )
+                    ]
+                ),
+            ]
+        )
+        dispatcher = _dispatcher(monkeypatch, client)
+        host = _CapturingHost()
+
+        await dispatcher.dispatch(
+            brief=brief,
+            profile=LLMCodeDispatchProfile(
+                llm="nvidia:minimaxai/minimax-m3",
+                max_turns=4,
+            ),
+            output_model=DevelopmentOutput,
+            run_id="r1",
+            node_id="development",
+            cwd=str(_patch_worktree_base),
+            session_host=host,
+        )
+
+        assert len(host.telemetry) == 1
+        telemetry = host.telemetry[0]
+        assert telemetry.turns == 2
+        assert telemetry.turns_with_unknown_usage == 1
+        assert telemetry.turn_series[0].input_tokens == 100
+        assert telemetry.turn_series[1].input_tokens is None
+
+    @pytest.mark.asyncio
+    async def test_host_without_hook_is_unaffected(self, monkeypatch, brief, _patch_worktree_base):
+        (_patch_worktree_base / "app.py").write_text("print('hello')\n", encoding="utf-8")
+        client = _FakeClient(
+            [
+                _Message(
+                    tool_calls=[
+                        _ToolCall(
+                            "call_1",
+                            "final_output",
+                            {
+                                "files_changed": ["app.py"],
+                                "commit_shas": ["abc1234"],
+                                "summary": "done",
+                            },
+                        )
+                    ]
+                ),
+            ]
+        )
+        dispatcher = _dispatcher(monkeypatch, client)
+
+        class _NoHookHost:
+            def apply(self, action, origin=None) -> None:
+                pass
+
+        host = _NoHookHost()
+        from parrot.flows.dev_loop.dispatchers._shared import _SESSION_HOST_CTX
+
+        token = _SESSION_HOST_CTX.set(host)  # type: ignore[arg-type]
+
+        try:
+            result = await dispatcher.dispatch(
+                brief=brief,
+                profile=LLMCodeDispatchProfile(
+                    llm="nvidia:minimaxai/minimax-m3",
+                    max_turns=4,
+                ),
+                output_model=DevelopmentOutput,
+                run_id="r1",
+                node_id="development",
+                cwd=str(_patch_worktree_base),
+            )
+        finally:
+            _SESSION_HOST_CTX.reset(token)
+
+        assert result.summary == "done"
+
+
+from parrot.clients.budget_scope import current_budget_scope  # noqa: E402
+from parrot.core.exceptions import BudgetRegistryFull  # noqa: E402
+
+
+class TestObservationalScope:
+    def test_policy_shape(self, monkeypatch):
+        monkeypatch.setattr("parrot.flows.dev_loop.dispatchers.llm.conf.DEV_LOOP_CODER_TELEMETRY", True)
+        monkeypatch.setattr("parrot.flows.dev_loop.dispatchers.llm.conf.DEV_LOOP_CODER_LEDGER", True)
+        profile = LLMCodeDispatchProfile(llm="nvidia:minimaxai/minimax-m3", max_turns=4)
+        policy = LLMCodeDispatcher._observational_policy(profile)
+        assert policy is not None
+        assert policy.enforcement == "observe"
+        assert policy.budget_mode == "estimated"
+        assert policy.final_answer_reserve == 0
+
+    def test_policy_shape_disabled_by_default(self, monkeypatch):
+        # Both switches default False/True but the master switch
+        # (DEV_LOOP_CODER_TELEMETRY) still gates it — leave it at its
+        # fallback (False) and assert no policy is built.
+        monkeypatch.setattr("parrot.flows.dev_loop.dispatchers.llm.conf.DEV_LOOP_CODER_TELEMETRY", False)
+        profile = LLMCodeDispatchProfile(llm="nvidia:minimaxai/minimax-m3", max_turns=4)
+        assert LLMCodeDispatcher._observational_policy(profile) is None
+
+    @pytest.mark.asyncio
+    async def test_disabled_binds_no_scope(self, monkeypatch, brief, _patch_worktree_base):
+        # DEV_LOOP_CODER_TELEMETRY defaults to False — AC-1: no scope, no
+        # BudgetScope construction, current_budget_scope() stays None.
+        (_patch_worktree_base / "app.py").write_text("print('hello')\n", encoding="utf-8")
+
+        class _ScopeCheckingClient(_FakeClient):
+            async def _chat_completion(self, **kwargs: Any) -> _Response:
+                assert current_budget_scope() is None
+                return await super()._chat_completion(**kwargs)
+
+        client = _ScopeCheckingClient(
+            [
+                _Message(
+                    tool_calls=[
+                        _ToolCall(
+                            "call_1",
+                            "final_output",
+                            {
+                                "files_changed": ["app.py"],
+                                "commit_shas": ["abc1234"],
+                                "summary": "done",
+                            },
+                        )
+                    ]
+                ),
+            ]
+        )
+        dispatcher = _dispatcher(monkeypatch, client)
+
+        result = await dispatcher.dispatch(
+            brief=brief,
+            profile=LLMCodeDispatchProfile(llm="nvidia:minimaxai/minimax-m3", max_turns=4),
+            output_model=DevelopmentOutput,
+            run_id="r1",
+            node_id="development",
+            cwd=str(_patch_worktree_base),
+        )
+        assert result.summary == "done"
+
+    @pytest.mark.asyncio
+    async def test_one_operation_id_across_turns(self, monkeypatch, brief, _patch_worktree_base):
+        # AC-2: every budgeted request in one attempt shares the SAME
+        # ledger operation_id, across every turn (including the implicit
+        # coverage of the salvage call — the scope wraps the whole loop).
+        monkeypatch.setattr("parrot.flows.dev_loop.dispatchers.llm.conf.DEV_LOOP_CODER_TELEMETRY", True)
+        monkeypatch.setattr("parrot.flows.dev_loop.dispatchers.llm.conf.DEV_LOOP_CODER_LEDGER", True)
+        (_patch_worktree_base / "app.py").write_text("print('hello')\n", encoding="utf-8")
+
+        seen_operation_ids: set[str] = set()
+
+        class _ScopeRecordingClient(_FakeClient):
+            async def _chat_completion(self, **kwargs: Any) -> _Response:
+                scope = current_budget_scope()
+                assert scope is not None
+                seen_operation_ids.add(scope.operation_id)
+                return await super()._chat_completion(**kwargs)
+
+        client = _ScopeRecordingClient(
+            [
+                _Message(
+                    content="looking",
+                    tool_calls=[_ToolCall("call_1", "read_file", {"path": "app.py"})],
+                ),
+                _Message(
+                    tool_calls=[
+                        _ToolCall(
+                            "call_2",
+                            "final_output",
+                            {
+                                "files_changed": ["app.py"],
+                                "commit_shas": ["abc1234"],
+                                "summary": "done",
+                            },
+                        )
+                    ]
+                ),
+            ]
+        )
+        dispatcher = _dispatcher(monkeypatch, client)
+        host = _CapturingHost()
+
+        await dispatcher.dispatch(
+            brief=brief,
+            profile=LLMCodeDispatchProfile(llm="nvidia:minimaxai/minimax-m3", max_turns=4),
+            output_model=DevelopmentOutput,
+            run_id="r1",
+            node_id="development",
+            cwd=str(_patch_worktree_base),
+            session_host=host,
+        )
+
+        assert len(seen_operation_ids) == 1
+        assert len(host.telemetry) == 1
+        budget_report = host.telemetry[0].budget_report
+        assert budget_report is not None
+        assert "settled_estimate_input_tokens" in budget_report
+        assert "input_tokens" in budget_report
+
+    @pytest.mark.asyncio
+    async def test_registry_full_degrades(self, monkeypatch, brief, _patch_worktree_base):
+        # AC-11: a full registry must never fail the dispatch — it falls
+        # through to the unscoped path with budget_report=None and exactly
+        # one WARNING.
+        monkeypatch.setattr("parrot.flows.dev_loop.dispatchers.llm.conf.DEV_LOOP_CODER_TELEMETRY", True)
+        monkeypatch.setattr("parrot.flows.dev_loop.dispatchers.llm.conf.DEV_LOOP_CODER_LEDGER", True)
+        (_patch_worktree_base / "app.py").write_text("print('hello')\n", encoding="utf-8")
+
+        class _FailingRegistry:
+            async def create(self, policy):
+                raise BudgetRegistryFull("registry holds 1024 records")
+
+        monkeypatch.setattr(
+            "parrot.flows.dev_loop.dispatchers.llm.get_default_registry",
+            lambda: _FailingRegistry(),
+        )
+
+        client = _FakeClient(
+            [
+                _Message(
+                    tool_calls=[
+                        _ToolCall(
+                            "call_1",
+                            "final_output",
+                            {
+                                "files_changed": ["app.py"],
+                                "commit_shas": ["abc1234"],
+                                "summary": "done",
+                            },
+                        )
+                    ]
+                ),
+            ]
+        )
+        dispatcher = _dispatcher(monkeypatch, client)
+        host = _CapturingHost()
+
+        result = await dispatcher.dispatch(
+            brief=brief,
+            profile=LLMCodeDispatchProfile(llm="nvidia:minimaxai/minimax-m3", max_turns=4),
+            output_model=DevelopmentOutput,
+            run_id="r1",
+            node_id="development",
+            cwd=str(_patch_worktree_base),
+            session_host=host,
+        )
+
+        assert result.summary == "done"
+        assert len(host.telemetry) == 1
+        assert host.telemetry[0].budget_report is None

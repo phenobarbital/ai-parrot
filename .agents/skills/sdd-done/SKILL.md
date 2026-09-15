@@ -1,6 +1,6 @@
 ---
 name: sdd-done
-description: Verify a completed SDD feature worktree, stamp task verification, push or open the PR, optionally sync hotfixes down, and clean the worktree.
+description: Verify a completed SDD feature worktree, check for merge blockers, snapshot ledger issues, stamp task verification, push or open the PR, optionally sync hotfixes down, and clean the worktree.
 ---
 
 # SDD Done
@@ -12,8 +12,10 @@ Codex invocation: `$sdd-done FEAT-NNN [--dry-run] [--merge] [--force] [--resolve
 
 ## Purpose
 
-Verify evidence in the feature worktree, stamp verification on the feature
-branch, push it, open or describe the PR, and remove the worktree when safe.
+Verify evidence in the feature worktree, check for merge blockers scoped to
+the current feature, snapshot ledger issues on base branch, stamp verification
+on the feature branch, push it, open or describe the PR, and remove the worktree
+when safe.
 
 ## Guardrails
 
@@ -28,6 +30,10 @@ branch, push it, open or describe the PR, and remove the worktree when safe.
   creating or merging the PR automatically.
 - Use `--sync-down` only after the hotfix PR has merged to `main`.
 - Use `--sync-dev` only as a deprecated alias for `--sync-down`.
+- Merge gate checks apply only to `--merge` flag, not PR flow.
+- Ledger snapshots use throwaway worktrees and never modify active worktrees.
+- Hotfixes skip ledger snapshots.
+- Bounded retry for rejected pushes (max 3 attempts).
 
 ## Workflow
 
@@ -69,7 +75,28 @@ branch, push it, open or describe the PR, and remove the worktree when safe.
    - commit `sdd: close tasks for FEAT-NNN - <feature-slug>`
 9. Push feature branch:
    - `git -C <worktree> push origin <branch>`
-10. Integrate:
+10. Check merge blockers (feature flows only):
+    - If `--merge` flag is set and not a hotfix, run `wikitoolkit ledger blockers <FEAT-ID>`
+    - The command prints plain-text blocker lines (never JSON) and exits non-zero
+      exactly when blockers exist — gate on the **exit code**, not on parsing its output
+    - If blockers found and not `--force`, refuse merge and list the blockers
+      (`wikitoolkit ledger acknowledge <ISSUE-ID> --reason "..." --actor human:<name>`
+      is how a human resolves one)
+    - If `--force`, warn but proceed with merge
+
+11. Snapshot ledger issues (feature flows only):
+    - For features (not hotfixes), `git fetch origin <BASE_BRANCH>` then create a
+      throwaway detached worktree at `origin/<BASE_BRANCH>` (`git worktree add --detach`)
+    - Run `wikitoolkit ledger export` there; only when its output contains `(changed)`:
+      `git add sdd/ledger/issues.jsonl`, commit `sdd: ledger snapshot for <FEAT-ID>`,
+      and `git push origin HEAD:<BASE_BRANCH>`
+    - On a rejected push, `git fetch` + `git reset --hard origin/<BASE_BRANCH>` inside
+      the throwaway worktree only, re-export, commit, push again — up to 3 attempts,
+      then warn and continue without failing `/sdd-done`
+    - Always `git worktree remove --force` the throwaway worktree afterward
+    - Skip the snapshot entirely for hotfixes
+
+12. Integrate:
     - If `base_branch == main`, refuse automatic merge or PR creation. Print
       the manual hotfix PR command:
       `gh pr create --base main --head <branch> --title "<title>" --body "<verification summary>"`.

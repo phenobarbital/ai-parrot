@@ -101,28 +101,41 @@ class DevIntakeNode(DevLoopNode):
             # under the exact key it reads. IdeationNode never runs.
             shared["feature_brief"] = brief
             self.logger.info(
-                "Dev intake validated: kind=feature, document_kind=%s, "
-                "document_path=%s",
-                brief.document_kind, brief.document_path,
+                "Dev intake validated: kind=feature, document_kind=%s, " "document_path=%s",
+                brief.document_kind,
+                brief.document_path,
             )
         else:
             self.logger.info(
                 "Dev intake validated: kind=%s, title=%s",
-                brief.kind, brief.title,
+                brief.kind,
+                brief.title,
             )
 
         run_id = shared.get("run_id", "")
         if run_id:
             await self._emit_validated_event(run_id, brief)
+        if isinstance(brief, FeatureBrief):
+            self.report_progress(
+                ctx,
+                "finished",
+                f"Validated feature brief: {brief.document_kind} {brief.document_path}",
+                "ideation is skipped — the planner runs next",
+            )
+        else:
+            self.report_progress(
+                ctx,
+                "finished",
+                f"Validated {brief.kind} request: {brief.title}",
+                "routing to ideation, which turns the request into an SDD document",
+            )
         return brief
 
     # ------------------------------------------------------------------
     # Internal
     # ------------------------------------------------------------------
 
-    def _load_brief(
-        self, prompt: str, ctx: dict[str, Any]
-    ) -> DevRequestBrief | FeatureBrief:
+    def _load_brief(self, prompt: str, ctx: dict[str, Any]) -> DevRequestBrief | FeatureBrief:
         """Load a :class:`DevRequestBrief` or :class:`FeatureBrief`.
 
         Resolution order:
@@ -153,14 +166,9 @@ class DevIntakeNode(DevLoopNode):
             return parse_dev_brief(candidate)
         if prompt:
             return parse_dev_brief(json.loads(prompt))
-        raise ValueError(
-            "DevIntakeNode requires ctx['dev_brief'], ctx['feature_brief'], "
-            "or a JSON prompt."
-        )
+        raise ValueError("DevIntakeNode requires ctx['dev_brief'], ctx['feature_brief'], " "or a JSON prompt.")
 
-    async def _emit_validated_event(
-        self, run_id: str, brief: DevRequestBrief | FeatureBrief
-    ) -> None:
+    async def _emit_validated_event(self, run_id: str, brief: DevRequestBrief | FeatureBrief) -> None:
         """XADD one ``flow.intake_validated`` event to the flow stream.
 
         Args:
@@ -202,13 +210,9 @@ class DevIntakeNode(DevLoopNode):
         }
         fields = {"event": json.dumps(envelope)}
         try:
-            await redis_client.xadd(
-                f"flow:{run_id}:flow", fields, maxlen=10_000, approximate=True
-            )
+            await redis_client.xadd(f"flow:{run_id}:flow", fields, maxlen=10_000, approximate=True)
         except Exception as exc:  # noqa: BLE001 — telemetry must never break a run
-            self.logger.warning(
-                "Failed to XADD flow.intake_validated: %s", exc
-            )
+            self.logger.warning("Failed to XADD flow.intake_validated: %s", exc)
 
     async def _ensure_redis(self) -> Any:
         """Return a cached async Redis client, creating it on first call.
@@ -220,9 +224,7 @@ class DevIntakeNode(DevLoopNode):
             return self._redis
         import redis.asyncio as aioredis
 
-        self._redis = aioredis.from_url(
-            self._redis_url, decode_responses=True
-        )
+        self._redis = aioredis.from_url(self._redis_url, decode_responses=True)
         return self._redis
 
     async def close(self) -> None:

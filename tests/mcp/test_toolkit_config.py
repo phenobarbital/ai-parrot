@@ -4,6 +4,8 @@ FEAT-485: Tests for toolkit_config.py — config models, built-in defaults,
 and YAML loading + merging.
 """
 
+from pathlib import Path
+
 import pytest
 from parrot.mcp.toolkit_config import (
     MCPToolkitsConfig,
@@ -168,3 +170,66 @@ def test_explicit_config_path_missing_raises(tmp_path):
     the default path, whose absence silently falls back to built-ins."""
     with pytest.raises(ValueError, match="not found"):
         load_toolkits_config(tmp_path, config_path=tmp_path / "nope.yaml")
+
+
+# --------------------------------------------------------------------------- #
+# FEAT-543: llm_kwargs
+# --------------------------------------------------------------------------- #
+def test_llm_kwargs_defaults_to_empty():
+    """Existing sections are unchanged: the new field defaults to empty."""
+    section = ToolkitSection.model_validate({"class": "x.Y"})
+    assert section.llm_kwargs == {}
+    assert section.llm is None
+
+
+def test_llm_kwargs_parses_with_llm():
+    """A section may carry trusted client construction kwargs."""
+    section = ToolkitSection.model_validate(
+        {
+            "class": "x.Y",
+            "llm": "bedrock-converse:qwen3-coder-480b-a35b",
+            "llm_kwargs": {"fallback_model": None, "max_retries": 1, "read_timeout": 120},
+        }
+    )
+    assert section.llm_kwargs["fallback_model"] is None
+    assert section.llm_kwargs["max_retries"] == 1
+
+
+def test_llm_kwargs_requires_llm(tmp_path):
+    """llm_kwargs without llm is a configuration error naming the section."""
+    parrot_dir = tmp_path / ".parrot"
+    parrot_dir.mkdir()
+    (parrot_dir / "mcp-toolkits.yaml").write_text(
+        "toolkits:\n  w:\n    class: x.Y\n    llm_kwargs: {fallback_model: null}\n"
+    )
+    with pytest.raises(ValueError, match="'w'"):
+        load_toolkits_config(tmp_path)
+
+
+def test_llm_kwargs_rejects_llm_key():
+    """An `llm` key inside llm_kwargs would collide with the factory argument."""
+    with pytest.raises(ValueError, match="must not contain"):
+        ToolkitSection.model_validate({"class": "x.Y", "llm": "openai:gpt", "llm_kwargs": {"llm": "z"}})
+
+
+def test_example_tool_optimizations_config_loads():
+    """The shipped FEAT-543 example is valid and pins the no-fallback setting."""
+    example = Path(__file__).resolve().parents[2] / "examples" / "tool-optimizations-mcp.yaml"
+    assert example.is_file(), f"missing example config at {example}"
+
+    config = load_toolkits_config(example.parent, config_path=example)
+    assert set(config.toolkits) >= {"local-git", "bounded-source", "targeted-writer"}
+
+    writer = config.toolkits["targeted-writer"]
+    assert writer.class_path == "parrot_tools.tool_optimizations.writer.TargetedWriterToolkit"
+    assert writer.llm == "bedrock-converse:qwen3-coder-480b-a35b"
+    # Explicit null, not merely absent — an absent key would let the Bedrock
+    # client apply its own fallback default.
+    assert "fallback_model" in writer.llm_kwargs
+    assert writer.llm_kwargs["fallback_model"] is None
+    assert writer.kwargs["expected_model_ids"] == ["qwen.qwen3-coder-480b-a35b-v1:0"]
+
+    # The deterministic toolkits configure no model at all.
+    for name in ("local-git", "bounded-source"):
+        assert config.toolkits[name].llm is None
+        assert config.toolkits[name].llm_kwargs == {}

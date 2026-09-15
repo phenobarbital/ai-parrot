@@ -217,10 +217,10 @@ class TestBedrockResearchPartner:
         client = _make_client_mock(ResearchFindings(summary="ok"))
         with (
             patch(
-                "parrot.flows.dev_flow.research_partner.BedrockMantleClient",
+                "parrot.clients.amazon.nova.mantle.BedrockMantleClient",
                 return_value=client,
             ) as mock_mantle,
-            patch("parrot.flows.dev_flow.research_partner.NovaClient") as mock_nova,
+            patch("parrot.clients.amazon.nova.client.NovaClient") as mock_nova,
         ):
             partner = BedrockResearchPartner(backend="gpt")
             findings = await partner.research(
@@ -239,10 +239,10 @@ class TestBedrockResearchPartner:
         client = _make_client_mock(ResearchFindings(summary="ok"))
         with (
             patch(
-                "parrot.flows.dev_flow.research_partner.NovaClient",
+                "parrot.clients.amazon.nova.client.NovaClient",
                 return_value=client,
             ) as mock_nova,
-            patch("parrot.flows.dev_flow.research_partner.BedrockMantleClient") as mock_mantle,
+            patch("parrot.clients.amazon.nova.mantle.BedrockMantleClient") as mock_mantle,
         ):
             partner = BedrockResearchPartner(backend="nova")
             await partner.research(
@@ -267,7 +267,7 @@ class TestBedrockResearchPartner:
         """
         client = _make_client_mock(ResearchFindings(summary="ok"))
         with patch(
-            "parrot.flows.dev_flow.research_partner.BedrockMantleClient",
+            "parrot.clients.amazon.nova.mantle.BedrockMantleClient",
             return_value=client,
         ):
             partner = BedrockResearchPartner(backend="gpt")
@@ -291,12 +291,13 @@ class TestBedrockResearchPartner:
     async def test_both_backends_share_one_call_shape(self, tmp_path):
         """Both invoke ask(use_tools=True, structured_output=ResearchFindings)
         with the toolkit registered — no per-transport branching in the call."""
-        for backend, client_attr in (("gpt", "BedrockMantleClient"), ("nova", "NovaClient")):
+        client_targets = {
+            "gpt": "parrot.clients.amazon.nova.mantle.BedrockMantleClient",
+            "nova": "parrot.clients.amazon.nova.client.NovaClient",
+        }
+        for backend, target in client_targets.items():
             client = _make_client_mock(ResearchFindings(summary="ok"))
-            with patch(
-                f"parrot.flows.dev_flow.research_partner.{client_attr}",
-                return_value=client,
-            ):
+            with patch(target, return_value=client):
                 partner = BedrockResearchPartner(backend=backend)
                 await partner.research(
                     brief=_FakeBrief(),
@@ -314,7 +315,7 @@ class TestBedrockResearchPartner:
         """thinking_budget only on Converse; effort only on mantle."""
         gpt_client = _make_client_mock(ResearchFindings(summary="ok"))
         with patch(
-            "parrot.flows.dev_flow.research_partner.BedrockMantleClient",
+            "parrot.clients.amazon.nova.mantle.BedrockMantleClient",
             return_value=gpt_client,
         ):
             partner = BedrockResearchPartner(backend="gpt")
@@ -324,7 +325,7 @@ class TestBedrockResearchPartner:
 
         nova_client = _make_client_mock(ResearchFindings(summary="ok"))
         with patch(
-            "parrot.flows.dev_flow.research_partner.NovaClient",
+            "parrot.clients.amazon.nova.client.NovaClient",
             return_value=nova_client,
         ):
             partner = BedrockResearchPartner(backend="nova")
@@ -341,7 +342,7 @@ class TestBedrockResearchPartner:
         client = _make_client_mock(ResearchFindings(summary="ok"))
         with (
             patch(
-                "parrot.flows.dev_flow.research_partner.BedrockMantleClient",
+                "parrot.clients.amazon.nova.mantle.BedrockMantleClient",
                 return_value=client,
             ),
             caplog.at_level(logging.WARNING),
@@ -356,7 +357,7 @@ class TestBedrockResearchPartner:
         client = _make_client_mock(ResearchFindings(summary="ok"))
         with (
             patch(
-                "parrot.flows.dev_flow.research_partner.BedrockMantleClient",
+                "parrot.clients.amazon.nova.mantle.BedrockMantleClient",
                 return_value=client,
             ),
             caplog.at_level(logging.WARNING),
@@ -371,7 +372,7 @@ class TestBedrockResearchPartner:
         client = _make_client_mock(ResearchFindings(summary="ok"))
         brief = _FakeBrief(title="add caching to the ideation node")
         with patch(
-            "parrot.flows.dev_flow.research_partner.BedrockMantleClient",
+            "parrot.clients.amazon.nova.mantle.BedrockMantleClient",
             return_value=client,
         ):
             partner = BedrockResearchPartner(backend="gpt")
@@ -393,7 +394,7 @@ class TestBedrockResearchPartner:
         """Registered toolkit exposes no write-shaped tool."""
         client = _make_client_mock(ResearchFindings(summary="ok"))
         with patch(
-            "parrot.flows.dev_flow.research_partner.BedrockMantleClient",
+            "parrot.clients.amazon.nova.mantle.BedrockMantleClient",
             return_value=client,
         ):
             partner = BedrockResearchPartner(backend="gpt")

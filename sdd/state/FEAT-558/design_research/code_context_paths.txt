@@ -1,0 +1,13 @@
+packages/ai-parrot-tools/src/parrot_tools/qsource.py
+packages/ai-parrot-tools/src/parrot_tools/querytoolkit.py
+packages/ai-parrot/src/parrot/tools/dataset_manager/sources/query_slug.py
+.venv/.../querysource/queries/qs.py
+.venv/.../querysource/interfaces/connections.py
+.venv/.../querysource/models.py
+.venv/.../querysource/queries/multi/__init__.py
+.venv/.../querysource/queries/multi/registry.py
+.venv/.../querysource/handlers/manager.py
+packages/ai-parrot/src/parrot/tools/toolkit.py
+packages/ai-parrot/src/parrot/tools/databasequery/toolkit.py
+packages/ai-parrot-tools/src/parrot_tools/__init__.py
+packages/ai-parrot/src/parrot/auth/permission.py

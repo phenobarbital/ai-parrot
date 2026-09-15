@@ -27,6 +27,7 @@ from ..services.csrf import issue_form_csrf_token, validate_form_csrf_token
 from ..services.event_dispatcher import apply_schema_overrides, dispatch
 from ..services.registry import FormAlreadyExistsError, FormRegistry
 from ..services.validators import FormValidator
+from . import a2ui_wire
 from ._utils import _bump_version, _deep_merge, _loc_to_str
 from .tenant import (
     assert_body_tenant_matches,
@@ -1008,6 +1009,13 @@ class FormAPIHandler:
         pre-flighting a submission is not told `200` for a payload `/submit`
         would then `422`. `drop` and `keep` responses are unchanged — this
         route never stores anything, so `keep` needs no cap check here.
+
+        FEAT-544: dual-wire — an A2UI v1.0 `action` envelope (`form.validate`
+        or `form.submit`; `unwrap_action` accepts both) is unwrapped into
+        plain field_id answers exactly like `submit_data`'s A2UI branch; the
+        reply is then `{"messages": []}` (200, valid) or per-field
+        `VALIDATION_FAILED` envelopes (422, invalid) instead of plain JSON.
+        A legacy JSON caller is completely unaffected.
         """
         from ..core.schema import UnknownFieldsPolicy
 
@@ -1025,6 +1033,26 @@ class FormAPIHandler:
         except (json.JSONDecodeError, ValueError):
             return JSONResponse({"error": "Invalid JSON body"}, status=400)
 
+        # FEAT-544 (spec §3 Module 5) — same unwrap as submit_data's A2UI branch.
+        a2ui_surface_id: str | None = None
+        if a2ui_wire.is_a2ui_request(request, body):
+            expected_surface_id = f"form-{form.form_uid}"
+            if request.content_length is not None and request.content_length > a2ui_wire.A2UI_MAX_BODY_BYTES:
+                from parrot.outputs.a2ui.runtime.models import A2UIErrorCode, error_envelope
+
+                envelope = error_envelope(
+                    A2UIErrorCode.INTERNAL,
+                    "The submitted data model exceeds the maximum allowed size.",
+                    surface_id=expected_surface_id,
+                )
+                return a2ui_wire.a2ui_response([envelope], status=413)
+            try:
+                submission_in = a2ui_wire.unwrap_action(form, body)
+            except a2ui_wire.A2UIWireError as exc:
+                return a2ui_wire.a2ui_response([exc.envelope], status=exc.status)
+            a2ui_surface_id = submission_in.surface_id
+            body = submission_in.answers
+
         data, visit_context = self._extract_visit_context(form, body)
         result = await self.validator.validate(form, data, visit_context=visit_context)
 
@@ -1033,6 +1061,12 @@ class FormAPIHandler:
             errors["__unknown__"] = sorted(result.extra_data)
 
         is_valid = not errors
+
+        if a2ui_surface_id is not None:
+            if is_valid:
+                return a2ui_wire.a2ui_response([], status=200)
+            return a2ui_wire.a2ui_response(a2ui_wire.validation_errors(a2ui_surface_id, errors), status=422)
+
         return JSONResponse(
             {"is_valid": is_valid, "errors": errors},
             status=200 if is_valid else 422,
@@ -1467,6 +1501,12 @@ class FormAPIHandler:
         Flow:
         1. Load the form from registry (404 if not found).
         2. Parse JSON body (400 if invalid).
+        1a. A2UI wire (FEAT-544): if the body is an A2UI v1.0 ``action``
+            envelope (``api.a2ui_wire.is_a2ui_request``), unwrap it into a
+            plain field_id-keyed answers dict BEFORE step 3 and remember its
+            ``surfaceId``. Every response below is then translated into A2UI
+            envelopes (via the local ``_reply`` helper) instead of plain
+            JSON; a legacy JSON caller is completely unaffected.
         3. If ``?merge_partials=true``, load cached partial and merge into data
            (submitted values override cached; skipped silently if no store or
            no cached partial).
@@ -1523,6 +1563,56 @@ class FormAPIHandler:
             body = await request.json()
         except (json.JSONDecodeError, ValueError):
             return JSONResponse({"error": "Invalid JSON body"}, status=400)
+
+        # FEAT-544 (spec §3 Module 5): dual-wire — an A2UI v1.0 renderer->agent
+        # `action` envelope is unwrapped into plain field_id answers BEFORE
+        # `_extract_visit_context` so the validate -> lifecycle -> persist ->
+        # forward pipeline below runs completely unchanged; `a2ui_surface_id`
+        # (non-None only for an A2UI caller) selects the reply shape below.
+        a2ui_surface_id: str | None = None
+        if a2ui_wire.is_a2ui_request(request, body):
+            expected_surface_id = f"form-{form.form_uid}"
+            if request.content_length is not None and request.content_length > a2ui_wire.A2UI_MAX_BODY_BYTES:
+                from parrot.outputs.a2ui.runtime.models import A2UIErrorCode, error_envelope
+
+                envelope = error_envelope(
+                    A2UIErrorCode.INTERNAL,
+                    "The submitted data model exceeds the maximum allowed size.",
+                    surface_id=expected_surface_id,
+                )
+                return a2ui_wire.a2ui_response([envelope], status=413)
+            try:
+                submission_in = a2ui_wire.unwrap_action(form, body)
+            except a2ui_wire.A2UIWireError as exc:
+                return a2ui_wire.a2ui_response([exc.envelope], status=exc.status)
+            a2ui_surface_id = submission_in.surface_id
+            body = submission_in.answers
+
+        def _reply(payload: dict[str, Any], status: int, *, headers: dict[str, str] | None = None) -> web.Response:
+            """Reply as legacy JSON, or translated A2UI envelopes for an A2UI caller.
+
+            Dispatches purely on ``payload``'s shape: an ``"errors"`` key is a
+            validation failure (``validation_errors``); a ``"submission_id"``
+            key is the 200 composite (``confirmation``); anything else (the
+            sink-layer ``{"error": ...}`` shapes) becomes a generic
+            ``A2UIErrorCode.INTERNAL`` envelope. ``headers`` is honoured only
+            on the legacy path — it has no A2UI wire equivalent.
+            """
+            if a2ui_surface_id is None:
+                return JSONResponse(payload, status=status, headers=headers)
+            if "errors" in payload:
+                return a2ui_wire.a2ui_response(
+                    a2ui_wire.validation_errors(a2ui_surface_id, payload["errors"]), status=status
+                )
+            if "submission_id" in payload:
+                return a2ui_wire.a2ui_response(a2ui_wire.confirmation(a2ui_surface_id, payload), status=status)
+
+            from parrot.outputs.a2ui.runtime.models import A2UIErrorCode, error_envelope
+
+            envelope = error_envelope(
+                A2UIErrorCode.INTERNAL, payload.get("error", "Unexpected error."), surface_id=a2ui_surface_id
+            )
+            return a2ui_wire.a2ui_response([envelope], status=status)
 
         # Split off an optional caller-supplied store context before it can
         # be treated as an answer field by the merge/lifecycle steps below
@@ -1607,7 +1697,7 @@ class FormAPIHandler:
                     )
                 except Exception as _meta_exc:
                     self.logger.exception("onError handler raised during validation: %s", _meta_exc)
-                return JSONResponse(
+                return _reply(
                     {"is_valid": False, "errors": result.errors},
                     status=422,
                 )
@@ -1635,7 +1725,7 @@ class FormAPIHandler:
                         )
                     except Exception as _meta_exc:
                         self.logger.exception("onError handler raised during unknown-field reject: %s", _meta_exc)
-                    return JSONResponse(
+                    return _reply(
                         {"is_valid": False, "errors": {"__unknown__": sorted(result.extra_data)}},
                         status=422,
                     )
@@ -1654,7 +1744,7 @@ class FormAPIHandler:
                             )
                         except Exception as _meta_exc:
                             self.logger.exception("onError handler raised during extras cap rejection: %s", _meta_exc)
-                        return JSONResponse(
+                        return _reply(
                             {
                                 "is_valid": False,
                                 "errors": {
@@ -1717,7 +1807,7 @@ class FormAPIHandler:
                         )
                     except Exception as _meta_exc:
                         self.logger.exception("onError handler raised during metadata: %s", _meta_exc)
-                    return JSONResponse(
+                    return _reply(
                         {"is_valid": False, "errors": {"_metadata": str(exc)}},
                         status=422,
                     )
@@ -1767,17 +1857,17 @@ class FormAPIHandler:
                     await sink.write(submission, payload)
                 except SinkUnavailableError as exc:
                     await _dispatch_on_error_best_effort(exc)
-                    return JSONResponse(
+                    return _reply(
                         {"error": str(exc)},
                         status=503,
                         headers={"Retry-After": "30"},
                     )
                 except SinkTargetMismatchError as exc:
                     await _dispatch_on_error_best_effort(exc)
-                    return JSONResponse({"error": str(exc)}, status=422)
+                    return _reply({"error": str(exc)}, status=422)
                 except SinkNotCapableError as exc:
                     await _dispatch_on_error_best_effort(exc)
-                    return JSONResponse({"error": str(exc)}, status=501)
+                    return _reply({"error": str(exc)}, status=501)
             elif self._submission_storage is not None:
                 await self._submission_storage.store(submission)
             else:
@@ -1839,14 +1929,15 @@ class FormAPIHandler:
                 payload=after_submit_payload,
             )
 
-            return JSONResponse(
+            return _reply(
                 {
                     "submission_id": submission.submission_id,
                     "is_valid": True,
                     "forwarded": forwarded,
                     "forward_status": forward_status,
                     "forward_error": forward_error,
-                }
+                },
+                status=200,
             )
 
         except FormEventAbort:

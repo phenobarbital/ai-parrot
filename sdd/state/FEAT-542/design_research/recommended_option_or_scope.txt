@@ -1,0 +1,38 @@
+Recommend **Option A — LanceDB Backend with a Dedicated Hybrid Origin**, subject to the unanswered scope questions. It provides the requested embedded backend and a direct route from native hybrid retrieval to graph federation. The additional adapter is small relative to defining a reusable hybrid API across backends whose semantics already differ.
+
+Choose Option B if a shared hybrid capability for multiple databases is itself a requirement. Choose Option C if separately visible retrieval legs and independent failure handling matter more than native hybrid fusion. If the first release is limited to vector and standalone FTS, Option A can ship its backend first and defer its hybrid origin.
+
+LanceDB's current documentation describes vector-plus-FTS retrieval with default reciprocal-rank fusion and explicit text/vector inputs. This allows retaining AI-Parrot's embedding provider rather than adopting a second embedding registry. The exact async SDK calls and compatible release still require validation. [Official hybrid search documentation](https://docs.lancedb.com/search/hybrid-search).
+
+Implement a full store backend for lifecycle, ingestion, vector search, FTS and native hybrid retrieval. Add a small LanceDB-specific `SearchOrigin` adapter whose normal search uses the selected vector or hybrid mode and whose FTS method performs lexical search. The store owns SDK calls; the origin owns federation payloads. Existing `VectorStoreOrigin` remains usable for vector-only integrations.
+
+**Pros:**
+
+- Covers the requested modes and supports native vector/FTS fusion before graph federation.
+- Keeps LanceDB behavior explicit, including score mapping, missing-index errors and query limits.
+- Requires no reinterpretation of existing backends' hybrid methods.
+- Contains changes mainly within one new backend and one new origin.
+
+**Cons:**
+
+- Adds a backend-specific adapter that may later overlap a generalized capability API.
+- Requires a precise store-to-origin hybrid result contract.
+- Native hybrid ordering survives in the origin section, but the toolkit's merged list is reranked separately with BM25. R4.
+
+**Effort:** Medium.
+
+**Libraries / Tools:**
+
+| Package | Purpose | Verification |
+|---|---|---|
+| `lancedb` | Embedded vector, FTS and native hybrid engine | New optional dependency; absent from inspected manifests; version compatibility untested |
+| `pyarrow` | Explicit storage schemas and result conversion | Core declares `>=25.0`; R7 |
+| Existing embedding backend | Generate vectors through AI-Parrot | Satellite declares local and remote provider extras; R1 |
+| `rustworkx`, `aiosqlite` | Existing optional graph composition | Already declared by core; R7 |
+
+**Existing Code to Reuse:**
+
+- `packages/ai-parrot/src/parrot/stores/abstract.py:245` — store search contract and parent visibility.
+- `packages/ai-parrot-tools/src/parrot_tools/multistoresearch/origins/base.py:42` — origin interface.
+- `packages/ai-parrot-tools/src/parrot_tools/multistoresearch/origins/vector.py:90` — provenance normalization pattern.
+- `packages/ai-parrot-tools/src/parrot_tools/multistoresearch/origins/graphindex.py:43` — graph federation configuration.

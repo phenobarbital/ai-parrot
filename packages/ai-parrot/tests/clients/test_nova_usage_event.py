@@ -75,6 +75,77 @@ class TestUsageEvent:
         assert _terminal_usage(out).extra["usage_event"] == frame
 
     @pytest.mark.asyncio
+    async def test_real_nova_sonic_schema(self):
+        """The documented Nova Sonic usageEvent shape (spec §8 Q1).
+
+        Corroborated by a live Nova 2 session on 2026-09-08: only
+        ``totalTokens`` matched the original guess list, so the example UI
+        showed ``tokens: 883`` next to ``in/out: 0/0``. The exact modality
+        breakdown below is from the AWS schema, not from that session's log.
+        """
+        out = await _run(
+            [
+                {
+                    "usageEvent": {
+                        "completionId": "c-1",
+                        "promptName": "p-1",
+                        "sessionId": "s-1",
+                        "details": {
+                            "delta": {
+                                "input": {"speechTokens": 40, "textTokens": 2},
+                                "output": {"speechTokens": 10, "textTokens": 1},
+                            },
+                            "total": {
+                                "input": {"speechTokens": 800, "textTokens": 12},
+                                "output": {"speechTokens": 60, "textTokens": 11},
+                            },
+                        },
+                        "totalInputTokens": 812,
+                        "totalOutputTokens": 71,
+                        "totalTokens": 883,
+                    }
+                },
+                END,
+            ]
+        )
+        usage = _terminal_usage(out)
+        assert (usage.prompt_tokens, usage.completion_tokens, usage.total_tokens) == (812, 71, 883)
+
+    @pytest.mark.asyncio
+    async def test_modality_breakdown_used_when_top_level_totals_absent(self):
+        """Falls back to details.total.input/output, summed across modalities."""
+        out = await _run(
+            [
+                {
+                    "usageEvent": {
+                        "details": {
+                            "delta": {"input": {"speechTokens": 1}, "output": {"speechTokens": 1}},
+                            "total": {
+                                "input": {"speechTokens": 800, "textTokens": 12},
+                                "output": {"speechTokens": 60, "textTokens": 11},
+                            },
+                        }
+                    }
+                },
+                END,
+            ]
+        )
+        usage = _terminal_usage(out)
+        # 812/71 comes from `total`, never from the smaller `delta` block.
+        assert (usage.prompt_tokens, usage.completion_tokens, usage.total_tokens) == (812, 71, 883)
+
+    @pytest.mark.asyncio
+    async def test_alias_fields_kept_in_sync(self):
+        """``__post_init__`` only syncs at construction; consumers read both.
+
+        ``VoiceChatHandler._send_complete_voice_response()`` serializes
+        ``usage.input_tokens``/``output_tokens``.
+        """
+        out = await _run([{"usageEvent": {"totalInputTokens": 9, "totalOutputTokens": 4}}, END])
+        usage = _terminal_usage(out)
+        assert (usage.input_tokens, usage.output_tokens) == (9, 4)
+
+    @pytest.mark.asyncio
     async def test_websocket_usage_not_all_zero(self):
         out = await _run(
             [
@@ -84,3 +155,28 @@ class TestUsageEvent:
         )
         msg = [r for r in out if r.is_complete][-1].to_websocket_message()
         assert msg["usage"]["total_tokens"] == 7
+
+
+class TestTurnTiming:
+    @pytest.mark.asyncio
+    async def test_terminal_frame_reports_response_time(self):
+        """The turn must be closed so `response_time_ms` is non-zero.
+
+        The example UI renders its latency counter only on a truthy
+        ``response_time_ms``, so a turn left open reports no latency at all.
+        """
+        out = await _run([{"textOutput": {"content": "hi"}}, END])
+        final = [r for r in out if r.is_complete][-1]
+        assert final.turn_metadata.ended_at is not None
+        assert final.usage.response_time_ms > 0
+
+    @pytest.mark.asyncio
+    async def test_first_token_stamped_on_first_model_output(self):
+        out = await _run(
+            [
+                {"contentStart": {"role": "ASSISTANT", "type": "TEXT"}},
+                {"textOutput": {"content": "hello"}},
+                END,
+            ]
+        )
+        assert _terminal_usage(out).first_token_time_ms > 0

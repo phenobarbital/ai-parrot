@@ -34,7 +34,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
-from typing import Any, cast
+from typing import Any, Optional, cast
 
 import click
 from pydantic import ValidationError
@@ -77,6 +77,7 @@ from parrot.knowledge.wiki.project import (
     save_env_overlay,
     save_global_registry,
     save_project_config,
+    sqlite_policy_from_config,
     validate_namespace_name,
     wiki_write_lock,
 )
@@ -86,8 +87,11 @@ from parrot.knowledge.wiki.repo_scan import (
     scan_repository,
 )
 from parrot.knowledge.wiki.sources import SourceCollectionManager
-from parrot.knowledge.wiki.store import BaseWikiStore, create_wiki_store
+from parrot.knowledge.wiki.store import BaseWikiStore, SQLiteWikiStore, WikiStoreBusy, create_wiki_store
 from parrot.knowledge.wiki.symbols import SymbolKind, parse_sym_id
+from parrot.knowledge.wiki.ledger.service import LedgerService
+from parrot.knowledge.wiki.ledger.events import IssueKind
+from parrot.knowledge.wiki.ledger.sdd_ingest import SDDGraphIngest
 
 _cli_logger = logging.getLogger("wikitoolkit.cli")
 
@@ -418,7 +422,34 @@ def _open_store(root: Path, config: WikiProjectConfig) -> BaseWikiStore:
             text_analyzer=config.arango_text_analyzer,
         )
     storage.mkdir(parents=True, exist_ok=True)
-    return create_wiki_store(storage, wiki_name=config.wiki_name, backend=config.backend)
+    return create_wiki_store(
+        storage,
+        wiki_name=config.wiki_name,
+        backend=config.backend,
+        sqlite_policy=sqlite_policy_from_config(config),
+    )
+
+
+def _checkpoint_if_sqlite(store: BaseWikiStore, label: str) -> None:
+    """Fold the WAL back after a long writer; never fail the command.
+
+    ``checkpoint()`` is concrete to :class:`SQLiteWikiStore` — the
+    memory, ArangoDB and Postgres backends have no such method — so the
+    call is guarded. A checkpoint is maintenance: a failure is logged
+    and swallowed, never surfaced as a non-zero exit (AC-7).
+
+    Args:
+        store: The store the long writer just used.
+        label: Command name, for the debug line.
+    """
+    if not isinstance(store, SQLiteWikiStore):
+        return
+    try:
+        report = _run(store.checkpoint())
+    except Exception:  # noqa: BLE001 - maintenance must never fail the command
+        _cli_logger.debug("%s: WAL checkpoint failed", label, exc_info=True)
+        return
+    _cli_logger.debug("%s: WAL checkpoint %s", label, report)
 
 
 def _open_sources(
@@ -438,7 +469,11 @@ def _open_sources(
     """
     storage = config.storage_path(root)
     if config.backend == "sqlite":
-        return SourceCollectionManager(storage / "sources", db_path=storage / "wiki.db")
+        return SourceCollectionManager(
+            storage / "sources",
+            db_path=storage / "wiki.db",
+            busy_timeout=config.sqlite_busy_timeout,
+        )
     if config.backend == "arangodb":
         return SourceCollectionManager(storage / "sources", backend="arangodb", arango_store=store)
     return SourceCollectionManager(storage / "sources", backend="json")
@@ -1541,6 +1576,16 @@ def build(
             counts.get("graph"),
         )
 
+        # Fold the WAL back now, still inside the writer lock — `store`
+        # itself is local to `_pipeline()` above, so a fresh handle is
+        # opened here (SQLite only — `_checkpoint_if_sqlite` guards on
+        # `SQLiteWikiStore`, and re-opening an ArangoDB store here would
+        # cost an unnecessary connection for no benefit). The
+        # schema/migration probe on the fresh handle is a cheap
+        # read-first no-op since the plane is already current.
+        if config.backend == "sqlite":
+            _checkpoint_if_sqlite(_open_store(root, config), "build")
+
         click.echo(
             f"Wiki '{config.wiki_name}' built at "
             f"{output_dir} — "
@@ -1728,6 +1773,17 @@ def upsert(
 
         try:
             counts = _run(_pipeline())
+        except WikiStoreBusy:
+            # Same non-failing skip as the file-lock-busy branch above:
+            # another writer holds the SQLite writer lock, so this
+            # upsert steps aside and the next build/upsert covers it.
+            if not quiet:
+                click.echo(
+                    "The wiki plane is busy (a build or another agent holds "
+                    "the SQLite writer lock) — skipping this upsert; the "
+                    "next build will cover these files."
+                )
+            return
         except Exception as exc:  # surfaced as a clear CLI error
             if config.backend == "arangodb":
                 raise click.ClickException(
@@ -2030,6 +2086,12 @@ def status(path_: str | None, ns_opt: str | None, as_json: bool) -> None:
     # reporting on.
     from parrot.knowledge.wiki.roblox.ingest import get_roblox_status
 
+    # FEAT-557: effective SQLite connection policy. Additive — every key
+    # already in `payload` is unchanged. Read from the LOCAL store, not
+    # from `read_store`, which may be a federated span.
+    if isinstance(store, SQLiteWikiStore):
+        payload["sqlite"] = _run(store.sqlite_settings())
+
     payload["roblox_api"] = get_roblox_status()
     if as_json:
         click.echo(json.dumps(payload, indent=2, default=str))
@@ -2068,6 +2130,21 @@ def status(path_: str | None, ns_opt: str | None, as_json: bool) -> None:
         click.echo(f"  {skip['name']:<16} {skip['reason']}{hint}")
     if stale:
         click.echo("Run `wikitoolkit build` to refresh stale sources.")
+
+    # FEAT-557: render SQLite diagnostics block
+    sqlite_info = payload.get("sqlite")
+    if sqlite_info is not None:
+        click.echo(
+            f"\nSQLite     : journal={sqlite_info['journal_mode']}, "
+            f"timeout={sqlite_info['busy_timeout_ms']}ms, "
+            f"sync={sqlite_info['synchronous']}, "
+            f"journal_limit={sqlite_info['journal_size_limit']}"
+        )
+        if sqlite_info["performance_pragmas"]:
+            click.echo("           : performance pragmas ENABLED")
+        else:
+            click.echo("           : performance pragmas disabled")
+
     roblox_api = payload.get("roblox_api")
     if roblox_api is None:
         click.echo("\nRoblox API : not downloaded — run `wikitoolkit ingest roblox-api --refresh`.")
@@ -2551,6 +2628,251 @@ def ns_remove(name: str, path_: str | None, is_global: bool) -> None:
         del config.namespaces[name]
         written = save_project_config(root, config)
     click.echo(f"Removed namespace {name!r} from {written}")
+
+
+# --------------------------------------------------------------------------
+# Ledger commands (FEAT-566 — SDD Work Ledger)
+# --------------------------------------------------------------------------
+
+
+@wiki.group(name="ledger")
+def ledger() -> None:
+    """Manage the SDD work ledger, discovered work, and spec graph."""
+
+
+@ledger.command("open")
+@click.option("--kind", type=click.Choice(["bug", "tech_debt", "feature_gap", "vulnerability"]), default="bug")
+@click.option("--severity", type=click.Choice(["critical", "major", "minor", "low"]), default="minor")
+@click.option("--discovered-from", required=True, help="Source: spec:<FEAT-ID>, task:<TASK-ID>, review:<TASK-ID>")
+@click.option("--about", multiple=True, help="Symbol/file IDs affected by this issue.")
+@click.option("--title", required=True, help="Issue title.")
+@click.option("--body", required=True, help="Issue description.")
+def ledger_open(
+    kind: str,
+    severity: str,
+    discovered_from: str,
+    about: tuple[str, ...],
+    title: str,
+    body: str,
+) -> None:
+    """Open a new issue in the ledger."""
+    service = LedgerService.from_root()
+    try:
+        issue_id = _run(
+            service.open_issue(
+                title=title,
+                body=body,
+                kind=cast(IssueKind, kind),
+                severity=severity,
+                discovered_from=discovered_from,
+                about=list(about),
+                actor="agent:cli",
+            )
+        )
+        click.echo(f"Opened {issue_id}")
+    except WikiStoreBusy as exc:
+        click.echo(f"Ledger index is busy ({exc.operation}); issue queued (index_pending)")
+
+
+@ledger.command("ready")
+@click.option("--kind", type=click.Choice(["bug", "tech_debt", "feature_gap", "vulnerability"]), default=None)
+def ledger_ready(kind: str | None) -> None:
+    """List unclaimed, open issues."""
+    service = LedgerService.from_root()
+    try:
+        kind_enum = cast(IssueKind, kind) if kind else None
+        issues = _run(service.ready_work(kind=kind_enum))
+        for issue in issues:
+            click.echo(f"{issue['issue_id']} [{issue['severity']}] {issue['title']} " f"({issue['kind']})")
+        if not issues:
+            click.echo("No ready issues.")
+    except WikiStoreBusy as exc:
+        click.echo(f"Ledger index is busy ({exc.operation}); no ready issues available (index_pending)")
+
+
+@ledger.command("claim")
+@click.argument("issue_id")
+@click.option("--actor", default="agent:cli", help="Actor claiming the issue.")
+def ledger_claim(issue_id: str, actor: str) -> None:
+    """Claim an issue for work."""
+    service = LedgerService.from_root()
+    try:
+        success = _run(service.claim(issue_id, actor))
+        if success:
+            click.echo(f"Claimed {issue_id}")
+        else:
+            click.echo(f"Could not claim {issue_id} (already claimed or closed)")
+            raise SystemExit(1)
+    except WikiStoreBusy as exc:
+        click.echo(f"Ledger index is busy ({exc.operation}); cannot claim")
+        raise SystemExit(2)
+
+
+@ledger.command("acknowledge")
+@click.argument("issue_id")
+@click.option("--reason", required=True, help="Reason for acknowledgement.")
+@click.option("--actor", required=True, help="Must be human:<name>.")
+def ledger_acknowledge(issue_id: str, reason: str, actor: str) -> None:
+    """Acknowledge a critical issue (human-only)."""
+    service = LedgerService.from_root()
+    success = _run(service.acknowledge(issue_id, reason, actor))
+    if success:
+        click.echo(f"Acknowledged {issue_id}")
+    else:
+        click.echo(f"Cannot acknowledge: actor {actor!r} is not human (must be human:<name>)")
+        raise SystemExit(1)
+
+
+@ledger.command("close")
+@click.argument("issue_id")
+@click.option("--reason", required=True, help="Reason for closing.")
+@click.option("--actor", default="agent:cli", help="Actor closing the issue.")
+def ledger_close(issue_id: str, reason: str, actor: str) -> None:
+    """Close an issue."""
+    service = LedgerService.from_root()
+    try:
+        success = _run(service.close_issue(issue_id, reason, actor))
+        if success:
+            click.echo(f"Closed {issue_id}")
+        else:
+            click.echo(f"Could not close {issue_id}")
+            raise SystemExit(1)
+    except WikiStoreBusy as exc:
+        click.echo(f"Ledger index is busy ({exc.operation}); issue queued (index_pending)")
+
+
+@ledger.command("context")
+@click.argument("file_paths", nargs=-1, required=True)
+@click.option("--max-tokens", default=3000, help="Token budget for context.")
+def ledger_context(file_paths: tuple[str, ...], max_tokens: int) -> None:
+    """Get context for file paths: open issues touching them."""
+    service = LedgerService.from_root()
+    context = _run(service.get_context(list(file_paths), max_tokens=max_tokens))
+    if context:
+        click.echo(context)
+    else:
+        click.echo("(no relevant open issues)")
+
+
+@ledger.command("blockers")
+@click.argument("feature_id")
+def ledger_blockers(feature_id: str) -> None:
+    """List unacknowledged critical issues blocking a feature merge."""
+    service = LedgerService.from_root()
+    issues = _run(service.merge_blockers(feature_id))
+    if issues:
+        for issue in issues:
+            click.echo(
+                f"{issue['issue_id']} [{issue['severity']}] {issue['title']} "
+                f"(discovered from {issue['discovered_from']})"
+            )
+        raise SystemExit(1)
+    click.echo("No blocking issues.")
+
+
+@ledger.command("export")
+@click.option("--dest", default="sdd/ledger/issues.jsonl", help="Export destination.")
+def ledger_export(dest: str) -> None:
+    """Export the ledger snapshot."""
+    service = LedgerService.from_root()
+    dest_path = Path(dest)
+    changed = _run(service.export_snapshot(dest_path))
+    if changed:
+        click.echo(f"Exported {dest_path} (changed)")
+    else:
+        click.echo(f"Exported {dest_path} (unchanged)")
+
+
+@ledger.command("sync")
+def ledger_sync() -> None:
+    """Sync the ledger index from the event log."""
+    service = LedgerService.from_root()
+    try:
+        _run(service.index.sync())
+        click.echo("Ledger index synced")
+    except WikiStoreBusy as exc:
+        # Module 2 SS2.2: sync/rebuild/ingest-sdd/compact all exit 2 on busy
+        # (unlike open/close's soft index_pending success) — the cursor is
+        # unchanged, the whole batch rolled back, nothing to report as done.
+        click.echo(f"Ledger index is busy ({exc.operation}); sync failed")
+        raise SystemExit(2)
+
+
+@ledger.command("rebuild")
+def ledger_rebuild() -> None:
+    """Rebuild the ledger index from scratch and checkpoint.
+
+    `spec:`/`task:` pages and edges from `ledger ingest-sdd` are not
+    event-sourced (Module 7 writes directly into ledger.db, with no
+    corresponding events.jsonl entries), so a plain replay-from-log
+    rebuild would silently and permanently wipe the SDD spec/task graph.
+    Re-running SDD ingestion right after the event replay restores it —
+    ingestion is idempotent (upsert semantics), so this is safe to run
+    even when nothing in sdd/ actually changed.
+    """
+    service = LedgerService.from_root()
+    try:
+        _run(service.index.rebuild())
+        _run(SDDGraphIngest(service.store, service.shared_root).ingest_all())
+        try:
+            _run(service.store.checkpoint(truncate=True))
+        except WikiStoreBusy:
+            _cli_logger.warning("Could not checkpoint after rebuild: index busy")
+        click.echo("Ledger index rebuilt (SDD spec/task graph re-ingested)")
+    except WikiStoreBusy as exc:
+        click.echo(f"Ledger index is busy ({exc.operation}); rebuild failed")
+        raise SystemExit(2)
+
+
+@ledger.command("ingest-sdd")
+def ledger_ingest_sdd() -> None:
+    """Ingest SDD specs and task indexes into the ledger."""
+    service = LedgerService.from_root()
+    try:
+        ingester = SDDGraphIngest(service.store, service.shared_root)
+        stats = _run(ingester.ingest_all())
+        try:
+            _run(service.store.checkpoint(truncate=True))
+        except WikiStoreBusy:
+            _cli_logger.warning("Could not checkpoint after ingest: index busy")
+        click.echo(
+            f"SDD artifacts ingested: {stats['specs']} specs, " f"{stats['tasks']} tasks, {stats['edges']} edges"
+        )
+    except WikiStoreBusy as exc:
+        click.echo(f"Ledger index is busy ({exc.operation}); ingest failed")
+        raise SystemExit(2)
+
+
+@ledger.command("compact")
+@click.option("--older-than", default=30, help="Days: events older than this can be compacted.")
+def ledger_compact(older_than: int) -> None:
+    """Compact the ledger index (index-only; manual only)."""
+    service = LedgerService.from_root()
+    try:
+        folded = _run(service.compact(older_than_days=older_than))
+    except WikiStoreBusy as exc:
+        click.echo(f"Ledger index is busy ({exc.operation}); compact failed")
+        raise SystemExit(2)
+    click.echo(f"Compacted: {folded} issue(s) folded (events.jsonl untouched)")
+
+
+@ledger.command("audit")
+def ledger_audit() -> None:
+    """Print ledger audit: log size, event counts, and index stats."""
+    service = LedgerService.from_root()
+    audit = _run(service.audit())
+
+    click.echo(f"Log size: {audit['log_size_bytes']} bytes")
+    click.echo(f"Total events: {audit['total_events']}")
+    if audit.get("event_counts"):
+        click.echo("Event counts by kind:")
+        for kind, count in sorted(audit["event_counts"].items()):
+            click.echo(f"  {kind}: {count}")
+    click.echo(f"Cursor offset: {audit['cursor_offset']}")
+    click.echo(f"Cursor lag: {audit['cursor_lag_events']} events")
+    click.echo(f"Broken edges: {audit['broken_edges']}")
+    if sqlite_info := audit.get("sqlite"):
+        click.echo(f"SQLite: journal={sqlite_info['journal_mode']}, " f"timeout={sqlite_info['busy_timeout_ms']}ms")
 
 
 @wiki.command()
@@ -4217,6 +4539,7 @@ def ingest(
             storage_backend=config.backend,
         )
         _run(_apply_all(applied, wiki_config, header.charter_version))
+        _checkpoint_if_sqlite(store, "ingest")
         click.echo(f"Applied {len(applied)} decision(s) from {review_opt}.")
         return
 
@@ -4293,6 +4616,7 @@ def ingest(
         )
         ManifestWriter(manifest_path).write(header, entries)
         _run(_apply_all(entries, wiki_config, charter.version, acquired_by_uri))
+        _checkpoint_if_sqlite(store, "ingest")
         click.echo(
             f"Applied {len(entries)} interactive decision(s)," f" skipped {len(skipped)}. Manifest: {manifest_path}"
         )
@@ -4322,6 +4646,7 @@ def ingest(
     )
     ManifestWriter(manifest_path).write(header, entries)
     _run(_apply_all(entries, wiki_config, charter.version, acquired_by_uri))
+    _checkpoint_if_sqlite(store, "ingest")
     audited = [e for e in entries if e.audit_sample]
     click.echo(
         f"Applied {len(entries)} auto decision(s), skipped {len(skipped)}."

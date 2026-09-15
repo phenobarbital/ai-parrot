@@ -640,7 +640,15 @@ class ClaudeAgentClient(AbstractClient):
         )
         _lc_t0_ca = _lc_time_ca.perf_counter()
 
-        messages = await self._collect_messages(prompt, options=options)
+        try:
+            messages = await self._collect_messages(prompt, options=options)
+        except BaseException as _lc_exc:
+            # FEAT-548 Finding #1: emit ClientCallFailedEvent on error
+            await self._emit_failed_call_safe(
+                _lc_tc_ca, client_name="claude-agent", model=resolved_model or "",
+                t0=_lc_t0_ca, exc=_lc_exc,
+            )
+            raise
         self._remember_cli_session(session_id, messages)
 
         ai_message = AIMessageFactory.from_claude_agent(
@@ -808,30 +816,37 @@ class ClaudeAgentClient(AbstractClient):
 
         all_messages = []
         turn_id = str(uuid.uuid4())
-        async for msg in query(prompt=prompt, options=options):
-            all_messages.append(msg)
-            # Duck-typed defensive checks in case the SDK introduces new
-            # subclasses or aliases.
-            if isinstance(msg, AssistantMessage) or type(msg).__name__ == "AssistantMessage":
-                for block in getattr(msg, "content", []) or []:
-                    if isinstance(block, TextBlock) or type(block).__name__ == "TextBlock":
-                        text = getattr(block, "text", "") or ""
-                        if text:
-                            # FEAT-176: per-chunk event
-                            if _lc_has_chunk_subs_cas:
-                                await self.events.emit(
-                                    _CAsStreamChunkEvent(
-                                        trace_context=_lc_tc_cas,
-                                        client_name="claude-agent",
-                                        model=resolved_model or "",
-                                        chunk_index=_lc_chunk_idx_cas,
-                                        chunk_size_bytes=len(text.encode("utf-8")),
-                                        source_type="client",
-                                        source_name="claude-agent",
+        try:  # FEAT-548 Finding #1: emit ClientCallFailedEvent on error
+            async for msg in query(prompt=prompt, options=options):
+                all_messages.append(msg)
+                # Duck-typed defensive checks in case the SDK introduces new
+                # subclasses or aliases.
+                if isinstance(msg, AssistantMessage) or type(msg).__name__ == "AssistantMessage":
+                    for block in getattr(msg, "content", []) or []:
+                        if isinstance(block, TextBlock) or type(block).__name__ == "TextBlock":
+                            text = getattr(block, "text", "") or ""
+                            if text:
+                                # FEAT-176: per-chunk event
+                                if _lc_has_chunk_subs_cas:
+                                    await self.events.emit(
+                                        _CAsStreamChunkEvent(
+                                            trace_context=_lc_tc_cas,
+                                            client_name="claude-agent",
+                                            model=resolved_model or "",
+                                            chunk_index=_lc_chunk_idx_cas,
+                                            chunk_size_bytes=len(text.encode("utf-8")),
+                                            source_type="client",
+                                            source_name="claude-agent",
+                                        )
                                     )
-                                )
-                                _lc_chunk_idx_cas += 1
-                            yield text
+                                    _lc_chunk_idx_cas += 1
+                                yield text
+        except BaseException as _lc_exc:
+            await self._emit_failed_call_safe(
+                _lc_tc_cas, client_name="claude-agent", model=resolved_model or "",
+                t0=_lc_t0_cas, exc=_lc_exc,
+            )
+            raise
 
         # Build and yield final AIMessage using accumulated messages
         ai_message = AIMessageFactory.from_claude_agent(

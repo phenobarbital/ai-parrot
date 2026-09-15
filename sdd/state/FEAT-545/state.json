@@ -1,0 +1,86 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-545",
+  "feature_slug": "collaborative-adversarial-spec-design",
+  "started_at": "2026-09-10T00:54:49+00:00",
+  "updated_at": "2026-09-10T01:03:37+00:00",
+  "source": {
+    "kind": "inline",
+    "raw_path": "sdd/state/FEAT-545/source.md",
+    "fetched_at": "2026-09-10T00:54:49+00:00",
+    "summary_oneline": "Make /sdd-spec emit executor-ready code+explanations and add a Codex collaborative design-research pass before spec creation"
+  },
+  "mode": "auto",
+  "detected_mode": "enrichment",
+  "wiki_available": true,
+  "phase": "proposal_drafted",
+  "phases": {
+    "source": {
+      "status": "completed"
+    },
+    "plan": {
+      "status": "completed",
+      "approved_by_user": false,
+      "notes": "Gate skipped: session runs unattended; plan executed as written with three depth-1 follow-ups (F011, F013, F015)."
+    },
+    "research": {
+      "status": "completed",
+      "completed_at": "2026-09-10T01:03:37+00:00",
+      "files_read": 17,
+      "grep_calls": 14,
+      "git_calls": 3,
+      "wiki_calls": 2,
+      "depth_reached": 1,
+      "truncated": false,
+      "truncation_reason": null,
+      "queries_planned": 22,
+      "queries_skipped": 0
+    },
+    "synthesis": {
+      "status": "completed",
+      "synthesis_path": "sdd/state/FEAT-545/synthesis.json",
+      "overall_confidence": "high",
+      "claims_total": 14,
+      "claims_high_conf": 14,
+      "claims_medium_conf": 0,
+      "claims_low_conf": 0,
+      "unknowns_count": 4,
+      "lint_passed": true,
+      "lint_iterations": 2,
+      "notes": "Lint iteration 1 flagged .agent/workflows/sdd-task.md as uncited; F011 citation added. Overall confidence held at medium because U1-U4 (product choices) are unresolved and C12 (model name) is low."
+    },
+    "qa": {
+      "status": "completed",
+      "questions_total": 4,
+      "questions_answered": 4,
+      "notes": "U3 (TASK-file blueprints), U1 (gpt-5.6-luna, verified F017), U2 (triage table), U4 (optional pass) \u2014 all resolved by user 2026-09-10."
+    },
+    "output": {
+      "status": "accepted",
+      "proposal_path": "sdd/proposals/collaborative-adversarial-spec-design.proposal.md",
+      "commit_sha": null,
+      "next_command_recommended": "sdd-spec",
+      "next_command_rationale": "Localization high-confidence; unknowns are product choices with recommended defaults.",
+      "notes": "Proposal accepted by user 2026-09-10; handed to /sdd-spec."
+    }
+  },
+  "budget": {
+    "profile": "default",
+    "max_files_read": 40,
+    "max_grep_calls": 25,
+    "max_git_calls": 10,
+    "max_depth": 2,
+    "max_wall_seconds": 300
+  },
+  "consumed": {
+    "files_read": 17,
+    "grep_calls": 14,
+    "git_calls": 3,
+    "wall_seconds": 240
+  },
+  "errors": [],
+  "resume_hint": {
+    "next_phase": "commit",
+    "next_action": "git add proposal + state; commit"
+  }
+}

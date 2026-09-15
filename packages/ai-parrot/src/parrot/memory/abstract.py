@@ -186,6 +186,7 @@ class ConversationTurn:
         turn_id: Optional[str] = None,
         assistant_text: Optional[str] = None,
         error: Optional[str] = None,
+        tool_invocations: Optional[List[ToolInvocation]] = None,
     ) -> "ConversationTurn":
         """Build a turn from the ``AIMessage`` a bot round produced.
 
@@ -212,6 +213,16 @@ class ConversationTurn:
                 synthesized after the fact.
             error: Round-level failure text (FEAT-525). Condensed by Stage 0
                 rule 5 when the turn is normalized; never omitted.
+            tool_invocations: Captured invocations to persist INSTEAD OF
+                deriving them from ``response.tool_calls`` (FEAT-538).
+                When the task-memory observer watched this turn it already
+                holds the canonical record of every dispatch — including
+                the ones that never produced a ``tool_call`` because they
+                were denied, cancelled or never executed. Passing them
+                here *replaces* the derivation rather than adding to it,
+                which is what stops an observed turn listing each call
+                twice. ``None`` keeps the legacy conversion, so an
+                unobserved turn is byte-identical to before.
 
         Returns:
             A fully populated :class:`ConversationTurn`.
@@ -226,7 +237,7 @@ class ConversationTurn:
         tool_calls = getattr(response, "tool_calls", None) or []
         usage = getattr(response, "usage", None)
 
-        tool_invocations = [
+        derived_invocations = [
             ToolInvocation(
                 tool_name=tc.name,
                 input=tc.arguments,
@@ -254,7 +265,7 @@ class ConversationTurn:
                 "response_time": getattr(response, "response_time", None),
             },
             chatbot_id=chatbot_id,
-            tool_invocations=tool_invocations,
+            tool_invocations=(derived_invocations if tool_invocations is None else list(tool_invocations)),
             error=error,
         )
 

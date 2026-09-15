@@ -70,6 +70,7 @@ Frames 3–5 are the sample's system-prompt priming
 | `usageEvent` | Populates `LiveCompletionUsage` (§6). |
 | `toolUse` | Stashed into `_TurnState.pending_tool` — **not executed yet** (§4). |
 | `contentEnd` (`type == "TOOL"`) | Executes the stashed tool call and sends the three-frame result envelope (§4). |
+| `contentEnd` (`type == "AUDIO"`, `stopReason == "END_TURN"`) | Completes the turn when its `contentId` matches an assistant audio block. Nova 2 Sonic can leave the connection open without emitting `completionEnd`; completing here releases push-to-talk clients before the provider idle timeout. User, text, partial, and interrupted content ends do not complete the turn. |
 | `completionEnd` | Terminal `LiveVoiceResponse(is_complete=True, tool_calls=..., usage=...)`. |
 
 ### Shutdown sequence (sent from `stream_voice()`'s `finally`, in order)
@@ -231,34 +232,66 @@ fired in production, since the transport that would have delivered a real
 
 ---
 
-## 6. Usage Accounting — ⚠️ Unverified Frame Shape
+## 6. Usage Accounting
 
-Nova emits `usageEvent` frames (`nova_sonic_tool_use.py:659-660`), but the
-sample only debug-prints the whole frame — **it does not document field
-names**. This is the one gap in FEAT-408 whose frame *shape* is unverified
-(spec §8 Q1).
+Nova emits `usageEvent` frames (`nova_sonic_tool_use.py:659-660`). FEAT-408
+shipped a *guessed* key list (spec §8 Q1) because the AWS sample only
+debug-prints the frame. A live Nova 2 Sonic session on 2026-09-08 showed
+that guess was half wrong: `totalTokens` matched, but the per-side counts
+did not, so the example UI rendered `tokens: 883` next to `in/out: 0/0`.
 
-Implemented defensively: several plausible key spellings are probed, most
-likely first, and an unrecognized shape leaves the counters at zero rather
-than raising:
+The frame nests a per-modality breakdown under `details`, and carries the
+per-side totals under `total`-prefixed top-level keys:
+
+```jsonc
+{"usageEvent": {
+  "completionId": "...", "promptName": "...", "sessionId": "...",
+  "details": {
+    "delta": {"input": {"speechTokens": N, "textTokens": N},
+              "output": {"speechTokens": N, "textTokens": N}},
+    "total": {"input": {"speechTokens": N, "textTokens": N},
+              "output": {"speechTokens": N, "textTokens": N}}
+  },
+  "totalInputTokens": N, "totalOutputTokens": N, "totalTokens": N
+}}
+```
+
+The probe list leads with those names and keeps the earlier guesses as
+tolerated fallbacks; an unrecognized shape still leaves the counters at
+zero rather than raising:
 
 ```python
-_USAGE_INPUT_KEYS = ("inputTokens", "promptTokens", "input_tokens")
-_USAGE_OUTPUT_KEYS = ("outputTokens", "completionTokens", "output_tokens")
+_USAGE_INPUT_KEYS = ("totalInputTokens", "inputTokens", "promptTokens", "input_tokens")
+_USAGE_OUTPUT_KEYS = ("totalOutputTokens", "outputTokens", "completionTokens", "output_tokens")
 _USAGE_TOTAL_KEYS = ("totalTokens", "total_tokens")
 ```
 
-One level of nesting under `details`/`totals`/`usage` sub-keys is also
-flattened and probed. `total_tokens` is derived as
-`prompt_tokens + completion_tokens` when no total key matches. Usage frames
-are treated as **absolute** (assigned, not accumulated) — chosen as the
-safe default since no evidence exists either way; if a real session proves
-Nova sends *incremental* deltas instead, this should change to
-accumulation.
+`_flatten_usage_event()` pulls up two levels of `details`/`totals`/`total`/
+`usage` sub-objects (outer keys win, and `delta` is never pulled up, so a
+cumulative `total` always beats a per-frame delta). When no per-side key
+matches, `_sum_token_fields()` falls back to summing the `*Tokens` leaves of
+the `input`/`output` sub-objects — modality counts are summed because
+neither `speechTokens` nor `textTokens` alone is the figure callers want.
+`total_tokens` is derived as `prompt_tokens + completion_tokens` when no
+total key matches. Both alias pairs are assigned
+(`prompt_tokens`/`input_tokens`, `completion_tokens`/`output_tokens`):
+`LiveCompletionUsage.__post_init__` syncs them only at construction, and the
+two `VoiceChatHandler` serialization paths read *different* names of each
+pair. Usage frames are treated as **absolute** (assigned, not accumulated).
 
-The raw frame is preserved in `usage.extra["usage_event"]` and logged at
-`debug` specifically so **the real schema can be read off the first live
-session** and this guess list corrected — closing spec §8 Q1.
+The raw frame is still preserved in `usage.extra["usage_event"]` and logged
+at `debug`.
+
+### Turn timing
+
+`stream_voice()` stamps `usage.first_token_time_ms` on the first assistant
+text or audio output, and — on the terminal frame — sets
+`turn_metadata.ended_at` and copies `turn_metadata.duration_ms` into
+`usage.response_time_ms` (the same points the Gemini Live producer uses).
+Before this, `ended_at` was explicitly reset to `None` just before the
+terminal frame, so every Nova turn reported `response_time_ms == 0` and the
+example UI — which renders its latency counter only on a truthy value —
+showed no latency at all.
 
 `tool_calls_executed` / `tool_execution_time_ms` accounting (populated when
 a tool executes, §4) is a separate code path and unaffected by any of the

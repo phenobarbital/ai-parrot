@@ -46,12 +46,17 @@ from parrot.flows.dev_loop import session_state as session_state_module
 RUN_ID = "run-prop0001"
 
 _NODE_IDS = (
-    "intent_classifier", "bug_intake", "research", "development",
-    "qa", "deployment_handoff", "revision_handoff", "failure_handler",
+    "intent_classifier",
+    "bug_intake",
+    "research",
+    "development",
+    "qa",
+    "deployment_handoff",
+    "revision_handoff",
+    "failure_handler",
     "close",
 )
-_GATE_KINDS = ("manual_criterion", "deployment_approval", "revision_approval",
-               "plan_approval")
+_GATE_KINDS = ("manual_criterion", "deployment_approval", "revision_approval", "plan_approval")
 _GATE_STATUSES = ("pending", "approved", "rejected", "expired")
 
 st_ts = st.floats(min_value=1e9, max_value=2e9, allow_nan=False, allow_infinity=False)
@@ -68,7 +73,9 @@ st_short_text = st.text(max_size=20)
 def _run_created():
     return st.builds(
         session_state_module.RunCreated,
-        ts=st_ts, run_id=st.just(RUN_ID), revision=st.booleans(),
+        ts=st_ts,
+        run_id=st.just(RUN_ID),
+        revision=st.booleans(),
         work_kind=st.sampled_from(["bug", "enhancement", "new_feature"]),
         summary=st_short_text,
     )
@@ -80,9 +87,11 @@ def _run_cancelled():
 
 def _run_closed():
     return st.builds(
-        session_state_module.RunClosed, ts=st_ts,
+        session_state_module.RunClosed,
+        ts=st_ts,
         outcome=st.sampled_from(["succeeded", "failed"]),
-        jira_issue_key=st_short_text, pr_url=st_short_text,
+        jira_issue_key=st_short_text,
+        pr_url=st_short_text,
     )
 
 
@@ -92,7 +101,9 @@ def _node_started():
 
 def _node_completed():
     return st.builds(
-        session_state_module.NodeCompleted, ts=st_ts, node_id=st_node_id,
+        session_state_module.NodeCompleted,
+        ts=st_ts,
+        node_id=st_node_id,
         summary=st.dictionaries(st_short_text, st_short_text, max_size=3),
     )
 
@@ -103,6 +114,19 @@ def _node_failed():
 
 def _node_skipped():
     return st.builds(session_state_module.NodeSkipped, ts=st_ts, node_id=st_node_id)
+
+
+def _node_progress():
+    return st.builds(
+        session_state_module.NodeProgress,
+        ts=st_ts,
+        node_id=st_node_id,
+        phase=st.sampled_from(["started", "working", "finished"]),
+        headline=st.text(max_size=200),
+        detail=st.text(max_size=500),
+        seat=st_short_text,
+        task_id=st_short_text,
+    )
 
 
 def _dispatch_queued():
@@ -140,11 +164,16 @@ def _dispatch_completed():
 def _approval_gate():
     return st.builds(
         session_state_module.ApprovalGate,
-        gate_id=st_gate_id, kind=st.sampled_from(_GATE_KINDS), node_id=st_node_id,
+        gate_id=st_gate_id,
+        kind=st.sampled_from(_GATE_KINDS),
+        node_id=st_node_id,
         status=st.sampled_from(_GATE_STATUSES),
         on_expiry=st.sampled_from(["fail", "approve"]),
-        title=st_short_text, instructions=st_short_text, payload_ref=st_short_text,
-        opened_at=st_ts, expires_at=st.one_of(st.none(), st_ts),
+        title=st_short_text,
+        instructions=st_short_text,
+        payload_ref=st_short_text,
+        opened_at=st_ts,
+        expires_at=st.one_of(st.none(), st_ts),
         resolved_by=st_short_text,
         resolved_at=st.one_of(st.none(), st_ts),
         comment=st_short_text,
@@ -157,8 +186,11 @@ def _gate_opened():
 
 def _gate_resolved():
     return st.builds(
-        session_state_module.GateResolved, ts=st_ts, gate_id=st_gate_id,
-        resolution=st.sampled_from(["approved", "rejected"]), resolved_by=st_short_text,
+        session_state_module.GateResolved,
+        ts=st_ts,
+        gate_id=st_gate_id,
+        resolution=st.sampled_from(["approved", "rejected"]),
+        resolved_by=st_short_text,
         comment=st_short_text,
     )
 
@@ -184,13 +216,27 @@ def any_action():
     it nonsense, not just well-formed sequences.
     """
     return st.one_of(
-        _run_created(), _run_cancelled(), _run_closed(),
-        _node_started(), _node_completed(), _node_failed(), _node_skipped(),
-        _dispatch_queued(), _dispatch_started(), _dispatch_delta(),
-        _dispatch_tool_use(), _dispatch_tool_result(),
-        _dispatch_output_invalid(), _dispatch_failed(), _dispatch_completed(),
-        _gate_opened(), _gate_resolved(), _gate_expired(),
-        _jira_linked(), _pr_linked(),
+        _run_created(),
+        _run_cancelled(),
+        _run_closed(),
+        _node_started(),
+        _node_completed(),
+        _node_failed(),
+        _node_skipped(),
+        _node_progress(),
+        _dispatch_queued(),
+        _dispatch_started(),
+        _dispatch_delta(),
+        _dispatch_tool_use(),
+        _dispatch_tool_result(),
+        _dispatch_output_invalid(),
+        _dispatch_failed(),
+        _dispatch_completed(),
+        _gate_opened(),
+        _gate_resolved(),
+        _gate_expired(),
+        _jira_linked(),
+        _pr_linked(),
     )
 
 
@@ -267,7 +313,8 @@ def test_terminal_phase_sticky(actions):
 @given(
     resolutions=st.lists(
         st.tuples(st.sampled_from(["approved", "rejected"]), st_short_text),
-        min_size=2, max_size=5,
+        min_size=2,
+        max_size=5,
     )
 )
 def test_arbitration_first_writer_wins(resolutions):
@@ -281,9 +328,7 @@ def test_arbitration_first_writer_wins(resolutions):
         with pytest.raises(GateAlreadyResolvedError):
             host.resolve_gate(gate_id, resolution, resolved_by=resolver)
 
-    resolved_envelopes = [
-        e for e in host.replay_since(0) if e.action.type == "gate/resolved"
-    ]
+    resolved_envelopes = [e for e in host.replay_since(0) if e.action.type == "gate/resolved"]
     assert len(resolved_envelopes) == 1
     assert host.state.gates[gate_id].resolved_by == first_resolver
     assert host.state.gates[gate_id].status == first_resolution
@@ -299,7 +344,11 @@ def test_arbitration_first_writer_wins(resolutions):
 def test_expiry_fail_closed_ends_expired(kind):
     host = SessionHost(RUN_ID)
     gate_id, _ = host.open_gate(
-        kind=kind, node_id="qa", title="x", ttl_seconds=10, on_expiry="fail",
+        kind=kind,
+        node_id="qa",
+        title="x",
+        ttl_seconds=10,
+        on_expiry="fail",
     )
     host.expire_due_gates(now=host.state.gates[gate_id].opened_at + 20)
     assert host.state.gates[gate_id].status == "expired"
@@ -310,7 +359,11 @@ def test_expiry_fail_closed_ends_expired(kind):
 def test_expiry_fail_open_ends_approved_by_system(kind):
     host = SessionHost(RUN_ID)
     gate_id, _ = host.open_gate(
-        kind=kind, node_id="qa", title="x", ttl_seconds=10, on_expiry="approve",
+        kind=kind,
+        node_id="qa",
+        title="x",
+        ttl_seconds=10,
+        on_expiry="approve",
     )
     host.expire_due_gates(now=host.state.gates[gate_id].opened_at + 20)
     gate = host.state.gates[gate_id]
@@ -327,12 +380,14 @@ def _run_summary():
     return st.builds(
         RunSummary,
         run_id=st.sampled_from(["run-a", "run-b", "run-c"]),
-        phase=st.sampled_from(["created", "running", "awaiting_gate",
-                               "succeeded", "failed", "cancelled"]),
-        work_kind=st_short_text, summary=st_short_text,
-        jira_issue_key=st_short_text, pr_url=st_short_text,
+        phase=st.sampled_from(["created", "running", "awaiting_gate", "succeeded", "failed", "cancelled"]),
+        work_kind=st_short_text,
+        summary=st_short_text,
+        jira_issue_key=st_short_text,
+        pr_url=st_short_text,
         pending_gate_count=st.integers(min_value=0, max_value=5),
-        created_at=st_ts, finished_at=st.one_of(st.none(), st_ts),
+        created_at=st_ts,
+        finished_at=st.one_of(st.none(), st_ts),
     )
 
 
@@ -341,7 +396,8 @@ def _root_action():
         st.builds(session_state_module.RunAdded, ts=st_ts, summary=_run_summary()),
         st.builds(session_state_module.RunSummaryChanged, ts=st_ts, summary=_run_summary()),
         st.builds(
-            session_state_module.RunRemoved, ts=st_ts,
+            session_state_module.RunRemoved,
+            ts=st_ts,
             run_id=st.sampled_from(["run-a", "run-b", "run-c", "run-unknown"]),
         ),
     )
@@ -397,15 +453,13 @@ def test_no_transport_imports():
 
     for banned in forbidden:
         assert banned not in imported_roots, (
-            f"session_state.py must not import {banned!r} — "
-            f"found in: {sorted(imported_roots)}"
+            f"session_state.py must not import {banned!r} — " f"found in: {sorted(imported_roots)}"
         )
 
     # Positive check: only pydantic + stdlib roots are present.
     stdlib_roots = {"__future__", "asyncio", "time", "uuid", "typing"}
     assert imported_roots <= (stdlib_roots | {"pydantic"}), (
-        f"unexpected non-stdlib/non-pydantic import roots: "
-        f"{imported_roots - stdlib_roots - {'pydantic'}}"
+        f"unexpected non-stdlib/non-pydantic import roots: " f"{imported_roots - stdlib_roots - {'pydantic'}}"
     )
 
 
@@ -419,10 +473,12 @@ def test_action_union_schema_has_discriminator():
     assert "oneOf" in schema
     assert "discriminator" in schema
     assert schema["discriminator"]["propertyName"] == "type"
-    # All 24 documented action types are present in the mapping (20
+    # All 27 documented action types are present in the mapping (20
     # original + FEAT-377 TASK-1913's ``run/qaAttemptRecorded`` + FEAT-378's
-    # JudgeVerdictRecorded/FeedbackDecisionRecorded/DocsArtifactLinked).
-    assert len(schema["discriminator"]["mapping"]) == 24
+    # JudgeVerdictRecorded/FeedbackDecisionRecorded/DocsArtifactLinked +
+    # the node-authored ``node/progress`` narrative + the run-summary
+    # projections ``run/changesetRecorded`` / ``development/seatUsageRecorded``).
+    assert len(schema["discriminator"]["mapping"]) == 27
 
 
 def test_root_action_union_schema_has_discriminator():
@@ -431,8 +487,11 @@ def test_root_action_union_schema_has_discriminator():
     assert "discriminator" in schema
     assert schema["discriminator"]["propertyName"] == "type"
     assert set(schema["discriminator"]["mapping"]) == {
-        "root/runAdded", "root/runSummaryChanged", "root/runRemoved",
+        "root/runAdded",
+        "root/runSummaryChanged",
+        "root/runRemoved",
         # FEAT-377 TASK-1917: gate park/resume visibility in the
         # replayable root-action stream.
-        "root/runParked", "root/runResumed",
+        "root/runParked",
+        "root/runResumed",
     }

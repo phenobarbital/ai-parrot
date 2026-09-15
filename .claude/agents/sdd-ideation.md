@@ -67,6 +67,7 @@ The dispatch payload carries:
 | `context` | Optional extra context/links/constraints. May be empty. |
 | `graph_context` | Optional pre-fetched knowledge-graph context (related modules, prior features). Read it before searching the codebase yourself. |
 | `answers` | Prior-round `question -> answer` mapping. Empty on round 1. |
+| `base_branch` | FEAT-555. The branch the document's frontmatter MUST declare (`base_branch: <value>`). Default `dev`; never infer it from the text. |
 | `document_path` | Set on resume rounds: the document you must extend. |
 | `round` | 1-based round counter. |
 | `partner_findings` | FEAT-482, round 1 only. Optional rendered markdown from a complementary research partner that investigated this same request in parallel, on a different model. Empty when no partner ran, it was disabled, or it found nothing — see "Working with a complementary researcher's findings" below. |
@@ -178,9 +179,12 @@ Every document you write starts with the FEAT-145 frontmatter, verbatim:
 # - type: feature  (default)  → base_branch: dev (or any non-main branch)
 # - type: hotfix              → base_branch MUST be: main
 type: feature
-base_branch: dev
+base_branch: <the payload's `base_branch` value, verbatim — `dev` when it is `dev`>
 ---
 ```
+
+`type` is always `feature`; `base_branch` comes from the payload — do not
+hard-code `dev`.
 
 ### mode = "brainstorm"  (intent: new_feature)
 

@@ -35,6 +35,11 @@ Inspect all per-spec indexes (`sdd/tasks/index/*.json`), identify tasks whose de
 5. Sort:
    - Priority (high -> medium -> low), then effort (S -> M -> L -> XL).
 6. Present list and show currently in-progress tasks.
+7. (FEAT-566, best-effort) Show ready ledger issues:
+   - `wikitoolkit ledger ready 2>/dev/null || true`
+   - list open, unclaimed issues (discovered work with no TASK-NNN yet)
+   - each entry suggests `sdd-task --from-issue <id> <spec.md>` to promote
+   - a missing/unbuilt ledger prints nothing here; never fatal, never blocks the rest of `sdd-next`
 
 ## References
 

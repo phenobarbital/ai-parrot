@@ -60,13 +60,38 @@ def google() -> None:
     show_default=True,
     help="Install Bookstore MCP and skill when an indexed library exists (no indexing).",
 )
-def install(path_: Optional[str], gitignore: bool, build_now: bool, bookstore: bool) -> None:
+@click.option(
+    "--toolkits",
+    "toolkits_",
+    default="",
+    help="Comma-separated toolkit sections to seed into .parrot/mcp-toolkits.yaml.",
+)
+@click.option(
+    "--all-toolkits",
+    is_flag=True,
+    default=False,
+    help="Seed every toolkit template shipped with this release.",
+)
+def install(
+    path_: Optional[str],
+    gitignore: bool,
+    build_now: bool,
+    bookstore: bool,
+    toolkits_: str,
+    all_toolkits: bool,
+) -> None:
     """Install WikiToolkit and Bookstore MCP servers and skills for Google Antigravity."""
     root = _resolve_root(path_)
+    from parrot.mcp.toolkit_seed import available_templates
+
+    names = {n.strip() for n in toolkits_.split(",") if n.strip()}
+    if all_toolkits:
+        names |= set(available_templates())
+    toolkits = sorted(names)
     try:
         config = load_effective_config(root).config
-        actions = install_google_integration(root, config, gitignore=gitignore, bookstore=bookstore)
-    except (RuntimeError, WikiConfigError) as exc:
+        actions = install_google_integration(root, config, gitignore=gitignore, bookstore=bookstore, toolkits=toolkits)
+    except (RuntimeError, WikiConfigError, ValueError) as exc:
         raise click.ClickException(str(exc)) from exc
 
     for action in actions:

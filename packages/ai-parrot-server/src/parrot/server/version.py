@@ -1,6 +1,6 @@
 """AI-Parrot Server version information."""
 
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 __title__ = "ai-parrot-server"
 __description__ = (
     "Server infrastructure (handlers, MCP/A2A transports, scheduler, "

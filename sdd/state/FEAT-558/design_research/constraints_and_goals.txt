@@ -1,0 +1,23 @@
+- **Tenancy is the toolkit's job.** `QS()` → `get_slug(slug, program=...)` ignores `program`; `QueryModel.program_slug` is a plain column; no parrot tool filters by it.
+  *Implication*: load the `QueryModel` row and check `program_slug` against the allowlist **before** calling `QS`/`MultiQS`, for the target slug and for every `queries[*].slug` inside a pipeline. *Evidence*: F005, F006, F011
+
+- **The dialect is compiled.** The wheel ships `parsers/*.so` + `.pxd`; readable `.pyx` exists only on GitHub (`dev`/`main`), so drift vs 4.5.11 is possible (the `.pxd` attribute/method set matches).
+  *Implication*: ship the dialect reference as a static, versioned artefact generated from F007 and re-verified at spec time against the pinned tag; offer `dry_run` so the LLM can see the rendered query. *Evidence*: F007
+
+- **`conditions` is a mixed bag.** Reserved option keys are popped (`fields`, `_limit`/`querylimit`, `_offset`, `paged`/`page`, `group_by`/`grouping`, `order_by`/`ordering`, `filter`/`where_cond`, `filter_options`, `qry_options`, `refresh`, `hierarchy`, `distinct`, `add_fields`, `tablename`/`schema`/`database`); keys present in `cond_definition` become placeholders; anything else becomes a WHERE filter; a nested `"conditions": {...}` is merged (`{**stored, **caller, **caller['conditions']}`). WHERE values: scalar `=`; `"!v"` or key suffix `!` → `!=`; list → `IN` (`key!` → `NOT IN`); `[op, v]` with op ∈ `< > >= <= <> != IS NOT IS`; `{op: v}` with op ∈ `>= <= <> != < >`; `"BETWEEN a AND b"`; `"null"`/`"!null"`; booleans. Unsafe keys/operators are silently dropped.
+  *Implication*: expose typed, separate tool arguments (`placeholders`, `filter`, `fields`, `ordering`, `grouping`, `limit`, `offset`, `refresh`) and assemble the payload deterministically. *Evidence*: F007, F005
+
+- **Catalog is sync and heavy.** `ComponentRegistry.get_catalog()` does discovery/introspection; the REST handler wraps it in `asyncio.to_thread`.
+  *Implication*: same wrapper + per-instance cache; no HTTP to `/api/v3/qs/components`. *Evidence*: F009
+
+- **Saved multi-query = queries row.** `MultiQS.query()` loads the slug and treats `query_raw` as a pipeline when it parses to JSON with `queries|files|sources`; there is no provider flag.
+  *Implication*: `describe_slug` must label multi-query slugs; `save_multiquery` writes a `QueryModel` row with `query_raw=json` and forced `program_slug`. *Evidence*: F008, F010
+
+- **Registry is generated.** `TOOL_REGISTRY` is produced by `scripts/generate_tool_registry.py`.
+  *Implication*: regenerate, never hand-edit; deleting `qsource.py` is safe (no other consumers, no commits in 90 days). *Evidence*: F013, F014
+
+- **Toolkit conventions.** Public async methods become tools; `_prepare_kwargs`/`_pre_execute` are documented seams for authorization; `DatabaseQueryToolkit` is the reference.
+  *Implication*: `tool_prefix="qs"`, `exclude_tools`, Pydantic results dumped in `_post_execute`, lazy/patchable querysource imports as in `query_slug.py`. *Evidence*: F012, F004
+
+- **No tests today.** Nothing covers `qsource.py`/`querytoolkit.py`; `QuerySlugSource` tests mock the lazy QS import.
+  *Implication*: add `packages/ai-parrot-tools/tests/querysource/` with fakes for `QS`, `MultiQS`, `QueryModel`, `ComponentRegistry`; no live DB in unit tests. *Evidence*: F015, F004

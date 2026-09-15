@@ -31,6 +31,35 @@ export const AvatarStatus = Object.freeze({
   ERROR: "error",
 });
 
+/**
+ * Viewer operating mode (FEAT-537).
+ *
+ * - `"single"` — the pre-FEAT-537 behaviour, unchanged: one user, one avatar
+ *   session, a WebSocket PCM fallback when avatar audio is unavailable.
+ * - `"broadcast"` — a moderated multi-browser broadcast. Room credentials come
+ *   from the scoped admission API, the audible source is chosen by the server's
+ *   descriptor (never inferred locally), and the WebSocket PCM fallback is
+ *   **disabled**: after a cutover the fallback audio arrives from the shared
+ *   room's direct publisher, so playing local PCM as well would give this
+ *   browser two audible sources.
+ *
+ * @typedef {"single"|"broadcast"} ViewerModeKind
+ */
+export const ViewerMode = Object.freeze({
+  SINGLE: "single",
+  BROADCAST: "broadcast",
+});
+
+/**
+ * How stale a broadcast descriptor may be before output is muted.
+ *
+ * Spec §2: "Polling fallback must disable capture if state freshness exceeds
+ * 3 seconds" and "Status older than 3 seconds mutes output until refreshed."
+ * A browser that has lost contact with the server must not keep playing audio
+ * whose authorisation it can no longer confirm.
+ */
+export const STATE_FRESHNESS_MS = 3000;
+
 export const AudioSource = Object.freeze({
   BROWSER: "browser",
   AVATAR: "avatar",
@@ -96,6 +125,12 @@ export class AvatarViewerController {
     onAudioPlaybackBlocked = noop,
     onError = noop,
     logger = console,
+    // ── FEAT-537 broadcast mode ──────────────────────────────────────
+    mode = ViewerMode.SINGLE,
+    onStale = noop,
+    onDisconnected = noop,
+    stateFreshnessMs = STATE_FRESHNESS_MS,
+    now = () => Date.now(),
   } = {}) {
     if (!sdk || !sdk.Room || !sdk.RoomEvent || !sdk.Track) {
       throw new Error(
@@ -132,8 +167,36 @@ export class AvatarViewerController {
     this._userMuted = false;
     this._canPlayAvatarAudio = false;
 
+    // ── FEAT-537 broadcast state ─────────────────────────────────────
+    this._mode = mode === ViewerMode.BROADCAST ? ViewerMode.BROADCAST : ViewerMode.SINGLE;
+    this._onStale = onStale;
+    this._onDisconnected = onDisconnected;
+    this._stateFreshnessMs = stateFreshnessMs;
+    this._now = now;
+    this._broadcast = null;
+    this._stale = false;
+
     if (this._audioEl) this._audioEl.muted = true;
     if (this._videoEl) this._videoEl.muted = true;
+  }
+
+  /** @returns {ViewerModeKind} `"single"` or `"broadcast"`. */
+  get mode() {
+    return this._mode;
+  }
+
+  /**
+   * @returns {?{state: string, version: number, outputEpoch: number,
+   *   avatarIdentity: ?string, directIdentity: ?string, lastStateAt: number}}
+   *   The last applied broadcast descriptor, or `null` outside broadcast mode.
+   */
+  get broadcastState() {
+    return this._broadcast;
+  }
+
+  /** @returns {boolean} Whether the descriptor is older than the freshness budget. */
+  get stale() {
+    return this._stale;
   }
 
   /** @returns {AvatarViewerStatus} */
@@ -165,6 +228,10 @@ export class AvatarViewerController {
    * @returns {boolean}
    */
   shouldPlayLocalAudio() {
+    // Broadcast mode has no WebSocket PCM fallback: the audience's fallback is
+    // the shared room's direct publisher, so playing local PCM here would be a
+    // second audible source for this browser alone (spec §2).
+    if (this._mode === ViewerMode.BROADCAST) return false;
     return !this._userMuted && this._audioSource === AudioSource.BROWSER;
   }
 
@@ -197,9 +264,9 @@ export class AvatarViewerController {
     const room = new Room();
     this._room = room;
 
-    room.on(RoomEvent.TrackSubscribed, (track) => {
+    room.on(RoomEvent.TrackSubscribed, (track, _publication, participant) => {
       if (generation !== this._generation) return; // stale generation guard
-      this._handleTrackSubscribed(track, Track, generation);
+      this._handleTrackSubscribed(track, Track, generation, participant);
     });
     room.on(RoomEvent.TrackUnsubscribed, (track) => {
       if (generation !== this._generation) return;
@@ -367,9 +434,235 @@ export class AvatarViewerController {
     await this._safeDisconnect(room);
   }
 
+  // ── FEAT-537: broadcast mode ───────────────────────────────────────
+
+  /**
+   * Join a broadcast's LiveKit room with per-lease admission credentials.
+   *
+   * Same connect path as {@link join}; the difference is what happens next —
+   * source selection is driven by the server's descriptor rather than by
+   * whichever track happens to arrive.
+   *
+   * @param {{livekit_url: string, client_token: string, room?: string}} credentials
+   *   Exactly the `ViewerJoinResponse` wire shape from
+   *   `GET .../viewers/{lease}/connection`.
+   * @param {object} [publicState] The `BroadcastPublicState` to apply on join.
+   * @returns {Promise<void>}
+   */
+  async joinBroadcast(credentials, publicState = null) {
+    this._mode = ViewerMode.BROADCAST;
+    this._broadcast = null;
+    this._stale = false;
+    if (publicState) this._adoptState(publicState);
+    await this.join(credentials);
+    if (publicState) this.applyBroadcastState(publicState);
+    this._attachExistingTracks();
+  }
+
+  /**
+   * Apply a server descriptor: select the audible source, or ignore it.
+   *
+   * Rejects any state that is not monotonically newer (`version` and
+   * `output_epoch`), so a late or reordered poll cannot resurrect the avatar
+   * after a cutover. `audio_only` is sticky by construction: the server never
+   * emits a *newer* `avatar` state after it, and an older one is rejected here.
+   *
+   * @param {object} publicState A `BroadcastPublicState`.
+   * @returns {boolean} Whether the state was applied.
+   */
+  applyBroadcastState(publicState) {
+    if (this._mode !== ViewerMode.BROADCAST || !publicState) return false;
+
+    const version = Number(publicState.version ?? 0);
+    const outputEpoch = Number(publicState.output_epoch ?? 0);
+    const current = this._broadcast;
+    if (current && (version < current.version || outputEpoch < current.outputEpoch)) {
+      this._logger.debug?.(
+        "AvatarViewerController: ignoring stale broadcast state",
+        { version, outputEpoch },
+      );
+      return false;
+    }
+
+    this._adoptState(publicState);
+    this.markStateFresh();
+
+    const selected = this._selectedIdentity();
+    if (publicState.state === "audio_only") {
+      // Detach avatar media BEFORE selecting direct audio, so the two are
+      // never audible together during the transition (spec §2).
+      this._detachAvatarMedia();
+    }
+    this._retainOnlySelected(selected);
+    this._attachExistingTracks();
+    return true;
+  }
+
+  /**
+   * Record that a fresh descriptor arrived (poll or push).
+   *
+   * Call on **every** state observation, including ones
+   * {@link applyBroadcastState} rejects as stale — an out-of-order poll still
+   * proves the server is reachable.
+   */
+  markStateFresh() {
+    if (this._broadcast) this._broadcast.lastStateAt = this._now();
+    if (this._stale) {
+      this._stale = false;
+      if (this._audioEl && !this._userMuted) this._audioEl.muted = false;
+      this._onStale(false);
+    }
+  }
+
+  /**
+   * Mute output when the descriptor has gone stale.
+   *
+   * The page drives this from its poll timer. A browser that cannot confirm
+   * the current state must not keep playing audio it can no longer show is
+   * authorised (spec §2: "Status older than 3 seconds mutes output").
+   *
+   * @returns {boolean} Whether the viewer is now stale.
+   */
+  checkStateFreshness() {
+    if (this._mode !== ViewerMode.BROADCAST || !this._broadcast) return false;
+    const age = this._now() - this._broadcast.lastStateAt;
+    const stale = age > this._stateFreshnessMs;
+    if (stale && !this._stale) {
+      this._stale = true;
+      if (this._audioEl) this._audioEl.muted = true;
+      if (this._videoEl) this._videoEl.muted = true;
+      this._onStale(true);
+    }
+    return this._stale;
+  }
+
+  /** Store the descriptor fields this controller acts on. */
+  _adoptState(publicState) {
+    this._broadcast = {
+      state: publicState.state,
+      version: Number(publicState.version ?? 0),
+      outputEpoch: Number(publicState.output_epoch ?? 0),
+      avatarIdentity: publicState.avatar_identity ?? null,
+      directIdentity: publicState.direct_identity ?? null,
+      selectedIdentity: publicState.selected_identity ?? null,
+      lastStateAt: this._now(),
+    };
+  }
+
+  /**
+   * The publisher identity the server says is authoritative right now.
+   *
+   * Prefers the server's own `selected_identity`; falls back to deriving it
+   * from the state so an older server that omits the field still works.
+   *
+   * @returns {?string}
+   */
+  _selectedIdentity() {
+    const state = this._broadcast;
+    if (!state) return null;
+    if (state.selectedIdentity) return state.selectedIdentity;
+    if (state.state === "audio_only") return state.directIdentity;
+    if (state.state === "avatar") return state.avatarIdentity;
+    return null;
+  }
+
+  /** Whether a participant is the currently selected publisher. */
+  _identityIsSelected(participant) {
+    const selected = this._selectedIdentity();
+    // Before any descriptor arrives, accept nothing: a broadcast viewer must
+    // not attach media it has not been told to play.
+    if (!selected) return false;
+    return !!participant && participant.identity === selected;
+  }
+
+  /** Mute and detach avatar video and audio ahead of a cutover. */
+  _detachAvatarMedia() {
+    if (this._videoEl) this._videoEl.muted = true;
+    if (this._audioEl) this._audioEl.muted = true;
+    for (const track of [this._videoTrack, this._audioTrack]) {
+      if (!track) continue;
+      try {
+        track.detach();
+      } catch (err) {
+        this._logger.warn?.("AvatarViewerController: detach failed", err);
+      }
+    }
+    this._videoTrack = null;
+    this._audioTrack = null;
+    this._canPlayAvatarAudio = false;
+    this._setAudioSource(AudioSource.BROWSER, this._generation);
+  }
+
+  /** Drop any attached track that no longer belongs to the selected publisher. */
+  _retainOnlySelected(selected) {
+    if (!selected) return;
+    for (const key of ["_videoTrack", "_audioTrack"]) {
+      const track = this[key];
+      if (!track) continue;
+      const identity = track.__parrotIdentity;
+      if (identity && identity !== selected) {
+        try {
+          track.detach();
+        } catch (err) {
+          this._logger.warn?.("AvatarViewerController: detach failed", err);
+        }
+        this[key] = null;
+      }
+    }
+  }
+
+  /**
+   * Attach tracks that were already published when we joined.
+   *
+   * A late joiner receives no `TrackSubscribed` event for media that was
+   * already flowing, so without this the tenth viewer would see a black frame
+   * (spec §2: "Late joins use current state and handle already published
+   * tracks").
+   */
+  _attachExistingTracks() {
+    const room = this._room;
+    if (!room || !room.remoteParticipants) return;
+    const { Track } = this._sdk;
+    const generation = this._generation;
+    const participants =
+      typeof room.remoteParticipants.values === "function"
+        ? Array.from(room.remoteParticipants.values())
+        : Object.values(room.remoteParticipants);
+
+    for (const participant of participants) {
+      if (!this._identityIsSelected(participant)) continue;
+      const publications =
+        participant.trackPublications &&
+        typeof participant.trackPublications.values === "function"
+          ? Array.from(participant.trackPublications.values())
+          : Object.values(participant.trackPublications || {});
+      for (const publication of publications) {
+        const track = publication && publication.track;
+        if (!track) continue;
+        if (track === this._audioTrack || track === this._videoTrack) continue;
+        this._handleTrackSubscribed(track, Track, generation, participant);
+      }
+    }
+  }
+
   // ── Internal event handlers ────────────────────────────────────────
 
-  _handleTrackSubscribed(track, Track, generation) {
+  _handleTrackSubscribed(track, Track, generation, participant = null) {
+    // In broadcast mode the server's descriptor — not arrival order — decides
+    // which publisher is audible. A late avatar track after a cutover, or any
+    // track from an unexpected identity, is ignored rather than attached.
+    if (this._mode === ViewerMode.BROADCAST && !this._identityIsSelected(participant)) {
+      this._logger.debug?.(
+        "AvatarViewerController: ignoring track from unselected identity",
+        participant && participant.identity,
+      );
+      return;
+    }
+    if (participant && participant.identity) {
+      // Remember which publisher a track came from: after a cutover we must be
+      // able to tell an avatar track from the direct publisher's.
+      track.__parrotIdentity = participant.identity;
+    }
     if (track.kind === Track.Kind.Video) {
       this._videoTrack = track;
       if (this._videoEl) {
@@ -418,6 +711,10 @@ export class AvatarViewerController {
       this._setAudioSource(AudioSource.BROWSER, generation);
     }
     this._setStatus(AvatarStatus.IDLE, generation);
+    // Broadcast mode does NOT restart a session here. Re-entry means asking
+    // the admission API for a fresh lease; reconnecting on our own would try
+    // to start a producer and could over-admit the room (spec §2).
+    if (this._mode === ViewerMode.BROADCAST) this._onDisconnected();
   }
 
   _handleAudioPlaybackStatusChanged(generation) {

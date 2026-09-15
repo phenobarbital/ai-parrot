@@ -25,6 +25,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from parrot.flows.dev_loop.nodes.base import run_label
 from parrot.flows.dev_loop.session_state import (
     ActionEnvelope,
+    ChangeSet,
+    SeatUsageSummary,
     GateKind,
     GateStatus,
     NodeStatus,
@@ -116,6 +118,13 @@ class DevelopedWork(_Frozen):
     criteria: List[CriterionOutcome] = Field(default_factory=list)
     code_review_findings: List[str] = Field(default_factory=list)
     docs_artifact_path: str = ""
+    # Git-measured file list (+/- per file, commits) — the PR-style "what
+    # changed" view; None when no node recorded one (non-git worktree,
+    # run failed before development).
+    changeset: Optional[ChangeSet] = None
+    # Per-seat roll-up (tasks, retries, duration, tokens) from the
+    # sdd-coder job journals or the pool's seat counters.
+    seat_usage: List[SeatUsageSummary] = Field(default_factory=list)
 
 
 class RunTotals(_Frozen):
@@ -184,6 +193,30 @@ def _dict_or_empty(value: Any) -> Mapping[str, Any]:
     when present, per ``nodes/close.py``'s own ``shared.get(...) or {}``
     pattern)."""
     return value if isinstance(value, Mapping) else {}
+
+
+def _changeset_of(state: Any, shared: Mapping[str, Any]) -> Optional[ChangeSet]:
+    """The run's changeset: session state first (replayable), then ``shared``."""
+    recorded = getattr(state, "changeset", None)
+    if isinstance(recorded, ChangeSet):
+        return recorded
+    candidate = shared.get("changeset")
+    return candidate if isinstance(candidate, ChangeSet) else None
+
+
+def _seat_usage_of(state: Any, shared: Mapping[str, Any]) -> List[SeatUsageSummary]:
+    """The run's per-seat usage: session state first, then ``shared``."""
+    recorded = getattr(state, "seat_usage", None) or []
+    if recorded:
+        return [s for s in recorded if isinstance(s, SeatUsageSummary)]
+    candidate = shared.get("seat_usage") or []
+    return [s for s in candidate if isinstance(s, SeatUsageSummary)]
+
+
+def _format_seat_tokens(seat: SeatUsageSummary) -> str:
+    if not seat.usage_known:
+        return "n/a"
+    return f"{seat.input_tokens or 0} in / {seat.output_tokens or 0} out"
 
 
 def build_run_bundle(
@@ -308,6 +341,8 @@ def build_run_bundle(
         criteria=criteria,
         code_review_findings=list(getattr(qa_report, "code_review_findings", None) or []),
         docs_artifact_path=docs_artifact_path,
+        changeset=_changeset_of(state, shared),
+        seat_usage=_seat_usage_of(state, shared),
     )
 
     mode = "feature" if "planner_output" in shared else str(shared.get("mode", "initial"))
@@ -417,6 +452,40 @@ def render_markdown(bundle: RunBundle, usage_markdown: str = "") -> str:
     # -- per-agent usage (FEAT-405 Module 7) --
     if usage_markdown:
         lines.append(usage_markdown.rstrip("\n"))
+        lines.append("")
+
+    # -- per-seat roll-up (sdd-coder journals / pool seats) --
+    if d.seat_usage:
+        lines.append("## Seats")
+        lines.append("")
+        lines.append("| Seat | Backend | Model | Tasks | Attempts | Retries | Failures | Duration | Tokens |")
+        lines.append("|---|---|---|---|---|---|---|---|---|")
+        for s in d.seat_usage:
+            lines.append(
+                f"| {s.seat} | {s.backend or 'n/a'} | {s.model or 'n/a'} | {len(s.tasks_handled)} "
+                f"| {s.attempts} | {s.retries} | {s.failures} | {_format_duration(s.duration_s)} "
+                f"| {_format_seat_tokens(s)} |"
+            )
+        lines.append("")
+
+    # -- files changed (git-measured, PR style) --
+    cs = d.changeset
+    if cs is not None:
+        lines.append("## Files changed")
+        lines.append("")
+        lines.append(
+            f"{len(cs.files)} file(s), **+{cs.total_additions} −{cs.total_deletions}**, "
+            f"{cs.commits} commit(s) on `{cs.branch or d.branch or 'HEAD'}` vs `{cs.base_ref}`"
+            + (f" · {cs.uncommitted} uncommitted" if cs.uncommitted else "")
+        )
+        lines.append("")
+        if cs.files:
+            lines.append("| Status | File | + | − |")
+            lines.append("|---|---|---|---|")
+            for f in cs.files:
+                plus = "bin" if f.binary else str(f.additions)
+                minus = "bin" if f.binary else str(f.deletions)
+                lines.append(f"| {f.status} | `{f.path}` | {plus} | {minus} |")
         lines.append("")
 
     # -- gate audit --

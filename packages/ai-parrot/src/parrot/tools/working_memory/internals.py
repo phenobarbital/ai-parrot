@@ -3,27 +3,264 @@
 Contains catalog storage, operation execution, and shape limiting components.
 These are internal implementation details — consumers should use WorkingMemoryToolkit
 from the package directly.
+
+Two catalog configurations coexist (FEAT-538):
+
+**Legacy (default).** No backend is attached. ``put``/``put_generic``/
+``get``/``drop``/``list_entries`` behave exactly as they always have: a
+plain dict, no locks, no versions, no I/O. Every existing caller — the
+nine direct ``_catalog.put*`` sites in ``tool.py``, and
+``bots/flows/plan/node.py``'s direct ``_catalog`` reads — is unaffected.
+
+**Enabled (opt-in).** A :class:`~parrot.interfaces.artifact_store.ArtifactStore`
+backend is attached, making the catalog *versioned and persistent*. Writes
+then go through the awaited API (:meth:`WorkingMemoryCatalog.aput`,
+:meth:`~WorkingMemoryCatalog.aput_generic`, :meth:`~WorkingMemoryCatalog.aget`,
+:meth:`~WorkingMemoryCatalog.adrop`), and a *synchronous* write is refused
+outright rather than being allowed to fire-and-forget the persistence half
+or block the event loop. That refusal is deliberate: a sync ``put`` that
+silently skipped the backend would publish an alias with no artifact
+version behind it, which is precisely the phantom-evidence failure
+versioning exists to prevent.
+
+Reads stay synchronous in both configurations, because
+``PlanToolNode._read_key`` / ``_has_key`` reach into the catalog directly
+and must keep working.
 """
+
 from __future__ import annotations
 
+import asyncio
+import json as _json
 import logging
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 import numpy as np
 import pandas as pd
 
-import json as _json
+from .models import AggFunc, EntryType, FilterSpec, JoinHow, OperationSpecInput
 
-from .models import (
-    AggFunc,
-    EntryType,
-    FilterSpec,
-    JoinHow,
-    OperationSpecInput,
-)
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from datetime import datetime
+
+    from parrot.interfaces.artifact_store import ArtifactStore
+    from parrot.tools.working_memory.task_memory.models import (
+        ArtifactAvailability,
+        ArtifactDescriptor,
+        ArtifactKind,
+        Attribution,
+        ReplBinding,
+        TaskScope,
+    )
+
+
+# ─────────────────────────────────────────────────────────────
+# Enabled-catalog errors
+# ─────────────────────────────────────────────────────────────
+
+
+class SyncCatalogWriteError(RuntimeError):
+    """A synchronous write was attempted against an enabled catalog (FEAT-538).
+
+    Raised by :meth:`WorkingMemoryCatalog.put`,
+    :meth:`~WorkingMemoryCatalog.put_generic` and
+    :meth:`~WorkingMemoryCatalog.drop` once an artifact-store backend is
+    attached.
+
+    The alternatives were both worse. Writing to the local dict and
+    scheduling the backend write in the background would publish an alias
+    with no committed artifact version behind it — a phantom alias, which
+    is exactly the failure versioned evidence exists to rule out. Driving
+    the coroutine to completion from a sync frame would block the event
+    loop. So the call is refused, and the message names the awaited method
+    to use instead.
+    """
+
+
+class CatalogNotEnabledError(RuntimeError):
+    """An awaited catalog operation was used without a configured backend.
+
+    The awaited API is meaningful only when a backend and a trusted scope
+    are attached; without them there is no version to allocate and no
+    scope to attribute the write to.
+    """
+
+
+# ─────────────────────────────────────────────────────────────
+# Version metadata (shared by both entry types)
+# ─────────────────────────────────────────────────────────────
+
+
+@dataclass
+class VersionMetadata:
+    """Version and evidence facts captured when an entry was registered.
+
+    Shared by :class:`CatalogEntry` **and** :class:`GenericEntry`. Both
+    need it: plan node results and compression-tee payloads are stored as
+    generic entries, so attaching versions only to the DataFrame entry
+    would leave most of the catalog unversioned.
+
+    Every field here is *captured at registration time* by the artifact
+    store and then frozen. Nothing is recomputed from the live payload
+    later, which is what lets :meth:`to_descriptor` stay cheap enough for
+    recall's hot path — and what makes a descriptor describe the value as
+    it was when its fingerprint was taken, rather than as it is now.
+
+    ``captured_shape`` is deliberately a separate field rather than a
+    reuse of :attr:`CatalogEntry.shape`. That property reads
+    ``self.df.shape`` live; shadowing it would mean a mutated frame
+    silently reported a shape its fingerprint never covered.
+
+    Attributes:
+        artifact_id: Stable identity allocated by the backend.
+        version: 1-based version within that identity.
+        scope: Trusted :class:`TaskScope` the write was attributed to.
+        kind: Captured :class:`ArtifactKind`.
+        availability: Captured :class:`ArtifactAvailability`.
+        created_at: When this version was registered (UTC).
+        task_id: Owning task, when one was selected.
+        producer_call_id: Physical attempt that produced the value.
+        attribution: How that attempt was attributed.
+        fingerprint: Canonical content fingerprint, when computable.
+        fingerprint_algorithm: Algorithm identity and version.
+        evidence_verifiable: Whether the fingerprint actually proves
+            content integrity.
+        invalidated: Whether this version's evidence was invalidated.
+        binding_invalid: Whether its REPL binding is stale.
+        byte_size: Recorded payload size.
+        captured_shape: Shape as captured, e.g. ``(rows, cols)``.
+        schema_summary: Bounded captured schema description.
+        storage_ref: Backend storage reference, when persisted.
+        repl_binding: Current REPL binding, when one exists.
+        invalidated_at: When it was invalidated, if it was.
+    """
+
+    artifact_id: str
+    version: int
+    scope: "TaskScope"
+    kind: "ArtifactKind"
+    availability: "ArtifactAvailability"
+    created_at: "datetime"
+    task_id: Optional[str] = None
+    producer_call_id: Optional[str] = None
+    attribution: Optional["Attribution"] = None
+    fingerprint: Optional[str] = None
+    fingerprint_algorithm: Optional[str] = None
+    evidence_verifiable: bool = False
+    invalidated: bool = False
+    binding_invalid: bool = False
+    byte_size: Optional[int] = None
+    captured_shape: Optional[tuple[int, ...]] = None
+    schema_summary: Optional[dict] = None
+    storage_ref: Optional[str] = None
+    repl_binding: Optional["ReplBinding"] = None
+    invalidated_at: Optional["datetime"] = None
+
+    @classmethod
+    def from_descriptor(cls, descriptor: "ArtifactDescriptor") -> "VersionMetadata":
+        """Capture the facts an entry keeps from a backend descriptor.
+
+        Args:
+            descriptor: What the artifact store returned for this write.
+
+        Returns:
+            The captured metadata.
+        """
+        return cls(
+            artifact_id=descriptor.ref.artifact_id,
+            version=descriptor.ref.version,
+            scope=descriptor.scope,
+            kind=descriptor.kind,
+            availability=descriptor.availability,
+            created_at=descriptor.created_at,
+            task_id=descriptor.task_id,
+            producer_call_id=descriptor.producer_call_id,
+            attribution=descriptor.attribution,
+            fingerprint=descriptor.fingerprint,
+            fingerprint_algorithm=descriptor.fingerprint_algorithm,
+            evidence_verifiable=descriptor.evidence_verifiable,
+            invalidated=descriptor.invalidated,
+            binding_invalid=descriptor.binding_invalid,
+            byte_size=descriptor.byte_size,
+            captured_shape=descriptor.shape,
+            schema_summary=descriptor.schema_summary,
+            storage_ref=descriptor.storage_ref,
+            repl_binding=descriptor.repl_binding,
+            invalidated_at=descriptor.invalidated_at,
+        )
+
+    def to_descriptor(self, *, alias: Optional[str] = None) -> "ArtifactDescriptor":
+        """Rebuild the read projection from the captured facts.
+
+        Args:
+            alias: Current working-memory key. Passed by the owning entry
+                so a renamed or dropped alias is reported truthfully.
+
+        Returns:
+            The :class:`ArtifactDescriptor` for this version.
+        """
+        # Imported lazily — see the note on `_artifact_descriptor_cls`.
+        descriptor_cls = _artifact_descriptor_cls()
+        evidence_ref_cls = _evidence_ref_cls()
+        return descriptor_cls(
+            ref=evidence_ref_cls(artifact_id=self.artifact_id, version=self.version),
+            alias=alias,
+            scope=self.scope,
+            task_id=self.task_id,
+            producer_call_id=self.producer_call_id,
+            attribution=self.attribution if self.attribution is not None else _default_attribution(),
+            kind=self.kind,
+            availability=self.availability,
+            fingerprint=self.fingerprint,
+            fingerprint_algorithm=self.fingerprint_algorithm,
+            evidence_verifiable=self.evidence_verifiable,
+            invalidated=self.invalidated,
+            binding_invalid=self.binding_invalid,
+            byte_size=self.byte_size,
+            shape=self.captured_shape,
+            schema_summary=self.schema_summary,
+            storage_ref=self.storage_ref,
+            repl_binding=self.repl_binding,
+            created_at=self.created_at,
+            invalidated_at=self.invalidated_at,
+        )
+
+
+def _task_memory_models() -> Any:
+    """Import the task-memory domain models lazily.
+
+    ``internals.py`` is imported by ``tool.py``, which is imported by this
+    package's ``__init__``. The task-memory models live *under* that same
+    package, so importing them at module scope would make this module's
+    import depend on its own package being further along in initialization
+    than it is. Deferring the import to call time removes that ordering
+    constraint entirely, and keeps the legacy configuration — which never
+    builds a descriptor — from paying for the import at all.
+
+    Returns:
+        The ``parrot.tools.working_memory.task_memory.models`` module.
+    """
+    from parrot.tools.working_memory.task_memory import models as task_memory_models
+
+    return task_memory_models
+
+
+def _artifact_descriptor_cls() -> Any:
+    """Return the :class:`ArtifactDescriptor` class (lazily imported)."""
+    return _task_memory_models().ArtifactDescriptor
+
+
+def _evidence_ref_cls() -> Any:
+    """Return the ``EvidenceRef`` class (lazily imported)."""
+    return _task_memory_models().EvidenceRef
+
+
+def _default_attribution() -> Any:
+    """Return ``Attribution.NONE`` (lazily imported)."""
+    return _task_memory_models().Attribution.NONE
 
 
 # ─────────────────────────────────────────────────────────────
@@ -82,6 +319,9 @@ class GenericEntry:
         turn_id: Optional conversation turn identifier.
         session_id: Optional session identifier.
         metadata: Optional arbitrary user-defined metadata dict.
+        version_metadata: Captured version/evidence metadata (FEAT-538).
+            ``None`` in the legacy configuration, where entries are not
+            versioned.
     """
 
     key: str
@@ -92,6 +332,37 @@ class GenericEntry:
     turn_id: Optional[str] = None
     session_id: Optional[str] = None
     metadata: dict = field(default_factory=dict)
+    version_metadata: Optional[VersionMetadata] = None
+
+    @property
+    def is_versioned(self) -> bool:
+        """Whether this entry was registered through the awaited API."""
+        return self.version_metadata is not None
+
+    def to_descriptor(self) -> "ArtifactDescriptor":
+        """Project this entry's captured metadata as an artifact descriptor.
+
+        Builds the descriptor purely from :attr:`version_metadata`. It
+        never touches :attr:`data` — no ``compact_summary()``, no
+        ``repr()``, no type introspection. Recall pages descriptors in
+        bulk, so touching the payload would put an arbitrary object's
+        ``repr`` on the hot path and risk leaking its contents into a
+        listing that is supposed to be metadata only.
+
+        Returns:
+            The :class:`ArtifactDescriptor` for this entry's version.
+
+        Raises:
+            CatalogNotEnabledError: If the entry has no captured metadata,
+                i.e. it was stored through the legacy synchronous path and
+                therefore has no artifact identity to describe.
+        """
+        if self.version_metadata is None:
+            raise CatalogNotEnabledError(
+                f"entry {self.key!r} has no version metadata; it was stored through the "
+                "legacy synchronous path and has no artifact version to describe"
+            )
+        return self.version_metadata.to_descriptor(alias=self.key)
 
     def compact_summary(self, max_length: int = 500) -> dict:
         """Return a type-aware compact summary suitable for the LLM context.
@@ -135,15 +406,13 @@ class GenericEntry:
             content_str = str(content)
             base["role"] = role
             base["content_length"] = len(content_str)
-            base["content_preview"] = (
-                content_str[:max_length] + ("..." if len(content_str) > max_length else "")
-            )
+            base["content_preview"] = content_str[:max_length] + ("..." if len(content_str) > max_length else "")
 
         elif self.entry_type == EntryType.BINARY:
             size = len(self.data)
             if size < 1024:
                 size_human = f"{size} B"
-            elif size < 1024 ** 2:
+            elif size < 1024**2:
                 size_human = f"{size / 1024:.1f} KB"
             else:
                 size_human = f"{size / 1024 ** 2:.1f} MB"
@@ -155,9 +424,7 @@ class GenericEntry:
             base["type_name"] = type(self.data).__name__
             repr_str = repr(self.data)
             base["repr"] = repr_str[:max_length] + ("..." if len(repr_str) > max_length else "")
-            base["attributes"] = [
-                a for a in dir(self.data) if not a.startswith("_")
-            ][:20]
+            base["attributes"] = [a for a in dir(self.data) if not a.startswith("_")][:20]
 
         else:
             # DATAFRAME fallback (should rarely reach here for GenericEntry)
@@ -173,7 +440,22 @@ class GenericEntry:
 
 @dataclass
 class CatalogEntry:
-    """Metadata and data container for a stored DataFrame in the catalog."""
+    """Metadata and data container for a stored DataFrame in the catalog.
+
+    Attributes:
+        key: Unique identifier in the working memory catalog.
+        df: The stored DataFrame.
+        created_at: Unix timestamp when this entry was created.
+        source_operation: Operation spec that produced it, when derived.
+        parent_keys: Keys this entry was derived from.
+        description: Optional human-readable description.
+        error: Error state, when the entry represents a failure.
+        turn_id: Optional conversation turn identifier.
+        session_id: Optional session identifier.
+        version_metadata: Captured version/evidence metadata (FEAT-538).
+            ``None`` in the legacy configuration, where entries are not
+            versioned.
+    """
 
     key: str
     df: pd.DataFrame
@@ -184,11 +466,50 @@ class CatalogEntry:
     error: Optional[str] = None
     turn_id: Optional[str] = None
     session_id: Optional[str] = None
+    version_metadata: Optional[VersionMetadata] = None
 
     @property
     def shape(self) -> tuple[int, int]:
-        """Return the shape of the stored DataFrame."""
+        """Return the shape of the stored DataFrame.
+
+        This reads the **live** frame. It is intentionally left as-is and
+        is *not* the same thing as
+        :attr:`VersionMetadata.captured_shape`, which records the shape at
+        the moment the fingerprint was taken. A mutated frame reports a
+        new ``shape`` here while its captured shape — and the evidence
+        that shape belongs to — stays fixed.
+        """
         return self.df.shape
+
+    @property
+    def is_versioned(self) -> bool:
+        """Whether this entry was registered through the awaited API."""
+        return self.version_metadata is not None
+
+    def to_descriptor(self) -> "ArtifactDescriptor":
+        """Project this entry's captured metadata as an artifact descriptor.
+
+        Builds the descriptor purely from :attr:`version_metadata`. It
+        never touches :attr:`df` — no ``compact_summary()``, no
+        ``describe()``, no ``memory_usage(deep=True)``. Those are
+        expensive (``describe()`` scans every numeric column) and recall
+        pages descriptors in bulk, so the projection has to be free of
+        them to stay on the hot path at all.
+
+        Returns:
+            The :class:`ArtifactDescriptor` for this entry's version.
+
+        Raises:
+            CatalogNotEnabledError: If the entry has no captured metadata,
+                i.e. it was stored through the legacy synchronous path and
+                therefore has no artifact identity to describe.
+        """
+        if self.version_metadata is None:
+            raise CatalogNotEnabledError(
+                f"entry {self.key!r} has no version metadata; it was stored through the "
+                "legacy synchronous path and has no artifact version to describe"
+            )
+        return self.version_metadata.to_descriptor(alias=self.key)
 
     @property
     def columns(self) -> list[str]:
@@ -217,8 +538,7 @@ class CatalogEntry:
         if numeric_cols:
             stats = df[numeric_cols[:max_cols]].describe().to_dict()
             summary["numeric_stats"] = {
-                col: {k: round(v, 4) if isinstance(v, float) else v
-                      for k, v in col_stats.items()}
+                col: {k: round(v, 4) if isinstance(v, float) else v for k, v in col_stats.items()}
                 for col, col_stats in stats.items()
             }
 
@@ -363,7 +683,7 @@ class OperationExecutor:
             corr_val = group[spec.columns].corr(method=spec.method)
             row = {"_group": name}
             for i, c1 in enumerate(spec.columns):
-                for c2 in spec.columns[i + 1:]:
+                for c2 in spec.columns[i + 1 :]:
                     row[f"corr_{c1}__{c2}"] = corr_val.loc[c1, c2]
             results.append(row)
         return pd.DataFrame(results)
@@ -463,12 +783,109 @@ class WorkingMemoryCatalog:
 
     Key namespace is shared: storing either type with an existing key replaces
     the previous entry regardless of its type. This is intentional.
+
+    With an artifact-store ``backend`` attached the catalog becomes
+    versioned and persistent (FEAT-538): writes must use the awaited API,
+    and each write allocates or increments an ``artifact_id@version``
+    behind the alias. Without one, everything below behaves exactly as it
+    always has.
     """
 
-    def __init__(self, session_id: Optional[str] = None) -> None:
+    def __init__(
+        self,
+        session_id: Optional[str] = None,
+        *,
+        backend: Optional["ArtifactStore"] = None,
+        scope: Optional["TaskScope"] = None,
+        task_id: Optional[str] = None,
+    ) -> None:
+        """Initialize the catalog.
+
+        Args:
+            session_id: Session identifier stamped on every entry.
+                Defaults to a fresh uuid4, as before.
+            backend: Optional artifact store. Attaching one enables the
+                versioned, persistent configuration and makes synchronous
+                writes an error.
+            scope: Trusted runtime scope every enabled write is attributed
+                to. Required whenever ``backend`` is given — a versioned
+                write with no scope could not be authorized on read back.
+            task_id: Default owning task for enabled writes. Individual
+                calls may override it.
+
+        Raises:
+            ValueError: If a ``backend`` is given without a ``scope``.
+        """
         self.session_id = session_id or str(uuid.uuid4())
         self._store: dict[str, CatalogEntry | GenericEntry] = {}
         self.logger = logging.getLogger(__name__)
+        if backend is not None and scope is None:
+            raise ValueError(
+                "an enabled catalog requires a trusted scope: a versioned write with no "
+                "scope could not be authorized when it is read back"
+            )
+        self._backend = backend
+        self._scope = scope
+        self.task_id = task_id
+        #: Serializes catalog mutation. Held across the backend write so a
+        #: race on one alias cannot leave the local dict pointing at an
+        #: older version than the backend's alias. Never held across tool
+        #: execution — the catalog does not call tools.
+        self._lock = asyncio.Lock()
+
+    # ── enabled-mode configuration ───────────────────────────────────
+
+    @property
+    def is_enabled(self) -> bool:
+        """Whether a versioned, persistent backend is attached."""
+        return self._backend is not None
+
+    @property
+    def backend(self) -> Optional["ArtifactStore"]:
+        """The attached artifact store, or ``None`` in legacy mode."""
+        return self._backend
+
+    @property
+    def scope(self) -> Optional["TaskScope"]:
+        """The trusted scope enabled writes are attributed to."""
+        return self._scope
+
+    def _reject_sync_write(self, method: str, awaited: str) -> None:
+        """Refuse a synchronous write against an enabled catalog.
+
+        Args:
+            method: The synchronous method that was called.
+            awaited: The awaited method to use instead.
+
+        Raises:
+            SyncCatalogWriteError: Always, when a backend is attached.
+        """
+        if self._backend is None:
+            return
+        raise SyncCatalogWriteError(
+            f"WorkingMemoryCatalog.{method}() is not available while task memory is "
+            f"enabled: the write must be persisted and versioned before the alias is "
+            f"published. Use `await catalog.{awaited}(...)` instead."
+        )
+
+    def _require_enabled(self, method: str) -> tuple["ArtifactStore", "TaskScope"]:
+        """Return the backend and scope, or explain that there are none.
+
+        Args:
+            method: The awaited method that was called.
+
+        Returns:
+            The attached backend and trusted scope.
+
+        Raises:
+            CatalogNotEnabledError: If no backend is configured.
+        """
+        if self._backend is None or self._scope is None:
+            raise CatalogNotEnabledError(
+                f"WorkingMemoryCatalog.{method}() requires a configured artifact-store "
+                "backend and scope; this catalog is in the legacy configuration"
+            )
+        return self._backend, self._scope
 
     def put(
         self,
@@ -481,7 +898,13 @@ class WorkingMemoryCatalog:
         error: Optional[str] = None,
         turn_id: Optional[str] = None,
     ) -> CatalogEntry:
-        """Store a DataFrame under the given key and return the catalog entry."""
+        """Store a DataFrame under the given key and return the catalog entry.
+
+        Raises:
+            SyncCatalogWriteError: If task memory is enabled. Use
+                :meth:`aput` instead.
+        """
+        self._reject_sync_write("put", "aput")
         entry = CatalogEntry(
             key=key,
             df=df,
@@ -522,7 +945,12 @@ class WorkingMemoryCatalog:
 
         Returns:
             The newly created GenericEntry.
+
+        Raises:
+            SyncCatalogWriteError: If task memory is enabled. Use
+                :meth:`aput_generic` instead.
         """
+        self._reject_sync_write("put_generic", "aput_generic")
         resolved_type = entry_type if entry_type is not None else _detect_entry_type(data)
         entry = GenericEntry(
             key=key,
@@ -534,9 +962,7 @@ class WorkingMemoryCatalog:
             session_id=self.session_id,
         )
         self._store[key] = entry
-        self.logger.info(
-            "[WorkingMemory] Stored generic '%s' type=%s", key, resolved_type.value
-        )
+        self.logger.info("[WorkingMemory] Stored generic '%s' type=%s", key, resolved_type.value)
         return entry
 
     def get(self, key: str) -> CatalogEntry | GenericEntry:
@@ -546,11 +972,291 @@ class WorkingMemoryCatalog:
         return self._store[key]
 
     def drop(self, key: str) -> bool:
-        """Remove an entry by key. Returns True if the key existed."""
+        """Remove an entry by key. Returns True if the key existed.
+
+        Raises:
+            SyncCatalogWriteError: If task memory is enabled. Use
+                :meth:`adrop` instead — dropping an enabled alias has to
+                reach the backend so the alias tombstone is recorded and
+                the pinned versions behind it are preserved.
+        """
+        self._reject_sync_write("drop", "adrop")
         if key in self._store:
             del self._store[key]
             return True
         return False
+
+    # ── awaited API (enabled task memory, FEAT-538) ──────────────────
+
+    async def aput(
+        self,
+        key: str,
+        df: pd.DataFrame,
+        *,
+        operation: Optional[OperationSpecInput] = None,
+        parent_keys: Optional[list[str]] = None,
+        description: str = "",
+        error: Optional[str] = None,
+        turn_id: Optional[str] = None,
+        task_id: Optional[str] = None,
+        producer_call_id: Optional[str] = None,
+        attribution: Optional["Attribution"] = None,
+        pin_for: Optional[str] = None,
+    ) -> CatalogEntry:
+        """Register a DataFrame with the backend, then publish its alias.
+
+        The order is the whole point. The backend allocates the version
+        and acknowledges the write **first**; only then does the alias
+        appear in the local dict. If the backend raises, nothing is
+        published — a caller that sees the alias can always resolve the
+        artifact version behind it.
+
+        Args:
+            key: Alias to publish under.
+            df: The DataFrame to store.
+            operation: Operation spec that produced it, when derived.
+            parent_keys: Keys it was derived from.
+            description: Human-readable description.
+            error: Error state, when the entry represents a failure.
+            turn_id: Conversation turn identifier.
+            task_id: Owning task; falls back to :attr:`task_id`.
+            producer_call_id: Physical attempt that produced the value.
+            attribution: How that attempt was attributed.
+            pin_for: Task id to pin this version for, atomically with
+                registration. Without it a newly registered version is an
+                ordinary eviction candidate and can be evicted at birth.
+
+        Returns:
+            The published :class:`CatalogEntry`, carrying its captured
+            :attr:`~CatalogEntry.version_metadata`.
+
+        Raises:
+            CatalogNotEnabledError: If no backend is configured.
+        """
+        backend, scope = self._require_enabled("aput")
+        owning_task = task_id if task_id is not None else self.task_id
+
+        async with self._lock:
+            descriptor = await self._register(
+                backend,
+                scope,
+                key,
+                df,
+                task_id=owning_task,
+                description=description,
+                producer_call_id=producer_call_id,
+                attribution=attribution,
+                turn_id=turn_id,
+                pin_for=pin_for,
+            )
+            entry = CatalogEntry(
+                key=key,
+                df=df,
+                source_operation=operation,
+                parent_keys=parent_keys or [],
+                description=description,
+                error=error,
+                turn_id=turn_id,
+                session_id=self.session_id,
+                version_metadata=VersionMetadata.from_descriptor(descriptor),
+            )
+            self._store[key] = entry
+
+        self.logger.info(
+            "[WorkingMemory] Stored '%s' shape=%s as %s@%s",
+            key,
+            df.shape,
+            descriptor.ref.artifact_id,
+            descriptor.ref.version,
+        )
+        return entry
+
+    async def aput_generic(
+        self,
+        key: str,
+        data: Any,
+        *,
+        entry_type: Optional[EntryType] = None,
+        description: str = "",
+        metadata: Optional[dict] = None,
+        turn_id: Optional[str] = None,
+        task_id: Optional[str] = None,
+        producer_call_id: Optional[str] = None,
+        attribution: Optional["Attribution"] = None,
+        pin_for: Optional[str] = None,
+    ) -> GenericEntry:
+        """Register arbitrary data with the backend, then publish its alias.
+
+        Same publish-after-acknowledgement ordering as :meth:`aput`. This
+        is the path plan-node results and compression-tee payloads take,
+        which is why generic entries carry version metadata too.
+
+        Args:
+            key: Alias to publish under.
+            data: The Python object to store.
+            entry_type: Explicit EntryType; auto-detected when ``None``.
+            description: Human-readable description.
+            metadata: User-defined metadata dict.
+            turn_id: Conversation turn identifier.
+            task_id: Owning task; falls back to :attr:`task_id`.
+            producer_call_id: Physical attempt that produced the value.
+            attribution: How that attempt was attributed.
+            pin_for: Task id to pin this version for, atomically with
+                registration.
+
+        Returns:
+            The published :class:`GenericEntry`, carrying its captured
+            :attr:`~GenericEntry.version_metadata`.
+
+        Raises:
+            CatalogNotEnabledError: If no backend is configured.
+        """
+        backend, scope = self._require_enabled("aput_generic")
+        owning_task = task_id if task_id is not None else self.task_id
+        resolved_type = entry_type if entry_type is not None else _detect_entry_type(data)
+
+        async with self._lock:
+            descriptor = await self._register(
+                backend,
+                scope,
+                key,
+                data,
+                task_id=owning_task,
+                description=description,
+                producer_call_id=producer_call_id,
+                attribution=attribution,
+                turn_id=turn_id,
+                metadata=metadata,
+                pin_for=pin_for,
+            )
+            entry = GenericEntry(
+                key=key,
+                data=data,
+                entry_type=resolved_type,
+                description=description,
+                metadata=metadata or {},
+                turn_id=turn_id,
+                session_id=self.session_id,
+                version_metadata=VersionMetadata.from_descriptor(descriptor),
+            )
+            self._store[key] = entry
+
+        self.logger.info(
+            "[WorkingMemory] Stored generic '%s' type=%s as %s@%s",
+            key,
+            resolved_type.value,
+            descriptor.ref.artifact_id,
+            descriptor.ref.version,
+        )
+        return entry
+
+    async def _register(
+        self,
+        backend: "ArtifactStore",
+        scope: "TaskScope",
+        key: str,
+        value: Any,
+        *,
+        task_id: Optional[str],
+        description: str,
+        producer_call_id: Optional[str],
+        attribution: Optional["Attribution"],
+        turn_id: Optional[str],
+        metadata: Optional[dict] = None,
+        pin_for: Optional[str] = None,
+    ) -> "ArtifactDescriptor":
+        """Call the backend exactly once and return its descriptor.
+
+        Args:
+            backend: The attached artifact store.
+            scope: Trusted runtime scope.
+            key: Alias being written.
+            value: The payload.
+            task_id: Owning task.
+            description: Human-readable description.
+            producer_call_id: Physical attempt that produced the value.
+            attribution: How that attempt was attributed.
+            turn_id: Conversation turn identifier.
+            metadata: Caller metadata.
+            pin_for: Task id to pin atomically with registration.
+
+        Returns:
+            The backend's :class:`ArtifactDescriptor`.
+        """
+        kwargs: dict[str, Any] = {
+            "task_id": task_id,
+            "description": description,
+            "producer_call_id": producer_call_id,
+            "turn_id": turn_id,
+            "metadata": metadata,
+        }
+        # `attribution` and `pin_for` are omitted when unset rather than
+        # passed as None. `attribution` has a meaningful backend-side
+        # default, and `pin_for` is an extension beyond the ArtifactStore
+        # protocol — forwarding it unconditionally would break a
+        # protocol-conformant backend that does not accept it.
+        if attribution is not None:
+            kwargs["attribution"] = attribution
+        if pin_for is not None:
+            kwargs["pin_for"] = pin_for
+        return await backend.put(scope, key, value, **kwargs)
+
+    async def aget(self, key: str) -> CatalogEntry | GenericEntry:
+        """Retrieve a catalog entry by key, under the catalog lock.
+
+        Args:
+            key: The alias to read.
+
+        Returns:
+            The stored entry.
+
+        Raises:
+            KeyError: If the key is not present — same message shape as
+                the synchronous :meth:`get`.
+        """
+        async with self._lock:
+            if key not in self._store:
+                raise KeyError(f"'{key}' not found. Available: {list(self._store.keys())}")
+            return self._store[key]
+
+    async def adrop(self, key: str, *, task_id: Optional[str] = None) -> bool:
+        """Drop a live alias through the backend, then locally.
+
+        Dropping removes the **alias**, never the versions behind it.
+        Pinned evidence survives, and the backend keeps an identity
+        tombstone so a later re-registration cannot reuse a version
+        number that some completed step still cites.
+
+        Args:
+            key: The alias to drop.
+            task_id: Owning task namespace; falls back to :attr:`task_id`.
+
+        Returns:
+            ``True`` if the alias existed locally.
+
+        Raises:
+            CatalogNotEnabledError: If no backend is configured.
+        """
+        backend, scope = self._require_enabled("adrop")
+        owning_task = task_id if task_id is not None else self.task_id
+
+        async with self._lock:
+            await backend.drop_alias(scope, key, task_id=owning_task)
+            if key in self._store:
+                del self._store[key]
+                return True
+            return False
+
+    def descriptors(self) -> list["ArtifactDescriptor"]:
+        """Project every versioned entry as an artifact descriptor.
+
+        Legacy entries — those stored through the synchronous path, with
+        no artifact identity — are skipped rather than fabricated.
+
+        Returns:
+            One descriptor per versioned entry, in insertion order.
+        """
+        return [entry.to_descriptor() for entry in self._store.values() if entry.version_metadata is not None]
 
     def list_entries(
         self,

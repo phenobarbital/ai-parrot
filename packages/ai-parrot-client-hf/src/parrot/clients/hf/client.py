@@ -388,19 +388,28 @@ class TransformersClient(AbstractClient):
         )
 
         # Tokenize input
-        inputs = self.tokenizer.encode(formatted_prompt, return_tensors="pt")
-        if self.device != "cpu":
-            inputs = inputs.to(self.device)
+        try:
+            inputs = self.tokenizer.encode(formatted_prompt, return_tensors="pt")
+            if self.device != "cpu":
+                inputs = inputs.to(self.device)
 
-        # Generate response
-        start_time = time.time()
+            # Generate response
+            start_time = time.time()
 
-        import torch
+            import torch
 
-        with torch.no_grad():
-            outputs = self.model.generate(inputs, generation_config=gen_config, **kwargs)
+            with torch.no_grad():
+                outputs = self.model.generate(inputs, generation_config=gen_config, **kwargs)
 
-        generation_time = time.time() - start_time
+            generation_time = time.time() - start_time
+        except BaseException as _lc_exc:
+            # FEAT-548 Finding #1: emit ClientCallFailedEvent on error
+            _lc_model_hf = self.model_name if hasattr(self, "model_name") else ""
+            await self._emit_failed_call_safe(
+                _lc_tc_hf, client_name="huggingface", model=_lc_model_hf,
+                t0=_lc_t0_hf, exc=_lc_exc,
+            )
+            raise
 
         # Decode response
         input_length = inputs.shape[1]

@@ -8,6 +8,7 @@ wiring, the bounded run registry, and the soft-timeout execution path over
 is added by TASK-2184; the plan file store, planner client and
 allowlist/catalog layering are added by TASK-2181/2182/2183 respectively.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -15,7 +16,7 @@ import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Sequence, Set, Union
+from typing import TYPE_CHECKING, Any, Callable, Dict, Mapping, Optional, Sequence, Set, Union
 
 from parrot.bots.flows.core.context import FlowContext
 from parrot.bots.flows.flow.flow import AgentsFlow
@@ -80,6 +81,11 @@ class ExecutionPlanToolkit(AbstractToolkit):
         max_completed_runs: Bound on completed/failed run-registry
             entries; oldest evicted first. In-flight runs are never
             evicted.
+        plan_step_mapping: Explicit ``{plan_node_id: domain_step_id}``
+            mapping forwarded to every plan node (FEAT-538). Supplying an
+            entry is the ONLY way a plan call is attributed to a task
+            step: a plan node id is not a step id, and a plan run never
+            creates a task or a step by itself.
     """
 
     name: str = "execution_plan"
@@ -102,6 +108,7 @@ class ExecutionPlanToolkit(AbstractToolkit):
         permission_context: Optional["PermissionContext"] = None,
         on_node_event: Optional[Callable[..., Any]] = None,
         max_completed_runs: int = 50,
+        plan_step_mapping: Optional[Mapping[str, str]] = None,
         **kwargs: Any,
     ) -> None:
         """Initialise the toolkit with its live dependencies.
@@ -128,6 +135,10 @@ class ExecutionPlanToolkit(AbstractToolkit):
                 own progress-tracking listener.
             max_completed_runs: Bound on completed/failed run-registry
                 entries.
+            plan_step_mapping: Explicit ``{plan_node_id: domain_step_id}``
+                mapping (FEAT-538). ``None`` — the default — leaves every
+                plan call task-level with ``plan`` provenance, which is the
+                honest answer when nobody has said which step a node is.
             **kwargs: Forwarded to :class:`AbstractToolkit`.
         """
         super().__init__(**kwargs)
@@ -135,13 +146,12 @@ class ExecutionPlanToolkit(AbstractToolkit):
         self._working_memory = working_memory
         self.planner_llm = planner_llm
         self.plans_dir: Optional[Path] = Path(plans_dir) if plans_dir is not None else None
-        self.allowed_tools: Optional[list] = (
-            list(allowed_tools) if allowed_tools is not None else None
-        )
+        self.allowed_tools: Optional[list] = list(allowed_tools) if allowed_tools is not None else None
         self.soft_timeout = soft_timeout
         self.permission_context = permission_context
         self._on_node_event = on_node_event
         self.max_completed_runs = max_completed_runs
+        self.plan_step_mapping: Dict[str, str] = dict(plan_step_mapping or {})
 
         # Run registry (bounded) — toolkit-internal state, never travels
         # through NodeDefinition.config.
@@ -162,9 +172,7 @@ class ExecutionPlanToolkit(AbstractToolkit):
             self._agent_registry = AgentRegistry()
         return self._agent_registry
 
-    async def _run_plan(
-        self, plan: ExecutionPlan, *, source: str
-    ) -> ToolResult:
+    async def _run_plan(self, plan: ExecutionPlan, *, source: str) -> ToolResult:
         """Compile, run and bound the response to ``soft_timeout``.
 
         Callers are responsible for validating ``plan`` first (TASK-2184's
@@ -183,10 +191,16 @@ class ExecutionPlanToolkit(AbstractToolkit):
         """
         ensure_tool_node_registered(PlanToolNode)
         definition = to_flow_definition(plan)
+        # Allocated before the factory rather than beside the RunRecord:
+        # every node's attempt receipt is correlated to this run id
+        # (FEAT-538), so it has to exist before any node is built.
+        run_id = f"run_{uuid.uuid4().hex[:8]}"
         factory = make_tool_node_factory(
             self._tool_manager,
             self._working_memory,
             permission_context=self.permission_context,
+            plan_run_id=run_id,
+            step_mapping=self.plan_step_mapping,
         )
         agent_registry = self._get_agent_registry()
         flow = AgentsFlow.from_definition(
@@ -206,7 +220,6 @@ class ExecutionPlanToolkit(AbstractToolkit):
         )
 
         plan_node_ids: Set[str] = {node.id for node in plan.nodes}
-        run_id = f"run_{uuid.uuid4().hex[:8]}"
         ctx = FlowContext(initial_task=plan.objective, agent_registry=agent_registry)
         started_monotonic = time.monotonic()
         record = RunRecord(
@@ -225,9 +238,7 @@ class ExecutionPlanToolkit(AbstractToolkit):
         if self._on_node_event is not None:
             flow.add_node_event_listener(self._on_node_event)
 
-        task = asyncio.create_task(
-            self._execute_flow(run_id, flow, plan, ctx, started_monotonic)
-        )
+        task = asyncio.create_task(self._execute_flow(run_id, flow, plan, ctx, started_monotonic))
         self._run_tasks[run_id] = task
 
         done, _pending = await asyncio.wait({task}, timeout=self.soft_timeout)
@@ -237,16 +248,13 @@ class ExecutionPlanToolkit(AbstractToolkit):
             exc = task.exception()
             record = self._runs.get(run_id, record)
             if record.manifest is not None:
-                return ToolResult(
-                    status="success", result=record.manifest.model_dump(mode="json")
-                )
+                return ToolResult(status="success", result=record.manifest.model_dump(mode="json"))
             reason = record.flow_error or (str(exc) if exc is not None else None)
             return ToolResult(
                 status="error",
                 success=False,
                 result=None,
-                error=f"Plan run {run_id!r} finished without a manifest"
-                + (f": {reason}" if reason else ""),
+                error=f"Plan run {run_id!r} finished without a manifest" + (f": {reason}" if reason else ""),
             )
 
         summary = RunningSummary(
@@ -320,9 +328,7 @@ class ExecutionPlanToolkit(AbstractToolkit):
                 # never returns an ArtifactRef; synthesize one so the
                 # manifest's counts stay honest instead of silently
                 # dropping the node.
-                refs.append(
-                    ArtifactRef(node_id=node.id, status="error", errors=[str(error)[:300]])
-                )
+                refs.append(ArtifactRef(node_id=node.id, status="error", errors=[str(error)[:300]]))
                 continue
             # Neither a result nor a recorded error: the node was never
             # dispatched at all — a hard upstream failure blocked it (the
@@ -360,11 +366,7 @@ class ExecutionPlanToolkit(AbstractToolkit):
 
         In-flight (``status == "running"``) runs are never evicted.
         """
-        finished = [
-            (run_id, rec)
-            for run_id, rec in self._runs.items()
-            if rec.status != "running"
-        ]
+        finished = [(run_id, rec) for run_id, rec in self._runs.items() if rec.status != "running"]
         overflow = len(finished) - self.max_completed_runs
         if overflow <= 0:
             return
@@ -376,7 +378,8 @@ class ExecutionPlanToolkit(AbstractToolkit):
             self._run_contexts.pop(run_id, None)
             self.logger.debug(
                 "Evicted completed run %r (max_completed_runs=%d)",
-                run_id, self.max_completed_runs,
+                run_id,
+                self.max_completed_runs,
             )
 
     # ── Agent-facing tools ───────────────────────────────────────────────────
@@ -442,9 +445,7 @@ class ExecutionPlanToolkit(AbstractToolkit):
         `run_id` summary if still running after `soft_timeout`.
         """
         try:
-            plan, _plan_json, report, source = await self._acquire_and_validate(
-                objective, plan_name, params
-            )
+            plan, _plan_json, report, source = await self._acquire_and_validate(objective, plan_name, params)
         except _StructuralError as exc:
             return ToolResult(status="error", success=False, result=None, error=str(exc))
 
@@ -472,9 +473,7 @@ class ExecutionPlanToolkit(AbstractToolkit):
         calls a tool.
         """
         try:
-            plan, plan_json, report, _source = await self._acquire_and_validate(
-                objective, plan_name, params
-            )
+            plan, plan_json, report, _source = await self._acquire_and_validate(objective, plan_name, params)
         except _StructuralError as exc:
             return ToolResult(status="error", success=False, result=None, error=str(exc))
 
@@ -532,13 +531,9 @@ class ExecutionPlanToolkit(AbstractToolkit):
     ) -> None:
         """Enforce exactly one of objective/plan_name, and params only with plan_name."""
         if objective is not None and plan_name is not None:
-            raise _StructuralError(
-                "Provide exactly one of 'objective' or 'plan_name', not both."
-            )
+            raise _StructuralError("Provide exactly one of 'objective' or 'plan_name', not both.")
         if objective is None and plan_name is None:
-            raise _StructuralError(
-                "Provide exactly one of 'objective' or 'plan_name'."
-            )
+            raise _StructuralError("Provide exactly one of 'objective' or 'plan_name'.")
         if objective is not None and params is not None:
             raise _StructuralError(
                 "'params' is a plan_name-mode concept ({params.<name>} load-time "
@@ -550,10 +545,8 @@ class ExecutionPlanToolkit(AbstractToolkit):
     ) -> "tuple[ExecutionPlan, Dict[str, Any], Any, str]":
         """``plan_name`` mode: load from ``plans_dir``, validate, no repair."""
         if self.plans_dir is None:
-            raise _StructuralError(
-                "plan_name mode requires the toolkit to be constructed with "
-                "plans_dir=<path>."
-            )
+            raise _StructuralError("plan_name mode requires the toolkit to be constructed with " "plans_dir=<path>.")
+
         def _load() -> ExecutionPlan:
             # PlanFileStore (construction + load) is sync file I/O.
             return PlanFileStore(self.plans_dir).load(plan_name, params)
@@ -569,15 +562,10 @@ class ExecutionPlanToolkit(AbstractToolkit):
         report = validate_with_allowlist(plan, self._tool_manager, self.allowed_tools)
         return plan, plan_json, report, "plan_name"
 
-    async def _acquire_from_objective(
-        self, objective: str
-    ) -> "tuple[ExecutionPlan, Dict[str, Any], Any, str]":
+    async def _acquire_from_objective(self, objective: str) -> "tuple[ExecutionPlan, Dict[str, Any], Any, str]":
         """``objective`` mode: author via the planner, validate, ≤1 repair."""
         if self.planner_llm is None:
-            raise _StructuralError(
-                "objective mode requires the toolkit to be constructed with "
-                "planner_llm=<...>."
-            )
+            raise _StructuralError("objective mode requires the toolkit to be constructed with " "planner_llm=<...>.")
         catalog = build_catalog(self._tool_manager, self.allowed_tools)
         planner = PlanPlanner(self.planner_llm, catalog)
 

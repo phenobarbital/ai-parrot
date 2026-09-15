@@ -23,6 +23,7 @@ from parrot.knowledge.wiki.claude_code.installer import (
     integration_status,
     uninstall_claude_integration,
 )
+from parrot.mcp.toolkit_seed import available_templates
 from parrot.knowledge.wiki.project import (
     WikiConfigError,
     find_project_root,
@@ -78,12 +79,41 @@ def claude() -> None:
     show_default=True,
     help="Install Bookstore MCP and skill when an indexed library exists (no indexing).",
 )
+@click.option(
+    "--tool-guards/--no-tool-guards",
+    default=False,
+    show_default=True,
+    help="Install the opt-in PreToolUse read guard (FEAT-543) that denies unbounded reads of large files.",
+)
+@click.option(
+    "--toolkits",
+    "toolkits_",
+    default="",
+    help="Comma-separated toolkit sections to seed into .parrot/mcp-toolkits.yaml (e.g. sdd-coder,bounded-source).",
+)
+@click.option(
+    "--all-toolkits",
+    "all_toolkits",
+    is_flag=True,
+    default=False,
+    help="Seed every toolkit template shipped with this release.",
+)
+@click.option(
+    "--approve-mcp/--no-approve-mcp",
+    default=True,
+    show_default=True,
+    help="Authorize the managed MCP servers in .claude/settings.local.json.",
+)
 def install(
     path_: Optional[str],
     git_hook: bool,
     gitignore: bool,
     build_now: bool,
     bookstore: bool,
+    tool_guards: bool,
+    toolkits_: str,
+    all_toolkits: bool,
+    approve_mcp: bool,
 ) -> None:
     """Install the wiki toolkit as Claude Code infrastructure.
 
@@ -93,16 +123,48 @@ def install(
     files — and keeps the graph fresh on every git commit.
     """
     root = _resolve_root(path_)
+    names = sorted(
+        {n.strip() for n in toolkits_.split(",") if n.strip()} | (set(available_templates()) if all_toolkits else set())
+    )
     try:
         config = load_effective_config(root).config
         actions = install_claude_integration(
-            root, config, git_hook=git_hook, gitignore=gitignore, bookstore=bookstore
+            root,
+            config,
+            git_hook=git_hook,
+            gitignore=gitignore,
+            bookstore=bookstore,
+            toolkits=names,
+            approve_mcp=approve_mcp,
         )
-    except (RuntimeError, WikiConfigError) as exc:
+    except (RuntimeError, WikiConfigError, ValueError) as exc:
         raise click.ClickException(str(exc)) from exc
 
     for action in actions:
         click.echo(f"  ✓ {action}")
+
+    if not names:
+        templates = available_templates()
+        if templates:
+            click.echo(
+                f"  ℹ Use --toolkits=<name,...> or --all-toolkits to seed MCP toolkit servers. "
+                f"Available: {', '.join(templates)}"
+            )
+
+    if names or approve_mcp:
+        click.echo("  ℹ Start a new Claude Code session for the MCP servers to appear.")
+
+    if tool_guards:
+        # Lazy import: core must not hard-depend on ai-parrot-tools.
+        try:
+            from parrot_tools.tool_optimizations.installation import install_guards
+        except ImportError as exc:  # pragma: no cover - exercised via monkeypatch
+            raise click.ClickException("tool guards require ai-parrot-tools: uv pip install ai-parrot-tools") from exc
+        try:
+            for action in install_guards(root, "claude"):
+                click.echo(f"  ✓ {action}")
+        except RuntimeError as exc:
+            raise click.ClickException(str(exc)) from exc
 
     if build_now and not config.is_built(root):
         click.echo("Building the wiki plane (first run)...")
@@ -125,6 +187,17 @@ def uninstall(path_: Optional[str]) -> None:
     for action in uninstall_claude_integration(root):
         click.echo(f"  ✓ {action}")
 
+    try:
+        from parrot_tools.tool_optimizations.installation import uninstall_guards
+    except ImportError:
+        pass
+    else:
+        try:
+            for action in uninstall_guards(root, "claude"):
+                click.echo(f"  ✓ {action}")
+        except RuntimeError as exc:
+            raise click.ClickException(str(exc)) from exc
+
 
 @claude.command()
 @path_option
@@ -133,6 +206,13 @@ def status(path_: Optional[str], as_json: bool) -> None:
     """Show which integration pieces are installed."""
     root = _resolve_root(path_)
     info = integration_status(root)
+
+    try:
+        from parrot_tools.tool_optimizations.installation import guard_status
+    except ImportError:
+        pass
+    else:
+        info["tool_guards"] = guard_status(root, "claude")
     if as_json:
         click.echo(json.dumps(info, indent=2))
         return

@@ -211,12 +211,46 @@ class ExecRequest(BaseModel):
     deadline_ms: int = Field(..., gt=0)
 
 
+class TransportEnvelope(BaseModel):
+    """Bounded runtime context carried across the REPL process boundary (FEAT-538).
+
+    Only a *bounded* envelope crosses the boundary — never a live task
+    context object. Every field is revalidated on return: scope drift is a
+    hard boundary violation, while task, generation or fencing drift means
+    the binding is stale and the artifact must be re-resolved rather than
+    trusted.
+
+    Attributes:
+        scope_key: Opaque, collision-safe encoding of the trusted scope.
+        task_id: The selected task at the time of the request.
+        artifact_id: Identity of the artifact being materialized.
+        version: Exact version of that artifact. A binding is to a
+            version, never to a mutable alias.
+        worker_generation: Identity of the worker *generation* the caller
+            believes it is talking to. A PID alone is not a generation
+            identity — a recycled PID would masquerade as the same worker.
+        fencing_token: Monotonic token used to reject a late reply from a
+            superseded owner.
+    """
+
+    scope_key: str = Field(..., max_length=512)
+    task_id: Optional[str] = Field(default=None, max_length=128)
+    artifact_id: Optional[str] = Field(default=None, max_length=128)
+    version: Optional[int] = Field(default=None, ge=1)
+    worker_generation: Optional[str] = Field(default=None, max_length=128)
+    fencing_token: Optional[int] = Field(default=None, ge=0)
+
+
 class InjectDfRequest(BaseModel):
     """Host -> worker: inject a DataFrame into the namespace.
 
     Implemented by TASK-1945: Arrow IPC over shared memory as the primary
     transport (``format="arrow"``), pickle+base64 as the fallback
     (``format="pickle"``) for dtypes Arrow cannot represent (spec G9).
+
+    FEAT-538 adds an opt-in ``strict`` mode for task-memory evidence. It
+    is off by default, so the legacy wire shape and behaviour are
+    unchanged for every existing caller.
     """
 
     op: Literal["inject_df"] = "inject_df"
@@ -228,6 +262,12 @@ class InjectDfRequest(BaseModel):
     size: Optional[int] = None
     #: base64-encoded pickle bytes (format="pickle").
     payload: Optional[str] = None
+    #: FEAT-538: strict task-memory evidence transport. The worker refuses
+    #: a strict request that is not Arrow, so a host bug cannot smuggle a
+    #: pickle payload in under an evidence label.
+    strict: bool = False
+    #: FEAT-538: bounded runtime context, revalidated on return.
+    envelope: Optional[TransportEnvelope] = None
 
 
 class GetVarRequest(BaseModel):

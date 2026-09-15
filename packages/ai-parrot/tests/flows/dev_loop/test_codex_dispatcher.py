@@ -152,7 +152,8 @@ class TestCodexCommandAndEvents:
         assert command[command.index("--cd") + 1] == str(_patch_worktree_base)
         assert command[command.index("--model") + 1] == "gpt-5.5"
         assert command[command.index("--sandbox") + 1] == "workspace-write"
-        assert command[command.index("--ask-for-approval") + 1] == "never"
+        assert "--ask-for-approval" not in command
+        assert command[command.index("-c") + 1] == "approval_policy=never"
         assert "--output-schema" in command
         assert "-o" in command
         assert "--ignore-user-config" in command

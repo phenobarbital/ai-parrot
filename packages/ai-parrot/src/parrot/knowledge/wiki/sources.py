@@ -31,9 +31,10 @@ import json
 import logging
 import sqlite3
 import uuid
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Iterator, Literal
 from urllib.parse import urlparse
 
 from parrot.knowledge.wiki.models import SourceManifestEntry
@@ -147,6 +148,8 @@ class SourceCollectionManager:
         backend: Literal["sqlite", "json", "arangodb"] = "sqlite",
         arango_db: Any | None = None,
         arango_store: Any | None = None,
+        *,
+        busy_timeout: float = 15.0,
     ) -> None:
         """Initialise the manager's chosen persistence backend.
 
@@ -186,6 +189,7 @@ class SourceCollectionManager:
         self.db_path: Path = Path(db_path) if db_path else self.sources_dir.parent / "wiki.db"
         self.manifest_path: Path = self.sources_dir / self._MANIFEST_FILENAME
         self.logger: logging.Logger = logging.getLogger(__name__)
+        self.busy_timeout: float = busy_timeout
         self._manifest: dict[str, SourceManifestEntry] = {}
         self._arango_db: Any | None = arango_db
         self._arango_store: Any | None = arango_store
@@ -211,7 +215,7 @@ class SourceCollectionManager:
             from parrot.knowledge.wiki.store import WIKI_SCHEMA_SQL
 
             self.db_path.parent.mkdir(parents=True, exist_ok=True)
-            with self._connect() as conn:
+            with self._write("init_schema") as conn:
                 conn.executescript(WIKI_SCHEMA_SQL)
             self._migrate_sources_columns()
             self._migrate_json_manifest()
@@ -790,7 +794,10 @@ class SourceCollectionManager:
             if removed:
                 self.logger.debug("Source removed: source_id=%s", source_id)
             return removed
-        with self._connect() as conn:
+        # A real DML write — must go through the bounded `BEGIN IMMEDIATE`
+        # transaction like every other writer, so contention maps to a typed
+        # `WikiStoreBusy` instead of a raw `sqlite3.OperationalError` (AC-3).
+        with self._write("remove_source") as conn:
             cur = conn.execute("DELETE FROM sources WHERE source_id = ?", (source_id,))
         removed = cur.rowcount > 0
         if removed:
@@ -1000,9 +1007,59 @@ class SourceCollectionManager:
         affinity); WAL mode allows concurrency with async WikiStore
         connections on the same file.
         """
-        conn = sqlite3.connect(str(self.db_path))
+        conn = sqlite3.connect(
+            str(self.db_path),
+            timeout=self.busy_timeout,
+            isolation_level=None,
+        )
         conn.row_factory = sqlite3.Row
+        conn.execute(f"PRAGMA busy_timeout = {int(self.busy_timeout * 1000)}")
         return conn
+
+    @contextmanager
+    def _write(self, operation: str) -> Iterator[sqlite3.Connection]:
+        """Run one SQLite write inside an explicit immediate transaction.
+
+        Args:
+            operation: Logical name of the write, used in the error.
+
+        Yields:
+            An open connection inside a ``BEGIN IMMEDIATE`` transaction.
+
+        Raises:
+            WikiStoreBusy: The writer lock was not acquired within
+                ``busy_timeout``. Raised only at the begin boundary.
+        """
+        from parrot.knowledge.wiki.store import WikiStoreBusy
+
+        conn = self._connect()
+        try:
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+            except sqlite3.OperationalError as exc:
+                # Codes, not message substrings (spec §7):
+                # 5 = SQLITE_BUSY, 517 = SQLITE_BUSY_SNAPSHOT.
+                if getattr(exc, "sqlite_errorcode", None) in (5, 517):
+                    raise WikiStoreBusy(self.db_path, operation, self.busy_timeout) from exc
+                raise
+            try:
+                yield conn
+            except BaseException:
+                try:
+                    conn.execute("ROLLBACK")
+                except sqlite3.Error:  # pragma: no cover - rollback best effort
+                    self.logger.debug("rollback failed after %s", operation, exc_info=True)
+                raise
+            # `executescript` (used by the schema-replay call site) issues
+            # an implicit COMMIT before running, so a transaction may
+            # already be closed by the time we get here — commit only if
+            # one is still open.
+            if conn.in_transaction:
+                conn.execute("COMMIT")
+        finally:
+            # The pre-existing `with self._connect() as conn:` pattern
+            # commits/rolls back but never CLOSES — close explicitly here.
+            conn.close()
 
     def _upsert(self, entry: SourceManifestEntry) -> None:
         """Insert or replace one source entry in the active backend."""
@@ -1013,7 +1070,7 @@ class SourceCollectionManager:
         if self.backend == "arangodb":
             self._run_async(self._async_upsert(entry))
             return
-        with self._connect() as conn:
+        with self._write("upsert_source") as conn:
             conn.execute(_SOURCES_UPSERT_SQL, self._entry_params(entry))
 
     def _upsert_many(self, entries: list[SourceManifestEntry]) -> None:
@@ -1036,7 +1093,7 @@ class SourceCollectionManager:
         if self.backend == "arangodb":
             self._run_async(self._async_upsert_many(entries))
             return
-        with self._connect() as conn:
+        with self._write("upsert_sources") as conn:
             conn.executemany(_SOURCES_UPSERT_SQL, [self._entry_params(e) for e in entries])
 
     @staticmethod
@@ -1380,7 +1437,7 @@ class SourceCollectionManager:
         pre-existing database gains the same index a fresh one gets from
         ``WIKI_SCHEMA_SQL``.
         """
-        with self._connect() as conn:
+        with self._write("migrate_sources") as conn:
             existing = {row["name"] for row in conn.execute("PRAGMA table_info(sources)").fetchall()}
             for column_map in (_SOURCES_DECISION_COLUMNS, _SOURCES_DOCUMENT_COLUMNS, _SOURCES_EXTERNAL_COLUMNS):
                 for name, col_type in column_map.items():

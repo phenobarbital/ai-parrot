@@ -19,7 +19,6 @@ from pathlib import Path
 from typing import Dict, List, Optional, Sequence
 
 import aiofiles
-
 from parrot.memory.compaction.models import Omission
 
 logger = logging.getLogger(__name__)
@@ -96,6 +95,48 @@ class OmissionStore(ABC):
             belongs to a different session.
         """
 
+    async def probe(self, session_key: str, content_id: str) -> Optional[bool]:
+        """Report whether ``content_id`` is still stored, WITHOUT loading it.
+
+        Added by FEAT-538. :meth:`get` fetches the payload text, so using
+        it to answer "does this still exist?" would drag potentially
+        large omitted content across the wire purely to compute a
+        boolean — and recall does exactly that check, for every omission
+        reference it reports.
+
+        Deliberately **not** abstract: a store written before this method
+        existed keeps working and inherits this default, which answers
+        ``None`` (*unknown*). Unknown is never reported as available —
+        claiming content is present when the store cannot say so would
+        let recall promise recoverable text that may be long gone.
+
+        Args:
+            session_key: Opaque scoping key (composed by the memory).
+            content_id: The id to probe.
+
+        Returns:
+            ``True`` when the content is stored, ``False`` when it is
+            known to be absent or expired, and ``None`` when this backend
+            cannot answer cheaply.
+        """
+        return None
+
+    async def probe_many(self, session_key: str, content_ids: Sequence[str]) -> Dict[str, Optional[bool]]:
+        """Probe several ids at once (default: loop over :meth:`probe`).
+
+        Backends with a batching primitive should override this; the
+        default keeps the contract satisfiable by any store.
+
+        Args:
+            session_key: Opaque scoping key (composed by the memory).
+            content_ids: The ids to probe.
+
+        Returns:
+            A mapping of id to availability, using :meth:`probe`'s
+            three-valued answer.
+        """
+        return {cid: await self.probe(session_key, cid) for cid in content_ids}
+
     @abstractmethod
     async def list_by_turn(self, session_key: str, turn_id: str) -> List[str]:
         """Return the content ids stored for ``turn_id``, in insertion order.
@@ -137,6 +178,10 @@ class InMemoryOmissionStore(OmissionStore):
 
     async def get(self, session_key: str, content_id: str) -> Optional[str]:
         return self._content.get(session_key, {}).get(content_id)
+
+    async def probe(self, session_key: str, content_id: str) -> Optional[bool]:
+        """Answer from key membership alone; never touches the value."""
+        return content_id in self._content.get(session_key, {})
 
     async def list_by_turn(self, session_key: str, turn_id: str) -> List[str]:
         return list(self._turns.get(session_key, {}).get(turn_id, []))
@@ -186,6 +231,39 @@ class RedisOmissionStore(OmissionStore):
 
     async def get(self, session_key: str, content_id: str) -> Optional[str]:
         return await self._redis.hget(self._content_key(session_key), content_id)
+
+    async def probe(self, session_key: str, content_id: str) -> Optional[bool]:
+        """Answer with ``HEXISTS``, which transfers no value.
+
+        ``HGET`` would pull the whole omitted payload back just to decide
+        a boolean — and omitted payloads are, by construction, the large
+        ones. A key expired by the store's TTL reports ``False``, which is
+        the honest answer: the content is gone.
+        """
+        return bool(await self._redis.hexists(self._content_key(session_key), content_id))
+
+    async def probe_many(self, session_key: str, content_ids: Sequence[str]) -> Dict[str, Optional[bool]]:
+        """Batch the probes into one pipeline round trip when possible.
+
+        Falls back to the base implementation for clients without
+        ``pipeline`` (lightweight doubles, restricted Redis-compatible
+        servers) rather than failing on them.
+        """
+        ids = list(content_ids)
+        if not ids:
+            return {}
+        pipeline_factory = getattr(self._redis, "pipeline", None)
+        if pipeline_factory is None:
+            return await super().probe_many(session_key, ids)
+        key = self._content_key(session_key)
+        try:
+            pipe = pipeline_factory()
+            for cid in ids:
+                pipe.hexists(key, cid)
+            results = await pipe.execute()
+        except (AttributeError, TypeError, NotImplementedError):
+            return await super().probe_many(session_key, ids)
+        return {cid: bool(present) for cid, present in zip(ids, results)}
 
     async def list_by_turn(self, session_key: str, turn_id: str) -> List[str]:
         raw = await self._redis.hget(self._turns_key(session_key), turn_id)
@@ -262,6 +340,11 @@ class FileOmissionStore(OmissionStore):
             return None
         async with aiofiles.open(path, "r", encoding="utf-8") as f:
             return await f.read()
+
+    async def probe(self, session_key: str, content_id: str) -> Optional[bool]:
+        """Answer from the file's existence; the contents are never opened."""
+        path = self._session_dir(session_key) / f"{content_id}.txt"
+        return bool(await asyncio.to_thread(path.exists))
 
     async def list_by_turn(self, session_key: str, turn_id: str) -> List[str]:
         index = await self._read_index(session_key)

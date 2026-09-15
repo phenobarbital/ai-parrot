@@ -161,7 +161,7 @@ class TestManifestBatching:
         store = FakeStore(pages=12)
         result = _run(repo, sources, store)
 
-        assert result == {"written": 0, "unchanged": 12}
+        assert result == {"written": 0, "unchanged": 12, "written_rel_paths": set()}
         assert store.upserted == [] and store.slices == []
         # Nothing to register: the batch write is skipped entirely.
         assert sources.calls.get("add_sources", 0) == 2  # called with an empty list
@@ -175,7 +175,7 @@ class TestManifestBatching:
         store = FakeStore(pages=12)
         result = _run(repo, sources, store)
 
-        assert result == {"written": 1, "unchanged": 11}
+        assert result == {"written": 1, "unchanged": 11, "written_rel_paths": {"mod3.py"}}
         # Non-fresh plane → the changed file goes through replace_source_slice.
         assert len(store.slices) == 1
         assert store.slices[0][1][0].concept_id == "file:mod3.py"
@@ -187,7 +187,11 @@ class TestManifestBatching:
         store = FakeStore(pages=12)
         result = _run(repo, sources, store, force=True)
 
-        assert result == {"written": 12, "unchanged": 0}
+        assert result == {
+            "written": 12,
+            "unchanged": 0,
+            "written_rel_paths": {f"mod{i}.py" for i in range(12)},
+        }
         assert len(store.slices) == 12
 
     def test_manifest_is_marked_only_after_the_pages_land(self, repo, tmp_path):

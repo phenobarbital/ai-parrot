@@ -1,0 +1,76 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-563",
+  "feature_slug": "lancedb-vector-store",
+  "started_at": "2026-09-09T23:19:51.051Z",
+  "updated_at": "2026-09-09T23:34:55.029Z",
+  "source": {
+    "kind": "inline",
+    "raw_path": "sdd/state/FEAT-563/source.md",
+    "fetched_at": "2026-09-09T23:19:51.051Z",
+    "summary_oneline": "Embedded LanceDB vector and FTS retrieval for local agents, with optional graph federation."
+  },
+  "mode": "enrichment",
+  "phase": "committed",
+  "phases": {
+    "source": {
+      "status": "completed"
+    },
+    "plan": {
+      "status": "completed",
+      "approved_by_user": false,
+      "plan_path": "sdd/state/FEAT-563/research_plan.json"
+    },
+    "research": {
+      "status": "completed",
+      "files_read": 20,
+      "grep_calls": 11,
+      "git_calls": 3,
+      "depth_reached": 2,
+      "truncated": false,
+      "truncation_reason": null
+    },
+    "synthesis": {
+      "status": "completed",
+      "synthesis_path": "sdd/state/FEAT-563/synthesis.json",
+      "overall_confidence": "medium",
+      "claims_total": 9,
+      "claims_high_conf": 6,
+      "claims_medium_conf": 3,
+      "claims_low_conf": 0,
+      "unknowns_count": 3,
+      "lint_passed": true,
+      "lint_iterations": 1
+    },
+    "qa": {
+      "status": "pending",
+      "questions_total": 3,
+      "questions_answered": 0
+    },
+    "output": {
+      "status": "completed",
+      "proposal_path": "sdd/proposals/lancedb-vector-store.proposal.md",
+      "commit_sha": null,
+      "next_command_recommended": "sdd-brainstorm",
+      "next_command_rationale": "Resolve hybrid/offline/writer scope, then write the spec."
+    }
+  },
+  "budget": {
+    "profile": "default",
+    "max_files_read": 40,
+    "max_grep_calls": 25,
+    "max_git_calls": 10,
+    "max_depth": 2,
+    "max_wall_seconds": 300
+  },
+  "consumed": {
+    "files_read": 20,
+    "grep_calls": 11,
+    "git_calls": 3,
+    "wall_seconds": 261
+  },
+  "resume_hint": {
+    "next_phase": "qa_pending",
+    "next_action": "Discuss the saved draft, record explicit scope choices, then promote to review/accepted or run sdd-spec."
+  }
+}

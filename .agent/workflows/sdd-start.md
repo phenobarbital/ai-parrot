@@ -51,20 +51,38 @@ Check:
   ```
   and STOP.
 
-### 3. Detect Context
+### 3. Ensure the Worktree
 
-With per-spec indexes (FEAT-145), commits land in whatever branch you are on
-— worktree or main repo. Both are safe because each feature owns its own
-index file, so there is no shared mutable state to collide on.
+The worktree is created by whoever is about to write code in it — not at
+planning time (FEAT-552). `/sdd-task` no longer creates one, so this step
+provisions it, idempotently: already inside the right worktree, it is a no-op
+that prints the path you are already in.
+
+Everything the step needs is in the per-spec index header resolved in §1
+(`feature_id`, `feature`, `spec`, `type`, `base_branch`):
 
 ```bash
-CURRENT_DIR=$(pwd)
-CURRENT_BRANCH=$(git branch --show-current)
+WT=$(python -m scripts.sdd.ensure_worktree \
+       --slug "<feature-slug>" \
+       --feature-id "<FEAT-ID>" \
+       --spec "<spec-path>" \
+       --index "sdd/tasks/index/<feature-slug>.json")
+cd "$WT"
 ```
 
-For the recommended layout, you should be inside a feature worktree (path
-contains `.claude/worktrees/`). If not, that's fine — just confirm the
-branch matches the feature you intend to work on.
+For a hotfix (`type: hotfix` in the index header) pass `--jira-key <KEY>`
+instead of `--feature-id`; the CLI applies the FEAT-466 naming and branches
+from `origin/main`.
+
+If the command exits non-zero, **STOP** and show its message verbatim. Do NOT
+fall back to implementing on `<base_branch>` — an un-isolated implementation is
+exactly what this step exists to prevent. The two messages you are most likely
+to see are a leftover branch with no worktree, and task artifacts missing from
+the base you branched off (fetch and re-run).
+
+With per-spec indexes (FEAT-145), commits then land in the worktree's own
+branch. Each feature owns its own index file, so parallel worktrees never
+collide on shared mutable state.
 
 ### 4. Mark In-Progress (in place)
 
@@ -95,6 +113,38 @@ The commit lives on the current branch. The merge in `/sdd-done` brings it
 to `base_branch` alongside the code commit — atomically, with no conflict
 surface (other features touch other per-spec index files).
 
+**Ledger `task.started` (FEAT-566, best-effort):** immediately after the
+commit above, record the start in the shared work ledger — never blocking
+on failure (missing ledger package, unwritable shared root, ...):
+
+```bash
+python3 - "<TASK-NNN>" "<feature-slug>" <<'PYEOF' || true
+import sys
+from pathlib import Path
+
+task_id, feature_slug = sys.argv[1:3]
+try:
+    from parrot.knowledge.wiki.ledger.events import LedgerEvent
+    from parrot.knowledge.wiki.ledger.log import LedgerLog
+    from parrot.knowledge.wiki.project import find_shared_root
+
+    shared_root = find_shared_root(Path.cwd()) or Path.cwd()
+    ledger_dir = shared_root / ".parrot" / "ledger"
+    ledger_dir.mkdir(parents=True, exist_ok=True)
+    event = LedgerEvent(
+        kind="task.started", subject=f"task:{task_id}",
+        actor="agent:sdd-start", payload={"feature": feature_slug},
+    )
+    LedgerLog(str(ledger_dir / "events.jsonl")).append(event)
+except Exception as exc:  # noqa: BLE001 — ledger emission never blocks /sdd-start
+    print(f"⚠️  task.started ledger emission skipped: {exc}", file=sys.stderr)
+PYEOF
+```
+
+Log-only append (same durability guarantee as `close_task.sh`'s
+`task.closed` — spec §2: "never takes a database lock") — there is no
+SQLite writer contention to handle here.
+
 ### 5. Read Context
 1. Read the **task file** at the path from the index.
 2. Read the **spec file** referenced in the task header.
@@ -103,6 +153,19 @@ surface (other features touch other per-spec index files).
    - Files to create/modify
    - Acceptance criteria
    - Test specification
+
+### Prime with Ledger Context (FEAT-566, best-effort)
+
+Before implementing, surface open ledger issues/insights that intersect the
+task's declared file/symbol scope — never fatal, never blocking on a busy or
+unbuilt ledger:
+
+```bash
+wikitoolkit ledger context <file-1> <file-2> ... 2>/dev/null || true
+```
+
+Fold any non-empty output into the context you carry into Step 7 — it is
+informational (known related issues, prior insights), not a gate.
 
 ### 6. Print Kickoff Summary
 Output:

@@ -250,8 +250,10 @@ After spec approval, automatically runs task decomposition.
 #### 6. Create Worktree
 
 ```bash
-git worktree add -b feat-<FEAT-ID>-<slug> \
-  .claude/worktrees/feat-<FEAT-ID>-<slug> HEAD
+python -m scripts.sdd.ensure_worktree --json \
+  --slug <slug> --feature-id FEAT-<NNN> \
+  --spec sdd/specs/<slug>.spec.md \
+  --index sdd/tasks/index/<slug>.json
 ```
 
 #### 7. Output & Handoff

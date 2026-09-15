@@ -53,10 +53,7 @@ def _fresh_state() -> DevLoopSessionState:
 
 def _envelopes(n: int) -> List[ActionEnvelope]:
     channel = session_channel(RUN_ID)
-    return [
-        ActionEnvelope(channel=channel, server_seq=i, action=RunCreated(run_id=RUN_ID))
-        for i in range(n)
-    ]
+    return [ActionEnvelope(channel=channel, server_seq=i, action=RunCreated(run_id=RUN_ID)) for i in range(n)]
 
 
 def _research_output(**overrides: Any) -> ResearchOutput:
@@ -76,8 +73,11 @@ def _qa_report(**overrides: Any) -> QAReport:
         passed=True,
         criterion_results=[
             CriterionResult(
-                name="run tests", kind="shell", exit_code=0,
-                duration_seconds=1.5, passed=True,
+                name="run tests",
+                kind="shell",
+                exit_code=0,
+                duration_seconds=1.5,
+                passed=True,
             ),
         ],
         lint_passed=True,
@@ -100,8 +100,12 @@ def test_build_bundle_successful_run():
     state = reduce(
         state,
         DispatchCompleted(
-            node_id="development", ts=5.0,
-            input_tokens=100, output_tokens=50, total_cost_usd=0.02, num_turns=3,
+            node_id="development",
+            ts=5.0,
+            input_tokens=100,
+            output_tokens=50,
+            total_cost_usd=0.02,
+            num_turns=3,
             duration_ms=3000,
         ),
     )
@@ -176,17 +180,20 @@ def test_build_bundle_gate_audit():
         state,
         GateOpened(
             gate=ApprovalGate(
-                gate_id="g1", kind="manual_criterion", node_id="qa", title="Manual check",
+                gate_id="g1",
+                kind="manual_criterion",
+                node_id="qa",
+                title="Manual check",
             )
         ),
     )
-    state = reduce(
-        state, GateResolved(gate_id="g1", resolution="approved", resolved_by="alice")
-    )
+    state = reduce(state, GateResolved(gate_id="g1", resolution="approved", resolved_by="alice"))
     state = reduce(state, RunClosed(outcome="succeeded"))
 
     bundle = build_run_bundle(
-        Snapshot(channel=state.channel, state=state, from_seq=0), _envelopes(3), {},
+        Snapshot(channel=state.channel, state=state, from_seq=0),
+        _envelopes(3),
+        {},
     )
 
     assert len(bundle.gates) == 1
@@ -208,13 +215,13 @@ def test_totals_aggregate_partial_telemetry():
     state = reduce(state, DispatchQueued(node_id="research"))
     state = reduce(state, DispatchCompleted(node_id="research", input_tokens=10))
     state = reduce(state, DispatchQueued(node_id="development"))
-    state = reduce(
-        state, DispatchCompleted(node_id="development", input_tokens=20, output_tokens=5)
-    )
+    state = reduce(state, DispatchCompleted(node_id="development", input_tokens=20, output_tokens=5))
     state = reduce(state, RunClosed(outcome="succeeded"))
 
     bundle = build_run_bundle(
-        Snapshot(channel=state.channel, state=state, from_seq=0), _envelopes(1), {},
+        Snapshot(channel=state.channel, state=state, from_seq=0),
+        _envelopes(1),
+        {},
     )
 
     assert bundle.totals.input_tokens == 30
@@ -229,7 +236,9 @@ def test_totals_none_when_no_telemetry():
     state = reduce(state, RunClosed(outcome="succeeded"))
 
     bundle = build_run_bundle(
-        Snapshot(channel=state.channel, state=state, from_seq=0), _envelopes(1), {},
+        Snapshot(channel=state.channel, state=state, from_seq=0),
+        _envelopes(1),
+        {},
     )
 
     assert bundle.totals.input_tokens is None
@@ -243,14 +252,20 @@ def test_task_ids_from_worker_summaries():
     state = reduce(state, RunClosed(outcome="succeeded"))
 
     development_output = DevelopmentOutput(
-        files_changed=["a.py"], commit_shas=["abc123"], summary="done",
+        files_changed=["a.py"],
+        commit_shas=["abc123"],
+        summary="done",
         worker_summaries=[
             WorkerSummary(
-                worker_id="development.w1", agent="codex", model="gpt",
+                worker_id="development.w1",
+                agent="codex",
+                model="gpt",
                 tasks_completed=["TASK-1", "TASK-2"],
             ),
             WorkerSummary(
-                worker_id="development.w2", agent="claude-code", model="sonnet",
+                worker_id="development.w2",
+                agent="claude-code",
+                model="sonnet",
                 tasks_completed=["TASK-3"],
             ),
         ],
@@ -276,7 +291,10 @@ def test_render_markdown_full():
     state = reduce(
         state,
         DispatchCompleted(
-            node_id="development", ts=4.0, input_tokens=10, output_tokens=5,
+            node_id="development",
+            ts=4.0,
+            input_tokens=10,
+            output_tokens=5,
             total_cost_usd=0.01,
         ),
     )
@@ -285,11 +303,51 @@ def test_render_markdown_full():
         state,
         GateOpened(gate=ApprovalGate(gate_id="g1", kind="manual_criterion", node_id="qa")),
     )
+    state = reduce(state, GateResolved(gate_id="g1", resolution="approved", resolved_by="bob"))
+    state = reduce(state, RunClosed(outcome="succeeded", jira_issue_key="OPS-1", pr_url="https://pr/9"))
+
+    from parrot.flows.dev_loop.models import ChangedFile, ChangeSet, SeatUsageSummary
+    from parrot.flows.dev_loop.session_state import ChangesetRecorded, SeatUsageRecorded
+
     state = reduce(
-        state, GateResolved(gate_id="g1", resolution="approved", resolved_by="bob")
+        state,
+        ChangesetRecorded(
+            changeset=ChangeSet(
+                base_ref="origin/dev",
+                branch="feat-999-x",
+                commits=2,
+                total_additions=12,
+                total_deletions=3,
+                files=[
+                    ChangedFile(path="src/a.py", additions=10, deletions=3, status="M"),
+                    ChangedFile(path="tests/test_a.py", additions=2, status="A"),
+                    ChangedFile(path="img.png", status="A", binary=True),
+                ],
+            )
+        ),
     )
     state = reduce(
-        state, RunClosed(outcome="succeeded", jira_issue_key="OPS-1", pr_url="https://pr/9")
+        state,
+        SeatUsageRecorded(
+            seats=[
+                SeatUsageSummary(
+                    seat="qwen",
+                    backend="nova",
+                    model="qwen.qwen3-coder",
+                    tasks_handled=["TASK-1", "TASK-2"],
+                    tasks_merged=2,
+                    attempts=3,
+                    retries=1,
+                    duration_s=125.0,
+                    input_tokens=118000,
+                    output_tokens=31000,
+                    usage_known=True,
+                ),
+                SeatUsageSummary(
+                    seat="codex-spark", backend="codex", tasks_handled=["TASK-3"], attempts=1, duration_s=61.0
+                ),
+            ]
+        ),
     )
 
     shared = {
@@ -298,7 +356,9 @@ def test_render_markdown_full():
         "deployment_result": {"pr_url": "https://pr/9", "pr_number": 9},
     }
     bundle = build_run_bundle(
-        Snapshot(channel=state.channel, state=state, from_seq=0), _envelopes(5), shared,
+        Snapshot(channel=state.channel, state=state, from_seq=0),
+        _envelopes(5),
+        shared,
     )
     report = render_markdown(bundle)
 
@@ -314,13 +374,43 @@ def test_render_markdown_full():
     assert "nit: rename var" in report
     assert "None" not in report
 
+    # Files changed — the PR-style list, from the recorded changeset.
+    assert bundle.developed.changeset is not None
+    assert "## Files changed" in report
+    assert "3 file(s), **+12 −3**, 2 commit(s) on `feat-999-x` vs `origin/dev`" in report
+    assert "| M | `src/a.py` | 10 | 3 |" in report
+    assert "| A | `img.png` | bin | bin |" in report
+
+    # Seats — per-agent roll-up; unknown usage renders n/a, never 0.
+    assert len(bundle.developed.seat_usage) == 2
+    assert "## Seats" in report
+    assert "| qwen | nova | qwen.qwen3-coder | 2 | 3 | 1 | 0 | 2m 05s | 118000 in / 31000 out |" in report
+    assert "| codex-spark | codex | n/a | 1 | 1 | 0 | 0 | 1m 01s | n/a |" in report
+
+
+def test_bundle_reads_changeset_and_seats_from_shared_when_state_lacks_them():
+    from parrot.flows.dev_loop.models import ChangedFile, ChangeSet, SeatUsageSummary
+
+    state = reduce(_fresh_state(), RunCreated(run_id=RUN_ID))
+    shared = {
+        "changeset": ChangeSet(base_ref="origin/dev", files=[ChangedFile(path="x.py", additions=1)], total_additions=1),
+        "seat_usage": [SeatUsageSummary(seat="w1")],
+    }
+    bundle = build_run_bundle(Snapshot(channel=state.channel, state=state, from_seq=0), [], shared)
+    assert bundle.developed.changeset.files[0].path == "x.py"
+    assert bundle.developed.seat_usage[0].seat == "w1"
+    report = render_markdown(bundle)
+    assert "## Files changed" in report and "## Seats" in report
+
 
 def test_render_markdown_omits_empty_sections():
     state = reduce(_fresh_state(), RunCreated(run_id=RUN_ID))
     state = reduce(state, RunCancelled(requested_by="alice"))
 
     bundle = build_run_bundle(
-        Snapshot(channel=state.channel, state=state, from_seq=0), _envelopes(1), {},
+        Snapshot(channel=state.channel, state=state, from_seq=0),
+        _envelopes(1),
+        {},
     )
     report = render_markdown(bundle)
 

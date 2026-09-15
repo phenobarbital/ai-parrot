@@ -5,6 +5,7 @@ tool filtering, and error handling.
 """
 
 import importlib
+import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -227,12 +228,92 @@ def test_config_path_override_honored(tmp_path, monkeypatch):
     silent no-op before."""
     monkeypatch.setattr("parrot.mcp.toolkit_server.importlib.import_module", mock_import_module)
     elsewhere = tmp_path / "custom-toolkits.yaml"
-    elsewhere.write_text(
-        "toolkits:\n" "  stub:\n" "    class: tests.mcp.stub_toolkit.StubToolkit\n" "    kwargs: {}\n"
-    )
+    elsewhere.write_text("toolkits:\n" "  stub:\n" "    class: tests.mcp.stub_toolkit.StubToolkit\n" "    kwargs: {}\n")
 
     # No .parrot/ under tmp_path at all — only the override can resolve "stub".
     server = create_toolkit_mcp_server("stub", tmp_path, config_path=str(elsewhere))
 
     assert server.config.name == "parrot-stub"
     assert "plain" in server.tools
+
+
+# --------------------------------------------------------------------------- #
+# FEAT-543: llm_kwargs pass-through
+# --------------------------------------------------------------------------- #
+def test_llm_kwargs_passed_to_factory(stub_config, monkeypatch):
+    """`llm_kwargs` reaches LLMFactory.create verbatim, alongside `llm`."""
+    monkeypatch.setattr("parrot.mcp.toolkit_server.importlib.import_module", mock_import_module)
+
+    config_file = stub_config / ".parrot" / "mcp-toolkits.yaml"
+    config_file.write_text(
+        "toolkits:\n"
+        "  stub:\n"
+        "    class: tests.mcp.stub_toolkit.StubToolkit\n"
+        "    llm: 'bedrock-converse:qwen3-coder-480b-a35b'\n"
+        "    llm_kwargs:\n"
+        "      fallback_model: null\n"
+        "      max_retries: 1\n"
+        "      read_timeout: 120\n"
+    )
+
+    seen = {}
+    mock_client = MagicMock()
+    from parrot.clients.factory import LLMFactory
+
+    def _capture(llm, **kwargs):
+        seen["llm"] = llm
+        seen["kwargs"] = kwargs
+        return mock_client
+
+    monkeypatch.setattr(LLMFactory, "create", staticmethod(_capture))
+    create_toolkit_mcp_server("stub", stub_config)
+
+    assert seen["llm"] == "bedrock-converse:qwen3-coder-480b-a35b"
+    # `fallback_model: null` must survive as an explicit None — that is the
+    # whole point: it is what stops the Bedrock client applying its default.
+    assert seen["kwargs"] == {"fallback_model": None, "max_retries": 1, "read_timeout": 120}
+    assert "fallback_model" in seen["kwargs"]
+
+
+def test_old_config_without_llm_kwargs_is_unchanged(stub_config, monkeypatch):
+    """A section with `llm` but no `llm_kwargs` calls the factory with no extras."""
+    monkeypatch.setattr("parrot.mcp.toolkit_server.importlib.import_module", mock_import_module)
+
+    config_file = stub_config / ".parrot" / "mcp-toolkits.yaml"
+    config_file.write_text(
+        "toolkits:\n" "  stub:\n" "    class: tests.mcp.stub_toolkit.StubToolkit\n" "    llm: 'test:model'\n"
+    )
+
+    seen = {}
+    from parrot.clients.factory import LLMFactory
+
+    def _capture(llm, **kwargs):
+        seen["llm"] = llm
+        seen["kwargs"] = kwargs
+        return MagicMock()
+
+    monkeypatch.setattr(LLMFactory, "create", staticmethod(_capture))
+    create_toolkit_mcp_server("stub", stub_config)
+
+    assert seen["llm"] == "test:model"
+    assert seen["kwargs"] == {}
+
+
+def test_deterministic_toolkit_never_imports_the_client_factory(stub_config, monkeypatch):
+    """A section without `llm:` must not pull in the client factory at all.
+
+    The Git and reader toolkits are deterministic; requiring provider
+    imports (and therefore AWS dependencies) to serve them would defeat the
+    point of keeping them model-free.
+    """
+
+    def refusing_import(name, *args, **kwargs):
+        if name == "parrot.clients.factory":
+            raise AssertionError("parrot.clients.factory must not be imported for a toolkit without llm:")
+        return mock_import_module(name)
+
+    monkeypatch.setattr("parrot.mcp.toolkit_server.importlib.import_module", refusing_import)
+    monkeypatch.delitem(sys.modules, "parrot.clients.factory", raising=False)
+
+    server = create_toolkit_mcp_server("stub", stub_config)
+    assert "plain" in set(server.tools.keys())

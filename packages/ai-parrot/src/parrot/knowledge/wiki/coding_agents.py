@@ -15,10 +15,10 @@ from typing import Any, TextIO
 
 NUDGE = (
     "This repository has an ai-parrot LLM-wiki. Before scanning source files, "
-    "run `wikitoolkit query \"<focused question>\"`, then inspect a result "
+    'run `wikitoolkit query "<focused question>"`, then inspect a result '
     "with `wikitoolkit page <id>` or `wikitoolkit related <id>`. When you "
     "learn a durable fact or decision, save it: "
-    "`wikitoolkit remember \"<fact>\" --category decision`."
+    '`wikitoolkit remember "<fact>" --category decision`.'
 )
 SKILL = """---
 name: parrot-wiki
@@ -44,11 +44,15 @@ _AGENTS = {
     "codex": ("AGENTS.md", ".codex/hooks.json", "PreToolUse", "Bash|Grep|Glob|Read"),
     "claude": ("CLAUDE.md", ".claude/settings.json", "PreToolUse", "Bash|Grep|Glob|Read"),
     "gemini": (
-        "GEMINI.md", ".gemini/settings.json", "AfterTool",
+        "GEMINI.md",
+        ".gemini/settings.json",
+        "AfterTool",
         "run_shell_command|read_file|read_many_files|grep_search|search_file_content|glob|list_directory",
     ),
     "google": (
-        "GEMINI.md", ".gemini/settings.json", "AfterTool",
+        "GEMINI.md",
+        ".gemini/settings.json",
+        "AfterTool",
         "run_shell_command|read_file|read_many_files|grep_search|search_file_content|glob|list_directory",
     ),
 }
@@ -63,12 +67,42 @@ def _block(agent: str) -> str:
     return f"{begin}\n## Codebase Knowledge Graph (LLM Wiki)\n\n{NUDGE}\n\n{end}\n"
 
 
+# FEAT-553: conventions block, keyed by the canonical instruction-file owner so `gemini` and
+# `google` (both GEMINI.md) share ONE block with the google/ installer. No entry for `claude`:
+# Claude Code already reads .claude/rules/ and this module has no uninstaller.
+_CONVENTIONS_AGENT: dict[str, str] = {"codex": "codex", "gemini": "google", "google": "google"}
+
+
+def _conventions_markers(agent: str) -> tuple[str, str] | None:
+    canonical = _CONVENTIONS_AGENT.get(agent)
+    if canonical is None:
+        return None
+    return f"<!-- parrot:conventions:{canonical}:begin -->", f"<!-- parrot:conventions:{canonical}:end -->"
+
+
+def _conventions_block(agent: str, root: Path) -> str:
+    from parrot.flows.conventions import (
+        load_project_conventions,
+    )  # stdlib-only leaf; local import keeps this module cheap
+
+    begin, end = _conventions_markers(agent)  # type: ignore[misc]  # caller checked for None
+    return f"{begin}\n## Project conventions\n\n{load_project_conventions(root)}\n\n{end}\n"
+
+
 def _upsert(text: str, block: str, begin: str, end: str) -> str:
     if begin in text:
         head, _, rest = text.partition(begin)
         tail = rest.partition(end)[2] if end in rest else "\n"
         return f"{head}{block.rstrip()}\n{tail.lstrip(chr(10))}"
-    return f"{text.rstrip(chr(10)) + chr(10) if text else ''}\n{block}"
+    # FEAT-553: a single newline separator here — matching the "begin in text"
+    # branch above — keeps a second, chained upsert() call in the SAME
+    # install() (wiki block, then conventions block) idempotent. Two
+    # newlines here (one from rstrip+chr(10), one from the literal "\n{block}")
+    # used to insert a blank-line separator on the FIRST install() that the
+    # replace-branch above then collapsed to one on every SUBSEQUENT
+    # install(), making two chained marker blocks non-idempotent.
+    stripped = text.rstrip(chr(10))
+    return f"{stripped}\n{block}" if stripped else f"\n{block}"
 
 
 def _json(path: Path) -> dict[str, Any]:
@@ -97,6 +131,9 @@ def install(agent: str, root: Path = Path.cwd()) -> list[str]:
     before = instruction_path.read_text(encoding="utf-8") if instruction_path.exists() else ""
     begin, end = _markers(agent)
     after = _upsert(before, _block(agent), begin, end)
+    conv = _conventions_markers(agent)
+    if conv is not None:
+        after = _upsert(after, _conventions_block(agent, root), *conv)
     if after != before:
         instruction_path.write_text(after, encoding="utf-8")
     changes.append(instruction)

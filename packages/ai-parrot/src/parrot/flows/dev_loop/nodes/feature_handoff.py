@@ -39,12 +39,14 @@ from parrot.bots.flows.core.types import DependencyResults
 from parrot.flows.dev_loop.dispatchers.nova import summarize_pr_changes
 from parrot.flows.dev_loop.graph_memory import DevLoopGraphMemory
 from parrot.flows.dev_loop.models import (
+    ChangeSet,
     DevelopmentOutput,
     FeedbackDecision,
     PlannerOutput,
     QAReport,
     SynthesisReport,
 )
+from parrot.flows.dev_loop.nodes._changeset import files_changed_markdown, record_changeset
 from parrot.flows.dev_loop.nodes.base import (
     BaseBranchMismatch,
     DevLoopNode,
@@ -225,6 +227,13 @@ class FeatureHandoffNode(DevLoopNode):
             await self._mark_blocked(issue_key, error)
             return {"status": "blocked", "error": error}
         object.__setattr__(self, "_base_branch", base)
+        self.report_progress(
+            ctx,
+            "started",
+            f"Opening draft PR for {planner.branch_name} → {base}",
+            f"push · base-branch guard · PR · docs artifact · wiki ingest · graph write-back"
+            f"{' · Jira ' + issue_key if issue_key else ''}",
+        )
 
         # 1. Push.
         try:
@@ -232,6 +241,7 @@ class FeatureHandoffNode(DevLoopNode):
         except RuntimeError as exc:
             self.logger.error("git push failed: %s", exc)
             await self._mark_blocked(issue_key, str(exc))
+            self.report_progress(ctx, "finished", f"blocked — push failed: {exc}")
             return {"status": "blocked", "error": f"push: {exc}"}
 
         # FEAT-466: sibling-overlap guard — the backstop. Same shared
@@ -246,11 +256,16 @@ class FeatureHandoffNode(DevLoopNode):
         except BaseBranchMismatch as exc:
             self.logger.error("base-branch guard blocked the PR: %s", exc)
             await self._mark_blocked(issue_key, str(exc))
+            self.report_progress(ctx, "finished", f"blocked — base-branch guard: {exc}")
             return {"status": "blocked", "error": str(exc)}
 
         # 2. Open draft PR with retry-once (mirrors DeploymentHandoffNode).
+        # The PR body carries git's own +/- file list, measured NOW (after
+        # the push, before the docs commit) rather than the agent's
+        # self-reported names.
+        changeset = await record_changeset(shared, planner.worktree_path, base, branch=planner.branch_name)
         title = self._build_title(planner)
-        body = await self._build_body_async(planner, development, synthesis, qa_report, accept_notes)
+        body = await self._build_body_async(planner, development, synthesis, qa_report, accept_notes, changeset)
         pr_url: Optional[str] = None
         last_error: Optional[str] = None
         for attempt in range(2):
@@ -271,6 +286,7 @@ class FeatureHandoffNode(DevLoopNode):
 
         if pr_url is None:
             await self._mark_blocked(issue_key, last_error or "unknown PR error")
+            self.report_progress(ctx, "finished", f"blocked — PR creation failed: {last_error or 'unknown error'}")
             return {"status": "blocked", "error": last_error or "unknown PR error"}
 
         pr_number = self._parse_pr_number(pr_url)
@@ -291,6 +307,8 @@ class FeatureHandoffNode(DevLoopNode):
             # Docs commit/push is best-effort — the PR itself already
             # exists; log loudly but do not block the handoff on it.
             self.logger.warning("Docs artifact commit/push failed (continuing): %s", exc)
+        # Final truth for the run summary: includes the docs-artifact commit.
+        await record_changeset(shared, planner.worktree_path, base, branch=planner.branch_name)
 
         # 4. Wiki page ingest (optional, degrades independently).
         wiki_page_id = await self._ingest_wiki_page(planner, docs_content)
@@ -332,6 +350,12 @@ class FeatureHandoffNode(DevLoopNode):
             except Exception as exc:  # noqa: BLE001 - degraded path
                 self.logger.warning("Jira add_comment failed: %s", exc)
 
+        self.report_progress(
+            ctx,
+            "finished",
+            f"Draft PR {pr_url} · docs {docs_path}",
+            f"wiki page {wiki_page_id or 'not ingested'} · a human reviews and merges; the flow never merges",
+        )
         return {
             "status": "ready_to_deploy",
             "pr_url": pr_url,
@@ -647,6 +671,7 @@ class FeatureHandoffNode(DevLoopNode):
         synthesis: Optional[SynthesisReport],
         qa_report: Optional[QAReport],
         accept_notes: str,
+        changeset: Optional[ChangeSet] = None,
     ) -> str:
         """``_build_body()`` plus an optional Haiku "Summary of changes"
         section (FEAT-405 Module 8, [R2] "enrich, never replace").
@@ -658,7 +683,7 @@ class FeatureHandoffNode(DevLoopNode):
         but this call site also swallows — PR creation must never break
         because of the mechanical seat.
         """
-        body = self._build_body(planner, development, synthesis, qa_report, accept_notes)
+        body = self._build_body(planner, development, synthesis, qa_report, accept_notes, changeset)
         try:
             summary = await summarize_pr_changes(body, logger=self.logger)
         except Exception:  # noqa: BLE001 - enrichment must never break handoff
@@ -673,14 +698,29 @@ class FeatureHandoffNode(DevLoopNode):
         return f"{planner.feat_id}: {planner.branch_name}"
 
     @staticmethod
+    def _files_changed_section(
+        development: Optional[DevelopmentOutput],
+        changeset: Optional[ChangeSet],
+    ) -> str:
+        """The PR body's ``## Files changed`` content.
+
+        With a git-measured :class:`ChangeSet` this is the same table a
+        reviewer sees on the PR (status, path, ``+``/``−`` per file, and a
+        totals line); without one it degrades to the agent's self-reported
+        names — the pre-changeset rendering, byte-identical.
+        """
+        return files_changed_markdown(development.files_changed if development else [], changeset)
+
+    @staticmethod
     def _build_body(
         planner: PlannerOutput,
         development: Optional[DevelopmentOutput],
         synthesis: Optional[SynthesisReport],
         qa_report: Optional[QAReport],
         accept_notes: str,
+        changeset: Optional[ChangeSet] = None,
     ) -> str:
-        files = ", ".join(development.files_changed[:10]) if development else "(none)"
+        files = FeatureHandoffNode._files_changed_section(development, changeset)
         criteria = (
             "\n".join(
                 f"- {r.name}: {'PASS' if r.passed else 'FAIL'}"

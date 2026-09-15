@@ -1,0 +1,1 @@
+$dd-proposal lancedb-vector-store -- for a vector-store search or combined with graph and FTS (multi-store search) for local (autonomous) operations, adopting LanceDB instead postgres+pgvector is useful for local-only agents without deploying an docker for postgres

@@ -6,7 +6,7 @@ import re
 import sys
 import tomllib
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, Sequence
 
 from parrot.knowledge.wiki.codex import assets
 from parrot.knowledge.wiki.project import WikiProjectConfig, config_path, load_effective_config, save_project_config
@@ -77,16 +77,14 @@ def _remove_toml_table(text: str, table: str) -> str:
 def _install_agents(root: Path) -> str:
     path = root / "AGENTS.md"
     before = path.read_text(encoding="utf-8") if path.exists() else ""
+    after = _upsert_marker_block(before, assets.AGENTS_SECTION, assets.AGENTS_BEGIN, assets.AGENTS_END)
     after = _upsert_marker_block(
-        before,
-        assets.AGENTS_SECTION,
-        assets.AGENTS_BEGIN,
-        assets.AGENTS_END,
+        after, assets.conventions_section(root), assets.CONVENTIONS_BEGIN, assets.CONVENTIONS_END
     )
     if after != before:
         path.write_text(after, encoding="utf-8")
-        return f"AGENTS.md — wiki section {'updated' if before else 'created'}"
-    return "AGENTS.md — wiki section already current"
+        return f"AGENTS.md — wiki + conventions sections {'updated' if before else 'created'}"
+    return "AGENTS.md — wiki + conventions sections already current"
 
 
 def _install_skill(root: Path) -> str:
@@ -206,8 +204,15 @@ def install_codex_integration(
     config: Optional[WikiProjectConfig] = None,
     gitignore: bool = True,
     bookstore: bool = True,
+    toolkits: Sequence[str] = (),
 ) -> list[str]:
-    """Install project-scoped Codex instructions, skill, MCP, and rules."""
+    """Install project-scoped Codex instructions, skill, MCP, and rules.
+
+    Args:
+        toolkits: Names to seed into `.parrot/mcp-toolkits.yaml` before MCP
+            reconciliation (FEAT-556); `()` seeds nothing. Seeding runs BEFORE
+            `_install_mcp` so the new sections produce entries in this pass.
+    """
     root = root.resolve()
     config = config or load_effective_config(root).config
     existed = config_path(root).exists()
@@ -220,9 +225,27 @@ def install_codex_integration(
         ),
         _install_agents(root),
         _install_skill(root),
-        _install_mcp(root),
-        _install_rules(root),
     ]
+
+    if toolkits:
+        from parrot.mcp.toolkit_seed import seed_toolkit_sections
+
+        seeded = seed_toolkit_sections(root, toolkits)
+        if seeded.created_file:
+            actions.append(".parrot/mcp-toolkits.yaml — created")
+        if seeded.added:
+            actions.append(
+                f".parrot/mcp-toolkits.yaml — seeded {len(seeded.added)} section(s): {', '.join(seeded.added)}"
+            )
+        if seeded.skipped:
+            actions.append(
+                f".parrot/mcp-toolkits.yaml — {len(seeded.skipped)} section(s) already present: {', '.join(seeded.skipped)}"
+            )
+        if seeded.unknown:
+            actions.append(f".parrot/mcp-toolkits.yaml — unknown toolkit name(s) skipped: {', '.join(seeded.unknown)}")
+
+    actions.append(_install_mcp(root))
+    actions.append(_install_rules(root))
     if gitignore:
         actions.append(_install_gitignore(root))
     if bookstore:
@@ -244,9 +267,10 @@ def uninstall_codex_integration(root: Path) -> list[str]:
     if agents_path.exists():
         before = agents_path.read_text(encoding="utf-8")
         after = _remove_marker_block(before, assets.AGENTS_BEGIN, assets.AGENTS_END)
+        after = _remove_marker_block(after, assets.CONVENTIONS_BEGIN, assets.CONVENTIONS_END)
         if after != before:
             agents_path.write_text(after, encoding="utf-8")
-            actions.append("AGENTS.md — wiki section removed")
+            actions.append("AGENTS.md — wiki + conventions sections removed")
 
     skill_path = root / assets.SKILL_PATH
     if skill_path.exists() and skill_path.read_text(encoding="utf-8") == assets.SKILL:

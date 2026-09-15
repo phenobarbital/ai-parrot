@@ -111,7 +111,7 @@ class TestBedrockConverseClient:
         client = BedrockConverseClient(model="claude-sonnet-4-5")
         captured_payloads = []
 
-        async def fake_sdk_create(payload):
+        async def fake_sdk_create(payload, handle=None):
             captured_payloads.append(payload)
             return tool_response if len(captured_payloads) == 1 else final_response
 
@@ -132,7 +132,7 @@ class TestBedrockConverseClient:
     async def test_ask_stream_yields_chunks_then_message(self):
         client = BedrockConverseClient(model="claude-sonnet-4-5")
 
-        async def fake_stream(_payload):
+        async def fake_stream(_payload, handle=None):
             async def _events():
                 yield {"contentBlockDelta": {"delta": {"text": "Hel"}}}
                 yield {"contentBlockDelta": {"delta": {"text": "lo!"}}}

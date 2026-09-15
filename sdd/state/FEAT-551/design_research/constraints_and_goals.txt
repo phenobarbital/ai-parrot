@@ -1,0 +1,9 @@
+- **Teams `Action.Submit` is bot-mediated, never an HTTP POST.** The Bot Framework delivers inputs + `data` as `activity.value` to the bot; Incoming Webhooks do not support `Action.Submit` at all. "Button pointing to the endpoint" must be an envelope the bot forwards. *Evidence*: F009, F020
+- **No in-card file/image upload in Teams.** Microsoft: "Adaptive Cards within Teams don't provide support for file or image uploads." No `Input.File`/file-consent code exists in the repo. *Evidence*: F020, F014
+- **Fixed renderer signature.** Per-target config (public base URL) must come via constructor/subclass; `handle_render` forwards only `locale`. *Evidence*: F005, F011
+- **Dialog presets consume `AdaptiveCardRenderer`.** They rely on `_action` and drop `_`-prefixed keys; the default `adaptive` output must stay byte-identical → new subclass + key `teams`. *Evidence*: F021
+- **Legacy `/data` contract is `{field_id: value}`.** Card inputs are keyed by `field_id`, so `activity.value` minus control keys is already the body. FEAT-544's A2UI dual-wire on `/data` is **not** implemented yet (`api/a2ui_wire.py` absent). *Evidence*: F017, F004, F016
+- **Bot has no route to FormDesigner's REST API.** No `FormRegistry`, aiohttp `ClientSession` or base-URL config in wrapper/orchestrator/models → the envelope must carry an absolute `submit_url`. *Evidence*: F023
+- **Teams card ceiling v1.6; positive/destructive styling and `Action.Submit.isEnabled` ignored.** Default version here is `ADAPTIVE_CARD_VERSION or "1.4"` — compatible. *Evidence*: F020, F004
+- **FILE/IMAGE degrade silently today** (in `UPLOAD_FIELD_TYPES` but not `_AC_FALLBACK_TYPES`). *Evidence*: F004, F007
+- **Teams returns `Input.Toggle` as `"true"/"false"` strings and multi-select `Input.ChoiceSet` as a comma-separated string** — the bot branch must coerce before POST (low-confidence; verify in spec). *Evidence*: F009, F017

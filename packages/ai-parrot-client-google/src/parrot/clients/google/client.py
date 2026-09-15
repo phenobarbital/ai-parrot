@@ -3440,6 +3440,12 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     chat = self.client.aio.chats.create(model=current_model, history=history)
                     delay = self._retry_delay_from_error(retry_count, e)
                     if retry_count >= max_retries:
+                        # FEAT-548 Finding #1: emit ClientCallFailedEvent
+                        await self._emit_failed_call_safe(
+                            _lc_tc_google, client_name="google",
+                            model=str(model) if model else "",
+                            t0=ask_started, exc=e,
+                        )
                         raise
                     await asyncio.sleep(delay)
                     continue
@@ -3464,6 +3470,12 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     delay,
                 )
                 if retry_count >= max_retries:
+                    # FEAT-548 Finding #1: emit ClientCallFailedEvent
+                    await self._emit_failed_call_safe(
+                        _lc_tc_google, client_name="google",
+                        model=str(model) if model else "",
+                        t0=ask_started, exc=e,
+                    )
                     raise
                 await asyncio.sleep(delay)
 
@@ -4452,6 +4464,14 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             )
             yield ai_message
 
+        except BaseException as _lc_stream_exc:
+            # FEAT-548 Finding #1: emit ClientCallFailedEvent on unhandled error
+            await self._emit_failed_call_safe(
+                _lc_tc_googles, client_name="google",
+                model=str(model) if model else "",
+                t0=_lc_t0_googles, exc=_lc_stream_exc,
+            )
+            raise
         finally:
             self._request_tools = {}
 

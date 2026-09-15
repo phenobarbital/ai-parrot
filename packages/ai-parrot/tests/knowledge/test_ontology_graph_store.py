@@ -1,4 +1,5 @@
 """Tests for ontology graph store with mocked ArangoDB client."""
+
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 
@@ -91,7 +92,8 @@ class TestInitializeTenant:
         await store.initialize_tenant(tenant_ctx)
         # Should create employees and departments
         collection_calls = [
-            c.args[0] for c in mock_db.create_collection.call_args_list
+            c.args[0]
+            for c in mock_db.create_collection.call_args_list
             if len(c.args) > 0 and not c.kwargs.get("edge", False)
         ]
         assert "employees" in collection_calls
@@ -100,10 +102,7 @@ class TestInitializeTenant:
     @pytest.mark.asyncio
     async def test_creates_edge_collections(self, store, tenant_ctx, mock_db):
         await store.initialize_tenant(tenant_ctx)
-        edge_calls = [
-            c for c in mock_db.create_collection.call_args_list
-            if c.kwargs.get("edge", False)
-        ]
+        edge_calls = [c for c in mock_db.create_collection.call_args_list if c.kwargs.get("edge", False)]
         assert len(edge_calls) >= 1
 
     @pytest.mark.asyncio
@@ -160,7 +159,8 @@ class TestExecuteTraversal:
     async def test_empty_result(self, store, tenant_ctx, mock_db):
         mock_db.execute_query.return_value = None
         results = await store.execute_traversal(
-            tenant_ctx, aql="FOR v IN c RETURN v",
+            tenant_ctx,
+            aql="FOR v IN c RETURN v",
         )
         assert results == []
 
@@ -175,7 +175,8 @@ class TestUpsertNodes:
             {"type": "unchanged"},
         ]
         result = await store.upsert_nodes(
-            tenant_ctx, "employees",
+            tenant_ctx,
+            "employees",
             nodes=[
                 {"employee_id": "1", "name": "Alice"},
                 {"employee_id": "2", "name": "Bob"},
@@ -191,7 +192,10 @@ class TestUpsertNodes:
     @pytest.mark.asyncio
     async def test_empty_nodes(self, store, tenant_ctx, mock_db):
         result = await store.upsert_nodes(
-            tenant_ctx, "employees", nodes=[], key_field="employee_id",
+            tenant_ctx,
+            "employees",
+            nodes=[],
+            key_field="employee_id",
         )
         assert result.inserted == 0
         mock_db.execute_query.assert_not_called()
@@ -203,7 +207,8 @@ class TestCreateEdges:
     async def test_creates_edges(self, store, tenant_ctx, mock_db):
         mock_db.execute_query.return_value = [1, 1, 0]
         count = await store.create_edges(
-            tenant_ctx, "belongs_to_dept",
+            tenant_ctx,
+            "belongs_to_dept",
             edges=[
                 {"_from": "employees/1", "_to": "departments/eng"},
                 {"_from": "employees/2", "_to": "departments/sales"},
@@ -215,7 +220,9 @@ class TestCreateEdges:
     @pytest.mark.asyncio
     async def test_empty_edges(self, store, tenant_ctx, mock_db):
         count = await store.create_edges(
-            tenant_ctx, "belongs_to_dept", edges=[],
+            tenant_ctx,
+            "belongs_to_dept",
+            edges=[],
         )
         assert count == 0
         mock_db.execute_query.assert_not_called()
@@ -244,7 +251,9 @@ class TestSoftDeleteNodes:
     @pytest.mark.asyncio
     async def test_soft_deletes(self, store, tenant_ctx, mock_db):
         await store.soft_delete_nodes(
-            tenant_ctx, "employees", keys=["1", "2"],
+            tenant_ctx,
+            "employees",
+            keys=["1", "2"],
         )
         mock_db.execute_query.assert_called_once()
         call_binds = mock_db.execute_query.call_args.kwargs.get("bind_vars", {})
@@ -253,7 +262,9 @@ class TestSoftDeleteNodes:
     @pytest.mark.asyncio
     async def test_empty_keys_noop(self, store, tenant_ctx, mock_db):
         await store.soft_delete_nodes(
-            tenant_ctx, "employees", keys=[],
+            tenant_ctx,
+            "employees",
+            keys=[],
         )
         mock_db.execute_query.assert_not_called()
 
@@ -271,7 +282,8 @@ class TestEnsureCollection:
         mock_db.collection_exists.return_value = False
         await store.ensure_collection(tenant_ctx, "gi_produced", edge=True)
         mock_db.create_collection.assert_called_once_with(
-            "gi_produced", edge=True,
+            "gi_produced",
+            edge=True,
         )
 
     @pytest.mark.asyncio
@@ -307,7 +319,9 @@ class TestDocumentHelpers:
     @pytest.mark.asyncio
     async def test_upsert_document(self, store, tenant_ctx, mock_db):
         await store.upsert_document(
-            tenant_ctx, "gi_commits", {"_key": "c1", "op": "x"},
+            tenant_ctx,
+            "gi_commits",
+            {"_key": "c1", "op": "x"},
         )
         aql = mock_db.execute_query.call_args.args[0]
         binds = mock_db.execute_query.call_args.kwargs["bind_vars"]
@@ -318,7 +332,9 @@ class TestDocumentHelpers:
     @pytest.mark.asyncio
     async def test_insert_document(self, store, tenant_ctx, mock_db):
         await store.insert_document(
-            tenant_ctx, "gi_commit_items", {"item_key": "a"},
+            tenant_ctx,
+            "gi_commit_items",
+            {"item_key": "a"},
         )
         aql = mock_db.execute_query.call_args.args[0]
         assert "INSERT @doc IN @@collection" in aql
@@ -360,14 +376,18 @@ class TestQueryDocuments:
     async def test_rejects_invalid_field(self, store, tenant_ctx, mock_db):
         with pytest.raises(ValueError):
             await store.query_documents(
-                tenant_ctx, "gi_commits", filters={"x == 1 REMOVE doc": "y"},
+                tenant_ctx,
+                "gi_commits",
+                filters={"x == 1 REMOVE doc": "y"},
             )
 
     @pytest.mark.asyncio
     async def test_rejects_invalid_sort_field(self, store, tenant_ctx, mock_db):
         with pytest.raises(ValueError):
             await store.query_documents(
-                tenant_ctx, "gi_commits", sort_desc="seq DESC REMOVE doc",
+                tenant_ctx,
+                "gi_commits",
+                sort_desc="seq DESC REMOVE doc",
             )
 
 
@@ -381,7 +401,10 @@ class TestEdgeHelpers:
 
     @pytest.mark.asyncio
     async def test_get_all_edges_failure_returns_empty(
-        self, store, tenant_ctx, mock_db,
+        self,
+        store,
+        tenant_ctx,
+        mock_db,
     ):
         mock_db.execute_query.side_effect = RuntimeError("boom")
         assert await store.get_all_edges(tenant_ctx, "gi_references") == []
@@ -399,10 +422,46 @@ class TestEdgeHelpers:
     async def test_remove_edge_by_triple(self, store, tenant_ctx, mock_db):
         mock_db.execute_query.return_value = ["k1"]
         removed = await store.remove_edge_by_triple(
-            tenant_ctx, "gi_references", "a", "b", "references",
+            tenant_ctx,
+            "gi_references",
+            "a",
+            "b",
+            "references",
         )
         assert removed
         binds = mock_db.execute_query.call_args.kwargs["bind_vars"]
         assert binds["src"] == "a"
         assert binds["tgt"] == "b"
         assert binds["kind"] == "references"
+
+
+class TestUpsertAqlShape:
+    """The UPSERT example must use a *literal* attribute name (ArangoDB ERR 1501)."""
+
+    @pytest.mark.asyncio
+    async def test_key_field_is_a_literal_attribute_not_a_bind(self, store, tenant_ctx, mock_db):
+        mock_db.execute_query.return_value = [{"type": "inserted"}]
+        await store.upsert_nodes(tenant_ctx, "employees", nodes=[{"employee_id": "1"}], key_field="employee_id")
+        aql = mock_db.execute_query.call_args.args[0]
+        binds = mock_db.execute_query.call_args.kwargs["bind_vars"]
+        assert "UPSERT { employee_id: doc.employee_id }" in aql
+        assert "_key: doc.employee_id" in aql
+        assert "@key_field" not in aql and "[@key_field]" not in aql
+        assert "key_field" not in binds
+        assert binds["@collection"] == "employees"
+
+    @pytest.mark.asyncio
+    async def test_fallback_path_also_uses_a_literal_attribute(self, store, tenant_ctx, mock_db):
+        mock_db.execute_query.side_effect = [RuntimeError("batch failed"), None]
+        await store.upsert_nodes(tenant_ctx, "employees", nodes=[{"employee_id": "1"}], key_field="employee_id")
+        aql = mock_db.execute_query.call_args.args[0]
+        binds = mock_db.execute_query.call_args.kwargs["bind_vars"]
+        assert "UPSERT { employee_id: @key_value }" in aql
+        assert binds["key_value"] == "1"
+        assert "key_field" not in binds
+
+    @pytest.mark.asyncio
+    async def test_a_non_identifier_key_field_is_refused(self, store, tenant_ctx, mock_db):
+        with pytest.raises(ValueError):
+            await store.upsert_nodes(tenant_ctx, "employees", nodes=[{"x": 1}], key_field="x } REMOVE")
+        mock_db.execute_query.assert_not_called()

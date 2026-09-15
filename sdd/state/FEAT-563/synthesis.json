@@ -1,0 +1,444 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-563",
+  "mode": "enrichment",
+  "summary_oneline": "Optional embedded LanceDB vector/FTS retrieval with local graph federation for autonomous agents.",
+  "localization": [
+    {
+      "path": "packages/ai-parrot/src/parrot/stores/__init__.py",
+      "lines": "1-13",
+      "symbol": "supported_stores",
+      "role": "Core dispatch",
+      "evidence": [
+        "F001"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-embeddings/pyproject.toml",
+      "lines": "28-30,62-99",
+      "symbol": "project.optional-dependencies",
+      "role": "Optional backend packaging",
+      "evidence": [
+        "F001"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/interfaces/vector.py",
+      "lines": "42-65",
+      "symbol": "VectorInterface._get_database_store",
+      "role": "Agent configuration",
+      "evidence": [
+        "F001"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/stores/abstract.py",
+      "lines": "117-174,201-325,383-454,454-542",
+      "symbol": "AbstractStore",
+      "role": "Abstract store contract",
+      "evidence": [
+        "F002"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/stores/models.py",
+      "lines": "19-36",
+      "symbol": "Document / DistanceStrategy",
+      "role": "Document and metrics",
+      "evidence": [
+        "F002"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/multistoresearch/origins/vector.py",
+      "lines": "16-105",
+      "symbol": "VectorStoreOrigin",
+      "role": "Vector/FTS origin",
+      "evidence": [
+        "F003"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/multistoresearch/origins/base.py",
+      "lines": "18-72",
+      "symbol": "SearchOrigin",
+      "role": "Origin extension contract",
+      "evidence": [
+        "F003"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/multistoresearch/origins/graphindex.py",
+      "lines": "23-83,109-159",
+      "symbol": "GraphIndexOrigin",
+      "role": "Graph federation",
+      "evidence": [
+        "F004"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/graphindex/retriever.py",
+      "lines": "168-211,218-242",
+      "symbol": "GraphExpandedRetriever",
+      "role": "Local graph retrieval and seed dependencies",
+      "evidence": [
+        "F004"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/graphindex/sqlite_reader.py",
+      "lines": "1-12,47-57,75-85,320-358",
+      "symbol": "SQLiteGraphReader / search_symbols",
+      "role": "Local FTS graph reader",
+      "evidence": [
+        "F004"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/multistoresearch/toolkit.py",
+      "lines": "245-320,359-420",
+      "symbol": "MultiStoreSearchToolkit / _run_origins / _rerank_with_bm25 / _deduplicate_hits",
+      "role": "Federation ranking and isolation",
+      "evidence": [
+        "F005"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/models/stores.py",
+      "lines": "23-43,46-103",
+      "symbol": "StoreType / SearchOriginKind / SearchResult / OriginHit",
+      "role": "Scores and store identifiers",
+      "evidence": [
+        "F005"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/registry/routing/store_router.py",
+      "lines": "181-221",
+      "symbol": "StoreRouter.execute",
+      "role": "Optional router integration",
+      "evidence": [
+        "F005"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-embeddings/tests/test_store_backends_present.py",
+      "lines": "7-37,49-55",
+      "symbol": "test_supported_stores_unchanged",
+      "role": "Dispatch regression expectations",
+      "evidence": [
+        "F006"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-embeddings/tests/test_namespace_imports.py",
+      "lines": "126-139",
+      "symbol": "test_supported_stores_unchanged",
+      "role": "Namespace regression expectations",
+      "evidence": [
+        "F006"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-tools/tests/multistoresearch/test_vector_origin.py",
+      "lines": "1-68",
+      "symbol": "test_fts_capability_detection",
+      "role": "Adapter test precedent",
+      "evidence": [
+        "F006"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-tools/tests/multistoresearch/test_toolkit.py",
+      "lines": "60-145",
+      "symbol": "test_timeout_isolated / test_error_isolated / test_fts_skips_non_capable",
+      "role": "Toolkit test precedent",
+      "evidence": [
+        "F006"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-embeddings/src/parrot/stores/faiss_store.py",
+      "lines": "21-47,89-92",
+      "symbol": "FAISSStore",
+      "role": "Local vector precedent",
+      "evidence": [
+        "F006"
+      ]
+    }
+  ],
+  "constraints": [
+    {
+      "statement": "The backend must implement AbstractStore's full required API and preserve parent filtering.",
+      "evidence": [
+        "F002"
+      ],
+      "implication": "Specify supported collection/schema/index options and reject unsupported behavior explicitly."
+    },
+    {
+      "statement": "VectorStoreOrigin detects FTS by callable method presence.",
+      "evidence": [
+        "F003"
+      ],
+      "implication": "Provide FTS for every initial backend instance or add an explicit capability design."
+    },
+    {
+      "statement": "SearchResult exposes score through a distance alias while OriginHit has native score semantics.",
+      "evidence": [
+        "F005"
+      ],
+      "implication": "Keep vector distance unchanged and mark lexical score semantics; return hybrid fusion scores through an origin contract."
+    },
+    {
+      "statement": "Core dispatch is asserted exactly in two satellite tests.",
+      "evidence": [
+        "F006"
+      ],
+      "implication": "Update expectations and verify backend resolution without eager optional dependency imports."
+    }
+  ],
+  "investigation": null,
+  "enrichment": {
+    "new": [
+      {
+        "proposal": "Optional LanceDBStore backend in the embeddings satellite; this symbol and module are proposed, not existing.",
+        "evidence": [
+          "F001",
+          "F002",
+          "F008"
+        ]
+      },
+      {
+        "proposal": "Explicit hybrid SearchOrigin implementation for native LanceDB vector-plus-FTS candidates in a graph federation call.",
+        "evidence": [
+          "F003",
+          "F005",
+          "F008"
+        ]
+      },
+      {
+        "proposal": "Local-only configuration examples and real temporary-directory integration fixtures.",
+        "evidence": [
+          "F004",
+          "F006",
+          "F009"
+        ]
+      }
+    ],
+    "modified": [
+      {
+        "path": "packages/ai-parrot/src/parrot/stores/__init__.py",
+        "change": "Register the new backend key.",
+        "evidence": [
+          "F001"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot-embeddings/pyproject.toml",
+        "change": "Add optional lancedb extra and resolve a tested compatible release.",
+        "evidence": [
+          "F001"
+        ]
+      }
+    ],
+    "non_goals": [
+      "Global PostgreSQL replacement or automatic migration",
+      "Graph database implementation in LanceDB",
+      "Replacing GraphIndex FAISS seed storage",
+      "Cloud deployment, distributed writer guarantees or PostgreSQL extension removal"
+    ],
+    "patterns": [
+      {
+        "statement": "Reuse the async abstraction, origin normalization and isolated federation.",
+        "evidence": [
+          "F002",
+          "F003",
+          "F005"
+        ]
+      }
+    ],
+    "risks": [
+      {
+        "statement": "Hybrid ranks can be mislabeled as vector distances; preserve mode-specific semantics.",
+        "evidence": [
+          "F005",
+          "F008"
+        ]
+      },
+      {
+        "statement": "Local graph seeding and model loading may still require separately configured assets.",
+        "evidence": [
+          "F002",
+          "F004"
+        ]
+      },
+      {
+        "statement": "FTS freshness, concurrent writers and Arrow/package compatibility remain unverified at runtime.",
+        "evidence": [
+          "F001",
+          "F009"
+        ]
+      }
+    ]
+  },
+  "confidence_map": [
+    {
+      "id": "C1",
+      "statement": "Concrete backends belong in the embeddings satellite and are selected through core dispatch.",
+      "evidence": [
+        "F001"
+      ],
+      "confidence": "high",
+      "reasoning": "Manifest and import dispatch read directly."
+    },
+    {
+      "id": "C2",
+      "statement": "The store API requires lifecycle, ingestion, search and deletion, with default parent exclusion.",
+      "evidence": [
+        "F002"
+      ],
+      "confidence": "high",
+      "reasoning": "Abstract signatures and search contract inspected."
+    },
+    {
+      "id": "C3",
+      "statement": "The current vector origin can federate a store exposing similarity_search and fulltext_search.",
+      "evidence": [
+        "F003"
+      ],
+      "confidence": "high",
+      "reasoning": "Both adapter call paths inspected."
+    },
+    {
+      "id": "C4",
+      "statement": "GraphIndex offers a local graph/SQLite FTS path; its semantic seeds still require separate configuration.",
+      "evidence": [
+        "F004"
+      ],
+      "confidence": "high",
+      "reasoning": "Reader, retriever constructor and graph adapter inspected."
+    },
+    {
+      "id": "C5",
+      "statement": "The toolkit does not automatically combine an origin's semantic and FTS methods; merged ranking is BM25.",
+      "evidence": [
+        "F005"
+      ],
+      "confidence": "high",
+      "reasoning": "Dispatch and rerank methods inspected."
+    },
+    {
+      "id": "C6",
+      "statement": "Current LanceDB documentation provides embedded async vector, BM25 and hybrid capabilities.",
+      "evidence": [
+        "F008"
+      ],
+      "confidence": "high",
+      "reasoning": "Official primary documentation; release-specific runtime behavior untested."
+    },
+    {
+      "id": "C7",
+      "statement": "An optional LanceDB backend with an explicit hybrid origin is a suitable local retrieval design.",
+      "evidence": [
+        "F001",
+        "F003",
+        "F004",
+        "F005",
+        "F008"
+      ],
+      "confidence": "medium",
+      "reasoning": "Architectural recommendation; integration fixture and scope choice pending."
+    },
+    {
+      "id": "C8",
+      "statement": "A fully offline configuration is plausible with cached local models and prebuilt graph artifacts.",
+      "evidence": [
+        "F002",
+        "F004",
+        "F008"
+      ],
+      "confidence": "medium",
+      "reasoning": "No end-to-end network-disabled experiment performed."
+    },
+    {
+      "id": "C9",
+      "statement": "Index maintenance, reader freshness, score metadata and document identity need explicit contracts.",
+      "evidence": [
+        "F005",
+        "F009"
+      ],
+      "confidence": "medium",
+      "reasoning": "Operational policies are design recommendations requiring tests."
+    }
+  ],
+  "unknowns": [
+    {
+      "id": "U1",
+      "question": "Should v1 include native vector-plus-FTS hybrid search inside a single multi-store call?",
+      "blocks_claims": [
+        "C7"
+      ],
+      "plausible_answers": [
+        "Include hybrid plus graph federation (recommended)",
+        "Ship vector and standalone FTS first"
+      ],
+      "ask_user": true
+    },
+    {
+      "id": "U2",
+      "question": "Does local-only require all inference offline after model provisioning, or only embedded storage?",
+      "blocks_claims": [
+        "C8"
+      ],
+      "plausible_answers": [
+        "Offline after provisioning (recommended)",
+        "Local storage with optional remote model calls"
+      ],
+      "ask_user": true
+    },
+    {
+      "id": "U3",
+      "question": "Must multiple independent agent processes write the same local dataset in v1?",
+      "blocks_claims": [
+        "C9"
+      ],
+      "plausible_answers": [
+        "One process owns writes initially (recommended)",
+        "Concurrent independent writers required"
+      ],
+      "ask_user": true
+    }
+  ],
+  "recommended_next_command": {
+    "command": "sdd-brainstorm",
+    "rationale": "Medium scope confidence and material hybrid/offline/concurrency choices remain; accepted scope can proceed to sdd-spec afterward."
+  },
+  "overall_confidence": "medium",
+  "meta": {
+    "findings_used": [
+      "F001",
+      "F002",
+      "F003",
+      "F004",
+      "F005",
+      "F006",
+      "F007",
+      "F008",
+      "F009"
+    ],
+    "findings_unused": [],
+    "notes": "FEAT-563 is provisional proposal identity, not a reserved formal specification ID. No SDK installation, implementation or runtime tests. Wiki orientation succeeded after sandbox escalation. Current documentation does not select a supported SDK release.",
+    "review_gate": {
+      "status": "presented_pending_user_response",
+      "choices": [
+        "proceed",
+        "refine research",
+        "refine synthesis",
+        "abort"
+      ],
+      "draft_policy": "Persist discussion draft without treating unanswered questions as approval."
+    },
+    "user_answers": [],
+    "wiki_memory": "mem-3b3cd0ede82d"
+  }
+}

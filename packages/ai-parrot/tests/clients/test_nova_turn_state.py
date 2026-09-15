@@ -1,3 +1,4 @@
+import asyncio
 import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -109,3 +110,60 @@ class TestAccumulation:
             ]
         )
         assert [r.text for r in out if r.text] == ["It is sunny."]
+
+
+class TestAudioTurnCompletion:
+    @pytest.mark.asyncio
+    async def test_audio_end_completes_without_completion_end_or_eof(self):
+        """Match the live service: audio END_TURN followed by an idle stream."""
+        client = _client()
+        stream = AsyncMock()
+
+        async def events(_stream):
+            yield {"contentStart": {"type": "AUDIO", "role": "ASSISTANT", "contentId": "reply"}}
+            yield {"audioOutput": {"content": "AAA="}}
+            # Interleaving a user's text block must not lose audio ownership.
+            yield {"contentStart": {"type": "TEXT", "role": "USER", "contentId": "user-text"}}
+            yield {"contentEnd": {"type": "AUDIO", "stopReason": "END_TURN", "contentId": "reply"}}
+            await asyncio.Event().wait()
+
+        async def audio():
+            yield b"\x00\x00"
+
+        with (
+            patch.dict(sys.modules, {"aws_sdk_bedrock_runtime": MagicMock()}),
+            patch.object(client, "_open_stream", return_value=stream),
+            patch.object(client, "_send_event", new=AsyncMock()),
+            patch.object(client, "_iter_events", new=events),
+            patch.object(client, "_close_stream", new=AsyncMock()) as close,
+        ):
+            async with asyncio.timeout(1):
+                responses = [r async for r in client.stream_voice(audio())]
+        assert len([r for r in responses if r.is_complete]) == 1
+        assert responses[-1].metadata.get("error") is None
+        assert b"".join(r.audio_data or b"" for r in responses) == b"\x00\x00"
+        close.assert_awaited_once_with(stream)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "role, content_type, stop_reason",
+        [
+            ("USER", "AUDIO", "END_TURN"),
+            ("USER", "TEXT", "END_TURN"),
+            ("ASSISTANT", "TEXT", "END_TURN"),
+            ("ASSISTANT", "AUDIO", "PARTIAL_TURN"),
+            ("ASSISTANT", "AUDIO", "INTERRUPTED"),
+        ],
+    )
+    async def test_nonterminal_content_does_not_cut_off_response(self, role, content_type, stop_reason):
+        responses = await _run(
+            [
+                {"contentStart": {"role": role, "type": content_type, "contentId": "first"}},
+                {"contentEnd": {"type": content_type, "stopReason": stop_reason, "contentId": "first"}},
+                SPECULATIVE,
+                {"textOutput": {"content": "The rest of the reply."}},
+                END,
+            ]
+        )
+        assert any(r.text == "The rest of the reply." for r in responses)
+        assert len([r for r in responses if r.is_complete]) == 1
