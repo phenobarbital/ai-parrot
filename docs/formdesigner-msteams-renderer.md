@@ -78,6 +78,7 @@ is configured with a `signing_secret`. `sig` is omitted (`null`) when no secret 
 | `formdesigner_submit_token` | `{NAME}_FORMDESIGNER_SUBMIT_TOKEN` | Bearer token sent to the FormDesigner API (needed for private forms). |
 | `formdesigner_submit_secret` | `{NAME}_FORMDESIGNER_SUBMIT_SECRET` | HMAC secret; when set, every envelope must carry a valid `sig`. |
 | `formdesigner_submit_timeout` | — | Seconds before the forwarding POST gives up (default `15.0`). |
+| `formdesigner_api_base_path` | `{NAME}_FORMDESIGNER_API_BASE_PATH` | Must match the `base_path` passed to `setup_form_api()` on the FormDesigner side (default `/api/v1`). A mismatch makes `verify_envelope`'s path check reject every submission. |
 
 `{NAME}` is the bot's configured name, upper-cased (same convention as the existing Jira OAuth
 fields on `MSTeamsAgentConfig`).

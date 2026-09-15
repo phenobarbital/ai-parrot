@@ -67,7 +67,7 @@ if TYPE_CHECKING:
 
 logging.getLogger("msrest").setLevel(logging.WARNING)
 
-FORMDESIGNER_API_BASE_PATH: str = "/api/v1"
+FORMDESIGNER_API_BASE_PATH: str = "/api/v1"  # fallback only; prefer config.formdesigner_api_base_path
 
 _debug_storage_logger = logging.getLogger(__name__)
 
@@ -1009,7 +1009,7 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
                 env,
                 allowed_hosts=allowed,
                 secret=self.config.formdesigner_submit_secret,
-                api_base_path=FORMDESIGNER_API_BASE_PATH,
+                api_base_path=getattr(self.config, "formdesigner_api_base_path", FORMDESIGNER_API_BASE_PATH),
             )
             activity_id = getattr(turn_context.activity, "id", None)
             if activity_id and self._formdesigner_recent.seen(activity_id):

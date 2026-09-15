@@ -60,6 +60,7 @@ class MSTeamsAgentConfig:
     formdesigner_submit_token: Optional[str] = None  # Authorization: Bearer (private forms)
     formdesigner_submit_secret: Optional[str] = None  # HMAC secret; envelopes must carry a valid sig when set
     formdesigner_submit_timeout: float = 15.0
+    formdesigner_api_base_path: str = "/api/v1"  # must match setup_form_api(base_path=...) on the FormDesigner side
 
     def __post_init__(self):
         """
@@ -89,6 +90,10 @@ class MSTeamsAgentConfig:
             raw_hosts = config.get(f"{self.name.upper()}_FORMDESIGNER_ALLOWED_HOSTS")
             if raw_hosts:
                 self.formdesigner_allowed_hosts = [h.strip().lower() for h in str(raw_hosts).split(",") if h.strip()]
+        if self.formdesigner_api_base_path == "/api/v1":
+            env_base_path = config.get(f"{self.name.upper()}_FORMDESIGNER_API_BASE_PATH")
+            if env_base_path:
+                self.formdesigner_api_base_path = str(env_base_path)
         # Resolve whitelists from env vars (comma-separated)
         name_upper = self.name.upper()
         if self.allowed_conversation_ids is None:
@@ -159,4 +164,5 @@ class MSTeamsAgentConfig:
             formdesigner_submit_token=data.get("formdesigner_submit_token"),
             formdesigner_submit_secret=data.get("formdesigner_submit_secret"),
             formdesigner_submit_timeout=float(data.get("formdesigner_submit_timeout", 15.0)),
+            formdesigner_api_base_path=data.get("formdesigner_api_base_path", "/api/v1"),
         )

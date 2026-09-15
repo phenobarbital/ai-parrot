@@ -91,9 +91,21 @@ async def post_submission(
             allow_redirects=False,
             timeout=aiohttp.ClientTimeout(total=timeout),
         ) as resp:
-            raw = await resp.content.read(max_response_bytes + 1)
-            if len(raw) > max_response_bytes:
-                return SubmitOutcome(status=resp.status, error="response too large")
+            # aiohttp's StreamReader.read(n) returns whatever is currently buffered once it
+            # has waited once — it does NOT guarantee n bytes or EOF in a single call. A slow
+            # network, chunked transfer, or proxy can deliver the body across several reads,
+            # so a single read() risks silently truncating it. Loop until EOF or the cap.
+            chunks: list[bytes] = []
+            total = 0
+            while True:
+                chunk = await resp.content.read(65536)
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                total += len(chunk)
+                if total > max_response_bytes:
+                    return SubmitOutcome(status=resp.status, error="response too large")
+            raw = b"".join(chunks)
             body = None
             if raw:
                 try:

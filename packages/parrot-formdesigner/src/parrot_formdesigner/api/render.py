@@ -20,6 +20,7 @@ not installed. ``GET /api/v1/forms/{id}/render/{unknown}`` returns
 
 from __future__ import annotations
 
+import base64
 import importlib.util
 import json
 import logging
@@ -211,12 +212,20 @@ async def handle_render(request: web.Request) -> web.Response:
         logger.warning("render dispatcher: %s renderer refused: %s", format_key, exc)
         return web.json_response({"error": str(exc)}, status=400)
 
-    # ?with_meta=true returns a JSON envelope with content, content_type, warnings, metadata
+    # ?with_meta=true returns a JSON envelope with content, content_type, warnings, metadata.
+    # Binary renderer output (e.g. PdfRenderer's raw PDF bytes) is not JSON-serialisable —
+    # base64-encode it and flag that with `content_encoding` so callers know to decode it.
     if request.query.get("with_meta", "").lower() in ("1", "true", "yes"):
+        content: Any = rendered.content
+        content_encoding: str | None = None
+        if isinstance(content, (bytes, bytearray, memoryview)):
+            content = base64.b64encode(bytes(content)).decode("ascii")
+            content_encoding = "base64"
         return web.json_response(
             {
-                "content": rendered.content,
+                "content": content,
                 "content_type": rendered.content_type,
+                "content_encoding": content_encoding,
                 "warnings": [w.model_dump(mode="json") for w in rendered.warnings],
                 "metadata": rendered.metadata,
             }
