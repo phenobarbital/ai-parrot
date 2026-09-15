@@ -113,3 +113,36 @@ if [[ ${#survivors[@]} -gt 0 ]]; then
 fi
 
 echo "✅ ${TASK_ID} closed (verification=${VERIFICATION}). active/ is clean."
+
+# FEAT-566 Module 12: emit task.closed to the shared work ledger, AFTER the
+# hard post-condition above has already passed. This only ever appends to
+# the durable, lock-free events.jsonl log (never touches ledger.db/SQLite),
+# so there is no writer contention to handle here — a ledger index sync
+# later applies the event. Emission is best-effort: any failure (missing
+# parrot.knowledge.wiki package, unwritable shared root, ...) is logged and
+# swallowed, never turning an otherwise-successful closure into a failure.
+python3 - "$TASK_ID" "$FEATURE_SLUG" "$VERIFICATION" <<'PYEOF' || true
+import sys
+from pathlib import Path
+
+task_id, feature_slug, verification = sys.argv[1:4]
+
+try:
+    from parrot.knowledge.wiki.ledger.events import LedgerEvent
+    from parrot.knowledge.wiki.ledger.log import LedgerLog
+    from parrot.knowledge.wiki.project import find_shared_root
+
+    shared_root = find_shared_root(Path.cwd()) or Path.cwd()
+    ledger_dir = shared_root / ".parrot" / "ledger"
+    ledger_dir.mkdir(parents=True, exist_ok=True)
+
+    event = LedgerEvent(
+        kind="task.closed",
+        subject=f"task:{task_id}",
+        actor="agent:close_task.sh",
+        payload={"feature": feature_slug, "verification": verification},
+    )
+    LedgerLog(str(ledger_dir / "events.jsonl")).append(event)
+except Exception as exc:  # noqa: BLE001 — ledger emission never blocks closure
+    print(f"⚠️  task.closed ledger emission skipped: {exc}", file=sys.stderr)
+PYEOF

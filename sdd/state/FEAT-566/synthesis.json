@@ -1,0 +1,152 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-566",
+  "mode": "enrichment",
+  "summary_oneline": "Add a shared, event-sourced SDD ledger that preserves discovered work and provenance across linked worktrees.",
+  "localization": [
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/repo/graph_search.py",
+      "symbol": "resolve_plane_root",
+      "lines": "31-81",
+      "role": "Existing async resolver from a linked worktree to the main checkout plane.",
+      "evidence": ["F002"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/project.py",
+      "symbol": "WikiProjectConfig.storage_path",
+      "lines": "472-496",
+      "role": "Resolves local or absolute wiki storage directories.",
+      "evidence": ["F002"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/store.py",
+      "symbol": "SQLiteWikiStore",
+      "lines": "875-1805",
+      "role": "SQLite page, edge, FTS, neighbor and audit contract reusable by a ledger index.",
+      "evidence": ["F003"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/federation.py",
+      "symbol": "FederatedWikiStore",
+      "lines": "599-950",
+      "role": "Read federation and qualified identifier behavior for a separate ledger plane.",
+      "evidence": ["F004"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/tools.py",
+      "symbol": "WikiRememberTool",
+      "lines": "272-327",
+      "role": "Current durable-memory write surface with an asserted link.",
+      "evidence": ["F005"]
+    },
+    {
+      "path": ".claude/commands/sdd-start.md",
+      "symbol": null,
+      "lines": "38-105",
+      "role": "Task readiness, worktree provisioning and in-progress lifecycle command.",
+      "evidence": ["F006"]
+    },
+    {
+      "path": "scripts/sdd/close_task.sh",
+      "symbol": null,
+      "lines": "3-115",
+      "role": "Deterministic completed-task state transition.",
+      "evidence": ["F006"]
+    }
+  ],
+  "constraints": [
+    {
+      "statement": "Worktree plane resolution is already implemented as an async read consumer outside the wiki project package.",
+      "evidence": ["F002"],
+      "implication": "The ledger should reuse or deliberately promote this seam rather than introduce a second incompatible common-directory algorithm."
+    },
+    {
+      "statement": "SQLite wiki writes run through per-call connections and migrations commit an UPDATE on every normal connection; the inspected store has no busy-timeout or explicit immediate transaction configuration.",
+      "evidence": ["F003"],
+      "implication": "A concurrency spike must set and test the ledger's durability and claim semantics before SDD command integration."
+    },
+    {
+      "statement": "Federation fans out reads while reserving writes for the local plane or an explicitly opened namespace store.",
+      "evidence": ["F004"],
+      "implication": "Ledger reads can federate, but ledger writes require a direct, explicit target."
+    },
+    {
+      "statement": "The current remember input has only an optional link and relation, and the managed hook only renders a post-commit refresh.",
+      "evidence": ["F005"],
+      "implication": "Provenance fields and post-merge refresh must be specified as compatibility-sensitive API and installer changes."
+    },
+    {
+      "statement": "SDD lifecycle state is index-driven, while reports and deferred findings are not mandatory records.",
+      "evidence": ["F006"],
+      "implication": "The ledger can fill a real gap, but all affected SDD platform command twins need an explicit rollout scope."
+    }
+  ],
+  "investigation": null,
+  "enrichment": {
+    "new": [
+      "A shared event log and rebuildable ledger index rooted at the main checkout.",
+      "Ledger command and tool surfaces for discovered work, claims, closures, provenance and scoped context."
+    ],
+    "modified": [
+      "Worktree plane resolution, SQLite configuration, federation registration, wiki memory inputs, managed hooks and SDD lifecycle commands."
+    ],
+    "untouched": [
+      "Provider clients and unrelated agent execution behavior.",
+      "Replacing the existing wiki retrieval plane or requiring a server-backed tracker in v1."
+    ],
+    "patterns": ["Reuse `SQLiteWikiStore` page-edge contracts and `FederatedWikiStore` read behavior."],
+    "risks": [
+      "A separate plane must have a direct write target because federation is deliberately read-oriented.",
+      "Shared-root code duplicated across packages can diverge unless a single API owner is selected.",
+      "Concurrent append and index updates need empirical validation before they become an agent workflow requirement."
+    ]
+  },
+  "confidence_map": [
+    {
+      "id": "C1",
+      "statement": "A linked worktree can resolve the main checkout's existing wiki plane through `resolve_plane_root`.",
+      "evidence": ["F002"],
+      "confidence": "high",
+      "reasoning": "Direct source read confirms the git-common-directory algorithm."
+    },
+    {
+      "id": "C2",
+      "statement": "The SQLite wiki store can represent ledger pages, provenance-bearing edges, lexical search, adjacency and dangling-edge audits.",
+      "evidence": ["F003"],
+      "confidence": "high",
+      "reasoning": "Direct source reads cover all named primitives."
+    },
+    {
+      "id": "C3",
+      "statement": "The current SQLite configuration needs a dedicated concurrent-writer spike before it can underpin atomic ledger claims.",
+      "evidence": ["F003"],
+      "confidence": "medium",
+      "reasoning": "The inspected implementation lacks the proposed controls, but no load test was run."
+    },
+    {
+      "id": "C4",
+      "statement": "A separate ledger plane can be exposed through existing federation reads.",
+      "evidence": ["F004"],
+      "confidence": "medium",
+      "reasoning": "The read path is direct; the proposed ledger write and cross-plane lifecycle contract remains design work."
+    },
+    {
+      "id": "C5",
+      "statement": "The proposed workflow integration targets real gaps in current review, readiness and completion commands.",
+      "evidence": ["F006"],
+      "confidence": "high",
+      "reasoning": "The current command documents directly show the relevant state transitions and optional review persistence."
+    }
+  ],
+  "unknowns": [],
+  "recommended_next_command": {
+    "command": "sdd-spec",
+    "rationale": "The user resolved the deployment, provenance and rollout decisions; specification work can now formalize the concurrency spike and interface contracts."
+  },
+  "overall_confidence": "medium",
+  "meta": {
+    "findings_used": ["F001", "F002", "F003", "F004", "F005", "F006", "F007"],
+    "findings_unused": [],
+    "notes": "Research was not truncated. The user selected single-host shared-worktree v1, general-purpose provenance support, and all three platform command twins. The plan-schema omission of wiki query types was handled by persisting wiki orientation separately."
+  }
+}

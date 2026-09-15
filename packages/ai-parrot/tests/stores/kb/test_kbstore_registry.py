@@ -1,7 +1,7 @@
 """Tests for KnowledgeBaseStore registry integration (TASK-377)."""
 import numpy as np
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 
 @pytest.fixture(autouse=True)
@@ -107,7 +107,7 @@ class TestKBStoreRegistryIntegration:
 
         registry = EmbeddingRegistry.instance(max_models=10)
         mock_model = MagicMock()
-        mock_model.encode.return_value = np.zeros((1, 384), dtype=np.float32)
+        mock_model.encode = AsyncMock(return_value=np.zeros((1, 384), dtype=np.float32))
 
         with _mock_faiss():
             from parrot.stores.kb.store import KnowledgeBaseStore
@@ -116,7 +116,7 @@ class TestKBStoreRegistryIntegration:
         with patch.object(registry, "_build_model", return_value=mock_model):
             await kb.add_facts([{"content": "Test fact", "metadata": {}}])
 
-        mock_model.encode.assert_called_once()
+        mock_model.encode.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_search_facts_triggers_lazy_load(self):
@@ -125,7 +125,7 @@ class TestKBStoreRegistryIntegration:
 
         registry = EmbeddingRegistry.instance(max_models=10)
         mock_model = MagicMock()
-        mock_model.encode.return_value = np.zeros((1, 384), dtype=np.float32)
+        mock_model.encode = AsyncMock(return_value=np.zeros((1, 384), dtype=np.float32))
 
         with _mock_faiss() as faiss_mock_ctx:
             from parrot.stores.kb.store import KnowledgeBaseStore
@@ -138,7 +138,7 @@ class TestKBStoreRegistryIntegration:
         with patch.object(registry, "_build_model", return_value=mock_model):
             results = await kb.search_facts("test query")
 
-        mock_model.encode.assert_called_once()
+        mock_model.encode.assert_awaited_once()
         assert isinstance(results, list)
 
     def test_embeddings_setter_for_backwards_compat(self):

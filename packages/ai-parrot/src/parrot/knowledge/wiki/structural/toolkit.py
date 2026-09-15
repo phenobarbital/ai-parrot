@@ -15,6 +15,7 @@ from parrot.knowledge.wiki.project import (
     WikiProjectConfig,
     find_project_root,
     load_effective_config,
+    sqlite_policy_from_config,
 )
 from parrot.knowledge.wiki.store import BaseWikiStore, create_wiki_store
 from parrot.knowledge.wiki.structural.service import StructuralService
@@ -90,7 +91,12 @@ class CodeStructuralToolkit(AbstractToolkit):
                 text_analyzer=self._config.arango_text_analyzer,
             )
         storage.mkdir(parents=True, exist_ok=True)
-        return create_wiki_store(storage, wiki_name=self._config.wiki_name, backend=self._config.backend)
+        return create_wiki_store(
+            storage,
+            wiki_name=self._config.wiki_name,
+            backend=self._config.backend,
+            sqlite_policy=sqlite_policy_from_config(self._config),
+        )
 
     async def symbol_lookup(
         self,

@@ -65,7 +65,9 @@ from ._graph_svg import render_graph_svg
 from ._intercept import intercepts
 from ._semantics import (
     is_kpi_row,
+    kpi_comparison_html,
     kpi_unit_html,
+    kpi_value_display,
     node_extensions,
     semantic_card_class,
     semantic_text_class,
@@ -183,6 +185,11 @@ class SSRHTMLRenderer(AbstractA2UIRenderer):
     #: weasyprint cannot play media in a rasterized PDF).
     _UNSUPPORTED: frozenset[str] = frozenset()
 
+    #: Whether this renderer's OUTPUT is paginated. The browser print sheet
+    #: exists for a screen document a reader sends to a printer; a renderer
+    #: that paginates server-side has its own paged rules and must not get it.
+    PAGINATES: bool = False
+
     def __init__(self, *, theme: str = "light", layout: str = "analytics") -> None:
         """Initialize the renderer with a default ``(theme, layout)`` pair.
 
@@ -259,7 +266,12 @@ class SSRHTMLRenderer(AbstractA2UIRenderer):
             )
 
         theme, layout = DesignSystem.resolve(envelope, theme_default=self.theme, layout_default=self.layout)
-        style = DesignSystem.stylesheet(theme, layout)
+        # `paged` is the renderer's own nature, not something an envelope may
+        # change: `DesignSystem.resolve` lets `parrot_layout` outrank the
+        # renderer's default, so a PDF of an envelope declaring "analytics"
+        # would otherwise be composed with the BROWSER print sheet on top of
+        # the paged rules weasyprint is already applying.
+        style = DesignSystem.stylesheet(theme, layout, paged=self.PAGINATES)
         document = document_shell(
             title=envelope.surface_id,
             style=style,
@@ -550,6 +562,8 @@ class SSRHTMLRenderer(AbstractA2UIRenderer):
         attrs = trend_attr_html(node) if role == "delta" else ""
 
         raw_value = props.get("text")
+        if role == "value":
+            return f'<p class="{cls}">{html.escape(kpi_value_display(node, raw_value))}{extra}</p>'
         col = self._table_cell_columns.get(id(node)) if role == "cell" else None
         if col is not None:
             col_type, col_format = col
@@ -675,7 +689,9 @@ class SSRHTMLRenderer(AbstractA2UIRenderer):
         variant_cls = semantic_card_class(node)
         if variant_cls:
             cls = f"{cls} {variant_cls}"
-        return f'<div class="{cls}">{inner}</div>'
+        # After the delta, because it qualifies it: "+52.4%" then "vs the
+        # previous 14 days". Empty for a card that declares no baseline.
+        return f'<div class="{cls}">{inner}{kpi_comparison_html(node)}</div>'
 
     def _render_Tabs(self, node: BasicNode, degradations: list[dict[str, Any]]) -> str:
         panes = []

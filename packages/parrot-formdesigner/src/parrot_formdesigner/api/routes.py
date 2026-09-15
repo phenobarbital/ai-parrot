@@ -59,6 +59,7 @@ if TYPE_CHECKING:
     from parrot.voice.tts.synthesizer import VoiceSynthesizer
     from parrot.voice.transcriber.faster_whisper_backend import FasterWhisperBackend
 
+    from ..renderers.base import AbstractFormRenderer
     from ..services.blob_storage import AbstractBlobStorage
     from ..services.forwarder import SubmissionForwarder
     from ..services.org_graph import OrgGraphService
@@ -162,6 +163,7 @@ def _reserved_tenant_segments(app: web.Application, bp: str) -> frozenset[str]:
             reserved.add(first_segment)
     return frozenset(reserved)
 
+
 def _stash_without_clobbering(app: web.Application, key: str, value: object) -> None:
     """Put ``value`` on ``app[key]`` without destroying what the host wired.
 
@@ -187,7 +189,6 @@ def _stash_without_clobbering(app: web.Application, key: str, value: object) -> 
         app.setdefault(key, None)
 
 
-
 def setup_form_api(
     app: web.Application,
     registry: FormRegistry,
@@ -209,6 +210,8 @@ def setup_form_api(
     venue_service: "VenueService | None" = None,
     rbac_enforcing: bool = False,
     alias_registry: "SinkAliasRegistry | None" = None,
+    public_base_url: str | None = None,
+    teams_renderer: "AbstractFormRenderer | None" = None,
 ) -> None:
     """Mount the JSON REST surface on ``app`` under ``base_path``.
 
@@ -259,6 +262,15 @@ def setup_form_api(
             ``FormAPIHandler`` — forms declaring ``persistence`` write to
             their own sink. ``None`` (default) leaves the feature
             entirely inactive; no route ever mutates this allowlist.
+        public_base_url: Optional public-facing base URL for the FormDesigner
+            UI. When provided (or via ``FORMDESIGNER_PUBLIC_URL`` env var),
+            registers the ``teams`` renderer for MS Teams Adaptive Card
+            rendering (FEAT-551 M3). ``None`` (default) leaves the
+            ``teams`` format unregistered.
+        teams_renderer: Optional pre-configured ``AbstractFormRenderer`` for
+            the ``teams`` format. When provided, takes precedence over
+            constructing a ``TeamsFormRenderer`` from ``public_base_url``.
+            ``None`` (default) defers to ``public_base_url`` / env var.
     """
     # Stash the registry on the app for the dispatcher / operations handler.
     # Guard: skip if already set (FormRegistry.__init__ sets it when app= is
@@ -297,6 +309,14 @@ def setup_form_api(
 
     # Seed the renderer registry with the V1 default renderers.
     render_module._seed_default_renderers()
+
+    # Register the Teams renderer if a public base URL is configured (FEAT-551 M3).
+    render_module.register_teams_renderer(
+        public_base_url=public_base_url,
+        api_base_path=base_path,
+        ui_base_path=app.get("_form_prefix", ""),
+        renderer=teams_renderer,
+    )
 
     # Stash partial store on the app for lifecycle management (optional).
     if partial_store is not None:

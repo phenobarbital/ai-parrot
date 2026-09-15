@@ -12,6 +12,8 @@ import contextlib
 from http import HTTPStatus
 from pathlib import Path
 from typing import Dict, Optional, Any, Union
+
+import aiohttp
 from aiohttp import web
 from botbuilder.core import (
     ActivityHandler,
@@ -24,6 +26,16 @@ import jsonpickle
 from botbuilder.schema import Activity, ActivityTypes, ChannelAccount, Attachment
 from botbuilder.dialogs import DialogSet, DialogTurnStatus
 from .models import MSTeamsAgentConfig
+from .formdesigner_submit import (
+    EnvelopeRejected,
+    RecentActivityCache,
+    build_reply_card,
+    extract_answers,
+    parse_envelope,
+    post_submission,
+    verify_envelope,
+)
+from parrot_formdesigner.renderers.teams import ENVELOPE_KEY
 from .adapter import Adapter
 from .handler import MessageHandler
 from ..parser import parse_response, ParsedResponse
@@ -54,6 +66,8 @@ if TYPE_CHECKING:
 
 
 logging.getLogger("msrest").setLevel(logging.WARNING)
+
+FORMDESIGNER_API_BASE_PATH: str = "/api/v1"  # fallback only; prefer config.formdesigner_api_base_path
 
 _debug_storage_logger = logging.getLogger(__name__)
 
@@ -143,6 +157,10 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
         # Form components
         # NOTE: card_builder and validator are no longer stored - dialogs create fresh instances
         self.dialog_factory = FormDialogFactory()
+
+        # FormDesigner card submissions (FEAT-551)
+        self._formdesigner_session: Optional[aiohttp.ClientSession] = None
+        self._formdesigner_recent = RecentActivityCache()
 
         # Form orchestrator (handles LLM form requests)
         self.form_orchestrator = FormOrchestrator(
@@ -440,6 +458,12 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
                 await self.send_text(result.response_text, turn_context)
             else:
                 await self.send_text("Action processed.", turn_context)
+            return
+
+        # FormDesigner standalone card (FEAT-551): card Submit carries {"_formdesigner": <envelope>, "_action": "submit",
+        # **{field_id: value}}. Verified and forwarded to POST .../forms/{uid}/data — never routed to dialogs.
+        if ENVELOPE_KEY in submitted_data:
+            await self._handle_formdesigner_submit(turn_context, submitted_data)
             return
 
         # Slash-style commands embedded in Adaptive Card Submit actions — e.g.
@@ -972,6 +996,52 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
             await self._send_parsed_response(parsed, turn_context)
         elif result.response_text:
             await self.send_text(result.response_text, turn_context)
+
+    async def _handle_formdesigner_submit(self, turn_context: TurnContext, submitted_data: Dict[str, Any]) -> None:
+        """Forward a FormDesigner Teams-card submission (spec §3 M4). Never raises; never continues the dialog."""
+        allowed = list(self.config.formdesigner_allowed_hosts or [])
+        if not allowed:
+            await self.send_text("Form submissions are not enabled for this bot.", turn_context)
+            return
+        try:
+            env = parse_envelope(submitted_data)
+            verify_envelope(
+                env,
+                allowed_hosts=allowed,
+                secret=self.config.formdesigner_submit_secret,
+                api_base_path=getattr(self.config, "formdesigner_api_base_path", FORMDESIGNER_API_BASE_PATH),
+            )
+            activity_id = getattr(turn_context.activity, "id", None)
+            if activity_id and self._formdesigner_recent.seen(activity_id):
+                self.logger.info("formdesigner submit: duplicate activity %s ignored", activity_id)
+                return
+            answers = extract_answers(submitted_data)
+            outcome = await post_submission(
+                await self._get_formdesigner_session(),
+                env,
+                answers,
+                bearer_token=self.config.formdesigner_submit_token,
+                timeout=self.config.formdesigner_submit_timeout,
+            )
+            self.logger.info("formdesigner submit: form=%s status=%s", env.form_uid, outcome.status)
+            await self.send_card(build_reply_card(outcome, env), turn_context)
+        except EnvelopeRejected as exc:
+            await self.send_text(str(exc), turn_context)
+        except Exception:  # noqa: BLE001 — adapter must never see an exception from a card submit
+            self.logger.exception("formdesigner submit failed")
+            await self.send_text("Could not process your submission. Please try again later.", turn_context)
+
+    async def _get_formdesigner_session(self) -> aiohttp.ClientSession:
+        """Lazily create the shared outbound session (pattern: graph.py:120-128)."""
+        if self._formdesigner_session is None or getattr(self._formdesigner_session, "closed", False):
+            self._formdesigner_session = aiohttp.ClientSession()
+        return self._formdesigner_session
+
+    async def close_formdesigner_client(self) -> None:
+        """Close the shared outbound session (pattern: close_voice_transcriber)."""
+        if self._formdesigner_session is not None and not getattr(self._formdesigner_session, "closed", False):
+            await self._formdesigner_session.close()
+        self._formdesigner_session = None
 
     async def close_voice_transcriber(self) -> None:
         """Close voice transcriber and release resources."""

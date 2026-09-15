@@ -1,0 +1,68 @@
+{
+  "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+  "actions": [
+    {
+      "data": {
+        "_action": "submit"
+      },
+      "style": "positive",
+      "title": "Submit",
+      "type": "Action.Submit"
+    },
+    {
+      "associatedInputs": "none",
+      "data": {
+        "_action": "cancel"
+      },
+      "style": "destructive",
+      "title": "Cancel",
+      "type": "Action.Submit"
+    }
+  ],
+  "body": [
+    {
+      "size": "Large",
+      "text": "Test Form",
+      "type": "TextBlock",
+      "weight": "Bolder",
+      "wrap": true
+    },
+    {
+      "spacing": "Medium",
+      "text": "Main",
+      "type": "TextBlock",
+      "weight": "Bolder"
+    },
+    {
+      "size": "Default",
+      "spacing": "Medium",
+      "text": "Name",
+      "type": "TextBlock",
+      "weight": "Bolder"
+    },
+    {
+      "id": "name",
+      "isRequired": false,
+      "placeholder": "",
+      "type": "Input.Text",
+      "value": ""
+    },
+    {
+      "size": "Default",
+      "spacing": "Medium",
+      "text": "Email",
+      "type": "TextBlock",
+      "weight": "Bolder"
+    },
+    {
+      "id": "email",
+      "isRequired": false,
+      "placeholder": "",
+      "style": "Email",
+      "type": "Input.Text",
+      "value": ""
+    }
+  ],
+  "type": "AdaptiveCard",
+  "version": "1.4"
+}

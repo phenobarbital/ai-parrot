@@ -937,11 +937,36 @@ class SddCoderEngine:
             )
 
     async def _run_task(self, ctx: _FeatureCtx, task: PlannedTask, seat: RosterSeat, *, job_id: str) -> TaskResult:
-        """Attempt 1 on the assigned seat; on failure attempt 2 on a different seat in a NEW sub-worktree;
-        a second failure yields `outcome="failed"` with both attempts' errors (spec G6, AC-6, AC-20)."""
+        """Run up to two attempts, retrying dispatch and dirty-worktree failures on another MCP seat.
+
+        A clean dispatcher response is not sufficient for success: an agent can
+        return ``DevelopmentOutput`` after exhausting its turn budget while
+        leaving its changes uncommitted. Treat that first-attempt
+        ``dirty_task_worktree`` outcome as retryable, but preserve fidelity
+        violations and merge conflicts for the orchestrator to handle.
+        """
         attempts: List[AttemptRecord] = []
         rec, out, err, manager, branch, path = await self._run_attempt(ctx, task, seat, attempt=1, job_id=job_id)
         attempts.append(rec)
+
+        if not err:
+            result = await self._consolidate(ctx, manager, task, branch=branch, path=path)
+            if not (result.outcome == "failed" and result.diagnostics.startswith("dirty_task_worktree:")):
+                final_result = result.model_copy(update={"attempts": attempts, "development_output": out})
+                self._latest_attempt[task.task_id] = rec
+                await self._emit_outcome(
+                    ctx,
+                    attempt_rec=rec,
+                    task_id=task.task_id,
+                    outcome=result.outcome,
+                    conflict_file_count=len(result.conflict_files),
+                    unexpected_file_count=len(result.unexpected_files),
+                )
+                return final_result
+
+            err = result.diagnostics
+            rec = rec.model_copy(update={"error": err, "error_class": "dirty_task_worktree"})
+            attempts[-1] = rec
 
         if err:
             assert self._assigner is not None

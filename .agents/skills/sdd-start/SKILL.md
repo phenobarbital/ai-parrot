@@ -45,6 +45,11 @@ validate it, and close it in the same branch/worktree.
    - set `started_at`
    - clear staging, stage only the index, verify cached names
    - commit `sdd: start TASK-NNN - <title>`
+   - (FEAT-566, best-effort) append `task.started` to the shared ledger's
+     `events.jsonl` — log-only, never blocks on failure (missing ledger
+     package, unwritable shared root); same pattern as `close_task.sh`'s
+     `task.closed` emission (`LedgerEvent`/`LedgerLog`, no SQLite writer
+     involved, so no contention to handle)
 5. Read context:
    - full task file
    - referenced spec file
@@ -54,6 +59,9 @@ validate it, and close it in the same branch/worktree.
    - implementation notes
    - acceptance criteria
    - test specification
+5b. Prime with ledger context (FEAT-566, best-effort):
+   - `wikitoolkit ledger context <files-from-scope> 2>/dev/null || true`
+   - fold non-empty output into context; never fatal on a busy/unbuilt ledger
 6. Print kickoff summary, then continue immediately.
 7. Verify Codebase Contract before editing:
    - confirm every import exists

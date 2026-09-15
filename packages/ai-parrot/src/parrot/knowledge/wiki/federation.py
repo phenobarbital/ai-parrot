@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import sqlite3
 from contextvars import ContextVar
 from dataclasses import dataclass
@@ -50,7 +51,13 @@ from parrot.knowledge.wiki.project import (
     resolve_arango_params,
     resolve_entry_base,
 )
-from parrot.knowledge.wiki.store import BaseWikiStore, SQLiteWikiStore, WikiPageRecord, create_wiki_store
+from parrot.knowledge.wiki.store import (
+    BaseWikiStore,
+    SQLitePragmaPolicy,
+    SQLiteWikiStore,
+    WikiPageRecord,
+    create_wiki_store,
+)
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
@@ -62,6 +69,10 @@ DEFAULT_ARANGO_TIMEOUT = 5.0
 #: Routing selectors that are not namespace names.
 SELECTOR_ALL = "all"
 SELECTOR_LOCAL = "local"
+
+#: Pattern to extract the kind prefix from a bare id (e.g., "issue" from "issue:xyz")
+#: (FEAT-566 M13 for overlay routing).
+_BARE_ID_KIND_RE = re.compile(r"^(issue|task|spec|insight|file|dir|mod|pkg|doc|func|class|concept|page|sym):")
 
 
 class NamespaceSkip(BaseModel):
@@ -158,7 +169,7 @@ async def _assert_plane_readable(store: BaseWikiStore) -> None:
     try:
         # Private, but this is the only way to reuse the immutable /
         # mode=ro ladder the read-only guarantee depends on.
-        async with store._connect() as conn:
+        async with store._read() as conn:
             for table, columns in _MIGRATION_COLUMNS.items():
                 async with conn.execute(f"PRAGMA table_info({table})") as cur:
                     present = {row["name"] for row in await cur.fetchall()}
@@ -274,7 +285,19 @@ def _open_local_plane(
         FileNotFoundError: When ``read_only`` and the plane is unbuilt.
     """
     if backend == "sqlite" and read_only:
-        return SQLiteWikiStore(storage_dir / "wiki.db", wiki_name=wiki_name, read_only=True)
+        # A foreign, read-only plane gets the bounded busy wait but never
+        # write or performance pragmas — `_read` on a read-only store
+        # never reaches `_apply_pragmas(writable=True)` anyway, so this
+        # is belt-and-braces. Federation resolves FOREIGN namespaces, so
+        # the local project config does not apply here; the policy's own
+        # defaults (15s, performance_pragmas=False) are what spec §2 asks
+        # for.
+        return SQLiteWikiStore(
+            storage_dir / "wiki.db",
+            wiki_name=wiki_name,
+            read_only=True,
+            sqlite_policy=SQLitePragmaPolicy(),
+        )
     if backend == "memory" and read_only and not (storage_dir / "pages").exists():
         raise FileNotFoundError(f"read-only wiki store has no plane at {storage_dir / 'pages'}")
     return create_wiki_store(storage_dir, wiki_name=wiki_name, backend=backend)
@@ -652,6 +675,19 @@ class FederatedWikiStore(BaseWikiStore):
         self._origin_local = origin_local
         self.logger = logging.getLogger(__name__)
 
+        # FEAT-566 M13: validate overlay prefix ownership — no two overlays
+        # may claim the same prefix.
+        self._prefix_to_namespace: dict[str, str] = {}
+        for handle in handles or []:
+            for prefix in handle.config.overlay_prefixes:
+                if prefix in self._prefix_to_namespace:
+                    existing = self._prefix_to_namespace[prefix]
+                    raise ValueError(
+                        f"Overlay prefix {prefix!r} claimed by both {existing!r} and {handle.name!r}; "
+                        "each overlay-owned kind must be unique"
+                    )
+                self._prefix_to_namespace[prefix] = handle.name
+
     @property
     def last_skipped(self) -> list[NamespaceSkip]:
         """Namespaces that failed during THIS task's most recent read.
@@ -847,7 +883,11 @@ class FederatedWikiStore(BaseWikiStore):
         return out
 
     def _route(self, page_id: str) -> tuple[NamespaceHandle | None, str, bool]:
-        """Resolve a possibly qualified id to its store.
+        """Resolve a possibly qualified id to its store (FEAT-566 M13 overlay routing).
+
+        FEAT-566 Module 13: Unqualified ids whose kind is in an overlay's
+        ``overlay_prefixes`` route to that overlay. This allows bare ids like
+        ``issue:3f8a1c9e`` to resolve without the ``ledger::`` prefix.
 
         Args:
             page_id: Page id, qualified or not.
@@ -859,13 +899,36 @@ class FederatedWikiStore(BaseWikiStore):
         """
         namespace, local_id = split_namespaced_id(page_id)
         if namespace is None:
+            # Unqualified id: check if its kind is in any overlay's prefixes
+            overlay_ns = self._route_bare_overlay_id(page_id)
+            if overlay_ns is not None:
+                handle = self.namespaces.get(overlay_ns)
+                if handle is not None:
+                    return handle, page_id, True
             return None, page_id, True
+
         if self._qualify_local and namespace == self.local_name:
             return None, local_id, True
         handle = self.namespaces.get(namespace)
         if handle is None:
             return None, local_id, False
         return handle, local_id, True
+
+    def _route_bare_overlay_id(self, page_id: str) -> str | None:
+        """Check if a bare id's kind prefix belongs to an overlay namespace.
+
+        Args:
+            page_id: Unqualified page id.
+
+        Returns:
+            Namespace name if the id's kind is in an overlay's prefixes, else None.
+        """
+        # Extract the kind prefix (e.g., "issue" from "issue:3f8a1c9e")
+        match = _BARE_ID_KIND_RE.match(page_id)
+        if not match:
+            return None
+        kind = match.group(1)
+        return self._prefix_to_namespace.get(kind)
 
     # -- reads -----------------------------------------------------------
 
@@ -918,8 +981,7 @@ class FederatedWikiStore(BaseWikiStore):
     ) -> list[dict[str, Any]]:
         """Return edge neighbours, qualified with the seed's namespace.
 
-        Two FEAT-532 §8 additions on top of the original single-store
-        lookup:
+        Three layers of processing (FEAT-532 §8, FEAT-566 M13):
 
         1. **Outgoing hydration**: any neighbor whose own id is already
            a foreign-qualified reference (a locally-owned edge's
@@ -929,13 +991,15 @@ class FederatedWikiStore(BaseWikiStore):
            qualified id itself is never re-derived — :func:`qualify_id`
            is idempotent against re-homing an already-qualified id, so
            no double prefix can occur.
-        2. **Incoming references**: when the seed itself is a qualified
-           foreign id, local pages that reference it are folded in too
-           (:meth:`_local_incoming_references`) — the existing
-           ``neighbors(..., direction="in")`` contract already answers
-           "what points at this id", so no new store method or
-           persisted inverse index is needed; it is always a live query
-           against the true local plane's own edges.
+        2. **Overlay outgoing-to-code**: when the seed is in an overlay
+           namespace and a neighbor's kind is NOT in that overlay's
+           prefixes, return the neighbor unqualified and hydrated from
+           the local plane (FEAT-566 M13).
+        3. **Incoming references + overlay edges**: when the seed itself
+           is a qualified foreign id or overlay id, local pages that
+           reference it are folded in (:meth:`_local_incoming_references`)
+           AND each overlay namespace's incoming edges are folded in
+           (:meth:`_overlay_incoming_edges`).
         """
         handle, local_id, known = self._route(concept_id)
         if not known:
@@ -947,7 +1011,17 @@ class FederatedWikiStore(BaseWikiStore):
         except Exception as exc:  # noqa: BLE001 — a broken namespace is a note
             self.logger.warning("Namespace %s failed on neighbors: %s", namespace or "local", exc)
             return []
-        qualified = [_qualify_row(row, namespace) for row in rows]
+
+        # FEAT-566 M13: for seeds in an overlay, re-route outgoing neighbors
+        # whose kind is NOT in the overlay's prefixes to the local plane
+        # (unqualified, not re-homed as "overlay::sym:...").
+        if handle is not None and handle.config.overlay_prefixes:
+            rows = await self._overlay_requalify_neighbors(rows, handle)
+            # Rows are already requalified with proper namespace by _overlay_requalify_neighbors
+            qualified = rows
+        else:
+            qualified = [_qualify_row(row, namespace) for row in rows]
+
         qualified = await self._hydrate_foreign_neighbors(qualified)
 
         # `namespace` (not just `handle is not None`) is the right test:
@@ -960,6 +1034,27 @@ class FederatedWikiStore(BaseWikiStore):
             qualified_seed = qualify_id(namespace, local_id)
             incoming = await self._local_incoming_references(qualified_seed, rel=rel)
             qualified = _dedup_by_concept_id(qualified + incoming)
+
+        # FEAT-566 M13: for local seeds, also fold in each overlay's
+        # incoming edges (edges WHERE the overlay's node points AT the
+        # local seed). This happens for unqualified local ids where
+        # namespace is None but we still want to see what overlay nodes
+        # reference the local seed. Gated on an overlay actually being
+        # configured (and on it finding something) so plain, non-overlay
+        # federation — the common case — never pays for or is affected by
+        # this: `_dedup_by_concept_id` dedupes purely by concept_id,
+        # ignoring `rel`, so applying it unconditionally would silently
+        # drop a legitimate row whenever a local seed already had two
+        # edges to the same neighbor concept_id under different `rel`
+        # values, even with zero overlays mounted.
+        if (
+            not handle
+            and direction in ("in", "both")
+            and any(h.config.overlay_prefixes for h in self.namespaces.values())
+        ):
+            overlay_in = await self._overlay_incoming_edges(concept_id, rel=rel)
+            if overlay_in:
+                qualified = _dedup_by_concept_id(qualified + overlay_in)
 
         return qualified
 
@@ -1034,6 +1129,85 @@ class FederatedWikiStore(BaseWikiStore):
             self.logger.warning("Local plane failed incoming-reference lookup for %s: %s", qualified_seed, exc)
             return []
         return [_qualify_row(row, None) for row in rows]
+
+    async def _overlay_requalify_neighbors(
+        self,
+        rows: list[dict[str, Any]],
+        overlay_handle: NamespaceHandle,
+    ) -> list[dict[str, Any]]:
+        """FEAT-566 M13: For overlay seeds, convert outgoing neighbors to local references.
+
+        When a seed is in an overlay namespace (e.g., ``issue:3f8a1c9e``), its
+        outgoing edges to the code plane should be returned unqualified (as
+        local ids, e.g., ``sym:pkg.py#Func``). Overlay-owned kinds (those in
+        ``overlay_prefixes``) stay qualified to their source overlay.
+
+        Args:
+            rows: Neighbors returned by the overlay store.
+            overlay_handle: The NamespaceHandle of the overlay namespace.
+
+        Returns:
+            Rows with concept_ids rewritten: code-plane kinds are unqualified,
+            overlay kinds stay qualified.
+        """
+        requalified: list[dict[str, Any]] = []
+        for row in rows:
+            out = dict(row)
+            concept_id = row.get("concept_id")
+            if not concept_id:
+                requalified.append(out)
+                continue
+
+            # Extract the kind prefix (e.g., "sym" from "sym:path")
+            kind_match = _BARE_ID_KIND_RE.match(str(concept_id))
+            if not kind_match:
+                requalified.append(out)
+                continue
+
+            kind = kind_match.group(1)
+            # If the neighbor's kind is NOT in this overlay's prefixes,
+            # it refers to the local code plane — return unqualified.
+            if kind not in overlay_handle.config.overlay_prefixes:
+                out["concept_id"] = concept_id  # Already unqualified
+                out["namespace"] = None
+            # Else: overlay-owned kind; qualify it to the overlay namespace
+            else:
+                out["concept_id"] = qualify_id(overlay_handle.name, concept_id)
+                out["namespace"] = overlay_handle.name
+            requalified.append(out)
+        return requalified
+
+    async def _overlay_incoming_edges(self, local_id: str, *, rel: str | None) -> list[dict[str, Any]]:
+        """FEAT-566 M13: Incoming edges from all overlay namespaces to a local seed.
+
+        When querying a local seed with direction="in" or "both", this method
+        fetches incoming edges from every overlay namespace's store, where
+        the overlay's node points AT the local seed.
+
+        Args:
+            local_id: Unqualified local plane id (e.g., ``sym:pkg.py#Func``).
+            rel: Optional relation filter.
+
+        Returns:
+            List of qualified neighbor rows (e.g., ``ledger::issue:xyz``),
+            merged and deduplicated.
+        """
+        overlay_edges: list[dict[str, Any]] = []
+        for handle in self.namespaces.values():
+            if not handle.config.overlay_prefixes:
+                # Not an overlay namespace — skip.
+                continue
+            try:
+                rows = await handle.store.neighbors(local_id, rel=rel, direction="in")
+            except Exception as exc:  # noqa: BLE001 — a broken overlay is a note, not fatal
+                self.logger.debug(
+                    "Overlay namespace %s failed incoming-edge lookup for %s: %s", handle.name, local_id, exc
+                )
+                continue
+            # Qualify edges with the overlay namespace name
+            qualified = [_qualify_row(row, handle.name) for row in rows]
+            overlay_edges.extend(qualified)
+        return overlay_edges
 
     async def stats(self) -> dict[str, Any]:
         """Local counters plus a per-namespace block and the skip notes.

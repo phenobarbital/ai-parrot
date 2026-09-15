@@ -1,4 +1,5 @@
 """End-to-end: toolkit/engine + fake dispatchers + real git sandbox (FEAT-549 AC-1, AC-13, AC-14, AC-15)."""
+
 from __future__ import annotations
 
 import asyncio
@@ -107,9 +108,7 @@ async def test_full_chunk_merges_and_runs_concurrently(git_sandbox_feature, thre
 
     # AC-1: at least one pair of attempts genuinely overlapped in wall-clock time.
     overlaps = any(
-        a["start"] < b["end"] and b["start"] < a["end"]
-        for i, a in enumerate(all_calls)
-        for b in all_calls[i + 1 :]
+        a["start"] < b["end"] and b["start"] < a["end"] for i, a in enumerate(all_calls) for b in all_calls[i + 1 :]
     )
     assert overlaps
 
@@ -121,9 +120,7 @@ async def test_full_chunk_merges_and_runs_concurrently(git_sandbox_feature, thre
     assert journal.is_file()
 
     # AC-15: Redis is unreachable (bogus URL) — at most one warning about it, not one per event.
-    redis_warnings = sum(
-        1 for r in caplog.records if r.levelname == "WARNING" and "redis" in r.getMessage().lower()
-    )
+    redis_warnings = sum(1 for r in caplog.records if r.levelname == "WARNING" and "redis" in r.getMessage().lower())
     assert redis_warnings <= 1
 
 
@@ -155,6 +152,36 @@ async def test_partial_completion_and_orphans(git_sandbox_feature, three_seat_ro
     orphan_ids = {o.task_id for o in plan2.orphan_branches}
     assert violated[0].task_id in orphan_ids
     assert violated[0].task_id in plan2.pending
+
+
+async def test_dirty_attempt_retries_on_other_seat_and_merges(git_sandbox_feature, three_seat_roster, noop_probe):
+    """A salvaged output with uncommitted changes gets one fresh-seat retry."""
+    worktree, feature_branch, base_path, _index_path = git_sandbox_feature
+    builder, fakes = make_builder({"nova": "dirty"})
+    engine = SddCoderEngine(
+        roster=three_seat_roster,
+        probe=noop_probe,
+        redis_url="redis://127.0.0.1:1/0",
+        worktree_base_path=str(base_path),
+        dispatcher_builder=builder,
+    )
+    plan = await engine.plan("FEAT-549", str(worktree))
+    task_id = plan.chunks[0].tasks[0].task_id
+
+    job = await engine.run_chunk("FEAT-549", str(worktree), [task_id])
+    done = await engine.wait(job.job_id, 30)
+
+    result = done.tasks[0]
+    assert result.outcome == "merged"
+    assert len(result.attempts) == 2
+    assert result.attempts[0].seat_label == "a"
+    assert result.attempts[1].seat_label == "b"
+    assert result.attempts[0].error.startswith("dirty_task_worktree:")
+    assert fakes["nova"].calls[0]["cwd"].endswith(f"{task_id}-a1")
+    assert fakes["google-compat"].calls[0]["cwd"].endswith(f"{task_id}-a2")
+
+    _rc, log, _err = await _git("log", "--oneline", feature_branch, cwd=worktree)
+    assert f"impl {task_id}" in log
 
 
 async def test_merge_conflict_leaves_feature_clean(git_sandbox_feature, three_seat_roster, noop_probe):

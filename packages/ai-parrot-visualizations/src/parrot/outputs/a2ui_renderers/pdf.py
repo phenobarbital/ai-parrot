@@ -112,6 +112,12 @@ class PDFRenderer(SSRHTMLRenderer):
 
     _UNSUPPORTED: frozenset[str] = frozenset({"Video", "AudioPlayer"})
 
+    #: weasyprint paginates this output itself, so the browser print sheet
+    #: must never be composed into it — declared on the CLASS because an
+    #: envelope can override the resolved layout name but not what this
+    #: renderer is.
+    PAGINATES: bool = True
+
     def __init__(self, *, theme: str = "light") -> None:
         """Initialize the renderer, ALWAYS composing with ``layout="print"``.
 

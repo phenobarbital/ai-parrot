@@ -53,14 +53,18 @@ def format_cell(value: Any, *, col_type: str | None, col_format: str | None = No
             library, not something this text-only renderer acts on.
 
     Returns:
-        The formatted display string. ``None`` always formats as ``""``,
-        regardless of type. A non-numeric type (or a value that fails
+        The formatted display string. ``None`` always formats as an em dash,
+        regardless of type: an empty cell in a printed table reads as a
+        number someone lost, while "—" says there is nothing to report. The
+        store rows with no scheduled visits are the case — they have no
+        completion rate because they have no denominator, not because the
+        figure went missing. A non-numeric type (or a value that fails
         numeric coercion) passes through as ``str(value)`` unmodified —
         a typed ``string`` column is NEVER comma-grouped or aligned, even
         if its value happens to look numeric (e.g. a zip code).
     """
     if value is None:
-        return ""
+        return "\u2014"
     if not is_numeric_column(col_type):
         return str(value)
     try:

@@ -15,7 +15,8 @@
         "metadata": {
           "extensions": {
             "parrot_role": "value",
-            "parrot_unit": "USD"
+            "parrot_unit": "USD",
+            "parrot_value_format": null
           }
         },
         "text": "1200"
@@ -25,6 +26,7 @@
         "metadata": {
           "extensions": {
             "parrot_role": "delta",
+            "parrot_sentiment": "good",
             "parrot_trend": "up"
           }
         },
