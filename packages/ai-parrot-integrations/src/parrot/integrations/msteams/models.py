@@ -52,6 +52,13 @@ class MSTeamsAgentConfig:
     jira_client_secret: Optional[str] = None
     jira_redirect_uri: Optional[str] = None
 
+    # FormDesigner card submissions — FEAT-551
+    # The bot forwards `_formdesigner` Action.Submit envelopes to POST .../forms/{uid}/data.
+    formdesigner_allowed_hosts: Optional[List[str]] = None   # None/[] disables the branch
+    formdesigner_submit_token: Optional[str] = None           # Authorization: Bearer (private forms)
+    formdesigner_submit_secret: Optional[str] = None          # HMAC secret; envelopes must carry a valid sig when set
+    formdesigner_submit_timeout: float = 15.0
+
     def __post_init__(self):
         """
         Resolve credentials and whitelists from environment variables if not provided.
@@ -74,6 +81,15 @@ class MSTeamsAgentConfig:
             self.jira_client_secret = config.get(f"{self.name.upper()}_JIRA_CLIENT_SECRET")
         if not self.jira_redirect_uri:
             self.jira_redirect_uri = config.get(f"{self.name.upper()}_JIRA_REDIRECT_URI")
+        # FormDesigner env fallbacks (FEAT-551)
+        if not self.formdesigner_submit_token:
+            self.formdesigner_submit_token = config.get(f"{self.name.upper()}_FORMDESIGNER_SUBMIT_TOKEN")
+        if not self.formdesigner_submit_secret:
+            self.formdesigner_submit_secret = config.get(f"{self.name.upper()}_FORMDESIGNER_SUBMIT_SECRET")
+        if not self.formdesigner_allowed_hosts:
+            raw_hosts = config.get(f"{self.name.upper()}_FORMDESIGNER_ALLOWED_HOSTS")
+            if raw_hosts:
+                self.formdesigner_allowed_hosts = [h.strip().lower() for h in str(raw_hosts).split(",") if h.strip()]
         # Resolve whitelists from env vars (comma-separated)
         name_upper = self.name.upper()
         if self.allowed_conversation_ids is None:
@@ -144,4 +160,9 @@ class MSTeamsAgentConfig:
             jira_client_id=data.get('jira_client_id'),
             jira_client_secret=data.get('jira_client_secret'),
             jira_redirect_uri=data.get('jira_redirect_uri'),
+            # FormDesigner (FEAT-551)
+            formdesigner_allowed_hosts=data.get('formdesigner_allowed_hosts'),
+            formdesigner_submit_token=data.get('formdesigner_submit_token'),
+            formdesigner_submit_secret=data.get('formdesigner_submit_secret'),
+            formdesigner_submit_timeout=float(data.get('formdesigner_submit_timeout', 15.0)),
         )
