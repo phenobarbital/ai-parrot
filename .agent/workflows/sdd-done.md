@@ -247,7 +247,13 @@ if [[ "$TYPE" != "hotfix" ]]; then
 
     TEMP_WORKTREE=".claude/worktrees/_ledger-snapshot-$$"
     git worktree add --detach "$TEMP_WORKTREE" "origin/$BASE_BRANCH" >/dev/null 2>&1
-    cleanup_snapshot_worktree() { git worktree remove --force "$TEMP_WORKTREE" >/dev/null 2>&1 || true; }
+    # No --force: the throwaway checkout only ever touches issues.jsonl, so
+    # restoring that one file leaves it clean and a plain remove succeeds
+    # (a detached, unpushed snapshot commit does not block `worktree remove`).
+    cleanup_snapshot_worktree() {
+        git -C "$TEMP_WORKTREE" restore --staged --worktree -- sdd/ledger/issues.jsonl >/dev/null 2>&1
+        git worktree remove "$TEMP_WORKTREE" >/dev/null 2>&1 || true
+    }
     trap cleanup_snapshot_worktree EXIT
 
     ATTEMPT=1
@@ -268,7 +274,8 @@ if [[ "$TYPE" != "hotfix" ]]; then
 
         # Rejected push: re-sync the throwaway worktree only, re-export, retry.
         git fetch origin "$BASE_BRANCH" >/dev/null 2>&1
-        git -C "$TEMP_WORKTREE" reset --hard "origin/$BASE_BRANCH" >/dev/null 2>&1
+        git -C "$TEMP_WORKTREE" restore --staged --worktree -- sdd/ledger/issues.jsonl >/dev/null 2>&1
+        git -C "$TEMP_WORKTREE" checkout -q --detach "origin/$BASE_BRANCH" >/dev/null 2>&1
         ATTEMPT=$((ATTEMPT + 1))
         if (( ATTEMPT > MAX_ATTEMPTS )); then
             echo "⚠️  Ledger snapshot push failed after $MAX_ATTEMPTS attempts — continuing without failing /sdd-done."
