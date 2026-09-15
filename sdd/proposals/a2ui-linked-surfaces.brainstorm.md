@@ -95,15 +95,22 @@ Decisions taken during discovery (all with the author, 2026-09-15):
   lane when no snapshot is present, and for scheduled delivery (FEAT-430).
   `UISurfaceRecord.refreshable` becomes `recipe_name is not None or
   has_data_sources`.
-- **One descriptor, two executors, one set of golden fixtures.** The DSL is
-  implemented in Python (reference) and in TypeScript (renderer); both must
-  pass the same JSON in/out fixtures.
-- **Transform DSL v1: nine declarative operations, no code.** `select`,
+- **One descriptor, one Python reference executor, N renderer executors,
+  one set of golden fixtures.** ai-parrot ships the Python executor, the
+  JSON Schema of the descriptor/DSL and the JSON in/out fixtures. It does
+  **not** ship a TypeScript executor for third parties: every renderer
+  (`navigator-frontend-next`, and the bundled `ai-parrot-server/ui`, which
+  implements its own as one renderer among others) writes its executor
+  against the published schema and must pass the same fixtures.
+- **Transform DSL v1: ten declarative operations, no code.** `select`,
   `rename`, `filter`, `group_by` (with `sum|avg|count|min|max`), `sort`,
   `limit`, `derive` (arithmetic between columns and constants only),
-  `pivot`, and `join` (`inner|left`, equality keys, `null` never matches,
+  `pivot`, `join` (`inner|left`, equality keys, `null` never matches,
   column collisions resolved by prefix, one join per step, between sources
-  of the same surface). LLM-generated code is **vetoed** in this version.
+  of the same surface) and `union` (concatenation by matching columns
+  across sources; this is how a `MultiQuerySlugSource` is expressed: N
+  descriptors plus a `union`). LLM-generated code is **vetoed** in this
+  version.
 - **Library input shapes are the renderer's job, not the DSL's.** Turning
   rows into ECharts pie pairs, gauge values, etc. happens in the renderer's
   adapter (today `a2ui-chart-adapter.ts`), consistent with viz-core's
@@ -112,7 +119,11 @@ Decisions taken during discovery (all with the author, 2026-09-15):
   a URL to a TypeScript module served by ai-parrot-server from a static,
   anonymously readable route, versioned (`<name>@<version>.js`) and pinned
   by an `integrity` (SRI) hash carried in the descriptor. `ref` transforms
-  are catalogued, never LLM-written.
+  are catalogued, never LLM-written. **Governance:** the static directory is
+  published per ai-parrot-server release together with a signed manifest
+  (`name@version` → integrity); the builder only accepts refs present in
+  the manifest; versions are retired by marking them `deprecated` in the
+  manifest, never by deleting the file.
 - **Only TOOL-origin builders may emit a descriptor.** A `ProducerOrigin.LLM`
   envelope carrying `parrot_data_sources` fails `validate_envelope` with a
   new code, mirroring D10b (`ACTION_NOT_ALLOWED_FOR_LLM`,
@@ -136,26 +147,49 @@ Decisions taken during discovery (all with the author, 2026-09-15):
   so the filter bar does not expose them; they are **not** a security
   barrier (a viewer could drop them). Security is QuerySource PBAC plus
   slug design. This must be documented in the wire doc.
-- **Snapshot is optional (agent decides).** When present it is the initial
-  `dataModel` (with `snapshot_at`); the renderer paints it and then applies
-  the refresh policy. Without it the renderer shows a loading state until
-  the first fetch, and the server-side lanes (HTML negotiation,
-  `bake_envelope`) must execute the descriptor first — `bake_envelope`
-  raises `BakeError` on any unresolved binding (`baking.py:140`).
+- **Snapshot is optional in chat, mandatory once persisted.** In a turn
+  response the agent decides; when present it is the initial `dataModel`
+  (with `snapshot_at`), capped at **500 rows per source** by the builder
+  (`max_snapshot_rows`, `snapshot_truncated: true` when cut), and the
+  renderer paints it before applying the refresh policy; without it the
+  renderer shows a loading state until the first fetch. **At save time**
+  (`POST /api/v1/ui/surfaces`, `publish_surface`) the server executes the
+  descriptor once with the owner's context if the envelope has sources but
+  no snapshot, and persists `dataModel` + `snapshot_at`. Consequently
+  `GET` (JSON and HTML) **never executes** anything — `bake_envelope`
+  (`baking.py:140`) always finds resolvable bindings — and only
+  `POST .../refresh` renews the snapshot.
 - **Refresh policy:** `on_mount` by default; `manual` and `interval`
-  optional. The renderer keeps "Filter" (local, over embedded rows,
-  §7.4 of the frontend reference) distinct from "Refresh" (re-fetch with
-  the current params).
+  optional. `interval` is clamped to a **30 s minimum**, paused while the
+  document is hidden and resumed with an immediate fetch. The renderer
+  keeps "Filter" (local, over embedded rows, §7.4 of the frontend
+  reference) distinct from "Refresh" (re-fetch with the current params).
+- **FilterBar carries params.** The existing `FilterBar` catalog component
+  is extended: a filter may declare `metadata.extensions.parrot_param =
+  {"source": "<key>", "name": "<param>"}`; with it a change re-fetches that
+  source (Refresh), without it the filter stays local (§7.4). One
+  component, one lowering.
+- **Share-token viewers** (FEAT-492) whose own credentials are denied by
+  QuerySource keep the last server-refreshed snapshot with a "data as of
+  `snapshot_at`" notice and a button for the server-side refresh
+  (`POST .../refresh`, owner context, which the share token already
+  permits). No automatic server refresh on their behalf.
+- **Tenant is renderer/session context, never descriptor content.** The
+  descriptor is tenant-agnostic; a renderer on a QuerySource FEAT-176
+  deployment resolves `/api/v1/{tenant}/queries/...` from the session.
 - **Never leak SQL.** Descriptors reference slugs only; QuerySource raw
   `query` mode is never allowed on the wire.
 - **Additive.** No change to existing envelopes, builders' outputs, the
   A2UI models, renderers or the ui_surfaces DDL beyond what is listed in
   Impact. Baked surfaces keep working exactly as today.
-- **Dependencies:** QuerySource `describe-queryslug` (FEAT-147 in
-  `../querysource`, 4.6.0: `describe`, `columns`, `vocabulary`, UDF keyword
-  fix for `date`-typed conditions) and ai-parrot **FEAT-567
-  `QuerySourceToolkit`** (`qs_describe`; no artifact exists yet — it must be
-  brainstormed and specified before this feature's `/sdd-task`).
+- **Dependencies and sequencing:** QuerySource `describe-queryslug`
+  (FEAT-147 in `../querysource`, 4.6.0: `describe`, `columns`, `vocabulary`,
+  UDF keyword fix for `date`-typed conditions) and ai-parrot **FEAT-567
+  `QuerySourceToolkit`** (`qs_describe`, `qs_columns`, `qs_vocabulary`,
+  `qs_run`; no artifact exists yet). Order agreed: QuerySource spec
+  approved → FEAT-567 brainstorm/spec (copies the JSON contracts) → this
+  feature's `/sdd-spec` citing FEAT-567 as a closed contract → `/sdd-task`
+  only after 4.6.0 is released and FEAT-567 is merged to `dev`.
 - Conventions: Pydantic v2 models, async I/O, `self.logger`, Google
   docstrings, `pytest` + `pytest-asyncio`, golden-file tests
   (`tests/outputs/a2ui/golden/`), conformance registration in
@@ -175,7 +209,7 @@ Four pieces, all additive:
    `locked: [names]`, `transform: TransformSpec | None`, `target` pointer,
    `snapshot_at`, `refresh: {"policy": "on_mount|manual|interval",
    "interval_seconds"}`) and `TransformSpec` (either `ops: [...]` inline or
-   `ref: {url, integrity}`), plus the nine `ops` models. JSON Schema is
+   `ref: {url, integrity}`), plus the ten `ops` models. JSON Schema is
    exported for the renderer. A surface-level validator (a new loop in
    `validate_envelope`, which today iterates components only) checks the
    extension, the `target` pointers against bindings, and the origin gate
@@ -194,20 +228,23 @@ Four pieces, all additive:
    `dsl.py`): fetch through `QuerySlugSource.fetch(**conditions)`
    (`sources/query_slug.py:122`), apply the DSL over a `pandas.DataFrame`,
    write into `dataModel[target]`. Wired into `UISurfacesHandler._refresh`
-   as a second path next to `RecipeRunner`, and into
-   `SurfaceNegotiationService` for the HTML lane when the surface has no
-   snapshot. `refreshable` widened. `PublishSurfaceTool` reports
-   `refreshable` accordingly.
-4. **TypeScript reference executor + renderer lane**: `a2ui-types.ts` gains
+   as a second path next to `RecipeRunner`, and into the save path
+   (`_pin_save` / `publish_surface`) to produce the snapshot when a linked
+   envelope arrives without one. `GET` lanes never execute. `refreshable`
+   widened. `PublishSurfaceTool` reports `refreshable` accordingly.
+4. **Published contract for renderers + the bundled UI's own executor**:
+   ai-parrot publishes the descriptor/DSL JSON Schema and the golden
+   fixtures (`tests/outputs/a2ui/golden/linked/`), and ai-parrot-server
+   serves `ref` transforms from a static route with a signed manifest.
+   `navigator-frontend-next` implements its executor from that contract.
+   The bundled `ai-parrot-server/ui` implements **its own** executor as one
+   more renderer (not a reference for anyone): `a2ui-types.ts` gains
    `CreateSurface.metadata`; a `linked/` module (fetch via
    `POST /api/v2/services/queries/{slug}` with the viewer's bearer, DSL
    executor, refresh scheduler, `ref` loader with SRI check) and an
    insertion point in `A2UISurface.svelte` (today a stateless renderer
-   with no fetch, `A2UISurface.svelte:12-30`). Shipped in the bundled
-   `ai-parrot-server/ui` as the reference implementation and validated
-   against the shared golden fixtures; `navigator-frontend-next` ports or
-   consumes it (open question on packaging). ai-parrot-server serves
-   `ref` transforms from a static route.
+   with no fetch, `A2UISurface.svelte:12-30`); `FilterBar` gets a branch
+   in `A2UINode.svelte` honouring `parrot_param`.
 
 ✅ **Pros:**
 - Matches every discovery decision; no change to the official wire shape
@@ -224,14 +261,19 @@ Four pieces, all additive:
   access, exactly like actions and inline data today.
 
 ❌ **Cons:**
-- Two executors of the same DSL (Python + TypeScript) must stay in parity;
-  the golden fixtures are the contract and they must be maintained.
+- Several executors of the same DSL (Python reference plus one per
+  renderer) must stay in parity; the golden fixtures are the contract and
+  they must be maintained with every DSL change.
 - Net-new frontend surface: the bundled UI has no API client for
-  QuerySource or ui_surfaces at all (`grep` → 0 hits in `ui/src`), so the
-  reference lane is written from scratch.
+  QuerySource or ui_surfaces at all (`grep` → 0 hits in `ui/src`), so its
+  lane is written from scratch.
 - Viewer-credential fetch means a shared surface (FEAT-492 share token)
   may render the snapshot but fail to refresh for a viewer without
-  `slug:execute`; the renderer must degrade gracefully (open question).
+  `slug:execute`; the renderer degrades to snapshot + notice + server-side
+  refresh button.
+- Saving a linked envelope without a snapshot makes `POST /api/v1/ui/surfaces`
+  execute the slug (owner context) — a write with a data-plane side effect,
+  bounded to save and refresh only.
 - Surface-level validation is a new concept in `validate_envelope`.
 
 📊 **Effort:** High
@@ -243,8 +285,8 @@ Four pieces, all additive:
 | `pandas` | Python DSL executor over `QuerySlugSource.fetch()` DataFrames | already a core dependency (DatasetManager) |
 | `querysource` (in-process `QS`) | server-side fetch | already used by `QuerySlugSource` (`lazy_import`, `sources/query_slug.py`) |
 | `jsonschema` | validate `parrot_data_sources` in the conformance suite | already used by `catalog.validate_message` |
-| Svelte 5 + TypeScript | reference renderer lane in `ai-parrot-server/ui` | existing bundled UI stack |
-| `aiohttp` static route | serve `ref` transform modules | already the server stack; SRI hash in descriptor |
+| Svelte 5 + TypeScript | the bundled UI's own renderer lane in `ai-parrot-server/ui` | existing bundled UI stack; not a reference for `navigator-frontend-next` |
+| `aiohttp` static route | serve `ref` transform modules + signed manifest | already the server stack; SRI hash in descriptor |
 
 🔗 **Existing Code to Reuse:**
 - `parrot/outputs/a2ui/builders.py:69` `build_surface` (needs `surface_metadata`), `:116` `build_chart`, `:137` `build_kpicard`, `:179` `build_datatable`, `:311` TOOL-origin precedent in `build_html_document`.
@@ -381,11 +423,12 @@ server-side lane inside A; on its own it does not meet the goal. Option D is
 worth keeping in mind for streaming KPIs, but it depends on a live session,
 which is the exact limitation FEAT-492 removed.
 
-What A trades off, knowingly: a DSL that must be kept in parity across
-Python and TypeScript (mitigated by shared golden fixtures and a small,
-closed operation set), and a frontend lane that this repo can only ship as
-a reference implementation in the bundled UI — the production renderer
-lives in `navigator-frontend-next`.
+What A trades off, knowingly: a DSL that must be kept in parity across the
+Python reference and every renderer's executor (mitigated by the published
+JSON Schema, the shared golden fixtures and a small, closed operation set),
+and the fact that this repo does not ship a TypeScript executor for third
+parties — the production renderer lives in `navigator-frontend-next` and
+implements its own; the bundled UI implements one as well, for itself.
 
 ---
 
@@ -460,17 +503,26 @@ A fetch denied by QuerySource (404, PBAC) keeps the snapshot on screen with
 a non-blocking notice; without a snapshot the widget shows an access
 message.
 
-**For persistence (FEAT-492).** "Pin" saves the envelope as today. The
-surface is `refreshable` because it has data sources; `POST
+**For persistence (FEAT-492).** "Pin" saves the envelope; if it carries
+sources but no snapshot, the server executes the descriptor once (owner
+context) and stores the snapshot with it, so every persisted linked surface
+has one. The surface is `refreshable` because it has data sources; `POST
 /api/v1/ui/surfaces/{id}/refresh` (owner context, share tokens included)
 runs the Python executor, updates `dataModel` and `snapshot_at` in place,
-and answers negotiated JSON/HTML. `GET ...?format=html` on a surface
-without a snapshot executes the descriptor first.
+and answers negotiated JSON/HTML. `GET` (JSON or `?format=html`) only reads.
+
+**For a share-token viewer.** The snapshot renders; the on-mount fetch runs
+with the viewer's own credentials. If QuerySource denies it, the snapshot
+stays with a "data as of `snapshot_at`" notice and a "Refresh on server"
+button that calls `POST .../refresh`.
 
 **For a dashboard.** Two slugs → two entries under `parrot_data_sources`
 (each with its own params and refresh policy) → KPI cards, charts and a
 `DataTable` bound to either; a `join` step in one source's transform may
-reference the other source by key.
+reference the other source by key, and a `union` concatenates sources with
+matching columns (how a `MultiQuerySlugSource` is expressed). Filters in a
+`FilterBar` that declare `parrot_param` re-fetch their source; the others
+filter locally.
 
 **`transform.ref`.** `{"ref": {"url": "/static/a2ui/transforms/group_by_day@1.0.0.js",
 "integrity": "sha384-…"}}` loads a catalogued module served by
@@ -479,16 +531,18 @@ integrity mismatch and falls back to the snapshot.
 
 ### Internal Behavior
 
-1. **Models and schema.** `LinkedDataSource`, `TransformSpec`, the nine op
+1. **Models and schema.** `LinkedDataSource`, `TransformSpec`, the ten op
    models and `RefreshPolicy` as Pydantic v2 in
    `parrot/outputs/a2ui/linked/models.py`; `export_json_schema()` writes
-   the schema consumed by the TypeScript side and by the conformance suite.
+   the schema published for renderers and used by the conformance suite.
+   `interval_seconds` validates `>= 30`.
 2. **Validation.** `validate_envelope` grows a surface-level pass: parse
    `metadata.extensions.parrot_data_sources` into the models; every
    `target` must be an absolute pointer whose root key exists in
    `dataModel` **or** is referenced by at least one binding; `locked` ⊆
    `params`; `join.with` must name another source of the same surface;
-   `kind` ∈ {`query_slug`}; `origin is LLM` → `DATA_SOURCES_NOT_ALLOWED_FOR_LLM`.
+   `kind` ∈ {`query_slug`}; `transform.ref` must match an entry of the
+   transforms manifest; `origin is LLM` → `DATA_SOURCES_NOT_ALLOWED_FOR_LLM`.
    Issues are reported all at once, like today.
 3. **Builder.** `build_surface(..., surface_metadata=SurfaceMetadata | None)`;
    `build_linked_surface(components, sources, *, snapshot, surface_id)`
@@ -499,10 +553,12 @@ integrity mismatch and falls back to the snapshot.
    `LinkedSurfaceToolkit(AbstractToolkit)`): `build_linked_surface(...)`
    (LLM-callable) resolves the source from `DatasetManager` (`entry.query_slug`,
    `permanent_filter` → `locked`, `column_types`) or from the last
-   `QSourceTool` result; calls FEAT-567 `qs_describe` for `params`; runs
-   the Python executor once when `snapshot=True`; returns the envelope in
-   the same shape `structured_chart` responses use (`a2ui_envelope` +
-   `artifacts[]`, FEAT-473 dual emission).
+   `QSourceTool` result; a `MultiQuerySlugSource` expands to N descriptors
+   plus a `union` step; calls FEAT-567 `qs_describe` for `params`; runs
+   the Python executor once when `snapshot=True` and caps the snapshot at
+   `max_snapshot_rows` (500); returns the envelope in the same shape
+   `structured_chart` responses use (`a2ui_envelope` + `artifacts[]`,
+   FEAT-473 dual emission).
 5. **Python executor** (`linked/executor.py`, `linked/dsl.py`): for each
    source, merge `conditions` with call-time param overrides (locked keys
    cannot be overridden), fetch through `QuerySlugSource(slug).fetch(**conds)`
@@ -512,25 +568,30 @@ integrity mismatch and falls back to the snapshot.
    pulls the other source's already-executed frame. Pure functions; no LLM.
 6. **ui_surfaces integration.** `UISurfaceRecord.refreshable` →
    `recipe_name is not None or _has_data_sources(envelope)`; `_refresh`
-   dispatches on which one is present (recipe first when both);
-   `SurfaceNegotiationService._respond_html` executes the descriptor when
-   the envelope has sources but no snapshot; `PublishSurfaceTool` returns
-   `refreshable` from the record.
-7. **Static transforms route.** ai-parrot-server serves
-   `/static/a2ui/transforms/<name>@<version>.js` from a configured
-   directory, anonymous, immutable cache headers; a manifest endpoint
-   lists names, versions and integrity hashes for the builder to embed.
-8. **Reference renderer lane** (bundled UI): `a2ui-types.ts` adds
-   `metadata?: {extensions?: Record<string, unknown>}` to `CreateSurface`;
-   `linked/` module = descriptor parsing, `fetchSource()` (QuerySource
-   client with bearer from `auth-headers.ts`), `applyTransform()`
-   (DSL executor), `RefreshScheduler`, `loadRef()` with SRI; `A2UISurface.svelte`
-   becomes stateful over `dataModel` and mounts the lane when
-   `parrot_data_sources` is present. Golden fixtures are loaded by the TS
-   tests from the Python `golden/linked/` directory.
-9. **Docs.** `parrot_data_sources` row in the `docs/outputs/a2ui-v1.md`
-   extension table; a new section in the frontend reference (§6.5 linked
-   surfaces; §7.4 amended: Filter vs Refresh vs Reload).
+   dispatches on which one is present (recipe first when both); the save
+   path (`_pin_save`, `publish_surface`) executes the descriptor with the
+   owner's context when a linked envelope has no snapshot and persists the
+   result; `GET`/HTML negotiation never executes; `PublishSurfaceTool`
+   returns `refreshable` from the record.
+7. **Static transforms route + manifest.** ai-parrot-server serves
+   `/static/a2ui/transforms/<name>@<version>.js` from a directory published
+   per release, anonymous, immutable cache headers, plus a signed
+   `manifest.json` (`name@version` → integrity, `deprecated` flag). The
+   builder embeds the integrity from the manifest and rejects unknown refs.
+8. **Bundled UI executor** (`ai-parrot-server/ui`, its own renderer lane):
+   `a2ui-types.ts` adds `metadata?: {extensions?: Record<string, unknown>}`
+   to `CreateSurface`; `linked/` module = descriptor parsing,
+   `fetchSource()` (QuerySource client with bearer from `auth-headers.ts`,
+   tenant base URL from session), `applyTransform()` (DSL executor),
+   `RefreshScheduler` (30 s clamp, `visibilitychange` pause/resume),
+   `loadRef()` with SRI; `A2UISurface.svelte` becomes stateful over
+   `dataModel` and mounts the lane when `parrot_data_sources` is present;
+   `A2UINode.svelte` gains a `FilterBar` branch honouring `parrot_param`.
+   Its tests load the Python `golden/linked/` fixtures.
+9. **Docs.** `parrot_data_sources` and `parrot_param` rows in the
+   `docs/outputs/a2ui-v1.md` extension table; a new section in the
+   frontend reference (§6.5 linked surfaces, executor contract = schema +
+   fixtures; §7.4 amended: Filter vs Refresh vs Reload).
 
 ### Edge Cases & Error Handling
 
@@ -540,8 +601,10 @@ integrity mismatch and falls back to the snapshot.
 - **Slug unknown / viewer denied at fetch time** → renderer keeps the
   snapshot and shows a notice; server-side refresh maps `RuntimeError`
   from `QuerySlugSource.fetch` to `502` (data stage) like the recipe path.
-- **No snapshot and HTML lane** → executor runs first; on failure the HTML
-  lane answers `502` with the same envelope as the refresh path.
+- **Save without snapshot** → the save path executes the descriptor; on
+  failure the save answers `502` (data stage) with the same envelope as the
+  refresh path and nothing is persisted. `GET` lanes never execute, so an
+  HTML render always has a snapshot.
 - **Locked key overridden in a refresh request** → ignored with a warning
   in the response (`ignored_params`).
 - **Transform errors** (missing column, type mismatch in `derive`, join key
@@ -551,18 +614,23 @@ integrity mismatch and falls back to the snapshot.
   `warnings` (server).
 - **`ref` integrity mismatch or fetch failure** → transform skipped,
   snapshot shown, error surfaced; never executes unverified code.
-- **Interval policy** → minimum interval enforced by the renderer (open
-  question); paused when the tab is hidden.
+- **Interval policy** → 30 s minimum enforced by both the model validator
+  and the renderer; paused on `document.hidden`, immediate fetch on resume.
 - **Relative-date keywords in a typed `date` param** depend on the
   QuerySource UDF fix shipping in 4.6.0; until then the builder emits
   absolute dates and marks `accepts_keywords: false`.
 - **Large results** → the DSL executor works in memory; the builder caps
-  a *snapshot* to a configurable row count with `snapshot_truncated: true`
-  (the live fetch is not capped; QuerySource `querylimit` may be part of
-  `conditions`).
+  a *snapshot* at 500 rows per source (`max_snapshot_rows`) with
+  `snapshot_truncated: true` (the live fetch is not capped; QuerySource
+  `querylimit` may be part of `conditions`).
 - **Share-token viewers** (FEAT-492) fetch with their own credentials; if
-  denied they see the last server-refreshed snapshot, which is why the
-  owner-context server refresh stays available.
+  denied they see the last server-refreshed snapshot with a notice and a
+  server-side refresh button (owner context); no automatic server refresh.
+- **Multi-tenant deployments** → the descriptor carries no tenant; the
+  renderer derives the QuerySource base path from the session.
+- **`ref` not in manifest / deprecated** → builder refuses at build time;
+  a renderer meeting a deprecated ref still executes it (integrity holds)
+  and logs a deprecation warning.
 
 ---
 
@@ -570,16 +638,16 @@ integrity mismatch and falls back to the snapshot.
 
 ### New Capabilities
 - `a2ui-linked-data-sources`: the `parrot_data_sources` surface extension, its Pydantic/JSON-Schema models, surface-level validation and the TOOL-origin gate.
-- `a2ui-transform-dsl`: the nine-operation declarative DSL with Python (reference) and TypeScript executors and shared golden fixtures; `transform.ref` static module serving with SRI.
-- `linked-surface-builder`: `build_linked_surface` + `surface_metadata` on `build_surface`; `LinkedSurfaceToolkit` for agents (DatasetManager / QSourceTool metadata → descriptor; `qs_describe` → params).
-- `linked-surface-python-executor`: server-side fetch + transform behind FEAT-492 refresh and the HTML lane.
-- `a2ui-linked-renderer-lane`: reference Svelte lane in the bundled UI (QuerySource client, refresh scheduler, filter bar from params).
+- `a2ui-transform-dsl`: the ten-operation declarative DSL (incl. `join` and `union`) with the Python reference executor, the published JSON Schema and the golden fixtures every renderer executor must pass; `transform.ref` static module serving with SRI and a signed manifest.
+- `linked-surface-builder`: `build_linked_surface` + `surface_metadata` on `build_surface`; `LinkedSurfaceToolkit` for agents (DatasetManager / QSourceTool metadata → descriptor; `MultiQuerySlugSource` → N sources + `union`; `qs_describe` → params; 500-row snapshot cap).
+- `linked-surface-python-executor`: server-side fetch + transform behind FEAT-492 refresh and the save path (snapshot on pin/publish).
+- `a2ui-linked-bundled-ui-lane`: the bundled UI's own executor (QuerySource client, DSL, refresh scheduler with 30 s clamp, `FilterBar` `parrot_param`, share-denied degradation).
 
 ### Modified Capabilities
-- `a2ui-surface-rehydration` (FEAT-492, `sdd/specs/a2ui-surface-rehydration.spec.md`): `refreshable` widened; `_refresh` gains the descriptor path; HTML negotiation may execute the descriptor.
-- `a2ui-v1-dialect` (FEAT-470): new extension key documented; `validate_envelope` gains a surface-level pass and a new error code.
+- `a2ui-surface-rehydration` (FEAT-492, `sdd/specs/a2ui-surface-rehydration.spec.md`): `refreshable` widened; `_refresh` gains the descriptor path; the save path produces the snapshot when missing; `GET` never executes.
+- `a2ui-v1-dialect` (FEAT-470): new extension keys (`parrot_data_sources`, `parrot_param`) documented; `validate_envelope` gains a surface-level pass and a new error code.
 - `a2ui-v1-structured-outputs` (FEAT-473): linked envelopes emitted with the same dual-emission shape.
-- `html-renderer-design-system` (FEAT-493, `FilterBar`): parameter-driven filter bar contract (Filter vs Refresh) — see Open Questions.
+- `html-renderer-design-system` (FEAT-493, `FilterBar`): filters may carry `parrot_param` (re-fetch) next to local filtering.
 
 ---
 
@@ -595,15 +663,16 @@ integrity mismatch and falls back to the snapshot.
 | `packages/ai-parrot-tools/src/parrot_tools/linked_surfaces.py` | new | `LinkedSurfaceToolkit` (`build_linked_surface`) |
 | `packages/ai-parrot-tools/src/parrot_tools/ui_surfaces.py` | modifies | `refreshable` from record instead of `recipe_name is not None` |
 | `packages/ai-parrot-server/src/parrot/handlers/models/ui_surfaces.py` | modifies | `refreshable` property |
-| `packages/ai-parrot-server/src/parrot/handlers/ui_surfaces.py` | extends | descriptor refresh path; HTML lane execution when no snapshot |
-| ai-parrot-server static route + manifest for `ref` transforms | new | `/static/a2ui/transforms/<name>@<ver>.js`, anonymous, SRI |
-| `packages/ai-parrot-server/ui/src/lib/components/agents/canvas/a2ui/` (`a2ui-types.ts`, `A2UISurface.svelte`, new `linked/`) | extends / new | reference renderer lane |
+| `packages/ai-parrot-server/src/parrot/handlers/ui_surfaces.py` | extends | descriptor refresh path; snapshot production on save when missing; `GET` untouched |
+| `parrot/outputs/a2ui/catalog/parrot/filterbar.py` | extends | `parrot_param` extension on filters (schema + lowering pass-through) |
+| ai-parrot-server static route + signed manifest for `ref` transforms | new | `/static/a2ui/transforms/<name>@<ver>.js` + `manifest.json`, anonymous, SRI, `deprecated` flag |
+| `packages/ai-parrot-server/ui/src/lib/components/agents/canvas/a2ui/` (`a2ui-types.ts`, `A2UISurface.svelte`, `A2UINode.svelte`, new `linked/`) | extends / new | the bundled UI's own executor lane |
 | `packages/ai-parrot-server/ui/src/lib/api/` | new | QuerySource client (`services/queries`) with bearer |
 | `tests/outputs/a2ui/golden/linked/`, `tests/outputs/a2ui/conformance/test_all_emitters.py` | new / extends | DSL fixtures (shared with TS tests); conformance registration of `build_linked_surface` |
 | `docs/outputs/a2ui-v1.md`, `docs/frontend/agentdashboard-a2ui-reference.md` | modifies | extension table; §6.5 linked surfaces; §7.4 Filter/Refresh/Reload |
 | FEAT-567 `QuerySourceToolkit.qs_describe` (ai-parrot, not yet written) | depends on | params contract; must be specified before `/sdd-task` here |
 | QuerySource `describe-queryslug` (FEAT-147, `../querysource`, 4.6.0) | depends on | `describe`, `columns`, `vocabulary`, UDF keyword fix |
-| `navigator-frontend-next` (external) | consumer | production renderer; ports/consumes the reference lane |
+| `navigator-frontend-next` (external) | consumer | production renderer; implements its own executor from the published JSON Schema + golden fixtures (no TS shipped from this repo) |
 
 No breaking changes. No new Python runtime dependency.
 
@@ -790,7 +859,7 @@ from parrot.handlers.models.ui_surfaces import UISurfaceRecord, UISurfaceKind   
 
 ## Parallelism Assessment
 
-- **Internal parallelism**: high. Five strands are independent until integration: (1) descriptor + DSL models + JSON Schema + Python DSL executor with golden fixtures; (2) builder + `surface_metadata` + surface-level validation + conformance registration; (3) `LinkedSurfaceToolkit` in `parrot_tools` (blocked on FEAT-567 for `qs_describe`, can stub); (4) ui_surfaces refresh/HTML integration + static `ref` route (server package); (5) reference renderer lane in the bundled UI (TypeScript executor validated against the same fixtures). Docs last.
+- **Internal parallelism**: high. Five strands are independent until integration: (1) descriptor + DSL models + JSON Schema + Python DSL executor with golden fixtures; (2) builder + `surface_metadata` + surface-level validation + conformance registration; (3) `LinkedSurfaceToolkit` in `parrot_tools` (blocked on FEAT-567 for `qs_describe`, can stub); (4) ui_surfaces refresh/save integration + static `ref` route and signed manifest (server package); (5) the bundled UI's own executor lane (validated against the same fixtures). Docs last.
 - **Cross-feature independence**: no in-flight ai-parrot spec touches `outputs/a2ui/linked/` or the builders' surface metadata. Shared files: `handlers/ui_surfaces.py` and `handlers/models/ui_surfaces.py` (FEAT-535 visibility landed; FEAT-492 complete), `catalog/__init__.py` (any concurrent catalog work), `a2ui-types.ts`/`A2UISurface.svelte` (FEAT-527 bundled-UI work, complete). External hard dependencies: QuerySource 4.6.0 (`describe`, `vocabulary`, keyword fix) and FEAT-567.
 - **Recommended isolation**: `mixed`.
 - **Rationale**: strands 1, 2 and 5 are self-contained modules with their own tests and can run in separate worktrees; strand 4 touches the shared server handler and should be one sequential task; strand 3 must wait for FEAT-567's `qs_describe` contract. The whole feature's `/sdd-task` should not start before FEAT-567 is at least specified and QuerySource's spec is approved.
@@ -802,20 +871,20 @@ from parrot.handlers.models.ui_surfaces import UISurfaceRecord, UISurfaceKind   
 - [x] Flow type and base branch — *Owner: Jesus Lara*: `feature`, base `dev`.
 - [x] Where the descriptor lives — *Owner: Jesus Lara*: surface-level `metadata.extensions.parrot_data_sources`; components bind by `path`; any surface, not only widgets.
 - [x] Fetch path for the renderer — *Owner: Jesus Lara*: directly to QuerySource `POST /api/v2/services/queries/{slug}` with the viewer's JWT; no ai-parrot-server proxy. Python executor only for server-side lanes.
-- [x] Transform DSL scope — *Owner: Jesus Lara*: nine ops incl. `join` (`inner|left`, equality keys, nulls never match, prefix on collision); no LLM-generated code; library input shapes (pie pairs) belong to the renderer.
+- [x] Transform DSL scope — *Owner: Jesus Lara*: ten ops incl. `join` and `union` (added when resolving the `MultiQuerySlugSource` question) (`inner|left`, equality keys, nulls never match, prefix on collision); no LLM-generated code; library input shapes (pie pairs) belong to the renderer.
 - [x] `transform.ref` in v1 — *Owner: Jesus Lara*: yes, URL to a TypeScript module served by ai-parrot-server from a static, anonymously readable route, pinned by an `integrity` (SRI) hash; inline `ops` remains the rule.
 - [x] Who may emit a descriptor — *Owner: Jesus Lara*: TOOL-origin builders only; LLM-origin envelopes fail `validate_envelope` (`DATA_SOURCES_NOT_ALLOWED_FOR_LLM`).
 - [x] Refresh policy and persisted surfaces — *Owner: Jesus Lara*: `on_mount` default (`manual`/`interval` optional); `refreshable = recipe_name or data_sources`; `POST .../refresh` runs the Python executor with the owner's context.
 - [x] `locked` conditions — *Owner: Jesus Lara*: UX hint only; security is QuerySource PBAC + slug design; documented as such.
-- [x] Snapshot — *Owner: Jesus Lara*: optional, the agent decides; server-side lanes execute the descriptor when absent.
+- [x] Snapshot — *Owner: Jesus Lara*: optional in chat (the agent decides); mandatory once persisted — the save path produces it with the owner's context when missing; `GET` never executes.
 - [x] Relative dates — *Owner: Jesus Lara*: QuerySource keyword vocabulary as condition values (`TODAY`, `FDOM`, ...), discovered through `describe`/`vocabulary`; no placeholder grammar.
-- [ ] Packaging of the TypeScript executor for `navigator-frontend-next`: port the bundled-UI reference module, publish it as an npm package from this repo, or generate it from the JSON Schema + fixtures only? — *Owner: Jesus Lara*
-- [ ] FilterBar ↔ params contract: extend the `FilterBar` catalog component with a `parrot_param` binding so one component serves both local filtering (§7.4) and re-fetch params, or introduce a distinct `ParamBar`? — *Owner: Jesus Lara*
-- [ ] Minimum `interval` for the `interval` refresh policy and behaviour on hidden tabs (proposal: 30 s minimum, paused when hidden). — *Owner: Jesus Lara*
-- [ ] Snapshot row cap when the agent opts in (proposal: 500 rows per source, `snapshot_truncated: true`). — *Owner: Jesus Lara*
-- [ ] Share-token viewers (FEAT-492) denied by QuerySource at fetch time: keep the last server-refreshed snapshot silently, show a notice, or trigger a server-side refresh on their behalf (owner context) automatically? — *Owner: Jesus Lara*
-- [ ] Multi-tenant slugs (QuerySource FEAT-176 `/api/v1/{tenant}/queries/...`): does the descriptor carry `tenant`, or is it renderer/session context? — *Owner: Jesus Lara*
-- [ ] `ref` transform catalogue governance: who publishes modules to the static directory, how versions are retired, and whether the builder may only reference names present in the manifest. — *Owner: Jesus Lara*
-- [ ] Does `build_linked_surface` accept a `MultiQuerySlugSource` (several slugs concatenated) as one source, or is that expressed as N sources + `join`/union in the DSL (v1 has no `union` op)? — *Owner: Jesus Lara*
-- [ ] Should the HTML lane refuse (`409`) rather than execute the descriptor for surfaces without a snapshot, to keep `GET` side-effect free? — *Owner: Jesus Lara*
-- [ ] FEAT-567 sequencing: brainstorm `QuerySourceToolkit` (with `qs_describe`, `qs_columns`, `qs_vocabulary`, `qs_run`) right after the QuerySource spec is approved, before this feature's `/sdd-spec`? — *Owner: Jesus Lara*
+- [x] TypeScript executor for `navigator-frontend-next` — *Owner: Jesus Lara*: ai-parrot ships no TypeScript for third parties; it publishes the descriptor/DSL JSON Schema and the golden fixtures, and each renderer implements its own executor against them. The bundled `ai-parrot-server/ui` implements its own executor too, as one renderer among others (not a reference).
+- [x] FilterBar ↔ params contract — *Owner: Jesus Lara*: extend `FilterBar`; a filter with `metadata.extensions.parrot_param = {source, name}` re-fetches that source, without it the filter stays local (§7.4). No `ParamBar`.
+- [x] `interval` refresh policy — *Owner: Jesus Lara*: 30 s minimum (model validator + renderer clamp), paused while `document.hidden`, immediate fetch on resume.
+- [x] Snapshot row cap — *Owner: Jesus Lara*: 500 rows per source (`max_snapshot_rows`), `snapshot_truncated: true` when cut; the live fetch is not capped.
+- [x] Share-token viewers denied by QuerySource — *Owner: Jesus Lara*: keep the last server-refreshed snapshot with a "data as of `snapshot_at`" notice and a server-side refresh button (owner context); no automatic server refresh.
+- [x] Multi-tenant slugs (QuerySource FEAT-176) — *Owner: Jesus Lara*: the descriptor is tenant-agnostic; the renderer derives the tenant base path from the session.
+- [x] `ref` transform catalogue governance — *Owner: Jesus Lara*: static directory published per ai-parrot-server release with a signed `manifest.json` (`name@version` → integrity); the builder only accepts refs present in the manifest; retirement = `deprecated` flag in the manifest, files are never deleted.
+- [x] `MultiQuerySlugSource` — *Owner: Jesus Lara*: N descriptors plus a tenth DSL operation `union` (concatenation by matching columns); no `multi_query_slug` kind.
+- [x] HTML lane without snapshot — *Owner: Jesus Lara*: never happens for persisted surfaces: the save path (`POST /api/v1/ui/surfaces`, `publish_surface`) executes the descriptor once with the owner's context when the snapshot is missing and persists it; `GET` (JSON/HTML) never executes. In chat responses the snapshot stays optional.
+- [x] FEAT-567 sequencing — *Owner: Jesus Lara*: brainstorm/spec `QuerySourceToolkit` (`qs_describe`, `qs_columns`, `qs_vocabulary`, `qs_run`) right after the QuerySource `describe-queryslug` spec is approved and before this feature's `/sdd-spec`, which will cite it as a closed contract.
