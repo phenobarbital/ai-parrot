@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "feat_id": "FEAT-567",
+  "feat_id": "FEAT-558",
   "mode": "enrichment",
   "summary_oneline": "Replace the single QSourceTool with a tenant-scoped QuerysourceToolkit that lists/describes/executes query-slugs and lists/validates/runs/saves MultiQuery pipelines, with a generated conditions-dialect reference for the LLM.",
   "localization": [

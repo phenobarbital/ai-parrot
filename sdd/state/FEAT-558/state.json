@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "feat_id": "FEAT-567",
+  "feat_id": "FEAT-558",
   "feature_slug": "querysource-toolkit-refactor",
   "started_at": "2026-09-15T00:21:56Z",
   "updated_at": "2026-09-15T03:05:00Z",
@@ -9,7 +9,7 @@
     "jira_key": null,
     "jira_url": null,
     "file_path": null,
-    "raw_path": "sdd/state/FEAT-567/source.md",
+    "raw_path": "sdd/state/FEAT-558/source.md",
     "fetched_at": "2026-09-15T00:21:56Z",
     "summary_oneline": "Refactor QSSourceTool into a tenant-scoped QuerysourceToolkit that explains, lists, inspects and executes query-slugs and MultiQuery pipelines."
   },
@@ -29,7 +29,7 @@
       "queries_total": 19,
       "approved_by_user": true,
       "edited_by_user": false,
-      "plan_path": "sdd/state/FEAT-567/research_plan.json",
+      "plan_path": "sdd/state/FEAT-558/research_plan.json",
       "completed_at": "2026-09-15T02:30:00Z",
       "duration_seconds": 300
     },
@@ -52,7 +52,7 @@
       "started_at": "2026-09-15T02:55:00Z",
       "completed_at": "2026-09-15T03:00:00Z",
       "duration_seconds": 300,
-      "synthesis_path": "sdd/state/FEAT-567/synthesis.json",
+      "synthesis_path": "sdd/state/FEAT-558/synthesis.json",
       "thinking_path": null,
       "overall_confidence": "medium",
       "claims_total": 10,
@@ -100,7 +100,7 @@
   "errors": [],
   "resume_hint": {
     "next_phase": "sdd-spec",
-    "next_action": "Run /sdd-spec FEAT-567 (reserves the ledger id) using the proposal."
+    "next_action": "Run /sdd-spec FEAT-558 (reserves the ledger id) using the proposal."
   },
-  "notes": "FEAT-567 is PROVISIONAL (max existing sdd/state id + 1). The ledger id is reserved by /sdd-spec via reserve_ids.py."
+  "notes": "FEAT-558 reserved by /sdd-spec via reserve_ids.py on 2026-09-15; was provisional FEAT-567 during /sdd-proposal."
 }

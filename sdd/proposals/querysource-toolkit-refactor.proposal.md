@@ -1,5 +1,5 @@
 ---
-id: FEAT-567
+id: FEAT-558
 title: QuerysourceToolkit — tenant-scoped toolkit that lists, describes and executes query-slugs and lists, validates, runs and saves MultiQuery pipelines, replacing QSourceTool
 slug: querysource-toolkit-refactor
 type: feature
@@ -13,24 +13,24 @@ source:
   summary_oneline: Refactor QSSourceTool into a tenant-scoped QuerysourceToolkit that explains, lists, inspects and executes query-slugs and MultiQuery pipelines.
 overall_confidence: medium
 base_branch: dev
-research_state: sdd/state/FEAT-567/
+research_state: sdd/state/FEAT-558/
 created: 2026-09-15
 updated: 2026-09-15
-id_note: FEAT-567 is PROVISIONAL (max existing sdd/state id + 1); the ledger id is reserved by /sdd-spec via reserve_ids.py.
+id_note: FEAT-558 reserved via reserve_ids.py on 2026-09-15 (was provisional FEAT-567 during /sdd-proposal).
 ---
 
-# FEAT-567 — QuerysourceToolkit: tenant-scoped query-slug and MultiQuery tools for agents
+# FEAT-558 — QuerysourceToolkit: tenant-scoped query-slug and MultiQuery tools for agents
 
 > **Mode**: enrichment
 > **Confidence**: medium
 > **Source**: `inline` (user brief, Spanish)
-> **Audit**: [`sdd/state/FEAT-567/`](../state/FEAT-567/)
+> **Audit**: [`sdd/state/FEAT-558/`](../state/FEAT-558/)
 
 ---
 
 ## 0. Origin
 
-The original request, preserved verbatim in `sdd/state/FEAT-567/source.md`. Excerpt:
+The original request, preserved verbatim in `sdd/state/FEAT-558/source.md`. Excerpt:
 
 > Querysource (…) es una libreria que permite registrar en una tabla en postgres (public.queries) queries parametrizables a diferentes bases de datos (…) necesitamos actualizar el Tool que actualmente invoca el componente interno QS() de Querysource para darle a un agente la capacidad de: 1. entender el dialecto de filtrado JSON de querysource 2. invocar query-slugs (…) con distintas condiciones de filtrado (…) recientemente incorporamos "MultiQuery", es un JSON pipeline (…) debemos hacer un refactor del current QSSourceTool y convertirlo en un Toolkit (QuerysourceToolkit) que: 1. permita al LLM "consultar" qué query invoca un query-slug 2. permitir que ejecute un query-slug con las condiciones indicadas (…) 3. permitir listar los query-slugs existentes 4. listar los componentes soportados por multi-query 5. invocar multi-queries 6. usar la API de MultiQuery para que el propio LLM pueda crear multi-queries. Todas estas tools del Toolkit deberían poder restringirse por tenant (…) "program_slug" (…) por ejemplo Pokemon.
 
@@ -50,7 +50,7 @@ The current `QSourceTool` (`packages/ai-parrot-tools/src/parrot_tools/qsource.py
 
 ## 2. Codebase Findings
 
-> All entries are grounded in `sdd/state/FEAT-567/findings/`. Paths under `.venv/...` are the installed querysource 4.5.11; two entries cite GitHub source because the wheel ships only compiled parsers.
+> All entries are grounded in `sdd/state/FEAT-558/findings/`. Paths under `.venv/...` are the installed querysource 4.5.11; two entries cite GitHub source because the wheel ships only compiled parsers.
 
 ### 2.1 Localization
 
@@ -196,12 +196,12 @@ Distribution: **8** high, **2** medium, **0** low.
 
 ## 6. Recommended Next Step
 
-**`/sdd-spec FEAT-567`** — *Rationale*: the architecture is settled (an `AbstractToolkit` mirroring `DatabaseQueryToolkit`, in-process querysource calls, allowlist tenancy); the remaining items are spec-level decisions (version pin, result shape), not architectural forks. The spec must re-verify the dialect (C4) against the pinned querysource tag and reserve the real FEAT id.
+**`/sdd-spec FEAT-558`** — *Rationale*: the architecture is settled (an `AbstractToolkit` mirroring `DatabaseQueryToolkit`, in-process querysource calls, allowlist tenancy); the remaining items are spec-level decisions (version pin, result shape), not architectural forks. The spec must re-verify the dialect (C4) against the pinned querysource tag and reserve the real FEAT id.
 
 ### Alternatives
 
-- **`/sdd-brainstorm FEAT-567`** — only if you want to explore per-call tenant derivation (`UserSession.tenant_id`) or a REST-backed catalog as first-class alternatives.
-- **`/sdd-task FEAT-567`** — not suitable: this is a multi-file feature (package, models, dialect reference, tests, registry regeneration).
+- **`/sdd-brainstorm FEAT-558`** — only if you want to explore per-call tenant derivation (`UserSession.tenant_id`) or a REST-backed catalog as first-class alternatives.
+- **`/sdd-task FEAT-558`** — not suitable: this is a multi-file feature (package, models, dialect reference, tests, registry regeneration).
 - **Manual review** — not needed; research was not truncated.
 
 ---
@@ -210,11 +210,11 @@ Distribution: **8** high, **2** medium, **0** low.
 
 | Artifact | Path |
 |----------|------|
-| State checkpoints | `sdd/state/FEAT-567/state.json` |
-| Source (raw) | `sdd/state/FEAT-567/source.md` |
-| Research plan | `sdd/state/FEAT-567/research_plan.json` |
-| Findings (digests) | `sdd/state/FEAT-567/findings/F001-*.md` … `F015-*.md` |
-| Synthesis (JSON) | `sdd/state/FEAT-567/synthesis.json` |
+| State checkpoints | `sdd/state/FEAT-558/state.json` |
+| Source (raw) | `sdd/state/FEAT-558/source.md` |
+| Research plan | `sdd/state/FEAT-558/research_plan.json` |
+| Findings (digests) | `sdd/state/FEAT-558/findings/F001-*.md` … `F015-*.md` |
+| Synthesis (JSON) | `sdd/state/FEAT-558/synthesis.json` |
 
 **Budget consumed**:
 - Files read: 24 / 40
