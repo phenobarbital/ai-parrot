@@ -33,7 +33,7 @@
       "feature_id": "FEAT-559",
       "feature": "sdd-coder-execution-pool-suspensions",
       "spec": "sdd/specs/sdd-coder-execution-pool-suspensions.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -43,8 +43,8 @@
       "parallelism_notes": "Depends on TASK-3274 for ledger identity/policy types. Completes shared models/jobs edits before the runtime, roster and attribution tasks fan out.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3275-coder-execution-models-jobs.md"
+      "completed_at": "2026-09-15T23:03:27+00:00",
+      "file": "sdd/tasks/completed/TASK-3275-coder-execution-models-jobs.md"
     },
     {
       "id": "TASK-3276",
