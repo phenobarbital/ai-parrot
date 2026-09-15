@@ -537,9 +537,17 @@ stay with the thinking model — eligibility never delegates a design choice.
 
 **Worktree hint (new section in spec):**
 Include a `## Worktree Strategy` section in the spec with:
-- Default isolation unit: `per-spec` or `per-task`.
-- If `per-spec`: all tasks run sequentially in one worktree.
-- If mixed: list which tasks are parallelizable and why.
+- Isolation: always ONE feature worktree per spec; the `sdd-coder` engine gives
+  each task its own sub-worktree inside it. Do not write "tasks run
+  sequentially" — that is not an isolation choice, and `/sdd-task` must not
+  turn it into a dependency chain.
+- Module dependency graph: which modules need which (M2 → M1 because M2 imports
+  M1's `<symbol>`), with the evidence. Modules without an edge between them
+  are expected to run concurrently.
+- Shared files: files more than one module modifies (their tasks get serialized).
+- Exclusive resources: steps that mutate shared state outside a module's own
+  files (extension rebuild, lockfile, migration) — their tasks become
+  `parallel: false`.
 - Cross-feature dependencies: list any specs that must be merged first.
 
 ### 6. Commit the Spec
@@ -588,7 +596,7 @@ git commit -m "sdd: add spec for FEAT-<ID> — <feature-name>"
 ✅ Spec created and committed: sdd/specs/<feature-name>.spec.md
 
    Feature ID: FEAT-<ID>
-   Isolation: per-spec (sequential tasks) | mixed (some parallel tasks)
+   Module graph: <M> modules, <E> dependency edges, exclusive: <modules or "none">
    Design research: <N> suggestions — <C> confirmed / <R> rejected / <E> escalated   (model <MODEL>)
    # or:  Design research: skipped (<SKIP_REASON>)
 

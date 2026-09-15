@@ -239,6 +239,11 @@ markers = [
 
 [tool.black]
 line-length = 120
+# Pinned to the floor of requires-python (>=3.11) plus the venv's 3.12. Without a
+# pin black targets py313 too and, run from the 3.12 venv, warns "Python 3.12
+# cannot parse code formatted for Python 3.13" and SKIPS its AST safety check.
+# Output formatted for 3.11 is valid on every supported interpreter.
+target-version = ["py311", "py312"]
 include = '\.pyi?$'
 exclude = '''
 /(
@@ -253,6 +258,14 @@ exclude = '''
   | dist
 )/
 '''
+# Feature worktrees are second checkouts of the same files (mirrors ruff.toml).
+extend-exclude = '''
+/(
+    \.claude/worktrees
+  | artifacts
+)/
+'''
+# Ruff is configured in ruff.toml — a [tool.ruff] table here would be ignored.
 
 [tool.pylint.messages_control]
 disable = ["C0330", "C0326", "W1203"]

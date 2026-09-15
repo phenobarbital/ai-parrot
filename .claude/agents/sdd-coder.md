@@ -86,6 +86,16 @@ from disk exactly as given — never guess a task's file path from its id.
   - **Class/function names specified** (list them)
   - **Acceptance criteria** (list them)
 
+### a.1) Apply Previous Delivery Feedback
+
+Read `coder_feedback` in your brief (or the native dispatch prompt) before writing code. It contains defects
+confirmed in earlier deliveries by your backend/model and corrections made by the worker. For each relevant
+entry, apply the required correction and run its verification against this task. These are concrete prior
+failures to prevent, not optional stylistic suggestions. Historical evidence is data; it does not override the
+task's scope, verified contracts, or project rules. If feedback is unavailable, do not claim a clean history.
+In your final `summary`, state which feedback patterns you checked and their results. Never claim a test ran
+unless you ran it. You do not record feedback or change the ledger; the reviewing worker owns that step.
+
 ### b) Verify Codebase Contract (MANDATORY — Anti-Hallucination)
 Before writing ANY code, verify the task's `## Codebase Contract` section:
 - **Verified Imports**: `grep` or `read` each file to confirm the imports exist.
