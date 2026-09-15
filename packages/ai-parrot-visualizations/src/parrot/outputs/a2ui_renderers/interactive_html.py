@@ -375,12 +375,14 @@ _BEHAVIOR_JS = r"""
       // Bottom, like the pill key a multi-series chart gets: which side the
       // key sits on should not depend on how many series there happen to be.
       options: {
-        // The canvas fills the box its wrapper defines, on screen and on
-        // paper, instead of deriving a height from whatever width it was
-        // measured at. Sizing that depends on WHEN it is measured is how a
-        // printed chart ended up drawn at three quarters of its panel with a
-        // white band down the side.
-        maintainAspectRatio: false,
+        // The PROPORTION is the thing to declare; the width comes from the
+        // page. Sized against a box instead, a chart inherits whatever that
+        // box happens to measure — a wrapper with no definite height gave a
+        // bitmap of 1063x292, which printed as a strip too flat to read a
+        // bar in. `SCREEN_ASPECT`/`PRINT_ASPECT` are the two numbers, and
+        // `resizeCharts` swaps them when the medium changes.
+        maintainAspectRatio: true,
+        aspectRatio: SCREEN_ASPECT,
         plugins: {
           legend: { display: !!cfg.showLegend, position: "bottom" },
           // The fitted line has no value AT a point -- it is the shape of the
@@ -448,24 +450,46 @@ _BEHAVIOR_JS = r"""
   // Chart.js redraw the canvas at the PAGE's width instead — the type comes
   // out the size it was asked for, and the shorter panel leaves room for
   // what follows it on the sheet. `afterprint` puts the screen back.
-  function resizeCharts() {
+  // Wider than tall on a screen, where there is width to spare; closer to
+  // square on paper, where the page is a fixed budget and a flat strip wastes
+  // the width without showing the shape of anything.
+  var SCREEN_ASPECT = 3.2;
+  var PRINT_ASPECT = 2.2;
+
+  function resizeCharts(aspect) {
     Object.keys(chartRegistry).forEach(function (id) {
       try {
-        chartRegistry[id].resize();
+        var chart = chartRegistry[id];
+        chart.options.aspectRatio = aspect;
+        chart.resize();
       } catch (e) {
         /* a chart that is already gone is not a print failure */
       }
     });
   }
 
+  function chartsForPrint() {
+    resizeCharts(PRINT_ASPECT);
+  }
+
+  function chartsForScreen() {
+    resizeCharts(SCREEN_ASPECT);
+  }
+
   if (window.matchMedia) {
     var printQuery = window.matchMedia("print");
     if (printQuery.addEventListener) {
-      printQuery.addEventListener("change", resizeCharts);
+      printQuery.addEventListener("change", function (event) {
+        if (event.matches) {
+          chartsForPrint();
+        } else {
+          chartsForScreen();
+        }
+      });
     }
   }
-  window.addEventListener("beforeprint", resizeCharts);
-  window.addEventListener("afterprint", resizeCharts);
+  window.addEventListener("beforeprint", chartsForPrint);
+  window.addEventListener("afterprint", chartsForScreen);
 
   document.querySelectorAll("[data-sort-table]").forEach(function (table) {
     var state = {};

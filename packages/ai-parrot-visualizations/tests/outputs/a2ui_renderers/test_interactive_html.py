@@ -1015,18 +1015,25 @@ class TestChartsAreRedrawnForPaper:
         )
         return (await InteractiveHTMLRenderer().render(env)).content.decode()
 
-    async def test_the_runtime_remeasures_before_printing(self):
+    async def test_the_runtime_reshapes_before_printing(self):
         doc = await self._doc()
-        assert 'window.addEventListener("beforeprint", resizeCharts)' in doc
+        assert 'window.addEventListener("beforeprint", chartsForPrint)' in doc
         # And puts the screen back afterwards, so printing does not leave the
         # page looking like a print preview.
-        assert 'window.addEventListener("afterprint", resizeCharts)' in doc
+        assert 'window.addEventListener("afterprint", chartsForScreen)' in doc
+
+    async def test_paper_gets_its_own_proportion(self):
+        # A page is a fixed budget: the strip that suits a wide screen prints
+        # as something too flat to read a bar in.
+        doc = await self._doc()
+        assert "var SCREEN_ASPECT = 3.2" in doc
+        assert "var PRINT_ASPECT = 2.2" in doc
 
     async def test_a_missing_chart_does_not_break_the_print(self):
         # `resize()` on a destroyed chart throws; a print is not the moment
         # to discover that.
         doc = await self._doc()
-        block = doc[doc.index("function resizeCharts()"):][:300]
+        block = doc[doc.index("function resizeCharts(aspect)"):][:400]
         assert "try {" in block and "catch" in block
 
 

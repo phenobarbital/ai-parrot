@@ -120,15 +120,13 @@
 }
 
 /* ---------- Charts ---------- */
-/* The box a chart is drawn into. Chart.js runs with
- * `maintainAspectRatio: false`, so this height is the only thing deciding
- * how tall a chart is — one place, the same rule on screen and in print,
- * rather than a number derived from whatever width the canvas happened to
- * be measured at. `position: relative` is what Chart.js needs to size a
- * responsive canvas against it. */
+/* The box a chart is drawn into. It does NOT set a height: Chart.js owns
+ * the proportion (`aspectRatio`, one number per medium) and the width comes
+ * from the page, so the height follows from those two rather than from a
+ * third number here arguing with them. Constraining the height was what
+ * squeezed the WIDTH and left a white band beside every printed chart. */
 .a2ui-chart-canvas {
     position: relative;
-    height: 320px;
 }
 
 /* ---------- KPI cards ---------- */
