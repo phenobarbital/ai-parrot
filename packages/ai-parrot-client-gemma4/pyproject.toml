@@ -7,7 +7,7 @@ name = "ai-parrot-client-gemma4"
 version = "0.2.2"
 description = "Google Gemma 4 (local, transformers) LLM client for AI-Parrot (parrot.clients.gemma4)"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.14"
 license = "MIT"
 authors = [
     {name = "Jesus Lara", email = "jesuslara@phenobarbital.info"}

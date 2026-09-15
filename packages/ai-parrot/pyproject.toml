@@ -15,7 +15,7 @@ authors = [
 ]
 readme = "README.md"
 license = "MIT"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.14"
 keywords = ["asyncio", "asyncpg", "aioredis", "aiomcache", "artificial intelligence", "ai", "chatbot", "agents"]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -27,7 +27,6 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
-    "Programming Language :: Python :: 3.14",
     "Programming Language :: Python :: 3 :: Only",
     "Framework :: AsyncIO",
     "Typing :: Typed",
@@ -200,7 +199,7 @@ notify-all = [
 # Database / query tools (querysource, psycopg, advanced asyncdb extras)
 db = [
     "querysource>=4.1.11",
-    "psycopg-binary==3.2.6",
+    "psycopg-binary>=3.2.12",
     "jq==1.7.0",
     "asyncdb[bigquery,mongodb,arangodb,influxdb,boto3,sqlalchemy]>=2.12.0",
 ]
@@ -249,7 +248,10 @@ flowtask = [
 # dependencies (FEAT-471) — wikitoolkit imports them unconditionally.
 graphindex = [
     "tree-sitter>=0.23",
-    "tree-sitter-languages>=1.10",
+    # tree-sitter-languages was removed: unmaintained (no py3.13+ wheels or
+    # sdist, ever) and unused — nothing in the codebase imports it, the
+    # per-language grammar wheels below (`wiki-languages`) already replaced
+    # it for the same reason.
     # FEAT-539: deterministic fuzzy matching for contract parent resolution
     # and party/title reconciliation. Also covers the previously undeclared
     # lazy import in `knowledge/ontology/discovery.py`.

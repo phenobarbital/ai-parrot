@@ -5,7 +5,7 @@ build-backend = "maturin"
 [project]
 name = "navrules"
 version = "1.0.2"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.14"
 description = "Generic, low-latency rule evaluation engine (priority, first-match, all-match policies) with optional Rust backend"
 readme = "README.md"
 authors = [

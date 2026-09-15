@@ -7,7 +7,7 @@ name = "ai-parrot-embeddings"
 dynamic = ["version"]
 description = "Concrete embedding, vector-store, and reranker backends for AI-Parrot"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.14"
 license = "MIT"
 authors = [
     {name = "Jesus Lara", email = "jesuslara@phenobarbital.info"}
