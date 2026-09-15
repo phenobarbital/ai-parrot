@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-15T22:20:17.343873+00:00",
-  "completed_at": null,
+  "completed_at": "2026-09-15T23:44:12+00:00",
   "parallel_semantics": "exclusive",
   "tasks": [
     {
@@ -15,7 +15,7 @@
       "feature_id": "FEAT-560",
       "feature": "dev-loop-pool-exclusive-tasks",
       "spec": "sdd/specs/dev-loop-pool-exclusive-tasks.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -23,9 +23,10 @@
       "parallelism_notes": "No dependencies: owns task_scheduler.py and its tests; only adds pure helpers, with no shared resource mutation. Can run alongside TASK-3273 documentation.",
       "assigned_to": null,
       "assigned_at": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3269-exclusive-wave-helpers.md"
+      "started_at": "2026-09-15T22:35:11+00:00",
+      "completed_at": "2026-09-15T22:44:43+00:00",
+      "file": "sdd/tasks/completed/TASK-3269-exclusive-wave-helpers.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3270",
@@ -34,7 +35,7 @@
       "feature_id": "FEAT-560",
       "feature": "dev-loop-pool-exclusive-tasks",
       "spec": "sdd/specs/dev-loop-pool-exclusive-tasks.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -44,9 +45,10 @@
       "parallelism_notes": "Imports partition_wave from TASK-3269 (task_scheduler.py). Owns only sdd_coder/roster.py; may run alongside TASK-3271 and TASK-3272 after the helper lands.",
       "assigned_to": null,
       "assigned_at": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3270-roster-shared-wave-partition.md"
+      "started_at": "2026-09-15T22:35:11+00:00",
+      "completed_at": "2026-09-15T23:02:40+00:00",
+      "file": "sdd/tasks/completed/TASK-3270-roster-shared-wave-partition.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3271",
@@ -55,7 +57,7 @@
       "feature_id": "FEAT-560",
       "feature": "dev-loop-pool-exclusive-tasks",
       "spec": "sdd/specs/dev-loop-pool-exclusive-tasks.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -65,9 +67,10 @@
       "parallelism_notes": "Imports partition_wave and parallel_width from TASK-3269 (task_scheduler.py). Owns development.py and test_development_node.py; no write overlap with roster or planner tasks.",
       "assigned_to": null,
       "assigned_at": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3271-pool-exclusive-dispatch-rounds.md"
+      "started_at": "2026-09-15T22:35:11+00:00",
+      "completed_at": "2026-09-15T23:02:40+00:00",
+      "file": "sdd/tasks/completed/TASK-3271-pool-exclusive-dispatch-rounds.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3272",
@@ -76,7 +79,7 @@
       "feature_id": "FEAT-560",
       "feature": "dev-loop-pool-exclusive-tasks",
       "spec": "sdd/specs/dev-loop-pool-exclusive-tasks.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -86,9 +89,10 @@
       "parallelism_notes": "Imports parallel_width from TASK-3269 (task_scheduler.py). Owns planner.py and test_planner_node.py; may run with TASK-3270 and TASK-3271 after the helper exists.",
       "assigned_to": null,
       "assigned_at": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3272-planner-parallel-width-sizing.md"
+      "started_at": "2026-09-15T22:35:11+00:00",
+      "completed_at": "2026-09-15T23:02:40+00:00",
+      "file": "sdd/tasks/completed/TASK-3272-planner-parallel-width-sizing.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3273",
@@ -97,7 +101,7 @@
       "feature_id": "FEAT-560",
       "feature": "dev-loop-pool-exclusive-tasks",
       "spec": "sdd/specs/dev-loop-pool-exclusive-tasks.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "low",
       "effort": "S",
       "depends_on": [],
@@ -105,9 +109,10 @@
       "parallelism_notes": "No dependencies: documentation derives from the approved spec and owns only dev-flow-model-plan.md. It can run with TASK-3269 and changes no executable or shared generated files.",
       "assigned_to": null,
       "assigned_at": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3273-exclusive-pool-task-documentation.md"
+      "started_at": "2026-09-15T22:35:11+00:00",
+      "completed_at": "2026-09-15T22:44:43+00:00",
+      "file": "sdd/tasks/completed/TASK-3273-exclusive-pool-task-documentation.md",
+      "verification": "verified"
     }
   ]
 }

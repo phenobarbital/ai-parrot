@@ -20,21 +20,22 @@ from parrot.flows.dev_loop.models import (
 from parrot.flows.dev_loop.nodes.planner import PlannerNode
 
 _SDD_PLANNER_PROMPT = (
-    Path(__file__).resolve().parents[3]
-    / "src"
-    / "parrot"
-    / "flows"
-    / "dev_loop"
-    / "_subagent_data"
-    / "sdd-planner.md"
+    Path(__file__).resolve().parents[3] / "src" / "parrot" / "flows" / "dev_loop" / "_subagent_data" / "sdd-planner.md"
 )
 
 
-def _write_index(tmp_path: Path, slug: str, tasks: list[dict]) -> Path:
+def _write_index(tmp_path: Path, slug: str, tasks: list[dict], exclusive: bool = False) -> Path:
     index_dir = tmp_path / "sdd" / "tasks" / "index"
     index_dir.mkdir(parents=True, exist_ok=True)
     path = index_dir / f"{slug}.json"
-    path.write_text(json.dumps({"feature": slug, "tasks": tasks}))
+    payload = {"feature": slug, "tasks": tasks}
+    if exclusive:
+        # TaskScheduler.from_index_file only honours a task's ``parallel``
+        # field under this header (task_scheduler.py:170); without it every
+        # TaskRef defaults to parallel=True regardless of what the index
+        # says, and exclusive semantics never engage.
+        payload["parallel_semantics"] = "exclusive"
+    path.write_text(json.dumps(payload))
     return path
 
 
@@ -223,6 +224,130 @@ def test_pool_sizing_single_task(tmp_path):
     pool = asyncio.run(node._resolve_pool(brief, planner_out))
     assert len(pool.agents) == 1
     assert pool.agents[0].count == 1
+
+
+def test_pool_sizing_exclusive_only(tmp_path):
+    """Exclusive-only wave should size to one slot."""
+    slug = "exclusive-feature"
+    _write_index(
+        tmp_path,
+        slug,
+        [
+            {"id": "X1", "status": "pending", "depends_on": [], "parallel": False},
+            {"id": "X2", "status": "pending", "depends_on": [], "parallel": False},
+        ],
+        exclusive=True,
+    )
+    dispatcher = MagicMock()
+    node = _node(dispatcher, development_pool_max=4)
+    brief = _brief(tmp_path)
+    planner_out = _planner_output(tmp_path, slug)
+
+    import asyncio
+
+    pool = asyncio.run(node._resolve_pool(brief, planner_out))
+    assert len(pool.agents) == 1
+    assert pool.agents[0].count == 1  # exclusive-only -> 1 slot
+
+
+def test_pool_sizing_mixed_wave(tmp_path):
+    """Mixed wave should size to the number of parallel tasks."""
+    slug = "mixed-feature"
+    _write_index(
+        tmp_path,
+        slug,
+        [
+            {"id": "X1", "status": "pending", "depends_on": [], "parallel": False},
+            {"id": "P2", "status": "pending", "depends_on": [], "parallel": True},
+            {"id": "P3", "status": "pending", "depends_on": [], "parallel": True},
+        ],
+        exclusive=True,
+    )
+    dispatcher = MagicMock()
+    node = _node(dispatcher, development_pool_max=4)
+    brief = _brief(tmp_path)
+    planner_out = _planner_output(tmp_path, slug)
+
+    import asyncio
+
+    pool = asyncio.run(node._resolve_pool(brief, planner_out))
+    assert len(pool.agents) == 1
+    assert pool.agents[0].count == 2  # 2 parallel tasks
+
+
+def test_pool_sizing_legacy_no_parallel_field(tmp_path):
+    """Legacy tasks without parallel field default to parallel (backward compat)."""
+    slug = "legacy-feature"
+    _write_index(
+        tmp_path,
+        slug,
+        [
+            {"id": "TASK-1", "status": "pending", "depends_on": []},
+            {"id": "TASK-2", "status": "pending", "depends_on": []},
+            {"id": "TASK-3", "status": "pending", "depends_on": []},
+        ],
+    )
+    dispatcher = MagicMock()
+    node = _node(dispatcher, development_pool_max=4)
+    brief = _brief(tmp_path)
+    planner_out = _planner_output(tmp_path, slug)
+
+    import asyncio
+
+    pool = asyncio.run(node._resolve_pool(brief, planner_out))
+    assert len(pool.agents) == 1
+    assert pool.agents[0].count == 3  # legacy: all parallel by default
+
+
+def test_pool_sizing_exclusive_with_cap(tmp_path):
+    """Exclusive tasks respect the development_pool_max cap."""
+    slug = "capped-exclusive-feature"
+    _write_index(
+        tmp_path,
+        slug,
+        [
+            {"id": "X1", "status": "pending", "depends_on": [], "parallel": False},
+            {"id": "X2", "status": "pending", "depends_on": [], "parallel": False},
+        ],
+        exclusive=True,
+    )
+    dispatcher = MagicMock()
+    node = _node(dispatcher, development_pool_max=1)
+    brief = _brief(tmp_path)
+    planner_out = _planner_output(tmp_path, slug)
+
+    import asyncio
+
+    pool = asyncio.run(node._resolve_pool(brief, planner_out))
+    assert len(pool.agents) == 1
+    assert pool.agents[0].count == 1  # capped at 1
+
+
+def test_pool_sizing_brief_override_precedence(tmp_path):
+    """Brief override takes precedence over wave-based sizing."""
+    slug = "override-feature"
+    _write_index(
+        tmp_path,
+        slug,
+        [
+            {"id": "P1", "status": "pending", "depends_on": [], "parallel": True},
+            {"id": "P2", "status": "pending", "depends_on": [], "parallel": True},
+        ],
+    )
+    dispatcher = MagicMock()
+    node = _node(dispatcher, development_pool_max=4)
+    brief = _brief(
+        tmp_path,
+        dev_agents=[DevAgentSpec(agent="codex", model="gpt-5.5", count=3)],
+    )
+    planner_out = _planner_output(tmp_path, slug)
+
+    import asyncio
+
+    pool = asyncio.run(node._resolve_pool(brief, planner_out))
+    assert len(pool.agents) == 1
+    assert pool.agents[0].agent == "codex"
+    assert pool.agents[0].count == 3  # brief override wins
 
 
 async def test_cycle_fails_before_dev_dispatch(tmp_path, monkeypatch):

@@ -104,4 +104,22 @@ git diff --check
 
 ## Completion Note
 
-Pending implementation.
+Extended `docs/dev_loop/dev-flow-model-plan.md` §Planner interaction with the
+`parallel_width(first_wave)` capped-by-`development_pool_max` sizing rule
+(brief overrides preserved), and added a new `## Exclusive tasks` section
+covering `parallel_semantics: exclusive` + `parallel: false`, exclusive-first
+ascending-id singleton rounds, re-planning after every round, a mixed-wave
+JSON example, isolated-mode merge/refresh + identical sdd-coder dispatch
+semantics, and unchanged legacy parallel-flag interpretation. Linked
+`.claude/commands/sdd-task.md` (Task graph rules) and
+`scripts/sdd/check_task_graph.py`. No executable files changed;
+`git diff --check` clean.
+
+Code review: 1 finding, fixed. The `#task-graph-rules` link fragment
+targeted bold prose in `sdd-task.md:104` (inside `### 3. Plan Task
+Decomposition`), not an actual heading, so the anchor never resolves.
+Fixed in commit `218e324407bd286a1017e059830d25b2c7d5bb26` by removing the
+fragment and naming the section in prose instead. Feedback recorded:
+`coder-feedback:e5cda9c5360d19e6f8502dd0`.
+
+Seat: mistral · Backend: nova · Model: mistral.devstral-2-123b · Attempts: 1 · Duration: 374.1s · Tokens: 169776/1936
