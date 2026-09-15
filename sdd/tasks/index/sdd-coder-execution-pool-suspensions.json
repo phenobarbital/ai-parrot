@@ -53,7 +53,7 @@
       "feature_id": "FEAT-559",
       "feature": "sdd-coder-execution-pool-suspensions",
       "spec": "sdd/specs/sdd-coder-execution-pool-suspensions.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -63,8 +63,8 @@
       "parallelism_notes": "Depends on TASK-3275 payloads (and transitively TASK-3274 store). Can run beside TASK-3277 and TASK-3278: only owns pool.py and test_pool.py; reads but does not edit roster.py.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3276-coder-execution-pool-runtime.md"
+      "completed_at": "2026-09-15T23:57:58+00:00",
+      "file": "sdd/tasks/completed/TASK-3276-coder-execution-pool-runtime.md"
     },
     {
       "id": "TASK-3277",
@@ -73,7 +73,7 @@
       "feature_id": "FEAT-559",
       "feature": "sdd-coder-execution-pool-suspensions",
       "spec": "sdd/specs/sdd-coder-execution-pool-suspensions.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -83,8 +83,8 @@
       "parallelism_notes": "Depends on TASK-3275 for structured probe metadata. Parallel with TASK-3276 and TASK-3278; owns roster.py/test_roster.py only and preserves the recently landed exclusive scheduling behavior.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3277-coder-roster-suspension-gates.md"
+      "completed_at": "2026-09-15T23:57:58+00:00",
+      "file": "sdd/tasks/completed/TASK-3277-coder-roster-suspension-gates.md"
     },
     {
       "id": "TASK-3278",
@@ -93,7 +93,7 @@
       "feature_id": "FEAT-559",
       "feature": "sdd-coder-execution-pool-suspensions",
       "spec": "sdd/specs/sdd-coder-execution-pool-suspensions.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -103,8 +103,8 @@
       "parallelism_notes": "Depends on TASK-3275 for AttemptRecord identity. Runs beside TASK-3276/TASK-3277 because telemetry and existing feedback/review files are disjoint; TASK-3281 waits for this work before editing test_feedback.py.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3278-coder-execution-attribution.md"
+      "completed_at": "2026-09-15T23:57:58+00:00",
+      "file": "sdd/tasks/completed/TASK-3278-coder-execution-attribution.md"
     },
     {
       "id": "TASK-3279",

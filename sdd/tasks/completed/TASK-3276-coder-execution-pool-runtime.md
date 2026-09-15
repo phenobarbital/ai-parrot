@@ -178,5 +178,38 @@ outside this task's scope, report it for the owning task instead of broadening f
 
 ## Completion Note
 
-Not completed. The executing worker must record its identity, date, implementation summary, verification evidence
-and deviations here before marking this task done.
+**Delivered by**: MCP coder, seat `qwen` (backend `nova`, model `qwen.qwen3-coder-480b-a35b-instruct`),
+attempt_uid `ae242839560048b2ad63125a309ba2e8`, commit cf9959185ec0ad097a0ac0d2ab501ba3ed6cb271 — 2026-09-16.
+**Reviewed and corrected by**: sdd-worker (Sonnet 5 orchestrator) — 2026-09-16.
+
+**Implementation summary**: `ExecutionPool` with private eligible seats, `asyncio.Condition`-serialized
+admission/release/suspend, generation counter, cached `ChunkAssigner`, `view()`/`snapshot()` for
+`ExecutionPoolView`/`ExecutionSnapshot`, and `close()`/`mark_recovery_required()`/`is_exhausted()` lifecycle
+helpers, built on TASK-3274's `CoderSuspensionStore`/`ModelKey` and TASK-3275's payload contracts.
+
+**Review findings (confirmed, fixed)**: the acceptance run of `test_pool.py` hung for ~29 minutes (had to be
+killed) — `admit()`'s busy-wait loop rechecked only `busy` after waking, never exclusion/closed status, so a
+seat suspended while something waited on it looped forever instead of raising. 3 of the remaining 5 tests
+called the (correctly) async `admit()`/`suspend()` without `await`/`async def`, silently asserting against
+unawaited coroutines. Also found and fixed: `release()` tracked only `attempt_uid -> task_id`, losing which
+`ModelKey` to free; `snapshot()` built a required `roster_fingerprint` as an empty string (a latent
+`ValidationError` the moment anyone called it); the condition lock was held across the suspension-store's
+disk I/O (violating the task's own "Disk I/O ... never hold the condition" instruction); `close()`/
+`mark_recovery_required()` used a plain `with self._condition:` (asyncio.Condition has no sync context-manager
+protocol); `assigner()` needed to return `None` (not construct an empty `ChunkAssigner`) when exhausted.
+Rewrote `pool.py`'s admission/release/suspend/assigner logic and `test_pool.py` (6 tests, all required
+scenarios, all award-async/awaited correctly).
+
+**Verification evidence**:
+- `pytest test_pool.py -q` → 6 passed (was 2 passed / 3 failed / 1 hung).
+  Log: `artifacts/logs/task-3276-pytest.log`.
+- `ruff check` → clean. `black --check` → clean.
+  Logs: `artifacts/logs/task-3276-ruff.log`, `artifacts/logs/task-3276-black.log`.
+- `git diff --check` → clean. Only `pool.py`/`test_pool.py` changed (declared scope).
+- Model feedback recorded: `coder-feedback:cf76274b8267fab1d2ec59b3` (pattern
+  `async-wait-loop-missed-recheck`, model `nova/qwen.qwen3-coder-480b-a35b-instruct`).
+- Review measurement recorded: `coder-review:fdf5ad6a52780d675f7b1a41`, fix commit
+  `c94f679f4694bd5a3f317bb533a3a893011a1557`.
+
+Seat: qwen · Backend: nova · Model: qwen.qwen3-coder-480b-a35b-instruct · Attempts: 1 (MCP) + 1 (orchestrator
+review fix) · Duration: 298.2s (MCP attempt) · Tokens: 1,582,677 in / 21,332 out (MCP attempt)
