@@ -319,6 +319,16 @@ XAxisMode = Literal["category", "time"]
 """X-axis mode: 'category' for categorical labels, 'time' for ISO 8601 date strings."""
 
 
+#: The marks a series may take in a combination, and the scales it may sit
+#: on. Spelled as literals rather than free strings so the JSON Schema --
+#: derived from this class by construction -- REFUSES "Bar" or "Right".
+#: Untyped, those validated and then degraded silently: `chartTypeMap["Bar"]`
+#: is undefined and `_SERIES_TYPE.get("Bar", ...)` falls back, so the chart
+#: came out wrong with no error anywhere.
+SeriesMark = Literal["bar", "line", "area"]
+SeriesAxis = Literal["left", "right"]
+
+
 class StructuredChartConfig(BaseModel):
     """Library-agnostic chart configuration mirroring the frontend AppChartConfig.
 
@@ -374,7 +384,7 @@ class StructuredChartConfig(BaseModel):
         alias="xAxisMode",
         description="Axis scale: 'category' or 'time'",
     )
-    series_types: Optional[List[Optional[str]]] = Field(
+    series_types: Optional[List[Optional[SeriesMark]]] = Field(
         default=None,
         alias="seriesTypes",
         description=(
@@ -394,7 +404,7 @@ class StructuredChartConfig(BaseModel):
             "to 80 beside counts of events is a number nobody can read."
         ),
     )
-    series_axes: Optional[List[Optional[str]]] = Field(
+    series_axes: Optional[List[Optional[SeriesAxis]]] = Field(
         default=None,
         alias="seriesAxes",
         description=(

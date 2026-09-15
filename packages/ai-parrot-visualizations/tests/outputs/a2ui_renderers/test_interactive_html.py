@@ -1342,3 +1342,31 @@ class TestAGridNeverHasMoreColumnsThanItems:
         doc = await self._doc(8)
         block = doc[re.search(r"@media print\s*\{", doc).end():]
         assert ".ds-page[data-layout] .kpi-grid {" in block
+
+
+class TestTheContractRefusesWhatItCannotHonour:
+    async def test_a_mark_outside_the_vocabulary_is_rejected(self):
+        # Untyped, "Bar" validated and then degraded silently: the lookup
+        # missed, the fallback fired, and the chart came out wrong with no
+        # error anywhere.
+        import pytest
+        from parrot.models.outputs import StructuredChartConfig
+
+        with pytest.raises(Exception):
+            StructuredChartConfig(type="bar", x="m", y=["a"], seriesTypes=["Bar"])
+        with pytest.raises(Exception):
+            StructuredChartConfig(type="bar", x="m", y=["a"], seriesAxes=["Right"])
+
+    async def test_the_fitted_line_rides_the_axis_it_was_fitted_against(self):
+        # The fit runs over the FIRST series. Drawn against a different scale
+        # it renders fine and says something untrue.
+        env = _envelope(
+            Component(
+                id="root", component="Chart", type="bar", x="w", y=["a", "b"],
+                data={"path": "/rows"}, trendline=True, seriesAxes=["right", None],
+            ),
+            data_model={"rows": [{"w": "W1", "a": 1, "b": 2}, {"w": "W2", "a": 3, "b": 4}]},
+        )
+        doc = (await InteractiveHTMLRenderer().render(env)).content.decode()
+        assert 'cfg.seriesAxes[0] === "right"' in doc
+        assert 'trend.yAxisID = "yRight"' in doc

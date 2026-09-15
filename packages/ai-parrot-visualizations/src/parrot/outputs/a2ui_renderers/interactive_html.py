@@ -343,7 +343,7 @@ _BEHAVIOR_JS = r"""
       var col = (cfg.y || [])[0];
       var fitted = trendData(rows, col);
       if (fitted) {
-        datasets.push({
+        var trend = {
           label: (names[0] || col) + " trend",
           data: fitted,
           type: "line",
@@ -358,7 +358,13 @@ _BEHAVIOR_JS = r"""
           pointRadius: 0,
           fill: false,
           isTrend: true,
-        });
+        };
+        // The fit is computed over the FIRST series; drawn against a scale it
+        // was not computed in it would render fine and say something untrue.
+        if (cfg.seriesAxes && cfg.seriesAxes[0] === "right") {
+          trend.yAxisID = "yRight";
+        }
+        datasets.push(trend);
       }
     }
     return datasets;

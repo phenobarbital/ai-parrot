@@ -262,8 +262,15 @@ class EChartsRenderer(AbstractA2UIRenderer):
 
         # A combination is declared per series: `seriesTypes[i]` names the
         # mark for one y column and the chart's own `type` covers the rest.
-        series_types = props.get("seriesTypes") or []
-        series_axes = props.get("seriesAxes") or []
+        # Guarded, because `"right"` is a valid substring of a bare string:
+        # `seriesAxes: "right"` (an easy mistake, the description reads
+        # `'left' | 'right'`) made `"right" in series_axes` true and drew a
+        # second axis, while `series_axes[i] == "right"` was false for every
+        # series -- a phantom empty scale nothing was bound to.
+        series_types = props.get("seriesTypes")
+        series_types = list(series_types) if isinstance(series_types, (list, tuple)) else []
+        series_axes = props.get("seriesAxes")
+        series_axes = list(series_axes) if isinstance(series_axes, (list, tuple)) else []
 
         series = []
         for index, col in enumerate(y_cols):
@@ -291,21 +298,24 @@ class EChartsRenderer(AbstractA2UIRenderer):
             first_values = [row.get(first_col) for row in rows if isinstance(row, dict)]
             trend_values = self._linear_trend(first_values)
             if trend_values:
-                series.append(
-                    {
-                        "name": f"{first_col} Trend",
-                        "type": "line",
-                        "data": trend_values,
-                        "smooth": True,
-                        "symbol": "none",
+                trend_entry: dict[str, Any] = {
+                    "name": f"{first_col} Trend",
+                    "type": "line",
+                    "data": trend_values,
+                    "smooth": True,
+                    "symbol": "none",
                         # Grey on purpose, not the next colour off the palette:
                         # a colour is a judgement in these reports and a
                         # regression is geometry. Same tone as the interactive
                         # surface and the Svelte canvas draw it in.
-                        "lineStyle": {"type": "dashed", "color": _TREND_COLOR},
-                        "itemStyle": {"color": _TREND_COLOR},
-                    }
-                )
+                    "lineStyle": {"type": "dashed", "color": _TREND_COLOR},
+                    "itemStyle": {"color": _TREND_COLOR},
+                }
+                # The fit is computed over y[0]; drawn against a different
+                # scale it would render fine and say something untrue.
+                if series_axes and series_axes[0] == "right":
+                    trend_entry["yAxisIndex"] = 1
+                series.append(trend_entry)
 
         option: dict[str, Any] = {
             "title": {"text": props.get("title", "")},

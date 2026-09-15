@@ -185,6 +185,11 @@ class SSRHTMLRenderer(AbstractA2UIRenderer):
     #: weasyprint cannot play media in a rasterized PDF).
     _UNSUPPORTED: frozenset[str] = frozenset()
 
+    #: Whether this renderer's OUTPUT is paginated. The browser print sheet
+    #: exists for a screen document a reader sends to a printer; a renderer
+    #: that paginates server-side has its own paged rules and must not get it.
+    PAGINATES: bool = False
+
     def __init__(self, *, theme: str = "light", layout: str = "analytics") -> None:
         """Initialize the renderer with a default ``(theme, layout)`` pair.
 
@@ -261,7 +266,12 @@ class SSRHTMLRenderer(AbstractA2UIRenderer):
             )
 
         theme, layout = DesignSystem.resolve(envelope, theme_default=self.theme, layout_default=self.layout)
-        style = DesignSystem.stylesheet(theme, layout)
+        # `paged` is the renderer's own nature, not something an envelope may
+        # change: `DesignSystem.resolve` lets `parrot_layout` outrank the
+        # renderer's default, so a PDF of an envelope declaring "analytics"
+        # would otherwise be composed with the BROWSER print sheet on top of
+        # the paged rules weasyprint is already applying.
+        style = DesignSystem.stylesheet(theme, layout, paged=self.PAGINATES)
         document = document_shell(
             title=envelope.surface_id,
             style=style,

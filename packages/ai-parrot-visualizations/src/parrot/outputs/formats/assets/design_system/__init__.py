@@ -101,10 +101,16 @@ class DesignSystem:
     DEFAULT_LAYOUT: ClassVar[str] = "analytics"
 
     #: Composed sheets, cached per ``(theme_name, layout_name)`` pair.
-    _cache: ClassVar[dict[tuple[str, str], str]] = {}
+    _cache: ClassVar[dict[tuple[str, str, bool], str]] = {}
 
     @classmethod
-    def stylesheet(cls, theme: "str | ThemeConfig | None" = None, layout: str | None = None) -> str:
+    def stylesheet(
+        cls,
+        theme: "str | ThemeConfig | None" = None,
+        layout: str | None = None,
+        *,
+        paged: bool | None = None,
+    ) -> str:
         """Return the composed CSS for a ``(theme, layout)`` pair.
 
         Args:
@@ -120,7 +126,16 @@ class DesignSystem:
         theme_config, theme_key = cls._resolve_theme(theme)
         layout_key, layout_css = cls._resolve_layout(layout)
 
-        cache_key = (theme_key, layout_key)
+        # Whether the OUTPUT is paginated, which is not the same question as
+        # which layout was resolved. A caller that paginates (the PDF
+        # renderer, via weasyprint) says so explicitly; inferring it from
+        # `layout_key == "print"` was wrong, because an envelope declaring
+        # `parrot_layout: "analytics"` outranks the renderer's own default in
+        # `DesignSystem.resolve`, and the browser print sheet would then be
+        # composed into a document weasyprint renders with media="print".
+        paged_medium = layout_key == "print" if paged is None else paged
+
+        cache_key = (theme_key, layout_key, paged_medium)
         cached = cls._cache.get(cache_key)
         if cached is not None:
             return cached
@@ -134,7 +149,7 @@ class DesignSystem:
                 _TAILWIND_CSS,
                 _EDITORIAL_CSS,
                 layout_css or "",
-                "" if layout_key == "print" else _PRINT_MEDIA_CSS,
+                "" if paged_medium else _PRINT_MEDIA_CSS,
             )
             if part
         )
