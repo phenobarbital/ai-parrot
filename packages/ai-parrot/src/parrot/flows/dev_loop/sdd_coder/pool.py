@@ -63,7 +63,7 @@ class ExecutionPool:
         """
         # Validate execution_id is a proper UUID
         UUID(execution_id)  # Raises ValueError if invalid
-        
+
         self._execution_id = execution_id
         self._feature_id = feature_id
         self._worktree_path = worktree_path
@@ -71,7 +71,7 @@ class ExecutionPool:
         self._seats = list(seats)  # Copy to prevent external mutation
         self._suspension_store = suspension_store
         self._initial_exclusions = set(initial_exclusions)
-        
+
         # Runtime state
         self._condition = asyncio.Condition()
         self._status: ExecutionStatus = "active"
@@ -83,13 +83,12 @@ class ExecutionPool:
         self._fallback_required = False
         self._fallback_reason = ""
         self._persistence_degraded = False
-        
+
         # Build initial seat views
         self._seat_views: Dict[ModelKey, PoolSeatView] = {}
         for seat in self._seats:
             key = ModelKey(
-                backend=seat.backend or "native" if seat.kind == "native" else seat.backend or "",
-                model=seat.model
+                backend=seat.backend or "native" if seat.kind == "native" else seat.backend or "", model=seat.model
             )
             self._seat_views[key] = PoolSeatView(
                 label=seat.label,
@@ -100,7 +99,7 @@ class ExecutionPool:
                 suspended=key in self._initial_exclusions,
                 reason="inherited_suspension" if key in self._initial_exclusions else "",
             )
-            
+
         # Apply initial exclusions
         for key in self._initial_exclusions:
             if key in self._seat_views:
@@ -180,31 +179,31 @@ class ExecutionPool:
             # Check pool state
             if self._status in ("closed", "recovery_required"):
                 raise ValueError(f"Cannot admit to {self._status} pool")
-            
+
             # Check exclusions
             if key in self._initial_exclusions or key in self._local_exclusions:
                 raise ValueError(f"Model {key} is excluded from this execution")
-                
+
             # Check seat availability
             if key not in self._seat_views:
                 raise ValueError(f"Model {key} not found in pool seats")
-                
+
             seat_view = self._seat_views[key]
             if not seat_view.available or seat_view.suspended or seat_view.probe_unavailable:
                 raise ValueError(f"Model {key} is not available")
-                
+
             # Wait if seat is busy
             while key in self._busy_seats:
                 await self._condition.wait()
-                
+
             # Reserve the seat
-            attempt_uid = str(UUID(int=hash((self._execution_id, task_id, key.backend, key.model)) & (1<<128)-1))
+            attempt_uid = str(UUID(int=hash((self._execution_id, task_id, key.backend, key.model)) & (1 << 128) - 1))
             self._admitted_attempts[attempt_uid] = task_id
             self._busy_seats.add(key)
-            
+
             # Update seat view
             seat_view.busy = True
-            
+
             return attempt_uid
 
     async def release(self, attempt_uid: str) -> None:
@@ -217,16 +216,16 @@ class ExecutionPool:
             if attempt_uid not in self._admitted_attempts:
                 logger.warning("Attempt %s not found in admitted attempts", attempt_uid)
                 return
-                
+
             self._admitted_attempts.pop(attempt_uid, None)
-            
+
             # Find the corresponding seat and release it
             for key, seat_view in self._seat_views.items():
                 if seat_view.busy and key in self._busy_seats:
                     self._busy_seats.discard(key)
                     seat_view.busy = False
                     break
-                    
+
             # Wake all waiters
             self._condition.notify_all()
 
@@ -254,11 +253,11 @@ class ExecutionPool:
                     seat_view.suspension_id = record.suspension_id
                     # Format expires_at as ISO string
                     seat_view.suspended_until = record.expires_at.isoformat()
-                    
+
             # Increment generation to invalidate cached plans
             self._generation += 1
             self._cached_assigner = None
-            
+
             # Persist the suspension (off the condition lock)
             try:
                 receipt = await self._suspension_store.record(record)
@@ -275,10 +274,10 @@ class ExecutionPool:
                     expires_at=record.expires_at,
                     pool_generation=self._generation,
                 )
-                
+
             # Wake all waiters since eligibility changed
             self._condition.notify_all()
-            
+
             return receipt
 
     def assigner(self) -> ChunkAssigner:
@@ -288,14 +287,13 @@ class ExecutionPool:
             eligible_seats = []
             for seat in self._seats:
                 key = ModelKey(
-                    backend=seat.backend or "native" if seat.kind == "native" else seat.backend or "",
-                    model=seat.model
+                    backend=seat.backend or "native" if seat.kind == "native" else seat.backend or "", model=seat.model
                 )
                 if key not in self._initial_exclusions and key not in self._local_exclusions:
                     seat_view = self._seat_views.get(key)
                     if seat_view and seat_view.available and not seat_view.suspended:
                         eligible_seats.append(seat)
-                        
+
             self._cached_assigner = ChunkAssigner(eligible_seats)
         return self._cached_assigner
 
@@ -315,7 +313,8 @@ class ExecutionPool:
         """Check if all seats are exhausted (no available seats)."""
         with self._condition:
             available_count = sum(
-                1 for view in self._seat_views.values() 
+                1
+                for view in self._seat_views.values()
                 if view.available and not view.suspended and not view.probe_unavailable
             )
             return available_count == 0 and not self._fallback_required
