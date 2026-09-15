@@ -1,4 +1,5 @@
 """Routing tests for the FEAT-551 `_formdesigner` branch (skips without botbuilder, like test_a2ui_submit.py)."""
+
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
@@ -13,12 +14,22 @@ pytestmark = pytest.mark.asyncio
 
 def _wrapper(allowed_hosts=("forms.test",)) -> MSTeamsAgentWrapper:
     w = MSTeamsAgentWrapper.__new__(MSTeamsAgentWrapper)
-    w.config = SimpleNamespace(allowed_conversation_ids=None, allowed_user_ids=None,
-                               formdesigner_allowed_hosts=list(allowed_hosts), formdesigner_submit_token=None,
-                               formdesigner_submit_secret=None, formdesigner_submit_timeout=5.0)
-    w.logger = MagicMock(); w._command_router = MagicMock(); w._command_router.try_dispatch = AsyncMock(return_value=True)
-    w.form_orchestrator = MagicMock(); w.send_text = AsyncMock(); w.send_card = AsyncMock()
-    w._formdesigner_session = None; w._formdesigner_recent = wrapper_mod.RecentActivityCache()
+    w.config = SimpleNamespace(
+        allowed_conversation_ids=None,
+        allowed_user_ids=None,
+        formdesigner_allowed_hosts=list(allowed_hosts),
+        formdesigner_submit_token=None,
+        formdesigner_submit_secret=None,
+        formdesigner_submit_timeout=5.0,
+    )
+    w.logger = MagicMock()
+    w._command_router = MagicMock()
+    w._command_router.try_dispatch = AsyncMock(return_value=True)
+    w.form_orchestrator = MagicMock()
+    w.send_text = AsyncMock()
+    w.send_card = AsyncMock()
+    w._formdesigner_session = None
+    w._formdesigner_recent = wrapper_mod.RecentActivityCache()
     return w
 
 
@@ -98,7 +109,9 @@ async def test_teams_wrapper_formdesigner_disabled_without_allowlist():
         await w._handle_card_submission(_ctx(value), dialog_context)
 
         # Should send "not enabled" text
-        w.send_text.assert_awaited_once_with("Form submissions are not enabled for this bot.", w.send_text.call_args[0][1])
+        w.send_text.assert_awaited_once_with(
+            "Form submissions are not enabled for this bot.", w.send_text.call_args[0][1]
+        )
 
         # post_submission should NOT be called
         mock_post.assert_not_awaited()

@@ -1,11 +1,18 @@
 """Unit tests for msteams.formdesigner_submit (FEAT-551 TASK-3150) — no botbuilder needed."""
+
 import uuid
 import pytest
 import asyncio
 from aiohttp import web
 from parrot.integrations.msteams.formdesigner_submit import (
-    EnvelopeRejected, RecentActivityCache, SubmitOutcome, build_reply_card, extract_answers, parse_envelope,
-    post_submission, verify_envelope,
+    EnvelopeRejected,
+    RecentActivityCache,
+    SubmitOutcome,
+    build_reply_card,
+    extract_answers,
+    parse_envelope,
+    post_submission,
+    verify_envelope,
 )
 from parrot.integrations.msteams.models import MSTeamsAgentConfig
 from parrot_formdesigner.renderers.teams import ENVELOPE_KEY, TeamsSubmitEnvelope
@@ -15,9 +22,14 @@ FORM_UID = uuid.uuid4()
 
 
 def _env(**over) -> TeamsSubmitEnvelope:
-    base = dict(form_uid=FORM_UID, tenant="navigator", form_version="1.0", is_public=True,
-                submit_url=f"https://forms.test/api/v1/navigator/forms/{FORM_UID}/data",
-                form_url=f"https://forms.test/navigator/forms/{FORM_UID}")
+    base = dict(
+        form_uid=FORM_UID,
+        tenant="navigator",
+        form_version="1.0",
+        is_public=True,
+        submit_url=f"https://forms.test/api/v1/navigator/forms/{FORM_UID}/data",
+        form_url=f"https://forms.test/navigator/forms/{FORM_UID}",
+    )
     base.update(over)
     return TeamsSubmitEnvelope(**base)
 
@@ -30,12 +42,15 @@ def test_parse_envelope_rejects_malformed():
     assert parse_envelope({ENVELOPE_KEY: _env().model_dump(mode="json")}).tenant == "navigator"
 
 
-@pytest.mark.parametrize("over,reason", [
-    ({"submit_url": f"http://forms.test/api/v1/navigator/forms/{FORM_UID}/data"}, "https"),
-    ({"submit_url": f"https://evil.test/api/v1/navigator/forms/{FORM_UID}/data"}, "not allowed"),
-    ({"submit_url": f"https://forms.test/api/v1/other/forms/{FORM_UID}/data"}, "does not match"),
-    ({"submit_url": f"https://forms.test/api/v1/navigator/forms/{uuid.uuid4()}/data"}, "does not match"),
-])
+@pytest.mark.parametrize(
+    "over,reason",
+    [
+        ({"submit_url": f"http://forms.test/api/v1/navigator/forms/{FORM_UID}/data"}, "https"),
+        ({"submit_url": f"https://evil.test/api/v1/navigator/forms/{FORM_UID}/data"}, "not allowed"),
+        ({"submit_url": f"https://forms.test/api/v1/other/forms/{FORM_UID}/data"}, "does not match"),
+        ({"submit_url": f"https://forms.test/api/v1/navigator/forms/{uuid.uuid4()}/data"}, "does not match"),
+    ],
+)
 def test_verify_envelope_rules(over, reason):
     with pytest.raises(EnvelopeRejected, match=reason):
         verify_envelope(_env(**over), allowed_hosts=["forms.test"], secret=None)
@@ -108,12 +123,16 @@ async def test_post_submission_outcomes(aiohttp_client):
     assert outcome.error == "TimeoutError"
 
     # Large response
-    outcome = await post_submission(client.session, env, {"marker": "large"}, bearer_token=None, timeout=1.0, max_response_bytes=100)
+    outcome = await post_submission(
+        client.session, env, {"marker": "large"}, bearer_token=None, timeout=1.0, max_response_bytes=100
+    )
     assert outcome.status == 200
     assert outcome.error == "response too large"
 
     # Auth check
-    outcome = await post_submission(client.session, env, {"marker": "auth_check"}, bearer_token="valid_token", timeout=1.0)
+    outcome = await post_submission(
+        client.session, env, {"marker": "auth_check"}, bearer_token="valid_token", timeout=1.0
+    )
     assert outcome.status == 200
     assert outcome.body == {"submission_id": "sub_auth", "is_valid": True}
 
@@ -153,7 +172,9 @@ def test_recent_activity_cache():
 
 
 def test_config_from_dict_formdesigner_fields():
-    cfg = MSTeamsAgentConfig.from_dict("bot", {"formdesigner_allowed_hosts": ["forms.test"], "formdesigner_submit_timeout": "5"})
+    cfg = MSTeamsAgentConfig.from_dict(
+        "bot", {"formdesigner_allowed_hosts": ["forms.test"], "formdesigner_submit_timeout": "5"}
+    )
     assert cfg.formdesigner_allowed_hosts == ["forms.test"]
     assert cfg.formdesigner_submit_timeout == 5.0
     assert MSTeamsAgentConfig.from_dict("bot", {}).formdesigner_allowed_hosts in (None, [])

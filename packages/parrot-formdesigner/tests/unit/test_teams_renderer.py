@@ -1,8 +1,9 @@
 """Unit tests for TeamsFormRenderer / TeamsSubmitEnvelope (FEAT-551 TASK-3147/TASK-3148)."""
+
 import json
 import pytest
-from parrot_formdesigner.core import FormSchema, FormSection, FormSubsection   # verified: test_renderers.py:4
-from parrot_formdesigner.core.schema import FormField                 # verified: test_renderers.py:5
+from parrot_formdesigner.core import FormSchema, FormSection, FormSubsection  # verified: test_renderers.py:4
+from parrot_formdesigner.core.schema import FormField  # verified: test_renderers.py:5
 from parrot_formdesigner.core.types import FieldType
 from parrot_formdesigner.renderers import AdaptiveCardRenderer, TeamsFormRenderer, TeamsSubmitEnvelope
 from parrot_formdesigner.renderers.teams import ENVELOPE_KEY, TeamsRenderConfigError
@@ -22,21 +23,16 @@ def form() -> FormSchema:
                 section_id="main",
                 title="Main Section",
                 fields=[
-                    FormField(
-                        field_id="name",
-                        field_type=FieldType.TEXT,
-                        label="Full Name",
-                        required=True
-                    ),
+                    FormField(field_id="name", field_type=FieldType.TEXT, label="Full Name", required=True),
                     FormField(
                         field_id="newsletter",
                         field_type=FieldType.BOOLEAN,
                         label="Subscribe to newsletter",
-                        required=False
-                    )
-                ]
+                        required=False,
+                    ),
+                ],
             )
-        ]
+        ],
     )
 
 
@@ -98,41 +94,30 @@ async def test_teams_wizard_last_step_only_has_envelope(form):
             FormSection(
                 section_id="step1",
                 title="Step 1",
-                fields=[
-                    FormField(
-                        field_id="field1",
-                        field_type=FieldType.TEXT,
-                        label="Field 1"
-                    )
-                ]
+                fields=[FormField(field_id="field1", field_type=FieldType.TEXT, label="Field 1")],
             ),
             FormSection(
                 section_id="step2",
                 title="Step 2",
-                fields=[
-                    FormField(
-                        field_id="field2",
-                        field_type=FieldType.TEXT,
-                        label="Field 2"
-                    )
-                ]
-            )
-        ]
+                fields=[FormField(field_id="field2", field_type=FieldType.TEXT, label="Field 2")],
+            ),
+        ],
     )
-    
+
     # First step - should not have envelope
     result = await renderer.render_section(multi_section_form, 0, show_back=True, show_skip=False)
     submit_actions = [action for action in result.content["actions"] if action["type"] == "Action.Submit"]
     next_action = next((action for action in submit_actions if action["data"]["_action"] == "next"), None)
     assert next_action is not None
     assert ENVELOPE_KEY not in next_action["data"]
-    
+
     # Last step - should have envelope
     result = await renderer.render_section(multi_section_form, 1, show_back=True, show_skip=False)
     submit_actions = [action for action in result.content["actions"] if action["type"] == "Action.Submit"]
     submit_action = next((action for action in submit_actions if action["data"]["_action"] == "submit"), None)
     assert submit_action is not None
     assert ENVELOPE_KEY in submit_action["data"]
+
 
 def _walk(node):
     """Yield every dict node in a nested Adaptive Card items/actions/body tree (TASK-3148)."""
@@ -178,14 +163,13 @@ async def test_teams_upload_fields_openurl_and_warning(renderer, upload_form):
     result = await renderer.render(upload_form, tenant="navigator")
     opens = [n for n in _walk(result.content["body"]) if n.get("type") == "Action.OpenUrl"]
     assert len(opens) == 2
-    assert all(
-        o["url"] == f"https://forms.test/navigator/forms/{upload_form.form_uid}" for o in opens
-    )
+    assert all(o["url"] == f"https://forms.test/navigator/forms/{upload_form.form_uid}" for o in opens)
     # Neither upload field's id shows up on an Input.* element — they render as
     # Container + Action.OpenUrl instead (spec §3 M2).
     upload_ids = {"photo", "doc"}
     inputs = [
-        n for n in _walk(result.content["body"])
+        n
+        for n in _walk(result.content["body"])
         if str(n.get("type", "")).startswith("Input.") and n.get("id") in upload_ids
     ]
     assert inputs == []
@@ -215,9 +199,7 @@ async def test_teams_upload_field_types_all_get_openurl_and_warning(renderer, fi
     opens = [n for n in _walk(result.content["body"]) if n.get("type") == "Action.OpenUrl"]
     assert len(opens) == 1
     assert opens[0]["url"] == f"https://forms.test/navigator/forms/{single_field_form.form_uid}"
-    teams_warnings = [
-        w for w in result.warnings if w.renderer == "teams" and w.field_id == "upload"
-    ]
+    teams_warnings = [w for w in result.warnings if w.renderer == "teams" and w.field_id == "upload"]
     assert len(teams_warnings) == 1
     assert teams_warnings[0].field_type == field_type.value
 

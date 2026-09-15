@@ -4,6 +4,7 @@ No botbuilder import here on purpose: everything is unit-testable without the ``
 The wrapper (``wrapper.py``) owns the aiohttp session and calls these in order:
 parse_envelope -> verify_envelope -> RecentActivityCache.seen -> extract_answers -> post_submission -> build_reply_card.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -17,8 +18,8 @@ from urllib.parse import urlparse
 import aiohttp
 from pydantic import BaseModel, ValidationError
 
-from parrot.outputs.cards.spec import DEFAULT_ADAPTIVE_CARD_VERSION       # verified: cards/spec.py:12
-from parrot_formdesigner.renderers.teams import ENVELOPE_KEY, RESERVED_CONTROL_KEYS, TeamsSubmitEnvelope   # TASK-3147
+from parrot.outputs.cards.spec import DEFAULT_ADAPTIVE_CARD_VERSION  # verified: cards/spec.py:12
+from parrot_formdesigner.renderers.teams import ENVELOPE_KEY, RESERVED_CONTROL_KEYS, TeamsSubmitEnvelope  # TASK-3147
 
 logger = logging.getLogger(__name__)
 MAX_RESPONSE_BYTES: int = 1_048_576
@@ -40,8 +41,9 @@ def parse_envelope(submitted_data: dict[str, Any]) -> TeamsSubmitEnvelope:
         raise EnvelopeRejected("This card's FormDesigner envelope is malformed.") from exc
 
 
-def verify_envelope(env: TeamsSubmitEnvelope, *, allowed_hosts: list[str], secret: str | None,
-                    api_base_path: str = "/api/v1") -> None:
+def verify_envelope(
+    env: TeamsSubmitEnvelope, *, allowed_hosts: list[str], secret: str | None, api_base_path: str = "/api/v1"
+) -> None:
     """SSRF guard (spec S3). Order: https -> host allowlist -> path/tenant/uid -> signature."""
     url = urlparse(str(env.submit_url))
     if url.scheme != "https":
@@ -62,14 +64,21 @@ def extract_answers(submitted_data: dict[str, Any]) -> dict[str, Any]:
 
 class SubmitOutcome(BaseModel):
     """Result of the forwarding POST. ``status == 0`` means the request never completed."""
+
     status: int
     body: dict[str, Any] | None = None
     error: str | None = None
 
 
-async def post_submission(session: aiohttp.ClientSession, env: TeamsSubmitEnvelope, answers: dict[str, Any], *,
-                          bearer_token: str | None, timeout: float,
-                          max_response_bytes: int = MAX_RESPONSE_BYTES) -> SubmitOutcome:
+async def post_submission(
+    session: aiohttp.ClientSession,
+    env: TeamsSubmitEnvelope,
+    answers: dict[str, Any],
+    *,
+    bearer_token: str | None,
+    timeout: float,
+    max_response_bytes: int = MAX_RESPONSE_BYTES,
+) -> SubmitOutcome:
     """POST the legacy JSON body to ``env.submit_url`` (no redirects, bounded timeout and body size)."""
     headers = {"Accept": "application/json"}
     if bearer_token:
@@ -80,7 +89,7 @@ async def post_submission(session: aiohttp.ClientSession, env: TeamsSubmitEnvelo
             json=answers,
             headers=headers,
             allow_redirects=False,
-            timeout=aiohttp.ClientTimeout(total=timeout)
+            timeout=aiohttp.ClientTimeout(total=timeout),
         ) as resp:
             raw = await resp.content.read(max_response_bytes + 1)
             if len(raw) > max_response_bytes:
@@ -109,20 +118,17 @@ def build_reply_card(outcome: SubmitOutcome, env: TeamsSubmitEnvelope) -> dict[s
         text = "Thank you! Your submission has been received successfully."
         if sub_id:
             text += f"\n\n**Submission ID:** {sub_id}"
-        body_elements.append({
-            "type": "TextBlock",
-            "text": text,
-            "wrap": True,
-            "color": "Good"
-        })
+        body_elements.append({"type": "TextBlock", "text": text, "wrap": True, "color": "Good"})
     elif outcome.status == 422:
-        body_elements.append({
-            "type": "TextBlock",
-            "text": "Your submission contains validation errors. Please correct them and try again:",
-            "wrap": True,
-            "weight": "Bolder",
-            "color": "Attention"
-        })
+        body_elements.append(
+            {
+                "type": "TextBlock",
+                "text": "Your submission contains validation errors. Please correct them and try again:",
+                "wrap": True,
+                "weight": "Bolder",
+                "color": "Attention",
+            }
+        )
         errors = {}
         if outcome.body and isinstance(outcome.body, dict):
             errors = outcome.body.get("errors", {})
@@ -132,51 +138,51 @@ def build_reply_card(outcome: SubmitOutcome, env: TeamsSubmitEnvelope) -> dict[s
                     msg_str = ", ".join(str(m) for m in msgs)
                 else:
                     msg_str = str(msgs)
-                body_elements.append({
-                    "type": "TextBlock",
-                    "text": f"- **{field_id}**: {msg_str}",
-                    "wrap": True,
-                    "isSubtle": True
-                })
+                body_elements.append(
+                    {"type": "TextBlock", "text": f"- **{field_id}**: {msg_str}", "wrap": True, "isSubtle": True}
+                )
         else:
-            body_elements.append({
-                "type": "TextBlock",
-                "text": "Unknown validation error occurred.",
-                "wrap": True,
-                "isSubtle": True
-            })
+            body_elements.append(
+                {"type": "TextBlock", "text": "Unknown validation error occurred.", "wrap": True, "isSubtle": True}
+            )
     elif outcome.status in (401, 403):
-        body_elements.append({
-            "type": "TextBlock",
-            "text": "Submission failed: You do not have permission to submit this private form.",
-            "wrap": True,
-            "color": "Attention",
-            "weight": "Bolder"
-        })
+        body_elements.append(
+            {
+                "type": "TextBlock",
+                "text": "Submission failed: You do not have permission to submit this private form.",
+                "wrap": True,
+                "color": "Attention",
+                "weight": "Bolder",
+            }
+        )
     elif outcome.status == 404:
-        body_elements.append({
-            "type": "TextBlock",
-            "text": "Submission failed: The target form could not be found.",
-            "wrap": True,
-            "color": "Attention",
-            "weight": "Bolder"
-        })
+        body_elements.append(
+            {
+                "type": "TextBlock",
+                "text": "Submission failed: The target form could not be found.",
+                "wrap": True,
+                "color": "Attention",
+                "weight": "Bolder",
+            }
+        )
     else:
         # status == 0 or 5xx or other unhandled status
         err_msg = outcome.error or f"HTTP {outcome.status}"
-        body_elements.append({
-            "type": "TextBlock",
-            "text": f"Submission failed: Could not reach the submission server ({err_msg}). Please try again later.",
-            "wrap": True,
-            "color": "Attention",
-            "weight": "Bolder"
-        })
+        body_elements.append(
+            {
+                "type": "TextBlock",
+                "text": f"Submission failed: Could not reach the submission server ({err_msg}). Please try again later.",
+                "wrap": True,
+                "color": "Attention",
+                "weight": "Bolder",
+            }
+        )
 
     return {
         "type": "AdaptiveCard",
         "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
         "version": DEFAULT_ADAPTIVE_CARD_VERSION,
-        "body": body_elements
+        "body": body_elements,
     }
 
 

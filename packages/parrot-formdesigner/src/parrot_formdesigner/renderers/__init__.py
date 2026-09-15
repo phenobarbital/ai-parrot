@@ -9,6 +9,7 @@ Renderers convert FormSchema + StyleSchema into platform-specific output:
 - A2UIFormRenderer: A2UI v1.0 createSurface envelope (requires the
   ``ai-parrot`` extra — FEAT-544)
 """
+
 # Lazy re-exports (PEP 562). TelegramRenderer pulls aiogram (~1.5s);
 # A2UIFormRenderer's own module imports ai-parrot lazily (optional extra) —
 # both are deferred until the symbol is actually accessed.

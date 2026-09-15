@@ -92,7 +92,9 @@ def test_seed_skips_a2ui_when_spec_missing(monkeypatch, caplog):
     monkeypatch.setattr(
         importlib.util,
         "find_spec",
-        lambda name, *args, **kwargs: (None if name == "parrot.outputs.a2ui" else real_find_spec(name, *args, **kwargs)),
+        lambda name, *args, **kwargs: (
+            None if name == "parrot.outputs.a2ui" else real_find_spec(name, *args, **kwargs)
+        ),
     )
     with caplog.at_level("INFO"):
         _seed_default_renderers()
@@ -218,8 +220,7 @@ async def test_dispatcher_html_delegates(aiohttp_client, sample_form):
     captured: dict[str, Any] = {}
 
     class _R(AbstractFormRenderer):
-        async def render(self, form, style=None, *, locale="en",
-                         prefilled=None, errors=None):
+        async def render(self, form, style=None, *, locale="en", prefilled=None, errors=None):
             captured["form_id"] = form.form_id
             captured["locale"] = locale
             return RenderedForm(content="<html/>", content_type="text/html")
@@ -236,9 +237,7 @@ async def test_dispatcher_html_delegates(aiohttp_client, sample_form):
     )
 
     client = await aiohttp_client(app)
-    resp = await client.get(
-        f"/api/v1/navigator/forms/{sample_form.form_uid}/render/html"
-    )
+    resp = await client.get(f"/api/v1/navigator/forms/{sample_form.form_uid}/render/html")
     assert resp.status == 200
     assert resp.content_type == "text/html"
     assert captured["form_id"] == sample_form.form_id
@@ -254,8 +253,7 @@ async def test_dispatcher_adaptive_delegates(aiohttp_client, sample_form):
     captured: dict[str, Any] = {}
 
     class _R(AbstractFormRenderer):
-        async def render(self, form, style=None, *, locale="en",
-                         prefilled=None, errors=None):
+        async def render(self, form, style=None, *, locale="en", prefilled=None, errors=None):
             captured["form_id"] = form.form_id
             captured["locale"] = locale
             return RenderedForm(
@@ -275,9 +273,7 @@ async def test_dispatcher_adaptive_delegates(aiohttp_client, sample_form):
     )
 
     client = await aiohttp_client(app)
-    resp = await client.get(
-        f"/api/v1/navigator/forms/{sample_form.form_uid}/render/adaptive"
-    )
+    resp = await client.get(f"/api/v1/navigator/forms/{sample_form.form_uid}/render/adaptive")
     assert resp.status == 200
     assert resp.content_type == "application/json"
     assert captured["form_id"] == sample_form.form_id
@@ -297,9 +293,7 @@ async def test_dispatcher_404_when_form_unknown(aiohttp_client):
     client = await aiohttp_client(app)
     # FEAT-389: must be a well-formed (but unregistered) UUID — extract_form_uid()
     # validates format before the registry lookup runs.
-    resp = await client.get(
-        "/api/v1/navigator/forms/00000000-0000-0000-0000-000000000000/render/html"
-    )
+    resp = await client.get("/api/v1/navigator/forms/00000000-0000-0000-0000-000000000000/render/html")
     assert resp.status == 404
 
 
@@ -332,9 +326,7 @@ async def test_dispatcher_teams_415_when_unregistered(aiohttp_client, sample_for
     )
 
     client = await aiohttp_client(app)
-    resp = await client.get(
-        f"/api/v1/navigator/forms/{sample_form.form_uid}/render/teams"
-    )
+    resp = await client.get(f"/api/v1/navigator/forms/{sample_form.form_uid}/render/teams")
     assert resp.status == 415
     body = await resp.json()
     assert "supported" in body
@@ -376,9 +368,7 @@ async def test_dispatcher_teams_passes_tenant(aiohttp_client, sample_form):
     )
 
     client = await aiohttp_client(app)
-    resp = await client.get(
-        f"/api/v1/navigator/forms/{sample_form.form_uid}/render/teams"
-    )
+    resp = await client.get(f"/api/v1/navigator/forms/{sample_form.form_uid}/render/teams")
     assert resp.status == 200
     assert captured["tenant"] == "navigator"
 
@@ -418,9 +408,7 @@ async def test_dispatcher_teams_without_accepts_tenant(aiohttp_client, sample_fo
     )
 
     client = await aiohttp_client(app)
-    resp = await client.get(
-        f"/api/v1/navigator/forms/{sample_form.form_uid}/render/teams"
-    )
+    resp = await client.get(f"/api/v1/navigator/forms/{sample_form.form_uid}/render/teams")
     assert resp.status == 200
     assert captured["tenant"] is None  # Not passed
 
@@ -467,9 +455,7 @@ async def test_dispatcher_with_meta_envelope(aiohttp_client, sample_form):
     client = await aiohttp_client(app)
 
     # Test with_meta=true
-    resp = await client.get(
-        f"/api/v1/navigator/forms/{sample_form.form_uid}/render/teams?with_meta=true"
-    )
+    resp = await client.get(f"/api/v1/navigator/forms/{sample_form.form_uid}/render/teams?with_meta=true")
     assert resp.status == 200
     body = await resp.json()
     assert "content" in body
@@ -483,9 +469,7 @@ async def test_dispatcher_with_meta_envelope(aiohttp_client, sample_form):
     assert body["metadata"]["channel"] == "msteams"
 
     # Test without with_meta - should return raw content
-    resp = await client.get(
-        f"/api/v1/navigator/forms/{sample_form.form_uid}/render/teams"
-    )
+    resp = await client.get(f"/api/v1/navigator/forms/{sample_form.form_uid}/render/teams")
     assert resp.status == 200
     assert resp.content_type == "application/json"
     body_raw = await resp.json()
@@ -519,9 +503,7 @@ async def test_dispatcher_render_config_error_400(aiohttp_client, sample_form):
     )
 
     client = await aiohttp_client(app)
-    resp = await client.get(
-        f"/api/v1/navigator/forms/{sample_form.form_uid}/render/teams"
-    )
+    resp = await client.get(f"/api/v1/navigator/forms/{sample_form.form_uid}/render/teams")
     assert resp.status == 400
     body = await resp.json()
     assert "error" in body

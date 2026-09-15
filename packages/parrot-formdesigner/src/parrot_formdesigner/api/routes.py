@@ -163,6 +163,7 @@ def _reserved_tenant_segments(app: web.Application, bp: str) -> frozenset[str]:
             reserved.add(first_segment)
     return frozenset(reserved)
 
+
 def _stash_without_clobbering(app: web.Application, key: str, value: object) -> None:
     """Put ``value`` on ``app[key]`` without destroying what the host wired.
 
@@ -186,7 +187,6 @@ def _stash_without_clobbering(app: web.Application, key: str, value: object) -> 
         app[key] = value
     else:
         app.setdefault(key, None)
-
 
 
 def setup_form_api(

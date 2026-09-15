@@ -1,6 +1,7 @@
 """
 Data models for MS Teams bot configuration.
 """
+
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Dict, List, Optional, Any
 from navconfig import config
@@ -26,6 +27,7 @@ class MSTeamsAgentConfig:
         dialog: Optional dialog configuration.
         voice_config: Optional voice transcription configuration.
     """
+
     name: str
     chatbot_id: str
     client_id: Optional[str] = None
@@ -54,9 +56,9 @@ class MSTeamsAgentConfig:
 
     # FormDesigner card submissions — FEAT-551
     # The bot forwards `_formdesigner` Action.Submit envelopes to POST .../forms/{uid}/data.
-    formdesigner_allowed_hosts: Optional[List[str]] = None   # None/[] disables the branch
-    formdesigner_submit_token: Optional[str] = None           # Authorization: Bearer (private forms)
-    formdesigner_submit_secret: Optional[str] = None          # HMAC secret; envelopes must carry a valid sig when set
+    formdesigner_allowed_hosts: Optional[List[str]] = None  # None/[] disables the branch
+    formdesigner_submit_token: Optional[str] = None  # Authorization: Bearer (private forms)
+    formdesigner_submit_secret: Optional[str] = None  # HMAC secret; envelopes must carry a valid sig when set
     formdesigner_submit_timeout: float = 15.0
 
     def __post_init__(self):
@@ -70,10 +72,7 @@ class MSTeamsAgentConfig:
             env_var_name = f"{self.name.upper()}_MICROSOFT_APP_PASSWORD"
             self.client_secret = config.get(env_var_name)
         if not self.app_tenantid:
-            self.app_tenantid = (
-                config.get(f"{self.name.upper()}_APP_TENANTID")
-                or config.get("APP_TENANTID")
-            )
+            self.app_tenantid = config.get(f"{self.name.upper()}_APP_TENANTID") or config.get("APP_TENANTID")
         # Jira OAuth env fallbacks
         if not self.jira_client_id:
             self.jira_client_id = config.get(f"{self.name.upper()}_JIRA_CLIENT_ID")
@@ -95,15 +94,11 @@ class MSTeamsAgentConfig:
         if self.allowed_conversation_ids is None:
             env_val = config.get(f"{name_upper}_ALLOWED_CONVERSATION_IDS")
             if env_val:
-                self.allowed_conversation_ids = [
-                    s.strip() for s in env_val.split(",") if s.strip()
-                ]
+                self.allowed_conversation_ids = [s.strip() for s in env_val.split(",") if s.strip()]
         if self.allowed_user_ids is None:
             env_val = config.get(f"{name_upper}_ALLOWED_USER_IDS")
             if env_val:
-                self.allowed_user_ids = [
-                    s.strip() for s in env_val.split(",") if s.strip()
-                ]
+                self.allowed_user_ids = [s.strip() for s in env_val.split(",") if s.strip()]
 
     @property
     def APP_ID(self) -> str:
@@ -127,12 +122,13 @@ class MSTeamsAgentConfig:
         return self.voice_config is not None and self.voice_config.enabled
 
     @classmethod
-    def from_dict(cls, name: str, data: Dict[str, Any]) -> 'MSTeamsAgentConfig':
+    def from_dict(cls, name: str, data: Dict[str, Any]) -> "MSTeamsAgentConfig":
         """Create config from dictionary."""
         # Parse voice_config if provided
         voice_config = None
-        if voice_data := data.get('voice_config'):
+        if voice_data := data.get("voice_config"):
             from .voice.models import VoiceTranscriberConfig
+
             if isinstance(voice_data, dict):
                 voice_config = VoiceTranscriberConfig(**voice_data)
             elif isinstance(voice_data, VoiceTranscriberConfig):
@@ -140,29 +136,27 @@ class MSTeamsAgentConfig:
 
         return cls(
             name=name,
-            chatbot_id=data.get('chatbot_id', name),
-            client_id=data.get('client_id'),
-            client_secret=data.get('client_secret'),
-            app_type=data.get('app_type', 'MultiTenant'),
-            app_tenantid=data.get('app_tenantid'),
-            welcome_message=data.get('welcome_message'),
-            commands=data.get('commands', {}),
-            dialog=data.get('dialog'),
-            enable_group_mentions=data.get('enable_group_mentions', True),
-            enable_group_commands=data.get('enable_group_commands', True),
-            allowed_conversation_ids=data.get('allowed_conversation_ids'),
-            allowed_user_ids=data.get('allowed_user_ids'),
+            chatbot_id=data.get("chatbot_id", name),
+            client_id=data.get("client_id"),
+            client_secret=data.get("client_secret"),
+            app_type=data.get("app_type", "MultiTenant"),
+            app_tenantid=data.get("app_tenantid"),
+            welcome_message=data.get("welcome_message"),
+            commands=data.get("commands", {}),
+            dialog=data.get("dialog"),
+            enable_group_mentions=data.get("enable_group_mentions", True),
+            enable_group_commands=data.get("enable_group_commands", True),
+            allowed_conversation_ids=data.get("allowed_conversation_ids"),
+            allowed_user_ids=data.get("allowed_user_ids"),
             voice_config=voice_config,
-            adaptive_card_version=data.get(
-                'adaptive_card_version', DEFAULT_ADAPTIVE_CARD_VERSION
-            ),
+            adaptive_card_version=data.get("adaptive_card_version", DEFAULT_ADAPTIVE_CARD_VERSION),
             # Jira OAuth (FEAT-225)
-            jira_client_id=data.get('jira_client_id'),
-            jira_client_secret=data.get('jira_client_secret'),
-            jira_redirect_uri=data.get('jira_redirect_uri'),
+            jira_client_id=data.get("jira_client_id"),
+            jira_client_secret=data.get("jira_client_secret"),
+            jira_redirect_uri=data.get("jira_redirect_uri"),
             # FormDesigner (FEAT-551)
-            formdesigner_allowed_hosts=data.get('formdesigner_allowed_hosts'),
-            formdesigner_submit_token=data.get('formdesigner_submit_token'),
-            formdesigner_submit_secret=data.get('formdesigner_submit_secret'),
-            formdesigner_submit_timeout=float(data.get('formdesigner_submit_timeout', 15.0)),
+            formdesigner_allowed_hosts=data.get("formdesigner_allowed_hosts"),
+            formdesigner_submit_token=data.get("formdesigner_submit_token"),
+            formdesigner_submit_secret=data.get("formdesigner_submit_secret"),
+            formdesigner_submit_timeout=float(data.get("formdesigner_submit_timeout", 15.0)),
         )

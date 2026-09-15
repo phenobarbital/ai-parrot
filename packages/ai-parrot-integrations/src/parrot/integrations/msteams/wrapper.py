@@ -1005,16 +1005,24 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
             return
         try:
             env = parse_envelope(submitted_data)
-            verify_envelope(env, allowed_hosts=allowed, secret=self.config.formdesigner_submit_secret,
-                            api_base_path=FORMDESIGNER_API_BASE_PATH)
+            verify_envelope(
+                env,
+                allowed_hosts=allowed,
+                secret=self.config.formdesigner_submit_secret,
+                api_base_path=FORMDESIGNER_API_BASE_PATH,
+            )
             activity_id = getattr(turn_context.activity, "id", None)
             if activity_id and self._formdesigner_recent.seen(activity_id):
                 self.logger.info("formdesigner submit: duplicate activity %s ignored", activity_id)
                 return
             answers = extract_answers(submitted_data)
-            outcome = await post_submission(await self._get_formdesigner_session(), env, answers,
-                                            bearer_token=self.config.formdesigner_submit_token,
-                                            timeout=self.config.formdesigner_submit_timeout)
+            outcome = await post_submission(
+                await self._get_formdesigner_session(),
+                env,
+                answers,
+                bearer_token=self.config.formdesigner_submit_token,
+                timeout=self.config.formdesigner_submit_timeout,
+            )
             self.logger.info("formdesigner submit: form=%s status=%s", env.form_uid, outcome.status)
             await self.send_card(build_reply_card(outcome, env), turn_context)
         except EnvelopeRejected as exc:

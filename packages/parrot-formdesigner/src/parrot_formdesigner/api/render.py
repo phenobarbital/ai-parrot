@@ -31,7 +31,6 @@ from ..renderers.base import AbstractFormRenderer
 from .handlers import extract_form_uid
 from .tenant import declared_tenant, enforce_membership_unless_public
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -135,9 +134,7 @@ def register_teams_renderer(
 
     if renderer is None:
         if not (public_base_url or os.environ.get(PUBLIC_URL_ENV)):
-            logger.info(
-                "register_teams_renderer: no public base URL — 'teams' format not registered"
-            )
+            logger.info("register_teams_renderer: no public base URL — 'teams' format not registered")
             return False
         renderer = TeamsFormRenderer(
             public_base_url,
@@ -190,16 +187,12 @@ async def handle_render(request: web.Request) -> web.Response:
     registry = request.app.get("form_registry")
     if registry is None:
         logger.error("render dispatcher: app['form_registry'] is unset")
-        return web.json_response(
-            {"error": "form registry not configured"}, status=500
-        )
+        return web.json_response({"error": "form registry not configured"}, status=500)
 
     tenant = declared_tenant(request)
     form = await registry.get(form_uid, tenant=tenant)
     if form is None:
-        return web.json_response(
-            {"error": f"Form '{form_uid}' not found"}, status=404
-        )
+        return web.json_response({"error": f"Form '{form_uid}' not found"}, status=404)
     # FEAT-421 review fix: this route is mounted tenant="public" (the same
     # route serves public and private forms) — requires_tenant skipped
     # membership authorization at the decorator level because it can't
@@ -220,12 +213,14 @@ async def handle_render(request: web.Request) -> web.Response:
 
     # ?with_meta=true returns a JSON envelope with content, content_type, warnings, metadata
     if request.query.get("with_meta", "").lower() in ("1", "true", "yes"):
-        return web.json_response({
-            "content": rendered.content,
-            "content_type": rendered.content_type,
-            "warnings": [w.model_dump(mode="json") for w in rendered.warnings],
-            "metadata": rendered.metadata,
-        })
+        return web.json_response(
+            {
+                "content": rendered.content,
+                "content_type": rendered.content_type,
+                "warnings": [w.model_dump(mode="json") for w in rendered.warnings],
+                "metadata": rendered.metadata,
+            }
+        )
 
     body = _coerce_body(rendered.content)
     if isinstance(body, str):

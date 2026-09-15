@@ -515,19 +515,17 @@ async def test_wizard_non_terminal_actions_unchanged():
             ),
         ],
     )
-    result = await AdaptiveCardRenderer().render_section(
-        multi_section_form, 1, show_back=True, show_skip=True
-    )
-    
+    result = await AdaptiveCardRenderer().render_section(multi_section_form, 1, show_back=True, show_skip=True)
+
     # Check that there's no submit action (since it's not the last step)
     actions = result.content.get("actions", [])
     submit_actions = [action for action in actions if action.get("data", {}).get("_action") == "submit"]
     assert len(submit_actions) == 0
-    
+
     # Check that Next action exists (non-last step should have Next, not Submit)
     next_actions = [action for action in actions if action.get("data", {}).get("_action") == "next"]
     assert len(next_actions) == 1
-    
+
     # Check that other actions have the expected literals
     action_data_values = [action.get("data", {}).get("_action") for action in actions]
     expected_literals = {"back", "skip", "cancel", "next"}
@@ -552,18 +550,18 @@ async def test_wizard_terminal_action_uses_hook(sample_schema):
                 section_id="sec2",
                 title="Section 2",
                 fields=[FormField(field_id="email", field_type=FieldType.EMAIL, label="Email")],
-            )
+            ),
         ],
     )
-    
+
     # Render the last section (index 1)
     result = await AdaptiveCardRenderer().render_section(multi_section_form, 1)
-    
+
     # Check that Submit action exists and uses our hook
     actions = result.content.get("actions", [])
     submit_actions = [action for action in actions if action.get("data", {}).get("_action") == "submit"]
     assert len(submit_actions) == 1
-    
+
     # The data should be what our hook returns
     submit_action = submit_actions[0]
     assert submit_action["data"] == {"_action": "submit"}
@@ -573,12 +571,8 @@ async def test_wizard_terminal_action_uses_hook(sample_schema):
 async def test_upload_element_default_matches_previous_fallback(sample_schema):
     """An IMAGE field with a FileEnvelope-like dict value renders Input.Text with filename (thumbnail_url) — as before."""
     # Create a form with an IMAGE field
-    image_field = FormField(
-        field_id="upload_test",
-        field_type=FieldType.IMAGE,
-        label="Upload Test"
-    )
-    
+    image_field = FormField(field_id="upload_test", field_type=FieldType.IMAGE, label="Upload Test")
+
     form_with_image = FormSchema(
         form_id="test_image",
         title="Test Image Form",
@@ -590,21 +584,18 @@ async def test_upload_element_default_matches_previous_fallback(sample_schema):
             )
         ],
     )
-    
+
     # Test with a FileEnvelope-like dict value
-    file_value = {
-        "filename": "test.png",
-        "thumbnail_url": "https://example.com/thumb.png"
-    }
-    
+    file_value = {"filename": "test.png", "thumbnail_url": "https://example.com/thumb.png"}
+
     renderer = AdaptiveCardRenderer()
     result = await renderer.render(form_with_image, prefilled={"upload_test": file_value})
-    
+
     # Find the input element for our field
     body = result.content.get("body", [])
     input_elements = [elem for elem in body if elem.get("id") == "upload_test" and elem.get("type") == "Input.Text"]
     assert len(input_elements) == 1
-    
+
     input_elem = input_elements[0]
     # Should contain the filename and thumbnail_url as before
     assert "test.png (https://example.com/thumb.png)" in input_elem.get("value", "")
