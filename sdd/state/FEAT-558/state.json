@@ -3,7 +3,7 @@
   "feat_id": "FEAT-558",
   "feature_slug": "querysource-toolkit-refactor",
   "started_at": "2026-09-15T00:21:56Z",
-  "updated_at": "2026-09-15T03:05:00Z",
+  "updated_at": "2026-09-15T03:40:00Z",
   "source": {
     "kind": "inline",
     "jira_key": null,
@@ -14,7 +14,7 @@
     "summary_oneline": "Refactor QSSourceTool into a tenant-scoped QuerysourceToolkit that explains, lists, inspects and executes query-slugs and MultiQuery pipelines."
   },
   "mode": "enrichment",
-  "phase": "committed",
+  "phase": "spec_drafted",
   "wiki_available": true,
   "phases": {
     "source": {
@@ -99,8 +99,9 @@
   },
   "errors": [],
   "resume_hint": {
-    "next_phase": "sdd-spec",
-    "next_action": "Run /sdd-spec FEAT-558 (reserves the ledger id) using the proposal."
+    "next_phase": "sdd-task",
+    "next_action": "Review sdd/specs/querysource-toolkit-refactor.spec.md, set Status: approved, then /sdd-task sdd/specs/querysource-toolkit-refactor.spec.md"
   },
-  "notes": "FEAT-558 reserved by /sdd-spec via reserve_ids.py on 2026-09-15; was provisional FEAT-567 during /sdd-proposal."
+  "notes": "FEAT-558 reserved by /sdd-spec via reserve_ids.py on 2026-09-15; was provisional FEAT-567 during /sdd-proposal.",
+  "spec_path": "sdd/specs/querysource-toolkit-refactor.spec.md"
 }

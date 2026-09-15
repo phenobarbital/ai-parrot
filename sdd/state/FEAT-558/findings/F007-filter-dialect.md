@@ -65,3 +65,8 @@ WHERE value grammar (SQLParser): scalar → `key = 'v'`; `"!v"` or key suffix `!
   excerpt: QS_VARIABLES = {}
 ## Notes
 A Rust fast path (`qs_parsers/_qs_parsers.so`, `HAS_RUST`) implements the same WHERE builder; grammar parity is asserted by the library, not verified here. The dialect reference the toolkit ships to the LLM should be generated from this finding and re-verified at spec time against the pinned querysource version.
+
+## Addendum (2026-09-15, /sdd-spec)
+GitHub tag `4.5.11` exists (`git ls-remote --tags`) and its `querysource/parsers/abstract.pyx` and `parsers/sql.pyx`
+are byte-identical to the `dev` copies cited above (`diff -q`). The dialect is therefore verified against the
+installed wheel version, not just `dev`; confidence for claim C4 rises to high.
