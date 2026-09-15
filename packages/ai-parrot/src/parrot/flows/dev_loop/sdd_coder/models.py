@@ -7,6 +7,8 @@ import re
 from typing import Any, Dict, List, Literal, Optional, Tuple
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from parrot.knowledge.wiki.ledger.coder_feedback import CoderFeedback
+from parrot.knowledge.wiki.ledger.coder_reviews import CoderReview
 
 from parrot.flows.dev_loop.models import (  # verified: models/base.py:407, :497
     DevAgentBackend,
@@ -103,6 +105,14 @@ class LintReport(BaseModel):
     tool_error: str = ""
 
 
+class FeedbackConfig(BaseModel):
+    """Bound historical lessons and allow a measured baseline without injection."""
+
+    enabled: bool = True
+    max_tokens: int = Field(default=1800, ge=0, le=6000)
+    max_age_days: int = Field(default=90, ge=1, le=365)
+
+
 class RosterConfig(BaseModel):
     """Ordered roster + engine bounds (spec: wait ≤ 300 s)."""
 
@@ -110,6 +120,7 @@ class RosterConfig(BaseModel):
     wait_timeout_max_s: int = Field(default=300, ge=10, le=300)
     smoke_timeout_s: int = Field(default=60, ge=5, le=300)
     lint: LintConfig = Field(default_factory=LintConfig)
+    feedback: FeedbackConfig = Field(default_factory=FeedbackConfig)
 
 
 class SeatProbeResult(BaseModel):
@@ -232,6 +243,9 @@ class NativePrep(BaseModel):
     branch: str
     worktree_path: str
     seat_label: str
+    model: str = "haiku"
+    attempt_uid: str = ""
+    coder_feedback: str = ""
 
 
 class CoderJob(BaseModel):
@@ -340,6 +354,18 @@ class CoderPrepareNativeArgs(_Args):
 
 class CoderMergeArgs(CoderPrepareNativeArgs):
     """Same shape as prepare_native."""
+
+
+class CoderRecordFeedbackArgs(CoderPlanArgs):
+    """Record a worker-confirmed correction from a known coder attempt."""
+
+    feedback: CoderFeedback
+
+
+class CoderRecordReviewArgs(CoderPlanArgs):
+    """Complete review measurement, including zero-fix deliveries."""
+
+    review: CoderReview
 
 
 class CoderWaitArgs(_Args):

@@ -132,15 +132,22 @@ class ChunkAssigner:
         self._seats, self._start = list(seats), 0
 
     def assign(self, wave: List[TaskRef], task_files: Dict[str, str]) -> List[PlanChunk]:
-        """Sort by id; chunk k = tasks[k*n:(k+1)*n]; task j ↦ seats[(start+j) % n]; start
+        """Sort by id; each exclusive task alone first, then shared chunk k = shared[k*n:(k+1)*n];
+        task j ↦ seats[(start+j) % n]; start
         advances by one for each chunk produced, so consecutive chunks begin on a
         different seat even when every chunk is a full `n`-sized batch (a `+= len(chunk)`
         step would be a no-op mod `n` whenever the batch is full-sized)."""
         n = len(self._seats)
         ordered = sorted(wave, key=lambda t: t.id)  # design research S3
+        # Exclusive tasks (`parallel: false` under the index's exclusive semantics) get a
+        # chunk of their own and come first: the orchestrator dispatches only chunks[0]
+        # per round, so an exclusive task queued behind shared batches could starve while
+        # new shared tasks keep unblocking.
+        exclusive = [t for t in ordered if not t.parallel]
+        shared = [t for t in ordered if t.parallel]
+        batches = [[t] for t in exclusive] + [shared[k : k + n] for k in range(0, len(shared), n)]
         chunks: List[PlanChunk] = []
-        for k in range(0, len(ordered), n):
-            batch = ordered[k : k + n]
+        for batch in batches:
             planned_tasks: List[PlannedTask] = []
             for j, task in enumerate(batch):
                 seat = self._seats[(self._start + j) % n]

@@ -150,3 +150,26 @@ class TestTaskFile:
         p = index_file([{"id": "TASK-1", "status": "pending", "depends_on": []}])
         s = TaskScheduler.from_index_file(p)
         assert s.next_wave()[0].file == ""
+
+
+def _index(tmp_path, header: dict) -> TaskScheduler:
+    path = tmp_path / "index.json"
+    tasks = [
+        {"id": "TASK-1", "status": "pending", "depends_on": [], "parallel": False},
+        {"id": "TASK-2", "status": "pending", "depends_on": []},
+    ]
+    path.write_text(json.dumps({**header, "tasks": tasks}))
+    sched = TaskScheduler.from_index_file(path)
+    assert sched is not None
+    return sched
+
+
+def test_parallel_flag_ignored_without_exclusive_semantics(tmp_path):
+    """Legacy indexes defaulted `parallel: false` everywhere; it must not serialize them."""
+    wave = {t.id: t.parallel for t in _index(tmp_path, {}).next_wave()}
+    assert wave == {"TASK-1": True, "TASK-2": True}
+
+
+def test_parallel_flag_honoured_under_exclusive_semantics(tmp_path):
+    wave = {t.id: t.parallel for t in _index(tmp_path, {"parallel_semantics": "exclusive"}).next_wave()}
+    assert wave == {"TASK-1": False, "TASK-2": True}

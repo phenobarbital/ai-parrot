@@ -21,6 +21,13 @@ from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
+#: Per-spec index header value (``"parallel_semantics": "exclusive"``) under which
+#: ``parallel: false`` means "exclusive — never dispatched alongside another task".
+#: Legacy indexes used ``parallel`` as a loose "could run in its own worktree" hint
+#: that defaulted to ``false`` on nearly every task, so without this header the
+#: flag is ignored and only ``depends_on`` shapes the waves.
+PARALLEL_SEMANTICS_EXCLUSIVE = "exclusive"
+
 
 class TaskRef(BaseModel):
     """A single task entry read from the per-spec index (FEAT-145).
@@ -46,6 +53,15 @@ class TaskRef(BaseModel):
             "place this is knowable: <slug> is per-task and cannot be "
             "derived from the id or the feature slug. Empty when the index "
             "entry omits it."
+        ),
+    )
+    parallel: bool = Field(
+        default=True,
+        description=(
+            "False = exclusive: the task mutates shared state beyond its declared files "
+            "(extension rebuild, lockfile, migration) and must never share a dispatch with "
+            "another task. Read from the index only when its header declares "
+            "``parallel_semantics: exclusive``; otherwise always True."
         ),
     )
 
@@ -103,7 +119,11 @@ class TaskScheduler:
         try:
             raw = Path(path).read_text()
             data = json.loads(raw)
-            tasks = [TaskRef(**entry) for entry in data.get("tasks", [])]
+            exclusive = data.get("parallel_semantics") == PARALLEL_SEMANTICS_EXCLUSIVE
+            tasks = [
+                TaskRef(**{**entry, "parallel": bool(entry.get("parallel", True)) if exclusive else True})
+                for entry in data.get("tasks", [])
+            ]
         except FileNotFoundError:
             logger.warning("Per-spec task index not found at %s; degrading to single-agent.", path)
             return None

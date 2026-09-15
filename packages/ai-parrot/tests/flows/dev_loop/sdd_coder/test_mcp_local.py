@@ -1,4 +1,5 @@
 """`parrot mcp-local sdd-coder` builds from the tracked example yaml (FEAT-549 AC-3)."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -6,13 +7,29 @@ from pathlib import Path
 from parrot.flows.dev_loop.sdd_coder import roster as roster_mod
 from parrot.mcp.toolkit_server import create_toolkit_mcp_server
 
-EXPECTED = {f"coder_{n}" for n in ("plan", "run_chunk", "prepare_native", "merge", "wait", "status", "cleanup")}
+EXPECTED = {
+    f"coder_{n}"
+    for n in (
+        "plan",
+        "run_chunk",
+        "prepare_native",
+        "merge",
+        "wait",
+        "status",
+        "cleanup",
+        "record_feedback",
+        "record_review",
+        "feedback_report",
+    )
+}
 
 
 def test_mcp_local_serves_sdd_coder(monkeypatch, tmp_path):
     async def fake_probe(self, roster):  # all seats available, no network
         return [
-            roster_mod.SeatProbeResult(label=s.label, kind=s.kind, backend=s.backend, available=True, model_used=s.model)
+            roster_mod.SeatProbeResult(
+                label=s.label, kind=s.kind, backend=s.backend, available=True, model_used=s.model
+            )
             for s in roster.seats
         ]
 

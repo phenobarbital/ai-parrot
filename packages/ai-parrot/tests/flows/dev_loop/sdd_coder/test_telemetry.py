@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import subprocess
 import pytest
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -247,3 +248,17 @@ class TestSink:
 
         assert len(uids) == 20
         assert uids == {f"concurrent-uid-{i:02d}" for i in range(20)}
+
+
+def test_derives_main_checkout_from_worktree_base_not_process_cwd(tmp_path, monkeypatch):
+    """navconfig chdirs to its BASE_DIR on import; the root must follow the worktree base's repo."""
+    repo = tmp_path / "other-repo"
+    (repo / ".claude" / "worktrees").mkdir(parents=True)
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+
+    resolved = resolve_durable_root(None, worktree_base_path=str(repo / ".claude" / "worktrees"))
+
+    assert resolved == (repo / "artifacts" / "logs" / "sdd-coder-usage").resolve()

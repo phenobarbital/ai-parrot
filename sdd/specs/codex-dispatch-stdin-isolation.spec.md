@@ -8,7 +8,7 @@ base_branch: main
 **Identity**: codex-dispatch-stdin-isolation (hotfix; no Jira key supplied)
 **Date**: 2026-09-15
 **Author**: Codex
-**Status**: review
+**Status**: approved
 **Target version**: Next patch release containing the Codex dispatcher
 **Source consumable**: `artifacts/plan_sdd_codex_timeout_diagnosis.md`
 

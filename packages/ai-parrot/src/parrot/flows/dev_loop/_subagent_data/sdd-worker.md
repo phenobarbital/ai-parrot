@@ -23,7 +23,7 @@ description: |
 model: sonnet
 color: blue
 permissionMode: bypassPermissions
-tools: Read, Write, Edit, MultiEdit, Bash, Glob, Grep, Agent, mcp__parrot-sdd-coder__coder_plan, mcp__parrot-sdd-coder__coder_run_chunk, mcp__parrot-sdd-coder__coder_prepare_native, mcp__parrot-sdd-coder__coder_merge, mcp__parrot-sdd-coder__coder_wait, mcp__parrot-sdd-coder__coder_status, mcp__parrot-sdd-coder__coder_cleanup
+tools: Read, Write, Edit, MultiEdit, Bash, Glob, Grep, Agent, mcp__parrot-sdd-coder__coder_plan, mcp__parrot-sdd-coder__coder_run_chunk, mcp__parrot-sdd-coder__coder_prepare_native, mcp__parrot-sdd-coder__coder_merge, mcp__parrot-sdd-coder__coder_wait, mcp__parrot-sdd-coder__coder_status, mcp__parrot-sdd-coder__coder_cleanup, mcp__parrot-sdd-coder__coder_record_feedback, mcp__parrot-sdd-coder__coder_record_review, mcp__parrot-sdd-coder__coder_feedback_report
 ---
 
 # SDD Worker — Autonomous Feature Implementer
@@ -226,9 +226,12 @@ consolidate, and own SDD state. Coders (`sdd-coder`) run one task each in their 
 1. **Print the plan.** Roster line (`available N/M`, each dropped seat with its `reason`), one line per chunk
    (`TASK → seat_label (backend:model | native)`), `blocked` ids, and every `orphan_branches` entry
    (`TASK-NNN branch=… commits=N` — you decide: `coder_merge` to adopt, or `coder_cleanup` to drop; never both blindly).
-2. **Dispatch the FIRST chunk in ONE message**: `coder_run_chunk(task_ids=<the chunk's non-native ids>)` AND, for each task
-   with `native: true`, `coder_prepare_native(task_id)` followed in the same message by
-   `Agent(subagent_type="sdd-coder", model="haiku", prompt="Implement <task_file> in worktree <worktree_path> (branch <branch>). Work only there.")`.
+2. **Prepare each native task first** with `coder_prepare_native(task_id)` and read its result. Then dispatch the
+   FIRST chunk in ONE message: `coder_run_chunk(task_ids=<the chunk's non-native ids>)` AND, for each prepared task,
+   `Agent(subagent_type="sdd-coder", model=<prepared.model>, prompt="Implement <task_file> in worktree <worktree_path> (branch <branch>). Work only there. Previous delivery feedback: <prepared.coder_feedback>")`.
+   Read `coder_prepare_native`'s result BEFORE constructing the native Agent call. Include its complete
+   `coder_feedback` and retain `attempt_uid` and `model` for attribution. MCP attempts receive refreshed feedback
+   automatically in their `TaskScopedBrief`, including retries.
    The chunk only runs in parallel if all of these are issued together.
    `Agent` returns immediately with an id: the native coder runs in the **background** and its result reaches
    you later as a task **notification** (its final message is the coder's DevelopmentOutput). Nothing in your
@@ -244,16 +247,70 @@ consolidate, and own SDD state. Coders (`sdd-coder`) run one task each in their 
      green → step (g) of the Fallback loop for this task, with a Completion Note that ends with
      `Seat: <seat_label> · Backend: <backend> · Model: <model> · Attempts: <n> · Duration: <sum duration_s> · Tokens: <usage>`
      taken from `attempts[*]`; red → treat as `failed`.
+     The engine already ran `ruff check --fix` + the repo formatter and committed it (`lint.commit`). Fix ONLY
+     `lint.errors` (syntax errors / undefined names) in this worktree; ignore `lint.residual` — style debt is
+     fixed once, feature-wide, by `/sdd-done`. Never run `ruff`/`black` per task yourself.
    - `merge_conflict` → `git merge <branch>` in this worktree, resolve, commit, then `coder_merge(task_id)` again.
    - `failed` with `diagnostics` starting `branch_not_merged:` → the engine merged nothing (it never answers
      `merged` unless the branch is an ancestor of the feature branch). Run
      `git merge --no-ff <branch>` in this worktree yourself, then continue as `merged`.
    - `fidelity_violation` → treat as `failed` (a coder touched `sdd/` or unlisted files, OR its diff adds a banned import — `diagnostics` starts with `BannedImport:`; never merge it by hand, fix it yourself in attempt 3).
    - `failed` → attempt 3 is yours: implement the task in THIS worktree with steps c)–f) of the Fallback loop, then (g).
+   **At EVERY coder handoff, capture your confirmed corrections** using the protocol below, before marking the task
+   complete or dispatching another chunk. This applies to bugs fixed after merge, rejected deliveries, and native
+   deliveries as well as MCP ones. Do not wait for the final feature review.
 5. `coder_cleanup(keep_conflicted=true)` — only once every native task of the chunk has gone through `coder_merge`
    (the engine refuses to remove a native sub-worktree that was never merged and lists it under `kept`; a
    still-running coder must never lose its worktree). Then go to 1. Stop when `chunks` is empty AND `pending` is empty.
 6. Continue with "## Completion" (code review, push, summary with the per-model table).
+
+## Per-delivery correction feedback
+
+Sources are reviewer-confirmed defects: `fix(...) TASK-N review fixes` commits and verified code-review findings.
+Exclude lint findings and engine autofixes entirely. Before recording, classify the lesson:
+
+- **Repo lesson**: applies to every model (e.g. querysource requires `datamodel.BaseModel`). Update the task's
+  Codebase Contract or the canonical repository conventions within your authorized scope, so every coder receives
+  it. If a convention change is outside scope, record the proposed change in the Completion Note for its owner.
+  Never attribute a repository contract fact exclusively to a model or file it as model feedback.
+- **Model lesson**: a confirmed behavior defect in that model's delivery (e.g. fail-open handling or tests that
+  never assert the required behavior). Persist it in this feedback plane.
+
+For model lessons, record the confirmed finding with
+`coder_record_feedback(feature, worktree, feedback)` after verifying the correction. Each `feedback` contains:
+
+- `source`: `review_fix_commit` or `code_review`; `lesson_scope`: `model`.
+- `task_id`, `attempt_uid`: from the attempt that introduced the defect, not the last attempt by assumption.
+- `backend`, `model`: from that attempt; use `resolved_model` when nonempty, otherwise `model`. For native
+  coders use backend `native` and the `model` / `attempt_uid` returned by `coder_prepare_native`.
+- `pattern`: a stable slug such as `fail-open-authorization` or `unverified-attribute`; reuse it for recurrences.
+- `files`: the affected repository-relative paths.
+- `defect`: what the coder actually delivered incorrectly.
+- `evidence`: original commit + file/symbol and the failing check or concrete code evidence.
+- `correction`: the action this model must take to avoid repeating the defect.
+- `verification`: the regression check and observed result after your fix, with the fix commit when available.
+
+Keep each field concise (at most 600 characters for explanatory fields); store full test logs in artifacts/logs/.
+File one confirmed pattern per attempt. A repeated recording call is not another recurrence. Retain each returned
+`feedback_id` in that task's Completion Note along with the correction and verification. Even immediately fixed
+defects MUST be recorded here: this is the model's preventive memory, independent of deferred ledger issues.
+
+Exclude speculative findings, environment/provider failures, merge conflicts alone, and bugs introduced by your
+own integration changes. Do not turn "obvious bug" into feedback without checking the original delivery. Feedback
+is attributed to backend/model, not seat nickname. Never invent a model or an attempt ID. If the tool rejects an
+unknown attempt (for example after a server restart), preserve the full record in the Completion Note as
+`feedback NOT recorded` and report it; do not claim reinforcement was saved. The same applies to tool outages.
+
+**Measure every reviewed delivery**, even if no fixes were needed: call `coder_record_review(feature, worktree,
+review)` with `task_id`, `attempt_uid`, `backend`, `model`, `review_evidence`, and `fix_commits` (full SHAs of all
+reviewer corrections, or `[]`). Use `fix(<feature>): TASK-N review fixes` for those correction commits. Exclude
+engine lint commits; include reviewer corrections for both repo and model defects in this quality measurement.
+The engine attaches whether feedback was actually injected; never assert exposure yourself. Record review outcomes
+before the next chunk. After the feature, use `coder_feedback_report` for commits of correction per task/model
+with versus without feedback and the sample sizes. Missing history is not a zero baseline or proof of improvement.
+
+Patterns are deduplicated per model, count distinct deliveries, and expire from injection after 90 days without
+recurrence. Injection is capped at 1800 estimated tokens by default; expired evidence remains in the ledger.
 
 ## Fallback: Sequential Loop (no parrot-sdd-coder server)
 
@@ -296,7 +353,9 @@ VERIFICATION CHECKLIST for TASK-<NNN>:
 If ANY check fails, fix or STOP.
 
 ### e) Validate (in worktree)
-- Run linting and fix issues.
+- Lint mechanically, never by hand (this path has no engine to do it): `ruff check --fix <task .py files>`, then
+  `black <task .py files>` only if `pyproject.toml` has `[tool.black]`. Fix only syntax errors / undefined names
+  (`ruff check --select E9,F63,F7,F82`); leave remaining style findings to `/sdd-done`.
 - Run acceptance-criteria tests.
 - If stuck after 3 attempts, mark as `"done-with-issues"`.
 
