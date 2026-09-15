@@ -262,10 +262,35 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (orchestrator attempt 3, after two MCP coder attempts)
+**Date**: 2026-09-15
 **Notes**:
+Two `parrot-sdd-coder` MCP attempts ran first: `glm` (attempt 1) hit
+`max_turns=60` with no `final_output` and was recorded as `failed`; `qwen`
+(attempt 2) produced a correct, on-scope commit (only the 3 listed files
+touched) but the engine still reported `failed` because its sub-worktree was
+left dirty with 4 untracked scratch files it never cleaned up
+(`generate_golden_fixture.py`, `packages/parrot-formdesigner/tests/unit/
+fixtures/__init__.py`, `temp_generate_golden.py`, `test_method_exists.py`).
+Per the orchestrator's consolidation rule for a plain `failed` outcome
+(no `branch_not_merged:`/`fidelity_violation` prefix), attempt 3 was mine:
+I reviewed the qwen attempt's commit line-by-line against this task's
+Implementation Blueprint (hooks, `form=` kwargs, `RENDERER_NAME` literal
+substitution, golden fixture), confirmed it matched exactly, and
+cherry-picked it (`cf9402f76`) into the clean feature worktree instead of
+re-implementing from scratch — the untracked scratch files were never
+committed so they did not come along.
+`pytest packages/parrot-formdesigner/tests/unit/test_renderers.py` then
+showed 1 failure: `test_wizard_non_terminal_actions_unchanged` asserted on
+`sample_schema` (single-section — its only index is always both `is_first`
+and `is_last`), so it could never observe a genuine non-terminal step. I
+rewrote the test with a dedicated 3-section form and asserted on the middle
+index (neither first nor last), which correctly exercises
+Back+Skip+Cancel+Next without touching production code. All 55 tests in the
+file pass; `grep -c '"data": {"_action": "submit"},'` on `adaptive_card.py`
+is 0; `ruff check` is clean; the msteams preset import/call
+(`AdaptiveCardRenderer()._build_form_actions()`) resolves.
 
-**Deviations from spec**: none
+**Deviations from spec**: none — the one change beyond the coder's diff was
+fixing the coder's own test bug (wrong fixture for a non-terminal-step
+assertion), not a deviation from the task's Implementation Blueprint.

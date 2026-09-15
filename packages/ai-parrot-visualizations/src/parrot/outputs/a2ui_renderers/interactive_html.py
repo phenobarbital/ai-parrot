@@ -30,6 +30,9 @@ the vendored Chart.js UMD bundle):
   (``type``/``x``/``y``/``data``/``title``/``showLegend``, plus an optional
   ``tabs`` array of ``{"label", "data"}`` day-slices). Chart.js is
   instantiated from this on page load.
+* ``trendline`` inside that config — a least-squares line over the first y
+  column, fitted IN THE BROWSER so it follows the rows a day-tab or a filter
+  leaves on screen, drawn dashed and kept out of the hover readout.
 * ``[data-tabs-for="<chart-id>"]`` + ``[data-tab-index]`` buttons — day-tab
   switching: clicking a tab swaps the chart's active data slice
   (``config.tabs[index].data``). Rendered only when the Chart's properties
@@ -98,15 +101,18 @@ from parrot.outputs.formats.assets.design_system import DesignSystem
 from ._graph_svg import render_graph_svg
 from ._intercept import intercepts
 from ._semantics import (
+    humanize_key,
     is_kpi_row,
+    kpi_comparison_html,
     kpi_unit_html,
+    kpi_value_display,
     node_extensions,
     semantic_card_class,
     semantic_text_class,
     trend_attr_html,
 )
 from ._shell import document_shell
-from ._table_format import format_cell_html
+from ._table_format import format_cell_html, is_numeric_column
 
 # NOTE (post-review, FEAT-522): deliberately NOT a top-level `from .folium_map
 # import build_map_document`. `folium_map.py` builds its `_OFFLINE_URL_MAP`
@@ -128,6 +134,13 @@ _SURFACE_NAME = "interactive-html"
 #: viz-core-only and resolved catalog-aware via `_GRAPH_INTERCEPT_TABLE`
 #: below, not this set).
 _INTERCEPTED = {"Chart", "DataTable", "Infographic", "Map", "HtmlDocument"}
+
+#: Chart types a least-squares line can be drawn over. Cartesian, category
+#: x-axis: the fit runs over row ORDER, so a pie, a donut or a radar has no
+#: axis for it to mean anything along. Scatter is left out for a different
+#: reason -- its x is a value, not a position, so fitting over the index
+#: would draw a line that is not the regression a reader would expect.
+_TRENDABLE_CHART_TYPES = {"bar", "line", "area"}
 
 #: The one (catalog_id, name) pair intercepted as a native Graph — used
 #: with the shared catalog-aware `intercepts()` helper (FEAT-529).
@@ -240,10 +253,121 @@ _BEHAVIOR_JS = r"""
   }
   reportData(); // parsed for validation / future generic $bind use; charts embed their own config.
 
-  function buildDatasets(cfg, rows) {
-    return (cfg.y || []).map(function (col) {
-      return { label: col, data: rows.map(function (r) { return r[col]; }) };
+  // A mid-tone grey, so the fitted line holds up against either a light or a
+  // dark card without ever borrowing a colour that means something.
+  var TREND_COLOR = "#94a3b8";
+
+  // Series colours, chosen rather than left to Chart.js. Its default plugin
+  // fills with alpha, which survives a screen and washes out on paper —
+  // printed, the bars read as ghosts of themselves. These are solid and at a
+  // weight that holds on white.
+  //
+  // No red and no green in the set, on purpose: those two belong to the
+  // deltas, where they mean good news and bad. Here colour is identity — the
+  // reader gets the series from the legend, not from the hue — and a chart
+  // borrowing the verdict colours would make "Missed" look like a judgement
+  // the chart is not making.
+  var SERIES_COLORS = [
+    "#2563eb", "#d97706", "#0d9488", "#7c3aed", "#db2777", "#475569",
+    "#0891b2", "#a16207",
+  ];
+
+  function seriesColor(cfg, i) {
+    var palette = (cfg.palette && cfg.palette.length) ? cfg.palette : SERIES_COLORS;
+    return palette[i % palette.length];
+  }
+
+  // Chart.js sizes its text for a screen. The canvas is then rasterised and
+  // scaled down to the page width, taking the type with it — axis labels and
+  // the legend came out at around seven points. Bigger here so they land
+  // legible on paper, and darker so they are read as labels rather than as
+  // grid furniture.
+  Chart.defaults.font.size = 14;
+  Chart.defaults.color = "#334155";
+
+  // Least squares over the first y column, drawn dashed and without markers
+  // so nobody reads the fitted line as measured data. Returns null when
+  // there is nothing to fit: fewer than two numbers, or every x the same.
+  function trendData(rows, col) {
+    var n = 0, sumX = 0, sumY = 0, sumXY = 0, sumXX = 0;
+    rows.forEach(function (r, i) {
+      var y = Number(r[col]);
+      if (r[col] === null || r[col] === undefined || isNaN(y)) return;
+      n += 1; sumX += i; sumY += y; sumXY += i * y; sumXX += i * i;
     });
+    if (n < 2) return null;
+    var denominator = n * sumXX - sumX * sumX;
+    if (denominator === 0) return null;
+    var slope = (n * sumXY - sumX * sumY) / denominator;
+    var intercept = (sumY - slope * sumX) / n;
+    return rows.map(function (_, i) { return slope * i + intercept; });
+  }
+
+  // A regression over whichever rows are on screen. It is computed HERE and
+  // not once in Python because this function runs again on every day-tab
+  // switch and every FilterBar change: a line baked server-side would keep
+  // the slope of data the reader is no longer looking at.
+  function buildDatasets(cfg, rows) {
+    var names = cfg.yLabels || [];
+    var datasets = (cfg.y || []).map(function (col, i) {
+      var color = seriesColor(cfg, i);
+      // A combination is per-series: the chart's own `type` is the default
+      // and `seriesTypes[i]` overrides it for that series alone. Chart.js
+      // already draws mixed datasets — it is how the trend line rides on a
+      // bar chart — so all this needs is somewhere to say it.
+      var mark = (cfg.seriesTypes && cfg.seriesTypes[i]) || cfg.type;
+      var isLine = mark === "line" || mark === "area";
+      var dataset = {
+        label: names[i] || col,
+        data: rows.map(function (r) { return r[col]; }),
+        backgroundColor: color,
+        borderColor: color,
+        borderWidth: isLine ? 2.5 : 0,
+        pointRadius: isLine ? 2.5 : undefined,
+        fill: mark === "area",
+        type: chartTypeMap[mark] || undefined,
+      };
+      // Only when a series asks for the right-hand axis. Naming an axis on
+      // every dataset would create the second scale even for a chart whose
+      // series all share one.
+      if (cfg.seriesAxes && cfg.seriesAxes[i] === "right") {
+        dataset.yAxisID = "yRight";
+      }
+      return dataset;
+    });
+    // Whether a fit makes sense for this chart type was decided once, in
+    // Python, where the FINAL type is known (an unsupported type arrives here
+    // already degraded to bar). Re-deciding it here would be a second copy of
+    // the same rule, free to drift.
+    if (cfg.trendline && datasets.length) {
+      var col = (cfg.y || [])[0];
+      var fitted = trendData(rows, col);
+      if (fitted) {
+        var trend = {
+          label: (names[0] || col) + " trend",
+          data: fitted,
+          type: "line",
+          // Grey on purpose, not the next colour off the palette. In this
+          // report a colour is a judgement -- green is good news, red is bad
+          // -- and a regression is geometry, not a verdict. Left to Chart.js
+          // the line came out red, which reads as an alarm nobody raised.
+          borderColor: TREND_COLOR,
+          backgroundColor: TREND_COLOR,
+          borderDash: [6, 4],
+          borderWidth: 2,
+          pointRadius: 0,
+          fill: false,
+          isTrend: true,
+        };
+        // The fit is computed over the FIRST series; drawn against a scale it
+        // was not computed in it would render fine and say something untrue.
+        if (cfg.seriesAxes && cfg.seriesAxes[0] === "right") {
+          trend.yAxisID = "yRight";
+        }
+        datasets.push(trend);
+      }
+    }
+    return datasets;
   }
 
   // FEAT-527: donut/radar are Chart.js natives; the 5 new types with no
@@ -253,6 +377,49 @@ _BEHAVIOR_JS = r"""
     bar: "bar", line: "line", area: "line", scatter: "scatter", pie: "pie",
     donut: "doughnut", radar: "radar",
   };
+
+  // Wider than tall on a screen, where there is width to spare; closer to
+  // square on paper, where the page is a fixed budget and a flat strip wastes
+  // the width without showing the shape of anything.
+  //
+  // Declared ABOVE the construction loop, not beside the resize helpers that
+  // also use them: `var` hoists the declaration and not the assignment, so
+  // read from inside the loop they were `undefined` and every chart was built
+  // with Chart.js's own default proportion. The print path hid it, because
+  // PRINT_ASPECT is only ever read from inside a function that runs later.
+  var SCREEN_ASPECT = 3.2;
+  var PRINT_ASPECT = 2.2;
+
+  // Chart types with no axes to name. Handing `scales` to a pie is not a
+  // label, it is a configuration it cannot use.
+  var CARTESIAN = { bar: true, line: true, area: true, scatter: true };
+
+  function axisTitle(text) {
+    return { display: !!text, text: text || "" };
+  }
+
+  // The second scale exists only if a series asked for it. A rate and a count
+  // do not share a floor: plotted on one axis the rate lies flat along the
+  // bottom and the chart says nothing about it. And an axis nobody named is a
+  // column of numbers the reader has to guess the units of — which is what an
+  // unlabelled 0-to-80 scale beside counts of events was.
+  function buildScales(cfg) {
+    if (!CARTESIAN[cfg.type]) return undefined;
+    var usesRight = (cfg.seriesAxes || []).indexOf("right") !== -1;
+    var labels = cfg.yAxisLabels || [];
+    var scales = {
+      x: { title: axisTitle(cfg.xAxisLabel) },
+      y: { position: "left", title: axisTitle(labels[0] || cfg.yAxisLabel) },
+    };
+    if (usesRight) {
+      scales.yRight = {
+        position: "right",
+        grid: { drawOnChartArea: false },
+        title: axisTitle(labels[1]),
+      };
+    }
+    return scales;
+  }
 
   // Populated as each chart is created below; consulted by the FilterBar
   // runtime (TASK-2716) to re-render a chart's ALREADY-embedded rows
@@ -269,7 +436,28 @@ _BEHAVIOR_JS = r"""
         labels: rows.map(function (r) { return r[cfg.x]; }),
         datasets: buildDatasets(cfg, rows),
       },
-      options: { plugins: { legend: { display: !!cfg.showLegend } } },
+      // Bottom, like the pill key a multi-series chart gets: which side the
+      // key sits on should not depend on how many series there happen to be.
+      options: {
+        // The second scale exists only if a series asked for it. A rate and
+        // a count do not share a floor: plotted on one axis the rate lies
+        // flat along the bottom and the chart says nothing about it.
+        scales: buildScales(cfg),
+        // The PROPORTION is the thing to declare; the width comes from the
+        // page. Sized against a box instead, a chart inherits whatever that
+        // box happens to measure — a wrapper with no definite height gave a
+        // bitmap of 1063x292, which printed as a strip too flat to read a
+        // bar in. `SCREEN_ASPECT`/`PRINT_ASPECT` are the two numbers, and
+        // `resizeCharts` swaps them when the medium changes.
+        maintainAspectRatio: true,
+        aspectRatio: SCREEN_ASPECT,
+        plugins: {
+          legend: { display: !!cfg.showLegend, position: "bottom" },
+          // The fitted line has no value AT a point -- it is the shape of the
+          // whole series -- so it stays out of the hover readout.
+          tooltip: { filter: function (item) { return !(item.dataset || {}).isTrend; } },
+        },
+      },
     });
 
     var chartId = canvas.getAttribute("data-chart");
@@ -296,8 +484,25 @@ _BEHAVIOR_JS = r"""
     var toggleGroup = document.querySelector('[data-metric-toggle-for="' + chartId + '"]');
     if (toggleGroup) {
       toggleGroup.querySelectorAll("[data-metric-index]").forEach(function (btn) {
+        // The buttons ARE the key now (the built-in legend is off whenever
+        // they render), so each one carries its series' colour. Chart.js
+        // resolves those itself, and the accessor has moved between major
+        // versions — a swatch that cannot be coloured simply stays blank
+        // rather than throwing and killing the click handler below.
+        var dot = btn.querySelector("[data-metric-dot]");
+        if (dot) {
+          try {
+            var meta = chart.getDatasetMeta(parseInt(btn.getAttribute("data-metric-index"), 10));
+            var style = meta && meta.controller && meta.controller.getStyle
+              ? meta.controller.getStyle(0, false) : null;
+            var colour = style && (style.backgroundColor || style.borderColor);
+            if (colour) dot.style.background = colour;
+          } catch (e) { /* no swatch, still a working toggle */ }
+        }
         btn.addEventListener("click", function () {
           btn.classList.toggle("active");
+          // The class paints it; aria-pressed is what says it out loud.
+          btn.setAttribute("aria-pressed", btn.classList.contains("active") ? "true" : "false");
           var idx = parseInt(btn.getAttribute("data-metric-index"), 10);
           var meta = chart.getDatasetMeta(idx);
           meta.hidden = !btn.classList.contains("active");
@@ -306,6 +511,66 @@ _BEHAVIOR_JS = r"""
       });
     }
   });
+
+  // A chart is drawn at the width of the screen and then rasterised; the
+  // printer scales that bitmap down to the page, taking the type with it, so
+  // a 14px axis label lands near six. Re-measuring on `beforeprint` makes
+  // Chart.js redraw the canvas at the PAGE's width instead — the type comes
+  // out the size it was asked for, and the shorter panel leaves room for
+  // what follows it on the sheet. `afterprint` puts the screen back.
+  function resizeCharts(aspect) {
+    Object.keys(chartRegistry).forEach(function (id) {
+      try {
+        var chart = chartRegistry[id];
+        chart.options.aspectRatio = aspect;
+        chart.resize();
+      } catch (e) {
+        /* a chart that is already gone is not a print failure */
+      }
+    });
+  }
+
+  // On paper the metric buttons are hidden — they do nothing there — so the
+  // key they stood in for has to come back, or a chart of seven series
+  // prints with nothing naming them. Only for charts whose legend was turned
+  // off FOR the buttons: an author who asked for no legend still gets none.
+  function legendForPrint(printing) {
+    Object.keys(chartRegistry).forEach(function (id) {
+      try {
+        var chart = chartRegistry[id];
+        var cfg = JSON.parse(chart.canvas.getAttribute("data-chart-config"));
+        if (!cfg.legendReplacedByToggles) return;
+        chart.options.plugins.legend.display = printing;
+      } catch (e) {
+        /* a chart without a readable config keeps whatever it had */
+      }
+    });
+  }
+
+  function chartsForPrint() {
+    legendForPrint(true);
+    resizeCharts(PRINT_ASPECT);
+  }
+
+  function chartsForScreen() {
+    legendForPrint(false);
+    resizeCharts(SCREEN_ASPECT);
+  }
+
+  if (window.matchMedia) {
+    var printQuery = window.matchMedia("print");
+    if (printQuery.addEventListener) {
+      printQuery.addEventListener("change", function (event) {
+        if (event.matches) {
+          chartsForPrint();
+        } else {
+          chartsForScreen();
+        }
+      });
+    }
+  }
+  window.addEventListener("beforeprint", chartsForPrint);
+  window.addEventListener("afterprint", chartsForScreen);
 
   document.querySelectorAll("[data-sort-table]").forEach(function (table) {
     var state = {};
@@ -867,7 +1132,11 @@ class InteractiveHTMLRenderer(AbstractA2UIRenderer):
             cls = f"{cls} {semantic_cls}"
         extra = kpi_unit_html(node) if role == "value" else ""
         attrs = trend_attr_html(node) if role == "delta" else ""
-        return f'<p class="{cls}"{attrs}>{_esc(props.get("text"))}{extra}</p>'
+        if role == "value":
+            display = html.escape(kpi_value_display(node, props.get("text")))
+        else:
+            display = _esc(props.get("text"))
+        return f'<p class="{cls}"{attrs}>{display}{extra}</p>'
 
     def _render_prim_Image(self, node: BasicNode, degradations: list[dict[str, Any]]) -> str:
         props = node.model_extra or {}
@@ -977,7 +1246,9 @@ class InteractiveHTMLRenderer(AbstractA2UIRenderer):
         variant_cls = semantic_card_class(node)
         if variant_cls:
             cls = f"{cls} {variant_cls}"
-        return f'<div class="{cls}">{inner}</div>'
+        # See `ssr_html._render_Card`: the baseline label qualifies the delta,
+        # so it follows it.
+        return f'<div class="{cls}">{inner}{kpi_comparison_html(node)}</div>'
 
     def _render_prim_Tabs(self, node: BasicNode, degradations: list[dict[str, Any]]) -> str:
         """A ``Tabs`` primitive -> a ``[data-tabs]`` nav + ``[data-tabs-panes]``
@@ -1107,15 +1378,61 @@ class InteractiveHTMLRenderer(AbstractA2UIRenderer):
                 '<p class="a2ui-notice">'
                 f"rendered as bar (no {html.escape(str(original_type))} support in this surface)</p>"
             )
+        # More than one y column means the metric toggles render, and those
+        # carry the colours and the names — so Chart.js' own legend would be
+        # a SECOND key saying the same six words. One key, and it is the one
+        # you can click.
+        has_toggles = len(y_columns) > 1
         config: dict[str, Any] = {
             "type": "bar" if original_type in _UNSUPPORTED_CHART_TYPES else original_type,
             "x": props.get("x"),
             "y": y_columns,
+            # Parallel to `y`: the readable name for each series, so the
+            # legend and the toggles never disagree about what a series is
+            # called.
+            "yLabels": [humanize_key(col) for col in y_columns],
             "data": rows,
-            "showLegend": bool(props.get("showLegend", True)),
+            "showLegend": bool(props.get("showLegend", True)) and not has_toggles,
         }
+        # The legend is off because the metric buttons ARE the key — but a
+        # printed page hides those buttons, and a chart with seven series and
+        # no key at all is worse than either. Flagged here so the runtime can
+        # put the legend back for print without second-guessing an author who
+        # genuinely asked for no legend.
+        if has_toggles and bool(props.get("showLegend", True)):
+            config["legendReplacedByToggles"] = True
+        # An author-chosen palette wins over the built-in one, the same
+        # precedent the static ECharts surface already set.
+        palette = props.get("palette")
+        if isinstance(palette, (list, tuple)) and palette:
+            config["palette"] = [str(colour) for colour in palette]
+
+        # The combination. Both ride as lists parallel to `y`; absent, the
+        # chart is what it always was, so nothing changes for a chart that
+        # does not ask.
+        for key in ("seriesTypes", "seriesAxes", "yAxisLabels"):
+            value = props.get(key)
+            if isinstance(value, (list, tuple)) and value:
+                config[key] = [None if item is None else str(item) for item in value]
+
+        # Axis names. This surface has never drawn them — `yAxisLabel` has
+        # been in the contract all along and only the static renderers read
+        # it, which is why nobody missed it until a combination put a second,
+        # unnamed scale on the right of a chart.
+        for key in ("xAxisLabel", "yAxisLabel"):
+            value = props.get(key)
+            if isinstance(value, str) and value:
+                config[key] = value
         if isinstance(tabs, list) and tabs:
             config["tabs"] = tabs
+        # Only when asked for AND only where a straight line means something:
+        # a regression through a pie or a radar is nonsense. The type tested
+        # is the FINAL one -- a degraded chart is a bar by the time it gets
+        # here, and a bar can carry a trend. The flag rides in the embedded
+        # config; the line itself is fitted in the browser, over whichever
+        # rows a day-tab or a FilterBar leaves on screen.
+        if props.get("trendline") and config["type"] in _TRENDABLE_CHART_TYPES:
+            config["trendline"] = True
 
         title = props.get("title")
         title_html = f'<p class="a2ui-heading">{html.escape(str(title))}</p>' if title else ""
@@ -1132,19 +1449,25 @@ class InteractiveHTMLRenderer(AbstractA2UIRenderer):
             tabs_html = f'<div class="a2ui-tabs" data-tabs-for="{chart_id}">{buttons}</div>'
 
         toggle_html = ""
-        if len(y_columns) > 1:
+        if has_toggles:
             buttons = "".join(
-                f'<button type="button" class="metricbtn active" data-metric-index="{i}">'
-                f"{html.escape(str(col))}</button>"
+                f'<button type="button" class="metricbtn active" aria-pressed="true" '
+                f'data-metric-index="{i}">'
+                f'<span class="metricbtn-dot" data-metric-dot></span>'
+                f"{html.escape(humanize_key(col))}</button>"
                 for i, col in enumerate(y_columns)
             )
             toggle_html = f'<div class="a2ui-metric-toggle" data-metric-toggle-for="{chart_id}">' f"{buttons}</div>"
 
         config_attr = html.escape(_safe_json(config), quote=True)
+        # The key goes UNDER the chart: it explains what was just drawn, and
+        # above the canvas it pushed the plot down and read as a toolbar.
         return (
-            f'<div class="a2ui-card a2ui-chart-wrap">{title_html}{tabs_html}{toggle_html}'
+            f'<div class="a2ui-card a2ui-chart-wrap">{title_html}{tabs_html}'
+            f'<div class="a2ui-chart-canvas">'
             f'<canvas data-chart="{chart_id}" data-chart-config="{config_attr}"></canvas>'
-            "</div>"
+            f"</div>"
+            f"{toggle_html}</div>"
         )
 
     def _render_datatable(self, props: dict[str, Any]) -> str:
@@ -1168,12 +1491,30 @@ class InteractiveHTMLRenderer(AbstractA2UIRenderer):
         table_id = f"table-{uuid.uuid4().hex[:8]}"
 
         title_html = f'<p class="a2ui-heading">{html.escape(str(title))}</p>' if title else ""
-        header_cells = "".join(
-            f'<th data-sort-key="{html.escape(str(col.get("name", "")), quote=True)}">'
-            f'{html.escape(str(col.get("title") or col.get("name", "")))}</th>'
-            for col in columns
-            if isinstance(col, dict)
-        )
+        # Two things a header row has to get right, and neither was free.
+        #
+        # A column with no `title` printed its DATA KEY: a report handed to a
+        # client read `store_id | store_name | rate` across the top. The key
+        # is the fallback of last resort now, humanised on the way out, the
+        # same treatment a chart's series names already got.
+        #
+        # And a numeric header carries `num`, so it right-aligns with the
+        # figures beneath it. Left-aligned over right-aligned numbers, a
+        # header labels the white space next to its column rather than the
+        # column.
+        header_parts: list[str] = []
+        for col in columns:
+            if not isinstance(col, dict):
+                continue
+            name = str(col.get("name", ""))
+            label = str(col.get("title") or humanize_key(name))
+            numeric = ' class="num"' if is_numeric_column(col.get("type")) else ""
+            header_parts.append(
+                f'<th data-sort-key="{html.escape(name, quote=True)}"{numeric}>'
+                f"{html.escape(label)}</th>"
+            )
+        header_cells = "".join(header_parts)
+
         body_rows = []
         for row in rows:
             if not isinstance(row, dict):
@@ -1249,9 +1590,58 @@ class InteractiveHTMLRenderer(AbstractA2UIRenderer):
             text = section.get("text")
             if text is not None:
                 section_parts.append(f'<p class="a2ui-text a2ui-body">{html.escape(str(text))}</p>')
+            # Consecutive KPI cards are a grid, the rest render in place. The
+            # stylesheet has always carried `.kpi-grid` (four columns, down to
+            # two on a phone) but nothing here ever applied it: the class was
+            # only attached to a Row of kpi Cards, and a section is a COLUMN
+            # whose first child is its heading -- so eight KPIs came out as
+            # eight full-width blocks, three screens of scrolling for what the
+            # app shows in two rows. Grouping by RUN, not by container, is the
+            # rule the Svelte canvas already uses (`Infographic.svelte`).
+            # Charts group the same way KPI cards do, and for the same
+            # reason: the Svelte canvas already lays consecutive ones out two
+            # across, and stacking them here sent the second chart to a sheet
+            # of its own with half a page of white under it.
+            _GROUPED = {"KPICard": "kpi-grid", "Chart": "chart-grid"}
+            run: list[str] = []
+            run_class = ""
+
+            def _flush() -> None:
+                nonlocal run_class
+                if not run:
+                    return
+                # A run of ONE is not a grid. Wrapped anyway, a lone chart sat
+                # in the first of two columns with the second left blank, and
+                # a lone card in the first of four — both were full width
+                # before any of this grouping existed.
+                if len(run) == 1:
+                    section_parts.append(run[0])
+                else:
+                    # The count travels with the group so the stylesheet can
+                    # cap the columns at it: three cards in a four-column
+                    # track are three quarter-width cards and a hole.
+                    section_parts.append(
+                        f'<div class="{run_class}" data-count="{len(run)}">{"".join(run)}</div>'
+                    )
+                run.clear()
+                run_class = ""
+
             for descriptor in section.get("components") or []:
-                if isinstance(descriptor, dict):
-                    section_parts.append(self._render_descriptor(descriptor, degradations))
+                if not isinstance(descriptor, dict):
+                    continue
+                fragment = self._render_descriptor(descriptor, degradations)
+                grouped_as = _GROUPED.get(str(descriptor.get("component")))
+                if grouped_as:
+                    # A run is one KIND: a chart after a card starts a new
+                    # group rather than joining a grid meant for cards.
+                    if run_class and run_class != grouped_as:
+                        _flush()
+                    run_class = grouped_as
+                    run.append(fragment)
+                    continue
+                _flush()
+                section_parts.append(fragment)
+            _flush()
             parts.append(f'<div class="a2ui-col a2ui-section">{"".join(section_parts)}</div>')
 
         return f'<div class="a2ui-card" data-variant="infographic">{"".join(parts)}</div>'

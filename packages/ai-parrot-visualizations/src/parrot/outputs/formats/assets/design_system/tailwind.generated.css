@@ -68,6 +68,9 @@
   background-color: var(--panel-bg);
   padding: var(--density-padding);
 }
+.a2ui-chart-canvas {
+  display: block;
+}
 .a2ui-chart-wrap {
   display: flex;
   flex-direction: column;

@@ -142,6 +142,8 @@ class AdaptiveCardRenderer(AbstractFormRenderer):
     SCHEMA_URL = "http://adaptivecards.io/schemas/adaptive-card.json"
     DEFAULT_VERSION = DEFAULT_ADAPTIVE_CARD_VERSION
     CONTENT_TYPE = "application/vnd.microsoft.card.adaptive"
+    RENDERER_NAME: str = "adaptive_card"
+    accepts_tenant: bool = False
 
     def __init__(
         self,
@@ -244,27 +246,31 @@ class AdaptiveCardRenderer(AbstractFormRenderer):
             show_cancel=form.cancel_allowed,
             submit_label=submit_label,
             cancel_label=cancel_label,
+            form=form,
         )
 
         card = self._wrap_card(body, actions)
 
-        # Emit RenderWarning for field types that used the text fallback
+        # Emit RenderWarning for field types that used the text fallback (walks
+        # subsections the same way _build_section_body does, above).
         warnings: list[RenderWarning] = []
         for section in form.sections:
-            for field in section.fields:
-                if field.field_type in _AC_FALLBACK_TYPES:
-                    warnings.append(
-                        RenderWarning(
-                            field_id=field.field_id,
-                            field_uid=field.field_uid,
-                            field_type=field.field_type.value,
-                            renderer="adaptive_card",
-                            reason=(
-                                f"unsupported {field.field_type.value} in adaptive_card"
-                                " — rendered as text placeholder"
-                            ),
+            for item in section.fields:
+                fields = item.fields if isinstance(item, FormSubsection) else [item]
+                for field in fields:
+                    if field.field_type in _AC_FALLBACK_TYPES:
+                        warnings.append(
+                            RenderWarning(
+                                field_id=field.field_id,
+                                field_uid=field.field_uid,
+                                field_type=field.field_type.value,
+                                renderer=self.RENDERER_NAME,
+                                reason=(
+                                    f"unsupported {field.field_type.value} in adaptive_card"
+                                    " — rendered as text placeholder"
+                                ),
+                            )
                         )
-                    )
 
         return RenderedForm(
             content=card,
@@ -336,6 +342,7 @@ class AdaptiveCardRenderer(AbstractFormRenderer):
             show_cancel=form.cancel_allowed,
             show_skip=show_skip,
             cancel_label=cancel_label,
+            form=form,
         )
 
         card = self._wrap_card(body, actions)
@@ -1031,16 +1038,7 @@ class AdaptiveCardRenderer(AbstractFormRenderer):
         # filename (and, for images, a thumbnail_url link) instead of the
         # raw dict repr / URL.
         elif ft in UPLOAD_FIELD_TYPES:
-            display_name = _extract_display_name(value)
-            display_value = display_name
-            if isinstance(value, dict) and value.get("thumbnail_url"):
-                display_value = f"{display_name} ({value['thumbnail_url']})" if display_name else value["thumbnail_url"]
-            return {
-                **base,
-                "type": "Input.Text",
-                "placeholder": _resolve(field.placeholder, locale) if field.placeholder else "",
-                "value": display_value,
-            }
+            return self._build_upload_element(field, value, locale)
 
         # Fallback for unsupported types (includes SIGNATURE, REMOTE_RESPONSE, AVAILABILITY)
         else:
@@ -1051,6 +1049,35 @@ class AdaptiveCardRenderer(AbstractFormRenderer):
                 "placeholder": _resolve(field.placeholder, locale) if field.placeholder else "",
                 "value": str(value) if value is not None else "",
             }
+
+    def _submit_action_data(self, form: FormSchema | None, *, terminal: bool) -> dict[str, Any]:
+        """Return the ``data`` payload of a Submit action.
+
+        Default is byte-identical to the historical literal ``{"_action": "submit"}``.
+        Subclasses may add routing keys but MUST keep ``_action``.
+
+        Args:
+            form: The form being rendered (``None`` when a builder is called standalone).
+            terminal: ``True`` for the final Submit; ``False`` never reaches the default.
+        """
+        return {"_action": "submit"}
+
+    def _build_upload_element(self, field: FormField, value: Any, locale: str) -> dict[str, Any] | None:
+        """Element for FILE/IMAGE/IMAGE_DROPZONE/MULTI_UPLOAD fields (text-placeholder fallback).
+
+        Body moved verbatim from the former ``elif ft in UPLOAD_FIELD_TYPES`` branch.
+        """
+        base: dict[str, Any] = {"id": field.field_id, "isRequired": field.required}
+        display_name = _extract_display_name(value)
+        display_value = display_name
+        if isinstance(value, dict) and value.get("thumbnail_url"):
+            display_value = f"{display_name} ({value['thumbnail_url']})" if display_name else value["thumbnail_url"]
+        return {
+            **base,
+            "type": "Input.Text",
+            "placeholder": _resolve(field.placeholder, locale) if field.placeholder else "",
+            "value": display_value,
+        }
 
     def _build_choices(
         self,
@@ -1081,6 +1108,8 @@ class AdaptiveCardRenderer(AbstractFormRenderer):
         show_cancel: bool = True,
         submit_label: str = "Submit",
         cancel_label: str = "Cancel",
+        *,
+        form: FormSchema | None = None,
     ) -> list[dict[str, Any]]:
         """Build action buttons for a complete form.
 
@@ -1097,7 +1126,7 @@ class AdaptiveCardRenderer(AbstractFormRenderer):
                 "type": "Action.Submit",
                 "title": submit_label,
                 "style": "positive",
-                "data": {"_action": "submit"},
+                "data": self._submit_action_data(form, terminal=True),
             },
         ]
         if show_cancel:
@@ -1120,6 +1149,8 @@ class AdaptiveCardRenderer(AbstractFormRenderer):
         show_cancel: bool = True,
         show_skip: bool = False,
         cancel_label: str = "Cancel",
+        *,
+        form: FormSchema | None = None,
     ) -> list[dict[str, Any]]:
         """Build action buttons for a wizard step.
 
@@ -1173,7 +1204,7 @@ class AdaptiveCardRenderer(AbstractFormRenderer):
                     "type": "Action.Submit",
                     "title": "Submit",
                     "style": "positive",
-                    "data": {"_action": "submit"},
+                    "data": self._submit_action_data(form, terminal=True),
                 }
             )
         else:

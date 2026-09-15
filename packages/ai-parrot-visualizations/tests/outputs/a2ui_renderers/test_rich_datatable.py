@@ -26,7 +26,10 @@ class TestFormatCell:
             (0.427, "number", "percent", "%"),
             ("Sales", "string", None, "Sales"),
             ("90210", "string", None, "90210"),  # a typed string is never grouped
-            (None, "number", None, ""),
+            # An em dash, not a blank: a hole in a printed table reads as a
+            # number someone lost, not as "nothing to report".
+            (None, "number", None, "\u2014"),
+            (None, "string", None, "\u2014"),
         ],
     )
     def test_formatting(self, value, col_type, col_format, expected_fragment):

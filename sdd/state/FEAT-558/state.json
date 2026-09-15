@@ -1,0 +1,108 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-558",
+  "feature_slug": "querysource-toolkit-refactor",
+  "started_at": "2026-09-15T00:21:56Z",
+  "updated_at": "2026-09-15T05:00:00Z",
+  "source": {
+    "kind": "inline",
+    "jira_key": null,
+    "jira_url": null,
+    "file_path": null,
+    "raw_path": "sdd/state/FEAT-558/source.md",
+    "fetched_at": "2026-09-15T00:21:56Z",
+    "summary_oneline": "Refactor QSSourceTool into a tenant-scoped QuerysourceToolkit that explains, lists, inspects and executes query-slugs and MultiQuery pipelines."
+  },
+  "mode": "enrichment",
+  "phase": "tasks_created",
+  "wiki_available": true,
+  "phases": {
+    "source": {
+      "status": "completed",
+      "started_at": "2026-09-15T00:21:56Z",
+      "completed_at": "2026-09-15T00:21:56Z",
+      "duration_seconds": 0
+    },
+    "plan": {
+      "status": "completed",
+      "started_at": "2026-09-15T00:21:56Z",
+      "queries_total": 19,
+      "approved_by_user": true,
+      "edited_by_user": false,
+      "plan_path": "sdd/state/FEAT-558/research_plan.json",
+      "completed_at": "2026-09-15T02:30:00Z",
+      "duration_seconds": 300
+    },
+    "research": {
+      "status": "completed",
+      "started_at": "2026-09-15T02:30:00Z",
+      "completed_at": "2026-09-15T02:55:00Z",
+      "duration_seconds": 1500,
+      "queries_executed": 19,
+      "queries_skipped": 0,
+      "depth_reached": 1,
+      "files_read": 24,
+      "grep_calls": 20,
+      "git_calls": 2,
+      "truncated": false,
+      "truncation_reason": null
+    },
+    "synthesis": {
+      "status": "completed",
+      "started_at": "2026-09-15T02:55:00Z",
+      "completed_at": "2026-09-15T03:00:00Z",
+      "duration_seconds": 300,
+      "synthesis_path": "sdd/state/FEAT-558/synthesis.json",
+      "thinking_path": null,
+      "overall_confidence": "medium",
+      "claims_total": 10,
+      "claims_high_conf": 8,
+      "claims_medium_conf": 2,
+      "claims_low_conf": 0,
+      "unknowns_count": 4,
+      "lint_passed": true,
+      "lint_iterations": 0
+    },
+    "qa": {
+      "status": "completed",
+      "started_at": "2026-09-15T03:00:00Z",
+      "completed_at": "2026-09-15T03:04:00Z",
+      "duration_seconds": 240,
+      "questions_total": 4,
+      "questions_answered": 4,
+      "skipped_reason": null
+    },
+    "output": {
+      "status": "completed",
+      "started_at": "2026-09-15T03:05:00Z",
+      "proposal_path": "sdd/proposals/querysource-toolkit-refactor.proposal.md",
+      "commit_sha": "04986c079b3975f8fecc3dcfc8fdbb86fb6ae081",
+      "next_command_recommended": "sdd-spec",
+      "next_command_rationale": "Architecture settled; remaining items are spec-level decisions (version pin, result shape).",
+      "completed_at": "2026-09-15T03:06:00Z",
+      "duration_seconds": 60
+    }
+  },
+  "budget": {
+    "profile": "default",
+    "max_files_read": 40,
+    "max_grep_calls": 25,
+    "max_git_calls": 10,
+    "max_depth": 2,
+    "max_wall_seconds": 300
+  },
+  "consumed": {
+    "files_read": 24,
+    "grep_calls": 20,
+    "git_calls": 2,
+    "wall_seconds": 1500
+  },
+  "errors": [],
+  "resume_hint": {
+    "next_phase": "sdd-start",
+    "next_action": "python -m scripts.sdd.ensure_worktree --slug querysource-toolkit-refactor --feature-id FEAT-558 ; then /sdd-start TASK-3245 (order 3245\u21923246\u21923247\u21923248\u21923249\u21923250\u21923251\u21923252\u21923253\u21923254\u21923255)"
+  },
+  "notes": "FEAT-558 reserved by /sdd-spec via reserve_ids.py on 2026-09-15; was provisional FEAT-567 during /sdd-proposal.",
+  "spec_path": "sdd/specs/querysource-toolkit-refactor.spec.md",
+  "task_index": "sdd/tasks/index/querysource-toolkit-refactor.json"
+}

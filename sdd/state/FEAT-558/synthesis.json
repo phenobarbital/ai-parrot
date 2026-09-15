@@ -1,0 +1,481 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-558",
+  "mode": "enrichment",
+  "summary_oneline": "Replace the single QSourceTool with a tenant-scoped QuerysourceToolkit that lists/describes/executes query-slugs and lists/validates/runs/saves MultiQuery pipelines, with a generated conditions-dialect reference for the LLM.",
+  "localization": [
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/qsource.py",
+      "symbol": "QSourceTool",
+      "lines": "21-437",
+      "role": "Current single tool to be replaced (hard cut); vague `conditions` schema, latent DataNotFound NameError.",
+      "evidence": [
+        "F002",
+        "F014"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/querytoolkit.py",
+      "symbol": "QueryToolkit",
+      "lines": "89-401",
+      "role": "Existing AbstractToolkit base over querysource with a `program` attribute; precedent for the tenant name, not a base to subclass.",
+      "evidence": [
+        "F003"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/dataset_manager/sources/query_slug.py",
+      "symbol": "QuerySlugSource",
+      "lines": "19-162",
+      "role": "Sibling QS consumer: permanent_filter precedence and patchable lazy QS import to mirror.",
+      "evidence": [
+        "F004"
+      ]
+    },
+    {
+      "path": ".venv/lib/python3.12/site-packages/querysource/queries/qs.py",
+      "symbol": "QS",
+      "lines": "42-536",
+      "role": "Execution contract: QS(slug|query+driver|raw_query, conditions, lazy, dwh); build_provider(); query(output_format) -> (result, error); dry_run(); close().",
+      "evidence": [
+        "F005"
+      ]
+    },
+    {
+      "path": ".venv/lib/python3.12/site-packages/querysource/interfaces/connections.py",
+      "symbol": "QueryConnection.get_slug",
+      "lines": "444-506",
+      "role": "Slug resolution by PK only; the `program` argument is ignored, so tenancy is not enforced by the library.",
+      "evidence": [
+        "F005"
+      ]
+    },
+    {
+      "path": ".venv/lib/python3.12/site-packages/querysource/models.py",
+      "symbol": "QueryModel",
+      "lines": "48-110",
+      "role": "public.queries row: query_slug PK, conditions/cond_definition/filtering/fields/ordering/grouping, query_raw, provider, program_slug.",
+      "evidence": [
+        "F006"
+      ]
+    },
+    {
+      "path": "https://raw.githubusercontent.com/phenobarbital/querysource/dev/querysource/parsers/abstract.pyx",
+      "symbol": "AbstractParser._extract_options",
+      "lines": "156-527",
+      "role": "Source of the conditions dialect (option keys, placeholder vs WHERE routing, @variables); wheel ships only compiled parsers.",
+      "evidence": [
+        "F007"
+      ]
+    },
+    {
+      "path": "https://raw.githubusercontent.com/phenobarbital/querysource/dev/querysource/parsers/sql.pyx",
+      "symbol": "SQLParser.filter_conditions",
+      "lines": "113-235",
+      "role": "WHERE value grammar (scalar, !, list/IN, [op,v], {op:v}, BETWEEN, null/!null, bool).",
+      "evidence": [
+        "F007"
+      ]
+    },
+    {
+      "path": ".venv/lib/python3.12/site-packages/querysource/queries/multi/__init__.py",
+      "symbol": "MultiQS",
+      "lines": "56-557",
+      "role": "Pipeline executor; a persisted multi-query is a queries row whose query_raw is the pipeline JSON.",
+      "evidence": [
+        "F008"
+      ]
+    },
+    {
+      "path": ".venv/lib/python3.12/site-packages/querysource/queries/multi/registry.py",
+      "symbol": "ComponentRegistry",
+      "lines": "24-375",
+      "role": "In-process get_catalog() (same payload as /api/v3/qs/components) and validate_pipeline().",
+      "evidence": [
+        "F009"
+      ]
+    },
+    {
+      "path": ".venv/lib/python3.12/site-packages/querysource/handlers/manager.py",
+      "symbol": "QueryManager",
+      "lines": "71-520",
+      "role": "Reference for slug list/get/upsert semantics (default_fields, QueryModel.get/insert/update) the toolkit reproduces in-process.",
+      "evidence": [
+        "F010"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/toolkit.py",
+      "symbol": "AbstractToolkit",
+      "lines": "206-712",
+      "role": "Toolkit base: tool_prefix, exclude_tools, auto_open, _prepare_kwargs/_pre_execute/_post_execute hooks.",
+      "evidence": [
+        "F012"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/databasequery/toolkit.py",
+      "symbol": "DatabaseQueryToolkit",
+      "lines": "115-200",
+      "role": "Reference toolkit shape to mirror (prefix, exclusions, Pydantic result dump).",
+      "evidence": [
+        "F012"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/__init__.py",
+      "symbol": "TOOL_REGISTRY",
+      "lines": "4-241",
+      "role": "Auto-generated registry holding the only references to QSourceTool (q_source, qsource); regenerate after the rename.",
+      "evidence": [
+        "F013"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/auth/permission.py",
+      "symbol": "UserSession",
+      "lines": "20-56",
+      "role": "Existing tenant primitive (tenant_id) if per-call tenant derivation is wanted.",
+      "evidence": [
+        "F011"
+      ]
+    }
+  ],
+  "constraints": [
+    {
+      "statement": "QS() and QueryConnection.get_slug() resolve a slug by primary key and ignore `program`; nothing in the library or in ai-parrot filters by program_slug.",
+      "evidence": [
+        "F005",
+        "F006",
+        "F011"
+      ],
+      "implication": "The toolkit must load the QueryModel row itself and check program_slug against its allowlist BEFORE calling QS/MultiQS, for every slug referenced (including every `queries[*].slug` inside a pipeline)."
+    },
+    {
+      "statement": "The conditions dialect lives in compiled Cython/Rust parsers; the readable source is only on GitHub (dev/main) and may drift from the pinned wheel (4.5.11).",
+      "evidence": [
+        "F007"
+      ],
+      "implication": "Ship the dialect reference as a versioned, static artefact in the toolkit (generated from F007 and re-verified at spec time), plus a `dry_run` probe so the LLM can see the rendered query; do not try to introspect the parser at runtime."
+    },
+    {
+      "statement": "A caller's `conditions` dict is a mixed bag: reserved option keys (fields, querylimit/_limit, _offset, ordering, grouping, filter/where_cond, refresh, ...) are popped, keys present in cond_definition become placeholders, everything else becomes WHERE filters; a nested `conditions` key is also merged.",
+      "evidence": [
+        "F007",
+        "F005"
+      ],
+      "implication": "Expose the tool arguments as typed, separate fields (placeholders, filter, fields, ordering, grouping, limit, offset, refresh) and assemble the QS payload deterministically instead of a free-form `conditions` blob."
+    },
+    {
+      "statement": "ComponentRegistry.get_catalog() is synchronous and does module discovery/introspection; the REST handler runs it in asyncio.to_thread.",
+      "evidence": [
+        "F009"
+      ],
+      "implication": "Call it via asyncio.to_thread and cache the catalog per toolkit instance; the toolkit does not need HTTP access to /api/v3/qs/components."
+    },
+    {
+      "statement": "A persisted MultiQuery is an ordinary public.queries row whose query_raw holds the pipeline JSON (detected by the presence of queries/files/sources); there is no provider flag.",
+      "evidence": [
+        "F008",
+        "F010"
+      ],
+      "implication": "describe_slug must detect and label multi-query slugs; save_multiquery (if allowed) writes a QueryModel row with query_raw=json and program_slug forced to the tenant."
+    },
+    {
+      "statement": "TOOL_REGISTRY in parrot_tools/__init__.py is auto-generated and holds the only references to QSourceTool.",
+      "evidence": [
+        "F013",
+        "F014"
+      ],
+      "implication": "Deleting qsource.py is a safe hard cut; regenerate the registry with scripts/generate_tool_registry.py rather than hand-editing."
+    },
+    {
+      "statement": "Toolkits expose public async methods as tools, with tool_prefix/exclude_tools/_prepare_kwargs/_pre_execute/auto_open available; DatabaseQueryToolkit is the current reference shape.",
+      "evidence": [
+        "F012"
+      ],
+      "implication": "Implement QuerysourceToolkit(AbstractToolkit) with tool_prefix='qs', enforce tenancy in _pre_execute/_prepare_kwargs, keep querysource imports lazy and patchable as query_slug.py does."
+    },
+    {
+      "statement": "There are no tests for qsource.py or querytoolkit.py; QuerySlugSource tests mock the lazy QS import.",
+      "evidence": [
+        "F015",
+        "F004"
+      ],
+      "implication": "The refactor must add packages/ai-parrot-tools/tests/querysource/ with fakes for QS, MultiQS, QueryModel and ComponentRegistry; no live DB in unit tests."
+    }
+  ],
+  "recent_history": [
+    {
+      "commit": "fd2a35e1e",
+      "when": "2026-03-23",
+      "author": "Jesus",
+      "message": "fixing dependencies of all tools",
+      "touched": [
+        "packages/ai-parrot-tools/src/parrot_tools/qsource.py"
+      ],
+      "evidence": [
+        "F014"
+      ]
+    },
+    {
+      "commit": "65fd61bca",
+      "when": "2026-03-22",
+      "author": "Jesus",
+      "message": "feat(runtime-dependency-reduction): TASK-389 — Database/Query Tools Lazy Imports",
+      "touched": [
+        "packages/ai-parrot-tools/src/parrot_tools/qsource.py"
+      ],
+      "evidence": [
+        "F014"
+      ]
+    }
+  ],
+  "scope": {
+    "whats_new": [
+      "packages/ai-parrot-tools/src/parrot_tools/querysource/ package: QuerysourceToolkit(AbstractToolkit) with tool_prefix 'qs' and tools: qs_get_dialect_reference, qs_list_slugs, qs_describe_slug (incl. optional dry_run), qs_execute_slug, qs_list_components, qs_validate_pipeline, qs_run_multiquery, qs_save_multiquery (write, confirming, opt-in).",
+      "Pydantic models for tool inputs/outputs (SlugSummary, SlugDetail, ExecutionResult with bounded rows + row_count/columns, PipelineValidation, ComponentInfo mirror) and a static, versioned dialect reference (option keys, placeholder vs WHERE routing, WHERE value grammar, @variables note).",
+      "Tenant scoping: constructor `programs` allowlist (None = unrestricted) enforced on list/describe/execute/run/save and on every slug referenced by a pipeline; raw SQL nodes gated by a separate flag.",
+      "Unit tests under packages/ai-parrot-tools/tests/querysource/ with fakes for QS, MultiQS, QueryModel and ComponentRegistry."
+    ],
+    "what_changes": [
+      {
+        "path": "packages/ai-parrot-tools/src/parrot_tools/qsource.py",
+        "symbol": "QSourceTool",
+        "change": "Deleted (hard cut); behaviour absorbed by qs_execute_slug.",
+        "evidence": [
+          "F002",
+          "F013"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot-tools/src/parrot_tools/__init__.py",
+        "symbol": "TOOL_REGISTRY",
+        "change": "Regenerated: drop q_source/qsource, add querysource toolkit entry.",
+        "evidence": [
+          "F013"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot-tools/pyproject.toml",
+        "symbol": null,
+        "change": "querysource stays an optional extra; document the minimum version the dialect reference was verified against.",
+        "evidence": [
+          "F007"
+        ]
+      }
+    ],
+    "non_goals": [
+      "Modifying the querysource library (adding program filtering to get_slug, exposing parser sources).",
+      "Replacing QuerySlugSource/MultiQuerySlugSource in dataset_manager or QueryToolkit subclasses (PricesTool, EpsonProductToolkit).",
+      "Calling the QuerySource REST API from the toolkit (everything is in-process via the installed package).",
+      "PBAC/Guardian integration — tenancy here is a program_slug allowlist, not policy evaluation."
+    ],
+    "patterns_to_follow": [
+      {
+        "pattern": "DatabaseQueryToolkit shape: tool_prefix, exclude_tools, docstring listing tool names, _post_execute model_dump.",
+        "evidence": [
+          "F012"
+        ]
+      },
+      {
+        "pattern": "Lazy, patchable querysource import (module-level QS = None + _get_qs()).",
+        "evidence": [
+          "F004"
+        ]
+      },
+      {
+        "pattern": "permanent_filter precedence: toolkit-level forced conditions override LLM-supplied ones.",
+        "evidence": [
+          "F004"
+        ]
+      },
+      {
+        "pattern": "asyncio.to_thread(ComponentRegistry.get_catalog) as in the REST handler.",
+        "evidence": [
+          "F009"
+        ]
+      }
+    ],
+    "integration_risks": [
+      {
+        "risk": "Dialect reference drifts from the installed querysource version.",
+        "mitigation": "Pin the version the reference was verified against; add a smoke test that imports AbstractParser and asserts the .pxd attribute set; spec re-verifies against GitHub tag of the pinned version.",
+        "evidence": [
+          "F007"
+        ]
+      },
+      {
+        "risk": "Double slug lookup (toolkit tenant check + QS.build_provider) adds a DB round-trip per execution.",
+        "mitigation": "Small TTL cache slug -> program_slug/is_multi in the toolkit; acceptable latency for LLM tool calls.",
+        "evidence": [
+          "F005"
+        ]
+      },
+      {
+        "risk": "Pipelines can embed inline SQL nodes ({\"query\": ..., \"driver\": ...}) that bypass slug tenancy.",
+        "mitigation": "Reject inline query nodes when a programs allowlist is set unless allow_raw_sql=True.",
+        "evidence": [
+          "F008",
+          "F010"
+        ]
+      }
+    ]
+  },
+  "claims": [
+    {
+      "id": "C1",
+      "claim": "QSourceTool is a single AbstractTool with a free-form `conditions` field and no tenant notion; DataNotFound is only imported under TYPE_CHECKING.",
+      "evidence": [
+        "F002"
+      ],
+      "confidence": "high",
+      "reasoning": "Direct read of the file."
+    },
+    {
+      "id": "C2",
+      "claim": "QS() accepts slug | query+driver | raw_query, merges stored conditions with caller conditions (caller wins) and returns (result, error) from query().",
+      "evidence": [
+        "F005"
+      ],
+      "confidence": "high",
+      "reasoning": "Direct read of installed qs.py 4.5.11."
+    },
+    {
+      "id": "C3",
+      "claim": "Tenancy is not enforced by querysource: get_slug ignores `program`, QueryModel.program_slug is a plain column.",
+      "evidence": [
+        "F005",
+        "F006"
+      ],
+      "confidence": "high",
+      "reasoning": "Direct read of connections.py and models.py."
+    },
+    {
+      "id": "C4",
+      "claim": "The conditions dialect is: option keys popped first; cond_definition keys become placeholders; other keys become WHERE filters with the grammar in F007; nested `conditions` merges.",
+      "evidence": [
+        "F007"
+      ],
+      "confidence": "medium",
+      "reasoning": "Read from GitHub dev source, not the compiled 4.5.11 wheel; .pxd attribute set matches."
+    },
+    {
+      "id": "C5",
+      "claim": "ComponentRegistry.get_catalog()/validate_pipeline() give the components catalog and pipeline validation in-process with the same shape as /api/v3/qs/components.",
+      "evidence": [
+        "F009"
+      ],
+      "confidence": "high",
+      "reasoning": "Direct read of registry.py and components.py."
+    },
+    {
+      "id": "C6",
+      "claim": "A persisted multi-query is a queries row with pipeline JSON in query_raw; MultiQS detects it by queries/files/sources keys.",
+      "evidence": [
+        "F008"
+      ],
+      "confidence": "high",
+      "reasoning": "Direct read of MultiQS.query()."
+    },
+    {
+      "id": "C7",
+      "claim": "Deleting QSourceTool is a safe hard cut; only the auto-generated TOOL_REGISTRY references it.",
+      "evidence": [
+        "F013",
+        "F014"
+      ],
+      "confidence": "high",
+      "reasoning": "Repo-wide grep excluding build/ artefacts; no commits in 90 days."
+    },
+    {
+      "id": "C8",
+      "claim": "AbstractToolkit hooks (_prepare_kwargs/_pre_execute) are the right seam for tenant enforcement, following DatabaseQueryToolkit.",
+      "evidence": [
+        "F012"
+      ],
+      "confidence": "high",
+      "reasoning": "Direct read of toolkit.py docstrings describing these hooks for authorization."
+    },
+    {
+      "id": "C9",
+      "claim": "@-variable functions (QS_VARIABLES) are supplied by the deploying app's settings, so the toolkit cannot enumerate them from the library alone.",
+      "evidence": [
+        "F007"
+      ],
+      "confidence": "medium",
+      "reasoning": "services.py imports settings.settings.QUERYSOURCE_VARIABLES; whether the ai-parrot deployment defines any was not checked."
+    },
+    {
+      "id": "C10",
+      "claim": "No tests exist for the current tool; QuerySlugSource tests show how QS is mocked.",
+      "evidence": [
+        "F015",
+        "F004"
+      ],
+      "confidence": "high",
+      "reasoning": "Glob over packages/*/tests returned nothing for qsource/querytoolkit."
+    }
+  ],
+  "unknowns": [
+    {
+      "id": "U1",
+      "question": "How should the toolkit read the slug catalog (list/describe)?",
+      "resolves_claims": [
+        "C3"
+      ],
+      "plausible_answers": [
+        "a) In-process via QueryModel/asyncdb using querysource's default_dsn (same path QS uses) — recommended",
+        "b) Via the QuerySource REST management API (/api/v1/management/queries) with a service token",
+        "c) Both, selectable per instance"
+      ],
+      "user_answer": "a) In-process via QueryModel/asyncdb using querysource's default_dsn (same path QS uses)"
+    },
+    {
+      "id": "U2",
+      "question": "May the LLM persist multi-queries it composes (write to public.queries)?",
+      "resolves_claims": [
+        "C6"
+      ],
+      "plausible_answers": [
+        "a) Yes, via an opt-in `allow_write=True` confirming tool that forces program_slug to the tenant (default off) — recommended",
+        "b) No — compose and run ad hoc only, never persist",
+        "c) Yes, but through the REST manager endpoint so PBAC applies"
+      ],
+      "user_answer": "a) Yes, via an opt-in allow_write=True confirming tool that forces program_slug to the tenant (default off)"
+    },
+    {
+      "id": "U3",
+      "question": "When a programs allowlist is set, what about raw SQL (QS(query=...) and inline {\"query\": ...} pipeline nodes)?",
+      "resolves_claims": [
+        "C3",
+        "C6"
+      ],
+      "plausible_answers": [
+        "a) Forbidden whenever the toolkit is tenant-restricted (fail closed) — recommended",
+        "b) Allowed only with an explicit allow_raw_sql=True flag",
+        "c) Always allowed (tenancy applies to slugs only)"
+      ],
+      "user_answer": "a) Forbidden whenever the toolkit is tenant-restricted (fail closed)"
+    },
+    {
+      "id": "U4",
+      "question": "Where does the tenant come from at runtime?",
+      "resolves_claims": [
+        "C8"
+      ],
+      "plausible_answers": [
+        "a) Static constructor allowlist `programs=[...]` set in the agent config — recommended for v1",
+        "b) Derived per call from UserSession.tenant_id via _permission_context",
+        "c) Both: constructor allowlist intersected with the session tenant when present"
+      ],
+      "user_answer": "a) Static constructor allowlist programs=[...] set in the agent config (None = unrestricted)"
+    }
+  ],
+  "overall_confidence": "medium",
+  "overall_confidence_rationale": "Localization and the QS/MultiQS/registry contracts are read directly from the installed 4.5.11 package (high). The conditions dialect — a core deliverable — was reconstructed from GitHub dev sources because the wheel ships compiled parsers (medium). Product decisions on write access and tenant source remain open (U1–U4).",
+  "recommended_next_command": {
+    "command": "sdd-spec",
+    "rationale": "The architecture is settled (an AbstractToolkit mirroring DatabaseQueryToolkit, in-process querysource calls); remaining questions are product decisions resolvable in Q&A, not architectural forks. The spec must re-verify the dialect against the pinned querysource tag."
+  }
+}
