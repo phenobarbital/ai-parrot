@@ -1251,3 +1251,15 @@ class TestChartsGroupLikeCards:
         }
         doc = await self._doc(self._chart("A"), table, self._chart("B"))
         assert doc.count('<div class="chart-grid">') == 2
+
+    async def test_paper_keeps_the_charts_full_width_and_together(self):
+        # Two columns is a screen luxury: half a page-width leaves a chart so
+        # little drawing height that Chart.js drops ticks, rotates the axis
+        # names and spills the legend out of its card.
+        doc = await self._doc(self._chart("A"), self._chart("B"))
+        block = doc[re.search(r"@media print\s*\{", doc).end():]
+        rule = block[block.index(".chart-grid {"):][:260]
+        assert "grid-template-columns: 1fr;" in rule
+        # Together on one sheet rather than split across a page break. Two
+        # full-width charts fit a page; the comment says why three would not.
+        assert "break-inside: avoid" in rule

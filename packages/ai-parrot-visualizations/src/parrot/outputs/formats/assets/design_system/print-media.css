@@ -97,12 +97,24 @@
         gap: 0.75rem;
     }
 
-    /* Same reasoning, two across: a page is a fixed budget and one chart per
-       sheet spends it on white. */
+    /* One across on paper, unlike the screen. Half a page-width leaves a
+       chart about 150px of drawing height at this proportion, and Chart.js
+       starts dropping things to fit: one tick on the whole y axis, week
+       labels on the diagonal, axis names rotated and clipped, a legend
+       spilling out of its card. Two columns is a screen luxury.
+       
+       The run stays together instead — which is what puts both charts on a
+       sheet of their own rather than splitting one onto each side of a page
+       break. It fits: two full-width charts are about 168mm against 257mm of
+       printable page. A run of THREE would not fit, and a block that cannot
+       fit does not shrink — it jumps to the next sheet and leaves this one
+       blank, which is the failure this file has already been bitten by. */
     .chart-grid {
         display: grid;
-        grid-template-columns: 1fr 1fr;
+        grid-template-columns: 1fr;
         gap: 0.75rem;
+        break-inside: avoid;
+        page-break-inside: avoid;
     }
 
     /* A long table keeps flowing, but a row stays whole and the header
