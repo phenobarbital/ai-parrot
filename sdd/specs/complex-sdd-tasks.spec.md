@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-561
 **Date**: 2026-09-16
 **Author**: Codex, from requirements by Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: Next SDD tooling release
 
 Source: direct feature request by Jesus Lara. Initial thresholds are proposed
