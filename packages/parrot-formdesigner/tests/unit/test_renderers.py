@@ -488,10 +488,36 @@ def test_submit_action_data_default():
 
 
 @pytest.mark.asyncio
-async def test_wizard_non_terminal_actions_unchanged(sample_schema):
-    # Test that non-last step has Next action (not Submit) and other actions have the expected literals
-    # {"_action": "back"|"skip"|"cancel"|"next"}
-    result = await AdaptiveCardRenderer().render_section(sample_schema, 0, show_back=True, show_skip=True)
+async def test_wizard_non_terminal_actions_unchanged():
+    # Test that a non-first, non-last step has Back/Skip/Cancel/Next literals (not Submit).
+    # `sample_schema` has a single section (its only index is always both first AND last), so
+    # a three-section form is required to exercise a genuine middle, non-terminal step — the
+    # middle index is neither `is_first` (so Back is emitted) nor `is_last` (so Next, not
+    # Submit, is emitted).
+    multi_section_form = FormSchema(
+        form_id="test_multi_non_terminal",
+        title="Test Multi-Section Form",
+        sections=[
+            FormSection(
+                section_id="sec1",
+                title="Section 1",
+                fields=[FormField(field_id="name", field_type=FieldType.TEXT, label="Name")],
+            ),
+            FormSection(
+                section_id="sec2",
+                title="Section 2",
+                fields=[FormField(field_id="email", field_type=FieldType.EMAIL, label="Email")],
+            ),
+            FormSection(
+                section_id="sec3",
+                title="Section 3",
+                fields=[FormField(field_id="phone", field_type=FieldType.TEXT, label="Phone")],
+            ),
+        ],
+    )
+    result = await AdaptiveCardRenderer().render_section(
+        multi_section_form, 1, show_back=True, show_skip=True
+    )
     
     # Check that there's no submit action (since it's not the last step)
     actions = result.content.get("actions", [])
