@@ -1,4 +1,5 @@
 """Roster probe + distinct-seat chunk assigner (spec §3 M2; G2, G6, G8)."""
+
 from __future__ import annotations
 
 import asyncio
@@ -41,8 +42,11 @@ class RosterProbe:
             except Exception as exc:  # noqa: BLE001 — probe must never raise
                 results.append(
                     SeatProbeResult(
-                        label=seat.label, kind=seat.kind, backend=seat.backend,
-                        available=False, reason=str(exc),
+                        label=seat.label,
+                        kind=seat.kind,
+                        backend=seat.backend,
+                        available=False,
+                        reason=str(exc),
                     )
                 )
         return results
@@ -73,8 +77,12 @@ class RosterProbe:
 
         if self._smoke is None:
             return SeatProbeResult(
-                label=seat.label, kind=seat.kind, backend=backend,
-                available=True, model_used=seat.model, reason=reason,
+                label=seat.label,
+                kind=seat.kind,
+                backend=backend,
+                available=True,
+                model_used=seat.model,
+                reason=reason,
             )
 
         try:
@@ -84,30 +92,40 @@ class RosterProbe:
             reason = str(exc)
 
         if ok:
-            return SeatProbeResult(label=seat.label, kind=seat.kind, backend=backend, available=True, model_used=seat.model)
+            return SeatProbeResult(
+                label=seat.label, kind=seat.kind, backend=backend, available=True, model_used=seat.model
+            )
 
         if not seat.fallback_model:
             return SeatProbeResult(
-                label=seat.label, kind=seat.kind, backend=backend, available=False,
+                label=seat.label,
+                kind=seat.kind,
+                backend=backend,
+                available=False,
                 reason=reason or f"smoke call rejected model {seat.model!r}",
             )
 
         try:
-            fallback_ok = await asyncio.wait_for(
-                self._smoke(seat, seat.fallback_model), timeout=self._smoke_timeout_s
-            )
+            fallback_ok = await asyncio.wait_for(self._smoke(seat, seat.fallback_model), timeout=self._smoke_timeout_s)
         except Exception as exc:  # noqa: BLE001 — smoke failures are reported, not raised
             fallback_ok = False
             reason = str(exc)
 
         if fallback_ok:
             return SeatProbeResult(
-                label=seat.label, kind=seat.kind, backend=backend, available=True,
-                model_used=seat.fallback_model, fallback_used=True,
+                label=seat.label,
+                kind=seat.kind,
+                backend=backend,
+                available=True,
+                model_used=seat.fallback_model,
+                fallback_used=True,
             )
 
         return SeatProbeResult(
-            label=seat.label, kind=seat.kind, backend=backend, available=False,
+            label=seat.label,
+            kind=seat.kind,
+            backend=backend,
+            available=False,
             reason=reason or f"smoke call rejected both {seat.model!r} and fallback {seat.fallback_model!r}",
         )
 
@@ -147,7 +165,7 @@ class ChunkAssigner:
             # Split the parallel batch into chunks of at most n tasks
             for k in range(0, len(parallel_batch), n):
                 batches.append(parallel_batch[k : k + n])
-        
+
         chunks: List[PlanChunk] = []
         for batch in batches:
             planned_tasks: List[PlannedTask] = []
