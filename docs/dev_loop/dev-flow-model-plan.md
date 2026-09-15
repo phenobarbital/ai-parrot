@@ -272,7 +272,8 @@ and enforced by the [`scripts/sdd/check_task_graph.py`](../../scripts/sdd/check_
 These rules ensure that the task graph is acyclic, dependencies are met,
 and concurrent file overlaps are avoided.
 
-For more details, refer to the [Task graph rules](../../.claude/commands/sdd-task.md#task-graph-rules)
+For more details, refer to the **Task graph rules** section of
+[`.claude/commands/sdd-task.md`](../../.claude/commands/sdd-task.md)
 and the [check_task_graph.py](../../scripts/sdd/check_task_graph.py) script.
 
 ## Per-run application (FEAT-490)
