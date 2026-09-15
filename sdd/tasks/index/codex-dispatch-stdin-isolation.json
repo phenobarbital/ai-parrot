@@ -16,16 +16,16 @@
       "feature_id": "codex-dispatch-stdin-isolation",
       "feature": "codex-dispatch-stdin-isolation",
       "spec": "sdd/specs/codex-dispatch-stdin-isolation.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Independent production module; no shared resource mutation outside its declared file.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/HOTFIX-codex-dispatch-stdin-isolation-1-isolate-input-and-bound-lifecycle.md"
+      "started_at": "2026-09-15T22:16:52+00:00",
+      "completed_at": "2026-09-15T22:16:52+00:00",
+      "file": "sdd/tasks/completed/HOTFIX-codex-dispatch-stdin-isolation-1-isolate-input-and-bound-lifecycle.md"
     },
     {
       "id": "HOTFIX-codex-dispatch-stdin-isolation-2",

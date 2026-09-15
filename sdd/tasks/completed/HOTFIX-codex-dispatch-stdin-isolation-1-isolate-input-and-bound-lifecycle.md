@@ -2,11 +2,11 @@
 
 **Feature**: codex-dispatch-stdin-isolation — Codex dispatch stdin isolation (hotfix)
 **Spec**: `sdd/specs/codex-dispatch-stdin-isolation.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2–4h)
 **Depends-on**: none
-**Assigned-to**: unassigned
+**Assigned-to**: sdd-worker (sequential fallback — parrot-sdd-coder rejected this hotfix's non-`TASK-<NNN>` ids)
 **Index**: `sdd/tasks/index/codex-dispatch-stdin-isolation.json`
 
 ## Context
@@ -139,4 +139,65 @@ next task; passing existing tests alone does not complete the hotfix.
 
 ## Completion Note
 
-Pending execution. No implementation or validation run is claimed by this task artifact.
+Implemented in `packages/ai-parrot/src/parrot/flows/dev_loop/dispatchers/codex.py`:
+
+- `_create_process()` now passes `stdin=asyncio.subprocess.DEVNULL` (stdout/stderr
+  pipes and `limit=8*1024*1024` unchanged; argv prompt unchanged) — AC-1.
+- New module-level `_BoundedStderrReader`: per-dispatch, reads stderr in
+  `<=4096`-byte chunks via an incremental UTF-8 decoder (`errors="replace"`),
+  retains only the last 4000 decoded characters (`.tail`), never a full
+  transcript. `.wait()` awaits natural EOF for the success/nonzero-exit path;
+  `.settle(timeout)` bounds cleanup by cancelling+awaiting the reader task if
+  it does not finish in time — no dangling reader task remains either way.
+  It falls back from `stream.read(n)` to `stream.read()` on `TypeError` so it
+  works unmodified against the existing `_AsyncBytesStream` test fake (whole
+  read semantics) as well as a real `asyncio.StreamReader` (bounded reads).
+- New `_cleanup_process_and_reader()`: bounds child-kill + `process.wait()` +
+  `stderr_reader.settle()` inside one shared 5-second budget; tolerates
+  `ProcessLookupError`/generic exceptions from an already-exited child so a
+  kill/exit race can never mask the original timeout/cancellation.
+- `dispatch()`'s inner timeout block now initializes `stderr_reader = None`
+  alongside the pre-existing `process = None` before the process is spawned
+  (timeout-during-creation safe), replaces the old fire-and-forget
+  `_read_stream` task with `_BoundedStderrReader`, and gained an
+  `except asyncio.CancelledError:` branch (alongside the existing
+  `FileNotFoundError`/`TimeoutError` branches) that runs the same bounded
+  cleanup before re-raising — caller cancellation is never turned into a
+  `DispatchExecutionError`.
+- Timeout path: `dispatch.failed` event now carries `stderr_tail` (<=4000
+  chars); the raised `DispatchExecutionError` keeps the exact existing prefix
+  `Dispatch exceeded {N}s wall-clock cap` and appends `: {last <=1000 chars}`
+  only when the captured tail is nonempty.
+- Removed the now-unreferenced `_read_stream()` (superseded by
+  `_BoundedStderrReader`; verified unused elsewhere via repo-wide grep —
+  `gemini.py`/`google_coding.py` have their own independent copies, untouched
+  per the spec's non-goals).
+
+Deviation from the blueprint: kept the `stream.read(n)` / `stream.read()`
+fallback (not explicitly specified) because task AC-5 requires the *existing*
+`test_codex_dispatcher.py` (unmodified — its `_AsyncBytesStream.read()` takes
+no size argument) to keep passing under M1 alone, before M2 (this hotfix's
+task 2) extends that fake for chunked reads.
+
+Verification: `PYTHONPATH=packages/ai-parrot/src pytest
+packages/ai-parrot/tests/flows/dev_loop/test_codex_dispatcher.py
+packages/ai-parrot/tests/flows/dev_loop/test_adversarial_review.py -q` — 29
+passed (log: `artifacts/logs/codex_stdin_existing_tests.log`). `black --check
+--line-length 120` and `ruff check` clean on the changed file; `git diff
+--check` clean.
+
+Note: this worktree's shared `.venv` is editable-installed against the main
+checkout, whose Cython `parrot.utils.types` / `parrot.utils.parsers.toml`
+`.so` builds are absent from this worktree's source tree (gitignored build
+artifacts); copied the matching `cpython-312` `.so` files locally (not
+committed — `.gitignore` already excludes `*.so`) to make `pytest` importable
+here, per the known worktree/Cython gap.
+
+Orchestration note: `parrot-sdd-coder` MCP dispatch tools
+(`coder_prepare_native`, `coder_run_chunk`, `coder_merge`) reject this
+hotfix's task ids (`HOTFIX-codex-dispatch-stdin-isolation-N`, per the spec's
+Worktree Strategy §"user-authorized-slug" identity, not `TASK-<NNN>`) with
+"invalid tool arguments" regardless of payload (verified with an empty
+`task_ids` array too); `coder_plan` itself works. Implemented directly via
+the sequential fallback loop instead. No per-model feedback recorded — this
+is a task-id-format tooling gap, not a coder delivery defect.
