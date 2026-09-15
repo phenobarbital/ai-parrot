@@ -319,6 +319,16 @@ XAxisMode = Literal["category", "time"]
 """X-axis mode: 'category' for categorical labels, 'time' for ISO 8601 date strings."""
 
 
+#: The marks a series may take in a combination, and the scales it may sit
+#: on. Spelled as literals rather than free strings so the JSON Schema --
+#: derived from this class by construction -- REFUSES "Bar" or "Right".
+#: Untyped, those validated and then degraded silently: `chartTypeMap["Bar"]`
+#: is undefined and `_SERIES_TYPE.get("Bar", ...)` falls back, so the chart
+#: came out wrong with no error anywhere.
+SeriesMark = Literal["bar", "line", "area"]
+SeriesAxis = Literal["left", "right"]
+
+
 class StructuredChartConfig(BaseModel):
     """Library-agnostic chart configuration mirroring the frontend AppChartConfig.
 
@@ -341,6 +351,15 @@ class StructuredChartConfig(BaseModel):
         map_name: GeoJSON map identifier (required when type="map").
         data: Flat row list — INPUT-ONLY; excluded from output by the renderer.
         layout: "full" or "half" width hint (FEAT-527).
+        series_types: Per-series mark, parallel to ``y``. This is what lets a
+            chart be a combination — bars for the counts and a line for the
+            one series that is read as a shape rather than a quantity. An
+            entry that is absent or null means the chart's own ``type``.
+        series_axes: Per-series axis, parallel to ``y``: "left" (the default)
+            or "right". A combination usually needs it — a completion RATE
+            plotted against the same scale as a count of events sits flat on
+            the floor of the chart and shows nothing. Declaring it beats
+            leaving a renderer to guess which series share a scale.
     """
 
     model_config = ConfigDict(populate_by_name=True)
@@ -364,6 +383,35 @@ class StructuredChartConfig(BaseModel):
         default=None,
         alias="xAxisMode",
         description="Axis scale: 'category' or 'time'",
+    )
+    series_types: Optional[List[Optional[SeriesMark]]] = Field(
+        default=None,
+        alias="seriesTypes",
+        description=(
+            "Per-series mark, parallel to `y` ('bar' | 'line' | 'area'). "
+            "A null or missing entry means the chart's own `type`. This is "
+            "how a chart becomes a combination: bars for the counts, a line "
+            "for the series read as a shape."
+        ),
+    )
+    y_axis_labels: Optional[List[Optional[str]]] = Field(
+        default=None,
+        alias="yAxisLabels",
+        description=(
+            "Axis names, parallel to the axes: [left, right]. `yAxisLabel` "
+            "names one axis, which is enough until a chart has two — and a "
+            "combination always does. An unnamed right-hand scale running 0 "
+            "to 80 beside counts of events is a number nobody can read."
+        ),
+    )
+    series_axes: Optional[List[Optional[SeriesAxis]]] = Field(
+        default=None,
+        alias="seriesAxes",
+        description=(
+            "Per-series axis, parallel to `y` ('left' | 'right'). Default "
+            "left. A rate and a count do not share a scale: without a second "
+            "axis the rate sits flat on the floor of the chart."
+        ),
     )
     palette: Optional[List[str]] = Field(
         default=None,

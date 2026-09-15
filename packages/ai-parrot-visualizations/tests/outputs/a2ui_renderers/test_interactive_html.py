@@ -538,3 +538,835 @@ class TestHtmlDocumentSandboxedIframe:
         out = art.content.decode()
         assert 'sandbox="allow-scripts"' in out
         assert "Nested Doc" in out
+
+
+class TestChartKeyIsReadableAndSingular:
+    """The chart key used to be a schema printed twice.
+
+    "Events by week" showed a row of buttons reading `scheduled | in_progress
+    | completed | missed | unfulfilled | cancelled` and, directly under it,
+    Chart.js' own legend with the same six words — one of them a column key
+    with an underscore in it.
+    """
+
+    pytestmark = pytest.mark.asyncio
+
+    @staticmethod
+    def _weekly_chart() -> CreateSurface:
+        return CreateSurface(
+            surfaceId="s",
+            catalogId="c",
+            components=[
+                Component(
+                    id="root",
+                    component="Chart",
+                    type="bar",
+                    x="week",
+                    y=["scheduled", "in_progress", "completed"],
+                    title="Events by week",
+                    data=[{"week": "2026-W36", "scheduled": 8, "in_progress": 1, "completed": 27}],
+                )
+            ],
+            dataModel={},
+        )
+
+    async def test_a_series_is_named_not_keyed(self):
+        doc = (await InteractiveHTMLRenderer().render(self._weekly_chart())).content.decode()
+        assert ">In progress</button>" in doc
+        # The raw key must not survive as the button's visible text. It still
+        # appears inside the embedded config (it is how a row is looked up),
+        # so this checks the RENDERED label, not the whole document.
+        assert ">in_progress</button>" not in doc
+
+    async def test_the_datasets_carry_the_same_names(self):
+        # The toggles and the plot must not disagree about what a series is
+        # called, so the readable names travel in the config beside `y`.
+        doc = (await InteractiveHTMLRenderer().render(self._weekly_chart())).content.decode()
+        assert "yLabels" in doc
+        assert "In progress" in doc
+
+    async def test_only_one_key_is_drawn(self):
+        # The toggles carry the colours and the names, so Chart.js' built-in
+        # legend would be a second key saying the same words.
+        doc = (await InteractiveHTMLRenderer().render(self._weekly_chart())).content.decode()
+        assert "&quot;showLegend&quot;: false" in doc or '"showLegend": false' in doc
+
+    async def test_a_single_series_keeps_the_built_in_legend(self):
+        # No toggles render for one y column, so nothing would name the series
+        # if the legend were off too.
+        envelope = CreateSurface(
+            surfaceId="s",
+            catalogId="c",
+            components=[
+                Component(
+                    id="root",
+                    component="Chart",
+                    type="line",
+                    x="week",
+                    y=["completed"],
+                    data=[{"week": "2026-W36", "completed": 27}],
+                )
+            ],
+            dataModel={},
+        )
+        doc = (await InteractiveHTMLRenderer().render(envelope)).content.decode()
+        # ...and it sits at the bottom too, so the key is in the same place
+        # whether a chart has one series or six.
+        assert 'position: "bottom"' in doc
+        # The MARKUP, not the string: the runtime's own JS contains the
+        # selector `[data-metric-toggle-for="...]` and the stylesheet contains
+        # `.a2ui-metric-toggle`, both inlined into every document, so a bare
+        # substring is true with no toggles rendered at all.
+        assert '<div class="a2ui-metric-toggle"' not in doc
+        assert "&quot;showLegend&quot;: true" in doc or '"showLegend": true' in doc
+
+    async def test_the_key_sits_below_the_chart(self):
+        doc = (await InteractiveHTMLRenderer().render(self._weekly_chart())).content.decode()
+        assert doc.index("<canvas") < doc.index('<div class="a2ui-metric-toggle"')
+
+    async def test_a_toggle_says_out_loud_whether_it_is_on(self):
+        # The class paints the state; only aria-pressed reports it. Without
+        # it the control is a button whose entire purpose — "this series is
+        # currently hidden" — is visible and nothing else.
+        doc = (await InteractiveHTMLRenderer().render(self._weekly_chart())).content.decode()
+        assert 'aria-pressed="true"' in doc
+
+    async def test_the_key_is_styled_at_all(self):
+        # `.metricbtn` and `.daytab` carried no CSS whatsoever: browser
+        # default buttons, and `.active` painted nothing, so a series
+        # switched off looked exactly like one switched on.
+        doc = (await InteractiveHTMLRenderer().render(self._weekly_chart())).content.decode()
+        assert ".metricbtn," in doc or ".metricbtn {" in doc
+        assert ".metricbtn:not(.active)" in doc
+        assert ".metricbtn:focus-visible" in doc or ".metricbtn:focus-visible," in doc
+
+
+class TestInteractiveChartTrendline:
+    """The trendline the app draws and this surface used to drop.
+
+    `StructuredChartConfig.trendline` reached the static ECharts renderer and
+    the Svelte canvas, but the interactive surface ignored it — the same
+    report showed a fitted line in the app and none in the exported HTML.
+    """
+
+    def _doc_and_config(self, doc: str) -> dict:
+        raw = re.search(r'data-chart-config="([^"]*)"', doc).group(1)
+        return json.loads(html.unescape(raw))
+
+    async def test_a_requested_trendline_reaches_the_embedded_config(self):
+        env = _envelope(
+            Component(
+                id="root",
+                component="Chart",
+                type="line",
+                x="day",
+                y=["actual"],
+                data={"path": "/rows"},
+                trendline=True,
+            ),
+            data_model={"rows": [{"day": "Mon", "actual": 10}, {"day": "Tue", "actual": 14}]},
+        )
+        art = await InteractiveHTMLRenderer().render(env)
+        doc = art.content.decode()
+        assert self._doc_and_config(doc)["trendline"] is True
+
+    async def test_a_chart_that_asked_for_nothing_carries_nothing(self):
+        env = _envelope(
+            Component(
+                id="root", component="Chart", type="line", x="day", y=["actual"],
+                data={"path": "/rows"},
+            ),
+            data_model={"rows": [{"day": "Mon", "actual": 10}]},
+        )
+        art = await InteractiveHTMLRenderer().render(env)
+        assert "trendline" not in self._doc_and_config(art.content.decode())
+
+    @pytest.mark.parametrize("chart_type", ["pie", "donut", "radar"])
+    async def test_a_line_through_a_pie_is_never_drawn(self, chart_type):
+        # The fit runs over row ORDER, and these have no axis for that to
+        # mean anything along. Decided here, in Python, so the browser
+        # runtime does not carry a second copy of the rule.
+        env = _envelope(
+            Component(
+                id="root", component="Chart", type=chart_type, x="day", y=["actual"],
+                data={"path": "/rows"}, trendline=True,
+            ),
+            data_model={"rows": [{"day": "Mon", "actual": 10}, {"day": "Tue", "actual": 14}]},
+        )
+        art = await InteractiveHTMLRenderer().render(env)
+        assert "trendline" not in self._doc_and_config(art.content.decode())
+
+    async def test_a_degraded_chart_is_a_bar_and_a_bar_can_carry_a_trend(self):
+        # `waterfall` has no Chart.js equivalent and arrives as a bar. The
+        # type tested is the final one, so the trend survives the degradation.
+        env = _envelope(
+            Component(
+                id="root", component="Chart", type="waterfall", x="day", y=["actual"],
+                data={"path": "/rows"}, trendline=True,
+            ),
+            data_model={"rows": [{"day": "Mon", "actual": 10}, {"day": "Tue", "actual": 14}]},
+        )
+        art = await InteractiveHTMLRenderer().render(env)
+        config = self._doc_and_config(art.content.decode())
+        assert config["type"] == "bar"
+        assert config["trendline"] is True
+
+    async def test_the_fit_is_computed_in_the_browser_not_baked_in(self):
+        # The point of fitting client-side: `buildDatasets` runs again on
+        # every day-tab switch and every FilterBar change, so the line must be
+        # recomputed from the rows on screen. A server-baked array of points
+        # would keep the slope of data the reader stopped looking at.
+        env = _envelope(
+            Component(
+                id="root", component="Chart", type="bar", x="day", y=["actual"],
+                data={"path": "/rows"}, trendline=True,
+            ),
+            data_model={"rows": [{"day": "Mon", "actual": 10}, {"day": "Tue", "actual": 14}]},
+        )
+        art = await InteractiveHTMLRenderer().render(env)
+        doc = art.content.decode()
+        assert "function trendData(" in doc
+        # The config carries the FLAG and the rows, never fitted points.
+        config = self._doc_and_config(doc)
+        assert set(config["data"][0]) == {"day", "actual"}
+
+    async def test_the_fitted_line_never_borrows_a_meaningful_colour(self):
+        # Colour is a judgement in these reports -- green is good news, red is
+        # bad. Left to Chart.js the trend came out red, reading as an alarm
+        # nobody raised. Grey, and the same grey the other two renderers use.
+        env = _envelope(
+            Component(
+                id="root", component="Chart", type="line", x="day", y=["actual"],
+                data={"path": "/rows"}, trendline=True,
+            ),
+            data_model={"rows": [{"day": "Mon", "actual": 10}, {"day": "Tue", "actual": 14}]},
+        )
+        art = await InteractiveHTMLRenderer().render(env)
+        doc = art.content.decode()
+        assert 'var TREND_COLOR = "#94a3b8"' in doc
+        assert "borderColor: TREND_COLOR" in doc
+
+
+class TestInteractiveKpiGrid:
+    """Eight KPIs came out as eight full-width blocks.
+
+    The stylesheet has always carried `.kpi-grid`, but the class was only
+    attached to a Row of kpi Cards — and an Infographic section is a COLUMN
+    whose first child is its heading, so the rule never fired.
+    """
+
+    def _section(self, *components) -> Component:
+        return Component(
+            id="root",
+            component="Infographic",
+            title="Report",
+            sections=[{"heading": "Hero", "components": list(components)}],
+        )
+
+    def _kpi(self, label: str) -> dict:
+        return {"component": "KPICard", "properties": {"label": label, "value": 1}}
+
+    async def test_consecutive_kpi_cards_become_one_grid(self):
+        env = _envelope(self._section(self._kpi("Events"), self._kpi("Completed"), self._kpi("Missed")))
+        doc = (await InteractiveHTMLRenderer().render(env)).content.decode()
+        assert doc.count('<div class="kpi-grid" data-count="3">') == 1
+        grid = doc.split('<div class="kpi-grid"')[1]
+        assert grid.count('class="a2ui-card kpi-card"') == 3
+
+    async def test_a_chart_between_them_starts_a_second_grid(self):
+        # Grouped by RUN, not by container: the same rule the Svelte canvas
+        # uses. Two KPIs, a chart, then one more KPI is two grids, not one.
+        chart = {
+            "component": "Chart",
+            "properties": {"type": "bar", "x": "day", "y": ["n"], "data": []},
+        }
+        # Two cards, a chart, two more cards: two card grids, and the lone
+        # chart between them is not a grid at all.
+        env = _envelope(
+            self._section(self._kpi("A"), self._kpi("B"), chart, self._kpi("C"), self._kpi("D"))
+        )
+        doc = (await InteractiveHTMLRenderer().render(env)).content.decode()
+        assert doc.count('<div class="kpi-grid"') == 2
+        assert doc.count('<div class="chart-grid"') == 0
+        assert "<canvas" in doc
+
+    async def test_a_section_with_no_kpis_grows_no_grid(self):
+        chart = {
+            "component": "Chart",
+            "properties": {"type": "bar", "x": "day", "y": ["n"], "data": []},
+        }
+        env = _envelope(self._section(chart))
+        doc = (await InteractiveHTMLRenderer().render(env)).content.decode()
+        assert '<div class="kpi-grid">' not in doc
+
+
+class TestExportedDeltaReadsLikeTheApp:
+    async def _card_doc(self, **props) -> str:
+        env = _envelope(
+            Component(id="root", component="KPICard", label="Metric", value=10, **props)
+        )
+        return (await InteractiveHTMLRenderer().render(env)).content.decode()
+
+    async def test_the_direction_travels_and_is_now_drawn(self):
+        # `data-trend` always travelled and the stylesheet's own comment
+        # described an arrow — but nothing drew one, so the export reported
+        # direction by the sign alone while the app showed a glyph.
+        doc = await self._card_doc(delta="-55.4%", trend="down")
+        assert 'data-trend="down"' in doc
+        assert '.kpi-delta[data-trend="down"]::before' in doc
+
+    async def test_an_unjudged_delta_is_ordinary_text_not_muted(self):
+        # Same decision the Svelte card took: unjudged is not unimportant,
+        # and muted weighed exactly as much as the period beside it.
+        doc = await self._card_doc(delta="-55.4%", trend="down", higherIsBetter=None)
+        assert 'data-sentiment="neutral"' in doc
+        assert '.kpi-delta[data-sentiment="neutral"] { color: var(--neutral-text); }' in doc
+        assert '.kpi-delta[data-sentiment="neutral"] { color: var(--neutral-muted); }' not in doc
+
+
+class TestPrintingAnExportedReport:
+    """Ctrl+P on an exported report, which is how it becomes a PDF.
+
+    `layout-print.css` is a whole LAYOUT the PDF renderer selects
+    server-side; an interactive document ships as `[data-layout="analytics"]`
+    and never sees it. Until `print-media.css` the composed sheet carried no
+    `@media print` rule at all.
+    """
+
+    async def _doc(self) -> str:
+        env = _envelope(
+            Component(
+                id="root", component="Chart", type="bar", x="day", y=["a", "b"],
+                data={"path": "/rows"},
+            ),
+            data_model={"rows": [{"day": "Mon", "a": 1, "b": 2}]},
+        )
+        return (await InteractiveHTMLRenderer().render(env)).content.decode()
+
+    async def test_the_document_carries_print_rules(self):
+        doc = await self._doc()
+        assert "@media print" in doc
+
+    async def test_colour_is_asked_for_explicitly(self):
+        # Browsers drop background colours when printing unless the reader
+        # ticked "Background graphics". Everything meaningful in this report
+        # is a colour — the delta greens and reds, the table header band.
+        assert "print-color-adjust: exact" in await self._doc()
+
+    async def test_controls_that_do_nothing_on_paper_are_hidden(self):
+        doc = await self._doc()
+        # From the RULE, not from the prose: the stylesheet's own comment
+        # mentions `@media print` before the block opens.
+        block = doc[re.search(r"@media print\s*\{", doc).end():]
+        for selector in (".a2ui-metric-toggle", ".a2ui-table-pager", ".filter-bar"):
+            assert f"{selector},\n" in block or f"{selector} " in block
+
+    async def test_the_pdf_layout_does_not_get_a_second_page_rule(self):
+        # `layout-print.css` already owns the paged rules for WeasyPrint.
+        # Two sources deciding one margin is worse than one.
+        from parrot.outputs.formats.assets.design_system import DesignSystem
+
+        assert "@media print" not in DesignSystem.stylesheet(layout="print")
+        assert "@media print" in DesignSystem.stylesheet(layout="analytics")
+
+
+class TestTableHeadersReadLikeAReport:
+    """A report handed to a client had `store_id | store_name | rate` across
+    the top of its tables: the database schema, read by someone who does not
+    have it.
+    """
+
+    async def _headers(self, columns) -> str:
+        env = _envelope(
+            Component(
+                id="root", component="DataTable", columns=columns,
+                data={"path": "/rows"},
+            ),
+            data_model={"rows": [{"store_id": "BBY1", "scheduled": 2}]},
+        )
+        doc = (await InteractiveHTMLRenderer().render(env)).content.decode()
+        return re.search(r"<thead><tr>(.*?)</tr></thead>", doc).group(1)
+
+    async def test_a_declared_title_is_used_verbatim(self):
+        head = await self._headers([{"name": "store_id", "title": "Store", "type": "string"}])
+        assert ">Store</th>" in head
+        assert "store_id</th>" not in head
+
+    async def test_a_column_with_no_title_is_humanised_not_printed_raw(self):
+        # The fallback of last resort, not the default: a recipe should name
+        # its columns. But a key is never shown to a reader as-is.
+        head = await self._headers([{"name": "open_clocks", "type": "integer"}])
+        assert ">Open clocks</th>" in head
+
+    async def test_a_numeric_header_aligns_with_its_figures(self):
+        # Left-aligned over right-aligned numbers, a header labels the white
+        # space beside its column rather than the column.
+        head = await self._headers(
+            [
+                {"name": "store_id", "title": "Store", "type": "string"},
+                {"name": "scheduled", "title": "Scheduled", "type": "integer"},
+            ]
+        )
+        assert 'class="num">Scheduled</th>' in head
+        assert 'class="num">Store</th>' not in head
+
+    async def test_the_sticky_header_stays_opaque(self):
+        # `position: sticky` plus a transparent background prints the header
+        # and the first row on top of each other while the reader scrolls.
+        env = _envelope(
+            Component(
+                id="root", component="DataTable",
+                columns=[{"name": "a", "title": "A", "type": "string"}],
+                data={"path": "/rows"},
+            ),
+            data_model={"rows": [{"a": "1"}]},
+        )
+        doc = (await InteractiveHTMLRenderer().render(env)).content.decode()
+        assert "background: var(--panel-bg)" in doc
+
+
+class TestPageBreaksDoNotWasteSheets:
+    """Only what fits on a page may refuse to be split.
+
+    Asking a block taller than the page to stay whole does not shrink it:
+    the browser pushes the whole thing to the next sheet and leaves the
+    current one blank. A seven-page report printed a half-empty first page
+    and a third page holding nothing but a heading.
+    """
+
+    async def _print_block(self) -> str:
+        env = _envelope(
+            Component(id="root", component="Text", text="x"),
+        )
+        doc = (await InteractiveHTMLRenderer().render(env)).content.decode()
+        return doc[re.search(r"@media print\s*\{", doc).end():]
+
+    async def test_a_section_and_a_table_may_break_across_pages(self):
+        block = await self._print_block()
+        allowed = block[block.index('.a2ui-card[data-variant="infographic"]'):][:220]
+        assert ".a2ui-section" in allowed
+        assert ".a2ui-table-wrap" in allowed
+        assert "break-inside: auto" in allowed
+
+    async def test_a_card_and_a_chart_still_stay_whole(self):
+        block = await self._print_block()
+        kept = block[block.index(".kpi-card,"):][:200]
+        assert ".a2ui-chart-wrap" in kept
+        assert "break-inside: avoid" in kept
+
+    async def test_a_heading_is_never_the_last_line_of_a_page(self):
+        assert "break-after: avoid" in await self._print_block()
+
+
+class TestChartsPrintSolid:
+    """Chart.js fills with alpha when nothing says otherwise. That survives a
+    screen and washes out on paper — printed, the bars read as ghosts.
+    """
+
+    async def _doc(self, **props) -> str:
+        env = _envelope(
+            Component(
+                id="root", component="Chart", type="bar", x="day", y=["a", "b"],
+                data={"path": "/rows"}, **props,
+            ),
+            data_model={"rows": [{"day": "Mon", "a": 1, "b": 2}]},
+        )
+        return (await InteractiveHTMLRenderer().render(env)).content.decode()
+
+    async def test_series_colours_are_chosen_not_defaulted(self):
+        doc = await self._doc()
+        assert "var SERIES_COLORS" in doc
+        assert "backgroundColor: color," in doc
+
+    async def test_the_palette_holds_no_red_and_no_green(self):
+        # Those two belong to the deltas, where they mean good news and bad.
+        # In a chart colour is identity, and borrowing the verdict pair would
+        # make "Missed" look like a judgement the chart is not making.
+        doc = await self._doc()
+        palette = re.search(r"var SERIES_COLORS = \[(.*?)\]", doc, re.S).group(1)
+        for verdict in ("#dc2626", "#ef4444", "#10b981", "#059669", "#16a34a"):
+            assert verdict not in palette
+
+    async def test_an_author_palette_wins(self):
+        doc = await self._doc(palette=["#111111", "#222222"])
+        config = json.loads(html.unescape(re.search(r'data-chart-config="([^"]*)"', doc).group(1)))
+        assert config["palette"] == ["#111111", "#222222"]
+
+    async def test_a_chart_with_no_palette_carries_none(self):
+        config = json.loads(
+            html.unescape(re.search(r'data-chart-config="([^"]*)"', await self._doc()).group(1))
+        )
+        assert "palette" not in config
+
+    async def test_chart_type_is_sized_for_paper(self):
+        # The canvas is rasterised at screen size and scaled down to the page
+        # width, taking its type with it: axis labels landed around seven
+        # points.
+        assert "Chart.defaults.font.size = 14" in await self._doc()
+
+
+class TestChartsAreRedrawnForPaper:
+    """A chart is drawn at screen width and rasterised; the printer scales
+    that bitmap down to the page and takes the type with it.
+    """
+
+    async def _doc(self) -> str:
+        env = _envelope(
+            Component(
+                id="root", component="Chart", type="bar", x="day", y=["a"],
+                data={"path": "/rows"},
+            ),
+            data_model={"rows": [{"day": "Mon", "a": 1}]},
+        )
+        return (await InteractiveHTMLRenderer().render(env)).content.decode()
+
+    async def test_the_runtime_reshapes_before_printing(self):
+        doc = await self._doc()
+        assert 'window.addEventListener("beforeprint", chartsForPrint)' in doc
+        # And puts the screen back afterwards, so printing does not leave the
+        # page looking like a print preview.
+        assert 'window.addEventListener("afterprint", chartsForScreen)' in doc
+
+    async def test_paper_gets_its_own_proportion(self):
+        # A page is a fixed budget: the strip that suits a wide screen prints
+        # as something too flat to read a bar in.
+        doc = await self._doc()
+        assert "var SCREEN_ASPECT = 3.2" in doc
+        assert "var PRINT_ASPECT = 2.2" in doc
+
+    async def test_the_screen_proportion_is_declared_before_it_is_read(self):
+        # `var` hoists the declaration and not the assignment. Declared below
+        # the construction loop, `SCREEN_ASPECT` read as `undefined` there and
+        # every chart was built with Chart.js's own default proportion — while
+        # the print path looked right, because `PRINT_ASPECT` is only read
+        # from inside a function that runs later. The previous test passes
+        # with that bug fully present: both constants are in the document, in
+        # the wrong order.
+        doc = await self._doc()
+        assert doc.index("var SCREEN_ASPECT") < doc.index("aspectRatio: SCREEN_ASPECT")
+        assert doc.index("var PRINT_ASPECT") < doc.index('querySelectorAll("[data-chart-config]")')
+
+    async def test_a_missing_chart_does_not_break_the_print(self):
+        # `resize()` on a destroyed chart throws; a print is not the moment
+        # to discover that.
+        doc = await self._doc()
+        block = doc[doc.index("function resizeCharts(aspect)"):][:400]
+        assert "try {" in block and "catch" in block
+
+
+class TestPrintUndoesScreenOnlyPositioning:
+    async def test_the_table_header_is_not_sticky_on_paper(self):
+        # Sticky belongs to a scrolling viewport. Left on in print it cost the
+        # header its text — the accent rule printed and the column names did
+        # not — while `table-header-group` was already repeating it correctly.
+        env = _envelope(
+            Component(
+                id="root", component="DataTable",
+                columns=[{"name": "a", "title": "A", "type": "string"}],
+                data={"path": "/rows"},
+            ),
+            data_model={"rows": [{"a": "1"}]},
+        )
+        doc = (await InteractiveHTMLRenderer().render(env)).content.decode()
+        block = doc[re.search(r"@media print\s*\{", doc).end():]
+        assert "position: static !important" in block
+
+    async def test_print_does_not_force_a_canvas_height(self):
+        # The runtime already sized the canvas for the page; forcing a height
+        # on top of it letterboxed the drawing inside its own box.
+        env = _envelope(
+            Component(
+                id="root", component="Chart", type="bar", x="d", y=["a"],
+                data={"path": "/rows"},
+            ),
+            data_model={"rows": [{"d": "Mon", "a": 1}]},
+        )
+        doc = (await InteractiveHTMLRenderer().render(env)).content.decode()
+        block = doc[re.search(r"@media print\s*\{", doc).end():]
+        canvas_rule = block[block.index("\n    canvas {"):][:200]
+        # Width leads and height follows. Constraining the height while the
+        # canvas keeps its bitmap's proportion is what shrank the WIDTH to
+        # about three quarters of the panel and left a white band beside
+        # every chart — measured in print emulation, the canvas filled its
+        # wrapper exactly, so the box was never the problem.
+        assert "width: 100% !important" in canvas_rule
+        assert "height: auto !important" in canvas_rule
+        assert "max-height: none !important" in canvas_rule
+
+
+class TestInteractiveCombination:
+    """Chart.js has always drawn mixed datasets — it is how the trend line
+    rides on a bar chart. All this needed was somewhere to say it.
+    """
+
+    async def _config(self, **props) -> dict:
+        env = _envelope(
+            Component(
+                id="root", component="Chart", type="bar", x="week", y=["events", "rate"],
+                data={"path": "/rows"}, **props,
+            ),
+            data_model={"rows": [{"week": "W1", "events": 27, "rate": 0.62}]},
+        )
+        doc = (await InteractiveHTMLRenderer().render(env)).content.decode()
+        return json.loads(html.unescape(re.search(r'data-chart-config="([^"]*)"', doc).group(1)))
+
+    async def test_the_marks_reach_the_embedded_config(self):
+        config = await self._config(seriesTypes=[None, "line"])
+        assert config["seriesTypes"] == [None, "line"]
+
+    async def test_the_axes_reach_it_too(self):
+        config = await self._config(seriesTypes=[None, "line"], seriesAxes=[None, "right"])
+        assert config["seriesAxes"] == [None, "right"]
+
+    async def test_a_chart_that_combines_nothing_carries_nothing(self):
+        config = await self._config()
+        assert "seriesTypes" not in config
+        assert "seriesAxes" not in config
+
+    async def test_the_second_scale_is_conditional_in_the_runtime(self):
+        env = _envelope(
+            Component(
+                id="root", component="Chart", type="bar", x="week", y=["a"],
+                data={"path": "/rows"},
+            ),
+            data_model={"rows": [{"week": "W1", "a": 1}]},
+        )
+        doc = (await InteractiveHTMLRenderer().render(env)).content.decode()
+        # Built only when a series asked: an unasked-for second scale is an
+        # empty ruler on the right of every chart.
+        assert 'var usesRight = (cfg.seriesAxes || []).indexOf("right") !== -1' in doc
+        assert "if (usesRight) {" in doc
+
+
+class TestThePrintedChartKeepsAKey:
+    """A chart with more than one series turns its legend off because the
+    metric buttons are the key. Print hides those buttons — and a chart of
+    seven series with no key at all is worse than either.
+    """
+
+    async def _doc(self, y) -> str:
+        env = _envelope(
+            Component(
+                id="root", component="Chart", type="bar", x="week", y=y,
+                data={"path": "/rows"},
+            ),
+            data_model={"rows": [{"week": "W1", "a": 1, "b": 2}]},
+        )
+        return (await InteractiveHTMLRenderer().render(env)).content.decode()
+
+    def _config(self, doc: str) -> dict:
+        return json.loads(html.unescape(re.search(r'data-chart-config="([^"]*)"', doc).group(1)))
+
+    async def test_a_multi_series_chart_says_why_its_legend_is_off(self):
+        config = self._config(await self._doc(["a", "b"]))
+        assert config["showLegend"] is False
+        assert config["legendReplacedByToggles"] is True
+
+    async def test_a_single_series_chart_keeps_its_legend_and_says_nothing(self):
+        config = self._config(await self._doc(["a"]))
+        assert config["showLegend"] is True
+        assert "legendReplacedByToggles" not in config
+
+    async def test_the_runtime_restores_the_legend_for_paper_only(self):
+        doc = await self._doc(["a", "b"])
+        assert "function legendForPrint(printing)" in doc
+        # Gated on the flag: an author who asked for no legend still gets none.
+        block = doc[doc.index("function legendForPrint(printing)"):][:520]
+        assert "cfg.legendReplacedByToggles" in block
+
+
+class TestAxesAreNamed:
+    """`yAxisLabel` has been in the contract all along and only the static
+    renderers read it. Nobody missed it until a combination put a second,
+    unnamed scale on the right of a chart running 0 to 80 beside counts.
+    """
+
+    async def _config(self, **props) -> dict:
+        env = _envelope(
+            Component(
+                id="root", component="Chart", type="bar", x="week", y=["events", "rate"],
+                data={"path": "/rows"}, **props,
+            ),
+            data_model={"rows": [{"week": "W1", "events": 27, "rate": 62}]},
+        )
+        doc = (await InteractiveHTMLRenderer().render(env)).content.decode()
+        return json.loads(html.unescape(re.search(r'data-chart-config="([^"]*)"', doc).group(1)))
+
+    async def test_both_scales_can_be_named(self):
+        config = await self._config(
+            seriesTypes=[None, "line"],
+            seriesAxes=[None, "right"],
+            yAxisLabels=["Events", "Completion %"],
+        )
+        assert config["yAxisLabels"] == ["Events", "Completion %"]
+
+    async def test_the_single_label_still_reaches_this_surface(self):
+        config = await self._config(yAxisLabel="Events", xAxisLabel="Week")
+        assert config["yAxisLabel"] == "Events"
+        assert config["xAxisLabel"] == "Week"
+
+    async def test_a_chart_that_named_nothing_carries_nothing(self):
+        config = await self._config()
+        for key in ("yAxisLabels", "yAxisLabel", "xAxisLabel"):
+            assert key not in config
+
+    async def test_a_pie_is_given_no_scales_at_all(self):
+        # Handing `scales` to a pie is not a label, it is a configuration it
+        # cannot use.
+        env = _envelope(
+            Component(
+                id="root", component="Chart", type="pie", x="week", y=["events"],
+                data={"path": "/rows"}, yAxisLabel="Events",
+            ),
+            data_model={"rows": [{"week": "W1", "events": 27}]},
+        )
+        doc = (await InteractiveHTMLRenderer().render(env)).content.decode()
+        assert "if (!CARTESIAN[cfg.type]) return undefined;" in doc
+
+
+class TestChartsGroupLikeCards:
+    """Consecutive charts go two across, which is what the Svelte canvas
+    already does with them. Stacked here, the second chart landed on a sheet
+    of its own with half a page of white beneath it.
+    """
+
+    def _section(self, *components) -> Component:
+        return Component(
+            id="root", component="Infographic", title="Report",
+            sections=[{"heading": "Trend", "components": list(components)}],
+        )
+
+    def _chart(self, title: str) -> dict:
+        return {
+            "component": "Chart",
+            "properties": {"type": "bar", "x": "d", "y": ["n"], "data": [], "title": title},
+        }
+
+    def _kpi(self, label: str) -> dict:
+        return {"component": "KPICard", "properties": {"label": label, "value": 1}}
+
+    async def _doc(self, *components) -> str:
+        env = _envelope(self._section(*components))
+        return (await InteractiveHTMLRenderer().render(env)).content.decode()
+
+    async def test_two_charts_share_one_grid(self):
+        doc = await self._doc(self._chart("A"), self._chart("B"))
+        assert doc.count('<div class="chart-grid" data-count="2">') == 1
+        assert doc.count("<canvas") == 2
+
+    async def test_a_lone_chart_is_not_a_grid(self):
+        # Wrapped anyway it sat in the first of two columns with the second
+        # left blank — it was full width before any of this grouping existed.
+        doc = await self._doc(self._chart("A"))
+        assert '<div class="chart-grid"' not in doc
+        assert doc.count("<canvas") == 1
+
+    async def test_a_lone_card_is_not_a_grid_either(self):
+        doc = await self._doc(self._kpi("Events"))
+        assert '<div class="kpi-grid"' not in doc
+        assert "Events" in doc
+
+    async def test_a_run_is_one_kind(self):
+        # A chart after a card starts a new group rather than joining a grid
+        # meant for cards — four columns is a KPI row, not a chart row.
+        doc = await self._doc(
+            self._kpi("Events"), self._kpi("Completed"), self._chart("A"), self._chart("B")
+        )
+        assert doc.count('<div class="kpi-grid" data-count="2">') == 1
+        assert doc.count('<div class="chart-grid" data-count="2">') == 1
+
+    async def test_a_table_between_them_starts_a_second_group(self):
+        table = {
+            "component": "DataTable",
+            "properties": {"columns": [{"name": "a", "title": "A", "type": "string"}], "data": []},
+        }
+        doc = await self._doc(
+            self._chart("A"), self._chart("B"), table, self._chart("C"), self._chart("D")
+        )
+        assert doc.count('<div class="chart-grid"') == 2
+
+    async def test_paper_keeps_the_charts_full_width_and_together(self):
+        # Two columns is a screen luxury: half a page-width leaves a chart so
+        # little drawing height that Chart.js drops ticks, rotates the axis
+        # names and spills the legend out of its card.
+        doc = await self._doc(self._chart("A"), self._chart("B"))
+        block = doc[re.search(r"@media print\s*\{", doc).end():]
+        # To the closing brace, not a fixed number of characters: a comment
+        # added inside the rule pushed the assertion out of the window once.
+        start = block.index(".chart-grid {")
+        rule = block[start:block.index("}", start)]
+        assert "grid-template-columns: 1fr;" in rule
+        # Together on one sheet rather than split across a page break. Two
+        # full-width charts fit a page; the comment says why three would not.
+        assert "break-inside: avoid" in rule
+
+
+class TestAGridNeverHasMoreColumnsThanItems:
+    """Four is the CAP, not the count. A run of two in a four-column track is
+    two quarter-width cards and half a row of nothing — and every tenant's
+    report with a short KPI run got that, not just the one this work was
+    driven by.
+    """
+
+    async def _doc(self, cards: int) -> str:
+        env = _envelope(
+            Component(
+                id="root", component="Infographic", title="R",
+                sections=[{
+                    "heading": "S",
+                    "components": [
+                        {"component": "KPICard", "properties": {"label": f"K{i}", "value": i}}
+                        for i in range(cards)
+                    ],
+                }],
+            )
+        )
+        return (await InteractiveHTMLRenderer().render(env)).content.decode()
+
+    async def test_the_group_carries_its_own_size(self):
+        assert 'data-count="2"' in await self._doc(2)
+        assert 'data-count="3"' in await self._doc(3)
+        assert 'data-count="8"' in await self._doc(8)
+
+    async def test_the_stylesheet_caps_the_columns_at_the_count(self):
+        doc = await self._doc(2)
+        assert '.kpi-grid[data-count="2"]' in doc
+        assert '.kpi-grid[data-count="3"]' in doc
+
+    async def test_the_print_rule_outranks_the_screen_layout(self):
+        # An unscoped `.kpi-grid` in the print sheet loses to
+        # `.ds-page[data-layout="analytics"] .kpi-grid` whatever the
+        # composition order, and a media query adds no specificity. A4 at
+        # 12mm margins trips the analytics 1100px breakpoint, so printed rows
+        # came out three across while the print sheet claimed four.
+        doc = await self._doc(8)
+        block = doc[re.search(r"@media print\s*\{", doc).end():]
+        assert ".ds-page[data-layout] .kpi-grid {" in block
+
+
+class TestTheContractRefusesWhatItCannotHonour:
+    async def test_a_mark_outside_the_vocabulary_is_rejected(self):
+        # Untyped, "Bar" validated and then degraded silently: the lookup
+        # missed, the fallback fired, and the chart came out wrong with no
+        # error anywhere.
+        import pytest
+        from parrot.models.outputs import StructuredChartConfig
+
+        with pytest.raises(Exception):
+            StructuredChartConfig(type="bar", x="m", y=["a"], seriesTypes=["Bar"])
+        with pytest.raises(Exception):
+            StructuredChartConfig(type="bar", x="m", y=["a"], seriesAxes=["Right"])
+
+    async def test_the_fitted_line_rides_the_axis_it_was_fitted_against(self):
+        # The fit runs over the FIRST series. Drawn against a different scale
+        # it renders fine and says something untrue.
+        env = _envelope(
+            Component(
+                id="root", component="Chart", type="bar", x="w", y=["a", "b"],
+                data={"path": "/rows"}, trendline=True, seriesAxes=["right", None],
+            ),
+            data_model={"rows": [{"w": "W1", "a": 1, "b": 2}, {"w": "W2", "a": 3, "b": 4}]},
+        )
+        doc = (await InteractiveHTMLRenderer().render(env)).content.decode()
+        assert 'cfg.seriesAxes[0] === "right"' in doc
+        assert 'trend.yAxisID = "yRight"' in doc

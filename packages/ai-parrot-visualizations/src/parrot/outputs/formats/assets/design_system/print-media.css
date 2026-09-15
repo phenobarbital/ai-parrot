@@ -1,0 +1,185 @@
+/* ─────────────────────────────────────────────
+ * Design system — print-media.css
+ *
+ * What a SCREEN surface does when the reader presses Ctrl+P. Not to be
+ * confused with `layout-print.css`, which is a whole layout the PDF
+ * renderer selects server-side (`[data-layout="print"]`, WeasyPrint): that
+ * one never applies here, because an interactive document ships as
+ * `[data-layout="analytics"]`. Until this file existed the composed sheet
+ * had no `@media print` rule at all, so printing an exported report to PDF
+ * gave screen chrome, dropped colour and charts cut across pages.
+ *
+ * Composed only for the screen layouts. The print LAYOUT already carries
+ * its own paged rules, and stacking a second `@page` on top of them would
+ * be two sources deciding one margin.
+ * ───────────────────────────────────────────── */
+
+@media print {
+    /* Margins only. Page SIZE is the reader's to choose in the print
+       dialog — forcing A4 on someone printing to US Letter crops the page
+       for no reason. */
+    @page {
+        margin: 12mm;
+    }
+
+    /* Browsers drop background colours when printing unless the reader has
+       ticked "Background graphics". Everything that carries meaning here is
+       a colour — the delta greens and reds, the table header band, the
+       status series in a chart — so ask for them explicitly. */
+    html,
+    body,
+    .ds-page {
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+        background: #fff;
+    }
+
+    .ds-page {
+        padding: 0;
+        --shadow: none;
+    }
+
+    /* Controls that do nothing on paper. A printed button is a reader
+       wondering why it will not press. */
+    .a2ui-tabs,
+    .a2ui-metric-toggle,
+    .a2ui-table-search,
+    .a2ui-table-pager,
+    .a2ui-button,
+    .a2ui-modal,
+    .filter-bar {
+        display: none !important;
+    }
+
+    .a2ui-card,
+    .a2ui-chart-wrap,
+    .a2ui-graph-wrap,
+    .a2ui-table-wrap {
+        box-shadow: none;
+    }
+
+    /* Only what FITS on a page may refuse to be split. Asking a block taller
+     * than the page to stay whole does not shrink it — the browser gives up,
+     * pushes the whole thing to the next sheet and leaves the rest of the
+     * current one blank. `.a2ui-card` covered the report's own outer card, a
+     * section of two full-height charts and a forty-row table, which is how
+     * a report with seven pages of content printed a half-empty first page
+     * and a third page holding nothing but a heading. */
+    .kpi-card,
+    .a2ui-chart-wrap,
+    .a2ui-graph-wrap {
+        break-inside: avoid;
+        page-break-inside: avoid;
+    }
+
+    .a2ui-card[data-variant="infographic"],
+    .a2ui-section,
+    .a2ui-table-wrap {
+        break-inside: auto;
+        page-break-inside: auto;
+    }
+
+    /* A heading is the first line of what follows it, never the last line of
+     * the page before. */
+    .a2ui-heading,
+    .a2ui-title,
+    .a2ui-subtitle {
+        break-after: avoid;
+        page-break-after: avoid;
+    }
+
+    /* A fixed count, never the responsive track function the analytics
+       layout uses: on paper there is no viewport to respond to, and the
+       reader's paper size is not known here. */
+    /* Scoped to `.ds-page[data-layout]` to MATCH the analytics sheet's own
+       specificity — an unscoped `.kpi-grid` here loses to
+       `.ds-page[data-layout="analytics"] .kpi-grid` no matter what order the
+       sheets are composed in, and a media query adds none. Unscoped, this
+       rule was inert: A4 at 12mm margins is about 703 CSS px, which trips
+       the analytics `max-width: 1100px` breakpoint, so printed KPI rows came
+       out three across while this file claimed four. */
+    .ds-page[data-layout] .kpi-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 0.75rem;
+    }
+
+    /* Four is the cap, not the count, here too. */
+    .ds-page[data-layout] .kpi-grid[data-count="2"] {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .ds-page[data-layout] .kpi-grid[data-count="3"] {
+        grid-template-columns: repeat(3, 1fr);
+    }
+
+    /* One across on paper, unlike the screen. Half a page-width leaves a
+       chart about 150px of drawing height at this proportion, and Chart.js
+       starts dropping things to fit: one tick on the whole y axis, week
+       labels on the diagonal, axis names rotated and clipped, a legend
+       spilling out of its card. Two columns is a screen luxury.
+       
+       The run stays together instead — which is what puts both charts on a
+       sheet of their own rather than splitting one onto each side of a page
+       break. It fits: two full-width charts are about 168mm against 257mm of
+       printable page. A run of THREE would not fit, and a block that cannot
+       fit does not shrink — it jumps to the next sheet and leaves this one
+       blank, which is the failure this file has already been bitten by. */
+    .ds-page[data-layout] .chart-grid,
+    .chart-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        /* Wider than the KPI gap: these are two full-width panels stacked,
+           and 12px between them read as one block cut in half rather than as
+           two charts. */
+        gap: 1.4rem;
+        break-inside: avoid;
+        page-break-inside: avoid;
+    }
+
+    /* A long table keeps flowing, but a row stays whole and the header
+       repeats on every page — the paged idiom, not sticky positioning. */
+    table {
+        break-inside: auto;
+    }
+    thead {
+        display: table-header-group;
+    }
+    tbody tr {
+        break-inside: avoid;
+        page-break-inside: avoid;
+    }
+
+    /* The runtime re-measures on `beforeprint`, so Chart.js has already
+       sized this canvas for the page. Forcing a height on top of that fought
+       the size it had just computed and left the drawing letterboxed inside
+       its own box — a white band down the side of every chart. Width is the
+       only thing worth holding here. */
+    /* Width leads, height follows. Measured in print emulation the canvas
+       fills its wrapper exactly (851x234 in a 851x234 box) — the box was
+       never the problem. What produced a white band down the right of every
+       chart was constraining the HEIGHT while the canvas kept its bitmap's
+       proportion: to stay inside the height the browser shrinks the WIDTH,
+       and the drawing ends at about three quarters of its panel.
+       `width: 100%` is not negotiable with any inline width Chart.js may
+       have left behind, and `height: auto` takes the proportion from the
+       bitmap, so nothing is stretched either. */
+    .a2ui-chart-canvas {
+        height: auto;
+    }
+
+    canvas {
+        width: 100% !important;
+        height: auto !important;
+        max-width: 100% !important;
+        max-height: none !important;
+    }
+
+    /* Sticky belongs to a scrolling viewport. On paper the repeating-header
+       idiom is `thead { display: table-header-group }`, used above, and
+       leaving the header positioned as well cost it its text: the rule
+       printed and the column names did not. */
+    thead th {
+        position: static !important;
+    }
+}
