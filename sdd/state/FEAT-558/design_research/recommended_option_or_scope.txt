@@ -1,0 +1,44 @@
+*(mode = enrichment)*
+
+### What's New
+
+- **`packages/ai-parrot-tools/src/parrot_tools/querysource/`** — new package. `QuerysourceToolkit(AbstractToolkit)`, `tool_prefix = "qs"`, constructor `programs: list[str] | None = None` (allowlist; `None` = unrestricted), `allow_write: bool = False`, `default_output: "records"`, `max_rows` cap. Tools (method → tool name):
+  - `get_dialect_reference()` → `qs_get_dialect_reference` — returns the static dialect reference (option keys, placeholder vs WHERE routing, WHERE grammar, `@variables` note, worked examples such as `{"firstdate": "2026-08-09", "lastdate": "2026-08-15"}`), versioned against the querysource release it was verified on.
+  - `list_slugs(search=None, program=None, limit=50)` → `qs_list_slugs` — `QueryModel` query on `public.queries`, filtered to the allowlist; returns `SlugSummary` (slug, description, program_slug, provider, is_multiquery, placeholder names).
+  - `describe_slug(slug, dry_run=False)` → `qs_describe_slug` — `SlugDetail`: description, `query_raw` (or the pipeline JSON when multi-query), stored `conditions` defaults, `cond_definition` types, `filtering`, `fields`, `ordering`, `grouping`, provider, cache flags; with `dry_run=True` also the rendered query from `QS.dry_run()`.
+  - `execute_slug(slug, placeholders=None, filter=None, fields=None, ordering=None, grouping=None, limit=None, offset=None, refresh=False)` → `qs_execute_slug` — assembles the QS `conditions` payload deterministically, tenant-checks, runs `QS(slug=..., conditions=...)`, returns `ExecutionResult` (bounded records, `row_count`, `columns`, applied conditions).
+  - `list_components(category=None)` → `qs_list_components` — `asyncio.to_thread(ComponentRegistry.get_catalog)`, cached; same shape as `/api/v3/qs/components`.
+  - `validate_pipeline(pipeline)` → `qs_validate_pipeline` — `ComponentRegistry.validate_pipeline` + tenant check of every referenced slug + raw-node policy.
+  - `run_multiquery(pipeline=None, slug=None, conditions=None)` → `qs_run_multiquery` — `MultiQS(query=pipeline)` or `MultiQS(slug=...)`; returns `ExecutionResult` (or a dict of results when the pipeline yields several frames).
+  - `save_multiquery(slug, pipeline, description)` → `qs_save_multiquery` — **only when `allow_write=True`**; a confirming tool; validates first, inserts/updates a `QueryModel` row with `query_raw=json.dumps(pipeline)`, `is_raw=True`, `program_slug` forced to the tenant (requires exactly one program in the allowlist, or an explicit `program` in it).
+- **Pydantic models** for inputs and outputs (`SlugSummary`, `SlugDetail`, `ExecutionResult`, `PipelineValidation`, a `ComponentInfo` mirror) and the static **dialect reference** module.
+- **Tenant enforcement** in `_pre_execute` / inside each tool via a small `slug → (program_slug, is_multiquery)` TTL cache; raw SQL (`QS(query=...)`, inline `{"query": ...}` pipeline nodes) **rejected whenever `programs` is set** (U3).
+- **Tests** under `packages/ai-parrot-tools/tests/querysource/` with fakes for `QS`, `MultiQS`, `QueryModel`, `ComponentRegistry` — dialect assembly, tenant allow/deny, raw-node rejection, write gating, catalog caching.
+
+### What Changes
+
+- **`packages/ai-parrot-tools/src/parrot_tools/qsource.py`::`QSourceTool`** — deleted (hard cut); behaviour absorbed by `qs_execute_slug`. *Evidence*: F002, F013
+- **`packages/ai-parrot-tools/src/parrot_tools/__init__.py`::`TOOL_REGISTRY`** — regenerated via `scripts/generate_tool_registry.py`: drop `q_source`/`qsource`, add the toolkit entry. *Evidence*: F013
+- **`packages/ai-parrot-tools/pyproject.toml`** — `querysource` remains an optional extra; record the minimum version the dialect reference was verified against. *Evidence*: F007
+
+### What's Untouched (Non-Goals)
+
+- Modifying the `querysource` library (e.g. making `get_slug` honour `program`, publishing parser sources).
+- `QuerySlugSource` / `MultiQuerySlugSource` in `dataset_manager`, and `QueryToolkit` subclasses (`PricesTool`, `EpsonProductToolkit`).
+- Calling the QuerySource REST API from the toolkit — everything is in-process (U1).
+- PBAC / Guardian policy evaluation — tenancy here is a `program_slug` allowlist.
+- Per-call tenant derivation from `UserSession.tenant_id` (U4: constructor allowlist for v1; the `_permission_context` seam stays available for a later increment).
+
+### Patterns to Follow
+
+- `DatabaseQueryToolkit` shape: prefix, `exclude_tools`, docstring listing tool names, `_post_execute` → `model_dump()`. *Evidence*: F012
+- Lazy, patchable querysource import (`QS = None` + `_get_qs()`). *Evidence*: F004
+- `permanent_filter` precedence: toolkit-forced conditions override LLM-supplied ones. *Evidence*: F004
+- `asyncio.to_thread(ComponentRegistry.get_catalog)` as in the REST handler. *Evidence*: F009
+
+### Integration Risks
+
+- **Dialect drift** between the shipped reference and the installed querysource: pin the verified version, add a smoke test asserting the `.pxd` attribute set on `AbstractParser`, re-verify at spec time against the pinned tag. *Evidence*: F007
+- **Double slug lookup** (toolkit tenant check + `QS.build_provider`): one extra `public.queries` read per execution; mitigated by the TTL cache. *Evidence*: F005
+- **Inline SQL nodes in pipelines** bypass slug tenancy: rejected when `programs` is set (U3). *Evidence*: F008, F010
+- **`@variables` are deployment-defined** (`settings.settings.QUERYSOURCE_VARIABLES`): the reference can only explain the mechanism, not enumerate names, unless the deployment exposes them. *Evidence*: F007
