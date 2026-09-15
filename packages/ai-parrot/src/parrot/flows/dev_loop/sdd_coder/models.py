@@ -5,10 +5,12 @@ from __future__ import annotations
 import os
 import re
 from typing import Any, Dict, List, Literal, Optional, Tuple
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from parrot.knowledge.wiki.ledger.coder_feedback import CoderFeedback
 from parrot.knowledge.wiki.ledger.coder_reviews import CoderReview
+from parrot.knowledge.wiki.ledger.coder_suspensions import ModelKey, SuspensionPolicy, SuspensionReason
 
 from parrot.flows.dev_loop.models import (  # verified: models/base.py:407, :497
     DevAgentBackend,
@@ -17,7 +19,22 @@ from parrot.flows.dev_loop.models import (  # verified: models/base.py:407, :497
 )
 
 SeatKind = Literal["mcp", "native"]
-TaskOutcome = Literal["queued", "running", "merged", "merge_conflict", "failed", "fidelity_violation", "retry_native"]
+TaskOutcome = Literal[
+    "queued",
+    "running",
+    "merged",
+    "merge_conflict",
+    "failed",
+    "fidelity_violation",
+    "retry_native",
+    "not_dispatched",
+]
+"""`not_dispatched` (FEAT-559): a queued task lost its seat before admission --
+no synthetic attempt is recorded; the reason lives in `TaskResult.diagnostics`."""
+
+ExecutionStatus = Literal["active", "exhausted", "recovery_required", "closed"]
+"""Execution-pool lifecycle state (FEAT-559 spec §2 "Execution lifecycle, ownership and recovery")."""
+
 ERROR_CODES: frozenset[str] = frozenset(
     {
         "feature_not_found",
@@ -37,9 +54,38 @@ ERROR_CODES: frozenset[str] = frozenset(
         "fidelity_violation",
         "invalid_arguments",
         "internal_error",
+        # FEAT-559: execution pool / suspension lifecycle errors (spec §2).
+        "execution_required",
+        "execution_not_found",
+        "execution_scope_mismatch",
+        "execution_config_mismatch",
+        "execution_closed",
+        "execution_in_progress",
+        "execution_busy",
+        "execution_recovery_required",
+        "plan_stale",
+        "model_suspended",
+        "suspension_history_unavailable",
+        "suspension_persistence_failed",
     }
 )
 _TASK_ID_RE = re.compile(r"^TASK-\d{1,5}$")
+
+
+def _check_uuid(v: str) -> str:
+    """Reject anything that is not a valid UUID string.
+
+    Spec §2 architecture overview: "a caller-generated UUID `execution_id`".
+    Applied only to fields where a fresh explicit id is always supplied by
+    the caller -- NOT to the legacy-compatible `execution_id: str = ""`
+    telemetry fields on `CoderPlan`/`CoderJob`/`AttemptRecord`/`NativePrep`,
+    which must keep parsing historical records that predate this feature.
+    """
+    try:
+        UUID(v)
+    except (ValueError, AttributeError, TypeError) as exc:
+        raise ValueError(f"execution_id must be a valid UUID string, got {v!r}") from exc
+    return v
 
 
 class RosterSeat(BaseModel):
@@ -121,10 +167,19 @@ class RosterConfig(BaseModel):
     smoke_timeout_s: int = Field(default=60, ge=5, le=300)
     lint: LintConfig = Field(default_factory=LintConfig)
     feedback: FeedbackConfig = Field(default_factory=FeedbackConfig)
+    suspension_policy: SuspensionPolicy = Field(default_factory=SuspensionPolicy)
+    """FEAT-559: cooldown/summary-budget policy shared by every execution pool for this roster."""
 
 
 class SeatProbeResult(BaseModel):
-    """Outcome of probing one seat at first use (spec G8)."""
+    """Outcome of probing one seat at first use (spec G8).
+
+    `probe_*` fields (FEAT-559) are structured failure metadata for the
+    ONE probe call that ran on this seat, so roster wiring need not infer
+    a failure from prose. They are independent of `fallback_used`: a
+    primary probe can fail (recorded here) while a configured fallback
+    still succeeds, leaving `available=True`.
+    """
 
     label: str
     kind: SeatKind
@@ -133,6 +188,10 @@ class SeatProbeResult(BaseModel):
     model_used: str = ""
     fallback_used: bool = False
     reason: str = ""
+    probe_uid: str = ""
+    probe_observed_at: str = ""
+    probe_duration_s: float = 0.0
+    probe_exception_class: str = ""
 
 
 class PlannedTask(BaseModel):
@@ -176,6 +235,12 @@ class CoderPlan(BaseModel):
     chunks: List[PlanChunk]
     roster: List[SeatProbeResult]
     orphan_branches: List[OrphanBranch]
+    execution_id: str = ""
+    """FEAT-559: the execution this plan was cached under. Empty only for
+    plans predating this feature; a new plan always carries its execution."""
+    pool_generation: int = Field(default=0, ge=0)
+    """Execution pool generation this plan was computed against; `run_chunk`
+    rejects a stale plan (`plan_stale`) once the generation has moved on."""
 
 
 class AttemptRecord(BaseModel):
@@ -218,6 +283,9 @@ class AttemptRecord(BaseModel):
     """Per turn: (round_number, input_tokens or None, output_tokens or None)."""
     budget_report: Dict[str, Any] = Field(default_factory=dict)
     """BudgetReport.model_dump() when an observational ledger was bound."""
+    execution_id: str = ""
+    """FEAT-559: the execution this attempt ran under. Empty for attempts
+    recorded before this feature landed; new attempts always carry one."""
 
 
 class TaskResult(BaseModel):
@@ -246,6 +314,8 @@ class NativePrep(BaseModel):
     model: str = "haiku"
     attempt_uid: str = ""
     coder_feedback: str = ""
+    execution_id: str = ""
+    """FEAT-559: the execution this native reservation belongs to."""
 
 
 class CoderJob(BaseModel):
@@ -259,6 +329,10 @@ class CoderJob(BaseModel):
     ended_at: str = ""
     tasks: List[TaskResult] = Field(default_factory=list)
     error: str = ""
+    execution_id: str = ""
+    """FEAT-559: the execution that dispatched this chunk. Empty only for
+    jobs journaled before this feature; `JobTable.create` always requires
+    one for new jobs (never minted implicitly)."""
 
 
 class CoderJobView(CoderJob):
@@ -277,6 +351,84 @@ class CleanupReport(BaseModel):
 
     removed: List[str] = Field(default_factory=list)
     kept: List[str] = Field(default_factory=list)
+
+
+class PoolSeatView(BaseModel):
+    """One seat's admission state inside an execution pool (spec §2 `PoolSeatView`).
+
+    `configured_model`/`backend` are the roster's static configuration;
+    `resolved_key` is the effective `ModelKey` once the seat has actually
+    been probed/dispatched (absent before then). Runtime locks/conditions
+    belong to the pool's own runtime object, never to this serialized view.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    label: str = Field(..., min_length=1, max_length=32)
+    kind: SeatKind
+    backend: Optional[str] = None
+    configured_model: str = ""
+    resolved_key: Optional[ModelKey] = None
+    available: bool = False
+    busy: bool = False
+    suspended: bool = False
+    probe_unavailable: bool = False
+    reason: str = ""
+    suspension_id: str = ""
+    suspended_until: str = ""
+
+
+class ExecutionPoolView(BaseModel):
+    """`coder_begin_execution` / status payload: one execution's pool state (spec §2 `ExecutionPoolView`).
+
+    Bound immutably to `(execution_id, feature_id, worktree_path)` for its
+    whole lifetime; `generation` increments on every suspension so a stale
+    cached plan can be rejected before it reaches admission.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    execution_id: str = Field(..., min_length=1)
+    feature_id: str = Field(..., min_length=1)
+    worktree_path: str = Field(..., min_length=1)
+    status: ExecutionStatus
+    generation: int = Field(..., ge=0)
+    seats: List[PoolSeatView] = Field(default_factory=list)
+    fallback_required: bool = False
+    fallback_reason: str = ""
+    persisted: bool = True
+    persistence_degraded: bool = False
+
+    _exec = field_validator("execution_id")(_check_uuid)
+
+
+class ExecutionSnapshot(BaseModel):
+    """Durable per-execution journal payload (spec §2 `ExecutionSnapshot`; architecture
+    "Execution lifecycle, ownership and recovery" -- journaled under
+    `<feature-worktree>/.sdd-coder/executions/<uuid>.json`).
+
+    Carries everything a restart needs to replay: scope/fingerprint binding,
+    admitted attempts, native reservations, outstanding jobs and both local
+    (this execution's own) and inherited (durable, pre-existing) exclusions.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    execution_id: str = Field(..., min_length=1)
+    feature_id: str = Field(..., min_length=1)
+    worktree_path: str = Field(..., min_length=1)
+    roster_fingerprint: str = Field(..., min_length=1)
+    admitted_attempts: Dict[str, str] = Field(default_factory=dict)
+    """attempt_uid -> task_id."""
+    native_reservations: Dict[str, str] = Field(default_factory=dict)
+    """task_id -> reservation id."""
+    outstanding_job_ids: List[str] = Field(default_factory=list)
+    local_exclusions: List[ModelKey] = Field(default_factory=list)
+    inherited_exclusions: List[ModelKey] = Field(default_factory=list)
+    status: ExecutionStatus
+    generation: int = Field(..., ge=0)
+
+    _exec = field_validator("execution_id")(_check_uuid)
 
 
 class CoderError(BaseModel):
@@ -333,23 +485,29 @@ def _check_abs(v: str) -> str:
 class CoderPlanArgs(_Args):
     feature: str
     worktree: str
+    execution_id: str = Field(..., min_length=1)
     _wt = field_validator("worktree")(_check_abs)
+    _exec = field_validator("execution_id")(_check_uuid)
 
 
 class CoderRunChunkArgs(_Args):
     feature: str
     worktree: str
     task_ids: List[str] = Field(..., min_length=1)
+    execution_id: str = Field(..., min_length=1)
     _wt = field_validator("worktree")(_check_abs)
     _tids = field_validator("task_ids")(_check_task_ids)
+    _exec = field_validator("execution_id")(_check_uuid)
 
 
 class CoderPrepareNativeArgs(_Args):
     feature: str
     worktree: str
     task_id: str
+    execution_id: str = Field(..., min_length=1)
     _wt = field_validator("worktree")(_check_abs)
     _tid = field_validator("task_id")(_check_task_id)
+    _exec = field_validator("execution_id")(_check_uuid)
 
 
 class CoderMergeArgs(CoderPrepareNativeArgs):
@@ -380,5 +538,35 @@ class CoderStatusArgs(_Args):
 class CoderCleanupArgs(_Args):
     feature: str
     worktree: str
+    execution_id: str = Field(..., min_length=1)
     keep_conflicted: bool = True
     _wt = field_validator("worktree")(_check_abs)
+    _exec = field_validator("execution_id")(_check_uuid)
+
+
+class CoderFeedbackReportArgs(_Args):
+    """`coder_feedback_report` arguments -- read-only and repository-wide.
+
+    Deliberately split from `CoderPlanArgs` (FEAT-559): the feedback report
+    never starts, resumes or requires an execution, unlike the other seven
+    scoped orchestration/review tools.
+    """
+
+    feature: str
+    worktree: str
+    _wt = field_validator("worktree")(_check_abs)
+
+
+class SuspendModelArgs(_Args):
+    """`coder_suspend_model` arguments.
+
+    The target model is resolved by the engine from `attempt_uid` -- the
+    caller never names a model directly, so it cannot invent an arbitrary
+    suspension target.
+    """
+
+    execution_id: str = Field(..., min_length=1)
+    attempt_uid: str = Field(..., min_length=1, max_length=128)
+    reason: SuspensionReason
+    evidence_ref: str = Field(default="", max_length=300)
+    _exec = field_validator("execution_id")(_check_uuid)
