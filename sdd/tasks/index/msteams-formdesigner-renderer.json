@@ -34,7 +34,7 @@
       "feature_id": "FEAT-551",
       "feature": "msteams-formdesigner-renderer",
       "spec": "sdd/specs/msteams-formdesigner-renderer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L (4-8h)",
       "depends_on": [
@@ -45,8 +45,8 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": "2026-09-15T11:49:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3147-teams-renderer-and-envelope.md"
+      "completed_at": "2026-09-15T12:08:53+00:00",
+      "file": "sdd/tasks/completed/TASK-3147-teams-renderer-and-envelope.md"
     },
     {
       "id": "TASK-3148",

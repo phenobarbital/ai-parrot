@@ -329,8 +329,44 @@ See blueprint block for `test_teams_renderer.py`; add `test_teams_wizard_last_st
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (orchestrator; MCP coder `qwen` attempt 1 + orchestrator fix pass)
+**Date**: 2026-09-15
 **Notes**:
+`parrot-sdd-coder` seat `qwen` (nova:qwen.qwen3-coder-480b-a35b-instruct) implemented
+`teams.py`, the `renderers/__init__.py` export, and `test_teams_renderer.py` on the first
+attempt (44 turns, no retries) and the branch merged cleanly into the feature branch
+(`33b53914` → `81d5ad8c6`). The production code (`TeamsSubmitEnvelope`, `TeamsFormRenderer.
+build_envelope`/`render`/`_submit_action_data`) matched the Implementation Blueprint's
+`# FILL IN:` sections exactly.
+Running the acceptance-criteria test command surfaced 4 failures, all genuine bugs I fixed
+in this worktree before marking the task done:
+1. `test_teams_envelope_shape` / `test_adaptive_unaffected` assumed
+   `result.content["actions"][-1]` is the Submit action, but `_build_form_actions`
+   (unmodified by this feature) emits Submit first and appends Cancel after when
+   `form.cancel_allowed` is True (the schema default) — fixed both tests to locate Submit
+   by its `_action` literal instead of by position.
+2. `test_teams_render_requires_tenant_and_base_url` used the `form` fixture (which sets
+   `tenant="navigator"`) to test the "missing tenant" branch, so it could never fail —
+   fixed to use a `model_copy(update={"tenant": None})` variant.
+3. `test_teams_wizard_last_step_only_has_envelope` had a leftover flawed first block
+   testing "non-last step" against the single-section `form` fixture (whose only index is
+   always both first and last) — removed the dead block, kept the correct
+   multi-section-form assertions.
+4. That same test then caught a **real production bug**: `TeamsFormRenderer` only
+   overrode `render()`, not `render_section()`, so calling the wizard path directly never
+   set `self._current_tenant` and the last step's Submit silently fell back to the base
+   `{"_action": "submit"}` with no envelope. Added a `render_section` override in
+   `teams.py` mirroring `render()`'s tenant-resolution-before-delegating pattern (spec §7).
+Also converted `test_teams_envelope_sign_verify_roundtrip` to `async def` to clear a
+pytest-asyncio mark mismatch warning (cosmetic, no behavior change).
+All 60 tests in `test_teams_renderer.py` + `test_renderers.py` pass; `ruff check` is clean
+on this task's 3 files (the one repo-wide ruff hit, `html5.py:1229` F541, predates this
+feature and is out of scope); `grep -c aiohttp teams.py` is 0; imports resolve.
 
-**Deviations from spec**: none
+**Deviations from spec**: `render_section()` override added to `TeamsFormRenderer` — not
+explicitly spelled out in the Implementation Blueprint (which only filled in `render()`),
+but required to satisfy this same task's own acceptance criterion ("`render_section`
+non-last steps carry none" implies the last step DOES carry it) and its own Test
+Specification instruction to add `test_teams_wizard_last_step_only_has_envelope` using
+`render_section` (index 0 vs last). No fixed signature was changed; no file outside the
+task's Files-to-Modify list was touched.
