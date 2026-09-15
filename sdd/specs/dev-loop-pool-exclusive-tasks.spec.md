@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-560
 **Date**: 2026-09-16
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: next minor of `ai-parrot`
 
 ---
@@ -443,7 +443,7 @@ class SubWorktreeManager:
 
 > Questions that must be resolved before or during implementation.
 
-- [ ] Should `PlannerNode._resolve_pool` size from the maximum parallel width across all waves instead of wave 1? Today it uses wave 1 only; this spec keeps that and only changes how the width is counted. — *Owner: Jesus Lara*
+- [x] Should `PlannerNode._resolve_pool` size from the maximum parallel width across all waves instead of wave 1? Today it uses wave 1 only; this spec keeps that and only changes how the width is counted. — *Owner: Jesus Lara*: suggested default.
 
 ---
 
