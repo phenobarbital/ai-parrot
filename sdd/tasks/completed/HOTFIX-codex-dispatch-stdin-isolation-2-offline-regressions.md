@@ -216,18 +216,34 @@ narrowing set of candidate causes each time):
 
 Filed `issue:bde3a98caed2` (tech_debt, minor) with the full reproduction
 matrix for follow-up (bisect the responsible conftest fixture, or file
-upstream against uvloop, or accept a documented environment-specific
-xfail). Did not weaken the test's assertions or delete required coverage to
-force a pass. AC-1's core claim (DEVNULL kwarg reaches the launcher) remains
-deterministically covered by `test_spawn_isolates_stdin`; AC-1's "inherits an
-open ancestor pipe without the fix" half is deterministically covered by the
-added negative-control test.
+upstream against uvloop). Did not weaken the test's assertions or delete
+required coverage to force a pass. AC-1's core claim (DEVNULL kwarg reaches
+the launcher) remains deterministically covered by `test_spawn_isolates_stdin`;
+AC-1's "inherits an open ancestor pipe without the fix" half is
+deterministically covered by the added negative-control test.
+
+**Code review (adversarial, external agent) CONFIRMED**: the initial delivery
+excluded the flaky test via `pytest -k "not test_spawn_child_gets_eof..."`
+when generating the evidence log — the reviewer correctly flagged that a bare
+`-k` exclusion makes a real, still-open AC-2 gap invisible in a plain
+"N passed" log, and recommended an explicit `xfail(strict=False, reason=...)`
+instead so the test's red/xfail status stays visible in every full-suite run.
+Adopted: the test is now decorated with
+`@pytest.mark.xfail(strict=False, reason="... see issue:bde3a98caed2 ...")`,
+its docstring updated accordingly, and the retry-loop wrapper removed (retries
+did not help — the failure is deterministic within a given pytest session,
+not transient, so retrying added no value beyond what the reviewer already
+confirmed by running the suite twice). The reviewer's remaining findings
+(bounded-tail UTF-8 correctness, timeout/cancellation split, DEVNULL single
+call-site, test-fake fidelity, one untested defensive fallback branch in
+`_read_next_chunk`) were review-only confirmations of already-correct
+behavior; no further code changes were needed for those.
 
 Verification: `PYTHONPATH=packages/ai-parrot/src pytest
 packages/ai-parrot/tests/flows/dev_loop/test_codex_dispatcher.py
-packages/ai-parrot/tests/flows/dev_loop/test_adversarial_review.py -q -k "not
-test_spawn_child_gets_eof_with_parent_stdin_open"` — 38 passed (log:
-`artifacts/logs/codex_stdin_regression_tests.log`). `black --check
+packages/ai-parrot/tests/flows/dev_loop/test_adversarial_review.py -q` — 38
+passed, 1 xfailed (log: `artifacts/logs/codex_stdin_regression_tests.log`,
+regenerated with no exclusions after the `xfail` fix). `black --check
 --line-length 120` and `ruff check` clean on both touched files; `git diff
 --check` clean.
 
