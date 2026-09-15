@@ -335,20 +335,22 @@ class TestExecutionAttribution:
     async def test_legacy_feedback_record_round_trip(self, store: CoderFeedbackStore) -> None:
         """Old feedback records parse without rewriting history."""
         # Create a legacy feedback JSON without execution_id
-        legacy_json = json.dumps({
-            "task_id": "TASK-0001",
-            "attempt_uid": "attempt-1",
-            "backend": "nova",
-            "model": "qwen",
-            "source": "code_review",
-            "lesson_scope": "model",
-            "pattern": "fail-open-authorization",
-            "files": ["pkg/t1.py"],
-            "defect": "Exception handler allowed access when authorization failed.",
-            "evidence": "commit abc123, pkg/t1.py:authorize; failing exception-path test.",
-            "correction": "Reject the operation when authorization cannot be verified.",
-            "verification": "pytest test_auth.py::test_lookup_failure_denies: passed after fix.",
-        })
+        legacy_json = json.dumps(
+            {
+                "task_id": "TASK-0001",
+                "attempt_uid": "attempt-1",
+                "backend": "nova",
+                "model": "qwen",
+                "source": "code_review",
+                "lesson_scope": "model",
+                "pattern": "fail-open-authorization",
+                "files": ["pkg/t1.py"],
+                "defect": "Exception handler allowed access when authorization failed.",
+                "evidence": "commit abc123, pkg/t1.py:authorize; failing exception-path test.",
+                "correction": "Reject the operation when authorization cannot be verified.",
+                "verification": "pytest test_auth.py::test_lookup_failure_denies: passed after fix.",
+            }
+        )
 
         # Parse and verify execution_id defaults to empty
         parsed = CoderFeedback.model_validate_json(legacy_json)
@@ -404,16 +406,18 @@ class TestExecutionAttribution:
         reviews = CoderReviewStore(store.log)
 
         # Create a legacy review JSON without execution_id
-        legacy_json = json.dumps({
-            "task_id": "TASK-0001",
-            "attempt_uid": "attempt-legacy",
-            "backend": "nova",
-            "model": "qwen",
-            "fix_commits": [],
-            "review_evidence": "Review completed, pytest passed",
-            "exposure": "without_feedback",
-            "feedback_tokens": 0,
-        })
+        legacy_json = json.dumps(
+            {
+                "task_id": "TASK-0001",
+                "attempt_uid": "attempt-legacy",
+                "backend": "nova",
+                "model": "qwen",
+                "fix_commits": [],
+                "review_evidence": "Review completed, pytest passed",
+                "exposure": "without_feedback",
+                "feedback_tokens": 0,
+            }
+        )
 
         # Parse and verify execution_id defaults to empty
         parsed = CoderReviewMeasurement.model_validate_json(legacy_json)

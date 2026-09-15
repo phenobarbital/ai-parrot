@@ -270,23 +270,25 @@ class TestExecutionAttribution:
     def test_legacy_history_and_telemetry(self):
         """Old records parse without rewriting history; execution_id defaults to empty."""
         # Legacy row without execution_id
-        legacy_json = json.dumps({
-            "kind": "attempt",
-            "ts": "2026-09-12T00:00:00+00:00",
-            "attempt_uid": "a" * 32,
-            "job_id": "job-123",
-            "feature_id": "FEAT-554",
-            "task_id": "TASK-1",
-            "attempt": 1,
-            "seat_label": "seat-1",
-            "backend": "bedrock",
-            "configured_model": "anthropic.claude-3",
-            "resolved_model": "anthropic.claude-3",
-            "duration_s": 60.0,
-            "turns": 3,
-            "terminal": "completed",
-            "error_class": "",
-        })
+        legacy_json = json.dumps(
+            {
+                "kind": "attempt",
+                "ts": "2026-09-12T00:00:00+00:00",
+                "attempt_uid": "a" * 32,
+                "job_id": "job-123",
+                "feature_id": "FEAT-554",
+                "task_id": "TASK-1",
+                "attempt": 1,
+                "seat_label": "seat-1",
+                "backend": "bedrock",
+                "configured_model": "anthropic.claude-3",
+                "resolved_model": "anthropic.claude-3",
+                "duration_s": 60.0,
+                "turns": 3,
+                "terminal": "completed",
+                "error_class": "",
+            }
+        )
 
         # Parse and verify execution_id defaults to empty
         row = AttemptUsageRow.model_validate_json(legacy_json)
@@ -294,17 +296,19 @@ class TestExecutionAttribution:
         assert row.attempt_uid == "a" * 32
 
         # Same for outcome row
-        outcome_json = json.dumps({
-            "kind": "outcome",
-            "ts": "2026-09-12T00:00:00+00:00",
-            "attempt_uid": "a" * 32,
-            "job_id": "job-123",
-            "feature_id": "FEAT-554",
-            "task_id": "TASK-1",
-            "attempt": 1,
-            "event_seq": 1,
-            "outcome": "merged",
-        })
+        outcome_json = json.dumps(
+            {
+                "kind": "outcome",
+                "ts": "2026-09-12T00:00:00+00:00",
+                "attempt_uid": "a" * 32,
+                "job_id": "job-123",
+                "feature_id": "FEAT-554",
+                "task_id": "TASK-1",
+                "attempt": 1,
+                "event_seq": 1,
+                "outcome": "merged",
+            }
+        )
         outcome = OutcomeRow.model_validate_json(outcome_json)
         assert outcome.execution_id == ""
 
