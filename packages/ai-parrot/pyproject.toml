@@ -849,6 +849,12 @@ all-fast = [
     "ai-parrot-embeddings[huggingface,faiss,pgvector]",
 ]
 
+# Protected stores for navigator-session vault rotation / migration
+# (navigator-vault CLI). See navigator_session/vault/registry.py.
+[project.entry-points."navigator_session.vault_targets"]
+parrot_user_credentials = "parrot.vault_targets:user_credentials_factory"
+parrot_user_llm_keys = "parrot.vault_targets:user_llm_keys_factory"
+
 [project.urls]
 Homepage = "https://github.com/phenobarbital/ai-parrot"
 Source = "https://github.com/phenobarbital/ai-parrot"
