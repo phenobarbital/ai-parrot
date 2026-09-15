@@ -5,6 +5,7 @@ Renderers convert FormSchema + StyleSchema into platform-specific output:
 - HTML5Renderer: HTML5 form fragment for web
 - JsonSchemaRenderer: JSON Schema output for custom frontends
 - TelegramRenderer: Telegram inline keyboards / WebApp for Telegram bots
+- TeamsFormRenderer: MS Teams Adaptive Card with submit envelope
 - A2UIFormRenderer: A2UI v1.0 createSurface envelope (requires the
   ``ai-parrot`` extra — FEAT-544)
 """
@@ -18,6 +19,7 @@ from .adaptive_card import AdaptiveCardRenderer
 from .base import AbstractFormRenderer
 from .html5 import HTML5Renderer
 from .jsonschema import JsonSchemaRenderer
+from .teams import TeamsFormRenderer, TeamsSubmitEnvelope
 
 _LAZY_EXPORTS = {
     "TelegramRenderer": ".telegram",
@@ -46,5 +48,7 @@ __all__ = [
     "AdaptiveCardRenderer",
     "HTML5Renderer",
     "JsonSchemaRenderer",
+    "TeamsFormRenderer",
+    "TeamsSubmitEnvelope",
     "TelegramRenderer",
 ]
