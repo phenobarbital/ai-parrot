@@ -1,4 +1,5 @@
 """Roster probe + distinct-seat chunk assigner (spec §3 M2; G2, G6, G8)."""
+
 from __future__ import annotations
 
 import asyncio
@@ -51,8 +52,11 @@ class RosterProbe:
             except Exception as exc:  # noqa: BLE001 — probe must never raise
                 results.append(
                     SeatProbeResult(
-                        label=seat.label, kind=seat.kind, backend=seat.backend,
-                        available=False, reason=str(exc),
+                        label=seat.label,
+                        kind=seat.kind,
+                        backend=seat.backend,
+                        available=False,
+                        reason=str(exc),
                     )
                 )
         return results
@@ -73,7 +77,9 @@ class RosterProbe:
             model = seat.model if seat.model else "haiku"
             if self._is_excluded("native", model, excluded):
                 return SeatProbeResult(
-                    label=seat.label, kind="native", available=False,
+                    label=seat.label,
+                    kind="native",
+                    available=False,
                     reason="model excluded",
                 )
             return SeatProbeResult(label=seat.label, kind="native", available=True, model_used=model)
@@ -102,12 +108,19 @@ class RosterProbe:
             # No smoke check; still verify model is not excluded
             if self._is_excluded(backend, seat.model, excluded):
                 return SeatProbeResult(
-                    label=seat.label, kind=seat.kind, backend=backend,
-                    available=False, reason="model excluded",
+                    label=seat.label,
+                    kind=seat.kind,
+                    backend=backend,
+                    available=False,
+                    reason="model excluded",
                 )
             return SeatProbeResult(
-                label=seat.label, kind=seat.kind, backend=backend,
-                available=True, model_used=seat.model, reason=reason,
+                label=seat.label,
+                kind=seat.kind,
+                backend=backend,
+                available=True,
+                model_used=seat.model,
+                reason=reason,
             )
 
         # Check if primary model is excluded before making smoke call
@@ -136,19 +149,30 @@ class RosterProbe:
 
             if ok:
                 return SeatProbeResult(
-                    label=seat.label, kind=seat.kind, backend=backend, available=True,
-                    model_used=seat.model, probe_uid=primary_uid, probe_observed_at=primary_observed_at,
-                    probe_duration_s=primary_duration_s, probe_exception_class=primary_exception_class,
+                    label=seat.label,
+                    kind=seat.kind,
+                    backend=backend,
+                    available=True,
+                    model_used=seat.model,
+                    probe_uid=primary_uid,
+                    probe_observed_at=primary_observed_at,
+                    probe_duration_s=primary_duration_s,
+                    probe_exception_class=primary_exception_class,
                 )
 
         # Primary failed or was excluded; try fallback if configured
         if not seat.fallback_model:
             # No fallback; report primary failure (even if excluded, for tracking)
             return SeatProbeResult(
-                label=seat.label, kind=seat.kind, backend=backend, available=False,
+                label=seat.label,
+                kind=seat.kind,
+                backend=backend,
+                available=False,
                 reason=primary_reason or f"smoke call rejected model {seat.model!r}",
-                probe_uid=primary_probe_uid, probe_observed_at=primary_observed_at,
-                probe_duration_s=primary_duration_s, probe_exception_class=primary_exception_class,
+                probe_uid=primary_probe_uid,
+                probe_observed_at=primary_observed_at,
+                probe_duration_s=primary_duration_s,
+                probe_exception_class=primary_exception_class,
             )
 
         # Check if fallback model is excluded
@@ -157,35 +181,49 @@ class RosterProbe:
         if fallback_excluded:
             # Fallback is excluded; report primary failure
             return SeatProbeResult(
-                label=seat.label, kind=seat.kind, backend=backend, available=False,
+                label=seat.label,
+                kind=seat.kind,
+                backend=backend,
+                available=False,
                 reason=primary_reason or f"smoke call rejected model {seat.model!r}; fallback excluded",
-                probe_uid=primary_probe_uid, probe_observed_at=primary_observed_at,
-                probe_duration_s=primary_duration_s, probe_exception_class=primary_exception_class,
+                probe_uid=primary_probe_uid,
+                probe_observed_at=primary_observed_at,
+                probe_duration_s=primary_duration_s,
+                probe_exception_class=primary_exception_class,
             )
 
         # Probe the fallback
         try:
-            fallback_ok = await asyncio.wait_for(
-                self._smoke(seat, seat.fallback_model), timeout=self._smoke_timeout_s
-            )
+            fallback_ok = await asyncio.wait_for(self._smoke(seat, seat.fallback_model), timeout=self._smoke_timeout_s)
         except Exception:  # noqa: BLE001 — smoke failures are reported, not raised
             fallback_ok = False
 
         if fallback_ok:
             # Fallback succeeded; report primary failure metadata alongside success
             return SeatProbeResult(
-                label=seat.label, kind=seat.kind, backend=backend, available=True,
-                model_used=seat.fallback_model, fallback_used=True,
-                probe_uid=primary_probe_uid, probe_observed_at=primary_observed_at,
-                probe_duration_s=primary_duration_s, probe_exception_class=primary_exception_class,
+                label=seat.label,
+                kind=seat.kind,
+                backend=backend,
+                available=True,
+                model_used=seat.fallback_model,
+                fallback_used=True,
+                probe_uid=primary_probe_uid,
+                probe_observed_at=primary_observed_at,
+                probe_duration_s=primary_duration_s,
+                probe_exception_class=primary_exception_class,
             )
 
         # Both failed; report primary failure (more useful for debugging)
         return SeatProbeResult(
-            label=seat.label, kind=seat.kind, backend=backend, available=False,
+            label=seat.label,
+            kind=seat.kind,
+            backend=backend,
+            available=False,
             reason=primary_reason or f"smoke call rejected both {seat.model!r} and fallback {seat.fallback_model!r}",
-            probe_uid=primary_probe_uid, probe_observed_at=primary_observed_at,
-            probe_duration_s=primary_duration_s, probe_exception_class=primary_exception_class,
+            probe_uid=primary_probe_uid,
+            probe_observed_at=primary_observed_at,
+            probe_duration_s=primary_duration_s,
+            probe_exception_class=primary_exception_class,
         )
 
 
