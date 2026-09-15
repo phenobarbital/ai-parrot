@@ -369,8 +369,31 @@ See blueprint block for `test_formdesigner_submit.py`.
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (orchestrator; MCP coder `gemini` attempt 1 + orchestrator fix)
+**Date**: 2026-09-15
 **Notes**:
+`parrot-sdd-coder` seat `gemini` (google-compat:gemini-3.5-flash) implemented
+`formdesigner_submit.py`, the `MSTeamsAgentConfig` fields/`from_dict`/env fallbacks, and the
+test file on the first attempt (59 turns, no retries) and the branch merged cleanly into the
+feature branch (`f575d7c8a` → `7117584f5`).
+Running the acceptance-criteria test command surfaced 1 failure: `test_recent_activity_cache`
+raised `NameError: name 'time' is not defined` — `RecentActivityCache.seen()` calls
+`time.time()` but the module's import block only had `asyncio, collections, json, logging`
+(the Codebase Contract's own Verified Imports list specified `import time, collections,
+logging`, so this was a straightforward omission). Added `import time`.
+All 11 tests pass; `ruff check` is clean on all three files; `MSTeamsAgentConfig.from_dict({})`
+keeps backward-compatible defaults (tested); `verify_envelope` order (https → allowlist →
+path/tenant/uid → signature) is exercised and correct; `extract_answers` keeps `_department`-
+style ids and strips exactly `_action`/`_formdesigner`.
+One AC is a spec/blueprint self-collision, not a code defect: `grep -c "botbuilder"
+formdesigner_submit.py` is required to print `0`, but the Implementation Blueprint's own
+suggested module docstring reads "No botbuilder import here on purpose" — the literal grep
+count is 1 (the docstring sentence), while the actual dependency check
+(`grep -n '^import botbuilder\|^from botbuilder'`) is 0, i.e., there is genuinely no
+botbuilder import. Left the docstring as specified rather than degrading its clarity to
+satisfy a literal substring count.
+
+**Deviations from spec**: none beyond the `import time` fix noted above; the `grep -c
+"botbuilder"` AC is technically unmet only because of the wording collision described above.
 
 **Deviations from spec**: none

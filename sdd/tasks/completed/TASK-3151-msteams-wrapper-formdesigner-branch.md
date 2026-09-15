@@ -288,8 +288,19 @@ See blueprint.
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (orchestrator; MCP coder `minimax` attempt 1, merged clean)
+**Date**: 2026-09-15
 **Notes**:
+`parrot-sdd-coder` seat `minimax` (nova:minimax.minimax-m2.5) implemented the `_formdesigner`
+branch, the shared aiohttp session lifecycle (`_get_formdesigner_session`/
+`close_formdesigner_client`), and the routing tests on the first attempt (49 turns, no
+retries) and the branch merged cleanly into the feature branch (`364488902` → `7af9082b6`).
+Ran the full acceptance criteria: `pytest test_formdesigner_wrapper.py test_a2ui_submit.py`
+— 8 passed (`botbuilder` is installed in this venv, so the 3 new routing tests ran for real
+rather than skipping, and the pre-existing `test_a2ui_submit.py` stayed green); `ruff check`
+clean; branch-placement grep confirms `ENVELOPE_KEY in submitted_data` (line 465) sits before
+`command = submitted_data.get("command")` (line 475); session lifecycle methods present and
+correctly guard on `.closed`. No fixes were needed — the implementation matched the
+Implementation Blueprint's `# FILL IN:` sections exactly.
 
-**Deviations from spec**: none
+**Deviations from spec**: none.

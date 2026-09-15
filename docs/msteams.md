@@ -394,6 +394,14 @@ async def create_teams_agent():
     )
 ```
 
+## FormDesigner forms in Teams (FEAT-551)
+
+FormDesigner can export any form as an MS Teams Adaptive Card (`GET …/forms/{form_uid}/render/teams`).
+The bot receives the card's Submit, verifies the `_formdesigner` envelope and forwards the answers to
+`POST …/forms/{form_uid}/data`. Configure `formdesigner_allowed_hosts` (and optionally
+`formdesigner_submit_token` / `formdesigner_submit_secret`) on the bot. Full guide:
+[docs/formdesigner-msteams-renderer.md](formdesigner-msteams-renderer.md).
+
 ## Troubleshooting
 
 ### Authentication Issues
