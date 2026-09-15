@@ -114,6 +114,18 @@ class MetaClient(OpenAIBaseClient):
         use_responses: Whether to route ``ask()``/``ask_stream()`` through
             the Responses API (default) instead of the inherited Chat
             Completions funnel. Set ``False`` to use Chat Completions.
+        native_tool_search: Opt in to Meta's hosted ``tool_search`` instead
+            of parrot's client-side ``search_tools`` (spec §3 Module 6, D2).
+            When ``True``, every function tool is sent with
+            ``defer_loading: true`` (name and description stay visible, the
+            parameter schema is withheld) plus ``{"type": "tool_search"}``,
+            and Meta searches and loads definitions in the same response.
+            ``False`` by default: parrot's client-side path stays the
+            default because the operator measured Meta's hosted
+            ``tool_search`` as slower than parrot's own search — an
+            operator measurement, not an independently reproduced
+            benchmark. Responses API only; ``ask()``/``ask_stream()`` raise
+            ``ValueError`` when combined with ``use_responses=False``.
         **kwargs: Additional arguments passed to
             :class:`~parrot.clients.openai_base.OpenAIBaseClient`.
 
@@ -140,9 +152,11 @@ class MetaClient(OpenAIBaseClient):
         api_key: str | None = None,
         base_url: str | None = None,
         use_responses: bool = True,
+        native_tool_search: bool = False,
         **kwargs: Any,
     ) -> None:
         self.use_responses = use_responses
+        self.native_tool_search = native_tool_search
         resolved_key = api_key or config.get("META_API_KEY") or config.get("MODEL_API_KEY")
         super().__init__(
             api_key=resolved_key,
@@ -302,6 +316,107 @@ class MetaClient(OpenAIBaseClient):
                 flat["strict"] = function["strict"]
             return flat
         return tool
+
+    # ------------------------------------------------------------------
+    # Native hosted tool_search (D2: opt-in; spec §3 Module 6).
+    # ------------------------------------------------------------------
+
+    def _check_native_tool_search_route(self) -> None:
+        """Reject ``native_tool_search`` on the Chat Completions path.
+
+        Raises:
+            ValueError: If ``self.native_tool_search`` is set while
+                ``self.use_responses`` is ``False`` — Meta only exposes
+                ``tool_search`` on the Responses API.
+        """
+        if self.native_tool_search and not self.use_responses:
+            raise ValueError(
+                "native_tool_search requires the Responses API path "
+                "(use_responses=True); this client was configured with "
+                "use_responses=False."
+            )
+
+    def _native_tool_search_tools(self, tools: list[dict[str, Any]] | None) -> list[dict[str, Any]] | None:
+        """Build a Responses tool list that defers function tools to hosted ``tool_search``.
+
+        Every function tool is flattened to the Responses shape and marked
+        ``defer_loading: true``; ``{"type": "tool_search"}`` is appended.
+        parrot's own client-side ``search_tools`` tool is dropped — the hosted
+        search replaces it, and offering both would let the model search
+        twice. Non-function tools (e.g. ``web_search``) pass through undeferred.
+
+        Meta HTTP 400s on ``tool_search`` without at least one deferred tool
+        (``tools.tool_search requires at least one deferred tool``), so when
+        there is nothing to defer this returns ``None`` and the caller falls
+        back to parrot's client-side path instead of sending that request.
+
+        Args:
+            tools: Chat-Completions-shaped tools from ``_prepare_tools()``.
+
+        Returns:
+            The Responses-shaped tool list, or ``None`` when no function
+            tool can be deferred.
+        """
+        deferred: list[dict[str, Any]] = []
+        passthrough: list[dict[str, Any]] = []
+        for tool in tools or []:
+            flat = self._to_responses_tool(tool)
+            if flat.get("type") != "function":
+                passthrough.append(flat)
+                continue
+            if flat.get("name") == "search_tools":
+                continue
+            deferred.append({**flat, "defer_loading": True})
+        if not deferred:
+            return None
+        return [*deferred, *passthrough, {"type": "tool_search"}]
+
+    @staticmethod
+    def _undefer_tools(tools: list[dict[str, Any]], names: set[str]) -> list[dict[str, Any]]:
+        """Send the named function tools with their full schema on later rounds.
+
+        Once the model has called a deferred tool, the follow-up request
+        replays that ``function_call`` in ``input`` but not the
+        ``tool_search_output`` that loaded it, so the called tools are sent
+        undeferred. ``{"type": "tool_search"}`` is dropped once no deferred
+        tool remains, which would otherwise be a guaranteed HTTP 400.
+
+        Args:
+            tools: The current Responses-shaped tool list.
+            names: Names of function tools the model has called.
+
+        Returns:
+            A new tool list; the input list is not mutated.
+        """
+        updated: list[dict[str, Any]] = []
+        for tool in tools:
+            if tool.get("type") == "function" and tool.get("name") in names and tool.get("defer_loading"):
+                tool = {key: value for key, value in tool.items() if key != "defer_loading"}
+            updated.append(tool)
+        if not any(tool.get("defer_loading") for tool in updated):
+            updated = [tool for tool in updated if tool.get("type") != "tool_search"]
+        return updated
+
+    @staticmethod
+    def _output_item_ids(raw: Any, item_type: str) -> list[str | None]:
+        """Return the ids of ``output[]`` items of one type in a raw Responses result.
+
+        Args:
+            raw: The raw Responses API result (SDK object or dict).
+            item_type: The output item ``type`` to collect (e.g. ``tool_search_call``).
+
+        Returns:
+            The ``id`` of every matching item, in output order.
+        """
+        output = getattr(raw, "output", None)
+        if output is None and isinstance(raw, dict):
+            output = raw.get("output")
+        ids: list[str | None] = []
+        for item in output or []:
+            current_type = item.get("type") if isinstance(item, dict) else getattr(item, "type", None)
+            if current_type == item_type:
+                ids.append(item.get("id") if isinstance(item, dict) else getattr(item, "id", None))
+        return ids
 
     def _prepare_responses_args(self, *, messages: list[dict[str, Any]], args: dict[str, Any]) -> dict[str, Any]:
         """Map a Chat-Completions-style message list into a Responses payload.
@@ -581,8 +696,15 @@ class MetaClient(OpenAIBaseClient):
         Returns:
             The response from the model.
 
+        When ``self.native_tool_search`` is ``True``, function tools are
+        deferred to Meta's hosted ``tool_search`` instead of parrot's
+        client-side ``search_tools`` (whether or not ``lazy_loading`` is
+        set); with nothing to defer, the call falls back to parrot's path.
+        Loaded tools are reported in ``metadata["tool_search_calls"]``.
+
         Raises:
-            ValueError: If ``search_grounding=True`` while
+            ValueError: If ``search_grounding=True`` or
+                ``self.native_tool_search`` is set while
                 ``self.use_responses`` is ``False``.
         """
         if search_grounding and not self.use_responses:
@@ -591,6 +713,7 @@ class MetaClient(OpenAIBaseClient):
                 "(use_responses=True); this client was configured with "
                 "use_responses=False."
             )
+        self._check_native_tool_search_route()
 
         if not self.use_responses:
             return await super().ask(
@@ -625,7 +748,13 @@ class MetaClient(OpenAIBaseClient):
 
         active_tool_names: set[str] = set()
         prepared_tools = None
-        if _use_tools:
+        native_search = False
+        if _use_tools and self.native_tool_search:
+            prepared_tools = self._native_tool_search_tools(self._prepare_tools())
+            native_search = prepared_tools is not None
+            if not native_search:
+                self.logger.debug("native_tool_search: no deferrable tool; using parrot's client-side path")
+        if _use_tools and not native_search:
             if lazy_loading:
                 prepared_tools = self._prepare_lazy_tools()
                 if prepared_tools:
@@ -637,6 +766,19 @@ class MetaClient(OpenAIBaseClient):
         if prepared_tools:
             args["tools"] = prepared_tools
             args["tool_choice"] = "auto"
+
+        tool_search_call_ids: list[str | None] = []
+
+        async def _native_search_round(**completion_kwargs: Any) -> _ResponsesCompatResult:
+            """Run one Responses round, tracking hosted tool_search activity."""
+            round_response = await self._responses_completion(**completion_kwargs)
+            tool_search_call_ids.extend(self._output_item_ids(round_response.raw, "tool_search_call"))
+            called = {tc.function.name for tc in round_response.choices[0].message.tool_calls}
+            if called and args.get("tools"):
+                args["tools"] = self._undefer_tools(args["tools"], called)
+            return round_response
+
+        call_completion = _native_search_round if native_search else self._responses_completion
 
         if search_grounding:
             web_search_tool = {"type": "web_search"}
@@ -651,7 +793,7 @@ class MetaClient(OpenAIBaseClient):
         if temperature:
             args["temperature"] = temperature
 
-        response = await self._responses_completion(model=model_str, messages=messages, use_tools=_use_tools, **args)
+        response = await call_completion(model=model_str, messages=messages, use_tools=_use_tools, **args)
         result = response.choices[0].message
 
         result, response, all_tool_calls, accumulated_usage, round_number = await self._run_tool_call_loop(
@@ -662,8 +804,10 @@ class MetaClient(OpenAIBaseClient):
             use_tools=_use_tools,
             args=args,
             session_id=current_session_id.get(),
-            call_completion=self._responses_completion,
-            lazy_loading=lazy_loading,
+            call_completion=call_completion,
+            # Hosted search owns tool loading; parrot's lazy re-preparation
+            # would rewrite args["tools"] and strip defer_loading/tool_search.
+            lazy_loading=lazy_loading and not native_search,
             active_tool_names=active_tool_names,
             track_usage=True,
         )
@@ -703,6 +847,11 @@ class MetaClient(OpenAIBaseClient):
             ai_message.metadata["web_search_calls"] = web_search_call_ids
             ai_message.metadata["search_grounded"] = True
 
+        if native_search:
+            ai_message.metadata["native_tool_search"] = True
+            if tool_search_call_ids:
+                ai_message.metadata["tool_search_calls"] = tool_search_call_ids
+
         # Cached-token observability (spec §1 Non-Goal: caching itself is
         # automatic server-side; nothing to implement beyond surfacing it).
         raw_usage = getattr(response.raw, "usage", None)
@@ -740,10 +889,18 @@ class MetaClient(OpenAIBaseClient):
             Use :meth:`ask` (``use_responses=True``) for a full tool-calling
             round trip on the Responses path.
 
+            When ``self.native_tool_search`` is ``True``, tools are deferred
+            to Meta's hosted ``tool_search`` exactly as in :meth:`ask`.
+
         Yields:
             Successive string chunks, followed by a final
             :class:`~parrot.models.responses.AIMessage`.
+
+        Raises:
+            ValueError: If ``self.native_tool_search`` is set while
+                ``self.use_responses`` is ``False``.
         """
+        self._check_native_tool_search_route()
         if not self.use_responses:
             async for item in super().ask_stream(
                 prompt,
@@ -776,7 +933,9 @@ class MetaClient(OpenAIBaseClient):
                 self.register_tool(tool)
 
         tools_payload = None
-        if use_tools and self.tools:
+        if use_tools and self.tools and self.native_tool_search:
+            tools_payload = self._native_tool_search_tools(self._prepare_tools())
+        if use_tools and self.tools and tools_payload is None:
             if lazy_loading:
                 tools_payload = self._prepare_lazy_tools()
             else:
