@@ -281,7 +281,8 @@ Before writing ANY code, verify the task's `## Codebase Contract` section:
 - Create/modify ONLY the files listed in the task.
 - Use ONLY the class names, method signatures, and patterns specified.
 - Use ONLY the imports from the verified Codebase Contract.
-- Follow project conventions (asyncio-first, Pydantic v2, etc.).
+- Follow project conventions (asyncio-first, Pydantic v2, etc.) — the binding
+  set, per language, is `.claude/rules/codebase-conventions.md`.
 
 ### d) Post-Implementation Verification (MANDATORY, in worktree)
 ```

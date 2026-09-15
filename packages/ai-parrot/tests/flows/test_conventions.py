@@ -33,7 +33,7 @@ def test_conventions_fall_back_to_package_copy(tmp_path):
     out_none = load_project_conventions(None)
     out_tmp = load_project_conventions(tmp_path)
     assert out_none == out_tmp
-    assert "## Project rule: python-development" in out_none
+    assert "## Project rule: codebase-conventions" in out_none
 
 
 def test_conventions_strip_frontmatter_and_join():
@@ -41,10 +41,13 @@ def test_conventions_strip_frontmatter_and_join():
     out = load_project_conventions()
     for name in CODER_RULE_NAMES:
         assert f"## Project rule: {name}" in out
-    # Blocks are separated by the separator
-    assert "\n\n---\n\n" in out
+    # Blocks are separated by the separator — one per boundary, none for a single rule
+    assert out.count("\n\n---\n\n") == len(CODER_RULE_NAMES) - 1
     # Frontmatter is stripped - "trigger: always_on" should not survive
     assert "trigger: always_on" not in out
+    # The single consolidated rule carries every language section
+    for section in ("## Python", "## Cython", "## Rust", "## TypeScript + Svelte"):
+        assert section in out, section
 
 
 def test_conventions_reject_unknown_name():

@@ -12,7 +12,8 @@ from importlib.resources import files
 from pathlib import Path
 from typing import Sequence
 
-CODER_RULE_NAMES: tuple[str, ...] = ("codebase-conventions", "python-development")  # v1 Python only (spec §8 Q5)
+# One consolidated rule file: Python, Cython, Rust and the Svelte admin UI in a single document (2026-09-15).
+CODER_RULE_NAMES: tuple[str, ...] = ("codebase-conventions",)
 RULES_DIRNAME: str = ".agent/rules"
 CONVENTIONS_PREAMBLE: str = (
     "Project conventions — binding for every file you touch; a banned import fails " "this attempt at the merge gate:"

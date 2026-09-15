@@ -39,7 +39,6 @@ def test_codex_and_claude_emit_advisory_hook_responses(tmp_path):
 def test_install_writes_conventions_block(tmp_path, agent, canonical):
     (tmp_path / ".agent" / "rules").mkdir(parents=True)
     (tmp_path / ".agent" / "rules" / "codebase-conventions.md").write_text("RULE-ONE\n")
-    (tmp_path / ".agent" / "rules" / "python-development.md").write_text("RULE-TWO\n")
     coding_agents.install(agent, tmp_path)
     instruction = tmp_path / coding_agents._AGENTS[agent][0]
     text = instruction.read_text()
@@ -58,7 +57,6 @@ def test_claude_install_writes_no_conventions_block(tmp_path):
 def test_gemini_and_google_share_one_conventions_block(tmp_path):
     (tmp_path / ".agent" / "rules").mkdir(parents=True)
     (tmp_path / ".agent" / "rules" / "codebase-conventions.md").write_text("RULE-ONE\n")
-    (tmp_path / ".agent" / "rules" / "python-development.md").write_text("RULE-TWO\n")
     coding_agents.install("gemini", tmp_path)
     from parrot.knowledge.wiki.google.installer import _install_gemini_md
 

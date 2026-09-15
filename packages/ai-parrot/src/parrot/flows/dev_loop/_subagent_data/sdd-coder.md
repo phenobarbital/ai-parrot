@@ -106,7 +106,8 @@ Before writing ANY code, verify the task's `## Codebase Contract` section:
 - Create/modify ONLY the files listed in the task.
 - Use ONLY the imports from the verified Codebase Contract.
 - Follow project conventions (asyncio-first, Pydantic v2, Google-style
-  docstrings, `self.logger` instead of `print`).
+  docstrings, `self.logger` instead of `print`) — the binding set, per
+  language, is `.claude/rules/codebase-conventions.md`.
 
 ### d) Verification Checklist (MANDATORY)
 ```

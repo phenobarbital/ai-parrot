@@ -142,9 +142,9 @@ or drop it with `coder_cleanup`.
 ## Conventions & lint backstop (FEAT-553)
 
 Every MCP seat receives the repo's coder rules (`.agent/rules/codebase-conventions.md`
-+ `python-development.md`, via `parrot.flows.conventions.load_project_conventions`)
-inline in its prompt, right after the `sdd-coder` body. The native seat reads the same
-files from `.claude/rules/`. Prompts are advisory; the guarantee is ruff rule `TID251`
+— one consolidated file covering Python, Cython, Rust and the Svelte admin UI — via
+`parrot.flows.conventions.load_project_conventions`) inline in its prompt, right after
+the `sdd-coder` body. The native seat reads the same file from `.claude/rules/`. Prompts are advisory; the guarantee is ruff rule `TID251`
 (`ruff.toml`, `[lint.flake8-tidy-imports.banned-api]`): `requests`, `httpx`, `starlette`,
 `fastapi`, `uvicorn` and every `langchain*`/`langgraph`/`langsmith` import fail
 `ruff check`, and the engine runs the same check after every attempt (attempt error →
