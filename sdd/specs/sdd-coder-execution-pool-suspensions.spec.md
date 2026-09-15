@@ -198,6 +198,11 @@ incident. Effective exclusion lasts until the maximum unexpired expiry
 among matching incidents. Reading, restarting and inheriting an exclusion
 never append a new suspension or prolong it.
 
+`occurred_at` is when the terminal failure/suspension is observed, not when
+the attempt started. Set `expires_at = occurred_at + cooldown_seconds`:
+a 1800-second failed attempt must not consume its entire 1800-second
+cooldown before the suspension even becomes visible.
+
 Default `SuspensionPolicy.cooldown_seconds=1800`, validated range
 60..86400; `history_max_tokens=1200`, range 0..4000, affects only the
 human-readable summary. Selection uses all structured matching records,
@@ -467,6 +472,7 @@ class CoderSuspensionStore:
 | `test_pool_private_state` | M2 | Two execution instances share no mutable seats/rotation/exclusions |
 | `test_suspend_first_failure` | M2 | One qualifying incident excludes the model and every label alias |
 | `test_expiry_is_new_execution_only` | M1–M2 | Exact UTC boundary eligible for a new ID; original ID stays suspended |
+| `test_cooldown_starts_at_failure_observation` | M1–M3 | A long timed-out attempt still receives the full cooldown after failing |
 | `test_duplicate_incident_preserves_expiry` | M1 | Repeated append/replay cannot increment incidents or extend cooldown |
 | `test_latest_real_incident_extends_exclusion` | M1 | Distinct failures use maximum matching expiry |
 | `test_summary_budget_does_not_limit_exclusion` | M1 | All structured exclusions apply even with a zero-token summary |
