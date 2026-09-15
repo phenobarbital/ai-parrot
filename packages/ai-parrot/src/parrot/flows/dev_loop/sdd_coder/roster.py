@@ -7,7 +7,7 @@ import shutil
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Set
 
 from parrot import conf  # verified: navconfig `config` at parrot/conf.py
-from parrot.flows.dev_loop.task_scheduler import TaskRef  # verified: task_scheduler.py:25
+from parrot.flows.dev_loop.task_scheduler import TaskRef, partition_wave  # verified: task_scheduler.py:25, 65
 from parrot.flows.dev_loop.sdd_coder.models import PlanChunk, PlannedTask, RosterConfig, RosterSeat, SeatProbeResult
 
 SmokeFn = Callable[[RosterSeat, str], Awaitable[bool]]
@@ -132,20 +132,22 @@ class ChunkAssigner:
         self._seats, self._start = list(seats), 0
 
     def assign(self, wave: List[TaskRef], task_files: Dict[str, str]) -> List[PlanChunk]:
-        """Sort by id; each exclusive task alone first, then shared chunk k = shared[k*n:(k+1)*n];
+        """Exclusive tasks alone first (via ``partition_wave``); the parallel batch is split
+        into chunks of at most len(seats), retaining singleton exclusive batches;
         task j ↦ seats[(start+j) % n]; start
         advances by one for each chunk produced, so consecutive chunks begin on a
         different seat even when every chunk is a full `n`-sized batch (a `+= len(chunk)`
         step would be a no-op mod `n` whenever the batch is full-sized)."""
         n = len(self._seats)
-        ordered = sorted(wave, key=lambda t: t.id)  # design research S3
-        # Exclusive tasks (`parallel: false` under the index's exclusive semantics) get a
-        # chunk of their own and come first: the orchestrator dispatches only chunks[0]
-        # per round, so an exclusive task queued behind shared batches could starve while
-        # new shared tasks keep unblocking.
-        exclusive = [t for t in ordered if not t.parallel]
-        shared = [t for t in ordered if t.parallel]
-        batches = [[t] for t in exclusive] + [shared[k : k + n] for k in range(0, len(shared), n)]
+        # Obtain dispatch batches through partition_wave without duplicating exclusive classification
+        batches = partition_wave(wave)
+        # Subdivide the parallel batch (last batch) by seat count
+        if batches:
+            parallel_batch = batches.pop()
+            # Split the parallel batch into chunks of at most n tasks
+            for k in range(0, len(parallel_batch), n):
+                batches.append(parallel_batch[k : k + n])
+        
         chunks: List[PlanChunk] = []
         for batch in batches:
             planned_tasks: List[PlannedTask] = []
