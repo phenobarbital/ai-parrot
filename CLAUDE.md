@@ -240,76 +240,15 @@ the Action fails (or the user is offline), run
 should require PRs, passing CI, and signed commits. Not configured
 declaratively in this repo — set via GitHub repo settings.
 
-- **Worktrees branch from `origin/<base_branch>`**, and are created by whoever
-  implements: `/sdd-start` and `sdd-worker` for the normal lanes, and the
-  dev-loop orchestrators (`sdd-planner`, `sdd-research`, `sdd-autopilot`) which
-  plan and dispatch in one run. `/sdd-task` creates none (FEAT-552). Naming and
-  base ref come from `scripts.sdd.sdd_meta.plan_worktree` via
-  `python -m scripts.sdd.ensure_worktree` — never hand-built.
+## Worktrees
 
-## Worktree Creation
-
-> **CRITICAL**: Do NOT use `claude --worktree`. It branches from the repo's default
-> branch (`main`), which does not contain SDD artifacts.
->
-> Always create worktrees manually from the current branch:
-
-```bash
-# Standard pattern: create worktree from current branch
-git worktree add -b <branch-name> .claude/worktrees/<worktree-name> HEAD
-```
-
-> **Carve-out (FEAT-466): a hotfix must never branch from `HEAD` or inherit
-> unreleased `dev` commits.** That used to depend on the caller already
-> being on the right branch when `HEAD` was used as shorthand for
-> `base_branch` — fragile, because whatever branch happened to be checked
-> out in the main repo at the time silently became the base (the FEAT-466
-> root cause, PR #1250). `plan_worktree` (`scripts/sdd/sdd_meta.py`) now
-> enforces the rule directly: it always resolves `base_ref` to
-> `origin/<base_branch>`, so a worktree can never inherit a local, unpushed
-> `HEAD` — for a hotfix that `base_ref` is `origin/main` by construction.
-> Use the shared CLI, never hand-build the `git worktree add` line:
-> ```bash
-> # Feature — from the base branch (dev, or staging during a freeze)
-> python -m scripts.sdd.ensure_worktree --slug <slug> --feature-id FEAT-<NNN>
-> # Hotfix — ALWAYS from origin/main, never from HEAD/dev
-> python -m scripts.sdd.ensure_worktree --slug <slug> --jira-key <JIRA-KEY>
-> ```
-
-### Quick reference
-
-```bash
-# From dev (most common)
-git checkout dev
-git worktree add -b feat-014-videoreel-visual-changes \
-  .claude/worktrees/feat-014-videoreel-visual-changes HEAD
-
-# From another feature branch (sub-features)
-git checkout feat/ontology-rag
-git worktree add -b feat-014-sub-task \
-  .claude/worktrees/feat-014-sub-task HEAD
-
-# Then launch Claude inside the worktree
-cd .claude/worktrees/feat-014-videoreel-visual-changes
-claude   # interactive, manual /sdd-start
-# or
-claude --agent sdd-worker --model sonnet --verbose
-```
-
-### Cleanup
-
-```bash
-# After PR merge
-git worktree remove .claude/worktrees/<name>
-# or prune all dead worktrees
-git worktree prune
-```
-
-### .gitignore
-
-```gitignore
-.claude/worktrees/
-```
+Everything about worktrees — location (`.claude/worktrees/`), naming,
+creation via `python -m scripts.sdd.ensure_worktree` (always from
+`origin/<base_branch>`, never `HEAD`, never `claude --worktree`), working
+inside one, finishing and cleanup — lives in **one** rule:
+`.claude/rules/worktree-management.md` (twin: `.agent/skills/worktree-management/`).
+Worktrees are created by whoever implements (`/sdd-start`, `sdd-worker`, the
+dev-loop orchestrators); `/sdd-task` creates none (FEAT-552).
 
 ## SDD Auto-Commit Rule
 
@@ -354,52 +293,16 @@ check_id_collisions.py` is an independent, read-only backstop wired into
 CI that catches any `TASK-<NNN>` collision that still slips through. See
 `sdd/WORKFLOW.md` ("TASK/FEAT ID Allocation") for full details.
 
-## Isolation Model
-
-Worktrees isolate **features** from each other. Tasks within a feature run
-sequentially in the same worktree via `/sdd-start TASK-<NNN>`.
-
-```
-Terminal 1 (in .claude/worktrees/feat-007):     Terminal 2 (in .claude/worktrees/feat-008):
-  /sdd-start TASK-001 → commit                   /sdd-start TASK-010 → commit
-  /sdd-start TASK-002 → commit (sees 001)         /sdd-start TASK-011 → commit
-  /sdd-start TASK-003 → commit (sees 001+2)       /sdd-start TASK-012 → commit
-  push, PR against dev                            push, PR against dev
-```
-
 ## Typical Workflow
 
 ```bash
-# 1. Ensure you're on dev with latest
 git checkout dev && git pull origin dev
-
-# 2. Create and approve a spec (committed to dev automatically)
-/sdd-spec videoreel-visual-changes -- ...
-/sdd-task sdd/specs/videoreel-visual-changes.spec.md
-
-# 3. Start a task — creates the worktree on this machine, idempotently
-/sdd-start TASK-069
-
-# 4. Enter worktree and work
-cd .claude/worktrees/feat-014
-
-# Manual (task-by-task):
-claude
-/sdd-start TASK-069
-/sdd-start TASK-070
-/sdd-done FEAT-014
-
-# Or autonomous:
-claude --agent sdd-worker --dangerously-skip-permissions --model sonnet --verbose
-/sdd-done FEAT-014
-
-# 5. Push and PR
-git push origin feat-014-videoreel-visual-changes
-# Create PR against dev
-
-# 6. Cleanup after merge
-cd ~/proyectos/...   # back to main repo
-git worktree remove .claude/worktrees/feat-014
+/sdd-spec <feature> -- ...                 # spec, committed to dev
+/sdd-task sdd/specs/<feature>.spec.md      # tasks, committed to dev
+/sdd-start TASK-<NNN>                      # creates the worktree, implements the task
+cd .claude/worktrees/feat-FEAT-<NNN>-<slug>
+/sdd-start TASK-<NNN+1> …                  # or: claude --agent sdd-worker
+/sdd-done FEAT-<NNN>                       # verify, push, merge → dev, clean up
 ```
 
 ## Autonomous Agent (`sdd-worker`)
@@ -470,15 +373,6 @@ Authoritative reference: `sdd/specs/sdd-flow-types-and-per-spec-index.spec.md`
 > rule landed, so they remain editable. If you ever need to add a NEW
 > template file, you must `git add -f` it and consider tightening the
 > ignore pattern.
-
-### When NOT to Use Worktrees
-
-- **Hotfixes on `main`**: Work directly on `main` or a short-lived `hotfix/*` branch.
-- **Documentation-only changes**: No code conflicts possible, work on `dev` directly.
-- **Single-task features**: If a spec has only one task, a worktree adds overhead
-  with no benefit. Work directly on a feature branch.
-- **Exploratory brainstorming**: `/sdd-brainstorm` doesn't produce code — no worktree needed.
-- **Quick bug fixes**: If the fix is a single commit, skip the worktree ceremony.
 
 <!-- parrot:wiki:begin -->
 ## Codebase Knowledge Graph (LLM Wiki)

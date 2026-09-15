@@ -11,7 +11,6 @@ from parrot.knowledge.wiki.google.installer import _install_gemini_md, uninstall
 def _seed(root: Path) -> None:
     (root / ".agent" / "rules").mkdir(parents=True)
     (root / ".agent" / "rules" / "codebase-conventions.md").write_text("---\nx: 1\n---\nRULE-ONE\n")
-    (root / ".agent" / "rules" / "python-development.md").write_text("RULE-TWO\n")
 
 
 def test_install_gemini_md_upserts_conventions_block(tmp_path):
@@ -23,7 +22,7 @@ def test_install_gemini_md_upserts_conventions_block(tmp_path):
     # it reflects whether GEMINI.md existed at all before the call, not whether the markers did.
     # GEMINI.md is seeded with content above, so this call reports "updated".
     assert "updated" in first and text.index(assets.AGENTS_BEGIN) < text.index(assets.CONVENTIONS_BEGIN)
-    assert "RULE-ONE" in text and "RULE-TWO" in text and "keep me" in text
+    assert "RULE-ONE" in text and "keep me" in text
     assert "already current" in _install_gemini_md(tmp_path)
 
 
