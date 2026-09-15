@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-15T22:20:17.343873+00:00",
-  "completed_at": "2026-09-15T23:02:40+00:00",
+  "completed_at": "2026-09-15T23:44:12+00:00",
   "parallel_semantics": "exclusive",
   "tasks": [
     {
@@ -25,7 +25,8 @@
       "assigned_at": null,
       "started_at": "2026-09-15T22:35:11+00:00",
       "completed_at": "2026-09-15T22:44:43+00:00",
-      "file": "sdd/tasks/completed/TASK-3269-exclusive-wave-helpers.md"
+      "file": "sdd/tasks/completed/TASK-3269-exclusive-wave-helpers.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3270",
@@ -46,7 +47,8 @@
       "assigned_at": null,
       "started_at": "2026-09-15T22:35:11+00:00",
       "completed_at": "2026-09-15T23:02:40+00:00",
-      "file": "sdd/tasks/completed/TASK-3270-roster-shared-wave-partition.md"
+      "file": "sdd/tasks/completed/TASK-3270-roster-shared-wave-partition.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3271",
@@ -67,7 +69,8 @@
       "assigned_at": null,
       "started_at": "2026-09-15T22:35:11+00:00",
       "completed_at": "2026-09-15T23:02:40+00:00",
-      "file": "sdd/tasks/completed/TASK-3271-pool-exclusive-dispatch-rounds.md"
+      "file": "sdd/tasks/completed/TASK-3271-pool-exclusive-dispatch-rounds.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3272",
@@ -88,7 +91,8 @@
       "assigned_at": null,
       "started_at": "2026-09-15T22:35:11+00:00",
       "completed_at": "2026-09-15T23:02:40+00:00",
-      "file": "sdd/tasks/completed/TASK-3272-planner-parallel-width-sizing.md"
+      "file": "sdd/tasks/completed/TASK-3272-planner-parallel-width-sizing.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3273",
@@ -107,7 +111,8 @@
       "assigned_at": null,
       "started_at": "2026-09-15T22:35:11+00:00",
       "completed_at": "2026-09-15T22:44:43+00:00",
-      "file": "sdd/tasks/completed/TASK-3273-exclusive-pool-task-documentation.md"
+      "file": "sdd/tasks/completed/TASK-3273-exclusive-pool-task-documentation.md",
+      "verification": "verified"
     }
   ]
 }
