@@ -41,6 +41,7 @@ from parrot.flows.dev_loop.worktree_manager import (  # verified: worktree_manag
 )
 from parrot.flows.dev_loop.sdd_coder.fidelity import check_banned_imports, check_fidelity, parse_task_files
 from parrot.flows.dev_loop.sdd_coder.jobs import JobTable
+from parrot.flows.dev_loop.sdd_coder.lint import run_lint_pass
 from parrot.flows.dev_loop.sdd_coder.models import (
     AttemptRecord,
     CleanupReport,
@@ -563,6 +564,15 @@ class SddCoderEngine:
                 worktree_path=path,
                 unexpected_files=report.unexpected + report.sdd_touched,
             )
+        # Engine-owned lint pass: ruff --fix + formatter on the task's own files, committed on the
+        # attempt branch so the merge carries it. Runs for every entry point (MCP seats, native
+        # merge, re-merge) and never blocks — findings ride on the TaskResult for the orchestrator.
+        lint_report = await run_lint_pass(
+            path,
+            changed,
+            config=self.roster.lint,
+            commit_message=f"style({ctx.feature}): {task.task_id} — engine lint autofix",
+        )
         # FEAT-553 (spec §10 R1): the shared merge boundary — `merge()` reaches here directly
         # for native tasks and re-merges, so the banned-import gate lives HERE, not only in
         # `_run_attempt`. Nothing with a banned import can merge no matter which entry point
@@ -575,6 +585,7 @@ class SddCoderEngine:
                 branch=branch,
                 worktree_path=path,
                 diagnostics="BannedImport: " + "; ".join(violations),
+                lint=lint_report,
             )
         async with self._merge_lock:
             try:
@@ -597,6 +608,7 @@ class SddCoderEngine:
                     worktree_path=path,
                     conflict_files=conflict_files,
                     diagnostics=exc.stderr,
+                    lint=lint_report,
                 )
             # `merge_sequential` only merges branches the manager still remembers in
             # `_created`; if that map was emptied (a `cleanup()` ran first, FEAT-555
@@ -614,8 +626,9 @@ class SddCoderEngine:
                     f"merge_sequential (nothing landed); merge it manually with `git merge --no-ff {branch}`. "
                     + err.strip()
                 ),
+                lint=lint_report,
             )
-        return TaskResult(task_id=task.task_id, outcome="merged", branch=branch, worktree_path=path)
+        return TaskResult(task_id=task.task_id, outcome="merged", branch=branch, worktree_path=path, lint=lint_report)
 
     async def merge(self, feature: str, worktree: str, task_id: str) -> TaskResult:
         """Consolidate the task's LATEST attempt branch (native tasks; re-merge after Sonnet fixed a conflict)."""

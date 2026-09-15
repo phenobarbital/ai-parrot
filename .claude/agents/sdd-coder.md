@@ -122,7 +122,9 @@ VERIFICATION CHECKLIST for TASK-<NNN>:
 If ANY check fails, fix it or STOP and report.
 
 ### e) Validate
-- Run linting (`ruff check`) on the files you touched and fix issues.
+- Do NOT run `ruff`/`black` or spend turns on style: the engine runs `ruff check --fix` plus the
+  repo formatter on your committed files at merge time and commits the result itself. Style debt
+  that remains is fixed once, feature-wide, by `/sdd-done`.
 - Run THIS task's acceptance-criteria tests.
 - If stuck after 3 attempts, stop and report the failure clearly instead of
   committing broken code — the orchestrator treats an unresolved failure as

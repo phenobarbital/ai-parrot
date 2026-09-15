@@ -55,6 +55,7 @@ class SddCoderToolkit(AbstractToolkit):
         redis_url: Optional[str] = None,
         worktree_base_path: Optional[str] = None,
         telemetry_dir: Optional[str] = None,
+        lint: Optional[Dict[str, Any]] = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
@@ -62,7 +63,7 @@ class SddCoderToolkit(AbstractToolkit):
         cfg = (
             roster
             if isinstance(roster, RosterConfig)
-            else RosterConfig(seats=roster)  # type: ignore[arg-type]  # yaml kwargs arrive as list[dict]; pydantic coerces at runtime
+            else RosterConfig(seats=roster, lint=lint or {})  # type: ignore[arg-type]  # yaml kwargs arrive as list[dict]; pydantic coerces at runtime
         )
         self._engine = SddCoderEngine(
             roster=cfg,

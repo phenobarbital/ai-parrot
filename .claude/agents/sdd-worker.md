@@ -244,6 +244,9 @@ consolidate, and own SDD state. Coders (`sdd-coder`) run one task each in their 
      green → step (g) of the Fallback loop for this task, with a Completion Note that ends with
      `Seat: <seat_label> · Backend: <backend> · Model: <model> · Attempts: <n> · Duration: <sum duration_s> · Tokens: <usage>`
      taken from `attempts[*]`; red → treat as `failed`.
+     The engine already ran `ruff check --fix` + the repo formatter and committed it (`lint.commit`). Fix ONLY
+     `lint.errors` (syntax errors / undefined names) in this worktree; ignore `lint.residual` — style debt is
+     fixed once, feature-wide, by `/sdd-done`. Never run `ruff`/`black` per task yourself.
    - `merge_conflict` → `git merge <branch>` in this worktree, resolve, commit, then `coder_merge(task_id)` again.
    - `failed` with `diagnostics` starting `branch_not_merged:` → the engine merged nothing (it never answers
      `merged` unless the branch is an ancestor of the feature branch). Run
@@ -296,7 +299,9 @@ VERIFICATION CHECKLIST for TASK-<NNN>:
 If ANY check fails, fix or STOP.
 
 ### e) Validate (in worktree)
-- Run linting and fix issues.
+- Lint mechanically, never by hand (this path has no engine to do it): `ruff check --fix <task .py files>`, then
+  `black <task .py files>` only if `pyproject.toml` has `[tool.black]`. Fix only syntax errors / undefined names
+  (`ruff check --select E9,F63,F7,F82`); leave remaining style findings to `/sdd-done`.
 - Run acceptance-criteria tests.
 - If stuck after 3 attempts, mark as `"done-with-issues"`.
 
