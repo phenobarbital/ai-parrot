@@ -24,11 +24,18 @@ _SDD_PLANNER_PROMPT = (
 )
 
 
-def _write_index(tmp_path: Path, slug: str, tasks: list[dict]) -> Path:
+def _write_index(tmp_path: Path, slug: str, tasks: list[dict], exclusive: bool = False) -> Path:
     index_dir = tmp_path / "sdd" / "tasks" / "index"
     index_dir.mkdir(parents=True, exist_ok=True)
     path = index_dir / f"{slug}.json"
-    path.write_text(json.dumps({"feature": slug, "tasks": tasks}))
+    payload = {"feature": slug, "tasks": tasks}
+    if exclusive:
+        # TaskScheduler.from_index_file only honours a task's ``parallel``
+        # field under this header (task_scheduler.py:170); without it every
+        # TaskRef defaults to parallel=True regardless of what the index
+        # says, and exclusive semantics never engage.
+        payload["parallel_semantics"] = "exclusive"
+    path.write_text(json.dumps(payload))
     return path
 
 
@@ -229,6 +236,7 @@ def test_pool_sizing_exclusive_only(tmp_path):
             {"id": "X1", "status": "pending", "depends_on": [], "parallel": False},
             {"id": "X2", "status": "pending", "depends_on": [], "parallel": False},
         ],
+        exclusive=True,
     )
     dispatcher = MagicMock()
     node = _node(dispatcher, development_pool_max=4)
@@ -253,6 +261,7 @@ def test_pool_sizing_mixed_wave(tmp_path):
             {"id": "P2", "status": "pending", "depends_on": [], "parallel": True},
             {"id": "P3", "status": "pending", "depends_on": [], "parallel": True},
         ],
+        exclusive=True,
     )
     dispatcher = MagicMock()
     node = _node(dispatcher, development_pool_max=4)
@@ -300,6 +309,7 @@ def test_pool_sizing_exclusive_with_cap(tmp_path):
             {"id": "X1", "status": "pending", "depends_on": [], "parallel": False},
             {"id": "X2", "status": "pending", "depends_on": [], "parallel": False},
         ],
+        exclusive=True,
     )
     dispatcher = MagicMock()
     node = _node(dispatcher, development_pool_max=1)

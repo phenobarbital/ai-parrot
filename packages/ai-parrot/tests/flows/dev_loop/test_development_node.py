@@ -70,12 +70,17 @@ def _feature_brief(tmp_path: Path, **overrides) -> FeatureBrief:
     return FeatureBrief(**defaults)
 
 
-def _write_index(worktree_path: Path, feat_id: str, feature_slug: str, tasks: list) -> None:
+def _write_index(worktree_path: Path, feat_id: str, feature_slug: str, tasks: list, exclusive: bool = False) -> None:
     index_dir = worktree_path / "sdd" / "tasks" / "index"
     index_dir.mkdir(parents=True, exist_ok=True)
-    (index_dir / f"{feature_slug}.json").write_text(
-        json.dumps({"feature": feature_slug, "feature_id": feat_id, "tasks": tasks})
-    )
+    payload = {"feature": feature_slug, "feature_id": feat_id, "tasks": tasks}
+    if exclusive:
+        # TaskScheduler.from_index_file only honours a task's ``parallel``
+        # field under this header (task_scheduler.py:170); without it every
+        # TaskRef defaults to parallel=True regardless of what the index
+        # says, and exclusive semantics never engage.
+        payload["parallel_semantics"] = "exclusive"
+    (index_dir / f"{feature_slug}.json").write_text(json.dumps(payload))
 
 
 class FakeDispatcher:
@@ -709,6 +714,7 @@ class TestExclusiveTasks:
                 {"id": "TASK-3", "status": "pending", "depends_on": [], "parallel": True},
                 {"id": "TASK-4", "status": "pending", "depends_on": [], "parallel": True},
             ],
+            exclusive=True,
         )
         research = _research(str(tmp_path), feat_id="FEAT-560")
 
@@ -787,6 +793,7 @@ class TestExclusiveTasks:
                 {"id": "TASK-2", "status": "pending", "depends_on": [], "parallel": True},
                 {"id": "TASK-3", "status": "pending", "depends_on": [], "parallel": True},
             ],
+            exclusive=True,
         )
         research = _research(str(tmp_path), feat_id="FEAT-560")
         d1, d2, d3 = FakeDispatcher(), FakeDispatcher(), FakeDispatcher()
@@ -814,10 +821,19 @@ class TestExclusiveTasks:
                 {"id": "TASK-2", "status": "pending", "depends_on": ["TASK-1"], "parallel": True},
                 {"id": "TASK-3", "status": "pending", "depends_on": [], "parallel": True},
             ],
+            exclusive=True,
         )
         research = _research(str(tmp_path), feat_id="FEAT-560")
-        # Make TASK-1 fail
-        d1, d2, d3 = FakeDispatcher(fail_ids=["TASK-1"]), FakeDispatcher(), FakeDispatcher()
+        # Make TASK-1 fail on every worker it could land on: the pool
+        # retries a failed dispatch exactly once on the *next* worker
+        # (agent_pool.py's documented single-retry), so both workers that
+        # could receive this singleton exclusive round must fail it for
+        # the task to end up genuinely, terminally failed.
+        d1, d2, d3 = (
+            FakeDispatcher(fail_ids=["TASK-1"]),
+            FakeDispatcher(fail_ids=["TASK-1"]),
+            FakeDispatcher(),
+        )
         pool_config = DevAgentPoolConfig(agents=[DevAgentSpec(agent="claude-code", count=2)])
         node = DevelopmentNode(
             dispatcher=MagicMock(),

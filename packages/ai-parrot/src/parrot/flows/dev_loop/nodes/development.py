@@ -1479,103 +1479,105 @@ class DevelopmentNode(DevLoopNode):
                 if not wave:
                     break
 
-                # Partition the wave into batches respecting exclusive tasks
+                # Partition the wave into batches respecting exclusive tasks;
+                # dispatch ONLY the first batch, then loop back to the top so
+                # `scheduler.next_wave()` re-plans on every round — a wave
+                # newly unblocked by this round's completion (e.g. another
+                # exclusive task, or one whose only blocker just finished)
+                # must be picked up immediately, never from a batches list
+                # cached from a stale `next_wave()` call.
                 batches = partition_wave(wave)
                 if not batches:
                     break
 
-                for batch in batches:
-                    wave_number += 1
-                    is_exclusive = len(batch) == 1 and not batch[0].parallel
+                batch = batches[0]
+                wave_number += 1
+                is_exclusive = len(batch) == 1 and not batch[0].parallel
 
-                    # Log exclusive rounds differently
-                    if is_exclusive:
-                        self.logger.info(
-                            "%s wave %d (exclusive): dispatching task %s",
-                            research.feat_id,
-                            wave_number,
-                            self._task_label(batch[0]),
-                        )
-                        self.report_progress(
-                            shared,
-                            "working",
-                            f"Wave {wave_number}: exclusive task {batch[0].id}"
-                            + (f" · {len(scheduler.pending()) - 1} still pending" if scheduler.pending() else ""),
-                            f"exclusive: {self._task_label(batch[0])}",
-                        )
-                    else:
-                        self.logger.info(
-                            "%s wave %d: dispatching %d task(s): %s",
-                            research.feat_id,
-                            wave_number,
-                            len(batch),
-                            ", ".join(self._task_label(t) for t in batch),
-                        )
-                        self.report_progress(
-                            shared,
-                            "working",
-                            f"Wave {wave_number}: {len(batch)} task(s) on {min(len(batch), len(pool.workers))} seat(s)"
-                            + (
-                                f" · {len(scheduler.pending()) - len(batch)} still pending"
-                                if scheduler.pending()
-                                else ""
-                            ),
-                            ", ".join(self._task_label(t) for t in batch),
-                        )
-
-                    result = await pool.run_wave(
-                        batch,
-                        research=research,
-                        run_id=run_id,
-                        cwd_for=_cwd_for,
-                        escalate=escalate,
-                        session_host=shared.get("session_host"),
+                # Log exclusive rounds differently
+                if is_exclusive:
+                    self.logger.info(
+                        "%s wave %d (exclusive): dispatching task %s",
+                        research.feat_id,
+                        wave_number,
+                        self._task_label(batch[0]),
                     )
-                    wave_results.append(result)
+                    self.report_progress(
+                        shared,
+                        "working",
+                        f"Wave {wave_number}: exclusive task {batch[0].id}"
+                        + (f" · {len(scheduler.pending()) - 1} still pending" if scheduler.pending() else ""),
+                        f"exclusive: {self._task_label(batch[0])}",
+                    )
+                else:
+                    self.logger.info(
+                        "%s wave %d: dispatching %d task(s): %s",
+                        research.feat_id,
+                        wave_number,
+                        len(batch),
+                        ", ".join(self._task_label(t) for t in batch),
+                    )
+                    self.report_progress(
+                        shared,
+                        "working",
+                        f"Wave {wave_number}: {len(batch)} task(s) on {min(len(batch), len(pool.workers))} seat(s)"
+                        + (f" · {len(scheduler.pending()) - len(batch)} still pending" if scheduler.pending() else ""),
+                        ", ".join(self._task_label(t) for t in batch),
+                    )
 
-                    for task_id in result.completed:
-                        scheduler.mark_done(task_id)
-                    for task_id in result.failed:
-                        scheduler.mark_failed(task_id)
+                result = await pool.run_wave(
+                    batch,
+                    research=research,
+                    run_id=run_id,
+                    cwd_for=_cwd_for,
+                    escalate=escalate,
+                    session_host=shared.get("session_host"),
+                )
+                wave_results.append(result)
 
-                    # Log completion with appropriate wording
-                    if is_exclusive:
-                        self.logger.info(
-                            "%s wave %d (exclusive %s) complete: %d completed (%s), %d failed (%s); "
-                            "%d task(s) still pending, %d skipped",
-                            research.feat_id,
-                            wave_number,
-                            batch[0].id,
-                            len(result.completed),
-                            ", ".join(sorted(result.completed)) or "-",
-                            len(result.failed),
-                            ", ".join(sorted(result.failed)) or "-",
-                            len(scheduler.pending()),
-                            len(scheduler.skipped()),
-                        )
-                    else:
-                        self.logger.info(
-                            "%s wave %d complete: %d completed (%s), %d failed (%s); "
-                            "%d task(s) still pending, %d skipped",
-                            research.feat_id,
-                            wave_number,
-                            len(result.completed),
-                            ", ".join(sorted(result.completed)) or "-",
-                            len(result.failed),
-                            ", ".join(sorted(result.failed)) or "-",
-                            len(scheduler.pending()),
-                            len(scheduler.skipped()),
-                        )
+                for task_id in result.completed:
+                    scheduler.mark_done(task_id)
+                for task_id in result.failed:
+                    scheduler.mark_failed(task_id)
 
-                    # For exclusive rounds, merge and refresh before the next batch
-                    if manager is not None:
-                        await manager.merge_sequential(resolver=_resolver)
-                        merged_any = True
-                        # Propagate this wave's merged output into every
-                        # sub-worktree so the next wave's tasks (which may
-                        # depend_on a task another worker just finished) build
-                        # on the integrated feature branch, not a stale tree.
-                        await manager.refresh_all()
+                # Log completion with appropriate wording
+                if is_exclusive:
+                    self.logger.info(
+                        "%s wave %d (exclusive %s) complete: %d completed (%s), %d failed (%s); "
+                        "%d task(s) still pending, %d skipped",
+                        research.feat_id,
+                        wave_number,
+                        batch[0].id,
+                        len(result.completed),
+                        ", ".join(sorted(result.completed)) or "-",
+                        len(result.failed),
+                        ", ".join(sorted(result.failed)) or "-",
+                        len(scheduler.pending()),
+                        len(scheduler.skipped()),
+                    )
+                else:
+                    self.logger.info(
+                        "%s wave %d complete: %d completed (%s), %d failed (%s); "
+                        "%d task(s) still pending, %d skipped",
+                        research.feat_id,
+                        wave_number,
+                        len(result.completed),
+                        ", ".join(sorted(result.completed)) or "-",
+                        len(result.failed),
+                        ", ".join(sorted(result.failed)) or "-",
+                        len(scheduler.pending()),
+                        len(scheduler.skipped()),
+                    )
+
+                # For exclusive rounds, merge and refresh before the next batch
+                if manager is not None:
+                    await manager.merge_sequential(resolver=_resolver)
+                    merged_any = True
+                    # Propagate this wave's merged output into every
+                    # sub-worktree so the next wave's tasks (which may
+                    # depend_on a task another worker just finished) build
+                    # on the integrated feature branch, not a stale tree.
+                    await manager.refresh_all()
         finally:
             if manager is not None:
                 await manager.cleanup(keep_on_conflict=True)
