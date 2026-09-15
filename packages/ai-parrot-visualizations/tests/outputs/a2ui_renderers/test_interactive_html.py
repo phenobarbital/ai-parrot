@@ -1118,3 +1118,40 @@ class TestInteractiveCombination:
         # Built only when a series asked: naming an axis on every dataset
         # would put an empty ruler on the right of every chart.
         assert 'indexOf("right") === -1 ? undefined' in doc
+
+
+class TestThePrintedChartKeepsAKey:
+    """A chart with more than one series turns its legend off because the
+    metric buttons are the key. Print hides those buttons — and a chart of
+    seven series with no key at all is worse than either.
+    """
+
+    async def _doc(self, y) -> str:
+        env = _envelope(
+            Component(
+                id="root", component="Chart", type="bar", x="week", y=y,
+                data={"path": "/rows"},
+            ),
+            data_model={"rows": [{"week": "W1", "a": 1, "b": 2}]},
+        )
+        return (await InteractiveHTMLRenderer().render(env)).content.decode()
+
+    def _config(self, doc: str) -> dict:
+        return json.loads(html.unescape(re.search(r'data-chart-config="([^"]*)"', doc).group(1)))
+
+    async def test_a_multi_series_chart_says_why_its_legend_is_off(self):
+        config = self._config(await self._doc(["a", "b"]))
+        assert config["showLegend"] is False
+        assert config["legendReplacedByToggles"] is True
+
+    async def test_a_single_series_chart_keeps_its_legend_and_says_nothing(self):
+        config = self._config(await self._doc(["a"]))
+        assert config["showLegend"] is True
+        assert "legendReplacedByToggles" not in config
+
+    async def test_the_runtime_restores_the_legend_for_paper_only(self):
+        doc = await self._doc(["a", "b"])
+        assert "function legendForPrint(printing)" in doc
+        # Gated on the flag: an author who asked for no legend still gets none.
+        block = doc[doc.index("function legendForPrint(printing)"):][:520]
+        assert "cfg.legendReplacedByToggles" in block

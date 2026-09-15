@@ -490,11 +490,30 @@ _BEHAVIOR_JS = r"""
     });
   }
 
+  // On paper the metric buttons are hidden — they do nothing there — so the
+  // key they stood in for has to come back, or a chart of seven series
+  // prints with nothing naming them. Only for charts whose legend was turned
+  // off FOR the buttons: an author who asked for no legend still gets none.
+  function legendForPrint(printing) {
+    Object.keys(chartRegistry).forEach(function (id) {
+      try {
+        var chart = chartRegistry[id];
+        var cfg = JSON.parse(chart.canvas.getAttribute("data-chart-config"));
+        if (!cfg.legendReplacedByToggles) return;
+        chart.options.plugins.legend.display = printing;
+      } catch (e) {
+        /* a chart without a readable config keeps whatever it had */
+      }
+    });
+  }
+
   function chartsForPrint() {
+    legendForPrint(true);
     resizeCharts(PRINT_ASPECT);
   }
 
   function chartsForScreen() {
+    legendForPrint(false);
     resizeCharts(SCREEN_ASPECT);
   }
 
@@ -1335,6 +1354,13 @@ class InteractiveHTMLRenderer(AbstractA2UIRenderer):
             "data": rows,
             "showLegend": bool(props.get("showLegend", True)) and not has_toggles,
         }
+        # The legend is off because the metric buttons ARE the key — but a
+        # printed page hides those buttons, and a chart with seven series and
+        # no key at all is worse than either. Flagged here so the runtime can
+        # put the legend back for print without second-guessing an author who
+        # genuinely asked for no legend.
+        if has_toggles and bool(props.get("showLegend", True)):
+            config["legendReplacedByToggles"] = True
         # An author-chosen palette wins over the built-in one, the same
         # precedent the static ECharts surface already set.
         palette = props.get("palette")
