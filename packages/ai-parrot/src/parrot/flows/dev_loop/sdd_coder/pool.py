@@ -7,10 +7,11 @@ not perform a model probe before the execution's ledger exclusions are known.
 
 from __future__ import annotations
 
-import asyncio
+import hashlib
 import logging
-from typing import Dict, List, Optional, Set
-from uuid import UUID
+from asyncio import Condition
+from typing import Dict, List, Optional, Set, Tuple
+from uuid import UUID, uuid4
 
 from parrot.flows.dev_loop.sdd_coder.models import (
     ExecutionPoolView,
@@ -31,12 +32,41 @@ from parrot.knowledge.wiki.ledger.coder_suspensions import (
 logger = logging.getLogger(__name__)
 
 
+def _effective_key(seat: RosterSeat) -> Optional[ModelKey]:
+    """Compute the exact `ModelKey` for a roster seat.
+
+    Mirrors `RosterProbe._is_excluded`'s native-default normalization
+    (`roster.py`): a native seat's identity is always `("native", model or
+    "haiku")`. Returns `None` for an mcp seat with no configured model --
+    that seat can never be admitted and is excluded from the pool's seat
+    views rather than raising (the empty-model exclusion itself is the
+    probe's job, spec: `model_identity_required`).
+    """
+    if seat.kind == "native":
+        return ModelKey(backend="native", model=seat.model or "haiku")
+    if not seat.model:
+        return None
+    return ModelKey(backend=seat.backend or "", model=seat.model)
+
+
+def _roster_fingerprint(roster: RosterConfig) -> str:
+    """Deterministic, stable fingerprint of a roster's configuration.
+
+    Used to detect `execution_config_mismatch` on resume (a caller reusing an
+    `execution_id` with a roster that has since changed) -- computed once at
+    pool construction, never recomputed from mutable runtime state.
+    """
+    canonical = roster.model_dump_json()
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
+
+
 class ExecutionPool:
     """Per-execution runtime, condition, reservations and views.
 
     Bound immutably to `(execution_id, feature_id, worktree_path)` for its
-    whole lifetime. Owns one asyncio.Condition for admission coordination;
-    never shares mutable state with other pools.
+    whole lifetime. Owns one `asyncio.Condition` for admission coordination;
+    never shares mutable state (seats, rotation, exclusions, cached plan)
+    with any other pool instance.
     """
 
     def __init__(
@@ -50,63 +80,61 @@ class ExecutionPool:
         suspension_store: CoderSuspensionStore,
         initial_exclusions: List[ModelKey],
     ) -> None:
-        """Initialize execution pool with explicit scope and roster.
+        """Initialize one execution's private pool.
 
         Args:
             execution_id: Caller-generated UUID identifying this execution.
             feature_id: Feature this execution operates on.
-            worktree_path: Absolute path to the feature worktree.
-            roster: Original roster configuration (immutable).
-            seats: Effective available seats after probing.
+            worktree_path: Absolute path to the canonical feature worktree.
+            roster: Original roster configuration (read-only; never mutated).
+            seats: Effective seats after probing -- this pool copies the list,
+                it never mutates the caller's.
             suspension_store: Durable suspension history store.
-            initial_exclusions: Models suspended before this execution began.
+            initial_exclusions: Models already suspended (from durable
+                history) before this execution began; immutable for this
+                execution's lifetime -- only `suspend()` adds further,
+                execution-local exclusions on top of these.
         """
-        # Validate execution_id is a proper UUID
-        UUID(execution_id)  # Raises ValueError if invalid
+        UUID(execution_id)  # Raises ValueError if not a valid UUID string.
 
         self._execution_id = execution_id
         self._feature_id = feature_id
         self._worktree_path = worktree_path
-        self._roster = roster
-        self._seats = list(seats)  # Copy to prevent external mutation
+        self._roster_fingerprint = _roster_fingerprint(roster)
+        self._seats: List[RosterSeat] = list(seats)
         self._suspension_store = suspension_store
-        self._initial_exclusions = set(initial_exclusions)
+        self._initial_exclusions: Set[ModelKey] = set(initial_exclusions)
 
-        # Runtime state
-        self._condition = asyncio.Condition()
+        self._condition = Condition()
         self._status: ExecutionStatus = "active"
         self._generation = 0
         self._local_exclusions: Set[ModelKey] = set()
-        self._admitted_attempts: Dict[str, str] = {}  # attempt_uid -> task_id
-        self._busy_seats: Set[ModelKey] = set()  # Currently reserved seats
+        # attempt_uid -> (task_id, ModelKey): the exact reservation `release()`
+        # must free -- an attempt_uid alone does not identify which seat it holds.
+        self._admitted: Dict[str, Tuple[str, ModelKey]] = {}
+        self._busy_seats: Set[ModelKey] = set()
         self._cached_assigner: Optional[ChunkAssigner] = None
         self._fallback_required = False
         self._fallback_reason = ""
         self._persistence_degraded = False
 
-        # Build initial seat views
         self._seat_views: Dict[ModelKey, PoolSeatView] = {}
         for seat in self._seats:
-            key = ModelKey(
-                backend=seat.backend or "native" if seat.kind == "native" else seat.backend or "", model=seat.model
-            )
+            key = _effective_key(seat)
+            if key is None:
+                logger.warning("Seat %r has no configured model; excluded from this pool's admission set", seat.label)
+                continue
+            suspended = key in self._initial_exclusions
             self._seat_views[key] = PoolSeatView(
                 label=seat.label,
                 kind=seat.kind,
                 backend=seat.backend,
                 configured_model=seat.model,
+                resolved_key=key,
                 available=True,
-                suspended=key in self._initial_exclusions,
-                reason="inherited_suspension" if key in self._initial_exclusions else "",
+                suspended=suspended,
+                reason="inherited_suspension" if suspended else "",
             )
-
-        # Apply initial exclusions
-        for key in self._initial_exclusions:
-            if key in self._seat_views:
-                view = self._seat_views[key]
-                view.available = False
-                view.suspended = True
-                view.reason = "inherited_suspension"
 
     @property
     def execution_id(self) -> str:
@@ -120,23 +148,28 @@ class ExecutionPool:
 
     @property
     def worktree_path(self) -> str:
-        """Absolute path to the feature worktree."""
+        """Absolute path to the canonical feature worktree."""
         return self._worktree_path
 
     @property
+    def roster_fingerprint(self) -> str:
+        """Fingerprint of the roster this pool was constructed with (resume validation)."""
+        return self._roster_fingerprint
+
+    @property
     def generation(self) -> int:
-        """Current generation counter, incremented on every suspension."""
+        """Current generation counter; increments on every suspension, invalidating cached plans."""
         return self._generation
 
     def view(self) -> ExecutionPoolView:
-        """Return a snapshot view of the current pool state."""
+        """Return a read-only snapshot of the current pool state."""
         return ExecutionPoolView(
             execution_id=self._execution_id,
             feature_id=self._feature_id,
             worktree_path=self._worktree_path,
             status=self._status,
             generation=self._generation,
-            seats=list(self._seat_views.values()),
+            seats=[view.model_copy() for view in self._seat_views.values()],
             fallback_required=self._fallback_required,
             fallback_reason=self._fallback_reason,
             persisted=not self._persistence_degraded,
@@ -144,15 +177,21 @@ class ExecutionPool:
         )
 
     def snapshot(self) -> ExecutionSnapshot:
-        """Return a durable snapshot for journaling/restoration."""
+        """Return a durable snapshot for journaling/restoration (TASK-3282 owns the filesystem side).
+
+        `native_reservations`/`outstanding_job_ids` are intentionally empty
+        here: this pool tracks MCP admission reservations only -- the engine
+        (out of this task's scope) enriches those two fields from its own
+        native-prep/job bookkeeping before journaling to disk.
+        """
         return ExecutionSnapshot(
             execution_id=self._execution_id,
             feature_id=self._feature_id,
             worktree_path=self._worktree_path,
-            roster_fingerprint="",  # TODO: Implement roster fingerprinting
-            admitted_attempts=self._admitted_attempts.copy(),
-            native_reservations={},  # TODO: Track native reservations
-            outstanding_job_ids=[],  # TODO: Track job IDs
+            roster_fingerprint=self._roster_fingerprint,
+            admitted_attempts={uid: task_id for uid, (task_id, _key) in self._admitted.items()},
+            native_reservations={},
+            outstanding_job_ids=[],
             local_exclusions=list(self._local_exclusions),
             inherited_exclusions=list(self._initial_exclusions),
             status=self._status,
@@ -160,161 +199,147 @@ class ExecutionPool:
         )
 
     async def admit(self, task_id: str, key: ModelKey) -> str:
-        """Reserve a seat for a task attempt, returning the reservation UID.
+        """Reserve `key` for one attempt of `task_id`, returning its reservation UID.
 
-        Admission rejects excluded keys and closed/degraded/recovery states
-        atomically. Busy healthy keys await the condition.
-
-        Args:
-            task_id: The task being attempted.
-            key: The model key to reserve.
-
-        Returns:
-            A unique attempt UID for this reservation.
+        Blocks (releasing the condition) while `key` is busy with a healthy,
+        non-excluded seat. Every wake-up re-checks status/exclusion from
+        scratch -- a key suspended while something waits on it raises
+        `ValueError` instead of looping or hanging forever.
 
         Raises:
-            ValueError: If the pool is closed, degraded, or the key is excluded.
+            ValueError: the pool is closed/recovering, `key` is excluded
+                (initial or local), unknown to this pool, or probe-failed.
         """
         async with self._condition:
-            # Check pool state
-            if self._status in ("closed", "recovery_required"):
-                raise ValueError(f"Cannot admit to {self._status} pool")
-
-            # Check exclusions
-            if key in self._initial_exclusions or key in self._local_exclusions:
-                raise ValueError(f"Model {key} is excluded from this execution")
-
-            # Check seat availability
-            if key not in self._seat_views:
-                raise ValueError(f"Model {key} not found in pool seats")
-
-            seat_view = self._seat_views[key]
-            if not seat_view.available or seat_view.suspended or seat_view.probe_unavailable:
-                raise ValueError(f"Model {key} is not available")
-
-            # Wait if seat is busy
-            while key in self._busy_seats:
+            while True:
+                if self._status in ("closed", "recovery_required"):
+                    raise ValueError(f"cannot admit to a {self._status!r} execution pool")
+                if key in self._initial_exclusions or key in self._local_exclusions:
+                    raise ValueError(f"model {key.backend}/{key.model} is excluded from this execution")
+                seat_view = self._seat_views.get(key)
+                if seat_view is None:
+                    raise ValueError(f"model {key.backend}/{key.model} is not a seat of this pool")
+                if seat_view.probe_unavailable:
+                    raise ValueError(f"model {key.backend}/{key.model} failed its probe and is unavailable")
+                if key not in self._busy_seats:
+                    break
                 await self._condition.wait()
 
-            # Reserve the seat
-            attempt_uid = str(UUID(int=hash((self._execution_id, task_id, key.backend, key.model)) & (1 << 128) - 1))
-            self._admitted_attempts[attempt_uid] = task_id
+            attempt_uid = uuid4().hex
+            self._admitted[attempt_uid] = (task_id, key)
             self._busy_seats.add(key)
-
-            # Update seat view
             seat_view.busy = True
-
             return attempt_uid
 
     async def release(self, attempt_uid: str) -> None:
-        """Release a completed attempt reservation and wake waiters.
+        """Release a settled attempt's reservation and wake every waiter.
 
-        Args:
-            attempt_uid: The reservation to release.
+        Unknown `attempt_uid` is a no-op (logged): a duplicate/late release
+        must never raise into an already-finished caller.
         """
         async with self._condition:
-            if attempt_uid not in self._admitted_attempts:
-                logger.warning("Attempt %s not found in admitted attempts", attempt_uid)
+            entry = self._admitted.pop(attempt_uid, None)
+            if entry is None:
+                logger.warning("release(): unknown attempt_uid=%s (already released or never admitted)", attempt_uid)
                 return
-
-            self._admitted_attempts.pop(attempt_uid, None)
-
-            # Find the corresponding seat and release it
-            for key, seat_view in self._seat_views.items():
-                if seat_view.busy and key in self._busy_seats:
-                    self._busy_seats.discard(key)
-                    seat_view.busy = False
-                    break
-
-            # Wake all waiters
+            _task_id, key = entry
+            self._busy_seats.discard(key)
+            seat_view = self._seat_views.get(key)
+            if seat_view is not None:
+                seat_view.busy = False
             self._condition.notify_all()
 
     async def suspend(self, record: SuspensionRecord) -> SuspensionReceipt:
-        """Suspend models locally and persist the incident.
+        """Exclude every alias in `record.blocked_keys` for the rest of this execution, then persist.
 
-        Suspension must not release a live reservation. All aliases of the
-        blocked keys are excluded from future admission in this execution.
-
-        Args:
-            record: The suspension incident to record.
-
-        Returns:
-            The persistence receipt, with degraded status if append failed.
+        Local state changes (and the `generation` bump that invalidates any
+        cached plan) happen under the condition, BEFORE the durable append --
+        no later admission can select a just-suspended model even if the
+        ledger write is slow. Disk I/O never holds the condition. Does not
+        release a live reservation: a suspended-but-busy seat keeps running
+        until its own `release()`.
         """
         async with self._condition:
-            # Add to local exclusions
             for key in record.blocked_keys:
                 self._local_exclusions.add(key)
-                if key in self._seat_views:
-                    seat_view = self._seat_views[key]
+                seat_view = self._seat_views.get(key)
+                if seat_view is not None:
                     seat_view.available = False
                     seat_view.suspended = True
                     seat_view.reason = record.reason
                     seat_view.suspension_id = record.suspension_id
-                    # Format expires_at as ISO string
                     seat_view.suspended_until = record.expires_at.isoformat()
-
-            # Increment generation to invalidate cached plans
             self._generation += 1
             self._cached_assigner = None
-
-            # Persist the suspension (off the condition lock)
-            try:
-                receipt = await self._suspension_store.record(record)
-                receipt.pool_generation = self._generation
-            except Exception as exc:
-                logger.error("Failed to persist suspension: %s", exc, exc_info=True)
-                self._persistence_degraded = True
-                # Create a minimal receipt for local use
-                receipt = SuspensionReceipt(
-                    suspension_id=record.suspension_id,
-                    execution_id=record.execution_id,
-                    blocked_keys=record.blocked_keys,
-                    persisted=False,
-                    expires_at=record.expires_at,
-                    pool_generation=self._generation,
-                )
-
-            # Wake all waiters since eligibility changed
+            # Wake every admit() waiter now: eligibility already changed under
+            # this lock, so a waiter for a just-suspended key raises instead
+            # of looping forever waiting for a `release()` that would not help.
             self._condition.notify_all()
 
-            return receipt
+        persisted = True
+        try:
+            receipt = await self._suspension_store.record(record)
+        except Exception as exc:  # noqa: BLE001 -- persistence failure must be explicit, never silently OK
+            logger.error("Failed to persist suspension %s: %s", record.suspension_id, exc, exc_info=True)
+            persisted = False
+            receipt = SuspensionReceipt(
+                suspension_id=record.suspension_id,
+                execution_id=record.execution_id,
+                blocked_keys=record.blocked_keys,
+                persisted=False,
+                expires_at=record.expires_at,
+            )
 
-    def assigner(self) -> ChunkAssigner:
-        """Get or create a chunk assigner for eligible seats."""
-        if self._cached_assigner is None:
-            # Filter seats to only those that are available and not suspended
-            eligible_seats = []
-            for seat in self._seats:
-                key = ModelKey(
-                    backend=seat.backend or "native" if seat.kind == "native" else seat.backend or "", model=seat.model
-                )
-                if key not in self._initial_exclusions and key not in self._local_exclusions:
-                    seat_view = self._seat_views.get(key)
-                    if seat_view and seat_view.available and not seat_view.suspended:
-                        eligible_seats.append(seat)
+        async with self._condition:
+            receipt.pool_generation = self._generation
+            if not persisted:
+                self._persistence_degraded = True
+        return receipt
 
-            self._cached_assigner = ChunkAssigner(eligible_seats)
+    def assigner(self) -> Optional[ChunkAssigner]:
+        """Return the cached `ChunkAssigner` over currently eligible seats, or `None` when exhausted.
+
+        Never constructs a `ChunkAssigner` over an empty seat list (its
+        constructor rejects that) -- an exhausted/all-suspended-or-busy pool
+        is represented as `None`, not as an empty assigner or a raised error.
+        """
+        if self._cached_assigner is not None:
+            return self._cached_assigner
+        eligible = [
+            seat
+            for seat in self._seats
+            for key in (_effective_key(seat),)
+            if key is not None
+            and key not in self._busy_seats
+            and (view := self._seat_views.get(key)) is not None
+            and view.available
+            and not view.suspended
+            and not view.probe_unavailable
+        ]
+        if not eligible:
+            return None
+        self._cached_assigner = ChunkAssigner(eligible)
         return self._cached_assigner
 
-    def close(self) -> None:
-        """Mark the pool as closed, preventing new admissions."""
-        with self._condition:
+    def is_exhausted(self) -> bool:
+        """True when no seat remains that could ever be selected right now.
+
+        A busy-but-healthy seat is NOT exhausted -- it becomes eligible again
+        once its holder releases; only suspended/unavailable/probe-failed
+        seats count against eligibility here.
+        """
+        return not any(
+            view.available and not view.suspended and not view.probe_unavailable for view in self._seat_views.values()
+        )
+
+    async def close(self) -> None:
+        """Mark the pool closed: no new admissions; wakes every waiter to fail fast instead of hanging."""
+        async with self._condition:
             self._status = "closed"
             self._condition.notify_all()
 
-    def mark_recovery_required(self) -> None:
-        """Mark the pool as requiring recovery."""
-        with self._condition:
+    async def mark_recovery_required(self) -> None:
+        """Mark the pool as requiring reconciliation after a restart; wakes waiters to fail fast."""
+        async with self._condition:
             self._status = "recovery_required"
             self._condition.notify_all()
-
-    def is_exhausted(self) -> bool:
-        """Check if all seats are exhausted (no available seats)."""
-        with self._condition:
-            available_count = sum(
-                1
-                for view in self._seat_views.values()
-                if view.available and not view.suspended and not view.probe_unavailable
-            )
-            return available_count == 0 and not self._fallback_required

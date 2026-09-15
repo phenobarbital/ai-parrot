@@ -134,16 +134,26 @@ class RosterProbe:
             primary_exception_class = ""
             primary_reason = "model excluded"
         else:
-            # Primary is not excluded; probe it
+            # Primary is not excluded; probe it. `primary_reason`/`primary_exception_class`
+            # are initialized here (not only inside `except`) because a smoke call that
+            # simply *returns* False (no exception) must not leave them referenced-before-
+            # assignment below -- that previously surfaced as an opaque UnboundLocalError
+            # wrapped by `probe()`'s catch-all, masking every ordinary probe failure.
             primary_uid = str(uuid.uuid4())
             primary_start = time.monotonic()
             primary_observed_at = datetime.now(timezone.utc).isoformat()
+            primary_reason = ""
+            primary_exception_class = ""
             try:
                 ok = await asyncio.wait_for(self._smoke(seat, seat.model), timeout=self._smoke_timeout_s)
             except Exception as exc:  # noqa: BLE001 — smoke failures are reported, not raised
                 ok = False
-                primary_reason = str(exc)
                 primary_exception_class = type(exc).__name__
+                detail = str(exc)
+                # Some exceptions (notably a bare `asyncio.TimeoutError`) stringify to "" --
+                # always fall back to the exception's class name so the reason is never
+                # silently empty (e.g. still surfaces "TimeoutError" for a smoke timeout).
+                primary_reason = f"{primary_exception_class}: {detail}" if detail else primary_exception_class
             primary_duration_s = time.monotonic() - primary_start
             primary_probe_uid = primary_uid
 
