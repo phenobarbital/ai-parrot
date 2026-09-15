@@ -71,6 +71,8 @@ class AttemptUsageRow(BaseModel):
     turns_with_unknown_usage: int = 0
     calibration_eligible: bool = False
     turn_series: List[Tuple[int, Optional[int], Optional[int]]] = Field(default_factory=list)
+    execution_id: str = Field("", max_length=64)
+    """FEAT-559: the execution this attempt ran under. Empty for historical records."""
 
 
 class OutcomeRow(BaseModel):
@@ -87,6 +89,8 @@ class OutcomeRow(BaseModel):
     outcome: str = Field(..., max_length=32)
     conflict_file_count: int = 0
     unexpected_file_count: int = 0
+    execution_id: str = Field("", max_length=64)
+    """FEAT-559: the execution this outcome belongs to. Empty for historical records."""
 
 
 def feature_file_name(feature_id: str) -> str:
@@ -240,6 +244,7 @@ def build_attempt_row(
         turns_with_unknown_usage=turns_with_unknown_usage,
         calibration_eligible=calibration_eligible,
         turn_series=getattr(record, "turn_series", []),
+        execution_id=getattr(record, "execution_id", ""),
     )
 
 
