@@ -216,33 +216,36 @@ class TestShouldFanOut:
 
     def test_exclusive_tasks_do_not_fan_out(self):
         """Exclusive tasks (parallel=False) should not fan out even with multiple tasks."""
+
         def _exclusive_task_ref(task_id: str) -> TaskRef:
             return TaskRef(id=task_id, status="pending", depends_on=[], parallel=False)
-            
+
         wave = [_exclusive_task_ref("TASK-1"), _exclusive_task_ref("TASK-2")]
         pool_cfg = DevAgentPoolConfig(agents=[DevAgentSpec(agent="claude-code", count=2)])
         assert should_fan_out(wave, pool_cfg) is False
 
     def test_mixed_exclusive_and_parallel_tasks_fan_out(self):
         """Mixed exclusive and parallel tasks should fan out if there are enough parallel tasks."""
+
         def _exclusive_task_ref(task_id: str) -> TaskRef:
             return TaskRef(id=task_id, status="pending", depends_on=[], parallel=False)
-            
+
         def _parallel_task_ref(task_id: str) -> TaskRef:
             return TaskRef(id=task_id, status="pending", depends_on=[], parallel=True)
-            
+
         wave = [_exclusive_task_ref("TASK-1"), _parallel_task_ref("TASK-2"), _parallel_task_ref("TASK-3")]
         pool_cfg = DevAgentPoolConfig(agents=[DevAgentSpec(agent="claude-code", count=2)])
         assert should_fan_out(wave, pool_cfg) is True
 
     def test_single_parallel_task_with_exclusive_does_not_fan_out(self):
         """With only one parallel task and some exclusive tasks, should not fan out."""
+
         def _exclusive_task_ref(task_id: str) -> TaskRef:
             return TaskRef(id=task_id, status="pending", depends_on=[], parallel=False)
-            
+
         def _parallel_task_ref(task_id: str) -> TaskRef:
             return TaskRef(id=task_id, status="pending", depends_on=[], parallel=True)
-            
+
         wave = [_exclusive_task_ref("TASK-1"), _parallel_task_ref("TASK-2")]
         pool_cfg = DevAgentPoolConfig(agents=[DevAgentSpec(agent="claude-code", count=2)])
         assert should_fan_out(wave, pool_cfg) is False
@@ -693,7 +696,7 @@ class TestSingleAgentHonoursDeclaredAgent:
 @pytest.mark.asyncio
 class TestExclusiveTasks:
     """Tests for exclusive task dispatch behavior."""
-    
+
     async def test_exclusive_tasks_run_alone(self, tmp_path):
         """Test that exclusive tasks (parallel=False) are dispatched alone."""
         _write_index(
@@ -708,16 +711,16 @@ class TestExclusiveTasks:
             ],
         )
         research = _research(str(tmp_path), feat_id="FEAT-560")
-        
+
         # Track calls to verify dispatch order
         calls = []
-        
+
         class TrackingDispatcher(FakeDispatcher):
             async def dispatch(self, *, brief, **kwargs):
                 task_id = getattr(brief, "task_id", None)
                 calls.append(task_id)
                 return await super().dispatch(brief=brief, **kwargs)
-        
+
         d1, d2, d3, d4 = TrackingDispatcher(), TrackingDispatcher(), TrackingDispatcher(), TrackingDispatcher()
         pool_config = DevAgentPoolConfig(agents=[DevAgentSpec(agent="claude-code", count=2)])
         node = DevelopmentNode(
@@ -731,7 +734,7 @@ class TestExclusiveTasks:
 
         # Should have dispatched 4 tasks total
         assert set(result.files_changed) == {"TASK-1.py", "TASK-2.py", "TASK-3.py", "TASK-4.py"}
-        
+
         # Exclusive tasks should be dispatched one at a time
         # The order should be: TASK-1 (exclusive), TASK-2 (exclusive), then TASK-3 & TASK-4 (parallel)
         # But since we're tracking all dispatchers, we need to check the actual calls
@@ -742,20 +745,22 @@ class TestExclusiveTasks:
         """Test that exclusive tasks are properly identified when index has parallel_semantics: exclusive."""
         index_dir = tmp_path / "sdd" / "tasks" / "index"
         index_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # Write index with parallel_semantics header
         (index_dir / "exclusive-test.json").write_text(
-            json.dumps({
-                "feature": "exclusive-test",
-                "feature_id": "FEAT-560",
-                "parallel_semantics": "exclusive",
-                "tasks": [
-                    {"id": "TASK-1", "status": "pending", "depends_on": [], "parallel": False},
-                    {"id": "TASK-2", "status": "pending", "depends_on": [], "parallel": True},
-                ]
-            })
+            json.dumps(
+                {
+                    "feature": "exclusive-test",
+                    "feature_id": "FEAT-560",
+                    "parallel_semantics": "exclusive",
+                    "tasks": [
+                        {"id": "TASK-1", "status": "pending", "depends_on": [], "parallel": False},
+                        {"id": "TASK-2", "status": "pending", "depends_on": [], "parallel": True},
+                    ],
+                }
+            )
         )
-        
+
         research = _research(str(tmp_path), feat_id="FEAT-560")
         d1, d2 = FakeDispatcher(), FakeDispatcher()
         pool_config = DevAgentPoolConfig(agents=[DevAgentSpec(agent="claude-code", count=2)])

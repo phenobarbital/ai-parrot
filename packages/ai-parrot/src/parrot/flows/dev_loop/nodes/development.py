@@ -95,7 +95,7 @@ def should_fan_out(wave: List[TaskRef], pool_cfg: DevAgentPoolConfig) -> bool:
         out could actually run tasks in parallel.
     """
     from parrot.flows.dev_loop.task_scheduler import parallel_width
-    
+
     return parallel_width(wave) >= 2 and sum(spec.count for spec in pool_cfg.agents) > 1
 
 
@@ -1386,7 +1386,7 @@ class DevelopmentNode(DevLoopNode):
             RuntimeError: Every dispatchable task ended up incomplete.
         """
         from parrot.flows.dev_loop.task_scheduler import partition_wave
-        
+
         pool = DevAgentPool.build(pool_cfg, self._dispatcher_builder, self._pool_max)
         self._propagate_usage_wiring(pool)
         # FEAT-486 (spec G4): make the deployment visible. `DevAgentPool.
@@ -1487,7 +1487,7 @@ class DevelopmentNode(DevLoopNode):
                 for batch in batches:
                     wave_number += 1
                     is_exclusive = len(batch) == 1 and not batch[0].parallel
-                    
+
                     # Log exclusive rounds differently
                     if is_exclusive:
                         self.logger.info(
@@ -1515,7 +1515,11 @@ class DevelopmentNode(DevLoopNode):
                             shared,
                             "working",
                             f"Wave {wave_number}: {len(batch)} task(s) on {min(len(batch), len(pool.workers))} seat(s)"
-                            + (f" · {len(scheduler.pending()) - len(batch)} still pending" if scheduler.pending() else ""),
+                            + (
+                                f" · {len(scheduler.pending()) - len(batch)} still pending"
+                                if scheduler.pending()
+                                else ""
+                            ),
                             ", ".join(self._task_label(t) for t in batch),
                         )
 
@@ -1537,7 +1541,8 @@ class DevelopmentNode(DevLoopNode):
                     # Log completion with appropriate wording
                     if is_exclusive:
                         self.logger.info(
-                            "%s wave %d (exclusive %s) complete: %d completed (%s), %d failed (%s); " "%d task(s) still pending, %d skipped",
+                            "%s wave %d (exclusive %s) complete: %d completed (%s), %d failed (%s); "
+                            "%d task(s) still pending, %d skipped",
                             research.feat_id,
                             wave_number,
                             batch[0].id,
@@ -1550,7 +1555,8 @@ class DevelopmentNode(DevLoopNode):
                         )
                     else:
                         self.logger.info(
-                            "%s wave %d complete: %d completed (%s), %d failed (%s); " "%d task(s) still pending, %d skipped",
+                            "%s wave %d complete: %d completed (%s), %d failed (%s); "
+                            "%d task(s) still pending, %d skipped",
                             research.feat_id,
                             wave_number,
                             len(result.completed),
