@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-15T22:20:17.343873+00:00",
-  "completed_at": null,
+  "completed_at": "2026-09-15T23:02:40+00:00",
   "parallel_semantics": "exclusive",
   "tasks": [
     {
@@ -34,7 +34,7 @@
       "feature_id": "FEAT-560",
       "feature": "dev-loop-pool-exclusive-tasks",
       "spec": "sdd/specs/dev-loop-pool-exclusive-tasks.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -45,8 +45,8 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": "2026-09-15T22:35:11+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3270-roster-shared-wave-partition.md"
+      "completed_at": "2026-09-15T23:02:40+00:00",
+      "file": "sdd/tasks/completed/TASK-3270-roster-shared-wave-partition.md"
     },
     {
       "id": "TASK-3271",
@@ -55,7 +55,7 @@
       "feature_id": "FEAT-560",
       "feature": "dev-loop-pool-exclusive-tasks",
       "spec": "sdd/specs/dev-loop-pool-exclusive-tasks.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -66,8 +66,8 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": "2026-09-15T22:35:11+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3271-pool-exclusive-dispatch-rounds.md"
+      "completed_at": "2026-09-15T23:02:40+00:00",
+      "file": "sdd/tasks/completed/TASK-3271-pool-exclusive-dispatch-rounds.md"
     },
     {
       "id": "TASK-3272",
@@ -76,7 +76,7 @@
       "feature_id": "FEAT-560",
       "feature": "dev-loop-pool-exclusive-tasks",
       "spec": "sdd/specs/dev-loop-pool-exclusive-tasks.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -87,8 +87,8 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": "2026-09-15T22:35:11+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3272-planner-parallel-width-sizing.md"
+      "completed_at": "2026-09-15T23:02:40+00:00",
+      "file": "sdd/tasks/completed/TASK-3272-planner-parallel-width-sizing.md"
     },
     {
       "id": "TASK-3273",

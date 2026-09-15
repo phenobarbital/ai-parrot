@@ -108,4 +108,32 @@ ruff check packages/ai-parrot/src/parrot/flows/dev_loop/nodes/planner.py package
 
 ## Completion Note
 
-Pending implementation.
+`PlannerNode._resolve_pool` now imports `parallel_width` from
+`task_scheduler.py` (TASK-3269) and replaces `max(1, len(wave))` with
+`max(1, parallel_width(wave))`, preserving the `development_pool_max`
+cap and brief-override precedence. Docstring updated to describe
+parallel width of wave 1.
+
+Code review: 1 confirmed defect, fixed in commit
+`73a6c6d72366747a4a42d013bb257bf3cd5fc291`. The 3 new pool-sizing tests
+(`test_pool_sizing_exclusive_only`, `test_pool_sizing_mixed_wave`,
+`test_pool_sizing_exclusive_with_cap`) wrote `"parallel": false` via the
+legacy `_write_index` helper, which never emits the required
+`"parallel_semantics": "exclusive"` header, so every task defaulted
+back to `parallel=True`. 2 of the 3 failed outright when actually run
+(`exclusive_only` expected count==1, got 2; `mixed_wave` expected
+count==2, got 3); the cap test passed by coincidence (the cap masked
+the wrong width). The delivery's own summary noted tests could not be
+run locally (missing `.so` in the sub-worktree), so this went
+unverified before merge. Added an `exclusive: bool` kwarg to
+`_write_index` and set it on the 3 call sites that need real exclusive
+semantics. Feedback recorded:
+`coder-feedback:bd9fae3f475c60d38b590a3e`.
+
+Verification: re-ran `test_planner_node.py` — all pass (was 2 failing).
+Residual ruff findings from the engine's lint pass
+(`planner.py:162` ASYNC240, `planner.py:375` B905) are pre-existing
+style debt outside this task's diff scope; left for `/sdd-done`'s
+feature-wide lint pass per the fallback loop's own rule.
+
+Seat: minimax · Backend: nova · Model: minimax.minimax-m2.5 · Attempts: 1 · Duration: 218.2s · Tokens: 1085760/7117
