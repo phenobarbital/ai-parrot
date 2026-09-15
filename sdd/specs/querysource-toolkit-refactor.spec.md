@@ -9,7 +9,7 @@ base_branch: dev
 **Feature ID**: FEAT-558
 **Date**: 2026-09-15
 **Author**: Jesus Lara (drafted with Claude)
-**Status**: draft
+**Status**: approved
 **Target version**: ai-parrot-tools 1.1.0 (hard cut: `QSourceTool` removed)
 **Proposal**: `sdd/proposals/querysource-toolkit-refactor.proposal.md` (accepted 2026-09-15; research audit `sdd/state/FEAT-558/`)
 
@@ -49,7 +49,8 @@ toolkit that can only see and execute — and, when explicitly allowed, register
   the tenant.
 - **G8 Tenancy.** Every tool is restrictable to a `program_slug` allowlist, enforced by the toolkit before any
   QuerySource execution, including every slug referenced inside a pipeline; restricted instances fail closed on raw
-  SQL and on non-slug sources.
+  SQL. `files` / `sources` sections (S3, SharePoint, Airtable, Smartsheet, …) are not program-scoped and stay
+  available unless the operator sets `allow_external_sources=False` (§8 Q1).
 - **G9 Hard cut.** `QSourceTool` is deleted and the tool registry regenerated with no stale aliases.
 
 ### Non-Goals (explicitly out of scope)
@@ -92,8 +93,9 @@ unrestricted (resolved U4). When a list is given the instance is *restricted*: `
 `program_slug ∈ programs`; `describe_slug`, `execute_slug`, `run_multiquery(slug=…)` and `save_multiquery` load the
 `QueryModel` row **at call time** (no positive authorisation cache — design research S2) and raise
 `TenantDeniedError` when `program_slug ∉ programs`; pipelines are normalised and every `queries[*]` node must be a
-`{"slug": …}` node whose row passes the same check; inline `{"query": …}` / `{"raw_query": …}` nodes, `files` and
-`sources` sections are rejected (fail closed, resolved U3). Raw SQL execution is never exposed as a tool argument;
+`{"slug": …}` node whose row passes the same check; inline `{"query": …}` / `{"raw_query": …}` nodes are rejected
+(fail closed, resolved U3). `files` and `sources` sections are **accepted** for restricted instances because they are
+not program-scoped (resolved §8 Q1); `allow_external_sources: bool = True` lets an operator switch them off. Raw SQL execution is never exposed as a tool argument;
 inline pipeline nodes are additionally gated by `allow_raw_sql: bool = False` for **unrestricted** instances (design
 research S3, folded without contradicting U4). Destination steps inside `Output` (`tableOutput`, `dwh`, `s3`,
 `sharepoint`, classified via `ComponentRegistry` category `Destinations`) are writes and require `allow_write=True`.
@@ -105,6 +107,9 @@ allowlists; invalid entries are **rejected up front**, never silently dropped �
 `grouping`, `querylimit = min(limit or max_rows, max_rows)` pushed into QS (S8), `_offset`, `refresh`. Toolkit-level
 `forced_conditions` are merged last (the `permanent_filter` precedence of `QuerySlugSource`). A startup guard compares
 `querysource.version.__version__` with `DIALECT_VERIFIED_AGAINST` and logs a warning on a minor/major mismatch (S11).
+The deployment's `@variables` (resolved §8 Q2) are loaded the way `querysource.services` does — `from
+settings.settings import QUERYSOURCE_VARIABLES` (`services.py:29-33`), falling back to the already-populated
+`querysource.parsers.QS_VARIABLES` — and rendered in `DialectReference.variables` (name → first docstring line).
 
 **Results.** `ExecutionResult` carries `rows` (≤ `max_rows`, JSON-safe: datetimes ISO-8601, NaN → `None`),
 `returned_rows`, `total_rows` (when the frame was larger than the slice), `truncated`, `columns`, `applied_conditions`
@@ -234,7 +239,8 @@ class DialectReference(BaseModel):
     operators_list_form: list[str]                               # ('<','>','>=','<=','<>','!=','IS NOT','IS')
     operators_dict_form: list[str]                               # ('>=','<=','<>','!=','<','>')
     examples: list[dict[str, Any]]
-    notes: list[str]                                             # @variables are deployment-defined, unsafe keys dropped by parser, …
+    variables: dict[str, str] = Field(default_factory=dict)      # '@name' → one-line doc, from the deployment's QUERYSOURCE_VARIABLES (§8 Q2)
+    notes: list[str]                                             # unsafe keys dropped by parser, …
 ```
 
 ### New Public Interfaces
@@ -252,6 +258,7 @@ class QuerysourceToolkit(AbstractToolkit):
         programs: list[str] | None = None,       # tenant allowlist; None = unrestricted (U4)
         allow_write: bool = False,               # enables save_multiquery + destination steps (U2)
         allow_raw_sql: bool = False,             # inline query nodes, unrestricted instances only (S3)
+        allow_external_sources: bool = True,     # files / sources sections, also for restricted instances (§8 Q1)
         include_sql: bool = True,                # describe_slug returns query_raw (user requirement G2)
         max_rows: int = 200,
         forced_conditions: dict[str, Any] | None = None,
@@ -365,6 +372,10 @@ class QuerysourceToolkit(AbstractToolkit):
       with `forced` merged LAST (permanent_filter precedence, query_slug.py:143). Omits empty sections."""
   def check_version_compatibility(installed: str) -> str | None:
       """Return a warning string when installed major.minor != DIALECT_VERIFIED_AGAINST major.minor, else None (S11)."""
+  def load_variables() -> dict[str, str]:
+      """Return {'@name': doc} for the deployment's variable functions: try `from settings.settings import
+      QUERYSOURCE_VARIABLES` (dotted-path map, resolved with importlib exactly as querysource/services.py:29-33,94-96),
+      else `querysource.parsers.QS_VARIABLES` (parsers/__init__.py:6). Never raises; empty dict when neither exists."""
   ```
 
 ### Module 4: Slug catalog, tenant guard & pipeline normaliser
@@ -465,7 +476,8 @@ class QuerysourceToolkit(AbstractToolkit):
 
       async def get_dialect_reference(self) -> DialectReference:
           """Return the QuerySource conditions dialect: which keys are options, which become placeholders, which
-          become WHERE filters, the WHERE value grammar with examples. Call this before building conditions."""
+          become WHERE filters, the WHERE value grammar with examples, and the '@variables' this deployment
+          accepts as values (e.g. '@today'). Call this before building conditions."""
       async def list_slugs(self, search: str | None = None, program: str | None = None, limit: int = 50) -> list[SlugSummary]:
           """List query-slugs visible to this toolkit (allowlist-filtered). `search` matches slug or description."""
       async def describe_slug(self, slug: str, dry_run: bool = False) -> SlugDetail:
@@ -495,8 +507,9 @@ class QuerysourceToolkit(AbstractToolkit):
       async def validate_pipeline(self, pipeline: dict[str, Any]) -> PipelineValidation:
           """Validate a MultiQuery pipeline: structural rules via ComponentRegistry.validate_pipeline (registry.py:332),
           plus this toolkit's policy: every queries[*] node must reference a slug the instance may execute; raw
-          nodes / files / sources are issues when restricted (or when allow_raw_sql is False); destination steps
-          are issues when allow_write is False. Never executes anything."""
+          nodes are issues when restricted (or when allow_raw_sql is False); files / sources sections are issues
+          only when allow_external_sources is False; destination steps are issues when allow_write is False.
+          Never executes anything."""
       async def run_multiquery(self, pipeline: dict[str, Any] | None = None, slug: str | None = None,
                                conditions: dict[str, Any] | None = None) -> MultiQueryResult:
           """Run a pipeline inline (pipeline=) or a saved multi-query slug (slug=). validate_pipeline() must pass
@@ -543,6 +556,7 @@ class QuerysourceToolkit(AbstractToolkit):
 | `test_validate_filter_grammar` | M3 | accepts scalar / `!v` / list IN / `[op,v]` / `{op:v}` / BETWEEN / null forms; rejects unsafe key, unknown operator, injected BETWEEN |
 | `test_dialect_reference_matches_pxd` | M3 | every option key in `OPTION_KEYS` appears as an attribute/extractor in the installed `parsers/abstract.pxd` (skipped when querysource missing) |
 | `test_version_guard` | M3 | `check_version_compatibility("4.6.0")` warns, `"4.5.12"` does not |
+| `test_load_variables_sources` | M3 | patched `settings.settings.QUERYSOURCE_VARIABLES` → names resolved; absent module → falls back to `QS_VARIABLES`; both absent → `{}` |
 | `test_catalog_get_uses_per_call_connection` | M4 | fake `AsyncDB` asserts `QueryModel.get(query_slug=..., _connection=conn)` receives the context-managed connection |
 | `test_tenant_guard_denies_other_program` | M4 | restricted `["pokemon"]` + row `program_slug="epson"` → `TenantDeniedError` |
 | `test_tenant_guard_unrestricted` | M4 | `programs=None` allows any program |
@@ -557,7 +571,7 @@ class QuerysourceToolkit(AbstractToolkit):
 | `test_execute_slug_denied_before_qs` | M5 | restricted instance: `QS` never constructed for a foreign slug |
 | `test_frame_to_result_json_safe` | M5 | datetime → ISO string, NaN → None, numpy ints → int, `truncated`/`total_rows` correct |
 | `test_list_components_cached_and_filtered` | M6 | fake registry called once across two calls; `category` filter applied |
-| `test_validate_pipeline_policy` | M6 | restricted: raw node / files / sources → issues; unrestricted + `allow_raw_sql=False`: raw node → issue; destination step without `allow_write` → issue |
+| `test_validate_pipeline_policy` | M6 | restricted: raw node → issue, files / sources → no issue; `allow_external_sources=False`: files / sources → issue; unrestricted + `allow_raw_sql=False`: raw node → issue; destination step without `allow_write` → issue |
 | `test_run_multiquery_walks_slugs` | M6 | every slug node is tenant-checked before `MultiQS` is constructed; timeout wraps the call |
 | `test_save_multiquery_gated` | M6 | without `allow_write` the tool is absent and direct call raises `WriteDisabledError`; with it, `QueryModel` insert receives `query_raw=json`, `program_slug` forced |
 | `test_registry_has_no_stale_qsource_keys` | M7 | `TOOL_REGISTRY` contains `querysource` and neither `q_source` nor `qsource`; `parrot_tools.qsource` does not import |
@@ -598,12 +612,13 @@ def toolkit_factory(patched_qs):
 - [ ] `QuerysourceToolkit().list_tool_names()` returns exactly `qs_get_dialect_reference, qs_list_slugs, qs_describe_slug, qs_execute_slug, qs_list_components, qs_validate_pipeline, qs_run_multiquery`; with `allow_write=True` also `qs_save_multiquery`, marked `requires_confirmation`.
 - [ ] `qs_get_dialect_reference` returns `verified_against == "4.5.11"` and documents every option key, the placeholder-vs-WHERE rule, both operator allowlists, `BETWEEN`/`null`/`!` forms and at least three worked examples, one of them `{"firstdate": "2026-08-09", "lastdate": "2026-08-15"}` on `epson_field_activity`.
 - [ ] `execute_slug` builds `conditions` exactly as `build_conditions()` specifies; `querylimit` never exceeds `max_rows`; invalid placeholders/filters raise `InvalidConditionsError` before `QS` is constructed.
-- [ ] With `programs=["pokemon"]`: a foreign slug raises `TenantDeniedError` from `describe_slug`, `execute_slug`, `run_multiquery` and `save_multiquery` **before** any `QS`/`MultiQS` object is created; `list_slugs` returns only `pokemon` rows; pipelines with raw nodes, `files` or `sources` are rejected; authorisation is re-read from `QueryModel` on every call (no positive cache).
+- [ ] With `programs=["pokemon"]`: a foreign slug raises `TenantDeniedError` from `describe_slug`, `execute_slug`, `run_multiquery` and `save_multiquery` **before** any `QS`/`MultiQS` object is created; `list_slugs` returns only `pokemon` rows; pipelines with raw nodes are rejected while `files` / `sources` sections pass (rejected only when `allow_external_sources=False`); authorisation is re-read from `QueryModel` on every call (no positive cache).
 - [ ] With `programs=None` and `allow_raw_sql=False`, inline `{"query": …}` pipeline nodes are rejected; with `allow_raw_sql=True` they pass validation.
 - [ ] Destination steps (`Destinations` category) in `Output` are rejected unless `allow_write=True`.
 - [ ] `save_multiquery` is absent from `get_tools()` when `allow_write=False`; when enabled it validates first, forces `program_slug`, and refuses to overwrite a slug owned by another program.
 - [ ] `describe_slug` never returns `params`, `attributes`, `dwh_info`, `dwh_scheduler`, `cache_options`, `source`; returns `sql` only when `include_sql=True`; labels multi-query slugs and returns their parsed pipeline.
 - [ ] Empty results yield `status="empty"` (no exception); results are JSON-serialisable (`json.dumps` succeeds) and carry `returned_rows`, `total_rows`, `truncated`, `columns`.
+- [ ] `qs_get_dialect_reference().variables` lists the deployment's `QUERYSOURCE_VARIABLES` names (empty, without error, when the `settings` module is absent).
 - [ ] `list_components` output for `Concat` equals the shape in the proposal (`name, category, description, usage, attributes, json_schema, example, icon`).
 - [ ] `packages/ai-parrot-tools/src/parrot_tools/qsource.py` is deleted; `TOOL_REGISTRY` has `querysource` and no `q_source`/`qsource`; `python scripts/generate_tool_registry.py --check` exits 0; `tests/test_imports_integrity.py` passes.
 - [ ] `packages/ai-parrot-tools/pyproject.toml` `db` extra requires `querysource>=4.5.11`; importing the toolkit with a different minor logs a warning and does not fail.
@@ -783,7 +798,7 @@ TOOL_REGISTRY: dict[str, str]                                          # line 13
 - **Redaction**: `QueryModel` rows carry `source`, `params`, `attributes`, `dwh_info`, `cache_options` that may embed connection details; `SlugDetail` never includes them (S10). `include_sql` defaults to `True` because explaining the query is a stated requirement (G2); operators may set it to `False`.
 - **Registry generator preserves unknown entries** (`generate_tool_registry.py:296-298`): removing `qsource.py` without deleting the `q_source`/`qsource` keys leaves dead aliases that `test_imports_integrity.py` will catch — delete them explicitly (M7).
 - **Dialect drift**: reference verified against tag `4.5.11` (identical to `dev` for both parser files); `check_version_compatibility` warns on minor/major mismatch; `test_dialect_pxd_surface` catches renamed extractors.
-- **`@variables` are deployment-defined**: the reference explains the `@fn` mechanism but cannot enumerate names; §8 Q2.
+- **`@variables` are deployment-defined**: `QS_VARIABLES` is populated only when the QuerySource aiohttp app starts (`services.py:94-96`), so an agent process must import `settings.settings.QUERYSOURCE_VARIABLES` itself (M3 `load_variables`); the `settings` package is the deploying app's, not part of ai-parrot — always optional.
 - **Empty pipelines**: `MultiQS.__init__` raises `DriverError` when no source section is present — `validate_pipeline` reports this before construction.
 
 ### External Dependencies
@@ -804,9 +819,9 @@ TOOL_REGISTRY: dict[str, str]                                          # line 13
 - [x] **U4 — Where does the tenant come from at runtime?** — *Resolved in proposal*: Static constructor allowlist `programs=[...]` from the agent config; `None` = unrestricted.
 - [x] **Which querysource version is the dialect reference pinned to?** — *Resolved by spec author*: `4.5.11` (installed and locked); GitHub tag `4.5.11` exists and its `parsers/abstract.pyx` and `parsers/sql.pyx` are byte-identical to the `dev` copies used for finding F007. `ai-parrot-tools[db]` floor raised to `>=4.5.11`.
 - [x] **Result shape for large outputs?** — *Resolved by spec author*: bounded `rows` (≤ `max_rows`, default 200) with `returned_rows`, `total_rows`, `truncated`, `columns`; `querylimit` is pushed into QS for single slugs (S8). Dataset hand-off is a non-goal for v1.
-- [ ] **Q1 — External sources for restricted tenants.** Should a restricted instance ever accept `files` / `sources` sections (S3/SharePoint/Airtable/Smartsheet sources are not program-scoped)? v1 rejects them; a future `allow_external_sources` flag would need its own credential story. — *Owner: Jesus Lara*
-- [ ] **Q2 — `@variables` listing.** Does the ai-parrot deployment define `QUERYSOURCE_VARIABLES` (e.g. `@today`, `@yesterday`) that the dialect reference should enumerate? If so, expose them via `get_dialect_reference().notes` from `querysource.parsers.QS_VARIABLES` at runtime. — *Owner: Jesus Lara*
-- [ ] **Q3 — MultiQS blocking join (design research S4, ESCALATE).** `MultiQS.query()` joins worker threads synchronously inside the coroutine (`multi/__init__.py:315`). Options: (a) accept, like the QuerySource REST handler, with `asyncio.wait_for` timeout (v1 default); (b) run each `MultiQS` on a dedicated thread with its own event loop via `asyncio.to_thread(lambda: asyncio.run(...))` — isolates the agent loop but bypasses shared connection pools and needs a test. — *Owner: Jesus Lara*
+- [x] **Q1 — External sources for restricted tenants.** — *Resolved by user 2026-09-15*: yes. Restricted instances accept `files` / `sources` sections (not program-scoped); `allow_external_sources: bool = True` lets an operator disable them. Only raw SQL nodes stay forbidden when restricted.
+- [x] **Q2 — `@variables` listing.** — *Resolved by user 2026-09-15*: yes, the deployment defines `QUERYSOURCE_VARIABLES`. `dialect.load_variables()` loads them from `settings.settings` (fallback `QS_VARIABLES`) and `DialectReference.variables` lists them.
+- [x] **Q3 — MultiQS blocking join (design research S4, ESCALATE).** `MultiQS.query()` joins worker threads synchronously inside the coroutine (`multi/__init__.py:315`). Options: (a) accept, like the QuerySource REST handler, with `asyncio.wait_for` timeout (v1 default); (b) run each `MultiQS` on a dedicated thread with its own event loop via `asyncio.to_thread(lambda: asyncio.run(...))` — isolates the agent loop but bypasses shared connection pools and needs a test. — *Resolved by user 2026-09-15*: option (a) — accept the library's behaviour, wrap in `asyncio.wait_for(multiquery_timeout)`; (b) may be revisited if agent loops stall in practice.
 
 ---
 
@@ -852,3 +867,4 @@ Summary: **11** confirmed (2 partial) · **0** rejected · **1** escalated.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-09-15 | Jesus Lara / Claude | Initial draft from accepted proposal FEAT-558 + codex design research (11 confirm / 1 escalate) |
+| 0.2 | 2026-09-15 | Jesus Lara / Claude | Q1–Q3 resolved by user (external sources allowed, `@variables` loaded from settings, S4 option a); Status → approved |
