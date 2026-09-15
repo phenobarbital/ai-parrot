@@ -47,7 +47,9 @@ def renderer() -> TeamsFormRenderer:
 
 async def test_teams_envelope_shape(renderer, form):
     result = await renderer.render(form, tenant="navigator")
-    submit = result.content["actions"][-1]
+    # `form.cancel_allowed` defaults to True, so `_build_form_actions` appends a Cancel
+    # action after Submit — locate Submit by its `_action` literal, not by position.
+    submit = next(a for a in result.content["actions"] if a["data"].get("_action") == "submit")
     assert submit["type"] == "Action.Submit" and submit["data"]["_action"] == "submit"
     env = TeamsSubmitEnvelope.model_validate(submit["data"][ENVELOPE_KEY])
     assert str(env.submit_url) == f"https://forms.test/api/v1/navigator/forms/{form.form_uid}/data"
@@ -56,7 +58,7 @@ async def test_teams_envelope_shape(renderer, form):
     assert result.metadata["channel"] == "msteams" and result.metadata["envelope_version"] == 1
 
 
-def test_teams_envelope_sign_verify_roundtrip(renderer, form):
+async def test_teams_envelope_sign_verify_roundtrip(renderer, form):
     env = renderer.build_envelope(form, "navigator")
     assert env.verify("s3cr3t") and not env.verify("other")
     assert not env.model_copy(update={"sig": None}).verify("s3cr3t")
@@ -64,10 +66,13 @@ def test_teams_envelope_sign_verify_roundtrip(renderer, form):
 
 
 async def test_teams_render_requires_tenant_and_base_url(form, monkeypatch):
-    # Test that TeamsFormRenderer raises TeamsRenderConfigError when no tenant is provided
+    # Test that TeamsFormRenderer raises TeamsRenderConfigError when no tenant is provided.
+    # `form` (fixture) already carries tenant="navigator", so a tenant-less copy is required
+    # to genuinely exercise the "no tenant" branch of render().
+    form_without_tenant = form.model_copy(update={"tenant": None})
     with pytest.raises(TeamsRenderConfigError):
-        await TeamsFormRenderer("https://x").render(form)
-    
+        await TeamsFormRenderer("https://x").render(form_without_tenant)
+
     # Test that TeamsFormRenderer raises TeamsRenderConfigError when no public base URL is configured
     monkeypatch.delenv("FORMDESIGNER_PUBLIC_URL", raising=False)
     with pytest.raises(TeamsRenderConfigError):
@@ -76,28 +81,14 @@ async def test_teams_render_requires_tenant_and_base_url(form, monkeypatch):
 
 async def test_adaptive_unaffected(form):
     result = await AdaptiveCardRenderer().render(form)
-    assert result.content["actions"][-1]["data"] == {"_action": "submit"} and result.metadata is None
+    submit = next(a for a in result.content["actions"] if a["data"].get("_action") == "submit")
+    assert submit["data"] == {"_action": "submit"} and result.metadata is None
 
 
 async def test_teams_wizard_last_step_only_has_envelope(form):
     renderer = TeamsFormRenderer("https://forms.test/")
-    # Test that non-last wizard steps don't have envelope
-    result = await renderer.render_section(form, 0, show_back=True, show_skip=False)
-    submit_actions = [action for action in result.content["actions"] if action["type"] == "Action.Submit"]
-    # Should have Back and Next buttons, but no envelope in Next button
-    next_action = next((action for action in submit_actions if action["data"]["_action"] == "next"), None)
-    assert next_action is not None
-    assert ENVELOPE_KEY not in next_action["data"]
-    
-    # Test that last wizard step has envelope
-    result = await renderer.render_section(form, 0, show_back=True, show_skip=False)
-    submit_actions = [action for action in result.content["actions"] if action["type"] == "Action.Submit"]
-    # For a single-section form, the last step should have the submit action with envelope
-    # But we need to make it explicitly the last step
-    result = await renderer.render_section(form, 0, show_back=True, show_skip=False)
-    # Since it's a single section form, we can't easily test the "last step" behavior
-    # Let's create a multi-section form for this test
-    
+    # `form` (fixture) is single-section, so its only index is always the last step — a
+    # multi-section form is required to exercise a genuine non-last step with a Next action.
     multi_section_form = FormSchema(
         form_id="wizard-demo",
         title="Wizard Demo Form",

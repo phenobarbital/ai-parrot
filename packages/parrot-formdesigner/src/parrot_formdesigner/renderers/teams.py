@@ -105,6 +105,25 @@ class TeamsFormRenderer(AdaptiveCardRenderer):
         }
         return result
 
+    async def render_section(self, form: FormSchema, section_index: int, style: StyleSchema | None = None, *,
+                             locale: str = "en", prefilled: dict[str, Any] | None = None,
+                             errors: dict[str, str] | None = None, show_back: bool = False,
+                             show_skip: bool = False, tenant: str | None = None) -> RenderedForm:
+        """Render a wizard step via the base class; the terminal step's Submit carries the envelope.
+
+        Mirrors ``render()``'s tenant-resolution pattern (spec §7): ``_current_tenant`` is set
+        immediately before delegating to the base builder so ``_submit_action_data`` can attach
+        the envelope on the last step.
+        """
+        resolved = tenant or form.tenant
+        if not resolved:
+            raise TeamsRenderConfigError("tenant is required (pass tenant= or set FormSchema.tenant)")
+        self._current_tenant = resolved
+        return await super().render_section(
+            form, section_index, style, locale=locale, prefilled=prefilled, errors=errors,
+            show_back=show_back, show_skip=show_skip,
+        )
+
     def _submit_action_data(self, form: FormSchema | None, *, terminal: bool) -> dict[str, Any]:
         """Terminal Submit -> {"_action": "submit", "_formdesigner": <envelope>}; otherwise the base default."""
         if not terminal or form is None or self._current_tenant is None:
