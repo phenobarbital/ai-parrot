@@ -5,7 +5,7 @@
 **Status**: pending
 **Priority**: high
 **Estimated effort**: M (2-4h)
-**Depends-on**: TASK-3260
+**Depends-on**: TASK-3260, TASK-3264
 **Assigned-to**: unassigned
 
 ---

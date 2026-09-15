@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-04T13:45:29.930482+00:00",
-  "completed_at": null,
+  "completed_at": "2026-09-15T15:48:12+00:00",
   "tasks": [
     {
       "id": "TASK-2833",
@@ -160,7 +160,7 @@
       "feature_id": "FEAT-526",
       "feature": "meta-llm-client",
       "spec": "sdd/specs/meta-llm-client.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "low",
       "effort": "M",
       "depends_on": [
@@ -169,9 +169,10 @@
       "parallel": false,
       "parallelism_notes": "Edits clients/meta/client.py. D2: last and explicitly droppable - nothing depends on it; intended cut if the phase runs long.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2840-tool-search-mapping.md"
+      "started_at": "2026-09-15T15:34:49+00:00",
+      "completed_at": "2026-09-15T15:41:33+00:00",
+      "file": "sdd/tasks/completed/TASK-2840-tool-search-mapping.md",
+      "verification": "verified"
     }
   ],
   "spec_revision": "0.3",

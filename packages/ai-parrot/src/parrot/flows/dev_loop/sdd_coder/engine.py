@@ -25,6 +25,14 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from parrot import conf
+from parrot.knowledge.wiki.ledger.coder_feedback import CoderFeedback, CoderFeedbackReceipt, CoderFeedbackStore
+from parrot.knowledge.wiki.ledger.coder_reviews import (
+    CoderReview,
+    CoderReviewMeasurement,
+    CoderReviewReport,
+    CoderReviewStore,
+)
+from parrot.knowledge.wiki.store import estimate_tokens
 from parrot.flows.dev_loop.agent_builder import build_dispatcher  # verified: agent_builder.py:135
 from parrot.flows.dev_loop.models import (  # verified: models/base.py:412, :763, :497, :340, :458
     DevAgentSpec,
@@ -336,6 +344,10 @@ class SddCoderEngine:
         # blind to it); `cleanup()` must not remove these worktrees while the coder may
         # still be working inside them (FEAT-555 incident: TASK-230-a1 was deleted mid-run).
         self._native_inflight: set[str] = set()
+        # Attribution for feedback is checked against attempts this engine issued.
+        self._feedback_sources: Dict[str, Tuple[str, str, str, str]] = {}
+        self._feedback_contexts: Dict[str, str] = {}
+        self._feedback_unknown_exposure: set[str] = set()
 
         # Telemetry setup (FEAT-554). `conf.DEV_LOOP_CODER_TELEMETRY` is the
         # master switch — mirrors the same conf-fallback pattern `redis_url`/
@@ -506,13 +518,95 @@ class SddCoderEngine:
             raise CoderFailure("task_not_in_plan", f"{task_id} is not a native task of the current chunk plan")
         path = await self._manager_for(ctx, task_id, 1).create(f"{task_id}.a1")
         self._native_inflight.add(f"{task_id}.a1")
+        seat = next(seat for seat in self.roster.seats if seat.label == planned.seat_label)
+        model = seat.model or "haiku"
+        attempt_uid = uuid.uuid4().hex
+        self._feedback_sources[attempt_uid] = (ctx.worktree, task_id, "native", model)
+        feedback_context = await self._feedback_for(ctx, planned, "native", model)
+        self._feedback_contexts[attempt_uid] = feedback_context
         return NativePrep(
             task_id=task_id,
             task_file=planned.task_file,
             branch=f"{ctx.feature_branch}--{task_id}-a1",
             worktree_path=path,
             seat_label=planned.seat_label,
+            model=model,
+            attempt_uid=attempt_uid,
+            coder_feedback=feedback_context,
         )
+
+    async def record_feedback(self, feature: str, worktree: str, feedback: CoderFeedback) -> CoderFeedbackReceipt:
+        """Persist a reviewed correction after checking its attempt/model attribution."""
+        ctx = await self._resolve_feature(feature, worktree)
+        expected = (ctx.worktree, feedback.task_id, feedback.backend, feedback.model)
+        if self._feedback_sources.get(feedback.attempt_uid) != expected:
+            raise CoderFailure(
+                "invalid_arguments", "feedback must match a known attempt's task, backend and actual model"
+            )
+        store = await asyncio.to_thread(CoderFeedbackStore.from_root, Path(ctx.worktree))
+        return await store.record(feedback)
+
+    async def _feedback_for(self, ctx: _FeatureCtx, task: PlannedTask, backend: str, model: str) -> str:
+        """Refresh preventive feedback before each dispatch, including retries."""
+        policy = self.roster.feedback
+        if not policy.enabled or policy.max_tokens == 0:
+            return ""
+        if not model:
+            return "Feedback unavailable: configure an explicit seat model to retrieve its prior corrections."
+        try:
+            root = await asyncio.to_thread(Path(ctx.worktree).resolve)
+            task_path = await asyncio.to_thread((root / task.task_file).resolve)
+            if not task_path.is_relative_to(root):
+                raise ValueError("task path is outside the worktree")
+            task_md = await asyncio.to_thread(task_path.read_text, encoding="utf-8")
+            store = await asyncio.to_thread(CoderFeedbackStore.from_root, root)
+            return await store.context(
+                backend, model, list(parse_task_files(task_md)), policy.max_tokens, policy.max_age_days
+            )
+        except Exception:  # feedback outages are visible but do not invalidate code delivery
+            self.logger.warning(
+                "Coder feedback unavailable for %s (%s/%s)", task.task_id, backend, model, exc_info=True
+            )
+            return "Feedback unavailable: retrieval failed; this is not evidence of a clean history."
+
+    async def record_review(self, feature: str, worktree: str, review: CoderReview) -> CoderFeedbackReceipt:
+        """Measure a reviewed delivery and validate its review-fix commits."""
+        ctx = await self._resolve_feature(feature, worktree)
+        expected = (ctx.worktree, review.task_id, review.backend, review.model)
+        if self._feedback_sources.get(review.attempt_uid) != expected:
+            raise CoderFailure(
+                "invalid_arguments", "review must match a known attempt's task, backend and actual model"
+            )
+        for sha in set(review.fix_commits):
+            rc, subject, _err = await _git("show", "-s", "--format=%s", sha, cwd=ctx.worktree)
+            ancestor_rc, _out, _err = await _git("merge-base", "--is-ancestor", sha, "HEAD", cwd=ctx.worktree)
+            if (
+                rc
+                or ancestor_rc
+                or not subject.startswith("fix(")
+                or not re.search(rf"\b{re.escape(review.task_id)}\b", subject)
+                or "review fixes" not in subject.lower()
+            ):
+                raise CoderFailure(
+                    "invalid_arguments", f"{sha} must be a reachable fix(...) {review.task_id} review fixes commit"
+                )
+        context = self._feedback_contexts.get(review.attempt_uid, "Feedback unavailable")
+        exposure = (
+            "unavailable"
+            if context.startswith("Feedback unavailable") or review.attempt_uid in self._feedback_unknown_exposure
+            else "with_feedback" if "[coder-feedback:" in context else "without_feedback"
+        )
+        measurement = CoderReviewMeasurement(
+            **review.model_dump(), exposure=exposure, feedback_tokens=estimate_tokens(context)
+        )
+        store = await asyncio.to_thread(CoderFeedbackStore.from_root, Path(ctx.worktree))
+        return await CoderReviewStore(store.log).record(measurement)
+
+    async def feedback_report(self, feature: str, worktree: str) -> CoderReviewReport:
+        """Return repository-wide review-fix rates by model and exposure cohort."""
+        ctx = await self._resolve_feature(feature, worktree)
+        store = await asyncio.to_thread(CoderFeedbackStore.from_root, Path(ctx.worktree))
+        return await CoderReviewStore(store.log).report()
 
     async def _consolidate(
         self, ctx: _FeatureCtx, manager: SubWorktreeManager, task: PlannedTask, *, branch: str, path: str
@@ -825,11 +919,14 @@ class SddCoderEngine:
                 stream_ttl_seconds=self._stream_ttl,
             )
             profile = profile.model_copy(update={"subagent": "sdd-coder"})  # S7 — every profile defaults to sdd-worker
+            feedback_context = await self._feedback_for(ctx, task, seat.backend, seat.model)
+            self._feedback_contexts[attempt_uid] = feedback_context
             output = await dispatcher.dispatch(
                 brief=TaskScopedBrief(
                     research=self._research_for(ctx, worktree_path=path),
                     task_id=task.task_id,
                     task_file=task.task_file,
+                    coder_feedback=feedback_context,
                 ),
                 profile=profile,
                 output_model=DevelopmentOutput,
@@ -869,6 +966,14 @@ class SddCoderEngine:
             self.logger.warning("attempt %d of %s on %s failed: %s", attempt, task.task_id, seat.label, error)
 
         record = collector.record()
+        if record.resolved_model and record.resolved_model != seat.model:
+            self._feedback_unknown_exposure.add(attempt_uid)
+        self._feedback_sources[attempt_uid] = (
+            ctx.worktree,
+            task.task_id,
+            seat.backend,
+            record.resolved_model or record.model,
+        )
         # Write the measurement BEFORE consolidation: if the server dies between
         # here and the outcome, the attempt row still survives and the analysis
         # reports an incomplete pair rather than losing the sample (spec §2).

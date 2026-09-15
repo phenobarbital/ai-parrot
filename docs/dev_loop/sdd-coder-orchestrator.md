@@ -47,7 +47,7 @@ Coders never touch `sdd/`.
    ```
    Claude Code reads `.mcp.json` only at startup — restart it (and approve the
    project-scoped server) before `/mcp` will show `parrot-sdd-coder`.
-   Claude Code then exposes the seven tools as
+   Claude Code then exposes the orchestration tools as
    `mcp__parrot-sdd-coder__coder_plan` … `mcp__parrot-sdd-coder__coder_cleanup`.
 3. Credentials (none live in the yaml — see `examples/sdd-coder-mcp.yaml`'s
    own header comment):
@@ -66,6 +66,66 @@ Coders never touch `sdd/`.
    toolkits.
 
 ## The roster
+
+### Per-delivery correction feedback
+
+At each coder handoff, the worker records confirmed code-review defects with
+`coder_record_feedback`, including corrections it fixed immediately. Sources
+are reviewed `fix(...) TASK-N review fixes` commits or verified review findings;
+engine lint/autofixes are excluded. Repo-wide facts belong in conventions or
+the task's Codebase Contract, not in one model's feedback. Model-specific
+behavior defects carry task/attempt/backend/actual-model attribution, a stable
+pattern slug, evidence, required correction, and regression verification.
+
+The engine validates attribution against issued attempts. Native preparation
+returns its model and unique attempt ID; MCP attribution uses `resolved_model`
+when available. Feedback recording after a server restart cannot authenticate
+old attempts: retain those records as NOT recorded in the Completion Note.
+Already persisted feedback remains available across restarts and worktrees.
+
+The shared SDD ledger stores these as `insight.recorded` events in the
+`coder_feedback` category. They never become open work or merge blockers.
+Replay deduplicates by backend/model/task/attempt/pattern, counts occurrences
+in the active window, and ranks matching files/components before other lessons
+from that model. Every MCP attempt (including retries) refreshes its brief;
+the worker forwards `coder_prepare_native.coder_feedback` into the native prompt.
+
+Configure `kwargs.feedback` alongside `kwargs.roster`:
+
+```yaml
+feedback:
+  enabled: true
+  max_tokens: 1800
+  max_age_days: 90
+```
+
+Expired patterns stop being injected but remain durable. A new confirmed
+occurrence reactivates the pattern; repeating a recording call does not.
+Token budgets use the wiki's estimator, not a provider-specific tokenizer.
+Retrieval failures produce an explicit unavailable notice. Use explicit model
+names: unknown defaults cannot retrieve personal history, and dispatchers that
+internally switch models may receive context for the configured model. Such
+attempts are excluded from the known-exposure comparison.
+
+After EVERY completed handoff review, call `coder_record_review` with identity,
+`review_evidence`, and `fix_commits` (full SHAs, or `[]` for a clean delivery).
+The engine verifies reachable `fix(...) TASK-N review fixes` commit subjects
+and attaches observed feedback exposure. Count reviewer fixes for both repo
+and model defects; do not count lint commits. Re-recording a completed review
+updates its measurement without double-counting the attempt or commit.
+
+`coder_feedback_report` reports correction commits per reviewed task by
+backend/model and exposure, with sample sizes and mean injected tokens.
+`feedback.enabled: false` supports collecting a baseline while still recording
+reviews and lessons. Missing historical reviews are not inferred as zero fixes.
+Comparison is descriptive: task difficulty can differ between cohorts, so
+the report alone does not prove feedback caused an improvement. The worker's
+review evidence remains the authority for completeness and defect attribution.
+
+Restart the local MCP server to expose the three feedback/review tools after
+updating the package. No model calls or model-weight changes are involved.
+
+### Seat configuration
 
 The roster is pure configuration (`kwargs.roster` in the yaml) — no model
 id, backend, or provider key appears in Python or in either the

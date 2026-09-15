@@ -18,6 +18,8 @@ from parrot.flows.dev_loop.sdd_coder.models import (
     CoderMergeArgs,
     CoderPlanArgs,
     CoderPrepareNativeArgs,
+    CoderRecordFeedbackArgs,
+    CoderRecordReviewArgs,
     CoderResult,
     CoderRunChunkArgs,
     CoderStatusArgs,
@@ -34,7 +36,7 @@ def _with_seats(job: CoderJob) -> CoderJobView:
 
 
 class SddCoderToolkit(AbstractToolkit):
-    """Orchestration kernel for the interactive sdd-worker. Seven tools; every result is a CoderResult."""
+    """Orchestration and correction feedback for sdd-worker; every result is a CoderResult."""
 
     llm_dependent_tools: frozenset = frozenset()
     auto_open: bool = True  # probe on FIRST tool call (toolkit.py:169-172); no server startup hook exists (S12)
@@ -46,6 +48,9 @@ class SddCoderToolkit(AbstractToolkit):
         "coder_wait": CoderWaitArgs,
         "coder_status": CoderStatusArgs,
         "coder_cleanup": CoderCleanupArgs,
+        "coder_record_feedback": CoderRecordFeedbackArgs,
+        "coder_record_review": CoderRecordReviewArgs,
+        "coder_feedback_report": CoderPlanArgs,
     }
 
     def __init__(
@@ -56,6 +61,7 @@ class SddCoderToolkit(AbstractToolkit):
         worktree_base_path: Optional[str] = None,
         telemetry_dir: Optional[str] = None,
         lint: Optional[Dict[str, Any]] = None,
+        feedback: Optional[Dict[str, Any]] = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
@@ -63,7 +69,7 @@ class SddCoderToolkit(AbstractToolkit):
         cfg = (
             roster
             if isinstance(roster, RosterConfig)
-            else RosterConfig(seats=roster, lint=lint or {})  # type: ignore[arg-type]  # yaml kwargs arrive as list[dict]; pydantic coerces at runtime
+            else RosterConfig(seats=roster, lint=lint or {}, feedback=feedback or {})  # type: ignore[arg-type]  # yaml kwargs arrive as list[dict]; pydantic coerces at runtime
         )
         self._engine = SddCoderEngine(
             roster=cfg,
@@ -155,6 +161,42 @@ class SddCoderToolkit(AbstractToolkit):
     async def coder_merge(self, feature: str, worktree: str, task_id: str) -> CoderResult:
         """Clean-status check, fidelity check and merge of the task's latest attempt branch."""
         return await self._run("coder_merge", self._engine.merge(feature, worktree, task_id))
+
+    async def coder_record_feedback(self, feature: str, worktree: str, feedback: Dict[str, Any]) -> CoderResult:
+        """Record a confirmed defect corrected by the worker in one coder delivery.
+
+        Supply source (review_fix_commit or code_review), lesson_scope=model,
+        task_id, attempt_uid, backend, actual model, stable pattern slug,
+        repository-relative files, defect, evidence, correction and verification.
+        Use the attempt's resolved_model when present, otherwise model; native
+        identity comes from coder_prepare_native. Call after each verified fix,
+        before dispatching the next chunk. Never file infrastructure failures or
+        speculative findings or engine lint fixes. Repo-wide lessons belong in
+        conventions or the Codebase Contract. Records survive issue closure and cleanup.
+        """
+        from parrot.knowledge.wiki.ledger.coder_feedback import CoderFeedback
+
+        return await self._run(
+            "coder_record_feedback", self._engine.record_feedback(feature, worktree, CoderFeedback(**feedback))
+        )
+
+    async def coder_record_review(self, feature: str, worktree: str, review: Dict[str, Any]) -> CoderResult:
+        """Record EVERY completed coder handoff review, including zero corrections.
+
+        Supply task_id, attempt_uid, backend, actual model, fix_commits (full
+        SHAs of all fix(...) TASK-N review fixes commits, [] when none), and
+        review_evidence. Exclude engine lint commits. The engine attaches actual
+        feedback exposure so before/after rates include clean deliveries too.
+        """
+        from parrot.knowledge.wiki.ledger.coder_reviews import CoderReview
+
+        return await self._run(
+            "coder_record_review", self._engine.record_review(feature, worktree, CoderReview(**review))
+        )
+
+    async def coder_feedback_report(self, feature: str, worktree: str) -> CoderResult:
+        """Read repository-wide review correction commits per task/model, grouped by feedback exposure."""
+        return await self._run("coder_feedback_report", self._engine.feedback_report(feature, worktree))
 
     async def coder_wait(self, job_id: str, timeout_seconds: int = 120) -> CoderResult:
         """Block up to timeout_seconds (≤ 300) and return the job snapshot plus its per-seat `seats` roll-up."""

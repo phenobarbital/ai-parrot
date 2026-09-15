@@ -1,0 +1,252 @@
+{
+  "feature": "sdd-coder-execution-pool-suspensions",
+  "feature_id": "FEAT-559",
+  "spec": "sdd/specs/sdd-coder-execution-pool-suspensions.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "parallel_semantics": "exclusive",
+  "created_at": "2026-09-15T22:27:11+00:00",
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-3274",
+      "slug": "coder-suspension-ledger",
+      "title": "Durable suspension records and strict ledger replay",
+      "feature_id": "FEAT-559",
+      "feature": "sdd-coder-execution-pool-suspensions",
+      "spec": "sdd/specs/sdd-coder-execution-pool-suspensions.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Root deliverable: only creates the new ledger module and its tests. No existing implementation file is shared with another root task.",
+      "assigned_to": null,
+      "started_at": "2026-09-15T22:35:37+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3274-coder-suspension-ledger.md"
+    },
+    {
+      "id": "TASK-3275",
+      "slug": "coder-execution-models-jobs",
+      "title": "Execution payload contracts and scoped job ownership",
+      "feature_id": "FEAT-559",
+      "feature": "sdd-coder-execution-pool-suspensions",
+      "spec": "sdd/specs/sdd-coder-execution-pool-suspensions.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-3274"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Depends on TASK-3274 for ledger identity/policy types. Completes shared models/jobs edits before the runtime, roster and attribution tasks fan out.",
+      "assigned_to": null,
+      "started_at": "2026-09-15T22:35:37+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3275-coder-execution-models-jobs.md"
+    },
+    {
+      "id": "TASK-3276",
+      "slug": "coder-execution-pool-runtime",
+      "title": "Private execution pool and atomic admission reservations",
+      "feature_id": "FEAT-559",
+      "feature": "sdd-coder-execution-pool-suspensions",
+      "spec": "sdd/specs/sdd-coder-execution-pool-suspensions.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-3275"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Depends on TASK-3275 payloads (and transitively TASK-3274 store). Can run beside TASK-3277 and TASK-3278: only owns pool.py and test_pool.py; reads but does not edit roster.py.",
+      "assigned_to": null,
+      "started_at": "2026-09-15T22:35:37+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3276-coder-execution-pool-runtime.md"
+    },
+    {
+      "id": "TASK-3277",
+      "slug": "coder-roster-suspension-gates",
+      "title": "Gate primary and fallback probes by exact model identity",
+      "feature_id": "FEAT-559",
+      "feature": "sdd-coder-execution-pool-suspensions",
+      "spec": "sdd/specs/sdd-coder-execution-pool-suspensions.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-3275"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Depends on TASK-3275 for structured probe metadata. Parallel with TASK-3276 and TASK-3278; owns roster.py/test_roster.py only and preserves the recently landed exclusive scheduling behavior.",
+      "assigned_to": null,
+      "started_at": "2026-09-15T22:35:37+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3277-coder-roster-suspension-gates.md"
+    },
+    {
+      "id": "TASK-3278",
+      "slug": "coder-execution-attribution",
+      "title": "Add execution attribution to telemetry and review history",
+      "feature_id": "FEAT-559",
+      "feature": "sdd-coder-execution-pool-suspensions",
+      "spec": "sdd/specs/sdd-coder-execution-pool-suspensions.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-3275"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Depends on TASK-3275 for AttemptRecord identity. Runs beside TASK-3276/TASK-3277 because telemetry and existing feedback/review files are disjoint; TASK-3281 waits for this work before editing test_feedback.py.",
+      "assigned_to": null,
+      "started_at": "2026-09-15T22:35:37+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3278-coder-execution-attribution.md"
+    },
+    {
+      "id": "TASK-3279",
+      "slug": "coder-engine-execution-lifecycle",
+      "title": "Begin execution and plan from private history-gated pools",
+      "feature_id": "FEAT-559",
+      "feature": "sdd-coder-execution-pool-suspensions",
+      "spec": "sdd/specs/sdd-coder-execution-pool-suspensions.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-3276",
+        "TASK-3277",
+        "TASK-3278"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Fan-in after TASK-3276 runtime, TASK-3277 probe gates and TASK-3278 attribution. Begins the ordered engine.py edit sequence; no concurrent engine edits are permitted.",
+      "assigned_to": null,
+      "started_at": "2026-09-15T22:35:37+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3279-coder-engine-execution-lifecycle.md"
+    },
+    {
+      "id": "TASK-3280",
+      "slug": "coder-engine-admission-retries",
+      "title": "Gate dispatch and retries and classify terminal failures",
+      "feature_id": "FEAT-559",
+      "feature": "sdd-coder-execution-pool-suspensions",
+      "spec": "sdd/specs/sdd-coder-execution-pool-suspensions.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-3279"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Depends on TASK-3279 engine lifecycle; modifies engine.py after it. TASK-3281 must wait because native/merge paths reuse the execution naming and attempt attribution introduced here.",
+      "assigned_to": null,
+      "started_at": "2026-09-15T22:35:37+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3280-coder-engine-admission-retries.md"
+    },
+    {
+      "id": "TASK-3281",
+      "slug": "coder-native-review-ownership",
+      "title": "Scope native delivery, reviews, merge and cleanup to execution",
+      "feature_id": "FEAT-559",
+      "feature": "sdd-coder-execution-pool-suspensions",
+      "spec": "sdd/specs/sdd-coder-execution-pool-suspensions.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-3280"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Depends on TASK-3280 naming/admission and transitively TASK-3278 review payloads. Serializes shared engine.py, test_engine_plan_merge.py and test_feedback.py edits before TASK-3282.",
+      "assigned_to": null,
+      "started_at": "2026-09-15T22:35:37+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3281-coder-native-review-ownership.md"
+    },
+    {
+      "id": "TASK-3282",
+      "slug": "coder-execution-restart-recovery",
+      "title": "Persist execution snapshots and reconcile restart safely",
+      "feature_id": "FEAT-559",
+      "feature": "sdd-coder-execution-pool-suspensions",
+      "spec": "sdd/specs/sdd-coder-execution-pool-suspensions.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-3281"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Depends on TASK-3281 fully scoped ownership. Writes engine.py only after native/review isolation; creates the integration file that TASK-3285 later extends.",
+      "assigned_to": null,
+      "started_at": "2026-09-15T22:35:37+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3282-coder-execution-restart-recovery.md"
+    },
+    {
+      "id": "TASK-3283",
+      "slug": "coder-pool-mcp-protocol",
+      "title": "Expose execution lifecycle and suspension tools through MCP",
+      "feature_id": "FEAT-559",
+      "feature": "sdd-coder-execution-pool-suspensions",
+      "spec": "sdd/specs/sdd-coder-execution-pool-suspensions.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-3282"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Depends on TASK-3282 final lifecycle/status behavior. No overlapping toolkit edits may run during this task; TASK-3284 documents exactly this landed surface.",
+      "assigned_to": null,
+      "started_at": "2026-09-15T22:35:37+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3283-coder-pool-mcp-protocol.md"
+    },
+    {
+      "id": "TASK-3284",
+      "slug": "coder-worker-pool-lifecycle",
+      "title": "Teach both worker prompts the execution lifecycle and fallback",
+      "feature_id": "FEAT-559",
+      "feature": "sdd-coder-execution-pool-suspensions",
+      "spec": "sdd/specs/sdd-coder-execution-pool-suspensions.spec.md",
+      "status": "in-progress",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-3283"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Depends on TASK-3283 actual MCP surface. Owns only prompt twins and operator docs; TASK-3285 waits to validate prompt/schema agreement against their final content.",
+      "assigned_to": null,
+      "started_at": "2026-09-15T22:35:37+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3284-coder-worker-pool-lifecycle.md"
+    },
+    {
+      "id": "TASK-3285",
+      "slug": "coder-pool-regression-suite",
+      "title": "Complete offline execution-pool regression and acceptance coverage",
+      "feature_id": "FEAT-559",
+      "feature": "sdd-coder-execution-pool-suspensions",
+      "spec": "sdd/specs/sdd-coder-execution-pool-suspensions.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-3284"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Depends on TASK-3284 prompt/documentation completion and transitively all runtime tasks. This is the full feature gate, not an artificial ordering edge: it checks final MCP/prompt agreement and shared regression files.",
+      "assigned_to": null,
+      "started_at": "2026-09-15T22:35:37+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3285-coder-pool-regression-suite.md"
+    }
+  ]
+}

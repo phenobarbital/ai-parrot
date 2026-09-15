@@ -97,13 +97,23 @@ async def _ruff_findings(ruff: str, cwd: str, files: List[str], select: Optional
         items = json.loads(out or "[]")
     except json.JSONDecodeError:
         return [], "ruff: unparseable output"
+    return _format_findings(items, cwd), ""
+
+
+def _format_findings(items: List[dict], cwd: str) -> List[str]:
+    """Render ruff JSON findings as ``path:row: CODE message`` relative to ``cwd``."""
     findings = []
     for item in items:
         rel = os.path.relpath(item.get("filename", ""), cwd)
         row = (item.get("location") or {}).get("row", 0)
         code = item.get("code") or "syntax-error"
         findings.append(f"{rel}:{row}: {code} {item.get('message', '')}")
-    return findings, ""
+    return findings
+
+
+def _existing_python_files(cwd: str, changed: List[str]) -> List[str]:
+    """The changed paths that are ``.py`` files still present in ``cwd`` (deletions excluded)."""
+    return [p for p in changed if p.endswith(".py") and Path(cwd, p).is_file()]
 
 
 async def run_lint_pass(cwd: str, changed: List[str], *, config: LintConfig, commit_message: str) -> LintReport:
@@ -121,7 +131,7 @@ async def run_lint_pass(cwd: str, changed: List[str], *, config: LintConfig, com
     Returns:
         The lint report attached to the task result.
     """
-    py_files = [p for p in changed if p.endswith(".py") and Path(cwd, p).is_file()]
+    py_files = await asyncio.to_thread(_existing_python_files, cwd, changed)
     if not py_files:
         return LintReport()
     ruff = resolve_bin("ruff")

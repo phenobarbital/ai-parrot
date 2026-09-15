@@ -113,10 +113,11 @@
       "priority": "high",
       "effort": "M",
       "depends_on": [
-        "TASK-3260"
+        "TASK-3260",
+        "TASK-3264"
       ],
       "parallel": false,
-      "parallelism_notes": "Imports helpers from wiki/operations.py (TASK-3260); edits wiki/cli.py, also edited by TASK-3264.",
+      "parallelism_notes": "Imports helpers from wiki/operations.py (TASK-3260); edits wiki/cli.py, also edited by TASK-3264 — depends on TASK-3264 so the two cli.py edits never run concurrently.",
       "assigned_to": null,
       "started_at": null,
       "completed_at": null,

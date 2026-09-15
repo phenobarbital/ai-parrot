@@ -17,7 +17,7 @@ def _toolkit(three_seat_roster):
     return SddCoderToolkit(roster=three_seat_roster)
 
 
-def test_toolkit_exposes_seven_tools(three_seat_roster):
+def test_toolkit_exposes_ten_tools(three_seat_roster):
     toolkit = _toolkit(three_seat_roster)
     names = {t.name for t in toolkit.get_tools()}
     assert names == {
@@ -28,6 +28,9 @@ def test_toolkit_exposes_seven_tools(three_seat_roster):
         "coder_wait",
         "coder_status",
         "coder_cleanup",
+        "coder_record_feedback",
+        "coder_record_review",
+        "coder_feedback_report",
     }
 
 
@@ -142,6 +145,9 @@ def test_mcp_local_serves_sdd_coder(monkeypatch, tmp_path):
         "coder_wait",
         "coder_status",
         "coder_cleanup",
+        "coder_record_feedback",
+        "coder_record_review",
+        "coder_feedback_report",
     }
 
 

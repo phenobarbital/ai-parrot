@@ -81,3 +81,10 @@ async def test_probe_never_raises():
     probe = RosterProbe(config_getter=lambda k, fallback=None: "x", which=lambda b: "/bin/x", smoke=smoke)
     res = (await probe.probe(_roster(1)))[0]
     assert not res.available and "boom" in res.reason
+
+
+def test_assign_exclusive_tasks_run_alone_and_first():
+    wave = _wave(4)
+    wave[2] = TaskRef(id="TASK-0002", status="pending", parallel=False)
+    chunks = ChunkAssigner(_roster(4).seats).assign(wave, {})
+    assert [[t.task_id for t in c.tasks] for c in chunks] == [["TASK-0002"], ["TASK-0000", "TASK-0001", "TASK-0003"]]
