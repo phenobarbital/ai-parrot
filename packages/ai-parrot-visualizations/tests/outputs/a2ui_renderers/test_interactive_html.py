@@ -769,8 +769,8 @@ class TestInteractiveKpiGrid:
     async def test_consecutive_kpi_cards_become_one_grid(self):
         env = _envelope(self._section(self._kpi("Events"), self._kpi("Completed"), self._kpi("Missed")))
         doc = (await InteractiveHTMLRenderer().render(env)).content.decode()
-        assert doc.count('<div class="kpi-grid">') == 1
-        grid = doc.split('<div class="kpi-grid">')[1]
+        assert doc.count('<div class="kpi-grid" data-count="3">') == 1
+        grid = doc.split('<div class="kpi-grid"')[1]
         assert grid.count('class="a2ui-card kpi-card"') == 3
 
     async def test_a_chart_between_them_starts_a_second_grid(self):
@@ -780,9 +780,14 @@ class TestInteractiveKpiGrid:
             "component": "Chart",
             "properties": {"type": "bar", "x": "day", "y": ["n"], "data": []},
         }
-        env = _envelope(self._section(self._kpi("A"), self._kpi("B"), chart, self._kpi("C")))
+        # Two cards, a chart, two more cards: two card grids, and the lone
+        # chart between them is not a grid at all.
+        env = _envelope(
+            self._section(self._kpi("A"), self._kpi("B"), chart, self._kpi("C"), self._kpi("D"))
+        )
         doc = (await InteractiveHTMLRenderer().render(env)).content.decode()
-        assert doc.count('<div class="kpi-grid">') == 2
+        assert doc.count('<div class="kpi-grid"') == 2
+        assert doc.count('<div class="chart-grid"') == 0
         assert "<canvas" in doc
 
     async def test_a_section_with_no_kpis_grows_no_grid(self):
@@ -1246,23 +1251,39 @@ class TestChartsGroupLikeCards:
 
     async def test_two_charts_share_one_grid(self):
         doc = await self._doc(self._chart("A"), self._chart("B"))
-        assert doc.count('<div class="chart-grid">') == 1
+        assert doc.count('<div class="chart-grid" data-count="2">') == 1
         assert doc.count("<canvas") == 2
+
+    async def test_a_lone_chart_is_not_a_grid(self):
+        # Wrapped anyway it sat in the first of two columns with the second
+        # left blank — it was full width before any of this grouping existed.
+        doc = await self._doc(self._chart("A"))
+        assert '<div class="chart-grid"' not in doc
+        assert doc.count("<canvas") == 1
+
+    async def test_a_lone_card_is_not_a_grid_either(self):
+        doc = await self._doc(self._kpi("Events"))
+        assert '<div class="kpi-grid"' not in doc
+        assert "Events" in doc
 
     async def test_a_run_is_one_kind(self):
         # A chart after a card starts a new group rather than joining a grid
         # meant for cards — four columns is a KPI row, not a chart row.
-        doc = await self._doc(self._kpi("Events"), self._chart("A"))
-        assert doc.count('<div class="kpi-grid">') == 1
-        assert doc.count('<div class="chart-grid">') == 1
+        doc = await self._doc(
+            self._kpi("Events"), self._kpi("Completed"), self._chart("A"), self._chart("B")
+        )
+        assert doc.count('<div class="kpi-grid" data-count="2">') == 1
+        assert doc.count('<div class="chart-grid" data-count="2">') == 1
 
     async def test_a_table_between_them_starts_a_second_group(self):
         table = {
             "component": "DataTable",
             "properties": {"columns": [{"name": "a", "title": "A", "type": "string"}], "data": []},
         }
-        doc = await self._doc(self._chart("A"), table, self._chart("B"))
-        assert doc.count('<div class="chart-grid">') == 2
+        doc = await self._doc(
+            self._chart("A"), self._chart("B"), table, self._chart("C"), self._chart("D")
+        )
+        assert doc.count('<div class="chart-grid"') == 2
 
     async def test_paper_keeps_the_charts_full_width_and_together(self):
         # Two columns is a screen luxury: half a page-width leaves a chart so
@@ -1278,3 +1299,46 @@ class TestChartsGroupLikeCards:
         # Together on one sheet rather than split across a page break. Two
         # full-width charts fit a page; the comment says why three would not.
         assert "break-inside: avoid" in rule
+
+
+class TestAGridNeverHasMoreColumnsThanItems:
+    """Four is the CAP, not the count. A run of two in a four-column track is
+    two quarter-width cards and half a row of nothing — and every tenant's
+    report with a short KPI run got that, not just the one this work was
+    driven by.
+    """
+
+    async def _doc(self, cards: int) -> str:
+        env = _envelope(
+            Component(
+                id="root", component="Infographic", title="R",
+                sections=[{
+                    "heading": "S",
+                    "components": [
+                        {"component": "KPICard", "properties": {"label": f"K{i}", "value": i}}
+                        for i in range(cards)
+                    ],
+                }],
+            )
+        )
+        return (await InteractiveHTMLRenderer().render(env)).content.decode()
+
+    async def test_the_group_carries_its_own_size(self):
+        assert 'data-count="2"' in await self._doc(2)
+        assert 'data-count="3"' in await self._doc(3)
+        assert 'data-count="8"' in await self._doc(8)
+
+    async def test_the_stylesheet_caps_the_columns_at_the_count(self):
+        doc = await self._doc(2)
+        assert '.kpi-grid[data-count="2"]' in doc
+        assert '.kpi-grid[data-count="3"]' in doc
+
+    async def test_the_print_rule_outranks_the_screen_layout(self):
+        # An unscoped `.kpi-grid` in the print sheet loses to
+        # `.ds-page[data-layout="analytics"] .kpi-grid` whatever the
+        # composition order, and a media query adds no specificity. A4 at
+        # 12mm margins trips the analytics 1100px breakpoint, so printed rows
+        # came out three across while the print sheet claimed four.
+        doc = await self._doc(8)
+        block = doc[re.search(r"@media print\s*\{", doc).end():]
+        assert ".ds-page[data-layout] .kpi-grid {" in block

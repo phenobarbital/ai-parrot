@@ -44,6 +44,18 @@
     grid-template-columns: repeat(4, 1fr);
 }
 
+/* Never more columns than there are cards. Four is the CAP, not the count:
+ * a run of two in a four-column track is two quarter-width cards and half a
+ * row of nothing. The attribute selector outranks the width rules below on
+ * purpose — a narrower screen may reduce the columns, never raise them. */
+.ds-page[data-layout="analytics"] .kpi-grid[data-count="2"] {
+    grid-template-columns: repeat(2, 1fr);
+}
+
+.ds-page[data-layout="analytics"] .kpi-grid[data-count="3"] {
+    grid-template-columns: repeat(3, 1fr);
+}
+
 @media (max-width: 1100px) {
     .ds-page[data-layout="analytics"] .kpi-grid {
         grid-template-columns: repeat(3, 1fr);
@@ -54,7 +66,8 @@
     .ds-page[data-layout="analytics"] {
         padding: 0.75rem;
     }
-    .ds-page[data-layout="analytics"] .kpi-grid {
+    .ds-page[data-layout="analytics"] .kpi-grid,
+    .ds-page[data-layout="analytics"] .kpi-grid[data-count] {
         grid-template-columns: repeat(2, 1fr);
     }
     .ds-page[data-layout="analytics"] .kpi-value {

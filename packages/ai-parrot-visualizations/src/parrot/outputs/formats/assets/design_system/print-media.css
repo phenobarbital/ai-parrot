@@ -91,10 +91,26 @@
     /* A fixed count, never the responsive track function the analytics
        layout uses: on paper there is no viewport to respond to, and the
        reader's paper size is not known here. */
-    .kpi-grid {
+    /* Scoped to `.ds-page[data-layout]` to MATCH the analytics sheet's own
+       specificity — an unscoped `.kpi-grid` here loses to
+       `.ds-page[data-layout="analytics"] .kpi-grid` no matter what order the
+       sheets are composed in, and a media query adds none. Unscoped, this
+       rule was inert: A4 at 12mm margins is about 703 CSS px, which trips
+       the analytics `max-width: 1100px` breakpoint, so printed KPI rows came
+       out three across while this file claimed four. */
+    .ds-page[data-layout] .kpi-grid {
         display: grid;
         grid-template-columns: repeat(4, 1fr);
         gap: 0.75rem;
+    }
+
+    /* Four is the cap, not the count, here too. */
+    .ds-page[data-layout] .kpi-grid[data-count="2"] {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .ds-page[data-layout] .kpi-grid[data-count="3"] {
+        grid-template-columns: repeat(3, 1fr);
     }
 
     /* One across on paper, unlike the screen. Half a page-width leaves a
@@ -109,6 +125,7 @@
        printable page. A run of THREE would not fit, and a block that cannot
        fit does not shrink — it jumps to the next sheet and leaves this one
        blank, which is the failure this file has already been bitten by. */
+    .ds-page[data-layout] .chart-grid,
     .chart-grid {
         display: grid;
         grid-template-columns: 1fr;

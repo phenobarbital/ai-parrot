@@ -1604,7 +1604,19 @@ class InteractiveHTMLRenderer(AbstractA2UIRenderer):
                 nonlocal run_class
                 if not run:
                     return
-                section_parts.append(f'<div class="{run_class}">{"".join(run)}</div>')
+                # A run of ONE is not a grid. Wrapped anyway, a lone chart sat
+                # in the first of two columns with the second left blank, and
+                # a lone card in the first of four — both were full width
+                # before any of this grouping existed.
+                if len(run) == 1:
+                    section_parts.append(run[0])
+                else:
+                    # The count travels with the group so the stylesheet can
+                    # cap the columns at it: three cards in a four-column
+                    # track are three quarter-width cards and a hole.
+                    section_parts.append(
+                        f'<div class="{run_class}" data-count="{len(run)}">{"".join(run)}</div>'
+                    )
                 run.clear()
                 run_class = ""
 
