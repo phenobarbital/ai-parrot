@@ -311,14 +311,29 @@ _BEHAVIOR_JS = r"""
     var names = cfg.yLabels || [];
     var datasets = (cfg.y || []).map(function (col, i) {
       var color = seriesColor(cfg, i);
-      return {
+      // A combination is per-series: the chart's own `type` is the default
+      // and `seriesTypes[i]` overrides it for that series alone. Chart.js
+      // already draws mixed datasets — it is how the trend line rides on a
+      // bar chart — so all this needs is somewhere to say it.
+      var mark = (cfg.seriesTypes && cfg.seriesTypes[i]) || cfg.type;
+      var isLine = mark === "line" || mark === "area";
+      var dataset = {
         label: names[i] || col,
         data: rows.map(function (r) { return r[col]; }),
         backgroundColor: color,
         borderColor: color,
-        borderWidth: cfg.type === "line" || cfg.type === "area" ? 2.5 : 0,
-        pointRadius: cfg.type === "line" || cfg.type === "area" ? 2.5 : undefined,
+        borderWidth: isLine ? 2.5 : 0,
+        pointRadius: isLine ? 2.5 : undefined,
+        fill: mark === "area",
+        type: chartTypeMap[mark] || undefined,
       };
+      // Only when a series asks for the right-hand axis. Naming an axis on
+      // every dataset would create the second scale even for a chart whose
+      // series all share one.
+      if (cfg.seriesAxes && cfg.seriesAxes[i] === "right") {
+        dataset.yAxisID = "yRight";
+      }
+      return dataset;
     });
     // Whether a fit makes sense for this chart type was decided once, in
     // Python, where the FINAL type is known (an unsupported type arrives here
@@ -375,6 +390,13 @@ _BEHAVIOR_JS = r"""
       // Bottom, like the pill key a multi-series chart gets: which side the
       // key sits on should not depend on how many series there happen to be.
       options: {
+        // The second scale exists only if a series asked for it. A rate and
+        // a count do not share a floor: plotted on one axis the rate lies
+        // flat along the bottom and the chart says nothing about it.
+        scales: (cfg.seriesAxes || []).indexOf("right") === -1 ? undefined : {
+          y: { position: "left" },
+          yRight: { position: "right", grid: { drawOnChartArea: false } },
+        },
         // The PROPORTION is the thing to declare; the width comes from the
         // page. Sized against a box instead, a chart inherits whatever that
         // box happens to measure — a wrapper with no definite height gave a
@@ -1318,6 +1340,14 @@ class InteractiveHTMLRenderer(AbstractA2UIRenderer):
         palette = props.get("palette")
         if isinstance(palette, (list, tuple)) and palette:
             config["palette"] = [str(colour) for colour in palette]
+
+        # The combination. Both ride as lists parallel to `y`; absent, the
+        # chart is what it always was, so nothing changes for a chart that
+        # does not ask.
+        for key in ("seriesTypes", "seriesAxes"):
+            value = props.get(key)
+            if isinstance(value, (list, tuple)) and value:
+                config[key] = [None if item is None else str(item) for item in value]
         if isinstance(tabs, list) and tabs:
             config["tabs"] = tabs
         # Only when asked for AND only where a straight line means something:

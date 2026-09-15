@@ -97,3 +97,32 @@ async def test_the_trend_line_is_grey_not_the_next_palette_colour():
     assert trend[0]["lineStyle"]["color"] == _TREND_COLOR
     # The measured series keep whatever the palette gives them.
     assert all("lineStyle" not in s for s in option["series"] if not str(s["name"]).endswith("Trend"))
+
+
+async def test_a_chart_can_combine_a_bar_and_a_line():
+    """The brief's "barra + línea en el mismo gráfico".
+
+    Until the contract could name a mark per series, a chart was one mark for
+    everything — the requirement sat marked "Bloqueado (contrato)".
+    """
+    comp = _chart_component(seriesTypes=[None, "line"])
+    option = json.loads((await EChartsRenderer().render(_envelope(comp))).content)
+    assert [s["type"] for s in option["series"]] == ["bar", "line"]
+
+
+async def test_a_series_gets_its_own_scale_only_when_it_asks():
+    # A rate against a count on one axis lies flat along the floor and says
+    # nothing; an unasked-for second axis is an empty ruler on every chart.
+    comp = _chart_component(seriesTypes=[None, "line"], seriesAxes=[None, "right"])
+    option = json.loads((await EChartsRenderer().render(_envelope(comp))).content)
+    assert option["series"][0].get("yAxisIndex") is None
+    assert option["series"][1]["yAxisIndex"] == 1
+    assert isinstance(option["yAxis"], list)
+    assert option["yAxis"][1]["position"] == "right"
+
+
+async def test_a_chart_that_combines_nothing_is_untouched():
+    comp = _chart_component()
+    option = json.loads((await EChartsRenderer().render(_envelope(comp))).content)
+    assert {s["type"] for s in option["series"]} == {"bar"}
+    assert isinstance(option["yAxis"], dict)

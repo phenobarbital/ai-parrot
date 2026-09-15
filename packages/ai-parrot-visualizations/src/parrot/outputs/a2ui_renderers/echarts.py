@@ -260,16 +260,30 @@ class EChartsRenderer(AbstractA2UIRenderer):
                 }
             return base_option
 
+        # A combination is declared per series: `seriesTypes[i]` names the
+        # mark for one y column and the chart's own `type` covers the rest.
+        series_types = props.get("seriesTypes") or []
+        series_axes = props.get("seriesAxes") or []
+
         series = []
-        for col in y_cols:
+        for index, col in enumerate(y_cols):
             values = [row.get(col) for row in rows if isinstance(row, dict)]
-            series_entry: dict[str, Any] = {"name": col, "type": series_type, "data": values}
-            if chart_type == "area":
+            mark = series_types[index] if index < len(series_types) and series_types[index] else chart_type
+            series_entry: dict[str, Any] = {
+                "name": col,
+                "type": _SERIES_TYPE.get(mark, series_type),
+                "data": values,
+            }
+            if mark == "area":
                 series_entry["areaStyle"] = {}
             if chart_type == "donut":
                 series_entry["radius"] = ["40%", "70%"]
             if stacked:
                 series_entry["stack"] = "total"
+            # Only a series that asked sits on the right-hand axis; the rest
+            # keep index 0, which is the axis they had before any of this.
+            if index < len(series_axes) and series_axes[index] == "right":
+                series_entry["yAxisIndex"] = 1
             series.append(series_entry)
 
         if trendline and series:
@@ -341,7 +355,13 @@ class EChartsRenderer(AbstractA2UIRenderer):
                 if y_axis_label:
                     y_axis["name"] = y_axis_label
                 option["xAxis"] = x_axis
-                option["yAxis"] = y_axis
+                # The second scale appears only if a series asked for it: a
+                # rate and a count do not share a floor, and on one axis the
+                # rate lies flat along the bottom saying nothing.
+                if "right" in series_axes:
+                    option["yAxis"] = [y_axis, {"type": "value", "position": "right", "splitLine": {"show": False}}]
+                else:
+                    option["yAxis"] = y_axis
         return option
 
     def _build_graph_option(self, props: dict[str, Any]) -> dict[str, Any]:

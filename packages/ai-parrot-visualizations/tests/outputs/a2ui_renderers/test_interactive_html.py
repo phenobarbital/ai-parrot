@@ -1075,3 +1075,46 @@ class TestPrintUndoesScreenOnlyPositioning:
         assert "width: 100% !important" in canvas_rule
         assert "height: auto !important" in canvas_rule
         assert "max-height: none !important" in canvas_rule
+
+
+class TestInteractiveCombination:
+    """Chart.js has always drawn mixed datasets — it is how the trend line
+    rides on a bar chart. All this needed was somewhere to say it.
+    """
+
+    async def _config(self, **props) -> dict:
+        env = _envelope(
+            Component(
+                id="root", component="Chart", type="bar", x="week", y=["events", "rate"],
+                data={"path": "/rows"}, **props,
+            ),
+            data_model={"rows": [{"week": "W1", "events": 27, "rate": 0.62}]},
+        )
+        doc = (await InteractiveHTMLRenderer().render(env)).content.decode()
+        return json.loads(html.unescape(re.search(r'data-chart-config="([^"]*)"', doc).group(1)))
+
+    async def test_the_marks_reach_the_embedded_config(self):
+        config = await self._config(seriesTypes=[None, "line"])
+        assert config["seriesTypes"] == [None, "line"]
+
+    async def test_the_axes_reach_it_too(self):
+        config = await self._config(seriesTypes=[None, "line"], seriesAxes=[None, "right"])
+        assert config["seriesAxes"] == [None, "right"]
+
+    async def test_a_chart_that_combines_nothing_carries_nothing(self):
+        config = await self._config()
+        assert "seriesTypes" not in config
+        assert "seriesAxes" not in config
+
+    async def test_the_second_scale_is_conditional_in_the_runtime(self):
+        env = _envelope(
+            Component(
+                id="root", component="Chart", type="bar", x="week", y=["a"],
+                data={"path": "/rows"},
+            ),
+            data_model={"rows": [{"week": "W1", "a": 1}]},
+        )
+        doc = (await InteractiveHTMLRenderer().render(env)).content.decode()
+        # Built only when a series asked: naming an axis on every dataset
+        # would put an empty ruler on the right of every chart.
+        assert 'indexOf("right") === -1 ? undefined' in doc
