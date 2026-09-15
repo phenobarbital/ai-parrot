@@ -211,8 +211,43 @@ See blueprint.
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (orchestrator attempt 3, after one exhausted MCP coder attempt)
+**Date**: 2026-09-15
 **Notes**:
+The `parrot-sdd-coder` MCP attempt (`gemini`, google-compat:gemini-3.5-flash) exhausted its
+61-turn budget during environment exploration/setup and produced zero file changes
+(`incomplete_tasks: ["TASK-3152"]`) — the engine still reported the job outcome as `merged`
+(nothing to merge, branch had no commits), so I verified via `git log`/`git status` that
+nothing had actually landed and treated it as a failed attempt. Implemented fresh in this
+worktree (attempt 3).
+While implementing the round-trip tests I discovered the Implementation Blueprint's own
+suggested approach doesn't work as written: `setup_form_api(app, registry,
+public_base_url=...)` mounts every route (including `render` and `data`) behind
+navigator-auth's `is_authenticated`/`user_session` decorators (`_wrap_auth` in
+`api/routes.py`), which 400s with "Authentication Backend is not enabled" in this unit-test
+environment with no auth backend configured. The task's own "Does NOT Exist" note claimed
+"the public-form path needs none" — that turned out to be incorrect once actually run. I
+adapted by hand-wiring the render/submit routes directly to `handle_render`/
+`FormAPIHandler.submit_data` (bypassing only the auth-decorator layer, not the handler logic
+itself), mirroring the exact same established pattern already used by
+`packages/parrot-formdesigner/tests/unit/api/test_render_dispatcher.py`'s
+`_tenant_wrapped_render` and `packages/parrot-formdesigner/tests/integration/
+test_render_xml.py` for precisely this reason. This preserves a REAL aiohttp test server (so
+`post_submission`'s actual HTTP POST still exercises the real route) while sidestepping the
+auth backend dependency the blueprint didn't account for.
+All three round-trip tests pass (200 success, 422 validation errors, 403 private-form
+membership — the 403 test needed no `token_validator` scaffolding since the hand-wired
+request has no `session` attribute, so `enforce_membership_unless_public`'s default-deny path
+applies directly, exactly as the task's fallback language anticipated). Wrote
+`docs/formdesigner-msteams-renderer.md` with all 9 required sections and the pointer section
+in `docs/msteams.md` before `## Troubleshooting`.
+Verified: `pytest test_formdesigner_roundtrip.py` (3 passed); `pytest packages/
+parrot-formdesigner/tests/unit -q` (33 pre-existing, unrelated failures — identical count
+confirmed against the pre-FEAT-551 baseline during TASK-3148, no new failures); `pytest
+packages/ai-parrot-integrations/tests/msteams -q` (29 passed, 0 failed — includes the earlier
+TASK-3150/3151 tests); `ruff check` clean on the new test file.
 
-**Deviations from spec**: none
+**Deviations from spec**: the round-trip test file hand-wires routes to `handle_render`/
+`FormAPIHandler.submit_data` instead of using `setup_form_api()` directly, for the auth-backend
+reason explained above. No production code changed; only the test's route-registration
+strategy differs from the Implementation Blueprint's literal suggestion.
