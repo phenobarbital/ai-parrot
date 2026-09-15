@@ -159,7 +159,7 @@ class PlannerNode(DevLoopNode):
             ],
             model="claude-sonnet-4-6",
         )
-        dispatch_cwd = os.path.abspath(conf.WORKTREE_BASE_PATH)
+        dispatch_cwd = await asyncio.to_thread(os.path.abspath, conf.WORKTREE_BASE_PATH)
         os.makedirs(dispatch_cwd, exist_ok=True)
 
         planner_out: PlannerOutput = await self._dispatcher.dispatch(
@@ -372,7 +372,11 @@ class PlannerNode(DevLoopNode):
         slots = [0] * len(configured)
         for i in range(count):
             slots[i % len(configured)] += 1
-        return [spec.model_copy(update={"count": allocated}) for spec, allocated in zip(configured, slots) if allocated]
+        return [
+            spec.model_copy(update={"count": allocated})
+            for spec, allocated in zip(configured, slots, strict=True)
+            if allocated
+        ]
 
 
 __all__ = ["PlannerNode"]
