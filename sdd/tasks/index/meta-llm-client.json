@@ -160,7 +160,7 @@
       "feature_id": "FEAT-526",
       "feature": "meta-llm-client",
       "spec": "sdd/specs/meta-llm-client.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "low",
       "effort": "M",
       "depends_on": [
@@ -169,7 +169,7 @@
       "parallel": false,
       "parallelism_notes": "Edits clients/meta/client.py. D2: last and explicitly droppable - nothing depends on it; intended cut if the phase runs long.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-15T15:34:49+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2840-tool-search-mapping.md"
     }
