@@ -1205,3 +1205,49 @@ class TestAxesAreNamed:
         )
         doc = (await InteractiveHTMLRenderer().render(env)).content.decode()
         assert "if (!CARTESIAN[cfg.type]) return undefined;" in doc
+
+
+class TestChartsGroupLikeCards:
+    """Consecutive charts go two across, which is what the Svelte canvas
+    already does with them. Stacked here, the second chart landed on a sheet
+    of its own with half a page of white beneath it.
+    """
+
+    def _section(self, *components) -> Component:
+        return Component(
+            id="root", component="Infographic", title="Report",
+            sections=[{"heading": "Trend", "components": list(components)}],
+        )
+
+    def _chart(self, title: str) -> dict:
+        return {
+            "component": "Chart",
+            "properties": {"type": "bar", "x": "d", "y": ["n"], "data": [], "title": title},
+        }
+
+    def _kpi(self, label: str) -> dict:
+        return {"component": "KPICard", "properties": {"label": label, "value": 1}}
+
+    async def _doc(self, *components) -> str:
+        env = _envelope(self._section(*components))
+        return (await InteractiveHTMLRenderer().render(env)).content.decode()
+
+    async def test_two_charts_share_one_grid(self):
+        doc = await self._doc(self._chart("A"), self._chart("B"))
+        assert doc.count('<div class="chart-grid">') == 1
+        assert doc.count("<canvas") == 2
+
+    async def test_a_run_is_one_kind(self):
+        # A chart after a card starts a new group rather than joining a grid
+        # meant for cards — four columns is a KPI row, not a chart row.
+        doc = await self._doc(self._kpi("Events"), self._chart("A"))
+        assert doc.count('<div class="kpi-grid">') == 1
+        assert doc.count('<div class="chart-grid">') == 1
+
+    async def test_a_table_between_them_starts_a_second_group(self):
+        table = {
+            "component": "DataTable",
+            "properties": {"columns": [{"name": "a", "title": "A", "type": "string"}], "data": []},
+        }
+        doc = await self._doc(self._chart("A"), table, self._chart("B"))
+        assert doc.count('<div class="chart-grid">') == 2

@@ -97,6 +97,14 @@
         gap: 0.75rem;
     }
 
+    /* Same reasoning, two across: a page is a fixed budget and one chart per
+       sheet spends it on white. */
+    .chart-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.75rem;
+    }
+
     /* A long table keeps flowing, but a row stays whole and the header
        repeats on every page — the paged idiom, not sticky positioning. */
     table {

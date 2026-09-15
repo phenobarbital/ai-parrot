@@ -129,6 +129,21 @@
     position: relative;
 }
 
+/* Two charts across where there is room for two, which is what the Svelte
+ * canvas does with consecutive charts. Stacked, the second one landed on a
+ * sheet of its own with half a page of white beneath it. */
+.chart-grid {
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: 1fr;
+}
+
+@media (min-width: 900px) {
+    .chart-grid {
+        grid-template-columns: 1fr 1fr;
+    }
+}
+
 /* ---------- KPI cards ---------- */
 .kpi-card {
     display: flex;

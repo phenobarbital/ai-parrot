@@ -1586,19 +1586,33 @@ class InteractiveHTMLRenderer(AbstractA2UIRenderer):
             # eight full-width blocks, three screens of scrolling for what the
             # app shows in two rows. Grouping by RUN, not by container, is the
             # rule the Svelte canvas already uses (`Infographic.svelte`).
+            # Charts group the same way KPI cards do, and for the same
+            # reason: the Svelte canvas already lays consecutive ones out two
+            # across, and stacking them here sent the second chart to a sheet
+            # of its own with half a page of white under it.
+            _GROUPED = {"KPICard": "kpi-grid", "Chart": "chart-grid"}
             run: list[str] = []
+            run_class = ""
 
             def _flush() -> None:
+                nonlocal run_class
                 if not run:
                     return
-                section_parts.append(f'<div class="kpi-grid">{"".join(run)}</div>')
+                section_parts.append(f'<div class="{run_class}">{"".join(run)}</div>')
                 run.clear()
+                run_class = ""
 
             for descriptor in section.get("components") or []:
                 if not isinstance(descriptor, dict):
                     continue
                 fragment = self._render_descriptor(descriptor, degradations)
-                if descriptor.get("component") == "KPICard":
+                grouped_as = _GROUPED.get(str(descriptor.get("component")))
+                if grouped_as:
+                    # A run is one KIND: a chart after a card starts a new
+                    # group rather than joining a grid meant for cards.
+                    if run_class and run_class != grouped_as:
+                        _flush()
+                    run_class = grouped_as
                     run.append(fragment)
                     continue
                 _flush()
