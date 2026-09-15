@@ -115,16 +115,24 @@
        the size it had just computed and left the drawing letterboxed inside
        its own box — a white band down the side of every chart. Width is the
        only thing worth holding here. */
-    /* Shorter on paper than on a screen: a page is a fixed budget and a
-       chart that takes two fifths of it leaves the rest of the sheet empty.
-       The wrapper owns the height in both media (see `editorial.css`), so
-       this is the only number that changes. */
+    /* Width leads, height follows. Measured in print emulation the canvas
+       fills its wrapper exactly (851x234 in a 851x234 box) — the box was
+       never the problem. What produced a white band down the right of every
+       chart was constraining the HEIGHT while the canvas kept its bitmap's
+       proportion: to stay inside the height the browser shrinks the WIDTH,
+       and the drawing ends at about three quarters of its panel.
+       `width: 100%` is not negotiable with any inline width Chart.js may
+       have left behind, and `height: auto` takes the proportion from the
+       bitmap, so nothing is stretched either. */
     .a2ui-chart-canvas {
-        height: 62mm;
+        height: auto;
     }
 
     canvas {
+        width: 100% !important;
+        height: auto !important;
         max-width: 100% !important;
+        max-height: none !important;
     }
 
     /* Sticky belongs to a scrolling viewport. On paper the repeating-header

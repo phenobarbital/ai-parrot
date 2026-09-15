@@ -1059,10 +1059,12 @@ class TestPrintUndoesScreenOnlyPositioning:
         )
         doc = (await InteractiveHTMLRenderer().render(env)).content.decode()
         block = doc[re.search(r"@media print\s*\{", doc).end():]
-        canvas_rule = block[block.index("\n    canvas {"):][:120]
-        assert "max-width: 100%" in canvas_rule
-        assert "height" not in canvas_rule.replace("max-width", "")
-        # The WRAPPER owns it, in both media, so there is one number to change
-        # rather than a size derived from when the canvas was measured.
-        assert ".a2ui-chart-canvas {" in block
-        assert "height: 62mm" in block
+        canvas_rule = block[block.index("\n    canvas {"):][:200]
+        # Width leads and height follows. Constraining the height while the
+        # canvas keeps its bitmap's proportion is what shrank the WIDTH to
+        # about three quarters of the panel and left a white band beside
+        # every chart — measured in print emulation, the canvas filled its
+        # wrapper exactly, so the box was never the problem.
+        assert "width: 100% !important" in canvas_rule
+        assert "height: auto !important" in canvas_rule
+        assert "max-height: none !important" in canvas_rule
