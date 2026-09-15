@@ -233,6 +233,22 @@
  */
 .a2ui-table-wrap {
     overflow-x: auto;
+    /* The half without which the line above does nothing.
+     *
+     * This card is a flex child (`.a2ui-col` lays the section out as a
+     * column), and a flex child defaults to `min-width: auto` — it refuses to
+     * shrink below its content. So a 500px table in a 430px viewport did not
+     * get clipped and scrolled: it widened its parent, and the page with it.
+     * Measured on a phone: every element reported as sticking out was the
+     * table and its own rows, never this wrapper. */
+    min-width: 0;
+}
+
+/* Same reason, one level up: a column that will not shrink passes the
+ * problem to whatever contains it. */
+.a2ui-col,
+.a2ui-section {
+    min-width: 0;
 }
 
 .a2ui-chart-canvas canvas,
