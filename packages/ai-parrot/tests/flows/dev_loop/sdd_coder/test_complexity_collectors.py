@@ -105,24 +105,26 @@ async def test_collect_complexity_basic(temp_worktree):
 
     # Mock subprocess calls
     with patch("parrot.flows.dev_loop.sdd_coder.complexity_collectors._run_subprocess") as mock_run:
-        # Mock Ruff cyclomatic
+        # Mock Ruff cyclomatic. `ruff check --output-format json` prints a
+        # top-level JSON array of diagnostics (verified against the
+        # installed ruff binary), each `message` shaped
+        # "`name` is too complex (N > threshold)" -- not a
+        # `{"diagnostics": [...]}` wrapper nor a bare "(N)".
         mock_run.side_effect = [
             SubprocessResult(
                 1,
                 json.dumps(
-                    {
-                        "diagnostics": [
-                            {
-                                "code": "C901",
-                                "message": "Function is too complex (5)",
-                                "location": {"file": "src/sample.py"},
-                            }
-                        ]
-                    }
+                    [
+                        {
+                            "code": "C901",
+                            "message": "`method_one` is too complex (5 > 0)",
+                            "location": {"file": "src/sample.py"},
+                        }
+                    ]
                 ),
                 "",
             ),
-            SubprocessResult(0, json.dumps({"diagnostics": []}), ""),  # Syntax check
+            SubprocessResult(0, json.dumps([]), ""),  # Syntax check
             SubprocessResult(
                 0,
                 json.dumps(
@@ -311,8 +313,8 @@ async def test_validate_complexity_snapshot():
         # Mock subprocess for initial collection
         with patch("parrot.flows.dev_loop.sdd_coder.complexity_collectors._run_subprocess") as mock_run:
             mock_run.side_effect = [
-                SubprocessResult(0, json.dumps({"diagnostics": []}), ""),  # Cyclomatic
-                SubprocessResult(0, json.dumps({"diagnostics": []}), ""),  # Syntax
+                SubprocessResult(0, json.dumps([]), ""),  # Cyclomatic
+                SubprocessResult(0, json.dumps([]), ""),  # Syntax
             ]
 
             # Collect initial evidence

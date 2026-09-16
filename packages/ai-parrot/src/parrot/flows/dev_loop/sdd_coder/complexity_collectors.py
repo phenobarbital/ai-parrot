@@ -331,18 +331,22 @@ async def _collect_ruff_cyclomatic(
                     {},
                 )
 
-            # Parse Ruff output
+            # Parse Ruff output. `ruff check --output-format json` prints a
+            # top-level JSON *array* of diagnostic objects (verified against
+            # the installed ruff binary) -- not `{"diagnostics": [...]}`.
             try:
                 ruff_output = json.loads(result.stdout)
                 complexities = []
 
                 # Extract complexity values from diagnostics
-                for diagnostic in ruff_output.get("diagnostics", []):
+                for diagnostic in ruff_output:
                     if diagnostic.get("code") == "C901":
-                        # Extract complexity value from message
+                        # Extract complexity value from message. Real format:
+                        # "`name` is too complex (11 > 0)" -- the value is the
+                        # first integer in the parens, not the parens' whole
+                        # content (which also has the threshold after "> ").
                         message = diagnostic.get("message", "")
-                        # Message format: "Function is too complex (12)"
-                        match = re.search(r"\((\d+)\)", message)
+                        match = re.search(r"\((\d+)\s*>", message)
                         if match:
                             complexities.append(int(match.group(1)))
 
@@ -437,14 +441,13 @@ async def _collect_ruff_syntax(
 
             result = await _run_subprocess(cmd, worktree, policy.timeout_seconds, policy.max_output_bytes)
 
-            # Count syntax errors
+            # Count syntax errors. Same top-level-array shape as the
+            # cyclomatic collector above -- not `{"diagnostics": [...]}`.
             syntax_error_count = 0
             if result.returncode in (0, 1):
                 try:
                     ruff_output = json.loads(result.stdout)
-                    syntax_error_count = len(
-                        [d for d in ruff_output.get("diagnostics", []) if d.get("code", "").startswith("E9")]
-                    )
+                    syntax_error_count = len([d for d in ruff_output if d.get("code", "").startswith("E9")])
                 except json.JSONDecodeError:
                     pass  # Ignore JSON errors for syntax collection
 
