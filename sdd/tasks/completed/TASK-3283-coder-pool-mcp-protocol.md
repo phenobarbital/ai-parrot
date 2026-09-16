@@ -185,5 +185,62 @@ outside this task's scope, report it for the owning task instead of broadening f
 
 ## Completion Note
 
-Not completed. The executing worker must record its identity, date, implementation summary, verification evidence
-and deviations here before marking this task done.
+**Delivery attempts (both failed, neither merged)**:
+1. Seat `glm` (backend `nova`, model `zai.glm-4.7-flash`), attempt_uid `ef3cba3fa2084030be72a4d2aacc3a68` —
+   hit `max_turns=60` with no `final_output` recovered; zero output.
+2. Seat `mistral` (backend `nova`, model `mistral.devstral-2-123b`, MCP retry), attempt_uid
+   `471b41f571ce45b08634bee5280b7eee` — self-admittedly "partially complete due to import errors", left
+   uncommitted (`dirty_task_worktree`).
+
+Neither attempt reached `outcome=merged`; no reviewed code was ever landed under either attempt_uid, so no
+model feedback/review measurement was recorded for this task (consistent with the codex-spark timeout
+precedent in TASK-3281 — an environment/incomplete failure with nothing merged to review, distinct from a
+merged-but-broken delivery). Implemented directly by sdd-worker (Sonnet 5 orchestrator), using mistral's
+uncommitted diff only as loose orientation — its unauthorized rename of the existing `SuspendModelArgs` to
+`CoderSuspendModelArgs` was discarded (the task explicitly says to use "the new TASK-3275 argument models"
+as delivered, and the rename would have required touching `test_models.py`, outside both TASK-3275's and
+this task's declared scope) — 2026-09-16.
+
+**Implementation summary**:
+- Registered `coder_begin_execution`/`coder_end_execution`/`coder_suspend_model`. `coder_begin_execution`
+  reuses `CoderPlanArgs` (identical `feature`/`worktree`/`execution_id` shape — no new class needed);
+  `coder_suspend_model` reuses the existing `SuspendModelArgs` unchanged. `coder_end_execution` needed one
+  small, **disclosed scope exception** into `models.py` (outside this task's own declared file list): no
+  existing model has ONLY `execution_id`, so a minimal `CoderEndExecutionArgs` was unavoidable.
+- Threaded `execution_id` through `coder_plan`/`run_chunk`/`prepare_native`/`merge`/`cleanup`/
+  `record_feedback`/`record_review` (all now required method parameters, matching the arg models' own
+  required field). Fixed `coder_feedback_report`'s `arg_models` entry from `CoderPlanArgs` (now
+  execution_id-required — a latent bug `CoderFeedbackReportArgs` was created specifically to prevent, back
+  in TASK-3275, but never wired into this mapping) to `CoderFeedbackReportArgs`.
+- `_pre_execute` maps a validation failure caused SOLELY by a missing `execution_id` to the dedicated
+  `execution_required` error code; every other validation failure (bad UUID, extra field, wrong type, ...)
+  still maps to the existing generic `invalid_arguments`.
+- Fixed `coder_status`: still called the now-async (TASK-3282) `engine.status()` synchronously
+  (`TypeError: object CoderJob can't be used in 'await' expression`) — added `await`.
+- Exposed a `suspension_policy` kwarg alongside the existing `lint`/`feedback` dict-kwarg pattern, threaded
+  into `RosterConfig.suspension_policy`.
+
+**Pre-existing tests fixed** (8, all within this task's own file scope): missing `execution_id` in several
+`_pre_execute`/direct-method calls; tool-set assertions needing the 3 new tool names (both `test_toolkit.py`
+and `test_mcp_local.py` copies); a `status` mock still synchronous after TASK-3282's async conversion.
+**Required scenarios added**: `test_missing_execution_rejected`, `test_toolkit_exposes_execution_lifecycle_tools`,
+`test_registered_schemas_require_execution_identity` (checks the REAL `get_tools()` JSON schemas via
+`tool.get_schema()`, not just the internal `arg_models` mapping), `test_status_wait_preserve_pool_and_seat_views`
+(the existing per-seat rollup test, fixed), `test_mcp_local_starts_without_probe` (injects a probe that raises
+if called; server construction alone must never trigger it — `auto_open` is lazy, only the first actual tool
+call opens).
+
+**Verification evidence**:
+- `pytest test_toolkit.py test_mcp_local.py -q` → 14 passed (was 3 passed / 8 failed across both).
+  Log: `artifacts/logs/task-3283-pytest.log`.
+- Full `tests/flows/dev_loop/sdd_coder/` sweep: 280 passed, 3 failed — the SAME `test_integration_chunk.py`
+  failures already confirmed/deferred to TASK-3285 (empty-model roster fixture), unrelated to this task.
+- `ruff check` → clean. `black --check` → clean (after one reformat pass).
+  Logs: `artifacts/logs/task-3283-ruff.log`, `artifacts/logs/task-3283-black.log`.
+- `git diff --check` → clean. Only `toolkit.py`/`test_toolkit.py`/`test_mcp_local.py` (declared scope) plus
+  the disclosed `models.py` exception changed.
+
+Seat: glm (failed, no output) → mistral (failed, uncommitted) · Backend: nova · Model: zai.glm-4.7-flash →
+mistral.devstral-2-123b · Attempts: 1 (glm, MCP) + 1 (mistral, MCP retry) + 1 (orchestrator direct
+implementation) · Duration: 215.2s + 336.7s (MCP attempts) · Tokens: 2,621,071 in / 5,985 out (glm) +
+1,647,829 in / 7,734 out (mistral)

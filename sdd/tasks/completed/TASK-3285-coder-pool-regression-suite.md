@@ -218,5 +218,50 @@ outside this task's scope, report it for the owning task instead of broadening f
 
 ## Completion Note
 
-Not completed. The executing worker must record its identity, date, implementation summary, verification evidence
-and deviations here before marking this task done.
+Completed 2026-09-16 by sdd-worker (orchestrator). Initial delivery by seat `qwen`
+(backend `nova`, model `qwen.qwen3-coder-480b-a35b-instruct`), attempt_uid
+`50e7dac14ee64a518c683a4efc19a462`, merged in commit `a7466d2bf05437e50e01207e05da296fd4471893`.
+
+Independent verification found the merged delivery materially incomplete: it touched only
+1 of the 7 declared files (`test_execution_pool_integration.py`), never touched
+`test_integration_chunk.py`/`test_engine_dispatch.py`/`test_engine_plan_merge.py`/
+`test_feedback.py`/`test_telemetry.py`/`conftest.py`, and its own DevelopmentOutput
+summary admitted the new tests were never executed ("couldn't be executed directly but
+were verified to compile correctly"). Running the actual suite confirmed 4 of its 11 new
+tests failed and 2 of the 9 required scenarios were entirely missing. Fixed directly in
+this worktree in commit `01c5cd328cf733abff2ce23472f490b6ddfd3ebd`:
+
+1. 6 call sites passed a nonexistent `SddCoderEngine(suspension_store=...)` constructor
+   kwarg — fixed by constructing plainly and injecting `engine._suspension_store = store`
+   afterwards (the pattern `test_engine_plan_merge.py`'s `isolated_suspension_store` fixture
+   already established).
+2. 4 tests' `mock_probe.probe = AsyncMock(return_value=[])` left the pool with zero
+   admissible seats at all — fixed by returning a real `SeatProbeResult` per configured seat.
+3. `test_overlapping_workers_isolated` began two DIFFERENT executions (A, B) against the
+   SAME worktree path with one engine, tripping the engine's own single-owner-per-worktree
+   invariant (`execution_in_progress`) — exactly what the task's own scope note warned
+   against ("on a separate feature worktree"). Fixed by giving A/B/C their own git-initialized
+   worktree, sharing only the root-scoped `CoderSuspensionStore`.
+4. `conftest.py`'s shared `three_seat_roster` fixture (declared in this task's own file
+   list) still had empty `model=""` seats, excluded by TASK-3277's `model_identity_required`
+   rule — broke `test_integration_chunk.py`'s roster-dependent tests. Fixed by giving the
+   fixture explicit deterministic model ids; the other 5 declared files needed no further
+   changes (confirmed by the full 290-test suite run below).
+5. Added the two required scenarios the delivery never wrote: `test_model_aliases_and_parallel_admission`
+   and `test_mcp_and_prompt_twins` (both in `test_execution_pool_integration.py`, the only
+   file this task ultimately needed to change besides `conftest.py`).
+
+Verification: `pytest packages/ai-parrot/tests/flows/dev_loop/sdd_coder/ -q` → 290 passed;
+`pytest tests/knowledge/wiki/test_ledger_{events,log,service,integration}.py -q` → 36 passed;
+`black --check` clean; `git diff --check` clean. `ruff check` on the two touched files
+reports 40 `ASYNC221` findings (subprocess.run inside async def), all pre-existing in
+qwen's own scaffolding (its lint step already recorded 44 residual findings of this class) —
+left for `/sdd-done`'s feature-wide style pass per convention, not fixed here. Logs:
+`artifacts/logs/task-3285-validation.log`, `task-3285-black.log`, `task-3285-ruff.log`.
+
+Feedback recorded: `coder-feedback:a9fda78501412de3c21942e5` (pattern
+`unverified-tests-and-incomplete-file-scope`). Review recorded:
+`coder-review:4ab2db5c6c8071e7a975372a` (fix_commits=[`01c5cd328cf733abff2ce23472f490b6ddfd3ebd`]).
+
+Seat: qwen · Backend: nova · Model: qwen.qwen3-coder-480b-a35b-instruct ·
+Attempts: 1 (+ orchestrator fix-up) · Duration: 528.34s · Tokens: 2432324 in / 26132 out.

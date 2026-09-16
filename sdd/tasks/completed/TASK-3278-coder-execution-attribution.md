@@ -174,5 +174,35 @@ outside this task's scope, report it for the owning task instead of broadening f
 
 ## Completion Note
 
-Not completed. The executing worker must record its identity, date, implementation summary, verification evidence
-and deviations here before marking this task done.
+**Delivered by**: MCP coder, seat `glm5` (backend `nova`, model `zai.glm-5`),
+attempt_uid `d5ab2d7625264d208319b8a00f2166b1`, commit 5a5474461 — 2026-09-16.
+**Reviewed by**: sdd-worker (Sonnet 5 orchestrator) — 2026-09-16. No corrections required.
+
+**Implementation summary**: Added `execution_id: str = Field("", max_length=64)` to `AttemptUsageRow`/
+`OutcomeRow` (telemetry.py, projected explicitly from `AttemptRecord`, not via `model_dump`), and to
+`CoderFeedback`/`CoderReview` (coder_feedback.py/coder_reviews.py) — all additive, defaulting to empty for
+historical records, never affecting `feedback_id()`'s hash or existing review cohort totals. New
+`TestExecutionAttribution` test classes in both `test_telemetry.py` and `test_feedback.py` cover legacy
+parsing, execution-identity projection, and that an empty `execution_id` is never counted as a zero-fix
+baseline.
+
+**Review findings**: `pytest test_telemetry.py -q` → 19 passed, clean. `pytest test_feedback.py -q` → 21
+passed, 1 failed (`test_mcp_retry_refreshes_feedback_for_each_model`). Traced the failure to
+`engine.py:1171`'s `self._jobs.create(ctx.feature_id, list(task_ids), runner)` — missing the now-mandatory
+`execution_id` keyword (`TypeError`). This is collateral from TASK-3275's `JobTable.create()` signature
+change, NOT introduced by this task (this task never touches `engine.py`/`jobs.py`), and NOT one of this
+task's own new tests. `engine.py`'s migration to thread `execution_id` through `run_chunk`/`_run_task` is
+explicitly TASK-3280's scope ("Execution-bound run_chunk/attempts, classifier, admission and retry loop") —
+deferred there; this delivery required no change.
+
+**Verification evidence**:
+- `pytest test_telemetry.py -q` → 19 passed. Log: `artifacts/logs/task-3278-telemetry-pytest.log`.
+- `pytest test_feedback.py -q` → 21 passed, 1 pre-existing/deferred failure (see above).
+  Log: `artifacts/logs/task-3278-feedback-pytest.log`.
+- `ruff check`/`black --check` on the five declared files → clean (engine lint autofix commit c081a7193).
+- `git diff --check` → clean.
+- Review measurement recorded: `coder-review:85bd4a098bf6c81b49007623`, `fix_commits: []` (no correction
+  needed).
+
+Seat: glm5 · Backend: nova · Model: zai.glm-5 · Attempts: 1 (MCP, no retry) · Duration: 442.2s · Tokens:
+1,995,300 in / 10,974 out

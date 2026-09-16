@@ -215,7 +215,7 @@ async def test_complex_task_routes_to_strong_model(
     async def mock_compute_assessment(self, ctx, task, task_file):
         return mock_assessment
 
-    async def mock_assessment_for(self, ctx, task, task_file):
+    async def mock_assessment_for(self, ctx, task, task_file, execution_id=None):
         # run_chunk's admission check revalidates against the CURRENTLY
         # cached plan; the real validate_complexity_snapshot would recollect
         # real evidence and never match this fixture's fake hashes, so trust
@@ -386,7 +386,7 @@ async def test_native_preparation_respects_complexity(
     async def mock_compute_assessment(self, ctx, task, task_file):
         return mock_assessment
 
-    async def mock_assessment_for(self, ctx, task, task_file):
+    async def mock_assessment_for(self, ctx, task, task_file, execution_id=None):
         return self._plan_cache[ctx.feature_id].assessments[task.task_id]
 
     monkeypatch.setattr(SddCoderEngine, "_compute_assessment", mock_compute_assessment)
@@ -429,7 +429,7 @@ async def test_retry_uses_different_strong_model(
     async def mock_compute_assessment(self, ctx, task, task_file):
         return mock_assessment
 
-    async def mock_assessment_for(self, ctx, task, task_file):
+    async def mock_assessment_for(self, ctx, task, task_file, execution_id=None):
         return self._plan_cache[ctx.feature_id].assessments[task.task_id]
 
     monkeypatch.setattr(SddCoderEngine, "_compute_assessment", mock_compute_assessment)

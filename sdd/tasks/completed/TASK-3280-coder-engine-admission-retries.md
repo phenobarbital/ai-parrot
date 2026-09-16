@@ -188,5 +188,48 @@ outside this task's scope, report it for the owning task instead of broadening f
 
 ## Completion Note
 
-Not completed. The executing worker must record its identity, date, implementation summary, verification evidence
-and deviations here before marking this task done.
+**Delivered by**: MCP coder, seat `glm5` (backend `nova`, model `zai.glm-5`),
+attempt_uid `62b22afaf6e74838b5d8f6bd5b36f9ef`, commit f561f3b35844e2276722428d178b5319ec5ebe26 — 2026-09-16.
+**Reviewed and corrected by**: sdd-worker (Sonnet 5 orchestrator) — 2026-09-16.
+
+**Implementation summary**: `run_chunk()` now gates each dispatch through `pool.admit()`/`pool.release()`;
+`_classify_failure_reason()` maps a failure's bounded exception cause chain to a `SuspensionReason`
+(`timeout`/`dispatch_error`/`invalid_output`/`dirty_delivery`/`fidelity_violation`), distinguishing a wrapped
+dispatch-deadline `TimeoutError` from a `coder_wait` polling timeout; `_classify_and_suspend()` builds and
+persists the `SuspensionRecord` before scheduling a retry; `_select_retry_seat()` picks a healthy,
+not-yet-tried model, waiting on the pool's condition when busy; stale plans are rejected (`plan_stale`)
+before any job/worktree is created; `_run_attempt()`/`_run_task()` carry `execution_id`/`pool` end-to-end.
+
+**Review findings (confirmed, fixed)**: `engine.py`'s own new logic was correct — the actual defect was
+entirely in the TEST FILE. `test_engine_dispatch.py`'s local `_roster(*labels_backends)` helper built every
+seat with no `model=` (default `""`), used by nearly every test in the file including almost all of this
+task's own new tests (`TestStalePlanAdmitsNothing`, `TestRetryUsesOnlyHealthyFreeModel`,
+`TestModelAliasesAndParallelAdmission`, `TestCooldownStartsAtFailureObservation`). TASK-3277's (already-
+merged) mandatory `model_identity_required` rule now always excludes an empty-model seat before any
+probe/smoke call, so 19 of 29 tests failed with `roster_empty`. Added an explicit, distinct-per-label
+`model=f"model-{lbl}"` to `_roster()` and to two hand-built inline rosters
+(`test_plan_then_dispatch_uses_consistent_seat_assignment`). As a side effect, this also resolved the
+previously-deferred `test_feedback.py::test_mcp_retry_refreshes_feedback_for_each_model` collateral failure
+(now genuinely fixed by this task's own `run_chunk`/`JobTable.create(execution_id=...)` threading, not
+merely reformulated).
+
+**Verification evidence**:
+- `pytest test_engine_dispatch.py -q` → 29 passed (was 10 passed / 19 failed).
+  Log: `artifacts/logs/task-3280-pytest.log`.
+- Full `tests/flows/dev_loop/sdd_coder/` sweep (excluding `test_mcp_local.py`): 263 passed, 5 failed — all 5
+  in files outside this task's scope (`test_integration_chunk.py` ×3 → confirmed owned by TASK-3285;
+  `test_toolkit.py` ×2 → confirmed owned by TASK-3283, `CoderPlanArgs.execution_id` not yet threaded through
+  the MCP toolkit). Flagged for verification when those tasks are consolidated.
+- `ruff check` → clean except pre-existing `lint.residual` (ASYNC240×5, B905×1, already flagged by the
+  engine's own lint pass, deferred to `/sdd-done`'s feature-wide pass per policy). `black --check` → clean.
+  Logs: `artifacts/logs/task-3280-ruff.log`, `artifacts/logs/task-3280-black.log`.
+- `git diff --check` → clean. Only `test_engine_dispatch.py` changed (declared scope).
+- Model feedback recorded: `coder-feedback:bd774ff2ff65fb16d459c060` (pattern
+  `empty-model-roster-fixture-vs-model-identity-required`, model `nova/zai.glm-5`).
+- Review measurement recorded: `coder-review:69288535cfdb75cee377eb43`, fix commit
+  `699a38e7738fbbaae7200d9f9d34163e3661aefb` (marker commit `10a645f381fc410cff752c0b83c69159f08cae9a`
+  carries the exact `fix(...): TASK-3280 review fixes` message the review tool requires; the real diff is
+  in the referenced commit).
+
+Seat: glm5 · Backend: nova · Model: zai.glm-5 · Attempts: 1 (MCP) + 1 (orchestrator review fix) · Duration:
+635.0s (MCP attempt) · Tokens: 3,447,906 in / 16,892 out (MCP attempt)

@@ -184,5 +184,69 @@ outside this task's scope, report it for the owning task instead of broadening f
 
 ## Completion Note
 
-Not completed. The executing worker must record its identity, date, implementation summary, verification evidence
-and deviations here before marking this task done.
+**Delivered by**: MCP coder, seat `minimax` (backend `nova`, model `minimax.minimax-m2.5`),
+attempt_uid `aa122ec28306468387c61cedc721fbbd`, commit e1910367da02ef546cda4510d09a09202dff1096 — 2026-09-16.
+**Reviewed and corrected by**: sdd-worker (Sonnet 5 orchestrator) — 2026-09-16.
+
+**Implementation summary**: `begin_execution()` reads durable suspension history via `CoderSuspensionStore`
+before probing eligible candidates, binds `execution_id` to the canonical worktree (single-owner
+`execution_in_progress` guard), builds an `ExecutionPool` with the resolved `initial_exclusions`, and marks
+`fallback_required`/`all_seats_exhausted` when no seat remains eligible. `end_execution()` refuses while
+attempts/reservations are in flight and releases worktree ownership. `plan()` gained an optional
+`execution_id` kwarg that routes to the execution's private cached assigner (legacy `open()`/no-execution
+path unchanged). Added `explicit_model_roster`/`fake_utc_clock`/`isolated_suspension_store` fixtures.
+
+**Review findings (confirmed, fixed)**:
+1. `begin_execution()` wrapped the already-`async def` `CoderSuspensionStore.recent()` in ANOTHER
+   `asyncio.to_thread(...)` — this runs the coroutine *function* in a worker thread without awaiting the
+   coroutine it returns, silently discarding the real result (`RuntimeWarning: coroutine 'recent' was never
+   awaited`, then `TypeError: 'coroutine' object is not iterable`), caught by the broad `except` as a false
+   `suspension_history_unavailable` — broke all 3 of this task's own new lifecycle tests.
+2. A confirmed dead-code stub: the resume-path roster-fingerprint check compared
+   `existing.roster_fingerprint` against `ExecutionPool.roster_fingerprint.__get__(existing, ExecutionPool)`
+   — the exact same value — so it always evaluated "equal" and silently skipped the spec-mandated
+   `execution_config_mismatch` error on a genuine mismatch. Fixed by exposing `pool.py`'s roster-fingerprint
+   helper publicly (`roster_fingerprint()`, was `_roster_fingerprint` — **disclosed scope exception**: this
+   touches `pool.py`, owned by the already-merged TASK-3276, not in this task's own declared file list; the
+   change is a minimal, backward-compatible rename + one new call site, needed to compare the CURRENT
+   roster's fingerprint against the pool's stored one without constructing a throwaway `ExecutionPool`) and
+   comparing against the live `self.roster`, now correctly raising `execution_config_mismatch`.
+3. 6 PRE-EXISTING tests (`test_engine_plan_from_real_index`, `test_engine_plan_is_deterministic`,
+   `test_engine_plan_dependency_cycle`, `test_engine_rejects_worktree_outside_base`,
+   `test_engine_feature_not_found`, `test_engine_orphans_listed_not_merged`) broke as collateral from
+   TASK-3277's (already-merged) mandatory `model_identity_required` rule: they used the shared
+   `three_seat_roster` fixture (empty `model` fields), now correctly always excluded before any probe.
+   Switched them to THIS task's own `explicit_model_roster` fixture rather than editing the shared
+   `three_seat_roster` (also used by `test_toolkit.py`/`test_integration_chunk.py`, outside this task's
+   scope — left untouched).
+4. Two of this task's own new tests had authoring bugs: `test_plan_cache_is_execution_private` began TWO
+   execution_ids on the SAME worktree, contradicting the single-owner invariant
+   `test_same_worktree_has_single_execution_owner` already asserts — now ends the first execution before
+   beginning the second, preserving the actual intent (private per-execution plan caches).
+   `test_all_seats_exhausted`'s `SuspensionRecord` was missing the required `attempt_uid` field and used
+   `now.replace(second=now.second + 1800)` (seconds must be 0..59) instead of
+   `now + timedelta(seconds=...)`.
+
+**Known, disclosed, OUT-OF-SCOPE collateral (not fixed here)**: running the full `sdd_coder` test directory
+surfaces 20 additional failures in `test_engine_dispatch.py`, `test_feedback.py`
+(`test_mcp_retry_refreshes_feedback_for_each_model`), `test_integration_chunk.py` and `test_toolkit.py` —
+all trace to TASK-3275's mandatory `JobTable.create(execution_id=...)` / `CoderPlanArgs.execution_id` and
+TASK-3277's `model_identity_required` rule, in files NOT in this task's (or TASK-3276/3277/3278's) declared
+scope. `test_engine_dispatch.py` is explicitly TASK-3280's scope ("Execution-bound run_chunk/attempts...");
+`test_toolkit.py` is TASK-3283's ("coder-pool-mcp-protocol"). Flagged for verification when those tasks are
+consolidated, and again at TASK-3285's final regression gate.
+
+**Verification evidence**:
+- `pytest test_engine_plan_merge.py -q` → 21 passed (was 11 passed / 10 failed).
+  Log: `artifacts/logs/task-3279-pytest.log`.
+- `ruff check` → clean except pre-existing `lint.residual` (ASYNC240×5, B905×1, already flagged by the
+  engine's own lint pass at delivery time, deferred to `/sdd-done`'s feature-wide pass per policy).
+  `black --check` → clean. Logs: `artifacts/logs/task-3279-ruff.log`, `artifacts/logs/task-3279-black.log`.
+- `git diff --check` → clean.
+- Model feedback recorded: `coder-feedback:cb2d17c6b108dff24d5288da` (pattern
+  `double-to-thread-on-async-def`, model `nova/minimax.minimax-m2.5`).
+- Review measurement recorded: `coder-review:96fa5a89d43d3a583d4ec37f`, fix commit
+  `7d49150abb0af3898407fe52553391b02ca5f562`.
+
+Seat: minimax · Backend: nova · Model: minimax.minimax-m2.5 · Attempts: 1 (MCP) + 1 (orchestrator review fix)
+· Duration: 414.5s (MCP attempt) · Tokens: 3,086,422 in / 14,599 out (MCP attempt)

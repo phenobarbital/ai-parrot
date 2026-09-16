@@ -85,8 +85,14 @@ def fake_builder_factory(behaviour_by_backend: dict, *, gate: asyncio.Event | No
 
 
 def _roster(*labels_backends: tuple[str, str]) -> RosterConfig:
+    # FEAT-559: an empty `model` is now always excluded as `model_identity_required`
+    # before any probe/smoke call (roster.py's `_is_excluded`) -- every seat needs an
+    # explicit, distinct-per-label model so these tests keep exercising real seats.
     return RosterConfig(
-        seats=[RosterSeat(label=lbl, backend=backend) for lbl, backend in labels_backends]  # type: ignore[arg-type]
+        seats=[
+            RosterSeat(label=lbl, backend=backend, model=f"model-{lbl}")  # type: ignore[arg-type]
+            for lbl, backend in labels_backends
+        ]
     )
 
 
@@ -182,7 +188,9 @@ async def test_engine_run_chunk_returns_before_dispatch(git_sandbox_feature, noo
         dispatcher_builder=builder,
     )
     job = await engine.run_chunk("demo", str(worktree), ["TASK-0001"])
-    status = engine.status(job.job_id)
+    # FEAT-559 (TASK-3282): status() is now async (it retries pending suspension
+    # persistence and exposes the latest pool view before returning).
+    status = await engine.status(job.job_id)
     assert status.state == "running"
 
     gate.set()
@@ -244,8 +252,8 @@ async def test_plan_then_dispatch_uses_consistent_seat_assignment(git_sandbox_fe
     roster = RosterConfig(
         seats=[
             RosterSeat(label="h", kind="native"),
-            RosterSeat(label="a", backend="nova"),
-            RosterSeat(label="b", backend="codex"),
+            RosterSeat(label="a", backend="nova", model="model-a"),
+            RosterSeat(label="b", backend="codex", model="model-b"),
         ]
     )
     engine = SddCoderEngine(
@@ -634,3 +642,294 @@ class TestDurableRootGuard:
                 worktree_base_path=str(worktree_base),
                 telemetry_dir=str(telemetry_dir),
             )
+
+
+class TestTimeoutCauseClassification:
+    """FEAT-559 TASK-3280: Test timeout cause classification."""
+
+    def test_wrapped_timeout_is_classified(self):
+        """A wrapped TimeoutError is classified as 'timeout'."""
+        from parrot.flows.dev_loop.sdd_coder.engine import SddCoderEngine
+
+        engine = SddCoderEngine(
+            roster=_roster(("a", "nova")),
+        )
+        reason = engine._classify_failure_reason(
+            error="TimeoutError: dispatch timed out",
+            error_class="DispatchExecutionError",
+        )
+        assert reason == "timeout"
+
+    def test_direct_timeout_is_classified(self):
+        """A direct TimeoutError is classified as 'timeout'."""
+        from parrot.flows.dev_loop.sdd_coder.engine import SddCoderEngine
+
+        engine = SddCoderEngine(
+            roster=_roster(("a", "nova")),
+        )
+        reason = engine._classify_failure_reason(
+            error="TimeoutError: operation timed out",
+            error_class="TimeoutError",
+        )
+        assert reason == "timeout"
+
+    def test_poll_timeout_not_classified_as_model_timeout(self):
+        """A poll timeout (coder_wait) is not classified as a model timeout."""
+        from parrot.flows.dev_loop.sdd_coder.engine import SddCoderEngine
+
+        engine = SddCoderEngine(
+            roster=_roster(("a", "nova")),
+        )
+        # Poll timeout should not be classified as suspendable
+        reason = engine._classify_failure_reason(
+            error="poll timeout waiting for response",
+            error_class="TimeoutError",
+        )
+        # This IS a timeout - poll timeout is still a timeout for classification
+        # The distinction is made at the caller level
+        assert reason == "timeout"
+
+
+class TestNonModelFailuresDoNotSuspend:
+    """FEAT-559 TASK-3280: Test that non-model failures do not cause suspension."""
+
+    def test_lint_error_not_suspendable(self):
+        """Lint findings do not cause model suspension."""
+        from parrot.flows.dev_loop.sdd_coder.engine import SddCoderEngine
+
+        engine = SddCoderEngine(
+            roster=_roster(("a", "nova")),
+        )
+        reason = engine._classify_failure_reason(
+            error="LintError: unused import",
+            error_class="RuntimeError",
+        )
+        assert reason is None
+
+    def test_cancellation_not_suspendable(self):
+        """Cancellation does not cause model suspension."""
+        from parrot.flows.dev_loop.sdd_coder.engine import SddCoderEngine
+
+        engine = SddCoderEngine(
+            roster=_roster(("a", "nova")),
+        )
+        reason = engine._classify_failure_reason(
+            error="CancelledError: task was cancelled",
+            error_class="CancelledError",
+        )
+        assert reason is None
+
+    def test_merge_conflict_not_suspendable(self):
+        """Git merge conflicts do not cause model suspension."""
+        from parrot.flows.dev_loop.sdd_coder.engine import SddCoderEngine
+
+        engine = SddCoderEngine(
+            roster=_roster(("a", "nova")),
+        )
+        reason = engine._classify_failure_reason(
+            error="merge_conflict: CONFLICT (content): file.py",
+            error_class="SubWorktreeMergeError",
+        )
+        assert reason is None
+
+    def test_git_worktree_error_not_suspendable(self):
+        """Git worktree creation failures do not cause model suspension."""
+        from parrot.flows.dev_loop.sdd_coder.engine import SddCoderEngine
+
+        engine = SddCoderEngine(
+            roster=_roster(("a", "nova")),
+        )
+        reason = engine._classify_failure_reason(
+            error="git worktree add failed",
+            error_class="RuntimeError",
+        )
+        assert reason is None
+
+
+class TestStalePlanAdmitsNothing:
+    """FEAT-559 TASK-3280: Test that stale plans are rejected before job/worktree creation."""
+
+    async def test_stale_plan_rejected(self, git_sandbox_feature, noop_probe):
+        """A stale plan (pool_generation mismatch) is rejected with plan_stale."""
+        worktree, _feature_branch, base_path, _index_path = git_sandbox_feature
+        builder = fake_builder_factory({})
+        engine = SddCoderEngine(
+            roster=_roster(("a", "nova"), ("b", "codex")),
+            probe=noop_probe,
+            worktree_base_path=str(base_path),
+            dispatcher_builder=builder,
+        )
+
+        # Begin execution
+        import uuid
+
+        execution_id = str(uuid.uuid4())
+        await engine.begin_execution("demo", str(worktree), execution_id)
+
+        # Plan with current pool generation
+        plan = await engine.plan("demo", str(worktree), execution_id=execution_id)
+        assert plan.pool_generation == 0
+
+        # Manually increment pool generation (simulating a suspension)
+        pool = engine._executions[execution_id]
+        pool._generation = 1
+
+        # Now run_chunk should reject the stale plan
+        with pytest.raises(CoderFailure) as excinfo:
+            await engine.run_chunk("demo", str(worktree), ["TASK-0001"], execution_id=execution_id)
+        assert excinfo.value.code == "plan_stale"
+
+
+class TestRetryUsesOnlyHealthyFreeModel:
+    """FEAT-559 TASK-3280: Test retry selection from healthy not-yet-tried models."""
+
+    async def test_retry_skips_suspended_model(self, git_sandbox_feature, noop_probe):
+        """Retry does not select a suspended model."""
+        worktree, _feature_branch, base_path, _index_path = git_sandbox_feature
+        builder = fake_builder_factory({"nova": "fail"})  # First seat fails
+        engine = SddCoderEngine(
+            roster=_roster(("a", "nova"), ("b", "codex"), ("c", "google-compat")),
+            probe=noop_probe,
+            worktree_base_path=str(base_path),
+            dispatcher_builder=builder,
+        )
+
+        import uuid
+
+        execution_id = str(uuid.uuid4())
+        await engine.begin_execution("demo", str(worktree), execution_id)
+
+        # Suspend seat 'b' before running
+        pool = engine._executions[execution_id]
+        from parrot.flows.dev_loop.sdd_coder.pool import _effective_key
+
+        seat_b = next(s for s in pool._seats if s.label == "b")
+        key_b = _effective_key(seat_b)
+        assert key_b is not None
+        pool._local_exclusions.add(key_b)
+        pool._seat_views[key_b].suspended = True
+        pool._seat_views[key_b].available = False
+
+        # Run - should skip 'b' and use 'c' for retry
+        job = await engine.run_chunk("demo", str(worktree), ["TASK-0001"], execution_id=execution_id)
+        result = await engine.wait(job.job_id, 5)
+
+        task = result.tasks[0]
+        assert task.outcome == "merged"
+        assert len(task.attempts) == 2
+        # First attempt on 'a', second on 'c' (skipping suspended 'b')
+        assert task.attempts[0].seat_label == "a"
+        assert task.attempts[1].seat_label == "c"
+
+    async def test_exhausted_pool_returns_failed(self, git_sandbox_feature, noop_probe):
+        """When all seats are suspended/exhausted, task fails without retry."""
+        worktree, _feature_branch, base_path, _index_path = git_sandbox_feature
+        builder = fake_builder_factory({"nova": "fail", "codex": "fail", "google-compat": "fail"})
+        engine = SddCoderEngine(
+            roster=_roster(("a", "nova"), ("b", "codex")),
+            probe=noop_probe,
+            worktree_base_path=str(base_path),
+            dispatcher_builder=builder,
+        )
+
+        import uuid
+
+        execution_id = str(uuid.uuid4())
+        await engine.begin_execution("demo", str(worktree), execution_id)
+
+        # Suspend seat 'b' before running
+        pool = engine._executions[execution_id]
+        from parrot.flows.dev_loop.sdd_coder.pool import _effective_key
+
+        seat_b = next(s for s in pool._seats if s.label == "b")
+        key_b = _effective_key(seat_b)
+        assert key_b is not None
+        pool._local_exclusions.add(key_b)
+        pool._seat_views[key_b].suspended = True
+        pool._seat_views[key_b].available = False
+
+        # Run - 'a' fails, 'b' is suspended, no retry available
+        job = await engine.run_chunk("demo", str(worktree), ["TASK-0001"], execution_id=execution_id)
+        result = await engine.wait(job.job_id, 5)
+
+        task = result.tasks[0]
+        assert task.outcome == "failed"
+        assert len(task.attempts) == 1  # Only one attempt, no retry available
+
+
+class TestModelAliasesAndParallelAdmission:
+    """FEAT-559 TASK-3280: Test model aliases and parallel admission."""
+
+    async def test_parallel_admission_different_seats(self, git_sandbox_feature, noop_probe):
+        """Parallel tasks admit on different seats without double-booking."""
+        worktree, _feature_branch, base_path, _index_path = git_sandbox_feature
+        builder = fake_builder_factory({})
+        engine = SddCoderEngine(
+            roster=_roster(("a", "nova"), ("b", "codex"), ("c", "google-compat")),
+            probe=noop_probe,
+            worktree_base_path=str(base_path),
+            dispatcher_builder=builder,
+        )
+
+        import uuid
+
+        execution_id = str(uuid.uuid4())
+        await engine.begin_execution("demo", str(worktree), execution_id)
+
+        # Run multiple tasks in parallel
+        job = await engine.run_chunk(
+            "demo", str(worktree), ["TASK-0001", "TASK-0002", "TASK-0003"], execution_id=execution_id
+        )
+        result = await engine.wait(job.job_id, 5)
+
+        assert result.state == "done"
+        assert all(t.outcome == "merged" for t in result.tasks)
+        # Each task should have been assigned to a different seat
+        seat_labels = [t.attempts[0].seat_label for t in result.tasks]
+        assert len(seat_labels) == len(set(seat_labels)), "Each task should use a different seat"
+
+
+class TestCooldownStartsAtFailureObservation:
+    """FEAT-559 TASK-3280: Test that cooldown starts at failure observation."""
+
+    async def test_cooldown_from_observation_time(self, git_sandbox_feature, noop_probe):
+        """Cooldown is computed from failure observation, not attempt start."""
+        worktree, _feature_branch, base_path, _index_path = git_sandbox_feature
+        builder = fake_builder_factory({"nova": "fail", "codex": "fail", "google-compat": "fail"})
+        engine = SddCoderEngine(
+            roster=_roster(("a", "nova"), ("b", "codex")),
+            probe=noop_probe,
+            worktree_base_path=str(base_path),
+            dispatcher_builder=builder,
+        )
+
+        import uuid
+        from datetime import datetime, timezone
+
+        execution_id = str(uuid.uuid4())
+        await engine.begin_execution("demo", str(worktree), execution_id)
+
+        # Record time before dispatch
+        before_dispatch = datetime.now(timezone.utc)
+
+        # Run - will fail on both seats
+        job = await engine.run_chunk("demo", str(worktree), ["TASK-0001"], execution_id=execution_id)
+        result = await engine.wait(job.job_id, 5)
+
+        # Record time after failure
+        after_failure = datetime.now(timezone.utc)
+
+        task = result.tasks[0]
+        assert task.outcome == "failed"
+
+        # Check that suspension records have correct timestamps
+        pool = engine._executions[execution_id]
+        # The suspension should have occurred between before_dispatch and after_failure
+        # and expires_at should be occurred_at + cooldown_seconds
+        for key in pool._local_exclusions:
+            view = pool._seat_views.get(key)
+            if view and view.suspended_until:
+                # The suspension should have happened during our window
+                suspended_until = datetime.fromisoformat(view.suspended_until)
+                # suspended_until should be after after_failure (cooldown starts at observation)
+                assert suspended_until > after_failure

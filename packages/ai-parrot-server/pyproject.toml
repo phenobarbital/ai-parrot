@@ -87,6 +87,11 @@ all = [
 [project.scripts]
 parrot-fs = "parrot.autonomous.transport.filesystem.cli:main"
 
+# Protected stores for navigator-session vault rotation / migration
+# (navigator-vault CLI). See navigator_session/vault/registry.py.
+[project.entry-points."navigator_session.vault_targets"]
+parrot_users_bots = "parrot.handlers.models.vault_target:factory"
+
 [project.urls]
 Homepage = "https://github.com/phenobarbital/ai-parrot"
 Source = "https://github.com/phenobarbital/ai-parrot"
