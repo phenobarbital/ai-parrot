@@ -154,7 +154,7 @@
       "feature_id": "FEAT-561",
       "feature": "complex-sdd-tasks",
       "spec": "sdd/specs/complex-sdd-tasks.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -164,8 +164,8 @@
       "parallelism_notes": "Depends on TASK-3287 parser schema. Parallel with TASK-3288/TASK-3289 and subsequent engine tasks because its three documentation targets are disjoint.",
       "assigned_to": null,
       "started_at": "2026-09-16T00:12:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3293-complexity-task-authoring.md"
+      "completed_at": "2026-09-16T01:01:06+00:00",
+      "file": "sdd/tasks/completed/TASK-3293-complexity-task-authoring.md"
     },
     {
       "id": "TASK-3294",

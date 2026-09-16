@@ -152,5 +152,48 @@ No live model call is needed for these checks.
 
 ## Completion Note
 
-Not started. On completion record files changed, acceptance evidence, tests,
-commit SHA, remaining limitations and actual model/attempt/assessment attribution.
+Implemented directly by the worker (not merged from a coder delivery): added
+the mandatory `## Complexity Contract` section (schema_version 1, targets
+matching Files to Create/Modify exactly with uppercase actions,
+`contract_symbols` listing exact existing symbol IDs, `[]` not `null` when
+none) to `sdd/templates/task.md`, `.claude/commands/sdd-task.md`, and
+`.agents/skills/sdd-task/SKILL.md`.
+
+One dispatched attempt, not merged: gemini (attempt_uid
+09032f1fc71f41139eb8c412b9f91b6f) produced substantively correct,
+near-identical content across all 3 declared files, but the engine's
+fidelity gate rejected it as `fidelity_violation` because
+`sdd/templates/task.md` falls under the categorically reserved `sdd/` path
+-- coders can never touch it regardless of what an individual task's own
+file table declares. Reviewed and reused its content as reference after
+independently verifying placement/wording (review outcome
+`coder-review:47326251d6f8c5f7a9a8c71a`). Not filed as model feedback: the
+content itself had no defect, so this is a structural authoring gap, not a
+model mistake -- proposed to the `/sdd-task` authoring-flow owner: a task
+whose Files-to-Modify table includes an `sdd/` path should be flagged
+worker-only (or such a module marked "no" in the spec's Delegation-eligible
+table with this exact reason) so no coder seat is ever dispatched against
+it, avoiding a guaranteed wasted attempt.
+
+Acceptance criteria: satisfied — both hosts (`.claude/commands/sdd-task.md`,
+`.agents/skills/sdd-task/SKILL.md`) instruct the same schema with identical
+target/symbol-provenance wording; legacy missing coverage is documented as
+unknown, not downgradable by prose; Complexity Contract kept fully separate
+from and independent of the optional Delegation Contract; the template's
+existing Acceptance Criteria section (machine-countable top-level
+checkboxes) is unchanged.
+
+Tests: `pytest packages/ai-parrot-tools/tests/tool_optimizations/test_sdd_contracts.py`
+-> 4 pre-existing failures, all parametrized on `.claude/agents/sdd-worker.md`
+delegation-protocol wording (a file this task never touches) -- unrelated
+to this change. Every test parametrized on `claude-command`/`codex-skill`
+(the 2 files this task modifies) passes; 17/21 passed overall, same 4
+failures present before this task's commit.
+
+Limitations: no automated `parse_complexity_contract` round-trip test was
+added against the new template example (owned by TASK-3295's
+integration/regression matrix per this task's own Test Specification).
+
+Seat: worker (self-implementation, after gemini's fidelity_violation) ·
+Backend: n/a · Model: n/a · Attempts: 1 dispatched (rejected) + 1 worker
+implementation · Duration: n/a (worker-authored) · Tokens: n/a.
