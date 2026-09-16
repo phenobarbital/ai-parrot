@@ -1,130 +1,145 @@
-"""Unit tests for credential encryption/decryption helpers (TASK-438)."""
+"""Unit tests for credential encryption helpers (TASK-438; envelope v2 in FEAT-099)."""
+import base64
 import os
+
 import pytest
-from parrot.handlers.credentials_utils import encrypt_credential, decrypt_credential
+from navigator_session.vault import (
+    KeyRing,
+    UnknownKeyVersionError,
+    UnsupportedFormatError,
+    VaultIntegrityError,
+    read_header,
+)
+from parrot.handlers.credentials_utils import (
+    credential_context,
+    decrypt_credential,
+    encrypt_credential,
+    llm_key_context,
+    normalize_user_id,
+    reseal_credential,
+)
+
+USER = 7
+NAME = "prod_pg"
 
 
 @pytest.fixture
-def master_key():
-    """Generate a 32-byte random master key for testing."""
-    return os.urandom(32)
+def master_keys():
+    return {1: os.urandom(32), 2: os.urandom(32)}
 
 
 @pytest.fixture
-def master_keys(master_key):
-    """Return a master_keys dict for key_id=1."""
-    return {1: master_key}
+def keyring(master_keys):
+    return KeyRing(master_keys, 1)
+
+
+@pytest.fixture
+def ctx():
+    return credential_context(USER, NAME)
 
 
 class TestCredentialEncryption:
-    """Tests for encrypt_credential / decrypt_credential round-trips."""
+    """Round-trips through encrypt_credential / decrypt_credential."""
 
-    def test_roundtrip_basic(self, master_key, master_keys):
-        """Encrypt then decrypt returns original credential dict."""
-        cred = {
-            "driver": "pg",
-            "host": "localhost",
-            "port": 5432,
-            "user": "admin",
-            "password": "secret",
-        }
-        encrypted = encrypt_credential(cred, key_id=1, master_key=master_key)
-        assert isinstance(encrypted, str)
-        decrypted = decrypt_credential(encrypted, master_keys)
-        assert decrypted == cred
+    @pytest.mark.parametrize(
+        "cred",
+        [
+            {"driver": "pg", "params": {"host": "db", "password": "p@ss"}},
+            {"driver": "pg", "password": "very$ecure!Pass#123 \n\t"},
+            {"driver": "pg", "password": "contraseña_日本語_пароль"},
+            {"driver": "pg"},
+            {},
+            {"api_key": "sk-test", "nested": {"list": [1, 2, {"a": None}]}},
+        ],
+        ids=["basic", "special-chars", "unicode", "driver-only", "empty", "nested"],
+    )
+    def test_roundtrip(self, keyring, ctx, cred):
+        assert decrypt_credential(encrypt_credential(cred, ctx, keyring), ctx, keyring) == cred
 
-    def test_roundtrip_special_chars(self, master_key, master_keys):
-        """Passwords with special characters survive encryption round-trip."""
-        cred = {"driver": "mysql", "password": "p@$$w0rd!#&*()_+{}|:<>?"}
-        encrypted = encrypt_credential(cred, key_id=1, master_key=master_key)
-        decrypted = decrypt_credential(encrypted, master_keys)
-        assert decrypted == cred
+    def test_encrypted_is_base64_v2_envelope(self, keyring, ctx):
+        encrypted = encrypt_credential({"password": "super-secret"}, ctx, keyring)
+        blob = base64.b64decode(encrypted)  # valid base64
+        assert blob[0] == 0xA2 and read_header(blob).key_id == 1
+        assert "super-secret" not in encrypted and b"super-secret" not in blob
 
-    def test_roundtrip_unicode(self, master_key, master_keys):
-        """Unicode passwords survive encryption round-trip."""
-        cred = {"driver": "pg", "password": "contraseña_日本語_пароль"}
-        encrypted = encrypt_credential(cred, key_id=1, master_key=master_key)
-        decrypted = decrypt_credential(encrypted, master_keys)
-        assert decrypted == cred
-
-    def test_roundtrip_empty_params(self, master_key, master_keys):
-        """Empty credential dict (driver only) survives round-trip."""
+    def test_nonce_is_random(self, keyring, ctx):
         cred = {"driver": "pg"}
-        encrypted = encrypt_credential(cred, key_id=1, master_key=master_key)
-        decrypted = decrypt_credential(encrypted, master_keys)
-        assert decrypted == cred
+        assert encrypt_credential(cred, ctx, keyring) != encrypt_credential(cred, ctx, keyring)
 
-    def test_roundtrip_full_asyncdb_credential(self, master_key, master_keys):
-        """Full asyncdb-style credential dict survives round-trip."""
-        cred = {
-            "driver": "pg",
-            "params": {
-                "host": "db.example.com",
-                "port": 5432,
-                "user": "app_user",
-                "password": "very$ecure!Pass#123",
-                "database": "production_db",
-            },
-        }
-        encrypted = encrypt_credential(cred, key_id=1, master_key=master_key)
-        decrypted = decrypt_credential(encrypted, master_keys)
-        assert decrypted == cred
+    def test_explicit_key_id(self, keyring, ctx):
+        encrypted = encrypt_credential({"a": 1}, ctx, keyring, key_id=2)
+        assert read_header(base64.b64decode(encrypted)).key_id == 2
+        assert decrypt_credential(encrypted, ctx, keyring) == {"a": 1}
 
-    def test_encrypted_is_valid_base64(self, master_key):
-        """Encrypted output is valid base64 ASCII."""
-        import base64
-        cred = {"driver": "pg", "password": "secret"}
-        encrypted = encrypt_credential(cred, key_id=1, master_key=master_key)
-        # Should not raise
-        decoded = base64.b64decode(encrypted)
-        assert len(decoded) > 0
 
-    def test_encrypted_is_different_from_plaintext(self, master_key):
-        """Encrypted string does not contain the plaintext password."""
-        cred = {"driver": "pg", "password": "supersecretpassword"}
-        encrypted = encrypt_credential(cred, key_id=1, master_key=master_key)
-        assert "supersecretpassword" not in encrypted
+class TestContextBinding:
+    @pytest.mark.parametrize(
+        "other",
+        [
+            credential_context(8, NAME),
+            credential_context(USER, "staging_pg"),
+            llm_key_context(USER, NAME),
+        ],
+        ids=["other-user", "other-name", "other-purpose"],
+    )
+    def test_wrong_context_rejected(self, keyring, ctx, other):
+        encrypted = encrypt_credential({"password": "p"}, ctx, keyring)
+        with pytest.raises(VaultIntegrityError):
+            decrypt_credential(encrypted, other, keyring)
 
-    def test_encrypt_produces_different_ciphertexts(self, master_key):
-        """Two calls with the same plaintext produce different ciphertexts (nonce randomness)."""
-        cred = {"driver": "pg", "password": "secret"}
-        enc1 = encrypt_credential(cred, key_id=1, master_key=master_key)
-        enc2 = encrypt_credential(cred, key_id=1, master_key=master_key)
-        # Different nonces should produce different output
-        assert enc1 != enc2
+    def test_llm_key_bound_to_provider(self, keyring):
+        encrypted = encrypt_credential({"api_key": "sk"}, llm_key_context(USER, "openai"), keyring)
+        with pytest.raises(VaultIntegrityError):
+            decrypt_credential(encrypted, llm_key_context(USER, "anthropic"), keyring)
 
-    def test_wrong_key_raises(self, master_key):
-        """Decryption with wrong key raises an error."""
-        cred = {"driver": "pg", "password": "secret"}
-        encrypted = encrypt_credential(cred, key_id=1, master_key=master_key)
-        wrong_master_key = os.urandom(32)
-        wrong_keys = {1: wrong_master_key}
-        with pytest.raises(Exception):
-            decrypt_credential(encrypted, wrong_keys)
+    def test_wrong_master_key(self, keyring, ctx, master_keys):
+        encrypted = encrypt_credential({"a": 1}, ctx, keyring)
+        other = KeyRing({1: os.urandom(32)}, 1)
+        with pytest.raises(VaultIntegrityError):
+            decrypt_credential(encrypted, ctx, other)
 
-    def test_missing_key_id_raises(self, master_key, master_keys):
-        """Decryption raises KeyError when key_id not in master_keys."""
-        cred = {"driver": "pg"}
-        encrypted = encrypt_credential(cred, key_id=1, master_key=master_key)
-        empty_keys: dict = {}
-        with pytest.raises(KeyError):
-            decrypt_credential(encrypted, empty_keys)
+    def test_unknown_key_version(self, keyring, ctx, master_keys):
+        encrypted = encrypt_credential({"a": 1}, ctx, keyring, key_id=2)
+        with pytest.raises(UnknownKeyVersionError):
+            decrypt_credential(encrypted, ctx, KeyRing({1: master_keys[1]}, 1))
 
-    def test_roundtrip_bigquery_credential(self, master_key, master_keys):
-        """BigQuery-style credential with nested JSON survives round-trip."""
-        cred = {
-            "driver": "bigquery",
-            "params": {
-                "project": "my-gcp-project",
-                "credentials": {
-                    "type": "service_account",
-                    "project_id": "my-gcp-project",
-                    "private_key_id": "key123",
-                    "private_key": "-----BEGIN RSA PRIVATE KEY-----\nMIIEow...\n-----END RSA PRIVATE KEY-----\n",
-                    "client_email": "svc@my-gcp-project.iam.gserviceaccount.com",
-                },
-            },
-        }
-        encrypted = encrypt_credential(cred, key_id=1, master_key=master_key)
-        decrypted = decrypt_credential(encrypted, master_keys)
-        assert decrypted == cred
+    def test_legacy_v1_blob_rejected(self, keyring, ctx):
+        v1 = base64.b64encode(b"\x00\x01" + os.urandom(40)).decode()
+        with pytest.raises(UnsupportedFormatError):
+            decrypt_credential(v1, ctx, keyring)
+
+    def test_reseal_for_new_name(self, keyring, ctx):
+        encrypted = encrypt_credential({"password": "p"}, ctx, keyring)
+        new_ctx = credential_context(USER, "renamed")
+        resealed = reseal_credential(encrypted, ctx, new_ctx, keyring)
+        assert decrypt_credential(resealed, new_ctx, keyring) == {"password": "p"}
+        with pytest.raises(VaultIntegrityError):
+            decrypt_credential(resealed, ctx, keyring)
+
+
+class TestContexts:
+    @pytest.mark.parametrize("value,expected", [(7, 7), ("7", 7), ("alice", "alice")])
+    def test_normalize_user_id(self, value, expected):
+        assert normalize_user_id(value) == expected
+
+    @pytest.mark.parametrize("value", [None, "", True, 1.5])
+    def test_normalize_user_id_rejects(self, value):
+        with pytest.raises(ValueError):
+            normalize_user_id(value)
+
+    def test_numeric_string_user_matches_int(self, keyring):
+        encrypted = encrypt_credential({"a": 1}, credential_context("7", NAME), keyring)
+        assert decrypt_credential(encrypted, credential_context(7, NAME), keyring) == {"a": 1}
+
+    def test_context_shapes(self):
+        cred = credential_context(7, NAME)
+        assert cred.purpose == "parrot-credential" and cred.layer == "db"
+        assert cred.fields == (("user_id", 7), ("name", NAME), ("field", "credential"))
+        key = llm_key_context("7", "openai")
+        assert key.purpose == "parrot-llm-key"
+        assert key.fields == (("user_id", 7), ("provider", "openai"), ("field", "api_key"))
+
+    @pytest.mark.parametrize("factory,args", [(credential_context, (7, "")), (llm_key_context, (7, ""))])
+    def test_missing_identity_rejected(self, factory, args):
+        with pytest.raises(ValueError):
+            factory(*args)

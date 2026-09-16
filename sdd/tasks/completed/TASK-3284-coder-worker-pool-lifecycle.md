@@ -173,5 +173,52 @@ outside this task's scope, report it for the owning task instead of broadening f
 
 ## Completion Note
 
-Not completed. The executing worker must record its identity, date, implementation summary, verification evidence
-and deviations here before marking this task done.
+Completed 2026-09-16 by sdd-worker (orchestrator), delivered by seat `mistral`
+(backend `nova`, model `mistral.devstral-2-123b`), attempt_uid
+`2e9f6e665f094133af403b7711937b8b`, merged in commit `af40eecd58c9d57d37d5edac1cfb0eddbe569d9c`.
+
+Both worker-prompt twins (`.claude/agents/sdd-worker.md`,
+`packages/ai-parrot/src/parrot/flows/dev_loop/_subagent_data/sdd-worker.md`)
+were delivered correctly: tool allowlists gained `coder_begin_execution`/
+`coder_end_execution`/`coder_suspend_model`, the Orchestrator Loop was rewritten
+to generate one UUID per invocation and thread `execution_id` through every
+step, and `not_dispatched`/`plan_stale` outcome handling plus
+`coder_suspend_model` reporting were added.
+
+`docs/dev_loop/sdd-coder-orchestrator.md` had two confirmed defects that I
+found during review and fixed directly in commit
+`7415d6316f43f2cd9038407a3f3a4dfc3fa74d19` (`fix(sdd-coder-execution-pool-suspensions):
+TASK-3284 review fixes`):
+1. The new "Execution lifecycle and suspension policy" section was pasted
+   twice (once nested `###` under "## The roster", once top-level `##`
+   before "## Related") — removed the duplicate.
+2. "Operator examples" cited two CLI subcommands
+   (`parrot sdd-coder suspensions list`, `parrot sdd-coder execution show`)
+   that do not exist anywhere in the codebase (verified via grep) — replaced
+   with an accurate description of `CoderSuspensionStore.recent()`/
+   `for_execution()` over the shared ledger, and clarified that execution
+   snapshots are separate per-worktree JSON files
+   (`.sdd-coder/executions/<uuid>.json`), not a ledger category.
+
+Also found (not a defect in the delivery — this section predates the
+feature and mistral's diff never touched it) that the doc's pre-existing
+"## The loop" section still described the old pre-execution-pool protocol,
+contradicting the newly-added content and the updated worker prompts.
+Rewrote it in the same fix commit: threaded `execution_id` through
+`coder_plan`/`coder_run_chunk`/`coder_prepare_native`/`coder_cleanup`,
+added step 0 "Begin execution" and step 6 "End execution", and added
+`not_dispatched`/`plan_stale` rows to the "## Outcomes" table for
+consistency with the updated "## The loop" prose.
+
+Validation: `git diff --check` clean, heading-uniqueness grep clean (see
+`artifacts/logs/task-3284-review-fixes.log`). TASK-3285 owns the automated
+`test_mcp_and_prompt_twins` consistency test and the final offline
+package/ledger regression gate per this task's own scope note.
+
+Feedback recorded: `coder-feedback:00ce15ba8a077c9bb1020402` (pattern
+`duplicated-doc-section-and-fabricated-cli`). Review recorded:
+`coder-review:a74b108b538264bd97afff14` (fix_commits=
+[`7415d6316f43f2cd9038407a3f3a4dfc3fa74d19`]).
+
+Seat: mistral · Backend: nova · Model: mistral.devstral-2-123b ·
+Attempts: 1 · Duration: 470.98s · Tokens: 1981569 in / 12881 out.

@@ -149,18 +149,25 @@ availability and reason, and `sdd-worker` prints it.
 
 ## The loop
 
-`sdd-worker`'s "## Orchestrator Loop (FEAT-549)" section runs, per wave:
+`sdd-worker`'s "## Orchestrator Loop (FEAT-549)" section runs, per wave. Every
+step below carries the SAME `execution_id` — one UUID generated once per
+worker invocation and reused across every chunk, retry, native agent, review
+and cleanup call (see "Execution lifecycle and suspension policy" below):
 
-0. `coder_plan(feature, worktree)` — if the tool is unavailable or returns
-   `error.code: roster_empty`, fall back to the sequential loop (any other
-   error code is a STOP condition).
-1. Print the plan: roster availability, one line per chunk (task → seat),
-   `blocked` ids, and every orphan branch.
-2. Dispatch the **first** chunk in **one message**: `coder_run_chunk` for
-   every non-native task id, and — for each `native: true` task —
-   `coder_prepare_native` followed by `Agent(subagent_type="sdd-coder",
-   model="haiku", …)` in the same message. This is the only way the native
-   seat actually runs in parallel with the MCP seats.
+0. **Begin execution.** Generate one UUID and call `coder_begin_execution(feature,
+   worktree, execution_id)` before any plan or probe — it reads durable
+   suspension history and applies recent exclusions first. If the tool is
+   unavailable or returns an error, fall back to the sequential loop.
+1. `coder_plan(feature, worktree, execution_id)`. Print the plan: roster
+   availability (including any excluded/suspended models with their reason and
+   remaining cooldown), one line per chunk (task → seat), `blocked` ids, and
+   every orphan branch.
+2. Dispatch the **first** chunk in **one message**: `coder_run_chunk(...,
+   execution_id)` for every non-native task id, and — for each `native: true`
+   task — `coder_prepare_native(task_id, execution_id)` followed by
+   `Agent(subagent_type="sdd-coder", model="haiku", …)` in the same message.
+   This is the only way the native seat actually runs in parallel with the
+   MCP seats.
 3. Poll `coder_wait(job_id, timeout_seconds=90)` until `state != "running"`.
    `timeout_seconds` is clamped to **300 s** server-side regardless of what
    is requested — a timeout never leaves a job unresolved: it simply
@@ -171,11 +178,19 @@ availability and reason, and `sdd-worker` prints it.
    requests strictly sequentially, so a second call in the same turn would
    queue behind the blocking wait instead of running concurrently.
 4. Consolidate every task by outcome (see below), running acceptance
-   criteria for every `merged` task before recording it.
-5. `coder_cleanup(keep_conflicted=true)`, then repeat from step 1 until the
-   plan's `chunks` and `pending` are both empty.
-6. Continue to "## Completion": code review, push, and the summary —
-   extended with a per-model table for this feature.
+   criteria for every `merged` task before recording it. A `not_dispatched`
+   task stays pending (never treated as completed); a `plan_stale` task is
+   replanned without consuming an attempt. Report a confirmed native failure
+   or critical review defect via `coder_suspend_model(execution_id, attempt_uid,
+   reason, evidence_ref)` — this never means a live native child stopped.
+5. `coder_cleanup(keep_conflicted=true, execution_id)`, then repeat from step 1
+   until the plan's `chunks` and `pending` are both empty. An empty `chunks`
+   list with pending tasks remaining is never completion.
+6. **End execution.** Call `coder_end_execution(execution_id)` only once
+   admitted work has settled and persistence succeeds (refuses with
+   `execution_busy` otherwise). Then continue to "## Completion": code
+   review, push, and the summary — extended with a per-model table for this
+   feature.
 
 ## Outcomes
 
@@ -185,6 +200,8 @@ availability and reason, and `sdd-worker` prints it.
 | `merge_conflict` | Content conflict against the feature branch | Resolve manually in this worktree, commit, call `coder_merge` again |
 | `fidelity_violation` | The coder touched `sdd/` or a file not on its task's list, **or** its diff adds a banned import (`diagnostics` starts with `BannedImport:`) | Treated as `failed` — never merged by hand |
 | `failed` | Both attempts (assigned seat, then a different seat) errored | Attempt 3 is `sdd-worker`'s own: implement the task itself (Fallback loop steps c–f), then (g) |
+| `not_dispatched` | The task lost its seat (suspended/exhausted) before admission | Task stays pending — no synthetic attempt is recorded; replan or fall back |
+| `plan_stale` | The cached plan's pool generation moved on since it was computed | Replan; the rejection does not consume an attempt |
 
 Every task gets at most two coder attempts before `sdd-worker` takes over —
 a task is never permanently orphaned.
@@ -397,6 +414,75 @@ as the unbudgeted comparison baseline.
 - **`LLM code dispatch exceeded max_turns=…`** — the in-process seats' library default is 40 turns
   (`LLMCodeDispatchProfile.max_turns`, FEAT-553); the roster path sets 60 via `build_dispatcher`
   (`DEV_LOOP_LLM_MAX_TURNS`). The effective value is in the `dispatch.completed` payload.
+
+## Execution lifecycle and suspension policy
+
+Each `sdd-worker` invocation owns one execution pool identified by a UUID. The
+worker generates this ID at startup and propagates it to every MCP call and
+native Agent prompt. The pool spans all chunks, retries, native agents, reviews
+and cleanup for that execution.
+
+**Begin execution:** Call `coder_begin_execution(feature, worktree, execution_id)`
+before any plan or probe. This reads durable suspension history and applies
+recent exclusions before probing eligible models. The configured roster remains
+immutable; exclusions and reasons are exposed separately.
+
+**Suspension triggers:**
+- Dispatch timeout (including wrapped `TimeoutError`)
+- Dispatch exception/nonzero CLI exit/provider unavailable
+- Invalid `DevelopmentOutput` or exhausted unsuccessful delivery
+- Dirty delivery or file-fidelity violation attributable to coder
+- Worker confirms a critical code-review defect
+
+**Suspension semantics:**
+- First qualifying failure removes the model from that execution's pool.
+- Suspension is durably recorded with validated attribution, reason, timestamp
+  and fixed expiry (default 1800 seconds from failure observation).
+- A new execution excludes all unexpired matching records before any probe.
+- Cooldown expiry only affects new executions; duplicate begin/record/replay
+  does not refresh expiry or clear local bans.
+- Active pools remain independent; another execution's cleanup cannot mutate them.
+- No native or MCP child is cancelled merely because its model was suspended;
+  reservations settle explicitly.
+
+**End execution:** Call `coder_end_execution(execution_id)` only after admitted
+work settles and persistence succeeds. Keep `recovery_required` blocked until
+completion/termination evidence is available.
+
+**Configuration:**
+```yaml
+kwargs:
+  suspension:
+    cooldown_seconds: 1800
+    history_max_tokens: 1200
+```
+
+**Migration:** Existing worktrees without execution IDs continue to work via
+the sequential fallback loop. New executions require explicit begin/use/end
+and visible exclusions. Coordinate MCP/worker upgrade by restarting the local
+server after updating the package.
+
+**Operator inspection:** no dedicated CLI subcommand exists for this feature.
+Durable suspension records are `insight.recorded` events (category
+`coder_suspension`) in the same shared-repository ledger
+`coder_feedback`/`coder_review` already use (`<shared_root>/.parrot/ledger/events.jsonl`,
+resolved via `parrot.knowledge.wiki.ledger.service.LedgerService.from_root`) —
+read it with `parrot.knowledge.wiki.ledger.coder_suspensions.CoderSuspensionStore`
+(`recent()`/`for_execution()`) the same way the engine itself does. Execution
+snapshots are NOT in the ledger: they are per-worktree JSON files at
+`<worktree>/.sdd-coder/executions/<uuid>.json` (git-ignored, written by the
+engine's `_write_execution_snapshot`/`_read_execution_snapshot`); inspect one
+directly or via `coder_status`. In tests, force expiry by advancing the
+injected fake clock past `expires_at`; never shorten a real suspension by
+rewriting a durable timestamp.
+
+**Troubleshooting:**
+- `execution_scope_mismatch`: ensure feature/worktree match the original begin call.
+- `persistence_degraded`: check ledger permissions; retry idempotently at next status/end.
+- `recovery_required`: establish completion/termination before cleanup/end; never assume
+  a lost native child exited.
+- `suspension_history_unavailable`: fall back to sequential worker loop; do not probe
+  under an invented empty history.
 
 ## Related
 

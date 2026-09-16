@@ -16,7 +16,8 @@ from .query_validator import (
     QueryValidator,
 )
 from .vault_utils import (
-    load_vault_keys,
+    get_vault_keyring,
+    reset_vault_keyring,
     store_vault_credential,
     retrieve_vault_credential,
     delete_vault_credential,
@@ -61,7 +62,8 @@ __all__ = [
     'PromptInjectionException',
     'QueryLanguage',
     'QueryValidator',
-    'load_vault_keys',
+    'get_vault_keyring',
+    'reset_vault_keyring',
     'store_vault_credential',
     'retrieve_vault_credential',
     'delete_vault_credential',
