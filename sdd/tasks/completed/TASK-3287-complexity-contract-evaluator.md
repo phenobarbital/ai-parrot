@@ -207,3 +207,19 @@ Attempts: 2 · Duration: 281.17s (139.04s failed minimax attempt + 142.13s
 qwen attempt) · Tokens: in=500923/out=17135 (both attempts combined, per
 coder_wait `seats` summary) · Fix commit:
 fb6c54c9619fca6d7f0dcd9a6c9e01c37f9a447e (worker, post-merge).
+
+### Second review round (post TASK-3295, full-feature adversarial pass)
+
+A second adversarial review over the completed feature diff found: (1)
+the hard-trigger loop in `evaluate_complexity` used a hardcoded local
+dict duplicating `policy.hard_limits` instead of reading it; (2) a
+metric key entirely missing from `evidence.metrics` was silently
+skipped instead of raising classification to `unknown`; (3)
+`parse_complexity_contract` raised on any task lacking an explicit
+"## Complexity Contract" section instead of falling back to the legacy
+Files-to-Create/Modify table per spec AC12. All three fixed in commit
+`5980f35a82cc2021840116263adb82ed329bce3c` (pointer commit
+`bf9bc274f7bb595e470600b63d5cd7540c3ef7dc`). Recorded as model feedback
+`coder-feedback:c37253a7b5ea64bbdae5eb9f` and review outcome
+`coder-review:e61c161807c622d01e300aa0` (attempt_uid
+fb7e39b1577a44aaad3ccc52de057a50, qwen.qwen3-coder-480b-a35b-instruct).

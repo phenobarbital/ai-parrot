@@ -214,3 +214,22 @@ integration/regression matrix per spec §4.
 Seat: qwen · Backend: nova · Model: qwen.qwen3-coder-480b-a35b-instruct ·
 Attempts: 1 · Duration: 494.21s · Tokens: in=651074/out=14248 · Fix commit:
 d13a017faebde1f31c3f54d61ae5fee820ea3ef9 (worker, post-merge).
+
+### Second review round (post TASK-3295, full-feature adversarial pass)
+
+A second adversarial review over the completed feature diff found four
+defects: an accumulator variable in `_collect_all_evidence` shadowed by
+an identically-named per-collector unpacked variable (a `.update()` no-op
+against itself); the `wiki symbols blast` CLI invocation placed `--path`
+before the `symbols blast` subcommand (invalid — verified against
+`wiki/cli.py`'s decorator placement); blast-radius impact summed
+per-root lists instead of a deduped union, and silently folded any
+unreliable root query into an `ok` zero instead of `unknown` with a
+lower bound; `_collect_dependency_metrics` counted only DIRECT
+dependents instead of the TRANSITIVE descendant set, with no
+cycle/dangling-reference detection. All fixed in commit
+`5980f35a82cc2021840116263adb82ed329bce3c` (pointer commit
+`a85a6597b33351dc2124c4e03a02594e4541ecd6`). Recorded as model feedback
+`coder-feedback:d5f26f648355a0cdb41df208` and review outcome
+`coder-review:c2c96ed32d0fe29fc6ef9d48` (attempt_uid
+df6112a5f3b94e7d9526a2cb7ef06de0, qwen.qwen3-coder-480b-a35b-instruct).

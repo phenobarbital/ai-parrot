@@ -223,3 +223,15 @@ Duration: 516.67s (161.88s failed glm attempt + 354.79s minimax attempt) ·
 Tokens: in=3458922/out=21192 (both attempts combined, per coder_wait
 `seats` summary) · Fix commit: 8cb9e78577012d9b018edd5dce1e53e1e1ae85f5
 (worker, post-merge).
+
+### Second review round (post TASK-3295, full-feature adversarial pass)
+
+A second adversarial review over the completed feature diff found that
+`hard_limits` (only 3 of the 6 metrics) was being reused as the sole
+source for every metric's 2-point boundary, silently capping
+`weighted_files`/`modules`/`acceptance_criteria` at 1 point forever. Fixed
+by adding `ComplexityPolicy.two_point_thresholds` (all 6 metrics, validated
+against `bands`) in commit `5980f35a82cc2021840116263adb82ed329bce3c`.
+Recorded as model feedback `coder-feedback:98a6aaf632c3e8758273a7f1` and
+review outcome `coder-review:52a65b6441dcdd8c0e7d7925` (attempt_uid
+78f839601b8e433d8d666639e9d59925, minimax.minimax-m2.5).
