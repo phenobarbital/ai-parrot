@@ -157,7 +157,9 @@ def parse_complexity_contract(task_text: str) -> ComplexityContract:
         legacy_targets = _parse_legacy_targets(task_text)
         return ComplexityContract(
             schema_version=1,
-            targets=tuple(ComplexityTarget(path=_normalize_path(t["path"]), action=t["action"]) for t in legacy_targets),
+            targets=tuple(
+                ComplexityTarget(path=_normalize_path(t["path"]), action=t["action"]) for t in legacy_targets
+            ),
             contract_symbols=None,
         )
 
@@ -165,7 +167,7 @@ def parse_complexity_contract(task_text: str) -> ComplexityContract:
         # Parse the JSON
         contract_data = json.loads(contract_json)
     except json.JSONDecodeError as e:
-        raise ComplexityContractError(f"Invalid JSON in Complexity Contract: {e}", "complexity_contract_invalid")
+        raise ComplexityContractError(f"Invalid JSON in Complexity Contract: {e}", "complexity_contract_invalid") from e
 
     # Validate required fields
     if "schema_version" not in contract_data:
@@ -225,7 +227,7 @@ def parse_complexity_contract(task_text: str) -> ComplexityContract:
             contract_symbols=contract_symbols,
         )
     except Exception as e:
-        raise ComplexityContractError(f"Invalid ComplexityContract: {e}", "complexity_contract_invalid")
+        raise ComplexityContractError(f"Invalid ComplexityContract: {e}", "complexity_contract_invalid") from e
 
 
 def _calculate_component_points(metric_name: str, evidence: MetricEvidence, policy: ComplexityPolicy) -> int:

@@ -184,9 +184,7 @@ class ComplexityPolicy(BaseModel):
                 raise ValueError(f"two_point_thresholds {key!r} must be positive, got {value}")
             band_max = self.bands[key][1]
             if value <= band_max:
-                raise ValueError(
-                    f"two_point_thresholds {key!r} ({value}) must exceed its band max ({band_max})"
-                )
+                raise ValueError(f"two_point_thresholds {key!r} ({value}) must exceed its band max ({band_max})")
         return self
 
     @model_validator(mode="after")

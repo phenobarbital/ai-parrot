@@ -13,7 +13,10 @@ import pytest
 from parrot.flows.dev_loop.sdd_coder.complexity_collectors import (
     collect_complexity,
     validate_complexity_snapshot,
+    _collect_all_evidence,
     _collect_dependency_metrics,
+    _collect_ruff_cyclomatic,
+    _collect_wiki_blast,
     _run_subprocess,
     SubprocessResult,
 )
@@ -130,8 +133,21 @@ async def test_collect_complexity_basic(temp_worktree):
                 0,
                 json.dumps(
                     {
-                        "root": {"symbol_id": "sym:src/sample.py#SampleClass"},
-                        "impacted": [{"symbol_id": "sym:src/other.py#OtherClass"}],
+                        # Real CLI shape: `impacted` entries nest the hit
+                        # under a "symbol" key alongside "via"/"distance"/
+                        # "provenance" (verified against BlastRadiusOutput /
+                        # ImpactedSymbol in structural/service.py, serialized
+                        # via structural/tools.py's `model_dump(mode="json")`)
+                        # -- not a flat {"symbol_id": ...} dict.
+                        "root": {"symbol_id": "sym:src/sample.py#SampleClass", "stale": False},
+                        "impacted": [
+                            {
+                                "symbol": {"symbol_id": "sym:src/other.py#OtherClass", "stale": False},
+                                "via": "calls",
+                                "distance": 1,
+                                "provenance": "static",
+                            }
+                        ],
                         "files": ["src/other.py"],
                         "truncated": False,
                     }
@@ -299,6 +315,12 @@ async def test_collect_complexity_no_python_files():
 """
         task_file = worktree / "TASK-5678-non-python.md"
         task_file.write_text(task_content)
+
+        # A MODIFY target must exist on disk (spec §2 item 3: a missing
+        # MODIFY target invalidates the contract and blocks dispatch).
+        readme = worktree / "docs" / "readme.md"
+        readme.parent.mkdir(parents=True, exist_ok=True)
+        readme.write_text("# docs\n")
 
         # Create index
         index_content = {"TASK-5678": {"id": "TASK-5678", "status": "pending", "depends_on": []}}
@@ -535,3 +557,124 @@ async def test_run_subprocess_timeout():
 
         # Verify process was killed
         mock_proc.kill.assert_called_once()
+
+
+# --- Post-review regression coverage: three defects a feature-wide adversarial
+# review found that the per-task test suite above did not catch, because each
+# used a wrong/simplified assumption about the real tool's output shape or
+# about None-vs-() semantics instead of the real contract. ---
+
+
+@pytest.mark.asyncio
+async def test_wiki_blast_reads_nested_symbol_id():
+    """`wikitoolkit symbols blast --json` nests each impacted hit's id under
+    `impacted[i]["symbol"]["symbol_id"]` (verified against `BlastRadiusOutput`/
+    `ImpactedSymbol` in structural/service.py, serialized via
+    structural/tools.py's `model_dump(mode="json")`) -- a collector reading a
+    flat `impacted[i]["symbol_id"]` instead silently counts zero impacted
+    symbols for every real invocation."""
+    contract = ComplexityContract(
+        schema_version=1,
+        targets=(ComplexityTarget(path="src/sample.py", action="MODIFY"),),
+        contract_symbols=("sym:src/sample.py#SampleClass",),
+    )
+    real_shaped_output = {
+        "root": {"symbol_id": "sym:src/sample.py#SampleClass", "stale": False},
+        "impacted": [
+            {
+                "symbol": {"symbol_id": "sym:src/other.py#OtherClass", "stale": False},
+                "via": "calls",
+                "distance": 1,
+                "provenance": "static",
+            }
+        ],
+        "files": ["src/other.py"],
+        "truncated": False,
+    }
+    with patch(
+        "parrot.flows.dev_loop.sdd_coder.complexity_collectors._run_subprocess",
+        AsyncMock(return_value=SubprocessResult(0, json.dumps(real_shaped_output), "")),
+    ):
+        metrics, *_ = await _collect_wiki_blast(Path("."), contract, ComplexityPolicy(), asyncio.Semaphore(1))
+
+    assert metrics["blast_symbols"].state == "ok"
+    assert metrics["blast_symbols"].value == 1
+
+
+@pytest.mark.asyncio
+async def test_legacy_task_missing_contract_symbols_is_unknown_not_not_applicable():
+    """`contract_symbols=None` (legacy task, coverage never declared) must
+    route `blast_symbols` to `unknown` -- NOT `not_applicable`, which is
+    reserved for an explicit `()` declaration of zero symbols (spec §2 item 2
+    / AC12: legacy tasks require the conservative complex-task route until
+    upgraded). A bare truthiness check on `contract_symbols` cannot tell
+    these two cases apart."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        worktree = Path(tmpdir)
+        task_file = worktree / "TASK-0001-demo.md"
+        task_file.write_text("# TASK-0001: demo\n\n## Acceptance Criteria\n\n- [ ] one\n")
+        index_file = worktree / "index.json"
+        index_file.write_text(json.dumps({"TASK-0001": {"id": "TASK-0001", "status": "pending", "depends_on": []}}))
+        sample_py = worktree / "src" / "sample.py"
+        sample_py.parent.mkdir(parents=True, exist_ok=True)
+        sample_py.write_text("def f():\n    pass\n")
+
+        contract = ComplexityContract(
+            schema_version=1,
+            targets=(ComplexityTarget(path="src/sample.py", action="MODIFY"),),
+            contract_symbols=None,
+        )
+        empty_ruff_output = AsyncMock(return_value=SubprocessResult(0, json.dumps([]), ""))
+        with patch("parrot.flows.dev_loop.sdd_coder.complexity_collectors._run_subprocess", empty_ruff_output):
+            metrics, *_ = await _collect_all_evidence(
+                worktree,
+                task_file.relative_to(worktree),
+                index_file.relative_to(worktree),
+                contract,
+                ComplexityPolicy(),
+                asyncio.Semaphore(1),
+            )
+            assert metrics["blast_symbols"].state == "unknown"
+
+            # The explicit-empty-tuple case remains not_applicable.
+            explicit_empty_contract = contract.model_copy(update={"contract_symbols": ()})
+            metrics_empty, *_ = await _collect_all_evidence(
+                worktree,
+                task_file.relative_to(worktree),
+                index_file.relative_to(worktree),
+                explicit_empty_contract,
+                ComplexityPolicy(),
+                asyncio.Semaphore(1),
+            )
+            assert metrics_empty["blast_symbols"].state == "not_applicable"
+
+
+@pytest.mark.asyncio
+async def test_modify_target_syntax_error_is_unknown_not_zero():
+    """A MODIFY target that fails to parse makes Ruff exit 1 with
+    `code: "invalid-syntax"` diagnostics instead of any `C901` finding
+    (verified empirically against the installed ruff binary). Without an
+    explicit check, that reads as "no function over threshold" -- a clean
+    `ok`/0 -- instead of the unmeasurable module it actually is (spec §2
+    item 1: "Ruff exit 2, malformed output or syntax errors make the
+    affected measurement unknown")."""
+    contract = ComplexityContract(
+        schema_version=1,
+        targets=(ComplexityTarget(path="src/broken.py", action="MODIFY"),),
+        contract_symbols=(),
+    )
+    invalid_syntax_output = [
+        {
+            "code": "invalid-syntax",
+            "message": "Expected a parameter or the end of the parameter list",
+            "filename": "src/broken.py",
+        }
+    ]
+    with patch(
+        "parrot.flows.dev_loop.sdd_coder.complexity_collectors._run_subprocess",
+        AsyncMock(return_value=SubprocessResult(1, json.dumps(invalid_syntax_output), "")),
+    ):
+        metrics, *_ = await _collect_ruff_cyclomatic(Path("."), contract, ComplexityPolicy(), asyncio.Semaphore(1))
+
+    assert metrics["cyclomatic_max"].state == "unknown"
+    assert "src/broken.py" in metrics["cyclomatic_max"].reason

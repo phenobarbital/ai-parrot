@@ -23,7 +23,7 @@ from parrot.flows.dev_loop.sdd_coder.complexity_models import (
     ComplexityPolicy,
     MetricEvidence,
 )
-from parrot.flows.dev_loop.sdd_coder.complexity import parse_complexity_contract
+from parrot.flows.dev_loop.sdd_coder.complexity import ComplexityContractError, parse_complexity_contract
 
 logger = logging.getLogger(__name__)
 
@@ -49,19 +49,23 @@ async def collect_complexity(
     Returns:
         Complete evidence snapshot with all six metric families.
     """
-    # Validate inputs
+    # Validate inputs. Filesystem checks are offloaded via asyncio.to_thread --
+    # pathlib methods are blocking calls and this function is async (ASYNC240).
     if not worktree.is_absolute():
         raise ValueError("worktree must be an absolute path")
 
-    if not worktree.exists() or not worktree.is_dir():
+    worktree_exists, worktree_is_dir = await asyncio.gather(
+        asyncio.to_thread(worktree.exists), asyncio.to_thread(worktree.is_dir)
+    )
+    if not worktree_exists or not worktree_is_dir:
         raise ValueError(f"worktree does not exist or is not a directory: {worktree}")
 
     full_task_path = worktree / task_file
-    if not full_task_path.exists():
+    if not await asyncio.to_thread(full_task_path.exists):
         raise ValueError(f"task_file does not exist: {full_task_path}")
 
     full_index_path = worktree / index_path
-    if not full_index_path.exists():
+    if not await asyncio.to_thread(full_index_path.exists):
         raise ValueError(f"index_path does not exist: {full_index_path}")
 
     # Read task content
@@ -224,16 +228,31 @@ async def _collect_all_evidence(
     collector_versions: Dict[str, str] = {}
     details: Dict[str, object] = {}
 
-    # Collect target hashes
+    # Collect target hashes. Spec §2 item 3: "Missing MODIFY targets or
+    # existing CREATE targets invalidate the contract and block dispatch; do
+    # not silently change action." -- a CREATE target that already exists on
+    # disk, or a MODIFY target that does not, means the declared action
+    # disagrees with reality and the contract itself is unreliable, not just
+    # one metric.
     for target in contract.targets:
+        target_path = worktree / target.path
+        target_exists = await asyncio.to_thread(target_path.exists)
         if target.action == "CREATE":
+            if target_exists:
+                raise ComplexityContractError(
+                    f"CREATE target already exists on disk: {target.path}",
+                    "complexity_contract_invalid",
+                    details={"path": target.path, "action": target.action},
+                )
             target_hashes[target.path] = None
         else:  # MODIFY
-            target_path = worktree / target.path
-            if target_path.exists():
-                target_hashes[target.path] = _sha256_file(target_path)
-            else:
-                target_hashes[target.path] = None
+            if not target_exists:
+                raise ComplexityContractError(
+                    f"MODIFY target does not exist on disk: {target.path}",
+                    "complexity_contract_invalid",
+                    details={"path": target.path, "action": target.action},
+                )
+            target_hashes[target.path] = _sha256_file(target_path)
 
     # Collect metrics concurrently
     tasks = []
@@ -244,14 +263,24 @@ async def _collect_all_evidence(
     # Syntax errors (Ruff)
     tasks.append(_collect_ruff_syntax(worktree, contract, policy, semaphore))
 
-    # Wiki blast radius
+    # Wiki blast radius. `contract_symbols` distinguishes `None` (legacy task,
+    # coverage never declared -- unknown) from `()` (task explicitly declared
+    # zero symbols -- not_applicable); a bare truthiness check collapses both
+    # into the same conservative-losing branch (spec §2 item 2 / AC12).
     if contract.contract_symbols:
         tasks.append(_collect_wiki_blast(worktree, contract, policy, semaphore))
+    elif contract.contract_symbols is None:
+        metrics["blast_symbols"] = MetricEvidence(
+            state="unknown",
+            reason="Task contract does not declare contract_symbols (legacy/missing coverage)",
+            source="wiki_collector",
+        )
+        wiki_evidence_hashes = {}
     else:
-        # No symbols to analyze
+        # Explicit empty tuple: task declared zero symbols to analyze.
         metrics["blast_symbols"] = MetricEvidence(
             state="not_applicable",
-            reason="No contract symbols to analyze",
+            reason="Task contract explicitly declares zero contract symbols",
             source="wiki_collector",
         )
         wiki_evidence_hashes = {}
@@ -320,27 +349,37 @@ async def _collect_ruff_cyclomatic(
 
             python_modify_paths = [t.path for t in modify_targets if t.path.endswith((".py", ".pyi"))]
 
+            # Any non-Python, non-doc/config MODIFY target is a language Ruff
+            # cannot analyze. The score is a MAXIMUM over every MODIFY target
+            # (spec §2 item 1), so this check must run regardless of whether
+            # Python targets are ALSO present -- a task modifying both a .py
+            # and a .rs file cannot claim "ok" from the .py file alone while
+            # silently never measuring the .rs file.
+            non_doc_non_python_targets = [
+                t.path
+                for t in modify_targets
+                if not t.path.endswith((".py", ".pyi")) and Path(t.path).suffix.lower() not in _DOC_CONFIG_EXTENSIONS
+            ]
+            if non_doc_non_python_targets:
+                return (
+                    {
+                        "cyclomatic_max": MetricEvidence(
+                            state="unknown",
+                            reason=f"Unsupported source language(s) for MODIFY targets: {non_doc_non_python_targets}",
+                            source="ruff_cyclomatic",
+                        )
+                    },
+                    {},
+                    {},
+                    {"ruff": "unknown"},
+                    {},
+                )
+
             if not python_modify_paths:
-                # MODIFY targets exist but none are Python. Spec §2 item 1:
-                # "Unsupported source languages give unknown.
-                # Documentation/configuration gives not_applicable." -- these
-                # are NOT the same outcome, unlike the earlier delivery that
-                # folded both into not_applicable.
-                non_doc_targets = [t.path for t in modify_targets if Path(t.path).suffix.lower() not in _DOC_CONFIG_EXTENSIONS]
-                if non_doc_targets:
-                    return (
-                        {
-                            "cyclomatic_max": MetricEvidence(
-                                state="unknown",
-                                reason=f"Unsupported source language(s) for MODIFY targets: {non_doc_targets}",
-                                source="ruff_cyclomatic",
-                            )
-                        },
-                        {},
-                        {},
-                        {"ruff": "unknown"},
-                        {},
-                    )
+                # MODIFY targets exist but are all documentation/configuration.
+                # Spec §2 item 1: "Documentation/configuration gives
+                # not_applicable" -- distinct from the unsupported-language
+                # `unknown` branch above.
                 return (
                     {
                         "cyclomatic_max": MetricEvidence(
@@ -396,6 +435,36 @@ async def _collect_ruff_cyclomatic(
             try:
                 ruff_output = json.loads(result.stdout)
                 complexities = []
+
+                # A MODIFY target that fails to parse makes Ruff exit 1 with
+                # `code: "invalid-syntax"` diagnostics instead of any `C901`
+                # entries (verified empirically: `ruff check --select C901`
+                # against a syntactically broken file). Left unchecked, that
+                # reads as "zero functions over the complexity threshold" --
+                # a clean `ok`/0 -- instead of the unmeasurable module it
+                # actually is. Spec §2 item 1 requires `unknown` here, not a
+                # silent pass.
+                syntax_error_files = sorted(
+                    {
+                        diagnostic.get("filename")
+                        for diagnostic in ruff_output
+                        if str(diagnostic.get("code", "")).startswith("invalid-syntax")
+                    }
+                )
+                if syntax_error_files:
+                    return (
+                        {
+                            "cyclomatic_max": MetricEvidence(
+                                state="unknown",
+                                reason=f"Unparseable Python in MODIFY target(s): {syntax_error_files}",
+                                source="ruff_cyclomatic",
+                            )
+                        },
+                        {},
+                        {},
+                        {"ruff": "unknown"},
+                        {},
+                    )
 
                 # Extract complexity values from diagnostics
                 for diagnostic in ruff_output:
@@ -526,11 +595,22 @@ async def _collect_wiki_blast(
     async with semaphore:
         try:
             if not contract.contract_symbols:
+                # `None` (legacy/missing coverage) is unknown; `()` (explicit
+                # empty declaration) is not_applicable -- see spec §2 item 2 /
+                # AC12. Callers that already know the contract is legacy
+                # short-circuit before this collector runs (`_collect_all_evidence`),
+                # but keep this branch correct standalone too.
+                state = "unknown" if contract.contract_symbols is None else "not_applicable"
+                reason = (
+                    "Task contract does not declare contract_symbols (legacy/missing coverage)"
+                    if state == "unknown"
+                    else "Task contract explicitly declares zero contract symbols"
+                )
                 return (
                     {
                         "blast_symbols": MetricEvidence(
-                            state="not_applicable",
-                            reason="No contract symbols to analyze",
+                            state=state,
+                            reason=reason,
                             source="wiki_collector",
                         )
                     },
@@ -567,7 +647,10 @@ async def _collect_wiki_blast(
                         "symbols",
                         "blast",
                         "--path",
-                        str(worktree.absolute()),
+                        # `worktree` is already required to be absolute
+                        # (validated in `collect_complexity`); `.absolute()`
+                        # is a redundant blocking pathlib call (ASYNC240).
+                        str(worktree),
                         "--depth",
                         "2",
                         "--no-inferred",
@@ -593,7 +676,14 @@ async def _collect_wiki_blast(
 
                         # Extract impacted symbol IDs (deduplicated union, not a
                         # per-root count sum -- two roots sharing 15 callers
-                        # must report 15, not 30).
+                        # must report 15, not 30). Real CLI JSON shape (verified
+                        # against BlastRadiusOutput/ImpactedSymbol in
+                        # structural/service.py, serialized via model_dump in
+                        # structural/tools.py): `impacted` is a list of
+                        # {"symbol": {"symbol_id": ..., "stale": ..., ...},
+                        # "via": ..., "distance": ..., "provenance": ...} --
+                        # the id and staleness live on the NESTED "symbol"
+                        # object, not on the impacted entry itself.
                         impacted_symbols = blast_output.get("impacted", [])
                         root = blast_output.get("root")
                         files = blast_output.get("files", [])
@@ -603,14 +693,32 @@ async def _collect_wiki_blast(
                             # Missing root: observed count is a lower bound only.
                             any_root_unreliable = True
                             unreliable_reasons.append(f"{symbol}: missing root")
+                        elif isinstance(root, dict) and root.get("stale"):
+                            # Stale root: the wiki index disagrees with the
+                            # file on disk (spec §2 item 2: "stale results ...
+                            # are unknown").
+                            any_root_unreliable = True
+                            unreliable_reasons.append(f"{symbol}: stale root")
 
-                        symbol_ids = {
-                            item.get("symbol_id")
-                            for item in impacted_symbols
-                            if isinstance(item, dict) and item.get("symbol_id")
-                        }
+                        symbol_ids: set = set()
+                        any_impacted_stale = False
+                        for item in impacted_symbols:
+                            if not isinstance(item, dict):
+                                continue
+                            hit = item.get("symbol")
+                            if not isinstance(hit, dict):
+                                continue
+                            symbol_id = hit.get("symbol_id")
+                            if symbol_id:
+                                symbol_ids.add(symbol_id)
+                            if hit.get("stale"):
+                                any_impacted_stale = True
                         impacted_ids.update(symbol_ids)
                         all_files.update(files)
+
+                        if any_impacted_stale:
+                            any_root_unreliable = True
+                            unreliable_reasons.append(f"{symbol}: stale impacted symbol(s)")
 
                         if truncated:
                             any_root_unreliable = True

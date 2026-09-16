@@ -66,7 +66,6 @@ from parrot.flows.dev_loop.sdd_coder.models import (
 from parrot.flows.dev_loop.sdd_coder.complexity_models import (
     ComplexityAssessment,
     ComplexityBlock,
-    ComplexityPolicy,
 )
 from parrot.flows.dev_loop.sdd_coder.complexity_collectors import (
     collect_complexity,
@@ -75,7 +74,6 @@ from parrot.flows.dev_loop.sdd_coder.complexity_collectors import (
 from parrot.flows.dev_loop.sdd_coder.complexity import (
     ComplexityContractError,
     evaluate_complexity,
-    parse_complexity_contract,
 )
 from parrot.flows.dev_loop.sdd_coder.roster import ChunkAssigner, RosterProbe, available_seats, eligible_seats
 from parrot.flows.dev_loop.models.telemetry import AttemptTelemetry

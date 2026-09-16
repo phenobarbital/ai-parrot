@@ -377,8 +377,20 @@ class TestAttemptIdentity:
         # HEAD: report stale and require coder_plan, rather than recalculating
         # silently") -- replan before the second dispatch, exactly as the real
         # orchestrator loop does between chunks.
+        pre_job1_sha = (await _git("rev-parse", "HEAD", cwd=str(worktree)))[1].strip()
         job1 = await engine.run_chunk("demo", str(worktree), ["TASK-0001"])
         result1 = await engine.wait(job1.job_id, 5)
+
+        # job1's merge committed TASK-0001's declared CREATE target
+        # (pkg/t1.py) to the feature branch. TASK-0001's own Complexity
+        # Contract still declares that same path as CREATE, and spec §2 item
+        # 3 makes an existing CREATE target an invalid contract that blocks
+        # dispatch -- so re-running the identical task_id a second time (this
+        # test's only interest is attempt_uid uniqueness, not the CREATE-once
+        # invariant) requires resetting the feature branch back to its
+        # pre-job1 state first, exactly as if job2 were an independent second
+        # attempt that never observed job1's result.
+        await _git("reset", "--hard", pre_job1_sha, cwd=str(worktree))
 
         await engine.plan("demo", str(worktree))
         job2 = await engine.run_chunk("demo", str(worktree), ["TASK-0001"])
