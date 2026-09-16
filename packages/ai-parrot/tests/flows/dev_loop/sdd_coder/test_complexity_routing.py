@@ -17,7 +17,6 @@ from parrot.flows.dev_loop.sdd_coder.models import (
     PlannedTask,
     RosterConfig,
     RosterSeat,
-    StrongModelIdentity,
 )
 from parrot.flows.dev_loop.sdd_coder.complexity_models import (
     ComplexityAssessment,
@@ -26,6 +25,7 @@ from parrot.flows.dev_loop.sdd_coder.complexity_models import (
     ComplexityPolicy,
     ComplexityTarget,
     MetricEvidence,
+    StrongModelIdentity,
 )
 
 
@@ -82,31 +82,38 @@ def strong_policy() -> ComplexityPolicy:
         version="v1",
         strong_models=(
             StrongModelIdentity(canonical_model="gpt-5.6-terra", backend="codex", model="gpt-5.6-terra"),
-            StrongModelIdentity(canonical_model="sonnet-5", backend="claude", model="claude-sonnet-5"),
+            # "native" -- not "claude" (not a valid RosterSeat.backend literal at all) --
+            # matches `eligible_seats`' `"native" if seat.kind == "native" else seat.backend`
+            # convention (see examples/sdd-coder-mcp.yaml's own sonnet-5 mapping).
+            StrongModelIdentity(canonical_model="sonnet-5", backend="native", model="claude-sonnet-5"),
         ),
     )
 
 
 @pytest.fixture
-def weak_roster() -> RosterConfig:
+def weak_roster(strong_policy: ComplexityPolicy) -> RosterConfig:
     """Create a roster with only weak models."""
     return RosterConfig(
         seats=[
             RosterSeat(label="w1", backend="codex", model="haiku"),
-            RosterSeat(label="w2", backend="claude", model="sonnet"),  # Not sonnet-5
-        ]
+            # Native kind (like the real sonnet-5 candidate) but a DIFFERENT model
+            # string, so it does not match strong_policy's ("native", "claude-sonnet-5").
+            RosterSeat(label="w2", kind="native", model="sonnet"),  # Not claude-sonnet-5
+        ],
+        complexity=strong_policy,
     )
 
 
 @pytest.fixture
-def mixed_roster() -> RosterConfig:
+def mixed_roster(strong_policy: ComplexityPolicy) -> RosterConfig:
     """Create a roster with both strong and weak models."""
     return RosterConfig(
         seats=[
             RosterSeat(label="w1", backend="codex", model="haiku"),
             RosterSeat(label="s1", backend="codex", model="gpt-5.6-terra"),
-            RosterSeat(label="s2", backend="claude", model="claude-sonnet-5"),
-        ]
+            RosterSeat(label="s2", kind="native", model="claude-sonnet-5"),
+        ],
+        complexity=strong_policy,
     )
 
 
@@ -164,7 +171,7 @@ async def test_complex_task_blocked_without_strong_models(
     # Mock the complexity assessment to return a complex task
     mock_assessment = create_mock_assessment("TASK-0001", "complex", cyclomatic_value=25)
 
-    def mock_compute_assessment(self, ctx, task, task_file):
+    async def mock_compute_assessment(self, ctx, task, task_file):
         return mock_assessment
 
     monkeypatch.setattr(SddCoderEngine, "_compute_assessment", mock_compute_assessment)
@@ -184,11 +191,16 @@ async def test_complex_task_blocked_without_strong_models(
     assert len(blocked_tasks) == 1
     assert blocked_tasks[0].code == "complex_model_unavailable"
 
-    # Running the chunk should fail for the complex task
+    # A routing-blocked task is excluded from every chunk (spec: "Other ready
+    # tasks can continue"), so run_chunk correctly reports it as not in the
+    # current plan rather than re-deriving the complex_model_unavailable
+    # reason itself -- that reason already lives on the routing_blocks entry
+    # asserted above, which is the stronger, planning-time guarantee (no
+    # worktree is ever considered for this task).
     with pytest.raises(CoderFailure) as exc_info:
         await engine.run_chunk("demo", str(worktree), ["TASK-0001"])
 
-    assert exc_info.value.code == "complex_model_unavailable"
+    assert exc_info.value.code == "task_not_in_plan"
 
 
 async def test_complex_task_routes_to_strong_model(
@@ -200,10 +212,18 @@ async def test_complex_task_routes_to_strong_model(
     # Mock the complexity assessment to return a complex task
     mock_assessment = create_mock_assessment("TASK-0001", "complex", cyclomatic_value=25)
 
-    def mock_compute_assessment(self, ctx, task, task_file):
+    async def mock_compute_assessment(self, ctx, task, task_file):
         return mock_assessment
 
+    async def mock_assessment_for(self, ctx, task, task_file):
+        # run_chunk's admission check revalidates against the CURRENTLY
+        # cached plan; the real validate_complexity_snapshot would recollect
+        # real evidence and never match this fixture's fake hashes, so trust
+        # the cache directly instead (mirrors mock_compute_assessment above).
+        return self._plan_cache[ctx.feature_id].assessments[task.task_id]
+
     monkeypatch.setattr(SddCoderEngine, "_compute_assessment", mock_compute_assessment)
+    monkeypatch.setattr(SddCoderEngine, "_assessment_for", mock_assessment_for)
 
     builder = fake_complexity_builder_factory({})
     engine = SddCoderEngine(
@@ -221,7 +241,7 @@ async def test_complex_task_routes_to_strong_model(
     assert len(blocked_tasks) == 0
 
     # The task should be assigned to a strong model seat
-    task_chunks = [chunk for chunk in plan.chunks for task in chunk.tasks if task.task_id == "TASK-0001"]
+    task_chunks = [task for chunk in plan.chunks for task in chunk.tasks if task.task_id == "TASK-0001"]
     assert len(task_chunks) == 1
     assigned_task = task_chunks[0]
     assert assigned_task.seat_label in ["s1", "s2"]  # Strong model seats
@@ -239,7 +259,9 @@ async def test_complex_task_routes_to_strong_model(
     called_dispatchers = [d for d in dispatchers.values() if d.calls]
     assert len(called_dispatchers) == 1
     call = called_dispatchers[0].calls[0]
-    assert call["labels"]["seat"] in ["s1", "s2"]
+    # DispatchLabels is a frozen Pydantic model, not a dict; `_labels_for`
+    # always prefixes the seat label with "sdd-coder." (engine.py:1101).
+    assert call["labels"].seat in ["sdd-coder.s1", "sdd-coder.s2"]
 
 
 async def test_standard_task_uses_normal_rotation(
@@ -251,7 +273,7 @@ async def test_standard_task_uses_normal_rotation(
     # Mock the complexity assessment to return a standard task
     mock_assessment = create_mock_assessment("TASK-0001", "standard")
 
-    def mock_compute_assessment(self, ctx, task, task_file):
+    async def mock_compute_assessment(self, ctx, task, task_file):
         return mock_assessment
 
     monkeypatch.setattr(SddCoderEngine, "_compute_assessment", mock_compute_assessment)
@@ -286,7 +308,7 @@ async def test_unknown_task_blocked_without_strong_models(
     # Mock the complexity assessment to return an unknown task
     mock_assessment = create_mock_assessment("TASK-0001", "unknown")
 
-    def mock_compute_assessment(self, ctx, task, task_file):
+    async def mock_compute_assessment(self, ctx, task, task_file):
         return mock_assessment
 
     monkeypatch.setattr(SddCoderEngine, "_compute_assessment", mock_compute_assessment)
@@ -316,7 +338,7 @@ async def test_hard_limit_triggers_complex_classification(
     # Mock the complexity assessment with a value that hits hard limit
     mock_assessment = create_mock_assessment("TASK-0001", "complex", cyclomatic_value=21)  # Hit hard limit
 
-    def mock_compute_assessment(self, ctx, task, task_file):
+    async def mock_compute_assessment(self, ctx, task, task_file):
         return mock_assessment
 
     monkeypatch.setattr(SddCoderEngine, "_compute_assessment", mock_compute_assessment)
@@ -337,7 +359,7 @@ async def test_hard_limit_triggers_complex_classification(
     assert len(blocked_tasks) == 0
 
     # Should be assigned to strong model
-    task_chunks = [chunk for chunk in plan.chunks for task in chunk.tasks if task.task_id == "TASK-0001"]
+    task_chunks = [task for chunk in plan.chunks for task in chunk.tasks if task.task_id == "TASK-0001"]
     assert len(task_chunks) == 1
     assigned_task = task_chunks[0]
     assert assigned_task.seat_label in ["s1", "s2"]
@@ -354,16 +376,21 @@ async def test_native_preparation_respects_complexity(
         seats=[
             RosterSeat(label="n1", kind="native"),
             RosterSeat(label="w1", backend="codex", model="haiku"),
-        ]
+        ],
+        complexity=strong_policy,
     )
 
     # Mock the complexity assessment to return a complex task
     mock_assessment = create_mock_assessment("TASK-0001", "complex", cyclomatic_value=25)
 
-    def mock_compute_assessment(self, ctx, task, task_file):
+    async def mock_compute_assessment(self, ctx, task, task_file):
         return mock_assessment
 
+    async def mock_assessment_for(self, ctx, task, task_file):
+        return self._plan_cache[ctx.feature_id].assessments[task.task_id]
+
     monkeypatch.setattr(SddCoderEngine, "_compute_assessment", mock_compute_assessment)
+    monkeypatch.setattr(SddCoderEngine, "_assessment_for", mock_assessment_for)
 
     engine = SddCoderEngine(
         roster=native_roster,
@@ -371,28 +398,42 @@ async def test_native_preparation_respects_complexity(
         worktree_base_path=str(base_path),
     )
 
-    # Preparing a native task for a complex assessment should fail
+    # Neither seat (native "n1" with no configured model, nor mcp "w1") is
+    # eligible for a complex task under strong_policy, so the task is
+    # blocked at PLANNING time already -- a stronger guarantee than a
+    # prepare_native-local check, since it never enters any chunk at all.
+    plan = await engine.plan("demo", str(worktree))
+    blocked_tasks = [block for block in plan.routing_blocks if block.task_id == "TASK-0001"]
+    assert len(blocked_tasks) == 1
+    assert blocked_tasks[0].code == "complex_model_unavailable"
+
+    # Preparing a native task that never entered any chunk correctly reports
+    # it as not in the current plan, rather than allocating a worktree for it.
     with pytest.raises(CoderFailure) as exc_info:
         await engine.prepare_native("demo", str(worktree), "TASK-0001")
 
-    assert exc_info.value.code == "complex_model_unavailable"
-    assert "native" in exc_info.value.message
-    assert "complex" in exc_info.value.message
+    assert exc_info.value.code == "task_not_in_plan"
 
 
 async def test_retry_uses_different_strong_model(
     git_sandbox_feature, mixed_roster, noop_probe, strong_policy, monkeypatch
 ):
-    """Test that retries of complex tasks use different strong models."""
+    """Test that a failed strong-MCP attempt never silently retries through
+    the only other eligible seat when that seat is native (native has no
+    dispatcher and is never a valid MCP retry target, strong-model or not)."""
     worktree, feature_branch, base_path, index_path = git_sandbox_feature
 
     # Mock the complexity assessment to return a complex task
     mock_assessment = create_mock_assessment("TASK-0001", "complex", cyclomatic_value=25)
 
-    def mock_compute_assessment(self, ctx, task, task_file):
+    async def mock_compute_assessment(self, ctx, task, task_file):
         return mock_assessment
 
+    async def mock_assessment_for(self, ctx, task, task_file):
+        return self._plan_cache[ctx.feature_id].assessments[task.task_id]
+
     monkeypatch.setattr(SddCoderEngine, "_compute_assessment", mock_compute_assessment)
+    monkeypatch.setattr(SddCoderEngine, "_assessment_for", mock_assessment_for)
 
     # Make first dispatch fail to trigger retry
     builder = fake_complexity_builder_factory({"codex": "fail"})
@@ -403,21 +444,23 @@ async def test_retry_uses_different_strong_model(
         dispatcher_builder=builder,
     )
 
-    # Run chunk - first attempt should fail, second should succeed on different seat
+    # mixed_roster's only two seats eligible for a complex task are s1 (codex,
+    # gpt-5.6-terra) and s2 (native, claude-sonnet-5). s1's dispatch fails
+    # (behavior_by_backend={"codex": "fail"}), but ChunkAssigner.retry_seat
+    # NEVER returns a kind="native" seat (it has no dispatcher -- a native
+    # attempt only ever runs via prepare_native/Agent, never the MCP retry
+    # ladder). So there is genuinely no eligible retry candidate here: the
+    # task must end up failed with exactly one attempt and an explicit
+    # complex_model_unavailable diagnostic, NOT silently retried through the
+    # native seat (spec: "a failed strong coder cannot retry through a weak
+    # seat" -- native is not a valid MCP retry target at all, strong or not).
     job = await engine.run_chunk("demo", str(worktree), ["TASK-0001"])
     result = await engine.wait(job.job_id, 10)
 
-    # Should eventually succeed with merged outcome
     assert result.state == "done"
     assert len(result.tasks) == 1
     task_result = result.tasks[0]
-    assert task_result.outcome == "merged"
-
-    # Should have multiple attempts
-    assert len(task_result.attempts) >= 1
-
-    # If there were multiple attempts, they should be on different seats
-    if len(task_result.attempts) > 1:
-        first_seat = task_result.attempts[0].seat_label
-        second_seat = task_result.attempts[1].seat_label
-        assert first_seat != second_seat
+    assert task_result.outcome == "failed"
+    assert len(task_result.attempts) == 1
+    assert task_result.attempts[0].seat_label == "s1"
+    assert "complex_model_unavailable" in task_result.diagnostics
