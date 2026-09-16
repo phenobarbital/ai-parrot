@@ -851,9 +851,7 @@ class SddCoderEngine:
                 - invalid_arguments: reason not in SuspensionReason enum
         """
         if execution_id not in self._executions:
-            raise CoderFailure(
-                "execution_not_found", f"no execution found with id {execution_id}"
-            )
+            raise CoderFailure("execution_not_found", f"no execution found with id {execution_id}")
 
         pool = self._executions[execution_id]
         view = pool.view()
@@ -929,9 +927,7 @@ class SddCoderEngine:
         )
 
         # Store the suspension
-        store = await asyncio.to_thread(
-            CoderSuspensionStore.from_root, Path(pool.worktree_path)
-        )
+        store = await asyncio.to_thread(CoderSuspensionStore.from_root, Path(pool.worktree_path))
         receipt = await store.record(suspension_record)
 
         # Add to local exclusions
