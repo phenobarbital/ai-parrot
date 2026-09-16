@@ -16,6 +16,7 @@ import difflib
 import json
 import logging
 import os
+from pathlib import Path
 import re
 import shlex
 import shutil
@@ -54,6 +55,7 @@ from parrot.flows.dev_loop.models.telemetry import (
 from parrot.flows.dev_loop.dispatchers.claude import ClaudeCodeDispatcher
 from parrot.flows.dev_loop.models import DispatchEvent, DispatchLabels, LLMCodeDispatchProfile
 from parrot.flows.dev_loop.session_state import SessionHost
+from parrot.flows.dev_loop.worktree_environment import command_policy_error, protected_argv, validate_write_path
 from parrot.models.basic import CompletionUsage
 from parrot.observability.context import usage_attribution
 
@@ -1733,6 +1735,7 @@ class LLMCodeDispatcher:
             raise ValueError("old_string must not be empty; use write_file to create a file")
         path = self._resolve_repo_path(cwd, str(args["path"]))
         rel_path = os.path.relpath(path, cwd)
+        validate_write_path(Path(cwd), Path(path))
         if not os.path.isfile(path):
             return {
                 "ok": False,
@@ -1822,6 +1825,7 @@ class LLMCodeDispatcher:
             raise ValueError("mode must be 'overwrite' or 'append'")
         path = self._resolve_repo_path(cwd, str(args["path"]))
         parent = os.path.dirname(path)
+        validate_write_path(Path(cwd), Path(path))
         if parent:
             os.makedirs(parent, exist_ok=True)
         existed = os.path.exists(path)
@@ -1936,6 +1940,8 @@ class LLMCodeDispatcher:
             int(args.get("timeout_seconds") or profile.command_timeout_seconds),
             profile.command_timeout_seconds,
         )
+        if policy_error := command_policy_error(Path(run_cwd), argv):
+            return {"ok": False, "exit_code": None, "stdout": "", "stderr": policy_error}
         result = await self._run_argv(argv, cwd=run_cwd, timeout=timeout)
         payload = {**result, "ok": result["exit_code"] == 0}
         if not payload["ok"]:
@@ -2022,10 +2028,9 @@ class LLMCodeDispatcher:
         ``python -c "open('/home/user/repo/x.py','w')..."`` and write there
         — which is how stray files appear outside a worktree.
 
-        This is a guard-rail, not a jail. The command still runs as this
-        process's user, and a script can build a path at runtime that no
-        static check can see. It closes the accidental route, which is the
-        one observed in practice; real isolation needs a container.
+        This supplies early feedback for accidental cross-checkout paths.
+        Scripts can compute paths dynamically; the independent Bubblewrap
+        runner enforces filesystem protection even when this check is disabled.
 
         Args:
             cwd: The worktree every command is confined to.
@@ -2127,6 +2132,7 @@ class LLMCodeDispatcher:
         if not argv:
             raise ValueError("argv must not be empty")
         try:
+            argv = protected_argv(Path(cwd), argv)
             process = await asyncio.create_subprocess_exec(
                 *argv,
                 cwd=cwd,

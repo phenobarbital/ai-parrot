@@ -33,6 +33,9 @@ import contextvars
 import json
 import logging
 import os
+from pathlib import Path
+import shlex
+import sys
 import time
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Type
 
@@ -60,6 +63,7 @@ from parrot.flows.dev_loop.dispatchers._shared import (
 )
 from parrot.flows.dev_loop.models import ClaudeCodeDispatchProfile, DispatchEvent, DispatchLabels
 from parrot.flows.dev_loop.session_state import SessionHost
+from parrot.flows.dev_loop import worktree_environment
 from parrot.observability.context import usage_attribution
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -614,6 +618,27 @@ class ClaudeCodeDispatcher:
         # JSON parsing of the final ``ResultMessage`` payload — see
         # ``_validate_output`` — and leave ``extra_args`` unset.
         extra_args: Optional[Dict[str, Optional[str]]] = None
+        if profile.subagent in {"sdd-worker", "sdd-coder"}:
+            # Programmatic AgentDefinitions strip prompt frontmatter. Supply
+            # the protection independently of project settings and prompt hooks.
+            hook_command = (
+                shlex.join([sys.executable, str(Path(worktree_environment.__file__).resolve()), "--hook"])
+                + " || exit 2"
+            )
+            extra_args = {
+                "settings": json.dumps(
+                    {
+                        "hooks": {
+                            "PreToolUse": [
+                                {
+                                    "matcher": "Bash|Write|Edit|MultiEdit|NotebookEdit",
+                                    "hooks": [{"type": "command", "command": hook_command, "timeout": 10}],
+                                }
+                            ]
+                        }
+                    }
+                )
+            }
 
         return ClaudeAgentRunOptions(
             cwd=cwd,

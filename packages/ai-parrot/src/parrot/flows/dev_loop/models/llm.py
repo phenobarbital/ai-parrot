@@ -40,13 +40,12 @@ class LLMCodeDispatchProfile(BaseModel):
         default=True,
         description=(
             "Reject a run_command argv whose path arguments point outside "
-            "the worktree. A guard-rail, NOT a jail: the command still runs "
-            "as this process's user and a script can compute a path at "
-            "runtime. It closes the accidental route (a seat running "
+            "the worktree. This provides early feedback for accidental "
+            "cross-checkout access (a seat running "
             "pytest/sed/git against the main clone by absolute path, or an "
             "inline `python -c` that writes there), which is the one that "
-            "actually happens. Real isolation needs a container or "
-            "bubblewrap."
+            "actually happens. Independently, command execution uses "
+            "Bubblewrap filesystem protection, including read-only shared environments."
         ),
     )
     allowed_commands: List[str] = Field(
