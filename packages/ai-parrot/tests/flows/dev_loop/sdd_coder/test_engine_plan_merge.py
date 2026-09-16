@@ -397,3 +397,60 @@ async def test_engine_plan_creates_routing_blocks_for_complex_tasks_without_stro
     # For now, just check that the plan can be created without error
     # (the actual blocking behavior depends on the complexity assessment)
     assert plan is not None
+
+
+def _force_classification(plan, task_id: str, classification: str):
+    """Return a copy of `plan` with `task_id`'s cached assessment's classification
+    overridden (evidence untouched, so `validate_complexity_snapshot` still finds
+    it fresh). Deterministic stand-in for a task real collectors would classify
+    complex/unknown -- avoids depending on a real `ruff`/`wikitoolkit` install."""
+    assessment = plan.assessments[task_id].model_copy(update={"classification": classification})
+    return plan.model_copy(update={"assessments": {**plan.assessments, task_id: assessment}})
+
+
+def _tamper_head_sha(plan, task_id: str):
+    """Return a copy of `plan` with `task_id`'s cached assessment's `head_sha`
+    changed, so `validate_complexity_snapshot` reports it stale on the next
+    admission check (spec: "a change returns complexity_plan_stale")."""
+    assessment = plan.assessments[task_id]
+    stale_evidence = assessment.evidence.model_copy(update={"head_sha": "0" * 40})
+    stale_assessment = assessment.model_copy(update={"evidence": stale_evidence})
+    return plan.model_copy(update={"assessments": {**plan.assessments, task_id: stale_assessment}})
+
+
+async def test_run_chunk_blocks_stale_assessment_without_worktree(git_sandbox_feature, three_seat_roster, noop_probe):
+    """AC10/spec: a tampered/stale assessment blocks admission BEFORE any
+    worktree is allocated or job registered -- run_chunk raises complexity_plan_stale
+    directly, and no sub-worktree directory is created for the task."""
+    worktree, feature_branch, base_path, _index_path = git_sandbox_feature
+    engine = SddCoderEngine(roster=three_seat_roster, probe=noop_probe, worktree_base_path=str(base_path))
+
+    plan = await engine.plan("demo", str(worktree))
+    engine._plan_cache["FEAT-549"] = _tamper_head_sha(plan, "TASK-0001")  # noqa: SLF001
+
+    with pytest.raises(CoderFailure) as excinfo:
+        await engine.run_chunk("demo", str(worktree), ["TASK-0001"])
+    assert excinfo.value.code == "complexity_plan_stale"
+
+    sub_worktree = Path(base_path) / f"{feature_branch}--pool" / "TASK-0001-a1"
+    assert not sub_worktree.exists()
+    assert engine._jobs.running_task_ids() == set()  # noqa: SLF001 — no job was ever registered
+
+
+async def test_prepare_native_blocks_restricted_task_without_configured_model(git_sandbox_feature, noop_probe):
+    """AC7: a native seat with no configured model cannot serve a restricted
+    (complex/unknown) task -- NativePrep must never fall back to "haiku" for
+    it, and no sub-worktree is allocated."""
+    worktree, feature_branch, base_path, _index_path = git_sandbox_feature
+    roster = RosterConfig(seats=[RosterSeat(label="h", kind="native")])  # no `model` configured
+    engine = SddCoderEngine(roster=roster, probe=noop_probe, worktree_base_path=str(base_path))
+
+    plan = await engine.plan("demo", str(worktree))
+    engine._plan_cache["FEAT-549"] = _force_classification(plan, "TASK-0001", "complex")  # noqa: SLF001
+
+    with pytest.raises(CoderFailure) as excinfo:
+        await engine.prepare_native("demo", str(worktree), "TASK-0001")
+    assert excinfo.value.code == "complex_model_unavailable"
+
+    sub_worktree = Path(base_path) / f"{feature_branch}--pool" / "TASK-0001-a1"
+    assert not sub_worktree.exists()

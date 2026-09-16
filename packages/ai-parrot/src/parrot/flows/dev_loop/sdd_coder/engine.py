@@ -699,6 +699,21 @@ class SddCoderEngine:
             return cached
         return await self.plan(feature, worktree)
 
+    async def _eligible_retry_labels(self, ctx: _FeatureCtx, task: PlannedTask) -> Optional[Set[str]]:
+        """Current eligible seat labels for `task`'s retry, or `None` when unrestricted.
+
+        `None` means "standard classification, no restriction" and must be passed
+        straight through to `ChunkAssigner.retry_seat`'s `eligible_labels` (which
+        applies no filter for `None`) -- an empty `set()` would instead mean
+        "no seat is eligible," which is only correct once we know the task IS
+        restricted.
+        """
+        plan = await self._cached_plan(ctx.feature, ctx.worktree, ctx)
+        assessment = plan.assessments.get(task.task_id)
+        if assessment is None or assessment.classification not in ("complex", "unknown"):
+            return None
+        return {s.label for s in eligible_seats(assessment, self.seats, self.roster.complexity)}
+
     def _manager_for(self, ctx: _FeatureCtx, task_id: str, attempt: int) -> SubWorktreeManager:
         key = f"{task_id}.a{attempt}"
         if key not in self._managers:
@@ -715,15 +730,32 @@ class SddCoderEngine:
         if planned is None or not planned.native:
             raise CoderFailure("task_not_in_plan", f"{task_id} is not a native task of the current chunk plan")
 
-        # Get assessment for this task
-        assessment_id = ""
-        if task_id in plan.assessments:
-            assessment_id = plan.assessments[task_id].assessment_id
+        # Admission (spec: "Validate native tasks before allocating their
+        # worktree"): revalidate the assessment BEFORE `manager.create()`
+        # below -- a stale assessment raises `complexity_plan_stale` and
+        # allocates no worktree.
+        assessment = await self._assessment_for(ctx, planned, planned.task_file)
+        assessment_id = assessment.assessment_id
+
+        seat = next(seat for seat in self.roster.seats if seat.label == planned.seat_label)
+        if assessment.classification in ("complex", "unknown"):
+            # Spec: "NativePrep returns ... the exact planned effective model,
+            # never seat.model-or-haiku for restricted tasks" -- a native seat
+            # with no configured model cannot serve a restricted task at all.
+            if not seat.model:
+                raise CoderFailure(
+                    "complex_model_unavailable",
+                    f"native seat {seat.label!r} has no configured model for {assessment.classification} "
+                    f"task {task_id}",
+                    task_id=task_id,
+                    assessment_id=assessment_id,
+                )
+            model = seat.model
+        else:
+            model = seat.model or "haiku"
 
         path = await self._manager_for(ctx, task_id, 1).create(f"{task_id}.a1")
         self._native_inflight.add(f"{task_id}.a1")
-        seat = next(seat for seat in self.roster.seats if seat.label == planned.seat_label)
-        model = seat.model or "haiku"
         attempt_uid = uuid.uuid4().hex
         self._feedback_sources[attempt_uid] = (ctx.worktree, task_id, "native", model)
         feedback_context = await self._feedback_for(ctx, planned, "native", model)
@@ -1107,7 +1139,26 @@ class SddCoderEngine:
             collector.declared_files_known = False
         output: Optional[DevelopmentOutput] = None
         error = ""
+        assessment: Optional[ComplexityAssessment] = None
         try:
+            # Admission (spec: "check the constructed dispatch profile's model
+            # before dispatcher.dispatch: a missing or changed effective model
+            # is ineligible on restricted tasks"). `seat` is the roster's
+            # already-probed entry (`available_seats` substitutes any smoke-test
+            # fallback model before `plan()`/`eligible_seats` ever saw it), so
+            # this defends against a plan/seat mismatch, not against re-probing.
+            plan = await self._cached_plan(ctx.feature, ctx.worktree, ctx)
+            assessment = plan.assessments.get(task.task_id)
+            if assessment is not None and assessment.classification in ("complex", "unknown"):
+                strong_keys = {(sm.backend, sm.model) for sm in self.roster.complexity.strong_models}
+                if (seat.backend, seat.model or "") not in strong_keys:
+                    raise CoderFailure(
+                        "complex_model_unavailable",
+                        f"seat {seat.label!r} (backend={seat.backend!r}, model={seat.model!r}) is not "
+                        f"eligible for {assessment.classification} task {task.task_id}",
+                        task_id=task.task_id,
+                    )
+
             # Code-review fix (FEAT-549, IMPORTANT): sub-worktree creation and dispatcher
             # construction used to happen BEFORE this try block — a `git worktree add`
             # failure or a `build_dispatcher` error would propagate raw out of
@@ -1174,14 +1225,26 @@ class SddCoderEngine:
         if record.resolved_model and record.resolved_model != seat.model:
             self._feedback_unknown_exposure.add(attempt_uid)
 
+        # Spec: "A provider-reported resolved_model outside the allowlist is a
+        # model mismatch: record it and refuse consolidation as successful
+        # delivery; it must not be relabeled as an allowed model." A same-provider
+        # probe fallback (or any other post-dispatch model substitution) that
+        # lands outside the strong-model allowlist turns an otherwise-clean
+        # attempt into an error, so `_run_task` never consolidates it.
+        if not error and assessment is not None and assessment.classification in ("complex", "unknown"):
+            reported_model = record.resolved_model or seat.model or ""
+            strong_keys = {(sm.backend, sm.model) for sm in self.roster.complexity.strong_models}
+            if (seat.backend, reported_model) not in strong_keys:
+                error = (
+                    f"complex_model_unavailable: reported model {reported_model!r} is not an allowed "
+                    f"strong-model identity for {assessment.classification} task {task.task_id}"
+                )
+                collector.error = error
+                record = record.model_copy(update={"error": error, "error_class": "complex_model_unavailable"})
+
         # Attach the assessment this attempt was dispatched under (spec: "attempt
-        # records refer to the assessment ID"). `ctx.feature`/`ctx.worktree` -- not
-        # the undefined `feature`/`worktree` names this method never received --
-        # `_cached_plan` reuses the already-computed plan for this feature.
-        plan = await self._cached_plan(ctx.feature, ctx.worktree, ctx)
-        assessment_id = ""
-        if task.task_id in plan.assessments:
-            assessment_id = plan.assessments[task.task_id].assessment_id
+        # records refer to the assessment ID").
+        assessment_id = assessment.assessment_id if assessment is not None else ""
         record = record.model_copy(update={"assessment_id": assessment_id})
 
         self._feedback_sources[attempt_uid] = (
@@ -1304,7 +1367,21 @@ class SddCoderEngine:
 
         if err:
             assert self._assigner is not None
-            retry = self._assigner.retry_seat(seat.label, {seat.label})
+            eligible_labels = await self._eligible_retry_labels(ctx, task)
+            retry = self._assigner.retry_seat(seat.label, {seat.label}, eligible_labels=eligible_labels)
+            if retry is None and eligible_labels is not None:
+                # Restricted task, no eligible retry seat left: make the block
+                # explicit rather than silently falling through with attempt
+                # 1's unrelated dispatch error as the only diagnostic (spec:
+                # "if none exists return a visible blocked/failed result with
+                # complex_model_unavailable diagnostic, preserving previous
+                # attempts").
+                no_retry_error = f"complex_model_unavailable: no eligible retry seat for {task.task_id}"
+                rec = rec.model_copy(
+                    update={"error": f"{rec.error}\n{no_retry_error}" if rec.error else no_retry_error}
+                )
+                attempts[-1] = rec
+                err = rec.error
             if retry is not None:
                 # Emit attempt 1's own outcome NOW, before running the
                 # retry: `_run_task` only returns ONE `TaskResult`, so if
@@ -1366,6 +1443,12 @@ class SddCoderEngine:
                 raise CoderFailure("task_not_in_plan", f"{task_id} is not in the current chunk plan")
             if planned.native:
                 raise CoderFailure("task_not_in_plan", f"{task_id} is a native task — use coder_prepare_native")
+            # Admission (spec: "revalidate ... before run_chunk and prepare_native
+            # side effects"): a stale assessment blocks BEFORE any worktree is
+            # allocated or job registered -- `_assessment_for` raises
+            # `complexity_plan_stale` rather than silently reusing an assignment
+            # this displayed plan no longer matches.
+            await self._assessment_for(ctx, planned, planned.task_file)
 
         seats = {s.label: s for s in self.seats}
 
