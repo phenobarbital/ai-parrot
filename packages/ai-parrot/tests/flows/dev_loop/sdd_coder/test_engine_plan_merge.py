@@ -437,7 +437,17 @@ async def test_all_seats_exhausted(git_sandbox_feature, explicit_model_roster, n
             seat_label="x",
             backend="nova" if model == "model-a" else "google-compat" if model == "model-b" else "codex",
             configured_model=model,
-            blocked_keys=[ModelKey(backend="nova", model=model) if model == "model-a" else ModelKey(backend="google-compat", model=model) if model == "model-b" else ModelKey(backend="codex", model=model)],
+            blocked_keys=[
+                (
+                    ModelKey(backend="nova", model=model)
+                    if model == "model-a"
+                    else (
+                        ModelKey(backend="google-compat", model=model)
+                        if model == "model-b"
+                        else ModelKey(backend="codex", model=model)
+                    )
+                )
+            ],
             reason="timeout",
             occurred_at=now,
             expires_at=now.replace(second=now.second + 1800),

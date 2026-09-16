@@ -7,6 +7,7 @@ a per-spec index and a handful of TASK files under `sdd/tasks/active/`.
 FEAT-559 adds execution-pool fixtures with explicit model IDs, isolated
 suspension stores and fake clocks for deterministic testing.
 """
+
 from __future__ import annotations
 
 import asyncio
