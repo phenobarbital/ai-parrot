@@ -191,10 +191,7 @@ _BUILTIN_METADATA: dict[FieldType, dict[str, Any]] = {
     },
     FieldType.IMAGE: {
         "label": "Image",
-        "description": (
-            "Upload a single image by choosing a file. Accepts validation "
-            "constraints such as size and type."
-        ),
+        "description": "Upload one image by choosing a file.",
         "category": "media",
         "icon": "image",
         "render_hint": "upload",
@@ -574,7 +571,7 @@ _BUILTIN_METADATA: dict[FieldType, dict[str, Any]] = {
         "label": "Image Dropzone",
         "description": (
             "Upload images by dragging them onto the field, or by choosing a "
-            "file. Accepts one or several, and takes no validation constraints."
+            "file. Takes one or several."
         ),
         "category": "media",
         "icon": "image-dropzone",

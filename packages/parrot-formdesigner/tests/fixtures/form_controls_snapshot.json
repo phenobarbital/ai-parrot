@@ -718,7 +718,7 @@
     },
     {
       "category": "media",
-      "description": "Upload a single image by choosing a file. Accepts validation constraints such as size and type.",
+      "description": "Upload one image by choosing a file.",
       "icon": "image",
       "is_container": false,
       "label": "Image",
@@ -806,7 +806,7 @@
     },
     {
       "category": "media",
-      "description": "Upload images by dragging them onto the field, or by choosing a file. Accepts one or several, and takes no validation constraints.",
+      "description": "Upload images by dragging them onto the field, or by choosing a file. Takes one or several.",
       "icon": "image-dropzone",
       "is_container": false,
       "label": "Image Dropzone",
