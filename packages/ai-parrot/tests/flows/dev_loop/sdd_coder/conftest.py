@@ -4,6 +4,7 @@
 `test_worktree_manager.py:36-52` with the SDD artifacts the engine reads:
 a per-spec index and a handful of TASK files under `sdd/tasks/active/`.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -91,6 +92,11 @@ async def git_sandbox_feature(tmp_path):
     await _run_git("config", "user.email", "test@example.com", cwd=worktree)
     await _run_git("config", "user.name", "Test", cwd=worktree)
     await _write_and_commit(worktree, "README.md", "hello\n", "initial commit")
+    # Real checkouts ignore `artifacts/` (repo-root .gitignore); the sandbox
+    # needs its own so `collect_complexity`'s persisted-assessment writes
+    # (spec: "Do not commit runtime artifacts automatically") don't dirty
+    # `git status` in tests that assert a clean worktree post-merge.
+    await _write_and_commit(worktree, ".gitignore", "artifacts/\n", "add gitignore")
     await _write_and_commit(worktree, "pkg/__init__.py", "", "add pkg")
 
     await _run_git("checkout", "-b", FEATURE_BRANCH, cwd=worktree)
@@ -151,6 +157,11 @@ async def git_sandbox_feature_with_complex_task(tmp_path):
     await _run_git("config", "user.email", "test@example.com", cwd=worktree)
     await _run_git("config", "user.name", "Test", cwd=worktree)
     await _write_and_commit(worktree, "README.md", "hello\n", "initial commit")
+    # Real checkouts ignore `artifacts/` (repo-root .gitignore); the sandbox
+    # needs its own so `collect_complexity`'s persisted-assessment writes
+    # (spec: "Do not commit runtime artifacts automatically") don't dirty
+    # `git status` in tests that assert a clean worktree post-merge.
+    await _write_and_commit(worktree, ".gitignore", "artifacts/\n", "add gitignore")
     await _write_and_commit(worktree, "pkg/__init__.py", "", "add pkg")
 
     await _run_git("checkout", "-b", FEATURE_BRANCH, cwd=worktree)
@@ -227,7 +238,9 @@ async def git_sandbox_feature_with_complex_task(tmp_path):
     await _write_and_commit(worktree, index_path_rel, json.dumps(index, indent=2) + "\n", "add index")
 
     await _write_and_commit(worktree, "sdd/tasks/active/TASK-9999-demo.md", complex_task_body, "add complex task")
-    await _write_and_commit(worktree, "pkg/utils.py", "# utils\ndef some_function(): pass\ndef another_function(): pass\n", "add utils")
+    await _write_and_commit(
+        worktree, "pkg/utils.py", "# utils\ndef some_function(): pass\ndef another_function(): pass\n", "add utils"
+    )
 
     index_path = worktree / index_path_rel
     return worktree, FEATURE_BRANCH, base_path, index_path
