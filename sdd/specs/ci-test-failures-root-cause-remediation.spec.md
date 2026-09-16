@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-562
 **Date**: 2026-09-15
 **Author**: Claude Sonnet 5, on behalf of amartinez@trocglobal.com
-**Status**: draft
+**Status**: approved
 **Target version**: n/a (CI/test infrastructure fix, no package version bump)
 
 ---
@@ -269,6 +269,19 @@ None.
     `crew.py:4164`).
   - No change in behavior when `tqdm` **is** installed (existing
     `use_tqdm=True` tests, if any, continue to pass unchanged).
+- **Correction (implementation pass, 2026-09-16 — implemented on `dev`)**:
+  the guard shipped as specified, AND `tqdm>=4.66.5` was added to
+  `packages/ai-parrot/pyproject.toml`'s core `dependencies` (commit
+  `5f8047441`). The guard alone leaves the declaration wrong: `tqdm` was never
+  declared anywhere, yet `parrot/interfaces/onedrive.py` and
+  `parrot/interfaces/sharepoint.py` also import it unconditionally at module
+  level and are NOT in this module's scope, so a bare install still breaks
+  there. Floor-only pin because querysource caps `tqdm<=4.67.1`. The test
+  lives at `packages/ai-parrot/tests/bots/flows/crew/test_tqdm_optional.py`
+  and blocks only `tqdm.asyncio` in a child interpreter (blocking the whole
+  `tqdm` package would break unrelated third-party imports in the same chain,
+  testing the wrong thing; a child process avoids the module-reload side
+  effects `crew.py`'s registration decorators would otherwise re-run).
 
 ### Module 2: Establish CI environments, guard confirmed optional tests, and close coverage gaps
 
@@ -528,6 +541,30 @@ simulate missing loaders even in the installed-document profile.
     0 failed / 1 skipped).
   - No other content in `.claude/agents/sdd-worker.md` changes — this is a
     pure restoration, not a rewrite of the Orchestrator Loop.
+- **Correction (implementation pass, 2026-09-16 — implemented on `dev`)**:
+  this module as drafted could not go green on its own. Two verified gaps:
+  1. **A counter-test asserts the opposite.** TASK-3124 did not merely delete
+     the section, it locked the deletion in:
+     `packages/ai-parrot/tests/flows/dev_loop/test_worker_prompt_orchestrator.py`
+     asserts `"### b2)"`, `"writer_apply"`, `"parrot-targeted-writer"` and
+     `"Delegation Contract"` are ABSENT from the body
+     (`test_worker_prompt_no_delegation_contract_step`), and
+     `test_worker_prompt_has_orchestrator_loop` asserts the same for
+     `"writer_generate"`. A verbatim restore therefore trades 4 red in
+     `test-tool-optimizations` for 5 red in `test-core`. Resolved by narrowing those
+     absence assertions from the whole body to the `## Orchestrator Loop
+     (FEAT-549)` section via a new `_orchestrator_loop()` helper — which is
+     what they actually mean to guard (the DISPATCH path uses `sdd-coder`
+     seats, never the writer route), while the Fallback loop, where the agent
+     implements a task itself, legitimately carries `### b2)` again. Neither
+     suite's intent is weakened; `test_sdd_contracts.py` is untouched.
+  2. **The prompt has a twin.** `.claude/agents/sdd-worker.md` must stay
+     byte-identical to
+     `packages/ai-parrot/src/parrot/flows/dev_loop/_subagent_data/sdd-worker.md`
+     (`test_subagent_parity.py`, FEAT-377). The restoration was applied to
+     both copies; restoring only the repo-level one breaks parity.
+  Verified: `test_sdd_contracts.py` 21 passed with the file unmodified; the
+  full `tool_optimizations/` suite reports the 422 items this module predicted.
 
 ### Module 5: Fix the stale schema-version assertion in the wiki migration test
 
@@ -1001,13 +1038,13 @@ wiki profile. M2's result checker uses the Python standard library.
   checked against required selections and audited exclusions. Text grep and
   installation alone are insufficient.
 
-- [ ] **Should the M7 items (`DatabaseAgent`/`DatabaseAgentToolkit`,
+- [x] **Should the M7 items (`DatabaseAgent`/`DatabaseAgentToolkit`,
   `create_netsuite_mcp_server`) be fixed within this spec's implementation
   pass, or deferred to a follow-up once diagnosed?** — *Owner*: implementing
   task / reviewer. *Plausible answers*: a) fix in place once root-caused
   (preferred, if the cause turns out simple) · b) defer with an SDD ledger
   entry if the cause is a CI-runner-specific artifact unrelated to any
-  in-repo change.
+  in-repo change. Answer from Arturo: Lets fix this as well take option a.
 
 ---
 
@@ -1034,3 +1071,4 @@ validation remain implementation acceptance requirements.
 | 0.1 | 2026-09-15 | Claude Sonnet 5 | Initial draft, from FEAT-568 proposal + additional spec-time codebase research (reclassified 2 previously-"unexplained" errors into M1/M2, surfaced M2's true scope, identified M7's residual unknowns) |
 | 0.2 | 2026-09-16 | Claude Opus 4.8 (review pass) | Adversarial re-review against the proposal + findings. Fixes: (1) added Module 8 — 4 files wrongly filed under M2 as "satellite gap" are actually stale `unittest.mock.patch` targets left by two unrelated refactors (FEAT-523 TASK-2846's lazy-import AC-3, and `saas-auth-hardening` TASK-2321's eval-context consolidation); (2) resolved the `mcp`/`googleapiclient` sourcing TODO (`ai-parrot[mcp]` extra) and wired it into M2's job; (3) added `ai-parrot-pipelines` and the a2ui-css/folium file to M2's list, both missing from the first draft; (4) corrected M1's Codebase Contract (`AgentCrew`, not a placeholder `CrewClass`) and M4's citation (sourced from commit `461b74c2e`, not `.claude/commands/sdd-start.md`, whose current wording has since drifted); (5) added an explicit uv-sync exact-sync-semantics caveat to M2's CI job snippet, since the multi-package/extra combination was not empirically verified; (6) softened the M7 Non-Goals' `IdentifiedProduct` classification pending re-check after M2 lands; (7) flagged a brand-new, unrelated `navigator-session`/Python-3.13 resolver regression that appeared on `dev` after the first draft, explicitly out of this spec's scope but noted so implementers aren't misled about residual CI redness. |
 | 0.3 | 2026-09-16 | Codex, user-approved decision review | Preserve explicit CI environments; require inventory-backed classification and complete test-to-job mapping, including all provider-local suites; replace text skip grep with structured coverage checks and audited offline selections; retain optional document dependencies and both installation modes; require AsyncMock at the bound handler alias while preserving AbstractBot patches; make resolver remediation a validation prerequisite. |
+| 0.4 | 2026-09-16 | Claude Opus 5, on behalf of jlara@trocglobal.com (implementation pass) | Modules 1, 4 and 5 implemented on `dev` ahead of task decomposition, while fixing three red CI jobs directly. Two corrections to M4 recorded inline (a FEAT-549 counter-test asserting the exact opposite; the `_subagent_data` prompt twin), one to M1 (the dependency was declared as well as guarded, since M1's scope misses two other unconditional `tqdm` importers). M5 landed verbatim. M3's intent landed as `--extra wiki` in the `test-wiki-extras` job plus `pytest.importorskip` on the pymupdf fixtures. Modules 2, 6, 7, 8 remain open. |
