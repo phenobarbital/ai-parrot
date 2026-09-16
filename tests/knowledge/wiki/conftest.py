@@ -254,10 +254,13 @@ async def arango_test_db(arango_params: dict[str, Any]):
 # FEAT-451: document-acquisition fixtures (loader-backed `ingest`).
 #
 # No binary fixture is ever committed to the repo — PDFs are built at
-# runtime with ``pymupdf`` (already a core dep, precedent:
-# ``pageindex/pdf_to_markdown.py``), DOCX with ``python-docx`` (an
-# ``ai-parrot-loaders`` extra — guarded with ``pytest.importorskip`` so
-# the suite still collects cleanly without it installed).
+# runtime with ``pymupdf`` and DOCX with ``python-docx``. NEITHER is a core
+# dependency: both ship via ``ai-parrot[wiki]`` -> ``ai-parrot-loaders
+# [documents]`` (``pageindex/pdf_to_markdown.py`` guards its own pymupdf
+# import for exactly that reason), so both are taken with
+# ``pytest.importorskip`` and the suite still collects cleanly on a
+# core-only install. CI runs the real thing in the `test-wiki-extras` job,
+# which syncs `--extra wiki`.
 # ---------------------------------------------------------------------------
 
 
@@ -271,7 +274,7 @@ def sample_pdf(tmp_path: Path) -> Path:
     Returns:
         Path to the generated PDF.
     """
-    import pymupdf
+    pymupdf = pytest.importorskip("pymupdf")
 
     doc = pymupdf.open()
     try:

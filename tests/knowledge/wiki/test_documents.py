@@ -154,7 +154,7 @@ def no_parrot_loaders(monkeypatch):
 @pytest.fixture
 def sample_pdf(tmp_path):
     """A tiny 2-page PDF with Title/Author set, written via pymupdf."""
-    import pymupdf
+    pymupdf = pytest.importorskip("pymupdf")
 
     pdf_path = tmp_path / "sample.pdf"
     doc = pymupdf.open()
@@ -309,7 +309,7 @@ def _install_fake_session(monkeypatch, *, response=None, exc=None):
 def url_pdf_bytes(tmp_path):
     """Bytes of a real, tiny, pymupdf-generated PDF (so downstream loader
     extraction actually succeeds, not just the fetch itself)."""
-    import pymupdf
+    pymupdf = pytest.importorskip("pymupdf")
 
     p = tmp_path / "src.pdf"
     doc = pymupdf.open()

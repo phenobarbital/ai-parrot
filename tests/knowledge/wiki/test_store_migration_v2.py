@@ -72,7 +72,11 @@ async def test_open_v1_db_migrates_to_v2(v1_db: Path):
         row = conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()
     finally:
         conn.close()
-    assert row[0] == SCHEMA_VERSION == "2"
+    # Assert against SCHEMA_VERSION only — the literal was "2" and went
+    # stale the moment the FTS external-content fix bumped the schema to
+    # "3". What this test owns is "a v1 plane is migrated up to the
+    # current schema", not which number that currently is.
+    assert row[0] == SCHEMA_VERSION
 
 
 @pytest.mark.asyncio

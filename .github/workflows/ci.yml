@@ -168,8 +168,15 @@ jobs:
       # grammar wheels together. Scoped to `tests/knowledge/wiki` — the
       # only area either extra affects — rather than re-running the
       # whole `tests/` suite a second time.
-      - name: Sync core package with wiki-languages + wiki-structural
-        run: uv sync --package ai-parrot --extra wiki-languages --extra wiki-structural
+      # `--extra wiki` is the one-shot wiki stack (graphindex + wiki-languages
+      # + wiki-structural + leiden + `ai-parrot-loaders[documents]`). The two
+      # extras below are already implied by it, kept explicit because this
+      # job's name and its Luau gate are about them. `documents` is what
+      # brings pymupdf/pymupdf4llm/python-docx, without which every FEAT-451
+      # `wikitoolkit ingest` test errored at fixture setup instead of
+      # exercising the loader-backed acquisition path this job exists to cover.
+      - name: Sync core package with the wiki stack (+ wiki-languages / wiki-structural)
+        run: uv sync --package ai-parrot --extra wiki --extra wiki-languages --extra wiki-structural
 
       - name: Scaffold NavConfig environment
         run: mkdir -p env/dev && touch env/dev/.env

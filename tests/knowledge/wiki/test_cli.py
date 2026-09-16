@@ -841,7 +841,7 @@ class TestSupervisedIngestInteractive:
 @pytest.fixture
 def sample_pdf(tmp_path: Path) -> Path:
     """A tiny real PDF, written via pymupdf (goes through the loader branch)."""
-    import pymupdf
+    pymupdf = pytest.importorskip("pymupdf")
 
     p = tmp_path / "sample.pdf"
     doc = pymupdf.open()
