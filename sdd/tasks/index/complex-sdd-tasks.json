@@ -15,14 +15,14 @@
       "feature_id": "FEAT-561",
       "feature": "complex-sdd-tasks",
       "spec": "sdd/specs/complex-sdd-tasks.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Root deliverable creates the types consumed by TASK-3287; finishes shared models.py/test_models.py edits before integration tasks.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-16T00:12:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3286-complexity-models.md"
     },
@@ -33,7 +33,7 @@
       "feature_id": "FEAT-561",
       "feature": "complex-sdd-tasks",
       "spec": "sdd/specs/complex-sdd-tasks.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,7 +42,7 @@
       "parallel": true,
       "parallelism_notes": "Depends on TASK-3286 for its exact Pydantic schemas. Creates only complexity.py/test_complexity.py; collectors, roster and authoring can fan out after this task.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-16T00:12:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3287-complexity-contract-evaluator.md"
     },
@@ -53,7 +53,7 @@
       "feature_id": "FEAT-561",
       "feature": "complex-sdd-tasks",
       "spec": "sdd/specs/complex-sdd-tasks.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -62,7 +62,7 @@
       "parallel": true,
       "parallelism_notes": "Depends on TASK-3287 parser/evaluator and TASK-3286 types. Parallel with TASK-3289 roster and TASK-3293 authoring: all target files are disjoint.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-16T00:12:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3288-complexity-metric-collectors.md"
     },
@@ -73,7 +73,7 @@
       "feature_id": "FEAT-561",
       "feature": "complex-sdd-tasks",
       "spec": "sdd/specs/complex-sdd-tasks.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -82,7 +82,7 @@
       "parallel": true,
       "parallelism_notes": "Depends on TASK-3287 classification semantics and upstream models. Parallel with TASK-3288 and TASK-3293; only owns roster.py/test_roster.py.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-16T00:12:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3289-complexity-roster-routing.md"
     },
@@ -93,7 +93,7 @@
       "feature_id": "FEAT-561",
       "feature": "complex-sdd-tasks",
       "spec": "sdd/specs/complex-sdd-tasks.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -103,7 +103,7 @@
       "parallel": true,
       "parallelism_notes": "Fan-in from TASK-3288 collectors and TASK-3289 assignment. Begins ordered engine.py edits; TASK-3291 must wait. Shared fixture changes land before dispatch/regression changes.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-16T00:12:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3290-complexity-plan-audit.md"
     },
@@ -114,7 +114,7 @@
       "feature_id": "FEAT-561",
       "feature": "complex-sdd-tasks",
       "spec": "sdd/specs/complex-sdd-tasks.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -123,7 +123,7 @@
       "parallel": true,
       "parallelism_notes": "Depends on TASK-3290 helpers and fixtures; serializes engine.py and test_engine_plan_merge.py edits. Toolkit/prompt work consumes the final admission behavior.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-16T00:12:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3291-complexity-dispatch-admission.md"
     },
@@ -134,7 +134,7 @@
       "feature_id": "FEAT-561",
       "feature": "complex-sdd-tasks",
       "spec": "sdd/specs/complex-sdd-tasks.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -143,7 +143,7 @@
       "parallel": true,
       "parallelism_notes": "Depends on TASK-3291 final engine behavior for adapter integration tests; owns toolkit.py/test_toolkit.py only.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-16T00:12:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3292-complexity-mcp-policy.md"
     },
@@ -154,7 +154,7 @@
       "feature_id": "FEAT-561",
       "feature": "complex-sdd-tasks",
       "spec": "sdd/specs/complex-sdd-tasks.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -163,7 +163,7 @@
       "parallel": true,
       "parallelism_notes": "Depends on TASK-3287 parser schema. Parallel with TASK-3288/TASK-3289 and subsequent engine tasks because its three documentation targets are disjoint.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-16T00:12:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3293-complexity-task-authoring.md"
     },
@@ -174,7 +174,7 @@
       "feature_id": "FEAT-561",
       "feature": "complex-sdd-tasks",
       "spec": "sdd/specs/complex-sdd-tasks.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -184,7 +184,7 @@
       "parallel": true,
       "parallelism_notes": "Depends on TASK-3292 actual MCP fields and TASK-3293 authoring protocol; edits prompt twins/example/docs only.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-16T00:12:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3294-complexity-worker-policy.md"
     },
@@ -195,7 +195,7 @@
       "feature_id": "FEAT-561",
       "feature": "complex-sdd-tasks",
       "spec": "sdd/specs/complex-sdd-tasks.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -204,7 +204,7 @@
       "parallel": true,
       "parallelism_notes": "Final gate depends on TASK-3294 final prompts/config and transitively every runtime task plus TASK-3293 authoring. All shared test-file edits are ordered after their owning implementation tasks.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-16T00:12:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3295-complexity-integration-regressions.md"
     }
