@@ -126,3 +126,52 @@ class TestFinalizeInfographicSuccess:
         _, call_kwargs = fake_agent_instance.generate_infographic.call_args
         assert call_kwargs["summary"] == "All good."
         assert call_kwargs["crew_name"] == "test"
+        # No theme configured -> the ResultAgent's own default applies.
+        assert "theme" not in call_kwargs
+
+
+class TestInfographicTheme:
+    def test_theme_defaults_to_none(self):
+        """No theme configured -> None; empty string is treated as unset."""
+        assert AgentCrew(name="test").infographic_theme is None
+        assert AgentCrew(name="test", infographic_theme="").infographic_theme is None
+
+    def test_from_definition_wires_theme(self):
+        """``CrewDefinition.infographic_theme`` reaches the crew instance."""
+        from parrot.models.crew_definition import AgentDefinition, CrewDefinition
+
+        crew_def = CrewDefinition(
+            name="themed",
+            agents=[AgentDefinition(agent_id="a", name="Researcher")],
+            generate_infographic=True,
+            infographic_theme="corporate",
+        )
+        resolver = MagicMock(return_value=None)  # -> BasicAgent fallback
+        crew = AgentCrew.from_definition(crew_def, class_resolver=resolver)
+        assert crew.generate_infographic is True
+        assert crew.infographic_theme == "corporate"
+        # Call-time override still wins, mirroring the other infographic knobs.
+        overridden = AgentCrew.from_definition(crew_def, class_resolver=resolver, infographic_theme="dark")
+        assert overridden.infographic_theme == "dark"
+
+    @pytest.mark.asyncio
+    async def test_theme_forwarded_to_result_agent(self):
+        """A configured theme is passed as ``theme=`` to ``generate_infographic``."""
+        crew = AgentCrew(name="test", generate_infographic=True, infographic_theme="corporate")
+        crew.execution_memory = MagicMock()
+        crew.execution_memory.results = {}
+        result = MagicMock()
+        result.infographic = None
+        result.summary = "All good."
+        result.output = "Final output."
+
+        fake_agent_instance = MagicMock()
+        fake_agent_instance.generate_infographic = AsyncMock(return_value=MagicMock())
+        fake_metadata = MagicMock()
+        fake_metadata.factory = MagicMock(return_value=fake_agent_instance)
+
+        with patch("parrot.registry.agent_registry.get_metadata", return_value=fake_metadata):
+            await crew._finalize_infographic(result)
+
+        _, call_kwargs = fake_agent_instance.generate_infographic.call_args
+        assert call_kwargs["theme"] == "corporate"
