@@ -46,7 +46,7 @@ class TestPathNormalization:
         """Test rejecting absolute paths."""
         with pytest.raises(ComplexityContractError):
             _normalize_path("/absolute/path/file.py")
-        
+
         with pytest.raises(ComplexityContractError):
             _normalize_path("C:/windows/path/file.py")
 
@@ -59,10 +59,10 @@ class TestPathNormalization:
         """Test rejecting glob patterns."""
         with pytest.raises(ComplexityContractError):
             _normalize_path("packages/*/file.py")
-        
+
         with pytest.raises(ComplexityContractError):
             _normalize_path("packages/file?.py")
-        
+
         with pytest.raises(ComplexityContractError):
             _normalize_path("packages/file[0-9].py")
 
@@ -298,11 +298,10 @@ class TestComplexityEvaluation:
             schema_version=1,
             targets=(
                 ComplexityTarget(
-                    path="packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/complexity.py",
-                    action="CREATE"
+                    path="packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/complexity.py", action="CREATE"
                 ),
             ),
-            contract_symbols=None
+            contract_symbols=None,
         )
 
     @pytest.fixture
@@ -319,41 +318,31 @@ class TestComplexityEvaluation:
             target_hashes={"packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/complexity.py": None},
             wiki_evidence_hashes={},
             collector_versions={},
-            details={}
+            details={},
         )
 
     def test_evaluate_standard_task(self, base_evidence: ComplexityEvidence, sample_policy: ComplexityPolicy):
         """Test evaluating a standard complexity task."""
         # All metrics below threshold
         metrics: Dict[str, MetricEvidence] = {
-            "cyclomatic_max": MetricEvidence(
-                state="ok", value=5, reason="Low complexity", source="ruff"
-            ),
-            "blast_symbols": MetricEvidence(
-                state="ok", value=10, reason="Moderate symbols", source="wikitoolkit"
-            ),
-            "weighted_files": MetricEvidence(
-                state="ok", value=2, reason="Few files", source="task_parser"
-            ),
-            "modules": MetricEvidence(
-                state="ok", value=1, reason="Single module", source="task_parser"
-            ),
-            "acceptance_criteria": MetricEvidence(
-                state="ok", value=3, reason="Few criteria", source="task_parser"
-            ),
-            "downstream_tasks": MetricEvidence(
-                state="ok", value=1, reason="Few dependencies", source="task_parser"
-            ),
+            "cyclomatic_max": MetricEvidence(state="ok", value=5, reason="Low complexity", source="ruff"),
+            "blast_symbols": MetricEvidence(state="ok", value=10, reason="Moderate symbols", source="wikitoolkit"),
+            "weighted_files": MetricEvidence(state="ok", value=2, reason="Few files", source="task_parser"),
+            "modules": MetricEvidence(state="ok", value=1, reason="Single module", source="task_parser"),
+            "acceptance_criteria": MetricEvidence(state="ok", value=3, reason="Few criteria", source="task_parser"),
+            "downstream_tasks": MetricEvidence(state="ok", value=1, reason="Few dependencies", source="task_parser"),
         }
-        
+
         evidence = base_evidence.model_copy(update={"metrics": metrics})
         assessment = evaluate_complexity(evidence, sample_policy)
-        
+
         assert assessment.classification == "standard"
         assert assessment.total_points < sample_policy.score_threshold
         assert "score_below_threshold" in assessment.reason_codes
 
-    def test_evaluate_complex_task_score_threshold(self, base_evidence: ComplexityEvidence, sample_policy: ComplexityPolicy):
+    def test_evaluate_complex_task_score_threshold(
+        self, base_evidence: ComplexityEvidence, sample_policy: ComplexityPolicy
+    ):
         """Test evaluating a complex task based on score threshold."""
         # Metrics that sum to meet or exceed threshold
         metrics: Dict[str, MetricEvidence] = {
@@ -376,67 +365,71 @@ class TestComplexityEvaluation:
                 state="ok", value=3, reason="Several dependencies", source="task_parser"
             ),  # 2 points (above band 2-5)
         }
-        
+
         evidence = base_evidence.model_copy(update={"metrics": metrics})
         assessment = evaluate_complexity(evidence, sample_policy)
-        
+
         assert assessment.classification == "complex"
         assert assessment.total_points >= sample_policy.score_threshold
         assert "score_threshold_met" in assessment.reason_codes
 
-    def test_evaluate_complex_task_hard_limit_cyclomatic(self, base_evidence: ComplexityEvidence, sample_policy: ComplexityPolicy):
+    def test_evaluate_complex_task_hard_limit_cyclomatic(
+        self, base_evidence: ComplexityEvidence, sample_policy: ComplexityPolicy
+    ):
         """Test evaluating a complex task based on cyclomatic hard limit."""
         metrics: Dict[str, MetricEvidence] = {
             "cyclomatic_max": MetricEvidence(
                 state="ok", value=25, reason="Very high complexity", source="ruff"
             ),  # Exceeds hard limit of 21
         }
-        
+
         evidence = base_evidence.model_copy(update={"metrics": metrics})
         assessment = evaluate_complexity(evidence, sample_policy)
-        
+
         assert assessment.classification == "complex"
         assert "hard_limit_cyclomatic_max" in assessment.reason_codes
 
-    def test_evaluate_complex_task_hard_limit_blast(self, base_evidence: ComplexityEvidence, sample_policy: ComplexityPolicy):
+    def test_evaluate_complex_task_hard_limit_blast(
+        self, base_evidence: ComplexityEvidence, sample_policy: ComplexityPolicy
+    ):
         """Test evaluating a complex task based on blast symbols hard limit."""
         metrics: Dict[str, MetricEvidence] = {
             "blast_symbols": MetricEvidence(
                 state="ok", value=35, reason="Very many symbols", source="wikitoolkit"
             ),  # Exceeds hard limit of 30
         }
-        
+
         evidence = base_evidence.model_copy(update={"metrics": metrics})
         assessment = evaluate_complexity(evidence, sample_policy)
-        
+
         assert assessment.classification == "complex"
         assert "hard_limit_blast_symbols" in assessment.reason_codes
 
-    def test_evaluate_complex_task_hard_limit_downstream(self, base_evidence: ComplexityEvidence, sample_policy: ComplexityPolicy):
+    def test_evaluate_complex_task_hard_limit_downstream(
+        self, base_evidence: ComplexityEvidence, sample_policy: ComplexityPolicy
+    ):
         """Test evaluating a complex task based on downstream tasks hard limit."""
         metrics: Dict[str, MetricEvidence] = {
             "downstream_tasks": MetricEvidence(
                 state="ok", value=7, reason="Many dependencies", source="task_parser"
             ),  # Exceeds hard limit of 5
         }
-        
+
         evidence = base_evidence.model_copy(update={"metrics": metrics})
         assessment = evaluate_complexity(evidence, sample_policy)
-        
+
         assert assessment.classification == "complex"
         assert "hard_limit_downstream_tasks" in assessment.reason_codes
 
     def test_evaluate_unknown_task(self, base_evidence: ComplexityEvidence, sample_policy: ComplexityPolicy):
         """Test evaluating a task with unknown metrics."""
         metrics: Dict[str, MetricEvidence] = {
-            "cyclomatic_max": MetricEvidence(
-                state="unknown", value=None, reason="Tool failed", source="ruff"
-            ),
+            "cyclomatic_max": MetricEvidence(state="unknown", value=None, reason="Tool failed", source="ruff"),
         }
-        
+
         evidence = base_evidence.model_copy(update={"metrics": metrics})
         assessment = evaluate_complexity(evidence, sample_policy)
-        
+
         assert assessment.classification == "unknown"
         assert "metric_unknown" in assessment.reason_codes
 
@@ -447,10 +440,10 @@ class TestComplexityEvaluation:
                 state="not_applicable", value=None, reason="Not a code task", source="ruff"
             ),
         }
-        
+
         evidence = base_evidence.model_copy(update={"metrics": metrics})
         assessment = evaluate_complexity(evidence, sample_policy)
-        
+
         assert assessment.classification == "standard"
         assert assessment.component_points["cyclomatic_max"] == 0
 
@@ -462,27 +455,25 @@ class TestComplexityEvaluation:
                 state="ok", value=10, reason="Below band", source="ruff"
             ),  # 0 points (below 11)
         }
-        
+
         evidence_low = base_evidence.model_copy(update={"metrics": metrics_low})
         assessment_low = evaluate_complexity(evidence_low, sample_policy)
         assert assessment_low.component_points["cyclomatic_max"] == 0
-        
+
         metrics_in_band: Dict[str, MetricEvidence] = {
-            "cyclomatic_max": MetricEvidence(
-                state="ok", value=15, reason="In band", source="ruff"
-            ),  # 1 point (11-21)
+            "cyclomatic_max": MetricEvidence(state="ok", value=15, reason="In band", source="ruff"),  # 1 point (11-21)
         }
-        
+
         evidence_in_band = base_evidence.model_copy(update={"metrics": metrics_in_band})
         assessment_in_band = evaluate_complexity(evidence_in_band, sample_policy)
         assert assessment_in_band.component_points["cyclomatic_max"] == 1
-        
+
         metrics_high: Dict[str, MetricEvidence] = {
             "cyclomatic_max": MetricEvidence(
                 state="ok", value=25, reason="Above band", source="ruff"
             ),  # 2 points (above 21)
         }
-        
+
         evidence_high = base_evidence.model_copy(update={"metrics": metrics_high})
         assessment_high = evaluate_complexity(evidence_high, sample_policy)
         assert assessment_high.component_points["cyclomatic_max"] == 2
@@ -490,15 +481,13 @@ class TestComplexityEvaluation:
     def test_assessment_id_consistency(self, base_evidence: ComplexityEvidence, sample_policy: ComplexityPolicy):
         """Test that identical inputs produce identical assessment IDs."""
         metrics: Dict[str, MetricEvidence] = {
-            "cyclomatic_max": MetricEvidence(
-                state="ok", value=15, reason="High complexity", source="ruff"
-            ),
+            "cyclomatic_max": MetricEvidence(state="ok", value=15, reason="High complexity", source="ruff"),
         }
-        
+
         evidence1 = base_evidence.model_copy(update={"metrics": metrics})
         evidence2 = base_evidence.model_copy(update={"metrics": metrics})
-        
+
         assessment1 = evaluate_complexity(evidence1, sample_policy)
         assessment2 = evaluate_complexity(evidence2, sample_policy)
-        
+
         assert assessment1.assessment_id == assessment2.assessment_id

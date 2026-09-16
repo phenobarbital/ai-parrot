@@ -9,9 +9,8 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
-from pydantic import BaseModel
 
 from parrot.flows.dev_loop.sdd_coder.complexity_models import (
     ComplexityAssessment,
@@ -21,8 +20,6 @@ from parrot.flows.dev_loop.sdd_coder.complexity_models import (
     ComplexityTarget,
     MetricEvidence,
 )
-from parrot.flows.dev_loop.sdd_coder.models import RosterConfig
-from parrot.flows.dev_loop.task_scheduler import TaskRef
 
 
 class ComplexityContractError(ValueError):
@@ -33,7 +30,9 @@ class ComplexityContractError(ValueError):
         details: Additional diagnostic information about the error.
     """
 
-    def __init__(self, message: str, code: str = "complexity_contract_invalid", details: Optional[Dict[str, object]] = None):
+    def __init__(
+        self, message: str, code: str = "complexity_contract_invalid", details: Optional[Dict[str, object]] = None
+    ):
         super().__init__(message)
         self.code = code
         self.details = details or {}
@@ -64,19 +63,19 @@ def _normalize_path(path: str) -> str:
 
     # Normalize path separators
     normalized = path.replace("\\", "/")
-    
+
     # Collapse multiple slashes
     while "//" in normalized:
         normalized = normalized.replace("//", "/")
-    
+
     # Remove leading ./ components
     while normalized.startswith("./"):
         normalized = normalized[2:]
-    
+
     # Remove trailing slash if present (except for root)
     if normalized != "/" and normalized.endswith("/"):
         normalized = normalized[:-1]
-        
+
     return normalized
 
 
@@ -123,10 +122,11 @@ def parse_complexity_contract(task_text: str) -> ComplexityContract:
     # Validate required fields
     if "schema_version" not in contract_data:
         raise ComplexityContractError("Missing schema_version in Complexity Contract", "complexity_contract_invalid")
-    
+
     if contract_data.get("schema_version") != 1:
-        raise ComplexityContractError(f"Unsupported schema version: {contract_data.get('schema_version')}", 
-                                    "complexity_contract_invalid")
+        raise ComplexityContractError(
+            f"Unsupported schema version: {contract_data.get('schema_version')}", "complexity_contract_invalid"
+        )
 
     if "targets" not in contract_data:
         raise ComplexityContractError("Missing targets in Complexity Contract", "complexity_contract_invalid")
@@ -136,17 +136,14 @@ def parse_complexity_contract(task_text: str) -> ComplexityContract:
     for target in contract_data["targets"]:
         if "path" not in target or "action" not in target:
             raise ComplexityContractError("Target missing path or action", "complexity_contract_invalid")
-        
+
         normalized_path = _normalize_path(target["path"])
         normalized_action = target["action"].upper()
-        
+
         if normalized_action not in ("CREATE", "MODIFY"):
             raise ComplexityContractError(f"Invalid action: {target['action']}", "complexity_contract_invalid")
-            
-        normalized_targets.append({
-            "path": normalized_path,
-            "action": normalized_action
-        })
+
+        normalized_targets.append({"path": normalized_path, "action": normalized_action})
 
     # Process contract_symbols
     contract_symbols = contract_data.get("contract_symbols")
@@ -160,7 +157,7 @@ def parse_complexity_contract(task_text: str) -> ComplexityContract:
         return ComplexityContract(
             schema_version=1,
             targets=tuple(ComplexityTarget(**target) for target in normalized_targets),
-            contract_symbols=contract_symbols
+            contract_symbols=contract_symbols,
         )
     except Exception as e:
         raise ComplexityContractError(f"Invalid ComplexityContract: {e}", "complexity_contract_invalid")
@@ -180,22 +177,22 @@ def _calculate_component_points(metric_name: str, evidence: MetricEvidence, poli
     # If not applicable, contributes zero points
     if evidence.state == "not_applicable":
         return 0
-    
+
     # If unknown, contributes zero points (cannot determine)
     if evidence.state == "unknown":
         return 0
-    
+
     # Must be "ok" state with a value
     if evidence.state != "ok" or evidence.value is None:
         return 0
-    
+
     value = evidence.value
-    
+
     # Check for hard limits first
     if metric_name in policy.hard_limits and value >= policy.hard_limits[metric_name]:
         # Hard limit reached, maximum points
         return 2
-    
+
     # Check bands
     if metric_name in policy.bands:
         min_val, max_val = policy.bands[metric_name]
@@ -208,7 +205,7 @@ def _calculate_component_points(metric_name: str, evidence: MetricEvidence, poli
                 return 2
         # Below minimum, 0 points
         return 0
-    
+
     # Unknown metric, 0 points
     return 0
 
@@ -229,12 +226,12 @@ def _canonical_hash(obj: object) -> str:
         data = obj.dict()
     else:
         data = obj
-    
+
     # Create canonical JSON representation
-    json_str = json.dumps(data, sort_keys=True, separators=(',', ':'), ensure_ascii=False)
-    
+    json_str = json.dumps(data, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
     # Generate SHA-256 hash
-    return hashlib.sha256(json_str.encode('utf-8')).hexdigest()
+    return hashlib.sha256(json_str.encode("utf-8")).hexdigest()
 
 
 def evaluate_complexity(evidence: ComplexityEvidence, policy: ComplexityPolicy) -> ComplexityAssessment:
@@ -253,17 +250,17 @@ def evaluate_complexity(evidence: ComplexityEvidence, policy: ComplexityPolicy) 
     component_points: Dict[str, int] = {}
     reason_codes: List[str] = []
     total_points = 0
-    
+
     # Known metrics that contribute to complexity
     metric_names = [
         "cyclomatic_max",
-        "blast_symbols", 
+        "blast_symbols",
         "weighted_files",
         "modules",
         "acceptance_criteria",
-        "downstream_tasks"
+        "downstream_tasks",
     ]
-    
+
     # Calculate points for each metric
     for metric_name in metric_names:
         if metric_name in evidence.metrics:
@@ -273,25 +270,23 @@ def evaluate_complexity(evidence: ComplexityEvidence, policy: ComplexityPolicy) 
         else:
             # Metric not provided, contributes 0 points
             component_points[metric_name] = 0
-    
+
     # Determine classification
     classification = "standard"
-    
+
     # Check for hard limits that force complex classification
-    hard_triggers = {
-        "cyclomatic_max": 21,
-        "blast_symbols": 30, 
-        "downstream_tasks": 5
-    }
-    
+    hard_triggers = {"cyclomatic_max": 21, "blast_symbols": 30, "downstream_tasks": 5}
+
     for metric_name, threshold in hard_triggers.items():
-        if (metric_name in evidence.metrics and 
-            evidence.metrics[metric_name].state == "ok" and
-            evidence.metrics[metric_name].value is not None and
-            evidence.metrics[metric_name].value >= threshold):
+        if (
+            metric_name in evidence.metrics
+            and evidence.metrics[metric_name].state == "ok"
+            and evidence.metrics[metric_name].value is not None
+            and evidence.metrics[metric_name].value >= threshold
+        ):
             classification = "complex"
             reason_codes.append(f"hard_limit_{metric_name}")
-    
+
     # If no hard limits triggered, use point-based classification
     if classification == "standard":
         if total_points >= policy.score_threshold:
@@ -301,17 +296,16 @@ def evaluate_complexity(evidence: ComplexityEvidence, policy: ComplexityPolicy) 
             # Check if any metrics are unknown - if so, classification is unknown
             has_unknown = False
             for metric_name in metric_names:
-                if (metric_name in evidence.metrics and 
-                    evidence.metrics[metric_name].state == "unknown"):
+                if metric_name in evidence.metrics and evidence.metrics[metric_name].state == "unknown":
                     has_unknown = True
                     break
-            
+
             if has_unknown:
                 classification = "unknown"
                 reason_codes.append("metric_unknown")
             else:
                 reason_codes.append("score_below_threshold")
-    
+
     # Create the assessment
     assessment = ComplexityAssessment(
         policy_version=policy.version,
@@ -321,10 +315,10 @@ def evaluate_complexity(evidence: ComplexityEvidence, policy: ComplexityPolicy) 
         component_points=component_points,
         reason_codes=tuple(reason_codes),
         evidence=evidence,
-        assessment_id=""  # Will be filled in by the validator
+        assessment_id="",  # Will be filled in by the validator
     )
-    
+
     # Set the assessment_id using canonical hash
     assessment.assessment_id = _canonical_hash(assessment)
-    
+
     return assessment
