@@ -184,5 +184,62 @@ outside this task's scope, report it for the owning task instead of broadening f
 
 ## Completion Note
 
-Not completed. The executing worker must record its identity, date, implementation summary, verification evidence
-and deviations here before marking this task done.
+**Completed by**: sdd-worker (Sonnet 5, orchestrator direct implementation) — 2026-09-16.
+
+**Context**: The MCP coder pool dispatched this task; attempt 1 (seat `mistral`) hit
+`FileNotFoundError` (coincided with my own concurrent `coder_cleanup` call racing the fresh
+sub-worktree — a self-inflicted operational mistake, noted so it isn't repeated: never call
+`coder_cleanup` while a chunk is still running). Attempt 2 (seat `qwen`, MCP's own retry)
+produced a substantive diff but left the sub-worktree dirty/uncommitted and, on inspection,
+over-reached scope: it silently removed the existing `task_not_pending` error code (a real
+regression) and added unauthorized `CoderBeginExecutionArgs`/`CoderEndExecutionArgs` MCP
+argument models that belong to M4 (this task's scope is M2 payload contracts only, per its
+"NOT in scope" note: "toolkit registration"). Engine reported `outcome=failed`
+(`dirty_task_worktree`). Discarded that delivery and implemented fresh in this worktree
+(Fallback loop steps c–g), using it only as loose orientation.
+
+**Implementation summary**:
+- `models.py`: added `not_dispatched` to `TaskOutcome`; added `ExecutionStatus` literal; added
+  the 12 FEAT-559 execution/suspension error codes to `ERROR_CODES` (kept every existing code,
+  including `task_not_pending`); added `_check_uuid` (applied only where a fresh
+  caller-generated UUID is mandatory, never to the legacy-compatible `execution_id: str = ""`
+  telemetry fields); `RosterConfig.suspension_policy: SuspensionPolicy`; `SeatProbeResult`
+  probe metadata (`probe_uid`/`probe_observed_at`/`probe_duration_s`/`probe_exception_class`);
+  `execution_id`(/`pool_generation` on `CoderPlan`) added to `CoderPlan`, `AttemptRecord`,
+  `NativePrep`, `CoderJob` (all default `""`, backward-compatible with historical records);
+  new `PoolSeatView`, `ExecutionPoolView`, `ExecutionSnapshot` (UUID-validated `execution_id`,
+  `extra="forbid"`); `execution_id` added (UUID-validated) to `CoderPlanArgs`,
+  `CoderRunChunkArgs`, `CoderPrepareNativeArgs`, `CoderCleanupArgs` — `CoderMergeArgs`,
+  `CoderRecordFeedbackArgs`, `CoderRecordReviewArgs` inherit it, covering all seven scoped
+  tools; new `SuspendModelArgs` and `CoderFeedbackReportArgs` (split out of `CoderPlanArgs` so
+  the feedback report never requires an execution).
+- `jobs.py`: `JobTable.create(..., *, execution_id: str)` — mandatory, keyword-only, never
+  minted implicitly; `running_task_ids(execution_id: str | None = None)` — scoped to one
+  execution for the normal `task_already_running` check, `None` preserved as the explicit
+  all-job/shutdown/orphan-detection view.
+- Engine (`engine.py`) callers of `running_task_ids()`/`JobTable.create()` are now stale by
+  design — explicitly deferred to the dependent M3 task (TASK-3277) per this task's own
+  Implementation Blueprint step 5 ("later engine/toolkit tasks migrate their callers").
+
+**Verification evidence**:
+- `pytest test_models.py test_jobs.py -q` → 21 passed, including the four required scenarios
+  (`test_execution_models_reject_invalid_uuid_and_extra_fields`,
+  `test_missing_execution_rejected_by_scoped_args`,
+  `test_job_running_tasks_are_execution_scoped`, `test_job_wait_returns_snapshot_on_timeout`)
+  plus updated pre-existing tests (`test_run_chunk_args_*`,
+  `TestAttemptRecordTelemetryFields`) and light coverage for `not_dispatched`,
+  `RosterConfig.suspension_policy` and `SeatProbeResult` probe metadata.
+  Log: `artifacts/logs/task-3275-pytest.log`.
+- `ruff check` → clean. Log: `artifacts/logs/task-3275-ruff.log`.
+- `black --check` → clean (after one reformat pass). Log: `artifacts/logs/task-3275-black.log`.
+- `git diff --check` → clean.
+
+**Deviations / notes for dependent tasks**:
+- `not_dispatched`'s structured reason is conveyed through the existing `TaskResult.diagnostics`
+  string field (no new field invented), consistent with the existing `dirty_task_worktree`
+  convention already used there.
+- No model-lesson feedback recorded for the discarded qwen delivery: `dirty_task_worktree`/scope
+  over-reach on an MCP attempt is a delivery/host-failure category the FEAT-559 spec explicitly
+  does not attribute to the model as a reviewed code lesson; it was simply discarded, not merged.
+
+Seat: none (direct orchestrator implementation, not an MCP/native coder delivery) · Backend: n/a · Model: n/a (Sonnet 5 orchestrator) · Attempts: 2 (MCP, both failed/discarded) + 1 (direct) · Duration: n/a · Tokens: n/a

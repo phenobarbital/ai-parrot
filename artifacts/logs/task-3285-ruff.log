@@ -1,0 +1,431 @@
+ASYNC221 Async functions should not run processes with blocking methods
+  --> packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_execution_pool_integration.py:56:5
+   |
+54 |     import subprocess
+55 |
+56 |     subprocess.run(["git", "init", "-b", "dev"], cwd=worktree_path, check=True, capture_output=True)
+   |     ^^^^^^^^^^^^^^
+57 |     subprocess.run(
+58 |         ["git", "config", "user.email", "test@example.com"], cwd=worktree_path, check=True, capture_output=True
+   |
+
+ASYNC221 Async functions should not run processes with blocking methods
+  --> packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_execution_pool_integration.py:57:5
+   |
+56 |     subprocess.run(["git", "init", "-b", "dev"], cwd=worktree_path, check=True, capture_output=True)
+57 |     subprocess.run(
+   |     ^^^^^^^^^^^^^^
+58 |         ["git", "config", "user.email", "test@example.com"], cwd=worktree_path, check=True, capture_output=True
+59 |     )
+   |
+
+ASYNC221 Async functions should not run processes with blocking methods
+  --> packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_execution_pool_integration.py:60:5
+   |
+58 |         ["git", "config", "user.email", "test@example.com"], cwd=worktree_path, check=True, capture_output=True
+59 |     )
+60 |     subprocess.run(["git", "config", "user.name", "Test"], cwd=worktree_path, check=True, capture_output=True)
+   |     ^^^^^^^^^^^^^^
+61 |     # An unborn branch (zero commits) makes `git rev-parse --abbrev-ref HEAD` fail
+62 |     # (exit 128, "unknown revision") -- `_resolve_feature` needs a resolvable
+   |
+
+ASYNC221 Async functions should not run processes with blocking methods
+  --> packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_execution_pool_integration.py:64:5
+   |
+62 |     # (exit 128, "unknown revision") -- `_resolve_feature` needs a resolvable
+63 |     # current branch, so every sandbox here needs at least one commit.
+64 |     subprocess.run(
+   |     ^^^^^^^^^^^^^^
+65 |         ["git", "commit", "--allow-empty", "-m", "initial commit"], cwd=worktree_path, check=True, capture_output=True
+66 |     )
+   |
+
+ASYNC221 Async functions should not run processes with blocking methods
+   --> packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_execution_pool_integration.py:141:5
+    |
+139 |     import subprocess
+140 |
+141 |     subprocess.run(["git", "init", "-b", "dev"], cwd=worktree_path, check=True, capture_output=True)
+    |     ^^^^^^^^^^^^^^
+142 |     subprocess.run(
+143 |         ["git", "config", "user.email", "test@example.com"], cwd=worktree_path, check=True, capture_output=True
+    |
+
+ASYNC221 Async functions should not run processes with blocking methods
+   --> packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_execution_pool_integration.py:142:5
+    |
+141 |     subprocess.run(["git", "init", "-b", "dev"], cwd=worktree_path, check=True, capture_output=True)
+142 |     subprocess.run(
+    |     ^^^^^^^^^^^^^^
+143 |         ["git", "config", "user.email", "test@example.com"], cwd=worktree_path, check=True, capture_output=True
+144 |     )
+    |
+
+ASYNC221 Async functions should not run processes with blocking methods
+   --> packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_execution_pool_integration.py:145:5
+    |
+143 |         ["git", "config", "user.email", "test@example.com"], cwd=worktree_path, check=True, capture_output=True
+144 |     )
+145 |     subprocess.run(["git", "config", "user.name", "Test"], cwd=worktree_path, check=True, capture_output=True)
+    |     ^^^^^^^^^^^^^^
+146 |     # An unborn branch (zero commits) makes `git rev-parse --abbrev-ref HEAD` fail
+147 |     # (exit 128, "unknown revision") -- `_resolve_feature` needs a resolvable
+    |
+
+ASYNC221 Async functions should not run processes with blocking methods
+   --> packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_execution_pool_integration.py:149:5
+    |
+147 |     # (exit 128, "unknown revision") -- `_resolve_feature` needs a resolvable
+148 |     # current branch, so every sandbox here needs at least one commit.
+149 |     subprocess.run(
+    |     ^^^^^^^^^^^^^^
+150 |         ["git", "commit", "--allow-empty", "-m", "initial commit"], cwd=worktree_path, check=True, capture_output=True
+151 |     )
+    |
+
+ASYNC221 Async functions should not run processes with blocking methods
+   --> packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_execution_pool_integration.py:213:5
+    |
+211 |     import subprocess
+212 |
+213 |     subprocess.run(["git", "init", "-b", "dev"], cwd=worktree_path, check=True, capture_output=True)
+    |     ^^^^^^^^^^^^^^
+214 |     subprocess.run(
+215 |         ["git", "config", "user.email", "test@example.com"], cwd=worktree_path, check=True, capture_output=True
+    |
+
+ASYNC221 Async functions should not run processes with blocking methods
+   --> packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_execution_pool_integration.py:214:5
+    |
+213 |     subprocess.run(["git", "init", "-b", "dev"], cwd=worktree_path, check=True, capture_output=True)
+214 |     subprocess.run(
+    |     ^^^^^^^^^^^^^^
+215 |         ["git", "config", "user.email", "test@example.com"], cwd=worktree_path, check=True, capture_output=True
+216 |     )
+    |
+
+ASYNC221 Async functions should not run processes with blocking methods
+   --> packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_execution_pool_integration.py:217:5
+    |
+215 |         ["git", "config", "user.email", "test@example.com"], cwd=worktree_path, check=True, capture_output=True
+216 |     )
+217 |     subprocess.run(["git", "config", "user.name", "Test"], cwd=worktree_path, check=True, capture_output=True)
+    |     ^^^^^^^^^^^^^^
+218 |     # An unborn branch (zero commits) makes `git rev-parse --abbrev-ref HEAD` fail
+219 |     # (exit 128, "unknown revision") -- `_resolve_feature` needs a resolvable
+    |
+
+ASYNC221 Async functions should not run processes with blocking methods
+   --> packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_execution_pool_integration.py:221:5
+    |
+219 |     # (exit 128, "unknown revision") -- `_resolve_feature` needs a resolvable
+220 |     # current branch, so every sandbox here needs at least one commit.
+221 |     subprocess.run(
+    |     ^^^^^^^^^^^^^^
+222 |         ["git", "commit", "--allow-empty", "-m", "initial commit"], cwd=worktree_path, check=True, capture_output=True
+223 |     )
+    |
+
+ASYNC221 Async functions should not run processes with blocking methods
+   --> packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_execution_pool_integration.py:302:5
+    |
+300 |     import subprocess
+301 |
+302 |     subprocess.run(["git", "init", "-b", "dev"], cwd=worktree_path, check=True, capture_output=True)
+    |     ^^^^^^^^^^^^^^
+303 |     subprocess.run(
+304 |         ["git", "config", "user.email", "test@example.com"], cwd=worktree_path, check=True, capture_output=True
+    |
+
+ASYNC221 Async functions should not run processes with blocking methods
+   --> packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_execution_pool_integration.py:303:5
+    |
+302 |     subprocess.run(["git", "init", "-b", "dev"], cwd=worktree_path, check=True, capture_output=True)
+303 |     subprocess.run(
+    |     ^^^^^^^^^^^^^^
+304 |         ["git", "config", "user.email", "test@example.com"], cwd=worktree_path, check=True, capture_output=True
+305 |     )
+    |
+
+ASYNC221 Async functions should not run processes with blocking methods
+   --> packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_execution_pool_integration.py:306:5
+    |
+304 |         ["git", "config", "user.email", "test@example.com"], cwd=worktree_path, check=True, capture_output=True
+305 |     )
+306 |     subprocess.run(["git", "config", "user.name", "Test"], cwd=worktree_path, check=True, capture_output=True)
+    |     ^^^^^^^^^^^^^^
+307 |     # An unborn branch (zero commits) makes `git rev-parse --abbrev-ref HEAD` fail
+308 |     # (exit 128, "unknown revision") -- `_resolve_feature` needs a resolvable
+    |
+
+ASYNC221 Async functions should not run processes with blocking methods
+   --> packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_execution_pool_integration.py:310:5
+    |
+308 |     # (exit 128, "unknown revision") -- `_resolve_feature` needs a resolvable
+309 |     # current branch, so every sandbox here needs at least one commit.
+310 |     subprocess.run(
+    |     ^^^^^^^^^^^^^^
+311 |         ["git", "commit", "--allow-empty", "-m", "initial commit"], cwd=worktree_path, check=True, capture_output=True
+312 |     )
+    |
+
+ASYNC221 Async functions should not run processes with blocking methods
+   --> packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_execution_pool_integration.py:383:5
+    |
+381 |     import subprocess
+382 |
+383 |     subprocess.run(["git", "init", "-b", "dev"], cwd=worktree_path, check=True, capture_output=True)
+    |     ^^^^^^^^^^^^^^
+384 |     subprocess.run(
+385 |         ["git", "config", "user.email", "test@example.com"], cwd=worktree_path, check=True, capture_output=True
+    |
+
+ASYNC221 Async functions should not run processes with blocking methods
+   --> packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_execution_pool_integration.py:384:5
+    |
+383 |     subprocess.run(["git", "init", "-b", "dev"], cwd=worktree_path, check=True, capture_output=True)
+384 |     subprocess.run(
+    |     ^^^^^^^^^^^^^^
+385 |         ["git", "config", "user.email", "test@example.com"], cwd=worktree_path, check=True, capture_output=True
+386 |     )
+    |
+
+ASYNC221 Async functions should not run processes with blocking methods
+   --> packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_execution_pool_integration.py:387:5
+    |
+385 |         ["git", "config", "user.email", "test@example.com"], cwd=worktree_path, check=True, capture_output=True
+386 |     )
+387 |     subprocess.run(["git", "config", "user.name", "Test"], cwd=worktree_path, check=True, capture_output=True)
+    |     ^^^^^^^^^^^^^^
+388 |     # An unborn branch (zero commits) makes `git rev-parse --abbrev-ref HEAD` fail
+389 |     # (exit 128, "unknown revision") -- `_resolve_feature` needs a resolvable
+    |
+
+ASYNC221 Async functions should not run processes with blocking methods
+   --> packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_execution_pool_integration.py:391:5
+    |
+389 |     # (exit 128, "unknown revision") -- `_resolve_feature` needs a resolvable
+390 |     # current branch, so every sandbox here needs at least one commit.
+391 |     subprocess.run(
+    |     ^^^^^^^^^^^^^^
+392 |         ["git", "commit", "--allow-empty", "-m", "initial commit"], cwd=worktree_path, check=True, capture_output=True
+393 |     )
+    |
+
+ASYNC221 Async functions should not run processes with blocking methods
+   --> packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_execution_pool_integration.py:447:5
+    |
+445 |     import subprocess
+446 |
+447 |     subprocess.run(["git", "init", "-b", "dev"], cwd=worktree_path, check=True, capture_output=True)
+    |     ^^^^^^^^^^^^^^
+448 |     subprocess.run(
+449 |         ["git", "config", "user.email", "test@example.com"], cwd=worktree_path, check=True, capture_output=True
+    |
+
+ASYNC221 Async functions should not run processes with blocking methods
+   --> packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_execution_pool_integration.py:448:5
+    |
+447 |     subprocess.run(["git", "init", "-b", "dev"], cwd=worktree_path, check=True, capture_output=True)
+448 |     subprocess.run(
+    |     ^^^^^^^^^^^^^^
+449 |         ["git", "config", "user.email", "test@example.com"], cwd=worktree_path, check=True, capture_output=True
+450 |     )
+    |
+
+ASYNC221 Async functions should not run processes with blocking methods
+   --> packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_execution_pool_integration.py:451:5
+    |
+449 |         ["git", "config", "user.email", "test@example.com"], cwd=worktree_path, check=True, capture_output=True
+450 |     )
+451 |     subprocess.run(["git", "config", "user.name", "Test"], cwd=worktree_path, check=True, capture_output=True)
+    |     ^^^^^^^^^^^^^^
+452 |     # An unborn branch (zero commits) makes `git rev-parse --abbrev-ref HEAD` fail
+453 |     # (exit 128, "unknown revision") -- `_resolve_feature` needs a resolvable
+    |
+
+ASYNC221 Async functions should not run processes with blocking methods
+   --> packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_execution_pool_integration.py:455:5
+    |
+453 |     # (exit 128, "unknown revision") -- `_resolve_feature` needs a resolvable
+454 |     # current branch, so every sandbox here needs at least one commit.
+455 |     subprocess.run(
+    |     ^^^^^^^^^^^^^^
+456 |         ["git", "commit", "--allow-empty", "-m", "initial commit"], cwd=worktree_path, check=True, capture_output=True
+457 |     )
+    |
+
+ASYNC221 Async functions should not run processes with blocking methods
+   --> packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_execution_pool_integration.py:534:5
+    |
+532 |     import subprocess
+533 |
+534 |     subprocess.run(["git", "init", "-b", "dev"], cwd=worktree_path, check=True, capture_output=True)
+    |     ^^^^^^^^^^^^^^
+535 |     subprocess.run(
+536 |         ["git", "config", "user.email", "test@example.com"], cwd=worktree_path, check=True, capture_output=True
+    |
+
+ASYNC221 Async functions should not run processes with blocking methods
+   --> packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_execution_pool_integration.py:535:5
+    |
+534 |     subprocess.run(["git", "init", "-b", "dev"], cwd=worktree_path, check=True, capture_output=True)
+535 |     subprocess.run(
+    |     ^^^^^^^^^^^^^^
+536 |         ["git", "config", "user.email", "test@example.com"], cwd=worktree_path, check=True, capture_output=True
+537 |     )
+    |
+
+ASYNC221 Async functions should not run processes with blocking methods
+   --> packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_execution_pool_integration.py:538:5
+    |
+536 |         ["git", "config", "user.email", "test@example.com"], cwd=worktree_path, check=True, capture_output=True
+537 |     )
+538 |     subprocess.run(["git", "config", "user.name", "Test"], cwd=worktree_path, check=True, capture_output=True)
+    |     ^^^^^^^^^^^^^^
+539 |     subprocess.run(
+540 |         ["git", "commit", "--allow-empty", "-m", "initial commit"], cwd=worktree_path, check=True, capture_output=True
+    |
+
+ASYNC221 Async functions should not run processes with blocking methods
+   --> packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_execution_pool_integration.py:539:5
+    |
+537 |     )
+538 |     subprocess.run(["git", "config", "user.name", "Test"], cwd=worktree_path, check=True, capture_output=True)
+539 |     subprocess.run(
+    |     ^^^^^^^^^^^^^^
+540 |         ["git", "commit", "--allow-empty", "-m", "initial commit"], cwd=worktree_path, check=True, capture_output=True
+541 |     )
+    |
+
+ASYNC221 Async functions should not run processes with blocking methods
+   --> packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_execution_pool_integration.py:648:5
+    |
+646 |     import subprocess
+647 |
+648 |     subprocess.run(["git", "init", "-b", "dev"], cwd=worktree_path, check=True, capture_output=True)
+    |     ^^^^^^^^^^^^^^
+649 |     subprocess.run(
+650 |         ["git", "config", "user.email", "test@example.com"], cwd=worktree_path, check=True, capture_output=True
+    |
+
+ASYNC221 Async functions should not run processes with blocking methods
+   --> packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_execution_pool_integration.py:649:5
+    |
+648 |     subprocess.run(["git", "init", "-b", "dev"], cwd=worktree_path, check=True, capture_output=True)
+649 |     subprocess.run(
+    |     ^^^^^^^^^^^^^^
+650 |         ["git", "config", "user.email", "test@example.com"], cwd=worktree_path, check=True, capture_output=True
+651 |     )
+    |
+
+ASYNC221 Async functions should not run processes with blocking methods
+   --> packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_execution_pool_integration.py:652:5
+    |
+650 |         ["git", "config", "user.email", "test@example.com"], cwd=worktree_path, check=True, capture_output=True
+651 |     )
+652 |     subprocess.run(["git", "config", "user.name", "Test"], cwd=worktree_path, check=True, capture_output=True)
+    |     ^^^^^^^^^^^^^^
+653 |     subprocess.run(
+654 |         ["git", "commit", "--allow-empty", "-m", "initial commit"], cwd=worktree_path, check=True, capture_output=True
+    |
+
+ASYNC221 Async functions should not run processes with blocking methods
+   --> packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_execution_pool_integration.py:653:5
+    |
+651 |     )
+652 |     subprocess.run(["git", "config", "user.name", "Test"], cwd=worktree_path, check=True, capture_output=True)
+653 |     subprocess.run(
+    |     ^^^^^^^^^^^^^^
+654 |         ["git", "commit", "--allow-empty", "-m", "initial commit"], cwd=worktree_path, check=True, capture_output=True
+655 |     )
+    |
+
+ASYNC221 Async functions should not run processes with blocking methods
+   --> packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_execution_pool_integration.py:777:5
+    |
+775 |     import subprocess
+776 |
+777 |     subprocess.run(["git", "init", "-b", "dev"], cwd=worktree_path, check=True, capture_output=True)
+    |     ^^^^^^^^^^^^^^
+778 |     subprocess.run(
+779 |         ["git", "config", "user.email", "test@example.com"], cwd=worktree_path, check=True, capture_output=True
+    |
+
+ASYNC221 Async functions should not run processes with blocking methods
+   --> packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_execution_pool_integration.py:778:5
+    |
+777 |     subprocess.run(["git", "init", "-b", "dev"], cwd=worktree_path, check=True, capture_output=True)
+778 |     subprocess.run(
+    |     ^^^^^^^^^^^^^^
+779 |         ["git", "config", "user.email", "test@example.com"], cwd=worktree_path, check=True, capture_output=True
+780 |     )
+    |
+
+ASYNC221 Async functions should not run processes with blocking methods
+   --> packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_execution_pool_integration.py:781:5
+    |
+779 |         ["git", "config", "user.email", "test@example.com"], cwd=worktree_path, check=True, capture_output=True
+780 |     )
+781 |     subprocess.run(["git", "config", "user.name", "Test"], cwd=worktree_path, check=True, capture_output=True)
+    |     ^^^^^^^^^^^^^^
+782 |     subprocess.run(
+783 |         ["git", "commit", "--allow-empty", "-m", "initial commit"], cwd=worktree_path, check=True, capture_output=True
+    |
+
+ASYNC221 Async functions should not run processes with blocking methods
+   --> packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_execution_pool_integration.py:782:5
+    |
+780 |     )
+781 |     subprocess.run(["git", "config", "user.name", "Test"], cwd=worktree_path, check=True, capture_output=True)
+782 |     subprocess.run(
+    |     ^^^^^^^^^^^^^^
+783 |         ["git", "commit", "--allow-empty", "-m", "initial commit"], cwd=worktree_path, check=True, capture_output=True
+784 |     )
+    |
+
+ASYNC221 Async functions should not run processes with blocking methods
+    --> packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_execution_pool_integration.py:1091:5
+     |
+1089 |     import subprocess
+1090 |
+1091 |     subprocess.run(["git", "init", "-b", "dev"], cwd=worktree_path, check=True, capture_output=True)
+     |     ^^^^^^^^^^^^^^
+1092 |     subprocess.run(
+1093 |         ["git", "config", "user.email", "test@example.com"], cwd=worktree_path, check=True, capture_output=True
+     |
+
+ASYNC221 Async functions should not run processes with blocking methods
+    --> packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_execution_pool_integration.py:1092:5
+     |
+1091 |     subprocess.run(["git", "init", "-b", "dev"], cwd=worktree_path, check=True, capture_output=True)
+1092 |     subprocess.run(
+     |     ^^^^^^^^^^^^^^
+1093 |         ["git", "config", "user.email", "test@example.com"], cwd=worktree_path, check=True, capture_output=True
+1094 |     )
+     |
+
+ASYNC221 Async functions should not run processes with blocking methods
+    --> packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_execution_pool_integration.py:1095:5
+     |
+1093 |         ["git", "config", "user.email", "test@example.com"], cwd=worktree_path, check=True, capture_output=True
+1094 |     )
+1095 |     subprocess.run(["git", "config", "user.name", "Test"], cwd=worktree_path, check=True, capture_output=True)
+     |     ^^^^^^^^^^^^^^
+1096 |     subprocess.run(
+1097 |         ["git", "commit", "--allow-empty", "-m", "initial commit"], cwd=worktree_path, check=True, capture_output=True
+     |
+
+ASYNC221 Async functions should not run processes with blocking methods
+    --> packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_execution_pool_integration.py:1096:5
+     |
+1094 |     )
+1095 |     subprocess.run(["git", "config", "user.name", "Test"], cwd=worktree_path, check=True, capture_output=True)
+1096 |     subprocess.run(
+     |     ^^^^^^^^^^^^^^
+1097 |         ["git", "commit", "--allow-empty", "-m", "initial commit"], cwd=worktree_path, check=True, capture_output=True
+1098 |     )
+     |
+
+Found 40 errors.

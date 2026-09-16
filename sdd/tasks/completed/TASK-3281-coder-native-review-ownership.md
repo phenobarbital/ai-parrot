@@ -189,5 +189,69 @@ outside this task's scope, report it for the owning task instead of broadening f
 
 ## Completion Note
 
-Not completed. The executing worker must record its identity, date, implementation summary, verification evidence
-and deviations here before marking this task done.
+**Delivery attempts**:
+1. Seat `codex-spark` (backend `codex`, model `gpt-5.3-codex-spark`), attempt_uid `9012a2a7c55b4130b8d9a3f073eace4e` —
+   hit the 1800s dispatch wall-clock cap (`DispatchExecutionError`), zero output. Environment/platform failure,
+   not a reviewed code defect; no feedback recorded for this attempt per policy.
+2. Seat `glm` (backend `nova`, model `zai.glm-4.7-flash`, MCP retry), attempt_uid `86a71b2dde0f49fba2a113d1a0b4fec8`,
+   commit 678dcaf72ca7e1afb0dab30eb389ce6fa2120279 — self-admittedly implemented ONLY `suspend_model()` (its own
+   summary listed 5 missing scope items and all 5 required test scenarios as skipped), yet reported `merged`.
+**Reviewed and completed by**: sdd-worker (Sonnet 5 orchestrator) — 2026-09-16.
+
+**Review findings (confirmed, fixed)**: `suspend_model()` as delivered would crash on any real invocation —
+`ExecutionPool._admitted`'s dict VALUES are plain `(task_id, ModelKey)` tuples (per the already-merged
+`pool.py`), but the code did `for task_id, attempt_rec in snapshot.admitted_attempts.items(): if
+attempt_rec.attempt_uid == attempt_uid` — `attempt_rec` is a `str`, so this raises `AttributeError`
+immediately. It also called `SuspensionReason(reason)` as if `SuspensionReason` were an Enum, when it is a
+`Literal[...]` type alias (not callable). Rewrote it as a thin, correct wrapper delegating to
+`ExecutionPool.suspend()` (TASK-3276) instead of duplicating its local-exclusion/generation/persistence logic.
+
+**Implementation summary (the rest of this task's scope, implemented directly)**:
+- **Centralized naming**: `_worker_id`/`_branch_for`/`_path_for` (`TASK-N.a<attempt>[.<execution_uuid_hex>]`),
+  replacing duplicated hard-coded branch/path string construction across `prepare_native`, `merge` and
+  `_run_attempt` (TASK-3280's dispatch code included) with one source of truth — execution-qualified so
+  successive executions never collide on the same task's branch/path.
+- **`prepare_native`**: gained an optional `execution_id` (default `None`, preserving every existing
+  non-execution-aware caller). When given, admits the native seat's model through the pool BEFORE creating
+  the worktree (a suspended/excluded native seat is rejected up front); a duplicate call for the same
+  `(execution_id, task_id)` reuses the existing reservation instead of admitting/worktree-creating twice.
+- **`merge`**: scoped manager lookup to the calling execution via a new `_manager_execution` map and a
+  UUID-safe `_parse_worker_id` (never `int()`s a suffix that might carry a hex UUID — the Codebase Contract's
+  own warning); releases the native pool reservation on settlement (any outcome) — the ONLY place a native
+  reservation is freed, never by a suspend report alone.
+- **`cleanup`**: gained an optional `execution_id`; filters `self._managers` by the new execution-ownership
+  map so one execution's cleanup can never enumerate or delete another's managers, native reservations or
+  worktrees, even on the same engine instance.
+- **`record_feedback`/`record_review`**: gained an optional `execution_id`; attach it to the payload and
+  reject a conflicting caller-supplied `feedback.execution_id`/`review.execution_id`.
+- **`_orphan_branches`**: now parses both legacy (`TASK-N-a<attempt>`) and execution-qualified
+  (`...-<32 hex chars>`) branch suffixes correctly — strips the fixed-length hex suffix FIRST, since a plain
+  `rpartition("-a")` can mis-split once the hex itself contains "-a"-shaped substrings; reporting only, never
+  auto-adopts either form.
+- Added all 5 required scenarios: `test_execution_qualified_attempt_branch_names`,
+  `test_native_report_is_attempt_bound`, `test_suspension_does_not_settle_native`,
+  `test_cleanup_cannot_cross_execution` (via a second, sibling sandbox worktree under the same
+  `worktree_base_path` — two executions cannot share one canonical worktree per the single-owner invariant),
+  `test_review_and_feedback_coexist`.
+
+**Verification evidence**:
+- `pytest test_engine_plan_merge.py test_feedback.py -q` → 48 passed.
+  Log: `artifacts/logs/task-3281-pytest.log`.
+- Full `tests/flows/dev_loop/sdd_coder/` sweep (excluding `test_mcp_local.py`): 268 passed, 5 failed — the
+  SAME 5 pre-existing, out-of-scope failures already confirmed and deferred by TASK-3279/3280
+  (`test_integration_chunk.py` ×3 → TASK-3285; `test_toolkit.py` ×2 → TASK-3283), unchanged by this task.
+- `ruff check` → clean except pre-existing `lint.residual` (ASYNC240×5, B905×1, deferred to `/sdd-done`'s
+  feature-wide pass per policy). `black --check` → clean.
+  Logs: `artifacts/logs/task-3281-ruff.log`, `artifacts/logs/task-3281-black.log`.
+- `git diff --check` → clean. Only `engine.py`/`test_engine_plan_merge.py`/`test_feedback.py` changed
+  (declared scope).
+- Model feedback recorded: `coder-feedback:58f40c45ca8888910221006e` (pattern
+  `wrong-type-assumption-dict-values-and-literal-as-enum`, model `nova/zai.glm-4.7-flash`).
+- Review measurement recorded: `coder-review:bbabe01e556fccb0b4216e9f`, fix commit
+  `716b55b18371647f593986514f9f6fa80cf6eee5` (marker commit for the exact `fix(...): TASK-3281 review fixes`
+  message the tool requires; actual diff is `24a24d546d6ac10306c66a362fc7b444d341f591`).
+
+Seat: codex-spark (timeout, no delivery) → glm (partial delivery) · Backend: codex → nova · Model:
+gpt-5.3-codex-spark → zai.glm-4.7-flash · Attempts: 1 (codex-spark, failed) + 1 (glm, MCP retry, partial) +
+1 (orchestrator direct implementation) · Duration: 1801.2s + 175.0s (MCP attempts) · Tokens: n/a (codex-spark
+timeout, usage unknown) + 2,379,332 in / 5,384 out (glm attempt)

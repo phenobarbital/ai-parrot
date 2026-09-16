@@ -1,11 +1,12 @@
 """In-memory job registry for the sdd_coder MCP server (spec §3 M4; AC-12, AC-21)."""
+
 from __future__ import annotations
 
 import asyncio
 import logging
 import uuid
 from datetime import datetime, timezone
-from typing import Awaitable, Callable, Dict, List
+from typing import Awaitable, Callable, Dict, List, Optional
 
 from parrot.flows.dev_loop.sdd_coder.models import CoderJob, TaskResult
 
@@ -23,12 +24,25 @@ class JobTable:
         self._tasks: Dict[str, "asyncio.Task[List[TaskResult]]"] = {}
 
     def create(
-        self, feature_id: str, task_ids: List[str], runner: Callable[[], Awaitable[List[TaskResult]]]
+        self,
+        feature_id: str,
+        task_ids: List[str],
+        runner: Callable[[], Awaitable[List[TaskResult]]],
+        *,
+        execution_id: str,
     ) -> CoderJob:
-        """Register + schedule immediately (asyncio.create_task); return the initial snapshot."""
+        """Register + schedule immediately (asyncio.create_task); return the initial snapshot.
+
+        `execution_id` is mandatory and keyword-only (FEAT-559): the caller
+        (the execution pool) owns identity, this table only threads it
+        through -- it is never minted implicitly here -- so running-task
+        queries and journaled snapshots stay execution-scoped (spec AC-6,
+        AC-11).
+        """
         job = CoderJob(
             job_id=f"job-{uuid.uuid4().hex[:12]}",
             feature_id=feature_id,
+            execution_id=execution_id,
             chunk_task_ids=list(task_ids),
             state="running",
             started_at=_now(),
@@ -56,9 +70,21 @@ class JobTable:
             job.ended_at = _now()
         return tasks
 
-    def running_task_ids(self) -> set[str]:
-        """Task ids owned by jobs still in state 'running' (engine uses it for task_already_running / orphan detection)."""
-        return {t for j in self._jobs.values() if j.state == "running" for t in j.chunk_task_ids}
+    def running_task_ids(self, execution_id: Optional[str] = None) -> set[str]:
+        """Task ids owned by jobs still in state 'running'.
+
+        `execution_id` scopes the query to one execution (FEAT-559): pass it
+        for the normal `task_already_running` check so two jobs with the same
+        task id in different executions never collide. Omit it (``None``,
+        the default) only for the explicit all-job, cross-execution
+        inspection used at shutdown / orphan detection.
+        """
+        return {
+            t
+            for j in self._jobs.values()
+            if j.state == "running" and (execution_id is None or j.execution_id == execution_id)
+            for t in j.chunk_task_ids
+        }
 
     def get(self, job_id: str) -> CoderJob:
         """Raises KeyError when unknown (toolkit maps it to job_not_found)."""

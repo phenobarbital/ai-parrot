@@ -1,0 +1,25 @@
+=== TASK-3284 review fixes validation ===
+git diff --check:
+exit:0
+
+heading structure (no duplicates):
+3:## What it does
+16:## Install
+68:## The roster
+70:### Per-delivery correction feedback
+128:### Seat configuration
+150:## The loop
+195:## Outcomes
+209:## Branches & worktrees
+219:## Conventions & lint backstop (FEAT-553)
+231:## Telemetry
+267:## Troubleshooting
+290:## Execution lifecycle and suspension policy
+359:## Related
+
+verified against source:
+- LedgerService.from_root -> ledger_dir/events.jsonl (service.py:114-139)
+- CoderSuspensionStore.from_root/recent/for_execution (coder_suspensions.py:263,315,327)
+- category=CODER_SUSPENSION_CATEGORY only; no coder_execution category exists (coder_suspensions.py:277,301)
+- execution snapshots are per-worktree JSON, not ledger (engine.py:1484-1523 _write_execution_snapshot)
+- CLI 'parrot sdd-coder suspensions/execution' commands: zero grep matches in packages/ai-parrot/src
