@@ -260,10 +260,15 @@ def test_dialect_reference_variables_default():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude Sonnet 5), manual fallback implementation
+**Date**: 2026-09-17
+**Notes**: Implemented verbatim per spec §2 Data Models / §3 Module 2. `pytest
+packages/ai-parrot-tools/tests/querysource/test_models.py -v` — 4 passed. `ruff check
+packages/ai-parrot-tools/src/parrot_tools/querysource packages/ai-parrot-tools/tests/querysource` — clean.
+Implemented manually (not via the `parrot-sdd-coder` MCP orchestrator): the task was classified `complex`
+by the FEAT-561 complexity router purely on the `hard_limit_downstream_tasks` metric (9 transitive
+descendants), and the deployed roster's `ComplexityPolicy.strong_models` is empty, so no seat is currently
+eligible for any `complex`/`unknown` task repo-wide. User explicitly authorized manual implementation for
+this task given its bounded, mechanical scope.
 
 **Deviations from spec**: none
