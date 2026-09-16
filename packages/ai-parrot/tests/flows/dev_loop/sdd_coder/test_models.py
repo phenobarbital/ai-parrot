@@ -188,9 +188,7 @@ class TestComplexityModels:
         assert len(policy.strong_models) == 2
 
     def test_complexity_evidence_validates_create_hashes(self):
-        contract = ComplexityContract(
-            targets=(ComplexityTarget(path="new.py", action="CREATE"),)
-        )
+        contract = ComplexityContract(targets=(ComplexityTarget(path="new.py", action="CREATE"),))
         # Missing CREATE hash should fail
         with pytest.raises(ValidationError, match="CREATE target .* missing"):
             ComplexityEvidence(
@@ -300,7 +298,9 @@ class TestBackwardCompatibility:
 
     def test_native_prep_without_assessment_id(self):
         """Old native prep without assessment_id should deserialize."""
-        old_json = '{"task_id": "TASK-1", "task_file": "x.md", "branch": "b", "worktree_path": "/tmp/wt", "seat_label": "s1"}'
+        old_json = (
+            '{"task_id": "TASK-1", "task_file": "x.md", "branch": "b", "worktree_path": "/tmp/wt", "seat_label": "s1"}'
+        )
         prep = NativePrep.model_validate_json(old_json)
         assert prep.assessment_id == ""
 

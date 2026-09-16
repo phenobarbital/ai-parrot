@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Literal, Optional, Tuple
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class MetricEvidence(BaseModel):
@@ -202,9 +202,7 @@ class ComplexityEvidence(BaseModel):
         for target in self.contract.targets:
             if target.action == "CREATE":
                 if target.path not in self.target_hashes:
-                    raise ValueError(
-                        f"CREATE target {target.path!r} missing from target_hashes"
-                    )
+                    raise ValueError(f"CREATE target {target.path!r} missing from target_hashes")
         return self
 
 
@@ -239,7 +237,6 @@ class ComplexityAssessment(BaseModel):
     def _freeze_evidence(self) -> "ComplexityAssessment":
         """Ensure evidence is owned/copied so caller mutations cannot change assessment."""
         # Create a deep copy by re-serializing and parsing
-        import json
 
         evidence_json = self.evidence.model_dump_json()
         self.evidence = ComplexityEvidence.model_validate_json(evidence_json)
