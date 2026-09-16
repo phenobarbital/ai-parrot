@@ -254,9 +254,6 @@ videos/*
 # compiled templates:
 templates/.compiled
 
-# uv's version file:
-uv.lock
-
 # Legacy root-level parrot/ (superseded by packages/ai-parrot/src/parrot/)
 /parrot/
 

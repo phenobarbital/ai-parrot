@@ -34,7 +34,7 @@ classifiers = [
 
 dependencies = [
     # Build tools
-    "Cython==3.0.11",
+    "Cython>=3.1.4",  # navconfig>=2.5.2 requires it
     # Core data / utilities
     "tabulate==0.9.0",
     "markdown2==2.5.4",
@@ -95,14 +95,23 @@ dependencies = [
     # explicitly (was previously only present via transitive resolution).
     "regex>=2023.0",
     # Navigator stack (core)
-    "navconfig[default]>=2.2.2",
+    # navconfig/asyncdb/navigator-auth/navigator-session floors: older releases
+    # can't build on Python 3.13+ and navconfig/asyncdb carry a stalled-asyncio
+    # bug — never let the resolver fall back to them.
+    "navconfig[default]>=2.5.2",
     # navigator-auth<=0.20.9 passes a `PolicyEffect` enum (not a str) to the
     # rs_pep Rust engine's `default_effect` arg, causing every ABAC/PBAC
     # evaluation to fail-closed with a PyO3 TypeError. The latest AI-Parrot
-    # changes additionally require the 0.24.0 API surface. Loose upper
+    # changes additionally require the 0.24.0 API surface; 0.28.0 builds on
+    # Python 3.13+. Loose upper
     # bound on purpose; only the floor is enforced.
-    "navigator-auth>=0.24.0",
-    "navigator-session>=1.0.0",
+    "navigator-auth>=0.28.0",
+    "navigator-session>=1.0.1",
+    # navigator-auth>=0.28 pulls pysaml2; pysaml2 7.5.1+ caps pyopenssl<24.3,
+    # which lets a plain pip resolve down to pyopenssl 22.0 — broken against
+    # current cryptography (`lib has no attribute GEN_EMAIL`). The floor steers
+    # the resolver to pysaml2 7.5.0 (uncapped).
+    "pyopenssl>=24.3.0",
     # navigator-api 3.0.3+ ships the `navigator.utils.file` FileManager
     # interface AI-Parrot re-exports from `parrot.interfaces.file`; 3.1.2
     # fixes the aiohttp RequestHandler kwargs warning (invalid
@@ -113,7 +122,7 @@ dependencies = [
     # (that downgrade broke `parrot.tools.pythonrepl` imports on 2026-09-03).
     "navigator-api[uvloop,locale,google]>=3.2.2",
     # Async DB — base only (asyncpg, aiosqlite, pandas, pgvector)
-    "asyncdb>=2.11.6",
+    "asyncdb>=2.16.2",
     # AgentsFlow state checkpointing (FEAT-399) — binary checkpoint encoding,
     # native Pydantic/datetime/UUID serialization; never pickle.
     "ormsgpack>=1.5",
@@ -212,7 +221,7 @@ db = [
     "querysource>=4.1.11",
     "psycopg-binary>=3.2.12",
     "jq==1.7.0",
-    "asyncdb[bigquery,mongodb,arangodb,influxdb,boto3,sqlalchemy]>=2.12.0",
+    "asyncdb[bigquery,mongodb,arangodb,influxdb,boto3,sqlalchemy]>=2.16.2",
 ]
 
 # Google BigQuery specific

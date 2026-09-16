@@ -74,6 +74,34 @@ class TestModelRelocation:
         assert cd.tenant == "global"
         # FEAT: deterministic tool nodes default to empty (backward compat)
         assert cd.tool_nodes == []
+        assert cd.generate_infographic is False
+        assert cd.infographic_theme is None
+
+    def test_infographic_theme_roundtrip(self):
+        """A named theme is stored verbatim (whitespace-trimmed)."""
+        cd = CrewDefinition(
+            name="themed",
+            agents=[AgentDefinition(agent_id="x")],
+            generate_infographic=True,
+            infographic_theme=" corporate ",
+        )
+        assert cd.infographic_theme == "corporate"
+        assert CrewDefinition(**cd.model_dump()).infographic_theme == "corporate"
+
+    def test_infographic_theme_blank_is_none(self):
+        """The crew builder UI sends ``""`` when no theme is picked.
+
+        That must be accepted (the model is ``extra="forbid"``, so an
+        undeclared key would 400 every save/import) and normalised to
+        ``None`` rather than stored as an unresolvable theme name.
+        """
+        for blank in ("", "   "):
+            cd = CrewDefinition(
+                name="blank",
+                agents=[AgentDefinition(agent_id="x")],
+                infographic_theme=blank,
+            )
+            assert cd.infographic_theme is None
 
 
 class TestToolNodeDefinition:
