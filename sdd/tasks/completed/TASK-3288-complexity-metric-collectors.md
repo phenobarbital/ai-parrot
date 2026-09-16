@@ -233,3 +233,62 @@ cycle/dangling-reference detection. All fixed in commit
 `coder-feedback:d5f26f648355a0cdb41df208` and review outcome
 `coder-review:c2c96ed32d0fe29fc6ef9d48` (attempt_uid
 df6112a5f3b94e7d9526a2cb7ef06de0, qwen.qwen3-coder-480b-a35b-instruct).
+
+### Third review round (final feature-wide adversarial pass, pre-push)
+
+A third adversarial review (Claude code-reviewer + independent codex
+`gpt-6-astra` cross-check, all findings independently re-verified against
+real Pydantic schemas/CLI output/ruff behavior) found three further
+CRITICAL defects, all localized to this task's `complexity_collectors.py`:
+
+- `_collect_wiki_blast` read `item.get("symbol_id")` on the *outer*
+  impacted-entry dict; the real `wikitoolkit symbols blast --json` shape
+  (`BlastRadiusOutput`/`ImpactedSymbol` in
+  `knowledge/wiki/structural/service.py`) nests the id under
+  `item["symbol"]["symbol_id"]` — `blast_symbols` was always 0 against
+  any real invocation. Also added `SymbolHit.stale` checks on both root
+  and impacted symbols (previously ignored despite spec §2 item 2 naming
+  "stale results" as a required unknown-trigger).
+- `_collect_all_evidence`'s `if contract.contract_symbols:` truthiness
+  check folded `None` (legacy/unknown coverage) and `()` (explicit zero)
+  into the same `not_applicable` branch, defeating AC12's legacy-task
+  conservative-routing guarantee. Same bug fixed in `_collect_wiki_blast`'s
+  own standalone guard.
+- `_collect_ruff_cyclomatic` scored a MODIFY target with a genuine syntax
+  error as `state="ok", value=0` — Ruff reports `code: "invalid-syntax"`
+  diagnostics (verified empirically, exit 1, no C901 entries) on a parse
+  failure, and nothing checked for them.
+
+Also fixed from the same pass: CREATE-target-already-exists /
+MODIFY-target-missing now raise `ComplexityContractError` (spec §2 item 3:
+"invalidate the contract and block dispatch") instead of silently hashing
+to `None`; a MODIFY target in an unsupported language no longer skips
+detection just because a Python MODIFY target is *also* present in the
+same task; two unused imports (`ComplexityPolicy`, `parse_complexity_contract`)
+removed from `engine.py`; two `B904` (`raise ... from e`) and all
+`ASYNC240`/black findings on every touched file resolved (engine.py's 6
+pre-existing, unrelated findings confirmed unchanged against `dev` and
+left untouched — out of this feature's scope).
+
+Three regression tests added to `test_complexity_collectors.py` covering
+exactly these three scenarios (real-shaped nested wiki JSON, a legacy task
+with `contract_symbols=None` vs an explicit `()`, and a MODIFY target with
+a genuine syntax error). Two existing fixtures
+(`test_collect_complexity_basic`'s mocked wiki JSON, and
+`test_collect_complexity_no_python_files`'s nonexistent MODIFY target)
+and one `test_engine_dispatch.py` test
+(`TestAttemptIdentity.test_uid_unique_across_jobs`, whose second
+`run_chunk` call re-ran a task whose CREATE target the first run had
+already merged onto disk — a premise the new CREATE-exists validation
+correctly rejects) were updated to match the corrected, spec-compliant
+behavior rather than weakening it. Fixed in commit `88c83849a`. Full
+targeted suite re-verified green: 316/316
+(`PYTHONPATH=packages/ai-parrot/src:packages/ai-parrot-server/src:packages/ai-parrot-tools/src:packages/ai-parrot-embeddings/src:packages/ai-parrot-advisors/src:packages/ai-parrot-integrations/src
+pytest packages/ai-parrot/tests/flows/dev_loop/sdd_coder/ -q`).
+
+Not recorded via `coder_record_feedback`/`coder_record_review`: these
+fixes were made directly by the orchestrating worker (not a dispatched
+coder delivery), and `wikitoolkit` was unavailable in this environment
+(`ModuleNotFoundError: No module named 'parrot.knowledge'` — pre-existing,
+unrelated to this feature) so no `coder-feedback:`/`coder-review:` ids or
+ledger issue ids could be filed for this pass; noted here in full instead.
