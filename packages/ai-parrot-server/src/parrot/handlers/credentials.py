@@ -33,37 +33,25 @@ from parrot.handlers.models.credentials import (
     CredentialResponse,
 )
 from parrot.handlers.credentials_utils import (
+    credential_context,
     decrypt_credential,
     encrypt_credential,
 )
-
-try:
-    from navigator_session.vault.config import get_active_key_id, load_master_keys
-except ImportError:
-    get_active_key_id = None  # type: ignore[assignment]
-    load_master_keys = None   # type: ignore[assignment]
+from parrot.security.vault_utils import get_vault_keyring
 
 logger = logging.getLogger(__name__)
 
 
-def _load_vault_keys() -> tuple[int, bytes, dict[int, bytes]]:
-    """Load vault master keys from environment.
+def _vault_keyring():
+    """Process-wide vault KeyRing (FEAT-099).
 
     Returns:
-        Tuple of (active_key_id, active_master_key, all_master_keys).
+        ``navigator_session.vault.KeyRing`` built from the vault env vars.
 
     Raises:
-        RuntimeError: If vault keys are not configured in the environment.
+        RuntimeError: If vault keys are not configured/available.
     """
-    if load_master_keys is None or get_active_key_id is None:
-        raise RuntimeError(
-            "navigator_session.vault.config is not available. "
-            "Ensure navigator-session is installed."
-        )
-    master_keys = load_master_keys()
-    active_key_id = get_active_key_id()
-    active_key = master_keys[active_key_id]
-    return active_key_id, active_key, master_keys
+    return get_vault_keyring()
 
 
 @is_authenticated()
@@ -183,7 +171,7 @@ class CredentialsHandler(BaseView):
         name: str | None = self.request.match_info.get('name')
 
         try:
-            _, _, master_keys = _load_vault_keys()
+            keyring = _vault_keyring()
         except RuntimeError as exc:
             self.logger.error("Vault key loading failed: %s", exc)
             return self.error("Encryption service unavailable.", status=500)
@@ -200,7 +188,9 @@ class CredentialsHandler(BaseView):
                         f"Credential '{name}' not found.", status=404
                     )
                 try:
-                    cred_dict = decrypt_credential(doc["credential"], master_keys)
+                    cred_dict = decrypt_credential(
+                        doc["credential"], credential_context(user_id, name), keyring
+                    )
                 except Exception as exc:
                     self.logger.error(
                         "Failed to decrypt credential '%s' for user %s: %s",
@@ -220,7 +210,9 @@ class CredentialsHandler(BaseView):
                 for doc in docs:
                     cname = doc["name"]
                     try:
-                        cred_dict = decrypt_credential(doc["credential"], master_keys)
+                        cred_dict = decrypt_credential(
+                            doc["credential"], credential_context(user_id, cname), keyring
+                        )
                         resp = CredentialResponse(name=cname, **cred_dict)
                         result[cname] = resp.model_dump()
                     except Exception as exc:
@@ -265,7 +257,7 @@ class CredentialsHandler(BaseView):
             return self.error(exc.errors(), status=400)
 
         try:
-            active_key_id, active_key, _ = _load_vault_keys()
+            keyring = _vault_keyring()
         except RuntimeError as exc:
             self.logger.error("Vault key loading failed: %s", exc)
             return self.error("Encryption service unavailable.", status=500)
@@ -295,7 +287,9 @@ class CredentialsHandler(BaseView):
 
             # Build encrypted document
             now = datetime.now(timezone.utc)
-            encrypted = encrypt_credential(credential_dict, active_key_id, active_key)
+            encrypted = encrypt_credential(
+                credential_dict, credential_context(user_id, payload.name), keyring
+            )
             doc = CredentialDocument(
                 user_id=user_id,
                 name=payload.name,
@@ -367,7 +361,7 @@ class CredentialsHandler(BaseView):
             return self.error(exc.errors(), status=400)
 
         try:
-            active_key_id, active_key, _ = _load_vault_keys()
+            keyring = _vault_keyring()
         except RuntimeError as exc:
             self.logger.error("Vault key loading failed: %s", exc)
             return self.error("Encryption service unavailable.", status=500)
@@ -398,7 +392,9 @@ class CredentialsHandler(BaseView):
             # Build updated encrypted document
             now = datetime.now(timezone.utc)
             created_at = existing.get("created_at", now)
-            encrypted = encrypt_credential(credential_dict, active_key_id, active_key)
+            encrypted = encrypt_credential(
+                credential_dict, credential_context(user_id, name), keyring
+            )
             doc = CredentialDocument(
                 user_id=user_id,
                 name=name,
