@@ -1,0 +1,16 @@
+{
+  "budget_profile": "default",
+  "mode": "investigation",
+  "queries": [
+    {"id": "Q001", "type": "read", "target": ".github/workflows/ci.yml", "intent": "Ground-truth the current CI job matrix, extras installed per job, and Python versions.", "priority": 1},
+    {"id": "Q002", "type": "read", "target": "pyproject.toml", "intent": "Check workspace-level dependency/marker config for the alleged async-notify/split resolver conflict.", "priority": 1},
+    {"id": "Q003", "type": "grep", "target": "async-notify", "intent": "Locate every place async-notify is declared/pinned across workspace pyproject.toml files.", "priority": 1},
+    {"id": "Q004", "type": "read", "target": "uv.lock", "intent": "Check current lockfile resolution for async-notify and the aarch64/3.13/linux split Copilot cited.", "priority": 1},
+    {"id": "Q005", "type": "grep", "target": "tqdm", "intent": "Find every unconditional top-level `import tqdm` reachable from parrot.bots.flows, and check whether tqdm is a declared core dependency.", "priority": 1},
+    {"id": "Q006", "type": "grep", "target": "pymupdf|fitz", "intent": "Find pymupdf/fitz imports in wiki test paths and check which extra declares pymupdf.", "priority": 1},
+    {"id": "Q007", "type": "grep", "target": "b2) Delegated implementation|never delegated, never silently invokes another coder", "intent": "Locate the FEAT-543 contract test assertions and the source-of-truth doc/prompt they check against, to determine which side drifted.", "priority": 1},
+    {"id": "Q008", "type": "git_log", "target": "packages/ai-parrot/src/parrot/bots/flows", "intent": "Recent history around tqdm import / flows changes.", "priority": 2},
+    {"id": "Q009", "type": "wiki_query", "target": "tool-optimizations FEAT-543 sdd worker contract test", "intent": "Locate the FEAT-543 test suite and its source-of-truth document via the knowledge graph.", "priority": 1},
+    {"id": "Q010", "type": "wiki_query", "target": "async-notify dependency ai-parrot agents extra", "intent": "Locate where async-notify is required and by which optional extra.", "priority": 2}
+  ]
+}

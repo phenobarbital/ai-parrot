@@ -17,14 +17,13 @@ from navigator_auth.decorators import is_authenticated, user_session
 from parrot.auth.broker import _UserLLMKeyResolver
 from parrot.clients.factory import SUPPORTED_CLIENTS
 from parrot.interfaces.documentdb import DocumentDb
-from parrot.security.credentials_utils import decrypt_credential, encrypt_credential
+from parrot.security.credentials_utils import (
+    decrypt_credential,
+    encrypt_credential,
+    llm_key_context,
+)
+from parrot.security.vault_utils import get_vault_keyring
 from pydantic import ValidationError
-
-try:
-    from navigator_session.vault.config import get_active_key_id, load_master_keys
-except ImportError:  # pragma: no cover — navigator-session always installed in prod
-    get_active_key_id = None  # type: ignore[assignment]
-    load_master_keys = None  # type: ignore[assignment]
 
 from ._base import StudioBaseView
 from .models import ByokKeyRequest, StudioError
@@ -33,22 +32,16 @@ COLLECTION = "user_llm_keys"
 SESSION_PREFIX = "_byok:"
 
 
-def _load_vault_keys() -> tuple[int, bytes, dict]:
-    """Load vault master keys (soft-import guard — pattern:
-    ``handlers/credentials.py::_load_vault_keys``).
+def _vault_keyring():
+    """Process-wide vault KeyRing (FEAT-099).
 
     Returns:
-        Tuple of (active_key_id, active_master_key, all_master_keys).
+        ``navigator_session.vault.KeyRing`` built from the vault env vars.
 
     Raises:
         RuntimeError: If vault keys are not configured/available.
     """
-    if load_master_keys is None or get_active_key_id is None:
-        raise RuntimeError("navigator_session.vault.config is not available. " "Ensure navigator-session is installed.")
-    master_keys = load_master_keys()
-    active_key_id = get_active_key_id()
-    active_key = master_keys[active_key_id]
-    return active_key_id, active_key, master_keys
+    return get_vault_keyring()
 
 
 def _mask(api_key: str) -> str:
@@ -107,7 +100,7 @@ class StudioKeysHandler(StudioBaseView):
         user = await self._get_user()
 
         try:
-            _, _, master_keys = _load_vault_keys()
+            keyring = _vault_keyring()
         except RuntimeError as exc:
             self.logger.error("BYOK: vault key loading failed: %s", exc)
             return self._error(
@@ -126,7 +119,9 @@ class StudioKeysHandler(StudioBaseView):
         keys = []
         for doc in docs or []:
             try:
-                credential = decrypt_credential(doc["api_key"], master_keys)
+                credential = decrypt_credential(
+                    doc["api_key"], llm_key_context(user.user_id, doc.get("provider")), keyring
+                )
                 masked = _mask(credential.get("api_key", ""))
             except Exception as exc:  # pylint: disable=broad-except
                 # NEVER log the raw doc/ciphertext.
@@ -177,7 +172,7 @@ class StudioKeysHandler(StudioBaseView):
             )
 
         try:
-            active_key_id, active_key, _ = _load_vault_keys()
+            keyring = _vault_keyring()
         except RuntimeError as exc:
             self.logger.error("BYOK: vault key loading failed: %s", exc)
             return self._error(
@@ -188,7 +183,9 @@ class StudioKeysHandler(StudioBaseView):
 
         user = await self._get_user()
         plaintext = key_request.api_key.get_secret_value()
-        encrypted = encrypt_credential({"api_key": plaintext}, active_key_id, active_key)
+        encrypted = encrypt_credential(
+            {"api_key": plaintext}, llm_key_context(user.user_id, provider), keyring
+        )
 
         # Session vault hot copy (pattern: CredentialsHandler._set_session_credential).
         session = await self._resolve_session()

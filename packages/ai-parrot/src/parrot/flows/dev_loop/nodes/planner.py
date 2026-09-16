@@ -47,7 +47,7 @@ from parrot.flows.dev_loop.models import (
     ResearchOutput,
 )
 from parrot.flows.dev_loop.nodes.base import DevLoopNode, register_dev_loop_node
-from parrot.flows.dev_loop.task_scheduler import TaskScheduler
+from parrot.flows.dev_loop.task_scheduler import TaskScheduler, parallel_width
 
 
 class _PlannerBrief(BaseModel):
@@ -159,7 +159,7 @@ class PlannerNode(DevLoopNode):
             ],
             model="claude-sonnet-4-6",
         )
-        dispatch_cwd = os.path.abspath(conf.WORKTREE_BASE_PATH)
+        dispatch_cwd = await asyncio.to_thread(os.path.abspath, conf.WORKTREE_BASE_PATH)
         os.makedirs(dispatch_cwd, exist_ok=True)
 
         planner_out: PlannerOutput = await self._dispatcher.dispatch(
@@ -287,10 +287,11 @@ class PlannerNode(DevLoopNode):
     async def _resolve_pool(self, brief: FeatureBrief, planner_out: PlannerOutput) -> DevAgentPoolConfig:
         """Resolve the effective :class:`DevAgentPoolConfig`.
 
-        Brief override wins; otherwise size from the width of the first
-        :class:`TaskScheduler` wave, capped at ``development_pool_max``. A
-        single task (or no ``depends_on`` edges at all) naturally degrades
-        to a width-1 wave — i.e. a single agent.
+        Brief override wins; otherwise size from the parallel width of the
+        first :class:`TaskScheduler` wave, capped at ``development_pool_max``.
+        Exclusive tasks do not contribute to the width; a wave containing
+        only exclusive tasks (or no ``depends_on`` edges at all) naturally
+        degrades to a width-1 wave — i.e. a single agent.
 
         FEAT-486: the *backends* of the derived pool now come from the
         deployment's configured pool (``development_pool_config``) rather
@@ -334,7 +335,7 @@ class PlannerNode(DevLoopNode):
             return DevAgentPoolConfig(agents=self._derive_specs(1))
 
         wave = scheduler.next_wave()
-        width = max(1, len(wave))
+        width = max(1, parallel_width(wave))
         count = min(width, self._pool_max)
         self.logger.info(
             "Pool sizing for %s: wave-1 width=%d, capped at " "development_pool_max=%d -> count=%d",
@@ -371,7 +372,11 @@ class PlannerNode(DevLoopNode):
         slots = [0] * len(configured)
         for i in range(count):
             slots[i % len(configured)] += 1
-        return [spec.model_copy(update={"count": allocated}) for spec, allocated in zip(configured, slots) if allocated]
+        return [
+            spec.model_copy(update={"count": allocated})
+            for spec, allocated in zip(configured, slots, strict=True)
+            if allocated
+        ]
 
 
 __all__ = ["PlannerNode"]

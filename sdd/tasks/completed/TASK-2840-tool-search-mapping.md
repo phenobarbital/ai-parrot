@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-526 — Meta Model API (Muse Spark) LLM Client
 **Spec**: `sdd/specs/meta-llm-client.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: low
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2836
@@ -50,8 +50,12 @@ behaviour; modifying `base.py`; the `execution: "client"` tool-search mode
 
 | File | Action | Description |
 |---|---|---|
-| `packages/ai-parrot/src/parrot/clients/meta/client.py` | MODIFY | native tool_search opt-in |
-| `packages/ai-parrot/tests/clients/test_meta_tool_search.py` | CREATE | Unit tests |
+| `packages/ai-parrot-client-meta/src/parrot/clients/meta/client.py` | MODIFY | native tool_search opt-in |
+| `tests/clients/test_meta_tool_search.py` | CREATE | Unit tests |
+
+> Paths corrected at implementation time (2026-09-15): the client moved to the
+> `ai-parrot-client-meta` satellite, and its sibling tests (`test_meta_*.py`)
+> live under the repo-root `tests/clients/`.
 
 ---
 
@@ -59,14 +63,14 @@ behaviour; modifying `base.py`; the `execution: "client"` tool-search mode
 
 ### parrot's EXISTING client-side mechanism (read; do NOT modify)
 ```python
-# packages/ai-parrot/src/parrot/clients/base.py
+# packages/ai-parrot/src/parrot/clients/base.py  (line numbers re-verified 2026-09-15)
 def _check_new_tools(self, tool_name: str,
-                     tool_result_content: str) -> List[str]      # :1298
-    #  :1307 early-returns unless tool_name == "search_tools"
-    #  :1318 warns on unparseable search_tools result
-def _prepare_lazy_tools(self, tool_choice: str = "auto") -> List[Dict]  # :1322
-    #  :1326 search_tool = self.tool_manager.get_tool("search_tools")
-    #  :1338 return self._prepare_tools(filter_names=["search_tools"])
+                     tool_result_content: str) -> List[str]      # :1432
+    #  :1443 early-returns unless tool_name == "search_tools"
+    #  :1454 warns on unparseable search_tools result
+def _prepare_lazy_tools(self, tool_choice: str = "auto") -> List[Dict]  # :1458
+    #  :1462 search_tool = self.tool_manager.get_tool("search_tools")
+    #  :1474 return self._prepare_tools(filter_names=["search_tools"])
 ```
 `OpenAIBaseClient.ask()` exposes `lazy_loading: bool = False` (`openai_base.py:523`).
 
@@ -131,17 +135,17 @@ Behaviour (docs):
 
 ## Acceptance Criteria
 
-- [ ] `native_tool_search` defaults to `False`; parrot's path is unchanged by default.
-- [ ] When enabled, `{"type": "tool_search"}` is injected and deferred tools
+- [x] `native_tool_search` defaults to `False`; parrot's path is unchanged by default.
+- [x] When enabled, `{"type": "tool_search"}` is injected and deferred tools
       carry `defer_loading: true`.
-- [ ] Enabling it with no deferred tool does not produce a guaranteed-400 request.
-- [ ] Enabling it with `use_responses=False` raises `ValueError`.
-- [ ] `tool_search_call` / `tool_search_output` items are handled without
+- [x] Enabling it with no deferred tool does not produce a guaranteed-400 request.
+- [x] Enabling it with `use_responses=False` raises `ValueError`.
+- [x] `tool_search_call` / `tool_search_output` items are handled without
       corrupting the folded visible text.
-- [ ] `base.py` is **unmodified** (`git diff` clean).
-- [ ] No new `ToolFormat` member added.
-- [ ] Tests pass: `pytest packages/ai-parrot/tests/clients/test_meta_tool_search.py -v`
-- [ ] `ruff check packages/ai-parrot/src/parrot/clients/meta/client.py` clean.
+- [x] `base.py` is **unmodified** (`git diff` clean).
+- [x] No new `ToolFormat` member added.
+- [x] Tests pass: `pytest tests/clients/test_meta_tool_search.py -v`
+- [x] `ruff check packages/ai-parrot-client-meta/src/parrot/clients/meta/client.py` clean.
 
 ---
 
@@ -186,7 +190,33 @@ class TestNativeToolSearch:
 
 ## Completion Note
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+**Completed by**: Claude Code (/sdd-start, Opus 5)
+**Date**: 2026-09-15
 **Notes**:
-**Deviations from spec**: none | describe if any
+- `MetaClient(native_tool_search: bool = False)` — instance-level opt-in (not an
+  `ask()` kwarg, so the funnel-parity signature sweep stays green).
+- When on (Responses path), `ask()`/`ask_stream()` send every function tool
+  flattened with `defer_loading: true` plus `{"type": "tool_search"}`, and drop
+  parrot's own `search_tools` tool (hosted search replaces it for that call).
+  Non-function tools (`web_search`) pass through undeferred. Applies whether
+  or not `lazy_loading` is set; `lazy_loading`'s meaning is unchanged when off.
+- 400 guard: with no deferrable function tool, `tool_search` is never sent and
+  the call falls back to parrot's client-side path (lazy or eager).
+- Tool loop: parrot's lazy re-preparation is disabled in native mode (it would
+  rewrite `args["tools"]` and strip `defer_loading`). Tools the model called are
+  sent undeferred on later rounds, because the follow-up input replays the
+  `function_call` but not the `tool_search_output`; `tool_search` is dropped
+  once nothing stays deferred. This is defensive — the follow-up-round
+  behaviour was NOT verified live.
+- `tool_search_call`/`tool_search_output` items are ignored by text folding and
+  tool-call extraction; ids are surfaced in `metadata["tool_search_calls"]`,
+  plus `metadata["native_tool_search"] = True`.
+- `use_responses=False` + `native_tool_search=True` raises `ValueError` from
+  `ask()` and on first iteration of `ask_stream()`.
+- Evidence: 164 passed across the Meta/parity client suites + 1 satellite test
+  (`artifacts/logs/TASK-2840-pytest.log`, gitignored); ruff + black clean;
+  `base.py` diff empty; no `ToolFormat` change. No live Meta API call was made.
+**Deviations from spec**: file paths in the task were stale (client now in the
+`ai-parrot-client-meta` satellite; tests in repo-root `tests/clients/`) —
+corrected above. `ask_stream()` also honours the flag (scope said Responses
+path; the task's tests only named `ask()`).

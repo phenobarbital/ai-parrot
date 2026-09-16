@@ -91,7 +91,7 @@ dependencies = [
     # changes additionally require the 0.24.0 API surface. Loose upper
     # bound on purpose; only the floor is enforced.
     "navigator-auth>=0.24.0",
-    "navigator-session>=0.6.5",
+    "navigator-session>=1.0.0",
     # navigator-api 3.0.3+ ships the `navigator.utils.file` FileManager
     # interface AI-Parrot re-exports from `parrot.interfaces.file`; 3.1.2
     # fixes the aiohttp RequestHandler kwargs warning (invalid
@@ -848,6 +848,12 @@ all-fast = [
     "ai-parrot[agents-lite,llms,integrations]",
     "ai-parrot-embeddings[huggingface,faiss,pgvector]",
 ]
+
+# Protected stores for navigator-session vault rotation / migration
+# (navigator-vault CLI). See navigator_session/vault/registry.py.
+[project.entry-points."navigator_session.vault_targets"]
+parrot_user_credentials = "parrot.vault_targets:user_credentials_factory"
+parrot_user_llm_keys = "parrot.vault_targets:user_llm_keys_factory"
 
 [project.urls]
 Homepage = "https://github.com/phenobarbital/ai-parrot"

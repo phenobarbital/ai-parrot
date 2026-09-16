@@ -7,6 +7,34 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING — Vault crypto hardening (FEAT-099).** Requires
+  `navigator-session>=1.0.0` and the offline vault migration
+  (`navigator-vault migrate`; see navigator-session
+  `docs/vault/migration-runbook.md`).
+  - `parrot.security.credentials_utils` seals credentials with envelope v2
+    bound to their document and field: `encrypt_credential(credential, context,
+    keyring)` / `decrypt_credential(encrypted, context, keyring)` with
+    `credential_context(user_id, name)` and `llm_key_context(user_id, provider)`.
+    A credential copied to another user, name or provider no longer decrypts.
+  - `parrot.security.vault_utils.get_vault_keyring()` replaces `load_vault_keys()`,
+    which was removed.
+  - `users_bots.mcp_config` / `tools_config` bind their context through AEAD
+    instead of the in-plaintext `_ctx` envelope.
+  - `user_credentials`, `user_llm_keys` and `users_bots` are registered as vault
+    targets for rotation and migration.
+  - `VaultTokenSync.read_tokens_result()` distinguishes missing from unreadable
+    tokens; integrations report `status: needs_reconnect` when stored tokens
+    cannot be used.
+
+### Fixed
+
+- **F4: Telegram/CLI token persistence.** `SessionVault` rejected `:` in key
+  names, so `VaultTokenSync.store_tokens()` silently stored nothing (the error
+  was swallowed). Vault keys may contain `:` now and the tokens are persisted.
+
+
 ---
 
 ## [1.0.2] — 2026-09-15
