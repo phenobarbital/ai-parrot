@@ -8,7 +8,7 @@ import pytest
 from pydantic import ValidationError
 
 from parrot.flows.dev_loop.sdd_coder.engine import CoderFailure
-from parrot.flows.dev_loop.sdd_coder.models import CoderResult
+from parrot.flows.dev_loop.sdd_coder.models import CoderResult, RosterConfig
 from parrot.flows.dev_loop.sdd_coder.toolkit import SddCoderToolkit
 from parrot.mcp.adapter import MCPToolAdapter
 
@@ -45,6 +45,90 @@ def test_toolkit_exposes_execution_lifecycle_tools(three_seat_roster):
 def test_toolkit_accepts_roster_as_list_of_dicts():
     toolkit = SddCoderToolkit(roster=[{"label": "a", "backend": "nova"}])
     assert toolkit._engine.roster.seats[0].label == "a"
+
+
+def test_toolkit_accepts_complexity_config_with_list_roster():
+    """Both configuration paths deliver the same policy to the engine."""
+    from parrot.flows.dev_loop.sdd_coder.complexity_models import ComplexityPolicy
+
+    complexity_config = {
+        "version": "v1",
+        "strong_models": [
+            {"canonical_model": "gpt-5.6-terra", "backend": "codex", "model": "gpt-5.6-terra"},
+            {"canonical_model": "sonnet-5", "backend": "claude", "model": "claude-sonnet-5"},
+        ],
+    }
+    toolkit = SddCoderToolkit(
+        roster=[{"label": "a", "backend": "nova"}],
+        complexity=complexity_config,
+    )
+    assert toolkit._engine.roster.complexity.version == "v1"
+    assert len(toolkit._engine.roster.complexity.strong_models) == 2
+
+
+def test_toolkit_preserves_roster_config_complexity():
+    """With RosterConfig and complexity omitted: preserve that object's policy."""
+    from parrot.flows.dev_loop.sdd_coder.complexity_models import ComplexityPolicy
+
+    original_policy = ComplexityPolicy(
+        version="v1",
+        strong_models=[
+            {"canonical_model": "gpt-5.6-terra", "backend": "codex", "model": "gpt-5.6-terra"},
+        ],
+    )
+    roster_config = RosterConfig(
+        seats=[{"label": "a", "backend": "nova"}],
+        complexity=original_policy,
+    )
+    toolkit = SddCoderToolkit(roster=roster_config)
+    assert toolkit._engine.roster.complexity.version == "v1"
+    assert len(toolkit._engine.roster.complexity.strong_models) == 1
+
+
+def test_toolkit_validates_complexity_override():
+    """With both object and explicit complexity: validate a copied config with the explicit override."""
+    from parrot.flows.dev_loop.sdd_coder.complexity_models import ComplexityPolicy
+
+    original_policy = ComplexityPolicy(
+        version="v1",
+        strong_models=[
+            {"canonical_model": "gpt-5.6-terra", "backend": "codex", "model": "gpt-5.6-terra"},
+        ],
+    )
+    roster_config = RosterConfig(
+        seats=[{"label": "a", "backend": "nova"}],
+        complexity=original_policy,
+    )
+    # Valid override
+    complexity_config = {
+        "version": "v1",
+        "strong_models": [
+            {"canonical_model": "sonnet-5", "backend": "claude", "model": "claude-sonnet-5"},
+        ],
+    }
+    toolkit = SddCoderToolkit(roster=roster_config, complexity=complexity_config)
+    assert toolkit._engine.roster.complexity.version == "v1"
+    assert len(toolkit._engine.roster.complexity.strong_models) == 1
+    # Original config should be unchanged
+    assert len(original_policy.strong_models) == 1
+
+
+def test_toolkit_rejects_malformed_complexity_config():
+    """Malformed policy raises validation error."""
+    from parrot.flows.dev_loop.sdd_coder.complexity_models import ComplexityPolicy
+
+    malformed_config = {
+        "version": "v1",
+        "strong_models": [
+            {"canonical_model": "gpt-5.6-terra", "backend": "codex", "model": "gpt-5.6-terra"},
+        ],
+        "bands": {"cyclomatic_max": (-1, 10)},  # Negative band bound
+    }
+    with pytest.raises(ValidationError):
+        SddCoderToolkit(
+            roster=[{"label": "a", "backend": "nova"}],
+            complexity=malformed_config,
+        )
 
 
 VALID_EXECUTION_ID = "11111111-1111-4111-8111-111111111111"

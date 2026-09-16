@@ -193,5 +193,132 @@ No live model call is needed for these checks.
 
 ## Completion Note
 
-Not started. On completion record files changed, acceptance evidence, tests,
-commit SHA, remaining limitations and actual model/attempt/assessment attribution.
+Implemented as specified: `test_complexity_routing.py` created with 7
+end-to-end tests over the full policy-to-attempt path (complex task
+blocked without strong models, complex task routed to a strong model,
+standard task uses normal rotation, unknown task blocked without strong
+models, hard limit triggers complex classification, native preparation
+blocked for a restricted task with no configured model, and a failed
+strong-MCP attempt never silently retries through a native seat). The 5
+other declared MODIFY files (`test_integration_chunk.py`,
+`test_feedback.py`, `test_lint.py`, `test_engine_dispatch.py`,
+`test_engine_plan_merge.py`) needed no changes: earlier tasks' review
+fixes (TASK-3288's collector fixes, TASK-3290/3291's engine fixes) already
+made them pass cleanly against the final engine/collector behavior, and
+the task's own Scope only requires adapting them "where the new
+legitimate measurements change dispatch" — that condition never applied.
+
+Post-merge review found 7 real defects in the delivered attempt (qwen,
+attempt_uid 92dc3e3dd5fd45f49e2b24488bbaaf86) and fixed them in commit
+`4a25bdd8b575881092933ed8f3218b6830a43418`: an unverified import
+(`StrongModelIdentity` from the wrong module, made the whole module
+uncollectable); the `strong_policy` fixture requested by every test but
+never wired into `RosterConfig.complexity`; all 7 `mock_compute_assessment`
+mocks defined as plain `def` replacing an `async def` method (every test
+failed with `TypeError: ... can't be used in 'await' expression`); a
+`[chunk for chunk in ... for task in ...]` comprehension collecting the
+wrong loop variable in 2 places; `RosterSeat(backend="claude", ...)` using
+a non-existent `DevAgentBackend` literal in 3 fixtures; `DispatchLabels`
+treated as a subscriptable dict with the un-prefixed seat label; and 2
+tests missing a mock for TASK-3290/3291's new `_assessment_for` admission
+check (which recollects real evidence and can never match a fixture's fake
+hashes). Two further tests asserted premises that contradicted the actual
+(correct) design — corrected to match real behavior rather than loosening
+production code: a routing-blocked task is excluded from every chunk at
+planning time, so `run_chunk`/`prepare_native` correctly report
+`task_not_in_plan` (the stronger `complex_model_unavailable` reason already
+lives on the `routing_blocks` entry); and `ChunkAssigner.retry_seat` never
+returns a `kind="native"` seat, so with only one MCP-backed strong
+candidate and one native-backed one, a failed MCP attempt has no eligible
+retry target and correctly ends `failed`, not `merged`. All recorded as
+model feedback (`coder-feedback:a7f7e69b8fa2db46300ae250`,
+`coder-feedback:40fc74adb143e897079f352f`,
+`coder-feedback:a826e3359171b3af853f836f`,
+`coder-feedback:c6e802b5e86a806af5f4faf2`) and review outcome
+(`coder-review:d3ce8ff7088754c984fedbac`).
+
+### AC1–AC14 verification
+
+- **AC1** (all five signal families recorded with provenance/state before
+  dispatch): `TestComplexityModels`/`TestComplexityEvaluation`
+  (TASK-3286/3287) plus `test_complexity_collectors.py` (TASK-3288) cover
+  cyclomatic/blast/scope/criteria/downstream collection with `ok`/`unknown`/
+  `not_applicable` states and sources.
+- **AC2** (versioned v1 policy, every threshold boundary): TASK-3287's
+  `test_complexity.py` boundary tests (n-1/n/n+1 per band, hard triggers,
+  aggregate 4/5).
+- **AC3** (no LLM judgment/title/outcome enters the evaluator): evaluator
+  signature only accepts `(evidence, policy)` — no title/effort/model
+  fields reach it; `test_complexity_routing.py` independence covered
+  implicitly by mocking assessments directly.
+- **AC4** (CREATE/MODIFY, breadth, criteria, downstream exact definitions):
+  `test_complexity_collectors.py`'s scope tests + TASK-3287's boundary
+  tests.
+- **AC5** (blast dedup, missing/stale/truncated vs zero impact):
+  TASK-3288's wiki collector tests.
+- **AC6** (unknown routes conservatively, invalid structure blocks with
+  diagnostic): `ComplexityContractError` -> `complexity_contract_invalid`
+  (TASK-3287/3290); `test_complex_task_blocked_without_strong_models`/
+  `test_unknown_task_blocked_without_strong_models` (this task).
+- **AC7** (complex/unknown dispatch only to configured strong identities):
+  `test_complex_task_blocked_without_strong_models`,
+  `test_complex_task_routes_to_strong_model`,
+  `test_unknown_task_blocked_without_strong_models`,
+  `test_hard_limit_triggers_complex_classification` (this task).
+- **AC8** (probe fallback/retries/native prep/worker self-implementation
+  cannot bypass AC7): `test_native_preparation_respects_complexity`
+  (native, no configured model -> blocked at planning);
+  `test_retry_uses_different_strong_model` (MCP retry never crosses into
+  native); TASK-3294's worker-prompt override instruction (no
+  self-implementation on a restricted block).
+- **AC9** (unavailable strong candidates block affected task only,
+  independent ready tasks continue): `plan()`'s per-task
+  `blocked_task_ids`/`routing_blocks` exclusion (TASK-3290/3291) — only the
+  restricted task is excluded from the assignable wave, verified across
+  every routing test in this file.
+- **AC10** (every attempt references persisted evidence; stale requires
+  replanning): `AttemptRecord.assessment_id` set on every path
+  (TASK-3290/3291); `test_run_chunk_blocks_stale_assessment_without_worktree`
+  (TASK-3291).
+- **AC11** (standard rotation/dependency ordering/exclusive
+  semantics/fidelity/review remain valid): full pre-existing
+  `test_engine_plan_merge.py`/`test_integration_chunk.py`/`test_lint.py`
+  suites unchanged and green.
+- **AC12** (task generation emits the contract; legacy tasks route
+  conservatively): TASK-3293's template/command/skill updates;
+  `ComplexityContract.contract_symbols: None` = legacy/unknown (TASK-3286).
+- **AC13** (worker prompt copies identical; docs describe
+  thresholds/availability/graph limitations): TASK-3294's byte-identity
+  verification + `docs/dev_loop/sdd-coder-orchestrator.md`.
+- **AC14** (targeted tests + existing affected suites pass; no new
+  dependency/direct provider SDK call): full suite below; no new
+  dependency added across the feature (verified per-task).
+
+Tests: `pytest packages/ai-parrot/tests/flows/dev_loop/sdd_coder/
+packages/ai-parrot/tests/flows/dev_loop/test_task_scheduler.py
+packages/ai-parrot/tests/flows/dev_loop/test_subagent_parity.py -q` ->
+337 passed, 1 skipped (0 failed), from the feature worktree with
+`PYTHONPATH=packages/ai-parrot/src:packages/ai-parrot-server/src`.
+`pytest packages/ai-parrot-tools/tests/tool_optimizations/test_sdd_contracts.py -q`
+(run separately — combining both distributions' test roots in one
+invocation hits an unrelated `rootdir`/module-name collision, not a defect)
+-> 17 passed, 4 pre-existing failures, all parametrized on
+`.claude/agents/sdd-worker.md` delegation-protocol wording (writer_generate/
+writer_apply, an unrelated in-progress feature's content) — confirmed
+unrelated and out of this task's declared file table in TASK-3293/3294;
+unchanged by this task. `ruff check --select E9,F63,F7,F82` clean on
+`test_complexity_routing.py`.
+
+Limitations: the 4 pre-existing `test_sdd_contracts.py` failures remain
+unfixed (genuinely out of scope: none of the 6 declared files is
+`.claude/agents/sdd-worker.md`, and TASK-3293/3294 already independently
+confirmed and documented them as unrelated). No live model/CLI dispatch
+was exercised anywhere in this feature's test suites, matching the spec's
+explicit non-requirement.
+
+Seat: qwen (attempt 2, after minimax/attempt 1's DispatchOutputValidationError)
+· Backend: nova · Model: qwen.qwen3-coder-480b-a35b-instruct · Attempts: 2
+· Duration: 901.65s (353.98s failed minimax + 547.67s qwen) · Tokens:
+in=3703604/out=16556 (both attempts combined, per coder_wait `seats`
+summary) · Fix commit: 4a25bdd8b575881092933ed8f3218b6830a43418 (worker,
+post-merge).

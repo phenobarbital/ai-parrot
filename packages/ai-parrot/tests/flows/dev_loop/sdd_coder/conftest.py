@@ -38,6 +38,25 @@ _TASK_TEMPLATE = """# {task_id}: Demo task {n}
 | File | Action | Description |
 |---|---|---|
 | `pkg/t{n}.py` | CREATE | demo file for {task_id} |
+
+## Complexity Contract
+
+```json
+{{
+  "schema_version": 1,
+  "targets": [
+    {{
+      "path": "pkg/t{n}.py",
+      "action": "CREATE"
+    }}
+  ],
+  "contract_symbols": []
+}}
+```
+
+## Acceptance Criteria
+
+- [ ] Demo file created
 """
 
 
@@ -84,6 +103,11 @@ async def git_sandbox_feature(tmp_path):
     await _run_git("config", "user.email", "test@example.com", cwd=worktree)
     await _run_git("config", "user.name", "Test", cwd=worktree)
     await _write_and_commit(worktree, "README.md", "hello\n", "initial commit")
+    # Real checkouts ignore `artifacts/` (repo-root .gitignore); the sandbox
+    # needs its own so `collect_complexity`'s persisted-assessment writes
+    # (spec: "Do not commit runtime artifacts automatically") don't dirty
+    # `git status` in tests that assert a clean worktree post-merge.
+    await _write_and_commit(worktree, ".gitignore", "artifacts/\n", "add gitignore")
     await _write_and_commit(worktree, "pkg/__init__.py", "", "add pkg")
 
     await _run_git("checkout", "-b", FEATURE_BRANCH, cwd=worktree)
@@ -135,6 +159,106 @@ def three_seat_roster() -> RosterConfig:
 @pytest.fixture
 def noop_probe() -> RosterProbe:
     return RosterProbe(config_getter=lambda k, fallback=None: "x", which=lambda b: "/usr/bin/" + b, smoke=None)
+
+
+@pytest.fixture
+async def git_sandbox_feature_with_complex_task(tmp_path):
+    """Temp repo with a complex task that has many acceptance criteria and dependencies."""
+    base_path = tmp_path / "wt"
+    worktree = base_path / FEATURE_BRANCH
+    worktree.mkdir(parents=True)
+
+    await _run_git("init", "-b", "dev", cwd=worktree)
+    await _run_git("config", "user.email", "test@example.com", cwd=worktree)
+    await _run_git("config", "user.name", "Test", cwd=worktree)
+    await _write_and_commit(worktree, "README.md", "hello\n", "initial commit")
+    # Real checkouts ignore `artifacts/` (repo-root .gitignore); the sandbox
+    # needs its own so `collect_complexity`'s persisted-assessment writes
+    # (spec: "Do not commit runtime artifacts automatically") don't dirty
+    # `git status` in tests that assert a clean worktree post-merge.
+    await _write_and_commit(worktree, ".gitignore", "artifacts/\n", "add gitignore")
+    await _write_and_commit(worktree, "pkg/__init__.py", "", "add pkg")
+
+    await _run_git("checkout", "-b", FEATURE_BRANCH, cwd=worktree)
+
+    # Create a complex task with many acceptance criteria
+    complex_task_body = """# TASK-9999: Complex demo task
+
+**Feature**: FEAT-549 — demo
+**Status**: pending
+**Depends-on**: []
+
+## Files to Create / Modify
+
+| File | Action | Description |
+|---|---|---|
+| `pkg/complex_module.py` | CREATE | Complex module with many functions |
+| `pkg/utils.py` | MODIFY | Utility functions |
+| `tests/test_complex.py` | CREATE | Tests for complex module |
+
+## Complexity Contract
+
+```json
+{
+  "schema_version": 1,
+  "targets": [
+    {
+      "path": "pkg/complex_module.py",
+      "action": "CREATE"
+    },
+    {
+      "path": "pkg/utils.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "tests/test_complex.py",
+      "action": "CREATE"
+    }
+  ],
+  "contract_symbols": [
+    "sym:pkg/utils.py#some_function",
+    "sym:pkg/utils.py#another_function"
+  ]
+}
+```
+
+## Acceptance Criteria
+
+- [ ] Implement complex algorithm with proper error handling
+- [ ] Add comprehensive unit tests with 100% coverage
+- [ ] Update documentation with examples
+- [ ] Handle edge cases and invalid inputs
+- [ ] Optimize performance for large datasets
+- [ ] Add logging for debugging purposes
+- [ ] Validate input parameters thoroughly
+- [ ] Implement retry logic for transient failures
+- [ ] Add metrics collection for monitoring
+- [ ] Write integration tests with other modules
+"""
+
+    tasks = [
+        _task_entry("TASK-9999", 9999, []),
+    ]
+    index = {
+        "feature": FEATURE_SLUG,
+        "feature_id": FEATURE_ID,
+        "spec": "sdd/specs/demo.spec.md",
+        "type": "feature",
+        "base_branch": "dev",
+        "created_at": "2026-09-10T00:00:00+00:00",
+        "completed_at": None,
+        "tasks": tasks,
+    }
+    index_path_rel = "sdd/tasks/index/demo.json"
+    await _write_and_commit(worktree, index_path_rel, json.dumps(index, indent=2) + "\n", "add index")
+
+    await _write_and_commit(worktree, "sdd/tasks/active/TASK-9999-demo.md", complex_task_body, "add complex task")
+    await _write_and_commit(
+        worktree, "pkg/utils.py", "# utils\ndef some_function(): pass\ndef another_function(): pass\n", "add utils"
+    )
+
+    index_path = worktree / index_path_rel
+    return worktree, FEATURE_BRANCH, base_path, index_path
 
 
 # FEAT-559 fixtures for execution lifecycle testing
