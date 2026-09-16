@@ -33,7 +33,7 @@
       "feature_id": "FEAT-561",
       "feature": "complex-sdd-tasks",
       "spec": "sdd/specs/complex-sdd-tasks.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -43,8 +43,8 @@
       "parallelism_notes": "Depends on TASK-3286 for its exact Pydantic schemas. Creates only complexity.py/test_complexity.py; collectors, roster and authoring can fan out after this task.",
       "assigned_to": null,
       "started_at": "2026-09-16T00:12:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3287-complexity-contract-evaluator.md"
+      "completed_at": "2026-09-16T00:37:15+00:00",
+      "file": "sdd/tasks/completed/TASK-3287-complexity-contract-evaluator.md"
     },
     {
       "id": "TASK-3288",
