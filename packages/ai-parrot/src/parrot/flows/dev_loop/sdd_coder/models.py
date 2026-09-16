@@ -16,6 +16,12 @@ from parrot.flows.dev_loop.models import (  # verified: models/base.py:407, :497
     SeatUsageSummary,
 )
 
+from parrot.flows.dev_loop.sdd_coder.complexity_models import (
+    ComplexityAssessment,
+    ComplexityBlock,
+    ComplexityPolicy,
+)
+
 SeatKind = Literal["mcp", "native"]
 TaskOutcome = Literal["queued", "running", "merged", "merge_conflict", "failed", "fidelity_violation", "retry_native"]
 ERROR_CODES: frozenset[str] = frozenset(
@@ -37,6 +43,11 @@ ERROR_CODES: frozenset[str] = frozenset(
         "fidelity_violation",
         "invalid_arguments",
         "internal_error",
+        # Complexity routing error codes (spec §2)
+        "complexity_contract_invalid",
+        "complexity_plan_stale",
+        "complex_model_unavailable",
+        "complexity_audit_failed",
     }
 )
 _TASK_ID_RE = re.compile(r"^TASK-\d{1,5}$")
@@ -121,6 +132,7 @@ class RosterConfig(BaseModel):
     smoke_timeout_s: int = Field(default=60, ge=5, le=300)
     lint: LintConfig = Field(default_factory=LintConfig)
     feedback: FeedbackConfig = Field(default_factory=FeedbackConfig)
+    complexity: ComplexityPolicy = Field(default_factory=ComplexityPolicy)
 
 
 class SeatProbeResult(BaseModel):
@@ -145,6 +157,7 @@ class PlannedTask(BaseModel):
     native: bool = False
     backend: Optional[str] = None
     model: str = ""
+    assessment_id: str = ""
 
 
 class PlanChunk(BaseModel):
@@ -176,6 +189,10 @@ class CoderPlan(BaseModel):
     chunks: List[PlanChunk]
     roster: List[SeatProbeResult]
     orphan_branches: List[OrphanBranch]
+    assessments: Dict[str, ComplexityAssessment] = Field(default_factory=dict)
+    """Task ID to ComplexityAssessment mapping for this plan's tasks."""
+    routing_blocks: List[ComplexityBlock] = Field(default_factory=list)
+    """Routing blocks preventing dispatch of affected tasks."""
 
 
 class AttemptRecord(BaseModel):
@@ -218,6 +235,8 @@ class AttemptRecord(BaseModel):
     """Per turn: (round_number, input_tokens or None, output_tokens or None)."""
     budget_report: Dict[str, Any] = Field(default_factory=dict)
     """BudgetReport.model_dump() when an observational ledger was bound."""
+    assessment_id: str = ""
+    """ComplexityAssessment ID for this attempt, enabling audit trail."""
 
 
 class TaskResult(BaseModel):
@@ -246,6 +265,8 @@ class NativePrep(BaseModel):
     model: str = "haiku"
     attempt_uid: str = ""
     coder_feedback: str = ""
+    assessment_id: str = ""
+    """ComplexityAssessment ID for native attempts, enabling attribution."""
 
 
 class CoderJob(BaseModel):
