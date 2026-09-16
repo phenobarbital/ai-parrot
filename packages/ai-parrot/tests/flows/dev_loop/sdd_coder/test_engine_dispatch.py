@@ -84,8 +84,14 @@ def fake_builder_factory(behaviour_by_backend: dict, *, gate: asyncio.Event | No
 
 
 def _roster(*labels_backends: tuple[str, str]) -> RosterConfig:
+    # FEAT-559: an empty `model` is now always excluded as `model_identity_required`
+    # before any probe/smoke call (roster.py's `_is_excluded`) -- every seat needs an
+    # explicit, distinct-per-label model so these tests keep exercising real seats.
     return RosterConfig(
-        seats=[RosterSeat(label=lbl, backend=backend) for lbl, backend in labels_backends]  # type: ignore[arg-type]
+        seats=[
+            RosterSeat(label=lbl, backend=backend, model=f"model-{lbl}")  # type: ignore[arg-type]
+            for lbl, backend in labels_backends
+        ]
     )
 
 
@@ -243,8 +249,8 @@ async def test_plan_then_dispatch_uses_consistent_seat_assignment(git_sandbox_fe
     roster = RosterConfig(
         seats=[
             RosterSeat(label="h", kind="native"),
-            RosterSeat(label="a", backend="nova"),
-            RosterSeat(label="b", backend="codex"),
+            RosterSeat(label="a", backend="nova", model="model-a"),
+            RosterSeat(label="b", backend="codex", model="model-b"),
         ]
     )
     engine = SddCoderEngine(
