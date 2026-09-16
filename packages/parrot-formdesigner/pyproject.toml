@@ -36,11 +36,11 @@ dependencies = [
     "yarl>=1.9",  # FEAT-459: services/sandbox/broker.py builds URLs via yarl.URL.build()
     # directly (SSRF-safe host/path separation) — was previously only a transitive
     # aiohttp dependency; declared explicitly since it is now imported directly.
-    "asyncdb>=2.0",
+    "asyncdb>=2.16.2",
     "PyYAML>=6.0",
     "jinja2>=3.1",
     "aiogram>=3.12",
-    "navigator-auth>=0.20.11",  # FEAT-241: requires add_exclude_provider + register/unregister_exclusions
+    "navigator-auth>=0.28.0",  # FEAT-241 API; 0.28.0 builds on Python 3.13+
     "lxml>=6.1.0",
     "reportlab>=4.1.0",
     "pycountry>=23.0",

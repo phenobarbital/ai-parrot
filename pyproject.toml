@@ -106,6 +106,10 @@ conflicts = [
     # OOM on the 15+ otel-instrumentation sub-packages.
 ]
 override-dependencies = [
+    # asyncdb[uvloop] 2.16.2 pins uvloop==0.21.0, but navconfig[uvloop] 2.5.2
+    # requires uvloop>=0.22.1 (flowtask pulls both extras). Remove once
+    # asyncdb relaxes its exact pin.
+    "uvloop>=0.22.1",
     "moviepy==2.2.1",
     "av>=13.0.0,<14.0.0",
     "watchdog>=6.0.0",
@@ -163,6 +167,13 @@ override-dependencies = [
     "packaging>=26.2",
 ]
 constraint-dependencies = [
+    # Navigator stack floors for every resolution path (incl. transitive pulls
+    # from querysource/flowtask): older navigator-auth/navigator-session fail to
+    # build on Python 3.13+, older navconfig/asyncdb have a stalled-asyncio bug.
+    "navconfig>=2.5.2",
+    "asyncdb>=2.16.2",
+    "navigator-auth>=0.28.0",
+    "navigator-session>=1.0.1",
     # Keep the shared runtime on the Protobuf 6.31 line. This is required by
     # the pinned ortools/flowtask path and is supported by the Google SDKs.
     # LiveKit 1.1.18 still ships stubs generated with Protobuf 5.29.3; remove
