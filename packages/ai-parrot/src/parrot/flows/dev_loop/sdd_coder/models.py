@@ -570,3 +570,18 @@ class SuspendModelArgs(_Args):
     reason: SuspensionReason
     evidence_ref: str = Field(default="", max_length=300)
     _exec = field_validator("execution_id")(_check_uuid)
+
+
+class CoderEndExecutionArgs(_Args):
+    """`coder_end_execution` arguments (FEAT-559 TASK-3283).
+
+    Deliberately minimal: `coder_begin_execution` reuses `CoderPlanArgs`
+    (identical feature/worktree/execution_id shape); no other existing model
+    has ONLY `execution_id`, so this one small class is unavoidable here --
+    a disclosed exception to TASK-3283's own file scope (see its Completion
+    Note), added in this ledger-adjacent models module rather than guessed
+    into toolkit.py.
+    """
+
+    execution_id: str = Field(..., min_length=1)
+    _exec = field_validator("execution_id")(_check_uuid)
