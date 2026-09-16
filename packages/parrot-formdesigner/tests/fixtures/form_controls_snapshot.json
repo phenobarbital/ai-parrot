@@ -718,7 +718,7 @@
     },
     {
       "category": "media",
-      "description": "Upload one image by choosing a file.",
+      "description": "Upload one image.",
       "icon": "image",
       "is_container": false,
       "label": "Image",
@@ -806,7 +806,7 @@
     },
     {
       "category": "media",
-      "description": "Upload images by dragging them onto the field, or by choosing a file. Takes one or several.",
+      "description": "Upload one or several images.",
       "icon": "image-dropzone",
       "is_container": false,
       "label": "Image Dropzone",
