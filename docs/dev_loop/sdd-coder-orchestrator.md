@@ -216,6 +216,134 @@ was never adopted) are **listed** by every `coder_plan` call and **never
 auto-merged** — `sdd-worker` decides per orphan whether to `coder_merge` it
 or drop it with `coder_cleanup`.
 
+## Complexity Routing (FEAT-561)
+
+Task complexity is classified deterministically before dispatch using five signal families.
+The classification drives model eligibility: **complex** and **unknown** tasks require explicit
+strong-model candidates (`gpt-5.6-terra` or `sonnet-5`); standard tasks use the configured
+roster rotation. This prevents weak models from being assigned to complex code changes.
+
+### Scoring system
+
+Five signal families, each rated 0–2 points (inclusive at thresholds):
+
+| Signal | 0 points | 1 point | 2 points | Notes |
+|---|---|---|---|---|
+| Max existing cyclomatic complexity (C901) | 0–10 | 11–20 | ≥21 | Ruff C901 from MODIFY files only |
+| Distinct impacted symbols, depth ≤2 | 0–9 | 10–29 | ≥30 | Static graph estimate; excludes inferred edges |
+| Weighted file scope: CREATE + 2×MODIFY | 0–3 | 4–7 | ≥8 | Module (parent directory) count normalized |
+| Distinct parent directories | 0–1 | 2 | ≥3 | CREATE or MODIFY actions |
+| Task acceptance criteria | 0–4 | 5–7 | ≥8 | Checkbox items only; nested/fenced excluded |
+| Transitive downstream tasks | 0–1 | 2–4 | ≥5 | From per-spec index; deduplicated |
+
+**Hard triggers for complex classification** (any of):
+- Total points ≥5
+- Maximum existing cyclomatic complexity ≥21
+- Blast radius (impacted symbols) ≥30
+- Transitive downstream task count ≥5
+
+**Classification outcomes**:
+- **Complex**: meets any hard trigger OR all measurements are known and total ≥5
+- **Standard**: all applicable measurements known, no hard trigger met, total <5
+- **Unknown**: any required measurement missing/unavailable (e.g., Ruff error, wiki query failure)
+
+Unknown tasks also require strong-model candidates until evidence is available.
+
+### Routing rules
+
+- **Standard tasks** use normal roster rotation (round-robin by label).
+- **Complex/unknown tasks** route only to explicitly configured candidates:
+  - `gpt-5.6-terra` (MCP seat backed by codex)
+  - `sonnet-5` (native seat or explicit Claude configuration)
+- If the configured seat is unavailable or already occupied in a chunk, the task blocks
+  with error code `complex_model_unavailable` (not a dependency block); other ready
+  tasks continue independently.
+- Retries and fallbacks preserve the strong-model restriction: a failed strong coder
+  cannot be retried through a weak seat.
+- Exclusive tasks and ordering are preserved; one seat per chunk, never fill a gap
+  with an ineligible coder.
+
+### Model identity mapping
+
+The roster configuration specifies both canonical candidate names and their deployed
+identities:
+
+```yaml
+policy:
+  strong_model_candidates:
+    - {model: gpt-5.6-terra, backend: codex, seat_label: gpt-5.6-terra}
+    - {model: sonnet-5, backend: native, seat_label: sonnet-5}
+```
+
+**Operator responsibility**: An operator may maintain a local identity mapping that
+connects the canonical candidate (e.g., `sonnet-5`) to the exact provider model ID
+deployed in their environment. Example mapping (operator-maintained, not in spec):
+
+```
+canonical: sonnet-5       → deployed: Claude-Sonnet-5-20260916
+canonical: gpt-5.6-terra  → deployed: gpt-5.6-terra-2025-09
+```
+
+**Important**: Never silently equate `sonnet`, `haiku` or other aliases with `sonnet-5`.
+The candidate names are fixed by policy; aliases are not validated as equivalents.
+If an operator's environment does not have an exact match for a canonical candidate,
+that candidate is unavailable and tasks remain blocked (no silent degradation).
+
+### Evidence and artifacts
+
+Before each dispatch, `coder_plan` collects pre-dispatch measurements and produces
+a `ComplexityAssessment` containing:
+
+- Classification (complex/standard/unknown)
+- Total and per-component points
+- Reason codes (hard trigger matched, e.g., `max_cc_≥21`)
+- All raw metric values (C901 max, symbol count, file scope, etc.)
+- Assessment ID (SHA-256 of canonical JSON)
+
+Assessments are persisted to
+`artifacts/sdd-coder/complexity/<feature-id>/<task-id>/<assessment-id>.json`
+before dispatch; an audit write failure blocks that task. Displayed to `sdd-worker`
+in the plan output, and referenced in attempt telemetry.
+
+**Freshness**: Measurements are recomputed at planning time. Before dispatch,
+task/index/policy/target file hashes and repository HEAD are revalidated. If any
+change is detected, planning returns `error.code: complexity_plan_stale` instead of
+proceeding with stale assignments — the orchestrator must request an explicit new plan.
+This prevents silent assignment changes mid-feature.
+
+### Collector behavior and limits
+
+Evidence collection is asynchronous and bounded:
+
+- **Ruff C901**: Runs in isolation with C901-only rules, ignores repo config, no caching.
+  Exit code 2, malformed JSON, or syntax errors make that measurement unknown.
+- **Wiki blast radius**: Depth-limited to 2 hops via `wikitoolkit symbols blast … --depth 2`.
+  Missing graph revision tokens mean results are snapshots, not atomic. Failed queries or
+  truncation are unknown, with the observed count retained as a lower bound.
+- **Timeouts & failures**: Collection for a single task has a total budget; if exceeded,
+  that measurement becomes unknown. The task is still planned, classified as unknown,
+  and routed via strong-model candidates.
+
+Never turn an unavailable tool (e.g., wiki down, Ruff missing) into a fabricated zero.
+Unknown measurements preserve evidence state and block is reported clearly.
+
+### Example output from `coder_plan`
+
+```
+Complexity routing:
+  TASK-001: complex (assessment_id=abc123, max_cc=25, blast=35, score=6) → [gpt-5.6-terra]
+  TASK-002: standard (assessment_id=def456, max_cc=8, blast=5, scope=2, score=2) → [qwen, gemini]
+  TASK-003: unknown (assessment_id=ghi789, max_cc=unknown, blast=unknown) → [gpt-5.6-terra, sonnet-5]
+  
+  Blocked (complex_model_unavailable):
+    TASK-004: strong-model candidate gpt-5.6-terra unavailable (offline)
+    TASK-005: strong-model candidate sonnet-5 unavailable (already in chunk with TASK-006)
+```
+
+The worker displays this evidence and does NOT bypass a `complex_model_unavailable` block
+through fallback or self-implementation. Complex/unknown tasks without an available seat
+are reported and the feature waits for model availability.
+
 ## Conventions & lint backstop (FEAT-553)
 
 Every MCP seat receives the repo's coder rules (`.agent/rules/codebase-conventions.md`
