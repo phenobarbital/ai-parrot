@@ -1334,9 +1334,7 @@ class SddCoderEngine:
             try:
                 await pool.release(attempt_uid)
             except Exception:
-                self.logger.warning(
-                    "failed to release pool reservation for attempt_uid=%s", attempt_uid, exc_info=True
-                )
+                self.logger.warning("failed to release pool reservation for attempt_uid=%s", attempt_uid, exc_info=True)
 
         # Write the measurement BEFORE consolidation: if the server dies between
         # here and the outcome, the attempt row still survives and the analysis
@@ -1418,9 +1416,7 @@ class SddCoderEngine:
                 exc_info=True,
             )
 
-    def _classify_failure_reason(
-        self, error: str, error_class: str, outcome: Optional[str] = None
-    ) -> Optional[str]:
+    def _classify_failure_reason(self, error: str, error_class: str, outcome: Optional[str] = None) -> Optional[str]:
         """Classify a failure into a suspension reason (FEAT-559).
 
         Traverse bounded exception cause chain for TimeoutError. Distinguish

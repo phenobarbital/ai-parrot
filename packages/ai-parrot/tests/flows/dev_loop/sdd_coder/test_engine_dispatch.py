@@ -835,4 +835,3 @@ class TestCooldownStartsAtFailureObservation:
                 suspended_until = datetime.fromisoformat(view.suspended_until)
                 # suspended_until should be after after_failure (cooldown starts at observation)
                 assert suspended_until > after_failure
-
