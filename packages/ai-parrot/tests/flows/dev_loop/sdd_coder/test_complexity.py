@@ -478,9 +478,7 @@ class TestComplexityEvaluation:
             ),
             "weighted_files": MetricEvidence(state="ok", value=0, reason="No targets", source="scope_collector"),
             "modules": MetricEvidence(state="ok", value=0, reason="No targets", source="scope_collector"),
-            "acceptance_criteria": MetricEvidence(
-                state="ok", value=0, reason="No criteria", source="scope_collector"
-            ),
+            "acceptance_criteria": MetricEvidence(state="ok", value=0, reason="No criteria", source="scope_collector"),
             "downstream_tasks": MetricEvidence(
                 state="ok", value=0, reason="No dependents", source="dependency_collector"
             ),
