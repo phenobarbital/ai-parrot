@@ -492,3 +492,33 @@ rewriting a durable timestamp.
   `SubWorktreeManager`) this kernel composes but does not replace.
 - `docs/mcp-local-toolkits.md` — the local MCP toolkit mechanism this
   server is an instance of.
+## Shared environment protection
+
+Task agents may read and execute the main checkout's Python environment, but
+must never install, uninstall, recreate, or repair files in it. Use installed
+tools directly or `uv run --no-sync`. Dependency declarations may be changed
+within task scope with `uv add --no-sync` / `uv remove --no-sync`. For installation,
+create a real task-local environment and pass its interpreter explicitly to
+`uv pip install --python .task-venv/bin/python ...`, or report the requirement
+to the main-checkout operator for controlled installation.
+
+`worktree_environment.py` builds the shared Bubblewrap runner used by all
+in-process dispatcher subprocesses, including patch application. Native Claude
+`sdd-worker` and `sdd-coder` definitions wrap Bash via `PreToolUse`; programmatic
+Claude dispatch also injects these hooks because prompt loading strips YAML
+frontmatter. Direct file-tool writes into shared environments, including symlink
+aliases, are rejected. Codex workers must retain their host's workspace sandbox
+and must not grant writable access to the shared environment.
+
+The runner exposes the host filesystem read-only, with writable mounts for the
+checkout and common Git directory and private `/tmp`. Shared environments remain
+read-only even when inside a writable checkout. Child scripts inherit these
+mounts; package-manager allowlists are only early feedback. Task package source
+directories are prepended to `PYTHONPATH` so tests exercise the task checkout.
+
+Linux hosts require Bubblewrap (`bwrap`) and permission to create its namespaces.
+A missing executable or namespace failure stops the command; there is no
+unsandboxed fallback. Nested container deployments must permit Bubblewrap or
+provide a compatible execution host. Other CLI backends need equivalent host
+filesystem protection; prompts alone are not a security boundary. This does not
+isolate network services or untrusted tools running in external MCP processes.

@@ -24,6 +24,13 @@ model: sonnet
 color: blue
 permissionMode: bypassPermissions
 tools: Read, Write, Edit, MultiEdit, Bash, Glob, Grep, Agent, mcp__parrot-sdd-coder__coder_begin_execution, mcp__parrot-sdd-coder__coder_end_execution, mcp__parrot-sdd-coder__coder_suspend_model, mcp__parrot-sdd-coder__coder_plan, mcp__parrot-sdd-coder__coder_run_chunk, mcp__parrot-sdd-coder__coder_prepare_native, mcp__parrot-sdd-coder__coder_merge, mcp__parrot-sdd-coder__coder_wait, mcp__parrot-sdd-coder__coder_status, mcp__parrot-sdd-coder__coder_cleanup, mcp__parrot-sdd-coder__coder_record_feedback, mcp__parrot-sdd-coder__coder_record_review, mcp__parrot-sdd-coder__coder_feedback_report
+hooks:
+  PreToolUse:
+    - matcher: "Bash|Write|Edit|MultiEdit|NotebookEdit"
+      hooks:
+        - type: command
+          command: 'python3 "$CLAUDE_PROJECT_DIR/packages/ai-parrot/src/parrot/flows/dev_loop/worktree_environment.py" --hook || exit 2'
+          timeout: 10
 ---
 
 # SDD Worker — Autonomous Feature Implementer
@@ -36,6 +43,25 @@ The merge in `/sdd-done` brings both to `base_branch` atomically. No
 directory switching, no shared mutable state across features.
 
 ---
+
+## Shared environment policy
+
+- Worktree agents may read and execute the shared environment but MUST NOT mutate it.
+  Never install, uninstall, sync, recreate, or repair `.pth` files in the main checkout's
+  `.venv`, including through symlinks or scripts.
+- Run installed tools directly, or use `uv run --no-sync`. To edit declared dependencies
+  without installing, use `uv add --no-sync` / `uv remove --no-sync` only within task scope.
+- Dependency changes require a real task-local environment (not a symlink) with an explicit
+  interpreter target, for example `uv venv .task-venv` then
+  `uv pip install --python .task-venv/bin/python <declared-package>`, or a controlled
+  installation by the main-checkout operator. Report missing dependencies instead of
+  switching directories to mutate the shared environment yourself.
+- Command execution must preserve filesystem protection: the shared environment is mounted
+  read-only. Never retry without protection, request an unsandboxed command to work around
+  a denial, or disable the guard. If isolation is unavailable, stop and report the blocker.
+- Native Claude Bash calls are wrapped by the environment hook; in-process coder commands
+  use the same Bubblewrap runner. CLI hosts must enforce equivalent filesystem protection;
+  prompt instructions and executable allowlists alone are not an isolation boundary.
 
 ## ⛔ CARDINAL RULES — NEVER VIOLATE THESE
 
