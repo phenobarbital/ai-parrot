@@ -195,7 +195,7 @@
       "feature_id": "FEAT-559",
       "feature": "sdd-coder-execution-pool-suspensions",
       "spec": "sdd/specs/sdd-coder-execution-pool-suspensions.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -205,8 +205,8 @@
       "parallelism_notes": "Depends on TASK-3282 final lifecycle/status behavior. No overlapping toolkit edits may run during this task; TASK-3284 documents exactly this landed surface.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3283-coder-pool-mcp-protocol.md"
+      "completed_at": "2026-09-16T01:59:14+00:00",
+      "file": "sdd/tasks/completed/TASK-3283-coder-pool-mcp-protocol.md"
     },
     {
       "id": "TASK-3284",
