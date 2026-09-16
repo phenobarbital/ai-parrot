@@ -114,7 +114,7 @@
       "feature_id": "FEAT-561",
       "feature": "complex-sdd-tasks",
       "spec": "sdd/specs/complex-sdd-tasks.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -124,8 +124,8 @@
       "parallelism_notes": "Depends on TASK-3290 helpers and fixtures; serializes engine.py and test_engine_plan_merge.py edits. Toolkit/prompt work consumes the final admission behavior.",
       "assigned_to": null,
       "started_at": "2026-09-16T00:12:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3291-complexity-dispatch-admission.md"
+      "completed_at": "2026-09-16T01:51:32+00:00",
+      "file": "sdd/tasks/completed/TASK-3291-complexity-dispatch-admission.md"
     },
     {
       "id": "TASK-3292",
