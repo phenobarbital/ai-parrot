@@ -10,6 +10,7 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional, Set
 from parrot import conf  # verified: navconfig `config` at parrot/conf.py
 from parrot.flows.dev_loop.task_scheduler import TaskRef, partition_wave  # verified: task_scheduler.py:25, 65
 from parrot.flows.dev_loop.sdd_coder.models import PlanChunk, PlannedTask, RosterConfig, RosterSeat, SeatProbeResult
+from parrot.flows.dev_loop.sdd_coder.complexity_models import ComplexityAssessment, ComplexityPolicy
 
 SmokeFn = Callable[[RosterSeat, str], Awaitable[bool]]
 _KEY_RULES: Dict[str, tuple[str, ...]] = {
@@ -130,6 +131,32 @@ class RosterProbe:
         )
 
 
+def eligible_seats(
+    assessment: ComplexityAssessment, seats: List[RosterSeat], policy: ComplexityPolicy
+) -> List[RosterSeat]:
+    """Filter `seats` to those permitted for `assessment`'s classification (spec §2).
+
+    `standard` tasks may use any of the supplied seats, unchanged and in order
+    ("Standard tasks retain the configured roster rotation behavior"). `complex`
+    and `unknown` tasks are restricted to seats whose exact `(backend, model)`
+    pair -- `backend="native"` for `kind="native"` seats -- matches one of
+    `policy.strong_models`'s configured identities. Never matches a seat
+    nickname or an inferred alias, and never overrides seat availability or
+    suspension: `seats` is expected to already be the caller's
+    available/unsuspended subset.
+    """
+    if assessment.classification == "standard":
+        return list(seats)
+
+    strong_keys = {(sm.backend, sm.model) for sm in policy.strong_models}
+    out: List[RosterSeat] = []
+    for seat in seats:
+        backend = "native" if seat.kind == "native" else (seat.backend or "")
+        if (backend, seat.model or "") in strong_keys:
+            out.append(seat)
+    return out
+
+
 def available_seats(roster: RosterConfig, results: List[SeatProbeResult]) -> List[RosterSeat]:
     """Seats with available=True, roster order, `model` replaced by `model_used`."""
     by_label = {r.label: r for r in results}
@@ -149,13 +176,34 @@ class ChunkAssigner:
             raise ValueError("ChunkAssigner needs at least one seat")
         self._seats, self._start = list(seats), 0
 
-    def assign(self, wave: List[TaskRef], task_files: Dict[str, str]) -> List[PlanChunk]:
+    def assign(
+        self,
+        wave: List[TaskRef],
+        task_files: Dict[str, str],
+        *,
+        eligible_labels: Optional[Dict[str, Set[str]]] = None,
+    ) -> List[PlanChunk]:
         """Exclusive tasks alone first (via ``partition_wave``); the parallel batch is split
         into chunks of at most len(seats), retaining singleton exclusive batches;
         task j ↦ seats[(start+j) % n]; start
         advances by one for each chunk produced, so consecutive chunks begin on a
         different seat even when every chunk is a full `n`-sized batch (a `+= len(chunk)`
-        step would be a no-op mod `n` whenever the batch is full-sized)."""
+        step would be a no-op mod `n` whenever the batch is full-sized).
+
+        `eligible_labels`, when given, maps each wave task's ID to the set of seat
+        labels it may be dispatched to (spec "Models and dispatch rules"): every
+        task in `wave` must have a non-empty entry, or this raises `ValueError`.
+        Seats are still assigned by the same rotating cyclic order and
+        one-seat-per-chunk rule, restricted to each task's eligible set. When the
+        next task's only eligible seats are already used in the current chunk,
+        that chunk is closed early and a new one (on the next rotation) continues
+        with that task, rather than ever dispatching it to an ineligible seat.
+        """
+        if eligible_labels is not None:
+            for task in wave:
+                if not eligible_labels.get(task.id):
+                    raise ValueError(f"task {task.id!r} has no eligible seat labels")
+
         n = len(self._seats)
         # Obtain dispatch batches through partition_wave without duplicating exclusive classification
         batches = partition_wave(wave)
@@ -169,8 +217,21 @@ class ChunkAssigner:
         chunks: List[PlanChunk] = []
         for batch in batches:
             planned_tasks: List[PlannedTask] = []
-            for j, task in enumerate(batch):
-                seat = self._seats[(self._start + j) % n]
+            used_labels: Set[str] = set()
+            for task in batch:
+                allowed = eligible_labels.get(task.id) if eligible_labels is not None else None
+                seat = self._next_seat(used_labels, allowed)
+                if seat is None and planned_tasks:
+                    # No unused eligible seat left in this chunk: close it and
+                    # retry this task against a freshly-rotated, empty chunk
+                    # instead of ever dispatching it to an ineligible seat.
+                    chunks.append(PlanChunk(index=len(chunks), tasks=planned_tasks))
+                    self._start = (self._start + 1) % n
+                    planned_tasks = []
+                    used_labels = set()
+                    seat = self._next_seat(used_labels, allowed)
+                if seat is None:
+                    raise ValueError(f"no eligible seat available for task {task.id!r}")
                 planned_tasks.append(
                     PlannedTask(
                         task_id=task.id,
@@ -182,11 +243,28 @@ class ChunkAssigner:
                         model=seat.model,
                     )
                 )
-            chunks.append(PlanChunk(index=len(chunks), tasks=planned_tasks))
-            self._start = (self._start + 1) % n
+                used_labels.add(seat.label)
+            if planned_tasks:
+                chunks.append(PlanChunk(index=len(chunks), tasks=planned_tasks))
+                self._start = (self._start + 1) % n
         return chunks
 
-    def retry_seat(self, failed_label: str, exclude: Set[str]) -> Optional[RosterSeat]:
+    def _next_seat(self, used_labels: Set[str], allowed: Optional[Set[str]]) -> Optional[RosterSeat]:
+        """First seat, in current rotation order, not in `used_labels` and (when
+        `allowed` is given) within that eligible set."""
+        n = len(self._seats)
+        for offset in range(n):
+            candidate = self._seats[(self._start + offset) % n]
+            if candidate.label in used_labels:
+                continue
+            if allowed is not None and candidate.label not in allowed:
+                continue
+            return candidate
+        return None
+
+    def retry_seat(
+        self, failed_label: str, exclude: Set[str], *, eligible_labels: Optional[Set[str]] = None
+    ) -> Optional[RosterSeat]:
         """Next MCP seat after `failed_label` in roster order not in `exclude`; None when none left.
 
         Never returns a `kind="native"` seat: the retry ladder (`SddCoderEngine._run_task`)
@@ -195,6 +273,11 @@ class ChunkAssigner:
         `Agent` call `sdd-worker` makes itself via `coder_prepare_native`), so returning one
         here would hit `_run_attempt`'s `assert seat.backend is not None` instead of
         performing a real retry (code review finding, FEAT-549).
+
+        `eligible_labels`, when given, restricts the candidate to that set (spec:
+        "Probe fallbacks, retry_seat and native preparation apply the same model
+        restriction" -- a failed strong-model attempt cannot retry through a
+        weak seat).
         """
         n = len(self._seats)
         try:
@@ -204,6 +287,9 @@ class ChunkAssigner:
         excluded = exclude | {failed_label}
         for offset in range(1, n + 1):
             candidate = self._seats[(failed_index + offset) % n]
-            if candidate.label not in excluded and candidate.kind != "native":
-                return candidate
+            if candidate.label in excluded or candidate.kind == "native":
+                continue
+            if eligible_labels is not None and candidate.label not in eligible_labels:
+                continue
+            return candidate
         return None
