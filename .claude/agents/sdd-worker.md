@@ -220,15 +220,23 @@ You do NOT implement tasks yourself while the `parrot-sdd-coder` MCP server is a
 consolidate, and own SDD state. Coders (`sdd-coder`) run one task each in their own sub-worktree.
 
 0. **Probe the server.** Call `coder_plan(feature=<FEAT-ID>, worktree=<absolute path of this worktree>)`. If the tool is
-   unavailable, or the result is `status: error` with `error.code: roster_empty`, print
+   unavailable, or the result is `status: error` with `error.code: roster_empty` (no available seats after probe), print
    `⚠️ parrot-sdd-coder unavailable (<reason>) — falling back to the sequential loop` and run "## Fallback: Sequential Loop".
-   Any other `error.code` is a STOP condition.
+   If the result is `status: error` with `error.code: complexity_plan_stale`, request an explicit new plan instead of
+   continuing; this indicates task/index/policy/targets changed mid-execution and prior assignments are no longer valid.
+   Any other `error.code` is a STOP condition (report the code and diagnostics).
 1. **Print the plan.** Roster line (`available N/M`, each dropped seat with its `reason`), one line per chunk
-   (`TASK → seat_label (backend:model | native)`), `blocked` ids, and every `orphan_branches` entry
+   (`TASK → seat_label (backend:model | native)`), all `blocked` ids with their `error_code` (distinguish `dependency_block`
+   from `complex_model_unavailable` routing blocks), and every `orphan_branches` entry
    (`TASK-NNN branch=… commits=N` — you decide: `coder_merge` to adopt, or `coder_cleanup` to drop; never both blindly).
-2. **Prepare each native task first** with `coder_prepare_native(task_id)` and read its result. Then dispatch the
-   FIRST chunk in ONE message: `coder_run_chunk(task_ids=<the chunk's non-native ids>)` AND, for each prepared task,
-   `Agent(subagent_type="sdd-coder", model=<prepared.model>, prompt="Implement <task_file> in worktree <worktree_path> (branch <branch>). Work only there. Previous delivery feedback: <prepared.coder_feedback>")`.
+   For each task in a chunk, also display: classification (complex/standard/unknown), assessment ID, and selected model.
+   For blocked tasks, display reason and evidence status (e.g., "blocked: complex_model_unavailable (classification=complex, assessment_id=abc123def)")
+2. **Prepare each native task first** with `coder_prepare_native(task_id)` and read its result. Verify the returned
+   `model` and `assessment_id` are present for routed tasks; if missing or unavailable, this is a STOP condition.
+   Then dispatch the FIRST chunk in ONE message: `coder_run_chunk(task_ids=<the chunk's non-native ids>)` AND, for each
+   prepared task, `Agent(subagent_type="sdd-coder", model=<prepared.model>, prompt="Implement <task_file> in worktree
+   <worktree_path> (branch <branch>). Work only there. Complexity assessment: <assessment_id>, classification: <classification>.
+   Previous delivery feedback: <prepared.coder_feedback>")`.
    Read `coder_prepare_native`'s result BEFORE constructing the native Agent call. Include its complete
    `coder_feedback` and retain `attempt_uid` and `model` for attribution. MCP attempts receive refreshed feedback
    automatically in their `TaskScopedBrief`, including retries.
@@ -255,7 +263,7 @@ consolidate, and own SDD state. Coders (`sdd-coder`) run one task each in their 
      `merged` unless the branch is an ancestor of the feature branch). Run
      `git merge --no-ff <branch>` in this worktree yourself, then continue as `merged`.
    - `fidelity_violation` → treat as `failed` (a coder touched `sdd/` or unlisted files, OR its diff adds a banned import — `diagnostics` starts with `BannedImport:`; never merge it by hand, fix it yourself in attempt 3).
-   - `failed` → attempt 3 is yours: implement the task in THIS worktree with steps c)–f) of the Fallback loop, then (g).
+   - `failed` → **DO NOT automatically implement this task yourself.** If the task is blocked with `complex_model_unavailable` or has an unavailable complexity assessment, wait and report the block instead of assuming standard. Only implement on your own (attempt 3, Fallback loop steps c–f) if the task is a standard classification with confirmed evidence. Report any `complex` or `unknown` classification that could not find an available seat.
    **At EVERY coder handoff, capture your confirmed corrections** using the protocol below, before marking the task
    complete or dispatching another chunk. This applies to bugs fixed after merge, rejected deliveries, and native
    deliveries as well as MCP ones. Do not wait for the final feature review.
