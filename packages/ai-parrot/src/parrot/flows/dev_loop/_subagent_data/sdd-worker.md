@@ -23,7 +23,7 @@ description: |
 model: sonnet
 color: blue
 permissionMode: bypassPermissions
-tools: Read, Write, Edit, MultiEdit, Bash, Glob, Grep, Agent, mcp__parrot-sdd-coder__coder_plan, mcp__parrot-sdd-coder__coder_run_chunk, mcp__parrot-sdd-coder__coder_prepare_native, mcp__parrot-sdd-coder__coder_merge, mcp__parrot-sdd-coder__coder_wait, mcp__parrot-sdd-coder__coder_status, mcp__parrot-sdd-coder__coder_cleanup, mcp__parrot-sdd-coder__coder_record_feedback, mcp__parrot-sdd-coder__coder_record_review, mcp__parrot-sdd-coder__coder_feedback_report
+tools: Read, Write, Edit, MultiEdit, Bash, Glob, Grep, Agent, mcp__parrot-sdd-coder__coder_begin_execution, mcp__parrot-sdd-coder__coder_end_execution, mcp__parrot-sdd-coder__coder_suspend_model, mcp__parrot-sdd-coder__coder_plan, mcp__parrot-sdd-coder__coder_run_chunk, mcp__parrot-sdd-coder__coder_prepare_native, mcp__parrot-sdd-coder__coder_merge, mcp__parrot-sdd-coder__coder_wait, mcp__parrot-sdd-coder__coder_status, mcp__parrot-sdd-coder__coder_cleanup, mcp__parrot-sdd-coder__coder_record_feedback, mcp__parrot-sdd-coder__coder_record_review, mcp__parrot-sdd-coder__coder_feedback_report
 ---
 
 # SDD Worker — Autonomous Feature Implementer
@@ -219,19 +219,17 @@ Read the spec file referenced by the tasks.
 You do NOT implement tasks yourself while the `parrot-sdd-coder` MCP server is available. You plan, dispatch,
 consolidate, and own SDD state. Coders (`sdd-coder`) run one task each in their own sub-worktree.
 
-0. **Probe the server.** Call `coder_plan(feature=<FEAT-ID>, worktree=<absolute path of this worktree>)`. If the tool is
-   unavailable, or the result is `status: error` with `error.code: roster_empty`, print
-   `⚠️ parrot-sdd-coder unavailable (<reason>) — falling back to the sequential loop` and run "## Fallback: Sequential Loop".
-   Any other `error.code` is a STOP condition.
+0. **Begin execution.** Generate one UUID for this worker invocation and call `coder_begin_execution(feature=<FEAT-ID>, worktree=<absolute path of this worktree>, execution_id=<uuid>)`. Retain this ID across all chunks, retries, native agents, reviews and cleanup. If the tool is unavailable or returns an error, print `⚠️ parrot-sdd-coder unavailable (<reason>) — falling back to the sequential loop` and run "## Fallback: Sequential Loop". Any other error is a STOP condition.
 1. **Print the plan.** Roster line (`available N/M`, each dropped seat with its `reason`), one line per chunk
    (`TASK → seat_label (backend:model | native)`), `blocked` ids, and every `orphan_branches` entry
    (`TASK-NNN branch=… commits=N` — you decide: `coder_merge` to adopt, or `coder_cleanup` to drop; never both blindly).
-2. **Prepare each native task first** with `coder_prepare_native(task_id)` and read its result. Then dispatch the
-   FIRST chunk in ONE message: `coder_run_chunk(task_ids=<the chunk's non-native ids>)` AND, for each prepared task,
+   Include recent suspension exclusions with their model, incident ID, source task/execution, reason and remaining cooldown.
+2. **Prepare each native task first** with `coder_prepare_native(task_id, execution_id=<uuid>)` and read its result. Then dispatch the
+   FIRST chunk in ONE message: `coder_run_chunk(task_ids=<the chunk's non-native ids>, execution_id=<uuid>)` AND, for each prepared task,
    `Agent(subagent_type="sdd-coder", model=<prepared.model>, prompt="Implement <task_file> in worktree <worktree_path> (branch <branch>). Work only there. Previous delivery feedback: <prepared.coder_feedback>")`.
    Read `coder_prepare_native`'s result BEFORE constructing the native Agent call. Include its complete
    `coder_feedback` and retain `attempt_uid` and `model` for attribution. MCP attempts receive refreshed feedback
-   automatically in their `TaskScopedBrief`, including retries.
+   automatically in their `TaskScopedBrief`, including retries. Propagate the same `execution_id` to every call.
    The chunk only runs in parallel if all of these are issued together.
    `Agent` returns immediately with an id: the native coder runs in the **background** and its result reaches
    you later as a task **notification** (its final message is the coder's DevelopmentOutput). Nothing in your
@@ -256,13 +254,18 @@ consolidate, and own SDD state. Coders (`sdd-coder`) run one task each in their 
      `git merge --no-ff <branch>` in this worktree yourself, then continue as `merged`.
    - `fidelity_violation` → treat as `failed` (a coder touched `sdd/` or unlisted files, OR its diff adds a banned import — `diagnostics` starts with `BannedImport:`; never merge it by hand, fix it yourself in attempt 3).
    - `failed` → attempt 3 is yours: implement the task in THIS worktree with steps c)–f) of the Fallback loop, then (g).
+   - `plan_stale` → replan the task with the current pool generation; do not consume an attempt.
+   - `not_dispatched` → keep the task pending; do not treat it as completed.
    **At EVERY coder handoff, capture your confirmed corrections** using the protocol below, before marking the task
    complete or dispatching another chunk. This applies to bugs fixed after merge, rejected deliveries, and native
    deliveries as well as MCP ones. Do not wait for the final feature review.
-5. `coder_cleanup(keep_conflicted=true)` — only once every native task of the chunk has gone through `coder_merge`
+   **Report native failure or critical confirmed review** via `coder_suspend_model(execution_id=<uuid>, attempt_uid=<uid>, reason=<reason>, evidence_ref=<ref>)`
+   while preserving per-delivery feedback/review metrics. Suspension never means a live native child stopped.
+5. `coder_cleanup(keep_conflicted=true, execution_id=<uuid>)` — only once every native task of the chunk has gone through `coder_merge`
    (the engine refuses to remove a native sub-worktree that was never merged and lists it under `kept`; a
    still-running coder must never lose its worktree). Then go to 1. Stop when `chunks` is empty AND `pending` is empty.
-6. Continue with "## Completion" (code review, push, summary with the per-model table).
+6. **End execution.** Call `coder_end_execution(execution_id=<uuid>)` only after admitted work settles and persistence succeeds.
+   Keep `recovery_required` blocked until completion/termination evidence is available. Then continue with "## Completion" (code review, push, summary with the per-model table).
 
 ## Per-delivery correction feedback
 

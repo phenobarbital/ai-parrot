@@ -125,6 +125,67 @@ review evidence remains the authority for completeness and defect attribution.
 Restart the local MCP server to expose the three feedback/review tools after
 updating the package. No model calls or model-weight changes are involved.
 
+### Execution lifecycle and suspension policy
+
+Each `sdd-worker` invocation owns one execution pool identified by a UUID. The
+worker generates this ID at startup and propagates it to every MCP call and
+native Agent prompt. The pool spans all chunks, retries, native agents, reviews
+and cleanup for that execution.
+
+**Begin execution:** Call `coder_begin_execution(feature, worktree, execution_id)`
+before any plan or probe. This reads durable suspension history and applies
+recent exclusions before probing eligible models. The configured roster remains
+immutable; exclusions and reasons are exposed separately.
+
+**Suspension triggers:**
+- Dispatch timeout (including wrapped `TimeoutError`)
+- Dispatch exception/nonzero CLI exit/provider unavailable
+- Invalid `DevelopmentOutput` or exhausted unsuccessful delivery
+- Dirty delivery or file-fidelity violation attributable to coder
+- Worker confirms a critical code-review defect
+
+**Suspension semantics:**
+- First qualifying failure removes the model from that execution's pool.
+- Suspension is durably recorded with validated attribution, reason, timestamp
+  and fixed expiry (default 1800 seconds from failure observation).
+- A new execution excludes all unexpired matching records before any probe.
+- Cooldown expiry only affects new executions; duplicate begin/record/replay
+  does not refresh expiry or clear local bans.
+- Active pools remain independent; another execution's cleanup cannot mutate them.
+- No native or MCP child is cancelled merely because its model was suspended;
+  reservations settle explicitly.
+
+**End execution:** Call `coder_end_execution(execution_id)` only after admitted
+work settles and persistence succeeds. Keep `recovery_required` blocked until
+completion/termination evidence is available.
+
+**Configuration:**
+```yaml
+kwargs:
+  suspension:
+    cooldown_seconds: 1800
+    history_max_tokens: 1200
+```
+
+**Migration:** Existing worktrees without execution IDs continue to work via
+the sequential fallback loop. New executions require explicit begin/use/end
+and visible exclusions. Coordinate MCP/worker upgrade by restarting the local
+server after updating the package.
+
+**Operator examples:**
+- List recent suspensions: `parrot sdd-coder suspensions list --worktree <path>`
+- Inspect an execution: `parrot sdd-coder execution show <uuid> --worktree <path>`
+- Force expiry for testing: advance the fake clock past `expires_at` in tests only;
+  never shorten a real suspension by rewriting timestamps.
+
+**Troubleshooting:**
+- `execution_scope_mismatch`: ensure feature/worktree match the original begin call.
+- `persistence_degraded`: check ledger permissions; retry idempotently at next status/end.
+- `recovery_required`: establish completion/termination before cleanup/end; never assume
+  a lost native child exited.
+- `suspension_history_unavailable`: fall back to sequential worker loop; do not probe
+  under an invented empty history.
+
 ### Seat configuration
 
 The roster is pure configuration (`kwargs.roster` in the yaml) — no model
@@ -269,6 +330,67 @@ as the unbudgeted comparison baseline.
 - **`LLM code dispatch exceeded max_turns=…`** — the in-process seats' library default is 40 turns
   (`LLMCodeDispatchProfile.max_turns`, FEAT-553); the roster path sets 60 via `build_dispatcher`
   (`DEV_LOOP_LLM_MAX_TURNS`). The effective value is in the `dispatch.completed` payload.
+
+## Execution lifecycle and suspension policy
+
+Each `sdd-worker` invocation owns one execution pool identified by a UUID. The
+worker generates this ID at startup and propagates it to every MCP call and
+native Agent prompt. The pool spans all chunks, retries, native agents, reviews
+and cleanup for that execution.
+
+**Begin execution:** Call `coder_begin_execution(feature, worktree, execution_id)`
+before any plan or probe. This reads durable suspension history and applies
+recent exclusions before probing eligible models. The configured roster remains
+immutable; exclusions and reasons are exposed separately.
+
+**Suspension triggers:**
+- Dispatch timeout (including wrapped `TimeoutError`)
+- Dispatch exception/nonzero CLI exit/provider unavailable
+- Invalid `DevelopmentOutput` or exhausted unsuccessful delivery
+- Dirty delivery or file-fidelity violation attributable to coder
+- Worker confirms a critical code-review defect
+
+**Suspension semantics:**
+- First qualifying failure removes the model from that execution's pool.
+- Suspension is durably recorded with validated attribution, reason, timestamp
+  and fixed expiry (default 1800 seconds from failure observation).
+- A new execution excludes all unexpired matching records before any probe.
+- Cooldown expiry only affects new executions; duplicate begin/record/replay
+  does not refresh expiry or clear local bans.
+- Active pools remain independent; another execution's cleanup cannot mutate them.
+- No native or MCP child is cancelled merely because its model was suspended;
+  reservations settle explicitly.
+
+**End execution:** Call `coder_end_execution(execution_id)` only after admitted
+work settles and persistence succeeds. Keep `recovery_required` blocked until
+completion/termination evidence is available.
+
+**Configuration:**
+```yaml
+kwargs:
+  suspension:
+    cooldown_seconds: 1800
+    history_max_tokens: 1200
+```
+
+**Migration:** Existing worktrees without execution IDs continue to work via
+the sequential fallback loop. New executions require explicit begin/use/end
+and visible exclusions. Coordinate MCP/worker upgrade by restarting the local
+server after updating the package.
+
+**Operator examples:**
+- List recent suspensions: `parrot sdd-coder suspensions list --worktree <path>`
+- Inspect an execution: `parrot sdd-coder execution show <uuid> --worktree <path>`
+- Force expiry for testing: advance the fake clock past `expires_at` in tests only;
+  never shorten a real suspension by rewriting timestamps.
+
+**Troubleshooting:**
+- `execution_scope_mismatch`: ensure feature/worktree match the original begin call.
+- `persistence_degraded`: check ledger permissions; retry idempotently at next status/end.
+- `recovery_required`: establish completion/termination before cleanup/end; never assume
+  a lost native child exited.
+- `suspension_history_unavailable`: fall back to sequential worker loop; do not probe
+  under an invented empty history.
 
 ## Related
 
