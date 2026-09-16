@@ -135,7 +135,7 @@
       "feature_id": "FEAT-559",
       "feature": "sdd-coder-execution-pool-suspensions",
       "spec": "sdd/specs/sdd-coder-execution-pool-suspensions.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -145,8 +145,8 @@
       "parallelism_notes": "Depends on TASK-3279 engine lifecycle; modifies engine.py after it. TASK-3281 must wait because native/merge paths reuse the execution naming and attempt attribution introduced here.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3280-coder-engine-admission-retries.md"
+      "completed_at": "2026-09-16T00:33:20+00:00",
+      "file": "sdd/tasks/completed/TASK-3280-coder-engine-admission-retries.md"
     },
     {
       "id": "TASK-3281",
