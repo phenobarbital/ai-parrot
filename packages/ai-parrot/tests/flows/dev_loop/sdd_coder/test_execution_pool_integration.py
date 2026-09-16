@@ -23,7 +23,7 @@ from uuid import uuid4
 import pytest
 
 from parrot.flows.dev_loop.sdd_coder.engine import SddCoderEngine, CoderFailure
-from parrot.flows.dev_loop.sdd_coder.models import ExecutionSnapshot, RosterConfig, RosterSeat
+from parrot.flows.dev_loop.sdd_coder.models import ExecutionSnapshot, RosterConfig, RosterSeat, SeatProbeResult
 from parrot.flows.dev_loop.sdd_coder.pool import ExecutionPool, roster_fingerprint
 from parrot.knowledge.wiki.ledger.coder_suspensions import CoderSuspensionStore, ModelKey, SuspensionRecord
 
@@ -568,8 +568,16 @@ async def test_timeout_then_next_chunk(tmp_path, roster_config):
         wait_timeout_max_s=60.0,
     )
 
+    # Both seats probe as available so a non-suspended model can still be
+    # admitted -- an empty probe result would leave the pool with zero seats
+    # at all, which is not what this scenario is testing.
     mock_probe = AsyncMock()
-    mock_probe.probe = AsyncMock(return_value=[])
+    mock_probe.probe = AsyncMock(
+        return_value=[
+            SeatProbeResult(label="a", kind="mcp", backend="nova", available=True, model_used="model-a"),
+            SeatProbeResult(label="b", kind="mcp", backend="nova", available=True, model_used="model-b"),
+        ]
+    )
 
     engine = SddCoderEngine(
         roster=explicit_roster,
@@ -676,7 +684,12 @@ async def test_new_execution_uses_durable_history(tmp_path, roster_config):
     )
 
     mock_probe = AsyncMock()
-    mock_probe.probe = AsyncMock(return_value=[])
+    mock_probe.probe = AsyncMock(
+        return_value=[
+            SeatProbeResult(label="a", kind="mcp", backend="nova", available=True, model_used="model-a"),
+            SeatProbeResult(label="b", kind="mcp", backend="nova", available=True, model_used="model-b"),
+        ]
+    )
 
     # Create isolated suspension store
     suspension_store = CoderSuspensionStore.from_root(tmp_path)
@@ -685,8 +698,8 @@ async def test_new_execution_uses_durable_history(tmp_path, roster_config):
         roster=explicit_roster,
         probe=mock_probe,
         worktree_base_path=str(tmp_path),
-        suspension_store=suspension_store,
     )
+    engine._suspension_store = suspension_store  # inject isolated store; begin_execution() only lazily creates one
 
     # Begin execution A
     await engine.begin_execution("FEAT-1", str(worktree_path), execution_id_a)
@@ -724,8 +737,8 @@ async def test_new_execution_uses_durable_history(tmp_path, roster_config):
         roster=explicit_roster,
         probe=mock_probe,
         worktree_base_path=str(tmp_path),
-        suspension_store=suspension_store,
     )
+    engine2._suspension_store = suspension_store  # inject isolated store; begin_execution() only lazily creates one
 
     # Begin execution B - should inherit suspensions from execution A
     view_b = await engine2.begin_execution("FEAT-1", str(worktree_path), execution_id_b)
@@ -800,7 +813,12 @@ async def test_new_execution_after_expiry(tmp_path, roster_config):
     )
 
     mock_probe = AsyncMock()
-    mock_probe.probe = AsyncMock(return_value=[])
+    mock_probe.probe = AsyncMock(
+        return_value=[
+            SeatProbeResult(label="a", kind="mcp", backend="nova", available=True, model_used="model-a"),
+            SeatProbeResult(label="b", kind="mcp", backend="nova", available=True, model_used="model-b"),
+        ]
+    )
 
     # Create isolated suspension store
     suspension_store = CoderSuspensionStore.from_root(tmp_path)
@@ -809,8 +827,8 @@ async def test_new_execution_after_expiry(tmp_path, roster_config):
         roster=explicit_roster,
         probe=mock_probe,
         worktree_base_path=str(tmp_path),
-        suspension_store=suspension_store,
     )
+    engine._suspension_store = suspension_store  # inject isolated store; begin_execution() only lazily creates one
 
     # Begin execution A
     await engine.begin_execution("FEAT-1", str(worktree_path), execution_id_a)
@@ -863,8 +881,8 @@ async def test_new_execution_after_expiry(tmp_path, roster_config):
             roster=explicit_roster,
             probe=mock_probe,
             worktree_base_path=str(tmp_path),
-            suspension_store=suspension_store,
         )
+        engine2._suspension_store = suspension_store  # inject isolated store; begin_execution() only lazily creates one
 
         # Begin execution C - should not inherit expired suspensions
         view_c = await engine2.begin_execution("FEAT-1", str(worktree_path), execution_id_c)
@@ -902,35 +920,40 @@ async def test_overlapping_workers_isolated(tmp_path, roster_config):
     - Create execution C after A's suspension is durable
     - Verify C inherits A's suspension
     """
-    worktree_path = tmp_path / "feature-worktree"
-    worktree_path.mkdir()
-
     import subprocess
 
-    subprocess.run(["git", "init", "-b", "dev"], cwd=worktree_path, check=True, capture_output=True)
-    subprocess.run(
-        ["git", "config", "user.email", "test@example.com"], cwd=worktree_path, check=True, capture_output=True
-    )
-    subprocess.run(["git", "config", "user.name", "Test"], cwd=worktree_path, check=True, capture_output=True)
-    subprocess.run(
-        ["git", "commit", "--allow-empty", "-m", "initial commit"], cwd=worktree_path, check=True, capture_output=True
-    )
-
-    # Create index
-    index_dir = worktree_path / "sdd" / "tasks" / "index"
-    index_dir.mkdir(parents=True)
-    index_file = index_dir / "test-feature.json"
-    index_file.write_text(
-        json.dumps(
-            {
-                "feature": "test-feature",
-                "feature_id": "FEAT-1",
-                "spec": "sdd/specs/test.spec.md",
-                "base_branch": "dev",
-                "tasks": [],
-            }
+    def _make_worktree(name: str) -> Path:
+        # Each overlapping worker owns its OWN feature worktree -- the engine's
+        # single-owner-per-worktree invariant (execution_in_progress) means two
+        # DIFFERENT executions can never share one canonical worktree path.
+        # Durable suspension history is still shared: it lives in the isolated
+        # CoderSuspensionStore rooted at tmp_path below, not per-worktree.
+        wt = tmp_path / name
+        wt.mkdir()
+        subprocess.run(["git", "init", "-b", "dev"], cwd=wt, check=True, capture_output=True)
+        subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=wt, check=True, capture_output=True)
+        subprocess.run(["git", "config", "user.name", "Test"], cwd=wt, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "--allow-empty", "-m", "initial commit"], cwd=wt, check=True, capture_output=True
         )
-    )
+        index_dir = wt / "sdd" / "tasks" / "index"
+        index_dir.mkdir(parents=True)
+        (index_dir / "test-feature.json").write_text(
+            json.dumps(
+                {
+                    "feature": "test-feature",
+                    "feature_id": "FEAT-1",
+                    "spec": "sdd/specs/test.spec.md",
+                    "base_branch": "dev",
+                    "tasks": [],
+                }
+            )
+        )
+        return wt
+
+    worktree_path_b = _make_worktree("feature-worktree-b")
+    worktree_path_a = _make_worktree("feature-worktree-a")
+    worktree_path_c = _make_worktree("feature-worktree-c")
 
     execution_id_a = str(uuid4())
     execution_id_b = str(uuid4())
@@ -947,27 +970,35 @@ async def test_overlapping_workers_isolated(tmp_path, roster_config):
     )
 
     mock_probe = AsyncMock()
-    mock_probe.probe = AsyncMock(return_value=[])
+    mock_probe.probe = AsyncMock(
+        return_value=[
+            SeatProbeResult(label="a", kind="mcp", backend="nova", available=True, model_used="model-a"),
+            SeatProbeResult(label="b", kind="mcp", backend="nova", available=True, model_used="model-b"),
+        ]
+    )
 
-    # Create isolated suspension store
+    # Create isolated suspension store, shared by both engines below (rooted
+    # at tmp_path, not at any one worktree -- this is what makes it "durable
+    # history shared across independent worker worktrees").
     suspension_store = CoderSuspensionStore.from_root(tmp_path)
 
     engine = SddCoderEngine(
         roster=explicit_roster,
         probe=mock_probe,
         worktree_base_path=str(tmp_path),
-        suspension_store=suspension_store,
     )
+    engine._suspension_store = suspension_store  # inject isolated store; begin_execution() only lazily creates one
 
-    # Begin execution B first (already active)
-    await engine.begin_execution("FEAT-1", str(worktree_path), execution_id_b)
+    # Begin execution B first (already active), on its own worktree.
+    await engine.begin_execution("FEAT-1", str(worktree_path_b), execution_id_b)
     pool_b = engine._executions[execution_id_b]
 
     # Verify initial state of B
     initial_seat_views_b = {key: view.model_copy() for key, view in pool_b._seat_views.items()}
 
-    # Begin execution A
-    await engine.begin_execution("FEAT-1", str(worktree_path), execution_id_a)
+    # Begin execution A on a DIFFERENT worktree -- same engine, different
+    # canonical worktree, so no execution_in_progress conflict with B.
+    await engine.begin_execution("FEAT-1", str(worktree_path_a), execution_id_a)
     pool_a = engine._executions[execution_id_a]
 
     # Simulate a timeout failure for model-a in execution A
@@ -1009,11 +1040,12 @@ async def test_overlapping_workers_isolated(tmp_path, roster_config):
         roster=explicit_roster,
         probe=mock_probe,
         worktree_base_path=str(tmp_path),
-        suspension_store=suspension_store,
     )
+    engine2._suspension_store = suspension_store  # inject isolated store; begin_execution() only lazily creates one
 
-    # Begin execution C - should inherit A's suspension
-    view_c = await engine2.begin_execution("FEAT-1", str(worktree_path), execution_id_c)
+    # Begin execution C - on its own worktree, should inherit A's suspension
+    # via the SHARED durable suspension_store rather than the worktree path.
+    view_c = await engine2.begin_execution("FEAT-1", str(worktree_path_c), execution_id_c)
     pool_c = engine2._executions[execution_id_c]
 
     # Verify model-a is excluded in execution C due to inherited history
@@ -1177,3 +1209,145 @@ async def test_all_seats_exhausted(tmp_path, roster_config):
 
     with pytest.raises(ValueError, match="model nova/model-b is excluded from this execution"):
         await pool.admit("TASK-0004", model_b_key)
+
+
+@pytest.mark.asyncio
+async def test_model_aliases_and_parallel_admission(tmp_path) -> None:
+    """Cover §4 alias + parallel-admission semantics directly on `ExecutionPool`.
+
+    - A single suspension incident can name up to two `blocked_keys` aliases
+      (spec: `configured_model` vs `resolved_model` can differ) -- both must
+      be excluded, even when only one of them is an actual pool seat.
+    - Admission is scoped per-`ModelKey`, not a single execution-wide lock:
+      admitting a busy key must never block admission of a DIFFERENT,
+      non-busy key.
+    """
+    roster = RosterConfig(
+        seats=[
+            RosterSeat(label="a", backend="nova", model="model-a"),
+            RosterSeat(label="b", backend="nova", model="model-b"),
+        ],
+        smoke_timeout_s=5.0,
+        wait_timeout_max_s=60.0,
+    )
+    suspension_store = CoderSuspensionStore.from_root(tmp_path)
+    key_a = ModelKey(backend="nova", model="model-a")
+    key_b = ModelKey(backend="nova", model="model-b")
+    # Not a configured seat of this pool at all -- an alias of key_a's
+    # underlying provider identity (e.g. a `resolved_model` the dispatcher
+    # actually hit), which must still be excluded once named in blocked_keys.
+    key_a_alias = ModelKey(backend="nova", model="model-a-resolved-2026-09")
+
+    pool = ExecutionPool(
+        execution_id=str(uuid4()),
+        feature_id="FEAT-1",
+        worktree_path=str(tmp_path),
+        roster=roster,
+        seats=roster.seats,
+        suspension_store=suspension_store,
+        initial_exclusions=[],
+    )
+
+    # -- Parallel admission of two DIFFERENT keys must not serialize --
+    attempt_uid_a = await pool.admit("TASK-0001", key_a)  # key_a now busy
+    # key_b is a different key entirely: admitting it must return promptly
+    # even while key_a stays held (no release() call for key_a yet).
+    attempt_uid_b = await asyncio.wait_for(pool.admit("TASK-0002", key_b), timeout=1.0)
+    assert attempt_uid_a != attempt_uid_b
+    await pool.release(attempt_uid_a)
+    await pool.release(attempt_uid_b)
+
+    # -- Alias suspension excludes BOTH the real seat and the alias key --
+    now = datetime.now(timezone.utc)
+    suspension_record = SuspensionRecord(
+        execution_id=pool.execution_id,
+        feature_id="FEAT-1",
+        task_id="TASK-0003",
+        attempt_uid="attempt-1",
+        job_id="job-1",
+        source="engine",
+        seat_label="a",
+        backend="nova",
+        configured_model="model-a",
+        resolved_model="model-a-resolved-2026-09",
+        blocked_keys=[key_a, key_a_alias],
+        reason="dispatch_error",
+        occurred_at=now,
+        expires_at=now + timedelta(seconds=1800),
+        duration_s=3.2,
+        exception_class="RuntimeError",
+        evidence_ref="job:job-1",
+        explanation="Dispatcher returned a nonzero exit for this model.",
+    )
+    receipt = await pool.suspend(suspension_record)
+    assert receipt.persisted
+
+    assert key_a in pool._local_exclusions
+    assert key_a_alias in pool._local_exclusions
+
+    with pytest.raises(ValueError, match="model nova/model-a is excluded from this execution"):
+        await pool.admit("TASK-0004", key_a)
+    # The alias is excluded too, even though it was never a configured seat --
+    # the exclusion check in admit() runs BEFORE the "is a seat" check.
+    with pytest.raises(ValueError, match="model nova/model-a-resolved-2026-09 is excluded from this execution"):
+        await pool.admit("TASK-0004", key_a_alias)
+
+    # key_b is untouched by an alias suspension that never named it.
+    attempt_uid_b2 = await pool.admit("TASK-0005", key_b)
+    assert attempt_uid_b2 is not None
+    await pool.release(attempt_uid_b2)
+
+
+def test_mcp_and_prompt_twins() -> None:
+    """AC-15: registered MCP tool names and both worker-prompt twins must agree.
+
+    - Every `coder_*` tool the toolkit actually registers must be allow-listed
+      (as `mcp__parrot-sdd-coder__coder_<name>`) in BOTH `.claude/agents/sdd-worker.md`
+      and its packaged twin `packages/ai-parrot/src/parrot/flows/dev_loop/_subagent_data/sdd-worker.md`.
+    - Both twins must allow-list the exact same tool set as each other (no drift
+      between the canonical prompt and the packaged copy shipped with the wheel).
+    """
+    import re
+
+    from parrot.flows.dev_loop.sdd_coder.toolkit import SddCoderToolkit
+
+    toolkit = SddCoderToolkit(
+        roster=[{"label": "a", "backend": "nova", "model": "model-a"}],
+    )
+    registered_names = {t.name for t in toolkit.get_tools()}
+    assert registered_names, "toolkit registered no tools at all"
+
+    repo_root = Path(__file__).resolve().parents[6]
+    canonical_prompt = repo_root / ".claude" / "agents" / "sdd-worker.md"
+    packaged_twin = (
+        repo_root
+        / "packages"
+        / "ai-parrot"
+        / "src"
+        / "parrot"
+        / "flows"
+        / "dev_loop"
+        / "_subagent_data"
+        / "sdd-worker.md"
+    )
+    assert canonical_prompt.is_file(), canonical_prompt
+    assert packaged_twin.is_file(), packaged_twin
+
+    def _allow_listed_coder_tools(prompt_path: Path) -> set[str]:
+        text = prompt_path.read_text()
+        frontmatter = text.split("---", 2)[1]
+        tools_line = next(line for line in frontmatter.splitlines() if line.strip().startswith("tools:"))
+        mcp_names = re.findall(r"mcp__parrot-sdd-coder__(coder_\w+)", tools_line)
+        return set(mcp_names)
+
+    canonical_tools = _allow_listed_coder_tools(canonical_prompt)
+    twin_tools = _allow_listed_coder_tools(packaged_twin)
+
+    # The two prompt files must never drift from each other.
+    assert canonical_tools == twin_tools, (
+        f"canonical/packaged worker-prompt tool allowlists disagree: "
+        f"only-canonical={canonical_tools - twin_tools} only-twin={twin_tools - canonical_tools}"
+    )
+    # Every tool the toolkit actually registers must be allow-listed in both.
+    missing = registered_names - canonical_tools
+    assert not missing, f"registered MCP tools missing from worker-prompt allowlists: {missing}"

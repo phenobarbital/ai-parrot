@@ -119,11 +119,15 @@ async def git_sandbox_feature(tmp_path):
 
 @pytest.fixture
 def three_seat_roster() -> RosterConfig:
+    # FEAT-559 TASK-3277's model_identity_required rule excludes any seat with
+    # an empty `model` from every probe/plan, so each seat needs an explicit
+    # (deterministic, test-only) model id -- otherwise engine.open()/plan()
+    # raises roster_empty for every caller of this fixture.
     return RosterConfig(
         seats=[
-            RosterSeat(label="a", backend="nova"),
-            RosterSeat(label="b", backend="google-compat"),
-            RosterSeat(label="c", backend="codex"),
+            RosterSeat(label="a", backend="nova", model="model-a"),
+            RosterSeat(label="b", backend="google-compat", model="model-b"),
+            RosterSeat(label="c", backend="codex", model="model-c"),
         ]
     )
 
