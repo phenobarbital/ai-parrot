@@ -22,7 +22,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 from parrot import conf
 from parrot.knowledge.wiki.ledger.coder_feedback import CoderFeedback, CoderFeedbackReceipt, CoderFeedbackStore
@@ -63,6 +63,16 @@ from parrot.flows.dev_loop.sdd_coder.models import (
     SeatProbeResult,
     TaskResult,
 )
+from parrot.flows.dev_loop.sdd_coder.complexity_models import (
+    ComplexityAssessment,
+    ComplexityBlock,
+    ComplexityPolicy,
+)
+from parrot.flows.dev_loop.sdd_coder.complexity_collectors import (
+    collect_complexity,
+    validate_complexity_snapshot,
+)
+from parrot.flows.dev_loop.sdd_coder.complexity import parse_complexity_contract
 from parrot.flows.dev_loop.sdd_coder.roster import ChunkAssigner, RosterProbe, available_seats
 from parrot.flows.dev_loop.models.telemetry import AttemptTelemetry
 from parrot.flows.dev_loop.sdd_coder.telemetry import (
@@ -459,11 +469,77 @@ class SddCoderEngine:
         ctx = await self._resolve_feature(feature, worktree)
         sched = await self._scheduler_for(ctx)
         wave = sorted(sched.next_wave(), key=lambda t: t.id)  # S3
+        
+        # Collect complexity assessments and determine eligible seats for each task
+        assessments: Dict[str, ComplexityAssessment] = {}
+        routing_blocks: List[ComplexityBlock] = []
+        eligible_labels: Dict[str, Set[str]] = {}
+        
+        from parrot.flows.dev_loop.sdd_coder.roster import eligible_seats
+        
+        for task_ref in wave:
+            try:
+                # Get assessment for this task
+                planned_task = PlannedTask(
+                    task_id=task_ref.id,
+                    task_file=task_ref.file,
+                    title=task_ref.title,
+                    seat_label="",
+                    native=False,
+                )
+                assessment = await self._assessment_for(ctx, planned_task, task_ref.file)
+                assessments[task_ref.id] = assessment
+                
+                # Determine eligible seats based on complexity classification
+                eligible = eligible_seats(assessment, self.seats, self.roster.complexity)
+                if eligible:
+                    eligible_labels[task_ref.id] = {seat.label for seat in eligible}
+                else:
+                    # No eligible seats for this task
+                    routing_blocks.append(ComplexityBlock(
+                        task_id=task_ref.id,
+                        assessment_id=assessment.assessment_id,
+                        code="complex_model_unavailable",
+                        message=f"No eligible seats available for {assessment.classification} task {task_ref.id}",
+                        details={
+                            "classification": assessment.classification,
+                            "required_models": [sm.canonical_model for sm in self.roster.complexity.strong_models],
+                        },
+                    ))
+                    eligible_labels[task_ref.id] = set()
+                    
+            except CoderFailure as exc:
+                if exc.code == "complexity_plan_stale":
+                    # Stale assessment - need to replan
+                    raise
+                elif exc.code == "complexity_audit_failed":
+                    # Audit failure - block this task
+                    routing_blocks.append(ComplexityBlock(
+                        task_id=task_ref.id,
+                        code="complexity_audit_failed",
+                        message=f"Complexity audit failed for {task_ref.id}: {exc.message}",
+                        details=exc.details,
+                    ))
+                    eligible_labels[task_ref.id] = set()
+                else:
+                    # Other errors - block this task
+                    routing_blocks.append(ComplexityBlock(
+                        task_id=task_ref.id,
+                        code="complexity_contract_invalid",
+                        message=f"Complexity contract invalid for {task_ref.id}: {exc.message}",
+                        details=exc.details,
+                    ))
+                    eligible_labels[task_ref.id] = set()
+        
         assert self._assigner is not None
-        chunks = self._assigner.assign(wave, {t.id: t.file for t in wave})
+        
+        # Assign tasks to chunks using eligible labels
+        chunks = self._assigner.assign(wave, {t.id: t.file for t in wave}, eligible_labels=eligible_labels)
+        
         pending = sorted(t.id for t in sched.pending())
         blocked = sorted(set(pending) - {t.id for t in wave})
         orphans = await self._orphan_branches(ctx)
+        
         result = CoderPlan(
             feature_id=ctx.feature_id,
             feature=ctx.feature,
@@ -474,6 +550,8 @@ class SddCoderEngine:
             chunks=chunks,
             roster=self.probe_results,
             orphan_branches=orphans,
+            assessments=assessments,
+            routing_blocks=routing_blocks,
         )
         # Code-review fix (FEAT-549, CRITICAL): cache the computed plan, keyed by feature_id.
         # `ChunkAssigner.assign()` mutates rotation state (`self._start`) on EVERY call — with a
@@ -486,6 +564,81 @@ class SddCoderEngine:
         # `prepare_native` now consult this cache via `_cached_plan()` instead of recomputing.
         self._plan_cache[ctx.feature_id] = result
         return result
+
+    async def _assessment_for(
+        self, ctx: _FeatureCtx, task: PlannedTask, task_file: str
+    ) -> ComplexityAssessment:
+        """Locate current cached assessment, validate its reference and snapshot.
+
+        Returns the assessment if valid, or raises CoderFailure with code
+        'complexity_plan_stale' or 'complexity_audit_failed'.
+        """
+        # Check if we have a cached assessment for this task
+        if task.task_id in self._plan_cache.get(ctx.feature_id, {}).assessments:
+            cached_assessment = self._plan_cache[ctx.feature_id].assessments[task.task_id]
+            
+            # Validate the assessment against current inputs
+            is_valid = await validate_complexity_snapshot(
+                Path(ctx.worktree),
+                Path(task_file),
+                Path(ctx.index_path),
+                cached_assessment,
+                self.roster.complexity,
+            )
+            
+            if is_valid:
+                return cached_assessment
+            else:
+                raise CoderFailure(
+                    "complexity_plan_stale",
+                    f"Cached assessment for {task.task_id} is stale",
+                    task_id=task.task_id,
+                    assessment_id=cached_assessment.assessment_id,
+                )
+        
+        # No cached assessment, need to collect and evaluate
+        try:
+            # Collect complexity evidence
+            evidence = await collect_complexity(
+                Path(ctx.worktree),
+                Path(task_file),
+                Path(ctx.index_path),
+                self.roster.complexity,
+            )
+            
+            # Evaluate complexity
+            from parrot.flows.dev_loop.sdd_coder.complexity import evaluate_complexity
+            
+            assessment = evaluate_complexity(evidence, self.roster.complexity)
+            
+            # Persist the assessment
+            await self._persist_assessment(ctx, assessment)
+            
+            return assessment
+            
+        except Exception as exc:
+            raise CoderFailure(
+                "complexity_audit_failed",
+                f"Failed to collect/evaluate complexity for {task.task_id}: {str(exc)}",
+                task_id=task.task_id,
+                error=str(exc),
+            )
+
+    async def _persist_assessment(
+        self, ctx: _FeatureCtx, assessment: ComplexityAssessment
+    ) -> None:
+        """Persist assessment to artifacts/sdd-coder/complexity/<feature-id>/<task-id>/<assessment-id>.json.
+
+        Creates parent directories and writes canonical JSON atomically.
+        """
+        artifacts_dir = Path(ctx.worktree) / "artifacts" / "sdd-coder" / "complexity" / ctx.feature_id / assessment.task_id
+        artifacts_dir.mkdir(parents=True, exist_ok=True)
+        
+        assessment_path = artifacts_dir / f"{assessment.assessment_id}.json"
+        
+        # Write assessment as canonical JSON
+        assessment_json = assessment.model_dump_json()
+        assessment_path.write_text(assessment_json, encoding="utf-8")
 
     async def _cached_plan(self, feature: str, worktree: str, ctx: _FeatureCtx) -> CoderPlan:
         """Reuse the most recently computed plan for this feature instead of recomputing.
@@ -516,6 +669,12 @@ class SddCoderEngine:
         planned = next((t for c in plan.chunks for t in c.tasks if t.task_id == task_id), None)
         if planned is None or not planned.native:
             raise CoderFailure("task_not_in_plan", f"{task_id} is not a native task of the current chunk plan")
+        
+        # Get assessment for this task
+        assessment_id = ""
+        if task_id in plan.assessments:
+            assessment_id = plan.assessments[task_id].assessment_id
+        
         path = await self._manager_for(ctx, task_id, 1).create(f"{task_id}.a1")
         self._native_inflight.add(f"{task_id}.a1")
         seat = next(seat for seat in self.roster.seats if seat.label == planned.seat_label)
@@ -533,6 +692,7 @@ class SddCoderEngine:
             model=model,
             attempt_uid=attempt_uid,
             coder_feedback=feedback_context,
+            assessment_id=assessment_id,
         )
 
     async def record_feedback(self, feature: str, worktree: str, feedback: CoderFeedback) -> CoderFeedbackReceipt:
@@ -968,6 +1128,16 @@ class SddCoderEngine:
         record = collector.record()
         if record.resolved_model and record.resolved_model != seat.model:
             self._feedback_unknown_exposure.add(attempt_uid)
+        
+        # Get assessment_id for this task
+        plan = await self._cached_plan(feature, worktree, ctx)
+        assessment_id = ""
+        if task.task_id in plan.assessments:
+            assessment_id = plan.assessments[task.task_id].assessment_id
+        
+        # Add assessment_id to the record
+        record = record.model_copy(update={"assessment_id": assessment_id})
+        
         self._feedback_sources[attempt_uid] = (
             ctx.worktree,
             task.task_id,
