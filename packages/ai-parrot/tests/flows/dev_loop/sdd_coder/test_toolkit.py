@@ -8,7 +8,7 @@ import pytest
 from pydantic import ValidationError
 
 from parrot.flows.dev_loop.sdd_coder.engine import CoderFailure
-from parrot.flows.dev_loop.sdd_coder.models import CoderResult
+from parrot.flows.dev_loop.sdd_coder.models import CoderResult, RosterConfig
 from parrot.flows.dev_loop.sdd_coder.toolkit import SddCoderToolkit
 from parrot.mcp.adapter import MCPToolAdapter
 
