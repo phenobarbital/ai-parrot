@@ -235,7 +235,7 @@
       "feature_id": "FEAT-559",
       "feature": "sdd-coder-execution-pool-suspensions",
       "spec": "sdd/specs/sdd-coder-execution-pool-suspensions.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -245,8 +245,8 @@
       "parallelism_notes": "Depends on TASK-3284 prompt/documentation completion and transitively all runtime tasks. This is the full feature gate, not an artificial ordering edge: it checks final MCP/prompt agreement and shared regression files.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3285-coder-pool-regression-suite.md"
+      "completed_at": "2026-09-16T02:38:04+00:00",
+      "file": "sdd/tasks/completed/TASK-3285-coder-pool-regression-suite.md"
     }
   ]
 }
