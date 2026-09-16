@@ -1,4 +1,5 @@
 """Roster probe + distinct-seat chunk assigner (spec §3 M2; G2, G6, G8)."""
+
 from __future__ import annotations
 
 import asyncio
@@ -7,7 +8,7 @@ import shutil
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Set
 
 from parrot import conf  # verified: navconfig `config` at parrot/conf.py
-from parrot.flows.dev_loop.task_scheduler import TaskRef  # verified: task_scheduler.py:25
+from parrot.flows.dev_loop.task_scheduler import TaskRef, partition_wave  # verified: task_scheduler.py:25, 65
 from parrot.flows.dev_loop.sdd_coder.models import PlanChunk, PlannedTask, RosterConfig, RosterSeat, SeatProbeResult
 
 SmokeFn = Callable[[RosterSeat, str], Awaitable[bool]]
@@ -41,8 +42,11 @@ class RosterProbe:
             except Exception as exc:  # noqa: BLE001 — probe must never raise
                 results.append(
                     SeatProbeResult(
-                        label=seat.label, kind=seat.kind, backend=seat.backend,
-                        available=False, reason=str(exc),
+                        label=seat.label,
+                        kind=seat.kind,
+                        backend=seat.backend,
+                        available=False,
+                        reason=str(exc),
                     )
                 )
         return results
@@ -73,8 +77,12 @@ class RosterProbe:
 
         if self._smoke is None:
             return SeatProbeResult(
-                label=seat.label, kind=seat.kind, backend=backend,
-                available=True, model_used=seat.model, reason=reason,
+                label=seat.label,
+                kind=seat.kind,
+                backend=backend,
+                available=True,
+                model_used=seat.model,
+                reason=reason,
             )
 
         try:
@@ -84,30 +92,40 @@ class RosterProbe:
             reason = str(exc)
 
         if ok:
-            return SeatProbeResult(label=seat.label, kind=seat.kind, backend=backend, available=True, model_used=seat.model)
+            return SeatProbeResult(
+                label=seat.label, kind=seat.kind, backend=backend, available=True, model_used=seat.model
+            )
 
         if not seat.fallback_model:
             return SeatProbeResult(
-                label=seat.label, kind=seat.kind, backend=backend, available=False,
+                label=seat.label,
+                kind=seat.kind,
+                backend=backend,
+                available=False,
                 reason=reason or f"smoke call rejected model {seat.model!r}",
             )
 
         try:
-            fallback_ok = await asyncio.wait_for(
-                self._smoke(seat, seat.fallback_model), timeout=self._smoke_timeout_s
-            )
+            fallback_ok = await asyncio.wait_for(self._smoke(seat, seat.fallback_model), timeout=self._smoke_timeout_s)
         except Exception as exc:  # noqa: BLE001 — smoke failures are reported, not raised
             fallback_ok = False
             reason = str(exc)
 
         if fallback_ok:
             return SeatProbeResult(
-                label=seat.label, kind=seat.kind, backend=backend, available=True,
-                model_used=seat.fallback_model, fallback_used=True,
+                label=seat.label,
+                kind=seat.kind,
+                backend=backend,
+                available=True,
+                model_used=seat.fallback_model,
+                fallback_used=True,
             )
 
         return SeatProbeResult(
-            label=seat.label, kind=seat.kind, backend=backend, available=False,
+            label=seat.label,
+            kind=seat.kind,
+            backend=backend,
+            available=False,
             reason=reason or f"smoke call rejected both {seat.model!r} and fallback {seat.fallback_model!r}",
         )
 
@@ -132,20 +150,22 @@ class ChunkAssigner:
         self._seats, self._start = list(seats), 0
 
     def assign(self, wave: List[TaskRef], task_files: Dict[str, str]) -> List[PlanChunk]:
-        """Sort by id; each exclusive task alone first, then shared chunk k = shared[k*n:(k+1)*n];
+        """Exclusive tasks alone first (via ``partition_wave``); the parallel batch is split
+        into chunks of at most len(seats), retaining singleton exclusive batches;
         task j ↦ seats[(start+j) % n]; start
         advances by one for each chunk produced, so consecutive chunks begin on a
         different seat even when every chunk is a full `n`-sized batch (a `+= len(chunk)`
         step would be a no-op mod `n` whenever the batch is full-sized)."""
         n = len(self._seats)
-        ordered = sorted(wave, key=lambda t: t.id)  # design research S3
-        # Exclusive tasks (`parallel: false` under the index's exclusive semantics) get a
-        # chunk of their own and come first: the orchestrator dispatches only chunks[0]
-        # per round, so an exclusive task queued behind shared batches could starve while
-        # new shared tasks keep unblocking.
-        exclusive = [t for t in ordered if not t.parallel]
-        shared = [t for t in ordered if t.parallel]
-        batches = [[t] for t in exclusive] + [shared[k : k + n] for k in range(0, len(shared), n)]
+        # Obtain dispatch batches through partition_wave without duplicating exclusive classification
+        batches = partition_wave(wave)
+        # Subdivide the parallel batch (last batch) by seat count
+        if batches:
+            parallel_batch = batches.pop()
+            # Split the parallel batch into chunks of at most n tasks
+            for k in range(0, len(parallel_batch), n):
+                batches.append(parallel_batch[k : k + n])
+
         chunks: List[PlanChunk] = []
         for batch in batches:
             planned_tasks: List[PlannedTask] = []

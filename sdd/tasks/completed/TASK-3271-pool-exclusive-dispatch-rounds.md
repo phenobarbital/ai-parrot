@@ -141,4 +141,43 @@ an undocumented ordering from `TaskScheduler.next_wave()`.
 
 ## Completion Note
 
-Pending implementation.
+`should_fan_out` now uses `parallel_width(wave) >= 2` (retaining the
+effective-slot check); `_execute_pool` partitions each fetched wave with
+`partition_wave` and dispatches one batch per round, merging/refreshing
+(isolated mode) and re-planning via `scheduler.next_wave()` before the
+next round. Exclusive rounds are logged with the word "exclusive" and
+the task id; ordinary rounds keep their existing wording.
+
+Code review: 2 confirmed defects, both fixed in commit
+`73a6c6d72366747a4a42d013bb257bf3cd5fc291`.
+1. **Implementation bug**: `_execute_pool` computed `batches =
+   partition_wave(wave)` once and then looped `for batch in batches`,
+   dispatching every batch (all exclusive singletons + the parallel
+   batch) from a single `next_wave()` call, instead of dispatching only
+   `batches[0]` and re-planning every round as AC-1 requires and the
+   task's own Implementation Blueprint step 2 specified. Confirmed via
+   integration test: a wave with one exclusive + one independent
+   parallel task logged a single non-exclusive combined dispatch
+   instead of two separate rounds. Restructured the while loop to
+   dispatch only the first batch per iteration.
+2. **Test bug**: the new `TestExclusiveTasks` tests wrote `"parallel":
+   false` via the legacy `_write_index` helper, which never emits the
+   required `"parallel_semantics": "exclusive"` header
+   (`task_scheduler.py:170`), so exclusive tasks silently defaulted
+   back to `parallel=True`. Most assertions were weak enough (set
+   equality) to pass anyway; `test_exclusive_task_failure_skips_dependents`
+   failed once defect 1 was fixed. Added an `exclusive: bool` kwarg to
+   `_write_index` and set it on the 3 call sites that need real
+   exclusive semantics; also made the failure test's retry genuinely
+   terminal (the pool retries a failed dispatch once on the next
+   worker, so both candidate workers must fail `TASK-1`).
+
+Feedback recorded: `coder-feedback:31254c0fcd2a16be77fe7d33` (cached
+batch list skips re-plan), `coder-feedback:43e6592c9f2a31d7d90d226c`
+(missing exclusive-semantics header in test fixture).
+
+Verification: re-ran `test_development_node.py`,
+`integration/test_pool_e2e.py`, `test_agent_pool.py` — 238 passed, 2
+skipped (pre-existing skips, unrelated). `black`/`ruff` clean.
+
+Seat: qwen · Backend: nova · Model: qwen.qwen3-coder-480b-a35b-instruct · Attempts: 1 · Duration: 428.6s · Tokens: 2617492/15178
