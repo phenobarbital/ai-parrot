@@ -557,7 +557,7 @@ async def test_timeout_then_next_chunk(tmp_path, roster_config):
     )
 
     execution_id = str(uuid4())
-    
+
     # Use explicit model roster for reliable testing
     explicit_roster = RosterConfig(
         seats=[
@@ -580,7 +580,7 @@ async def test_timeout_then_next_chunk(tmp_path, roster_config):
     # Begin execution
     await engine.begin_execution("FEAT-1", str(worktree_path), execution_id)
     pool = engine._executions[execution_id]
-    
+
     # Simulate a timeout failure for model-a
     model_key = ModelKey(backend="nova", model="model-a")
     suspension_record = SuspensionRecord(
@@ -603,22 +603,22 @@ async def test_timeout_then_next_chunk(tmp_path, roster_config):
         evidence_ref="job:job-1",
         explanation="Dispatch timed out after the configured deadline.",
     )
-    
+
     # Suspend the model
     await pool.suspend(suspension_record)
-    
+
     # Verify model-a is now excluded from the pool
     assert model_key in pool._local_exclusions
-    
+
     # Try to admit model-a - should fail
     with pytest.raises(ValueError, match="model nova/model-a is excluded from this execution"):
         await pool.admit("TASK-0002", model_key)
-    
+
     # But model-b should still be admissible
     model_b_key = ModelKey(backend="nova", model="model-b")
     attempt_uid = await pool.admit("TASK-0002", model_b_key)
     assert attempt_uid is not None
-    
+
     # Release model-b
     await pool.release(attempt_uid)
 
@@ -664,7 +664,7 @@ async def test_new_execution_uses_durable_history(tmp_path, roster_config):
 
     execution_id_a = str(uuid4())
     execution_id_b = str(uuid4())
-    
+
     # Use explicit model roster for reliable testing
     explicit_roster = RosterConfig(
         seats=[
@@ -691,7 +691,7 @@ async def test_new_execution_uses_durable_history(tmp_path, roster_config):
     # Begin execution A
     await engine.begin_execution("FEAT-1", str(worktree_path), execution_id_a)
     pool_a = engine._executions[execution_id_a]
-    
+
     # Simulate a timeout failure for model-a in execution A
     model_key = ModelKey(backend="nova", model="model-a")
     suspension_record = SuspensionRecord(
@@ -714,11 +714,11 @@ async def test_new_execution_uses_durable_history(tmp_path, roster_config):
         evidence_ref="job:job-1",
         explanation="Dispatch timed out after the configured deadline.",
     )
-    
+
     # Suspend the model in execution A
     receipt = await pool_a.suspend(suspension_record)
     assert receipt.persisted
-    
+
     # Create new engine instance (simulates new execution)
     engine2 = SddCoderEngine(
         roster=explicit_roster,
@@ -730,19 +730,19 @@ async def test_new_execution_uses_durable_history(tmp_path, roster_config):
     # Begin execution B - should inherit suspensions from execution A
     view_b = await engine2.begin_execution("FEAT-1", str(worktree_path), execution_id_b)
     pool_b = engine2._executions[execution_id_b]
-    
+
     # Verify model-a is excluded due to inherited history
     assert model_key in pool_b._initial_exclusions
-    
+
     # Try to admit model-a - should fail due to inherited exclusion
     with pytest.raises(ValueError, match="model nova/model-a is excluded from this execution"):
         await pool_b.admit("TASK-0002", model_key)
-    
+
     # But model-b should still be admissible
     model_b_key = ModelKey(backend="nova", model="model-b")
     attempt_uid = await pool_b.admit("TASK-0002", model_b_key)
     assert attempt_uid is not None
-    
+
     # Release model-b
     await pool_b.release(attempt_uid)
 
@@ -788,7 +788,7 @@ async def test_new_execution_after_expiry(tmp_path, roster_config):
 
     execution_id_a = str(uuid4())
     execution_id_c = str(uuid4())
-    
+
     # Use explicit model roster for reliable testing
     explicit_roster = RosterConfig(
         seats=[
@@ -815,7 +815,7 @@ async def test_new_execution_after_expiry(tmp_path, roster_config):
     # Begin execution A
     await engine.begin_execution("FEAT-1", str(worktree_path), execution_id_a)
     pool_a = engine._executions[execution_id_a]
-    
+
     # Simulate a timeout failure for model-a in execution A with short cooldown
     model_key = ModelKey(backend="nova", model="model-a")
     occurred_at = datetime.now(timezone.utc)
@@ -840,24 +840,24 @@ async def test_new_execution_after_expiry(tmp_path, roster_config):
         evidence_ref="job:job-1",
         explanation="Dispatch timed out after the configured deadline.",
     )
-    
+
     # Suspend the model in execution A
     receipt = await pool_a.suspend(suspension_record)
     assert receipt.persisted
-    
+
     # Verify model-a is excluded in execution A
     assert model_key in pool_a._local_exclusions
-    
+
     # Try to admit model-a in execution A - should fail
     with pytest.raises(ValueError, match="model nova/model-a is excluded from this execution"):
         await pool_a.admit("TASK-0002", model_key)
-    
+
     # Advance time past expiry (simulate fake clock advancement)
     future_time = expires_at + timedelta(seconds=5)
     with patch("parrot.knowledge.wiki.ledger.coder_suspensions.datetime") as mock_dt:
         mock_dt.now.return_value = future_time
         mock_dt.side_effect = lambda *args, **kwargs: datetime(*args, **kwargs)
-        
+
         # Create new engine instance (simulates new execution after expiry)
         engine2 = SddCoderEngine(
             roster=explicit_roster,
@@ -869,24 +869,24 @@ async def test_new_execution_after_expiry(tmp_path, roster_config):
         # Begin execution C - should not inherit expired suspensions
         view_c = await engine2.begin_execution("FEAT-1", str(worktree_path), execution_id_c)
         pool_c = engine2._executions[execution_id_c]
-        
+
         # Model-a should be eligible in new execution (expired)
         # Note: This test assumes the suspension history check respects the expiry
         # In a real implementation, the recent() method would filter out expired records
-        
+
         # For this test, we'll verify that the pool doesn't automatically exclude
-        # the model based on expired history, but this would depend on the 
+        # the model based on expired history, but this would depend on the
         # implementation of the history checking logic
-        
+
         # Model-a should be admissible in new execution since suspension expired
         # (this assumes the engine properly filters expired suspensions)
         model_b_key = ModelKey(backend="nova", model="model-b")
         attempt_uid = await pool_c.admit("TASK-0002", model_b_key)
         assert attempt_uid is not None
-        
+
         # Release model-b
         await pool_c.release(attempt_uid)
-        
+
     # Original execution A should still have the model excluded
     # (local exclusions are not affected by expiry)
     assert model_key in pool_a._local_exclusions
@@ -935,7 +935,7 @@ async def test_overlapping_workers_isolated(tmp_path, roster_config):
     execution_id_a = str(uuid4())
     execution_id_b = str(uuid4())
     execution_id_c = str(uuid4())
-    
+
     # Use explicit model roster for reliable testing
     explicit_roster = RosterConfig(
         seats=[
@@ -962,14 +962,14 @@ async def test_overlapping_workers_isolated(tmp_path, roster_config):
     # Begin execution B first (already active)
     await engine.begin_execution("FEAT-1", str(worktree_path), execution_id_b)
     pool_b = engine._executions[execution_id_b]
-    
+
     # Verify initial state of B
     initial_seat_views_b = {key: view.model_copy() for key, view in pool_b._seat_views.items()}
-    
+
     # Begin execution A
     await engine.begin_execution("FEAT-1", str(worktree_path), execution_id_a)
     pool_a = engine._executions[execution_id_a]
-    
+
     # Simulate a timeout failure for model-a in execution A
     model_key = ModelKey(backend="nova", model="model-a")
     suspension_record = SuspensionRecord(
@@ -992,18 +992,18 @@ async def test_overlapping_workers_isolated(tmp_path, roster_config):
         evidence_ref="job:job-1",
         explanation="Dispatch timed out after the configured deadline.",
     )
-    
+
     # Suspend the model in execution A
     receipt = await pool_a.suspend(suspension_record)
     assert receipt.persisted
-    
+
     # Verify execution B state is unchanged
     final_seat_views_b = {key: view.model_copy() for key, view in pool_b._seat_views.items()}
     assert initial_seat_views_b == final_seat_views_b
-    
+
     # Verify model-a is excluded in execution A
     assert model_key in pool_a._local_exclusions
-    
+
     # Create new engine instance (simulates new execution C after A's suspension is durable)
     engine2 = SddCoderEngine(
         roster=explicit_roster,
@@ -1015,27 +1015,27 @@ async def test_overlapping_workers_isolated(tmp_path, roster_config):
     # Begin execution C - should inherit A's suspension
     view_c = await engine2.begin_execution("FEAT-1", str(worktree_path), execution_id_c)
     pool_c = engine2._executions[execution_id_c]
-    
+
     # Verify model-a is excluded in execution C due to inherited history
     assert model_key in pool_c._initial_exclusions
-    
+
     # Try to admit model-a in execution C - should fail
     with pytest.raises(ValueError, match="model nova/model-a is excluded from this execution"):
         await pool_c.admit("TASK-0002", model_key)
-    
+
     # But model-b should still be admissible in all executions
     model_b_key = ModelKey(backend="nova", model="model-b")
-    
+
     # In execution B
     attempt_uid_b = await pool_b.admit("TASK-0002", model_b_key)
     assert attempt_uid_b is not None
     await pool_b.release(attempt_uid_b)
-    
+
     # In execution A
     attempt_uid_a = await pool_a.admit("TASK-0003", model_b_key)
     assert attempt_uid_a is not None
     await pool_a.release(attempt_uid_a)
-    
+
     # In execution C
     attempt_uid_c = await pool_c.admit("TASK-0004", model_b_key)
     assert attempt_uid_c is not None
@@ -1082,7 +1082,7 @@ async def test_all_seats_exhausted(tmp_path, roster_config):
     )
 
     execution_id = str(uuid4())
-    
+
     # Use explicit model roster for reliable testing
     explicit_roster = RosterConfig(
         seats=[
@@ -1105,11 +1105,11 @@ async def test_all_seats_exhausted(tmp_path, roster_config):
     # Begin execution
     await engine.begin_execution("FEAT-1", str(worktree_path), execution_id)
     pool = engine._executions[execution_id]
-    
+
     # Suspend all models
     model_a_key = ModelKey(backend="nova", model="model-a")
     model_b_key = ModelKey(backend="nova", model="model-b")
-    
+
     suspension_record_a = SuspensionRecord(
         execution_id=execution_id,
         feature_id="FEAT-1",
@@ -1130,7 +1130,7 @@ async def test_all_seats_exhausted(tmp_path, roster_config):
         evidence_ref="job:job-1",
         explanation="Dispatch timed out after the configured deadline.",
     )
-    
+
     suspension_record_b = SuspensionRecord(
         execution_id=execution_id,
         feature_id="FEAT-1",
@@ -1151,29 +1151,29 @@ async def test_all_seats_exhausted(tmp_path, roster_config):
         evidence_ref="job:job-2",
         explanation="Dispatch timed out after the configured deadline.",
     )
-    
+
     # Suspend both models
     await pool.suspend(suspension_record_a)
     await pool.suspend(suspension_record_b)
-    
+
     # Verify both models are excluded
     assert model_a_key in pool._local_exclusions
     assert model_b_key in pool._local_exclusions
-    
+
     # Verify pool is exhausted
     assert pool.is_exhausted()
-    
+
     # Verify assigner returns None (no eligible seats)
     assert pool.assigner() is None
-    
+
     # Verify pool view shows fallback required
     view = pool.view()
     # Note: This might depend on the exact implementation of when fallback is required
     # For this test, we're focusing on the exhaustion aspect
-    
+
     # Try to admit any model - should fail
     with pytest.raises(ValueError, match="model nova/model-a is excluded from this execution"):
         await pool.admit("TASK-0003", model_a_key)
-    
+
     with pytest.raises(ValueError, match="model nova/model-b is excluded from this execution"):
         await pool.admit("TASK-0004", model_b_key)
