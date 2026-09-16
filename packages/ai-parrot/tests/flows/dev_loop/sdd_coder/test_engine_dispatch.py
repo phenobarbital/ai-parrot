@@ -187,7 +187,9 @@ async def test_engine_run_chunk_returns_before_dispatch(git_sandbox_feature, noo
         dispatcher_builder=builder,
     )
     job = await engine.run_chunk("demo", str(worktree), ["TASK-0001"])
-    status = engine.status(job.job_id)
+    # FEAT-559 (TASK-3282): status() is now async (it retries pending suspension
+    # persistence and exposes the latest pool view before returning).
+    status = await engine.status(job.job_id)
     assert status.state == "running"
 
     gate.set()

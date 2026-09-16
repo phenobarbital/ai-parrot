@@ -55,6 +55,12 @@ async def test_restart_same_execution(tmp_path, roster_config):
         ["git", "config", "user.email", "test@example.com"], cwd=worktree_path, check=True, capture_output=True
     )
     subprocess.run(["git", "config", "user.name", "Test"], cwd=worktree_path, check=True, capture_output=True)
+    # An unborn branch (zero commits) makes `git rev-parse --abbrev-ref HEAD` fail
+    # (exit 128, "unknown revision") -- `_resolve_feature` needs a resolvable
+    # current branch, so every sandbox here needs at least one commit.
+    subprocess.run(
+        ["git", "commit", "--allow-empty", "-m", "initial commit"], cwd=worktree_path, check=True, capture_output=True
+    )
 
     # Create index
     index_dir = worktree_path / "sdd" / "tasks" / "index"
@@ -134,6 +140,12 @@ async def test_close_then_new_execution(tmp_path, roster_config):
         ["git", "config", "user.email", "test@example.com"], cwd=worktree_path, check=True, capture_output=True
     )
     subprocess.run(["git", "config", "user.name", "Test"], cwd=worktree_path, check=True, capture_output=True)
+    # An unborn branch (zero commits) makes `git rev-parse --abbrev-ref HEAD` fail
+    # (exit 128, "unknown revision") -- `_resolve_feature` needs a resolvable
+    # current branch, so every sandbox here needs at least one commit.
+    subprocess.run(
+        ["git", "commit", "--allow-empty", "-m", "initial commit"], cwd=worktree_path, check=True, capture_output=True
+    )
 
     # Create index
     index_dir = worktree_path / "sdd" / "tasks" / "index"
@@ -200,6 +212,12 @@ async def test_persistence_failure_is_explicit(tmp_path, roster_config):
         ["git", "config", "user.email", "test@example.com"], cwd=worktree_path, check=True, capture_output=True
     )
     subprocess.run(["git", "config", "user.name", "Test"], cwd=worktree_path, check=True, capture_output=True)
+    # An unborn branch (zero commits) makes `git rev-parse --abbrev-ref HEAD` fail
+    # (exit 128, "unknown revision") -- `_resolve_feature` needs a resolvable
+    # current branch, so every sandbox here needs at least one commit.
+    subprocess.run(
+        ["git", "commit", "--allow-empty", "-m", "initial commit"], cwd=worktree_path, check=True, capture_output=True
+    )
 
     # Create index
     index_dir = worktree_path / "sdd" / "tasks" / "index"
@@ -283,6 +301,12 @@ async def test_restart_preserves_inherited_exclusions(tmp_path, roster_config):
         ["git", "config", "user.email", "test@example.com"], cwd=worktree_path, check=True, capture_output=True
     )
     subprocess.run(["git", "config", "user.name", "Test"], cwd=worktree_path, check=True, capture_output=True)
+    # An unborn branch (zero commits) makes `git rev-parse --abbrev-ref HEAD` fail
+    # (exit 128, "unknown revision") -- `_resolve_feature` needs a resolvable
+    # current branch, so every sandbox here needs at least one commit.
+    subprocess.run(
+        ["git", "commit", "--allow-empty", "-m", "initial commit"], cwd=worktree_path, check=True, capture_output=True
+    )
 
     # Create index
     index_dir = worktree_path / "sdd" / "tasks" / "index"
@@ -358,6 +382,12 @@ async def test_corrupt_execution_snapshot_requires_recovery(tmp_path, roster_con
         ["git", "config", "user.email", "test@example.com"], cwd=worktree_path, check=True, capture_output=True
     )
     subprocess.run(["git", "config", "user.name", "Test"], cwd=worktree_path, check=True, capture_output=True)
+    # An unborn branch (zero commits) makes `git rev-parse --abbrev-ref HEAD` fail
+    # (exit 128, "unknown revision") -- `_resolve_feature` needs a resolvable
+    # current branch, so every sandbox here needs at least one commit.
+    subprocess.run(
+        ["git", "commit", "--allow-empty", "-m", "initial commit"], cwd=worktree_path, check=True, capture_output=True
+    )
 
     # Create index
     index_dir = worktree_path / "sdd" / "tasks" / "index"
@@ -416,6 +446,12 @@ async def test_uncertain_work_blocks_dispatch(tmp_path, roster_config):
         ["git", "config", "user.email", "test@example.com"], cwd=worktree_path, check=True, capture_output=True
     )
     subprocess.run(["git", "config", "user.name", "Test"], cwd=worktree_path, check=True, capture_output=True)
+    # An unborn branch (zero commits) makes `git rev-parse --abbrev-ref HEAD` fail
+    # (exit 128, "unknown revision") -- `_resolve_feature` needs a resolvable
+    # current branch, so every sandbox here needs at least one commit.
+    subprocess.run(
+        ["git", "commit", "--allow-empty", "-m", "initial commit"], cwd=worktree_path, check=True, capture_output=True
+    )
 
     # Create index
     index_dir = worktree_path / "sdd" / "tasks" / "index"
