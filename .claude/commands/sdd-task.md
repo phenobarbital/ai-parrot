@@ -333,6 +333,36 @@ complete. `design_complete: true` is a declaration the task author signs.
 - Omit the section entirely when the task is not eligible. Most tasks are not,
   and that is the normal, expected route.
 
+#### Complexity Contract (mandatory, per task)
+
+Every generated task MUST carry a `## Complexity Contract` section containing
+a JSON block with `schema_version: 1`.
+- **`targets`**: A list of objects with `path` (repo-relative path) and
+  `action` (`"CREATE"` or `"MODIFY"`, uppercase) matching the "Files to
+  Create / Modify" table exactly.
+- **`contract_symbols`**: A list of exact symbol IDs referenced by the
+  Codebase Contract (e.g.,
+  `"sym:packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/models.py#RosterConfig"`).
+  If there are no existing symbol references, use an empty list `[]` (do not
+  omit the field — an absent list means legacy/unknown coverage).
+- Legacy tasks without this section default to unknown complexity.
+  Natural-language assurances cannot downgrade this — the deterministic
+  evaluator, not the task author's prose, decides classification.
+
+Example:
+```json
+{
+  "schema_version": 1,
+  "targets": [
+    {
+      "path": "packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/complexity.py",
+      "action": "MODIFY"
+    }
+  ],
+  "contract_symbols": []
+}
+```
+
 ### 4b. Validate the Task Graph
 
 Run the deterministic graph check on the index you just wrote:
