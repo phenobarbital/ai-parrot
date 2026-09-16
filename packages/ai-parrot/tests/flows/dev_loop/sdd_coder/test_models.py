@@ -102,9 +102,7 @@ class TestComplexityModels:
         ev = MetricEvidence(state="ok", value=10, reason="measured", source="test")
         assert ev.value == 10
 
-    def test_metric_evidence_non_ok_rejects_value(self):
-        with pytest.raises(ValidationError, match="state .* requires value to be None"):
-            MetricEvidence(state="unknown", value=10, reason="tool failed", source="test")
+    def test_metric_evidence_not_applicable_rejects_value(self):
         with pytest.raises(ValidationError, match="state .* requires value to be None"):
             MetricEvidence(state="not_applicable", value=0, reason="not applicable", source="test")
 

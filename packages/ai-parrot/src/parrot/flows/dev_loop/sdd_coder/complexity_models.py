@@ -31,10 +31,16 @@ class MetricEvidence(BaseModel):
 
     @model_validator(mode="after")
     def _value_requires_ok(self) -> "MetricEvidence":
-        """If state is 'ok', value must be set; otherwise value must be None."""
+        """Enforce per-state value semantics (spec §2).
+
+        `ok` requires a measured value. `not_applicable` is never a
+        measurement and must carry no value. `unknown` may optionally
+        carry an observed lower bound (e.g. a partial count before a
+        tool timed out); an absent value is equally valid for `unknown`.
+        """
         if self.state == "ok" and self.value is None:
             raise ValueError("state 'ok' requires a value")
-        if self.state != "ok" and self.value is not None:
+        if self.state == "not_applicable" and self.value is not None:
             raise ValueError(f"state {self.state!r} requires value to be None")
         return self
 
@@ -243,6 +249,21 @@ class ComplexityAssessment(BaseModel):
         return self
 
 
+COMPLEXITY_ERROR_CODES: frozenset[str] = frozenset(
+    {
+        "complexity_contract_invalid",
+        "complexity_plan_stale",
+        "complex_model_unavailable",
+        "complexity_audit_failed",
+    }
+)
+"""The four complexity-specific error codes (spec §2). Mirrored into
+`sdd_coder.models.ERROR_CODES` (the closed set for `CoderError.code`); kept
+local here, rather than imported back from `models.py`, because `models.py`
+imports from this module and a reverse import would create a cycle.
+"""
+
+
 class ComplexityBlock(BaseModel):
     """A routing block preventing task dispatch.
 
@@ -261,3 +282,10 @@ class ComplexityBlock(BaseModel):
     code: str
     message: str
     details: Dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _validate_code(self) -> "ComplexityBlock":
+        """Reject any code outside the closed complexity error-code set."""
+        if self.code not in COMPLEXITY_ERROR_CODES:
+            raise ValueError(f"unknown error code: {self.code!r}")
+        return self
