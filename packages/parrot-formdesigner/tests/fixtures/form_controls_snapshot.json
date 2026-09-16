@@ -1089,7 +1089,7 @@
       "description": "Text that must follow a fixed format you define \u2014 a phone number, an ID, a postcode. The mask guides typing and rejects what does not fit.",
       "icon": "masked",
       "is_container": false,
-      "label": "Formatted Text",
+      "label": "Fixed-Format Text",
       "render_hint": "input",
       "snippet": {},
       "supported_effects": [

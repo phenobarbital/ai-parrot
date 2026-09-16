@@ -478,7 +478,7 @@ _BUILTIN_METADATA: dict[FieldType, dict[str, Any]] = {
         "supported_operations": ["copy", "lookup", "reload_options"],
     },
     FieldType.MASKED: {
-        "label": "Formatted Text",
+        "label": "Fixed-Format Text",
         "description": (
             "Text that must follow a fixed format you define — a phone number, "
             "an ID, a postcode. The mask guides typing and rejects what does not fit."
