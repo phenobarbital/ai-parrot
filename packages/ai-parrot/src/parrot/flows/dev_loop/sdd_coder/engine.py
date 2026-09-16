@@ -186,11 +186,18 @@ class AttemptTelemetryCollector:
     """
 
     def __init__(
-        self, *, attempt: int, seat: RosterSeat, attempt_uid: Optional[str] = None, job_id: Optional[str] = None
+        self,
+        *,
+        attempt: int,
+        seat: RosterSeat,
+        attempt_uid: Optional[str] = None,
+        job_id: Optional[str] = None,
+        execution_id: Optional[str] = None,
     ) -> None:
         self.attempt, self.seat = attempt, seat
         self.attempt_uid = attempt_uid or ""
         self.job_id = job_id or ""
+        self.execution_id = execution_id or ""
         self.started = time.monotonic()
         self.started_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
         self.usage: Dict[str, Any] = {}
@@ -293,6 +300,7 @@ class AttemptTelemetryCollector:
             turns=turns,
             terminal=terminal,
             error_class=error_class,
+            execution_id=self.execution_id,
             declared_files=self.declared_files,
             declared_files_known=self.declared_files_known,
             turns_with_unknown_usage=turns_with_unknown_usage,
@@ -582,8 +590,17 @@ class SddCoderEngine:
             for seat in self.roster.seats:
                 if seat.kind == "native":
                     model_keys.append(ModelKey(backend="native", model=seat.model or "haiku"))
-                elif seat.model:
+                    continue
+                if seat.model:
                     model_keys.append(ModelKey(backend=seat.backend or "", model=seat.model))
+                # A previously-suspended FALLBACK-only identity must also be
+                # excluded before the initial probe -- omitting it left a
+                # recently-failed fallback model eligible for a fresh smoke
+                # probe/dispatch even though its own incident is still within
+                # cooldown (AC-4: "excludes all unexpired matching records
+                # BEFORE any primary/fallback smoke probe or dispatcher call").
+                if seat.fallback_model:
+                    model_keys.append(ModelKey(backend=seat.backend or "", model=seat.fallback_model))
             # Query recent suspensions. `CoderSuspensionStore.recent` is itself an
             # `async def` that already offloads its file I/O via `asyncio.to_thread`
             # internally -- wrapping it in ANOTHER `asyncio.to_thread` here would call
@@ -618,6 +635,10 @@ class SddCoderEngine:
             )
             pool._fallback_required = True
             pool._fallback_reason = "suspension_history_unavailable"
+            # Spec §2 "Persistence failure behavior": unreadable/invalid
+            # suspension history at begin "yields an EXHAUSTED pool" --
+            # not just fallback_required with status left at "active".
+            pool._status = "exhausted"
             self._executions[execution_id] = pool
             self._execution_owners[canonical_worktree] = execution_id
             return pool.view()
@@ -671,8 +692,16 @@ class SddCoderEngine:
         pool = self._executions[execution_id]
         view = pool.view()
 
-        # Check for in-flight work
-        if view.status == "active":
+        # Check for in-flight work. Gated on "not already closed" (idempotent
+        # re-close is a no-op below), NOT on "== active": a pool transitions to
+        # "exhausted" the instant its last eligible seat is suspended, which can
+        # happen while a native/MCP attempt admitted BEFORE that suspension is
+        # still genuinely running -- gating on "active" alone let a just-exhausted
+        # pool skip this busy check entirely (code-review regression: a native
+        # agent suspended via `suspend_model` while it was the pool's only seat
+        # made `end_execution` fall straight through to the snapshot-enrichment
+        # loop below with the in-flight reservation never having settled).
+        if view.status != "closed":
             # Check admitted attempts
             snapshot = pool.snapshot()
             if snapshot.admitted_attempts:
@@ -831,9 +860,17 @@ class SddCoderEngine:
                 )
             pool = self._executions[execution_id]
             pool_generation = pool.generation
-            # Use the pool's seats and assigner
-            if not pool._seats:
-                # Pool has no seats (exhausted or fallback)
+            # Use the pool's own eligibility-filtered assigner -- `pool.assigner()`
+            # excludes suspended/busy/probe-failed seats (its own documented
+            # contract); constructing a bare `ChunkAssigner(pool._seats)` here
+            # bypassed that filtering entirely, so a replan right after a
+            # mid-execution suspension could still assign a task to the
+            # just-suspended seat (caught later by `pool.admit()`, but wasting
+            # a plan slot instead of routing to a healthy seat). `None` means
+            # the pool is currently exhausted -- same empty-chunks/fallback
+            # shape as the "no seats at all" case.
+            assigner = pool.assigner()
+            if assigner is None:
                 ctx = await self._resolve_feature(feature, worktree)
                 sched = await self._scheduler_for(ctx)
                 pending = sorted(t.id for t in sched.pending())
@@ -850,10 +887,6 @@ class SddCoderEngine:
                     execution_id=execution_id,
                     pool_generation=pool_generation,
                 )
-            # Use pool's private assigner
-            if pool._cached_assigner is None:
-                pool._cached_assigner = ChunkAssigner(pool._seats)
-            assigner = pool._cached_assigner
             seats = pool._seats
             probe_results = [
                 SeatProbeResult(
@@ -899,7 +932,9 @@ class SddCoderEngine:
         self._plan_cache[cache_key] = result
         return result
 
-    async def _cached_plan(self, feature: str, worktree: str, ctx: _FeatureCtx) -> CoderPlan:
+    async def _cached_plan(
+        self, feature: str, worktree: str, ctx: _FeatureCtx, execution_id: Optional[str] = None
+    ) -> CoderPlan:
         """Reuse the most recently computed plan for this feature instead of recomputing.
 
         `run_chunk`/`prepare_native` must see EXACTLY the chunk `coder_plan` most recently
@@ -907,11 +942,19 @@ class SddCoderEngine:
         again and could reclassify a task from mcp to native or vice versa (see `plan()`).
         Falls back to a fresh `plan()` (which populates the cache) when nothing is cached yet
         — e.g. a `coder_prepare_native`/`coder_run_chunk` call with no preceding `coder_plan`.
+
+        FEAT-559: `plan()` stores execution-scoped plans under the QUALIFIED key
+        `f"{feature_id}:{execution_id}"` (never under the bare `feature_id` when an
+        execution is involved) -- this lookup and the fallback `plan()` call below
+        must use the SAME qualified key, or every execution-scoped caller misses the
+        cache every time and silently falls back to the legacy, unscoped global
+        roster/assigner (bypassing suspension-aware seat filtering entirely).
         """
-        cached = self._plan_cache.get(ctx.feature_id)
+        cache_key = f"{ctx.feature_id}:{execution_id}" if execution_id else ctx.feature_id
+        cached = self._plan_cache.get(cache_key)
         if cached is not None:
             return cached
-        return await self.plan(feature, worktree)
+        return await self.plan(feature, worktree, execution_id=execution_id)
 
     @staticmethod
     def _worker_id(task_id: str, attempt: int, execution_id: Optional[str]) -> str:
@@ -968,7 +1011,7 @@ class SddCoderEngine:
                 raise CoderFailure("execution_not_found", f"no execution found with id {execution_id}")
             pool = self._executions[execution_id]
 
-        plan = await self._cached_plan(feature, worktree, ctx)
+        plan = await self._cached_plan(feature, worktree, ctx, execution_id=execution_id)
         planned = next((t for c in plan.chunks for t in c.tasks if t.task_id == task_id), None)
         if planned is None or not planned.native:
             raise CoderFailure("task_not_in_plan", f"{task_id} is not a native task of the current chunk plan")
@@ -1678,6 +1721,7 @@ class SddCoderEngine:
                         error=error_msg,
                         attempt_uid=attempt_uid,
                         job_id=job_id,
+                        execution_id=execution_id or "",
                     ),
                     None,
                     error_msg,
@@ -1686,7 +1730,9 @@ class SddCoderEngine:
                     "",
                 )
 
-        collector = AttemptTelemetryCollector(attempt=attempt, seat=seat, attempt_uid=attempt_uid, job_id=job_id)
+        collector = AttemptTelemetryCollector(
+            attempt=attempt, seat=seat, attempt_uid=attempt_uid, job_id=job_id, execution_id=execution_id
+        )
         # Read `task.task_file` and count `parse_task_files(...)` NOW,
         # while the worktree still exists — set declared_files /
         # declared_files_known on the collector. An unreadable file means
@@ -1849,6 +1895,7 @@ class SddCoderEngine:
                     outcome=outcome,
                     conflict_file_count=conflict_file_count,
                     unexpected_file_count=unexpected_file_count,
+                    execution_id=attempt_rec.execution_id,
                 )
             )
         except Exception:
@@ -1886,14 +1933,22 @@ class SddCoderEngine:
         if error_class == "dirty_task_worktree" or (error and error.startswith("dirty_task_worktree:")):
             return "dirty_delivery"
 
-        # Check for dispatch timeout - traverse cause chain for wrapped TimeoutError
-        if error_class == "TimeoutError" or "TimeoutError" in error:
+        # Check for dispatch timeout - traverse cause chain for wrapped TimeoutError.
+        # The real production wrap (`dispatchers/llm.py`'s `except TimeoutError as
+        # exc: raise DispatchExecutionError(f"Dispatch exceeded {timeout}s
+        # wall-clock cap") from exc`) never puts the literal substring
+        # "TimeoutError" in its message -- only "wall-clock cap" survives into
+        # `error`. Without this, every real dispatch timeout was silently
+        # misclassified as a generic "dispatch_error" (AC-3/AC-12's recorded
+        # `reason` was wrong for the exact scenario the spec's own motivation
+        # describes), even though it still qualified for suspension either way.
+        if error_class == "TimeoutError" or "TimeoutError" in error or "wall-clock cap" in error:
             return "timeout"
 
         # Check for dispatch execution error
         if error_class in ("DispatchExecutionError", "DispatchOutputValidationError"):
             # Check if wrapped cause is a timeout
-            if "TimeoutError" in error:
+            if "TimeoutError" in error or "wall-clock cap" in error:
                 return "timeout"
             if error_class == "DispatchOutputValidationError":
                 return "invalid_output"
@@ -2012,6 +2067,19 @@ class SddCoderEngine:
             receipt.persisted,
             receipt.pool_generation,
         )
+        # Persist the new local exclusion to disk immediately: `end_execution`/
+        # `status()`'s degraded-retry were the only other snapshot-write call
+        # sites, so a process crash between a real suspension and either of
+        # those would restart with the suspension durably recorded in the
+        # ledger (via `pool.suspend()`'s own `_suspension_store.record()` call
+        # above) but the local worktree snapshot at `.sdd-coder/executions/`
+        # would not yet reflect it -- writing here closes that gap for the
+        # exact event AC-10/AC-13 depend on surviving a restart.
+        persisted_snapshot = await self._write_execution_snapshot(pool.worktree_path, execution_id, pool.snapshot())
+        if not persisted_snapshot:
+            self.logger.warning(
+                "failed to persist execution snapshot for %s after suspending %s", execution_id, seat.model
+            )
 
     async def _select_retry_seat(
         self,
@@ -2169,14 +2237,21 @@ class SddCoderEngine:
                 attempts.append(rec)
 
         if err:
-            # FEAT-559: Classify failure for attempt 2 if it also failed
+            # FEAT-559: Classify failure for attempt 2 if it also failed. `retry`
+            # (the RosterSeat attempt 2 actually ran on) is bound here: this branch
+            # only runs when `len(attempts) > 1`, which only happens after the
+            # `if retry is not None:` branch above appended attempt 2 -- passing
+            # `attempts[-1].seat_label` (a str, not a RosterSeat) here raised
+            # AttributeError inside `_classify_and_suspend`/`_effective_key` on
+            # every second-attempt failure, silently swallowed by run_chunk's
+            # `return_exceptions=True` gather into an opaque "failed" outcome.
             if pool is not None and execution_id is not None and len(attempts) > 1:
                 await self._classify_and_suspend(
                     ctx=ctx,
                     pool=pool,
                     execution_id=execution_id,
                     task=task,
-                    seat=attempts[-1].seat_label,  # type: ignore[arg-type]
+                    seat=retry,
                     attempt_rec=rec,
                     error=err,
                     job_id=job_id,
@@ -2247,7 +2322,7 @@ class SddCoderEngine:
             pool = self._executions[execution_id]
             pool_generation = pool.generation
 
-        plan = await self._cached_plan(feature, worktree, ctx)
+        plan = await self._cached_plan(feature, worktree, ctx, execution_id=execution_id)
 
         # FEAT-559: Reject stale plan before job/worktree creation
         if execution_id is not None and plan.pool_generation != pool_generation:
@@ -2260,7 +2335,11 @@ class SddCoderEngine:
 
         first = {t.task_id: t for t in (plan.chunks[0].tasks if plan.chunks else [])}
 
-        running = self._jobs.running_task_ids()
+        # Scope the running-task check to THIS execution (jobs.py's own
+        # documented contract): unscoped, two unrelated executions/features
+        # that happen to dispatch the same task_id could spuriously block
+        # each other, violating AC-6/AC-11 execution isolation.
+        running = self._jobs.running_task_ids(execution_id)
         for task_id in task_ids:
             if task_id in running:
                 raise CoderFailure("task_already_running", f"{task_id} already has a running job")

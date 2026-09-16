@@ -274,6 +274,12 @@ class ExecutionPool:
                     seat_view.suspended_until = record.expires_at.isoformat()
             self._generation += 1
             self._cached_assigner = None
+            # Spec §2: state is active|exhausted|recovery_required|closed --
+            # this suspension may have been the last eligible seat. Only ever
+            # transition FROM "active": never downgrade a "closed" or already
+            # "recovery_required" pool back to "exhausted".
+            if self._status == "active" and self.is_exhausted():
+                self._status = "exhausted"
             # Wake every admit() waiter now: eligibility already changed under
             # this lock, so a waiter for a just-suspended key raises instead
             # of looping forever waiting for a `release()` that would not help.

@@ -22,6 +22,8 @@ from uuid import uuid4
 
 import pytest
 
+from parrot.flows.dev_loop.dispatchers import DispatchExecutionError
+from parrot.flows.dev_loop.models import DevelopmentOutput, LLMCodeDispatchProfile
 from parrot.flows.dev_loop.sdd_coder.engine import SddCoderEngine, CoderFailure
 from parrot.flows.dev_loop.sdd_coder.models import ExecutionSnapshot, RosterConfig, RosterSeat, SeatProbeResult
 from parrot.flows.dev_loop.sdd_coder.pool import ExecutionPool, roster_fingerprint
@@ -1351,3 +1353,117 @@ def test_mcp_and_prompt_twins() -> None:
     # Every tool the toolkit actually registers must be allow-listed in both.
     missing = registered_names - canonical_tools
     assert not missing, f"registered MCP tools missing from worker-prompt allowlists: {missing}"
+
+
+class _TimeoutOnceThenOkDispatcher:
+    """Real-shaped `run_chunk`-level dispatcher (code-review fix regression cover).
+
+    One seat ("a") always raises the EXACT wrapped-timeout shape production
+    code produces (`dispatchers/llm.py`'s `except TimeoutError as exc: raise
+    DispatchExecutionError(f"Dispatch exceeded {t}s wall-clock cap") from exc`)
+    -- proving `_classify_failure_reason` actually recognizes it (the fix for
+    the code-review finding that the literal substring "TimeoutError" never
+    appears in that real message). Every other seat commits the task's listed
+    file normally, mirroring `test_integration_chunk.py`'s `CommittingFakeDispatcher`.
+    """
+
+    def __init__(self, label: str, always_timeout: bool) -> None:
+        self.label, self.always_timeout = label, always_timeout
+        self.calls: list[dict] = []
+
+    async def dispatch(self, *, brief, profile, output_model, run_id, node_id, cwd, session_host=None, labels=None):
+        self.calls.append({"brief": brief, "cwd": cwd})
+        if self.always_timeout:
+            raise DispatchExecutionError("Dispatch exceeded 5s wall-clock cap")
+        n = int(brief.task_id.rsplit("-", 1)[-1])
+        target = f"pkg/t{n}.py"
+        (Path(cwd) / "pkg").mkdir(parents=True, exist_ok=True)
+        (Path(cwd) / target).write_text(f"# {brief.task_id}\n")
+        import subprocess
+
+        subprocess.run(["git", "add", target], cwd=cwd, check=True, capture_output=True)
+        subprocess.run(["git", "commit", "-m", f"impl {brief.task_id}"], cwd=cwd, check=True, capture_output=True)
+        return DevelopmentOutput(files_changed=[target], commit_shas=["deadbeef"], summary=f"{self.label} done")
+
+
+def _timeout_dispatcher_builder():
+    """Keys fakes by BACKEND (`DevAgentSpec.agent=seat.backend`, engine.py:1761),
+    never by seat label -- `three_seat_roster`'s seat "a" has `backend="nova"`,
+    so the always-failing fake must be keyed "nova" to actually intercept it."""
+    fakes: dict[str, _TimeoutOnceThenOkDispatcher] = {}
+
+    def builder(spec, *, redis_url, max_concurrent, stream_ttl_seconds, **_kwargs):
+        fake = fakes.setdefault(
+            spec.agent, _TimeoutOnceThenOkDispatcher(spec.agent, always_timeout=(spec.agent == "nova"))
+        )
+        return fake, LLMCodeDispatchProfile()
+
+    return builder, fakes
+
+
+async def test_real_wrapped_timeout_suspends_and_holds_across_chunks(
+    git_sandbox_feature, three_seat_roster, noop_probe
+) -> None:
+    """End-to-end regression cover for the code-review CRITICAL findings:
+
+    - `_cached_plan` must reuse the SAME execution-scoped plan `coder_plan`
+      returned (not silently fall back to the legacy unscoped roster) --
+      otherwise this test's second `run_chunk` would re-probe seat "a" fresh.
+    - `_classify_failure_reason` must recognize the REAL wrapped-timeout
+      message shape (`DispatchExecutionError("... wall-clock cap")`), not
+      only a literal "TimeoutError" substring.
+    - AC-13: once suspended, seat "a"'s dispatcher must receive ZERO further
+      calls within this execution, across a SECOND `run_chunk` in the same
+      execution -- not just within one task's own two attempts.
+    - AC-11: the merged task's `AttemptRecord.execution_id` must be populated.
+    """
+    worktree, feature_branch, base_path, _index_path = git_sandbox_feature
+    builder, fakes = _timeout_dispatcher_builder()
+    engine = SddCoderEngine(
+        roster=three_seat_roster,
+        probe=noop_probe,
+        redis_url="redis://127.0.0.1:1/0",
+        worktree_base_path=str(base_path),
+        dispatcher_builder=builder,
+    )
+
+    execution_id = str(uuid4())
+    await engine.begin_execution("FEAT-549", str(worktree), execution_id)
+
+    plan = await engine.plan("FEAT-549", str(worktree), execution_id=execution_id)
+    first_wave_ids = [t.task_id for t in plan.chunks[0].tasks if not t.native]
+    # Seat "a" is deterministically assigned TASK-0001 (start=0, seats [a,b,c]).
+    seat_a_task = next(t.task_id for t in plan.chunks[0].tasks if t.seat_label == "a")
+
+    job = await engine.run_chunk("FEAT-549", str(worktree), first_wave_ids, execution_id=execution_id)
+    done = await engine.wait(job.job_id, 30)
+    assert done.state == "done"
+
+    seat_a_result = next(t for t in done.tasks if t.task_id == seat_a_task)
+    assert seat_a_result.outcome == "merged"  # retried onto a healthy seat and succeeded
+    assert len(seat_a_result.attempts) == 2
+    assert seat_a_result.attempts[0].seat_label == "a"
+    assert seat_a_result.attempts[0].error  # attempt 1 recorded the real failure
+    # AC-11: execution identity must reach the real AttemptRecord construction sites.
+    assert seat_a_result.attempts[0].execution_id == execution_id
+    assert seat_a_result.attempts[1].execution_id == execution_id
+
+    assert len(fakes["nova"].calls) == 1  # exactly the one failed attempt so far
+
+    # Model "a" must now be excluded from this execution's pool.
+    pool = engine._executions[execution_id]
+    key_a = ModelKey(backend="nova", model="model-a")
+    assert key_a in pool._local_exclusions
+
+    # A SECOND plan + run_chunk in the SAME execution must never call seat "a" again.
+    plan2 = await engine.plan("FEAT-549", str(worktree), execution_id=execution_id)
+    second_wave_ids = [t.task_id for t in plan2.chunks[0].tasks if not t.native] if plan2.chunks else []
+    if second_wave_ids:
+        assert all(
+            t.seat_label != "a" for c in plan2.chunks for t in c.tasks
+        ), "a suspended seat must never be re-planned onto within the same execution"
+        job2 = await engine.run_chunk("FEAT-549", str(worktree), second_wave_ids, execution_id=execution_id)
+        done2 = await engine.wait(job2.job_id, 30)
+        assert done2.state == "done"
+
+    assert len(fakes["nova"].calls) == 1, "seat 'a' must receive ZERO further invocations after its suspension"
