@@ -59,6 +59,7 @@ from parrot.flows.dev_loop.sdd_coder.models import (
     CleanupReport,
     CoderJob,
     CoderPlan,
+    ExecutionSnapshot,
     NativePrep,
     OrphanBranch,
     PlannedTask,
@@ -449,7 +450,7 @@ class SddCoderEngine:
                     owner_execution_id=existing_id,
                 )
 
-        # Check for resume case: same execution_id already exists
+        # Check for resume case: same execution_id already exists in memory
         if execution_id in self._executions:
             existing = self._executions[execution_id]
             # Validate scope binding (same feature and worktree)
@@ -480,6 +481,94 @@ class SddCoderEngine:
                 )
             # Idempotent resume: return current view
             return existing.view()
+
+        # Check for durable snapshot (after MCP restart): read and restore from disk
+        durable_snapshot = await self._read_execution_snapshot(canonical_worktree, execution_id)
+        if durable_snapshot is not None:
+            # Validate scope binding against durable record
+            if durable_snapshot.feature_id != ctx.feature_id:
+                raise CoderFailure(
+                    "execution_scope_mismatch",
+                    f"durable snapshot for {execution_id} is bound to feature {durable_snapshot.feature_id}, not {ctx.feature_id}",
+                )
+            if durable_snapshot.worktree_path != canonical_worktree:
+                raise CoderFailure(
+                    "execution_scope_mismatch",
+                    f"durable snapshot for {execution_id} is bound to worktree {durable_snapshot.worktree_path}, not {canonical_worktree}",
+                )
+            # Validate roster fingerprint against durable record
+            if durable_snapshot.roster_fingerprint != roster_fingerprint(self.roster):
+                raise CoderFailure(
+                    "execution_config_mismatch",
+                    f"durable snapshot for {execution_id} was bound to a different roster configuration",
+                )
+
+            # Check if snapshot says closed: a closed execution never starts fresh work
+            if durable_snapshot.status == "closed":
+                raise CoderFailure(
+                    "execution_closed",
+                    f"execution {execution_id} is closed and cannot start new work",
+                )
+
+            # Restore the pool with persistent local + inherited exclusions
+            if self._suspension_store is None:
+                self._suspension_store = await asyncio.to_thread(
+                    CoderSuspensionStore.from_root, Path(canonical_worktree)
+                )
+
+            # Combine durable inherited exclusions with current inherited exclusions
+            # (per spec: replay own suspensions regardless of expiry)
+            now = datetime.now(timezone.utc)
+            combined_inherited = list(durable_snapshot.inherited_exclusions)
+
+            # Recreate pool with combined exclusions
+            try:
+                # Probe with combined exclusions
+                excluded_set = set(combined_inherited) | set(durable_snapshot.local_exclusions)
+                self.probe_results = await self._probe.probe(self.roster, excluded=excluded_set)
+                self.seats = available_seats(self.roster, self.probe_results)
+
+                pool = ExecutionPool(
+                    execution_id=execution_id,
+                    feature_id=ctx.feature_id,
+                    worktree_path=canonical_worktree,
+                    roster=self.roster,
+                    seats=self.seats,
+                    suspension_store=self._suspension_store,
+                    initial_exclusions=combined_inherited,
+                )
+
+                # Restore local exclusions (from this execution's own suspensions)
+                pool._local_exclusions = set(durable_snapshot.local_exclusions)
+
+                # Check for unresolved running/prepared attempts that require reconciliation
+                if (
+                    durable_snapshot.admitted_attempts
+                    or durable_snapshot.native_reservations
+                    or durable_snapshot.outstanding_job_ids
+                ):
+                    # Uncertain work requires reconciliation before dispatch
+                    pool._status = "recovery_required"
+
+                # Check if pool has any available seats
+                view = pool.view()
+                if not any(seat.available and not seat.suspended for seat in view.seats):
+                    pool._fallback_required = True
+                    pool._fallback_reason = "all_seats_exhausted"
+
+                self._executions[execution_id] = pool
+                self._execution_owners[canonical_worktree] = execution_id
+                return pool.view()
+            except Exception as exc:
+                self.logger.warning(
+                    "failed to restore execution from snapshot %s: %s",
+                    execution_id,
+                    exc,
+                )
+                raise CoderFailure(
+                    "internal_error",
+                    f"failed to restore execution from snapshot: {exc}",
+                )
 
         # New execution: read durable suspension history BEFORE probing
         try:
@@ -604,9 +693,32 @@ class SddCoderEngine:
                     f"execution {execution_id} has {len(snapshot.outstanding_job_ids)} outstanding jobs",
                 )
 
-        # Mark as closed and release ownership
+        # Mark as closed and write durable snapshot before releasing ownership
         pool._status = "closed"
         canonical_worktree = pool.worktree_path
+
+        # Enrich snapshot with native reservations and outstanding job IDs from engine bookkeeping
+        snapshot = pool.snapshot()
+
+        # Collect native reservations belonging to this execution
+        for (exec_id, task_id), attempt_uid in list(self._native_reservations.items()):
+            if exec_id == execution_id:
+                manager_key = f"{task_id}.a{self._latest_attempt.get(task_id, AttemptRecord(attempt=1)).attempt}"
+                if manager_key in self._manager_execution and self._manager_execution[manager_key] == execution_id:
+                    snapshot.native_reservations[task_id] = manager_key
+
+        # Collect outstanding job IDs belonging to this execution (track via _job_worktrees)
+        for job_id, job_wt in list(self._job_worktrees.items()):
+            if job_wt == canonical_worktree:
+                snapshot.outstanding_job_ids.append(job_id)
+
+        # Write durable snapshot atomically
+        persisted = await self._write_execution_snapshot(canonical_worktree, execution_id, snapshot)
+        if not persisted:
+            pool._persistence_degraded = True
+            self.logger.warning("failed to durably close execution %s; persistence status is degraded", execution_id)
+
+        # Release ownership after durable close
         if self._execution_owners.get(canonical_worktree) == execution_id:
             del self._execution_owners[canonical_worktree]
 
@@ -1369,11 +1481,98 @@ class SddCoderEngine:
 
         await asyncio.to_thread(_write)
 
-    def status(self, job_id: str) -> CoderJob:
+    async def _write_execution_snapshot(self, worktree: str, execution_id: str, snapshot: ExecutionSnapshot) -> bool:
+        """Write an atomic per-execution snapshot (TASK-3282).
+
+        Persists to <worktree>/.sdd-coder/executions/<uuid>.json using atomic
+        replace: writes to a temporary sibling, then renames over the original
+        if it exists. Returns True if write succeeded, False if write/durable
+        persistence failed.
+        """
+
+        def _write_atomic() -> bool:
+            """Write atomically using temporary file + rename pattern."""
+            try:
+                base_dir = Path(worktree) / ".sdd-coder" / "executions"
+                base_dir.mkdir(parents=True, exist_ok=True)
+                target_file = base_dir / f"{execution_id}.json"
+                temp_file = base_dir / f"{execution_id}.tmp"
+
+                # Write to temporary file first
+                temp_file.write_text(snapshot.model_dump_json(indent=2), encoding="utf-8")
+
+                # Atomic replace: rename temp over target
+                temp_file.replace(target_file)
+                return True
+            except (OSError, IOError) as exc:
+                self.logger.warning("failed to write execution snapshot for %s: %s", execution_id, exc)
+                return False
+
+        return await asyncio.to_thread(_write_atomic)
+
+    async def _read_execution_snapshot(self, worktree: str, execution_id: str) -> Optional[ExecutionSnapshot]:
+        """Read a persisted execution snapshot (TASK-3282).
+
+        Returns the snapshot if found and valid, None if not found, and raises
+        CoderFailure if the file is corrupt/unreadable.
+        """
+
+        def _read() -> Optional[ExecutionSnapshot]:
+            """Read from disk, validating structure."""
+            try:
+                snapshot_file = Path(worktree) / ".sdd-coder" / "executions" / f"{execution_id}.json"
+                if not snapshot_file.is_file():
+                    return None
+                data = json.loads(snapshot_file.read_text(encoding="utf-8"))
+                return ExecutionSnapshot(**data)
+            except FileNotFoundError:
+                return None
+            except (json.JSONDecodeError, ValueError, TypeError) as exc:
+                raise CoderFailure(
+                    "internal_error",
+                    f"corrupt execution snapshot for {execution_id}: {exc}",
+                )
+
+        return await asyncio.to_thread(_read)
+
+    async def status(self, job_id: str) -> CoderJob:
+        """Get job status and flush any pending execution snapshots (TASK-3282).
+
+        Retries pending suspension persistence idempotently; exposes latest pool
+        state and degraded persistence status if applicable.
+        """
         try:
-            return self._jobs.get(job_id)
+            job = self._jobs.get(job_id)
         except KeyError as exc:
             raise CoderFailure("job_not_found", f"unknown job {job_id}") from exc
+
+        # Flush any pending execution snapshots (retry persistence if degraded)
+        for execution_id, pool in list(self._executions.items()):
+            if pool._persistence_degraded:
+                # Try to persist current state atomically
+                snapshot = pool.snapshot()
+                # Enrich with engine bookkeeping (native_reservations and outstanding_job_ids)
+                for (exec_id, task_id), attempt_uid in list(self._native_reservations.items()):
+                    if exec_id == execution_id:
+                        manager_key = (
+                            f"{task_id}.a{self._latest_attempt.get(task_id, AttemptRecord(attempt=1)).attempt}"
+                        )
+                        if (
+                            manager_key in self._manager_execution
+                            and self._manager_execution[manager_key] == execution_id
+                        ):
+                            snapshot.native_reservations[task_id] = manager_key
+
+                for job_id_iter, job_wt in list(self._job_worktrees.items()):
+                    if job_wt == pool.worktree_path and job_id_iter not in snapshot.outstanding_job_ids:
+                        snapshot.outstanding_job_ids.append(job_id_iter)
+
+                persisted = await self._write_execution_snapshot(pool.worktree_path, execution_id, snapshot)
+                if persisted:
+                    pool._persistence_degraded = False
+                    self.logger.info("recovered persistence for execution %s", execution_id)
+
+        return job
 
     def _research_for(self, ctx: _FeatureCtx, *, worktree_path: str) -> ResearchOutput:
         """Synthetic ResearchOutput — TaskScopedBrief requires one; no Jira ticket exists for a coder attempt."""
@@ -2115,4 +2314,6 @@ class SddCoderEngine:
         job_worktree = self._job_worktrees.get(job_id)
         if job_worktree is not None:
             await self._journal(job_worktree, job)
+            # Flush any pending execution snapshots after job completion (TASK-3282)
+            await self.status(job_id)
         return job
