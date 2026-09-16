@@ -198,6 +198,11 @@ class CrewDefinition(BaseModel):
         result_agent_name: Registered name of the ResultAgent used to author
             the infographic's executive-summary tab. Only relevant when
             ``generate_infographic`` is ``True``.
+        infographic_theme: Optional design-system theme name (as listed by
+            the infographic themes API, e.g. ``"light"``, ``"dark"``,
+            ``"corporate"``) applied to the end-of-run infographic. ``None``
+            (or an empty string, which the crew builder UI sends when no
+            theme is picked) leaves the renderer's default in place.
         enable_execution_wiki: Opt-out for the searchable per-crew execution
             wiki (runs + intermediate results + tool-call results). Wired
             through to ``AgentCrew`` by ``from_definition``.
@@ -261,6 +266,14 @@ class CrewDefinition(BaseModel):
             "executive-summary tab (only used when generate_infographic=True)"
         )
     )
+    infographic_theme: Optional[str] = Field(
+        default=None,
+        description=(
+            "Design-system theme name for the end-of-run infographic "
+            "(only used when generate_infographic=True); empty means the "
+            "renderer default"
+        )
+    )
     enable_execution_wiki: bool = Field(
         default=True,
         description=(
@@ -294,6 +307,27 @@ class CrewDefinition(BaseModel):
         extra="forbid",
         json_encoders={datetime: lambda v: v.isoformat()},
     )
+
+    @field_validator("infographic_theme", mode="before")
+    @classmethod
+    def _blank_theme_is_none(cls, value: Any) -> Any:
+        """Treat an empty or whitespace-only theme as "not set".
+
+        The crew builder UI keeps ``infographic_theme`` as ``""`` until the
+        user picks one and sends it verbatim on save/import. An empty name
+        can never resolve in the theme registry, so it is normalised to
+        ``None`` here rather than stored and later rejected by the renderer.
+
+        Args:
+            value: The raw incoming value.
+
+        Returns:
+            ``None`` for blank strings, otherwise the stripped value.
+        """
+        if isinstance(value, str):
+            stripped = value.strip()
+            return stripped or None
+        return value
 
     def member_names(self) -> List[str]:
         """Return the names ``flow_relations`` may reference.
