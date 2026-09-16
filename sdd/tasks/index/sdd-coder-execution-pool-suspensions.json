@@ -6,7 +6,7 @@
   "base_branch": "dev",
   "parallel_semantics": "exclusive",
   "created_at": "2026-09-15T22:27:11+00:00",
-  "completed_at": null,
+  "completed_at": "2026-09-16T09:21:54+00:00",
   "tasks": [
     {
       "id": "TASK-3274",
@@ -24,7 +24,8 @@
       "assigned_to": null,
       "started_at": null,
       "completed_at": "2026-09-15T22:48:52+00:00",
-      "file": "sdd/tasks/completed/TASK-3274-coder-suspension-ledger.md"
+      "file": "sdd/tasks/completed/TASK-3274-coder-suspension-ledger.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3275",
@@ -44,7 +45,8 @@
       "assigned_to": null,
       "started_at": null,
       "completed_at": "2026-09-15T23:03:27+00:00",
-      "file": "sdd/tasks/completed/TASK-3275-coder-execution-models-jobs.md"
+      "file": "sdd/tasks/completed/TASK-3275-coder-execution-models-jobs.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3276",
@@ -64,7 +66,8 @@
       "assigned_to": null,
       "started_at": null,
       "completed_at": "2026-09-15T23:57:58+00:00",
-      "file": "sdd/tasks/completed/TASK-3276-coder-execution-pool-runtime.md"
+      "file": "sdd/tasks/completed/TASK-3276-coder-execution-pool-runtime.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3277",
@@ -84,7 +87,8 @@
       "assigned_to": null,
       "started_at": null,
       "completed_at": "2026-09-15T23:57:58+00:00",
-      "file": "sdd/tasks/completed/TASK-3277-coder-roster-suspension-gates.md"
+      "file": "sdd/tasks/completed/TASK-3277-coder-roster-suspension-gates.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3278",
@@ -104,7 +108,8 @@
       "assigned_to": null,
       "started_at": null,
       "completed_at": "2026-09-15T23:57:58+00:00",
-      "file": "sdd/tasks/completed/TASK-3278-coder-execution-attribution.md"
+      "file": "sdd/tasks/completed/TASK-3278-coder-execution-attribution.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3279",
@@ -126,7 +131,8 @@
       "assigned_to": null,
       "started_at": null,
       "completed_at": "2026-09-16T00:16:49+00:00",
-      "file": "sdd/tasks/completed/TASK-3279-coder-engine-execution-lifecycle.md"
+      "file": "sdd/tasks/completed/TASK-3279-coder-engine-execution-lifecycle.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3280",
@@ -146,7 +152,8 @@
       "assigned_to": null,
       "started_at": null,
       "completed_at": "2026-09-16T00:33:20+00:00",
-      "file": "sdd/tasks/completed/TASK-3280-coder-engine-admission-retries.md"
+      "file": "sdd/tasks/completed/TASK-3280-coder-engine-admission-retries.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3281",
@@ -166,7 +173,8 @@
       "assigned_to": null,
       "started_at": null,
       "completed_at": "2026-09-16T01:24:01+00:00",
-      "file": "sdd/tasks/completed/TASK-3281-coder-native-review-ownership.md"
+      "file": "sdd/tasks/completed/TASK-3281-coder-native-review-ownership.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3282",
@@ -186,7 +194,8 @@
       "assigned_to": null,
       "started_at": null,
       "completed_at": "2026-09-16T01:39:20+00:00",
-      "file": "sdd/tasks/completed/TASK-3282-coder-execution-restart-recovery.md"
+      "file": "sdd/tasks/completed/TASK-3282-coder-execution-restart-recovery.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3283",
@@ -206,7 +215,8 @@
       "assigned_to": null,
       "started_at": null,
       "completed_at": "2026-09-16T01:59:14+00:00",
-      "file": "sdd/tasks/completed/TASK-3283-coder-pool-mcp-protocol.md"
+      "file": "sdd/tasks/completed/TASK-3283-coder-pool-mcp-protocol.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3284",
@@ -226,7 +236,8 @@
       "assigned_to": null,
       "started_at": null,
       "completed_at": "2026-09-16T02:15:30+00:00",
-      "file": "sdd/tasks/completed/TASK-3284-coder-worker-pool-lifecycle.md"
+      "file": "sdd/tasks/completed/TASK-3284-coder-worker-pool-lifecycle.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3285",
@@ -246,7 +257,8 @@
       "assigned_to": null,
       "started_at": null,
       "completed_at": "2026-09-16T02:38:04+00:00",
-      "file": "sdd/tasks/completed/TASK-3285-coder-pool-regression-suite.md"
+      "file": "sdd/tasks/completed/TASK-3285-coder-pool-regression-suite.md",
+      "verification": "verified"
     }
   ]
 }
