@@ -718,7 +718,7 @@
     },
     {
       "category": "media",
-      "description": "Image upload.",
+      "description": "Upload a single image by choosing a file. Accepts validation constraints such as size and type.",
       "icon": "image",
       "is_container": false,
       "label": "Image",
@@ -806,7 +806,7 @@
     },
     {
       "category": "media",
-      "description": "Drag-and-drop image upload; a single file or a list of files.",
+      "description": "Upload images by dragging them onto the field, or by choosing a file. Accepts one or several, and takes no validation constraints.",
       "icon": "image-dropzone",
       "is_container": false,
       "label": "Image Dropzone",
@@ -1086,10 +1086,10 @@
     },
     {
       "category": "basic",
-      "description": "Text input rendered with an input mask (raw or masked, per config).",
+      "description": "Text that must follow a fixed format you define \u2014 a phone number, an ID, a postcode. The mask guides typing and rejects what does not fit.",
       "icon": "masked",
       "is_container": false,
-      "label": "Masked Input",
+      "label": "Formatted Text",
       "render_hint": "input",
       "snippet": {},
       "supported_effects": [
@@ -1873,6 +1873,7 @@
       "label": "Text Area",
       "render_hint": "input",
       "snippet": {
+        "content_type": "text/markdown",
         "field_id": "comments",
         "field_type": "text_area",
         "label": "Comments"
@@ -1952,10 +1953,10 @@
     },
     {
       "category": "selection",
-      "description": "Dual-list widget to move items between available and selected.",
+      "description": "Pick several items by moving them between two side-by-side lists, available and selected. Suits long lists of choices.",
       "icon": "transfer",
       "is_container": false,
-      "label": "Transfer List",
+      "label": "Two-List Picker",
       "render_hint": "transfer-list",
       "snippet": {
         "field_id": "selected_skills",
@@ -2010,10 +2011,10 @@
     },
     {
       "category": "selection",
-      "description": "Hierarchical picker; single mode yields the node value, multi mode a list.",
+      "description": "Pick from a hierarchy \u2014 a category and the choices under it \u2014 instead of a flat list. Single mode yields one node, multi mode a list.",
       "icon": "tree",
       "is_container": false,
-      "label": "Tree Select",
+      "label": "Nested Picker",
       "render_hint": "select",
       "snippet": {},
       "supported_effects": [
