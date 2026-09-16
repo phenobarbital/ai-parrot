@@ -1154,9 +1154,22 @@ class SddCoderEngine:
         )
 
     async def _run_attempt(
-        self, ctx: _FeatureCtx, task: PlannedTask, seat: RosterSeat, *, attempt: int, job_id: str
+        self,
+        ctx: _FeatureCtx,
+        task: PlannedTask,
+        seat: RosterSeat,
+        *,
+        attempt: int,
+        job_id: str,
+        execution_id: Optional[str] = None,
+        pool: Optional["ExecutionPool"] = None,
     ) -> Tuple[AttemptRecord, Optional[DevelopmentOutput], str, SubWorktreeManager, str, str]:
-        """ONE dispatch in ONE fresh sub-worktree. Returns (record, output|None, error, manager, branch, path)."""
+        """ONE dispatch in ONE fresh sub-worktree. Returns (record, output|None, error, manager, branch, path).
+
+        FEAT-559: When execution_id/pool are provided, performs admission gating
+        before dispatch. If the seat is no longer eligible (suspended, busy),
+        returns immediately with a not_dispatched error without creating a worktree.
+        """
         assert seat.backend is not None, "_run_attempt is only called for mcp seats; native tasks use prepare_native"
         manager = self._manager_for(ctx, task.task_id, attempt)
         branch = f"{ctx.feature_branch}--{task.task_id}-a{attempt}"
@@ -1170,6 +1183,62 @@ class SddCoderEngine:
         # invocation (line 592) and both attempts of a task share `job_id`, so
         # neither can key the telemetry join (spec §10 R3).
         attempt_uid = uuid.uuid4().hex
+
+        # FEAT-559: Admission gating - check pool admission before dispatch
+        if pool is not None and execution_id is not None:
+            from parrot.flows.dev_loop.sdd_coder.pool import _effective_key
+
+            key = _effective_key(seat)
+            if key is None:
+                # No model identity - cannot admit
+                return (
+                    AttemptRecord(
+                        attempt=attempt,
+                        seat_label=seat.label,
+                        backend=seat.backend,
+                        model=seat.model,
+                        started_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                        ended_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                        duration_s=0.0,
+                        usage={},
+                        error="model_identity_required: seat has no configured model",
+                        attempt_uid=attempt_uid,
+                        job_id=job_id,
+                    ),
+                    None,
+                    "model_identity_required: seat has no configured model",
+                    manager,
+                    "",
+                    "",
+                )
+
+            try:
+                # Reserve the seat - this will block if busy, raise if excluded
+                attempt_uid = await pool.admit(task.task_id, key)
+            except ValueError as exc:
+                # Seat is excluded or pool is closed - return not_dispatched
+                error_msg = str(exc)
+                return (
+                    AttemptRecord(
+                        attempt=attempt,
+                        seat_label=seat.label,
+                        backend=seat.backend,
+                        model=seat.model,
+                        started_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                        ended_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                        duration_s=0.0,
+                        usage={},
+                        error=error_msg,
+                        attempt_uid=attempt_uid,
+                        job_id=job_id,
+                    ),
+                    None,
+                    error_msg,
+                    manager,
+                    "",
+                    "",
+                )
+
         collector = AttemptTelemetryCollector(attempt=attempt, seat=seat, attempt_uid=attempt_uid, job_id=job_id)
         # Read `task.task_file` and count `parse_task_files(...)` NOW,
         # while the worktree still exists — set declared_files /
@@ -1259,6 +1328,16 @@ class SddCoderEngine:
             seat.backend,
             record.resolved_model or record.model,
         )
+
+        # FEAT-559: Release the pool reservation after attempt settles
+        if pool is not None:
+            try:
+                await pool.release(attempt_uid)
+            except Exception:
+                self.logger.warning(
+                    "failed to release pool reservation for attempt_uid=%s", attempt_uid, exc_info=True
+                )
+
         # Write the measurement BEFORE consolidation: if the server dies between
         # here and the outcome, the attempt row still survives and the analysis
         # reports an incomplete pair rather than losing the sample (spec §2).
@@ -1339,7 +1418,242 @@ class SddCoderEngine:
                 exc_info=True,
             )
 
-    async def _run_task(self, ctx: _FeatureCtx, task: PlannedTask, seat: RosterSeat, *, job_id: str) -> TaskResult:
+    def _classify_failure_reason(
+        self, error: str, error_class: str, outcome: Optional[str] = None
+    ) -> Optional[str]:
+        """Classify a failure into a suspension reason (FEAT-559).
+
+        Traverse bounded exception cause chain for TimeoutError. Distinguish
+        dispatch timeout from poll timeout. Returns None for non-suspendable
+        failures (lint, cancellation, Git conflicts, etc.).
+
+        Args:
+            error: The error message string.
+            error_class: The exception class name.
+            outcome: Optional outcome from consolidation (e.g., "fidelity_violation").
+
+        Returns:
+            Suspension reason string or None if not suspendable.
+        """
+        # Check for fidelity violation from consolidation
+        if outcome == "fidelity_violation":
+            return "fidelity_violation"
+
+        # Check for dirty delivery
+        if error_class == "dirty_task_worktree" or (error and error.startswith("dirty_task_worktree:")):
+            return "dirty_delivery"
+
+        # Check for dispatch timeout - traverse cause chain for wrapped TimeoutError
+        if error_class == "TimeoutError" or "TimeoutError" in error:
+            return "timeout"
+
+        # Check for dispatch execution error
+        if error_class in ("DispatchExecutionError", "DispatchOutputValidationError"):
+            # Check if wrapped cause is a timeout
+            if "TimeoutError" in error:
+                return "timeout"
+            if error_class == "DispatchOutputValidationError":
+                return "invalid_output"
+            return "dispatch_error"
+
+        # Check for banned import - this is a fidelity issue
+        if error and error.startswith("BannedImport:"):
+            return "fidelity_violation"
+
+        # Non-suspendable failures
+        # - Lint findings
+        # - Cancellation
+        # - Git merge conflicts
+        # - Poll timeout (not dispatch timeout)
+        # - Worktree creation failures
+        # - Build/setup errors
+        non_suspendable_prefixes = (
+            "LintError:",
+            "CancelledError",
+            "merge_conflict",
+            "worktree creation",
+            "git worktree",
+            "MergeConflict",
+        )
+        if any(error.startswith(prefix) for prefix in non_suspendable_prefixes if error):
+            return None
+
+        # Default: check error class for known suspendable types
+        if error_class in ("RuntimeError", "Exception") and error:
+            # Generic dispatch failure - suspendable
+            if "dispatch" in error.lower() or "timeout" in error.lower():
+                return "dispatch_error"
+
+        return None
+
+    async def _classify_and_suspend(
+        self,
+        ctx: _FeatureCtx,
+        pool: "ExecutionPool",
+        execution_id: str,
+        task: PlannedTask,
+        seat: RosterSeat,
+        attempt_rec: AttemptRecord,
+        error: str,
+        job_id: str,
+    ) -> None:
+        """Classify failure and suspend model if qualifying (FEAT-559).
+
+        Builds SuspensionRecord with fixed timestamps, observed duration,
+        sanitized evidence and both configured/resolved keys. Atomically
+        suspends first, then awaits persistence before retry.
+
+        Does NOT suspend for:
+        - Lint findings
+        - Cancellation
+        - Poll timeout
+        - Git conflicts
+        """
+        from parrot.flows.dev_loop.sdd_coder.pool import _effective_key
+        from parrot.knowledge.wiki.ledger.coder_suspensions import (
+            SuspensionRecord,
+        )
+
+        reason = self._classify_failure_reason(error, attempt_rec.error_class)
+        if reason is None:
+            self.logger.info(
+                "Non-suspendable failure for %s on %s: %s",
+                task.task_id,
+                seat.label,
+                error[:100] if error else "(no error)",
+            )
+            return
+
+        key = _effective_key(seat)
+        if key is None:
+            self.logger.warning("Cannot suspend seat %s - no model identity", seat.label)
+            return
+
+        # Build blocked_keys - include both configured and resolved if different
+        blocked_keys = [key]
+        if attempt_rec.resolved_model and attempt_rec.resolved_model != seat.model:
+            resolved_key = ModelKey(backend=seat.backend or "", model=attempt_rec.resolved_model)
+            if resolved_key not in blocked_keys:
+                blocked_keys.append(resolved_key)
+
+        now = datetime.now(timezone.utc)
+        cooldown_seconds = self.roster.suspension_policy.cooldown_seconds
+        expires_at = datetime.fromtimestamp(now.timestamp() + cooldown_seconds, tz=timezone.utc)
+
+        record = SuspensionRecord(
+            execution_id=execution_id,
+            feature_id=ctx.feature_id,
+            task_id=task.task_id,
+            attempt_uid=attempt_rec.attempt_uid,
+            job_id=job_id,
+            source="engine",
+            seat_label=seat.label,
+            backend=seat.backend or "",
+            configured_model=seat.model,
+            resolved_model=attempt_rec.resolved_model,
+            blocked_keys=blocked_keys,
+            reason=reason,
+            occurred_at=now,
+            expires_at=expires_at,
+            duration_s=attempt_rec.duration_s,
+            exception_class=attempt_rec.error_class,
+            evidence_ref=f"job:{job_id}",
+            explanation=f"Model {seat.model} failed with {reason} on {task.task_id}",
+        )
+
+        receipt = await pool.suspend(record)
+        self.logger.info(
+            "Suspended model %s (reason=%s, persisted=%s, pool_generation=%s)",
+            seat.model,
+            reason,
+            receipt.persisted,
+            receipt.pool_generation,
+        )
+
+    async def _select_retry_seat(
+        self,
+        pool: Optional["ExecutionPool"],
+        failed_label: str,
+        tried_seats: set[str],
+    ) -> Optional[RosterSeat]:
+        """Select a healthy, not-yet-tried seat for retry (FEAT-559).
+
+        When pool is available, uses pool's eligible seats and waits on busy
+        healthy seats through the pool condition. Falls back to legacy
+        assigner-based retry when pool is None.
+
+        Args:
+            pool: The execution pool (or None for legacy behavior).
+            failed_label: The label of the seat that just failed.
+            tried_seats: Set of seat labels already tried.
+
+        Returns:
+            A healthy RosterSeat for retry, or None if exhausted.
+        """
+        if pool is None:
+            # Legacy path: use global assigner
+            if self._assigner is None:
+                return None
+            return self._assigner.retry_seat(failed_label, tried_seats)
+
+        # Pool-based selection: find healthy, not-yet-tried seats
+        async with pool._condition:
+            while True:
+                # Check pool status
+                if pool._status in ("closed", "recovery_required"):
+                    return None
+
+                # Find eligible seats
+                for seat in pool._seats:
+                    from parrot.flows.dev_loop.sdd_coder.pool import _effective_key
+
+                    key = _effective_key(seat)
+                    if key is None:
+                        continue
+                    if seat.label in tried_seats:
+                        continue
+                    if key in pool._busy_seats:
+                        continue
+                    if key in pool._initial_exclusions or key in pool._local_exclusions:
+                        continue
+                    view = pool._seat_views.get(key)
+                    if view is None or not view.available or view.suspended or view.probe_unavailable:
+                        continue
+                    # Found a healthy, free seat
+                    return seat
+
+                # No healthy free seat available - check if we should wait
+                # Check if any healthy seat is busy (worth waiting for)
+                has_busy_healthy = False
+                for seat in pool._seats:
+                    from parrot.flows.dev_loop.sdd_coder.pool import _effective_key
+
+                    key = _effective_key(seat)
+                    if key is None or seat.label in tried_seats:
+                        continue
+                    if key in pool._busy_seats:
+                        view = pool._seat_views.get(key)
+                        if view and view.available and not view.suspended and not view.probe_unavailable:
+                            has_busy_healthy = True
+                            break
+
+                if not has_busy_healthy:
+                    # Pool exhausted - no point waiting
+                    return None
+
+                # Wait for a seat to be released or suspended
+                await pool._condition.wait()
+
+    async def _run_task(
+        self,
+        ctx: _FeatureCtx,
+        task: PlannedTask,
+        seat: RosterSeat,
+        *,
+        job_id: str,
+        execution_id: Optional[str] = None,
+        pool: Optional["ExecutionPool"] = None,
+    ) -> TaskResult:
         """Run up to two attempts, retrying dispatch and dirty-worktree failures on another MCP seat.
 
         A clean dispatcher response is not sufficient for success: an agent can
@@ -1347,9 +1661,16 @@ class SddCoderEngine:
         leaving its changes uncommitted. Treat that first-attempt
         ``dirty_task_worktree`` outcome as retryable, but preserve fidelity
         violations and merge conflicts for the orchestrator to handle.
+
+        FEAT-559: When execution_id/pool are provided, uses pool-based admission
+        gating, failure classification, and healthy-model retry selection.
         """
         attempts: List[AttemptRecord] = []
-        rec, out, err, manager, branch, path = await self._run_attempt(ctx, task, seat, attempt=1, job_id=job_id)
+        tried_seats: set[str] = {seat.label}  # Track seats we've already tried
+
+        rec, out, err, manager, branch, path = await self._run_attempt(
+            ctx, task, seat, attempt=1, job_id=job_id, execution_id=execution_id, pool=pool
+        )
         attempts.append(rec)
 
         if not err:
@@ -1372,9 +1693,24 @@ class SddCoderEngine:
             attempts[-1] = rec
 
         if err:
-            assert self._assigner is not None
-            retry = self._assigner.retry_seat(seat.label, {seat.label})
+            # FEAT-559: Classify failure and suspend model if qualifying
+            if pool is not None and execution_id is not None:
+                await self._classify_and_suspend(
+                    ctx=ctx,
+                    pool=pool,
+                    execution_id=execution_id,
+                    task=task,
+                    seat=seat,
+                    attempt_rec=rec,
+                    error=err,
+                    job_id=job_id,
+                )
+
+            # FEAT-559: Select retry from healthy not-yet-tried seats
+            retry = await self._select_retry_seat(pool, seat.label, tried_seats)
+
             if retry is not None:
+                tried_seats.add(retry.label)
                 # Emit attempt 1's own outcome NOW, before running the
                 # retry: `_run_task` only returns ONE `TaskResult`, so if
                 # attempt 2 succeeds below, attempt 1's failure would
@@ -1385,11 +1721,24 @@ class SddCoderEngine:
                 # single emission below instead, avoiding a double-emit.)
                 await self._emit_outcome(ctx, attempt_rec=rec, task_id=task.task_id, outcome="failed")
                 rec, out, err, manager, branch, path = await self._run_attempt(
-                    ctx, task, retry, attempt=2, job_id=job_id
+                    ctx, task, retry, attempt=2, job_id=job_id, execution_id=execution_id, pool=pool
                 )
                 attempts.append(rec)
 
         if err:
+            # FEAT-559: Classify failure for attempt 2 if it also failed
+            if pool is not None and execution_id is not None and len(attempts) > 1:
+                await self._classify_and_suspend(
+                    ctx=ctx,
+                    pool=pool,
+                    execution_id=execution_id,
+                    task=task,
+                    seat=attempts[-1].seat_label,  # type: ignore[arg-type]
+                    attempt_rec=rec,
+                    error=err,
+                    job_id=job_id,
+                )
+
             # Both attempts failed, or no retry seat was ever available:
             # `rec` is the one attempt whose outcome has NOT been emitted
             # yet (attempt 1 already got its row above if a retry ran).
@@ -1420,10 +1769,52 @@ class SddCoderEngine:
 
         return final_result
 
-    async def run_chunk(self, feature: str, worktree: str, task_ids: List[str]) -> CoderJob:
-        """Validate, register, RETURN. Everything slow happens inside the job (S4, AC-21)."""
+    async def run_chunk(
+        self,
+        feature: str,
+        worktree: str,
+        task_ids: List[str],
+        execution_id: Optional[str] = None,
+    ) -> CoderJob:
+        """Validate, register, RETURN. Everything slow happens inside the job (S4, AC-21).
+
+        Args:
+            feature: Feature identifier.
+            worktree: Absolute path to the feature worktree.
+            task_ids: List of task IDs to dispatch.
+            execution_id: Optional execution ID for FEAT-559 pools. When provided,
+                validates against the execution pool and carries execution ownership.
+
+        Raises:
+            CoderFailure with codes:
+                - plan_stale: cached plan's pool_generation doesn't match current pool
+                - execution_not_found: execution_id provided but no matching pool
+        """
         ctx = await self._resolve_feature(feature, worktree)
+
+        # FEAT-559: Validate execution_id and pool generation before plan validation
+        pool: Optional[ExecutionPool] = None
+        pool_generation = 0
+        if execution_id is not None:
+            if execution_id not in self._executions:
+                raise CoderFailure(
+                    "execution_not_found",
+                    f"no execution found with id {execution_id}; call begin_execution first",
+                )
+            pool = self._executions[execution_id]
+            pool_generation = pool.generation
+
         plan = await self._cached_plan(feature, worktree, ctx)
+
+        # FEAT-559: Reject stale plan before job/worktree creation
+        if execution_id is not None and plan.pool_generation != pool_generation:
+            raise CoderFailure(
+                "plan_stale",
+                f"cached plan generation {plan.pool_generation} does not match pool generation {pool_generation}",
+                pool_generation=pool_generation,
+                plan_generation=plan.pool_generation,
+            )
+
         first = {t.task_id: t for t in (plan.chunks[0].tasks if plan.chunks else [])}
 
         running = self._jobs.running_task_ids()
@@ -1436,11 +1827,25 @@ class SddCoderEngine:
             if planned.native:
                 raise CoderFailure("task_not_in_plan", f"{task_id} is a native task — use coder_prepare_native")
 
-        seats = {s.label: s for s in self.seats}
+        # FEAT-559: Use execution pool's seats when available
+        if pool is not None:
+            seats = {s.label: s for s in pool._seats}
+        else:
+            seats = {s.label: s for s in self.seats}
 
         async def runner() -> List[TaskResult]:
             raw_results = await asyncio.gather(
-                *(self._run_task(ctx, first[tid], seats[first[tid].seat_label], job_id=job.job_id) for tid in task_ids),
+                *(
+                    self._run_task(
+                        ctx,
+                        first[tid],
+                        seats[first[tid].seat_label],
+                        job_id=job.job_id,
+                        execution_id=execution_id,
+                        pool=pool,
+                    )
+                    for tid in task_ids
+                ),
                 return_exceptions=True,
             )
             results: List[TaskResult] = []
@@ -1453,7 +1858,7 @@ class SddCoderEngine:
             await self._journal(ctx.worktree, snapshot.model_copy(update={"tasks": results}))
             return results
 
-        job = self._jobs.create(ctx.feature_id, list(task_ids), runner)
+        job = self._jobs.create(ctx.feature_id, list(task_ids), runner, execution_id=execution_id or "")
         self._job_worktrees[job.job_id] = ctx.worktree
         await self._journal(ctx.worktree, job)
         return job
