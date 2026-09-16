@@ -174,5 +174,68 @@ No live model call is needed for these checks.
 
 ## Completion Note
 
-Not started. On completion record files changed, acceptance evidence, tests,
-commit SHA, remaining limitations and actual model/attempt/assessment attribution.
+Implemented as specified: `engine.py` extended (`plan()` integrates
+collection/evaluation/persistence/routing without changing its public
+signature; `_compute_assessment`/`_assessment_for` helpers; `CoderPlan`
+now carries `assessments`/`routing_blocks`); `conftest.py`/
+`test_engine_plan_merge.py` extended with complexity-aware fixtures and
+assertions.
+
+Post-merge review found 4 real defects in the delivered attempt (mistral,
+attempt_uid 509e5f94824545e99cbbed8428a77bed) and fixed them across two
+commits (`683e243195760373795b1f337f1a94d301d59d25` for this task's own
+3 files, `a3b1de653a740517a8b8d6247e4ac2032dbe48d2` for a 3rd TASK-3288
+collector defect this validation also surfaced):
+- `_assessment_for`'s `.get(ctx.feature_id, {})` fell back to a plain
+  dict lacking `.assessments` — AttributeError on every feature's first
+  `plan()` call.
+- `plan()` called the cache-validating `_assessment_for` on itself,
+  contradicting the spec's "never cache a wiki result across plans" —
+  split into `_compute_assessment` (always fresh, used by `plan()`) and
+  `_assessment_for` (kept for a future dispatch-time revalidation caller,
+  TASK-3291).
+- `plan()` passed routing-blocked tasks into `ChunkAssigner.assign` with
+  an empty eligible-label set, which TASK-3289's `assign()` rejects
+  outright — blocked tasks are now excluded from the assignable wave.
+- `_run_task`'s post-attempt assessment_id lookup referenced undefined
+  `feature`/`worktree` names — fixed to `ctx.feature`/`ctx.worktree`.
+
+All 4 recorded as model feedback
+(`coder-feedback:5464290b16564e7961cd240b`,
+`coder-feedback:be2165b47626e80413bd0d99`,
+`coder-feedback:4958135fb2ca905995aed16e`,
+`coder-feedback:343ab282787a9660f4d64a60`) plus a 5th for the
+TASK-3288 collector defect this validation surfaced
+(`coder-feedback:4a0cfb54994a6f4573e5b162`); review outcomes recorded
+(`coder-review:1f4c0144f94a67577337eced`,
+`coder-review:c2c96ed32d0fe29fc6ef9d48`).
+
+Acceptance criteria: satisfied — collection/evaluation/audit/routing
+integrated into `plan()` without changing its public signature; shared
+preflight helper (`_compute_assessment`) ready for TASK-3291's
+dispatch/native/retry paths; feedback, orphan detection and scheduler
+behavior preserved (full suite green).
+
+Tests: `pytest packages/ai-parrot/tests/flows/dev_loop/sdd_coder/ -q` ->
+288 passed (0 failed), from the feature worktree with
+`PYTHONPATH=packages/ai-parrot/src`. Also ran the full
+`packages/ai-parrot/tests/flows/dev_loop/` suite (2053 passed, 11
+pre-existing/unrelated failures in `test_pr_enrichment.py`). `ruff check
+--select E9,F63,F7,F82` clean.
+
+Limitations: `_assessment_for` (cache-validating path) has no caller yet
+— TASK-3291 must wire it into `run_chunk`/`prepare_native`/retry admission
+per spec ("revalidate ... before run_chunk and prepare_native side
+effects"). `test_engine_plan_creates_routing_blocks_for_complex_tasks_without_strong_models`
+(delivered by the attempt) only weakly asserts `plan is not None` — it
+never actually exercises a real routing block, since the fixture's demo
+tasks classify "standard". A stronger routing-block regression test is
+left for TASK-3295's integration/regression matrix.
+
+Seat: mistral (attempt 1, merged directly from its branch since the
+engine's own retry produced no commits) · Backend: nova · Model:
+mistral.devstral-2-123b · Attempts: 2 (1 real + 1 empty retry) ·
+Duration: 883.0s (750.86s mistral + 132.07s empty gemini retry) ·
+Tokens: in=5539198/out=14076 (both attempts combined, per coder_wait
+`seats` summary) · Fix commits: 683e243195760373795b1f337f1a94d301d59d25,
+a3b1de653a740517a8b8d6247e4ac2032dbe48d2 (worker, post-merge).

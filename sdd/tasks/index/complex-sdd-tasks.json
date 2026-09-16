@@ -93,7 +93,7 @@
       "feature_id": "FEAT-561",
       "feature": "complex-sdd-tasks",
       "spec": "sdd/specs/complex-sdd-tasks.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -104,8 +104,8 @@
       "parallelism_notes": "Fan-in from TASK-3288 collectors and TASK-3289 assignment. Begins ordered engine.py edits; TASK-3291 must wait. Shared fixture changes land before dispatch/regression changes.",
       "assigned_to": null,
       "started_at": "2026-09-16T00:12:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3290-complexity-plan-audit.md"
+      "completed_at": "2026-09-16T01:36:10+00:00",
+      "file": "sdd/tasks/completed/TASK-3290-complexity-plan-audit.md"
     },
     {
       "id": "TASK-3291",
