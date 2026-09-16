@@ -574,7 +574,7 @@ class SddCoderEngine:
                 raise CoderFailure(
                     "internal_error",
                     f"failed to restore execution from snapshot: {exc}",
-                )
+                ) from exc
 
         # New execution: read durable suspension history BEFORE probing
         try:
@@ -728,7 +728,7 @@ class SddCoderEngine:
         snapshot = pool.snapshot()
 
         # Collect native reservations belonging to this execution
-        for (exec_id, task_id), attempt_uid in list(self._native_reservations.items()):
+        for (exec_id, task_id), _attempt_uid in list(self._native_reservations.items()):
             if exec_id == execution_id:
                 manager_key = f"{task_id}.a{self._latest_attempt.get(task_id, AttemptRecord(attempt=1)).attempt}"
                 if manager_key in self._manager_execution and self._manager_execution[manager_key] == execution_id:
@@ -757,7 +757,7 @@ class SddCoderEngine:
         Order (first match wins): feature_id exact -> feature exact ->
         feature_id numeric/any suffix -> feature substring -> spec filename.
         """
-        wt = os.path.realpath(worktree)
+        wt = await asyncio.to_thread(os.path.realpath, worktree)
         if not (wt == self._base_path or wt.startswith(self._base_path + os.sep)):
             raise CoderFailure("worktree_outside_base", f"{worktree} is not under {self._base_path}")
 
@@ -1255,8 +1255,8 @@ class SddCoderEngine:
         # local path instead. `task.task_file` comes from the per-spec index's TaskRef.file —
         # repo-local SDD data, not raw external input — but no containment check existed;
         # mirrors `_resolve_feature`'s own worktree-containment pattern.
-        task_md_path = Path(ctx.worktree, task.task_file).resolve()
-        worktree_root = Path(ctx.worktree).resolve()
+        task_md_path = await asyncio.to_thread(lambda: Path(ctx.worktree, task.task_file).resolve())
+        worktree_root = await asyncio.to_thread(lambda: Path(ctx.worktree).resolve())
         if not (task_md_path == worktree_root or str(task_md_path).startswith(str(worktree_root) + os.sep)):
             return TaskResult(
                 task_id=task.task_id,
@@ -1572,7 +1572,7 @@ class SddCoderEngine:
                 raise CoderFailure(
                     "internal_error",
                     f"corrupt execution snapshot for {execution_id}: {exc}",
-                )
+                ) from exc
 
         return await asyncio.to_thread(_read)
 
@@ -1593,7 +1593,7 @@ class SddCoderEngine:
                 # Try to persist current state atomically
                 snapshot = pool.snapshot()
                 # Enrich with engine bookkeeping (native_reservations and outstanding_job_ids)
-                for (exec_id, task_id), attempt_uid in list(self._native_reservations.items()):
+                for (exec_id, task_id), _attempt_uid in list(self._native_reservations.items()):
                     if exec_id == execution_id:
                         manager_key = (
                             f"{task_id}.a{self._latest_attempt.get(task_id, AttemptRecord(attempt=1)).attempt}"
@@ -1736,8 +1736,8 @@ class SddCoderEngine:
         # declared_files_known on the collector. An unreadable file means
         # known=False, never 0.
         try:
-            task_md_path = Path(ctx.worktree, task.task_file).resolve()
-            worktree_root = Path(ctx.worktree).resolve()
+            task_md_path = await asyncio.to_thread(lambda: Path(ctx.worktree, task.task_file).resolve())
+            worktree_root = await asyncio.to_thread(lambda: Path(ctx.worktree).resolve())
             if task_md_path == worktree_root or str(task_md_path).startswith(str(worktree_root) + os.sep):
                 task_md = await asyncio.to_thread(task_md_path.read_text, "utf-8")
                 collector.declared_files = len(parse_task_files(task_md))
@@ -2369,7 +2369,7 @@ class SddCoderEngine:
                 return_exceptions=True,
             )
             results: List[TaskResult] = []
-            for tid, raw in zip(task_ids, raw_results):
+            for tid, raw in zip(task_ids, raw_results, strict=True):
                 if isinstance(raw, TaskResult):
                     results.append(raw)
                 elif isinstance(raw, BaseException):
