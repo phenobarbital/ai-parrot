@@ -41,7 +41,15 @@ import contextlib
 import asyncio
 import re
 import uuid
-from tqdm.asyncio import tqdm as async_tqdm
+try:
+    from tqdm.asyncio import tqdm as async_tqdm
+except ImportError:  # pragma: no cover — exercised via sys.modules patching
+    # tqdm is a declared dependency (see packages/ai-parrot/pyproject.toml) and
+    # a cosmetic progress bar with a single, already-optional call site. This
+    # guard means a stripped or partially-installed environment degrades to the
+    # plain iterator instead of making `parrot.bots.flows` — and everything that
+    # transitively imports it — unimportable.
+    async_tqdm = None  # type: ignore[assignment]
 from navconfig.logging import logging
 from datamodel.parsers.json import json_encoder  # pylint: disable=E0611 # noqa
 
@@ -4156,7 +4164,7 @@ Create a clear, well-structured response."""
         session_id = session_id or str(uuid.uuid4())
         user_id = user_id or "crew_summary_user"
         # Progress tracking
-        if self.use_tqdm:
+        if self.use_tqdm and async_tqdm is not None:
             chunk_iterator = async_tqdm(enumerate(chunks, 1), total=len(chunks), desc="Summarizing chunks")
         else:
             chunk_iterator = enumerate(chunks, 1)

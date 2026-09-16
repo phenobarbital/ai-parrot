@@ -65,3 +65,30 @@ Delegated implementation` section (and its checklist line) into
 b) and c), content-equivalent to what TASK-3090 originally added — updating
 any step-number cross-references to match the current heading structure.
 Zero test weakening; this restores dropped capability.
+
+## Correction (implementation pass, 2026-09-16)
+
+The conclusion above is right — this was a documentation regression, and the
+section is now restored on `dev`. Two facts the original evidence pass missed,
+recorded so the next reader does not re-derive them:
+
+1. **TASK-3124 did not merely drop the section; it asserted the drop.**
+   `packages/ai-parrot/tests/flows/dev_loop/test_worker_prompt_orchestrator.py`
+   (added by that same commit, `26de90a91`) asserts `"### b2)"`,
+   `"writer_apply"`, `"parrot-targeted-writer"` and `"Delegation Contract"` are
+   ABSENT from the prompt body, and `test_worker_prompt_has_orchestrator_loop`
+   asserts the same for `"writer_generate"`. A verbatim restore alone turns the
+   4 `test-tool-optimizations` failures into 5 `test-core` failures. The
+   restoration therefore also narrowed those absence assertions from the whole
+   body to the `## Orchestrator Loop (FEAT-549)` section — which is what they
+   are really about: the dispatch path uses `sdd-coder` seats, never the writer
+   route, while the Fallback loop (where the agent implements a task itself) is
+   exactly where `### b2)` belongs. `test_sdd_contracts.py` was not modified.
+
+2. **The prompt is dual-sourced.** `.claude/agents/sdd-worker.md` must stay
+   byte-identical to `packages/ai-parrot/src/parrot/flows/dev_loop/
+   _subagent_data/sdd-worker.md` (`test_subagent_parity.py`, FEAT-377), so the
+   section was restored in both copies.
+
+See `sdd/specs/ci-test-failures-root-cause-remediation.spec.md` §3 Module 4,
+"Correction (implementation pass)".
