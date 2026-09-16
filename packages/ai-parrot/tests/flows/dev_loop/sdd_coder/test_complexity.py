@@ -104,15 +104,44 @@ class TestContractParsing:
         assert contract.targets[1].action == "CREATE"
         assert len(contract.contract_symbols) == 2
 
-    def test_parse_contract_missing_section(self):
-        """Test parsing when complexity contract section is missing."""
+    def test_parse_contract_missing_section_is_legacy_not_invalid(self):
+        """A missing '## Complexity Contract' section is a LEGACY task, not an
+        invalid one (spec §2/AC12: "Legacy tasks without this section remain
+        parseable ... yield unknown symbol coverage"). No exception; targets
+        empty (no Files to Create/Modify table either here), contract_symbols
+        is explicitly None (legacy/unknown coverage), not an empty tuple."""
         task_text = """
 ## Some Other Section
 
 This is not a complexity contract.
 """
-        with pytest.raises(ComplexityContractError, match="No Complexity Contract section found"):
-            parse_complexity_contract(task_text)
+        contract = parse_complexity_contract(task_text)
+        assert contract.targets == ()
+        assert contract.contract_symbols is None
+
+    def test_parse_contract_missing_section_falls_back_to_files_table(self):
+        """A legacy task's targets come from its '## Files to Create / Modify'
+        table (every task, old or new, has one) when no Complexity Contract
+        section exists."""
+        task_text = """
+## Files to Create / Modify
+
+| File | Action | Description |
+|---|---|---|
+| `pkg/new_module.py` | CREATE | New module |
+| `pkg/existing.py` | MODIFY | Add import |
+
+## Acceptance Criteria
+
+- [ ] Something
+"""
+        contract = parse_complexity_contract(task_text)
+        assert contract.contract_symbols is None
+        targets_by_path = {t.path: t.action for t in contract.targets}
+        assert targets_by_path == {
+            "pkg/new_module.py": "CREATE",
+            "pkg/existing.py": "MODIFY",
+        }
 
     def test_parse_contract_invalid_json(self):
         """Test parsing contract with invalid JSON."""
@@ -434,10 +463,26 @@ class TestComplexityEvaluation:
         assert "metric_unknown" in assessment.reason_codes
 
     def test_evaluate_not_applicable_metrics(self, base_evidence: ComplexityEvidence, sample_policy: ComplexityPolicy):
-        """Test evaluating a task with not_applicable metrics."""
+        """A task where every metric is explicitly recorded (not_applicable
+        where genuinely inapplicable, ok/0 elsewhere) is standard, not
+        unknown. A metric ABSENT from evidence.metrics entirely -- which a
+        correctly-run collector never produces -- is a distinct, defensive
+        "cannot determine" case that evaluate_complexity treats as unknown
+        (see test_evaluate_missing_metric_key_is_unknown_not_zero below)."""
         metrics: Dict[str, MetricEvidence] = {
             "cyclomatic_max": MetricEvidence(
                 state="not_applicable", value=None, reason="Not a code task", source="ruff"
+            ),
+            "blast_symbols": MetricEvidence(
+                state="not_applicable", value=None, reason="No contract symbols", source="wiki_collector"
+            ),
+            "weighted_files": MetricEvidence(state="ok", value=0, reason="No targets", source="scope_collector"),
+            "modules": MetricEvidence(state="ok", value=0, reason="No targets", source="scope_collector"),
+            "acceptance_criteria": MetricEvidence(
+                state="ok", value=0, reason="No criteria", source="scope_collector"
+            ),
+            "downstream_tasks": MetricEvidence(
+                state="ok", value=0, reason="No dependents", source="dependency_collector"
             ),
         }
 
@@ -446,6 +491,26 @@ class TestComplexityEvaluation:
 
         assert assessment.classification == "standard"
         assert assessment.component_points["cyclomatic_max"] == 0
+        assert assessment.component_points["blast_symbols"] == 0
+
+    def test_evaluate_missing_metric_key_is_unknown_not_zero(
+        self, base_evidence: ComplexityEvidence, sample_policy: ComplexityPolicy
+    ):
+        """A metric key entirely absent from evidence.metrics (never produced
+        by a correctly-run collect_complexity, but defended against anyway)
+        must route to unknown, not silently score 0 and classify standard --
+        the spec's "never fabricate a zero for missing evidence" applies to
+        a missing key exactly as much as an explicit unknown state."""
+        metrics: Dict[str, MetricEvidence] = {
+            "cyclomatic_max": MetricEvidence(state="ok", value=5, reason="measured", source="ruff"),
+            # blast_symbols, weighted_files, modules, acceptance_criteria,
+            # downstream_tasks are all absent from this dict entirely.
+        }
+
+        evidence = base_evidence.model_copy(update={"metrics": metrics})
+        assessment = evaluate_complexity(evidence, sample_policy)
+
+        assert assessment.classification == "unknown"
 
     def test_evaluate_boundary_values(self, base_evidence: ComplexityEvidence, sample_policy: ComplexityPolicy):
         """Test evaluating tasks with boundary metric values."""
@@ -477,6 +542,40 @@ class TestComplexityEvaluation:
         evidence_high = base_evidence.model_copy(update={"metrics": metrics_high})
         assessment_high = evaluate_complexity(evidence_high, sample_policy)
         assert assessment_high.component_points["cyclomatic_max"] == 2
+
+    @pytest.mark.parametrize(
+        "metric_name,zero_value,one_value,two_value",
+        [
+            ("weighted_files", 3, 7, 8),  # spec band 0-3/4-7/>=8
+            ("modules", 1, 2, 3),  # spec band 0-1/2/>=3
+            ("acceptance_criteria", 4, 7, 8),  # spec band 0-4/5-7/>=8
+        ],
+    )
+    def test_evaluate_reaches_two_points_for_non_hard_limit_metrics(
+        self,
+        base_evidence: ComplexityEvidence,
+        sample_policy: ComplexityPolicy,
+        metric_name: str,
+        zero_value: int,
+        one_value: int,
+        two_value: int,
+    ):
+        """weighted_files/modules/acceptance_criteria have no policy.hard_limits
+        entry (only cyclomatic_max/blast_symbols/downstream_tasks force an
+        auto-complex hard trigger), but the spec's own table still requires
+        ALL SIX metrics to reach 2 points at their own boundary
+        (policy.two_point_thresholds) -- a value at the two-point threshold
+        must score 2, not get silently capped at 1 forever."""
+        for value, expected_points in ((zero_value, 0), (one_value, 1), (two_value, 2)):
+            metrics: Dict[str, MetricEvidence] = {
+                metric_name: MetricEvidence(state="ok", value=value, reason="boundary test", source="test"),
+            }
+            evidence = base_evidence.model_copy(update={"metrics": metrics})
+            assessment = evaluate_complexity(evidence, sample_policy)
+            assert assessment.component_points[metric_name] == expected_points, (
+                f"{metric_name}={value} expected {expected_points} points, got "
+                f"{assessment.component_points[metric_name]}"
+            )
 
     def test_assessment_id_consistency(self, base_evidence: ComplexityEvidence, sample_policy: ComplexityPolicy):
         """Test that identical inputs produce identical assessment IDs."""

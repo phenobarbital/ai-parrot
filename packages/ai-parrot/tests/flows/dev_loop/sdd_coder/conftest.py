@@ -46,6 +46,10 @@ _TASK_TEMPLATE = """# {task_id}: Demo task {n}
   "contract_symbols": []
 }}
 ```
+
+## Acceptance Criteria
+
+- [ ] Demo file created
 """
 
 

@@ -79,6 +79,41 @@ def _normalize_path(path: str) -> str:
     return normalized
 
 
+_FILES_HEADING = re.compile(r"^## Files to Create ?/ ?Modify\s*$", re.MULTILINE)  # sdd/templates/task.md:33
+_NEXT_HEADING = re.compile(r"^## ", re.MULTILINE)
+_TABLE_ROW = re.compile(r"^\|\s*`([^`]+)`\s*\|\s*(CREATE|MODIFY|create|modify)\s*\|")
+
+
+def _parse_legacy_targets(task_text: str) -> List[Dict[str, str]]:
+    """Fallback target list for a task with no '## Complexity Contract' section.
+
+    Every task, old or new, has a '## Files to Create / Modify' table (it
+    predates this feature -- see docs/sdd/WORKFLOW.md's Task Artifact
+    Format); reuse it as the target declaration for legacy tasks instead of
+    treating their absence of a Complexity Contract section as invalid.
+    """
+    heading = _FILES_HEADING.search(task_text)
+    if not heading:
+        return []
+    body = task_text[heading.end() :]
+    next_heading = _NEXT_HEADING.search(body)
+    if next_heading:
+        body = body[: next_heading.start()]
+
+    targets: List[Dict[str, str]] = []
+    seen: set = set()
+    for line in body.splitlines():
+        match = _TABLE_ROW.match(line.strip())
+        if not match:
+            continue
+        path, action = match.group(1), match.group(2).upper()
+        if path in seen:
+            continue
+        seen.add(path)
+        targets.append({"path": path, "action": action})
+    return targets
+
+
 def _extract_complexity_contract_section(task_text: str) -> Optional[str]:
     """Extract the Complexity Contract section from task text.
 
@@ -99,6 +134,14 @@ def _extract_complexity_contract_section(task_text: str) -> Optional[str]:
 def parse_complexity_contract(task_text: str) -> ComplexityContract:
     """Parse the complexity contract from a task's markdown text.
 
+    A task with NO '## Complexity Contract' section is a legacy task, not an
+    invalid one (spec §2: "Legacy tasks without this section remain parseable
+    but yield unknown symbol coverage and therefore require the complex-task
+    route until upgraded" -- AC12). Its targets are read from the
+    '## Files to Create / Modify' table every task already has, and
+    `contract_symbols` is `None` (the explicit legacy/unknown-coverage
+    marker, distinct from an empty list meaning "declared zero symbols").
+
     Args:
         task_text: The full task markdown text.
 
@@ -106,12 +149,17 @@ def parse_complexity_contract(task_text: str) -> ComplexityContract:
         The parsed ComplexityContract.
 
     Raises:
-        ComplexityContractError: If the contract is malformed or invalid.
+        ComplexityContractError: If a present Complexity Contract section is malformed.
     """
     # Extract the complexity contract section
     contract_json = _extract_complexity_contract_section(task_text)
     if not contract_json:
-        raise ComplexityContractError("No Complexity Contract section found", "complexity_contract_invalid")
+        legacy_targets = _parse_legacy_targets(task_text)
+        return ComplexityContract(
+            schema_version=1,
+            targets=tuple(ComplexityTarget(path=_normalize_path(t["path"]), action=t["action"]) for t in legacy_targets),
+            contract_symbols=None,
+        )
 
     try:
         # Parse the JSON
@@ -144,6 +192,23 @@ def parse_complexity_contract(task_text: str) -> ComplexityContract:
             raise ComplexityContractError(f"Invalid action: {target['action']}", "complexity_contract_invalid")
 
         normalized_targets.append({"path": normalized_path, "action": normalized_action})
+
+    # Cross-validate against the task's own "Files to Create / Modify" table
+    # (spec §2's Measurement Contract: "The parser must compare its targets
+    # with Files to Create / Modify") -- an explicit Complexity Contract that
+    # under- or over-declares relative to the real scope table is invalid,
+    # not silently accepted at face value.
+    files_table_targets = {(_normalize_path(t["path"]), t["action"]) for t in _parse_legacy_targets(task_text)}
+    declared_targets = {(t["path"], t["action"]) for t in normalized_targets}
+    if files_table_targets and declared_targets != files_table_targets:
+        raise ComplexityContractError(
+            "Complexity Contract targets do not match the Files to Create / Modify table",
+            "complexity_contract_invalid",
+            details={
+                "contract_only": sorted(declared_targets - files_table_targets),
+                "table_only": sorted(files_table_targets - declared_targets),
+            },
+        )
 
     # Process contract_symbols
     contract_symbols = contract_data.get("contract_symbols")
@@ -188,18 +253,18 @@ def _calculate_component_points(metric_name: str, evidence: MetricEvidence, poli
 
     value = evidence.value
 
-    # Check for hard limits first
-    if metric_name in policy.hard_limits and value >= policy.hard_limits[metric_name]:
-        # Hard limit reached, maximum points
+    # 2 points at/above the metric's own two-point threshold (spec's "inclusive
+    # bands" second boundary -- ALL SIX metrics have one, not just the three
+    # hard_limits metrics: weighted_files/modules/acceptance_criteria can and
+    # must reach 2 points too, they just never auto-trigger complex by
+    # themselves the way hard_limits metrics do).
+    if metric_name in policy.two_point_thresholds and value >= policy.two_point_thresholds[metric_name]:
         return 2
 
     # Check bands: `policy.bands[metric_name]` is the (0, max) zero-points
     # band from spec §2 (e.g. cyclomatic_max 0-10 scores 0). A value at or
-    # below that band's max is 0 points; above it (but below any hard
-    # limit, already handled above) is 1 point. 2 points is reserved for
-    # the policy-configured hard limit, matching the spec table's
-    # "inclusive bands" (e.g. cyclomatic_max: 0-10 -> 0, 11-20 -> 1,
-    # >=21 -> 2) -- this function must never return 2 via bands alone.
+    # below that band's max is 0 points; above it (but below the two-point
+    # threshold, already handled above) is 1 point.
     if metric_name in policy.bands:
         _min_val, max_val = policy.bands[metric_name]
         if value <= max_val:
@@ -261,23 +326,29 @@ def evaluate_complexity(evidence: ComplexityEvidence, policy: ComplexityPolicy) 
         "downstream_tasks",
     ]
 
-    # Calculate points for each metric
+    # Calculate points for each metric. A metric ABSENT from evidence.metrics
+    # (a defensive case -- a correctly-run collector always populates all six
+    # keys) is treated exactly like an unknown-state metric: 0 points, but
+    # still flagged for the has_unknown check below. Never a silent, fully
+    # trusted zero (spec: never fabricate a zero for missing evidence).
+    missing_metrics: List[str] = []
     for metric_name in metric_names:
         if metric_name in evidence.metrics:
             points = _calculate_component_points(metric_name, evidence.metrics[metric_name], policy)
             component_points[metric_name] = points
             total_points += points
         else:
-            # Metric not provided, contributes 0 points
             component_points[metric_name] = 0
+            missing_metrics.append(metric_name)
 
     # Determine classification
     classification = "standard"
 
-    # Check for hard limits that force complex classification
-    hard_triggers = {"cyclomatic_max": 21, "blast_symbols": 30, "downstream_tasks": 5}
-
-    for metric_name, threshold in hard_triggers.items():
+    # Check for hard limits that force complex classification, using the
+    # POLICY's own hard_limits (not a hardcoded local copy) -- an
+    # operator-reconfigured policy must actually change this behavior, not
+    # just per-metric point scoring.
+    for metric_name, threshold in policy.hard_limits.items():
         # A `state == "unknown"` metric may still carry an observed lower
         # bound (spec §2); if that bound already meets the hard limit, the
         # task is provably complex even though the exact value is unknown.
@@ -297,12 +368,12 @@ def evaluate_complexity(evidence: ComplexityEvidence, policy: ComplexityPolicy) 
             classification = "complex"
             reason_codes.append("score_threshold_met")
         else:
-            # Check if any metrics are unknown - if so, classification is unknown
-            has_unknown = False
-            for metric_name in metric_names:
-                if metric_name in evidence.metrics and evidence.metrics[metric_name].state == "unknown":
-                    has_unknown = True
-                    break
+            # Check if any metrics are unknown (or simply absent -- both are
+            # "cannot determine", never a trusted zero) - if so, unknown.
+            has_unknown = bool(missing_metrics) or any(
+                metric_name in evidence.metrics and evidence.metrics[metric_name].state == "unknown"
+                for metric_name in metric_names
+            )
 
             if has_unknown:
                 classification = "unknown"

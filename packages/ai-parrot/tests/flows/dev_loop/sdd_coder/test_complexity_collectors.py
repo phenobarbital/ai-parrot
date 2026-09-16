@@ -13,10 +13,11 @@ import pytest
 from parrot.flows.dev_loop.sdd_coder.complexity_collectors import (
     collect_complexity,
     validate_complexity_snapshot,
+    _collect_dependency_metrics,
     _run_subprocess,
     SubprocessResult,
 )
-from parrot.flows.dev_loop.sdd_coder.complexity_models import ComplexityPolicy
+from parrot.flows.dev_loop.sdd_coder.complexity_models import ComplexityContract, ComplexityPolicy, ComplexityTarget
 
 
 def _init_git_repo(worktree: Path) -> None:
@@ -169,6 +170,106 @@ async def test_collect_complexity_basic(temp_worktree):
         assert evidence.metrics["downstream_tasks"].value == 1  # One dependent task
 
 
+def _dep_contract() -> ComplexityContract:
+    return ComplexityContract(schema_version=1, targets=(ComplexityTarget(path="pkg/x.py", action="CREATE"),))
+
+
+async def _run_dependency_metrics(worktree: Path, index_data: dict, task_id: str = "TASK-0001"):
+    index_file = worktree / "index.json"
+    index_file.write_text(json.dumps(index_data))
+    task_file = worktree / f"{task_id}-demo.md"
+    task_file.write_text(f"# {task_id}: demo\n")
+    metrics, *_ = await _collect_dependency_metrics(
+        worktree,
+        task_file.relative_to(worktree),
+        index_file.relative_to(worktree),
+        _dep_contract(),
+        ComplexityPolicy(),
+    )
+    return metrics["downstream_tasks"]
+
+
+@pytest.mark.asyncio
+async def test_downstream_tasks_counts_transitive_not_direct():
+    """A 6-task linear dependency chain must report 5 TRANSITIVE descendants
+    for the root, not 1 direct dependent (spec §2 item 5: "The score uses
+    transitive count; direct count remains visible")."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        worktree = Path(tmpdir)
+        index_data = {
+            "tasks": [
+                {"id": "TASK-0001", "depends_on": []},
+                {"id": "TASK-0002", "depends_on": ["TASK-0001"]},
+                {"id": "TASK-0003", "depends_on": ["TASK-0002"]},
+                {"id": "TASK-0004", "depends_on": ["TASK-0003"]},
+                {"id": "TASK-0005", "depends_on": ["TASK-0004"]},
+                {"id": "TASK-0006", "depends_on": ["TASK-0005"]},
+            ]
+        }
+        evidence = await _run_dependency_metrics(worktree, index_data)
+        assert evidence.state == "ok"
+        assert evidence.value == 5
+
+
+@pytest.mark.asyncio
+async def test_downstream_tasks_dedups_diamond_paths():
+    """B and C both depend on ROOT; D depends on BOTH B and C. ROOT's
+    transitive descendants are {B, C, D} = 3, not 4 (D must not be counted
+    twice for reaching it via two different paths)."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        worktree = Path(tmpdir)
+        index_data = {
+            "tasks": [
+                {"id": "TASK-0001", "depends_on": []},
+                {"id": "TASK-0002", "depends_on": ["TASK-0001"]},
+                {"id": "TASK-0003", "depends_on": ["TASK-0001"]},
+                {"id": "TASK-0004", "depends_on": ["TASK-0002", "TASK-0003"]},
+            ]
+        }
+        evidence = await _run_dependency_metrics(worktree, index_data)
+        assert evidence.state == "ok"
+        assert evidence.value == 3
+
+
+@pytest.mark.asyncio
+async def test_downstream_tasks_cycle_is_unknown():
+    """A cycle back to the root task invalidates the dependency contract
+    (spec §2 item 5: "Missing nodes or cycles invalidate the dependency
+    contract") -- reported as unknown, never a silently-wrong count."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        worktree = Path(tmpdir)
+        index_data = {
+            "tasks": [
+                {"id": "TASK-0001", "depends_on": ["TASK-0002"]},
+                {"id": "TASK-0002", "depends_on": ["TASK-0001"]},
+            ]
+        }
+        evidence = await _run_dependency_metrics(worktree, index_data)
+        assert evidence.state == "unknown"
+        assert "cycle" in evidence.reason.lower()
+
+
+@pytest.mark.asyncio
+async def test_downstream_tasks_dangling_reference_is_unknown():
+    """A depends_on reference to a task ID never declared anywhere in the
+    index is dangling -- invalidates the whole dependency contract, even
+    when the dangling reference itself is unrelated to task_id's own
+    downstream subgraph (spec §2 item 5: "Missing nodes ... invalidate the
+    dependency contract")."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        worktree = Path(tmpdir)
+        index_data = {
+            "tasks": [
+                {"id": "TASK-0001", "depends_on": []},
+                {"id": "TASK-0003HILD", "depends_on": ["TASK-0001"]},
+                {"id": "TASK-0003", "depends_on": ["TASK-9999"]},
+            ]
+        }
+        evidence = await _run_dependency_metrics(worktree, index_data)
+        assert evidence.state == "unknown"
+        assert "dangling" in evidence.reason.lower()
+
+
 @pytest.mark.asyncio
 async def test_collect_complexity_no_python_files():
     """Test collecting complexity with no Python files."""
@@ -212,9 +313,57 @@ async def test_collect_complexity_no_python_files():
             worktree, task_file.relative_to(worktree), index_file.relative_to(worktree), policy
         )
 
-        # Should have not_applicable for cyclomatic complexity
+        # Documentation MODIFY target -> not_applicable (spec §2 item 1: distinct
+        # from an unsupported-language MODIFY target, which is unknown).
         assert evidence.metrics["cyclomatic_max"].state == "not_applicable"
-        assert "No Python MODIFY targets" in evidence.metrics["cyclomatic_max"].reason
+        assert "documentation" in evidence.metrics["cyclomatic_max"].reason.lower()
+
+
+@pytest.mark.asyncio
+async def test_collect_complexity_unsupported_language_is_unknown():
+    """A MODIFY target in an unsupported programming language (not Python, not
+    documentation/configuration) must be unknown, not not_applicable (spec §2
+    item 1: "Unsupported source languages give unknown.")."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        worktree = Path(tmpdir)
+
+        task_content = """# TASK-6789: Rust task
+
+## Complexity Contract
+```json
+{
+  "schema_version": 1,
+  "targets": [
+    {
+      "path": "src/lib.rs",
+      "action": "MODIFY"
+    }
+  ],
+  "contract_symbols": null
+}
+```
+"""
+        task_file = worktree / "TASK-6789-rust.md"
+        task_file.write_text(task_content)
+
+        rs_file = worktree / "src" / "lib.rs"
+        rs_file.parent.mkdir(parents=True)
+        rs_file.write_text("fn main() {}\n")
+
+        index_content = {"TASK-6789": {"id": "TASK-6789", "status": "pending", "depends_on": []}}
+        index_file = worktree / "index.json"
+        index_file.write_text(json.dumps(index_content))
+
+        _init_git_repo(worktree)
+
+        policy = ComplexityPolicy()
+
+        evidence = await collect_complexity(
+            worktree, task_file.relative_to(worktree), index_file.relative_to(worktree), policy
+        )
+
+        assert evidence.metrics["cyclomatic_max"].state == "unknown"
+        assert "lib.rs" in evidence.metrics["cyclomatic_max"].reason
 
 
 @pytest.mark.asyncio

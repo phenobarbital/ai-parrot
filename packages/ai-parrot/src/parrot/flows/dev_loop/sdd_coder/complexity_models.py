@@ -101,7 +101,15 @@ class ComplexityPolicy(BaseModel):
         strong_models: Tuple of allowed model identities for complex/unknown tasks.
         bands: Mapping from metric name to (min_points, max_points) tuples for scoring.
             Each band contributes at most 2 points.
-        hard_limits: Mapping from metric name to threshold that triggers complex classification.
+        hard_limits: Mapping from metric name to threshold that triggers complex
+            classification directly, regardless of total_points (spec §2's three named
+            hard triggers only: cyclomatic_max, blast_symbols, downstream_tasks).
+        two_point_thresholds: Mapping from EVERY metric name to the value at/above which
+            it scores 2 points (spec's "inclusive bands" second boundary, all six
+            metrics: 11/21, 10/30, 4/8, 2/3, 5/8, 2/5). Distinct from hard_limits: scoring
+            2 points on weighted_files/modules/acceptance_criteria contributes to
+            total_points but never auto-triggers complex by itself, unlike the three
+            hard_limits metrics.
         score_threshold: Total points at or above which a task is classified complex.
         timeout_seconds: Maximum seconds to wait for any measurement tool.
         max_output_bytes: Maximum bytes to capture from measurement tool output.
@@ -129,6 +137,16 @@ class ComplexityPolicy(BaseModel):
             "downstream_tasks": 5,
         }
     )
+    two_point_thresholds: Dict[str, int] = Field(
+        default_factory=lambda: {
+            "cyclomatic_max": 21,
+            "blast_symbols": 30,
+            "weighted_files": 8,
+            "modules": 3,
+            "acceptance_criteria": 8,
+            "downstream_tasks": 5,
+        }
+    )
     score_threshold: int = 5
     timeout_seconds: int = 30
     max_output_bytes: int = 8388608
@@ -153,6 +171,22 @@ class ComplexityPolicy(BaseModel):
                 raise ValueError(f"hard_limit references unknown metric {key!r}")
             if value <= 0:
                 raise ValueError(f"hard_limit {key!r} must be positive, got {value}")
+        return self
+
+    @model_validator(mode="after")
+    def _validate_two_point_thresholds(self) -> "ComplexityPolicy":
+        """Reject unknown metric keys or a threshold not strictly above its band's max
+        (the 2-points tier must start after the 0-points band ends)."""
+        for key, value in self.two_point_thresholds.items():
+            if key not in self.bands:
+                raise ValueError(f"two_point_thresholds references unknown metric {key!r}")
+            if value <= 0:
+                raise ValueError(f"two_point_thresholds {key!r} must be positive, got {value}")
+            band_max = self.bands[key][1]
+            if value <= band_max:
+                raise ValueError(
+                    f"two_point_thresholds {key!r} ({value}) must exceed its band max ({band_max})"
+                )
         return self
 
     @model_validator(mode="after")

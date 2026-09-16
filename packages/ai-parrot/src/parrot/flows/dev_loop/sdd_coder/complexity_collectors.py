@@ -27,6 +27,13 @@ from parrot.flows.dev_loop.sdd_coder.complexity import parse_complexity_contract
 
 logger = logging.getLogger(__name__)
 
+# Extensions treated as documentation/configuration (spec §2 item 1:
+# "Documentation/configuration gives not_applicable"), as opposed to a
+# programming-language source file Ruff cannot analyze (which is "unknown").
+_DOC_CONFIG_EXTENSIONS = frozenset(
+    {".md", ".markdown", ".txt", ".rst", ".yaml", ".yml", ".json", ".toml", ".cfg", ".ini", ".csv", ".xml", ".html"}
+)
+
 
 async def collect_complexity(
     worktree: Path, task_file: Path, index_path: Path, policy: ComplexityPolicy
@@ -131,6 +138,19 @@ async def validate_complexity_snapshot(
 
 
 # --- Helper functions ---
+
+
+def _extract_section(task_content: str, heading: str) -> Optional[str]:
+    """Body text of `## <heading>` up to (not including) the next `## ` heading, or
+    None if the heading is absent. Scopes counting to the declared section instead
+    of scanning the whole document."""
+    pattern = re.compile(rf"^## {re.escape(heading)}\s*$", re.MULTILINE)
+    match = pattern.search(task_content)
+    if not match:
+        return None
+    body = task_content[match.end() :]
+    next_heading = re.search(r"^## ", body, re.MULTILINE)
+    return body[: next_heading.start()] if next_heading else body
 
 
 def _extract_task_id(task_content: str) -> str:
@@ -251,8 +271,15 @@ async def _collect_all_evidence(
             logger.warning(f"Collector failed: {result}")
             continue
         if isinstance(result, tuple) and len(result) == 5:
-            # Unpack collector results
-            collector_metrics, collector_target_hashes, collector_wiki_hashes, collector_versions, collector_details = (
+            # Unpack collector results. The per-collector version dict is named
+            # `result_versions` here, NOT `collector_versions` -- reusing that
+            # name rebound the outer accumulator on every iteration, so
+            # `collector_versions.update(collector_versions)` was a no-op
+            # against itself and the function silently returned only the
+            # LAST collector's own (usually empty) version dict, discarding
+            # every earlier collector's recorded version (spec §2's
+            # "collector_versions" provenance field / AC1).
+            collector_metrics, collector_target_hashes, collector_wiki_hashes, result_versions, collector_details = (
                 result
             )
 
@@ -260,7 +287,7 @@ async def _collect_all_evidence(
             metrics.update(collector_metrics)
             target_hashes.update(collector_target_hashes)
             wiki_evidence_hashes.update(collector_wiki_hashes)
-            collector_versions.update(collector_versions)
+            collector_versions.update(result_versions)
             details.update(collector_details)
 
     return metrics, target_hashes, wiki_evidence_hashes, collector_versions, details
@@ -273,20 +300,52 @@ async def _collect_ruff_cyclomatic(
     """Collect cyclomatic complexity using Ruff."""
     async with semaphore:
         try:
-            # Get Python MODIFY targets
-            python_modify_paths = [
-                target.path
-                for target in contract.targets
-                if target.action == "MODIFY" and target.path.endswith((".py", ".pyi"))
-            ]
+            modify_targets = [target for target in contract.targets if target.action == "MODIFY"]
 
-            if not python_modify_paths:
-                # No Python files to analyze
+            if not modify_targets:
+                # No MODIFY targets at all -- genuinely not applicable.
                 return (
                     {
                         "cyclomatic_max": MetricEvidence(
                             state="not_applicable",
-                            reason="No Python MODIFY targets to analyze",
+                            reason="No MODIFY targets to analyze",
+                            source="ruff_cyclomatic",
+                        )
+                    },
+                    {},
+                    {},
+                    {"ruff": "unknown"},
+                    {},
+                )
+
+            python_modify_paths = [t.path for t in modify_targets if t.path.endswith((".py", ".pyi"))]
+
+            if not python_modify_paths:
+                # MODIFY targets exist but none are Python. Spec §2 item 1:
+                # "Unsupported source languages give unknown.
+                # Documentation/configuration gives not_applicable." -- these
+                # are NOT the same outcome, unlike the earlier delivery that
+                # folded both into not_applicable.
+                non_doc_targets = [t.path for t in modify_targets if Path(t.path).suffix.lower() not in _DOC_CONFIG_EXTENSIONS]
+                if non_doc_targets:
+                    return (
+                        {
+                            "cyclomatic_max": MetricEvidence(
+                                state="unknown",
+                                reason=f"Unsupported source language(s) for MODIFY targets: {non_doc_targets}",
+                                source="ruff_cyclomatic",
+                            )
+                        },
+                        {},
+                        {},
+                        {"ruff": "unknown"},
+                        {},
+                    )
+                return (
+                    {
+                        "cyclomatic_max": MetricEvidence(
+                            state="not_applicable",
+                            reason="MODIFY targets are documentation/configuration only",
                             source="ruff_cyclomatic",
                         )
                     },
@@ -481,23 +540,34 @@ async def _collect_wiki_blast(
                     {},
                 )
 
-            total_impacted = 0
-            all_files = set()
+            impacted_ids: set = set()  # UNION across roots, not a sum of per-root lengths
+            all_files: set = set()
             wiki_hashes = {}
             all_impacted_details = []
+            # Any root that fails/times out/returns invalid JSON/reports
+            # truncation makes the WHOLE measurement `unknown` (spec §2 item 2:
+            # "Missing roots, failed queries, stale results or truncation are
+            # unknown, with the observed count retained as a lower bound" --
+            # never silently reported as a clean `ok` measurement).
+            any_root_unreliable = False
+            unreliable_reasons: List[str] = []
 
             # Analyze each symbol
             for symbol in contract.contract_symbols:
                 try:
-                    # Run wikitoolkit symbols blast
+                    # Run wikitoolkit symbols blast. `--path` is a `symbols
+                    # blast`-level option (path_option decorates that leaf
+                    # command specifically, not the top-level `wiki` group --
+                    # verified in wiki/cli.py), so it must come AFTER "symbols
+                    # blast" on the command line, not before "symbols".
                     cmd = [
                         "python",
                         "-m",
                         "parrot.knowledge.wiki.cli",
-                        "--path",
-                        str(worktree.absolute()),
                         "symbols",
                         "blast",
+                        "--path",
+                        str(worktree.absolute()),
                         "--depth",
                         "2",
                         "--no-inferred",
@@ -509,7 +579,8 @@ async def _collect_wiki_blast(
                     result = await _run_subprocess(cmd, worktree, policy.timeout_seconds, policy.max_output_bytes)
 
                     if result.returncode != 0:
-                        # Command failed, continue with unknown state
+                        any_root_unreliable = True
+                        unreliable_reasons.append(f"{symbol}: exit {result.returncode}")
                         continue
 
                     # Parse output
@@ -520,42 +591,61 @@ async def _collect_wiki_blast(
                         evidence_hash = hashlib.sha256(result.stdout.encode()).hexdigest()
                         wiki_hashes[symbol] = evidence_hash
 
-                        # Extract impacted count
+                        # Extract impacted symbol IDs (deduplicated union, not a
+                        # per-root count sum -- two roots sharing 15 callers
+                        # must report 15, not 30).
                         impacted_symbols = blast_output.get("impacted", [])
+                        root = blast_output.get("root")
                         files = blast_output.get("files", [])
                         truncated = blast_output.get("truncated", False)
 
-                        # Add to totals
-                        total_impacted += len(impacted_symbols)
+                        if root is None:
+                            # Missing root: observed count is a lower bound only.
+                            any_root_unreliable = True
+                            unreliable_reasons.append(f"{symbol}: missing root")
+
+                        symbol_ids = {
+                            item.get("symbol_id")
+                            for item in impacted_symbols
+                            if isinstance(item, dict) and item.get("symbol_id")
+                        }
+                        impacted_ids.update(symbol_ids)
                         all_files.update(files)
+
+                        if truncated:
+                            any_root_unreliable = True
+                            unreliable_reasons.append(f"{symbol}: truncated")
 
                         # Store details
                         all_impacted_details.append(
                             {
                                 "symbol": symbol,
-                                "impacted_count": len(impacted_symbols),
+                                "impacted_count": len(symbol_ids),
                                 "file_count": len(files),
                                 "truncated": truncated,
                             }
                         )
 
                     except json.JSONDecodeError:
-                        # Invalid JSON, continue
+                        any_root_unreliable = True
+                        unreliable_reasons.append(f"{symbol}: invalid JSON")
                         continue
 
-                except Exception:
-                    # Individual symbol failed, continue with others
+                except Exception as exc:
+                    any_root_unreliable = True
+                    unreliable_reasons.append(f"{symbol}: {exc}")
                     continue
 
-            # Create metric evidence
-            metric_state = "ok"
-            metric_value = total_impacted
-            metric_reason = f"Total impacted symbols across {len(contract.contract_symbols)} contract symbols"
+            total_impacted = len(impacted_ids)
 
-            if not contract.contract_symbols:
-                metric_state = "not_applicable"
-                metric_value = None
-                metric_reason = "No contract symbols to analyze"
+            if any_root_unreliable:
+                metric_state = "unknown"
+                metric_value = total_impacted  # observed union is a LOWER BOUND
+                metric_reason = "Blast radius incomplete (" + "; ".join(unreliable_reasons) + ")"
+            else:
+                metric_state = "ok"
+                metric_value = total_impacted
+                metric_reason = f"Union of impacted symbols across {len(contract.contract_symbols)} contract symbols"
 
             return (
                 {
@@ -569,7 +659,7 @@ async def _collect_wiki_blast(
                 {},
                 wiki_hashes,
                 {},
-                {"blast_details": all_impacted_details, "unique_files": list(all_files)},
+                {"blast_details": all_impacted_details, "unique_files": sorted(all_files)},
             )
 
         except asyncio.TimeoutError:
@@ -611,17 +701,22 @@ async def _collect_scope_metrics(
         full_task_path = worktree / task_file
         task_content = full_task_path.read_text(encoding="utf-8")
 
-        # Count acceptance criteria checkboxes, excluding fenced content.
-        # `re.split` on the fence pattern already *removes* every fenced
-        # block and returns only the non-fenced segments (unlike
-        # `re.finditer`, it never alternates fenced/non-fenced groups) --
-        # every returned part must be counted, not just even-indexed ones.
-        criteria_count = 0
-        parts = re.split(r"```.*?```", task_content, flags=re.DOTALL)
-
-        for part in parts:
-            # Count unchecked [-] and checked [x] or [X] checkboxes
-            criteria_count += len(re.findall(r"^\s*[-*]\s+\[[xX\s-]\]\s+", part, re.MULTILINE))
+        # Count TOP-LEVEL acceptance criteria checkboxes, scoped to the
+        # '## Acceptance Criteria' section and excluding fenced content and
+        # nested/indented bullets (spec §2 item 4: "count top-level checkbox
+        # criteria in the task's Acceptance Criteria section ... excluding
+        # fenced code and nested explanatory bullets. Missing/malformed
+        # sections are unknown."). A missing section is NOT a measured zero.
+        ac_section = _extract_section(task_content, "Acceptance Criteria")
+        criteria_count: Optional[int] = None
+        if ac_section is not None:
+            # Strip fenced blocks within the section before counting.
+            unfenced = re.sub(r"```.*?```", "", ac_section, flags=re.DOTALL)
+            criteria_count = 0
+            for line in unfenced.splitlines():
+                # Top-level only: no leading whitespace before the bullet marker.
+                if re.match(r"^[-*]\s+\[[xX \-]\]\s+", line):
+                    criteria_count += 1
 
         # Count file targets
         create_count = sum(1 for target in contract.targets if target.action == "CREATE")
@@ -640,6 +735,20 @@ async def _collect_scope_metrics(
 
         module_count = len(parent_dirs)
 
+        if criteria_count is None:
+            acceptance_criteria_evidence = MetricEvidence(
+                state="unknown",
+                reason="No '## Acceptance Criteria' section found",
+                source="scope_collector",
+            )
+        else:
+            acceptance_criteria_evidence = MetricEvidence(
+                state="ok",
+                value=criteria_count,
+                reason="Top-level acceptance criteria checkboxes in the Acceptance Criteria section",
+                source="scope_collector",
+            )
+
         return (
             {
                 "weighted_files": MetricEvidence(
@@ -654,12 +763,7 @@ async def _collect_scope_metrics(
                     reason="Unique target parent directories",
                     source="scope_collector",
                 ),
-                "acceptance_criteria": MetricEvidence(
-                    state="ok",
-                    value=criteria_count,
-                    reason="Acceptance criteria checkboxes outside code fences",
-                    source="scope_collector",
-                ),
+                "acceptance_criteria": acceptance_criteria_evidence,
             },
             {},
             {},
@@ -667,7 +771,12 @@ async def _collect_scope_metrics(
             {
                 "create_count": create_count,
                 "modify_count": modify_count,
-                "parent_directories": list(parent_dirs),
+                # Sorted, not a raw `list(set(...))`: `_canonical_hash` only
+                # sorts dict KEYS (`sort_keys=True`), never list contents, so
+                # an unsorted set-derived list can serialize (and therefore
+                # hash) differently across processes under hash randomization
+                # -- undermining "same evidence/policy gives identical result".
+                "parent_directories": sorted(parent_dirs),
             },
         )
 
@@ -724,9 +833,6 @@ async def _collect_dependency_metrics(
         # Extract task ID from task file
         task_id = _extract_task_id((worktree / task_file).read_text(encoding="utf-8"))
 
-        # Find all tasks that depend on this task
-        downstream_tasks = []
-
         # Handle both list and dict formats
         tasks_list = []
         if isinstance(index_data, dict):
@@ -738,28 +844,81 @@ async def _collect_dependency_metrics(
         elif isinstance(index_data, list):
             tasks_list = index_data
 
-        # Look for tasks that depend on our task
+        # Build the reverse dependency graph (task_id -> tasks that declare
+        # `depends_on` including it) once, then BFS from the direct
+        # dependents to the full transitive closure. Spec §2 item 5: "count
+        # distinct direct dependents and distinct transitive descendants ...
+        # Deduplicate diamond paths ... The score uses transitive count;
+        # direct count remains visible." A missing depends_on reference or a
+        # cycle back to task_id "invalidates the dependency contract" --
+        # reported as unknown rather than a silently-wrong number.
+        known_ids: set = set()
+        reverse_deps: Dict[str, List[str]] = {}
         for task_entry in tasks_list:
-            if isinstance(task_entry, dict):
-                depends_on = task_entry.get("depends_on", [])
-                if task_id in depends_on:
-                    downstream_tasks.append(task_entry.get("id", "unknown"))
+            if not isinstance(task_entry, dict):
+                continue
+            entry_id = task_entry.get("id")
+            if entry_id:
+                known_ids.add(entry_id)
+            for dep in task_entry.get("depends_on") or []:
+                reverse_deps.setdefault(dep, []).append(entry_id)
 
-        downstream_count = len(downstream_tasks)
+        # A depends_on reference to a task ID that is never itself declared
+        # as a task entry anywhere in the index is dangling -- checked
+        # index-wide (this invalidates "the dependency contract" as a whole,
+        # not just this task's own downstream slice), not merely within the
+        # subgraph reachable from task_id's own descendants.
+        dangling = {dep for dep in reverse_deps if dep not in known_ids}
+
+        direct_dependents = sorted(d for d in reverse_deps.get(task_id, []) if d)
+
+        cycle_detected = False
+        transitive: set = set()
+        queue = list(direct_dependents)
+        while queue:
+            current = queue.pop(0)
+            if current == task_id:
+                cycle_detected = True
+                continue
+            if current is None or current in transitive or current not in known_ids:
+                continue
+            transitive.add(current)
+            queue.extend(reverse_deps.get(current, []))
+
+        if cycle_detected or dangling:
+            reason = "Dependency graph invalid: "
+            reason += "cycle detected" if cycle_detected else ""
+            if dangling:
+                reason += (", " if cycle_detected else "") + f"dangling reference(s) to {sorted(dangling)}"
+            return (
+                {
+                    "downstream_tasks": MetricEvidence(
+                        state="unknown",
+                        reason=reason,
+                        source="dependency_collector",
+                    )
+                },
+                {},
+                {},
+                {},
+                {"direct_dependents": direct_dependents},
+            )
+
+        downstream_count = len(transitive)
 
         return (
             {
                 "downstream_tasks": MetricEvidence(
                     state="ok",
                     value=downstream_count,
-                    reason=f"Tasks that declare dependency on {task_id}",
+                    reason=f"Transitive descendants of {task_id} ({len(direct_dependents)} direct)",
                     source="dependency_collector",
                 )
             },
             {},
             {},
             {},
-            {"direct_dependents": downstream_tasks},
+            {"direct_dependents": direct_dependents, "transitive_descendants": sorted(transitive)},
         )
 
     except Exception as e:
@@ -807,8 +966,11 @@ async def _run_subprocess(cmd: List[str], cwd: Path, timeout_seconds: int, max_o
 
         return SubprocessResult(proc.returncode, stdout_str, stderr_str)
 
-    except asyncio.TimeoutError:
-        # Kill the process if it timed out
+    except (asyncio.TimeoutError, asyncio.CancelledError):
+        # Kill and reap on EITHER a timeout OR the awaiting task being
+        # cancelled (spec §7: "cancellation must terminate and reap their
+        # processes") -- only handling TimeoutError left a cancelled
+        # collection's subprocess un-reaped.
         try:
             proc.kill()
             await proc.wait()
