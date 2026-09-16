@@ -11,7 +11,11 @@ from __future__ import annotations
 from datetime import datetime
 from typing import List, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+
+
+#: Lifecycle of a user's integration as shown in the UI.
+IntegrationStatus = Literal["connected", "disconnected", "needs_reconnect"]
 
 
 class IntegrationDescriptor(BaseModel):
@@ -22,7 +26,10 @@ class IntegrationDescriptor(BaseModel):
         display_name: Human-readable name, e.g. ``"Jira"``.
         icon: Icon identifier (Material Design Icons key) or URL.
         default_scopes: Scopes requested during the OAuth consent screen.
-        connected: Whether the current user has a ``users_integrations`` row.
+        connected: Whether the integration is usable (``status == "connected"``).
+        status: ``connected`` (row + readable tokens), ``disconnected`` (no row)
+            or ``needs_reconnect`` (row exists but its vault tokens are missing
+            or unreadable — the user must re-link the provider).
         enabled_on_agent: Whether the user has a ``user_agent_toolkits`` row
             for the current ``(user, agent)`` pair.
         account_id: Provider-side account identifier (available when connected).
@@ -36,11 +43,25 @@ class IntegrationDescriptor(BaseModel):
     icon: Optional[str] = None
     default_scopes: List[str] = Field(default_factory=list)
     connected: bool = False
+    status: Optional[IntegrationStatus] = None
     enabled_on_agent: bool = False
     account_id: Optional[str] = None
     display_account_name: Optional[str] = None
     email: Optional[str] = None
     connected_at: Optional[datetime] = None
+
+    @model_validator(mode="after")
+    def _sync_status_and_connected(self) -> "IntegrationDescriptor":
+        """Keep ``status`` and the legacy ``connected`` flag in sync.
+
+        Callers may set either one: an explicit ``status`` wins, otherwise it is
+        derived from ``connected`` (backwards compatible).
+        """
+        if self.status is None:
+            self.status = "connected" if self.connected else "disconnected"
+        else:
+            self.connected = self.status == "connected"
+        return self
 
 
 class ConnectInitRequest(BaseModel):

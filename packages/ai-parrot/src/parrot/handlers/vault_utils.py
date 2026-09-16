@@ -7,7 +7,8 @@ continue to work unchanged.
 """
 from parrot.security.vault_utils import (  # noqa: F401
     VAULT_CRED_COLLECTION,
-    load_vault_keys,
+    get_vault_keyring,
+    reset_vault_keyring,
     store_vault_credential,
     retrieve_vault_credential,
     delete_vault_credential,
@@ -15,7 +16,8 @@ from parrot.security.vault_utils import (  # noqa: F401
 )
 
 __all__ = [
-    "load_vault_keys",
+    "get_vault_keyring",
+    "reset_vault_keyring",
     "store_vault_credential",
     "retrieve_vault_credential",
     "delete_vault_credential",

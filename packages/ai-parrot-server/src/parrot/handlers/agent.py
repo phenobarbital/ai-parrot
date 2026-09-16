@@ -1139,11 +1139,12 @@ class AgentTalk(BaseView):
 
         _restore_factory_map = _get_factory_map()
 
-        # Load vault keys once for all secrets retrieval
+        # Load the vault key ring once for all secrets retrieval
         try:
-            from navigator_session.vault.config import load_master_keys
+            from parrot.security.credentials_utils import credential_context
+            from parrot.security.vault_utils import get_vault_keyring
 
-            master_keys = load_master_keys()
+            keyring = get_vault_keyring()
         except Exception as exc:
             self.logger.warning("MCP restore: vault unavailable, skipping restore: %s", exc)
             return
@@ -1177,7 +1178,11 @@ class AgentTalk(BaseView):
                                 config.server_name,
                             )
                             continue
-                        secret_params = _decrypt_credential(doc["credential"], master_keys)
+                        secret_params = _decrypt_credential(
+                            doc["credential"],
+                            credential_context(user_id, config.vault_credential_name),
+                            keyring,
+                        )
                     except Exception as exc:
                         self.logger.warning(
                             "MCP restore: failed to decrypt Vault credential " "'%s' for server '%s': %s",
