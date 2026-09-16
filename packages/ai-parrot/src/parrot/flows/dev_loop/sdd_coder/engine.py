@@ -18,6 +18,7 @@ import logging
 import os
 import re
 import time
+import typing
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -74,7 +75,13 @@ from parrot.flows.dev_loop.sdd_coder.telemetry import (
     OutcomeRow,
     build_attempt_row,
 )
-from parrot.knowledge.wiki.ledger.coder_suspensions import CoderSuspensionStore, ModelKey
+from parrot.knowledge.wiki.ledger.coder_suspensions import (
+    CoderSuspensionStore,
+    ModelKey,
+    SuspensionReason,
+    SuspensionReceipt,
+    SuspensionRecord,
+)
 
 _ORPHANS_INDEX_NAME = "_orphans.json"
 _CONFLICT_LINE = re.compile(r"^CONFLICT \([^)]*\):.* in (.+)$", re.M)
@@ -349,6 +356,14 @@ class SddCoderEngine:
         # blind to it); `cleanup()` must not remove these worktrees while the coder may
         # still be working inside them (FEAT-555 incident: TASK-230-a1 was deleted mid-run).
         self._native_inflight: set[str] = set()
+        # FEAT-559: manager key (worker id, see `_worker_id`) -> owning execution_id,
+        # or "" for a legacy/no-execution call. `cleanup()`/`merge()` use this to
+        # never enumerate or touch a DIFFERENT execution's managers (AC-6).
+        self._manager_execution: Dict[str, str] = {}
+        # FEAT-559: (execution_id, task_id) -> attempt_uid, so a duplicate
+        # `prepare_native` call for the same task in the same execution reuses the
+        # existing reservation instead of admitting (and worktree-creating) twice.
+        self._native_reservations: Dict[Tuple[str, str], str] = {}
         # Attribution for feedback is checked against attempts this engine issued.
         self._feedback_sources: Dict[str, Tuple[str, str, str, str]] = {}
         self._feedback_contexts: Dict[str, str] = {}
@@ -786,38 +801,97 @@ class SddCoderEngine:
             return cached
         return await self.plan(feature, worktree)
 
-    def _manager_for(self, ctx: _FeatureCtx, task_id: str, attempt: int) -> SubWorktreeManager:
-        key = f"{task_id}.a{attempt}"
+    @staticmethod
+    def _worker_id(task_id: str, attempt: int, execution_id: Optional[str]) -> str:
+        """Centralized worker id: `TASK-N.a<attempt>[.<execution_uuid_hex>]` (spec §2 Execution lifecycle).
+
+        Passed to `SubWorktreeManager.create()`; its `_branch_suffix` replaces every
+        `.` with `-`, so this is also the single source of truth `_branch_for`/
+        `_path_for` derive from -- never hand-construct a branch/path string
+        separately (that duplication was the FEAT-559 regression this task's scope
+        calls out: "remove duplicated hard-coded branch construction from
+        dispatch/merge paths"). Execution-qualified so successive executions never
+        collide on the same branch/path even for the same task+attempt.
+        """
+        base = f"{task_id}.a{attempt}"
+        return f"{base}.{execution_id.replace('-', '')}" if execution_id else base
+
+    def _branch_for(self, ctx: _FeatureCtx, task_id: str, attempt: int, execution_id: Optional[str]) -> str:
+        """The exact branch `SubWorktreeManager.create()` produces for this worker id."""
+        return f"{ctx.feature_branch}--{SubWorktreeManager._branch_suffix(self._worker_id(task_id, attempt, execution_id))}"  # noqa: SLF001
+
+    def _path_for(self, ctx: _FeatureCtx, task_id: str, attempt: int, execution_id: Optional[str]) -> str:
+        """The exact sub-worktree path `SubWorktreeManager.create()` produces for this worker id."""
+        worker_id = self._worker_id(task_id, attempt, execution_id)
+        return str(
+            Path(self._base_path) / f"{ctx.feature_branch}--pool" / SubWorktreeManager._branch_suffix(worker_id)
+        )  # noqa: SLF001
+
+    def _manager_for(
+        self, ctx: _FeatureCtx, task_id: str, attempt: int, execution_id: Optional[str] = None
+    ) -> SubWorktreeManager:
+        key = self._worker_id(task_id, attempt, execution_id)
         if key not in self._managers:
             self._managers[key] = SubWorktreeManager(
                 base_worktree=ctx.worktree, feature_branch=ctx.feature_branch, worktree_base_path=self._base_path
             )
+            self._manager_execution[key] = execution_id or ""
         return self._managers[key]
 
-    async def prepare_native(self, feature: str, worktree: str, task_id: str) -> NativePrep:
-        """Sub-worktree for a `native` planned task (attempt 1); branch <feature_branch>--<TASK-NNN>-a1."""
+    async def prepare_native(
+        self, feature: str, worktree: str, task_id: str, execution_id: Optional[str] = None
+    ) -> NativePrep:
+        """Sub-worktree for a `native` planned task (attempt 1); branch <feature_branch>--<TASK-NNN>-a1[-<exechex>].
+
+        FEAT-559: when `execution_id` is given, the native seat's model identity is
+        admitted through the execution's pool BEFORE the worktree is created (so a
+        suspended/excluded native seat is rejected up front, not discovered later),
+        and a duplicate call for the same (execution, task) reuses the existing
+        reservation/attempt instead of admitting (and worktree-creating) twice.
+        """
         ctx = await self._resolve_feature(feature, worktree)
+        pool: Optional[ExecutionPool] = None
+        if execution_id is not None:
+            if execution_id not in self._executions:
+                raise CoderFailure("execution_not_found", f"no execution found with id {execution_id}")
+            pool = self._executions[execution_id]
+
         plan = await self._cached_plan(feature, worktree, ctx)
         planned = next((t for c in plan.chunks for t in c.tasks if t.task_id == task_id), None)
         if planned is None or not planned.native:
             raise CoderFailure("task_not_in_plan", f"{task_id} is not a native task of the current chunk plan")
-        path = await self._manager_for(ctx, task_id, 1).create(f"{task_id}.a1")
-        self._native_inflight.add(f"{task_id}.a1")
         seat = next(seat for seat in self.roster.seats if seat.label == planned.seat_label)
         model = seat.model or "haiku"
-        attempt_uid = uuid.uuid4().hex
+
+        if pool is not None:
+            reservation_key = (execution_id, task_id)
+            existing_uid = self._native_reservations.get(reservation_key)
+            if existing_uid is not None:
+                attempt_uid = existing_uid
+            else:
+                attempt_uid = await pool.admit(task_id, ModelKey(backend="native", model=model))
+                self._native_reservations[reservation_key] = attempt_uid
+        else:
+            attempt_uid = uuid.uuid4().hex
+
+        worker_id = self._worker_id(task_id, 1, execution_id)
+        manager = self._manager_for(ctx, task_id, 1, execution_id)
+        path = await manager.create(worker_id)
+        self._native_inflight.add(worker_id)
+        branch = self._branch_for(ctx, task_id, 1, execution_id)
         self._feedback_sources[attempt_uid] = (ctx.worktree, task_id, "native", model)
         feedback_context = await self._feedback_for(ctx, planned, "native", model)
         self._feedback_contexts[attempt_uid] = feedback_context
         return NativePrep(
             task_id=task_id,
             task_file=planned.task_file,
-            branch=f"{ctx.feature_branch}--{task_id}-a1",
+            branch=branch,
             worktree_path=path,
             seat_label=planned.seat_label,
             model=model,
             attempt_uid=attempt_uid,
             coder_feedback=feedback_context,
+            execution_id=execution_id or "",
         )
 
     async def suspend_model(
@@ -826,131 +900,104 @@ class SddCoderEngine:
         attempt_uid: str,
         reason: str,
         evidence_ref: str,
-    ) -> str:
-        """
-        Record a model suspension for the remainder of this execution.
+    ) -> SuspensionReceipt:
+        """Report a WORKER-observed failure for one of ITS OWN admitted attempts (spec §2 M3).
 
-        The target model is resolved from the attempt_uid by looking up the
-        corresponding attempt in the execution's admitted attempts. The caller
-        never names a model directly, so it cannot invent an arbitrary suspension
-        target.
+        The target model is resolved SERVER-SIDE from `attempt_uid` via the pool's own
+        admission record (`ExecutionPool._admitted`) -- the caller never names a model
+        directly, so it cannot invent or cross-execution an arbitrary suspension target.
+        Delegates all local-exclusion/generation/persistence mechanics to
+        `ExecutionPool.suspend()` (TASK-3276) rather than duplicating them here.
+
+        Constrained to valid worker-report sources (spec: "constrain worker reports to
+        valid native/critical-review sources"): a native attempt may report any reason;
+        an MCP attempt may only report `review_critical` (any other MCP failure is the
+        engine's own internal `_classify_and_suspend`, never a worker-initiated report).
 
         Args:
-            execution_id: The execution to suspend a model in.
-            attempt_uid: The attempt that failed.
-            reason: The reason for suspension (e.g., "timeout", "dispatch_error").
-            evidence_ref: A reference to evidence (commit, log, etc.).
-
-        Returns:
-            The suspension_id of the recorded suspension.
+            execution_id: The execution owning `attempt_uid`.
+            attempt_uid: The attempt that failed, as issued by `prepare_native`/`pool.admit`.
+            reason: One of `SuspensionReason`.
+            evidence_ref: A short reference (log path, commit sha), never a transcript.
 
         Raises:
             CoderFailure with codes:
                 - execution_not_found: unknown execution_id
-                - attempt_not_found: attempt_uid not in this execution
-                - invalid_arguments: reason not in SuspensionReason enum
+                - attempt_not_found: attempt_uid is not an admitted reservation in this execution
+                - invalid_arguments: reason is not a valid SuspensionReason, or an MCP attempt
+                  reported a reason other than review_critical
         """
         if execution_id not in self._executions:
             raise CoderFailure("execution_not_found", f"no execution found with id {execution_id}")
-
         pool = self._executions[execution_id]
-        view = pool.view()
 
-        # Check if the attempt is in this execution
-        snapshot = pool.snapshot()
-        if attempt_uid not in snapshot.admitted_attempts:
+        entry = pool._admitted.get(attempt_uid)  # noqa: SLF001 — engine already reaches into pool internals elsewhere
+        if entry is None:
             raise CoderFailure(
-                "attempt_not_found",
-                f"attempt {attempt_uid} is not in execution {execution_id}",
+                "attempt_not_found", f"attempt {attempt_uid} is not an admitted reservation in execution {execution_id}"
+            )
+        task_id, key = entry
+
+        if reason not in typing.get_args(SuspensionReason):
+            raise CoderFailure("invalid_arguments", f"unknown suspension reason {reason!r}")
+
+        is_native = key.backend == "native"
+        if not is_native and reason != "review_critical":
+            raise CoderFailure(
+                "invalid_arguments",
+                "an MCP attempt's suspension may only be worker-reported for reason='review_critical'; "
+                "other MCP failures are classified and suspended internally by the engine, never the worker",
             )
 
-        # Find the attempt record to get the model
-        attempt_record = None
-        for task_id, attempt_rec in snapshot.admitted_attempts.items():
-            if attempt_rec.attempt_uid == attempt_uid:
-                attempt_record = attempt_rec
-                break
-
-        if attempt_record is None:
-            raise CoderFailure(
-                "attempt_not_found",
-                f"attempt {attempt_uid} not found in execution {execution_id}",
-            )
-
-        # Resolve the model key
-        model_key = ModelKey(
-            backend=attempt_record.backend or "native",
-            model=attempt_record.model,
+        seat = next(
+            (
+                s
+                for s in self.roster.seats
+                if (s.backend if s.kind == "mcp" else "native") == key.backend
+                and (s.model if s.kind == "mcp" else (s.model or "haiku")) == key.model
+            ),
+            None,
         )
+        seat_label = seat.label if seat is not None else key.backend
 
-        # Check if the model is already suspended
-        if model_key in view.seats:
-            for seat in view.seats:
-                if seat.resolved_key == model_key:
-                    if seat.suspended:
-                        # Already suspended - return existing suspension_id
-                        # We need to find the suspension record
-                        for susp in pool._local_exclusions:
-                            if susp == model_key:
-                                # This is a local exclusion - we need to get the suspension_id
-                                # from the store
-                                # For now, return a placeholder - the actual suspension_id
-                                # will be returned by the store.record() call
-                                pass
-                        break
-
-        # Record the suspension
-        from parrot.knowledge.wiki.ledger.coder_suspensions import (
-            SuspensionReason,
-            SuspensionRecord,
-        )
-
-        reason_enum = SuspensionReason(reason)
-        suspension_record = SuspensionRecord(
-            schema_version=1,
+        now = datetime.now(timezone.utc)
+        record = SuspensionRecord(
             execution_id=execution_id,
             feature_id=pool.feature_id,
-            task_id=attempt_record.task_id,
+            task_id=task_id,
             attempt_uid=attempt_uid,
-            source="engine",
-            seat_label=attempt_record.seat_label,
-            backend=attempt_record.backend or "native",
-            configured_model=attempt_record.model,
-            resolved_model=attempt_record.model,
-            blocked_keys=[model_key],
-            reason=reason_enum,
-            occurred_at=datetime.now(timezone.utc),
-            expires_at=datetime.now(timezone.utc) + timedelta(seconds=1800),
-            duration_s=0,
-            exception_class_name="",
-            evidence_ref=evidence_ref,
+            source="worker_review" if reason == "review_critical" else "native_report",
+            seat_label=seat_label,
+            backend=key.backend,
+            configured_model=key.model,
+            blocked_keys=[key],
+            reason=reason,
+            occurred_at=now,
+            expires_at=now + timedelta(seconds=self.roster.suspension_policy.cooldown_seconds),
+            duration_s=0.0,
+            evidence_ref=(evidence_ref or "")[:300],
+            explanation=f"Worker-reported {reason} for {task_id} (attempt {attempt_uid}).",
         )
+        return await pool.suspend(record)
 
-        # Store the suspension
-        store = await asyncio.to_thread(CoderSuspensionStore.from_root, Path(pool.worktree_path))
-        receipt = await store.record(suspension_record)
+    async def record_feedback(
+        self, feature: str, worktree: str, feedback: CoderFeedback, execution_id: Optional[str] = None
+    ) -> CoderFeedbackReceipt:
+        """Persist a reviewed correction after checking its attempt/model attribution.
 
-        # Add to local exclusions
-        pool._local_exclusions.add(model_key)
-        pool._generation += 1
-
-        # Update seat view
-        for seat in view.seats:
-            if seat.resolved_key == model_key:
-                seat.suspended = True
-                seat.reason = f"suspended: {reason}"
-                break
-
-        return receipt.suspension_id
-
-    async def record_feedback(self, feature: str, worktree: str, feedback: CoderFeedback) -> CoderFeedbackReceipt:
-        """Persist a reviewed correction after checking its attempt/model attribution."""
+        FEAT-559: when `execution_id` is given, it is attached to `feedback` (rejecting
+        a caller-supplied `feedback.execution_id` that conflicts with it) before recording.
+        """
         ctx = await self._resolve_feature(feature, worktree)
         expected = (ctx.worktree, feedback.task_id, feedback.backend, feedback.model)
         if self._feedback_sources.get(feedback.attempt_uid) != expected:
             raise CoderFailure(
                 "invalid_arguments", "feedback must match a known attempt's task, backend and actual model"
             )
+        if execution_id is not None:
+            if feedback.execution_id and feedback.execution_id != execution_id:
+                raise CoderFailure("invalid_arguments", "feedback execution_id does not match the calling execution")
+            feedback = feedback.model_copy(update={"execution_id": execution_id})
         store = await asyncio.to_thread(CoderFeedbackStore.from_root, Path(ctx.worktree))
         return await store.record(feedback)
 
@@ -977,14 +1024,24 @@ class SddCoderEngine:
             )
             return "Feedback unavailable: retrieval failed; this is not evidence of a clean history."
 
-    async def record_review(self, feature: str, worktree: str, review: CoderReview) -> CoderFeedbackReceipt:
-        """Measure a reviewed delivery and validate its review-fix commits."""
+    async def record_review(
+        self, feature: str, worktree: str, review: CoderReview, execution_id: Optional[str] = None
+    ) -> CoderFeedbackReceipt:
+        """Measure a reviewed delivery and validate its review-fix commits.
+
+        FEAT-559: when `execution_id` is given, it is attached to `review` (rejecting a
+        caller-supplied `review.execution_id` that conflicts with it) before recording.
+        """
         ctx = await self._resolve_feature(feature, worktree)
         expected = (ctx.worktree, review.task_id, review.backend, review.model)
         if self._feedback_sources.get(review.attempt_uid) != expected:
             raise CoderFailure(
                 "invalid_arguments", "review must match a known attempt's task, backend and actual model"
             )
+        if execution_id is not None:
+            if review.execution_id and review.execution_id != execution_id:
+                raise CoderFailure("invalid_arguments", "review execution_id does not match the calling execution")
+            review = review.model_copy(update={"execution_id": execution_id})
         for sha in set(review.fix_commits):
             rc, subject, _err = await _git("show", "-s", "--format=%s", sha, cwd=ctx.worktree)
             ancestor_rc, _out, _err = await _git("merge-base", "--is-ancestor", sha, "HEAD", cwd=ctx.worktree)
@@ -1132,19 +1189,44 @@ class SddCoderEngine:
             )
         return TaskResult(task_id=task.task_id, outcome="merged", branch=branch, worktree_path=path, lint=lint_report)
 
-    async def merge(self, feature: str, worktree: str, task_id: str) -> TaskResult:
-        """Consolidate the task's LATEST attempt branch (native tasks; re-merge after Sonnet fixed a conflict)."""
+    @staticmethod
+    def _parse_worker_id(key: str) -> Tuple[str, int, str]:
+        """Parse a `_worker_id`-produced dict key: `(task_id, attempt, execution_hex_or_empty)`.
+
+        Dict keys use literal dots (`TASK-N.a<attempt>[.hex]`), unlike the sanitized
+        branch/path forms -- never `int()` a suffix that might carry a UUID hex
+        (Codebase Contract warning); this partitions on the FIRST `.a`, then the
+        first `.` in what remains, so a hex fragment can never be mistaken for
+        another `.a` boundary.
+        """
+        task_id, sep, rest = key.partition(".a")
+        if not sep:
+            return key, 0, ""
+        attempt_part, _, exec_hex = rest.partition(".")
+        return task_id, int(attempt_part), exec_hex
+
+    async def merge(self, feature: str, worktree: str, task_id: str, execution_id: Optional[str] = None) -> TaskResult:
+        """Consolidate the task's LATEST attempt branch (native tasks; re-merge after Sonnet fixed a conflict).
+
+        FEAT-559: when `execution_id` is given, only that execution's OWN managers
+        are considered -- never another execution's, nor the legacy/no-execution scope.
+        """
         ctx = await self._resolve_feature(feature, worktree)
+        scope = execution_id or ""
         attempts = sorted(
-            (int(key.rsplit(".a", 1)[1]) for key in self._managers if key.startswith(f"{task_id}.a")),
+            (
+                self._parse_worker_id(key)[1]
+                for key in self._managers
+                if self._manager_execution.get(key, "") == scope and self._parse_worker_id(key)[0] == task_id
+            ),
             reverse=True,
         )
         if not attempts:
             raise CoderFailure("branch_not_found", f"no known attempt worktree for {task_id}")
         attempt = attempts[0]
-        manager = self._manager_for(ctx, task_id, attempt)
-        branch = f"{ctx.feature_branch}--{task_id}-a{attempt}"
-        path = str(Path(self._base_path) / f"{ctx.feature_branch}--pool" / f"{task_id}-a{attempt}")
+        manager = self._manager_for(ctx, task_id, attempt, execution_id)
+        branch = self._branch_for(ctx, task_id, attempt, execution_id)
+        path = self._path_for(ctx, task_id, attempt, execution_id)
 
         sched = await self._scheduler_for(ctx)
         task_ref = next((t for t in sched.all_tasks() if t.id == task_id), None)
@@ -1157,7 +1239,18 @@ class SddCoderEngine:
         # The orchestrator calls `merge()` only after the native `Agent` returned, so
         # whatever the outcome the sub-worktree is no longer in use and `cleanup()` may
         # reclaim it (conflicts are still protected by `keep_conflicted`).
-        self._native_inflight.discard(f"{task_id}.a{attempt}")
+        self._native_inflight.discard(self._worker_id(task_id, attempt, execution_id))
+        # FEAT-559: this IS the settlement point (spec: "reporting and settlement [are]
+        # separate... native completion is acknowledged only after the worker has
+        # received the child result") -- release the pool's seat reservation now,
+        # regardless of merge outcome, so another task can use this model again.
+        # `.pop()` makes this idempotent across a conflict-then-re-merge call pair.
+        if execution_id is not None:
+            pool = self._executions.get(execution_id)
+            if pool is not None:
+                reservation_uid = self._native_reservations.pop((execution_id, task_id), None)
+                if reservation_uid is not None:
+                    await pool.release(reservation_uid)
 
         # Emit an outcome row for the re-merge, attributed to the SAME
         # attempt_uid the original (pre-repair) outcome used. `_consolidate`
@@ -1182,12 +1275,23 @@ class SddCoderEngine:
 
         return result
 
-    async def cleanup(self, feature: str, worktree: str, keep_conflicted: bool = True) -> CleanupReport:
-        """Remove finished sub-worktrees this engine created; never touches orphan branches it never adopted."""
+    async def cleanup(
+        self, feature: str, worktree: str, keep_conflicted: bool = True, execution_id: Optional[str] = None
+    ) -> CleanupReport:
+        """Remove finished sub-worktrees THIS execution created; never touches orphan branches it never adopted.
+
+        FEAT-559: when `execution_id` is given, only managers created under that
+        exact execution scope are enumerated -- another execution's (or the legacy/
+        no-execution scope's) managers, native reservations and jobs are untouched,
+        even if they belong to the same engine instance/worktree.
+        """
         await self._resolve_feature(feature, worktree)
+        scope = execution_id or ""
         removed: List[str] = []
         kept: List[str] = []
-        for key, manager in self._managers.items():
+        for key, manager in list(self._managers.items()):
+            if self._manager_execution.get(key, "") != scope:
+                continue  # a different execution's (or scope's) manager -- never enumerate it
             if key in self._native_inflight:
                 # A native coder may still be running in there — see `_native_inflight`.
                 kept.extend(branch for _path, branch in manager._created.values())  # noqa: SLF001
@@ -1198,6 +1302,26 @@ class SddCoderEngine:
             for worker_id, (_path, branch) in before.items():
                 (kept if worker_id in after else removed).append(branch)
         return CleanupReport(removed=removed, kept=kept)
+
+    _EXEC_HEX_BRANCH_SUFFIX = re.compile(r"-([0-9a-f]{32})$")
+
+    @classmethod
+    def _parse_orphan_suffix(cls, suffix: str) -> str:
+        """Recognize both legacy (`TASK-N-a<attempt>`) and execution-qualified
+        (`TASK-N-a<attempt>-<32 lowercase hex chars>`) branch suffixes, returning
+        just `task_id` (or "" if unparseable).
+
+        Strips a trailing 32-hex-char execution suffix FIRST (fixed length,
+        unambiguous) before splitting on the last "-a" -- once dashes replace the
+        worker id's dots (`_branch_suffix`), the hex fragment itself can contain
+        "-a"-shaped substrings (e.g. a hex starting with "a" right after "a1-"),
+        so a plain `rpartition("-a")` alone would mis-split an execution-qualified
+        name. Never auto-adopts either form -- this is parsing for reporting only.
+        """
+        match = cls._EXEC_HEX_BRANCH_SUFFIX.search(suffix)
+        core = suffix[: match.start()] if match else suffix
+        task_id, sep, _attempt = core.rpartition("-a")
+        return task_id if sep and task_id else ""
 
     async def _orphan_branches(self, ctx: _FeatureCtx) -> List[OrphanBranch]:
         rc, out, _err = await _git(
@@ -1211,9 +1335,9 @@ class SddCoderEngine:
         for branch in (b.strip() for b in out.splitlines() if b.strip()):
             if not branch.startswith(prefix):
                 continue
-            suffix = branch[len(prefix) :]  # e.g. "TASK-0001-a1"
-            task_id, sep, _attempt = suffix.rpartition("-a")
-            if not sep or not task_id:
+            suffix = branch[len(prefix) :]  # e.g. "TASK-0001-a1" or "TASK-0001-a1-<32 hex chars>"
+            task_id = self._parse_orphan_suffix(suffix)
+            if not task_id:
                 continue
             if task_id in live:
                 continue
@@ -1294,14 +1418,15 @@ class SddCoderEngine:
         returns immediately with a not_dispatched error without creating a worktree.
         """
         assert seat.backend is not None, "_run_attempt is only called for mcp seats; native tasks use prepare_native"
-        manager = self._manager_for(ctx, task.task_id, attempt)
-        branch = f"{ctx.feature_branch}--{task.task_id}-a{attempt}"
-        # Computed the same way `SubWorktreeManager.create()` derives it internally
-        # (`_branch_suffix` replaces "." with "-"), so `path`/`branch` are always
-        # defined even if `manager.create()` itself raises below — see the
-        # code-review fix note on the `try:` block having moved to cover
-        # worktree-creation and dispatcher-construction too.
-        path = str(Path(self._base_path) / f"{ctx.feature_branch}--pool" / f"{task.task_id}-a{attempt}")
+        manager = self._manager_for(ctx, task.task_id, attempt, execution_id)
+        # `_branch_for`/`_path_for` derive from the SAME `_worker_id` passed to
+        # `manager.create()` below (spec: "centralize derived names; remove
+        # duplicated hard-coded branch construction from dispatch/merge paths"),
+        # so `path`/`branch` are always defined even if `manager.create()` itself
+        # raises below — see the code-review fix note on the `try:` block having
+        # moved to cover worktree-creation and dispatcher-construction too.
+        branch = self._branch_for(ctx, task.task_id, attempt, execution_id)
+        path = self._path_for(ctx, task.task_id, attempt, execution_id)
         # A unique id per attempt: `attempt` restarts at 1 on every _run_task
         # invocation (line 592) and both attempts of a task share `job_id`, so
         # neither can key the telemetry join (spec §10 R3).
@@ -1388,7 +1513,7 @@ class SddCoderEngine:
             # with an EMPTY `attempts` list, bypassing the attempt-2-on-a-different-seat
             # retry ladder entirely. Moved inside so every failure mode becomes a proper
             # attempt error the ladder can act on.
-            await manager.create(f"{task.task_id}.a{attempt}")
+            await manager.create(self._worker_id(task.task_id, attempt, execution_id))
             dispatcher, profile = self._dispatcher_builder(
                 DevAgentSpec(agent=seat.backend, model=seat.model),
                 redis_url=self._redis_url,

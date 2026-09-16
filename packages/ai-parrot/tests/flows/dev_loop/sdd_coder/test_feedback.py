@@ -430,3 +430,59 @@ class TestExecutionAttribution:
         # Verify report includes it
         report = await reviews.report()
         assert report.rows[0].reviewed_attempts == 1
+
+
+async def test_review_and_feedback_coexist(git_sandbox_feature: tuple, noop_probe: object) -> None:
+    """A critical reviewed code defect produces both a suspension and a valid code lesson;
+    a timeout produces a suspension only -- it is never itself a fabricated code lesson (FEAT-559 TASK-3281)."""
+    from parrot.flows.dev_loop.sdd_coder.engine import SddCoderEngine
+    from parrot.flows.dev_loop.sdd_coder.models import RosterConfig, RosterSeat
+
+    worktree, _branch, base_path, _index = git_sandbox_feature
+    # Two distinct native models so suspending one (timeout) never blocks admitting the other.
+    roster = RosterConfig(
+        seats=[
+            RosterSeat(label="h1", kind="native", model="haiku"),
+            RosterSeat(label="h2", kind="native", model="haiku-b"),
+        ]
+    )
+    engine = SddCoderEngine(roster=roster, probe=noop_probe, worktree_base_path=str(base_path))
+    execution_id = "550e0000-0000-0000-0000-000000000061"
+    await engine.begin_execution("demo", str(worktree), execution_id)
+
+    # --- Timeout: suspension only, no code lesson.
+    prep1 = await engine.prepare_native("demo", str(worktree), "TASK-0001", execution_id)
+    receipt_timeout = await engine.suspend_model(execution_id, prep1.attempt_uid, "timeout", "log:timeout")
+    assert receipt_timeout.persisted is True
+
+    # --- A critical reviewed defect on a DIFFERENT (still-eligible) model: suspension AND a code lesson.
+    prep2 = await engine.prepare_native("demo", str(worktree), "TASK-0002", execution_id)
+    assert prep2.model != prep1.model  # distinct seats -- confirms the timeout above did not block this one
+    receipt_critical = await engine.suspend_model(execution_id, prep2.attempt_uid, "review_critical", "commit:abc123")
+    assert receipt_critical.persisted is True
+
+    feedback = CoderFeedback(
+        task_id="TASK-0002",
+        attempt_uid=prep2.attempt_uid,
+        backend="native",
+        model=prep2.model,
+        source="code_review",
+        pattern="fail-open-authorization",
+        files=["pkg/t2.py"],
+        defect="Exception handler allowed access when authorization failed.",
+        evidence="commit abc123, pkg/t2.py:authorize; failing exception-path test.",
+        correction="Reject the operation when authorization cannot be verified.",
+        verification="pytest test_auth.py::test_lookup_failure_denies: passed after fix.",
+    )
+    fb_receipt = await engine.record_feedback("demo", str(worktree), feedback, execution_id=execution_id)
+    assert fb_receipt.feedback_id.startswith("coder-feedback:")
+
+    # Both models are now suspended (one from the timeout report, one from the critical review) --
+    # but ONLY the critical-review incident also produced a code lesson.
+    pool = engine._executions[execution_id]
+    assert all(seat.suspended for seat in pool.view().seats)
+    store = CoderFeedbackStore.from_root(Path(worktree))
+    context_h2 = await store.context("native", prep2.model, ["pkg/t2.py"])
+    assert "fail-open-authorization" in context_h2
+    context_h1 = await store.context("native", prep1.model, ["pkg/t1.py"])
+    assert context_h1 == ""  # the timeout never fabricated a lesson for the OTHER model

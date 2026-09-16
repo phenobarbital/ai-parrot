@@ -526,3 +526,173 @@ async def test_open_makes_zero_probes_without_execution(git_sandbox_feature, exp
     # Should have probed
     assert len(engine.probe_results) > 0
     assert len(engine.seats) > 0
+
+
+# FEAT-559 TASK-3281: native/review/cleanup scoped to execution.
+
+
+async def _second_sandbox(base_path: Path) -> tuple[Path, str]:
+    """A second, independent feature worktree+branch, sibling to `git_sandbox_feature`'s
+    under the SAME `worktree_base_path` (so one engine instance can legitimately own
+    both -- `_resolve_feature`'s containment check requires it), for cross-execution
+    isolation tests that need two DIFFERENT canonical worktrees at once (spec: "Only
+    one active execution may own a canonical feature worktree" -- two executions on
+    the SAME worktree cannot coexist, so isolation across worktrees is what a
+    same-worktree scenario cannot demonstrate)."""
+    feature_branch = "feat-FEAT-777-demo2"
+    worktree = base_path / feature_branch
+    worktree.mkdir(parents=True)
+    await _git("init", "-b", "dev", cwd=worktree)
+    await _git("config", "user.email", "test@example.com", cwd=worktree)
+    await _git("config", "user.name", "Test", cwd=worktree)
+    await _write_and_commit(worktree, "README.md", "hello\n", "initial commit")
+    await _git("checkout", "-b", feature_branch, cwd=worktree)
+    index = {
+        "feature": "demo2",
+        "feature_id": "FEAT-777",
+        "spec": "sdd/specs/demo2.spec.md",
+        "type": "feature",
+        "base_branch": "dev",
+        "created_at": "2026-09-10T00:00:00+00:00",
+        "completed_at": None,
+        "tasks": [
+            {
+                "id": "TASK-9001",
+                "feature_id": "FEAT-777",
+                "feature": "demo2",
+                "status": "pending",
+                "depends_on": [],
+                "file": "sdd/tasks/active/TASK-9001-demo2.md",
+            }
+        ],
+    }
+    await _write_and_commit(worktree, "sdd/tasks/index/demo2.json", json.dumps(index, indent=2) + "\n", "add index")
+    body = (
+        "# TASK-9001: Demo\n\n## Files to Create / Modify\n\n"
+        "| File | Action | Description |\n|---|---|---|\n| `pkg/t9001.py` | CREATE | demo |\n"
+    )
+    await _write_and_commit(worktree, "sdd/tasks/active/TASK-9001-demo2.md", body, "add TASK-9001")
+    return worktree, feature_branch
+
+
+async def test_execution_qualified_attempt_branch_names(git_sandbox_feature, noop_probe):
+    """Two successive executions never collide on the same task's branch/path."""
+    worktree, feature_branch, base_path, _index_path = git_sandbox_feature
+    roster = RosterConfig(seats=[RosterSeat(label="h", kind="native")])
+    engine = SddCoderEngine(roster=roster, probe=noop_probe, worktree_base_path=str(base_path))
+
+    exec_a = "550e0000-0000-0000-0000-0000000000a1"
+    await engine.begin_execution("demo", str(worktree), exec_a)
+    prep_a = await engine.prepare_native("demo", str(worktree), "TASK-0001", exec_a)
+    await _write_and_commit(Path(prep_a.worktree_path), "pkg/t1.py", "# a\n", "implement a")
+    result_a = await engine.merge("demo", str(worktree), "TASK-0001", exec_a)
+    assert result_a.outcome == "merged"
+    await engine.cleanup("demo", str(worktree), execution_id=exec_a)
+    await engine.end_execution(exec_a)
+
+    exec_b = "550e0000-0000-0000-0000-0000000000b2"
+    await engine.begin_execution("demo", str(worktree), exec_b)
+    prep_b = await engine.prepare_native("demo", str(worktree), "TASK-0001", exec_b)
+
+    assert prep_a.branch != prep_b.branch
+    assert exec_a.replace("-", "") in prep_a.branch
+    assert exec_b.replace("-", "") in prep_b.branch
+    assert f"{feature_branch}--TASK-0001-a1-{exec_b.replace('-', '')}" == prep_b.branch
+    assert prep_a.worktree_path != prep_b.worktree_path
+    assert prep_a.execution_id == exec_a
+    assert prep_b.execution_id == exec_b
+
+
+async def test_native_report_is_attempt_bound(git_sandbox_feature, noop_probe):
+    """A report for an unknown/wrong-execution attempt changes no model pool and writes no event."""
+    worktree, _feature_branch, base_path, _index_path = git_sandbox_feature
+    roster = RosterConfig(seats=[RosterSeat(label="h", kind="native")])
+    engine = SddCoderEngine(roster=roster, probe=noop_probe, worktree_base_path=str(base_path))
+    execution_id = "550e0000-0000-0000-0000-000000000041"
+    await engine.begin_execution("demo", str(worktree), execution_id)
+
+    with pytest.raises(CoderFailure) as excinfo:
+        await engine.suspend_model(execution_id, "unknown-attempt-uid", "timeout", "evidence")
+    assert excinfo.value.code == "attempt_not_found"
+
+    with pytest.raises(CoderFailure) as excinfo2:
+        await engine.suspend_model("550e0000-0000-0000-0000-000000000099", "whatever", "timeout", "evidence")
+    assert excinfo2.value.code == "execution_not_found"
+
+    pool = engine._executions[execution_id]
+    assert all(not seat.suspended for seat in pool.view().seats)  # neither bogus report changed the pool
+
+    prep = await engine.prepare_native("demo", str(worktree), "TASK-0001", execution_id)
+    receipt = await engine.suspend_model(execution_id, prep.attempt_uid, "timeout", "log:evidence")
+    assert receipt.persisted is True
+    assert pool.view().seats[0].suspended is True
+
+
+async def test_suspension_does_not_settle_native(git_sandbox_feature, noop_probe):
+    """A suspended but live native agent still blocks cleanup/end; prepared work cannot be deleted under it."""
+    worktree, _feature_branch, base_path, _index_path = git_sandbox_feature
+    roster = RosterConfig(seats=[RosterSeat(label="h", kind="native")])
+    engine = SddCoderEngine(roster=roster, probe=noop_probe, worktree_base_path=str(base_path))
+    execution_id = "550e0000-0000-0000-0000-000000000051"
+    await engine.begin_execution("demo", str(worktree), execution_id)
+    prep = await engine.prepare_native("demo", str(worktree), "TASK-0001", execution_id)
+
+    await engine.suspend_model(execution_id, prep.attempt_uid, "timeout", "log:evidence")
+
+    # Still blocks cleanup (native_inflight) and end_execution (still admitted) --
+    # an error report ALONE is not settlement.
+    report = await engine.cleanup("demo", str(worktree), execution_id=execution_id)
+    assert prep.branch in report.kept
+    assert prep.branch not in report.removed
+    assert Path(prep.worktree_path).exists()
+
+    with pytest.raises(CoderFailure) as excinfo:
+        await engine.end_execution(execution_id)
+    assert excinfo.value.code == "execution_busy"
+
+    # Only explicit settlement (merge) releases it.
+    await _write_and_commit(Path(prep.worktree_path), "pkg/t1.py", "# t1\n", "implement TASK-0001")
+    result = await engine.merge("demo", str(worktree), "TASK-0001", execution_id)
+    assert result.outcome == "merged"
+
+    report = await engine.cleanup("demo", str(worktree), execution_id=execution_id)
+    assert prep.branch in report.removed
+
+    view = await engine.end_execution(execution_id)
+    assert view.status == "closed"
+
+
+async def test_cleanup_cannot_cross_execution(git_sandbox_feature, noop_probe, tmp_path):
+    """Separate worktrees on one engine; A's cleanup preserves B's branches, native reservations and jobs."""
+    worktree_a, _feature_branch_a, base_path, _index_path = git_sandbox_feature
+    worktree_b, _feature_branch_b = await _second_sandbox(base_path)
+
+    roster = RosterConfig(seats=[RosterSeat(label="h", kind="native")])
+    engine = SddCoderEngine(roster=roster, probe=noop_probe, worktree_base_path=str(base_path))
+
+    exec_a = "550e0000-0000-0000-0000-0000000000aa"
+    exec_b = "550e0000-0000-0000-0000-0000000000bb"
+    await engine.begin_execution("demo", str(worktree_a), exec_a)
+    await engine.begin_execution("demo2", str(worktree_b), exec_b)
+
+    prep_a = await engine.prepare_native("demo", str(worktree_a), "TASK-0001", exec_a)
+    prep_b = await engine.prepare_native("demo2", str(worktree_b), "TASK-9001", exec_b)
+
+    # Settle A fully (merge), so its manager becomes eligible for removal.
+    await _write_and_commit(Path(prep_a.worktree_path), "pkg/t1.py", "# a\n", "implement TASK-0001")
+    result_a = await engine.merge("demo", str(worktree_a), "TASK-0001", exec_a)
+    assert result_a.outcome == "merged"
+
+    report = await engine.cleanup("demo", str(worktree_a), execution_id=exec_a)
+    assert prep_a.branch in report.removed
+
+    # B's manager/native reservation/sub-worktree are completely untouched.
+    b_worker_id = engine._worker_id("TASK-9001", 1, exec_b)
+    assert b_worker_id in engine._managers
+    assert b_worker_id in engine._native_inflight
+    assert Path(prep_b.worktree_path).exists()
+
+    # B's own execution is unaffected and still busy (its native reservation is live).
+    with pytest.raises(CoderFailure) as excinfo:
+        await engine.end_execution(exec_b)
+    assert excinfo.value.code == "execution_busy"
