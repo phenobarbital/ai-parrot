@@ -248,14 +248,19 @@ Unknown tasks also require strong-model candidates until evidence is available.
 
 ### Model identity mapping
 
-The roster configuration specifies both canonical candidate names and their deployed
-identities:
+`complexity` is `SddCoderToolkit`'s own top-level kwarg (a sibling of `roster`,
+forwarded to `RosterConfig.complexity` / `ComplexityPolicy` — the toolkit has
+no separate `policy` kwarg). Field names follow
+`ComplexityPolicy.strong_models: Tuple[StrongModelIdentity, ...]`
+(`canonical_model`, `backend`, `model` — there is no `seat_label`); the actual
+seat a candidate dispatches through is decided by matching `(backend, model)`
+against the `roster` list, not by naming a seat directly:
 
 ```yaml
-policy:
-  strong_model_candidates:
-    - {model: gpt-5.6-terra, backend: codex, seat_label: gpt-5.6-terra}
-    - {model: sonnet-5, backend: native, seat_label: sonnet-5}
+complexity:
+  strong_models:
+    - {canonical_model: gpt-5.6-terra, backend: codex, model: gpt-5.6-terra}
+    - {canonical_model: sonnet-5, backend: native, model: sonnet-5}
 ```
 
 **Operator responsibility**: An operator may maintain a local identity mapping that

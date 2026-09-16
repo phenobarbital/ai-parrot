@@ -55,7 +55,16 @@ toolkits:
         - {label: gpt-5.6-terra, kind: mcp,  backend: codex,         model: gpt-5.6-terra}
         - {label: sonnet-5,    kind: native, model: sonnet-5}
         - {label: haiku,       kind: native, model: haiku}
-      policy:
-        strong_model_candidates:
-          - {model: gpt-5.6-terra, backend: codex, seat_label: gpt-5.6-terra}
-          - {model: sonnet-5, backend: native, seat_label: sonnet-5}
+      # FEAT-561 — strong-model allowlist for complex/unknown-classified tasks
+      # (spec §2 "Models and dispatch rules"). `complexity` is `SddCoderToolkit`'s
+      # own top-level kwarg (sibling of `roster`, forwarded to
+      # `RosterConfig.complexity`/`ComplexityPolicy`), NOT a nested `roster.policy`
+      # key — the toolkit has no `policy` kwarg at all. Field names must match
+      # `ComplexityPolicy.strong_models: Tuple[StrongModelIdentity, ...]`
+      # (`canonical_model`, `backend`, `model` — no `seat_label`); the seat a
+      # candidate actually dispatches through is decided by matching `(backend,
+      # model)` against the roster above, not by naming a seat directly.
+      complexity:
+        strong_models:
+          - {canonical_model: gpt-5.6-terra, backend: codex, model: gpt-5.6-terra}
+          - {canonical_model: sonnet-5, backend: native, model: sonnet-5}
