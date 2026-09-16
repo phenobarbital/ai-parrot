@@ -29,13 +29,15 @@ from parrot.handlers.models._encrypted_field import seal, unseal
 
 @pytest.fixture
 def vault_keys():
-    """Patch ``load_vault_keys`` to return a deterministic master key."""
-    master_key = os.urandom(32)
+    """Patch the vault key ring with a deterministic master key (FEAT-099)."""
+    from navigator_session.vault import KeyRing
+
+    keyring = KeyRing({1: os.urandom(32)}, 1)
     with patch(
-        "parrot.handlers.models._encrypted_field.load_vault_keys",
-        return_value=(1, master_key, {1: master_key}),
+        "parrot.handlers.models._encrypted_field.get_vault_keyring",
+        return_value=keyring,
     ):
-        yield
+        yield keyring
 
 
 # ---------------------------------------------------------------------------
@@ -78,20 +80,26 @@ class TestSealUnsealContext:
             unseal(blob, user_id=1, chatbot_id="b1", field="tools_config")
 
     def test_legacy_envelope_rejected(self, vault_keys):
-        """Ciphertext lacking the _ctx envelope must be rejected.
+        """A pre-FEAT-099 (v1) ciphertext must be rejected until it is migrated."""
+        from parrot.security.credentials_utils import encrypt_credential
 
-        Simulates a row encrypted under the pre-hardening scheme by
-        directly encrypting a raw list.
-        """
-        from parrot.handlers.credentials_utils import encrypt_credential
-        master_key = os.urandom(32)
-        with patch(
-            "parrot.handlers.models._encrypted_field.load_vault_keys",
-            return_value=(1, master_key, {1: master_key}),
-        ):
-            legacy = encrypt_credential({"__list__": [{"k": "v"}]}, 1, master_key)
-            with pytest.raises(ValueError, match="missing or unsupported"):
-                unseal(legacy, user_id=1, chatbot_id="b1", field="mcp_config")
+        # A v2 blob sealed with a *different* context stands in for any blob
+        # that does not belong here (legacy v1 blobs fail the same way).
+        from parrot.handlers.models._encrypted_field import user_bot_context
+
+        foreign = encrypt_credential(
+            {"v": [{"k": "v"}]}, user_bot_context(1, "b1", "tools_config"), vault_keys
+        )
+        with pytest.raises(ValueError, match="context mismatch"):
+            unseal(foreign, user_id=1, chatbot_id="b1", field="mcp_config")
+
+    def test_v1_blob_rejected(self, vault_keys):
+        """A legacy v1 ciphertext (no v2 header) is rejected, not silently opened."""
+        import base64
+
+        legacy = base64.b64encode(b"\x00\x01" + os.urandom(40)).decode()
+        with pytest.raises(ValueError, match="context mismatch"):
+            unseal(legacy, user_id=1, chatbot_id="b1", field="mcp_config")
 
 
 # ---------------------------------------------------------------------------

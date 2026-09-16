@@ -8,7 +8,6 @@ continue to work unchanged.
 from parrot.security.vault_utils import (  # noqa: F401
     VAULT_CRED_COLLECTION,
     get_vault_keyring,
-    load_vault_keys,
     reset_vault_keyring,
     store_vault_credential,
     retrieve_vault_credential,
@@ -18,7 +17,6 @@ from parrot.security.vault_utils import (  # noqa: F401
 
 __all__ = [
     "get_vault_keyring",
-    "load_vault_keys",
     "reset_vault_keyring",
     "store_vault_credential",
     "retrieve_vault_credential",

@@ -70,34 +70,6 @@ def get_vault_keyring() -> Any:
     return _KEYRING
 
 
-def load_vault_keys() -> tuple:
-    """DEPRECATED (FEAT-099): raw master keys for the legacy v1 helpers.
-
-    Only ``parrot.handlers.models._encrypted_field`` still needs raw keys; it
-    moves to the v2 envelope in TASK-081, after which this function is removed.
-    New code must use :func:`get_vault_keyring`.
-
-    Returns:
-        Tuple of ``(active_key_id, active_master_key, all_master_keys)``.
-
-    Raises:
-        RuntimeError: If navigator-session vault config is unavailable.
-    """
-    try:
-        from navigator_session.vault.config import (  # pylint: disable=import-outside-toplevel
-            get_active_key_id,
-            load_master_keys,
-        )
-    except ImportError as exc:  # pragma: no cover - navigator-session missing
-        raise RuntimeError(
-            "navigator_session.vault.config is not available. "
-            "Ensure navigator-session is installed."
-        ) from exc
-    master_keys = load_master_keys()
-    active_key_id = get_active_key_id()
-    return active_key_id, master_keys[active_key_id], master_keys
-
-
 def reset_vault_keyring() -> None:
     """Drop the cached key ring (tests, key reconfiguration)."""
     global _KEYRING  # pylint: disable=global-statement
