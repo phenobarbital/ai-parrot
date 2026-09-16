@@ -442,8 +442,6 @@ class SddCoderEngine:
                 - execution_closed: trying to resume a closed execution for new work
                 - suspension_history_unavailable: cannot read durable history (fallback_required)
         """
-        from datetime import datetime, timezone
-
         # Resolve feature context first (validates feature/worktree binding)
         ctx = await self._resolve_feature(feature, worktree)
         canonical_worktree = ctx.worktree
@@ -1547,7 +1545,7 @@ class SddCoderEngine:
                 # Atomic replace: rename temp over target
                 temp_file.replace(target_file)
                 return True
-            except (OSError, IOError) as exc:
+            except OSError as exc:  # IOError is an alias of OSError since Python 3.3
                 self.logger.warning("failed to write execution snapshot for %s: %s", execution_id, exc)
                 return False
 
