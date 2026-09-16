@@ -193,18 +193,18 @@ def _calculate_component_points(metric_name: str, evidence: MetricEvidence, poli
         # Hard limit reached, maximum points
         return 2
 
-    # Check bands
+    # Check bands: `policy.bands[metric_name]` is the (0, max) zero-points
+    # band from spec §2 (e.g. cyclomatic_max 0-10 scores 0). A value at or
+    # below that band's max is 0 points; above it (but below any hard
+    # limit, already handled above) is 1 point. 2 points is reserved for
+    # the policy-configured hard limit, matching the spec table's
+    # "inclusive bands" (e.g. cyclomatic_max: 0-10 -> 0, 11-20 -> 1,
+    # >=21 -> 2) -- this function must never return 2 via bands alone.
     if metric_name in policy.bands:
-        min_val, max_val = policy.bands[metric_name]
-        if value >= min_val:
-            if value <= max_val:
-                # In band, 1 point
-                return 1
-            else:
-                # Above band, 2 points
-                return 2
-        # Below minimum, 0 points
-        return 0
+        _min_val, max_val = policy.bands[metric_name]
+        if value <= max_val:
+            return 0
+        return 1
 
     # Unknown metric, 0 points
     return 0
@@ -278,9 +278,13 @@ def evaluate_complexity(evidence: ComplexityEvidence, policy: ComplexityPolicy) 
     hard_triggers = {"cyclomatic_max": 21, "blast_symbols": 30, "downstream_tasks": 5}
 
     for metric_name, threshold in hard_triggers.items():
+        # A `state == "unknown"` metric may still carry an observed lower
+        # bound (spec §2); if that bound already meets the hard limit, the
+        # task is provably complex even though the exact value is unknown.
+        # Only `not_applicable` (value always None) cannot trigger this.
         if (
             metric_name in evidence.metrics
-            and evidence.metrics[metric_name].state == "ok"
+            and evidence.metrics[metric_name].state in ("ok", "unknown")
             and evidence.metrics[metric_name].value is not None
             and evidence.metrics[metric_name].value >= threshold
         ):
