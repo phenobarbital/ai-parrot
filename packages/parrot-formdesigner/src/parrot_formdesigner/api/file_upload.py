@@ -52,7 +52,7 @@ from urllib.parse import quote, unquote
 
 from aiohttp import web
 
-from ..core.mime_match import mime_matches
+from ..core.mime_match import file_type_allowed
 
 from ..core.constraints import DEFAULT_MAX_INLINE_SIZE
 from ..core.file_envelope import UPLOAD_FIELD_TYPES, FileEnvelope, is_single_cardinality
@@ -325,10 +325,10 @@ async def _process_file_part(
     """
     content_type = part.headers.get("Content-Type", "application/octet-stream")
     filename = part.filename or "upload"
-    # `mime_matches`, not `content_type in allowed_mimes`: the Designer's
+    # `file_type_allowed`, not `content_type in allowed_mimes`: the Designer's
     # presets are wildcards (`image/*`), and an exact test rejects every real
     # file against one.
-    if not mime_matches(allowed_mimes, content_type, filename):
+    if not file_type_allowed(allowed_mimes, content_type, filename):
         raise web.HTTPUnsupportedMediaType(text=f"MIME type {content_type!r} is not allowed. Allowed: {allowed_mimes}")
 
     hasher = hashlib.sha256()
@@ -460,7 +460,7 @@ async def _handle_chunk(
         or "application/octet-stream"
     )
     filename = request.headers.get("X-Parrot-Upload-Filename", f"{field_id}-upload")
-    if not mime_matches(allowed_mimes, content_type, filename):
+    if not file_type_allowed(allowed_mimes, content_type, filename):
         raise web.HTTPUnsupportedMediaType(text=f"MIME type {content_type!r} is not allowed. Allowed: {allowed_mimes}")
     checksum_hex = hashlib.sha256(file_bytes).hexdigest()
 

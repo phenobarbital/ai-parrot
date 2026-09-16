@@ -324,6 +324,55 @@ async def test_upload_415_disallowed_mime(
 
 
 @pytest.mark.asyncio
+async def test_upload_accepts_a_photo_under_the_images_only_preset(
+    aiohttp_client,
+    mock_blob_storage: MagicMock,
+    mock_resolver: MagicMock,
+) -> None:
+    """A wildcard allow-list accepts a real file — the case the presets write.
+
+    Regression for the defect manual QA found on 2026-09-16: every gate tested
+    exact membership, so `image/jpeg` failed against `["image/*"]` and the two
+    presets an author is most likely to pick ("Images only", "Images or PDF")
+    refused every file with a 415. The existing 415 test above uses an exact
+    allow-list, so it passed throughout and caught nothing.
+    """
+    from parrot_formdesigner.core.schema import FieldConstraints
+
+    field = FormField(
+        field_id="photo",
+        field_type=FieldType.REST,
+        label={"en": "Photo"},
+        required=False,
+        constraints=FieldConstraints(allowed_mime_types=["image/*"]),
+        meta={"rest": {"mode": "callback", "callback_ref": "cb"}},
+    )
+    form = FormSchema(
+        form_id="demo-form",
+        title={"en": "Demo"},
+        sections=[FormSection(section_id="s1", fields=[field])],
+        tenant="navigator",
+    )
+
+    client = await _make_client(aiohttp_client, form, mock_blob_storage, mock_resolver)
+
+    data = FormData()
+    data.add_field(
+        "file",
+        io.BytesIO(b"\xff\xd8\xff\xe0 jpeg bytes"),
+        filename="photo.jpg",
+        content_type="image/jpeg",
+    )
+
+    resp = await client.post(
+        f"/api/v1/navigator/forms/{form.form_uid}/fields/{_field_uid(form, 'photo')}/upload",
+        data=data,
+    )
+    assert resp.status != 415, await resp.text()
+    assert resp.status == 200
+
+
+@pytest.mark.asyncio
 async def test_upload_delete_failure_appends_warning(
     aiohttp_client,
     form_with_rest: FormSchema,

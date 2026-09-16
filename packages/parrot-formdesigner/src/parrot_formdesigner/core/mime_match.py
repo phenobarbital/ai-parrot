@@ -15,13 +15,19 @@ about what the field accepts, and the one the author configured through the
 UI was the one that could never work.
 
 Kept as a module rather than a local helper for the same reason the frontend
-extracted its own: there are three call sites, and the last time each wrote
+extracted its own: there are several call sites, and the last time each wrote
 its own check they all wrote the same bug.
+
+The name mirrors the frontend's ``fileTypeAllowed``, whose semantics this
+shares — an empty allow-list means "no restriction" and returns ``True``. It is
+deliberately NOT called ``mimeMatches``/``mime_matches``: the TS function with
+that name returns ``False`` for an empty list, and a reader who assumed the two
+matched would get the empty case backwards.
 """
 
 from __future__ import annotations
 
-__all__ = ["mime_matches"]
+__all__ = ["file_type_allowed"]
 
 
 def _extension_of(file_name: str | None) -> str:
@@ -33,7 +39,7 @@ def _extension_of(file_name: str | None) -> str:
     return ext.lower() if "." in file_name else ""
 
 
-def mime_matches(
+def file_type_allowed(
     allowed_mime_types: list[str] | None,
     mime_type: str | None,
     file_name: str | None = None,
@@ -45,8 +51,10 @@ def mime_matches(
 
     * an exact type — ``image/png``
     * a wildcard — ``image/*``
-    * a bare extension — ``.heic``, for the types a browser reports with an
-      empty content type
+    * a bare extension — ``.heic``. Matched on the file NAME, whatever content
+      type came with it: the case it exists for is a browser that reports no
+      usable type, but an author who allows an extension is allowing that
+      format, so a file that also declares a real type is not refused for it.
 
     Args:
         allowed_mime_types: The configured patterns. ``None`` or empty means

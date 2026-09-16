@@ -16,6 +16,7 @@ from typing import Any, Callable
 from pydantic import BaseModel, Field
 from pydantic import ValidationError as PydanticValidationError
 
+from ..core.mime_match import file_type_allowed
 from ..core._location_data import is_valid_iso_country_code
 from ..core.constraints import ConditionOperator, DependencyOperation
 from ..core.schema import FormField, FormSchema, FormSection
@@ -465,7 +466,13 @@ class FormValidator:
                 # the {field_id}__mime side-channel is only needed for legacy
                 # string values, which have no MIME of their own.
                 mime = all_data.get(f"{field.field_id}__mime") if all_data else None
-                if mime and mime not in c.allowed_mime_types:
+                # `file_type_allowed`, not `mime not in [...]`: the Designer's
+                # presets are wildcards (`image/*`), and an exact test refuses
+                # every real file against one. The upload endpoints had the same
+                # defect (2026-09-16); this is the submit-time twin of it. No
+                # file name reaches here, so a bare-extension pattern simply
+                # does not match — as it did not before.
+                if mime and not file_type_allowed(c.allowed_mime_types, mime, None):
                     errors.append(f"{label} must be one of: {', '.join(c.allowed_mime_types)}")
 
         # Built-in type validation
