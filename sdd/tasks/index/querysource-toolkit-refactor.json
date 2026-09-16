@@ -71,7 +71,7 @@
       "feature_id": "FEAT-558",
       "feature": "querysource-toolkit-refactor",
       "spec": "sdd/specs/querysource-toolkit-refactor.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -81,9 +81,9 @@
       "parallel": true,
       "parallelism_notes": "Only touches catalog.py + conftest/test; independent of dialect/results.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3248-qs-slug-catalog-tenant-guard.md"
+      "started_at": "2026-09-16T23:59:38+00:00",
+      "completed_at": "2026-09-16T23:59:38+00:00",
+      "file": "sdd/tasks/completed/TASK-3248-qs-slug-catalog-tenant-guard.md"
     },
     {
       "id": "TASK-3249",
