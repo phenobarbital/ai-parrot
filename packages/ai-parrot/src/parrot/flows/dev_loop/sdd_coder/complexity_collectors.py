@@ -17,12 +17,13 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from parrot.flows.dev_loop.sdd_coder.complexity_models import (
+    ComplexityAssessment,
     ComplexityContract,
     ComplexityEvidence,
     ComplexityPolicy,
     MetricEvidence,
-    parse_complexity_contract,
 )
+from parrot.flows.dev_loop.sdd_coder.complexity import parse_complexity_contract
 
 logger = logging.getLogger(__name__)
 
@@ -607,18 +608,17 @@ async def _collect_scope_metrics(
         full_task_path = worktree / task_file
         task_content = full_task_path.read_text(encoding="utf-8")
 
-        # Count acceptance criteria checkboxes
-        # Look for checkboxes outside code fences
+        # Count acceptance criteria checkboxes, excluding fenced content.
+        # `re.split` on the fence pattern already *removes* every fenced
+        # block and returns only the non-fenced segments (unlike
+        # `re.finditer`, it never alternates fenced/non-fenced groups) --
+        # every returned part must be counted, not just even-indexed ones.
         criteria_count = 0
-
-        # Split by code fences to exclude fenced content
         parts = re.split(r"```.*?```", task_content, flags=re.DOTALL)
 
-        for i, part in enumerate(parts):
-            # Only count checkboxes in non-fenced parts (even indices)
-            if i % 2 == 0:
-                # Count unchecked [-] and checked [x] or [X] checkboxes
-                criteria_count += len(re.findall(r"^\s*[-*]\s+\[[xX\s-]\]\s+", part, re.MULTILINE))
+        for part in parts:
+            # Count unchecked [-] and checked [x] or [X] checkboxes
+            criteria_count += len(re.findall(r"^\s*[-*]\s+\[[xX\s-]\]\s+", part, re.MULTILINE))
 
         # Count file targets
         create_count = sum(1 for target in contract.targets if target.action == "CREATE")

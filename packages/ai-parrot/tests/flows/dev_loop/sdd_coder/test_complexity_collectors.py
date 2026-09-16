@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+import subprocess
 import tempfile
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from parrot.flows.dev_loop.sdd_coder.complexity_collectors import (
@@ -15,6 +17,22 @@ from parrot.flows.dev_loop.sdd_coder.complexity_collectors import (
     SubprocessResult,
 )
 from parrot.flows.dev_loop.sdd_coder.complexity_models import ComplexityPolicy
+
+
+def _init_git_repo(worktree: Path) -> None:
+    """Initialize a minimal git repo with one commit.
+
+    `_get_git_head_sha` runs a real (unmocked) `git rev-parse HEAD` against
+    `worktree`, matching production use where `collect_complexity` always
+    runs inside a real feature worktree. Test fixtures must provide that
+    same precondition rather than relying on `_run_subprocess` mocking,
+    which only covers Ruff/wiki collector calls.
+    """
+    subprocess.run(["git", "init", "-q"], cwd=worktree, check=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=worktree, check=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=worktree, check=True)
+    subprocess.run(["git", "add", "-A"], cwd=worktree, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "initial"], cwd=worktree, check=True)
 
 
 @pytest.fixture
@@ -73,6 +91,8 @@ class SampleClass:
         }
         index_file = worktree / "index.json"
         index_file.write_text(json.dumps(index_content))
+
+        _init_git_repo(worktree)
 
         yield worktree, task_file.relative_to(worktree), index_file.relative_to(worktree)
 
@@ -182,6 +202,8 @@ async def test_collect_complexity_no_python_files():
         index_file = worktree / "index.json"
         index_file.write_text(json.dumps(index_content))
 
+        _init_git_repo(worktree)
+
         policy = ComplexityPolicy()
 
         evidence = await collect_complexity(
@@ -228,6 +250,8 @@ async def test_collect_complexity_ruff_timeout():
         index_content = {"TASK-9012": {"id": "TASK-9012", "status": "pending", "depends_on": []}}
         index_file = worktree / "index.json"
         index_file.write_text(json.dumps(index_content))
+
+        _init_git_repo(worktree)
 
         policy = ComplexityPolicy()
 
@@ -279,6 +303,8 @@ async def test_validate_complexity_snapshot():
         index_content = {"TASK-1111": {"id": "TASK-1111", "status": "pending", "depends_on": []}}
         index_file = worktree / "index.json"
         index_file.write_text(json.dumps(index_content))
+
+        _init_git_repo(worktree)
 
         policy = ComplexityPolicy()
 
@@ -349,7 +375,7 @@ async def test_run_subprocess_timeout():
         # Mock process
         mock_proc = AsyncMock()
         mock_proc.communicate = AsyncMock(side_effect=asyncio.TimeoutError())
-        mock_proc.kill = AsyncMock()
+        mock_proc.kill = Mock()  # real asyncio.subprocess.Process.kill() is sync, not a coroutine
         mock_proc.wait = AsyncMock()
         mock_create.return_value = mock_proc
 
