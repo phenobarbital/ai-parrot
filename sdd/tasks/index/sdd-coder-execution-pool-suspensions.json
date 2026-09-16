@@ -215,7 +215,7 @@
       "feature_id": "FEAT-559",
       "feature": "sdd-coder-execution-pool-suspensions",
       "spec": "sdd/specs/sdd-coder-execution-pool-suspensions.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -225,8 +225,8 @@
       "parallelism_notes": "Depends on TASK-3283 actual MCP surface. Owns only prompt twins and operator docs; TASK-3285 waits to validate prompt/schema agreement against their final content.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3284-coder-worker-pool-lifecycle.md"
+      "completed_at": "2026-09-16T02:15:30+00:00",
+      "file": "sdd/tasks/completed/TASK-3284-coder-worker-pool-lifecycle.md"
     },
     {
       "id": "TASK-3285",
