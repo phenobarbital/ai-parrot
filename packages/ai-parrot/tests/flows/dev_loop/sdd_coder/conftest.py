@@ -1,19 +1,27 @@
-"""Shared fixtures for sdd_coder tests (FEAT-549).
+"""Shared fixtures for sdd_coder tests (FEAT-549, FEAT-559).
 
 `git_sandbox_feature` extends the `git_sandbox` pattern of
 `test_worktree_manager.py:36-52` with the SDD artifacts the engine reads:
 a per-spec index and a handful of TASK files under `sdd/tasks/active/`.
+
+FEAT-559 adds execution-pool fixtures with explicit model IDs, isolated
+suspension stores and fake clocks for deterministic testing.
 """
+
 from __future__ import annotations
 
 import asyncio
 import json
+from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional
+from unittest.mock import patch
 
 import pytest
 
 from parrot.flows.dev_loop.sdd_coder.models import RosterConfig, RosterSeat
 from parrot.flows.dev_loop.sdd_coder.roster import RosterProbe
+from parrot.knowledge.wiki.ledger.coder_suspensions import CoderSuspensionStore
 
 FEATURE_BRANCH = "feat-FEAT-549-demo"
 FEATURE_ID = "FEAT-549"
@@ -123,3 +131,56 @@ def three_seat_roster() -> RosterConfig:
 @pytest.fixture
 def noop_probe() -> RosterProbe:
     return RosterProbe(config_getter=lambda k, fallback=None: "x", which=lambda b: "/usr/bin/" + b, smoke=None)
+
+
+# FEAT-559 fixtures for execution lifecycle testing
+
+
+@pytest.fixture
+def explicit_model_roster() -> RosterConfig:
+    """Roster with explicit, deterministic model IDs for testing.
+
+    Uses 'model-a', 'model-b', 'model-c' instead of empty models,
+    so exclusion matching works reliably in tests.
+    """
+    return RosterConfig(
+        seats=[
+            RosterSeat(label="a", backend="nova", model="model-a"),
+            RosterSeat(label="b", backend="google-compat", model="model-b"),
+            RosterSeat(label="c", backend="codex", model="model-c"),
+        ]
+    )
+
+
+@pytest.fixture
+def fake_utc_clock():
+    """Fake UTC clock for deterministic time-based tests.
+
+    Returns a function that returns a fixed datetime, and a way to
+    advance the clock for testing expiry behavior.
+    """
+    current_time = datetime(2026, 9, 16, 12, 0, 0, tzinfo=timezone.utc)
+
+    def _now() -> datetime:
+        return current_time
+
+    def _advance(seconds: int) -> None:
+        nonlocal current_time
+        current_time = datetime.fromtimestamp(current_time.timestamp() + seconds, tzinfo=timezone.utc)
+
+    # Patch datetime in the suspensions module
+    with patch("parrot.knowledge.wiki.ledger.coder_suspensions.datetime") as mock_dt:
+        mock_dt.now.return_value = current_time
+        mock_dt.side_effect = lambda *args, **kwargs: datetime(*args, **kwargs)
+        yield _now, _advance
+
+
+@pytest.fixture
+async def isolated_suspension_store(tmp_path) -> CoderSuspensionStore:
+    """Isolated suspension store with no pre-existing history.
+
+    Creates a fresh temporary directory for the ledger, ensuring
+    tests don't inherit any real suspension history.
+    """
+    store = CoderSuspensionStore.from_root(tmp_path)
+    return store

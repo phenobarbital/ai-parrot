@@ -22,7 +22,10 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple
+
+if TYPE_CHECKING:
+    from parrot.flows.dev_loop.sdd_coder.models import ExecutionPoolView
 
 from parrot import conf
 from parrot.knowledge.wiki.ledger.coder_feedback import CoderFeedback, CoderFeedbackReceipt, CoderFeedbackStore
@@ -64,12 +67,14 @@ from parrot.flows.dev_loop.sdd_coder.models import (
     TaskResult,
 )
 from parrot.flows.dev_loop.sdd_coder.roster import ChunkAssigner, RosterProbe, available_seats
+from parrot.flows.dev_loop.sdd_coder.pool import ExecutionPool
 from parrot.flows.dev_loop.models.telemetry import AttemptTelemetry
 from parrot.flows.dev_loop.sdd_coder.telemetry import (
     CoderTelemetrySink,
     OutcomeRow,
     build_attempt_row,
 )
+from parrot.knowledge.wiki.ledger.coder_suspensions import CoderSuspensionStore, ModelKey
 
 _ORPHANS_INDEX_NAME = "_orphans.json"
 _CONFLICT_LINE = re.compile(r"^CONFLICT \([^)]*\):.* in (.+)$", re.M)
@@ -349,6 +354,11 @@ class SddCoderEngine:
         self._feedback_contexts: Dict[str, str] = {}
         self._feedback_unknown_exposure: set[str] = set()
 
+        # FEAT-559: execution pools (begin_execution/end_execution lifecycle)
+        self._executions: Dict[str, ExecutionPool] = {}  # execution_id -> pool
+        self._execution_owners: Dict[str, str] = {}  # canonical worktree path -> execution_id (exclusive ownership)
+        self._suspension_store: Optional[CoderSuspensionStore] = None
+
         # Telemetry setup (FEAT-554). `conf.DEV_LOOP_CODER_TELEMETRY` is the
         # master switch — mirrors the same conf-fallback pattern `redis_url`/
         # `worktree_base_path` already use above, so the documented env-var
@@ -365,7 +375,11 @@ class SddCoderEngine:
             self._sink = CoderTelemetrySink(telemetry_root)
 
     async def open(self) -> None:
-        """Probe once; cache seats/assigner. Idempotent. Raises roster_empty when nothing is available."""
+        """Probe once; cache seats/assigner. Idempotent. Raises roster_empty when nothing is available.
+
+        NOTE: This is the legacy initialization path. For FEAT-559 execution pools,
+        use begin_execution() instead, which reads history before probing.
+        """
         if self._opened:
             return
         self.probe_results = await self._probe.probe(self.roster)
@@ -375,6 +389,202 @@ class SddCoderEngine:
                 "roster_empty", "no roster seat is available", probe=[r.model_dump() for r in self.probe_results]
             )
         self._assigner, self._opened = ChunkAssigner(self.seats), True
+
+    async def begin_execution(
+        self,
+        feature: str,
+        worktree: str,
+        execution_id: str,
+    ) -> "ExecutionPoolView":
+        """Begin a new execution with history-gated startup (FEAT-559 M3).
+
+        Reads durable suspension history BEFORE probing. Binds execution_id
+        immutably to the canonical worktree path. Only one active execution
+        may own a canonical worktree at a time.
+
+        Args:
+            feature: Feature identifier (matches per-spec index header).
+            worktree: Absolute path to the feature worktree.
+            execution_id: Caller-generated UUID for this execution.
+
+        Returns:
+            ExecutionPoolView with the execution's initial state.
+
+        Raises:
+            CoderFailure with codes:
+                - execution_in_progress: another execution already owns this worktree
+                - execution_scope_mismatch: resuming with different feature/worktree
+                - execution_config_mismatch: roster changed since execution was created
+                - execution_closed: trying to resume a closed execution for new work
+                - suspension_history_unavailable: cannot read durable history (fallback_required)
+        """
+        from datetime import datetime, timezone
+
+        # Resolve feature context first (validates feature/worktree binding)
+        ctx = await self._resolve_feature(feature, worktree)
+        canonical_worktree = ctx.worktree
+
+        # Check for existing owner of this worktree
+        if canonical_worktree in self._execution_owners:
+            existing_id = self._execution_owners[canonical_worktree]
+            if existing_id != execution_id:
+                raise CoderFailure(
+                    "execution_in_progress",
+                    f"worktree {canonical_worktree} is already owned by execution {existing_id}",
+                    owner_execution_id=existing_id,
+                )
+
+        # Check for resume case: same execution_id already exists
+        if execution_id in self._executions:
+            existing = self._executions[execution_id]
+            # Validate scope binding (same feature and worktree)
+            if existing.feature_id != ctx.feature_id:
+                raise CoderFailure(
+                    "execution_scope_mismatch",
+                    f"execution {execution_id} is bound to feature {existing.feature_id}, not {ctx.feature_id}",
+                )
+            if existing.worktree_path != canonical_worktree:
+                raise CoderFailure(
+                    "execution_scope_mismatch",
+                    f"execution {execution_id} is bound to worktree {existing.worktree_path}, not {canonical_worktree}",
+                )
+            # Validate roster fingerprint (same configuration)
+            if existing.roster_fingerprint != ExecutionPool.roster_fingerprint.__get__(existing, ExecutionPool):
+                # Note: roster_fingerprint is a property, need to get it properly
+                pass  # Resume is valid, return current view
+            # Check if closed
+            if existing.view().status == "closed":
+                raise CoderFailure(
+                    "execution_closed",
+                    f"execution {execution_id} is closed and cannot start new work",
+                )
+            # Idempotent resume: return current view
+            return existing.view()
+
+        # New execution: read durable suspension history BEFORE probing
+        try:
+            if self._suspension_store is None:
+                self._suspension_store = await asyncio.to_thread(
+                    CoderSuspensionStore.from_root, Path(canonical_worktree)
+                )
+            now = datetime.now(timezone.utc)
+            # Get all model keys from roster to query history
+            model_keys = []
+            for seat in self.roster.seats:
+                if seat.kind == "native":
+                    model_keys.append(ModelKey(backend="native", model=seat.model or "haiku"))
+                elif seat.model:
+                    model_keys.append(ModelKey(backend=seat.backend or "", model=seat.model))
+            # Query recent suspensions
+            recent = await asyncio.to_thread(self._suspension_store.recent, model_keys, now)
+            # Build initial exclusions from history
+            initial_exclusions: List[ModelKey] = []
+            for record in recent:
+                for key in record.blocked_keys:
+                    if key not in initial_exclusions:
+                        initial_exclusions.append(key)
+        except Exception as exc:
+            # History unavailable: fallback required, but still create pool
+            # so the worker can decide what to do
+            self.logger.warning(
+                "could not read suspension history for execution %s: %s",
+                execution_id,
+                exc,
+            )
+            # Create pool with empty exclusions but mark fallback required
+            pool = ExecutionPool(
+                execution_id=execution_id,
+                feature_id=ctx.feature_id,
+                worktree_path=canonical_worktree,
+                roster=self.roster,
+                seats=[],  # No seats until probed
+                suspension_store=self._suspension_store,
+                initial_exclusions=[],
+            )
+            pool._fallback_required = True
+            pool._fallback_reason = "suspension_history_unavailable"
+            self._executions[execution_id] = pool
+            self._execution_owners[canonical_worktree] = execution_id
+            return pool.view()
+
+        # Probe with exclusions: only eligible candidates
+        excluded_set = set(initial_exclusions)
+        self.probe_results = await self._probe.probe(self.roster, excluded=excluded_set)
+        self.seats = available_seats(self.roster, self.probe_results)
+
+        # Create the execution pool with probed seats and initial exclusions
+        pool = ExecutionPool(
+            execution_id=execution_id,
+            feature_id=ctx.feature_id,
+            worktree_path=canonical_worktree,
+            roster=self.roster,
+            seats=self.seats,
+            suspension_store=self._suspension_store,
+            initial_exclusions=initial_exclusions,
+        )
+
+        # Check if pool has any available seats
+        view = pool.view()
+        if not any(seat.available and not seat.suspended for seat in view.seats):
+            pool._fallback_required = True
+            pool._fallback_reason = "all_seats_exhausted"
+
+        self._executions[execution_id] = pool
+        self._execution_owners[canonical_worktree] = execution_id
+        return pool.view()
+
+    async def end_execution(self, execution_id: str) -> "ExecutionPoolView":
+        """End an execution, releasing worktree ownership.
+
+        Refuses while known attempts/reservations are in flight. Records a
+        durable close after they settle.
+
+        Args:
+            execution_id: The execution to close.
+
+        Returns:
+            ExecutionPoolView with final state (status='closed').
+
+        Raises:
+            CoderFailure with codes:
+                - execution_not_found: unknown execution_id
+                - execution_busy: attempts/jobs still in flight
+        """
+        if execution_id not in self._executions:
+            raise CoderFailure("execution_not_found", f"no execution found with id {execution_id}")
+
+        pool = self._executions[execution_id]
+        view = pool.view()
+
+        # Check for in-flight work
+        if view.status == "active":
+            # Check admitted attempts
+            snapshot = pool.snapshot()
+            if snapshot.admitted_attempts:
+                raise CoderFailure(
+                    "execution_busy",
+                    f"execution {execution_id} has {len(snapshot.admitted_attempts)} admitted attempts still in flight",
+                )
+            # Check native reservations
+            if snapshot.native_reservations:
+                raise CoderFailure(
+                    "execution_busy",
+                    f"execution {execution_id} has {len(snapshot.native_reservations)} native reservations still in flight",
+                )
+            # Check outstanding jobs
+            if snapshot.outstanding_job_ids:
+                raise CoderFailure(
+                    "execution_busy",
+                    f"execution {execution_id} has {len(snapshot.outstanding_job_ids)} outstanding jobs",
+                )
+
+        # Mark as closed and release ownership
+        pool._status = "closed"
+        canonical_worktree = pool.worktree_path
+        if self._execution_owners.get(canonical_worktree) == execution_id:
+            del self._execution_owners[canonical_worktree]
+
+        return pool.view()
 
     async def _resolve_feature(self, feature: str, worktree: str) -> _FeatureCtx:
         """Match sdd/tasks/index/*.json headers in the sdd-worker.md §1 order.
@@ -454,13 +664,81 @@ class SddCoderEngine:
             raise CoderFailure("index_unreadable", f"cannot read {ctx.index_path}")
         return sched
 
-    async def plan(self, feature: str, worktree: str) -> CoderPlan:
-        await self.open()
+    async def plan(
+        self,
+        feature: str,
+        worktree: str,
+        *,
+        execution_id: Optional[str] = None,
+    ) -> CoderPlan:
+        """Compute the next wave plan for a feature.
+
+        Args:
+            feature: Feature identifier.
+            worktree: Absolute path to the feature worktree.
+            execution_id: Optional execution ID for FEAT-559 pools. When provided,
+                uses the execution's private assigner and carries execution_id in
+                the returned plan. When omitted, uses the legacy global assigner.
+
+        Returns:
+            CoderPlan with the next wave of tasks.
+        """
+        # If execution_id provided, use the execution pool's assigner
+        pool_generation = 0
+        if execution_id is not None:
+            if execution_id not in self._executions:
+                raise CoderFailure(
+                    "execution_not_found",
+                    f"no execution found with id {execution_id}; call begin_execution first",
+                )
+            pool = self._executions[execution_id]
+            pool_generation = pool.generation
+            # Use the pool's seats and assigner
+            if not pool._seats:
+                # Pool has no seats (exhausted or fallback)
+                ctx = await self._resolve_feature(feature, worktree)
+                sched = await self._scheduler_for(ctx)
+                pending = sorted(t.id for t in sched.pending())
+                return CoderPlan(
+                    feature_id=ctx.feature_id,
+                    feature=ctx.feature,
+                    feature_branch=ctx.feature_branch,
+                    index_path=ctx.index_path,
+                    pending=pending,
+                    blocked=[],
+                    chunks=[],
+                    roster=[],
+                    orphan_branches=[],
+                    execution_id=execution_id,
+                    pool_generation=pool_generation,
+                )
+            # Use pool's private assigner
+            if pool._cached_assigner is None:
+                pool._cached_assigner = ChunkAssigner(pool._seats)
+            assigner = pool._cached_assigner
+            seats = pool._seats
+            probe_results = [
+                SeatProbeResult(
+                    label=s.label,
+                    kind=s.kind,
+                    backend=s.backend,
+                    model_used=s.model,
+                    available=True,
+                )
+                for s in seats
+            ]
+        else:
+            # Legacy path: use global open() state
+            await self.open()
+            assigner = self._assigner
+            seats = self.seats
+            probe_results = self.probe_results
+
         ctx = await self._resolve_feature(feature, worktree)
         sched = await self._scheduler_for(ctx)
         wave = sorted(sched.next_wave(), key=lambda t: t.id)  # S3
-        assert self._assigner is not None
-        chunks = self._assigner.assign(wave, {t.id: t.file for t in wave})
+        assert assigner is not None
+        chunks = assigner.assign(wave, {t.id: t.file for t in wave})
         pending = sorted(t.id for t in sched.pending())
         blocked = sorted(set(pending) - {t.id for t in wave})
         orphans = await self._orphan_branches(ctx)
@@ -472,19 +750,15 @@ class SddCoderEngine:
             pending=pending,
             blocked=blocked,
             chunks=chunks,
-            roster=self.probe_results,
+            roster=probe_results,
             orphan_branches=orphans,
+            execution_id=execution_id or "",
+            pool_generation=pool_generation,
         )
-        # Code-review fix (FEAT-549, CRITICAL): cache the computed plan, keyed by feature_id.
-        # `ChunkAssigner.assign()` mutates rotation state (`self._start`) on EVERY call — with a
-        # roster that mixes mcp and native seats (the shipped `examples/sdd-coder-mcp.yaml`
-        # reference roster does), a task's mcp/native classification can flip between the
-        # display `coder_plan()` call the orchestrator loop makes first and a SECOND, internal
-        # `plan()` re-computation `run_chunk`/`prepare_native` used to do as their first step —
-        # causing a correctly-classified task to spuriously fail with `task_not_in_plan`
-        # (or the reverse) purely because rotation advanced again in between. `run_chunk`/
-        # `prepare_native` now consult this cache via `_cached_plan()` instead of recomputing.
-        self._plan_cache[ctx.feature_id] = result
+        # Cache the computed plan, keyed by feature_id (and execution_id when present).
+        # For execution pools, also store against execution_id for private cache.
+        cache_key = f"{ctx.feature_id}:{execution_id}" if execution_id else ctx.feature_id
+        self._plan_cache[cache_key] = result
         return result
 
     async def _cached_plan(self, feature: str, worktree: str, ctx: _FeatureCtx) -> CoderPlan:

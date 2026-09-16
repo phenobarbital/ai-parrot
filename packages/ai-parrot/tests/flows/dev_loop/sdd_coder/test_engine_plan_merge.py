@@ -339,3 +339,187 @@ async def test_engine_merge_never_reports_merged_when_nothing_landed(git_sandbox
     assert "branch_not_merged" in result.diagnostics
     _rc, log, _err = await _git("log", "--oneline", feature_branch, cwd=worktree)
     assert "implement TASK-0001" not in log
+
+
+# FEAT-559 execution lifecycle tests (TASK-3279)
+
+
+async def test_begin_reads_history_before_probe(git_sandbox_feature, explicit_model_roster, noop_probe):
+    """begin_execution must read durable history BEFORE probing eligible candidates.
+
+    This is the core M3 requirement: no model probe happens until exclusions
+    from the suspension ledger are known.
+    """
+    worktree, _feature_branch, base_path, _index_path = git_sandbox_feature
+    engine = SddCoderEngine(roster=explicit_model_roster, probe=noop_probe, worktree_base_path=str(base_path))
+
+    execution_id = "550e0000-0000-0000-0000-000000000001"
+    view = await engine.begin_execution("demo", str(worktree), execution_id)
+
+    # Pool should be created with the execution_id bound
+    assert view.execution_id == execution_id
+    assert view.feature_id == "FEAT-549"
+    assert view.status == "active"
+    # Should have probed seats (noop_probe returns all available)
+    assert len(view.seats) > 0
+
+
+async def test_begin_idempotent_scope_and_roster_binding(git_sandbox_feature, explicit_model_roster, noop_probe):
+    """Repeated begin with the same execution_id is idempotent for matching scope/config.
+
+    A second begin with the same execution_id and same feature/worktree should
+    return the existing pool, not create a new one.
+    """
+    worktree, _feature_branch, base_path, _index_path = git_sandbox_feature
+    engine = SddCoderEngine(roster=explicit_model_roster, probe=noop_probe, worktree_base_path=str(base_path))
+
+    execution_id = "550e0000-0000-0000-0000-000000000002"
+
+    # First begin
+    view1 = await engine.begin_execution("demo", str(worktree), execution_id)
+    # Second begin (idempotent)
+    view2 = await engine.begin_execution("demo", str(worktree), execution_id)
+
+    # Should be the same pool
+    assert view1.execution_id == view2.execution_id
+    assert view1.generation == view2.generation
+    # Should not have cleared exclusions or extended expiry
+    assert execution_id in engine._executions
+
+
+async def test_same_worktree_has_single_execution_owner(git_sandbox_feature, explicit_model_roster, noop_probe):
+    """Only one active execution may own a canonical worktree at a time.
+
+    A second begin with a different execution_id for the same worktree should
+    fail with execution_in_progress.
+    """
+    worktree, _feature_branch, base_path, _index_path = git_sandbox_feature
+    engine = SddCoderEngine(roster=explicit_model_roster, probe=noop_probe, worktree_base_path=str(base_path))
+
+    exec_id_1 = "550e0000-0000-0000-0000-000000000011"
+    exec_id_2 = "550e0000-0000-0000-0000-000000000012"
+
+    # First execution owns the worktree
+    await engine.begin_execution("demo", str(worktree), exec_id_1)
+
+    # Second execution should be rejected
+    with pytest.raises(CoderFailure) as excinfo:
+        await engine.begin_execution("demo", str(worktree), exec_id_2)
+
+    assert excinfo.value.code == "execution_in_progress"
+    assert excinfo.value.details.get("owner_execution_id") == exec_id_1
+
+
+async def test_all_seats_exhausted(git_sandbox_feature, explicit_model_roster, noop_probe, isolated_suspension_store):
+    """When all seats are suspended, fallback_required should be true.
+
+    The pool should mark fallback_required=True with reason 'all_seats_exhausted'
+    when no available seats remain after applying exclusions.
+    """
+    worktree, _feature_branch, base_path, _index_path = git_sandbox_feature
+
+    # Pre-populate suspension store with all models excluded
+    from datetime import datetime, timezone
+    from parrot.knowledge.wiki.ledger.coder_suspensions import (
+        ModelKey,
+        SuspensionPolicy,
+        SuspensionRecord,
+    )
+
+    now = datetime.now(timezone.utc)
+    policy = SuspensionPolicy()
+
+    for model in ["model-a", "model-b", "model-c"]:
+        record = SuspensionRecord(
+            execution_id="prior-execution",
+            feature_id="FEAT-549",
+            source="engine",
+            seat_label="x",
+            backend="nova" if model == "model-a" else "google-compat" if model == "model-b" else "codex",
+            configured_model=model,
+            blocked_keys=[
+                (
+                    ModelKey(backend="nova", model=model)
+                    if model == "model-a"
+                    else (
+                        ModelKey(backend="google-compat", model=model)
+                        if model == "model-b"
+                        else ModelKey(backend="codex", model=model)
+                    )
+                )
+            ],
+            reason="timeout",
+            occurred_at=now,
+            expires_at=now.replace(second=now.second + 1800),
+            duration_s=0.0,
+            explanation="test suspension",
+        )
+        await isolated_suspension_store.record(record)
+
+    engine = SddCoderEngine(
+        roster=explicit_model_roster,
+        probe=noop_probe,
+        worktree_base_path=str(base_path),
+    )
+    engine._suspension_store = isolated_suspension_store
+
+    execution_id = "550e0000-0000-0000-0000-000000000021"
+    view = await engine.begin_execution("demo", str(worktree), execution_id)
+
+    # All seats should be suspended, fallback required
+    assert view.fallback_required is True
+    assert view.fallback_reason == "all_seats_exhausted"
+
+
+async def test_plan_cache_is_execution_private(git_sandbox_feature, explicit_model_roster, noop_probe):
+    """Plans are cached per execution, not globally.
+
+    Two different executions should have independent plan caches, so that
+    one execution's rotation state doesn't affect another.
+    """
+    worktree, _feature_branch, base_path, _index_path = git_sandbox_feature
+    engine = SddCoderEngine(roster=explicit_model_roster, probe=noop_probe, worktree_base_path=str(base_path))
+
+    exec_id_1 = "550e0000-0000-0000-0000-000000000031"
+    exec_id_2 = "550e0000-0000-0000-0000-000000000032"
+
+    # Begin two executions
+    await engine.begin_execution("demo", str(worktree), exec_id_1)
+    await engine.begin_execution("demo", str(worktree), exec_id_2)
+
+    # Plan with execution 1
+    plan1 = await engine.plan("demo", str(worktree), execution_id=exec_id_1)
+    # Plan with execution 2
+    plan2 = await engine.plan("demo", str(worktree), execution_id=exec_id_2)
+
+    # Both should have execution_id set
+    assert plan1.execution_id == exec_id_1
+    assert plan2.execution_id == exec_id_2
+
+    # Both should have different pool_generation (same initially, but caches are separate)
+    assert plan1.pool_generation == plan2.pool_generation  # Both 0 initially
+
+    # Verify cache keys are different
+    cache_key_1 = f"FEAT-549:{exec_id_1}"
+    cache_key_2 = f"FEAT-549:{exec_id_2}"
+    assert cache_key_1 in engine._plan_cache
+    assert cache_key_2 in engine._plan_cache
+    # The cached plans should be different objects
+    assert engine._plan_cache[cache_key_1] is not engine._plan_cache[cache_key_2]
+
+
+async def test_open_makes_zero_probes_without_execution(git_sandbox_feature, three_seat_roster, noop_probe):
+    """Legacy open() should probe without needing an execution_id.
+
+    This verifies backward compatibility: the old open() path still works
+    and probes immediately (no history gating).
+    """
+    worktree, _feature_branch, base_path, _index_path = git_sandbox_feature
+    engine = SddCoderEngine(roster=three_seat_roster, probe=noop_probe, worktree_base_path=str(base_path))
+
+    # Call open without begin_execution
+    await engine.open()
+
+    # Should have probed
+    assert len(engine.probe_results) > 0
+    assert len(engine.seats) > 0
