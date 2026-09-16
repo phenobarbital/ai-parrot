@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-562
 **Date**: 2026-09-15
 **Author**: Claude Sonnet 5, on behalf of amartinez@trocglobal.com
-**Status**: draft
+**Status**: approved
 **Target version**: n/a (CI/test infrastructure fix, no package version bump)
 
 ---
@@ -1038,13 +1038,13 @@ wiki profile. M2's result checker uses the Python standard library.
   checked against required selections and audited exclusions. Text grep and
   installation alone are insufficient.
 
-- [ ] **Should the M7 items (`DatabaseAgent`/`DatabaseAgentToolkit`,
+- [x] **Should the M7 items (`DatabaseAgent`/`DatabaseAgentToolkit`,
   `create_netsuite_mcp_server`) be fixed within this spec's implementation
   pass, or deferred to a follow-up once diagnosed?** — *Owner*: implementing
   task / reviewer. *Plausible answers*: a) fix in place once root-caused
   (preferred, if the cause turns out simple) · b) defer with an SDD ledger
   entry if the cause is a CI-runner-specific artifact unrelated to any
-  in-repo change.
+  in-repo change. Answer from Arturo: Lets fix this as well take option a.
 
 ---
 
