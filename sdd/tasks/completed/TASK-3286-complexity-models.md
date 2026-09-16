@@ -176,5 +176,62 @@ No live model call is needed for these checks.
 
 ## Completion Note
 
-Not started. On completion record files changed, acceptance evidence, tests,
-commit SHA, remaining limitations and actual model/attempt/assessment attribution.
+Implemented as specified: `complexity_models.py` created (MetricEvidence,
+ComplexityTarget, ComplexityContract, StrongModelIdentity, ComplexityPolicy,
+ComplexityEvidence, ComplexityAssessment, ComplexityBlock); `models.py`
+extended additively (RosterConfig.complexity, PlannedTask/AttemptRecord/
+NativePrep.assessment_id, CoderPlan.assessments/routing_blocks, four new
+ERROR_CODES); `test_models.py` extended with policy/evidence/backward-compat
+coverage.
+
+Post-merge review found 2 real defects in the delivered attempt (minimax,
+attempt_uid 78f839601b8e433d8d666639e9d59925) and fixed them in commit
+`8cb9e78577012d9b018edd5dce1e53e1e1ae85f5`:
+- `MetricEvidence` wrongly forbade a value on `state="unknown"`, contradicting
+  the task's own `test_metric_evidence_unknown_with_lower_bound` and spec §2
+  ("Unknown may carry an observed lower bound"). Now only `not_applicable`
+  requires `value=None`.
+- `ComplexityBlock.code` had no validator at all, so the task's own
+  `test_complexity_block_error_codes_in_error_codes_set` ("unknown code
+  rejected") never actually raised. Added a local `COMPLEXITY_ERROR_CODES`
+  closed set + `model_validator` (kept local, not imported from
+  `models.py`, to avoid the `complexity_models` <-> `models` import cycle
+  models.py already creates by importing from complexity_models.py).
+
+Both defects were also recorded as model feedback
+(`coder-feedback:081be5de412da2d8c6340498`,
+`coder-feedback:a156149c04aedfc1e5bc90b8`) and the review outcome recorded
+(`coder-review:52a65b6441dcdd8c0e7d7925`).
+
+Acceptance criteria: all 4 satisfied — evidence states/policy defaults match
+spec; old payloads deserialize (backward-compat tests pass); assessment
+mutation-freeze verified; all 4 new + rejected-unknown error codes validated.
+
+Tests: `pytest packages/ai-parrot/tests/flows/dev_loop/sdd_coder/ -q` ->
+241 passed (0 failed) after the fix, run from the feature worktree with
+`PYTHONPATH=packages/ai-parrot/src` and the venv's compiled `parrot.utils`
+Cython extensions manually copied into the worktree (pre-existing worktree
+gotcha, not part of this task's scope).
+
+Limitations: `SddCoderToolkit`/`engine.py`/`roster.py` integration (M3) is
+out of this task's scope by design — TASK-3287..3295 depend on these types
+but are not yet implemented.
+
+Seat: minimax (attempt 2, after glm/attempt 1 hit max_turns and was
+discarded) · Backend: nova · Model: minimax.minimax-m2.5 · Attempts: 2 ·
+Duration: 516.67s (161.88s failed glm attempt + 354.79s minimax attempt) ·
+Tokens: in=3458922/out=21192 (both attempts combined, per coder_wait
+`seats` summary) · Fix commit: 8cb9e78577012d9b018edd5dce1e53e1e1ae85f5
+(worker, post-merge).
+
+### Second review round (post TASK-3295, full-feature adversarial pass)
+
+A second adversarial review over the completed feature diff found that
+`hard_limits` (only 3 of the 6 metrics) was being reused as the sole
+source for every metric's 2-point boundary, silently capping
+`weighted_files`/`modules`/`acceptance_criteria` at 1 point forever. Fixed
+by adding `ComplexityPolicy.two_point_thresholds` (all 6 metrics, validated
+against `bands`) in commit `5980f35a82cc2021840116263adb82ed329bce3c`.
+Recorded as model feedback `coder-feedback:98a6aaf632c3e8758273a7f1` and
+review outcome `coder-review:52a65b6441dcdd8c0e7d7925` (attempt_uid
+78f839601b8e433d8d666639e9d59925, minimax.minimax-m2.5).

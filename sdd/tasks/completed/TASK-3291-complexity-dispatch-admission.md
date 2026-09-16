@@ -175,5 +175,64 @@ No live model call is needed for these checks.
 
 ## Completion Note
 
-Not started. On completion record files changed, acceptance evidence, tests,
-commit SHA, remaining limitations and actual model/attempt/assessment attribution.
+Implemented directly by the worker (not merged from a coder delivery, commit
+`112fc6495`): admission gates added at every real dispatch/native-prep/retry
+site in `engine.py` —
+- `run_chunk`/`prepare_native` revalidate the task's assessment
+  (`_assessment_for`) before any worktree is allocated or job registered;
+  stale raises `complexity_plan_stale` with no side effect.
+- `prepare_native` refuses to fall back to `"haiku"` for a restricted
+  (complex/unknown) task on a native seat with no configured model
+  (`complex_model_unavailable`).
+- `_run_attempt` checks the seat's `(backend, model)` against
+  `policy.strong_models` before `manager.create()`/`dispatcher.dispatch` for
+  a restricted task; after dispatch, a provider-reported `resolved_model`
+  outside the allowlist is also refused as a successful delivery.
+- `_run_task`'s `retry_seat` call now receives the current eligible label
+  set (`_eligible_retry_labels` helper), so a failed strong-model attempt
+  can never retry through a weak seat; no eligible retry seat produces an
+  explicit `complex_model_unavailable` diagnostic while preserving the
+  first attempt's own record.
+
+Both dispatched attempts (gemini attempt_uid 880a648ed3d44b67aea6c1686f250dd2,
+codex-spark retry attempt_uid 345506b938804ddda8fecfa42d4c1ca4) failed at the
+infrastructure/dispatch level before producing any output or commit ("No
+assistant text found in dispatch result"; Codex CLI exit 1 reading stdin) —
+nothing to salvage, and not a code defect, so no model feedback was recorded
+for either attempt.
+
+Acceptance criteria: satisfied — weak seats/retries/empty models never
+dispatch a restricted task (`test_weak_seat_never_dispatches_restricted_task`
+asserts zero dispatcher construction); native preparation returns the exact
+eligible model and assessment ID before any worktree exists
+(`test_prepare_native_blocks_restricted_task_without_configured_model`);
+stale/tampered assessments allocate no worktree
+(`test_run_chunk_blocks_stale_assessment_without_worktree`); every attempt
+(including failures) retains assessment attribution
+(`AttemptRecord.assessment_id`, unchanged from TASK-3290, verified still set
+on every path here); an unexpected resolved model cannot be consolidated
+(post-dispatch check in `_run_attempt`).
+
+Tests: `pytest packages/ai-parrot/tests/flows/dev_loop/sdd_coder/ -q` ->
+292 passed (0 failed; 288 baseline + 4 new tests). `ruff check --select
+E9,F63,F7,F82` clean (caught and fixed a duplicate orphaned `return`
+statement this worker's own edit briefly introduced, before committing).
+Also fixed `test_uid_unique_across_jobs` (pre-existing test in this
+task's own `test_engine_dispatch.py`), which called `run_chunk` twice for
+the same task without replanning between calls — legitimately now stale
+per spec ("A preceding task merge can advance HEAD: report stale and
+require coder_plan"), so inserted a `plan()` call between the two
+`run_chunk`s, matching the real orchestrator loop.
+
+Limitations: `test_engine_plan_creates_routing_blocks_for_complex_tasks_without_strong_models`
+(TASK-3290's own weak test, left untouched) still only asserts `plan is not
+None`; the new deterministic tests added here (`_force_classification`/
+`_tamper_head_sha` helpers that directly mutate a cached `CoderPlan`'s
+assessment) cover the actual blocking behavior instead, since relying on
+real `ruff`/`wikitoolkit` output to naturally produce a complex/unknown
+classification would be nondeterministic in CI.
+
+Seat: worker (self-implementation, after both dispatched attempts failed at
+the infrastructure level) · Backend: n/a · Model: n/a · Attempts: 2
+dispatched (both infra-failed, no output) + 1 worker implementation ·
+Duration: n/a (worker-authored) · Tokens: n/a.

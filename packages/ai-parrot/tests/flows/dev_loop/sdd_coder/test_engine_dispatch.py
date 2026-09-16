@@ -12,6 +12,7 @@ import pytest
 from parrot.flows.dev_loop.models import DevelopmentOutput
 from parrot.flows.dev_loop.sdd_coder.engine import CoderFailure, SddCoderEngine
 from parrot.flows.dev_loop.sdd_coder.models import RosterConfig, RosterSeat
+from parrot.flows.dev_loop.sdd_coder.complexity_models import ComplexityPolicy, StrongModelIdentity
 from parrot.flows.dev_loop.session_state import DispatchCompleted
 
 
@@ -378,10 +379,28 @@ class TestAttemptIdentity:
             dispatcher_builder=builder,
         )
 
-        # Run the same task twice with different job IDs
+        # Run the same task twice with different job IDs. The first run_chunk's
+        # merge advances feature_branch HEAD, so the cached plan's assessment
+        # for TASK-0001 is now stale (spec: "A preceding task merge can advance
+        # HEAD: report stale and require coder_plan, rather than recalculating
+        # silently") -- replan before the second dispatch, exactly as the real
+        # orchestrator loop does between chunks.
+        pre_job1_sha = (await _git("rev-parse", "HEAD", cwd=str(worktree)))[1].strip()
         job1 = await engine.run_chunk("demo", str(worktree), ["TASK-0001"])
         result1 = await engine.wait(job1.job_id, 5)
 
+        # job1's merge committed TASK-0001's declared CREATE target
+        # (pkg/t1.py) to the feature branch. TASK-0001's own Complexity
+        # Contract still declares that same path as CREATE, and spec §2 item
+        # 3 makes an existing CREATE target an invalid contract that blocks
+        # dispatch -- so re-running the identical task_id a second time (this
+        # test's only interest is attempt_uid uniqueness, not the CREATE-once
+        # invariant) requires resetting the feature branch back to its
+        # pre-job1 state first, exactly as if job2 were an independent second
+        # attempt that never observed job1's result.
+        await _git("reset", "--hard", pre_job1_sha, cwd=str(worktree))
+
+        await engine.plan("demo", str(worktree))
         job2 = await engine.run_chunk("demo", str(worktree), ["TASK-0001"])
         result2 = await engine.wait(job2.job_id, 5)
 
@@ -530,6 +549,77 @@ class TestOutcomeEvents:
         assert [r["event_seq"] for r in outcome_rows] == [1, 2]
         assert outcome_rows[0]["outcome"] == "merge_conflict"
         assert outcome_rows[1]["outcome"] == "merged"
+
+
+def _force_classification(plan, task_id: str, classification: str):
+    """Return a copy of `plan` with `task_id`'s cached assessment's classification
+    overridden (evidence untouched, so `validate_complexity_snapshot` still finds
+    it fresh). Deterministic stand-in for a task real collectors would classify
+    complex/unknown -- avoids depending on a real `ruff`/`wikitoolkit` install."""
+    assessment = plan.assessments[task_id].model_copy(update={"classification": classification})
+    return plan.model_copy(update={"assessments": {**plan.assessments, task_id: assessment}})
+
+
+class TestComplexityDispatchAdmission:
+    """TASK-3291: complexity restrictions enforced at every actual coder attempt."""
+
+    async def test_weak_seat_never_dispatches_restricted_task(self, git_sandbox_feature, noop_probe):
+        """AC7/AC8: a seat outside the strong-model allowlist must never reach
+        `dispatcher.dispatch` for a complex/unknown task -- verified by asserting
+        no dispatcher was ever constructed for the weak backend, not just that
+        the outcome is a failure (a failure could otherwise hide a real, wasted
+        dispatch)."""
+        worktree, _feature_branch, base_path, _index_path = git_sandbox_feature
+        builder = fake_builder_factory({})
+        roster = RosterConfig(
+            seats=[RosterSeat(label="weak", backend="nova", model="qwen")],
+            complexity=ComplexityPolicy(
+                strong_models=(
+                    StrongModelIdentity(canonical_model="sonnet-5", backend="codex", model="claude-3-5-sonnet"),
+                )
+            ),
+        )
+        engine = SddCoderEngine(
+            roster=roster, probe=noop_probe, worktree_base_path=str(base_path), dispatcher_builder=builder
+        )
+        plan = await engine.plan("demo", str(worktree))
+        engine._plan_cache["FEAT-549"] = _force_classification(plan, "TASK-0001", "complex")  # noqa: SLF001
+
+        job = await engine.run_chunk("demo", str(worktree), ["TASK-0001"])
+        result = await engine.wait(job.job_id, 5)
+
+        assert result.tasks[0].outcome == "failed"
+        assert "complex_model_unavailable" in result.tasks[0].diagnostics
+        assert builder.dispatchers == {}, "the weak seat's dispatcher must never have been constructed"
+
+    async def test_no_eligible_retry_seat_reports_complex_model_unavailable(self, git_sandbox_feature, noop_probe):
+        """AC7: after the only seat fails, a restricted task with no eligible
+        retry candidate gets an explicit complex_model_unavailable diagnostic
+        instead of silently falling through with the unrelated dispatch error,
+        preserving the failed first attempt (spec: "preserving previous
+        attempts")."""
+        worktree, _feature_branch, base_path, _index_path = git_sandbox_feature
+        builder = fake_builder_factory({"nova": "fail"})
+        roster = RosterConfig(
+            seats=[RosterSeat(label="weak", backend="nova", model="qwen")],
+            complexity=ComplexityPolicy(
+                strong_models=(
+                    StrongModelIdentity(canonical_model="sonnet-5", backend="codex", model="claude-3-5-sonnet"),
+                )
+            ),
+        )
+        engine = SddCoderEngine(
+            roster=roster, probe=noop_probe, worktree_base_path=str(base_path), dispatcher_builder=builder
+        )
+        plan = await engine.plan("demo", str(worktree))
+        engine._plan_cache["FEAT-549"] = _force_classification(plan, "TASK-0001", "unknown")  # noqa: SLF001
+
+        job = await engine.run_chunk("demo", str(worktree), ["TASK-0001"])
+        result = await engine.wait(job.job_id, 5)
+
+        assert result.tasks[0].outcome == "failed"
+        assert len(result.tasks[0].attempts) == 1, "no retry attempt when no eligible seat exists"
+        assert "complex_model_unavailable" in result.tasks[0].diagnostics
 
 
 class TestDurableRootGuard:

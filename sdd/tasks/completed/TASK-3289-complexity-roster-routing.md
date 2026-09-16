@@ -166,5 +166,51 @@ No live model call is needed for these checks.
 
 ## Completion Note
 
-Not started. On completion record files changed, acceptance evidence, tests,
-commit SHA, remaining limitations and actual model/attempt/assessment attribution.
+Implemented directly by the worker (not merged from a coder delivery):
+`eligible_seats(assessment, seats, policy)` added to `roster.py`
+(standard -> unchanged seat list; complex/unknown -> exact `(backend,
+model)` match against `policy.strong_models`, `backend="native"` for
+`kind="native"` seats); `ChunkAssigner.assign(..., eligible_labels=...)`
+now requires a non-empty eligible-label set per wave task (raises
+`ValueError` otherwise) and closes a chunk early rather than filling a gap
+with an ineligible seat; `ChunkAssigner.retry_seat(..., eligible_labels=...)`
+applies the same restriction to retries.
+
+Two dispatched attempts, neither merged:
+- mistral (attempt_uid 3c36a0f1e6fe42629eab8c75f792a9b6) failed with
+  `dirty_task_worktree` (an uncommitted `test_implementation.py` scratch
+  file) before reaching the merge/fidelity gate; its code was not reviewed.
+- gemini (attempt_uid d2df4f50661c45178dc5aeea0c655847) completed and its
+  `roster.py`/`test_roster.py` changes were substantively correct, but it
+  also modified `sdd_coder/__init__.py` to export `eligible_seats` from
+  the package root -- a real edit outside this task's 2-file declared
+  scope -- so the engine's fidelity gate rejected the whole delivery as
+  `fidelity_violation` and it was never merged. Recorded as model feedback
+  (`coder-feedback:2891011a7e2c0258f220ef53`) and review outcome
+  (`coder-review:6b1891b338e6fcc8e11057f9`).
+
+Reimplemented from scratch in this worktree (commit
+`865a58e5fa19daf6839eb84b2d9fe958f0bafbd1`), touching only the 2 declared
+files: tests import `eligible_seats` directly from the `.roster` submodule
+instead of the package root, so no `__init__.py` change was needed.
+
+Acceptance criteria: satisfied — `eligible_seats` never overrides
+availability/suspension (operates only on the `seats` list the caller
+supplies); `ChunkAssigner.assign`/`retry_seat` preserve standard rotation,
+exclusive-task-alone-first ordering and one-seat-per-chunk when
+`eligible_labels` is omitted (existing tests unchanged and still passing);
+eligibility restriction is exact-match only, no alias/nickname matching
+(`test_eligible_seats_no_alias_match`).
+
+Tests: `pytest packages/ai-parrot/tests/flows/dev_loop/sdd_coder/ -q` ->
+286 passed (0 failed), from the feature worktree with
+`PYTHONPATH=packages/ai-parrot/src`. `ruff check --select E9,F63,F7,F82`
+clean.
+
+Limitations: none beyond this task's declared scope; engine-level
+integration (TASK-3290/3291) still needs to call `eligible_seats` and pass
+`eligible_labels` through `assign`/`retry_seat`.
+
+Seat: worker (self-implementation, after gemini's fidelity_violation) ·
+Backend: n/a · Model: n/a · Attempts: 2 dispatched (both rejected) + 1
+worker implementation · Duration: n/a (worker-authored) · Tokens: n/a.

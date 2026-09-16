@@ -170,5 +170,69 @@ No live model call is needed for these checks.
 
 ## Completion Note
 
-Not started. On completion record files changed, acceptance evidence, tests,
-commit SHA, remaining limitations and actual model/attempt/assessment attribution.
+Implemented as specified: both `sdd-worker.md` copies teach the worker to
+display evidence (classification/metrics/assessment ID/model), handle
+`complexity_plan_stale` by requesting a fresh plan, and refuse to bypass a
+`complex_model_unavailable` block via fallback/self-implementation for
+non-standard classifications; `examples/sdd-coder-mcp.yaml` configures the
+two requested strong-model candidates (`gpt-5.6-terra` via codex,
+`sonnet-5` via native); `docs/dev_loop/sdd-coder-orchestrator.md` documents
+the full scoring system, hard triggers, routing rules and operator model
+identity mapping.
+
+Delivered by the native haiku agent (attempt_uid
+03326bd0d6944f49b5b6ec91939a5b84). Two real defects found on review and
+fixed:
+- The delivery made a SECOND commit that moved its own task file to
+  `sdd/tasks/completed/` and edited the per-spec index — out of scope for
+  a coder (SDD state is the orchestrator's job). The worker merged ONLY
+  the first, code-only commit (`e9b140ef0f9b729da1f31eb3e70d493ad53083ae`)
+  into the feature branch via `git merge --no-ff`, verified
+  `git diff <base> HEAD --stat -- sdd/` is empty, and performed this SDD
+  state update itself.
+- The example YAML and its matching doc section used a nonexistent
+  `roster.policy.strong_model_candidates`/`seat_label` schema —
+  `SddCoderToolkit.__init__` has no `policy` kwarg (only a top-level
+  `complexity` kwarg), and `ComplexityPolicy.strong_models` entries are
+  `StrongModelIdentity(canonical_model, backend, model)`, no `seat_label`.
+  The example was silently non-functional (`strong_models` stayed empty).
+  Fixed both files to the real schema in commit
+  `5f5ab220288874ddfbdf4bc86f896cacb6bf3635`, verified by constructing
+  `SddCoderToolkit` directly from the corrected YAML.
+
+Both defects recorded as model feedback
+(`coder-feedback:503a300a5f5b84aac0fe786d`,
+`coder-feedback:94bcf9bfdadbb67f737cffb0`) and the review outcome recorded
+(`coder-review:c2808d191eb03491800e8680`).
+
+Acceptance criteria: satisfied — worker copies verified byte-identical
+(`diff` clean); no bypass of complexity restrictions (worker prompt now
+explicitly refuses to self-implement complex/unknown blocks); strong-model
+candidates configured with consistent, now-functional identities; blocking
+behavior (`complex_model_unavailable` vs dependency blocks) documented and
+distinguished.
+
+Tests: `pytest packages/ai-parrot/tests/flows/dev_loop/sdd_coder/ -q` ->
+296 passed (0 failed), run with
+`PYTHONPATH=packages/ai-parrot/src:packages/ai-parrot-server/src` (needed
+for `parrot.mcp`'s `pkgutil.extend_path` namespace merge with
+`ai-parrot-server`'s `parrot/mcp/transports/`; core-only `PYTHONPATH` makes
+the whole `conftest.py` import chain fail — pre-existing, unrelated to this
+task). `pytest packages/ai-parrot-tools/tests/tool_optimizations/test_sdd_contracts.py`
+-> the same 4 pre-existing failures noted in TASK-3293 (unrelated
+delegation-protocol wording), no new failures.
+
+Limitations: none beyond this task's declared scope. Note for future
+debugging (not a defect, just a gotcha): importing `parrot.*` triggers a
+navconfig/Navigator side effect that `chdir()`s the process to the main
+checkout — a verification script combining a relative path with an early
+`parrot` import can silently read the wrong file; use an absolute path
+opened before any `parrot` import.
+
+Seat: haiku (native) · Backend: native · Model: haiku · Attempts: 1 ·
+Duration: ~618s (per subagent hand-back) · Tokens: n/a (native, not
+MCP-metered) · Fix commit: 5f5ab220288874ddfbdf4bc86f896cacb6bf3635
+(worker, post-merge); code-only commit adopted:
+e9b140ef0f9b729da1f31eb3e70d493ad53083ae (worker's own manual
+`git merge --no-ff`, since the coder's out-of-scope second commit made
+`coder_merge`'s "latest attempt branch" unsafe to adopt whole).

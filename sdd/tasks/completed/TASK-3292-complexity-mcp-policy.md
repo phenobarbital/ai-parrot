@@ -161,5 +161,55 @@ No live model call is needed for these checks.
 
 ## Completion Note
 
-Not started. On completion record files changed, acceptance evidence, tests,
-commit SHA, remaining limitations and actual model/attempt/assessment attribution.
+Implemented as specified: `SddCoderToolkit.__init__` extended with a
+keyword-only `complexity: Optional[Dict[str, Any]] = None` parameter; both
+configuration paths (list roster + explicit `complexity`, or a `RosterConfig`
+object with its own `.complexity`) deliver the same validated
+`ComplexityPolicy` to the engine without mutating caller-owned input;
+`coder_plan`'s docstring documents the new `assessments`/`routing_blocks`
+fields.
+
+Post-merge review found 1 real defect in the delivered attempt (glm,
+attempt_uid 3c913d5b69eb4c1cb244e22f6173b745) and fixed it in commit
+`b2c272db137d573007c7375bc027049bbc6471de`: `test_toolkit.py`'s 4 new tests
+used `RosterConfig` without importing it (F821, caught by the engine's own
+lint gate before merge). Recorded as model feedback
+(`coder-feedback:6ae75cbf7eb9ba8b6f2d0b6c`) and review outcome
+(`coder-review:b242313eeaee5cf7b8aa7521`).
+
+The delivery's own completion summary claimed "Tests could not be run due
+to pre-existing import chain issues in the codebase (missing
+parrot.handlers.models module)" — verified this claim independently and
+found it false: the actual root cause was an incomplete `PYTHONPATH` for
+this test run, not a codebase defect. `parrot.mcp.__init__` uses
+`pkgutil.extend_path`, merging in `ai-parrot-server`'s
+`parrot/mcp/transports/` (PEP 420-style, per CLAUDE.md's package matrix);
+`packages/ai-parrot/src` alone on `PYTHONPATH` makes the whole
+`conftest.py` import chain fail transitively (`parrot.bots.abstract` ->
+`parrot.mcp.MCPEnabledMixin` -> `integration.py` -> `.transports.*`).
+Running with `PYTHONPATH=packages/ai-parrot/src:packages/ai-parrot-server/src`
+resolves cleanly and all tests pass.
+
+Acceptance criteria: satisfied — both configuration paths verified to
+deliver the same policy (`test_toolkit_accepts_complexity_config_with_list_roster`);
+`RosterConfig` with `.complexity` omitted preserves that object's policy
+(`test_toolkit_preserves_roster_config_complexity`); an explicit override
+is validated on a copy, leaving the caller's `RosterConfig` unchanged
+(`test_toolkit_validates_complexity_override`); a malformed override
+raises `ValidationError` (`test_toolkit_rejects_malformed_complexity_config`);
+existing MCP tool set and strict argument validation remain intact (all
+pre-existing `test_toolkit.py` tests still pass).
+
+Tests: `pytest packages/ai-parrot/tests/flows/dev_loop/sdd_coder/ -q` ->
+296 passed (0 failed), from the feature worktree with
+`PYTHONPATH=packages/ai-parrot/src:packages/ai-parrot-server/src`. `ruff
+check --select E9,F63,F7,F82` clean.
+
+Limitations: none beyond this task's declared scope.
+
+Seat: glm (attempt 2, after codex-spark's attempt 1 CLI dispatch failure —
+infra-level, not a code defect, no feedback recorded for it) · Backend:
+nova · Model: zai.glm-4.7-flash · Attempts: 2 · Duration: 247.90s (3.06s
+failed codex-spark + 244.83s glm) · Tokens: in=2355077/out=5931 (glm
+attempt, per coder_wait `seats` summary) · Fix commit:
+b2c272db137d573007c7375bc027049bbc6471de (worker, post-merge).

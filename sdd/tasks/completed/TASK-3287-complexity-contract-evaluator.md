@@ -158,5 +158,68 @@ No live model call is needed for these checks.
 
 ## Completion Note
 
-Not started. On completion record files changed, acceptance evidence, tests,
-commit SHA, remaining limitations and actual model/attempt/assessment attribution.
+Implemented as specified: `complexity.py` created (ComplexityContractError,
+parse_complexity_contract, evaluate_complexity, path normalization and
+canonical-hash helpers); `test_complexity.py` created with boundary,
+malformed-section, adversarial-input and canonical-hash-invariance coverage.
+
+Post-merge review found 2 real defects in the delivered attempt (qwen,
+attempt_uid fb7e39b1577a44aaad3ccc52de057a50) and fixed them in commit
+`fb6c54c9619fca6d7f0dcd9a6c9e01c37f9a447e`:
+- `_calculate_component_points` inverted the spec's scoring bands: a value
+  inside the 0-points band (e.g. cyclomatic_max 0-10) scored 1, and any
+  value above that band scored 2 (double-triggering with the separate
+  hard-limit check). Fixed so within-band is 0, above-band-below-hard-limit
+  is 1; 2 is reserved for the policy hard limit.
+- `evaluate_complexity`'s hard-trigger check required `state == "ok"`,
+  silently ignoring an `unknown` metric's observed lower bound, contradicting
+  this task's own blueprint ("Known lower bounds can prove complex even with
+  unknown metrics"). Widened to accept `state in ("ok", "unknown")`.
+
+Both defects recorded as model feedback
+(`coder-feedback:9c3d03f6035981100cea537e`,
+`coder-feedback:eb61242c6424560f9957d64b`) and the review outcome recorded
+(`coder-review:e61c161807c622d01e300aa0`).
+
+Acceptance criteria: all 4 satisfied post-fix — every scoring boundary
+(n-1/n/n+1) and the aggregate 4/5 threshold verified by
+test_evaluate_boundary_values / test_evaluate_complex_task_score_threshold;
+contradictory-declaration and missing-vs-empty-symbol-coverage cases raise
+ComplexityContractError; reordered-equivalent-declaration canonical-hash
+invariance covered by test_assessment_id_consistency and
+TestCanonicalHash::test_canonical_hash_key_order_independence; no
+title/effort/model-preference input reaches the evaluator (evidence-only
+signature).
+
+Tests: `pytest packages/ai-parrot/tests/flows/dev_loop/sdd_coder/ -q` ->
+269 passed (0 failed), from the feature worktree with
+`PYTHONPATH=packages/ai-parrot/src`. `ruff check --select E9,F63,F7,F82`
+clean on complexity.py.
+
+Limitations: runtime target existence/symlink checks are explicitly out of
+scope (owned by TASK-3288 per this task's blueprint); no dedicated unit test
+was added for the unknown-lower-bound-hard-trigger branch fixed above --
+left for TASK-3295's integration/regression matrix per spec §4.
+
+Seat: qwen (attempt 2, after minimax/attempt 1 hit a JSON-output validation
+error) · Backend: nova · Model: qwen.qwen3-coder-480b-a35b-instruct ·
+Attempts: 2 · Duration: 281.17s (139.04s failed minimax attempt + 142.13s
+qwen attempt) · Tokens: in=500923/out=17135 (both attempts combined, per
+coder_wait `seats` summary) · Fix commit:
+fb6c54c9619fca6d7f0dcd9a6c9e01c37f9a447e (worker, post-merge).
+
+### Second review round (post TASK-3295, full-feature adversarial pass)
+
+A second adversarial review over the completed feature diff found: (1)
+the hard-trigger loop in `evaluate_complexity` used a hardcoded local
+dict duplicating `policy.hard_limits` instead of reading it; (2) a
+metric key entirely missing from `evidence.metrics` was silently
+skipped instead of raising classification to `unknown`; (3)
+`parse_complexity_contract` raised on any task lacking an explicit
+"## Complexity Contract" section instead of falling back to the legacy
+Files-to-Create/Modify table per spec AC12. All three fixed in commit
+`5980f35a82cc2021840116263adb82ed329bce3c` (pointer commit
+`bf9bc274f7bb595e470600b63d5cd7540c3ef7dc`). Recorded as model feedback
+`coder-feedback:c37253a7b5ea64bbdae5eb9f` and review outcome
+`coder-review:e61c161807c622d01e300aa0` (attempt_uid
+fb7e39b1577a44aaad3ccc52de057a50, qwen.qwen3-coder-480b-a35b-instruct).

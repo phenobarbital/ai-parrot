@@ -68,6 +68,17 @@ dependencies = [
     # tenacity above.
     "openai==3.3.1",
     "psutil>=5.9",
+    # `parrot/bots/flows/crew/crew.py` (AgentCrew, re-exported by
+    # `parrot.bots.flows.__init__`) does a module-level
+    # `from tqdm.asyncio import tqdm`, and `parrot/interfaces/onedrive.py`
+    # + `sharepoint.py` do `from tqdm import tqdm` — so a bare install
+    # could not `import parrot.bots.flows` at all (CI 2026-09-16: 99
+    # `ModuleNotFoundError: No module named 'tqdm'` in the core suite).
+    # It was previously only ever present transitively. Floor-only pin on
+    # purpose: querysource caps tqdm<=4.67.1 (see the `research` extra
+    # comment in packages/ai-parrot-tools/pyproject.toml), and 4.66.5 is
+    # the floor habanero 2.3.x needs.
+    "tqdm>=4.66.5",
     # Text splitters live in core (parrot.loaders.splitters) — Rust-backed
     # chunking used by AbstractLoader. Moved here from ai-parrot-loaders to
     # break the circular import (loaders depends on core).

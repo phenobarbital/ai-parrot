@@ -166,5 +166,129 @@ No live model call is needed for these checks.
 
 ## Completion Note
 
-Not started. On completion record files changed, acceptance evidence, tests,
-commit SHA, remaining limitations and actual model/attempt/assessment attribution.
+Implemented as specified: `complexity_collectors.py` created (bounded async
+Ruff/wiki/scope/dependency collectors, `collect_complexity`,
+`validate_complexity_snapshot`, `_run_subprocess` with timeout/output-size
+bounds); `test_complexity_collectors.py` created with collection tests.
+
+Post-merge review found 3 real defects in the delivered attempt (qwen,
+attempt_uid df6112a5f3b94e7d9526a2cb7ef06de0) and fixed them in commit
+`d13a017faebde1f31c3f54d61ae5fee820ea3ef9`:
+- `parse_complexity_contract` was imported from `complexity_models.py`,
+  where it does not exist (it lives in `complexity.py`, TASK-3287), and
+  `ComplexityAssessment` was used in a signature without being imported at
+  all -- both `ImportError`s made the whole test module uncollectable.
+- `_collect_scope_metrics`'s acceptance-criteria checkbox counter split on
+  the ` ```-fence ` pattern with `re.split`, then wrongly kept only
+  even-indexed parts (assuming `split` alternates fenced/non-fenced groups
+  like `re.finditer` would); `re.split` only ever returns non-fenced
+  segments, so with the task's one JSON contract fence, the real
+  `## Acceptance Criteria` section was silently discarded (undercounted 0
+  instead of 3).
+- `test_complexity_collectors.py` was missing `import asyncio` (used at 3
+  call sites) and none of its 4 `collect_complexity`-exercising tests
+  created a git repo in their temp worktree, so the real (unmocked)
+  `git rev-parse HEAD` inside `_get_git_head_sha` failed every time.
+
+Both defects recorded as model feedback
+(`coder-feedback:3d87049ea08f5470eab7ae69`,
+`coder-feedback:b64447b67bdcc06e21fc5174`) and the review outcome recorded
+(`coder-review:c2c96ed32d0fe29fc6ef9d48`).
+
+Acceptance criteria: satisfied post-fix — all six metric families
+collected with bounded async subprocesses; Ruff C901/syntax-only pass
+distinguish measured-zero from unparseable; wiki blast radius depth-2,
+no-inferred, tests-included; unknown/not_applicable states never
+fabricate a zero.
+
+Tests: `pytest packages/ai-parrot/tests/flows/dev_loop/sdd_coder/ -q` ->
+286 passed (0 failed), from the feature worktree with
+`PYTHONPATH=packages/ai-parrot/src`. `ruff check --select E9,F63,F7,F82`
+clean.
+
+Limitations: collectors were exercised only against synthetic fixtures
+with a real local git repo and mocked Ruff/wiki subprocess output, not a
+live `wikitoolkit`/`ruff` binary end-to-end -- left for TASK-3295's
+integration/regression matrix per spec §4.
+
+Seat: qwen · Backend: nova · Model: qwen.qwen3-coder-480b-a35b-instruct ·
+Attempts: 1 · Duration: 494.21s · Tokens: in=651074/out=14248 · Fix commit:
+d13a017faebde1f31c3f54d61ae5fee820ea3ef9 (worker, post-merge).
+
+### Second review round (post TASK-3295, full-feature adversarial pass)
+
+A second adversarial review over the completed feature diff found four
+defects: an accumulator variable in `_collect_all_evidence` shadowed by
+an identically-named per-collector unpacked variable (a `.update()` no-op
+against itself); the `wiki symbols blast` CLI invocation placed `--path`
+before the `symbols blast` subcommand (invalid — verified against
+`wiki/cli.py`'s decorator placement); blast-radius impact summed
+per-root lists instead of a deduped union, and silently folded any
+unreliable root query into an `ok` zero instead of `unknown` with a
+lower bound; `_collect_dependency_metrics` counted only DIRECT
+dependents instead of the TRANSITIVE descendant set, with no
+cycle/dangling-reference detection. All fixed in commit
+`5980f35a82cc2021840116263adb82ed329bce3c` (pointer commit
+`a85a6597b33351dc2124c4e03a02594e4541ecd6`). Recorded as model feedback
+`coder-feedback:d5f26f648355a0cdb41df208` and review outcome
+`coder-review:c2c96ed32d0fe29fc6ef9d48` (attempt_uid
+df6112a5f3b94e7d9526a2cb7ef06de0, qwen.qwen3-coder-480b-a35b-instruct).
+
+### Third review round (final feature-wide adversarial pass, pre-push)
+
+A third adversarial review (Claude code-reviewer + independent codex
+`gpt-6-astra` cross-check, all findings independently re-verified against
+real Pydantic schemas/CLI output/ruff behavior) found three further
+CRITICAL defects, all localized to this task's `complexity_collectors.py`:
+
+- `_collect_wiki_blast` read `item.get("symbol_id")` on the *outer*
+  impacted-entry dict; the real `wikitoolkit symbols blast --json` shape
+  (`BlastRadiusOutput`/`ImpactedSymbol` in
+  `knowledge/wiki/structural/service.py`) nests the id under
+  `item["symbol"]["symbol_id"]` — `blast_symbols` was always 0 against
+  any real invocation. Also added `SymbolHit.stale` checks on both root
+  and impacted symbols (previously ignored despite spec §2 item 2 naming
+  "stale results" as a required unknown-trigger).
+- `_collect_all_evidence`'s `if contract.contract_symbols:` truthiness
+  check folded `None` (legacy/unknown coverage) and `()` (explicit zero)
+  into the same `not_applicable` branch, defeating AC12's legacy-task
+  conservative-routing guarantee. Same bug fixed in `_collect_wiki_blast`'s
+  own standalone guard.
+- `_collect_ruff_cyclomatic` scored a MODIFY target with a genuine syntax
+  error as `state="ok", value=0` — Ruff reports `code: "invalid-syntax"`
+  diagnostics (verified empirically, exit 1, no C901 entries) on a parse
+  failure, and nothing checked for them.
+
+Also fixed from the same pass: CREATE-target-already-exists /
+MODIFY-target-missing now raise `ComplexityContractError` (spec §2 item 3:
+"invalidate the contract and block dispatch") instead of silently hashing
+to `None`; a MODIFY target in an unsupported language no longer skips
+detection just because a Python MODIFY target is *also* present in the
+same task; two unused imports (`ComplexityPolicy`, `parse_complexity_contract`)
+removed from `engine.py`; two `B904` (`raise ... from e`) and all
+`ASYNC240`/black findings on every touched file resolved (engine.py's 6
+pre-existing, unrelated findings confirmed unchanged against `dev` and
+left untouched — out of this feature's scope).
+
+Three regression tests added to `test_complexity_collectors.py` covering
+exactly these three scenarios (real-shaped nested wiki JSON, a legacy task
+with `contract_symbols=None` vs an explicit `()`, and a MODIFY target with
+a genuine syntax error). Two existing fixtures
+(`test_collect_complexity_basic`'s mocked wiki JSON, and
+`test_collect_complexity_no_python_files`'s nonexistent MODIFY target)
+and one `test_engine_dispatch.py` test
+(`TestAttemptIdentity.test_uid_unique_across_jobs`, whose second
+`run_chunk` call re-ran a task whose CREATE target the first run had
+already merged onto disk — a premise the new CREATE-exists validation
+correctly rejects) were updated to match the corrected, spec-compliant
+behavior rather than weakening it. Fixed in commit `88c83849a`. Full
+targeted suite re-verified green: 316/316
+(`PYTHONPATH=packages/ai-parrot/src:packages/ai-parrot-server/src:packages/ai-parrot-tools/src:packages/ai-parrot-embeddings/src:packages/ai-parrot-advisors/src:packages/ai-parrot-integrations/src
+pytest packages/ai-parrot/tests/flows/dev_loop/sdd_coder/ -q`).
+
+Not recorded via `coder_record_feedback`/`coder_record_review`: these
+fixes were made directly by the orchestrating worker (not a dispatched
+coder delivery), and `wikitoolkit` was unavailable in this environment
+(`ModuleNotFoundError: No module named 'parrot.knowledge'` — pre-existing,
+unrelated to this feature) so no `coder-feedback:`/`coder-review:` ids or
+ledger issue ids could be filed for this pass; noted here in full instead.
