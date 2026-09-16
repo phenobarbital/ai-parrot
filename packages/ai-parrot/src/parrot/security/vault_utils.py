@@ -22,14 +22,19 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Dict
 
-from parrot.security.credentials_utils import decrypt_credential, encrypt_credential
+from parrot.security.credentials_utils import (
+    credential_context,
+    decrypt_credential,
+    encrypt_credential,
+)
 from parrot.interfaces.documentdb import DocumentDb
 
 try:
-    from navigator_session.vault.config import get_active_key_id, load_master_keys
-except ImportError:
-    get_active_key_id = None  # type: ignore[assignment]
-    load_master_keys = None   # type: ignore[assignment]
+    from navigator_session.vault import KeyRing
+except ImportError:  # pragma: no cover - navigator-session not installed
+    KeyRing = None  # type: ignore[assignment]
+
+_KEYRING: Any = None
 
 
 # DocumentDB collection for Vault credential storage (mirrors CredentialsHandler)
@@ -41,24 +46,34 @@ VAULT_CRED_COLLECTION: str = "user_credentials"
 # ---------------------------------------------------------------------------
 
 
-def load_vault_keys() -> tuple[int, bytes, dict[int, bytes]]:
-    """Load vault master keys from the environment.
+def get_vault_keyring() -> Any:
+    """Return the process-wide vault :class:`KeyRing` (built on first use).
 
     Returns:
-        Tuple of ``(active_key_id, active_master_key, all_master_keys)``.
+        KeyRing built from ``VAULT_MASTER_KEY_v{N}`` / ``VAULT_ACTIVE_KEY_ID``.
 
     Raises:
-        RuntimeError: If ``navigator_session.vault.config`` is unavailable.
+        RuntimeError: If navigator-session vault crypto is unavailable or the
+            keys are not configured.
     """
-    if load_master_keys is None or get_active_key_id is None:
-        raise RuntimeError(
-            "navigator_session.vault.config is not available. "
-            "Ensure navigator-session is installed."
-        )
-    master_keys = load_master_keys()
-    active_key_id = get_active_key_id()
-    active_key = master_keys[active_key_id]
-    return active_key_id, active_key, master_keys
+    global _KEYRING  # pylint: disable=global-statement
+    if _KEYRING is None:
+        if KeyRing is None:
+            raise RuntimeError(
+                "navigator_session.vault is not available. "
+                "Ensure navigator-session is installed."
+            )
+        try:
+            _KEYRING = KeyRing.from_env()
+        except Exception as exc:  # pylint: disable=broad-except
+            raise RuntimeError(f"Vault keys are not configured: {exc}") from exc
+    return _KEYRING
+
+
+def reset_vault_keyring() -> None:
+    """Drop the cached key ring (tests, key reconfiguration)."""
+    global _KEYRING  # pylint: disable=global-statement
+    _KEYRING = None
 
 
 # ---------------------------------------------------------------------------
@@ -84,9 +99,13 @@ async def store_vault_credential(
 
     Raises:
         RuntimeError: If vault keys are unavailable.
+        navigator_session.vault.VaultCryptoError: If the stored credential
+            does not belong to ``(user_id, vault_name)`` or fails integrity.
     """
-    active_key_id, active_key, _ = load_vault_keys()
-    encrypted = encrypt_credential(secret_params, active_key_id, active_key)
+    keyring = get_vault_keyring()
+    encrypted = encrypt_credential(
+        secret_params, credential_context(user_id, vault_name), keyring
+    )
     now_str = datetime.now(timezone.utc).isoformat()
 
     async with DocumentDb() as db:
@@ -129,8 +148,10 @@ async def retrieve_vault_credential(
     Raises:
         KeyError: If the credential is not found in the Vault.
         RuntimeError: If vault keys are unavailable.
+        navigator_session.vault.VaultCryptoError: If the stored credential
+            does not belong to ``(user_id, vault_name)`` or fails integrity.
     """
-    _, _, master_keys = load_vault_keys()
+    keyring = get_vault_keyring()
 
     async with DocumentDb() as db:
         doc = await db.read_one(
@@ -143,7 +164,9 @@ async def retrieve_vault_credential(
             f"Vault credential '{vault_name}' not found for user '{user_id}'"
         )
 
-    return decrypt_credential(doc["credential"], master_keys)
+    return decrypt_credential(
+        doc["credential"], credential_context(user_id, vault_name), keyring
+    )
 
 
 async def delete_vault_credential(user_id: str, vault_name: str) -> None:

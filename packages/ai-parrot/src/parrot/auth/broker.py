@@ -359,17 +359,17 @@ class _UserLLMKeyResolver(CredentialResolver):
             The plaintext API key, or ``None`` if none is stored, the
             vault is unavailable, or decryption fails.
         """
+        from parrot.interfaces.documentdb import DocumentDb
+
         try:
-            from navigator_session.vault.config import load_master_keys
+            from parrot.security.credentials_utils import decrypt_credential, llm_key_context
+            from parrot.security.vault_utils import get_vault_keyring
         except ImportError:
             logger.debug("_UserLLMKeyResolver: navigator_session.vault not available.")
             return None
 
-        from parrot.interfaces.documentdb import DocumentDb
-        from parrot.security.credentials_utils import decrypt_credential
-
         try:
-            master_keys = load_master_keys()
+            keyring = get_vault_keyring()
         except Exception as exc:  # pylint: disable=broad-except
             logger.warning("_UserLLMKeyResolver: failed to load vault master keys: %s", exc)
             return None
@@ -391,7 +391,9 @@ class _UserLLMKeyResolver(CredentialResolver):
             return None
 
         try:
-            credential = decrypt_credential(doc["api_key"], master_keys)
+            credential = decrypt_credential(
+                doc["api_key"], llm_key_context(user_id, provider), keyring
+            )
             return credential.get("api_key")
         except Exception as exc:  # pylint: disable=broad-except
             # NEVER log the raw doc/ciphertext — only the failure.

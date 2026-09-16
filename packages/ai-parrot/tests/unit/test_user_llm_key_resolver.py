@@ -1,6 +1,6 @@
 """Unit tests for ``_UserLLMKeyResolver`` (FEAT-467 TASK-2516 — BYOK).
 
-Fakes ``navigator_session.vault.config.load_master_keys`` and
+Fakes the vault key ring and
 ``parrot.interfaces.documentdb.DocumentDb`` at their SOURCE modules —
 ``_UserLLMKeyResolver.resolve()`` does local ``from X import Y`` imports
 inside the method body, which re-resolve ``X.Y`` fresh on every call, so
@@ -15,7 +15,8 @@ from typing import ClassVar
 import parrot.interfaces.documentdb as documentdb_module
 import pytest
 from parrot.auth.broker import CredentialResolverFactory, _UserLLMKeyResolver
-from parrot.security.credentials_utils import encrypt_credential
+from navigator_session.vault import KeyRing
+from parrot.security.credentials_utils import encrypt_credential, llm_key_context
 
 MASTER_KEY_ID = 1
 MASTER_KEY = b"0" * 32  # deterministic 32-byte AES key for tests
@@ -44,12 +45,12 @@ class _FakeDocumentDb:
 
 @pytest.fixture(autouse=True)
 def patch_vault_keys(monkeypatch):
-    """Stand in for navigator_session.vault.config.load_master_keys."""
-    try:
-        import navigator_session.vault.config as vault_config_module
-    except ImportError:
-        pytest.skip("navigator_session.vault not installed")
-    monkeypatch.setattr(vault_config_module, "load_master_keys", lambda: MASTER_KEYS)
+    """Stand in for the process-wide vault KeyRing (FEAT-099)."""
+    import parrot.security.vault_utils as vault_utils_module
+
+    monkeypatch.setattr(
+        vault_utils_module, "get_vault_keyring", lambda: KeyRing(MASTER_KEYS, MASTER_KEY_ID)
+    )
 
 
 @pytest.fixture
@@ -60,7 +61,11 @@ def fake_db(monkeypatch):
 
 
 def _seed_stored_key(user_id: str, provider: str, api_key: str) -> None:
-    encrypted = encrypt_credential({"api_key": api_key}, MASTER_KEY_ID, MASTER_KEY)
+    encrypted = encrypt_credential(
+        {"api_key": api_key},
+        llm_key_context(user_id, provider),
+        KeyRing(MASTER_KEYS, MASTER_KEY_ID),
+    )
     _FakeDocumentDb.docs.append(
         {
             "_collection": "user_llm_keys",
@@ -107,12 +112,12 @@ class TestUserLLMKeyResolver:
 
     @pytest.mark.asyncio
     async def test_vault_unavailable_returns_none(self, fake_db, monkeypatch):
-        import navigator_session.vault.config as vault_config_module
+        import parrot.security.vault_utils as vault_utils_module
 
         def _raise():
             raise RuntimeError("vault keys not configured")
 
-        monkeypatch.setattr(vault_config_module, "load_master_keys", _raise)
+        monkeypatch.setattr(vault_utils_module, "get_vault_keyring", _raise)
         _seed_stored_key("user-1", "anthropic", "sk-ant-secret-value")
 
         resolver = _UserLLMKeyResolver()
