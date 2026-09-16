@@ -175,7 +175,7 @@
       "feature_id": "FEAT-559",
       "feature": "sdd-coder-execution-pool-suspensions",
       "spec": "sdd/specs/sdd-coder-execution-pool-suspensions.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -185,8 +185,8 @@
       "parallelism_notes": "Depends on TASK-3281 fully scoped ownership. Writes engine.py only after native/review isolation; creates the integration file that TASK-3285 later extends.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3282-coder-execution-restart-recovery.md"
+      "completed_at": "2026-09-16T01:39:20+00:00",
+      "file": "sdd/tasks/completed/TASK-3282-coder-execution-restart-recovery.md"
     },
     {
       "id": "TASK-3283",
