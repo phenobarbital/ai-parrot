@@ -31,9 +31,9 @@ async def _write_and_commit(worktree: Path, filename: str, content: str, message
     assert rc == 0, err
 
 
-async def test_engine_plan_from_real_index(git_sandbox_feature, three_seat_roster, noop_probe):
+async def test_engine_plan_from_real_index(git_sandbox_feature, explicit_model_roster, noop_probe):
     worktree, feature_branch, base_path, _index_path = git_sandbox_feature
-    engine = SddCoderEngine(roster=three_seat_roster, probe=noop_probe, worktree_base_path=str(base_path))
+    engine = SddCoderEngine(roster=explicit_model_roster, probe=noop_probe, worktree_base_path=str(base_path))
 
     plan = await engine.plan("demo", str(worktree))
 
@@ -49,14 +49,14 @@ async def test_engine_plan_from_real_index(git_sandbox_feature, three_seat_roste
     assert len(seat_labels) == len(set(seat_labels)) == 3
 
 
-async def test_engine_plan_is_deterministic(git_sandbox_feature, three_seat_roster, noop_probe, monkeypatch):
+async def test_engine_plan_is_deterministic(git_sandbox_feature, explicit_model_roster, noop_probe, monkeypatch):
     """Shuffled `TaskScheduler.next_wave()` order yields identical chunks (S3):
     two INDEPENDENT engines (fresh ChunkAssigner each, `_start=0`) must agree,
     since the assigner's rotating start is per-engine state, not part of the
     determinism guarantee under test here."""
     worktree, _feature_branch, base_path, _index_path = git_sandbox_feature
 
-    engine1 = SddCoderEngine(roster=three_seat_roster, probe=noop_probe, worktree_base_path=str(base_path))
+    engine1 = SddCoderEngine(roster=explicit_model_roster, probe=noop_probe, worktree_base_path=str(base_path))
     plan1 = await engine1.plan("demo", str(worktree))
 
     original_next_wave = TaskScheduler.next_wave
@@ -66,38 +66,38 @@ async def test_engine_plan_is_deterministic(git_sandbox_feature, three_seat_rost
 
     monkeypatch.setattr(TaskScheduler, "next_wave", _reversed_next_wave)
 
-    engine2 = SddCoderEngine(roster=three_seat_roster, probe=noop_probe, worktree_base_path=str(base_path))
+    engine2 = SddCoderEngine(roster=explicit_model_roster, probe=noop_probe, worktree_base_path=str(base_path))
     plan2 = await engine2.plan("demo", str(worktree))
 
     assert plan1.chunks == plan2.chunks
 
 
-async def test_engine_plan_dependency_cycle(git_sandbox_feature, three_seat_roster, noop_probe):
+async def test_engine_plan_dependency_cycle(git_sandbox_feature, explicit_model_roster, noop_probe):
     worktree, _feature_branch, base_path, index_path = git_sandbox_feature
     data = json.loads(index_path.read_text())
     data["tasks"][0]["depends_on"] = ["TASK-0002"]
     data["tasks"][1]["depends_on"] = ["TASK-0001"]
     index_path.write_text(json.dumps(data, indent=2))
 
-    engine = SddCoderEngine(roster=three_seat_roster, probe=noop_probe, worktree_base_path=str(base_path))
+    engine = SddCoderEngine(roster=explicit_model_roster, probe=noop_probe, worktree_base_path=str(base_path))
     with pytest.raises(CoderFailure) as excinfo:
         await engine.plan("demo", str(worktree))
     assert excinfo.value.code == "dependency_cycle"
 
 
-async def test_engine_rejects_worktree_outside_base(git_sandbox_feature, three_seat_roster, noop_probe, tmp_path):
+async def test_engine_rejects_worktree_outside_base(git_sandbox_feature, explicit_model_roster, noop_probe, tmp_path):
     worktree, _feature_branch, _base_path, _index_path = git_sandbox_feature
     other_base = tmp_path / "unrelated"
     other_base.mkdir()
-    engine = SddCoderEngine(roster=three_seat_roster, probe=noop_probe, worktree_base_path=str(other_base))
+    engine = SddCoderEngine(roster=explicit_model_roster, probe=noop_probe, worktree_base_path=str(other_base))
     with pytest.raises(CoderFailure) as excinfo:
         await engine.plan("demo", str(worktree))
     assert excinfo.value.code == "worktree_outside_base"
 
 
-async def test_engine_feature_not_found(git_sandbox_feature, three_seat_roster, noop_probe):
+async def test_engine_feature_not_found(git_sandbox_feature, explicit_model_roster, noop_probe):
     worktree, _feature_branch, base_path, _index_path = git_sandbox_feature
-    engine = SddCoderEngine(roster=three_seat_roster, probe=noop_probe, worktree_base_path=str(base_path))
+    engine = SddCoderEngine(roster=explicit_model_roster, probe=noop_probe, worktree_base_path=str(base_path))
     with pytest.raises(CoderFailure) as excinfo:
         await engine.plan("no-such-feature", str(worktree))
     assert excinfo.value.code == "feature_not_found"
@@ -195,14 +195,14 @@ async def test_engine_merge_conflict_reported_and_aborted(git_sandbox_feature, n
     assert f"{feature_branch}--TASK-0001-a2" in branches
 
 
-async def test_engine_orphans_listed_not_merged(git_sandbox_feature, three_seat_roster, noop_probe):
+async def test_engine_orphans_listed_not_merged(git_sandbox_feature, explicit_model_roster, noop_probe):
     worktree, feature_branch, base_path, _index_path = git_sandbox_feature
     orphan_branch = f"{feature_branch}--TASK-0009-a1"
     await _git("checkout", "-b", orphan_branch, cwd=worktree)
     await _write_and_commit(worktree, "pkg/orphan.py", "# orphan\n", "orphan commit")
     await _git("checkout", feature_branch, cwd=worktree)
 
-    engine = SddCoderEngine(roster=three_seat_roster, probe=noop_probe, worktree_base_path=str(base_path))
+    engine = SddCoderEngine(roster=explicit_model_roster, probe=noop_probe, worktree_base_path=str(base_path))
     plan = await engine.plan("demo", str(worktree))
 
     orphan_ids = {o.task_id: o for o in plan.orphan_branches}
@@ -419,7 +419,7 @@ async def test_all_seats_exhausted(git_sandbox_feature, explicit_model_roster, n
     worktree, _feature_branch, base_path, _index_path = git_sandbox_feature
 
     # Pre-populate suspension store with all models excluded
-    from datetime import datetime, timezone
+    from datetime import datetime, timedelta, timezone
     from parrot.knowledge.wiki.ledger.coder_suspensions import (
         ModelKey,
         SuspensionPolicy,
@@ -429,10 +429,11 @@ async def test_all_seats_exhausted(git_sandbox_feature, explicit_model_roster, n
     now = datetime.now(timezone.utc)
     policy = SuspensionPolicy()
 
-    for model in ["model-a", "model-b", "model-c"]:
+    for index, model in enumerate(["model-a", "model-b", "model-c"]):
         record = SuspensionRecord(
-            execution_id="prior-execution",
+            execution_id="550e0000-0000-0000-0000-000000000099",
             feature_id="FEAT-549",
+            attempt_uid=f"prior-attempt-{index}",
             source="engine",
             seat_label="x",
             backend="nova" if model == "model-a" else "google-compat" if model == "model-b" else "codex",
@@ -450,7 +451,7 @@ async def test_all_seats_exhausted(git_sandbox_feature, explicit_model_roster, n
             ],
             reason="timeout",
             occurred_at=now,
-            expires_at=now.replace(second=now.second + 1800),
+            expires_at=now + timedelta(seconds=policy.cooldown_seconds),
             duration_s=0.0,
             explanation="test suspension",
         )
@@ -483,13 +484,15 @@ async def test_plan_cache_is_execution_private(git_sandbox_feature, explicit_mod
     exec_id_1 = "550e0000-0000-0000-0000-000000000031"
     exec_id_2 = "550e0000-0000-0000-0000-000000000032"
 
-    # Begin two executions
+    # Only one execution may own this worktree at a time (execution_in_progress,
+    # verified separately by test_same_worktree_has_single_execution_owner) --
+    # end the first before beginning the second, then verify their plan caches
+    # (keyed by execution_id) stayed independent rather than being shared/reused.
     await engine.begin_execution("demo", str(worktree), exec_id_1)
-    await engine.begin_execution("demo", str(worktree), exec_id_2)
-
-    # Plan with execution 1
     plan1 = await engine.plan("demo", str(worktree), execution_id=exec_id_1)
-    # Plan with execution 2
+    await engine.end_execution(exec_id_1)
+
+    await engine.begin_execution("demo", str(worktree), exec_id_2)
     plan2 = await engine.plan("demo", str(worktree), execution_id=exec_id_2)
 
     # Both should have execution_id set
@@ -508,14 +511,14 @@ async def test_plan_cache_is_execution_private(git_sandbox_feature, explicit_mod
     assert engine._plan_cache[cache_key_1] is not engine._plan_cache[cache_key_2]
 
 
-async def test_open_makes_zero_probes_without_execution(git_sandbox_feature, three_seat_roster, noop_probe):
+async def test_open_makes_zero_probes_without_execution(git_sandbox_feature, explicit_model_roster, noop_probe):
     """Legacy open() should probe without needing an execution_id.
 
     This verifies backward compatibility: the old open() path still works
     and probes immediately (no history gating).
     """
     worktree, _feature_branch, base_path, _index_path = git_sandbox_feature
-    engine = SddCoderEngine(roster=three_seat_roster, probe=noop_probe, worktree_base_path=str(base_path))
+    engine = SddCoderEngine(roster=explicit_model_roster, probe=noop_probe, worktree_base_path=str(base_path))
 
     # Call open without begin_execution
     await engine.open()

@@ -49,12 +49,15 @@ def _effective_key(seat: RosterSeat) -> Optional[ModelKey]:
     return ModelKey(backend=seat.backend or "", model=seat.model)
 
 
-def _roster_fingerprint(roster: RosterConfig) -> str:
+def roster_fingerprint(roster: RosterConfig) -> str:
     """Deterministic, stable fingerprint of a roster's configuration.
 
     Used to detect `execution_config_mismatch` on resume (a caller reusing an
     `execution_id` with a roster that has since changed) -- computed once at
-    pool construction, never recomputed from mutable runtime state.
+    pool construction, never recomputed from mutable runtime state. Public
+    (not `_`-prefixed): the engine's `begin_execution` resume path needs the
+    CURRENT roster's fingerprint to compare against an existing pool's, without
+    constructing a throwaway `ExecutionPool` just to read the property.
     """
     canonical = roster.model_dump_json()
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
@@ -100,7 +103,7 @@ class ExecutionPool:
         self._execution_id = execution_id
         self._feature_id = feature_id
         self._worktree_path = worktree_path
-        self._roster_fingerprint = _roster_fingerprint(roster)
+        self._roster_fingerprint = roster_fingerprint(roster)
         self._seats: List[RosterSeat] = list(seats)
         self._suspension_store = suspension_store
         self._initial_exclusions: Set[ModelKey] = set(initial_exclusions)

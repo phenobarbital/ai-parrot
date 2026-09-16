@@ -67,7 +67,7 @@ from parrot.flows.dev_loop.sdd_coder.models import (
     TaskResult,
 )
 from parrot.flows.dev_loop.sdd_coder.roster import ChunkAssigner, RosterProbe, available_seats
-from parrot.flows.dev_loop.sdd_coder.pool import ExecutionPool
+from parrot.flows.dev_loop.sdd_coder.pool import ExecutionPool, roster_fingerprint
 from parrot.flows.dev_loop.models.telemetry import AttemptTelemetry
 from parrot.flows.dev_loop.sdd_coder.telemetry import (
     CoderTelemetrySink,
@@ -448,10 +448,15 @@ class SddCoderEngine:
                     "execution_scope_mismatch",
                     f"execution {execution_id} is bound to worktree {existing.worktree_path}, not {canonical_worktree}",
                 )
-            # Validate roster fingerprint (same configuration)
-            if existing.roster_fingerprint != ExecutionPool.roster_fingerprint.__get__(existing, ExecutionPool):
-                # Note: roster_fingerprint is a property, need to get it properly
-                pass  # Resume is valid, return current view
+            # Validate roster fingerprint (same configuration): a resume with a
+            # roster that has since changed is a config mismatch, not a silent
+            # no-op -- compare the pool's fingerprint (fixed at its construction)
+            # against the CURRENT roster's fingerprint.
+            if existing.roster_fingerprint != roster_fingerprint(self.roster):
+                raise CoderFailure(
+                    "execution_config_mismatch",
+                    f"execution {execution_id} was bound to a different roster configuration",
+                )
             # Check if closed
             if existing.view().status == "closed":
                 raise CoderFailure(
@@ -475,8 +480,14 @@ class SddCoderEngine:
                     model_keys.append(ModelKey(backend="native", model=seat.model or "haiku"))
                 elif seat.model:
                     model_keys.append(ModelKey(backend=seat.backend or "", model=seat.model))
-            # Query recent suspensions
-            recent = await asyncio.to_thread(self._suspension_store.recent, model_keys, now)
+            # Query recent suspensions. `CoderSuspensionStore.recent` is itself an
+            # `async def` that already offloads its file I/O via `asyncio.to_thread`
+            # internally -- wrapping it in ANOTHER `asyncio.to_thread` here would call
+            # the coroutine function in a worker thread without ever awaiting the
+            # coroutine it returns, silently discarding the result (surfaced as
+            # `TypeError: 'coroutine' object is not iterable` below, masked by the
+            # broad `except Exception` as a false "suspension_history_unavailable").
+            recent = await self._suspension_store.recent(model_keys, now)
             # Build initial exclusions from history
             initial_exclusions: List[ModelKey] = []
             for record in recent:
