@@ -18,11 +18,15 @@ import logging
 import os
 import re
 import time
+import typing
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple
+
+if TYPE_CHECKING:
+    from parrot.flows.dev_loop.sdd_coder.models import ExecutionPoolView
 
 from parrot import conf
 from parrot.knowledge.wiki.ledger.coder_feedback import CoderFeedback, CoderFeedbackReceipt, CoderFeedbackStore
@@ -55,6 +59,7 @@ from parrot.flows.dev_loop.sdd_coder.models import (
     CleanupReport,
     CoderJob,
     CoderPlan,
+    ExecutionSnapshot,
     NativePrep,
     OrphanBranch,
     PlannedTask,
@@ -64,11 +69,19 @@ from parrot.flows.dev_loop.sdd_coder.models import (
     TaskResult,
 )
 from parrot.flows.dev_loop.sdd_coder.roster import ChunkAssigner, RosterProbe, available_seats
+from parrot.flows.dev_loop.sdd_coder.pool import ExecutionPool, roster_fingerprint
 from parrot.flows.dev_loop.models.telemetry import AttemptTelemetry
 from parrot.flows.dev_loop.sdd_coder.telemetry import (
     CoderTelemetrySink,
     OutcomeRow,
     build_attempt_row,
+)
+from parrot.knowledge.wiki.ledger.coder_suspensions import (
+    CoderSuspensionStore,
+    ModelKey,
+    SuspensionReason,
+    SuspensionReceipt,
+    SuspensionRecord,
 )
 
 _ORPHANS_INDEX_NAME = "_orphans.json"
@@ -173,11 +186,18 @@ class AttemptTelemetryCollector:
     """
 
     def __init__(
-        self, *, attempt: int, seat: RosterSeat, attempt_uid: Optional[str] = None, job_id: Optional[str] = None
+        self,
+        *,
+        attempt: int,
+        seat: RosterSeat,
+        attempt_uid: Optional[str] = None,
+        job_id: Optional[str] = None,
+        execution_id: Optional[str] = None,
     ) -> None:
         self.attempt, self.seat = attempt, seat
         self.attempt_uid = attempt_uid or ""
         self.job_id = job_id or ""
+        self.execution_id = execution_id or ""
         self.started = time.monotonic()
         self.started_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
         self.usage: Dict[str, Any] = {}
@@ -280,6 +300,7 @@ class AttemptTelemetryCollector:
             turns=turns,
             terminal=terminal,
             error_class=error_class,
+            execution_id=self.execution_id,
             declared_files=self.declared_files,
             declared_files_known=self.declared_files_known,
             turns_with_unknown_usage=turns_with_unknown_usage,
@@ -344,10 +365,23 @@ class SddCoderEngine:
         # blind to it); `cleanup()` must not remove these worktrees while the coder may
         # still be working inside them (FEAT-555 incident: TASK-230-a1 was deleted mid-run).
         self._native_inflight: set[str] = set()
+        # FEAT-559: manager key (worker id, see `_worker_id`) -> owning execution_id,
+        # or "" for a legacy/no-execution call. `cleanup()`/`merge()` use this to
+        # never enumerate or touch a DIFFERENT execution's managers (AC-6).
+        self._manager_execution: Dict[str, str] = {}
+        # FEAT-559: (execution_id, task_id) -> attempt_uid, so a duplicate
+        # `prepare_native` call for the same task in the same execution reuses the
+        # existing reservation instead of admitting (and worktree-creating) twice.
+        self._native_reservations: Dict[Tuple[str, str], str] = {}
         # Attribution for feedback is checked against attempts this engine issued.
         self._feedback_sources: Dict[str, Tuple[str, str, str, str]] = {}
         self._feedback_contexts: Dict[str, str] = {}
         self._feedback_unknown_exposure: set[str] = set()
+
+        # FEAT-559: execution pools (begin_execution/end_execution lifecycle)
+        self._executions: Dict[str, ExecutionPool] = {}  # execution_id -> pool
+        self._execution_owners: Dict[str, str] = {}  # canonical worktree path -> execution_id (exclusive ownership)
+        self._suspension_store: Optional[CoderSuspensionStore] = None
 
         # Telemetry setup (FEAT-554). `conf.DEV_LOOP_CODER_TELEMETRY` is the
         # master switch — mirrors the same conf-fallback pattern `redis_url`/
@@ -365,7 +399,11 @@ class SddCoderEngine:
             self._sink = CoderTelemetrySink(telemetry_root)
 
     async def open(self) -> None:
-        """Probe once; cache seats/assigner. Idempotent. Raises roster_empty when nothing is available."""
+        """Probe once; cache seats/assigner. Idempotent. Raises roster_empty when nothing is available.
+
+        NOTE: This is the legacy initialization path. For FEAT-559 execution pools,
+        use begin_execution() instead, which reads history before probing.
+        """
         if self._opened:
             return
         self.probe_results = await self._probe.probe(self.roster)
@@ -376,13 +414,350 @@ class SddCoderEngine:
             )
         self._assigner, self._opened = ChunkAssigner(self.seats), True
 
+    async def begin_execution(
+        self,
+        feature: str,
+        worktree: str,
+        execution_id: str,
+    ) -> "ExecutionPoolView":
+        """Begin a new execution with history-gated startup (FEAT-559 M3).
+
+        Reads durable suspension history BEFORE probing. Binds execution_id
+        immutably to the canonical worktree path. Only one active execution
+        may own a canonical worktree at a time.
+
+        Args:
+            feature: Feature identifier (matches per-spec index header).
+            worktree: Absolute path to the feature worktree.
+            execution_id: Caller-generated UUID for this execution.
+
+        Returns:
+            ExecutionPoolView with the execution's initial state.
+
+        Raises:
+            CoderFailure with codes:
+                - execution_in_progress: another execution already owns this worktree
+                - execution_scope_mismatch: resuming with different feature/worktree
+                - execution_config_mismatch: roster changed since execution was created
+                - execution_closed: trying to resume a closed execution for new work
+                - suspension_history_unavailable: cannot read durable history (fallback_required)
+        """
+        # Resolve feature context first (validates feature/worktree binding)
+        ctx = await self._resolve_feature(feature, worktree)
+        canonical_worktree = ctx.worktree
+
+        # Check for existing owner of this worktree
+        if canonical_worktree in self._execution_owners:
+            existing_id = self._execution_owners[canonical_worktree]
+            if existing_id != execution_id:
+                raise CoderFailure(
+                    "execution_in_progress",
+                    f"worktree {canonical_worktree} is already owned by execution {existing_id}",
+                    owner_execution_id=existing_id,
+                )
+
+        # Check for resume case: same execution_id already exists in memory
+        if execution_id in self._executions:
+            existing = self._executions[execution_id]
+            # Validate scope binding (same feature and worktree)
+            if existing.feature_id != ctx.feature_id:
+                raise CoderFailure(
+                    "execution_scope_mismatch",
+                    f"execution {execution_id} is bound to feature {existing.feature_id}, not {ctx.feature_id}",
+                )
+            if existing.worktree_path != canonical_worktree:
+                raise CoderFailure(
+                    "execution_scope_mismatch",
+                    f"execution {execution_id} is bound to worktree {existing.worktree_path}, not {canonical_worktree}",
+                )
+            # Validate roster fingerprint (same configuration): a resume with a
+            # roster that has since changed is a config mismatch, not a silent
+            # no-op -- compare the pool's fingerprint (fixed at its construction)
+            # against the CURRENT roster's fingerprint.
+            if existing.roster_fingerprint != roster_fingerprint(self.roster):
+                raise CoderFailure(
+                    "execution_config_mismatch",
+                    f"execution {execution_id} was bound to a different roster configuration",
+                )
+            # Check if closed
+            if existing.view().status == "closed":
+                raise CoderFailure(
+                    "execution_closed",
+                    f"execution {execution_id} is closed and cannot start new work",
+                )
+            # Idempotent resume: return current view
+            return existing.view()
+
+        # Check for durable snapshot (after MCP restart): read and restore from disk
+        durable_snapshot = await self._read_execution_snapshot(canonical_worktree, execution_id)
+        if durable_snapshot is not None:
+            # Validate scope binding against durable record
+            if durable_snapshot.feature_id != ctx.feature_id:
+                raise CoderFailure(
+                    "execution_scope_mismatch",
+                    f"durable snapshot for {execution_id} is bound to feature {durable_snapshot.feature_id}, not {ctx.feature_id}",
+                )
+            if durable_snapshot.worktree_path != canonical_worktree:
+                raise CoderFailure(
+                    "execution_scope_mismatch",
+                    f"durable snapshot for {execution_id} is bound to worktree {durable_snapshot.worktree_path}, not {canonical_worktree}",
+                )
+            # Validate roster fingerprint against durable record
+            if durable_snapshot.roster_fingerprint != roster_fingerprint(self.roster):
+                raise CoderFailure(
+                    "execution_config_mismatch",
+                    f"durable snapshot for {execution_id} was bound to a different roster configuration",
+                )
+
+            # Check if snapshot says closed: a closed execution never starts fresh work
+            if durable_snapshot.status == "closed":
+                raise CoderFailure(
+                    "execution_closed",
+                    f"execution {execution_id} is closed and cannot start new work",
+                )
+
+            # Restore the pool with persistent local + inherited exclusions
+            if self._suspension_store is None:
+                self._suspension_store = await asyncio.to_thread(
+                    CoderSuspensionStore.from_root, Path(canonical_worktree)
+                )
+
+            # Combine durable inherited exclusions with current inherited exclusions
+            # (per spec: replay own suspensions regardless of expiry)
+            now = datetime.now(timezone.utc)
+            combined_inherited = list(durable_snapshot.inherited_exclusions)
+
+            # Recreate pool with combined exclusions
+            try:
+                # Probe with combined exclusions
+                excluded_set = set(combined_inherited) | set(durable_snapshot.local_exclusions)
+                self.probe_results = await self._probe.probe(self.roster, excluded=excluded_set)
+                self.seats = available_seats(self.roster, self.probe_results)
+
+                pool = ExecutionPool(
+                    execution_id=execution_id,
+                    feature_id=ctx.feature_id,
+                    worktree_path=canonical_worktree,
+                    roster=self.roster,
+                    seats=self.seats,
+                    suspension_store=self._suspension_store,
+                    initial_exclusions=combined_inherited,
+                )
+
+                # Restore local exclusions (from this execution's own suspensions)
+                pool._local_exclusions = set(durable_snapshot.local_exclusions)
+
+                # Check for unresolved running/prepared attempts that require reconciliation
+                if (
+                    durable_snapshot.admitted_attempts
+                    or durable_snapshot.native_reservations
+                    or durable_snapshot.outstanding_job_ids
+                ):
+                    # Uncertain work requires reconciliation before dispatch
+                    pool._status = "recovery_required"
+
+                # Check if pool has any available seats
+                view = pool.view()
+                if not any(seat.available and not seat.suspended for seat in view.seats):
+                    pool._fallback_required = True
+                    pool._fallback_reason = "all_seats_exhausted"
+
+                self._executions[execution_id] = pool
+                self._execution_owners[canonical_worktree] = execution_id
+                return pool.view()
+            except Exception as exc:
+                self.logger.warning(
+                    "failed to restore execution from snapshot %s: %s",
+                    execution_id,
+                    exc,
+                )
+                raise CoderFailure(
+                    "internal_error",
+                    f"failed to restore execution from snapshot: {exc}",
+                ) from exc
+
+        # New execution: read durable suspension history BEFORE probing
+        try:
+            if self._suspension_store is None:
+                self._suspension_store = await asyncio.to_thread(
+                    CoderSuspensionStore.from_root, Path(canonical_worktree)
+                )
+            now = datetime.now(timezone.utc)
+            # Get all model keys from roster to query history
+            model_keys = []
+            for seat in self.roster.seats:
+                if seat.kind == "native":
+                    model_keys.append(ModelKey(backend="native", model=seat.model or "haiku"))
+                    continue
+                if seat.model:
+                    model_keys.append(ModelKey(backend=seat.backend or "", model=seat.model))
+                # A previously-suspended FALLBACK-only identity must also be
+                # excluded before the initial probe -- omitting it left a
+                # recently-failed fallback model eligible for a fresh smoke
+                # probe/dispatch even though its own incident is still within
+                # cooldown (AC-4: "excludes all unexpired matching records
+                # BEFORE any primary/fallback smoke probe or dispatcher call").
+                if seat.fallback_model:
+                    model_keys.append(ModelKey(backend=seat.backend or "", model=seat.fallback_model))
+            # Query recent suspensions. `CoderSuspensionStore.recent` is itself an
+            # `async def` that already offloads its file I/O via `asyncio.to_thread`
+            # internally -- wrapping it in ANOTHER `asyncio.to_thread` here would call
+            # the coroutine function in a worker thread without ever awaiting the
+            # coroutine it returns, silently discarding the result (surfaced as
+            # `TypeError: 'coroutine' object is not iterable` below, masked by the
+            # broad `except Exception` as a false "suspension_history_unavailable").
+            recent = await self._suspension_store.recent(model_keys, now)
+            # Build initial exclusions from history
+            initial_exclusions: List[ModelKey] = []
+            for record in recent:
+                for key in record.blocked_keys:
+                    if key not in initial_exclusions:
+                        initial_exclusions.append(key)
+        except Exception as exc:
+            # History unavailable: fallback required, but still create pool
+            # so the worker can decide what to do
+            self.logger.warning(
+                "could not read suspension history for execution %s: %s",
+                execution_id,
+                exc,
+            )
+            # Create pool with empty exclusions but mark fallback required
+            pool = ExecutionPool(
+                execution_id=execution_id,
+                feature_id=ctx.feature_id,
+                worktree_path=canonical_worktree,
+                roster=self.roster,
+                seats=[],  # No seats until probed
+                suspension_store=self._suspension_store,
+                initial_exclusions=[],
+            )
+            pool._fallback_required = True
+            pool._fallback_reason = "suspension_history_unavailable"
+            # Spec §2 "Persistence failure behavior": unreadable/invalid
+            # suspension history at begin "yields an EXHAUSTED pool" --
+            # not just fallback_required with status left at "active".
+            pool._status = "exhausted"
+            self._executions[execution_id] = pool
+            self._execution_owners[canonical_worktree] = execution_id
+            return pool.view()
+
+        # Probe with exclusions: only eligible candidates
+        excluded_set = set(initial_exclusions)
+        self.probe_results = await self._probe.probe(self.roster, excluded=excluded_set)
+        self.seats = available_seats(self.roster, self.probe_results)
+
+        # Create the execution pool with probed seats and initial exclusions
+        pool = ExecutionPool(
+            execution_id=execution_id,
+            feature_id=ctx.feature_id,
+            worktree_path=canonical_worktree,
+            roster=self.roster,
+            seats=self.seats,
+            suspension_store=self._suspension_store,
+            initial_exclusions=initial_exclusions,
+        )
+
+        # Check if pool has any available seats
+        view = pool.view()
+        if not any(seat.available and not seat.suspended for seat in view.seats):
+            pool._fallback_required = True
+            pool._fallback_reason = "all_seats_exhausted"
+
+        self._executions[execution_id] = pool
+        self._execution_owners[canonical_worktree] = execution_id
+        return pool.view()
+
+    async def end_execution(self, execution_id: str) -> "ExecutionPoolView":
+        """End an execution, releasing worktree ownership.
+
+        Refuses while known attempts/reservations are in flight. Records a
+        durable close after they settle.
+
+        Args:
+            execution_id: The execution to close.
+
+        Returns:
+            ExecutionPoolView with final state (status='closed').
+
+        Raises:
+            CoderFailure with codes:
+                - execution_not_found: unknown execution_id
+                - execution_busy: attempts/jobs still in flight
+        """
+        if execution_id not in self._executions:
+            raise CoderFailure("execution_not_found", f"no execution found with id {execution_id}")
+
+        pool = self._executions[execution_id]
+        view = pool.view()
+
+        # Check for in-flight work. Gated on "not already closed" (idempotent
+        # re-close is a no-op below), NOT on "== active": a pool transitions to
+        # "exhausted" the instant its last eligible seat is suspended, which can
+        # happen while a native/MCP attempt admitted BEFORE that suspension is
+        # still genuinely running -- gating on "active" alone let a just-exhausted
+        # pool skip this busy check entirely (code-review regression: a native
+        # agent suspended via `suspend_model` while it was the pool's only seat
+        # made `end_execution` fall straight through to the snapshot-enrichment
+        # loop below with the in-flight reservation never having settled).
+        if view.status != "closed":
+            # Check admitted attempts
+            snapshot = pool.snapshot()
+            if snapshot.admitted_attempts:
+                raise CoderFailure(
+                    "execution_busy",
+                    f"execution {execution_id} has {len(snapshot.admitted_attempts)} admitted attempts still in flight",
+                )
+            # Check native reservations
+            if snapshot.native_reservations:
+                raise CoderFailure(
+                    "execution_busy",
+                    f"execution {execution_id} has {len(snapshot.native_reservations)} native reservations still in flight",
+                )
+            # Check outstanding jobs
+            if snapshot.outstanding_job_ids:
+                raise CoderFailure(
+                    "execution_busy",
+                    f"execution {execution_id} has {len(snapshot.outstanding_job_ids)} outstanding jobs",
+                )
+
+        # Mark as closed and write durable snapshot before releasing ownership
+        pool._status = "closed"
+        canonical_worktree = pool.worktree_path
+
+        # Enrich snapshot with native reservations and outstanding job IDs from engine bookkeeping
+        snapshot = pool.snapshot()
+
+        # Collect native reservations belonging to this execution
+        for (exec_id, task_id), _attempt_uid in list(self._native_reservations.items()):
+            if exec_id == execution_id:
+                manager_key = f"{task_id}.a{self._latest_attempt.get(task_id, AttemptRecord(attempt=1)).attempt}"
+                if manager_key in self._manager_execution and self._manager_execution[manager_key] == execution_id:
+                    snapshot.native_reservations[task_id] = manager_key
+
+        # Collect outstanding job IDs belonging to this execution (track via _job_worktrees)
+        for job_id, job_wt in list(self._job_worktrees.items()):
+            if job_wt == canonical_worktree:
+                snapshot.outstanding_job_ids.append(job_id)
+
+        # Write durable snapshot atomically
+        persisted = await self._write_execution_snapshot(canonical_worktree, execution_id, snapshot)
+        if not persisted:
+            pool._persistence_degraded = True
+            self.logger.warning("failed to durably close execution %s; persistence status is degraded", execution_id)
+
+        # Release ownership after durable close
+        if self._execution_owners.get(canonical_worktree) == execution_id:
+            del self._execution_owners[canonical_worktree]
+
+        return pool.view()
+
     async def _resolve_feature(self, feature: str, worktree: str) -> _FeatureCtx:
         """Match sdd/tasks/index/*.json headers in the sdd-worker.md §1 order.
 
         Order (first match wins): feature_id exact -> feature exact ->
         feature_id numeric/any suffix -> feature substring -> spec filename.
         """
-        wt = os.path.realpath(worktree)
+        wt = await asyncio.to_thread(os.path.realpath, worktree)
         if not (wt == self._base_path or wt.startswith(self._base_path + os.sep)):
             raise CoderFailure("worktree_outside_base", f"{worktree} is not under {self._base_path}")
 
@@ -454,13 +829,85 @@ class SddCoderEngine:
             raise CoderFailure("index_unreadable", f"cannot read {ctx.index_path}")
         return sched
 
-    async def plan(self, feature: str, worktree: str) -> CoderPlan:
-        await self.open()
+    async def plan(
+        self,
+        feature: str,
+        worktree: str,
+        *,
+        execution_id: Optional[str] = None,
+    ) -> CoderPlan:
+        """Compute the next wave plan for a feature.
+
+        Args:
+            feature: Feature identifier.
+            worktree: Absolute path to the feature worktree.
+            execution_id: Optional execution ID for FEAT-559 pools. When provided,
+                uses the execution's private assigner and carries execution_id in
+                the returned plan. When omitted, uses the legacy global assigner.
+
+        Returns:
+            CoderPlan with the next wave of tasks.
+        """
+        # If execution_id provided, use the execution pool's assigner
+        pool_generation = 0
+        if execution_id is not None:
+            if execution_id not in self._executions:
+                raise CoderFailure(
+                    "execution_not_found",
+                    f"no execution found with id {execution_id}; call begin_execution first",
+                )
+            pool = self._executions[execution_id]
+            pool_generation = pool.generation
+            # Use the pool's own eligibility-filtered assigner -- `pool.assigner()`
+            # excludes suspended/busy/probe-failed seats (its own documented
+            # contract); constructing a bare `ChunkAssigner(pool._seats)` here
+            # bypassed that filtering entirely, so a replan right after a
+            # mid-execution suspension could still assign a task to the
+            # just-suspended seat (caught later by `pool.admit()`, but wasting
+            # a plan slot instead of routing to a healthy seat). `None` means
+            # the pool is currently exhausted -- same empty-chunks/fallback
+            # shape as the "no seats at all" case.
+            assigner = pool.assigner()
+            if assigner is None:
+                ctx = await self._resolve_feature(feature, worktree)
+                sched = await self._scheduler_for(ctx)
+                pending = sorted(t.id for t in sched.pending())
+                return CoderPlan(
+                    feature_id=ctx.feature_id,
+                    feature=ctx.feature,
+                    feature_branch=ctx.feature_branch,
+                    index_path=ctx.index_path,
+                    pending=pending,
+                    blocked=[],
+                    chunks=[],
+                    roster=[],
+                    orphan_branches=[],
+                    execution_id=execution_id,
+                    pool_generation=pool_generation,
+                )
+            seats = pool._seats
+            probe_results = [
+                SeatProbeResult(
+                    label=s.label,
+                    kind=s.kind,
+                    backend=s.backend,
+                    model_used=s.model,
+                    available=True,
+                )
+                for s in seats
+            ]
+        else:
+            # Legacy path: use global open() state
+            await self.open()
+            assigner = self._assigner
+            seats = self.seats
+            probe_results = self.probe_results
+
         ctx = await self._resolve_feature(feature, worktree)
         sched = await self._scheduler_for(ctx)
         wave = sorted(sched.next_wave(), key=lambda t: t.id)  # S3
-        assert self._assigner is not None
-        chunks = self._assigner.assign(wave, {t.id: t.file for t in wave})
+        assert assigner is not None
+        chunks = assigner.assign(wave, {t.id: t.file for t in wave})
         pending = sorted(t.id for t in sched.pending())
         blocked = sorted(set(pending) - {t.id for t in wave})
         orphans = await self._orphan_branches(ctx)
@@ -472,22 +919,20 @@ class SddCoderEngine:
             pending=pending,
             blocked=blocked,
             chunks=chunks,
-            roster=self.probe_results,
+            roster=probe_results,
             orphan_branches=orphans,
+            execution_id=execution_id or "",
+            pool_generation=pool_generation,
         )
-        # Code-review fix (FEAT-549, CRITICAL): cache the computed plan, keyed by feature_id.
-        # `ChunkAssigner.assign()` mutates rotation state (`self._start`) on EVERY call — with a
-        # roster that mixes mcp and native seats (the shipped `examples/sdd-coder-mcp.yaml`
-        # reference roster does), a task's mcp/native classification can flip between the
-        # display `coder_plan()` call the orchestrator loop makes first and a SECOND, internal
-        # `plan()` re-computation `run_chunk`/`prepare_native` used to do as their first step —
-        # causing a correctly-classified task to spuriously fail with `task_not_in_plan`
-        # (or the reverse) purely because rotation advanced again in between. `run_chunk`/
-        # `prepare_native` now consult this cache via `_cached_plan()` instead of recomputing.
-        self._plan_cache[ctx.feature_id] = result
+        # Cache the computed plan, keyed by feature_id (and execution_id when present).
+        # For execution pools, also store against execution_id for private cache.
+        cache_key = f"{ctx.feature_id}:{execution_id}" if execution_id else ctx.feature_id
+        self._plan_cache[cache_key] = result
         return result
 
-    async def _cached_plan(self, feature: str, worktree: str, ctx: _FeatureCtx) -> CoderPlan:
+    async def _cached_plan(
+        self, feature: str, worktree: str, ctx: _FeatureCtx, execution_id: Optional[str] = None
+    ) -> CoderPlan:
         """Reuse the most recently computed plan for this feature instead of recomputing.
 
         `run_chunk`/`prepare_native` must see EXACTLY the chunk `coder_plan` most recently
@@ -495,54 +940,217 @@ class SddCoderEngine:
         again and could reclassify a task from mcp to native or vice versa (see `plan()`).
         Falls back to a fresh `plan()` (which populates the cache) when nothing is cached yet
         — e.g. a `coder_prepare_native`/`coder_run_chunk` call with no preceding `coder_plan`.
+
+        FEAT-559: `plan()` stores execution-scoped plans under the QUALIFIED key
+        `f"{feature_id}:{execution_id}"` (never under the bare `feature_id` when an
+        execution is involved) -- this lookup and the fallback `plan()` call below
+        must use the SAME qualified key, or every execution-scoped caller misses the
+        cache every time and silently falls back to the legacy, unscoped global
+        roster/assigner (bypassing suspension-aware seat filtering entirely).
         """
-        cached = self._plan_cache.get(ctx.feature_id)
+        cache_key = f"{ctx.feature_id}:{execution_id}" if execution_id else ctx.feature_id
+        cached = self._plan_cache.get(cache_key)
         if cached is not None:
             return cached
-        return await self.plan(feature, worktree)
+        return await self.plan(feature, worktree, execution_id=execution_id)
 
-    def _manager_for(self, ctx: _FeatureCtx, task_id: str, attempt: int) -> SubWorktreeManager:
-        key = f"{task_id}.a{attempt}"
+    @staticmethod
+    def _worker_id(task_id: str, attempt: int, execution_id: Optional[str]) -> str:
+        """Centralized worker id: `TASK-N.a<attempt>[.<execution_uuid_hex>]` (spec §2 Execution lifecycle).
+
+        Passed to `SubWorktreeManager.create()`; its `_branch_suffix` replaces every
+        `.` with `-`, so this is also the single source of truth `_branch_for`/
+        `_path_for` derive from -- never hand-construct a branch/path string
+        separately (that duplication was the FEAT-559 regression this task's scope
+        calls out: "remove duplicated hard-coded branch construction from
+        dispatch/merge paths"). Execution-qualified so successive executions never
+        collide on the same branch/path even for the same task+attempt.
+        """
+        base = f"{task_id}.a{attempt}"
+        return f"{base}.{execution_id.replace('-', '')}" if execution_id else base
+
+    def _branch_for(self, ctx: _FeatureCtx, task_id: str, attempt: int, execution_id: Optional[str]) -> str:
+        """The exact branch `SubWorktreeManager.create()` produces for this worker id."""
+        return f"{ctx.feature_branch}--{SubWorktreeManager._branch_suffix(self._worker_id(task_id, attempt, execution_id))}"  # noqa: SLF001
+
+    def _path_for(self, ctx: _FeatureCtx, task_id: str, attempt: int, execution_id: Optional[str]) -> str:
+        """The exact sub-worktree path `SubWorktreeManager.create()` produces for this worker id."""
+        worker_id = self._worker_id(task_id, attempt, execution_id)
+        return str(
+            Path(self._base_path) / f"{ctx.feature_branch}--pool" / SubWorktreeManager._branch_suffix(worker_id)
+        )  # noqa: SLF001
+
+    def _manager_for(
+        self, ctx: _FeatureCtx, task_id: str, attempt: int, execution_id: Optional[str] = None
+    ) -> SubWorktreeManager:
+        key = self._worker_id(task_id, attempt, execution_id)
         if key not in self._managers:
             self._managers[key] = SubWorktreeManager(
                 base_worktree=ctx.worktree, feature_branch=ctx.feature_branch, worktree_base_path=self._base_path
             )
+            self._manager_execution[key] = execution_id or ""
         return self._managers[key]
 
-    async def prepare_native(self, feature: str, worktree: str, task_id: str) -> NativePrep:
-        """Sub-worktree for a `native` planned task (attempt 1); branch <feature_branch>--<TASK-NNN>-a1."""
+    async def prepare_native(
+        self, feature: str, worktree: str, task_id: str, execution_id: Optional[str] = None
+    ) -> NativePrep:
+        """Sub-worktree for a `native` planned task (attempt 1); branch <feature_branch>--<TASK-NNN>-a1[-<exechex>].
+
+        FEAT-559: when `execution_id` is given, the native seat's model identity is
+        admitted through the execution's pool BEFORE the worktree is created (so a
+        suspended/excluded native seat is rejected up front, not discovered later),
+        and a duplicate call for the same (execution, task) reuses the existing
+        reservation/attempt instead of admitting (and worktree-creating) twice.
+        """
         ctx = await self._resolve_feature(feature, worktree)
-        plan = await self._cached_plan(feature, worktree, ctx)
+        pool: Optional[ExecutionPool] = None
+        if execution_id is not None:
+            if execution_id not in self._executions:
+                raise CoderFailure("execution_not_found", f"no execution found with id {execution_id}")
+            pool = self._executions[execution_id]
+
+        plan = await self._cached_plan(feature, worktree, ctx, execution_id=execution_id)
         planned = next((t for c in plan.chunks for t in c.tasks if t.task_id == task_id), None)
         if planned is None or not planned.native:
             raise CoderFailure("task_not_in_plan", f"{task_id} is not a native task of the current chunk plan")
-        path = await self._manager_for(ctx, task_id, 1).create(f"{task_id}.a1")
-        self._native_inflight.add(f"{task_id}.a1")
         seat = next(seat for seat in self.roster.seats if seat.label == planned.seat_label)
         model = seat.model or "haiku"
-        attempt_uid = uuid.uuid4().hex
+
+        if pool is not None:
+            reservation_key = (execution_id, task_id)
+            existing_uid = self._native_reservations.get(reservation_key)
+            if existing_uid is not None:
+                attempt_uid = existing_uid
+            else:
+                attempt_uid = await pool.admit(task_id, ModelKey(backend="native", model=model))
+                self._native_reservations[reservation_key] = attempt_uid
+        else:
+            attempt_uid = uuid.uuid4().hex
+
+        worker_id = self._worker_id(task_id, 1, execution_id)
+        manager = self._manager_for(ctx, task_id, 1, execution_id)
+        path = await manager.create(worker_id)
+        self._native_inflight.add(worker_id)
+        branch = self._branch_for(ctx, task_id, 1, execution_id)
         self._feedback_sources[attempt_uid] = (ctx.worktree, task_id, "native", model)
         feedback_context = await self._feedback_for(ctx, planned, "native", model)
         self._feedback_contexts[attempt_uid] = feedback_context
         return NativePrep(
             task_id=task_id,
             task_file=planned.task_file,
-            branch=f"{ctx.feature_branch}--{task_id}-a1",
+            branch=branch,
             worktree_path=path,
             seat_label=planned.seat_label,
             model=model,
             attempt_uid=attempt_uid,
             coder_feedback=feedback_context,
+            execution_id=execution_id or "",
         )
 
-    async def record_feedback(self, feature: str, worktree: str, feedback: CoderFeedback) -> CoderFeedbackReceipt:
-        """Persist a reviewed correction after checking its attempt/model attribution."""
+    async def suspend_model(
+        self,
+        execution_id: str,
+        attempt_uid: str,
+        reason: str,
+        evidence_ref: str,
+    ) -> SuspensionReceipt:
+        """Report a WORKER-observed failure for one of ITS OWN admitted attempts (spec §2 M3).
+
+        The target model is resolved SERVER-SIDE from `attempt_uid` via the pool's own
+        admission record (`ExecutionPool._admitted`) -- the caller never names a model
+        directly, so it cannot invent or cross-execution an arbitrary suspension target.
+        Delegates all local-exclusion/generation/persistence mechanics to
+        `ExecutionPool.suspend()` (TASK-3276) rather than duplicating them here.
+
+        Constrained to valid worker-report sources (spec: "constrain worker reports to
+        valid native/critical-review sources"): a native attempt may report any reason;
+        an MCP attempt may only report `review_critical` (any other MCP failure is the
+        engine's own internal `_classify_and_suspend`, never a worker-initiated report).
+
+        Args:
+            execution_id: The execution owning `attempt_uid`.
+            attempt_uid: The attempt that failed, as issued by `prepare_native`/`pool.admit`.
+            reason: One of `SuspensionReason`.
+            evidence_ref: A short reference (log path, commit sha), never a transcript.
+
+        Raises:
+            CoderFailure with codes:
+                - execution_not_found: unknown execution_id
+                - attempt_not_found: attempt_uid is not an admitted reservation in this execution
+                - invalid_arguments: reason is not a valid SuspensionReason, or an MCP attempt
+                  reported a reason other than review_critical
+        """
+        if execution_id not in self._executions:
+            raise CoderFailure("execution_not_found", f"no execution found with id {execution_id}")
+        pool = self._executions[execution_id]
+
+        entry = pool._admitted.get(attempt_uid)  # noqa: SLF001 — engine already reaches into pool internals elsewhere
+        if entry is None:
+            raise CoderFailure(
+                "attempt_not_found", f"attempt {attempt_uid} is not an admitted reservation in execution {execution_id}"
+            )
+        task_id, key = entry
+
+        if reason not in typing.get_args(SuspensionReason):
+            raise CoderFailure("invalid_arguments", f"unknown suspension reason {reason!r}")
+
+        is_native = key.backend == "native"
+        if not is_native and reason != "review_critical":
+            raise CoderFailure(
+                "invalid_arguments",
+                "an MCP attempt's suspension may only be worker-reported for reason='review_critical'; "
+                "other MCP failures are classified and suspended internally by the engine, never the worker",
+            )
+
+        seat = next(
+            (
+                s
+                for s in self.roster.seats
+                if (s.backend if s.kind == "mcp" else "native") == key.backend
+                and (s.model if s.kind == "mcp" else (s.model or "haiku")) == key.model
+            ),
+            None,
+        )
+        seat_label = seat.label if seat is not None else key.backend
+
+        now = datetime.now(timezone.utc)
+        record = SuspensionRecord(
+            execution_id=execution_id,
+            feature_id=pool.feature_id,
+            task_id=task_id,
+            attempt_uid=attempt_uid,
+            source="worker_review" if reason == "review_critical" else "native_report",
+            seat_label=seat_label,
+            backend=key.backend,
+            configured_model=key.model,
+            blocked_keys=[key],
+            reason=reason,
+            occurred_at=now,
+            expires_at=now + timedelta(seconds=self.roster.suspension_policy.cooldown_seconds),
+            duration_s=0.0,
+            evidence_ref=(evidence_ref or "")[:300],
+            explanation=f"Worker-reported {reason} for {task_id} (attempt {attempt_uid}).",
+        )
+        return await pool.suspend(record)
+
+    async def record_feedback(
+        self, feature: str, worktree: str, feedback: CoderFeedback, execution_id: Optional[str] = None
+    ) -> CoderFeedbackReceipt:
+        """Persist a reviewed correction after checking its attempt/model attribution.
+
+        FEAT-559: when `execution_id` is given, it is attached to `feedback` (rejecting
+        a caller-supplied `feedback.execution_id` that conflicts with it) before recording.
+        """
         ctx = await self._resolve_feature(feature, worktree)
         expected = (ctx.worktree, feedback.task_id, feedback.backend, feedback.model)
         if self._feedback_sources.get(feedback.attempt_uid) != expected:
             raise CoderFailure(
                 "invalid_arguments", "feedback must match a known attempt's task, backend and actual model"
             )
+        if execution_id is not None:
+            if feedback.execution_id and feedback.execution_id != execution_id:
+                raise CoderFailure("invalid_arguments", "feedback execution_id does not match the calling execution")
+            feedback = feedback.model_copy(update={"execution_id": execution_id})
         store = await asyncio.to_thread(CoderFeedbackStore.from_root, Path(ctx.worktree))
         return await store.record(feedback)
 
@@ -569,14 +1177,24 @@ class SddCoderEngine:
             )
             return "Feedback unavailable: retrieval failed; this is not evidence of a clean history."
 
-    async def record_review(self, feature: str, worktree: str, review: CoderReview) -> CoderFeedbackReceipt:
-        """Measure a reviewed delivery and validate its review-fix commits."""
+    async def record_review(
+        self, feature: str, worktree: str, review: CoderReview, execution_id: Optional[str] = None
+    ) -> CoderFeedbackReceipt:
+        """Measure a reviewed delivery and validate its review-fix commits.
+
+        FEAT-559: when `execution_id` is given, it is attached to `review` (rejecting a
+        caller-supplied `review.execution_id` that conflicts with it) before recording.
+        """
         ctx = await self._resolve_feature(feature, worktree)
         expected = (ctx.worktree, review.task_id, review.backend, review.model)
         if self._feedback_sources.get(review.attempt_uid) != expected:
             raise CoderFailure(
                 "invalid_arguments", "review must match a known attempt's task, backend and actual model"
             )
+        if execution_id is not None:
+            if review.execution_id and review.execution_id != execution_id:
+                raise CoderFailure("invalid_arguments", "review execution_id does not match the calling execution")
+            review = review.model_copy(update={"execution_id": execution_id})
         for sha in set(review.fix_commits):
             rc, subject, _err = await _git("show", "-s", "--format=%s", sha, cwd=ctx.worktree)
             ancestor_rc, _out, _err = await _git("merge-base", "--is-ancestor", sha, "HEAD", cwd=ctx.worktree)
@@ -637,8 +1255,8 @@ class SddCoderEngine:
         # local path instead. `task.task_file` comes from the per-spec index's TaskRef.file —
         # repo-local SDD data, not raw external input — but no containment check existed;
         # mirrors `_resolve_feature`'s own worktree-containment pattern.
-        task_md_path = Path(ctx.worktree, task.task_file).resolve()
-        worktree_root = Path(ctx.worktree).resolve()
+        task_md_path = await asyncio.to_thread(lambda: Path(ctx.worktree, task.task_file).resolve())
+        worktree_root = await asyncio.to_thread(lambda: Path(ctx.worktree).resolve())
         if not (task_md_path == worktree_root or str(task_md_path).startswith(str(worktree_root) + os.sep)):
             return TaskResult(
                 task_id=task.task_id,
@@ -724,19 +1342,44 @@ class SddCoderEngine:
             )
         return TaskResult(task_id=task.task_id, outcome="merged", branch=branch, worktree_path=path, lint=lint_report)
 
-    async def merge(self, feature: str, worktree: str, task_id: str) -> TaskResult:
-        """Consolidate the task's LATEST attempt branch (native tasks; re-merge after Sonnet fixed a conflict)."""
+    @staticmethod
+    def _parse_worker_id(key: str) -> Tuple[str, int, str]:
+        """Parse a `_worker_id`-produced dict key: `(task_id, attempt, execution_hex_or_empty)`.
+
+        Dict keys use literal dots (`TASK-N.a<attempt>[.hex]`), unlike the sanitized
+        branch/path forms -- never `int()` a suffix that might carry a UUID hex
+        (Codebase Contract warning); this partitions on the FIRST `.a`, then the
+        first `.` in what remains, so a hex fragment can never be mistaken for
+        another `.a` boundary.
+        """
+        task_id, sep, rest = key.partition(".a")
+        if not sep:
+            return key, 0, ""
+        attempt_part, _, exec_hex = rest.partition(".")
+        return task_id, int(attempt_part), exec_hex
+
+    async def merge(self, feature: str, worktree: str, task_id: str, execution_id: Optional[str] = None) -> TaskResult:
+        """Consolidate the task's LATEST attempt branch (native tasks; re-merge after Sonnet fixed a conflict).
+
+        FEAT-559: when `execution_id` is given, only that execution's OWN managers
+        are considered -- never another execution's, nor the legacy/no-execution scope.
+        """
         ctx = await self._resolve_feature(feature, worktree)
+        scope = execution_id or ""
         attempts = sorted(
-            (int(key.rsplit(".a", 1)[1]) for key in self._managers if key.startswith(f"{task_id}.a")),
+            (
+                self._parse_worker_id(key)[1]
+                for key in self._managers
+                if self._manager_execution.get(key, "") == scope and self._parse_worker_id(key)[0] == task_id
+            ),
             reverse=True,
         )
         if not attempts:
             raise CoderFailure("branch_not_found", f"no known attempt worktree for {task_id}")
         attempt = attempts[0]
-        manager = self._manager_for(ctx, task_id, attempt)
-        branch = f"{ctx.feature_branch}--{task_id}-a{attempt}"
-        path = str(Path(self._base_path) / f"{ctx.feature_branch}--pool" / f"{task_id}-a{attempt}")
+        manager = self._manager_for(ctx, task_id, attempt, execution_id)
+        branch = self._branch_for(ctx, task_id, attempt, execution_id)
+        path = self._path_for(ctx, task_id, attempt, execution_id)
 
         sched = await self._scheduler_for(ctx)
         task_ref = next((t for t in sched.all_tasks() if t.id == task_id), None)
@@ -749,7 +1392,18 @@ class SddCoderEngine:
         # The orchestrator calls `merge()` only after the native `Agent` returned, so
         # whatever the outcome the sub-worktree is no longer in use and `cleanup()` may
         # reclaim it (conflicts are still protected by `keep_conflicted`).
-        self._native_inflight.discard(f"{task_id}.a{attempt}")
+        self._native_inflight.discard(self._worker_id(task_id, attempt, execution_id))
+        # FEAT-559: this IS the settlement point (spec: "reporting and settlement [are]
+        # separate... native completion is acknowledged only after the worker has
+        # received the child result") -- release the pool's seat reservation now,
+        # regardless of merge outcome, so another task can use this model again.
+        # `.pop()` makes this idempotent across a conflict-then-re-merge call pair.
+        if execution_id is not None:
+            pool = self._executions.get(execution_id)
+            if pool is not None:
+                reservation_uid = self._native_reservations.pop((execution_id, task_id), None)
+                if reservation_uid is not None:
+                    await pool.release(reservation_uid)
 
         # Emit an outcome row for the re-merge, attributed to the SAME
         # attempt_uid the original (pre-repair) outcome used. `_consolidate`
@@ -774,12 +1428,23 @@ class SddCoderEngine:
 
         return result
 
-    async def cleanup(self, feature: str, worktree: str, keep_conflicted: bool = True) -> CleanupReport:
-        """Remove finished sub-worktrees this engine created; never touches orphan branches it never adopted."""
+    async def cleanup(
+        self, feature: str, worktree: str, keep_conflicted: bool = True, execution_id: Optional[str] = None
+    ) -> CleanupReport:
+        """Remove finished sub-worktrees THIS execution created; never touches orphan branches it never adopted.
+
+        FEAT-559: when `execution_id` is given, only managers created under that
+        exact execution scope are enumerated -- another execution's (or the legacy/
+        no-execution scope's) managers, native reservations and jobs are untouched,
+        even if they belong to the same engine instance/worktree.
+        """
         await self._resolve_feature(feature, worktree)
+        scope = execution_id or ""
         removed: List[str] = []
         kept: List[str] = []
-        for key, manager in self._managers.items():
+        for key, manager in list(self._managers.items()):
+            if self._manager_execution.get(key, "") != scope:
+                continue  # a different execution's (or scope's) manager -- never enumerate it
             if key in self._native_inflight:
                 # A native coder may still be running in there — see `_native_inflight`.
                 kept.extend(branch for _path, branch in manager._created.values())  # noqa: SLF001
@@ -790,6 +1455,26 @@ class SddCoderEngine:
             for worker_id, (_path, branch) in before.items():
                 (kept if worker_id in after else removed).append(branch)
         return CleanupReport(removed=removed, kept=kept)
+
+    _EXEC_HEX_BRANCH_SUFFIX = re.compile(r"-([0-9a-f]{32})$")
+
+    @classmethod
+    def _parse_orphan_suffix(cls, suffix: str) -> str:
+        """Recognize both legacy (`TASK-N-a<attempt>`) and execution-qualified
+        (`TASK-N-a<attempt>-<32 lowercase hex chars>`) branch suffixes, returning
+        just `task_id` (or "" if unparseable).
+
+        Strips a trailing 32-hex-char execution suffix FIRST (fixed length,
+        unambiguous) before splitting on the last "-a" -- once dashes replace the
+        worker id's dots (`_branch_suffix`), the hex fragment itself can contain
+        "-a"-shaped substrings (e.g. a hex starting with "a" right after "a1-"),
+        so a plain `rpartition("-a")` alone would mis-split an execution-qualified
+        name. Never auto-adopts either form -- this is parsing for reporting only.
+        """
+        match = cls._EXEC_HEX_BRANCH_SUFFIX.search(suffix)
+        core = suffix[: match.start()] if match else suffix
+        task_id, sep, _attempt = core.rpartition("-a")
+        return task_id if sep and task_id else ""
 
     async def _orphan_branches(self, ctx: _FeatureCtx) -> List[OrphanBranch]:
         rc, out, _err = await _git(
@@ -803,9 +1488,9 @@ class SddCoderEngine:
         for branch in (b.strip() for b in out.splitlines() if b.strip()):
             if not branch.startswith(prefix):
                 continue
-            suffix = branch[len(prefix) :]  # e.g. "TASK-0001-a1"
-            task_id, sep, _attempt = suffix.rpartition("-a")
-            if not sep or not task_id:
+            suffix = branch[len(prefix) :]  # e.g. "TASK-0001-a1" or "TASK-0001-a1-<32 hex chars>"
+            task_id = self._parse_orphan_suffix(suffix)
+            if not task_id:
                 continue
             if task_id in live:
                 continue
@@ -837,11 +1522,98 @@ class SddCoderEngine:
 
         await asyncio.to_thread(_write)
 
-    def status(self, job_id: str) -> CoderJob:
+    async def _write_execution_snapshot(self, worktree: str, execution_id: str, snapshot: ExecutionSnapshot) -> bool:
+        """Write an atomic per-execution snapshot (TASK-3282).
+
+        Persists to <worktree>/.sdd-coder/executions/<uuid>.json using atomic
+        replace: writes to a temporary sibling, then renames over the original
+        if it exists. Returns True if write succeeded, False if write/durable
+        persistence failed.
+        """
+
+        def _write_atomic() -> bool:
+            """Write atomically using temporary file + rename pattern."""
+            try:
+                base_dir = Path(worktree) / ".sdd-coder" / "executions"
+                base_dir.mkdir(parents=True, exist_ok=True)
+                target_file = base_dir / f"{execution_id}.json"
+                temp_file = base_dir / f"{execution_id}.tmp"
+
+                # Write to temporary file first
+                temp_file.write_text(snapshot.model_dump_json(indent=2), encoding="utf-8")
+
+                # Atomic replace: rename temp over target
+                temp_file.replace(target_file)
+                return True
+            except OSError as exc:  # IOError is an alias of OSError since Python 3.3
+                self.logger.warning("failed to write execution snapshot for %s: %s", execution_id, exc)
+                return False
+
+        return await asyncio.to_thread(_write_atomic)
+
+    async def _read_execution_snapshot(self, worktree: str, execution_id: str) -> Optional[ExecutionSnapshot]:
+        """Read a persisted execution snapshot (TASK-3282).
+
+        Returns the snapshot if found and valid, None if not found, and raises
+        CoderFailure if the file is corrupt/unreadable.
+        """
+
+        def _read() -> Optional[ExecutionSnapshot]:
+            """Read from disk, validating structure."""
+            try:
+                snapshot_file = Path(worktree) / ".sdd-coder" / "executions" / f"{execution_id}.json"
+                if not snapshot_file.is_file():
+                    return None
+                data = json.loads(snapshot_file.read_text(encoding="utf-8"))
+                return ExecutionSnapshot(**data)
+            except FileNotFoundError:
+                return None
+            except (json.JSONDecodeError, ValueError, TypeError) as exc:
+                raise CoderFailure(
+                    "internal_error",
+                    f"corrupt execution snapshot for {execution_id}: {exc}",
+                ) from exc
+
+        return await asyncio.to_thread(_read)
+
+    async def status(self, job_id: str) -> CoderJob:
+        """Get job status and flush any pending execution snapshots (TASK-3282).
+
+        Retries pending suspension persistence idempotently; exposes latest pool
+        state and degraded persistence status if applicable.
+        """
         try:
-            return self._jobs.get(job_id)
+            job = self._jobs.get(job_id)
         except KeyError as exc:
             raise CoderFailure("job_not_found", f"unknown job {job_id}") from exc
+
+        # Flush any pending execution snapshots (retry persistence if degraded)
+        for execution_id, pool in list(self._executions.items()):
+            if pool._persistence_degraded:
+                # Try to persist current state atomically
+                snapshot = pool.snapshot()
+                # Enrich with engine bookkeeping (native_reservations and outstanding_job_ids)
+                for (exec_id, task_id), _attempt_uid in list(self._native_reservations.items()):
+                    if exec_id == execution_id:
+                        manager_key = (
+                            f"{task_id}.a{self._latest_attempt.get(task_id, AttemptRecord(attempt=1)).attempt}"
+                        )
+                        if (
+                            manager_key in self._manager_execution
+                            and self._manager_execution[manager_key] == execution_id
+                        ):
+                            snapshot.native_reservations[task_id] = manager_key
+
+                for job_id_iter, job_wt in list(self._job_worktrees.items()):
+                    if job_wt == pool.worktree_path and job_id_iter not in snapshot.outstanding_job_ids:
+                        snapshot.outstanding_job_ids.append(job_id_iter)
+
+                persisted = await self._write_execution_snapshot(pool.worktree_path, execution_id, snapshot)
+                if persisted:
+                    pool._persistence_degraded = False
+                    self.logger.info("recovered persistence for execution %s", execution_id)
+
+        return job
 
     def _research_for(self, ctx: _FeatureCtx, *, worktree_path: str) -> ResearchOutput:
         """Synthetic ResearchOutput — TaskScopedBrief requires one; no Jira ticket exists for a coder attempt."""
@@ -869,30 +1641,103 @@ class SddCoderEngine:
         )
 
     async def _run_attempt(
-        self, ctx: _FeatureCtx, task: PlannedTask, seat: RosterSeat, *, attempt: int, job_id: str
+        self,
+        ctx: _FeatureCtx,
+        task: PlannedTask,
+        seat: RosterSeat,
+        *,
+        attempt: int,
+        job_id: str,
+        execution_id: Optional[str] = None,
+        pool: Optional["ExecutionPool"] = None,
     ) -> Tuple[AttemptRecord, Optional[DevelopmentOutput], str, SubWorktreeManager, str, str]:
-        """ONE dispatch in ONE fresh sub-worktree. Returns (record, output|None, error, manager, branch, path)."""
+        """ONE dispatch in ONE fresh sub-worktree. Returns (record, output|None, error, manager, branch, path).
+
+        FEAT-559: When execution_id/pool are provided, performs admission gating
+        before dispatch. If the seat is no longer eligible (suspended, busy),
+        returns immediately with a not_dispatched error without creating a worktree.
+        """
         assert seat.backend is not None, "_run_attempt is only called for mcp seats; native tasks use prepare_native"
-        manager = self._manager_for(ctx, task.task_id, attempt)
-        branch = f"{ctx.feature_branch}--{task.task_id}-a{attempt}"
-        # Computed the same way `SubWorktreeManager.create()` derives it internally
-        # (`_branch_suffix` replaces "." with "-"), so `path`/`branch` are always
-        # defined even if `manager.create()` itself raises below — see the
-        # code-review fix note on the `try:` block having moved to cover
-        # worktree-creation and dispatcher-construction too.
-        path = str(Path(self._base_path) / f"{ctx.feature_branch}--pool" / f"{task.task_id}-a{attempt}")
+        manager = self._manager_for(ctx, task.task_id, attempt, execution_id)
+        # `_branch_for`/`_path_for` derive from the SAME `_worker_id` passed to
+        # `manager.create()` below (spec: "centralize derived names; remove
+        # duplicated hard-coded branch construction from dispatch/merge paths"),
+        # so `path`/`branch` are always defined even if `manager.create()` itself
+        # raises below — see the code-review fix note on the `try:` block having
+        # moved to cover worktree-creation and dispatcher-construction too.
+        branch = self._branch_for(ctx, task.task_id, attempt, execution_id)
+        path = self._path_for(ctx, task.task_id, attempt, execution_id)
         # A unique id per attempt: `attempt` restarts at 1 on every _run_task
         # invocation (line 592) and both attempts of a task share `job_id`, so
         # neither can key the telemetry join (spec §10 R3).
         attempt_uid = uuid.uuid4().hex
-        collector = AttemptTelemetryCollector(attempt=attempt, seat=seat, attempt_uid=attempt_uid, job_id=job_id)
+
+        # FEAT-559: Admission gating - check pool admission before dispatch
+        if pool is not None and execution_id is not None:
+            from parrot.flows.dev_loop.sdd_coder.pool import _effective_key
+
+            key = _effective_key(seat)
+            if key is None:
+                # No model identity - cannot admit
+                return (
+                    AttemptRecord(
+                        attempt=attempt,
+                        seat_label=seat.label,
+                        backend=seat.backend,
+                        model=seat.model,
+                        started_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                        ended_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                        duration_s=0.0,
+                        usage={},
+                        error="model_identity_required: seat has no configured model",
+                        attempt_uid=attempt_uid,
+                        job_id=job_id,
+                    ),
+                    None,
+                    "model_identity_required: seat has no configured model",
+                    manager,
+                    "",
+                    "",
+                )
+
+            try:
+                # Reserve the seat - this will block if busy, raise if excluded
+                attempt_uid = await pool.admit(task.task_id, key)
+            except ValueError as exc:
+                # Seat is excluded or pool is closed - return not_dispatched
+                error_msg = str(exc)
+                return (
+                    AttemptRecord(
+                        attempt=attempt,
+                        seat_label=seat.label,
+                        backend=seat.backend,
+                        model=seat.model,
+                        started_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                        ended_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                        duration_s=0.0,
+                        usage={},
+                        error=error_msg,
+                        attempt_uid=attempt_uid,
+                        job_id=job_id,
+                        execution_id=execution_id or "",
+                    ),
+                    None,
+                    error_msg,
+                    manager,
+                    "",
+                    "",
+                )
+
+        collector = AttemptTelemetryCollector(
+            attempt=attempt, seat=seat, attempt_uid=attempt_uid, job_id=job_id, execution_id=execution_id
+        )
         # Read `task.task_file` and count `parse_task_files(...)` NOW,
         # while the worktree still exists — set declared_files /
         # declared_files_known on the collector. An unreadable file means
         # known=False, never 0.
         try:
-            task_md_path = Path(ctx.worktree, task.task_file).resolve()
-            worktree_root = Path(ctx.worktree).resolve()
+            task_md_path = await asyncio.to_thread(lambda: Path(ctx.worktree, task.task_file).resolve())
+            worktree_root = await asyncio.to_thread(lambda: Path(ctx.worktree).resolve())
             if task_md_path == worktree_root or str(task_md_path).startswith(str(worktree_root) + os.sep):
                 task_md = await asyncio.to_thread(task_md_path.read_text, "utf-8")
                 collector.declared_files = len(parse_task_files(task_md))
@@ -911,7 +1756,7 @@ class SddCoderEngine:
             # with an EMPTY `attempts` list, bypassing the attempt-2-on-a-different-seat
             # retry ladder entirely. Moved inside so every failure mode becomes a proper
             # attempt error the ladder can act on.
-            await manager.create(f"{task.task_id}.a{attempt}")
+            await manager.create(self._worker_id(task.task_id, attempt, execution_id))
             dispatcher, profile = self._dispatcher_builder(
                 DevAgentSpec(agent=seat.backend, model=seat.model),
                 redis_url=self._redis_url,
@@ -974,6 +1819,14 @@ class SddCoderEngine:
             seat.backend,
             record.resolved_model or record.model,
         )
+
+        # FEAT-559: Release the pool reservation after attempt settles
+        if pool is not None:
+            try:
+                await pool.release(attempt_uid)
+            except Exception:
+                self.logger.warning("failed to release pool reservation for attempt_uid=%s", attempt_uid, exc_info=True)
+
         # Write the measurement BEFORE consolidation: if the server dies between
         # here and the outcome, the attempt row still survives and the analysis
         # reports an incomplete pair rather than losing the sample (spec §2).
@@ -1040,6 +1893,7 @@ class SddCoderEngine:
                     outcome=outcome,
                     conflict_file_count=conflict_file_count,
                     unexpected_file_count=unexpected_file_count,
+                    execution_id=attempt_rec.execution_id,
                 )
             )
         except Exception:
@@ -1054,7 +1908,261 @@ class SddCoderEngine:
                 exc_info=True,
             )
 
-    async def _run_task(self, ctx: _FeatureCtx, task: PlannedTask, seat: RosterSeat, *, job_id: str) -> TaskResult:
+    def _classify_failure_reason(self, error: str, error_class: str, outcome: Optional[str] = None) -> Optional[str]:
+        """Classify a failure into a suspension reason (FEAT-559).
+
+        Traverse bounded exception cause chain for TimeoutError. Distinguish
+        dispatch timeout from poll timeout. Returns None for non-suspendable
+        failures (lint, cancellation, Git conflicts, etc.).
+
+        Args:
+            error: The error message string.
+            error_class: The exception class name.
+            outcome: Optional outcome from consolidation (e.g., "fidelity_violation").
+
+        Returns:
+            Suspension reason string or None if not suspendable.
+        """
+        # Check for fidelity violation from consolidation
+        if outcome == "fidelity_violation":
+            return "fidelity_violation"
+
+        # Check for dirty delivery
+        if error_class == "dirty_task_worktree" or (error and error.startswith("dirty_task_worktree:")):
+            return "dirty_delivery"
+
+        # Check for dispatch timeout - traverse cause chain for wrapped TimeoutError.
+        # The real production wrap (`dispatchers/llm.py`'s `except TimeoutError as
+        # exc: raise DispatchExecutionError(f"Dispatch exceeded {timeout}s
+        # wall-clock cap") from exc`) never puts the literal substring
+        # "TimeoutError" in its message -- only "wall-clock cap" survives into
+        # `error`. Without this, every real dispatch timeout was silently
+        # misclassified as a generic "dispatch_error" (AC-3/AC-12's recorded
+        # `reason` was wrong for the exact scenario the spec's own motivation
+        # describes), even though it still qualified for suspension either way.
+        if error_class == "TimeoutError" or "TimeoutError" in error or "wall-clock cap" in error:
+            return "timeout"
+
+        # Check for dispatch execution error
+        if error_class in ("DispatchExecutionError", "DispatchOutputValidationError"):
+            # Check if wrapped cause is a timeout
+            if "TimeoutError" in error or "wall-clock cap" in error:
+                return "timeout"
+            if error_class == "DispatchOutputValidationError":
+                return "invalid_output"
+            return "dispatch_error"
+
+        # Check for banned import - this is a fidelity issue
+        if error and error.startswith("BannedImport:"):
+            return "fidelity_violation"
+
+        # Non-suspendable failures
+        # - Lint findings
+        # - Cancellation
+        # - Git merge conflicts
+        # - Poll timeout (not dispatch timeout)
+        # - Worktree creation failures
+        # - Build/setup errors
+        non_suspendable_prefixes = (
+            "LintError:",
+            "CancelledError",
+            "merge_conflict",
+            "worktree creation",
+            "git worktree",
+            "MergeConflict",
+        )
+        if any(error.startswith(prefix) for prefix in non_suspendable_prefixes if error):
+            return None
+
+        # Default: check error class for known suspendable types
+        if error_class in ("RuntimeError", "Exception") and error:
+            # Generic dispatch failure - suspendable
+            if "dispatch" in error.lower() or "timeout" in error.lower():
+                return "dispatch_error"
+
+        return None
+
+    async def _classify_and_suspend(
+        self,
+        ctx: _FeatureCtx,
+        pool: "ExecutionPool",
+        execution_id: str,
+        task: PlannedTask,
+        seat: RosterSeat,
+        attempt_rec: AttemptRecord,
+        error: str,
+        job_id: str,
+    ) -> None:
+        """Classify failure and suspend model if qualifying (FEAT-559).
+
+        Builds SuspensionRecord with fixed timestamps, observed duration,
+        sanitized evidence and both configured/resolved keys. Atomically
+        suspends first, then awaits persistence before retry.
+
+        Does NOT suspend for:
+        - Lint findings
+        - Cancellation
+        - Poll timeout
+        - Git conflicts
+        """
+        from parrot.flows.dev_loop.sdd_coder.pool import _effective_key
+        from parrot.knowledge.wiki.ledger.coder_suspensions import (
+            SuspensionRecord,
+        )
+
+        reason = self._classify_failure_reason(error, attempt_rec.error_class)
+        if reason is None:
+            self.logger.info(
+                "Non-suspendable failure for %s on %s: %s",
+                task.task_id,
+                seat.label,
+                error[:100] if error else "(no error)",
+            )
+            return
+
+        key = _effective_key(seat)
+        if key is None:
+            self.logger.warning("Cannot suspend seat %s - no model identity", seat.label)
+            return
+
+        # Build blocked_keys - include both configured and resolved if different
+        blocked_keys = [key]
+        if attempt_rec.resolved_model and attempt_rec.resolved_model != seat.model:
+            resolved_key = ModelKey(backend=seat.backend or "", model=attempt_rec.resolved_model)
+            if resolved_key not in blocked_keys:
+                blocked_keys.append(resolved_key)
+
+        now = datetime.now(timezone.utc)
+        cooldown_seconds = self.roster.suspension_policy.cooldown_seconds
+        expires_at = datetime.fromtimestamp(now.timestamp() + cooldown_seconds, tz=timezone.utc)
+
+        record = SuspensionRecord(
+            execution_id=execution_id,
+            feature_id=ctx.feature_id,
+            task_id=task.task_id,
+            attempt_uid=attempt_rec.attempt_uid,
+            job_id=job_id,
+            source="engine",
+            seat_label=seat.label,
+            backend=seat.backend or "",
+            configured_model=seat.model,
+            resolved_model=attempt_rec.resolved_model,
+            blocked_keys=blocked_keys,
+            reason=reason,
+            occurred_at=now,
+            expires_at=expires_at,
+            duration_s=attempt_rec.duration_s,
+            exception_class=attempt_rec.error_class,
+            evidence_ref=f"job:{job_id}",
+            explanation=f"Model {seat.model} failed with {reason} on {task.task_id}",
+        )
+
+        receipt = await pool.suspend(record)
+        self.logger.info(
+            "Suspended model %s (reason=%s, persisted=%s, pool_generation=%s)",
+            seat.model,
+            reason,
+            receipt.persisted,
+            receipt.pool_generation,
+        )
+        # Persist the new local exclusion to disk immediately: `end_execution`/
+        # `status()`'s degraded-retry were the only other snapshot-write call
+        # sites, so a process crash between a real suspension and either of
+        # those would restart with the suspension durably recorded in the
+        # ledger (via `pool.suspend()`'s own `_suspension_store.record()` call
+        # above) but the local worktree snapshot at `.sdd-coder/executions/`
+        # would not yet reflect it -- writing here closes that gap for the
+        # exact event AC-10/AC-13 depend on surviving a restart.
+        persisted_snapshot = await self._write_execution_snapshot(pool.worktree_path, execution_id, pool.snapshot())
+        if not persisted_snapshot:
+            self.logger.warning(
+                "failed to persist execution snapshot for %s after suspending %s", execution_id, seat.model
+            )
+
+    async def _select_retry_seat(
+        self,
+        pool: Optional["ExecutionPool"],
+        failed_label: str,
+        tried_seats: set[str],
+    ) -> Optional[RosterSeat]:
+        """Select a healthy, not-yet-tried seat for retry (FEAT-559).
+
+        When pool is available, uses pool's eligible seats and waits on busy
+        healthy seats through the pool condition. Falls back to legacy
+        assigner-based retry when pool is None.
+
+        Args:
+            pool: The execution pool (or None for legacy behavior).
+            failed_label: The label of the seat that just failed.
+            tried_seats: Set of seat labels already tried.
+
+        Returns:
+            A healthy RosterSeat for retry, or None if exhausted.
+        """
+        if pool is None:
+            # Legacy path: use global assigner
+            if self._assigner is None:
+                return None
+            return self._assigner.retry_seat(failed_label, tried_seats)
+
+        # Pool-based selection: find healthy, not-yet-tried seats
+        async with pool._condition:
+            while True:
+                # Check pool status
+                if pool._status in ("closed", "recovery_required"):
+                    return None
+
+                # Find eligible seats
+                for seat in pool._seats:
+                    from parrot.flows.dev_loop.sdd_coder.pool import _effective_key
+
+                    key = _effective_key(seat)
+                    if key is None:
+                        continue
+                    if seat.label in tried_seats:
+                        continue
+                    if key in pool._busy_seats:
+                        continue
+                    if key in pool._initial_exclusions or key in pool._local_exclusions:
+                        continue
+                    view = pool._seat_views.get(key)
+                    if view is None or not view.available or view.suspended or view.probe_unavailable:
+                        continue
+                    # Found a healthy, free seat
+                    return seat
+
+                # No healthy free seat available - check if we should wait
+                # Check if any healthy seat is busy (worth waiting for)
+                has_busy_healthy = False
+                for seat in pool._seats:
+                    from parrot.flows.dev_loop.sdd_coder.pool import _effective_key
+
+                    key = _effective_key(seat)
+                    if key is None or seat.label in tried_seats:
+                        continue
+                    if key in pool._busy_seats:
+                        view = pool._seat_views.get(key)
+                        if view and view.available and not view.suspended and not view.probe_unavailable:
+                            has_busy_healthy = True
+                            break
+
+                if not has_busy_healthy:
+                    # Pool exhausted - no point waiting
+                    return None
+
+                # Wait for a seat to be released or suspended
+                await pool._condition.wait()
+
+    async def _run_task(
+        self,
+        ctx: _FeatureCtx,
+        task: PlannedTask,
+        seat: RosterSeat,
+        *,
+        job_id: str,
+        execution_id: Optional[str] = None,
+        pool: Optional["ExecutionPool"] = None,
+    ) -> TaskResult:
         """Run up to two attempts, retrying dispatch and dirty-worktree failures on another MCP seat.
 
         A clean dispatcher response is not sufficient for success: an agent can
@@ -1062,9 +2170,16 @@ class SddCoderEngine:
         leaving its changes uncommitted. Treat that first-attempt
         ``dirty_task_worktree`` outcome as retryable, but preserve fidelity
         violations and merge conflicts for the orchestrator to handle.
+
+        FEAT-559: When execution_id/pool are provided, uses pool-based admission
+        gating, failure classification, and healthy-model retry selection.
         """
         attempts: List[AttemptRecord] = []
-        rec, out, err, manager, branch, path = await self._run_attempt(ctx, task, seat, attempt=1, job_id=job_id)
+        tried_seats: set[str] = {seat.label}  # Track seats we've already tried
+
+        rec, out, err, manager, branch, path = await self._run_attempt(
+            ctx, task, seat, attempt=1, job_id=job_id, execution_id=execution_id, pool=pool
+        )
         attempts.append(rec)
 
         if not err:
@@ -1087,9 +2202,24 @@ class SddCoderEngine:
             attempts[-1] = rec
 
         if err:
-            assert self._assigner is not None
-            retry = self._assigner.retry_seat(seat.label, {seat.label})
+            # FEAT-559: Classify failure and suspend model if qualifying
+            if pool is not None and execution_id is not None:
+                await self._classify_and_suspend(
+                    ctx=ctx,
+                    pool=pool,
+                    execution_id=execution_id,
+                    task=task,
+                    seat=seat,
+                    attempt_rec=rec,
+                    error=err,
+                    job_id=job_id,
+                )
+
+            # FEAT-559: Select retry from healthy not-yet-tried seats
+            retry = await self._select_retry_seat(pool, seat.label, tried_seats)
+
             if retry is not None:
+                tried_seats.add(retry.label)
                 # Emit attempt 1's own outcome NOW, before running the
                 # retry: `_run_task` only returns ONE `TaskResult`, so if
                 # attempt 2 succeeds below, attempt 1's failure would
@@ -1100,11 +2230,31 @@ class SddCoderEngine:
                 # single emission below instead, avoiding a double-emit.)
                 await self._emit_outcome(ctx, attempt_rec=rec, task_id=task.task_id, outcome="failed")
                 rec, out, err, manager, branch, path = await self._run_attempt(
-                    ctx, task, retry, attempt=2, job_id=job_id
+                    ctx, task, retry, attempt=2, job_id=job_id, execution_id=execution_id, pool=pool
                 )
                 attempts.append(rec)
 
         if err:
+            # FEAT-559: Classify failure for attempt 2 if it also failed. `retry`
+            # (the RosterSeat attempt 2 actually ran on) is bound here: this branch
+            # only runs when `len(attempts) > 1`, which only happens after the
+            # `if retry is not None:` branch above appended attempt 2 -- passing
+            # `attempts[-1].seat_label` (a str, not a RosterSeat) here raised
+            # AttributeError inside `_classify_and_suspend`/`_effective_key` on
+            # every second-attempt failure, silently swallowed by run_chunk's
+            # `return_exceptions=True` gather into an opaque "failed" outcome.
+            if pool is not None and execution_id is not None and len(attempts) > 1:
+                await self._classify_and_suspend(
+                    ctx=ctx,
+                    pool=pool,
+                    execution_id=execution_id,
+                    task=task,
+                    seat=retry,
+                    attempt_rec=rec,
+                    error=err,
+                    job_id=job_id,
+                )
+
             # Both attempts failed, or no retry seat was ever available:
             # `rec` is the one attempt whose outcome has NOT been emitted
             # yet (attempt 1 already got its row above if a retry ran).
@@ -1135,13 +2285,59 @@ class SddCoderEngine:
 
         return final_result
 
-    async def run_chunk(self, feature: str, worktree: str, task_ids: List[str]) -> CoderJob:
-        """Validate, register, RETURN. Everything slow happens inside the job (S4, AC-21)."""
+    async def run_chunk(
+        self,
+        feature: str,
+        worktree: str,
+        task_ids: List[str],
+        execution_id: Optional[str] = None,
+    ) -> CoderJob:
+        """Validate, register, RETURN. Everything slow happens inside the job (S4, AC-21).
+
+        Args:
+            feature: Feature identifier.
+            worktree: Absolute path to the feature worktree.
+            task_ids: List of task IDs to dispatch.
+            execution_id: Optional execution ID for FEAT-559 pools. When provided,
+                validates against the execution pool and carries execution ownership.
+
+        Raises:
+            CoderFailure with codes:
+                - plan_stale: cached plan's pool_generation doesn't match current pool
+                - execution_not_found: execution_id provided but no matching pool
+        """
         ctx = await self._resolve_feature(feature, worktree)
-        plan = await self._cached_plan(feature, worktree, ctx)
+
+        # FEAT-559: Validate execution_id and pool generation before plan validation
+        pool: Optional[ExecutionPool] = None
+        pool_generation = 0
+        if execution_id is not None:
+            if execution_id not in self._executions:
+                raise CoderFailure(
+                    "execution_not_found",
+                    f"no execution found with id {execution_id}; call begin_execution first",
+                )
+            pool = self._executions[execution_id]
+            pool_generation = pool.generation
+
+        plan = await self._cached_plan(feature, worktree, ctx, execution_id=execution_id)
+
+        # FEAT-559: Reject stale plan before job/worktree creation
+        if execution_id is not None and plan.pool_generation != pool_generation:
+            raise CoderFailure(
+                "plan_stale",
+                f"cached plan generation {plan.pool_generation} does not match pool generation {pool_generation}",
+                pool_generation=pool_generation,
+                plan_generation=plan.pool_generation,
+            )
+
         first = {t.task_id: t for t in (plan.chunks[0].tasks if plan.chunks else [])}
 
-        running = self._jobs.running_task_ids()
+        # Scope the running-task check to THIS execution (jobs.py's own
+        # documented contract): unscoped, two unrelated executions/features
+        # that happen to dispatch the same task_id could spuriously block
+        # each other, violating AC-6/AC-11 execution isolation.
+        running = self._jobs.running_task_ids(execution_id)
         for task_id in task_ids:
             if task_id in running:
                 raise CoderFailure("task_already_running", f"{task_id} already has a running job")
@@ -1151,15 +2347,29 @@ class SddCoderEngine:
             if planned.native:
                 raise CoderFailure("task_not_in_plan", f"{task_id} is a native task — use coder_prepare_native")
 
-        seats = {s.label: s for s in self.seats}
+        # FEAT-559: Use execution pool's seats when available
+        if pool is not None:
+            seats = {s.label: s for s in pool._seats}
+        else:
+            seats = {s.label: s for s in self.seats}
 
         async def runner() -> List[TaskResult]:
             raw_results = await asyncio.gather(
-                *(self._run_task(ctx, first[tid], seats[first[tid].seat_label], job_id=job.job_id) for tid in task_ids),
+                *(
+                    self._run_task(
+                        ctx,
+                        first[tid],
+                        seats[first[tid].seat_label],
+                        job_id=job.job_id,
+                        execution_id=execution_id,
+                        pool=pool,
+                    )
+                    for tid in task_ids
+                ),
                 return_exceptions=True,
             )
             results: List[TaskResult] = []
-            for tid, raw in zip(task_ids, raw_results):
+            for tid, raw in zip(task_ids, raw_results, strict=True):
                 if isinstance(raw, TaskResult):
                     results.append(raw)
                 elif isinstance(raw, BaseException):
@@ -1168,7 +2378,7 @@ class SddCoderEngine:
             await self._journal(ctx.worktree, snapshot.model_copy(update={"tasks": results}))
             return results
 
-        job = self._jobs.create(ctx.feature_id, list(task_ids), runner)
+        job = self._jobs.create(ctx.feature_id, list(task_ids), runner, execution_id=execution_id or "")
         self._job_worktrees[job.job_id] = ctx.worktree
         await self._journal(ctx.worktree, job)
         return job
@@ -1181,4 +2391,6 @@ class SddCoderEngine:
         job_worktree = self._job_worktrees.get(job_id)
         if job_worktree is not None:
             await self._journal(job_worktree, job)
+            # Flush any pending execution snapshots after job completion (TASK-3282)
+            await self.status(job_id)
         return job

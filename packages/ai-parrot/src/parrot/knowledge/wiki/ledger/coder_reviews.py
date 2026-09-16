@@ -32,6 +32,8 @@ class CoderReview(BaseModel):
     model: str = Field(min_length=1, max_length=160)
     fix_commits: list[CommitSha] = Field(max_length=30)
     review_evidence: str = Field(min_length=1, max_length=600)
+    execution_id: str = Field("", max_length=64)
+    """FEAT-559: the execution this review was recorded under. Empty for historical records."""
 
 
 class CoderReviewMeasurement(CoderReview):

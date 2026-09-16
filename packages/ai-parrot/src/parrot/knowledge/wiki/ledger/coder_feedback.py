@@ -42,6 +42,8 @@ class CoderFeedback(BaseModel):
     evidence: Text
     correction: Text
     verification: Text
+    execution_id: str = Field("", max_length=64)
+    """FEAT-559: the execution this feedback was recorded under. Empty for historical records."""
 
     @field_validator("files")
     @classmethod

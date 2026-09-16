@@ -57,7 +57,7 @@ No code changes are needed in user projects after upgrading from
 | `arango` | `python-arango-async` | `parrot.stores.arango.ArangoDBStore` |
 | `bigquery` | `google-cloud-bigquery` | `parrot.stores.bigquery.BigQueryStore` |
 | `faiss` | (no extra deps; `faiss-cpu` ships with `ai-parrot` core) | `parrot.stores.faiss_store.FAISSStore` |
-| `chroma` | `chromadb` | (reserved for future `ChromaStore`) |
+| `chroma` | (empty — chromadb removed due to unpatched CVEs) | (reserved) |
 | `reranker-local` | `sentence-transformers`, `tokenizers`, `safetensors` | `parrot.rerankers.local.LocalCrossEncoderReranker` |
 | `reranker-llm` | (no extra deps; uses existing LLM clients) | `parrot.rerankers.llm.LLMReranker` |
 | `all` | All of the above | Full retrieval stack |

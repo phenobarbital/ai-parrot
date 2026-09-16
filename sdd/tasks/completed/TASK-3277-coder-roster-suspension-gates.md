@@ -176,5 +176,43 @@ outside this task's scope, report it for the owning task instead of broadening f
 
 ## Completion Note
 
-Not completed. The executing worker must record its identity, date, implementation summary, verification evidence
-and deviations here before marking this task done.
+**Delivered by**: MCP coder, seat `minimax` (backend `nova`, model `minimax.minimax-m2.5`),
+attempt_uid `c29105be9c4b4ccd9072dfc283494ceb`, commit 8341e9305 — 2026-09-16.
+**Reviewed and corrected by**: sdd-worker (Sonnet 5 orchestrator) — 2026-09-16.
+
+**Implementation summary**: `RosterProbe.probe()`/`_probe_one()` extended with an `excluded: Set[ModelKey]`
+parameter; primary and configured fallback are each gated against it before any smoke call; empty model IDs
+are excluded as `model_identity_required`; native seats normalize to `(native, model or "haiku")`, matching
+`pool.py`'s `_effective_key`. Structured per-probe metadata (`probe_uid`/`probe_observed_at`/
+`probe_duration_s`/`probe_exception_class`) is captured and reported even when a failed primary is followed
+by a successful fallback.
+
+**Review findings (confirmed, fixed)**: 6 of 95 `test_roster.py` tests failed. Root cause of 4: in
+`_probe_one()`, `primary_reason`/`primary_exception_class` were assigned only inside the `except` branch of
+the smoke-call try; a smoke call that returned `False` normally (no exception) left them unbound, so any
+later reference raised `UnboundLocalError` — caught by `probe()`'s catch-all and reported as an opaque
+failure, regressing 2 PRE-EXISTING tests (`test_probe_switches_to_fallback_model`,
+`test_probe_never_raises`) that predate this task. Also fixed: a bare `asyncio.TimeoutError` often
+stringifies to `""`, so the timeout reason silently lost the word "timeout" — now falls back to the
+exception's class name. Two of this task's OWN new tests had bugs, not implementation bugs: an inverted
+smoke stub in `test_identity_and_fallback_gate` (asserted the fallback would succeed but the stub only
+returned `True` for the excluded primary), and an over-strict assertion in
+`test_failed_primary_is_reported_with_successful_fallback` expecting a non-empty `probe_exception_class` for
+a primary that failed via a clean `False` return, not a raised exception. `test_probe_never_raises` was
+updated to use an explicit `model=` (an empty model is now correctly excluded before ever reaching smoke,
+per this feature's own `model_identity_required` rule it predates).
+
+**Verification evidence**:
+- `pytest test_roster.py -q` → 95 passed (was 89 passed / 6 failed).
+  Log: `artifacts/logs/task-3277-pytest.log`.
+- `ruff check` → clean. `black --check` → clean.
+  Logs: `artifacts/logs/task-3277-ruff.log`, `artifacts/logs/task-3277-black.log`.
+- `git diff --check` → clean. Only `roster.py`/`test_roster.py` changed (declared scope); existing exclusive
+  scheduling behavior (`test_assign_exclusive_tasks_run_alone_and_first`) unaffected.
+- Model feedback recorded: `coder-feedback:9206e60974dccc25d98915a1` (pattern
+  `unbound-local-var-only-set-in-except`, model `nova/minimax.minimax-m2.5`).
+- Review measurement recorded: `coder-review:103a858b8d6edc0fabb61414`, fix commit
+  `c94f679f4694bd5a3f317bb533a3a893011a1557`.
+
+Seat: minimax · Backend: nova · Model: minimax.minimax-m2.5 · Attempts: 1 (MCP) + 1 (orchestrator review fix)
+· Duration: 308.6s (MCP attempt) · Tokens: 1,287,620 in / 13,016 out (MCP attempt)

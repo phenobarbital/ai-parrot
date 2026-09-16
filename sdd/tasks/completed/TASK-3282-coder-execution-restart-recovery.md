@@ -182,5 +182,46 @@ outside this task's scope, report it for the owning task instead of broadening f
 
 ## Completion Note
 
-Not completed. The executing worker must record its identity, date, implementation summary, verification evidence
-and deviations here before marking this task done.
+**Delivered by**: native coder, seat `haiku` (backend `native`, model `haiku`), attempt_uid
+`69b9d0521d74408ab82215bbfc353365`, commit 3b8b160bd — 2026-09-16.
+**Reviewed and corrected by**: sdd-worker (Sonnet 5 orchestrator) — 2026-09-16.
+
+**Implementation summary**: `_write_execution_snapshot`/`_read_execution_snapshot` (atomic temp+rename,
+off-loop I/O, explicit failures) persist `ExecutionSnapshot` at
+`.sdd-coder/executions/<uuid>.json`. `begin_execution` reads a durable snapshot on restart, restores
+local/inherited exclusions regardless of expiry, validates canonical scope (feature_id/worktree_path) and
+roster fingerprint, and marks `recovery_required` when uncertain work (admitted attempts/native
+reservations/outstanding jobs) is detected — never auto-restarting a native child. `end_execution` enriches
+and durably writes the snapshot before releasing ownership, marking `persistence_degraded` on write failure.
+`status()` (now `async`) retries pending suspension persistence idempotently and flushes the pool view.
+
+**Review findings (confirmed, fixed)**: the `engine.py` implementation itself was correct. 5 of 6 new
+integration tests failed with `"could not determine the current branch"` — their hand-built git sandbox
+(`git init -b dev` + config, no commit) left an unborn branch; `_resolve_feature`'s `git rev-parse
+--abbrev-ref HEAD` fails (exit 128) on an unborn branch. Added an `--allow-empty` initial commit to all 6
+occurrences of the duplicated pattern. Also fixed a genuine regression this task's OWN sanctioned change
+(`status()` sync → async, explicitly noted in this task's scope: "TASK-3283 updates its toolkit caller")
+caused in `test_engine_dispatch.py::test_engine_run_chunk_returns_before_dispatch` (unawaited call) — a
+**disclosed, minimal scope exception** (one line, `await` added) since this specific test wasn't declared as
+anyone's responsibility, unlike `toolkit.py`'s own caller which is deliberately left for TASK-3283.
+
+**Verification evidence**:
+- `pytest test_execution_pool_integration.py -q` → 6 passed (was 1 passed / 5 failed).
+  Log: `artifacts/logs/task-3282-pytest.log`.
+- Full `tests/flows/dev_loop/sdd_coder/` sweep (excluding `test_mcp_local.py`): 274 passed, 5 failed — the
+  SAME 5 pre-existing, out-of-scope failures already confirmed/deferred by TASK-3279/3280/3281
+  (`test_integration_chunk.py` ×3 → TASK-3285; `test_toolkit.py` ×2 → TASK-3283, including its own
+  `status()` caller update).
+- `ruff check` → clean except pre-existing/consistent `lint.residual` (ASYNC221 on the test file's
+  `subprocess.run` sandbox helper — same pattern already used throughout that file; ASYNC240/B904/B007/B905
+  on engine.py, already-flagged pre-existing style debt) — deferred to `/sdd-done`'s feature-wide pass per
+  policy. `black --check` → clean.
+  Logs: `artifacts/logs/task-3282-ruff.log`, `artifacts/logs/task-3282-black.log`.
+- `git diff --check` → clean.
+- Model feedback recorded: `coder-feedback:8ce0df8cc0c0c2bc59aeb845` (pattern
+  `git-sandbox-missing-initial-commit`, model `native/haiku`).
+- Review measurement recorded: `coder-review:94d45da3f792074e7adb4913`, fix commit
+  `c7609b7badd2ec4f0c51a6c212daa14f51467659`.
+
+Seat: haiku (native) · Backend: native · Model: haiku · Attempts: 1 (native) + 1 (orchestrator review fix)
+· Duration: n/a (native, not MCP-metered) · Tokens: n/a
