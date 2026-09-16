@@ -31,10 +31,10 @@ ci-test-failures-root-cause-remediation.proposal.md` (FEAT-568, mode:
 investigation), which independently re-verified a supplied GitHub Copilot
 analysis against live `gh run` data and git history rather than trusting it,
 and additionally performed further codebase research during this spec's own
-drafting (§2b below) that reclassified two of the proposal's flagged
+drafting that reclassified two of the proposal's flagged
 "unexplained" errors and surfaced the true scope of the largest bucket.
 
-> **Revision 0.2 note (review pass).** A second, adversarial read of this
+> **Historical revision 0.2 note (superseded where stated below).** A second, adversarial read of this
 > spec against the support documents (`sdd/proposals/
 > ci-test-failures-root-cause-remediation.proposal.md`, `sdd/state/FEAT-568/
 > findings/*`) found three of M2's file-list entries were **mis-categorized**
@@ -45,6 +45,13 @@ drafting (§2b below) that reclassified two of the proposal's flagged
 > CI regression** that appeared on `dev` after this spec was first drafted
 > (see the addendum at the end of §1). Both are now reflected below; nothing
 > in the original M1/M3/M4/M5/M6/M7 analysis needed to change.
+
+> **Revision 0.3 (accepted decision review).** Supersedes the 0.2 decisions
+> on M2/M3/M8: establish the actual CI environment before classifying
+> failures, require complete test-to-job coverage and structured skip
+> checks, retain optional document dependencies, and patch the async
+> eval-context alias where it is used. The resolver fix is a prerequisite
+> for final validation, not an exception permitting completion without it.
 
 ### Goals
 
@@ -68,7 +75,7 @@ drafting (§2b below) that reclassified two of the proposal's flagged
 ### Non-Goals (explicitly out of scope)
 
 - **Full, literal 100% green on `test-core`.** During this spec's own
-  research (§2b), several additional `test-core` failures were found that
+  research, several additional `test-core` failures were found that
   are unrelated, pre-existing, and not part of the CI-configuration/
   regression story this spec addresses:
   `TypeError: PostgresToolkit.__init__() missing 1 required positional
@@ -82,26 +89,23 @@ drafting (§2b below) that reclassified two of the proposal's flagged
   these trace to any change this spec's modules touch; each needs its own
   independent investigation and is intentionally left alone here rather than
   guessed at.
-  A `pydantic_core.ValidationError` for `IdentifiedProduct` (3 occurrences,
-  `tests/pipelines/test_endcap_no_shelves.py`) was **originally listed here
-  too, but downgraded during this spec's review pass**: that exact file is
-  now known (§3/M2) to belong to `ai-parrot-pipelines`, a satellite `test-
-  core` never syncs — so this ValidationError may simply be an artifact of
-  running that test suite against an incomplete environment, not an
-  independent bug. **Do not assume either way** — re-check it once M2's new
-  CI job installs `ai-parrot-pipelines` properly; only re-file it here as a
-  confirmed independent Non-Goal if it still reproduces with the satellite
-  correctly installed.
+  The `IdentifiedProduct` ValidationError in
+  `tests/pipelines/test_endcap_no_shelves.py` remains **unclassified**.
+  A validation failure inside satellite code is not evidence of an absent
+  satellite. The current unscoped `uv run` installs workspace-root
+  dependencies, including pipelines (M2). Reproduce with an inventory of
+  installed distributions, then fix the confirmed cause or record an
+  evidenced deferral. Do not add a skip to conceal a model/fixture failure.
 - Redesigning `TargetedWriterToolkit`/FEAT-543's delegation architecture, or
   FEAT-549's Orchestrator Loop. M4 below is a restoration of previously
   shipped, tested content — not a redesign of either.
 - Adding CI coverage for satellite packages this investigation did not find
-  failing tests for (`ai-parrot-advisors`, `ai-parrot-pipelines`,
+  failing tests for (`ai-parrot-advisors`,
   `ai-parrot-openlit-bridge`, `parrot-formdesigner`, etc.). Real gap, but a
   separate initiative.
-- Re-litigating the FEAT-451 wiki-ingestion design. M3 restores what that
-  spec already documented as the intended state (`pymupdf` "already a core
-  dependency") — it does not redesign `DocumentAcquirer`.
+- Redesigning `DocumentAcquirer` or making document dependencies mandatory
+  for all core consumers. M3 retains the optional loader boundary; the
+  older FEAT-451 claim that PyMuPDF is already core is not a packaging contract.
 
 > ### ⚠️ Addendum (review pass, time-sensitive) — a NEW, unrelated CI
 > ### regression appeared after this spec was drafted
@@ -140,20 +144,25 @@ drafting (§2b below) that reclassified two of the proposal's flagged
 > **separate** fix landing first (or concurrently) for the full CI matrix to
 > go green.
 
+**Validation prerequisite:** record the separately tracked resolver fix and
+its passing sync evidence before final acceptance. Work on M1–M8 may proceed
+in parallel, but a resolver-blocked job is unvalidated, not passed or waived.
+Run each intended job installation in a disposable environment once the fix
+lands; preserve logs and the tested commit. Do not weaken the security-related
+dependency floor merely to make this specification executable.
+
 ---
 
 ## 2. Architectural Design
 
 ### Overview
 
-Eight independent modules, each fixing exactly one confirmed root cause.
-None of them share a target file with another (§2b's "Shared files" note
-covers the one apparent exception, `.github/workflows/ci.yml`, which only
-M2 touches). None of them introduces a new public component — every module
-is a bug fix (source, docs, or test) grounded in a specific, cited piece of
-evidence gathered by direct inspection of this repository's current `dev`
-HEAD (not the supplied Copilot transcript, which was independently
-re-verified and in two places found to be incomplete or superseded).
+Eight modules cover confirmed fixes and explicitly unresolved diagnosis.
+M2 owns `.github/workflows/ci.yml`, the coverage inventory, and its result
+gate; M3 and M8 supply their required test selections and dependency profiles
+to M2. M2 must validate after M1 removes the import cascade. M7 remains
+diagnosis-first. These modules are not independent merely because most
+source files differ; their CI acceptance depends on the same environments.
 **M8 was added during this spec's review pass** — it was originally, and
 incorrectly, folded into M2's file list as a satellite-gap case; the review
 found it is a different, unrelated bug (see M8).
@@ -162,15 +171,15 @@ found it is a different, unrelated bug (see M8).
 
 ```
 M1 (crew.py tqdm)         ──┐
-M2 (extras/CI gating)      ─┼─→  test-core / test-wiki-extras go green
-M3 (pymupdf → core dep)    ─┘         (independent fixes, no shared edges)
+M2 (environment/coverage)  ─┼─→  scoped failures removed, coverage verified
+M3 (optional documents)   ─┘         (M2 owns shared workflow changes)
 
 M4 (sdd-worker.md restore) ──→  test-tool-optimizations goes green
 
 M5 (wiki SCHEMA_VERSION)   ──┐
 M6 (BASE_CSS rewrite)       ─┤
 M7 (DatabaseAgent/netsuite) ─┼─→  further test-core error-volume reduction
-M8 (stale mock-patch targets)┘        (independent, lower-confidence fixes)
+M8 (stale mock-patch targets)┘        (M7 requires further diagnosis)
 ```
 
 ### Integration Points
@@ -179,7 +188,7 @@ M8 (stale mock-patch targets)┘        (independent, lower-confidence fixes)
 |---|---|---|
 | `parrot.bots.flows.crew.crew.AgentCrew` | modifies import | M1 — guard, no behavior change when `tqdm` is present |
 | `.github/workflows/ci.yml` jobs | extends | M2 — new job + `pytest.importorskip`/marker guards in existing test files |
-| `ai-parrot` core `[project.dependencies]` | extends | M3 — adds `pymupdf`, `pymupdf4llm` |
+| Optional document tests and loader extras | configures | M3 — preserves core absence coverage; M2 installs `ai-parrot-loaders[documents]` for ingestion coverage |
 | `.claude/agents/sdd-worker.md` | modifies | M4 — restores dropped section |
 | `parrot.knowledge.wiki.store.SQLiteWikiStore._migrate_fts` | uses (test only) | M5 — asserted against, not modified |
 | `parrot.outputs.formats.assets.design_system.DesignSystem.stylesheet` | uses (test only) | M6 — asserted against, not modified |
@@ -202,9 +211,9 @@ None.
 | Module | Eligible? | Decided patterns / exact contracts | Why not (if no) |
 |---|---|---|---|
 | M1: tqdm lazy import | yes | Exact guard pattern fixed in §3/M1 below (try/except at import time, `async_tqdm = None` fallback, degrade `use_tqdm` at runtime if unavailable) | — |
-| M2: extras/CI gating | yes | New CI job YAML fully specified (§3/M2); guard pattern (`pytest.importorskip`) fixed; file list is a **minimum floor**, not exhaustive — the task must re-run test-core's collection locally/in CI to catch every occurrence sharing this shape | Guard mechanics are mechanical; enumerating every file requires running the suite, which is still mechanical, not a design decision |
-| M3: pymupdf → core dep | yes | Exact `pyproject.toml` edit fixed (§3/M3) | — |
-| M4: sdd-worker.md restore | yes | Exact section text fixed, sourced verbatim from `.claude/commands/sdd-start.md`'s current wording, adapted only for step-lettering (§3/M4) | — |
+| M2: environment/coverage | no | Environment and coverage contract fixed below; exact profiles and failure classifications require isolated execution | Collection and skip reasons must be diagnosed before guards are assigned |
+| M3: optional documents | no | Retain extras; separate installed-document tests from core/absence tests | Mixed test modules require per-test dependency classification |
+| M4: sdd-worker.md restore | yes | Exact section text sourced from this file's original addition in commit `461b74c2e` (§3/M4) | — |
 | M5: wiki SCHEMA_VERSION test | yes | Exact assertion fix + additional `_migrate_fts` coverage contract fixed (§3/M5) | — |
 | M6: BASE_CSS test rewrite | no | Only the target API is fixed (`DesignSystem.stylesheet(theme_cfg, layout="report", paged=False)`); which of ~15 assertions in a 1300-line file need which specific replacement string requires case-by-case judgment | Each assertion currently probes a specific literal CSS string; deciding whether the *equivalent* string still exists in the composed report-layout sheet (vs. having moved, merged, or genuinely dropped) is a design judgment, not mechanical substitution |
 | M7: DatabaseAgent/netsuite drift | no | Root cause not established in this spec (§3/M7 states exactly what is known and unknown) | Diagnosis-first task; no fix can be specified before the cause is found |
@@ -261,196 +270,196 @@ None.
   - No change in behavior when `tqdm` **is** installed (existing
     `use_tqdm=True` tests, if any, continue to pass unchanged).
 
-### Module 2: Extend graceful-degradation to optional-satellite tests + add real CI coverage
+### Module 2: Establish CI environments, guard confirmed optional tests, and close coverage gaps
 
-- **Path (new)**: `.github/workflows/ci.yml` (new job)
-- **Path (modifies)**: every test file listed below, plus any sharing the
-  same shape found while running the suite (§ Delegation-eligible table)
-- **Responsibility**: (a) guard every test module that imports an optional
-  satellite's namespace so `test-core`'s bare-core sweep degrades cleanly
-  instead of hard-failing collection — **zero change to what any test
-  asserts once its extra IS present**; (b) add one new CI job that actually
-  installs those satellites and runs the guarded tests for real, with an
-  explicit "nothing was silently skipped" gate, mirroring
-  `test-wiki-extras`/`test-wiki-luau-fallback` (verified:
-  `.github/workflows/ci.yml:140-286`).
-- **Depends on**: nothing (independent of M1/M3/M4/M5/M6/M7/M8; different
-  files).
+- **Paths**: `.github/workflows/ci.yml`; the test files classified below;
+  `scripts/ci/` for a new deterministic coverage inventory/result checker
+  and focused checker tests (exact filenames recorded in the implementing task).
+- **Responsibility**: preserve explicit installation profiles through test
+  execution, diagnose failures within those profiles, and ensure every
+  optional test guarded in core runs in a job with its dependencies installed.
+- **Dependencies**: M1 before final failure classification; M3/M8 test
+  selections before completing the coverage inventory; resolver prerequisite
+  in §1 before installation evidence and final validation.
 
-#### 2a. Confirmed file list (minimum floor — see delegation table)
+#### 2a. Environment contract — required before classifying failures
 
-| File | Needs (extra/package) | Verified |
+The existing `test-core` job is **not a verified core-only environment**:
+`uv sync --package ai-parrot` is followed by `uv run pytest` at the workspace
+root. Root `pyproject.toml` directly depends on loaders, embeddings,
+visualizations, pipelines, integrations, server, tools, advisors, and navrules.
+Unscoped `uv run` automatically syncs that root project and adds its required
+packages. It uses inexact syncing by default, so this is not a claim that it
+removes the previously installed extras. See the
+[uv synchronization contract](https://docs.astral.sh/uv/concepts/projects/sync/).
+The historical logs therefore do not establish that these satellites were absent.
+
+M2 must:
+
+1. Define explicit package/extra profiles for core, wiki extras, wiki fallback,
+   and optional integrations. Run each profile in a clean disposable environment,
+   never by syncing the shared development `.venv`.
+2. Perform one combined sync per profile, then use `uv run --no-sync` for
+   all probes, collection, and execution steps in that environment. Apply
+   this boundary to existing CI jobs that sync a scoped package before
+   invoking unscoped `uv run`; preserve their intended package/extra selections.
+3. Save the Python/uv versions, tested commit, installed distribution inventory,
+   and relevant module origins under `artifacts/logs/`. Assert the intended
+   absent/present dependencies immediately before pytest. Account for
+   transitive dependencies; a profile is not "bare" solely because it has no extras.
+4. Reproduce and classify each failure as missing distribution/extra, broken
+   import within an installed package, stale contract, or behavioral failure.
+   `IdentifiedProduct` validation errors must be diagnosed, not presumed to be
+   installation failures. M7-style evidenced deferral is permitted for a
+   confirmed independent defect; the affected required CI job still cannot
+   be marked passed while it fails.
+5. Add absence guards only for a confirmed missing optional dependency.
+   Do not catch arbitrary import failures from the code under test. Probe
+   distribution/dependency availability narrowly, then import the target
+   normally so broken installed code remains a failure. Mixed modules must
+   retain dependency-independent tests in core; use per-test/fixture guards
+   rather than skipping the whole module.
+
+The following is a **candidate inventory**, not proof of missing packages or
+an exhaustive list. The implementing task records exact node IDs, reasons,
+installation profiles, and installed-dependency job ownership before completion.
+
+#### 2b. Required test-to-job mapping
+
+| Test surface | Required dependency/profile | Job that must execute installed-dependency tests |
 |---|---|---|
-| `tests/clients/test_bridged_hitl.py` | `ai-parrot-client-anthropic` | `parrot.clients.anthropic.claude_agent_bridge` — CI log |
-| `tests/clients/test_google_fallback.py`, `test_google_function_name_sanitization.py` | `ai-parrot-client-google` | `parrot.clients.google.client` — CI log |
-| `tests/clients/test_meta_client.py`, `test_meta_grounding.py`, `test_meta_models.py`, `test_meta_responses.py`, `test_meta_tool_search.py` | `ai-parrot-client-meta` | `parrot.clients.meta` — CI log |
-| `tests/clients/test_moonshot_client.py` | `ai-parrot-client-moonshot` | `parrot.clients.moonshot` — CI log |
-| `tests/clients/test_openai_base_parity.py`, `test_openai_fallback.py`, `test_openai_compatible_defaults.py`, `test_client_fallback.py` | `ai-parrot-client-openai` / `-anthropic` (mixed, see log) | `parrot.clients.openai` / `.anthropic` — CI log |
-| `tests/handlers/test_document_understanding_integration.py`, `tests/integration/test_claude_agent_tool_bridge.py` | `ai-parrot-client-google` / `-anthropic` | CI log |
-| `tests/integration/test_crew_infographic_e2e.py`, `tests/integration/test_saved_executions_flow.py`, `tests/test_crew_hooks.py`, `tests/bots/flows/core/storage/test_agentcrew_lifecycle.py`, `test_crew_agent_persistence.py`, `test_execution_wiki_wiring.py`, `test_integration.py`, `test_agentsflow_lifecycle.py` | already fixed by **M1** — confirm these do NOT ALSO need a guard once M1 lands; if any still fail post-M1 for an unrelated reason, add a guard here | tqdm cascade — CI log |
-| `tests/mcp/test_oauth2_e2e.py`, `test_oauth2_integration.py`, `test_oauth2_storage.py`, `tests/auth/test_mcp_oauth2_provider.py` | third-party `mcp` SDK | CI log |
-| `tests/integration/oauth2/` (whole dir) | `ai-parrot-integrations` | CI log |
-| `tests/unit/test_faiss_s3.py` | `ai-parrot-embeddings` (moved there by `cd320f0c77`, TASK-1335 — verified: `git log --follow`; no `--extra` needed — its own `faiss` extra is empty/name-only, `faiss-cpu` itself is already an unconditional `ai-parrot` core dependency, verified: `packages/ai-parrot/pyproject.toml:162`) | CI log + git history |
-| `tests/test_fireflies_wiki_agent.py` (dynamically loads `agents/fireflies_wiki.py:79`) | `ai-parrot-server[scheduler]` (`apscheduler`) | CI log; self-diagnosing error at `packages/ai-parrot/src/parrot/_imports.py:224` already names this exact cause |
-| `tests/pipelines/` (at least `test_endcap_no_shelves.py`) | `ai-parrot-pipelines` (`parrot_pipelines`) — found during this spec's review pass, was missing from the original list entirely | CI log (`pydantic_core.ValidationError: 1 validation error for IdentifiedProduct`, traced to `packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/types/endcap_no_shelves_promotional.py:630`) |
-| `tests/scripts/test_generate_a2ui_css.py::test_generate_a2ui_css_vendor_check` | `ai-parrot-visualizations[map]` (`folium`) — already synced by the separate `Lint & Registry Check` job (verified: `ci.yml:56-57`) for its OWN vendored-asset check; this test only needs a guard here, not a second sync of the same extra in this new job | CI log |
-| `tests/knowledge/wiki/languages/test_outline_parity.py`, `tests/knowledge/wiki/structural/test_tools.py`, `tests/knowledge/wiki/test_cli_symbols.py`, `tests/knowledge/wiki/test_structural_e2e.py` | `wiki-structural` extra (ast-grep-py) — these assert the **extra-present** behavior unconditionally, unlike the Luau tests' `pytest.mark.skipif(get_parser(...) is None, ...)` pattern at `tests/knowledge/wiki/languages/test_luau.py` (verified pattern) | CI log |
+| `tests/clients/` offline tests | All 15 `ai-parrot-client-*` distributions; audited provider extras | `test-optional-integrations` |
+| `packages/ai-parrot-client-*/tests/` for all 15 providers | Same; execute each package suite separately if collection names/configuration collide | `test-optional-integrations`, one result artifact per provider |
+| `tests/handlers/test_document_understanding_integration.py`, `tests/integration/test_claude_agent_tool_bridge.py` | Google/Anthropic clients and required server/bridge dependencies | `test-optional-integrations` |
+| `tests/handlers/test_mediagen_handler.py`, `test_understanding_handler.py`, `test_understanding_integration.py` (M8) | Server + Google client; corrected provider patch target | `test-optional-integrations` |
+| `tests/auth/test_policy_rules_integration.py` (M8) | Server/auth; no Google dependency for policy-only tests | `test-optional-integrations`; core-compatible cases also stay in core |
+| `tests/mcp/test_oauth2_e2e.py`, `test_oauth2_integration.py`, `test_oauth2_storage.py`, `tests/auth/test_mcp_oauth2_provider.py` | `ai-parrot[mcp]` | `test-optional-integrations` (run the offline `tests/mcp/` selection) |
+| `tests/integration/oauth2/` | `ai-parrot-integrations` and audited OAuth dependencies | `test-optional-integrations` |
+| `tests/unit/test_faiss_s3.py` | `ai-parrot-embeddings` and required backend dependencies | `test-optional-integrations` |
+| `tests/test_fireflies_wiki_agent.py` | `ai-parrot-server[scheduler]` and dependencies of the dynamically loaded agent | `test-optional-integrations` |
+| `tests/pipelines/`, including `test_endcap_no_shelves.py` | `ai-parrot-pipelines`; diagnose validation errors separately | `test-optional-integrations` |
+| `tests/scripts/test_generate_a2ui_css.py::test_generate_a2ui_css_vendor_check` | `ai-parrot-visualizations[map]`; provision Node if the test invokes asset generation | `lint-and-registry` must execute this exact test as well as its existing asset checks |
+| `tests/knowledge/wiki/languages/test_outline_parity.py`, `tests/knowledge/wiki/structural/test_tools.py`, `tests/knowledge/wiki/test_cli_symbols.py`, `tests/knowledge/wiki/test_structural_e2e.py` | `wiki-structural`/`wiki-languages` as required per case | `test-wiki-extras`; retain applicable fallback cases in core |
+| Document-dependent cases in `tests/knowledge/wiki/test_documents.py`, `test_cli.py`, `test_integration.py` (M3) | `ai-parrot-loaders[documents]` plus wiki extras | `test-wiki-extras`; core runs plaintext and missing-loader cases |
+| `tests/integration/test_crew_infographic_e2e.py`, `test_saved_executions_flow.py`, `tests/test_crew_hooks.py`, and `tests/bots/flows/core/storage/` lifecycle/persistence/wiki/integration suites previously attributed to tqdm | Re-run after M1; add optional guards only with new dependency evidence | Core for dependency-independent cases; every newly guarded case assigned an installed-dependency job before merge |
 
-**Explicitly NOT in this list — reclassified to Module 8 during this
-spec's review pass**: `tests/handlers/test_mediagen_handler.py`,
-`tests/handlers/test_understanding_handler.py`,
-`tests/handlers/test_understanding_integration.py`, and
-`tests/auth/test_policy_rules_integration.py`. All four were originally
-(and incorrectly) placed in this table as "satellite gap" cases. They are
-not: see M8 for why installing a satellite would not fix any of them.
+The inventory must be checked against collection/results, not merely stored
+as documentation. Every new guard must have an installed-dependency owner;
+missing files, empty required selections, missing provider reports, or an
+expected case disappearing through deselection must fail validation. Each
+provider must execute a nonzero required selection; installing its package
+alone is not coverage. Record exact deselections and rationale as well.
 
-For every file above, follow the **existing repo convention**, not a new
-one: `pytest.importorskip("<module>")` at module scope for a straight
-missing-module case, or the `pytest.mark.skipif(<probe>() is None, ...)`
-pattern already used for Luau (verified:
-`tests/knowledge/wiki/languages/test_luau.py`) when the seam has its own
-availability probe. **Never** convert a hard failure into a silent pass by
-weakening an assertion — a skip is not a pass, and the new CI job in §2b
-must prove it still runs for real.
+#### 2c. Installation and execution design
 
-#### 2b. New CI job
+Keep one combined optional-integrations job initially, using Python 3.12.
+It installs core with `mcp`, all 15 client packages (amazon, anthropic,
+gemma4, google, grok, groq, hf, local, meta, moonshot, nvidia, openai,
+openrouter, vllm, zai), server with `scheduler`, integrations, embeddings,
+and pipelines. Add only the extras proven necessary by the offline inventory.
+`ai-parrot[mcp]` declares both `mcp` and `google-api-python-client`; installing
+an OpenAI client alone does not request its `bridge` extra.
 
-- **Interface Skeleton** *(new `ci.yml` job, YAML — not Python, no
-  "signature" in the usual sense, but the exact contract this job must
-  satisfy)*:
-  ```yaml
-  # .github/workflows/ci.yml  (new job, pattern verified against
-  # test-wiki-extras/test-wiki-luau-fallback at ci.yml:140-286)
-  test-optional-integrations:
-    name: "Test optional integrations (LLM clients + scheduler + oauth2 + mcp + embeddings)"
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
-      - uses: astral-sh/setup-uv@v4
-        with:
-          version: "latest"
-      # ONE combined sync call. `uv sync` performs an EXACT sync by default
-      # (verified: `uv help sync` — "uv removes packages that are not
-      # declared as dependencies of the project"); splitting this into
-      # several sequential `uv sync` invocations would have each call
-      # UNDO the packages the previous call just installed. Every
-      # `--package`/`--extra` this job needs MUST stay in this one command.
-      - name: Sync ai-parrot + every optional-integration satellite
-        run: |
-          uv sync --package ai-parrot --extra mcp \
-            --package ai-parrot-client-amazon --package ai-parrot-client-anthropic \
-            --package ai-parrot-client-gemma4 --package ai-parrot-client-google \
-            --package ai-parrot-client-grok --package ai-parrot-client-groq \
-            --package ai-parrot-client-hf --package ai-parrot-client-local \
-            --package ai-parrot-client-meta --package ai-parrot-client-moonshot \
-            --package ai-parrot-client-nvidia --package ai-parrot-client-openai \
-            --package ai-parrot-client-openrouter --package ai-parrot-client-vllm \
-            --package ai-parrot-client-zai \
-            --package ai-parrot-server --extra scheduler \
-            --package ai-parrot-integrations \
-            --package ai-parrot-embeddings \
-            --package ai-parrot-pipelines
-      - name: Scaffold NavConfig environment
-        run: mkdir -p env/dev && touch env/dev/.env
-      - name: Run optional-integration tests with every satellite installed
-        run: |
-          uv run pytest tests/clients/ tests/mcp/ tests/integration/oauth2/ \
-            tests/unit/test_faiss_s3.py tests/test_fireflies_wiki_agent.py \
-            tests/auth/test_mcp_oauth2_provider.py tests/pipelines/ \
-            -q --tb=short 2>&1 | tee /tmp/optional-integrations.log
-      # Luau-style gate (verified pattern: ci.yml:208-218) — a skip here can
-      # only mean a regression in this job's own sync step, never "the
-      # satellite was never really installed".
-      - name: Confirm nothing was silently skipped
-        run: |
-          if grep -q "SKIPPED" /tmp/optional-integrations.log; then
-            echo "::error::A guarded test was skipped even though this job installs every satellite it needs."
-            exit 1
-          fi
-  ```
-  `mcp` (the third-party SDK, needed by `tests/mcp/*` and
-  `tests/auth/test_mcp_oauth2_provider.py`) and `googleapiclient` are BOTH
-  provided by `ai-parrot`'s own `mcp` extra (verified:
-  `packages/ai-parrot/pyproject.toml:459-478` — `mcp = [..., "mcp>=1.28.1,<2",
-  ..., "google-api-python-client>=2.151.0", ...]`) — resolved during this
-  review pass; the original draft had left these two as an open TODO. Do
-  **not** rely on `ai-parrot-client-openai`'s own `bridge` extra for `mcp` —
-  that extra is NOT requested by this job's `--package
-  ai-parrot-client-openai` (no `--extra bridge`), so it would not be
-  installed even though the package name might suggest otherwise.
+One combined sync avoids successive exact syncs undoing earlier selections.
+The multi-package/extra command must be executed in a disposable environment
+and its resulting inventory verified; do not assume extras are associated
+with a package by argument adjacency. Do not drop a required package to make
+resolution pass. Pin/use the validated uv version in the workflow.
 
-  **Not empirically verified in this spec**: whether `uv sync` correctly
-  scopes an `--extra` name to the specific `--package` that declares it when
-  several `--package` flags are given in one call (here, `mcp` on `ai-parrot`
-  and `scheduler` on both `ai-parrot` and `ai-parrot-server`, which happen to
-  share the extra name and an identical pin, so any ambiguity is harmless
-  either way). This was **not** run live in this pass — doing so would sync
-  the shared worktree `.venv` used by other sessions (`.claude/rules/
-  worktree-management.md` §4 forbids `uv sync` disturbances of that kind
-  outside a throwaway environment). The implementing task MUST dry-run this
-  exact command (isolated venv, or a draft PR) before merging, and adjust
-  the flag grouping if `uv` reports an error rather than assume the snippet
-  above is correct as written.
+After sync and NavConfig scaffolding, run the root selections from §2b and
+each provider-local suite through `uv run --no-sync pytest`, with a distinct
+`--junitxml=artifacts/logs/<selection>.xml` report. Explicitly deselect live
+provider/network/CLI-dependent cases using audited markers or exact node IDs;
+register any missing marker used by the inventory because strict markers are
+enabled. `tests/clients/test_anthropic_sdk_097.py::test_anthropic_live_smoke`
+is an existing credential-gated example, and `test_claude_agent.py` also has
+an external-CLI smoke test. No credentials or live services are required for
+this offline gate. Do not label newly failing offline tests as live to exclude them.
 
-- **Acceptance criteria for this module**:
-  - `test-core` (bare `uv sync --package ai-parrot`) no longer fails
-    collection on any file in §2a's list — each degrades to a real,
-    reported `SKIPPED`, not an `ERROR`.
-  - The new `test-optional-integrations` job passes, and its "Confirm
-    nothing was silently skipped" step is green.
-  - `test-wiki-extras` no longer fails on the ast-grep-related assertions
-    listed in §2a (those tests either gain the same skip-guard as Luau, or
-    — if `wiki-structural` genuinely IS installed in that job already,
-    verified: `ci.yml:172` — the assertions there should already pass once
-    M1's tqdm cascade stops masking them; confirm which is true before
-    choosing the fix).
+Preserve pytest's exit status, including collection errors and zero-test exits.
+If output is piped through `tee`, require `shell: bash` and `set -o pipefail`.
+Write logs and XML under `artifacts/logs/` and upload them with `if: always()`.
+The existing wiki/map jobs must produce equivalent reports for their assigned
+required selections; successful checks in another job are not substitutes for
+executing the mapped test itself.
 
-### Module 3: Promote `pymupdf`/`pymupdf4llm` to `ai-parrot` core dependencies
+#### 2d. Structured result gate
 
-- **Path**: `packages/ai-parrot/pyproject.toml`
-- **Responsibility**: Resolve the confirmed contradiction between
-  `sdd/specs/wikitoolkit-ingest-documents.spec.md` (FEAT-451), which twice
-  states these packages are "already a core dependency" (verified: spec
-  lines 388, 797), and the actual `pyproject.toml`, where they only appear
-  under the `bookstore` extra (verified: `pyproject.toml` line ~319) and a
-  catch-all extra (~line 407). **Decision made in this spec**: restore the
-  FEAT-451 spec's stated design intent (Option A from the proposal) —
-  promote both to `[project.dependencies]`. This is the more conservative
-  choice: it makes an already-accepted, already-written spec's own words
-  true, rather than reopening FEAT-451's design. **Precedent confirmed
-  during this spec's review pass**: `faiss-cpu>=1.9.0` — a comparably heavy
-  native dependency backing a comparably optional feature (vector search)
-  — is ALREADY an unconditional core dependency of `ai-parrot` (verified:
-  `packages/ai-parrot/pyproject.toml:162`), so promoting `pymupdf` is
-  consistent with existing practice, not a new category of exception.
-- **Depends on**: nothing.
-- **Interface Skeleton** *(pyproject.toml diff shape, not Python)*:
-  ```toml
-  # packages/ai-parrot/pyproject.toml
-  # Move these two lines OUT of the `bookstore` extra (verified: line ~319)
-  # and INTO [project.dependencies] (verified block starts pyproject.toml:34).
-  # Do not duplicate the pin already present in the catch-all extra
-  # (~line 407, "pymupdf==1.27.1" / "pymupdf4llm==0.0.27") — reconcile to
-  # ONE version constraint used everywhere pymupdf is now referenced.
-  dependencies = [
-      # ... existing entries ...
-      "pymupdf>=1.27",
-      "pymupdf4llm>=0.0.27",
-  ]
-  ```
-- **Acceptance criteria for this module**:
-  - `uv sync --package ai-parrot` (no extras) installs `pymupdf`/
-    `pymupdf4llm`.
-  - `tests/knowledge/wiki/test_documents.py`, `test_cli.py::
-    TestIngestSourceArgument`, `test_integration.py::
-    TestFeat451DocumentIngestEndToEnd` collect and pass under
-    `test-wiki-extras` (`wiki-languages` + `wiki-structural`, no
-    `bookstore`) and under `test-core` (no extras at all).
-  - `uv lock` resolves cleanly (no new conflicts introduced by moving these
-    two packages to unconditional).
+Replace the proposed `grep "SKIPPED"` check with a stdlib XML result checker
+owned by M2. A review reproduction using the repository pytest configuration
+reported `1 passed, 1 skipped` for a module-level `importorskip`, with no
+uppercase `SKIPPED`; textual progress output is not a reliable interface.
+
+The checker must fail on missing/malformed reports, failures/errors, zero
+executed required tests, missing inventory coverage, and unexpected skips,
+including collection/module-level skips. Scope zero-skip enforcement to
+mandatory offline selections. Pre-existing non-applicable parameter cases
+may have narrowly recorded exceptions by node ID and reason, reviewed before
+implementation; no blanket module/provider allowance is acceptable. Live
+cases are explicitly deselected and accounted for separately, not treated as
+missing-dependency skips. The inventory/result mapping must handle pytest's
+JUnit representation of collection skips as well as ordinary test cases.
+
+Test the checker with deterministic fixtures for ordinary pass, module-level
+skip, test-level skip, expected exception, unexpected exception, collection
+error, missing report, malformed XML, and empty/missing required coverage.
+Also demonstrate the gate fails when a required optional dependency is absent
+and passes when that same selection executes with the dependency installed.
+Apply this structured gate to the mapped wiki/map selections as well.
+
+- **Acceptance criteria**:
+  - The intended dependency profile survives through execution; inventories
+    prove presence/absence and logs reproduce each classification.
+  - Genuine absence causes a reported skip only for dependent tests; core
+    tests and installed-package import/behavior failures remain visible.
+  - All §2b selections have executed evidence, including all 15 package-local
+    client suites and M8 files; no guard loses its installed-dependency coverage.
+  - Mandatory offline selections pass with no unexpected skips; audited live
+    exclusions and narrow applicability exceptions are reported separately.
+  - The new job and structured gate pass after the resolver prerequisite;
+    a blocked sync or unrelated failure is not accepted as a passing job.
+
+### Module 3: Preserve optional document dependencies and test both installation modes
+
+- **Paths**: document-related tests/fixtures in
+  `tests/knowledge/wiki/test_documents.py`, `test_cli.py`, and
+  `test_integration.py`; M2 owns their workflow/profile changes.
+- **Responsibility**: keep `pymupdf` and `pymupdf4llm` optional. Do not move
+  them into core dependencies to reconcile an older spec sentence.
+  `DocumentAcquirer._acquire_binary` imports `parrot_loaders.factory`
+  before extraction and raises `DocumentAcquisitionError` when loaders are
+  absent. Installing only PyMuPDF cannot satisfy that runtime path.
+- **Depends on**: M2's explicit environment profiles and result gate.
+- **Decision**: install the existing `ai-parrot-loaders[documents]` extra
+  for document ingestion coverage. Its declaration includes PyMuPDF,
+  pymupdf4llm, python-docx, and the ebook extra. Verify the actual PDF loader
+  resolves and extracts the fixture; successful package imports alone are
+  insufficient. Any further packaging defect found is diagnosed explicitly,
+  not hidden by a fallback loader or weakened assertions.
+
+`test-wiki-extras` must install that loader profile together with
+`ai-parrot[wiki-languages,wiki-structural]` in its single combined sync,
+then execute using `uv run --no-sync`. M2 must verify multi-package extras
+and inventory in isolation. This revises the wiki job's installation profile;
+its Luau/structural required coverage must remain intact.
+
+In true core-only mode, keep plaintext ingestion, metadata/URL logic that
+needs no loader, and explicit missing-loader behavior tests active. Guard
+only fixtures/cases requiring real document extraction or PDF creation;
+never module-skip the mixed wiki test files. Preserve tests that deliberately
+simulate missing loaders even in the installed-document profile.
+
+- **Acceptance criteria**:
+  - No new unconditional PDF dependencies are added to core.
+  - Core-only collection succeeds; independent tests and missing-loader
+    error assertions execute, while only document-dependent cases skip.
+  - With `ai-parrot-loaders[documents]` installed, the mapped document tests
+    pass and the structured gate confirms no unexpected document skips.
+  - PDF extraction, nonempty text, page count, and error-path assertions keep
+    their original behavioral intent. Missing loaders produce the existing
+    actionable `DocumentAcquisitionError`; they are not treated as success.
+  - Both environments are verified independently with M2 inventories and
+    results after the resolver prerequisite is satisfied.
 
 ### Module 4: Restore the delegation section in `.claude/agents/sdd-worker.md`
 
@@ -636,8 +645,8 @@ must prove it still runs for real.
     imports inside the dynamically-loaded module.
   - This does **not** match the M1 (tqdm) or M2 (satellite) shape — it is
     reported here, honestly, as unresolved rather than guessed.
-- **Depends on**: nothing (independent of all other modules; different
-  files).
+- **Depends on**: M2's environment inventory for reliable reproduction;
+  source-level diagnosis may proceed before final CI validation.
 - **Interface Skeleton**: none — this module is a diagnosis task. No fix is
   specified until the cause is found.
 - **Acceptance criteria for this module**:
@@ -701,8 +710,8 @@ must prove it still runs for real.
     eval_context.py:23`, `async def build_eval_context(request:
     web.Request) -> object | None`). An unrelated feature from M1-M7's
     causes (`saas-auth-hardening`, not FEAT-523/FEAT-549/FEAT-493/FEAT-557).
-- **Depends on**: nothing (independent of all other modules; different
-  files).
+- **Depends on**: M2 for installed server/provider coverage and dependency
+  guards; behavioral corrections remain owned by M8.
 - **Interface Skeleton** *(the correction pattern — not a new component)*:
   ```python
   # tests/handlers/test_mediagen_handler.py, test_understanding_handler.py,
@@ -725,30 +734,31 @@ must prove it still runs for real.
   # `pytest.importorskip("parrot.clients.google")` guard for `test-core`.
 
   # tests/auth/test_policy_rules_integration.py
-  # CURRENT (verified, 4 occurrences):
-  #     patch('parrot.handlers.bots._EvalContext', MagicMock(...))
-  #
-  # REQUIRED: patch what bots.py actually calls today —
-  #     patch('parrot.handlers.bots._core_build_eval_context', ...)
-  # (verified import alias: packages/ai-parrot-server/src/parrot/handlers/
-  # bots.py:16) — or patch `parrot.auth.eval_context.build_eval_context`
-  # at its source, whichever the test's assertions on the mocked object's
-  # call signature/return shape actually require; read what each of the 4
-  # call sites expects `_EvalContext(...)` to return before choosing.
+  # Two handler occurrences currently patch the removed bots._EvalContext.
+  # Patch the async callable at its bound lookup location instead:
+  #     patch("parrot.handlers.bots._core_build_eval_context",
+  #           new=AsyncMock(return_value=eval_context))
+  # Use a context fixture compatible with the existing evaluator assertions.
+  # Do NOT patch parrot.auth.eval_context.build_eval_context after bots.py
+  # has imported it: that does not replace bots.py's already-bound alias.
+  # The other two occurrences patch _bots_abstract._EvalContext, which still
+  # exists and is called synchronously. Preserve those MagicMock patches.
   ```
 - **Acceptance criteria for this module**:
-  - `pytest tests/handlers/test_mediagen_handler.py
-    tests/handlers/test_understanding_handler.py
-    tests/handlers/test_understanding_integration.py
-    tests/auth/test_policy_rules_integration.py -q` passes under the new
-    `test-optional-integrations` job (M2) with `ai-parrot-client-google`
-    installed.
-  - The same four files degrade to `SKIPPED` (not `ERROR`) under bare
-    `test-core`, via the same `pytest.importorskip` convention as M2.
-  - No change to what any test asserts about handler *behavior* — only the
-    patch target changes, because the code being tested is unchanged; this
-    is purely correcting test plumbing that fell out of sync with a
-    deliberate lazy-import refactor.
+  - All four listed files execute in M2's installed-dependency job and pass
+    its inventory/result gate; adding dependencies without running them is
+    insufficient.
+  - Google-dependent handler cases skip only when their required provider
+    or server is genuinely absent. Policy-only tests must not be gated on
+    Google; guard server-dependent cases only if the server is absent and
+    keep core-compatible `AbstractBot` cases active.
+  - The two handler tests use `AsyncMock` at
+    `parrot.handlers.bots._core_build_eval_context`, assert it was awaited
+    with the request, and retain the filtering/authorization assertions.
+  - The two `_bots_abstract._EvalContext` patches remain synchronous and
+    unchanged unless independent evidence establishes a separate defect.
+  - No production import is restored to accommodate stale tests, and no
+    authorization/handler behavior assertion is weakened.
 
 ---
 
@@ -759,31 +769,32 @@ must prove it still runs for real.
 | Test | Module | Description |
 |---|---|---|
 | `monkeypatch`-simulated tqdm-absence unit test + reload (see M1's acceptance criteria) | M1 | Import succeeds without `tqdm`; falls back cleanly |
-| `pytest tests/clients/ tests/mcp/ tests/integration/oauth2/ tests/unit/test_faiss_s3.py tests/test_fireflies_wiki_agent.py tests/pipelines/ tests/scripts/test_generate_a2ui_css.py -q` (bare core) | M2 | Every listed file reports `SKIPPED`, never `ERROR` |
-| `pytest tests/clients/ ... -q` (new `test-optional-integrations` job, all satellites installed) | M2 | All pass, none skipped |
-| `pytest tests/knowledge/wiki/test_documents.py tests/knowledge/wiki/test_cli.py tests/knowledge/wiki/test_integration.py -q` | M3 | Pass under `test-wiki-extras` AND `test-core` (no extras at all) |
+| M2 §2b inventory under verified core-only profile | M2 | Only absent-dependency cases skip; independent cases execute; broken installed imports fail |
+| M2 §2b installed-dependency selections, including each provider-local suite | M2 | Required offline cases pass, nonzero coverage per provider, no unexpected skips; live exclusions reported |
+| Structured result-checker fixtures (§3/M2/2d) | M2 | Detect missing coverage, malformed/missing reports, failures, and both collection and test skips |
+| `tests/knowledge/wiki/test_documents.py`, `test_cli.py`, `test_integration.py` in two profiles | M3 | Core runs independent/missing-loader cases; wiki extras with `ai-parrot-loaders[documents]` runs document cases |
 | `pytest packages/ai-parrot-tools/tests/tool_optimizations/test_sdd_contracts.py -q` | M4 | 422 passed / 0 failed / 1 skipped |
 | `pytest tests/knowledge/wiki/test_store_migration_v2.py -q` | M5 | Passes; includes new `_migrate_fts` coverage |
 | `pytest tests/test_infographic_html.py -q` | M6 | Passes; no `BASE_CSS` reference remains |
 | `pytest tests/unit/test_database_agent.py tests/manager/test_botmanager_wiring.py -q` | M7 | Passes, or deferred with evidence |
-| `pytest tests/handlers/test_mediagen_handler.py tests/handlers/test_understanding_handler.py tests/handlers/test_understanding_integration.py tests/auth/test_policy_rules_integration.py -q` | M8 | Passes under `test-optional-integrations`; `SKIPPED` (not `ERROR`) under bare `test-core` |
+| M8's four handler/auth files | M8 | Execute and pass in optional integrations; in core guard only truly dependent cases, never policy tests on Google availability |
 
 ### Integration Tests
 
 | Test | Description |
 |---|---|
-| Full `test-core` CI job (`.github/workflows/ci.yml`, both Python 3.11/3.12 legs) | Goes from failing (277-319 errors/failures) to passing modulo the explicit Non-Goals list in §1 — **and modulo the unrelated `navigator-session`/py3.13 resolver regression flagged in §1's addendum**, which may independently block this job's `uv sync` step regardless of M1-M8 |
+| Full `test-core` CI job (both Python 3.11/3.12 legs) | After successful profile installation, scoped failures removed; residual Non-Goals reported by exact node ID/cause, not described as a green job |
 | Full `test-wiki-extras` CI job | Goes green |
 | Full `test-tool-optimizations` CI job (both Python legs) | Goes green |
-| New `test-optional-integrations` CI job | Green, including its "nothing silently skipped" gate |
+| New `test-optional-integrations` CI job | Green, including structured coverage/skip gate and all provider-local suite reports |
 
 ### Test Data / Fixtures
 
-No new fixtures required beyond what M5 needs for its `_migrate_fts`
-coverage (a `wiki_v2.db`-shaped fixture, or an in-place upgrade of the
-existing `wiki_v1.db` fixture through both migration steps — task's
-choice, consistent with the existing `v1_db` fixture pattern already in
-`test_store_migration_v2.py`).
+M2 needs deterministic result-checker fixtures described in §3/2d. M3
+scopes existing document fixtures to the cases needing optional dependencies.
+M5 needs a v2-shaped database fixture, or an upgrade of the existing v1
+fixture through both migration steps. M8 reuses compatible request/context
+fixtures with async mocks for the handler seam.
 
 ---
 
@@ -791,31 +802,36 @@ choice, consistent with the existing `v1_db` fixture pattern already in
 
 > This feature is complete when ALL of the following are true:
 
-- [ ] `test-core` (Python 3.11 and 3.12) no longer fails on any of: the
-      `tqdm` import cascade (M1), any file in M2's confirmed list (M2), the
-      `pymupdf` collection errors (M3), the `test_store_migration_v2.py`
-      assertion (M5), the `BASE_CSS` import error (M6), or the four
-      stale-mock-target failures (M8) — modulo the explicit residual items
-      named in §1 Non-Goals, M7's diagnose-or-defer outcome, and the
-      unrelated `navigator-session`/py3.13 resolver regression flagged in
-      §1's addendum (a separate, already-tracked blocker, not this spec's
-      to fix).
-- [ ] `test-wiki-extras` passes in full.
+- [ ] The separate resolver fix has landed and every intended CI profile
+      installs successfully in isolation on the tested commit. Preserve the
+      fix reference and logs; resolver-blocked execution is not a waiver.
+- [ ] M2's scoped profiles are preserved with `uv run --no-sync`, with
+      installed-distribution and module-origin evidence before testing.
+- [ ] `test-core` (Python 3.11 and 3.12) no longer has the scoped M1–M8
+      failures. Only proven optional-dependency absences skip. Residual
+      failures are individually evidenced against §1 Non-Goals/M7; a red
+      full job is still reported as red, not "passing modulo" those items.
+- [ ] `test-wiki-extras` passes with the document loader extras and its
+      mapped structural/document selections pass the structured result gate.
 - [ ] `test-tool-optimizations` passes in full on both Python legs.
-- [ ] A new `test-optional-integrations` CI job exists, passes, and its
-      "nothing silently skipped" gate is green.
-- [ ] No test assertion was weakened, relaxed, or deleted to make a job
-      pass, except where §3 explicitly documents that the old assertion's
-      target no longer exists and the replacement is recorded as a
-      deliberate, evidenced decision (M6's per-assertion translations, M5's
-      switch from a hardcoded literal to the live constant, M8's patch-target
-      corrections).
-- [ ] `uv lock` / `uv sync --all-packages` still resolves cleanly after M3's
-      dependency move (no new conflicts), **and** the new `test-optional-
-      integrations` sync command in M2 was actually dry-run (not merely
-      inspected) before this criterion is marked done.
-- [ ] M7 ends in either a genuine fix with a passing test, or an explicitly
-      recorded, evidenced deferral — never a silent skip.
+- [ ] `test-optional-integrations` passes, including all §3/2b assigned
+      root tests, M8 files, and all 15 provider-local suites with nonzero
+      required execution and no unexpected skips.
+- [ ] The coverage inventory accounts for every added guard, expected case,
+      live deselection, and narrow applicability exception; missing report,
+      module-level skip, or missing required coverage fails the gate.
+- [ ] The map/vendor test itself executes in `lint-and-registry` with its
+      dependencies and a passing structured result gate.
+- [ ] No behavioral assertion is weakened to turn CI green. M5/M6 translations
+      and M8 mock corrections retain their documented intent.
+- [ ] PDF dependencies remain optional; core absence behavior and installed
+      document extraction both have executed coverage (M3).
+- [ ] Combined profile syncs are actually exercised in disposable environments,
+      including applicable Python legs; no new resolver conflict is introduced.
+- [ ] M7 and the unclassified pipeline validation error end in a confirmed
+      fix or evidenced, explicitly tracked deferral. A deferral does not
+      waive the separate requirement for a required installed-dependency job
+      to pass; blocking independent fixes must land before final acceptance.
 
 ---
 
@@ -877,10 +893,10 @@ class SQLiteWikiStore:
 | New Component | Connects To | Via | Verified At |
 |---|---|---|---|
 | M1's guarded import | `AgentCrew`'s existing `use_tqdm` flag | runtime `if self.use_tqdm and async_tqdm is not None:` | `crew.py:227`, `4159` |
-| M2's new CI job | `ai-parrot-client-*` (15 packages), `ai-parrot-server[scheduler]`, `ai-parrot-integrations`, `ai-parrot-embeddings`, `ai-parrot-pipelines`, `ai-parrot[mcp]` | `uv sync --package ...` (ONE combined call — see M2's caveat on `uv sync`'s exact-sync semantics) | `sdd/tasks/index/pep-420-llm-clients.json` (FEAT-523, all 15 packages `"done"`); `packages/ai-parrot/pyproject.toml:459` (`mcp` extra) |
-| M3's promoted dependency | `DocumentAcquirer` PDF page-count path | already-existing call, per FEAT-451 spec | `sdd/specs/wikitoolkit-ingest-documents.spec.md:388` |
+| M2's new CI job | `ai-parrot-client-*` (15 packages), `ai-parrot-server[scheduler]`, `ai-parrot-integrations`, `ai-parrot-embeddings`, `ai-parrot-pipelines`, `ai-parrot[mcp]` | `uv sync --package ...` (one validated combined profile), followed by `uv run --no-sync` | `sdd/tasks/index/pep-420-llm-clients.json` (FEAT-523, all 15 packages `"done"`); `packages/ai-parrot/pyproject.toml:459` (`mcp` extra) |
+| M3's optional document profile | `DocumentAcquirer` extraction via `parrot_loaders.factory` | M2 installs `ai-parrot-loaders[documents]`; core keeps absence coverage | `documents.py::_acquire_binary`; `packages/ai-parrot-loaders/pyproject.toml` documents extra |
 | M4's restored section | commit `461b74c2e`'s original addition to THIS file (not a different doc) | verbatim content reuse | `git show 461b74c2e -- .claude/agents/sdd-worker.md` |
-| M8's corrected patch targets | `parrot.clients.google.GoogleGenAIClient` (source of the lazy import); `parrot.handlers.bots._core_build_eval_context` / `parrot.auth.eval_context.build_eval_context` | `unittest.mock.patch` retargeting | `mediagen.py:90`, `understanding.py:213`, `bots.py:16`, `eval_context.py:23` |
+| M8's corrected patch targets | `parrot.clients.google.GoogleGenAIClient` (source of the lazy import); `parrot.handlers.bots._core_build_eval_context` | Source patch for lazy provider import; `AsyncMock` at the bound handler alias | `mediagen.py:90`, `understanding.py:213`, `bots.py:16`, `eval_context.py:23` |
 
 ### Does NOT Exist (Anti-Hallucination)
 
@@ -924,15 +940,12 @@ class SQLiteWikiStore:
   — never a bare `try/except: pass` around an entire test body. See
   `tests/knowledge/wiki/languages/test_luau.py` for the reference pattern
   (verified, FEAT-532).
-  Any job asserting the "extra present" path must also assert nothing was
-  silently skipped — see `ci.yml:208-218` (verified, FEAT-532) for the
-  reference gate shape reused in M2.
-- **Cosmetic-feature imports are guarded, not required.** M1's fix pattern
-  (try/except at import time, runtime fallback) is the template for any
-  future "optional nicety" dependency — do not promote every such package
-  to a hard dependency by default; M3 is the exception because the FEAT-451
-  spec explicitly already called `pymupdf` core, not a new precedent for
-  optional niceties in general.
+  Probe only the missing dependency, not arbitrary import failures inside
+  installed code. An installed-dependency job must prove required execution
+  with M2's structured gate; copying Luau's text grep is insufficient.
+- **Optional features stay optional.** Guard M1's cosmetic progress bar;
+  keep M3's document loaders and PDF libraries in extras. Historical spec
+  wording alone does not justify an unconditional dependency.
 - **Restoring dropped content must be a verbatim restoration**, not a
   paraphrase — M4 exists because a paraphrase-free git-diff comparison is
   what proved this was a regression rather than an intentional removal.
@@ -944,29 +957,18 @@ class SQLiteWikiStore:
   surface additional files sharing the same shape. The implementing task
   MUST re-run collection and diff against this list, not treat it as
   exhaustive.
-- **M3 risks a resolver conflict.** Promoting `pymupdf`/`pymupdf4llm` to
-  unconditional core dependencies changes what `uv sync --package
-  ai-parrot` pulls in for every consumer, including CI jobs that don't
-  currently need it. Re-run `uv lock` and confirm no new `environments`
-  split appears (see the already-fixed `async-notify`/aarch64 precedent —
-  do not let a similar issue reappear silently).
-  **PostgresToolkit** already needs a `dsn` argument bug (M7 Non-Goal) is
-  unrelated but proves DB-related tests in this suite are not fully clean
-  even outside this spec's scope — don't assume test-core's log is only
-  ever the issues named in this spec after M1-M8 land; do a final, honest
-  re-check.
+- **True core isolation may expose additional failures.** Historical logs
+  came from unscoped `uv run`, not a proven core-only profile. Reclassify
+  with environment evidence; do not turn every newly exposed failure into
+  a guard. M3's PDF tests require the loader distribution, not just PyMuPDF.
 - **M6 is the highest-judgment module.** Do not rush it; a mistranslated
   assertion (e.g. asserting a CSS rule against the wrong layout) would
   silently stop testing what it used to test — precisely the failure mode
   the user explicitly warned against.
-- **M2's combined `uv sync` command was not empirically dry-run in this
-  spec** (see M2's own caveat) — treat the exact flag grouping as a strong
-  hypothesis, not a guarantee. If `uv` rejects the multi-`--package`/
-  `--extra` combination, the fallback is to give `ai-parrot`'s `mcp`/
-  `scheduler`-adjacent extras their own explicit pairing rather than
-  guessing further; do not silently drop packages from the list to make the
-  command merely "run" — that would quietly reintroduce a satellite gap
-  this module exists to close.
+- **Combined profile installations remain an execution prerequisite.**
+  Validate multi-package/extra behavior with the pinned uv version and save
+  inventories. Never rely on package/extra argument adjacency, successive
+  exact syncs, or a later root sync to fill missing profile dependencies.
 - **A category of bug this spec's review pass uncovered (M8) generalizes
   beyond the four files named there**: `unittest.mock.patch("module.Name")`
   only works when `Name` is bound at `module`'s top level. Anywhere a
@@ -979,33 +981,25 @@ class SQLiteWikiStore:
 
 ### External Dependencies
 
-| Package | Version | Reason |
-|---|---|---|
-| `pymupdf` | `>=1.27` | M3 — promoted from `bookstore` extra to core; already used at runtime by `DocumentAcquirer` |
-| `pymupdf4llm` | `>=0.0.27` | M3 — same |
+No new runtime dependency is introduced by this revision. Existing
+`ai-parrot-loaders[documents]` supplies `pymupdf>=1.27`,
+`pymupdf4llm>=0.0.27`, and the document/ebook dependencies to the installed
+wiki profile. M2's result checker uses the Python standard library.
 
 ---
 
 ## 8. Open Questions
 
-- [x] **Should `pymupdf`/`pymupdf4llm` become unconditional core
-  dependencies of `ai-parrot`, or should wiki PDF ingestion degrade
-  gracefully and the spec's claim be corrected instead?** — *Resolved in
-  this spec (M3)*: promote to core dependencies, per FEAT-451's own
-  documented assumption. This is the more conservative choice — it makes
-  an already-accepted spec's own words true rather than reopening that
-  spec's design.
-
-- [x] **Should the new CI coverage for the 15 `ai-parrot-client-*`
-  satellites be one combined job, or per-provider jobs?** — *Resolved in
-  this spec (M2)*: one combined job (`test-optional-integrations`),
-  matching the `test-wiki-extras` precedent's cost/signal tradeoff. It also
-  absorbs `ai-parrot-server[scheduler]`, `ai-parrot-integrations`,
-  `ai-parrot-embeddings`, `ai-parrot-pipelines` (added during this spec's
-  review pass), and `ai-parrot[mcp]` (which also supplies `googleapiclient`
-  — resolved during the review pass, was an open TODO in the first draft),
-  since all share the exact same "satellite never synced by test-core"
-  shape.
+- [x] **Promote PDF libraries to core?** — No. The accepted revision retains
+  optional loader/document dependencies and tests both absence and installed
+  extraction. FEAT-451's historical wording is superseded for this decision.
+- [x] **One combined provider job or per-provider jobs?** — Start with one
+  combined installed profile, but execute and report each provider-local
+  suite independently as well as the mapped root tests. Split jobs later
+  only if measured runtime or genuine dependency incompatibility requires it.
+- [x] **Can a green skip gate prove coverage?** — Only with structured reports
+  checked against required selections and audited exclusions. Text grep and
+  installation alone are insufficient.
 
 - [ ] **Should the M7 items (`DatabaseAgent`/`DatabaseAgentToolkit`,
   `create_netsuite_mcp_server`) be fixed within this spec's implementation
@@ -1019,15 +1013,17 @@ class SQLiteWikiStore:
 
 ## 9. Design Research Cross-Check
 
-> Independent design opinion from the `codex` seat over the accepted
-> exploration doc.
+> User-requested decision review of this specification against repository
+> source and CI configuration; this does not change the proposal's status.
 
-**Status: skipped** (`sdd/proposals/ci-test-failures-root-cause-
-remediation.proposal.md`'s frontmatter carries `status: review`, not
-`accepted` — the §3b precondition requires an accepted exploration
-document; this proposal's three open questions were resolved directly in
-this spec instead, per §8 above, since they were narrow implementation
-choices rather than a design fork needing external review).
+**Status: reviewed; changes accepted by the user (2026-09-16).**
+The decision review found five issues: unverified core environment isolation,
+an ineffective blanket skip gate, incomplete installed-dependency coverage,
+unjustified/incomplete PDF dependency promotion, and an ineffective alternate
+mock target. Revision 0.3 incorporates those findings plus the explicit
+resolver validation prerequisite. Source inspection and a focused pytest
+skip reproduction support the findings; a full CI rerun and profile sync
+validation remain implementation acceptance requirements.
 
 ---
 
@@ -1037,3 +1033,4 @@ choices rather than a design fork needing external review).
 |---|---|---|---|
 | 0.1 | 2026-09-15 | Claude Sonnet 5 | Initial draft, from FEAT-568 proposal + additional spec-time codebase research (reclassified 2 previously-"unexplained" errors into M1/M2, surfaced M2's true scope, identified M7's residual unknowns) |
 | 0.2 | 2026-09-16 | Claude Opus 4.8 (review pass) | Adversarial re-review against the proposal + findings. Fixes: (1) added Module 8 — 4 files wrongly filed under M2 as "satellite gap" are actually stale `unittest.mock.patch` targets left by two unrelated refactors (FEAT-523 TASK-2846's lazy-import AC-3, and `saas-auth-hardening` TASK-2321's eval-context consolidation); (2) resolved the `mcp`/`googleapiclient` sourcing TODO (`ai-parrot[mcp]` extra) and wired it into M2's job; (3) added `ai-parrot-pipelines` and the a2ui-css/folium file to M2's list, both missing from the first draft; (4) corrected M1's Codebase Contract (`AgentCrew`, not a placeholder `CrewClass`) and M4's citation (sourced from commit `461b74c2e`, not `.claude/commands/sdd-start.md`, whose current wording has since drifted); (5) added an explicit uv-sync exact-sync-semantics caveat to M2's CI job snippet, since the multi-package/extra combination was not empirically verified; (6) softened the M7 Non-Goals' `IdentifiedProduct` classification pending re-check after M2 lands; (7) flagged a brand-new, unrelated `navigator-session`/Python-3.13 resolver regression that appeared on `dev` after the first draft, explicitly out of this spec's scope but noted so implementers aren't misled about residual CI redness. |
+| 0.3 | 2026-09-16 | Codex, user-approved decision review | Preserve explicit CI environments; require inventory-backed classification and complete test-to-job mapping, including all provider-local suites; replace text skip grep with structured coverage checks and audited offline selections; retain optional document dependencies and both installation modes; require AsyncMock at the bound handler alias while preserving AbstractBot patches; make resolver remediation a validation prerequisite. |
