@@ -6,7 +6,7 @@
   "base_branch": "dev",
   "parallel_semantics": "exclusive",
   "created_at": "2026-09-16T00:01:34+00:00",
-  "completed_at": null,
+  "completed_at": "2026-09-16T02:44:09+00:00",
   "tasks": [
     {
       "id": "TASK-3286",
@@ -195,7 +195,7 @@
       "feature_id": "FEAT-561",
       "feature": "complex-sdd-tasks",
       "spec": "sdd/specs/complex-sdd-tasks.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -205,8 +205,8 @@
       "parallelism_notes": "Final gate depends on TASK-3294 final prompts/config and transitively every runtime task plus TASK-3293 authoring. All shared test-file edits are ordered after their owning implementation tasks.",
       "assigned_to": null,
       "started_at": "2026-09-16T00:12:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3295-complexity-integration-regressions.md"
+      "completed_at": "2026-09-16T02:44:09+00:00",
+      "file": "sdd/tasks/completed/TASK-3295-complexity-integration-regressions.md"
     }
   ]
 }
