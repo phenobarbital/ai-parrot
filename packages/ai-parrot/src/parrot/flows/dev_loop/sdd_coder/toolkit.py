@@ -62,6 +62,7 @@ class SddCoderToolkit(AbstractToolkit):
         telemetry_dir: Optional[str] = None,
         lint: Optional[Dict[str, Any]] = None,
         feedback: Optional[Dict[str, Any]] = None,
+        complexity: Optional[Dict[str, Any]] = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
@@ -71,6 +72,11 @@ class SddCoderToolkit(AbstractToolkit):
             if isinstance(roster, RosterConfig)
             else RosterConfig(seats=roster, lint=lint or {}, feedback=feedback or {})  # type: ignore[arg-type]  # yaml kwargs arrive as list[dict]; pydantic coerces at runtime
         )
+        # Forward complexity configuration to the engine
+        if complexity is not None:
+            # Validate and override the policy with explicit complexity config
+            # Use model_copy to avoid mutating the caller's input
+            cfg = cfg.model_copy(update={"complexity": cfg.complexity.model_validate(complexity)})
         self._engine = SddCoderEngine(
             roster=cfg,
             redis_url=redis_url,
@@ -147,7 +153,13 @@ class SddCoderToolkit(AbstractToolkit):
             )
 
     async def coder_plan(self, feature: str, worktree: str) -> CoderResult:
-        """Next wave of `feature` sliced into distinct-seat chunks; roster availability; orphan branches."""
+        """Next wave of `feature` sliced into distinct-seat chunks; roster availability; orphan branches.
+
+        Returns a CoderPlan containing:
+        - assessments: ComplexityAssessment for each task in the wave
+        - routing_blocks: ComplexityBlock entries for tasks that cannot be dispatched
+        - Standard tasks use configured roster rotation; complex/unknown tasks are restricted to strong-model seats
+        """
         return await self._run("coder_plan", self._engine.plan(feature, worktree))
 
     async def coder_run_chunk(self, feature: str, worktree: str, task_ids: List[str]) -> CoderResult:
