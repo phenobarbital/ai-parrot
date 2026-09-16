@@ -15,7 +15,7 @@
       "feature_id": "FEAT-561",
       "feature": "complex-sdd-tasks",
       "spec": "sdd/specs/complex-sdd-tasks.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -23,8 +23,8 @@
       "parallelism_notes": "Root deliverable creates the types consumed by TASK-3287; finishes shared models.py/test_models.py edits before integration tasks.",
       "assigned_to": null,
       "started_at": "2026-09-16T00:12:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3286-complexity-models.md"
+      "completed_at": "2026-09-16T00:26:13+00:00",
+      "file": "sdd/tasks/completed/TASK-3286-complexity-models.md"
     },
     {
       "id": "TASK-3287",
