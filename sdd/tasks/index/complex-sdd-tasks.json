@@ -53,7 +53,7 @@
       "feature_id": "FEAT-561",
       "feature": "complex-sdd-tasks",
       "spec": "sdd/specs/complex-sdd-tasks.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -63,8 +63,8 @@
       "parallelism_notes": "Depends on TASK-3287 parser/evaluator and TASK-3286 types. Parallel with TASK-3289 roster and TASK-3293 authoring: all target files are disjoint.",
       "assigned_to": null,
       "started_at": "2026-09-16T00:12:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3288-complexity-metric-collectors.md"
+      "completed_at": "2026-09-16T00:56:28+00:00",
+      "file": "sdd/tasks/completed/TASK-3288-complexity-metric-collectors.md"
     },
     {
       "id": "TASK-3289",
@@ -73,7 +73,7 @@
       "feature_id": "FEAT-561",
       "feature": "complex-sdd-tasks",
       "spec": "sdd/specs/complex-sdd-tasks.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -83,8 +83,8 @@
       "parallelism_notes": "Depends on TASK-3287 classification semantics and upstream models. Parallel with TASK-3288 and TASK-3293; only owns roster.py/test_roster.py.",
       "assigned_to": null,
       "started_at": "2026-09-16T00:12:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3289-complexity-roster-routing.md"
+      "completed_at": "2026-09-16T00:56:28+00:00",
+      "file": "sdd/tasks/completed/TASK-3289-complexity-roster-routing.md"
     },
     {
       "id": "TASK-3290",

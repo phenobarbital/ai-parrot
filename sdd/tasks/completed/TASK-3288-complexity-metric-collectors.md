@@ -166,5 +166,51 @@ No live model call is needed for these checks.
 
 ## Completion Note
 
-Not started. On completion record files changed, acceptance evidence, tests,
-commit SHA, remaining limitations and actual model/attempt/assessment attribution.
+Implemented as specified: `complexity_collectors.py` created (bounded async
+Ruff/wiki/scope/dependency collectors, `collect_complexity`,
+`validate_complexity_snapshot`, `_run_subprocess` with timeout/output-size
+bounds); `test_complexity_collectors.py` created with collection tests.
+
+Post-merge review found 3 real defects in the delivered attempt (qwen,
+attempt_uid df6112a5f3b94e7d9526a2cb7ef06de0) and fixed them in commit
+`d13a017faebde1f31c3f54d61ae5fee820ea3ef9`:
+- `parse_complexity_contract` was imported from `complexity_models.py`,
+  where it does not exist (it lives in `complexity.py`, TASK-3287), and
+  `ComplexityAssessment` was used in a signature without being imported at
+  all -- both `ImportError`s made the whole test module uncollectable.
+- `_collect_scope_metrics`'s acceptance-criteria checkbox counter split on
+  the ` ```-fence ` pattern with `re.split`, then wrongly kept only
+  even-indexed parts (assuming `split` alternates fenced/non-fenced groups
+  like `re.finditer` would); `re.split` only ever returns non-fenced
+  segments, so with the task's one JSON contract fence, the real
+  `## Acceptance Criteria` section was silently discarded (undercounted 0
+  instead of 3).
+- `test_complexity_collectors.py` was missing `import asyncio` (used at 3
+  call sites) and none of its 4 `collect_complexity`-exercising tests
+  created a git repo in their temp worktree, so the real (unmocked)
+  `git rev-parse HEAD` inside `_get_git_head_sha` failed every time.
+
+Both defects recorded as model feedback
+(`coder-feedback:3d87049ea08f5470eab7ae69`,
+`coder-feedback:b64447b67bdcc06e21fc5174`) and the review outcome recorded
+(`coder-review:c2c96ed32d0fe29fc6ef9d48`).
+
+Acceptance criteria: satisfied post-fix — all six metric families
+collected with bounded async subprocesses; Ruff C901/syntax-only pass
+distinguish measured-zero from unparseable; wiki blast radius depth-2,
+no-inferred, tests-included; unknown/not_applicable states never
+fabricate a zero.
+
+Tests: `pytest packages/ai-parrot/tests/flows/dev_loop/sdd_coder/ -q` ->
+286 passed (0 failed), from the feature worktree with
+`PYTHONPATH=packages/ai-parrot/src`. `ruff check --select E9,F63,F7,F82`
+clean.
+
+Limitations: collectors were exercised only against synthetic fixtures
+with a real local git repo and mocked Ruff/wiki subprocess output, not a
+live `wikitoolkit`/`ruff` binary end-to-end -- left for TASK-3295's
+integration/regression matrix per spec §4.
+
+Seat: qwen · Backend: nova · Model: qwen.qwen3-coder-480b-a35b-instruct ·
+Attempts: 1 · Duration: 494.21s · Tokens: in=651074/out=14248 · Fix commit:
+d13a017faebde1f31c3f54d61ae5fee820ea3ef9 (worker, post-merge).
