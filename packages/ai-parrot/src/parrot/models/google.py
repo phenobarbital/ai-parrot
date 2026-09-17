@@ -488,9 +488,7 @@ class VideoReelRequest(BaseModel):
     music_genre: Optional[MusicGenre] = Field(None, description="Genre of the background music.")
     music_mood: Optional[MusicMood] = Field(None, description="Mood of the background music.")
     aspect_ratio: AspectRatio = Field(AspectRatio.RATIO_9_16, description="Aspect ratio for the generated reel.")
-    transition_type: Literal["cut", "crossfade"] = Field(
-        "crossfade", description="Type of transition between scenes."
-    )
+    transition_type: Literal["cut", "crossfade"] = Field("crossfade", description="Type of transition between scenes.")
     output_format: Literal["mp4", "webm"] = Field("mp4", description="Output video format.")
     reference_images: Optional[List[Optional[str]]] = Field(
         None,
@@ -536,9 +534,7 @@ class VideoReelRequest(BaseModel):
             return v
         for item in v:
             if item is not None and not (isinstance(item, str) and item.strip()):
-                raise ValueError(
-                    "reference_images entries must be a non-blank path string, or null for an empty slot."
-                )
+                raise ValueError("reference_images entries must be a non-blank path string, or null for an empty slot.")
         return v
 
     @model_validator(mode="before")
@@ -651,9 +647,7 @@ class ReelSceneResult(BaseModel):
     submitted_duration_seconds: Optional[float] = Field(
         None, description="Covering duration actually submitted to the provider."
     )
-    measured_duration_seconds: Optional[float] = Field(
-        None, description="Duration measured from the generated media."
-    )
+    measured_duration_seconds: Optional[float] = Field(None, description="Duration measured from the generated media.")
     final_duration_seconds: Optional[float] = Field(
         None, description="Duration retained for this scene in the assembled timeline."
     )
@@ -686,10 +680,6 @@ class ReelResult(BaseModel):
         ..., description="Outcome of background music generation."
     )
     scenes: List[ReelSceneResult] = Field(default_factory=list, description="Per-scene results, original order.")
-    partial: bool = Field(
-        False, description="True when `partial_failure_policy='skip'` dropped at least one scene."
-    )
-    warnings: List[str] = Field(
-        default_factory=list, description="Non-fatal warnings, including deprecation notices."
-    )
+    partial: bool = Field(False, description="True when `partial_failure_policy='skip'` dropped at least one scene.")
+    warnings: List[str] = Field(default_factory=list, description="Non-fatal warnings, including deprecation notices.")
     final_duration_seconds: Optional[float] = Field(None, description="Final assembled reel duration in seconds.")
