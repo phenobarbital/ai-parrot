@@ -349,10 +349,20 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (sonnet, sequential fallback — TASK-3305 was routed `complex`
+by the complexity gate with `complex_model_unavailable`; no roster seat was eligible for
+`complex` work across two separate `coder_plan` calls, confirming a systemic gap rather than
+a task-specific one; user authorized implementing complex-blocked tasks directly)
+**Date**: 2026-09-17
+**Notes**: Created `policy.py` verbatim from the blueprint (constants + `ScopePolicy`).
+Created `planner.py`, filling in the two FILL IN markers: `PER_DIST_EXTRA_ARGS = ("--confcutdir",
+"{worktree}")` copied verbatim from TASK-3303's `artifacts/logs/feat-563-s2-conftest-rootdir.md`
+decision line, and the `_invocation` dedupe-by-path logic (declared > core > escalated > import
+> mirror precedence via a `_REASON_PRIORITY` dict, picking the highest-priority `TestTarget` per
+kept path before building the final `kept` tuple). Created `test_planner.py` verbatim from the
+Test Specification. All 26 tests pass (`pytest packages/ai-parrot/tests/flows/dev_loop/test_scope/
+-q`), `ruff check` clean, `nodes/qa.py` unchanged.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Deviations from spec**: none — only the three listed files were created.
 
 **Deviations from spec**: none | describe if any

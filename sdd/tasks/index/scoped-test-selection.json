@@ -69,7 +69,7 @@
       "feature_id": "FEAT-563",
       "feature": "scoped-test-selection",
       "spec": "sdd/specs/scoped-test-selection.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -80,8 +80,8 @@
       "parallelism_notes": "imports TestTarget/PytestInvocation/ScopePlan from TASK-3304 (test_scope/datatypes.py); applies the rootdir/conftest flag decision logged by TASK-3303",
       "assigned_to": null,
       "started_at": "2026-09-17T11:00:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3305-kernel-policy-planner.md"
+      "completed_at": "2026-09-17T12:12:09+00:00",
+      "file": "sdd/tasks/completed/TASK-3305-kernel-policy-planner.md"
     },
     {
       "id": "TASK-3306",
