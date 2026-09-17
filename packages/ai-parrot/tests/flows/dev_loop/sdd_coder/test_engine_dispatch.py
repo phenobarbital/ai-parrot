@@ -177,6 +177,29 @@ async def test_engine_forces_sdd_coder_subagent(git_sandbox_feature, noop_probe)
             assert call["profile"].subagent == "sdd-coder"
 
 
+async def test_engine_writes_attempt_context(git_sandbox_feature, noop_probe):
+    """FEAT-563: every MCP attempt sub-worktree carries a task-tier AttemptContext before dispatch."""
+    from parrot.flows.dev_loop.test_scope.context import read_attempt_context
+
+    worktree, feature_branch, base_path, _index_path = git_sandbox_feature
+    builder = fake_builder_factory({})
+    engine = SddCoderEngine(
+        roster=_roster(("a", "nova"), ("b", "codex"), ("c", "google-compat")),
+        probe=noop_probe,
+        worktree_base_path=str(base_path),
+        dispatcher_builder=builder,
+    )
+    job = await engine.run_chunk("demo", str(worktree), ["TASK-0001"])
+    await engine.wait(job.job_id, 5)
+    call = next(c for d in builder.dispatchers.values() for c in d.calls)
+    context = read_attempt_context(Path(call["cwd"]))
+    assert context is not None
+    assert context.tier == "task"
+    assert context.task_id == "TASK-0001"
+    assert context.base_ref == feature_branch
+    assert context.task_file == call["brief"].task_file
+
+
 async def test_engine_run_chunk_returns_before_dispatch(git_sandbox_feature, noop_probe):
     worktree, _feature_branch, base_path, _index_path = git_sandbox_feature
     gate = asyncio.Event()

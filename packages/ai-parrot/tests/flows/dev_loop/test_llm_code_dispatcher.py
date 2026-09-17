@@ -17,6 +17,8 @@ from parrot.flows.dev_loop import (
     LLMCodeDispatcher,
     ResearchOutput,
 )
+from parrot.flows.dev_loop.dispatchers import llm as llm_module
+from parrot.flows.dev_loop.test_scope.guard import GuardOutcome
 
 
 class _Function:
@@ -1734,3 +1736,81 @@ class TestObservationalScope:
         assert result.summary == "done"
         assert len(host.telemetry) == 1
         assert host.telemetry[0].budget_report is None
+
+
+@pytest.mark.asyncio
+async def test_run_command_rewrites_broad_pytest(monkeypatch, tmp_path):
+    dispatcher = _dispatcher(monkeypatch, _FakeClient([]))
+    replacement = (("pytest", "tests/test_a.py", "-q"), ("pytest", "packages/x/tests/test_b.py", "-q"))
+    monkeypatch.setattr(llm_module, "guard_argv", lambda argv, *, worktree: GuardOutcome("rewrite", replacement, "scoped"))
+    ran: list[list[str]] = []
+
+    async def _fake_run(argv, *, cwd, timeout, stdin=None):
+        ran.append(list(argv))
+        return {"exit_code": 0, "stdout": "ok", "stderr": ""}
+
+    monkeypatch.setattr(dispatcher, "_run_argv", _fake_run)
+    result = await dispatcher._tool_run_command(str(tmp_path), {"argv": ["pytest"]}, LLMCodeDispatchProfile())
+    assert ran == [list(a) for a in replacement]
+    assert result["ok"] is True
+    assert result["hint"] == "scoped"
+
+
+@pytest.mark.asyncio
+async def test_run_command_blocks_without_exec(monkeypatch, tmp_path):
+    dispatcher = _dispatcher(monkeypatch, _FakeClient([]))
+    monkeypatch.setattr(
+        llm_module, "guard_argv", lambda argv, *, worktree: GuardOutcome("block", (), "no scoped tests")
+    )
+    called = False
+
+    async def _fake_run(argv, *, cwd, timeout, stdin=None):
+        nonlocal called
+        called = True
+        return {"exit_code": 0, "stdout": "", "stderr": ""}
+
+    monkeypatch.setattr(dispatcher, "_run_argv", _fake_run)
+    result = await dispatcher._tool_run_command(str(tmp_path), {"argv": ["pytest"]}, LLMCodeDispatchProfile())
+    assert result["ok"] is False
+    assert result["stderr"] == "no scoped tests"
+    assert called is False
+
+
+@pytest.mark.asyncio
+async def test_run_command_first_nonzero_exit_wins(monkeypatch, tmp_path):
+    dispatcher = _dispatcher(monkeypatch, _FakeClient([]))
+    replacement = (("pytest", "a.py"), ("pytest", "b.py"))
+    monkeypatch.setattr(llm_module, "guard_argv", lambda argv, *, worktree: GuardOutcome("rewrite", replacement, "scoped"))
+    ran: list[list[str]] = []
+
+    async def _fake_run(argv, *, cwd, timeout, stdin=None):
+        ran.append(list(argv))
+        return {"exit_code": 1, "stdout": "", "stderr": ""} if list(argv) == ["pytest", "a.py"] else {
+            "exit_code": 0, "stdout": "", "stderr": ""
+        }
+
+    monkeypatch.setattr(dispatcher, "_run_argv", _fake_run)
+    result = await dispatcher._tool_run_command(str(tmp_path), {"argv": ["pytest"]}, LLMCodeDispatchProfile())
+    assert ran == [list(a) for a in replacement]
+    assert result["exit_code"] == 1
+    assert result["ok"] is False
+
+
+@pytest.mark.asyncio
+async def test_run_command_guard_exception_runs_unchanged(monkeypatch, tmp_path):
+    dispatcher = _dispatcher(monkeypatch, _FakeClient([]))
+
+    def _raise(argv, *, worktree):
+        raise RuntimeError("kernel broke")
+
+    monkeypatch.setattr(llm_module, "guard_argv", _raise)
+    calls = []
+
+    async def _fake_run(argv, *, cwd, timeout, stdin=None):
+        calls.append(list(argv))
+        return {"exit_code": 0, "stdout": "ok", "stderr": ""}
+
+    monkeypatch.setattr(dispatcher, "_run_argv", _fake_run)
+    result = await dispatcher._tool_run_command(str(tmp_path), {"argv": ["pytest"]}, LLMCodeDispatchProfile())
+    assert calls == [["pytest"]]
+    assert result["ok"] is True
