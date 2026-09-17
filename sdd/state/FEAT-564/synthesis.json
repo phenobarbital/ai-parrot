@@ -2,7 +2,7 @@
   "schema_version": "1.0",
   "feat_id": "FEAT-564",
   "mode": "enrichment",
-  "summary_oneline": "Repair video reel reliability and add Gemini Omni alongside Veo 3.1.",
+  "summary_oneline": "Repair stage routing, timing, audio and errors with API-specific Veo profiles and shared Omni assembly.",
   "localization": [
     {
       "path": "packages/ai-parrot-server/src/parrot/handlers/video_reel.py",
@@ -89,7 +89,11 @@
     "new": [
       "Proposed normalized clip contract and Omni adapter",
       "Proposed reel/scene video_model selection",
-      "Proposed authorized artifact download route"
+      "Proposed authorized artifact download route",
+      "Explicit director/image routing and deprecated model alias with conflict validation",
+      "API-specific model capability registry; no substring-based feature grants",
+      "Music off/optional/required policy and structured status",
+      "R01-R11 acceptance matrix in revised proposal"
     ],
     "modified": [
       {
@@ -225,6 +229,41 @@
       ],
       "confidence": "low",
       "reasoning": "No live generation."
+    },
+    {
+      "id": "C7",
+      "statement": "Director/video stages hardcode models and scene duration is not propagated or trimmed.",
+      "evidence": ["F009"],
+      "confidence": "high",
+      "reasoning": "Fresh source trace; exact provider output duration is not assumed."
+    },
+    {
+      "id": "C8",
+      "statement": "Installed SDK 2.23.0 exposes generate_audio but rejects it in Developer API serialization.",
+      "evidence": ["F010"],
+      "confidence": "high",
+      "reasoning": "Installed metadata and transport source; no claim of 2.24.0 certification."
+    },
+    {
+      "id": "C9",
+      "statement": "Gemini preview and Vertex GA model IDs require separate capability profiles.",
+      "evidence": ["F010"],
+      "confidence": "high",
+      "reasoning": "Official API-specific docs and different Lite capabilities."
+    },
+    {
+      "id": "C10",
+      "statement": "Lyria RealTime is publicly documented as experimental; private-only failure predictions are unsupported.",
+      "evidence": ["F011"],
+      "confidence": "high",
+      "reasoning": "Official guide; deployment access and PCM contract remain unverified."
+    },
+    {
+      "id": "C11",
+      "statement": "Focused handler tests reproduce 20 read-only request fixture errors with 13 tests passing.",
+      "evidence": ["F012"],
+      "confidence": "high",
+      "reasoning": "Fresh pytest output saved under artifacts/logs."
     }
   ],
   "unknowns": [
@@ -242,21 +281,28 @@
     },
     {
       "id": "U2",
-      "question": "Confirm proposed scope excluding automatic fallback and conversational editing.",
+      "question": "Confirm deprecated model alias for director_model with conflict rejection and stage-specific defaults.",
       "blocks_claims": [
         "C4"
       ],
       "plausible_answers": [
-        "Proceed",
-        "Refine scope"
+        "Accept proposed alias and defaults",
+        "Revise migration behavior"
       ],
+      "ask_user": true
+    },
+    {
+      "id": "U3",
+      "question": "Confirm optional music by default in separate mode with explicit off/required alternatives.",
+      "blocks_claims": ["C4"],
+      "plausible_answers": ["Preserve best-effort default", "Default music off"],
       "ask_user": true
     }
   ],
   "answers": [],
   "recommended_next_command": {
     "command": "sdd-spec",
-    "rationale": "User explicitly requested a formal spec; draft it now with open design decisions visible, not approved or decomposed into tasks."
+    "rationale": "Reconcile the existing draft spec with the revised proposal before approval and task decomposition; this request authorizes proposal revision only."
   },
   "overall_confidence": "medium",
   "meta": {
@@ -268,9 +314,13 @@
       "F005",
       "F006",
       "F007",
-      "F008"
+      "F008",
+      "F009",
+      "F010",
+      "F011",
+      "F012"
     ],
     "findings_unused": [],
-    "notes": "Research gate and targeted questions presented asynchronously. No answer received at drafting time; user authorized documents, not acceptance of policies. Draft spec produced in same turn. No hidden reasoning log persisted. Budget counters are conservative upper-bound accounting for research reads, including instruction/schema files. FEAT-564 reserved successfully; local courtesy fast-forward skipped due to divergence; no other work published."
+    "notes": "2026-09-17 Gemini-review revision: user requested complete proposal revision. Findings F009-F012 verify review claims and correct backend/version/access overstatements. Proposed policies remain review recommendations, not user answers. Existing spec is unchanged and requires reconciliation. No application edits or paid calls. Prior research counters remain historical; revision completed within a fresh loose-profile budget. Focused handler result: 13 passed, 20 errors, 8 warnings. Initial sandbox test was blocked by logging socket initialization and rerun with escalation."
   }
 }

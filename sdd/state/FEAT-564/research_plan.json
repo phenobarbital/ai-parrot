@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "mode_hint": "enrichment",
-  "rationale": "Verify Omni SDK contracts and map the existing reel review to repair requirements before writing a formal draft.",
+  "rationale": "Preserve the original Omni investigation and verify the supplied Gemini review against current code, installed SDK, official API-specific docs and focused handler tests before revising the proposal.",
   "queries": [
     {
       "id": "Q001",
@@ -98,9 +98,45 @@
           987
         ]
       }
+    },
+    {
+      "id": "Q009",
+      "type": "read",
+      "priority": 1,
+      "intent": "Trace effective stage models, scene timing and safety fallback.",
+      "params": {"path": "packages/ai-parrot-client-google/src/parrot/clients/google/generation.py", "lines": [1905, 2435]}
+    },
+    {
+      "id": "Q010",
+      "type": "read",
+      "priority": 1,
+      "intent": "Check installed audio serialization and compare official API-specific model profiles.",
+      "params": {"path": ".venv/lib/python3.12/site-packages/google/genai/models.py", "lines": [1943, 2163]}
+    },
+    {
+      "id": "Q011",
+      "type": "read",
+      "priority": 1,
+      "intent": "Check music API version and contrast public Lyria documentation.",
+      "params": {"path": "packages/ai-parrot-client-google/src/parrot/clients/google/generation.py", "lines": [1162, 1211]}
+    },
+    {
+      "id": "Q012",
+      "type": "read",
+      "priority": 1,
+      "intent": "Inspect fixture ownership and reproduce the focused handler baseline.",
+      "params": {"path": "packages/ai-parrot/tests/test_video_reel_handler.py", "lines": [70, 90]}
     }
   ],
   "meta": {
+    "revision": {
+      "date": "2026-09-17",
+      "source": "sdd/state/FEAT-564/gemini-review-source.md",
+      "plan": "artifacts/plan_video_reel_proposal_revision.md",
+      "wiki_query": "video reel omni Veo reliability model duration audio safety",
+      "wiki_page": "mem-a397a182dfcc",
+      "scope": "Proposal and audit only; existing spec requires later reconciliation."
+    },
     "wiki_orientation": {
       "query": "Video reel generation Omni interactions model support SDK generation",
       "page": "file:packages/ai-parrot-server/src/parrot/handlers/video_reel.py",
@@ -108,7 +144,9 @@
     },
     "external_sources": [
       "https://ai.google.dev/gemini-api/docs/omni",
-      "https://ai.google.dev/gemini-api/docs/veo"
+      "https://ai.google.dev/gemini-api/docs/veo",
+      "https://ai.google.dev/gemini-api/docs/realtime-music-generation",
+      "https://docs.cloud.google.com/vertex-ai/generative-ai/docs/release-notes"
     ],
     "schema_note": "Wiki-first requirement executed; schema excludes wiki query kinds and priority 0, so wiki preflight is recorded here. External docs supplement Q005. Findings aggregate paired reads and prior review.",
     "estimated_budget_use": {
