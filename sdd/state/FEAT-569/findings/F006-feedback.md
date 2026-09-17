@@ -18,17 +18,16 @@ CoderFeedback.feedback_id is a stable coder-feedback: hash, with first occurrenc
 ## Citations
 
 - path: `packages/ai-parrot/src/parrot/knowledge/wiki/ledger/coder_feedback.py`
-  lines: 77-85
+  lines: 67-71
   symbol: `CoderFeedback.feedback_id`
   excerpt: |
-        feedback_id: str
-
-
-    class CoderFeedbackStore:
+        def feedback_id(self) -> str:
+            """Stable occurrence key: retries of the recording call are not recurrences."""
+            key = [self.backend, self.model, self.task_id, self.attempt_uid, self.pattern]
 
 - path: `packages/ai-parrot/src/parrot/knowledge/wiki/ledger/coder_feedback.py`
-  lines: 101-215
-  symbol: `CoderFeedbackStore.record / context`
+  lines: 96-185
+  symbol: `CoderFeedbackStore.record / _read / context`
   excerpt: |
                 fact=feedback.model_dump_json(),
                 derived_from=f"task:{feedback.task_id}",
@@ -47,3 +46,5 @@ CoderFeedback.feedback_id is a stable coder-feedback: hash, with first occurrenc
 ## Notes
 
 Read-only inspection at dev HEAD 9ab95566e5982dbc3fe1cee8b03789ddcf6f161c. Proposed changes are inferences, not existing APIs. Range excerpts are locators; the summary uses the inspected surrounding range.
+
+Amended 2026-09-18 (diagnostic review): the original citation ranges `77-85` / `101-215` were wrong — the file has 185 lines and line 77 is `CoderFeedbackReceipt.feedback_id` (a field), not the `CoderFeedback.feedback_id()` method. Ranges corrected to `67-71` and `96-185`; the summary was re-verified against the file and is unchanged.

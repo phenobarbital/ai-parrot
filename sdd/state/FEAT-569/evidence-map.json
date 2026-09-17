@@ -5,12 +5,12 @@
     "summary": "Preserve Option B: full FSRS-6, verified outcomes only, recall does not reinforce, forgotten is recoverable, and coder feedback joins episodic memory. The source explicitly requires S1\u2013S4 before specification. Its formulas, compatibility claims and proposed symbols are design input, not implemented contracts.",
     "citations": [
       {
-        "path": "sdd/proposals/agent-memory-dynamics.brainstorm.md",
+        "path": "sdd/proposals/memory-dynamics.brainstorm.md",
         "lines": "31-55",
         "symbol": "owner constraints"
       },
       {
-        "path": "sdd/proposals/agent-memory-dynamics.brainstorm.md",
+        "path": "sdd/proposals/memory-dynamics.brainstorm.md",
         "lines": "565-600",
         "symbol": "spikes and open questions"
       }
@@ -116,12 +116,12 @@
     "citations": [
       {
         "path": "packages/ai-parrot/src/parrot/knowledge/wiki/ledger/coder_feedback.py",
-        "lines": "77-85",
+        "lines": "67-71",
         "symbol": "CoderFeedback.feedback_id"
       },
       {
         "path": "packages/ai-parrot/src/parrot/knowledge/wiki/ledger/coder_feedback.py",
-        "lines": "101-215",
+        "lines": "96-185",
         "symbol": "CoderFeedbackStore.record / context"
       },
       {

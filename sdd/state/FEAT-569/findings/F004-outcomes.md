@@ -38,3 +38,5 @@ The precise hardcoded SUCCESS/3 write is in _safe_record_ask, scheduled by _reco
 ## Notes
 
 Read-only inspection at dev HEAD 9ab95566e5982dbc3fe1cee8b03789ddcf6f161c. Proposed changes are inferences, not existing APIs. Range excerpts are locators; the summary uses the inspected surrounding range.
+
+Amended 2026-09-18 (diagnostic review): the unified path is **not functional today**. `UnifiedMemoryManager._record_episodic` (`manager.py:395-400`) calls `record_tool_episode(namespace=, query=, response=, tool_calls=)`, but the real signature (`episodic/store.py:235-242`) is `(namespace, tool_name, tool_args, tool_result, user_query=None)`. `inspect.signature(...).bind(...)` with the manager's arguments raises `TypeError: missing a required argument: 'tool_name'`. `record_interaction` (`manager.py:198-206`) swallows it as a WARNING, and `tests/memory/unified/test_manager.py:19` replaces the method with an `AsyncMock`, so no test exercises the real signature. Consequence: `LongTermMemoryMixin` agents write no episodes through this path. It must be repaired (or explicitly retired) before dynamics can grade anything recorded by unified agents.

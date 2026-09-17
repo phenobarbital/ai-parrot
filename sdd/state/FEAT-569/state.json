@@ -3,10 +3,10 @@
   "feat_id": "FEAT-569",
   "feature_slug": "memory-dynamics",
   "started_at": "2026-09-17T21:47:09.212549+00:00",
-  "updated_at": "2026-09-17T21:59:25.876007+00:00",
+  "updated_at": "2026-09-17T22:16:16.931569+00:00",
   "source": {
     "kind": "file",
-    "file_path": "sdd/proposals/agent-memory-dynamics.brainstorm.md",
+    "file_path": "sdd/proposals/memory-dynamics.brainstorm.md",
     "raw_path": "sdd/state/FEAT-569/source.md",
     "fetched_at": "2026-09-17T21:47:09.212549+00:00",
     "summary_oneline": "Outcome-verified memory dynamics across episodes, brain pages and coder feedback"
@@ -48,14 +48,14 @@
       "status": "skipped",
       "questions_total": 4,
       "questions_answered": 0,
-      "skipped_reason": "User proceeded with the discussion proposal; U1\u2013U4 remain explicit follow-up questions, without inferred answers."
+      "skipped_reason": "User proceeded with the discussion proposal; U1–U4 remain explicit follow-up questions, without inferred answers."
     },
     "output": {
       "status": "completed",
       "proposal_path": "sdd/proposals/memory-dynamics.proposal.md",
       "commit_sha": null,
-      "next_command_recommended": "sdd-brainstorm",
-      "next_command_rationale": "Resolve policy decisions and execute source-mandated S1\u2013S4 before sdd-spec; do not generate implementation tasks yet.",
+      "next_command_recommended": "sdd-spec",
+      "next_command_rationale": "Owner decision 2026-09-18: run sdd-spec with S1-S4 as Lane 0a gate tasks that block every implementation lane; do not open a second brainstorm. U1-U6 remain open questions for the spec.",
       "completed_at": "2026-09-17T21:59:25.876007+00:00"
     }
   },
@@ -75,6 +75,6 @@
   },
   "resume_hint": {
     "next_phase": "discussion",
-    "next_action": "Resolve U1\u2013U4 and execute S1\u2013S4 before sdd-spec. Find the artifact commit using git log -- sdd/proposals/memory-dynamics.proposal.md."
+    "next_action": "Run /sdd-spec memory-dynamics. Inputs: this proposal's Design Corrections + sdd/proposals/memory-dynamics.brainstorm.md (authoritative where not corrected)."
   }
 }

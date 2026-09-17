@@ -123,7 +123,7 @@
     },
     {
       "path": "packages/ai-parrot/src/parrot/knowledge/wiki/ledger/coder_feedback.py",
-      "lines": "77-85",
+      "lines": "67-71",
       "symbol": "CoderFeedback.feedback_id",
       "role": "Feedback migration has identity and retrieval compatibility risks",
       "evidence": [
@@ -132,7 +132,7 @@
     },
     {
       "path": "packages/ai-parrot/src/parrot/knowledge/wiki/ledger/coder_feedback.py",
-      "lines": "101-215",
+      "lines": "96-185",
       "symbol": "CoderFeedbackStore.record / context",
       "role": "Feedback migration has identity and retrieval compatibility risks",
       "evidence": [

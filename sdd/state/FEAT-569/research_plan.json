@@ -9,7 +9,7 @@
       "type": "read",
       "priority": 1,
       "params": {
-        "path": "sdd/proposals/agent-memory-dynamics.brainstorm.md",
+        "path": "sdd/proposals/memory-dynamics.brainstorm.md",
         "lines": [
           31,
           55

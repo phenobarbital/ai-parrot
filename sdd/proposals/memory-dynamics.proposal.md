@@ -4,10 +4,10 @@ title: Verified outcome-driven memory dynamics
 slug: memory-dynamics
 type: feature
 mode: enrichment
-status: discussion
+status: accepted
 source:
   kind: file
-  file_path: sdd/proposals/agent-memory-dynamics.brainstorm.md
+  file_path: sdd/proposals/memory-dynamics.brainstorm.md
   jira_key: null
   jira_url: null
   fetched_at: 2026-09-17
@@ -16,20 +16,20 @@ overall_confidence: medium
 base_branch: dev
 research_state: sdd/state/FEAT-569/
 created: 2026-09-17
-updated: 2026-09-17
+updated: 2026-09-18
 ---
 
 # FEAT-569 — Verified outcome-driven memory dynamics
 
-> **Mode:** enrichment · **Confidence:** medium · **Status:** discussion
+> **Mode:** enrichment · **Confidence:** medium · **Status:** accepted (2026-09-18, after diagnostic review — see §7)
 > **Source:** [preserved brainstorm](../state/FEAT-569/source.md)
 > **Audit:** [research state](../state/FEAT-569/state.json)
-> FEAT-569 identifies proposal research only; formal specification reservation happens later.
+> FEAT-569 identifies proposal research only; `/sdd-spec` reserves the formal FEAT-ID through `reserve_ids.py` (the ledger counter, not this number, is authoritative).
 
 ## 0. Origin
 
 Invocation: `$sdd-proposal memory-dynamics -- @sdd/proposals/agent-memory-dynamics.brainstorm.md`.
-The complete source, including frontmatter, is preserved byte-for-byte in [source.md](../state/FEAT-569/source.md).
+The complete source, including frontmatter, is preserved byte-for-byte in [source.md](../state/FEAT-569/source.md) as fetched on 2026-09-17. On 2026-09-18 the brainstorm was renamed to [`memory-dynamics.brainstorm.md`](memory-dynamics.brainstorm.md) so `/sdd-spec memory-dynamics` loads it as the authoritative input; it remains authoritative for everything this proposal does not explicitly correct.
 
 > **Recall does not reinforce.** Reading a memory updates `last_accessed`; only a review (recalled + intervened + verified outcome) changes stability.
 
@@ -57,7 +57,7 @@ Paths below are relative to `packages/ai-parrot/src/parrot/`, except where expli
 | `memory/dream/brain.py` | `BrainStore.remember`, `search` | 50–149 | [F005](../state/FEAT-569/findings/F005-brain.md) |
 | `memory/dream/runner.py` | `DreamCycleRunner.run_cycle`, `_collect` | 180–269 | F005 |
 | `knowledge/wiki/store.py` | `WikiPageRecord` | 409–455 | F005 |
-| `knowledge/wiki/ledger/coder_feedback.py` | `CoderFeedback.feedback_id`, `CoderFeedbackStore.context` | 77–215 | [F006](../state/FEAT-569/findings/F006-feedback.md) |
+| `knowledge/wiki/ledger/coder_feedback.py` | `CoderFeedback.feedback_id`; `CoderFeedbackStore.record`, `_read`, `context` | 67–71, 96–185 | [F006](../state/FEAT-569/findings/F006-feedback.md) |
 | `knowledge/wiki/ledger/coder_reviews.py` | `CoderReview`, `CoderReviewStore.record` | 21–107 | [F007](../state/FEAT-569/findings/F007-reviews.md) |
 | `flows/dev_loop/sdd_coder/engine.py` | `SddCoderEngine._feedback_for`, `record_review` | 1433–1500 | F007 |
 | `flows/dev_loop/sdd_coder/models.py` | `FeedbackConfig` | 165–170 | F007 |
@@ -77,6 +77,7 @@ Paths below are relative to `packages/ai-parrot/src/parrot/`, except where expli
 - **Keep calibration separate from verified behavior.** The [official algorithm](https://github.com/open-spaced-repetition/awesome-fsrs/wiki/The-Algorithm) requires a same-day successful-review clamp omitted in the source sketch. The [reference scheduler](https://raw.githubusercontent.com/open-spaced-repetition/py-fsrs/main/fsrs/scheduler.py) uses whole elapsed days and parameter bounds. Pin the implementation and test numerical parity before vendoring; any fractional-time variant must be explicitly identified. **F011.**
 - **No automatic historical grading.** Review records contain correction counts and exposure, not causal memory receipts. Historical feedback can migrate as lessons; reconstructing per-memory grades from it is unsupported. **F006, F007.**
 - **Outcome collection must cover both entry paths.** The hardcoded conversational success is in the wrapper `_safe_record_ask`, not directly in `_record_post_ask`. Unified recording has a separate delegation path that must also obey the verified-outcome policy. **F004.**
+- **The unified write path is currently dead (prerequisite).** `UnifiedMemoryManager._record_episodic` (`memory/unified/manager.py:395`) calls `record_tool_episode(namespace=, query=, response=, tool_calls=)`; the real signature (`memory/episodic/store.py:235`) is `(namespace, tool_name, tool_args, tool_result, user_query=None)`. The call raises `TypeError`, `record_interaction` swallows it as a WARNING (`manager.py:203`), and `tests/memory/unified/test_manager.py` hides it behind an `AsyncMock`. `LongTermMemoryMixin` agents therefore record **no** episodes through this path today, so there is nothing for dynamics to grade there. Repair it (or retire the path) as a prerequisite task, with a test against the real store signature. **F004 (amended 2026-09-18).**
 
 ### 2.3 Recent History
 
@@ -119,11 +120,27 @@ These are proposed capabilities, not existing APIs:
 
 Reuse shared-root resolution, durable bounded receipts, token-bounded whole lessons and existing injected strategy tests. **F002, F006, F009, F010.** Preserve provider-client history ownership and conversation compaction. Defer per-principal profiles, active rehearsal probes and skill usefulness scoring; none is necessary to validate this proposal. These boundaries follow the source direction. **F001.**
 
+### Spec Carry-Forward Requirements
+
+Source structure this proposal compressed and the spec must restore. None of it is contradicted by the findings. **F001.**
+
+- **Store is the contract.** `EpisodicMemoryStore` and `BrainStore` own the dynamics; `LongTermMemoryMixin`, `parrot mcp-local episodic`, the `wikitoolkit memory …` group and the SDD coder engine are four clients of that one store. The "durable review service" in *What's New* §2 is `EpisodicMemoryStore.review()` plus the `ReviewLog` protocol hardened as described — **not** a new subsystem or a fourth implementation of the concern ("menos es más").
+- **Parallelism lanes (source §Parallelism Assessment), amended by the gate decision in §6:**
+  - **Lane 0a — spikes S1–S4** as gate tasks (below). Every other lane `depends_on` the spike whose output it consumes.
+  - **Lane 0b — `memory/dynamics/`**: FSRS formulas, `MemoryState`, `Grade`, grade function, review log. Pure, no I/O. Depends on S1 (time unit, parity).
+  - **Lane 0c — prerequisite repair** of `UnifiedMemoryManager._record_episodic` (§2.2). Independent; may run first.
+  - **Lane 1 — episodic store**: initial state, rescoring recall, `review`/`cite`, `model_id` scope, mixin attribution, toolkit. Depends on 0b, S3.
+  - **Lane 2 — dream cycle**: collect rule, lineage, forwarding, re-distill, anti-pattern. Depends on 0b, S4. Independent of Lane 1 once `MemoryState` is frozen.
+  - **Lane 3 — SDD**: `CoderFeedback` → episodes, `_feedback_for` / `coder_record_review` adapters, `checked_patterns`, both agent-prose copies, `import-feedback`. Depends on Lane 1 and S2. Last.
+  - **Lane 4 — CLI/MCP surface**, `export-reviews` / `fit`, ops `status`. Depends on Lane 1–2 interfaces only.
+  - Isolation: `mixed` — one worktree for Lane 0, then per-lane worktrees.
+- **Source specifics that stay in scope** unless a Design Correction above overrides them: conversational `ask()` with no verified signal records `PARTIAL` and produces no review; re-distill trigger on rising difficulty and anti-patterns rendered first in warnings (thresholds from S1); `DreamCycleReport.pages_redistilled` / `memories_forgotten`; `PostgresReviewLog` sink for pgvector deployments; optional extra `memory-fit = ["fsrs[optimizer]"]`; partial supersession of the FEAT-390 spec's `reinforcement_count` decision; ACT-R base-level activation only as a tie-breaker if FSRS proves outcome-sparse.
+
 ### Required Validation Gates
 
-No gate has been executed by this proposal research. **F001, F011.**
+No gate has been executed by this proposal research. **F001, F011.** Per the owner decision recorded in §6, the gates run **inside the spec as Lane 0a gate tasks**, not before it: each is a task whose acceptance criteria are the evidence below, and no implementation lane may start until the spikes it depends on have passed and their outputs (time unit, backend, attribution default, page-state placement, thresholds) are written back into the spec.
 
-| Gate | Required evidence before `/sdd-spec` |
+| Gate | Required evidence (acceptance criteria of the gate task) |
 |---|---|
 | **S1 — FSRS parity and cold start** | Pin reference code; verify all grades, same-day/long-gap cases, clamps and parameter rejection. Replay 30-day synthetic traces and available real signals without inventing historical attribution. Measure premature forgetting, useful retention, ranking change and stale-memory persistence. The source's one-sided retention check alone does not demonstrate useful forgetting. Keep time-unit and threshold decisions open until measured. |
 | **S2 — Local storage and review consistency** | Eight reader/writer processes; 5k baseline episodes and up to 10k scale; zero lost writes and source target p95 recall below 50 ms with hardware and embedding costs stated. Include same-memory concurrent reviews, duplicate outcomes, crashes between log/state writes, restart replay, and migration retries. Compare against FAISS snapshots. |
@@ -146,27 +163,39 @@ Implementation acceptance should additionally cover legacy imports, unavailable 
 | C8 | FSRS parity clamps and optimizer conversion need specification. | F011 | high |
 | C9 | One dynamics policy can unify the flows while retaining adapters. | F002, F005, F006, F008 | medium |
 | C10 | The proposed defaults improve autonomous-agent outcomes. | F001, F011 | low; hypothesis only |
+| C11 | The unified manager's episodic write path raises `TypeError` and records nothing today. | F004 (amended) | high; signature bind reproduced 2026-09-18 |
 
-Distribution: **8 high, 1 medium, 1 low**. High claims are directly read contracts; C9 is architectural synthesis. C10 is not an accepted conclusion and blocks claims of efficacy or production readiness. Overall scope confidence is **medium**.
+Distribution: **9 high, 1 medium, 1 low** (C11 added by the 2026-09-18 diagnostic review; `synthesis.json` keeps the original ten). High claims are directly read contracts; C9 is architectural synthesis. C10 is not an accepted conclusion and blocks claims of efficacy or production readiness. Overall scope confidence is **medium**.
 
 ## 5. Open Questions
 
 Source decisions retained: Option B, full FSRS, verified outcomes, recall-only access tracking, unified feedback, recoverable forgetting, deferred profiles/probes. These are source decisions, not new answers from this session. **F001.**
 
-Four material policy questions remain for Jesus:
+Six material policy questions remain for Jesus (U1–U4 from the proposal research; U5–U6 restored by the 2026-09-18 diagnostic review):
 
 1. **U1 — Attribution default:** citations first, with generic overlap disabled until S3; or enable both once S3 meets an agreed precision target? Recommended: citations first. Blocks C9/C10.
 2. **U2 — Adapter lifetime:** permanent compatibility adapter, or announced deprecation after a release? Recommended: permanent adapter for v1, with legacy IDs/config preserved. Blocks C5/C9.
 3. **U3 — Calibration target:** retain the source's 30-day horizon or use another operating horizon, and what false-reinforcement/precision threshold should S3 meet? Required before spike acceptance. Blocks C10.
 4. **U4 — Log retention:** retain the complete review corpus in v1, or archive after fitting with replayable manifests? Recommended: complete corpus in v1. Blocks C9.
+5. **U5 — `max_age_days` fate:** the source decides to drop it ("retrievability replaces it" — one ageing rule), while `FeedbackConfig.max_age_days` (default 90, 1..365) is live roster configuration and §3 flags silently ignoring it as a behavioural change. Options: (a) drop as the source says, with a deprecation warning when a non-default value is set; (b) keep it as a hard upper bound applied on top of retrievability during the adapter's lifetime. Recommended: (a), preserving the source's single ageing rule. Blocks C5/C9.
+6. **U6 — Profile deferral check (source open question):** confirm that `EpisodeCategory.USER_PREFERENCE` + `get_user_preferences` is sufficient for the conversational agents in production today, so deferring the per-principal profile plane costs nothing in v1. Does not block the spec; a "no" reopens scope.
 
 Time units, backend choice, page-state placement and calibrated thresholds are technical spike outputs, not questions to settle by guesswork. Anti-pattern representation can remain metadata-first for the candidate v1; enum/schema changes require justification in the spec. **F001, F002, F005.**
 
 ## 6. Recommended Next Step
 
-**`$sdd-brainstorm memory-dynamics`** — resolve policy choices and plan/execute S1–S4, using this proposal as evidence. Then run **`$sdd-spec memory-dynamics`** after the gates pass. Do not jump to implementation tasks. This preserves the source's validation-first requirement. **F001.**
+**`/sdd-spec memory-dynamics`** — with S1–S4 as Lane 0a gate tasks inside the spec.
 
-The user answered **proceed** at the proposal review gate. This finalizes the discussion proposal; U1–U4 and S1–S4 remain unresolved. It does not accept untested defaults or authorize an implementation specification.
+Owner decision (Jesus, 2026-09-18): the source's "spike gates before `/sdd-spec`" becomes "spike gates before any implementation lane". The validation-first intent is kept — nothing in Lanes 0b–4 may start before the spikes it depends on pass — but the gates are tracked as SDD tasks instead of as an untracked pre-spec activity. The spec must therefore leave time unit, backend choice, attribution default, page-state placement and thresholds as explicit *spike outputs* and must not freeze untested defaults.
+
+Inputs for the spec, in precedence order: (1) the *Design Corrections* and §2.2 constraints of this proposal; (2) [`memory-dynamics.brainstorm.md`](memory-dynamics.brainstorm.md) — authoritative for everything not corrected here, including Code Context, the capability list and the lanes; (3) *Spec Carry-Forward Requirements* above. Do **not** run a second `/sdd-brainstorm`: the exploration document already exists, and spike results and U1–U6 answers are folded into it (or into the spec's open questions) rather than into a new document.
+
+### Alternatives
+
+- **Spikes first, spec after** (the source's original ordering): execute S1–S4 ad hoc, write the results into the brainstorm, then `/sdd-spec`. Rejected by the owner on 2026-09-18 in favour of tracked gate tasks.
+- **Hotfix the dead unified write path separately** (§2.2, C11): valid regardless of this feature's schedule; if done first, Lane 0c disappears.
+
+History: at the 2026-09-17 proposal review gate the user answered **proceed**, which finalised a *discussion* proposal with U1–U4 and S1–S4 unresolved. The 2026-09-18 acceptance does not resolve them either and does not accept untested defaults; it authorises the specification described above.
 
 ## 7. Research Audit
 
@@ -180,6 +209,8 @@ The user answered **proceed** at the proposal review gate. This finalizes the di
 | Citation map | [evidence-map.json](../state/FEAT-569/evidence-map.json) |
 
 Default limits: 40 repository files, 25 searches, 10 Git queries, depth 2, 300 seconds of research. Consumed counters are recorded in state; workflow/template reads and synthesis time are excluded. Research was not budget-truncated. Wiki status/query/page were used before source inspection; direct reads corrected stale-index risk. No runtime tests or spike experiments were run; document/schema validation is recorded separately. No implementation or dependency changes.
+
+**Diagnostic review, 2026-09-18** (independent re-verification of §2 against `dev`; cited files unchanged since `9ab95566e`): all ten claims held; 19 of 20 localization rows were correct. Amendments: the `coder_feedback.py` range (was `77–215` on a 185-line file) fixed here and in F006, `evidence-map.json`, `synthesis.json`; the dead unified write path added (§2.2, C11, F004); U5–U6 restored; *Spec Carry-Forward Requirements* added; §6 rewritten; source brainstorm renamed to the `memory-dynamics` slug and committed. F011's FSRS claims were re-checked against the `py-fsrs` `main` scheduler (whole-day `.days` elapsed time; same-day `max(increase, 1.0)` clamp for Hard/Good/Easy; parameter-bound `ValueError`). `validation.json` still describes the 2026-09-17 run; its "four unknowns" and source-path checks predate these amendments.
 
 ## 8. Provenance
 
