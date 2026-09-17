@@ -1,0 +1,50 @@
+FEAT-563 AC12 — task-tier budget
+
+change: TASK-3309's guard.py + test_guard.py 2-file change (deviation: the blueprint's literal
+        `GUARD_SHA` (8ca7092277a9a0997fd53dcaf9ec5b347f40404e) predates TASK-3310, so
+        `scripts/sdd/select_tests.py` does not exist in that tree yet and the CLI cannot run
+        there. Adapted the measurement to reproduce the SAME 2-file diff on top of the feature
+        tip (615bc01d2686fc046278ac93c570685f377ec8bd), where the CLI exists: a scratch,
+        detached checkout at tip had guard.py + test_guard.py removed (commit
+        b383ca2939a5a37c2406c5ba7be52855a369e46c, "PRE") then restored from tip content (commit
+        e0aa9c0e7202a266b51558ebf416e6ff727b4340, "POST") — an exact, real 203-line/2-file
+        `packages/ai-parrot` change, just replayed as a fresh diff instead of checked out at
+        the historical commit. See TASK-3320 Completion Note for the full rationale.
+files: packages/ai-parrot/src/parrot/flows/dev_loop/test_scope/guard.py
+       packages/ai-parrot/tests/flows/dev_loop/test_scope/test_guard.py
+
+command: python -m scripts.sdd.select_tests --tier task \
+           --base b383ca2939a5a37c2406c5ba7be52855a369e46c \
+           --task-file sdd/tasks/completed/TASK-3309-kernel-guard.md \
+           --worktree /tmp/feat563-evidence --run
+
+plan (--json, no --run):
+{
+  "tier": "task",
+  "invocations": [
+    {
+      "distribution": "ai-parrot",
+      "argv": [
+        "pytest", "-q", "--tb=short", "-p", "no:cacheprovider", "-o", "log_cli=false",
+        "-m", "not e2e and not real_llm and not integration",
+        "--confcutdir", "/tmp/feat563-evidence",
+        "packages/ai-parrot/tests/flows/dev_loop/test_scope"
+      ],
+      "targets": [
+        {"path": "packages/ai-parrot/tests/flows/dev_loop/test_scope", "distribution": "ai-parrot", "reason": "mirror"}
+      ]
+    }
+  ],
+  "escalated": [],
+  "notes": [],
+  "core_hits": [],
+  "skipped_escalations": []
+}
+
+54 tests selected each run (the full `test_scope/` suite mirrors the 2 changed files' directory).
+
+run 1 wall=7.29 s exit=0
+run 2 wall=7.21 s exit=0
+run 3 wall=7.43 s exit=0
+
+median=7.29 bound=60 verdict=PASS
