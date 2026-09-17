@@ -51,8 +51,16 @@ from parrot.models.infographic import (
     DocumentMeta,
     ChangelogEntry,
 )
-from parrot.outputs.formats.infographic_html import BASE_CSS, InfographicHTMLRenderer
+from parrot.outputs.formats.infographic_html import InfographicHTMLRenderer
 from parrot.outputs.formats.infographic import INFOGRAPHIC_SYSTEM_PROMPT
+from parrot.outputs.formats.assets.design_system import _COMPONENTS_CSS, _LAYOUT_CSS
+
+# FEAT-493 TASK-2712 deleted the module-level ``infographic_html.BASE_CSS``
+# constant after TASK-2707/2708 migrated it 1:1 into the design-system assets:
+# shared component rules in ``components.css`` and the rest in
+# ``layout-report.css`` (the two are de-duplicated against each other). Their
+# concatenation is the legacy stylesheet these CSS-content assertions guard.
+BASE_CSS = f"{_COMPONENTS_CSS}\n\n{_LAYOUT_CSS['report']}"
 
 
 # ──────────────────────────────────────────────
@@ -261,7 +269,21 @@ class TestThemeConfigV2:
         css = theme.to_css_variables()
         assert "--surface-bg" not in css
         assert "--code-bg" not in css
-        assert css.count("--") == 12
+        # 12 v1 palette/font variables, plus the always-emitted layout tokens
+        # added by FEAT-493 TASK-2706 (they derive when unset). No optional v2
+        # variable may leak in when it was not configured.
+        declared = set(re.findall(r"(--[a-z0-9-]+):", css))
+        v1_vars = {
+            "--primary", "--primary-dark", "--primary-light", "--accent-green",
+            "--accent-amber", "--accent-red", "--neutral-bg", "--neutral-border",
+            "--neutral-muted", "--neutral-text", "--body-bg", "--font-family",
+        }
+        layout_vars = {
+            "--content-width", "--radius", "--density", "--density-gap",
+            "--density-padding", "--shadow", "--mono-family", "--panel-bg",
+            "--panel-border", "--header-bg", "--header-text",
+        }
+        assert declared == v1_vars | layout_vars
 
     def test_theme_config_v2_fields(self):
         theme = ThemeConfig(
@@ -1040,8 +1062,12 @@ class TestDocumentStructure:
         assert "--primary:" in html
 
     def test_responsive_breakpoints(self, renderer, basic_response):
+        # FEAT-493 TASK-2712: the default layout is now "analytics"; the legacy
+        # 600px breakpoints moved with the old BASE_CSS into layout-report.css.
         html = renderer.render_to_html(basic_response)
-        assert "@media (max-width: 600px)" in html
+        assert "@media (max-width: 640px)" in html
+        report_html = renderer.render_to_html(basic_response, layout="report")
+        assert "@media (max-width: 600px)" in report_html
 
     def test_print_styles(self, renderer, basic_response):
         html = renderer.render_to_html(basic_response)

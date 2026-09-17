@@ -25,6 +25,7 @@ Commands:
 from __future__ import annotations
 
 import asyncio
+import errno
 import json
 import logging
 import os
@@ -2655,8 +2656,8 @@ def ledger_open(
     body: str,
 ) -> None:
     """Open a new issue in the ledger."""
-    service = LedgerService.from_root()
     try:
+        service = LedgerService.from_root()
         issue_id = _run(
             service.open_issue(
                 title=title,
@@ -2671,6 +2672,10 @@ def ledger_open(
         click.echo(f"Opened {issue_id}")
     except WikiStoreBusy as exc:
         click.echo(f"Ledger index is busy ({exc.operation}); issue queued (index_pending)")
+    except OSError as exc:
+        if exc.errno != errno.EROFS:
+            raise
+        click.echo(f"Ledger unavailable; NOT filed: shared ledger is read-only ({exc})")
 
 
 @ledger.command("ready")

@@ -34,6 +34,14 @@ def _load_security_advisor_module():
         _os.path.join(_os.path.dirname(__file__), _os.pardir)
     )
     _module_path = _os.path.join(_worktree_root, "agents", "security_advisor.py")
+    if not _os.path.isfile(_module_path):
+        # agents/ is gitignored: the module only exists on deployments/dev
+        # machines that ship it, never in a CI checkout.
+        pytest.skip(
+            f"agents/security_advisor.py not present ({_module_path}); "
+            "the repo-root agents/ directory is gitignored",
+            allow_module_level=True,
+        )
     spec = importlib.util.spec_from_file_location("security_advisor", _module_path)
     if spec is None:
         raise ImportError(f"Could not create spec for {_module_path}")

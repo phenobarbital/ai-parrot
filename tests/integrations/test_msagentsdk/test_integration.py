@@ -27,9 +27,24 @@ def _activity_module():
 
 
 def _sent_text(ctx):
-    """Return the ``text`` of the last Activity passed to ``send_activity``."""
+    """Return the reply text of the last Activity passed to ``send_activity``.
+
+    With Adaptive Cards enabled (the default since commit 4bde079b2) the reply
+    is an Activity whose card attachment carries the text in ``TextBlock``
+    elements; with cards disabled it is a plain-text Activity with ``text``.
+    """
     arg = ctx.send_activity.call_args.args[0]
-    return getattr(arg, "text", arg)
+    text = getattr(arg, "text", None)
+    if isinstance(text, str):
+        return text
+    attachments = getattr(arg, "attachments", None) or []
+    blocks = []
+    for att in attachments:
+        # A dict when the SDK is mocked; an SDK ``Attachment`` model otherwise.
+        content = att["content"] if isinstance(att, dict) else att.content
+        blocks.extend(b["text"] for b in content["body"] if b.get("type") == "TextBlock")
+    assert blocks, f"reply carried neither text nor a TextBlock card: {arg!r}"
+    return "\n".join(blocks)
 
 
 class TestEndToEndMessageFlow:

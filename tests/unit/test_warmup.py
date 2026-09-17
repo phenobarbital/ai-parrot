@@ -19,9 +19,22 @@ import pytest
 # ---------------------------------------------------------------------------
 
 _WT_ROOT = Path(__file__).resolve().parents[2]
-_EPHEMERAL_SRC = (
-    _WT_ROOT / "packages" / "ai-parrot" / "src" / "parrot" / "manager" / "ephemeral.py"
-)
+
+
+def _locate_workspace_source(relative: str) -> Path:
+    """Find a ``parrot.*`` source file across the uv workspace packages.
+
+    ``parrot.manager`` moved from core to ai-parrot-server (TASK-1372), so the
+    distribution is resolved by searching rather than hardcoded.
+    """
+    for pkg in sorted((_WT_ROOT / "packages").iterdir()):
+        candidate = pkg / "src" / relative
+        if candidate.is_file():
+            return candidate
+    raise FileNotFoundError(f"{relative!r} not found under any packages/*/src")
+
+
+_EPHEMERAL_SRC = _locate_workspace_source("parrot/manager/ephemeral.py")
 
 if "parrot.manager.ephemeral" not in sys.modules:
     _spec = importlib.util.spec_from_file_location(
@@ -189,20 +202,10 @@ class TestWarmUpMCPValidation:
         status = _make_status()
 
         mock_validate = AsyncMock()
-        with patch.object(_EPHEMERAL_MOD, "__builtins__", __builtins__):
-            # Patch the lazy import inside _warm_up via the sys.modules path.
-            import types as _types
-            _fake_mcp_mod = _types.ModuleType("parrot.mcp.integration")
-            _fake_mcp_mod.validate_mcp_http = mock_validate
-            old = sys.modules.get("parrot.mcp.integration")
-            sys.modules["parrot.mcp.integration"] = _fake_mcp_mod
-            try:
-                await _warm_up(bot, status, MagicMock())
-            finally:
-                if old is None:
-                    sys.modules.pop("parrot.mcp.integration", None)
-                else:
-                    sys.modules["parrot.mcp.integration"] = old
+        # validate_mcp_http is bound once at import time into the module-level
+        # ``_validate_mcp_http`` sentinel (FEAT-149 FIX-6), so patch that.
+        with patch.object(_EPHEMERAL_MOD, "_validate_mcp_http", mock_validate):
+            await _warm_up(bot, status, MagicMock())
 
         assert status.phase == "ready"
         assert mock_validate.call_count == 2
@@ -216,21 +219,12 @@ class TestWarmUpMCPValidation:
         status = _make_status()
 
         mock_validate = AsyncMock(side_effect=Exception("handshake failed"))
-        import types as _types
-        _fake_mcp_mod = _types.ModuleType("parrot.mcp.integration")
-        _fake_mcp_mod.validate_mcp_http = mock_validate
-        old = sys.modules.get("parrot.mcp.integration")
-        sys.modules["parrot.mcp.integration"] = _fake_mcp_mod
-        try:
+        with patch.object(_EPHEMERAL_MOD, "_validate_mcp_http", mock_validate):
             await _warm_up(bot, status, MagicMock())
-        finally:
-            if old is None:
-                sys.modules.pop("parrot.mcp.integration", None)
-            else:
-                sys.modules["parrot.mcp.integration"] = old
 
         assert status.phase == "error"
         assert status.error is not None
+        mock_validate.assert_awaited_once_with(server)
 
 
 # ---------------------------------------------------------------------------

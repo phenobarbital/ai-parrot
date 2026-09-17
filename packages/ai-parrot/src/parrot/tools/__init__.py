@@ -93,9 +93,16 @@ class _ParrotToolsRedirector(importlib.abc.MetaPathFinder):
                     # loaded as side-effects to their parrot.tools.*
                     # aliases.  This prevents Pydantic model classes
                     # from being duplicated across import paths.
+                    # Core submodules are never aliased: parrot_tools ships
+                    # re-export shims for some of them (e.g.
+                    # parrot_tools.abstract) that would otherwise overwrite
+                    # the canonical core module in sys.modules.
                     _pt = "parrot_tools."
                     for _k, _v in list(sys.modules.items()):
                         if _k.startswith(_pt):
+                            _alias_top = _k[len(_pt):].split(".")[0]
+                            if _alias_top.startswith("_") or _alias_top in _CORE_SUBMODULES:
+                                continue
                             _alias = self._PREFIX + _k[len(_pt):]
                             if sys.modules.get(_alias) is not _v:
                                 sys.modules[_alias] = _v

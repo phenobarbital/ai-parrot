@@ -10,6 +10,8 @@ currently expected to report ``mode == "ast-grep"``.
 
 from __future__ import annotations
 
+import importlib.util
+
 import pytest
 from parrot.knowledge.wiki.languages import astgrep, scanner_for
 
@@ -88,13 +90,41 @@ def test_outline_parity_with_and_without_seam(lang, suffix, src, monkeypatch, re
     assert with_seam.imports == without_seam.imports
 
 
+def _module_available(name: str) -> bool:
+    """Whether ``name`` is importable, without importing it (never raises)."""
+    try:
+        return importlib.util.find_spec(name) is not None
+    except (ImportError, ValueError):
+        return False
+
+
+def _seam_can_serve(lang: str) -> bool:
+    """Whether the ast-grep seam can serve ``lang`` in this environment.
+
+    The seam needs the optional ``wiki-structural`` extra (``ast-grep-py``);
+    Perl additionally needs the ``tree-sitter-perl`` grammar wheel from the
+    ``wiki-languages`` extra, which ``astgrep`` registers as a dynamic
+    language. Without them the scanner must degrade to a non-ast-grep tier.
+    """
+    if not astgrep.is_available():
+        return False
+    if lang == "perl":
+        return _module_available("tree_sitter_perl")
+    return True
+
+
 @pytest.mark.parametrize("lang,suffix,src", CASES, ids=[c[0] for c in CASES])
 def test_seam_service_matches_available_rules(lang, suffix, src):
-    """``mode == "ast-grep"`` iff a rule file for ``lang`` has landed."""
+    """``mode == "ast-grep"`` iff a rule file for ``lang`` has landed.
+
+    When the optional extras the seam needs are absent (the core CI job),
+    the landed rule cannot serve the file, so the scanner must report a
+    fallback tier instead.
+    """
     scanner = scanner_for(suffix)
     assert scanner is not None
     scanner.outline(src, f"x{suffix}")
-    if lang in SERVED_BY_RULE:
+    if lang in SERVED_BY_RULE and _seam_can_serve(lang):
         assert scanner.mode == "ast-grep"
     else:
         assert scanner.mode != "ast-grep"

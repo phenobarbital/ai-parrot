@@ -80,15 +80,20 @@ class TestSerializationGuard:
         result = _apply_serialization_guard(None)
         assert result is None
 
-    def test_unexpected_type_logs_warning(self):
+    def test_unexpected_type_logs_warning(self, caplog):
         """Non-list, non-DataFrame, non-None type logs a warning."""
         import logging
 
-        with pytest.raises(Exception) if False else pytest.warns(None):
+        # ``pytest.warns(None)`` was removed in pytest 8; the guard emits a
+        # *log* warning (not a Python ``Warning``), so assert via caplog.
+        with caplog.at_level(logging.WARNING, logger="test_serialization_guard"):
             # The guard logs a warning but does NOT raise an exception
             result = _apply_serialization_guard("unexpected string value")
-            # The data is returned as-is (guard only logs, doesn't transform)
-            assert result == "unexpected string value"
+        # The data is returned as-is (guard only logs, doesn't transform)
+        assert result == "unexpected string value"
+        assert any(
+            "unexpected type" in rec.getMessage() for rec in caplog.records
+        )
 
     def test_empty_dataframe_serialized(self):
         """Empty DataFrame is serialized to empty list."""

@@ -39,6 +39,8 @@ def _make_wrapper(singleton_agent: bool = True):
     wrapper._user_sessions = {}
     wrapper.conversations = {}
     wrapper._message_id_cache = {}
+    # Set by __init__ via _resolve_bot_id() (reminder delivery routing).
+    wrapper._bot_id = None
     return wrapper, agent
 
 

@@ -312,10 +312,15 @@ async def test_dialect_reference_has_variables_field(tk):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5), manual fallback implementation
+**Date**: 2026-09-17
+**Notes**: Implemented `QuerysourceToolkit` per spec §3 Module 5 blueprint (blocks 1+2) and replaced
+`__init__.py` with the spec §2 exports. Filled the one FILL IN marker (`describe_slug`'s dry-run branch:
+unpack `result, error = await qs.dry_run()`, `rendered_query = str(result) if result is not None else
+f"dry_run error: {error}"`, always `await qs.close()` in `finally`). `pytest
+packages/ai-parrot-tools/tests/querysource/ -q` — 54 passed (includes `test_toolkit_core.py`'s 5 tests).
+`ruff check` — clean. Also spot-verified `from parrot_tools.querysource import QuerysourceToolkit` resolves.
+Implemented manually: same repo-wide `complex_model_unavailable` block (empty `strong_models` policy); user
+authorized continuing the fallback loop for the rest of the feature.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**: none.

@@ -1,4 +1,6 @@
 """Tests verifying OAuthManager has been removed from parrot.mcp.oauth (FEAT-262, TASK-1665)."""
+import pytest
+
 import parrot.mcp.oauth as mod
 
 
@@ -30,21 +32,17 @@ def test_netsuite_m2m_still_exists():
     assert NetSuiteM2MAuth is not None
 
 
-def test_in_memory_token_store_functional():
+@pytest.mark.asyncio
+async def test_in_memory_token_store_functional():
     """InMemoryTokenStore still operates correctly."""
-    import asyncio
     from parrot.mcp.oauth import InMemoryTokenStore
 
     store = InMemoryTokenStore()
-
-    async def run():
-        await store.set("user1", "server1", {"access_token": "tok"})
-        result = await store.get("user1", "server1")
-        assert result == {"access_token": "tok"}
-        await store.delete("user1", "server1")
-        assert await store.get("user1", "server1") is None
-
-    asyncio.get_event_loop().run_until_complete(run())
+    await store.set("user1", "server1", {"access_token": "tok"})
+    result = await store.get("user1", "server1")
+    assert result == {"access_token": "tok"}
+    await store.delete("user1", "server1")
+    assert await store.get("user1", "server1") is None
 
 
 def test_helper_functions_preserved():

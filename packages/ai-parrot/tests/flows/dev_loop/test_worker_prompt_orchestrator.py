@@ -83,6 +83,13 @@ def test_worker_prompt_has_new_stop_conditions():
     assert "merge_conflict" in stop_section
 
 
+def test_worker_prompt_preserves_read_only_ledger_findings():
+    """Shared-ledger failures must be reported without bypassing the sandbox."""
+    body = load_subagent_definition("sdd-worker")
+    assert "shared ledger is read-only" in body
+    assert "worktree-local" in body
+
+
 def test_orchestrator_loop_describes_background_native_agents():
     """Regression (FEAT-555 incident): the loop must tell the orchestrator that a native `Agent`
     runs in the background, that its result arrives as a notification, that it must never be

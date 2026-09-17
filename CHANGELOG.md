@@ -7,6 +7,53 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+---
+
+## [1.0.3] — 2026-09-17
+
+Twelve core-line distributions move to `1.0.3`. The sixteen satellites
+(`ai-parrot-client-*`, `ai-parrot-openlit-bridge`) move to `0.2.3` and are
+re-pinned to `ai-parrot>=1.0.3`.
+
+### Added
+
+- **FEAT-561: Task complexity measurement for sdd-coder.** Typed complexity
+  evidence/policy/response contracts, Ruff+wiki+scope+dependency evidence
+  collection, deterministic complexity evaluation, complexity-restricted
+  dispatch and routing, MCP diagnostics surface, and measurable task contracts
+  in both SDD authoring hosts.
+- **FEAT-559: Execution pool suspensions for sdd-coder.** Private execution
+  pool with atomic admission, durable suspension records with strict ledger
+  replay, failure-classified dispatch gating, execution lifecycle (begin/end)
+  with history-gated startup, execution attribution in telemetry and review
+  history, and execution lifecycle MCP tools.
+- **FEAT-560: Exclusive-task wave scheduling in dev-loop.** Shared
+  exclusive-wave partition helpers, dispatch exclusive tasks alone in pool
+  rounds, and parallel-width pool sizing from the task graph.
+- **FEAT-526: Meta (Llama) LLM client.** `ai-parrot-client-meta` wired into
+  the client satellite matrix with `search_tools` mapped to native
+  `tool_search`.
+- **FEAT-540: GraphIndex core-seams** — spec approved + 13 tasks committed
+  (implementation pending).
+- **Configurable infographic theme** on `CrewDefinition`/`AgentCrew`.
+
+### Fixed
+
+- **Security:** upgrade Vite 5→6, svelte-vite-plugin 4→5 (CVE-2026-53571);
+  remove chromadb dependency (CVE-2026-45833/45831/45830).
+- **FormDesigner:** upload gates rejected every file the presets allow;
+  fixed-format text labeling; image-pair count gate; fourth gate exact-match
+  defect.
+- **Codex dispatch stdin isolation** (hotfix PR #1391): isolated Codex stdin
+  and bounded subprocess diagnostics with offline regression suite.
+- **CI:** declare `tqdm` as core dependency; install wiki stack in
+  `test-wiki-extras`.
+- **sdd-worker:** restore FEAT-543 delegated step; scope FEAT-549 absence
+  tests; protect shared environments from worker mutations.
+- **F4: Telegram/CLI token persistence.** `SessionVault` rejected `:` in key
+  names, so `VaultTokenSync.store_tokens()` silently stored nothing (the error
+  was swallowed). Vault keys may contain `:` now and the tokens are persisted.
+
 ### Changed
 
 - **BREAKING — Vault crypto hardening (FEAT-099).** Requires
@@ -27,13 +74,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   - `VaultTokenSync.read_tokens_result()` distinguishes missing from unreadable
     tokens; integrations report `status: needs_reconnect` when stored tokens
     cannot be used.
-
-### Fixed
-
-- **F4: Telegram/CLI token persistence.** `SessionVault` rejected `:` in key
-  names, so `VaultTokenSync.store_tokens()` silently stored nothing (the error
-  was swallowed). Vault keys may contain `:` now and the tokens are persisted.
-
+- Navigator stack deps pinned to Python 3.13+ builds.
 
 ---
 

@@ -8,6 +8,10 @@ Verifies:
 """
 import pytest
 from pathlib import Path, PurePath
+
+# PyMuPDF / pymupdf4llm ship with the ai-parrot-loaders[documents] extra only.
+pytest.importorskip("fitz")
+pytest.importorskip("pymupdf4llm")
 from unittest.mock import patch, MagicMock, AsyncMock
 from parrot_loaders.pdf import PDFLoader
 from parrot.loaders.abstract import AbstractLoader
@@ -53,9 +57,8 @@ class TestPDFLoaderFullDocument:
 
         # Should return exactly 1 document (full_document mode)
         assert len(docs) == 1
-        # Metadata should include total_pages (nested in document_meta)
-        doc_meta = docs[0].metadata.get('document_meta', {})
-        assert doc_meta.get('total_pages') == 3
+        # total_pages is a loader extra → top-level metadata (TASK-857, d31959725)
+        assert docs[0].metadata.get('total_pages') == 3
 
     @pytest.mark.asyncio
     @patch.object(AbstractLoader, '_setup_llm')
@@ -122,5 +125,6 @@ class TestPDFLoaderFullDocument:
         docs = await loader._load(PurePath(pdf_path))
 
         assert len(docs) == 1
-        doc_meta = docs[0].metadata.get('document_meta', {})
-        assert doc_meta.get('total_pages') == 5
+        # total_pages is a loader extra → top-level metadata (TASK-857, d31959725)
+        assert docs[0].metadata.get('total_pages') == 5
+        assert 'total_pages' not in docs[0].metadata['document_meta']

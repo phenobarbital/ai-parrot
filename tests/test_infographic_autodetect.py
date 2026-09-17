@@ -170,10 +170,24 @@ class TestTemplateRegistry:
         assert tpl.name == "multi_tab"
 
     def test_all_templates_listed(self):
-        """All 7 templates should be listed."""
+        """All built-in templates should be listed.
+
+        ``financial_variance`` (f97212621) and ``crew_report`` (TASK-1775)
+        joined the original seven after TASK-660.
+        """
         templates = infographic_registry.list_templates()
         assert "multi_tab" in templates
-        assert len(templates) == 7
+        assert set(templates) == {
+            "basic",
+            "comparison",
+            "crew_report",
+            "dashboard",
+            "executive",
+            "financial_variance",
+            "minimal",
+            "multi_tab",
+            "timeline",
+        }
 
     def test_prompt_instruction_tab_view(self):
         """multi_tab prompt should include tab_view instructions."""
