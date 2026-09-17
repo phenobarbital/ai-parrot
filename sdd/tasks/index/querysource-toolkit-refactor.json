@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-15T02:02:19Z",
-  "completed_at": null,
+  "completed_at": "2026-09-17T00:20:17+00:00",
   "tasks": [
     {
       "id": "TASK-3245",
@@ -217,7 +217,7 @@
       "feature_id": "FEAT-558",
       "feature": "querysource-toolkit-refactor",
       "spec": "sdd/specs/querysource-toolkit-refactor.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -226,9 +226,9 @@
       "parallel": false,
       "parallelism_notes": "Must run last: registry scan needs the finished class; integrity test needs the old module gone.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3255-qs-hard-cut-registry-docs.md"
+      "started_at": "2026-09-17T00:20:17+00:00",
+      "completed_at": "2026-09-17T00:20:17+00:00",
+      "file": "sdd/tasks/completed/TASK-3255-qs-hard-cut-registry-docs.md"
     }
   ]
 }
