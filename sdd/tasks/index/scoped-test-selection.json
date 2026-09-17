@@ -335,7 +335,7 @@
       "feature_id": "FEAT-563",
       "feature": "scoped-test-selection",
       "spec": "sdd/specs/scoped-test-selection.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -346,8 +346,8 @@
       "parallelism_notes": "uses ImportIndex/source_fanin from TASK-3307 (impact.py); serialized after TASK-3317 because both modify test_scope/policy.py",
       "assigned_to": null,
       "started_at": "2026-09-17T11:00:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3318-spike-core-fanin-core-paths.md"
+      "completed_at": "2026-09-17T14:16:32+00:00",
+      "file": "sdd/tasks/completed/TASK-3318-spike-core-fanin-core-paths.md"
     },
     {
       "id": "TASK-3319",
