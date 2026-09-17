@@ -494,6 +494,95 @@ rewriting a durable timestamp.
 - `suspension_history_unavailable`: fall back to sequential worker loop; do not probe
   under an invented empty history.
 
+## Scoped test selection (FEAT-563)
+
+Cost is proportional to blast radius: a leaf change pays the mirror of directories; a core change
+pays the suites of every distribution importing it — once. Full suite and e2e run only in CI.
+
+| Tier | Where | Selection |
+|---|---|---|
+| `task` | every sdd-coder attempt (guard) | task `## Validation Commands` ∪ mirror; never escalates |
+| `merge` | sdd-worker after each merge | mirror ∪ import-impact ∪ core escalation (ledger-deduped) |
+| `feature` | qa-runner, QANode, `/sdd-done` | mirror ∪ all Validation Commands ∪ core escalation |
+
+### CLI
+
+```bash
+python -m scripts.sdd.select_tests --tier {task,merge,feature} [--base origin/dev] \
+    [--task-file sdd/tasks/active/TASK-NNN-x.md] [--worktree <path>] [--run] [--json]
+```
+
+Exit codes: `0` — every invocation passed (or, without `--run`, the plan printed cleanly);
+`1` — an invocation failed; `2` — usage error, or an empty plan on the `task` tier (a task with
+no `## Validation Commands` and no mirrored test directory has nothing to run). `--run` also
+records green core escalations in the per-worktree escalation ledger so later tiers skip paying
+for the same content twice. `--json` prints the `ScopePlanModel` (tiers, invocations, targets with
+their `declared`/`mirror`/`core`/`escalated` reason, `core_hits`, `skipped_escalations`) without
+running anything.
+
+### Guard (task tier only)
+
+The kernel is inert everywhere except inside an sdd-coder attempt: `coder_prepare_native`/the
+engine's `_run_attempt` write an `AttemptContext` (tier, task id/file, base ref) to
+`parrot-test-scope.json` in the **per-worktree** git admin dir (`git rev-parse
+--absolute-git-dir` — not the shared common dir, so concurrent attempts never collide). Its mere
+presence is what activates `guard_argv`/`guard_bash` (`test_scope/guard.py`) for that attempt;
+outside an attempt (no context file) every guard call is a no-op. When the attempt issues a
+pytest invocation broader than its task plan (no path, `tests/`, `packages/<dist>/tests`, or
+similar), the guard either **rewrites** it to the task-tier plan (MCP seats via
+`dispatchers/llm.py`'s `_run_guarded_invocations`, and the native Claude hook in
+`worktree_environment.py`) or, when the plan is empty, **blocks** it outright. A codex seat
+cannot have its argv rewritten transparently, so `parrot_tools.tool_optimizations.hooks.py`
+(wired through `.codex/hooks.json` + `scripts/sdd/codex_hook.sh`) **denies** the call instead,
+returning the scoped command the seat should run in its place.
+
+### Core detection and escalation
+
+A changed source module is *core* when its transitive source fan-in — every source module that
+imports it, directly or indirectly, found by one AST pass over the worktree
+(`test_scope/impact.py`'s `ImportIndex`/`source_fanin`) — is `≥ DEFAULT_CORE_FANIN_THRESHOLD`
+(50), or its path is listed in `CORE_PATHS` (the manual override for AST-under-counted dynamic
+imports/registries/the `parrot.tools.<x>` ↔ `parrot_tools.<x>` meta_path redirect — measured by
+the TASK-3318 spike; see `artifacts/logs/feat-563-core-fanin.tsv`). A core hit escalates the
+**package suite** of every distribution that (transitively) imports the changed module — never
+the whole repo — and only on the `merge` and `feature` tiers; the `task` tier never escalates,
+so a single sdd-coder attempt stays fast regardless of what it touches.
+
+### Escalation ledger
+
+Because a core escalation can be expensive, it is paid **once per content**: `record_
+green_escalation`/`pending_escalations` (`test_scope/context.py`) key each distribution's
+escalation by the git **blob hash** of the core file that triggered it, in
+`parrot-test-scope-escalations.json` (per-worktree git admin dir, alongside the attempt context).
+A green run for a given blob hash is skipped on later tiers; a changed blob hash (new content) or
+a red run re-arms the escalation. A missing or malformed ledger is treated as **empty** — the
+kernel always fails open to "run the escalation again", never silently skips one because its
+bookkeeping was unreadable.
+
+### Agent flags and marker expression
+
+Every kernel-built pytest invocation applies `AGENT_FLAGS` (`-q --tb=short -p no:cacheprovider -o
+log_cli=false`) and the marker expression `AGENT_MARKER_EXPRESSION = "not e2e and not real_llm and
+not integration"` (`-m`), so agent-run tiers never pull in the suites CI alone owns.
+
+### xdist allowlist
+
+`XDIST_SAFE_DISTRIBUTIONS` (`test_scope/policy.py`) is the set of distributions proven safe under
+`-n auto` (same per-test outcome as serial, twice). It is currently **empty**: the FEAT-563 S3
+spike (`artifacts/logs/feat-563-s3-xdist.md`) could not complete a full serial-vs-xdist comparison
+for any distribution within its time budget (`ai-parrot` alone extrapolates to ~2.3h for one
+serial pass), and spec R7 ("either proven or excluded") makes the fail-safe default exclude every
+distribution until new evidence lands. Add an entry only with a fresh comparison log.
+
+### Codex operator config inheritance (R3b)
+
+Codex **development** dispatches (`CodexCodeDispatchProfile`) no longer pass
+`--ignore-user-config`, so the operator's `~/.codex/config.toml` — including its
+`hooks.json`-driven `PreToolUse` hook — applies, which is what lets the codex-seat scope guard
+above fire at all. Codex **review** profiles (`CodexCodeReviewProfile`,
+`CodexAdversarialReviewProfile`) still pass `--ignore-user-config` and stay pinned: a review's
+model/sandbox/approval must never vary with the operator's local config.
+
 ## Related
 
 - Spec: `sdd/specs/sdd-worker-subagents.spec.md`
