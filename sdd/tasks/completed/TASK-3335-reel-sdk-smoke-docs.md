@@ -176,4 +176,144 @@ Test names and assertions must describe observable behavior, not mirror private 
 
 ## Completion Note
 
-Pending implementation. The executor must record completed-by, date, test results, evidence-gate resolution and deviations before marking done.
+Completed-by: sdd-worker (fallback sequential loop, orchestrator-implemented) · Date: 2026-09-17
+
+### ⚠️ Safety incident disclosed in full — read before running this suite
+
+While manually verifying the opt-in smoke suite's skip guard (a deliberate,
+supervised check — running `PARROT_TEST_LIVE_GOOGLE=1 pytest
+packages/ai-parrot-client-google/tests/live/test_reel_smoke.py` **without**
+`GOOGLE_API_KEY` in this shell's raw environment, expecting a skip), all 5
+tests instead **executed** and attempted real network calls (one traceback
+frame reached `reel/music.py`'s `client.aio.live.music.connect(...)`),
+failing after ~14s each (71s total) — almost certainly connection
+timeouts/auth rejections, not successes. **Root cause**:
+`GoogleGenAIClient.__init__` resolves `api_key` via
+`config.get("GOOGLE_API_KEY")` (`navconfig`'s config, e.g. a `.env` file
+under this repo's `settings/` directory), **not** `os.environ` — confirmed
+by reading `client.py:189`. This environment apparently has a real
+`GOOGLE_API_KEY` configured via `navconfig` for unrelated dev/testing
+purposes, invisible to a raw `os.environ` check (confirmed empty via three
+independent methods: shell `env | grep`, a standalone Python script, and a
+subprocess-matching diagnostic). My original skip condition checked only
+`os.environ`, so it incorrectly evaluated "no credentials" while the
+CLIENT itself found one anyway via a different path. **No evidence any
+call actually completed successfully** (all 5 failed) and no billable
+resource is believed to have been created, but this is a genuine, if
+narrowly-averted, safety gap — reported honestly rather than glossed over.
+
+**Fix — three independent, redundant layers**, so a flaw in any one does
+not silently let a real call through:
+1. Kept the original `@pytest.mark.skipif` decorator (checks raw
+   `os.environ` for both `PARROT_TEST_LIVE_GOOGLE=1` and a credential var).
+2. Added `tests/live/conftest.py`'s `pytest_collection_modifyitems` hook —
+   independently re-checks the SAME raw-`os.environ` condition and
+   force-applies a skip marker to every item collected under `tests/live/`
+   regardless of what the test module declared. This is the EXACT pattern
+   already proven in `packages/ai-parrot/tests/conftest.py` for its own
+   `real_llm` marker — not a novel mechanism.
+3. Every test now constructs its client as
+   `GoogleGenAIClient(api_key=os.environ["GOOGLE_API_KEY"])` explicitly —
+   never a bare `GoogleGenAIClient()` that could silently resolve a
+   navconfig-configured key. If somehow reached without `GOOGLE_API_KEY`
+   in raw `os.environ`, this now raises `KeyError` immediately.
+
+Re-verified the DEFAULT (no env vars set) case after the fix: 5 skipped,
+0.26s, `--collect-only` and a full-suite run both confirm no network
+activity. **Did NOT re-run the "opted in without a real key" case again**
+after the fix — doing so was the exact action that caused the incident,
+and re-attempting it (even to "prove" the fix) would reintroduce the same
+risk if my fix has any remaining gap I haven't found. The fix is a
+well-established, already-proven pattern (item 2) plus two additional
+independent hardening layers, verified by careful code reading rather
+than by repeating the dangerous experiment.
+
+### Dependency floor evidence (AC15)
+
+Verified via direct introspection of the INSTALLED SDK (2.23.0; this
+workspace's `uv.lock` currently resolves 2.24.0, not separately verified
+and not claimed) — `google.genai.Client(...).aio.models.generate_videos`,
+`.operations.get`, `.files.download`, `.interactions.create`,
+`.live.music.connect`, `.aclose` all present with signatures matching how
+the reel adapters actually call them (parameter names checked via
+`inspect.signature`, not guessed). `packages/ai-parrot-client-google/pyproject.toml`'s
+floor raised `>=2.18.1` → `>=2.23.0`; `uv.lock`'s mirrored
+`requires-dist` entry for `ai-parrot-client-google` updated to match
+(the resolved `2.24.0` entry itself is untouched — it already satisfies
+the new, tighter floor, so no re-resolution was needed or attempted; `uv
+sync`/`uv lock` were never run, per this task's explicit instruction).
+
+### Marker registration (AC16)
+
+`live_google` registered in both `pytest.ini` (root, the config that
+actually governs plain `pytest ...` invocations from the repo root per
+pytest's file-priority rules) and `pyproject.toml`'s
+`[tool.pytest.ini_options]` (the alternate config, which additionally
+enforces `--strict-markers`) — confirmed via `pytest --markers` showing
+the registered description, and via a full-suite run showing zero
+"unknown marker" warnings/errors anywhere in either `ai-parrot-server`
+(583 passed) or `ai-parrot` (184 passed) regression sweeps.
+
+### `test_reel_sdk_contract.py` (AC15, AC18)
+
+10 tests, all introspection-only (verified: constructing
+`genai.Client(api_key="fake...")` is lazy and makes no request — confirmed
+by reading the SDK source, not assumed). Covers the version-floor
+assertion, all 5 async surfaces above, and two lazy-import checks
+(`ast`-parses `video_reel.py` to confirm no module-level `google.genai`
+import, and confirms the `GoogleGenAIClient` import inside `run_logic()`
+is indented/function-local — a static, structural check rather than a
+`sys.modules`-manipulation trick).
+
+### Migration doc (AC16, AC18)
+
+`docs/migration/video-reel-omni-veo-reliability.md` covers every item
+this task's scope demands: legacy `model` alias behavior, stage models
+(director/image/video + mixed Veo/Omni), duration/edit policy (covering
+duration selection + `insufficient_duration`), audio/music policy
+(`audio_mode` × `music_policy` matrix), result URLs and job ownership
+(§8 Q7 — closed by TASK-3333, full cross-reference), tested SDK versions
+(the table above), disabled Vertex entries (`enabled=False` on both
+GA profiles, rationale), and the four still-**open** evidence gates
+(Q3/Q4/Q5/Q6) — explicitly NOT claimed resolved anywhere, including by
+this task's own smoke suite (a successful smoke run, if one were ever
+performed, would only confirm the specific scenario it exercised — never
+a blanket "live-ready" claim).
+
+### Deviation — `tests/live/conftest.py` not in the declared Files list
+
+Not itemized in this task's "Files to Create / Modify" table, but created
+as a direct, necessary structural + safety companion to
+`test_reel_smoke.py` (the ONE file the table DOES list) — the redundant
+collection-time skip gate described above. Same category as
+`tests/live/__init__.py` (a bare package marker, matching every sibling
+test directory's convention): a structural necessity of the CREATE'd
+file, not independent new scope.
+
+### Tests
+
+`test_reel_sdk_contract.py` — 10 passed. `test_reel_smoke.py` (default,
+no opt-in) — 5 skipped, 0.26s, no network. Full regression:
+`ai-parrot-client-google` — 216 passed, 5 skipped (57.71s). `ai-parrot-server/
+tests/handlers/` — 583 passed, 4 skipped, 2 failed (`test_agent_a2ui_stream.py`,
+confirmed unrelated — zero A2UI files in this feature's diff). `ai-parrot`
+reel-related files + `test_google_client.py` — 184 passed.
+
+`black --check`/`ruff check`: clean on all 9 touched/created files. Full
+feature-diff sweep (34 Python files across all 5 completed TASK-332x/333x
+tasks): same 6 pre-existing, untouched-line residual findings documented
+since TASK-3331/3334 (2× `PIE796` in an unrelated `GoogleVoiceModel` enum,
+4× `E402` in a 1170-line shared test file's per-feature-section imports) —
+nothing new.
+
+### No live-service readiness claim
+
+Explicitly documented in the migration doc's own closing section: Q3
+(Omni URI auth), Q4 (image model id), Q5 (Vertex Veo 3.1 GA), and Q6
+(Lyria api_version/PCM) all remain open. This task's test evidence is
+mock-only (`test_reel_sdk_contract.py`) or opt-in-and-skipped-by-default
+(`test_reel_smoke.py`) — no claim of live-service readiness is inferred
+from either.
+
+Seat: sonnet (fallback sequential, orchestrator-implemented) · Backend: native · Model: sonnet ·
+Attempts: 1 · Duration: n/a · Tokens: n/a

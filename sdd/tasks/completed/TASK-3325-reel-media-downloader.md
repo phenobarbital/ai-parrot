@@ -137,4 +137,57 @@ Test names and assertions must describe observable behavior, not mirror private 
 
 ## Completion Note
 
-Pending implementation. The executor must record completed-by, date, test results, evidence-gate resolution and deviations before marking done.
+Completed 2026-09-17 by sdd-worker orchestrator (fallback sequential loop, sonnet).
+
+- `ProviderMediaDownloader.fetch(uri, dest, *, max_bytes, deadline) -> Path` implemented exactly
+  per §3 M4 signature. Manually follows redirects (`allow_redirects=False`, own loop up to
+  `max_redirects`, default 5) so scheme + SSRF guard + credential decision are all re-validated at
+  every hop — a `Location` header is never trusted blindly.
+- Scheme: only `https` accepted (initial URI and every redirect target); other schemes rejected.
+- SSRF guard: rejects a literal loopback/private/link-local/unspecified/reserved IP host (checked
+  via `ipaddress.ip_address`); a non-IP hostname is accepted (DNS-level SSRF/rebinding protection is
+  out of scope — no new dependency for it, and out of this task's Scope).
+- Credentials: `credential_provider` (optional zero-arg callable) is called fresh per hop and its
+  token attached as `Authorization: Bearer <token>` ONLY when that hop's exact hostname is in
+  `credential_origins` (default `DEFAULT_CREDENTIAL_ORIGINS`). A non-allowlisted origin (e.g. a
+  signed URL host) gets no `Authorization` header and its query string is never touched — "protect
+  signed query parameters" is satisfied by never mutating the URI at all, credentialed or not.
+- **Evidence gate (§8 Q3) — explicitly NOT resolved by this task, documented per Implementation
+  Notes ("Q3 is an engineering gate")**: there is no live-verified answer for (a) what host(s) an
+  Omni `VideoContent.uri` actually resolves to, or (b) whether it needs a bearer credential at all.
+  `DEFAULT_CREDENTIAL_ORIGINS = {"generativelanguage.googleapis.com", "storage.googleapis.com"}` is
+  a conservative, individually publicly-documented Google API hostname pair — NOT an invented
+  allowlist, and NOT a claim that Omni URIs live there. TASK-3326 (Omni adapter) must verify the
+  actual URI host against a live/recorded Omni response before trusting this default, and may need
+  to pass a different `credential_origins` set or `credential_provider` entirely.
+- Response validation: non-2xx status rejected; `text/html`/`text/plain` content-type rejected
+  (catches an error/login page returned with a 200); declared `Content-Length` over `max_bytes`
+  rejected before any body is read; actual streamed bytes over `max_bytes` abort mid-stream.
+- `deadline` is an absolute `time.monotonic()`-comparable timestamp (not a per-call relative
+  timeout) — checked before every redirect hop and before every chunk read, so multiple
+  `fetch()`/adapter calls can share one job-wide time budget (spec §2 item 10).
+- Cleanup: `dest` is removed on any failure ONLY if this call actually created it (`created_dest`
+  flag set only once the response passed status/content-type checks and streaming began) — a
+  pre-existing file at `dest` is never touched. `except BaseException` (catches
+  `asyncio.CancelledError`, a `BaseException` subclass, not `Exception`) cleans up then re-raises
+  unchanged — cancellation is never swallowed.
+- All failures normalize to `reel.errors.DownloadFailure` (the marker type TASK-3322 defined
+  specifically for this), so callers get `DOWNLOAD_FAILED`/`retryable=True` via
+  `classify_provider_error()`.
+- AC10, AC12, AC17 (owned by this task): covered by the 18 tests in `test_reel_download.py`.
+  Transport is mocked at the `aiohttp.ClientSession` level (a fake session/response pair, same
+  async-context-manager protocol) — no live network call, no new test dependency (`aioresponses`
+  isn't installed; confirmed via `python -c "import aioresponses"` failing with
+  `ModuleNotFoundError`), and no self-signed-TLS local server needed since the fakes accept
+  `https://` URLs without a real socket.
+- Tests: `pytest packages/ai-parrot-client-google/tests/unit/reel/test_reel_download.py -q` — 18
+  passed. Full `tests/unit/reel/` directory (TASK-3322+3323+3325 together) — 73 passed. Same
+  temporary main-checkout `.so` copy-then-remove as prior tasks; nothing committed.
+- Lint: `ruff check` — all checks passed. `black --line-length 120` reformatted both files
+  (wrapping only); re-ran the focused + full-directory suites after reformatting — still 18/73
+  passed.
+- No live-service claims inferred from mocks; no default test performs a paid provider call or a
+  real network call. No files outside the task's two listed targets were created or modified.
+
+Seat: sonnet (fallback sequential, orchestrator-implemented) · Backend: native · Model: sonnet ·
+Attempts: 1 · Duration: n/a (fallback, not MCP/native-agent timed) · Tokens: n/a
