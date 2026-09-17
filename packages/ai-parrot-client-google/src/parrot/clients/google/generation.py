@@ -1172,6 +1172,9 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         density: float = 0.5,
         brightness: float = 0.5,
         timeout: int = 300,
+        *,
+        client: Optional[Any] = None,
+        api_version: Optional[str] = None,
     ) -> AsyncIterator[bytes]:
         """
         Stream music using Lyria RealTime API.
@@ -1188,6 +1191,15 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
             density: Note density (0.0-1.0).
             brightness: Tonal brightness (0.0-1.0).
             timeout: Max duration in seconds to keep the connection open.
+            client: FEAT-564 (TASK-3327): an already-constructed, caller-owned
+                ``genai.Client`` to use instead of building one here. When
+                supplied, the CALLER owns and closes it — this method never
+                closes an injected client. Existing callers are unaffected
+                (defaults to ``None``, preserving the built-in client path).
+            api_version: FEAT-564 (TASK-3327): overrides the API version used
+                when this method builds its OWN client (ignored when
+                ``client`` is supplied). Defaults to the existing hardcoded
+                ``"v1alpha"`` for full backward compatibility.
 
         Yields:
             Audio chunks (bytes) in raw PCM format.
@@ -1195,8 +1207,13 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         Note:
             Renamed from generate_music() for API clarity.
         """
-        # Lyria RealTime requires the v1alpha API version.
-        music_client = await self.get_client(http_options={"api_version": "v1alpha"})
+        if client is not None:
+            music_client = client
+        else:
+            # Lyria RealTime requires the v1alpha API version by default;
+            # existing callers keep getting exactly that unless they pass
+            # api_version= explicitly.
+            music_client = await self.get_client(http_options={"api_version": api_version or "v1alpha"})
 
         # Build prompts
         prompts = [types.WeightedPrompt(text=prompt, weight=1.0)]
