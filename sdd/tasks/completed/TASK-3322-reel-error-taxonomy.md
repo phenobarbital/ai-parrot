@@ -142,4 +142,61 @@ Test names and assertions must describe observable behavior, not mirror private 
 
 ## Completion Note
 
-Pending implementation. The executor must record completed-by, date, test results, evidence-gate resolution and deviations before marking done.
+Completed 2026-09-17 by sdd-worker orchestrator (fallback sequential loop, sonnet — the
+`parrot-sdd-coder` MCP server became wedged: `coder_prepare_native` timed out after 1800s and a
+subsequent `coder_plan` also hung >120s, so this task and all remaining FEAT-564 tasks were
+implemented directly by the orchestrator per the documented fallback path).
+
+- Implemented `ReelErrorCode` (spec's 11 values plus the 3 registry-contract validation codes:
+  `wrong_api_surface`, `model_disabled`, `unsupported_option`), `ReelError`/`ReelValidationError`
+  (code/stage/scene_index/retryable/operation_id preserved), and `classify_provider_error()`.
+- Classification uses only structured `status`/`code` fields from `google.genai.errors.APIError`
+  plus a structured `reason` extracted from `ErrorInfo`-style `details`/nested `error.details`
+  entries — never message substrings. A bare 400/403 is never inferred as a safety block; only an
+  explicit structured `reason` in `_SAFETY_REASONS` (`SAFETY`, `PROHIBITED_CONTENT`, `RECITATION`,
+  `BLOCKLIST`) does.
+- **Design decision (no interface skeleton in spec/task for these)**: added local normalization
+  exception types `OperationFailure`, `FilteredOutputError`, `DownloadFailure`,
+  `MediaValidationFailure` so terminal-operation, filtered/empty-output, download and local-media
+  failures can all flow through the single `classify_provider_error(exc, ...)` entry point the spec
+  names, matching its `BaseException` signature. TASK-3323/3324/3325 (Veo/Omni adapters) are
+  expected to raise these when normalizing their own failure paths — confirm before those tasks
+  start.
+  - Added `MediaValidationFailure` docstring and normalization but left construction of "download"
+  vs "media invalid" boundary to the adapters (this task only defines the taxonomy).
+- `asyncio.CancelledError` always re-raised unchanged (never reclassified/swallowed).
+- Redaction (`_redact`): Bearer tokens, Google API-key-shaped strings, `key=value` credential
+  pairs and long base64 blobs are stripped from every `ReelError` message at construction time.
+- AC07/AC17 (owned by this task): covered by the 25 tests in `test_reel_errors.py` (structured
+  status/reason mapping for 400/401/403/404/408/429/5xx, safety-reason vs bare-400/403 non-inference,
+  operation/filtered-output/download/media normalization, cancellation pass-through, redaction of
+  bearer/API-key/base64/key-value secrets).
+- **Deviation flagged**: created `tests/unit/reel/__init__.py` (not in the task's Files to
+  Create/Modify list) — required to match this repo's established nested-test-package convention
+  (every sibling `tests/unit/<subdir>/` has one; `pytest` "prepend" import mode risks module-name
+  collisions without it). No other files outside the task's list were touched.
+- Tests: `pytest packages/ai-parrot-client-google/tests/unit/reel/test_reel_errors.py -q` — 25
+  passed (compiled Cython artifacts `parrot.utils.types`/`parrot.utils.parsers.toml`, absent from
+  every worktree's source tree, copied in from the main checkout temporarily to run pytest, then
+  removed — nothing committed; same documented shared-venv/worktree limitation as TASK-3321).
+- Lint: `ruff check` — all checks passed, no findings. `black --line-length 120` reformatted
+  `errors.py` (whitespace/wrapping only); re-ran the focused suite after reformatting — still 25
+  passed.
+- No live-service claims inferred from mocks; no default test performs a paid provider call.
+
+Seat: sonnet (fallback sequential, orchestrator-implemented) · Backend: native · Model: sonnet ·
+Attempts: 1 (native `sdd-coder` dispatch correctly stopped without writing code after finding its
+assigned pool sub-worktree read-only — see infra note below) · Duration: n/a (fallback, not
+MCP/native-agent timed) · Tokens: n/a
+
+**Infra note for the record**: before falling back, the orchestrator dispatched this task to the
+native `sonnet` seat via `coder_prepare_native`/`Agent` exactly as for TASK-3321. That dispatched
+agent correctly identified its assigned pool sub-worktree
+(`.claude/worktrees/feat-FEAT-564-video-reel-omni-veo-reliability--pool/TASK-3322-a1-...`) as
+mounted read-only (confirmed independently by the orchestrator's own `touch`/`rm` probes on the
+same path) and stopped without writing anything or bypassing the sandbox — correct behavior per
+the shared-environment policy. The orchestrator then could not free that path (git's physical
+worktree-file removal also hit the same read-only boundary) and, after retries, hit a wedged
+`parrot-sdd-coder` MCP server (`coder_prepare_native` timeout after 1800s, subsequent `coder_plan`
+hung >120s), so it switched to the documented sequential fallback for this task and all remaining
+FEAT-564 tasks.
