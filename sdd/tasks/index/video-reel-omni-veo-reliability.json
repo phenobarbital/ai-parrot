@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-17T11:52:28Z",
-  "completed_at": "2026-09-17T22:02:18+00:00",
+  "completed_at": "2026-09-17T22:22:34+00:00",
   "parallel_semantics": "exclusive",
   "approval_basis": "Committed spec body says approved; user repeated explicit sdd-task after the draft-frontmatter warning. YAML draft is stale; spec is preserved.",
   "reservation": {
@@ -55,7 +55,8 @@
         "AC04",
         "AC06",
         "AC10"
-      ]
+      ],
+      "verification": "verified"
     },
     {
       "id": "TASK-3322",
@@ -80,7 +81,8 @@
       "acceptance_criteria": [
         "AC07",
         "AC17"
-      ]
+      ],
+      "verification": "verified"
     },
     {
       "id": "TASK-3323",
@@ -108,7 +110,8 @@
         "AC04",
         "AC06",
         "AC17"
-      ]
+      ],
+      "verification": "verified"
     },
     {
       "id": "TASK-3324",
@@ -136,7 +139,8 @@
         "AC07",
         "AC12",
         "AC17"
-      ]
+      ],
+      "verification": "verified"
     },
     {
       "id": "TASK-3325",
@@ -162,7 +166,8 @@
         "AC10",
         "AC12",
         "AC17"
-      ]
+      ],
+      "verification": "verified"
     },
     {
       "id": "TASK-3326",
@@ -191,7 +196,8 @@
         "AC06",
         "AC12",
         "AC17"
-      ]
+      ],
+      "verification": "verified"
     },
     {
       "id": "TASK-3327",
@@ -217,7 +223,8 @@
         "AC06",
         "AC09",
         "AC12"
-      ]
+      ],
+      "verification": "verified"
     },
     {
       "id": "TASK-3328",
@@ -242,7 +249,8 @@
       "acceptance_criteria": [
         "AC04",
         "AC05"
-      ]
+      ],
+      "verification": "verified"
     },
     {
       "id": "TASK-3329",
@@ -270,7 +278,8 @@
         "AC05",
         "AC06",
         "AC12"
-      ]
+      ],
+      "verification": "verified"
     },
     {
       "id": "TASK-3330",
@@ -302,7 +311,8 @@
         "AC10",
         "AC13",
         "AC17"
-      ]
+      ],
+      "verification": "verified"
     },
     {
       "id": "TASK-3331",
@@ -328,7 +338,8 @@
         "AC12",
         "AC14",
         "AC17"
-      ]
+      ],
+      "verification": "verified"
     },
     {
       "id": "TASK-3332",
@@ -355,7 +366,8 @@
         "AC02",
         "AC08",
         "AC11"
-      ]
+      ],
+      "verification": "verified"
     },
     {
       "id": "TASK-3333",
