@@ -15,7 +15,7 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from scripts.sdd.sdd_meta import parse as parse_spec_meta
+from parrot.knowledge.wiki.ledger.sdd_meta import parse as parse_spec_meta
 from parrot.knowledge.wiki.store import WikiPageRecord
 
 if TYPE_CHECKING:  # pragma: no cover - typing only

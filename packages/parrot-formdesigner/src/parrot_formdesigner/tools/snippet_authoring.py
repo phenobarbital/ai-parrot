@@ -28,7 +28,7 @@ from typing import Any
 from parrot.tools import AbstractToolkit
 from parrot_formdesigner.core.snippets import CapabilityManifest, CapabilityTier, SnippetSource
 from parrot_formdesigner.services.snippets.approval import SnippetApprovalService
-from scripts.check_snippet_conformance import EquivalenceFixture, run_gate
+from parrot_formdesigner.services.snippets.conformance import EquivalenceFixture, run_gate
 
 logger = logging.getLogger(__name__)
 

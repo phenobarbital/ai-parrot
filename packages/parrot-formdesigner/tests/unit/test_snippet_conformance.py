@@ -10,7 +10,7 @@ from parrot_formdesigner.core.snippets import (
     SnippetBundle,
     SnippetSource,
 )
-from scripts.check_snippet_conformance import (
+from parrot_formdesigner.services.snippets.conformance import (
     EquivalenceFixture,
     check_equivalence,
     check_tier_conformance,

@@ -11,7 +11,7 @@ from parrot_formdesigner.core.snippets import (
     SnippetSource,
 )
 from parrot_formdesigner.tools.snippet_authoring import GeneratedBundle, SnippetAuthoringToolkit
-from scripts.check_snippet_conformance import EquivalenceFixture
+from parrot_formdesigner.services.snippets.conformance import EquivalenceFixture
 
 
 def _pure_bundle(handler_ref: str = "f.onBeforeSubmit") -> SnippetBundle:

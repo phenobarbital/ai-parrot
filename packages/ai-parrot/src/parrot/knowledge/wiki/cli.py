@@ -91,7 +91,6 @@ from parrot.knowledge.wiki.store import BaseWikiStore, SQLiteWikiStore, WikiStor
 from parrot.knowledge.wiki.symbols import SymbolKind, parse_sym_id
 from parrot.knowledge.wiki.ledger.service import LedgerService
 from parrot.knowledge.wiki.ledger.events import IssueKind
-from parrot.knowledge.wiki.ledger.sdd_ingest import SDDGraphIngest
 
 _cli_logger = logging.getLogger("wikitoolkit.cli")
 
@@ -2810,6 +2809,10 @@ def ledger_rebuild() -> None:
     ingestion is idempotent (upsert semantics), so this is safe to run
     even when nothing in sdd/ actually changed.
     """
+    # Imported lazily: SDD ingestion is only needed by the ledger commands,
+    # so a problem in it must never break every other ``wikitoolkit`` command.
+    from parrot.knowledge.wiki.ledger.sdd_ingest import SDDGraphIngest
+
     service = LedgerService.from_root()
     try:
         _run(service.index.rebuild())
@@ -2827,6 +2830,8 @@ def ledger_rebuild() -> None:
 @ledger.command("ingest-sdd")
 def ledger_ingest_sdd() -> None:
     """Ingest SDD specs and task indexes into the ledger."""
+    from parrot.knowledge.wiki.ledger.sdd_ingest import SDDGraphIngest
+
     service = LedgerService.from_root()
     try:
         ingester = SDDGraphIngest(service.store, service.shared_root)
