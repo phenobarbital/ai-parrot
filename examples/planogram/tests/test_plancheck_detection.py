@@ -1,4 +1,5 @@
 """Unit tests for plancheck.detection (FEAT-565, spec §4 — Module 3). Synthetic image only."""
+
 from __future__ import annotations
 
 import importlib.util

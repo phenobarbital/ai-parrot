@@ -3,6 +3,7 @@
 Faithful port of ``white_label_detector/detect_price_labels.py`` (``candidates`` L15-52, ``group_rows`` L55-107).
 Geometry/contrast heuristics only — no model weights. Pure, synchronous, CPU-bound.
 """
+
 from __future__ import annotations
 
 import logging
@@ -47,9 +48,7 @@ def find_candidates(image: np.ndarray, min_width: float = 0.025, max_width: floa
             contrast = float(gray[y : y + bh, x : x + bw].std())
             if contrast < 25:
                 continue
-            found.append(
-                {"box": [x, y, x + bw, y + bh], "rectangularity": float(rectangularity), "contrast": contrast}
-            )
+            found.append({"box": [x, y, x + bw, y + bh], "rectangularity": float(rectangularity), "contrast": contrast})
     kept: list[dict[str, Any]] = []
     for item in sorted(found, key=lambda d: d["rectangularity"], reverse=True):
         x1, y1, x2, y2 = item["box"]
@@ -199,7 +198,9 @@ def detect_tags(
             )
         )
     unassigned = [_scale_box(raw[i]["box"], sx, sy) for i in unassigned_idx]
-    logger.info("%s: %d tag rows, %d tags, %d unassigned", image_id, len(rows), sum(len(r.tags) for r in rows), len(unassigned))
+    logger.info(
+        "%s: %d tag rows, %d tags, %d unassigned", image_id, len(rows), sum(len(r.tags) for r in rows), len(unassigned)
+    )
     if not rows:
         logger.warning("%s: no tag rows detected; photo will be reported unregistered upstream", image_id)
     return rows, unassigned
