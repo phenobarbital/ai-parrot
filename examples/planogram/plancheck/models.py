@@ -185,3 +185,181 @@ class RowPriceReading(StrictModel):
 
 
 # --- part 2 (TASK-3338): fusion, result and config models ---
+
+
+class SlotObservation(StrictModel):
+    """Everything known about one slot of one photo after perception, resolution and registration."""
+
+    slot: Slot
+    reading: SlotReading | None = None
+    resolved_sku: str | None = None
+    candidate_skus: list[str] = Field(default_factory=list)
+    resolution: Resolution = "unresolved"
+    price: PriceReading = Field(default_factory=PriceReading)
+    facing_id: str | None = None  # None = unregistered
+    registration_grade: Grade | None = None
+    issues: list[str] = Field(default_factory=list)
+
+
+class RowRegistration(StrictModel):
+    """Alignment of one visible row to one planogram shelf."""
+
+    image_id: str
+    row: int
+    shelf: int | None
+    score: float
+    anchors: int
+    grade: Grade
+    assignments: dict[str, str]  # slot_id -> facing_id
+
+
+class ImageRegistration(StrictModel):
+    """Best row→shelf assignment of one photo, with the runner-up for auditability."""
+
+    image_id: str
+    rows: list[RowRegistration]
+    total_score: float
+    runner_up_shelves: list[int | None] | None = None
+    margin: float | None = None
+
+
+class ScoringWeights(StrictModel):
+    """Lenient-score partial credits (spec §8 Q2)."""
+
+    misplaced: float = 0.5
+    variant_unresolved: float = 0.5
+    inferred_present: float = 0.5
+    verified_by_expectation: float = 1.0
+
+
+class PositionResult(StrictModel):
+    """Merged verdict for one expected facing."""
+
+    facing: PlanogramFacing
+    status: PositionStatus
+    resolution: Resolution | None = None
+    strict_credit: float
+    lenient_credit: float
+    observed_sku: str | None = None
+    observed_brand: str | None = None
+    price: PriceReading | None = None
+    price_expected: Decimal | None = None
+    price_match: bool | None = None
+    slot_ids: list[str] = Field(default_factory=list)
+
+
+class ShelfScore(StrictModel):
+    """Per-shelf metrics. ``*_pct`` are percentages 0–100 (2 dp); ``None`` when the denominator is 0."""
+
+    shelf: int
+    expected: int
+    covered: int
+    decided: int
+    strict_pct: float | None
+    lenient_pct: float | None
+    occupancy_pct: float | None
+    empty_facing_ids: list[str]
+
+
+class BrandShare(StrictModel):
+    """Expected vs observed share of one brand (facings and linear)."""
+
+    brand: str
+    expected_facings: int
+    expected_share: float
+    observed_facings: int
+    observed_share: float | None
+    linear_share: float | None
+    occupancy_pct: float | None
+
+
+class PriceCompliance(StrictModel):
+    """Only present when ``--prices`` was supplied."""
+
+    compared: int
+    matched: int
+    match_pct: float | None
+    mismatches: list[str]
+    skus_missing_from_prices: list[str]
+    unknown_price_skus: list[str]
+
+
+class ComplianceSummary(StrictModel):
+    """Headline numbers; the ``*_direct_reference`` fields restrict to facings read ``direct`` in the planogram."""
+
+    strict_pct: float | None
+    lenient_pct: float | None
+    coverage: float
+    occupancy_pct: float | None
+    products_expected: int
+    products_present: int
+    unexpected_skus: list[str]
+    price: PriceCompliance | None = None
+    reference_direct_facings: int
+    strict_pct_direct_reference: float | None
+    lenient_pct_direct_reference: float | None
+
+
+class ImageInfo(StrictModel):
+    """One input photo and what was found in it."""
+
+    image_id: str
+    path: str
+    sha256: str
+    width: int
+    height: int
+    tag_rows: int
+    tags: int
+    slots: int
+    registration: ImageRegistration | None = None
+
+
+class RunInfo(StrictModel):
+    """Run metadata."""
+
+    visit_id: str
+    planogram_id: str
+    llm: str
+    ocr_llm: str
+    verify_pass: bool
+    started_at: str
+    finished_at: str
+    errors: list[str]
+    catalog_missing_skus: list[str]
+    registration_method: Literal["auto_alignment"] = "auto_alignment"
+    reference_provisional: bool = True
+    local_ocr_available: bool = True
+
+
+class ComplianceReport(StrictModel):
+    """The ``compliance.json`` document."""
+
+    run: RunInfo
+    images: list[ImageInfo]
+    slots: list[SlotObservation]
+    positions: list[PositionResult]
+    shelves: list[ShelfScore]
+    brands: list[BrandShare]
+    compliance: ComplianceSummary
+    notes: list[str]
+
+
+class Settings(StrictModel):
+    """Resolved run settings (all paths absolute by the time this is built)."""
+
+    images: list[str]
+    planogram: str
+    catalog: str
+    output: str
+    cache_dir: str
+    prices: str | None = None
+    llm: str = "google:gemini-3.8-flash"
+    ocr_llm: str | None = None
+    base_url: str | None = None
+    roi: tuple[float, float, float, float] | None = None
+    verify_pass: bool | None = None  # None = auto: True for cloud backends, False when the backend is local
+    marks: bool = True
+    concurrency: int = Field(default=4, ge=1, le=16)
+    visit_id: str = "visit"
+    work_width: int = Field(default=2048, ge=256)
+    weights: ScoringWeights = Field(default_factory=ScoringWeights)
