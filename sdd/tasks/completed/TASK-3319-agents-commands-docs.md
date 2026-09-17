@@ -321,10 +321,41 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Sonnet 5, sequential fallback lane, user-authorized for
+`complex_model_unavailable`-blocked tasks)
+**Date**: 2026-09-17
+**Notes**: Verified all Codebase Contract anchors before editing (line numbers matched exactly
+except qa-runner's fenced block, which had shifted by one line — `61-69` → `62-69` in the live
+file — verified with `grep -n` before touching it). Rewrote all nine files per the blueprint:
+- `qa-runner.md`: dropped the "sanity: quick full-suite signal" pytest block for the feature-tier
+  CLI (`--tier feature --run` + a one-time `--json` for the report's declared/mirror/core/escalated
+  breakdown), reworded the "Stay in scope" guideline and the L112 example note.
+- `sdd-autopilot.md` + its `.agent/agents/sdd-autopilot/agent.md` mirror: replaced step 3a/3b with
+  the single feature-tier CLI call, re-lettered the remaining ruff/mypy steps to `b.`/`c.`.
+- `sdd-coder.md`: replaced the acceptance-criteria-tests line with the exact
+  `## Validation Commands`-only instruction plus the guard-behaviour explanation (rewrite for
+  MCP/native, block on empty scope, deny with the scoped command for codex).
+- `sdd-worker.md`: added `--tier merge --run` after each `merged` outcome (step 4) and in the
+  Fallback loop's step (e); `grep -c 'select_tests --tier merge'` returns 2. Its
+  `.agent/agents/sdd-worker/agent.md` mirror received the same replacement text for its one
+  matching line (that mirror's step 4 does not have the `merged`-outcome consolidation prose, so
+  only the Fallback-loop-equivalent line was in scope there, per the task's own Files table).
+- Both `/sdd-done` copies (`.claude/commands/sdd-done.md`, `.agent/workflows/sdd-done.md`) received
+  byte-identical replacement text for the touched-module test instruction — verified with `diff`
+  on the extracted command substrings.
+- `docs/dev_loop/sdd-coder-orchestrator.md`: added the full "Scoped test selection (FEAT-563)"
+  section above `## Related`, covering the tiers table, CLI usage/exit codes, the guard
+  (attempt-context activation, rewrite vs. block vs. codex deny), core detection/escalation,
+  the escalation ledger (blob-hash keying, re-arm, fail-open on a malformed ledger), agent
+  flags/marker expression, the (currently empty) xdist allowlist with its S3 evidence pointer,
+  and R3b's codex operator-config inheritance.
+- No agent frontmatter was touched (`git diff` over every edited file shows no `---`-block
+  changes). All Test Specification checks and the task's Validation Command
+  (`pytest tests/sdd_scripts/test_select_tests.py -q`, 5 passed) pass.
+- One process error caught and fixed mid-task: the prior task's (TASK-3318) SDD-state commit had
+  staged the new `completed/` copy and the index update but never staged the `mv`'s deletion of
+  the `active/` copy, leaving it as an unstaged deletion in the worktree. Committed that fixup
+  separately (`sdd: fixup TASK-3318 index commit`) before starting this task's own commit, so
+  TASK-3318's SDD state is now fully consistent (file no longer exists in both places at once).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.

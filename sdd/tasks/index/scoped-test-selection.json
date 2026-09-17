@@ -356,7 +356,7 @@
       "feature_id": "FEAT-563",
       "feature": "scoped-test-selection",
       "spec": "sdd/specs/scoped-test-selection.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -367,8 +367,8 @@
       "parallelism_notes": "documents and invokes the scripts/sdd/select_tests.py CLI created by TASK-3310; the docs section cites the xdist allowlist result logged by TASK-3317 (artifacts/logs/feat-563-s3-xdist.md)",
       "assigned_to": null,
       "started_at": "2026-09-17T11:00:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3319-agents-commands-docs.md"
+      "completed_at": "2026-09-17T14:23:20+00:00",
+      "file": "sdd/tasks/completed/TASK-3319-agents-commands-docs.md"
     },
     {
       "id": "TASK-3320",
