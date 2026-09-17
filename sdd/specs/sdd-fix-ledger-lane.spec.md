@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-572
 **Date**: 2026-09-18
 **Author**: Jesus Lara (drafted with Claude)
-**Status**: draft
+**Status**: approved
 **Target version**: next minor of `ai-parrot`
 
 ---
@@ -131,15 +131,29 @@ Asymmetric on purpose: a wrong FAST route lands a real fix without spec or revie
 SDD route only costs ceremony. Thresholds are named constants in the planner, so retuning
 is a one-line diff plus a test — never a prose edit in three files.
 
-**Fast lane** — branch `fix/<issue-short-id>-<slug>` off `origin/dev` in the main checkout
-(no worktree; `worktree-management.md` §2 explicitly excludes single-commit fixes), edit,
-run the affected package's tests, commit, push, open a PR against `dev`, close each issue
-with `--resolved-by commit:<sha>`.
+**Fast lane — always a PR.** Branch `fix/<issue-short-id>-<slug>` off `origin/dev` in the
+main checkout (no worktree; `worktree-management.md` §2 explicitly excludes single-commit
+fixes), edit, run the affected package's tests, commit, push, then
+`gh pr create --base dev`. There is **no direct-push path**, not even for a one-line
+comment deletion: `worktree-management.md` §5 requires a PR for the ad-hoc lane, and the
+repository already lands exactly this branch shape that way (`fix/ci-test-core-drift`
+PR #1408, `fix/ci-test-core-arxiv-annotations` PR #1414). Issues close with
+`--resolved-by commit:<merge-sha>`.
 
 **SDD lane** — reuse the parent spec when its per-spec index has **no** `completed_at`;
 otherwise reserve a fresh `FEAT-<NNN>`, author a spec from the group, decompose it, and
 create `feat-FEAT-<NNN>-<slug>` via `ensure_worktree`. `/sdd-done <FEAT-ID>` closes it out
-unchanged.
+unchanged. The twin never reads `sdd/tasks/index/` itself — the plan already carries
+`FixGroup.parents[].open`, resolved once by the CLI (below).
+
+**Purity boundary.** The planner is pure, so every filesystem fact reaches it as an
+argument. The CLI resolves the two it needs and passes them down: per-parent
+`completed_at` (via a new `LedgerService.feature_index_status()`, sibling to
+`_feature_task_ids`, `service.py:311`), and — for the slug — the planner emits a
+*deterministic* `suggested_slug` derived from the group's dominant file, while
+**collision suffixing against existing `sdd/specs/*.spec.md` happens in the CLI**, because
+listing that directory is I/O. A slug is therefore reproducible from the plan's input
+alone; only its uniqueness depends on the working tree.
 
 **A group schedules work; every issue opens, closes and releases individually.** A
 connected component proves shared anchors, not a shared root cause — the group exists to
@@ -244,6 +258,20 @@ class FixIssue(BaseModel):
     files: list[str] = Field(default_factory=list)
 
 
+class ParentFeature(BaseModel):
+    """A feature that discovered issues in this group, and whether it is still open.
+
+    `completed_at` is the per-spec index's stamp, NOT the spec's `**Status**`
+    field — 443 specs read `approved` while only 7 read `implemented`, whereas
+    373 of 458 indexes carry `completed_at`. `open` is exactly
+    `completed_at is None` and is what the SDD lane branches on.
+    """
+
+    feature_id: str
+    completed_at: str | None = None
+    open: bool = False
+
+
 class FixGroup(BaseModel):
     """A connected component of issues sharing at least one code file."""
 
@@ -253,7 +281,8 @@ class FixGroup(BaseModel):
     max_severity: IssueSeverity
     lane: Lane
     lane_reason: str
-    parent_features: list[str] = Field(default_factory=list)
+    suggested_slug: str
+    parents: list[ParentFeature] = Field(default_factory=list)
 
 
 class FixPlan(BaseModel):
@@ -364,12 +393,28 @@ wikitoolkit ledger close <issue-id> --reason TEXT [--actor A] [--resolved-by REF
       around review.
       """
 
+  def suggest_slug(group: FixGroup) -> str:
+      """Derive a deterministic, kebab-case slug from the group's dominant file.
+
+      Dominant file = the one appearing in the most issues; ties break on the
+      sorted path, so the result never depends on iteration order. The stem and
+      its parent directory form the base (`.../dev_loop/nodes/development.py` →
+      `dev-loop-development`), suffixed by the group's dominant issue kind
+      (`tech_debt` → `-tech-debt`, `bug`/`feature_gap`/`vulnerability` →
+      `-fixes`). A group with no files falls back to its `group_id`.
+
+      This is PURE and therefore NOT unique: collision suffixing against
+      existing `sdd/specs/*.spec.md` is the CLI's job (listing that directory
+      is I/O). Same input ⇒ same slug, always.
+      """
+
   def plan_fix_batch(
       issues: Sequence[Mapping[str, Any]],
       *,
       kind: IssueKind | None = None,
       severity: IssueSeverity | None = None,
       lane_override: Lane | None = None,
+      parent_index_status: Mapping[str, str | None] | None = None,
       generated_at: str | None = None,
   ) -> FixPlan:
       """Build the ordered, lane-labelled plan from `ready_work()` output.
@@ -378,6 +423,15 @@ wikitoolkit ledger close <issue-id> --reason TEXT [--actor A] [--resolved-by REF
       Rows missing `issue_id` or carrying an unknown severity/kind are skipped,
       never raised on — the planner must not be the thing that breaks when the
       ledger grows a field. `generated_at` defaults to an ISO-8601 UTC stamp.
+
+      `parent_index_status` maps `FEAT-<NNN>` → the per-spec index's
+      `completed_at` (or None when still open), resolved by the caller because
+      reading `sdd/tasks/index/` is I/O. Parent ids come from each issue's
+      `discovered_from` (`spec:FEAT-551`, `task:TASK-…`, `review:TASK-…`);
+      only the `spec:` form yields a feature id directly. A parent absent from
+      the mapping is reported with `completed_at=None, open=False` — unknown is
+      NOT treated as open, so a missing index can never silently reopen a
+      finished feature.
       """
   ```
 
@@ -463,6 +517,18 @@ wikitoolkit ledger close <issue-id> --reason TEXT [--actor A] [--resolved-by REF
           which makes double-close detectable instead of silent.
           """
 
+      async def feature_index_status(self, feature_ids: Collection[str]) -> dict[str, str | None]:
+          """Map each `FEAT-<NNN>` to its per-spec index `completed_at`, or None if open.
+
+          Sibling of _feature_task_ids (verified: ledger/service.py:311-324) and
+          reads the same directory, `self.shared_root / "sdd" / "tasks" / "index"`,
+          with the same tolerance: an unreadable or malformed index file is
+          skipped, never raised on. A feature with no index file is ABSENT from
+          the result — the caller distinguishes "open" (present, None) from
+          "unknown" (absent). Scans the directory once for all ids, not once
+          per id.
+          """
+
       async def unclaim(self, issue_id: str, reason: str, actor: str) -> bool:
           """Append `issue.unclaimed`, returning the issue to the ready pool.
 
@@ -497,6 +563,19 @@ wikitoolkit ledger close <issue-id> --reason TEXT [--actor A] [--resolved-by REF
       `_run(...)`, and a WikiStoreBusy guard that degrades to the committed
       snapshot at sdd/ledger/issues.jsonl instead of failing. `--json` prints
       `FixPlan.model_dump_json(indent=2)`; the default prints the human table.
+
+      This command owns BOTH filesystem lookups the pure planner cannot do:
+
+      1. collect the `spec:FEAT-<NNN>` parents out of the ready rows, resolve
+         them through `LedgerService.feature_index_status()`, and pass the
+         result as `parent_index_status=`;
+      2. after planning, de-duplicate each group's `suggested_slug` against the
+         existing `sdd/specs/*.spec.md` stems, appending `-2`, `-3`, … in group
+         order so the suffixing is itself deterministic.
+
+      Neither lookup is fatal: an unreadable index directory yields an empty
+      mapping (every parent then reports `open=False`), and an unreadable specs
+      directory skips de-duplication rather than failing the plan.
       """
 
   @ledger.command("unclaim")
@@ -550,7 +629,10 @@ wikitoolkit ledger close <issue-id> --reason TEXT [--actor A] [--resolved-by REF
   2. Select    — picker, or deterministic resolution from the arguments
   3. Claim     — one `ledger claim` per issue; a False return drops that issue and continues
   4. Prime     — wikitoolkit ledger context <files…> --max-tokens 3000
-  5. Route     — fast lane | SDD lane (see §2 Overview)
+  5. Route     — fast lane: branch fix/<id>-<slug> → commit → push → `gh pr create --base dev`
+                 (ALWAYS a PR; there is no direct-push path)
+               — SDD lane: reuse parent when group.parents[].open, else reserve FEAT-<NNN>;
+                 slug comes from the plan, never re-derived in the twin
   6. Close     — two keys, fail-closed; `ledger close --resolved-by`
   7. Release   — `ledger unclaim` for every claimed-but-unfixed issue
   ```
@@ -621,6 +703,16 @@ wikitoolkit ledger close <issue-id> --reason TEXT [--actor A] [--resolved-by REF
 | `test_plan_groups_are_byte_deterministic` | M1 | two runs ⇒ identical `groups` JSON, `generated_at` excluded (S2) |
 | `test_plan_carries_planner_version` | M1 | `FixPlan.planner_version == PLANNER_VERSION` (S2) |
 | `test_decide_lane_override_cannot_force_vulnerability_to_fast` | M1 | raises `ValueError` (S7) |
+| `test_suggest_slug_is_deterministic_for_same_input` | M1 | two runs ⇒ identical slug |
+| `test_suggest_slug_uses_dominant_file_and_breaks_ties_by_path` | M1 | 4-of-5 `development.py` wins; ties sort by path |
+| `test_suggest_slug_falls_back_to_group_id_without_files` | M1 | empty `about` group still gets a slug |
+| `test_parents_open_flag_from_index_status` | M1 | `completed_at=None` ⇒ `open=True`; a stamp ⇒ `open=False` |
+| `test_parent_absent_from_mapping_is_not_open` | M1 | unknown ≠ open — a missing index cannot reopen a finished feature |
+| `test_parents_only_from_spec_prefixed_discovered_from` | M1 | `task:`/`review:` forms yield no parent feature id |
+| `test_feature_index_status_scans_index_dir_once` | M3 | one glob for N ids; malformed file skipped |
+| `test_feature_index_status_omits_features_without_index` | M3 | absent ≠ present-with-None |
+| `test_cli_plan_fix_dedupes_slug_against_existing_specs` | M4 | colliding stem ⇒ `-2`, deterministic in group order |
+| `test_cli_plan_fix_survives_unreadable_index_dir` | M4 | empty mapping, plan still emitted |
 
 ### Integration Tests
 
@@ -632,6 +724,8 @@ wikitoolkit ledger close <issue-id> --reason TEXT [--actor A] [--resolved-by REF
 | `test_concurrent_plan_and_claim_race` | two claimants, exactly one wins (extends `TestAtomicClaim`, `tests/knowledge/wiki/test_ledger_index.py`) |
 | `test_stale_plan_cannot_close_a_reclaimed_issue` | plan → another actor claims and closes → the stale lane closes nothing (S3) |
 | `test_all_sdd_next_twins_point_at_sdd_fix` | the three `/sdd-next` twins name `/sdd-fix`, not `--from-issue`, as the ledger entry point (S9) |
+| `test_all_twins_require_a_pr_on_the_fast_lane` | no twin documents a direct push to `dev`; all three name `gh pr create --base dev` |
+| `test_sdd_lane_reuses_open_parent_and_mints_on_closed` | `open=True` ⇒ no `reserve_ids` call; `open=False` ⇒ a fresh `FEAT-<NNN>` |
 
 ### Test Data / Fixtures
 
@@ -673,6 +767,16 @@ def snapshot_issues() -> list[dict]:
 - [ ] The MCP `ledger_close` tool accepts and forwards `resolved_by`; omitting it leaves
       current behaviour unchanged (S4).
 - [ ] A stale plan cannot close an issue that another actor has since claimed or closed (S3).
+- [ ] `plan_fix_batch` performs **no filesystem access**: every parent `completed_at` and
+      the slug arrive as arguments or are derived from the input rows alone.
+- [ ] `FixGroup.suggested_slug` is byte-identical across runs over identical input;
+      collision suffixes are applied by the CLI and are deterministic in group order.
+- [ ] A parent feature with no per-spec index reports `open=False` — an unknown parent
+      never causes a finished feature to be reopened.
+- [ ] No `/sdd-fix` twin documents a direct push to `dev`; the fast lane always opens a PR
+      against `dev` with `gh pr create`.
+- [ ] `LedgerService.feature_index_status()` scans `sdd/tasks/index/` once per call
+      regardless of how many feature ids are requested.
 - [ ] A group whose `max_severity` is `critical` cannot be forced to the fast lane
       (`ValueError`), and `/sdd-fix` never calls `ledger acknowledge`.
 - [ ] `LedgerService.close_issue(..., resolved_by="commit:<sha>")` persists `resolved_by`,
@@ -916,6 +1020,17 @@ def reserve_ids(...) -> ...                                                     
 - **Ordering `ready_work()` changes existing output.** `ledger ready`, `/sdd-next` and the
   MCP `ledger_ready` tool all start printing severity-ordered. That is the point, but any
   test asserting the old row order must be updated rather than worked around.
+- **The purity boundary is load-bearing, and it is easy to erode.** Two filesystem facts
+  the planner needs — parent `completed_at` and slug uniqueness — are deliberately resolved
+  by the CLI. Moving either into `fix_planner.py` "for convenience" breaks
+  `test_plan_groups_are_byte_deterministic` and the snapshot fixtures with it.
+- **`discovered_from` only sometimes names a feature.** It is `spec:FEAT-<NNN>`,
+  `task:TASK-<NNN>` or `review:TASK-<NNN>` (verified: `ledger/events.py:31`). Only the
+  `spec:` form yields a feature id directly; a `task:`/`review:` issue has no parent
+  feature in the plan and therefore always takes the new-`FEAT` path.
+- **Unknown parent ≠ open parent.** `feature_index_status()` omits features with no index
+  file, and the planner reports those as `open=False`. Inverting that default would let a
+  missing or renamed index file silently append tasks to a merged feature.
 - **Three twins, one behaviour.** Any behavioural statement added to one twin must be added
   to all three, or `TestFixTwins` fails — which is the point.
 
@@ -954,22 +1069,30 @@ def reserve_ids(...) -> ...                                                     
       brainstorm*: a new `issue.unclaimed` event kind. → §3 M2/M3.
 - [x] MCP surface for `ledger blockers` / `acknowledge` — *Resolved in brainstorm*: out of
       scope, separate proposal. → §1 Non-Goals.
-- [ ] **Exact JSON schema of `FixPlan` / `FixGroup`** — §2 Data Models fixes the field
-      names and types; confirm the twins need nothing more (e.g. a `suggested_slug`, or the
-      parent-index `completed_at` so the twin need not read the index itself). — *Owner: Jesus*
-- [ ] **Group slug naming for the SDD lane** — derive it from the dominant file's module
-      (e.g. `development.py` → `dev-loop-development-debt`), or have the agent author it
-      from the group's issue titles? Affects `plan_worktree(slug=…)` and the new spec's
-      filename. — *Owner: Jesus*
-- [ ] **Fast lane: PR or direct push to `dev`?** `worktree-management.md` §5 requires a PR
-      for the ad-hoc lane, which argues for a PR even on a one-line comment deletion.
-      Confirm, or carve an explicit exception. — *Owner: Jesus*
-      *Design research (S10, ESCALATE)*: "The open question about pushing directly to `dev`
-      conflicts with existing workflow rules: `/sdd-done` defaults to a PR, hotfixes
-      targeting `main` must use a PR, and worktrees use canonical branch/base naming. The
-      plan must carry explicit flow/base-branch metadata and should reuse `plan_worktree()`
-      and `ensure()` rather than inventing direct-push behavior." The metadata half is
-      folded into §2 regardless; the PR-vs-push half is yours to decide.
+- [x] **Exact JSON schema of `FixPlan` / `FixGroup`** — *Owner: Jesus*: the twins need two
+      fields beyond the draft, and both are resolved by the **CLI**, keeping the planner
+      pure. `FixGroup.parents: list[ParentFeature]` carries `{feature_id, completed_at,
+      open}` from a new `LedgerService.feature_index_status()` (sibling of
+      `_feature_task_ids`, `service.py:311`), so no twin ever globs `sdd/tasks/index/`
+      itself; and `FixGroup.suggested_slug` carries the name. Rejected having the twin read
+      the index (the same logic duplicated in three markdown files — exactly what Option B
+      exists to prevent) and having the planner do the I/O (breaks the determinism the
+      snapshot fixtures rely on). → §2 Data Models, §3 M1/M3/M4, §5.
+- [x] **Group slug naming for the SDD lane** — *Owner: Jesus*: derived deterministically by
+      the planner from the group's dominant file (most issues; ties break on the sorted
+      path), as `<parent-dir>-<stem>-<dominant-kind>`. Agent-authored slugs were rejected
+      because they are not reproducible and would break
+      `test_plan_groups_are_byte_deterministic`. **Uniqueness is separate from derivation**:
+      collision suffixing against existing `sdd/specs/*.spec.md` stems is the CLI's job,
+      since listing that directory is I/O. → §3 M1 `suggest_slug`, §3 M4, §5.
+- [x] **Fast lane: PR or direct push to `dev`?** — *Owner: Jesus*: **always a PR**, no
+      exception and no `--no-pr` escape. `worktree-management.md` §5 requires it for the
+      ad-hoc lane, and the repository already lands this exact branch shape that way —
+      `fix/ci-test-core-drift` (PR #1408) and `fix/ci-test-core-arxiv-annotations`
+      (PR #1414). Confirms design research S10, which was escalated rather than decided:
+      "The open question about pushing directly to `dev` conflicts with existing workflow
+      rules: `/sdd-done` defaults to a PR, hotfixes targeting `main` must use a PR, and
+      worktrees use canonical branch/base naming." → §2 Overview, §3 M5, §5.
 
 ---
 
@@ -992,7 +1115,7 @@ def reserve_ids(...) -> ...                                                     
 | S7 | Make fast-lane overrides subject to hard safety constraints (risk) | CONFIRM | The draft guarded only `critical` against `--lane fast`. Extended to `vulnerability` at any severity: it is already an unconditional SDD kind in the predicate, so letting an override bypass it would make the flag the one way to route a security issue around review. | §3 M1 `decide_lane`, §5 |
 | S8 | Use groups for scheduling, not bulk closure (alternative) | CONFIRM | Agrees with the two-key close already specified; adopted as an explicit invariant rather than an emergent property — "a group schedules work; every issue opens, closes and releases individually" is now stated where a reader looking for a bulk-close shortcut would find it. | §2 Overview |
 | S9 | Test the complete twin contract and concurrent paths (testing) | CONFIRM (partial) | Golden planner tests over real ledger rows, CLI exit-code tests and the three-file twin matrix were already specified. Added what was missing: twins asserted to *invoke* `plan-fix --json` (not merely mention it), a concurrent-claim integration test, and `/sdd-next` twin retarget assertions. | §4 |
-| S10 | Resolve fast-lane delivery semantics before implementation (risk) | ESCALATE | Correctly identifies that "push straight to `dev`" conflicts with the ad-hoc lane's PR requirement. It is already §8 Q3 and it is the user's call, not the reviewer's — its argument is recorded verbatim in that question rather than silently decided. The adjacent point (the plan should carry flow/base-branch metadata and reuse `plan_worktree()`/`ensure()`) is folded regardless. | §8 Q3, §2 Overview |
+| S10 | Resolve fast-lane delivery semantics before implementation (risk) | ESCALATE | Correctly identifies that "push straight to `dev`" conflicts with the ad-hoc lane's PR requirement. It is already §8 Q3 and it is the user's call, not the reviewer's — its argument is recorded verbatim in that question rather than silently decided. The adjacent point (the plan should carry flow/base-branch metadata and reuse `plan_worktree()`/`ensure()`) is folded regardless. | §8 Q3 — since RESOLVED in favour of its position: always a PR, §2 Overview |
 
 Summary: **9** confirmed · **0** rejected · **1** escalated.
 
@@ -1049,3 +1172,4 @@ Summary: **9** confirmed · **0** rejected · **1** escalated.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-09-18 | Jesus Lara (with Claude) | Initial draft from accepted brainstorm |
+| 0.2 | 2026-09-18 | Jesus Lara (with Claude) | Resolved all three open questions: CLI-resolved `parents`/`suggested_slug` (planner stays pure), deterministic dominant-file slug, fast lane always opens a PR |
