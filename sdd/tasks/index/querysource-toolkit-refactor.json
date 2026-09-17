@@ -132,7 +132,7 @@
       "feature_id": "FEAT-558",
       "feature": "querysource-toolkit-refactor",
       "spec": "sdd/specs/querysource-toolkit-refactor.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -145,9 +145,9 @@
       "parallel": false,
       "parallelism_notes": "Creates toolkit.py and __init__ exports; later tasks insert into toolkit.py.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3251-qs-toolkit-core-and-catalog-tools.md"
+      "started_at": "2026-09-17T00:06:17+00:00",
+      "completed_at": "2026-09-17T00:06:17+00:00",
+      "file": "sdd/tasks/completed/TASK-3251-qs-toolkit-core-and-catalog-tools.md"
     },
     {
       "id": "TASK-3252",
