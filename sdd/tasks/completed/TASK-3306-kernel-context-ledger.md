@@ -378,10 +378,23 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (sonnet, sequential fallback — `complex_model_unavailable`, same
+systemic roster gap as TASK-3303/3304/3305; user-authorized direct implementation)
+**Date**: 2026-09-17
+**Notes**: Created `context.py` filling in all four FILL IN markers: `read_attempt_context`
+(strict shape check — dict with exactly the four `AttemptContext` field names, all string
+values, else `None`); `read_ledger` (strict shape check per distribution — `{"core_blobs":
+{str: str}}, else empty `{}` for the WHOLE ledger, not just the bad entry, per R14
+"malformed → empty"); `record_green_escalation` (merges into the existing ledger, replacing
+only the given `hit_dists` entries with fresh blobs, atomic write); `pending_escalations`
+(skip iff a ledger entry exists AND every relevant core file's current blob is available and
+equals the stored one). Verified `worktree_git_dir` against a real linked `git worktree add`
+in the test fixtures — confirmed the per-worktree admin dir (containing `worktrees/` in its
+path parts) is distinct from both the main checkout's `.git` and the checkout itself, exactly
+the case `repository_paths` (cited in the contract as "DO NOT reuse") gets wrong via its
+`commondir` resolution. All 31 tests pass (`pytest packages/ai-parrot/tests/flows/dev_loop/
+test_scope/ -q`, up from 26 before this task), `ruff check` clean.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Deviations from spec**: none — only the two listed files were created.
 
 **Deviations from spec**: none | describe if any
