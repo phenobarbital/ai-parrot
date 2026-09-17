@@ -68,7 +68,7 @@ class BrokerAllowlist(BaseModel):
 class CapabilityManifest(BaseModel):
     """What a snippet declares it needs.
 
-    The security contract, and the unit ``check_snippet_conformance.py`` (M15)
+    The security contract, and the unit ``services/snippets/conformance.py`` (M15)
     checks the source against. ``timeout_ms``/``max_memory_mb`` bounds mirror the
     OQ-6 pool sizing defaults documented in spec §7.
     """
