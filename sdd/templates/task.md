@@ -273,6 +273,15 @@ anchor unique` instead of a bare one-line anchor.
 
 ---
 
+## Validation Commands
+
+> File-level pytest only — no directories, no package roots.
+
+- `pytest packages/ai-parrot/tests/flows/dev_loop/test_scope/test_mirror.py -q`
+- `pytest tests/sdd_scripts/test_check_task_graph.py::test_validation_contract_findings -q`
+
+---
+
 ## Test Specification
 
 > Minimal test scaffold. The agent must make these pass.

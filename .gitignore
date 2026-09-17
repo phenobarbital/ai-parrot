@@ -364,6 +364,7 @@ packages/ai-parrot/src/parrot/_version.py
 !.codex/
 !.codex/agents/
 !.codex/agents/*.toml
+!.codex/hooks.json
 
 # Downloaded TTS model weights (make install-supertonic) — large LFS assets
 /models/

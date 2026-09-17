@@ -10,6 +10,8 @@ local duplicate definition.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from parrot_formdesigner.core.constraints import (
     ConditionOperator,
@@ -25,6 +27,22 @@ from parrot_formdesigner.core.schema import (
     FormSubsection,
 )
 from parrot_formdesigner.core.types import FieldType
+
+_DIRECTORY_MARKERS = {"integration": "integration", "e2e": "e2e"}
+
+
+def pytest_collection_modifyitems(config, items):  # noqa: D401
+    """Mark items under ``integration/`` and ``e2e/`` directories (FEAT-563)."""
+    base = Path(__file__).resolve().parent
+    for item in items:
+        try:
+            parts = Path(str(item.path)).resolve().relative_to(base).parts[:-1]
+        except ValueError:
+            continue
+        for segment in parts:
+            marker = _DIRECTORY_MARKERS.get(segment)
+            if marker:
+                item.add_marker(getattr(pytest.mark, marker))
 
 
 def _field(fid: str, **kw) -> FormField:
@@ -43,16 +61,10 @@ def _form(sections: list[FormSection], form_id: str = "f") -> FormSchema:
 def form_with_nested_fields() -> FormSchema:
     """FormSchema with sections, a subsection, a GROUP (children) and an
     ARRAY (item_template) — exercises the full-tree traversal (spec §4)."""
-    group = _field(
-        "group", field_type=FieldType.GROUP, children=[_field("child")]
-    )
-    array_field = _field(
-        "arr", field_type=FieldType.ARRAY, item_template=_field("item")
-    )
+    group = _field("group", field_type=FieldType.GROUP, children=[_field("child")])
+    array_field = _field("arr", field_type=FieldType.ARRAY, item_template=_field("item"))
     subsection = FormSubsection(subsection_id="sub", fields=[_field("in_sub")])
-    return _form([
-        FormSection(section_id="s", fields=[group, array_field, subsection])
-    ])
+    return _form([FormSection(section_id="s", fields=[group, array_field, subsection])])
 
 
 @pytest.fixture

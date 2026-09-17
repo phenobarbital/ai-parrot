@@ -21,10 +21,11 @@ class CodexCodeDispatchProfile(BaseModel):
     approval_policy: Literal["untrusted", "on-request", "never"] = "never"
     timeout_seconds: int = Field(default=1800, ge=60, le=7200)
     ignore_user_config: bool = Field(
-        default=True,
+        default=False,
         description=(
-            "When True, pass --ignore-user-config so server-side dispatches do "
-            "not inherit an operator's interactive Codex settings."
+            "When True, pass --ignore-user-config. Development dispatches default to "
+            "False (FEAT-563) so the tracked project .codex/hooks.json test-scope guard "
+            "applies; review profiles pin True so reviewers stay isolated."
         ),
     )
     ignore_rules: bool = Field(
@@ -34,7 +35,6 @@ class CodexCodeDispatchProfile(BaseModel):
             "AGENTS.md / rules still guide the coding agent."
         ),
     )
-
 
 
 class CodexCodeReviewProfile(CodexCodeDispatchProfile):
@@ -50,6 +50,7 @@ class CodexCodeReviewProfile(CodexCodeDispatchProfile):
     sandbox: Literal["read-only", "workspace-write", "danger-full-access"] = "workspace-write"
     approval_policy: Literal["untrusted", "on-request", "never"] = "on-request"
     timeout_seconds: int = Field(default=1800, ge=60, le=7200)
+    ignore_user_config: bool = True  # FEAT-563: reviewers never inherit operator Codex config
 
 
 class CodexAdversarialReviewProfile(CodexCodeDispatchProfile):
@@ -76,3 +77,4 @@ class CodexAdversarialReviewProfile(CodexCodeDispatchProfile):
     # even /tmp), so a long timeout only pays for retry spirals when the
     # model attempts a command anyway.
     timeout_seconds: int = Field(default=600, ge=60, le=7200)
+    ignore_user_config: bool = True  # FEAT-563: reviewers never inherit operator Codex config

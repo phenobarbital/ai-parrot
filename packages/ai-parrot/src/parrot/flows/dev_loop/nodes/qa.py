@@ -20,10 +20,9 @@ The node returns the report regardless of ``passed`` — the flow factory
 from __future__ import annotations
 
 import asyncio
-import os
 import re
 import shlex
-from pathlib import PurePosixPath
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from pydantic import BaseModel, Field
@@ -57,6 +56,9 @@ from parrot.flows.dev_loop.nodes.base import (
     register_dev_loop_node,
 )
 from parrot.flows.dev_loop.session_state import QaAttemptRecorded
+from parrot.flows.dev_loop.test_scope import plan_tests
+from parrot.flows.dev_loop.test_scope import mirror as _scope_mirror
+from parrot.flows.dev_loop.test_scope.context import record_green_escalation
 
 _DEFAULT_LINT_COMMAND = "ruff check . && mypy --no-incremental"
 
@@ -413,6 +415,7 @@ class QANode(DevLoopNode):
             len(manual),
             files_modified,
         )
+        await self._record_green_escalations(shared, research, report)
         shared["qa_report"] = report
         passed_n = sum(1 for r in report.criterion_results if r.passed)
         self.report_progress(
@@ -560,8 +563,9 @@ class QANode(DevLoopNode):
             research: Upstream research output, for the worktree path.
 
         Returns:
-            A single-element list holding the derived ``ShellCriterion``,
-            or an empty list when nothing pytest-shaped changed.
+            One ``ShellCriterion`` per feature-tier ``PytestInvocation``
+            (FEAT-563) — never a bare, unscoped ``pytest`` — or an empty
+            list when nothing pytest-shaped changed or nothing mapped.
         """
         worktree = research.worktree_path
         development = shared.get("development_output")
@@ -575,105 +579,55 @@ class QANode(DevLoopNode):
             )
             return []
 
-        targets = self._pytest_targets(files, worktree)
-        command = "pytest " + " ".join(shlex.quote(t) for t in targets) if targets else "pytest"
-        self.logger.info(
-            "No acceptance criteria declared for %s — derived deterministic criterion: %s",
-            research.feat_id or research.jira_issue_key,
-            command,
-        )
-        return [ShellCriterion(name="pytest (derived: changed scopes)", command=command)]
+        plan = await asyncio.to_thread(plan_tests, worktree=Path(worktree), changed_files=files, tier="feature")
+        shared["test_scope_plan"] = plan
+        if not plan.invocations:
+            self.logger.warning(
+                "No test targets derived for %s (feature tier) — no pytest criterion. Notes: %s",
+                research.feat_id or research.jira_issue_key,
+                "; ".join(plan.notes),
+            )
+            return []
+        criteria: List[AcceptanceCriterion] = []
+        for inv in plan.invocations:
+            core = any(t.reason == "core" for t in inv.targets)
+            criteria.append(
+                ShellCriterion(
+                    name=f"pytest[{inv.distribution}]" + (" (core escalation)" if core else ""),
+                    command=shlex.join(inv.argv),
+                )
+            )
+        self.logger.info("Derived %d feature-tier pytest criteria: %s", len(criteria), [c.command for c in criteria])
+        return criteria
+
+    async def _record_green_escalations(
+        self, shared: Dict[str, Any], research: ResearchOutput, report: QAReport
+    ) -> None:
+        """Record passed core-escalation criteria in the test-scope ledger (FEAT-563 AC9c). Never raises."""
+        plan = shared.get("test_scope_plan")
+        if plan is None or not plan.core_hits:
+            return
+        try:
+            for result in report.criterion_results:
+                if not result.passed or not result.name.endswith(" (core escalation)"):
+                    continue
+                dist = result.name[len("pytest[") : result.name.index("]")]
+                core_files = [hit.path for hit in plan.core_hits if dist in hit.distributions]
+                if not core_files:
+                    continue
+                await asyncio.to_thread(record_green_escalation, Path(research.worktree_path), [dist], core_files)
+        except Exception as exc:  # noqa: BLE001 — ledger recording must never fail QA
+            self.logger.warning("Could not record green core escalations for %s: %s", research.feat_id, exc)
 
     @classmethod
     def _pytest_targets(cls, files: List[str], worktree_path: str) -> List[str]:
-        """Map changed files to the narrowest test targets that cover them.
-
-        Mapping a change to ``packages/<dist>/tests`` is correct but far
-        too coarse: for ``ai-parrot`` that is the entire 1250-module core
-        suite (~9 minutes), which is what the derived gate used to run for
-        a three-file change. The repo mirrors its source tree under
-        ``tests/`` (``src/parrot/flows/dev_loop/`` ->
-        ``tests/flows/dev_loop/``), so each changed file resolves instead
-        to the deepest mirrored directory that actually exists, walking up
-        towards ``packages/<dist>/tests`` until one does.
-
-        Per changed path:
-
-        * ``packages/<dist>/tests/...`` — a changed/created test module is
-          its own narrowest target, pointed at directly.
-        * ``packages/<dist>/src/<top_pkg>/<dirs>/<file>.py`` — mirrored to
-          the deepest existing ``packages/<dist>/tests/<dirs>``.
-        * anything else under ``packages/<dist>/`` — the package test root.
-        * ``tests/...`` — the repo-root suite, targeted directly.
-        * anything else (``scripts/``, ``docs/``…) — dropped (nothing maps).
-
-        A distribution with no ``tests`` directory at all contributes no
-        target: pytest exits 4 ("file or directory not found") on a
-        missing path, which would fail the gate for a package that simply
-        ships no tests.
-
-        Args:
-            files: Changed file paths, repo-relative.
-            worktree_path: Root the paths are relative to, for existence
-                checks.
-
-        Returns:
-            Existing test paths, sorted, with any target already covered
-            by an ancestor target removed; empty when nothing mapped (the
-            caller then falls back to an unscoped ``pytest``).
-        """
-        targets: set = set()
-        for path in files:
-            target = cls._pytest_target_for(path, worktree_path)
-            if target:
-                targets.add(target)
-        return cls._prune_nested(targets)
+        """Delegates to test_scope.mirror.pytest_targets (FEAT-563)."""
+        return _scope_mirror.pytest_targets(files, worktree_path)
 
     @classmethod
     def _pytest_target_for(cls, path: str, worktree_path: str) -> Optional[str]:
-        """Resolve one changed path to its narrowest existing test target.
-
-        Args:
-            path: A repo-relative changed file path.
-            worktree_path: Root the path is relative to.
-
-        Returns:
-            The test path to hand pytest, or ``None`` when the file maps
-            to nothing that exists on disk.
-        """
-        parts = PurePosixPath(path).parts
-        if parts and parts[0] == "tests":
-            # The repo-root ``tests/`` tree (pytest's configured
-            # ``testpaths``, ~400 modules) lives outside ``packages/`` and
-            # mirrors nothing, so a change there has no package to map to.
-            # Left unmapped it produced NO target at all, which the caller
-            # turns into a bare ``pytest`` — the entire root suite. The
-            # changed module is its own target.
-            if os.path.exists(os.path.join(worktree_path, path)):
-                return path
-            # Deleted module — fall back to the root tree, but only if it
-            # exists (pytest exits 4 on a missing path).
-            return "tests" if os.path.isdir(os.path.join(worktree_path, "tests")) else None
-        if len(parts) < 3 or parts[0] != "packages":
-            return None
-        tests_root = f"packages/{parts[1]}/tests"
-        if not os.path.isdir(os.path.join(worktree_path, tests_root)):
-            return None
-
-        rest = parts[2:]
-        if rest[0] == "tests":
-            # The changed test module itself is the tightest possible
-            # target. Fall back to the package root if it was deleted.
-            candidate = "/".join(parts)
-            if os.path.exists(os.path.join(worktree_path, candidate)):
-                return candidate
-            return tests_root
-        if rest[0] == "src":
-            # packages/<dist>/src/<top_pkg>/<dirs...>/<file> -> <dirs...>
-            inner = rest[1:]
-            subdirs = inner[1:-1] if len(inner) >= 2 else ()
-            return cls._deepest_existing_dir(tests_root, subdirs, worktree_path)
-        return tests_root
+        """Delegates to test_scope.mirror.pytest_target_for (FEAT-563)."""
+        return _scope_mirror.pytest_target_for(path, worktree_path)
 
     @staticmethod
     def _deepest_existing_dir(
@@ -681,40 +635,13 @@ class QANode(DevLoopNode):
         subdirs: Tuple[str, ...],
         worktree_path: str,
     ) -> str:
-        """Walk ``tests_root/subdirs`` upwards to the first directory that exists.
-
-        Args:
-            tests_root: ``packages/<dist>/tests`` — verified to exist by
-                the caller, so this always terminates with a real path.
-            subdirs: The source-relative directory chain to mirror.
-            worktree_path: Root the paths are relative to.
-
-        Returns:
-            The deepest existing mirrored directory, at worst
-            ``tests_root`` itself.
-        """
-        for depth in range(len(subdirs), 0, -1):
-            candidate = "/".join((tests_root, *subdirs[:depth]))
-            if os.path.isdir(os.path.join(worktree_path, candidate)):
-                return candidate
-        return tests_root
+        """Delegates to test_scope.mirror.deepest_existing_dir (FEAT-563)."""
+        return _scope_mirror.deepest_existing_dir(tests_root, subdirs, worktree_path)
 
     @staticmethod
     def _prune_nested(targets: set) -> List[str]:
-        """Drop targets already covered by another, broader target.
-
-        Without this, a change touching both ``.../dev_loop/nodes/qa.py``
-        and ``.../tests/flows/dev_loop/test_qa.py`` would hand pytest both
-        the directory and a module inside it, collecting that module (and
-        reporting its failures) twice.
-
-        Args:
-            targets: Candidate test paths.
-
-        Returns:
-            The surviving paths, sorted.
-        """
-        return sorted(t for t in targets if not any(t.startswith(f"{other}/") for other in targets))
+        """Delegates to test_scope.mirror.prune_nested (FEAT-563)."""
+        return _scope_mirror.prune_nested(targets)
 
     # ------------------------------------------------------------------
     # Lint scoping helpers
@@ -1387,7 +1314,7 @@ class QANode(DevLoopNode):
         synthesized: List[CriterionResult] = []
         audit_lines: List[str] = []
         all_passed = True
-        for (criterion, _gate_id), gate in zip(opened, resolved_gates):
+        for (criterion, _gate_id), gate in zip(opened, resolved_gates, strict=True):
             passed = gate.status == "approved"
             all_passed = all_passed and passed
             synthesized.append(

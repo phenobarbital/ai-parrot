@@ -5,17 +5,17 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-17T02:29:04+00:00",
-  "completed_at": null,
+  "completed_at": "2026-09-17T17:13:25+00:00",
   "parallel_semantics": "exclusive",
   "tasks": [
     {
       "id": "TASK-3302",
       "slug": "feat562-gate-contract-reverify",
-      "title": "Gate: FEAT-562 merged + re-verify spec §6 contract",
+      "title": "Gate: FEAT-562 merged + re-verify spec \u00a76 contract",
       "feature_id": "FEAT-563",
       "feature": "scoped-test-selection",
       "spec": "sdd/specs/scoped-test-selection.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -23,8 +23,9 @@
       "parallelism_notes": "no dependencies; writes only artifacts/logs/feat-563-contract-reverify.md; gates TASK-3316 (markers build on FEAT-562 registrations)",
       "assigned_to": null,
       "started_at": "2026-09-17T11:00:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3302-feat562-gate-contract-reverify.md"
+      "completed_at": "2026-09-17T11:39:28+00:00",
+      "file": "sdd/tasks/completed/TASK-3302-feat562-gate-contract-reverify.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3303",
@@ -33,7 +34,7 @@
       "feature_id": "FEAT-563",
       "feature": "scoped-test-selection",
       "spec": "sdd/specs/scoped-test-selection.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -41,8 +42,9 @@
       "parallelism_notes": "no dependencies; read-only pytest --co experiments, writes only artifacts/logs/feat-563-s2-conftest-rootdir.md",
       "assigned_to": null,
       "started_at": "2026-09-17T11:00:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3303-spike-conftest-rootdir.md"
+      "completed_at": "2026-09-17T12:02:29+00:00",
+      "file": "sdd/tasks/completed/TASK-3303-spike-conftest-rootdir.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3304",
@@ -51,7 +53,7 @@
       "feature_id": "FEAT-563",
       "feature": "scoped-test-selection",
       "spec": "sdd/specs/scoped-test-selection.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -59,8 +61,9 @@
       "parallelism_notes": "no dependencies; creates the test_scope package (__init__, datatypes, mirror, contract) and the scope_kernel test package",
       "assigned_to": null,
       "started_at": "2026-09-17T11:00:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3304-kernel-datatypes-mirror-contract.md"
+      "completed_at": "2026-09-17T12:08:54+00:00",
+      "file": "sdd/tasks/completed/TASK-3304-kernel-datatypes-mirror-contract.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3305",
@@ -69,7 +72,7 @@
       "feature_id": "FEAT-563",
       "feature": "scoped-test-selection",
       "spec": "sdd/specs/scoped-test-selection.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -80,8 +83,9 @@
       "parallelism_notes": "imports TestTarget/PytestInvocation/ScopePlan from TASK-3304 (test_scope/datatypes.py); applies the rootdir/conftest flag decision logged by TASK-3303",
       "assigned_to": null,
       "started_at": "2026-09-17T11:00:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3305-kernel-policy-planner.md"
+      "completed_at": "2026-09-17T12:12:09+00:00",
+      "file": "sdd/tasks/completed/TASK-3305-kernel-policy-planner.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3306",
@@ -90,7 +94,7 @@
       "feature_id": "FEAT-563",
       "feature": "scoped-test-selection",
       "spec": "sdd/specs/scoped-test-selection.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -100,8 +104,9 @@
       "parallelism_notes": "imports AttemptContext/LedgerEntry/CoreHit from TASK-3304 (test_scope/datatypes.py)",
       "assigned_to": null,
       "started_at": "2026-09-17T11:00:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3306-kernel-context-ledger.md"
+      "completed_at": "2026-09-17T12:14:14+00:00",
+      "file": "sdd/tasks/completed/TASK-3306-kernel-context-ledger.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3307",
@@ -110,7 +115,7 @@
       "feature_id": "FEAT-563",
       "feature": "scoped-test-selection",
       "spec": "sdd/specs/scoped-test-selection.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -121,8 +126,9 @@
       "parallelism_notes": "imports CoreHit from TASK-3304 (datatypes.py) and ScopePolicy from TASK-3305 (policy.py); resolves git dir itself to avoid an edge on TASK-3306",
       "assigned_to": null,
       "started_at": "2026-09-17T11:00:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3307-kernel-impact-core-detector.md"
+      "completed_at": "2026-09-17T12:37:35+00:00",
+      "file": "sdd/tasks/completed/TASK-3307-kernel-impact-core-detector.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3308",
@@ -131,7 +137,7 @@
       "feature_id": "FEAT-563",
       "feature": "scoped-test-selection",
       "spec": "sdd/specs/scoped-test-selection.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -143,8 +149,9 @@
       "parallelism_notes": "calls build_plan/ScopePolicy from TASK-3305, pending_escalations from TASK-3306 (context.py), impacted_tests/detect_core from TASK-3307 (impact.py); modifies __init__.py created by TASK-3304",
       "assigned_to": null,
       "started_at": "2026-09-17T11:00:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3308-kernel-select-plan-tests.md"
+      "completed_at": "2026-09-17T12:41:24+00:00",
+      "file": "sdd/tasks/completed/TASK-3308-kernel-select-plan-tests.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3309",
@@ -153,7 +160,7 @@
       "feature_id": "FEAT-563",
       "feature": "scoped-test-selection",
       "spec": "sdd/specs/scoped-test-selection.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -163,8 +170,9 @@
       "parallelism_notes": "calls plan_tests from TASK-3308 (select.py) and read_attempt_context/is_broad_pytest via its re-exports",
       "assigned_to": null,
       "started_at": "2026-09-17T11:00:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3309-kernel-guard.md"
+      "completed_at": "2026-09-17T12:44:42+00:00",
+      "file": "sdd/tasks/completed/TASK-3309-kernel-guard.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3310",
@@ -173,7 +181,7 @@
       "feature_id": "FEAT-563",
       "feature": "scoped-test-selection",
       "spec": "sdd/specs/scoped-test-selection.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -183,8 +191,9 @@
       "parallelism_notes": "wraps ScopePlan returned by plan_tests from TASK-3308 (select.py); --run records ledger via context.py re-exported through TASK-3308",
       "assigned_to": null,
       "started_at": "2026-09-17T11:00:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3310-models-and-select-tests-cli.md"
+      "completed_at": "2026-09-17T12:49:25+00:00",
+      "file": "sdd/tasks/completed/TASK-3310-models-and-select-tests-cli.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3311",
@@ -193,7 +202,7 @@
       "feature_id": "FEAT-563",
       "feature": "scoped-test-selection",
       "spec": "sdd/specs/scoped-test-selection.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -203,8 +212,9 @@
       "parallelism_notes": "converts plans with ScopePlanModel from TASK-3310 (test_scope/models.py) and calls plan_tests (TASK-3308) inside nodes/qa.py",
       "assigned_to": null,
       "started_at": "2026-09-17T11:00:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3311-qanode-feature-tier.md"
+      "completed_at": "2026-09-17T12:55:47+00:00",
+      "file": "sdd/tasks/completed/TASK-3311-qanode-feature-tier.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3312",
@@ -213,7 +223,7 @@
       "feature_id": "FEAT-563",
       "feature": "scoped-test-selection",
       "spec": "sdd/specs/scoped-test-selection.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -223,8 +233,9 @@
       "parallelism_notes": "calls guard_argv from TASK-3309 (guard.py) in dispatchers/llm.py and write_attempt_context (TASK-3306 via TASK-3309 chain) in engine._run_attempt",
       "assigned_to": null,
       "started_at": "2026-09-17T11:00:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3312-mcp-seat-guard-and-attempt-context.md"
+      "completed_at": "2026-09-17T13:04:20+00:00",
+      "file": "sdd/tasks/completed/TASK-3312-mcp-seat-guard-and-attempt-context.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3313",
@@ -233,7 +244,7 @@
       "feature_id": "FEAT-563",
       "feature": "scoped-test-selection",
       "spec": "sdd/specs/scoped-test-selection.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -244,8 +255,9 @@
       "parallelism_notes": "calls guard_bash from TASK-3309 (guard.py); serialized after TASK-3312 because both modify sdd_coder/engine.py and sdd_coder/test_engine_dispatch.py",
       "assigned_to": null,
       "started_at": "2026-09-17T11:00:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3313-native-hook-guard.md"
+      "completed_at": "2026-09-17T13:10:26+00:00",
+      "file": "sdd/tasks/completed/TASK-3313-native-hook-guard.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3314",
@@ -254,7 +266,7 @@
       "feature_id": "FEAT-563",
       "feature": "scoped-test-selection",
       "spec": "sdd/specs/scoped-test-selection.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -264,8 +276,9 @@
       "parallelism_notes": "calls guard/plan primitives from TASK-3309 (guard.py) inside tool_optimizations/hooks.py evaluate_scope",
       "assigned_to": null,
       "started_at": "2026-09-17T11:00:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3314-codex-deny-hook-tracked-config.md"
+      "completed_at": "2026-09-17T13:28:54+00:00",
+      "file": "sdd/tasks/completed/TASK-3314-codex-deny-hook-tracked-config.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3315",
@@ -274,7 +287,7 @@
       "feature_id": "FEAT-563",
       "feature": "scoped-test-selection",
       "spec": "sdd/specs/scoped-test-selection.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -284,8 +297,9 @@
       "parallelism_notes": "imports parse_validation_commands/is_broad_pytest from TASK-3304 (test_scope/contract.py) by path in check_task_graph.py",
       "assigned_to": null,
       "started_at": "2026-09-17T11:00:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3315-task-validation-contract-lint.md"
+      "completed_at": "2026-09-17T12:22:49+00:00",
+      "file": "sdd/tasks/completed/TASK-3315-task-validation-contract-lint.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3316",
@@ -294,7 +308,7 @@
       "feature_id": "FEAT-563",
       "feature": "scoped-test-selection",
       "spec": "sdd/specs/scoped-test-selection.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -305,8 +319,9 @@
       "parallelism_notes": "gated by TASK-3302 (FEAT-562 merged, its marker registrations re-verified); adds a test module inside the tests/flows/dev_loop/test_scope/ package created by TASK-3304; exclusive: edits conftest.py files and pyproject pytest sections loaded by every other task's tests",
       "assigned_to": null,
       "started_at": "2026-09-17T11:00:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3316-directory-markers.md"
+      "completed_at": "2026-09-17T12:32:01+00:00",
+      "file": "sdd/tasks/completed/TASK-3316-directory-markers.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3317",
@@ -315,7 +330,7 @@
       "feature_id": "FEAT-563",
       "feature": "scoped-test-selection",
       "spec": "sdd/specs/scoped-test-selection.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -325,8 +340,9 @@
       "parallelism_notes": "edits XDIST_SAFE_DISTRIBUTIONS in policy.py created by TASK-3305; exclusive: long -n auto package-suite runs saturate the shared machine",
       "assigned_to": null,
       "started_at": "2026-09-17T11:00:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3317-spike-xdist-allowlist.md"
+      "completed_at": "2026-09-17T13:56:30+00:00",
+      "file": "sdd/tasks/completed/TASK-3317-spike-xdist-allowlist.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3318",
@@ -335,7 +351,7 @@
       "feature_id": "FEAT-563",
       "feature": "scoped-test-selection",
       "spec": "sdd/specs/scoped-test-selection.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -346,8 +362,9 @@
       "parallelism_notes": "uses ImportIndex/source_fanin from TASK-3307 (impact.py); serialized after TASK-3317 because both modify test_scope/policy.py",
       "assigned_to": null,
       "started_at": "2026-09-17T11:00:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3318-spike-core-fanin-core-paths.md"
+      "completed_at": "2026-09-17T14:16:32+00:00",
+      "file": "sdd/tasks/completed/TASK-3318-spike-core-fanin-core-paths.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3319",
@@ -356,7 +373,7 @@
       "feature_id": "FEAT-563",
       "feature": "scoped-test-selection",
       "spec": "sdd/specs/scoped-test-selection.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -367,8 +384,9 @@
       "parallelism_notes": "documents and invokes the scripts/sdd/select_tests.py CLI created by TASK-3310; the docs section cites the xdist allowlist result logged by TASK-3317 (artifacts/logs/feat-563-s3-xdist.md)",
       "assigned_to": null,
       "started_at": "2026-09-17T11:00:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3319-agents-commands-docs.md"
+      "completed_at": "2026-09-17T14:23:20+00:00",
+      "file": "sdd/tasks/completed/TASK-3319-agents-commands-docs.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3320",
@@ -377,7 +395,7 @@
       "feature_id": "FEAT-563",
       "feature": "scoped-test-selection",
       "spec": "sdd/specs/scoped-test-selection.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -388,8 +406,9 @@
       "parallelism_notes": "runs scripts/sdd/select_tests.py from TASK-3310 against CORE_PATHS finalised by TASK-3318",
       "assigned_to": null,
       "started_at": "2026-09-17T11:00:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3320-evidence-budget-and-core-escalation.md"
+      "completed_at": "2026-09-17T14:36:55+00:00",
+      "file": "sdd/tasks/completed/TASK-3320-evidence-budget-and-core-escalation.md",
+      "verification": "verified"
     }
   ]
 }

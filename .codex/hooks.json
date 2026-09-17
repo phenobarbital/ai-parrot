@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh scripts/sdd/codex_hook.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

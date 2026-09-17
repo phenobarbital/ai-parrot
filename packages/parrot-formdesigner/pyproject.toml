@@ -92,3 +92,7 @@ include = ["parrot_formdesigner*"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+markers = [
+    "integration: test lives under an integration/ directory (FEAT-563 auto-mark)",
+    "e2e: test lives under an e2e/ directory (FEAT-563 auto-mark)",
+]

@@ -139,7 +139,9 @@ fi
 Then fix what `ruff check` still reports, in those files only (pre-existing
 violations in a touched file included — that is deliberate code improvement):
 - Keep each fix behavior-neutral; when one is not (e.g. narrowing a blind
-  `except Exception`), run the tests of the touched module before committing.
+  `except Exception`), run `TASK_FILES=$(jq -r '.tasks[].file' "sdd/tasks/index/<feature-slug>.json");
+  python -m scripts.sdd.select_tests --tier feature --base origin/<base_branch> --worktree "$WT"
+  $(printf -- '--task-file %s ' $TASK_FILES) --run` before committing.
 - Commit as `style(<slug>): FEAT-<ID> — lint fixes`.
 - A finding you cannot fix safely goes under **Lint residual** in the report.
   Residual syntax errors / undefined names (`E9`, `F63`, `F7`, `F82`) are merge
