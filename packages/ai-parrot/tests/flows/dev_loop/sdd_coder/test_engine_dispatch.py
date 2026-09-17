@@ -200,6 +200,32 @@ async def test_engine_writes_attempt_context(git_sandbox_feature, noop_probe):
     assert context.task_file == call["brief"].task_file
 
 
+async def test_prepare_native_writes_attempt_context(git_sandbox_feature, noop_probe):
+    """FEAT-563: the native sub-worktree carries a task-tier AttemptContext before sdd-worker launches the seat."""
+    from parrot.flows.dev_loop.test_scope.context import read_attempt_context
+
+    worktree, feature_branch, base_path, _index_path = git_sandbox_feature
+    roster = RosterConfig(
+        seats=[
+            RosterSeat(label="h", kind="native"),
+            RosterSeat(label="a", backend="nova", model="model-a"),
+            RosterSeat(label="b", backend="codex", model="model-b"),
+        ]
+    )
+    engine = SddCoderEngine(
+        roster=roster, probe=noop_probe, worktree_base_path=str(base_path), dispatcher_builder=fake_builder_factory({})
+    )
+    plan = await engine.plan("demo", str(worktree))
+    native_id = next(t.task_id for t in plan.chunks[0].tasks if t.native)
+    prep = await engine.prepare_native("demo", str(worktree), native_id)
+    context = read_attempt_context(Path(prep.worktree_path))
+    assert context is not None
+    assert context.tier == "task"
+    assert context.task_id == native_id
+    assert context.task_file == prep.task_file
+    assert context.base_ref == feature_branch
+
+
 async def test_engine_run_chunk_returns_before_dispatch(git_sandbox_feature, noop_probe):
     worktree, _feature_branch, base_path, _index_path = git_sandbox_feature
     gate = asyncio.Event()

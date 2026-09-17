@@ -1304,6 +1304,7 @@ class SddCoderEngine:
         worker_id = self._worker_id(task_id, 1, execution_id)
         manager = self._manager_for(ctx, task_id, 1, execution_id)
         path = await manager.create(worker_id)
+        await self._write_attempt_scope(path, task_id, planned.task_file, ctx.feature_branch)
         self._native_inflight.add(worker_id)
         branch = self._branch_for(ctx, task_id, 1, execution_id)
         self._feedback_sources[attempt_uid] = (ctx.worktree, task_id, "native", model)

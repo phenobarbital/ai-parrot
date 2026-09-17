@@ -227,6 +227,50 @@ def test_standalone_hook_denies_invalid_input() -> None:
     assert json.loads(result.stdout)["hookSpecificOutput"]["permissionDecision"] == "deny"
 
 
+def test_hook_rewrites_broad_pytest_before_sandbox(checkout: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(policy.shutil, "which", lambda _: "/usr/bin/bwrap")
+    monkeypatch.setattr(policy, "_scope_guard", lambda command, cwd: ("rewrite", "pytest tests/test_a.py -q"))
+    response = policy.hook_response({"cwd": str(checkout[0]), "tool_name": "Bash", "tool_input": {"command": "pytest"}})
+    updated = response["hookSpecificOutput"]["updatedInput"]
+    assert shlex.split(updated["command"])[-3:] == ["/bin/bash", "-c", "pytest tests/test_a.py -q"]
+
+
+def test_hook_blocks_with_guard_message(checkout: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(policy.shutil, "which", lambda _: "/usr/bin/bwrap")
+    monkeypatch.setattr(policy, "_scope_guard", lambda command, cwd: ("block", "no scoped tests"))
+    response = policy.hook_response({"cwd": str(checkout[0]), "tool_name": "Bash", "tool_input": {"command": "pytest"}})
+    output = response["hookSpecificOutput"]
+    assert output["permissionDecision"] == "deny"
+    assert "no scoped tests" in output["permissionDecisionReason"]
+    assert "updatedInput" not in output
+
+
+def test_scope_guard_import_error_allows(checkout: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch) -> None:
+    def _raise() -> Any:
+        raise ImportError("no kernel in this checkout")
+
+    monkeypatch.setattr(policy, "_load_guard_bash", _raise)
+    assert policy._scope_guard("pytest", checkout[0]) == ("allow", None)
+
+    monkeypatch.setattr(policy.shutil, "which", lambda _: "/usr/bin/bwrap")
+    response = policy.hook_response({"cwd": str(checkout[0]), "tool_name": "Bash", "tool_input": {"command": "pytest"}})
+    output = response["hookSpecificOutput"]
+    assert "permissionDecision" not in output
+    assert shlex.split(output["updatedInput"]["command"])[-3:] == ["/bin/bash", "-c", "pytest"]
+
+
+def test_standalone_loader_resolves_kernel_by_path() -> None:
+    hook_dir = str(Path(policy.__file__).parent)
+    code = (
+        f"import sys; sys.path.insert(0, {hook_dir!r}); "
+        "import worktree_environment as we; "
+        "print(we._load_guard_bash().__module__)"
+    )
+    result = subprocess.run([sys.executable, "-S", "-c", code], capture_output=True, text=True, timeout=10)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "test_scope.guard"
+
+
 @pytest.mark.parametrize("subagent", ["sdd-worker", "sdd-coder"])
 def test_programmatic_claude_protection_does_not_depend_on_project_settings(tmp_path: Path, subagent: str) -> None:
     """Programmatic prompts lose frontmatter, so protection must be injected."""
