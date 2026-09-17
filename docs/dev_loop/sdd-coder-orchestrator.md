@@ -548,6 +548,17 @@ the TASK-3318 spike; see `artifacts/logs/feat-563-core-fanin.tsv`). A core hit e
 the whole repo — and only on the `merge` and `feature` tiers; the `task` tier never escalates,
 so a single sdd-coder attempt stays fast regardless of what it touches.
 
+> **Cost callout (code review, 2026-09-17).** `CORE_PATHS` currently has 724 measured entries,
+> and the two files the spec itself uses as worked examples — `clients/base.py` and
+> `bots/abstract.py` — both escalate to ~25 of the repo's ~26 distributions (near-total-repo).
+> Spec R13 anticipates this cost class for exactly these two files and names the escalation
+> ledger plus a future xdist spike as mitigations; the ledger pays it once per core-file content
+> (see below), but `XDIST_SAFE_DISTRIBUTIONS` still ships empty (S3), so the *first* hit per
+> distinct content is a large serial run. If this magnitude proves too costly in practice, the
+> options are: raise `DEFAULT_CORE_FANIN_THRESHOLD` above 50, re-run the S4 measurement with a
+> narrower `CORE_PATHS` curation pass, or land an xdist-safety spike for the highest-cost
+> distributions — not something to change unilaterally without new measurement evidence.
+
 ### Escalation ledger
 
 Because a core escalation can be expensive, it is paid **once per content**: `record_

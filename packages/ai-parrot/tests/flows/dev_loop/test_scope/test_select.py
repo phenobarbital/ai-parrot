@@ -57,6 +57,20 @@ def test_core_escalates_every_importing_distribution(repo):
     assert {"packages/a/tests", "packages/b/tests"} <= paths
 
 
+def test_core_escalation_is_also_visible_in_the_escalated_field(repo):
+    """FEAT-563 review (I1): a core-only escalation (no impact-cap trip) must still be visible
+    via `plan.escalated` — the plain-text CLI and the spec's own datatypes.py contract both
+    document `escalated` as covering "core or cap", not cap-only."""
+    for tier in ("merge", "feature"):
+        plan = plan_tests(
+            worktree=repo,
+            changed_files=["packages/a/src/pa/base.py"],
+            tier=tier,
+            policy=ScopePolicy(core_fanin_threshold=1),
+        )
+        assert {"a", "b"} <= set(plan.escalated), (tier, plan.escalated)
+
+
 def test_feature_tier_no_impact_without_core(repo):
     plan = plan_tests(
         worktree=repo,

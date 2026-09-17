@@ -194,6 +194,13 @@ def plan_tests(
                     suite = _suite_for(dist, worktree)
                     if suite:
                         targets.append(TestTarget(path=suite, distribution=dist, reason="core"))
+                        # FEAT-563 review (I1): `escalated` used to be impact-cap-only, so a
+                        # core-only escalation was invisible to the plain-text CLI ("# escalated:
+                        # <dist>") and to the spec's own datatypes.py contract ("distributions
+                        # escalated (core or cap)"). Both escalation kinds are visible here now;
+                        # `core_hits`/`reason=="core"` targets remain the authoritative source
+                        # every real consumer (the ledger, QANode) already reads.
+                        escalated.append(dist)
                     else:
                         notes.append(f"{dist}: core escalation target suite does not exist, skipped")
 
