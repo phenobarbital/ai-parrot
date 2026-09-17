@@ -391,7 +391,7 @@
       "feature_id": "FEAT-564",
       "feature": "video-reel-omni-veo-reliability",
       "spec": "sdd/specs/video-reel-omni-veo-reliability.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -402,8 +402,8 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": "2026-09-17T20:40:34+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3334-reel-regression-integration.md",
+      "completed_at": "2026-09-17T20:59:44+00:00",
+      "file": "sdd/tasks/completed/TASK-3334-reel-regression-integration.md",
       "acceptance_criteria": [
         "AC01",
         "AC08",
@@ -413,7 +413,8 @@
         "AC13",
         "AC14",
         "AC18"
-      ]
+      ],
+      "verification": "verified"
     },
     {
       "id": "TASK-3335",
