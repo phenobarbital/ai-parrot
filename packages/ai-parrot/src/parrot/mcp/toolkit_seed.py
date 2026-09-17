@@ -10,8 +10,6 @@ from typing import Any, Sequence
 import yaml
 from pydantic import BaseModel, Field
 
-from parrot.mcp.toolkit_config import BUILTIN_TOOLKITS
-
 logger = logging.getLogger(__name__)
 
 TEMPLATE_PACKAGE: str = "parrot.mcp"
@@ -191,17 +189,7 @@ def seed_toolkit_sections(root: Path, names: Sequence[str]) -> SeedResult:
     if path.exists():
         try:
             config = load_toolkits_config(root_path)
-            # Get sections that are actually declared in the file (not built-ins)
-            if path.exists():
-                existing_sections = set(config.toolkits.keys())
-                # Remove built-in sections that aren't actually in the file
-                for builtin_name in BUILTIN_TOOLKITS:
-                    if builtin_name in existing_sections:
-                        # Check if this section is actually in the file or just a built-in
-                        # We need to check the raw file content
-                        file_content = path.read_text(encoding="utf-8")
-                        if f"{builtin_name}:" not in file_content:
-                            existing_sections.discard(builtin_name)
+            existing_sections = set(config.toolkits.keys())
         except ValueError:
             # If the file is malformed, we'll handle it when we try to re-load after writing
             pass

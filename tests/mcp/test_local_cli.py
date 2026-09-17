@@ -12,8 +12,17 @@ from click.testing import CliRunner
 from parrot.cli import cli
 
 
-def test_list_shows_builtins(monkeypatch, tmp_path):
-    """`--list` prints the three built-in names with enabled state."""
+def _write_memory_config(tmp_path: Path) -> None:
+    """Write an explicit `memory:` section — nothing resolves implicitly (FEAT-570)."""
+    parrot_dir = tmp_path / ".parrot"
+    parrot_dir.mkdir(exist_ok=True)
+    (parrot_dir / "mcp-toolkits.yaml").write_text(
+        "toolkits:\n  memory:\n    class: parrot.tools.working_memory.tool.WorkingMemoryToolkit\n    kwargs: {}\n"
+    )
+
+
+def test_list_shows_nothing_on_bare_repo(monkeypatch, tmp_path):
+    """`--list` on a bare repo (no config file) lists nothing (FEAT-570)."""
     monkeypatch.chdir(tmp_path)
     runner = CliRunner()
 
@@ -21,7 +30,19 @@ def test_list_shows_builtins(monkeypatch, tmp_path):
 
     assert result.exit_code == 0, result.output
     for name in ("scraping", "browsing", "memory"):
-        assert name in result.output
+        assert name not in result.output
+
+
+def test_list_shows_declared_section(monkeypatch, tmp_path):
+    """`--list` prints a section declared in `.parrot/mcp-toolkits.yaml`."""
+    _write_memory_config(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+
+    result = runner.invoke(cli, ["mcp-local", "--list"])
+
+    assert result.exit_code == 0, result.output
+    assert "memory" in result.output
     assert "enabled" in result.output
 
 
@@ -43,6 +64,7 @@ def test_list_does_not_import_toolkit_classes(monkeypatch, tmp_path):
 
 def test_unknown_name_nonzero(monkeypatch, tmp_path):
     """Unknown name exits non-zero; stderr lists resolvable names."""
+    _write_memory_config(tmp_path)
     monkeypatch.chdir(tmp_path)
     runner = CliRunner()
 
@@ -95,6 +117,7 @@ def test_overrides_passed(monkeypatch, tmp_path):
         "parrot.mcp.local_cli.asyncio.run",
         lambda coro: getattr(coro, "close", lambda: None)(),
     )
+    _write_memory_config(tmp_path)
     monkeypatch.chdir(tmp_path)
 
     custom_cfg = tmp_path / "custom.yaml"
@@ -148,6 +171,7 @@ def test_serve_path_stub_toolkit(monkeypatch, tmp_path):
 
 def test_keyboard_interrupt_clean_exit(monkeypatch, tmp_path):
     """A KeyboardInterrupt during serve exits cleanly with status 0."""
+    _write_memory_config(tmp_path)
     monkeypatch.chdir(tmp_path)
 
     def fake_factory(name, root, **overrides):
