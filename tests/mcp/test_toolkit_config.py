@@ -14,15 +14,20 @@ from parrot.mcp.toolkit_config import (
 )
 
 
-def test_no_file_returns_builtins(tmp_path):
-    """load_toolkits_config with no file returns exactly the 3 builtins."""
+def test_no_file_returns_empty(tmp_path):
+    """load_toolkits_config with no file resolves nothing (FEAT-570)."""
     cfg = load_toolkits_config(tmp_path)
-    assert set(cfg.toolkits.keys()) == {"scraping", "browsing", "memory"}
-    assert cfg.toolkits["memory"].class_path == "parrot.tools.working_memory.tool.WorkingMemoryToolkit"
+    assert cfg.toolkits == {}
 
 
-def test_file_overrides_builtin(tmp_path):
-    """File section with a built-in name replaces it entirely (kwargs not merged)."""
+def test_explicit_missing_config_still_raises(tmp_path):
+    """An explicitly named missing file is operator error, unchanged by FEAT-570."""
+    with pytest.raises(ValueError, match="not found"):
+        load_toolkits_config(tmp_path, config_path=tmp_path / "nope.yaml")
+
+
+def test_file_section_resolves(tmp_path):
+    """A declared section resolves with the kwargs given in the file."""
     parrot_dir = tmp_path / ".parrot"
     parrot_dir.mkdir()
     config_file = parrot_dir / "mcp-toolkits.yaml"
@@ -35,11 +40,11 @@ def test_file_overrides_builtin(tmp_path):
     )
     cfg = load_toolkits_config(tmp_path)
     assert cfg.toolkits["memory"].kwargs == {"max_rows": 25}
-    assert cfg.toolkits["scraping"].class_path == "parrot_tools.scraping.toolkit.WebScrapingToolkit"
+    assert "scraping" not in cfg.toolkits
 
 
 def test_new_section_added(tmp_path):
-    """New sections in file are appended alongside builtins."""
+    """Sections in the file are the ONLY way a toolkit resolves now."""
     parrot_dir = tmp_path / ".parrot"
     parrot_dir.mkdir()
     config_file = parrot_dir / "mcp-toolkits.yaml"
@@ -47,7 +52,7 @@ def test_new_section_added(tmp_path):
         "toolkits:\n" "  custom:\n" "    class: my.custom.Toolkit\n" "    kwargs:\n" "      param: value\n"
     )
     cfg = load_toolkits_config(tmp_path)
-    assert "scraping" in cfg.toolkits  # builtins still present
+    assert "scraping" not in cfg.toolkits  # nothing implicit (FEAT-570)
     assert "custom" in cfg.toolkits
     assert cfg.toolkits["custom"].class_path == "my.custom.Toolkit"
 
@@ -97,25 +102,40 @@ def test_non_mapping_toolkits_raises(tmp_path):
         load_toolkits_config(tmp_path)
 
 
-def test_builtin_defaults_match(tmp_path):
-    """Built-in defaults are correctly initialized."""
+def test_declared_section_resolves(tmp_path):
+    """A section present in the file is the ONLY way a toolkit resolves now."""
+    parrot_dir = tmp_path / ".parrot"
+    parrot_dir.mkdir()
+    config_file = parrot_dir / "mcp-toolkits.yaml"
+    config_file.write_text(
+        "toolkits:\n"
+        "  scraping:\n"
+        "    class: parrot_tools.scraping.toolkit.WebScrapingToolkit\n"
+        "    kwargs:\n"
+        "      headless: true\n"
+        "      plans_dir: .parrot/scraping_plans\n"
+        "  browsing:\n"
+        "    class: parrot_tools.browsing.toolkit.WebBrowsingToolkit\n"
+        "    kwargs:\n"
+        "      headless: true\n"
+        "      catalog_dir: .parrot/browsing_catalog\n"
+        "  memory:\n"
+        "    class: parrot.tools.working_memory.tool.WorkingMemoryToolkit\n"
+    )
     cfg = load_toolkits_config(tmp_path)
 
-    # Scraping
     scraping = cfg.toolkits["scraping"]
     assert scraping.class_path == "parrot_tools.scraping.toolkit.WebScrapingToolkit"
     assert scraping.kwargs["headless"] is True
     assert ".parrot/scraping_plans" in scraping.kwargs["plans_dir"]
     assert scraping.enabled is True
 
-    # Browsing
     browsing = cfg.toolkits["browsing"]
     assert browsing.class_path == "parrot_tools.browsing.toolkit.WebBrowsingToolkit"
     assert browsing.kwargs["headless"] is True
     assert ".parrot/browsing_catalog" in browsing.kwargs["catalog_dir"]
     assert browsing.enabled is True
 
-    # Memory
     memory = cfg.toolkits["memory"]
     assert memory.class_path == "parrot.tools.working_memory.tool.WorkingMemoryToolkit"
     assert memory.kwargs == {}
