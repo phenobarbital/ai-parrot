@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import TYPE_CHECKING, Any, AsyncIterator, List, Optional, Union, Sequence
+from typing import TYPE_CHECKING, Any, AsyncIterator, Dict, List, Optional, Union, Sequence
 import logging
 import warnings
 import asyncio
@@ -270,7 +270,7 @@ class GoogleGeneration:
 
         if reference_image:
             self.logger.info(f"Using reference image: {reference_image}")
-            if not reference_image.exists():
+            if not await asyncio.to_thread(reference_image.exists):
                 raise FileNotFoundError(f"Reference image not found: {reference_image}")
             # Load the reference image
             ref_image = Image.open(reference_image)
@@ -318,7 +318,6 @@ class GoogleGeneration:
             image_response = await self.client.aio.models.generate_images(
                 model=model, prompt=full_prompt, config=config
             )
-            execution_time = time.time() - start_time
 
             pil_images = []
             saved_image_paths = []
@@ -681,7 +680,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
                 saved_file_paths = []
 
                 if output_directory:
-                    output_directory.mkdir(parents=True, exist_ok=True)
+                    await asyncio.to_thread(output_directory.mkdir, parents=True, exist_ok=True)
                     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                     file_path = output_directory / f"generated_speech_{timestamp}.wav"
 
@@ -911,7 +910,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         output_directory: Optional[Path] = None
         if output_path is not None:
             p = Path(output_path)
-            output_directory = p if p.is_dir() else p.parent
+            output_directory = p if await asyncio.to_thread(p.is_dir) else p.parent
 
         self.logger.info(f"Synthesising speech with voice: {voice_name}")
 
@@ -1010,10 +1009,10 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         # --- Output directory ---------------------------------------------------
         if output_directory:
             out_dir = Path(output_directory)
-            out_dir.mkdir(parents=True, exist_ok=True)
+            await asyncio.to_thread(out_dir.mkdir, parents=True, exist_ok=True)
         else:
             out_dir = BASE_DIR.joinpath("static", "generated_videos")
-            out_dir.mkdir(parents=True, exist_ok=True)
+            await asyncio.to_thread(out_dir.mkdir, parents=True, exist_ok=True)
 
         # --- Aspect ratio normalisation ----------------------------------------
         ar_str = aspect_ratio.value if isinstance(aspect_ratio, AspectRatio) else str(aspect_ratio)
@@ -1519,7 +1518,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
 
         # 5. Get credentials
         credentials_file = getattr(self, "_credentials_file", None)
-        if credentials_file and Path(credentials_file).exists():
+        if credentials_file and await asyncio.to_thread(Path(credentials_file).exists):
             from google.oauth2 import service_account
             from google.auth.transport.requests import Request
 
@@ -1835,7 +1834,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
 
             if output_directory:
                 out_dir = Path(output_directory)
-                out_dir.mkdir(parents=True, exist_ok=True)
+                await asyncio.to_thread(out_dir.mkdir, parents=True, exist_ok=True)
 
             if response.parts:
                 for part in response.parts:
