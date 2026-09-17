@@ -9,7 +9,7 @@ from typing import Any
 from asyncdb import AsyncDB  # verified: parrot_tools/querytoolkit.py:18
 
 from parrot_tools.querysource import _qs
-from parrot_tools.querysource.errors import QuerysourceToolkitError, SlugNotFoundError, TenantDeniedError
+from parrot_tools.querysource.errors import InvalidConditionsError, QuerysourceToolkitError, SlugNotFoundError, TenantDeniedError
 from parrot_tools.querysource.models import SavedSlug
 
 logger = logging.getLogger(__name__)
@@ -200,3 +200,50 @@ class SlugCatalog:
                 action = "inserted"
         logger.info("catalog.upsert %s (%s) program=%s", slug, action, program_slug)
         return SavedSlug(slug=slug, program_slug=program_slug, action=action)
+
+
+_SECTION_KEYS = ("queries", "files", "sources", "Output")
+_RAW_NODE_KEYS = ("query", "raw_query")
+
+
+@dataclass
+class NormalizedPipeline:
+    """Flat view of a MultiQS pipeline dict (design research S6)."""
+    slug_nodes: dict[str, str]          # node name → slug
+    raw_nodes: list[str]                # node names carrying query/raw_query
+    has_files: bool
+    has_sources: bool
+    step_names: list[str]               # top-level keys other than queries/files/sources/Output
+    output_steps: list[str]             # step names inside Output (transformations + destinations)
+
+
+def normalize_pipeline(pipeline: dict[str, Any]) -> NormalizedPipeline:
+    """Walk the MultiQS shape (multi/__init__.py:95-97,443; obj.py:49-63); raise InvalidConditionsError when malformed."""
+    if not isinstance(pipeline, dict):
+        raise InvalidConditionsError("pipeline must be a JSON object")
+    queries = pipeline.get("queries", {})
+    if not isinstance(queries, dict):
+        raise InvalidConditionsError("'queries' must be a mapping of node name → {slug | query}")
+    slug_nodes: dict[str, str] = {}
+    raw_nodes: list[str] = []
+    for name, node in queries.items():
+        if not isinstance(node, dict):
+            raise InvalidConditionsError(f"query node '{name}' must be an object")
+        # A node with any raw key is treated as raw even alongside 'slug' (fail closed against tenancy bypass).
+        if any(key in node for key in _RAW_NODE_KEYS):
+            raw_nodes.append(name)
+        else:
+            slug_nodes[name] = node.get("slug", name)  # ThreadQuery.slug default (sources/query.py:62)
+    files = pipeline.get("files") or {}
+    sources = pipeline.get("sources") or []
+    output = pipeline.get("Output") or []
+    if not isinstance(output, list) or any(not isinstance(step, dict) or len(step) != 1 for step in output):
+        raise InvalidConditionsError("'Output' must be a list of single-key step objects")
+    return NormalizedPipeline(
+        slug_nodes=slug_nodes,
+        raw_nodes=raw_nodes,
+        has_files=bool(files),
+        has_sources=bool(sources),
+        step_names=[k for k in pipeline if k not in _SECTION_KEYS],
+        output_steps=[next(iter(step)) for step in output],
+    )
