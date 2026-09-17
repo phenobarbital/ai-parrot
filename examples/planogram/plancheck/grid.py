@@ -3,6 +3,7 @@
 Pure geometry over ``TagRow``/``Slot`` models in ORIGINAL image pixels. No image access, no I/O.
 Tags sit BELOW their products, so a slot spans from the previous row's line down to its own tag's top.
 """
+
 from __future__ import annotations
 
 import logging
@@ -143,7 +144,10 @@ def build_slots(rows: list[TagRow], image_size: tuple[int, int]) -> list[Slot]:
         xc = width / 2
         row_pitch_v = float(
             median(
-                [_line_y(rows_with_tags[i + 1], xc) - _line_y(rows_with_tags[i], xc) for i in range(len(rows_with_tags) - 1)]
+                [
+                    _line_y(rows_with_tags[i + 1], xc) - _line_y(rows_with_tags[i], xc)
+                    for i in range(len(rows_with_tags) - 1)
+                ]
             )
         )
         # Remaining space below last row
