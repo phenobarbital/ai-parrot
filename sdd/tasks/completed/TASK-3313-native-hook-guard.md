@@ -371,10 +371,32 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (sonnet, sequential fallback — `complex_model_unavailable`, same
+systemic roster gap as prior tasks; user-authorized direct implementation)
+**Date**: 2026-09-17
+**Notes**: Verified every anchor (`hook_response`, `protected_argv`, `repository_paths`,
+`prepare_native`'s `path = await manager.create(worker_id)`) via `grep`; line numbers for
+`engine.py` had shifted by TASK-3312's edits (1225→1246, 1285→1306) but the anchor TEXT
+matched exactly, confirming the same insertion points. Added `_load_guard_bash`,
+`_is_lone_pytest`, and `_scope_guard` above `hook_response`, all stdlib-only (verified module-
+level imports unchanged via `head -20`). For the one FILL IN
+(`_scope_guard`'s cwd-independence): added `_is_lone_pytest` — no compound shell markers
+(`&&`/`||`/`;`/`|`) anywhere in the command string AND the first token's basename is
+`pytest`/`python`/`python3` — and only then, when `root != cwd`, prefix the rewritten command
+with `cd <root> &&` (`shlex.quote`d); a command that already mixes its own `cd`/pipes keeps
+its author's cwd handling untouched. Wired the guard into `hook_response`'s Bash branch
+exactly before `protected_argv`, reusing the existing `ValueError`→deny path for blocks. Added
+`_write_attempt_scope` call in `prepare_native` right after `manager.create`, reusing
+TASK-3312's helper verbatim (same name/signature, as instructed). Wrote all four FILL-IN
+`test_worktree_environment.py` bodies (block, ImportError-allows, and the `-S` subprocess
+loader test — the only one that actually proves the script-mode `sys.path[0]`-relative import
+resolves `test_scope.guard` with zero site-packages) plus the given rewrite test verbatim, and
+the `test_engine_dispatch.py` native-context test (anchored after TASK-3312's
+`test_engine_writes_attempt_context`, confirmed unique). All new/existing tests pass (63
+passed, 3 pre-existing skips, across both suites); `ruff check` clean; confirmed
+`worktree_environment.py`'s module-level imports are unchanged (still exactly the 6 stdlib
+imports) — only function-local, lazy imports were added inside `_load_guard_bash`.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Deviations from spec**: none — only the four listed files were touched.
 
 **Deviations from spec**: none | describe if any

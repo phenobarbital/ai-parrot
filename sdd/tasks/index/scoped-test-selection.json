@@ -233,7 +233,7 @@
       "feature_id": "FEAT-563",
       "feature": "scoped-test-selection",
       "spec": "sdd/specs/scoped-test-selection.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -244,8 +244,8 @@
       "parallelism_notes": "calls guard_bash from TASK-3309 (guard.py); serialized after TASK-3312 because both modify sdd_coder/engine.py and sdd_coder/test_engine_dispatch.py",
       "assigned_to": null,
       "started_at": "2026-09-17T11:00:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3313-native-hook-guard.md"
+      "completed_at": "2026-09-17T13:10:26+00:00",
+      "file": "sdd/tasks/completed/TASK-3313-native-hook-guard.md"
     },
     {
       "id": "TASK-3314",
