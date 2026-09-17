@@ -149,4 +149,109 @@ Test names and assertions must describe observable behavior, not mirror private 
 
 ## Completion Note
 
-Pending implementation. The executor must record completed-by, date, test results, evidence-gate resolution and deviations before marking done.
+Completed 2026-09-17 by sdd-worker orchestrator (fallback sequential loop, sonnet).
+
+- `assemble_reel(plan, *, music_path, audio_mode, output_format, work_dir, deadline) -> Path` per
+  §3 M6, running the actual MoviePy encode in a `multiprocessing.get_context("spawn")` **process**
+  (never a thread) so cancellation/timeout can genuinely `.terminate()`/`.kill()` an in-progress
+  encode. `_terminate_and_join()` is the exact shared mechanism for both the timeout and
+  cancellation paths — always called in `finally`, escalating to `kill()` if `terminate()` doesn't
+  land within 10s. Result handoff uses a `multiprocessing.Queue`, polled in bounded 0.5s slices
+  (not one giant blocking wait) specifically so a cancelled `assemble_reel()` call doesn't leave an
+  executor thread blocked for the full remaining deadline.
+- `_create_reel_assembly` (generation.py:2328) now delegates its media-execution step to
+  `assemble_reel()` instead of its own inline `_moviepy_assemble`/`asyncio.to_thread` — its
+  download/upload wrapper logic is UNCHANGED. Since this legacy signature carries no explicit
+  per-scene edit-target duration, each clip's own MEASURED duration is used as `edit_seconds` (i.e.
+  "keep the whole clip") via a new `_measure_clip_duration` helper + `plan_timeline()`. **TASK-3330
+  (stage orchestration) is expected to replace this exact call site** with a real `TimelinePlan`
+  built from `VideoReelScene.duration` targets, a genuine job deadline, and the request's actual
+  `audio_mode` (this delegation hardcodes `audio_mode="separate"` and a flat 600s deadline as a
+  reasonable stand-in, clearly commented as such in the diff).
+- **Three real, verified environment bugs found and fixed while writing REAL encode tests (not
+  guessed — each reproduced then root-caused via direct `ffmpeg`/MoviePy probes)**:
+  1. **Frame-quantization on encode/decode round-trip**: a clip written with `duration=0.5` can
+     decode back marginally SHORTER (e.g. 0.49s) due to container frame-boundary rounding, so
+     blindly calling `subclipped(0, edit_seconds)` can raise `"end_time should be smaller or equal
+     to the clip's duration"`. Fixed by clamping to `min(edit_seconds, raw_clip.duration)` —
+     consistent with the one-frame tolerance philosophy already in `reel/timeline.py`.
+  2. **`concatenate_videoclips` + `vfx.CrossFadeIn` alone does NOT shorten total duration** — the
+     crossfade visual blend and the temporal overlap are two SEPARATE mechanisms in MoviePy 2.x.
+     The actual overlap requires a matching NEGATIVE `padding` on `concatenate_videoclips` itself
+     (verified via MoviePy's own docstring: "for negative padding, a clip will partly play at the
+     same time as the clip it follows... cool for clips who fade in on one another"). Fixed by
+     computing `padding=-overlap` from the plan's segments alongside the per-clip `CrossFadeIn` —
+     confirmed empirically (isolated probe: 4×0.5s clips, 0.1s overlaps → exactly 1.7s, matching
+     `plan_timeline`'s own math). **Limitation**: `padding` is one scalar for the whole
+     concatenation, so this assumes a uniform overlap across the plan — true of every plan
+     `plan_timeline` builds today (one `crossfade_seconds` for the whole timeline); a future
+     per-pair-varying overlap would need a different concatenation strategy (flagged in the code).
+  3. **WebM/Opus audio silently produces a ZERO-BYTE file** unless the audio sample rate is one
+     Opus actually legal-izes (8000/12000/16000/24000/48000 Hz) — the AAC-typical 44100 Hz fails
+     with NO error raised at all (`MoviePy - Done.` logged, 0-byte file). Fixed by forcing
+     `audio_fps=48000` for WebM output. **Separately**, MoviePy's codec→extension lookup table
+     (`moviepy.tools.extensions_dict`) has no `"libopus"` entry, so `write_videofile` raises
+     `ValueError: The audio_codec you chose is unknown by MoviePy` unless an explicit
+     `temp_audiofile` with a recognized extension (`.ogg`) is supplied, bypassing that lookup.
+  4. **Bonus finding, same diagnostic session**: MoviePy's `temp_audiofile_path` defaults to `""`
+     (an empty string), so the intermediate audio-mux temp file is written **CWD-relative**, not
+     next to the real output — this silently works in a coincidentally-writable cwd and fails
+     unpredictably otherwise (`"Error opening input file sceneTEMP_MPY_wvf_snd.mp4"`, "No such file
+     or directory"). Fixed by always pinning `temp_audiofile_path=str(Path(output_path_str).parent)`
+     for EVERY output format (not just the Opus branch) — this was silently broken in the ORIGINAL
+     `_moviepy_assemble` too, just never exercised by a test that actually ran ffmpeg for real.
+  All four are documented in `assembly.py`'s own module docstring and inline comments for the next
+  engineer, not just here.
+- Audio modes: `"native"` leaves each clip's own audio untouched; `"separate"` strips it and
+  attaches narration via `CompositeAudioClip([narration]).with_duration(edit_seconds)` — verified
+  empirically (isolated probe) that MoviePy correctly pads the composite with silence past the
+  narration's own shorter extent rather than erroring or looping; `"muted"` strips all audio, no
+  narration/music attached. Music (when `audio_mode="separate"` and `music_path` given) loops or
+  trims to the final assembled duration and is volume-scaled, mirroring the ORIGINAL
+  `_moviepy_assemble`'s own (verified, unchanged) approach.
+- Cleanup: ALL MoviePy clip objects (`clips`, `music`, `final_video`) are closed in the worker
+  process's own `finally` block, regardless of success or failure — verified via
+  `TestCancellationAndTermination` that no child process/clip resource leaks past a cancelled call
+  (`multiprocessing.active_children() == []` after settling).
+- **Deviation — one file outside this task's list was touched**:
+  `packages/ai-parrot/tests/test_video_reel_storage.py`. Its pre-existing
+  `test_assembly_uploads_final` mocked the ENTIRE `parrot.clients.google.generation.asyncio` module
+  and stubbed `asyncio.to_thread` to return the fake final path directly — a mocking strategy
+  tightly coupled to the OLD implementation's exact single-`asyncio.to_thread()`-call shape. Since
+  this task's own Scope explicitly mandates delegating to a managed PROCESS (not
+  `asyncio.to_thread` for the encode at all, and `asyncio.to_thread` is now used only for the
+  per-scene duration probe), that mock broke unconditionally regardless of how correctly the
+  delegation was implemented — every `asyncio.to_thread` call, including the unrelated duration
+  probes, was being intercepted uniformly and returned a `Path` where a `float` was expected
+  (`ValidationError: edit_seconds ... Input should be a valid number`). Fixed the ONE affected test
+  to mock `moviepy.VideoFileClip` (duration probe) and `reel.assembly.assemble_reel` (the actual
+  encode) directly instead of blanket-mocking `asyncio` — this tests OBSERVABLE behavior
+  (`file_manager.upload_file` called, `result` key shape) rather than a private implementation
+  detail, matching this repo's own test-writing guidance. Confirmed via isolated runs that the
+  OTHER 3 failures in that file (`TestFileManagerFactory::test_create_temp`/
+  `test_create_invalid_raises`, `TestHandlerStorageConfig::test_temp_backend`) are PRE-EXISTING,
+  unrelated `navigator-api`/`FileManagerFactory` environment drift (`FileManagerFactory.create`
+  returns `LocalFileManager` instead of `TempFileManager` — nothing this task touches) — left as-is,
+  not caused by and not fixed by this task.
+- AC04, AC05, AC06, AC12 (owned by this task): covered by the 12 tests in `test_reel_assembly.py`
+  using REAL tiny MoviePy-generated clips (ColorClip, no network — matching the spec's own
+  `tiny_clip` fixture pattern): playable MP4/AAC and WebM/Opus output, cut/crossfade total-duration
+  fidelity within one frame, narration padding never stretching the clip, muted/native audio-track
+  presence, unsupported-format/encoder-failure error surfacing, concurrent jobs never overwriting
+  each other's output, direct `_terminate_and_join` mechanism test, and cancellation-leaves-no-
+  child-process.
+- Tests: `pytest packages/ai-parrot-client-google/tests/unit/reel/test_reel_assembly.py -q` — 12
+  passed (~30s — real ffmpeg encoding, kept fast via 64x64/≤1s clips). Full `tests/unit/reel/`
+  directory — 153 passed. `test_video_reel_storage.py` — 22 passed, 1 skipped, 3 pre-existing
+  unrelated failures (see deviation note above). `test_google_reel.py` — 7 passed. Same temporary
+  main-checkout `.so` copy-then-remove as prior tasks; nothing committed.
+- Lint: `ruff check` found one real issue in my new file (`ASYNC240` blocking `Path.mkdir` in an
+  async function — fixed via `run_in_executor`) plus pre-existing, far-removed `generation.py`
+  findings (`ASYNC240`/`F821` at the same lines as before, just shifted by my insertion — confirmed
+  via exact line-content inspection) left for `/sdd-done`'s feature-wide pass. `black --line-length
+  120` reformatted 3 of the 4 touched files (wrapping only); re-ran the full regression sweep after
+  reformatting — still 153/22/7 passed.
+- No live-service claims inferred from mocks; no default test performs a paid provider call.
+
+Seat: sonnet (fallback sequential, orchestrator-implemented) · Backend: native · Model: sonnet ·
+Attempts: 1 · Duration: n/a (fallback, not MCP/native-agent timed) · Tokens: n/a
