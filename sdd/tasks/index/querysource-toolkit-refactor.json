@@ -197,7 +197,7 @@
       "feature_id": "FEAT-558",
       "feature": "querysource-toolkit-refactor",
       "spec": "sdd/specs/querysource-toolkit-refactor.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -206,9 +206,9 @@
       "parallel": false,
       "parallelism_notes": "Modifies toolkit.py after validate_pipeline; reuses _policy_check.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3254-qs-run-and-save-multiquery.md"
+      "started_at": "2026-09-17T00:13:38+00:00",
+      "completed_at": "2026-09-17T00:13:38+00:00",
+      "file": "sdd/tasks/completed/TASK-3254-qs-run-and-save-multiquery.md"
     },
     {
       "id": "TASK-3255",

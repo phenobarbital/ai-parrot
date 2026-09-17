@@ -243,10 +243,24 @@ async def test_save_gated_and_confirming(fake_mq, patched_qs):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5), manual fallback implementation
+**Date**: 2026-09-17
+**Notes**: Added `_raise_for_issues`, `run_multiquery`, `save_multiquery`, `_pre_execute` to `toolkit.py` (plus
+imports) per spec §3 Module 6. Filled the `save_multiquery` FILL IN marker (delegate to
+`self._catalog.upsert(...)` after policy + structural validation pass); the `run_multiquery` `QueryException`
+FILL IN comment already had its resolved code given verbatim in the blueprint (same pattern as TASK-3252),
+so no further judgment call was needed there. Fixed the test spec's broken fixture-import line
+(`from .test_components_validate import fake_registry, _Exc if False else None` is not valid Python) to a
+plain `from .test_components_validate import fake_registry` — the task's own note explicitly authorized
+adjusting this import. `pytest packages/ai-parrot-tools/tests/querysource/test_multiquery_tools.py -v` —
+4 passed. `ruff check` — clean.
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Same recurring stale-snapshot fix**: this is the toolkit's FINAL tool set (spec §5 AC: 7 tools without
+write, 8 with `qs_save_multiquery`), so `test_toolkit_core.py::test_tool_names_and_write_gate` now asserts
+the complete final list for both `allow_write=False` and `allow_write=True`, replacing the incremental
+snapshot. Full `packages/ai-parrot-tools/tests/querysource/` suite — 64 passed. Implemented manually: same
+repo-wide `complex_model_unavailable` block (empty `strong_models` policy); user authorized continuing the
+fallback loop for the rest of the feature.
 
-**Deviations from spec**: none
+**Deviations from spec**: fixed the test spec's invalid fixture-import expression (spec's own note permitted
+this); updated `test_toolkit_core.py`'s tool-name snapshot to its final, complete form. No behavior deviation.
