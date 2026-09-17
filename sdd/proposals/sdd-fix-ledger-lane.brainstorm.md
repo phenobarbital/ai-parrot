@@ -10,7 +10,7 @@ base_branch: dev
 
 **Date**: 2026-09-18
 **Author**: Jesus Lara (drafted with Claude)
-**Status**: exploration
+**Status**: accepted
 **Recommended Option**: Option B
 
 ---
@@ -340,10 +340,15 @@ it out unchanged.
 4. **Prime** — `LedgerService.get_context(files, max_tokens=3000)` renders the open
    issues touching those files into the working context.
 5. **Route** — fast lane or SDD lane per the label (or `--lane`).
-6. **Close selectively by evidence** — only issues whose fix is attributable to a file in
-   the final diff are closed, each with `resolved_by=commit:<sha>` (fast) or
-   `resolved_by=task:TASK-<NNN>` (SDD). Unfixed issues in the group are **not** closed and
-   **not** left claimed: an `issue.closed`-free path returns them to selectable state.
+6. **Close selectively by evidence — two keys, fail-closed.** An issue is closed only when
+   *both* hold: (a) the implementing agent explicitly asserts that issue id as resolved in
+   its final report, **and** (b) at least one of that issue's `about` files appears in the
+   final diff. Assertion alone cannot close (an agent could claim anything); file overlap
+   alone cannot close either (7 of 15 current issues share a file with another, so overlap
+   over-claims). Each close carries `resolved_by=commit:<sha>` (fast lane) or
+   `resolved_by=task:TASK-<NNN>` (SDD lane). Issues failing either key are **not** closed
+   and **not** left claimed — they are released with a new `issue.unclaimed` event
+   (`claimed → open`, `claimed_by` cleared) so they reappear in the next plan.
 
 ### Edge Cases & Error Handling
 
@@ -381,10 +386,17 @@ it out unchanged.
   non-interactive selection — executing the fast and SDD lanes.
 - `ledger-evidence-close`: `resolved_by` plumbed through `LedgerService.close_issue()` and
   `wikitoolkit ledger close --resolved-by`, making a closed issue falsifiable.
+- `ledger-unclaim-event`: a new `issue.unclaimed` event kind reverting `claimed → open` and
+  clearing `claimed_by`, so a claimed-but-unfixed issue returns to the ready pool without
+  losing its id. Additive by design — `apply_event` already ignores unknown kinds
+  (`index.py:120-122`).
 
 ### Modified Capabilities
-- `sdd-work-ledger` (`sdd/specs/sdd-work-ledger.spec.md`, FEAT-566) — adds the planner
-  and the `resolved_by` service path; no event-schema change.
+- `sdd-work-ledger` (`sdd/specs/sdd-work-ledger.spec.md`, FEAT-566) — adds the planner, the
+  `resolved_by` service path, and **one new event kind** (`issue.unclaimed`) with its
+  reduction rule. The `LedgerEventKind` Literal grows from 11 to 12 members; no existing
+  kind, payload or stored shape changes, and `IssueStatus` is untouched (the new event only
+  moves an issue between two statuses that already exist).
 - `/sdd-next` — its "Ready ledger issues" section (`sdd-next.md:96-107`) points at
   `/sdd-fix` instead of `/sdd-task --from-issue`, and shows severity-ordered groups.
 - `/sdd-task --from-issue` — deprecated as the ledger entry point per the Round-2
@@ -397,7 +409,9 @@ it out unchanged.
 | Affected Component | Impact Type | Notes |
 |---|---|---|
 | `parrot/knowledge/wiki/ledger/fix_planner.py` | new | pure planner; no I/O, fully unit-testable |
-| `parrot/knowledge/wiki/ledger/service.py:235` | modifies | `close_issue(..., resolved_by=None)` |
+| `parrot/knowledge/wiki/ledger/service.py:235` | modifies | `close_issue(..., resolved_by=None)` + new `unclaim()` |
+| `parrot/knowledge/wiki/ledger/events.py:7` | modifies | `LedgerEventKind` += `"issue.unclaimed"` (11 → 12) |
+| `parrot/knowledge/wiki/ledger/index.py:102` | modifies | `apply_event` branch + `_apply_issue_unclaimed` |
 | `parrot/knowledge/wiki/cli.py:2730` | modifies | `ledger close --resolved-by` |
 | `parrot/knowledge/wiki/cli.py` (`ledger` group) | extends | new `plan-fix` subcommand |
 | `.claude/commands/sdd-fix.md` | new | Claude twin |
@@ -565,6 +579,14 @@ the **index's `completed_at`**, never on the spec's `Status` field.
 - ~~`claimed_by` filtering in `ready_work()`~~ — the docstring says "unclaimed" but the
   predicate tests only `status == "open"`. It is correct *because* claiming flips
   `status` to `"claimed"`, not because `claimed_by` is checked. Do not "fix" it.
+- ~~`issue.unclaimed` event kind~~ — **not in `LedgerEventKind`**, which is a closed
+  `Literal` of exactly 11 members (`events.py:7-19`): `issue.opened`, `issue.claimed`,
+  `issue.acknowledged`, `issue.closed`, `issue.superseded`, `issue.linked`, `task.started`,
+  `task.closed`, `spec.registered`, `insight.recorded`, `insight.superseded`. There is also
+  no `_apply_issue_unclaimed` reducer. This feature adds both. Note `issue.superseded`
+  exists but is **not** a release — it sets `status="superseded"`, a terminal state.
+- ~~`LedgerService.unclaim()`~~ — no such method (`service.py` has `claim` at :209 and
+  `close_issue` at :235, nothing in between releases a claim).
 - ~~`wikitoolkit ledger related`~~ — deliberately absent (FEAT-566 §2.3: "There is no
   separate `wikitoolkit ledger related` traverser"). Use `wiki_related` / `wiki_query`.
 - ~~`sdd/fixes/`~~ — no such directory or artifact type; the SDD lane reuses
@@ -597,6 +619,8 @@ the **index's `completed_at`**, never on the spec's `Status` field.
 
 ## Open Questions
 
+<!-- Convention: [x] = resolved, answer appended after the final `:` on the owner line. -->
+
 - [x] Flow type and base branch — *Owner: Jesus*: `type: feature`, `base_branch: dev`.
 - [x] Does `/sdd-fix` always run the full SDD pipeline? — *Owner: Jesus*: no — triage by
   weight, with a deterministic predicate routing trivial issues to a fast lane.
@@ -612,32 +636,61 @@ the **index's `completed_at`**, never on the spec's `Status` field.
   return to selectable state.
 - [x] Interactive only, or agent-consumable? — *Owner: Jesus*: both — interactive picker
   by default, deterministic non-interactive selection for unattended use.
-- [ ] **Closure test for "parent spec still open".** The chosen rule reuses the parent
-  spec unless it is closed — but spec `**Status**` is a dead field (443 `approved` vs 7
-  `implemented`), while 373/458 indexes carry `completed_at`. Confirm the test is
-  `sdd/tasks/index/<slug>.json.completed_at is None`. Note the consequence: on today's
-  ledger **all three parent specs are closed**, so every current group would mint a new
-  `FEAT-<NNN>`. Is that acceptable, or should a closed parent instead be *reopened*?
-  — *Owner: Jesus*
-- [ ] **Exact lane predicate thresholds.** Proposed: `critical|major → SDD`;
-  `vulnerability (any severity) → SDD`; `minor|low AND kind == tech_debt AND |files| <= 1
-  → FAST`; everything else → SDD. On today's data that routes only groups 5, 6 and 7 to
-  the fast lane (3 of 15 issues). Should `|files| <= 2` widen it, or should
-  `kind == bug` with one file also qualify? — *Owner: Jesus*
-- [ ] **How is "fixed" attributed to an individual issue** for selective close? Options:
-  (a) the agent asserts per-issue resolution in its final report; (b) intersect the diff's
-  touched files with each issue's `about` files; (c) require one commit per issue with the
-  issue id in the message. (b) is automatic but over-claims when two issues share a file —
-  which is the *common* case here (7 of 15). — *Owner: Jesus*
-- [ ] **What returns a claimed-but-unfixed issue to selectable state?** There is no
-  `issue.unclaimed` event kind in `events.py`, and `_apply_issue_claimed` only moves
-  `open → claimed`. Does this feature add an event kind (schema change, touches FEAT-566's
-  replay), or close-and-reopen as a new issue (loses the id), or leave it claimed with a
-  note (pollutes `ready_work`)? — *Owner: Jesus*
-- [ ] **Deprecation window for `/sdd-task --from-issue`.** Keep it working with a pointer
-  for one cycle, or remove it in the same feature? Removal touches three twin files plus
-  `sdd-next`'s suggestion line. — *Owner: Jesus*
-- [ ] Should `ledger blockers` and `ledger acknowledge` become MCP tools alongside this
-  work, given `acknowledge` is human-only and would need
+- [x] **Closure test for "parent spec still open"** — *Owner: Jesus*: the test is
+  `sdd/tasks/index/<slug>.json` → `completed_at is None`, **never** the spec's `**Status**`
+  field (a dead signal: 443 `approved` vs 7 `implemented`, while 373/458 indexes carry
+  `completed_at`). A closed parent is **never reopened** — `/sdd-done` already stamped and
+  merged it, its worktree is gone, and re-opening a finished index would require re-running
+  the whole closure. The group mints a fresh `FEAT-<NNN>` instead, and its spec cites the
+  parent in Motivation. Accepted consequence: on today's ledger all three parent specs
+  (FEAT-551/559/560) are closed, so **every current group takes the new-FEAT path** — the
+  reuse branch exists for issues discovered against a feature still in flight, which is the
+  steady state once `/sdd-fix` runs continuously.
+- [x] **Exact lane predicate thresholds** — *Owner: Jesus*: ship the proposed rule
+  unchanged, evaluated per **group** (not per issue) on the group's maximum severity:
+  `critical | major → SDD`; `kind == vulnerability` at any severity `→ SDD`; empty `about`
+  `→ SDD`; `(minor | low) AND every issue kind == tech_debt AND |files| <= 1 → FAST`;
+  everything else `→ SDD`. Not widened to `|files| <= 2` and `bug` does not qualify for
+  FAST: the cost of a wrong FAST route (a real fix landing without a spec or review) is
+  strictly higher than the cost of a wrong SDD route (ceremony). On today's data this
+  routes groups 5, 6 and 7 — 3 of 15 issues — to the fast lane. Thresholds live in the
+  planner as named constants so retuning is a one-line diff plus a test, never a prose edit.
+- [x] **How is "fixed" attributed to an individual issue** — *Owner: Jesus*: two keys,
+  fail-closed — explicit per-issue assertion by the implementing agent **AND** at least one
+  of that issue's `about` files present in the final diff. Neither key alone may close an
+  issue. Rejected (a)-alone as unfalsifiable and (b)-alone as over-claiming: 7 of 15 current
+  issues share a file with another issue, so file overlap would close neighbours that were
+  never touched. Per-commit-per-issue (option c) was rejected as a constraint on how the
+  fix is authored rather than on what is proven.
+- [x] **What returns a claimed-but-unfixed issue to selectable state** — *Owner: Jesus*:
+  add an `issue.unclaimed` event kind (`claimed → open`, `claimed_by` cleared). This is the
+  additive path the ledger was designed for — `apply_event` ignores unknown kinds precisely
+  "so replay never breaks on a future event kind it doesn't own yet" (`index.py:120-122`),
+  and `IssueStatus` already contains both endpoints, so nothing about the stored shape
+  changes. Rejected close-and-reopen (loses the deterministic `compute_issue_id` identity
+  and pollutes the closed set with non-fixes) and leaving it claimed with a note (a crashed
+  session would strand the issue out of `ready_work()` forever, which is exactly today's
+  stall in a new form).
+- [x] **Deprecation window for `/sdd-task --from-issue`** — *Owner: Jesus*: keep it working
+  for one cycle with a pointer to `/sdd-fix` in all three twins; do not remove it in this
+  feature. Removing a documented flag in the same change that introduces its replacement
+  gives operators no overlap, and `/sdd-fix`'s lane routing is a heuristic that may need a
+  tuning pass before it is the only door. Removal is a separate, trivial follow-up.
+- [x] **Should `ledger blockers` / `ledger acknowledge` become MCP tools here** — *Owner:
+  Jesus*: no — out of scope for this feature. `/sdd-fix` runs from the CLI and needs
+  neither: it never acknowledges (human-only, `service.py:213-234`) and never gates a merge
+  (that stays `/sdd-done`'s job). Bundling MCP surface into the fix lane would couple two
+  unrelated risks — and any `acknowledge` tool must first carry
   `routing_meta["requires_confirmation"]` (the `ObsidianToolkit` precedent at
-  `mcp_server.py:218`)? — *Owner: Jesus*
+  `mcp_server.py:218`), or an agent could un-gate its own merge. Tracked as a separate
+  ledger-MCP-surface proposal.
+
+### Deferred to `/sdd-spec`
+
+Not blocking, but the spec must settle them:
+
+- [ ] Exact JSON schema of `FixPlan` / `FixGroup` (the twin↔planner contract).
+- [ ] Group naming for the SDD lane's slug — derived from the dominant file's module, or
+  authored by the agent from the group's titles? — *Owner: spec*
+- [ ] Whether the fast lane opens a PR or pushes straight to `dev` for a one-line comment
+  deletion, given `worktree-management.md` §5 requires a PR for the ad-hoc lane. — *Owner: spec*
