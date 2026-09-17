@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import tempfile
 import uuid
@@ -26,6 +27,32 @@ from parrot.models.google import (
 from parrot.interfaces.file import FileManagerInterface
 from parrot.tools.filemanager import FileManagerFactory
 from .jobs import JobManager, JobStatus
+
+# Matches an explicitly-indexed multipart image part name, e.g. "image_0", "image_12".
+_IMAGE_INDEX_RE = re.compile(r"^image_(\d+)$")
+
+
+class _RequestError(Exception):
+    """Internal 4xx/413 signal raised while parsing/validating an incoming request.
+
+    Carries the HTTP status the caller should see; always caught inside this
+    module and converted to a real ``web.HTTPException`` — never leaks past
+    ``post()``. ``max_size``/``actual_size`` are only meaningful for
+    ``status=413`` (see ``VideoReelHandler._raise_request_error``).
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        status: int = 400,
+        max_size: Optional[int] = None,
+        actual_size: Optional[int] = None,
+    ) -> None:
+        self.status = status
+        self.max_size = max_size
+        self.actual_size = actual_size
+        super().__init__(message)
 
 
 class VideoReelHandler(BaseView):
@@ -66,6 +93,26 @@ class VideoReelHandler(BaseView):
         if "job_manager" in app:
             return app["job_manager"]
         raise RuntimeError("JobManager not configured. Call configure_job_manager(app) during startup.")
+
+    # ------------------------------------------------------------------
+    # Server-configurable upload bounds (read per-call so tests/ops can
+    # override via environment without reloading this module).
+    # ------------------------------------------------------------------
+
+    @property
+    def _max_scenes(self) -> int:
+        """Maximum number of scenes/indexed image slots accepted per request."""
+        return int(os.environ.get("VIDEO_REEL_MAX_SCENES", "20"))
+
+    @property
+    def _max_image_bytes(self) -> int:
+        """Maximum size, in bytes, accepted for a single uploaded image part."""
+        return int(os.environ.get("VIDEO_REEL_MAX_IMAGE_BYTES", str(10 * 1024 * 1024)))
+
+    @property
+    def _max_total_upload_bytes(self) -> int:
+        """Maximum combined size, in bytes, accepted across all uploaded image parts."""
+        return int(os.environ.get("VIDEO_REEL_MAX_TOTAL_UPLOAD_BYTES", str(100 * 1024 * 1024)))
 
     # ------------------------------------------------------------------
     # Storage configuration
@@ -112,118 +159,296 @@ class VideoReelHandler(BaseView):
             kwargs["prefix"] = prefix
         return FileManagerFactory.create(backend, **kwargs)  # type: ignore[arg-type]
 
+    def _resolve_output_directory(self, output_directory: Optional[str]) -> Optional[Path]:
+        """Validates a caller-supplied ``output_directory`` against storage escapes.
+
+        Always rejects ``..`` path segments. When ``VIDEO_REEL_OUTPUT_ROOT`` is
+        configured, additionally requires the resolved path to stay under that
+        root — this is the only local-filesystem "ownership" boundary this
+        contract supplies; no tenant/owner helper is invented here.
+
+        Args:
+            output_directory: The raw, caller-supplied path string, if any.
+
+        Returns:
+            A validated ``Path``, or ``None`` if no ``output_directory`` was given.
+
+        Raises:
+            _RequestError: If the path contains traversal segments or escapes
+                the configured storage root.
+        """
+        if output_directory is None:
+            return None
+        candidate = Path(output_directory)
+        if ".." in candidate.parts:
+            raise _RequestError("output_directory must not contain '..' path segments.")
+        root = os.environ.get("VIDEO_REEL_OUTPUT_ROOT")
+        if root:
+            root_path = Path(root).resolve()
+            resolved = candidate.resolve()
+            if not resolved.is_relative_to(root_path):
+                raise _RequestError("output_directory must be inside the configured storage root.")
+            return resolved
+        return candidate
+
+    def _cleanup_tmp_dir(self, tmp_dir: Optional[Path]) -> None:
+        """Removes the upload temp directory, if any, swallowing removal errors.
+
+        Args:
+            tmp_dir: The temp directory created by ``_parse_multipart`` for this
+                request's uploaded images, or ``None`` if none was created.
+        """
+        if tmp_dir and tmp_dir.exists():
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    @staticmethod
+    def _raise_request_error(exc: _RequestError) -> None:
+        """Converts a ``_RequestError`` into the correct real ``web.HTTPException``.
+
+        ``BaseView.error()`` only maps a fixed status set (400/401/403/404/
+        406/412/428) — any other status, including 413, silently falls
+        through to ``HTTPBadRequest``. 413 therefore needs its own exception
+        class raised directly; everything else goes through ``self.error()``.
+
+        Args:
+            exc: The internal error to convert.
+
+        Raises:
+            web.HTTPException: Always — this method never returns.
+        """
+        if exc.status == 413:
+            raise web.HTTPRequestEntityTooLarge(
+                max_size=exc.max_size or 0,
+                actual_size=exc.actual_size or 0,
+                text=str(exc),
+            )
+        raise web.HTTPBadRequest(text=str(exc))
+
     # ------------------------------------------------------------------
     # HTTP methods
     # ------------------------------------------------------------------
 
-    async def _parse_multipart(self) -> tuple[dict, list[Path]]:
+    async def _parse_multipart(self) -> tuple[dict, dict[int, Path]]:
         """Read multipart body: flat FormData fields + zero or more file parts.
 
         The frontend sends:
           - Scalar fields as individual FormData entries (string-coerced)
-          - ``scenes`` as a JSON string
-          - ``speech`` as a JSON string
-          - ``reference_images`` as File/Blob parts (one per image, in order)
+          - ``scenes``/``speech``/``storage_config`` as JSON strings
+          - Reference images as either explicitly-indexed parts
+            (``image_0``, ``image_1``, ...) or ordered parts
+            (``reference_images``/``image``, one per part, index = arrival order)
 
         Backward compat: a single ``request`` JSON part is also accepted.
 
+        Mixing indexed and ordered image addressing in the same request is
+        rejected. Indexed slots preserve holes (an index with no uploaded
+        image is simply absent from the returned mapping); ordered slots
+        preserve holes from empty Blob placeholders the same way. Every saved
+        file gets a unique on-disk name (index + random suffix + sanitized
+        original name) so same-named uploads never collide.
+
+        Per-image and total-upload byte bounds (`_max_image_bytes`,
+        `_max_total_upload_bytes`) are enforced as each part is read, and the
+        indexed/ordered slot count is bounded by `_max_scenes` — all before
+        the full request has been consumed.
+
         Returns:
-            Tuple of (parsed data dict, list of saved image Paths in order).
+            Tuple of (parsed scalar-fields dict, ``{scene_index: image_path}``).
+
+        Raises:
+            _RequestError: On mixed addressing, duplicate/out-of-range
+                indices, or a per-image/total upload size violation. Any
+                temp directory created before the error is removed first.
         """
         reader = await self.request.multipart()
         data: dict = {}
-        image_parts: list[tuple[str, Path]] = []  # (part_name_or_index, path)
-        tmp_dir = Path(tempfile.mkdtemp(prefix="videoreel_upload_"))
-        img_counter = 0
+        explicit_images: dict[int, Path] = {}
+        ordered_images: list[Optional[Path]] = []
+        tmp_dir: Optional[Path] = None
+        total_bytes = 0
 
-        async for part in reader:
-            name = part.name or ""
+        def _ensure_tmp_dir() -> Path:
+            nonlocal tmp_dir
+            if tmp_dir is None:
+                tmp_dir = Path(tempfile.mkdtemp(prefix="videoreel_upload_"))
+            return tmp_dir
 
-            # Legacy: single JSON blob named "request"
-            if name == "request":
-                raw = await part.read(decode=True)
-                data = json.loads(raw)
-                continue
+        try:
+            async for part in reader:
+                name = part.name or ""
 
-            # File parts: reference_images or image_*
-            if name == "reference_images" or name.startswith("image"):
-                raw_bytes = await part.read(decode=True)
-                # Skip empty Blob placeholders (0-byte, no filename)
-                if len(raw_bytes) == 0:
-                    img_counter += 1
+                # Legacy: single JSON blob named "request"
+                if name == "request":
+                    raw = await part.read(decode=True)
+                    data = json.loads(raw)
                     continue
-                raw_name = part.filename or f"image_{img_counter}.bin"
-                filename = Path(raw_name).name  # strip directory components
-                dest = tmp_dir / filename
-                dest.write_bytes(raw_bytes)
-                image_parts.append((f"img_{img_counter:04d}", dest))
-                img_counter += 1
-                continue
 
-            # Scalar / JSON-encoded fields
-            value = (await part.read(decode=True)).decode("utf-8")
+                explicit_match = _IMAGE_INDEX_RE.match(name)
+                is_ordered_image = name in ("reference_images", "image")
 
-            if name in ("scenes", "speech"):
-                try:
-                    data[name] = json.loads(value)
-                except (json.JSONDecodeError, TypeError):
+                if explicit_match or is_ordered_image:
+                    if explicit_match and ordered_images:
+                        raise _RequestError("Cannot mix indexed (image_<n>) and ordered image uploads in one request.")
+                    if is_ordered_image and explicit_images:
+                        raise _RequestError("Cannot mix indexed (image_<n>) and ordered image uploads in one request.")
+
+                    raw_bytes = await part.read(decode=True)
+
+                    # Skip empty Blob placeholders (0-byte, no real content), but
+                    # still reserve their ordered slot so positions stay aligned.
+                    if len(raw_bytes) == 0:
+                        if is_ordered_image:
+                            ordered_images.append(None)
+                        continue
+
+                    if len(raw_bytes) > self._max_image_bytes:
+                        raise _RequestError(
+                            f"Image part '{name}' exceeds the {self._max_image_bytes}-byte per-image limit.",
+                            status=413,
+                            max_size=self._max_image_bytes,
+                            actual_size=len(raw_bytes),
+                        )
+                    total_bytes += len(raw_bytes)
+                    if total_bytes > self._max_total_upload_bytes:
+                        raise _RequestError(
+                            f"Total upload size exceeds the {self._max_total_upload_bytes}-byte limit.",
+                            status=413,
+                            max_size=self._max_total_upload_bytes,
+                            actual_size=total_bytes,
+                        )
+
+                    if explicit_match:
+                        index = int(explicit_match.group(1))
+                        if index < 0 or index >= self._max_scenes:
+                            raise _RequestError(f"Image index {index} is out of range (0..{self._max_scenes - 1}).")
+                        if index in explicit_images:
+                            raise _RequestError(f"Duplicate image index {index}.")
+                    else:
+                        index = len(ordered_images)
+                        if index >= self._max_scenes:
+                            raise _RequestError(
+                                f"Too many uploaded images (max {self._max_scenes}).",
+                                status=413,
+                                max_size=self._max_scenes,
+                                actual_size=index + 1,
+                            )
+
+                    raw_name = part.filename or f"image_{index}.bin"
+                    safe_name = Path(raw_name).name  # strip directory components
+                    dest = _ensure_tmp_dir() / f"{index:04d}_{uuid.uuid4().hex[:8]}_{safe_name}"
+                    dest.write_bytes(raw_bytes)
+
+                    if explicit_match:
+                        explicit_images[index] = dest
+                    else:
+                        ordered_images.append(dest)
+                    continue
+
+                # Scalar / JSON-encoded fields
+                value = (await part.read(decode=True)).decode("utf-8")
+                if name in ("scenes", "speech", "storage_config"):
+                    try:
+                        data[name] = json.loads(value)
+                    except (json.JSONDecodeError, TypeError):
+                        data[name] = value
+                else:
                     data[name] = value
-            else:
-                data[name] = value
+        except Exception:
+            self._cleanup_tmp_dir(tmp_dir)
+            raise
 
-        # Sort image parts by index to preserve order
-        image_parts.sort(key=lambda x: x[0])
-        image_paths = [p for _, p in image_parts]
-        return data, image_paths
+        if explicit_images:
+            images = dict(explicit_images)
+        else:
+            images = {i: p for i, p in enumerate(ordered_images) if p is not None}
+
+        return data, images
 
     async def post(self) -> web.Response:
         """Submit a video reel generation job and return immediately."""
         content_type = self.request.content_type or ""
-        image_paths: list[Path] = []
+        images: dict[int, Path] = {}
         tmp_dir: Optional[Path] = None
 
         try:
             if "multipart" in content_type:
-                data, image_paths = await self._parse_multipart()
-                if image_paths:
-                    tmp_dir = image_paths[0].parent
+                data, images = await self._parse_multipart()
+                if images:
+                    tmp_dir = next(iter(images.values())).parent
             else:
                 data = await self.request.json()
+        except _RequestError as exc:
+            self._raise_request_error(exc)
         except Exception as exc:
             self.logger.warning("Failed to parse request body: %s", exc)
-            if tmp_dir and tmp_dir.exists():
-                shutil.rmtree(tmp_dir, ignore_errors=True)
             return self.error("Invalid request body.", status=400)
 
-        # Extract control keys before Pydantic validation.
-        model = data.pop("model", "gemini-3.5-flash")
+        if not isinstance(data, dict):
+            self._cleanup_tmp_dir(tmp_dir)
+            return self.error("Request body must be a JSON object.", status=400)
+
+        # `reference_images` is populated exclusively by this handler from
+        # uploaded images — a caller supplying it directly could point the
+        # pipeline at an arbitrary local path (storage escape / LFI-style
+        # abuse), so it is rejected outright rather than trusted.
+        if "reference_images" in data:
+            self._cleanup_tmp_dir(tmp_dir)
+            return self.error(
+                "`reference_images` is populated internally from uploaded images; "
+                "do not supply it directly. Upload images via multipart/form-data instead.",
+                status=400,
+            )
+
+        scenes_field = data.get("scenes")
+        if isinstance(scenes_field, list) and len(scenes_field) > self._max_scenes:
+            self._cleanup_tmp_dir(tmp_dir)
+            self._raise_request_error(
+                _RequestError(
+                    f"At most {self._max_scenes} scenes are allowed.",
+                    status=413,
+                    max_size=self._max_scenes,
+                    actual_size=len(scenes_field),
+                )
+            )
+
+        # Extract control keys before Pydantic validation. `model` is
+        # deliberately NOT popped here — it must reach VideoReelRequest so
+        # the legacy-alias validator (conflict/blank/null checks) can run.
         output_directory: Optional[str] = data.pop("output_directory", None)
         user_id: Optional[str] = data.pop("user_id", None)
         session_id: Optional[str] = data.pop("session_id", None)
 
+        if images:
+            max_index = max(images)
+            data["reference_images"] = [str(images[i]) if i in images else None for i in range(max_index + 1)]
+
         try:
             req = VideoReelRequest(**data)
         except ValidationError as exc:
+            self._cleanup_tmp_dir(tmp_dir)
             return self.error(str(exc), status=400)
 
-        if image_paths:
-            req.reference_images = [str(p) for p in image_paths]
+        try:
+            output_path = self._resolve_output_directory(output_directory)
+            # Resolve storage backend from server-side config.
+            file_manager = self._create_file_manager(output_directory=output_path)
 
-        output_path = Path(output_directory) if output_directory else None
-
-        # Resolve storage backend from server-side config.
-        file_manager = self._create_file_manager(output_directory=output_path)
-
-        # Create a background job.
-        job_id = str(uuid.uuid4())
-        job = self.job_manager.create_job(
-            job_id=job_id,
-            obj_id="video_reel",
-            query=req.prompt,
-            user_id=user_id,
-            session_id=session_id,
-            execution_mode="video_reel",
-        )
+            # Create a background job.
+            job_id = str(uuid.uuid4())
+            job = self.job_manager.create_job(
+                job_id=job_id,
+                obj_id="video_reel",
+                query=req.prompt,
+                user_id=user_id,
+                session_id=session_id,
+                execution_mode="video_reel",
+            )
+        except _RequestError as exc:
+            self._cleanup_tmp_dir(tmp_dir)
+            self._raise_request_error(exc)
+        except Exception:
+            self._cleanup_tmp_dir(tmp_dir)
+            raise
 
         # Capture for closure.
         _tmp_dir = tmp_dir
@@ -235,7 +460,7 @@ class VideoReelHandler(BaseView):
                 # provider module at module scope (AC-3).
                 from parrot.clients.google import GoogleGenAIClient
 
-                client = GoogleGenAIClient(model=model)
+                client = GoogleGenAIClient(model=req.effective_director_model())
                 async with client:
                     result = await client.generate_video_reel(
                         request=req,
@@ -252,8 +477,7 @@ class VideoReelHandler(BaseView):
                     return result
             finally:
                 # Cleanup temp directory after job completes (success or failure).
-                if _tmp_dir and _tmp_dir.exists():
-                    shutil.rmtree(_tmp_dir, ignore_errors=True)
+                self._cleanup_tmp_dir(_tmp_dir)
 
         # Fire background task — returns immediately.
         await self.job_manager.execute_job(job.job_id, run_logic)

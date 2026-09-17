@@ -1,4 +1,5 @@
 """Tests for VideoReelHandler and VideoReelRequest."""
+
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -15,10 +16,10 @@ from parrot.models.google import (
     VideoReelScene,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_response(body, status=200, content_type="application/json"):
     """Build a lightweight fake web.Response-like object."""
@@ -57,6 +58,7 @@ def _make_job(
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def video_reel_payload() -> dict:
     """Valid payload for video reel generation."""
@@ -74,7 +76,15 @@ def handler():
 
     h = VideoReelHandler.__new__(VideoReelHandler)
     h.logger = MagicMock()
-    h.request = MagicMock()
+    # `request` is a read-only BaseView property (`self._request`); the
+    # historical fixture assigned the non-existent setter directly, which
+    # raises AttributeError against current navigator-api. Set the backing
+    # attribute instead — this is real BaseView-compatible construction
+    # (mirrors packages/ai-parrot-server/tests/handlers/test_infographic_render_route.py's
+    # `_handler()` helper), while keeping `request` itself a MagicMock so
+    # every existing assertion below (which stubs `.json`/`.content_type`/
+    # `.match_info` directly) keeps working unchanged.
+    h._request = MagicMock()
 
     # Mock JobManager accessible via request.app['job_manager']
     mock_jm = MagicMock()
@@ -86,14 +96,20 @@ def handler():
     h.request.app = {"job_manager": mock_jm}
     h.request.content_type = "application/json"
 
-    h.error = MagicMock(side_effect=lambda *a, **kw: _make_response(
-        body=kw.get('response', a[0] if a else "error"),
-        status=kw.get('status', 400),
-        content_type="application/json",
-    ))
-    h.json_response = MagicMock(side_effect=lambda data, **kw: _make_response(
-        body=data, status=kw.get('status', 200), content_type="application/json",
-    ))
+    h.error = MagicMock(
+        side_effect=lambda *a, **kw: _make_response(
+            body=kw.get("response", a[0] if a else "error"),
+            status=kw.get("status", 400),
+            content_type="application/json",
+        )
+    )
+    h.json_response = MagicMock(
+        side_effect=lambda data, **kw: _make_response(
+            body=data,
+            status=kw.get("status", 200),
+            content_type="application/json",
+        )
+    )
     h.request.match_info = {}
     return h
 
@@ -101,6 +117,7 @@ def handler():
 # ---------------------------------------------------------------------------
 # 1. Model validation tests
 # ---------------------------------------------------------------------------
+
 
 class TestVideoReelRequestModel:
     """Pydantic model tests for VideoReelRequest."""
@@ -143,13 +160,30 @@ class TestVideoReelRequestModel:
         assert req.scenes[0].background_prompt == "Ocean waves"
 
     def test_model_json_schema(self):
-        """JSON schema includes core properties."""
+        """JSON schema includes core properties (FEAT-564 TASK-3321 additive fields included)."""
         schema = VideoReelRequest.model_json_schema()
         props = schema["properties"]
         expected = {
-            "prompt", "scenes", "speech", "music_prompt", "music_genre",
-            "music_mood", "aspect_ratio", "transition_type", "output_format",
-            "reference_images", "storage_backend", "storage_config",
+            "prompt",
+            "scenes",
+            "speech",
+            "music_prompt",
+            "music_genre",
+            "music_mood",
+            "aspect_ratio",
+            "transition_type",
+            "output_format",
+            "reference_images",
+            "storage_backend",
+            "storage_config",
+            "director_model",
+            "model",
+            "image_model",
+            "video_model",
+            "resolution",
+            "audio_mode",
+            "music_policy",
+            "partial_failure_policy",
         }
         assert expected == set(props.keys())
 
@@ -172,6 +206,7 @@ class TestVideoReelRequestModel:
 # ---------------------------------------------------------------------------
 # 2. Handler POST tests (now returns 202 with job_id)
 # ---------------------------------------------------------------------------
+
 
 class TestVideoReelHandlerPost:
     """Tests for VideoReelHandler.post()."""
@@ -248,6 +283,7 @@ class TestVideoReelHandlerPost:
 # 3. Handler GET schema tests (no job_id)
 # ---------------------------------------------------------------------------
 
+
 class TestVideoReelHandlerGet:
     """Tests for VideoReelHandler.get() without job_id — schema catalog."""
 
@@ -259,8 +295,11 @@ class TestVideoReelHandlerGet:
         handler.json_response.assert_called_once()
         payload = handler.json_response.call_args[0][0]
         expected_keys = {
-            "video_reel_request", "video_reel_scene",
-            "aspect_ratios", "music_genres", "music_moods",
+            "video_reel_request",
+            "video_reel_scene",
+            "aspect_ratios",
+            "music_genres",
+            "music_moods",
         }
         assert set(payload.keys()) == expected_keys
 
@@ -312,6 +351,7 @@ class TestVideoReelHandlerGet:
 # ---------------------------------------------------------------------------
 # 4. Handler GET job status tests (with job_id)
 # ---------------------------------------------------------------------------
+
 
 class TestVideoReelHandlerGetJobStatus:
     """Tests for VideoReelHandler.get() with ?job_id= query parameter."""
@@ -402,6 +442,7 @@ class TestVideoReelHandlerGetJobStatus:
 # 5. Schema helper test
 # ---------------------------------------------------------------------------
 
+
 class TestSchemaHelper:
     """Test GoogleGenerationHelper.list_schemas includes video reel schema."""
 
@@ -426,6 +467,7 @@ class TestSchemaHelper:
 # ---------------------------------------------------------------------------
 # 6. Model field tests — reference_image / reference_images (FEAT-029)
 # ---------------------------------------------------------------------------
+
 
 class TestVideoReelReferenceImageFields:
     """Tests for new reference_image / reference_images model fields."""
@@ -460,6 +502,7 @@ class TestVideoReelReferenceImageFields:
 # 7. Handler multipart tests (FEAT-029)
 # ---------------------------------------------------------------------------
 
+
 class TestVideoReelHandlerMultipart:
     """Tests for multipart/form-data upload path in VideoReelHandler.post()."""
 
@@ -477,7 +520,12 @@ class TestVideoReelHandlerMultipart:
 
     @pytest.mark.asyncio
     async def test_post_multipart_single_image(self, handler, tmp_path):
-        """Multipart POST with one image assigns it to reference_images."""
+        """Multipart POST with one image assigns it to reference_images.
+
+        TASK-3332: `_parse_multipart` now returns an explicit
+        `{scene_index: Path}` mapping (not a positional list) so sparse
+        slots survive losslessly — see TASK-3321's `reference_images`.
+        """
         img = tmp_path / "ref.jpg"
         img.write_bytes(b"\xff\xd8\xff\xe0")
 
@@ -485,7 +533,7 @@ class TestVideoReelHandlerMultipart:
         with patch.object(
             handler,
             "_parse_multipart",
-            new=AsyncMock(return_value=({"prompt": "test reel"}, [img])),
+            new=AsyncMock(return_value=({"prompt": "test reel"}, {0: img})),
         ):
             result = await handler.post()
 
@@ -514,7 +562,7 @@ class TestVideoReelHandlerMultipart:
         with patch.object(
             handler,
             "_parse_multipart",
-            new=AsyncMock(return_value=({"prompt": "test"}, [img0, img1])),
+            new=AsyncMock(return_value=({"prompt": "test"}, {0: img0, 1: img1})),
         ):
             result = await handler.post()
 
