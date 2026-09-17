@@ -51,7 +51,7 @@
       "feature_id": "FEAT-563",
       "feature": "scoped-test-selection",
       "spec": "sdd/specs/scoped-test-selection.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -59,8 +59,8 @@
       "parallelism_notes": "no dependencies; creates the test_scope package (__init__, datatypes, mirror, contract) and the scope_kernel test package",
       "assigned_to": null,
       "started_at": "2026-09-17T11:00:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3304-kernel-datatypes-mirror-contract.md"
+      "completed_at": "2026-09-17T12:08:54+00:00",
+      "file": "sdd/tasks/completed/TASK-3304-kernel-datatypes-mirror-contract.md"
     },
     {
       "id": "TASK-3305",

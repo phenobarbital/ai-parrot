@@ -524,10 +524,46 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (sonnet, sequential fallback — TASK-3304 was routed `complex`
+by the complexity gate with `complex_model_unavailable`; no roster seat was eligible for
+`complex` work, so the user explicitly authorized implementing it directly)
+**Date**: 2026-09-17
+**Notes**: Created the four `test_scope/` kernel modules exactly per the Implementation
+Blueprint: `datatypes.py` verbatim from spec §2; `mirror.py` with `pytest_target_for` and
+`distribution_of` bodies filled in per the FILL IN markers, verified line-for-line against
+`nodes/qa.py:625-717` (read first, confirmed unchanged from the Codebase Contract) before
+copying; `contract.py` with `parse_validation_commands`, `_pytest_operands`, and
+`is_broad_pytest` filled in and hand-traced against every row of the `test_is_broad_pytest_matrix`
+parametrize table and the `test_parse_validation_commands` fixture before running pytest, to
+catch logic errors up front; `__init__.py` verbatim re-export list (no `models` import, per
+AC3). Created the four test modules verbatim from the Test Specification block. All 21 tests
+pass (`pytest packages/ai-parrot/tests/flows/dev_loop/test_scope/ -q`), including the
+`test_core_is_stdlib_only` isolated-interpreter (`-I -S`) AC3 check, `ruff check` clean on both
+new directories, and `nodes/qa.py` confirmed untouched (`git status --porcelain` on that file
+returns nothing).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Environment note (not a task deviation, not committed):** running the scoped tests initially
+failed with `ModuleNotFoundError: No module named 'parrot.utils.types'` (then, after one fix,
+`'parrot.utils.parsers.toml'`) — a pre-existing, unrelated environment issue confirmed by
+running an EXISTING sibling test (`test_qa_default_criteria.py`) which failed identically
+before any of my changes. Root cause: these are compiled Cython `.so` extensions that exist
+only in the main checkout (build artifacts, `.gitignore:7` `*.so`, never git-tracked), and the
+repo-root `conftest.py`'s worktree-precedence `sys.path`/`parrot.__path__` prepending shadows
+the main-checkout's compiled `parrot.utils` package with this worktree's source-only
+`packages/ai-parrot/src/parrot/utils/` (which has the `.pyx` but no `.so`). Per
+`CLAUDE.md`/`worktree-management.md` (never mutate the shared venv, never `uv sync` in a
+worktree), I did **not** touch the shared environment — I created two `symlink`s, inside this
+worktree only, from the main checkout's already-built `.cpython-312-x86_64-linux-gnu.so` files
+(matching this venv's Python 3.12) to the identical relative path in this worktree:
+`packages/ai-parrot/src/parrot/utils/types.cpython-312-x86_64-linux-gnu.so` and
+`packages/ai-parrot/src/parrot/utils/parsers/toml.cpython-312-x86_64-linux-gnu.so`. Both are
+gitignored (confirmed via `git status --porcelain` showing nothing for that directory) and
+were not staged or committed — they are a local-only fix so tests can run in this worktree,
+exactly mirroring what a normal build step would have produced here.
+
+**Deviations from spec**: none in file scope (only the eight listed files were created/no
+`nodes/qa.py` changes). The two `.so` symlinks above are NOT tracked and NOT part of this
+task's file list; flagging them for the orchestrator/`/sdd-done` in case another worktree hits
+the same pre-existing environment gap.
 
 **Deviations from spec**: `datatypes.py` holds the core dataclasses (spec updated). The test package is `tests/flows/dev_loop/test_scope/` so the mirror selector maps `src/.../dev_loop/test_scope/*` onto it (a differently named dir would fall back to all of `tests/flows/dev_loop`).
