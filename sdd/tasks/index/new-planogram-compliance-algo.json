@@ -37,7 +37,7 @@
       "feature_id": "FEAT-565",
       "feature": "new-planogram-compliance-algo",
       "spec": "sdd/specs/new-planogram-compliance-algo.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -45,8 +45,8 @@
       "parallelism_notes": "EXCLUSIVE: edits the repo-wide .gitignore and adopts an untracked file that exists only in the primary checkout — must run there, on dev, before the feature worktree exists. No dependencies.",
       "assigned_to": null,
       "started_at": "2026-09-17T23:08:13+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3336-repo-tracking.md"
+      "completed_at": "2026-09-17T23:09:37+00:00",
+      "file": "sdd/tasks/completed/TASK-3336-repo-tracking.md"
     },
     {
       "id": "TASK-3337",
