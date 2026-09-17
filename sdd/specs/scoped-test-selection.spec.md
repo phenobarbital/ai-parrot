@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-563
 **Date**: 2026-09-17
 **Author**: Jesus Lara (with Claude Opus 5)
-**Status**: draft
+**Status**: approved
 **Target version**: n/a (dev-loop / SDD tooling, no package version bump)
 **Input**: `sdd/proposals/scoped-test-selection.brainstorm.md` (Option B)
 **Hard prerequisite**: FEAT-562 (`ci-test-failures-root-cause-remediation`) merged into `dev` before `/sdd-task` runs — see Worktree Strategy.
