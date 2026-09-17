@@ -64,7 +64,7 @@
       "feature_id": "FEAT-564",
       "feature": "video-reel-omni-veo-reliability",
       "spec": "sdd/specs/video-reel-omni-veo-reliability.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -75,8 +75,8 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3322-reel-error-taxonomy.md",
+      "completed_at": "2026-09-17T15:12:19+00:00",
+      "file": "sdd/tasks/completed/TASK-3322-reel-error-taxonomy.md",
       "acceptance_criteria": [
         "AC07",
         "AC17"
