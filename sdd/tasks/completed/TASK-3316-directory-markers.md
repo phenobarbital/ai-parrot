@@ -364,10 +364,41 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (sonnet, sequential fallback — `complex_model_unavailable`, same
+systemic roster gap as prior tasks; user-authorized direct implementation)
+**Date**: 2026-09-17
+**Notes**: Re-verified every anchor against TASK-3302's `artifacts/logs/feat-563-contract-reverify.md`
+first — all unchanged, so no reconciliation with FEAT-562 registrations was needed. Extended
+the existing `pytest_collection_modifyitems` in `packages/ai-parrot/tests/conftest.py` with a
+new `_mark_by_directory` helper (segment-exact match, never substring — verified `integrations/`
+stays unmarked); created the same hook fresh in `tests/conftest.py` and
+`packages/parrot-formdesigner/tests/conftest.py` (neither had one); added marker registration
+(`config.addinivalue_line`) plus the hook to `packages/ai-parrot-server/tests/conftest.py`
+(`Path` was already imported there, so no import addition needed there). Registered `e2e` in
+`pytest.ini` and `integration`+`e2e` in all three `[tool.pytest.ini_options]` markers lists
+(parrot-formdesigner had none, so added the list fresh). Wrote the pytester-isolated
+`test_directory_markers.py` with the hook inlined as a string constant (never imports the real
+conftest, which pulls in all of `parrot`).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Verification beyond the task's own pytester test** (empirical, real repo tree, avoiding
+pre-existing unrelated collection errors in `packages/ai-parrot/tests/unit/` by scoping to the
+specific directories): `packages/ai-parrot/tests/integration` (291/291 selected under
+`-m integration`), `packages/ai-parrot/tests/flows/dev_loop/integration` (30/30),
+`tests/integration` (142/142), `tests/e2e` (37/37 under `-m e2e`) — all fully selected, zero
+deselected. The `integrations/` trap: `tests/integrations` (176 total, **0** selected under
+`-m integration`, all 176 deselected) and `tests/unit/integrations` (5 total, 0 selected) —
+confirms R8. `pytest --strict-markers --co -q` succeeds in all four AC8-named locations. `git
+diff` on the four ini/pyproject files shows marker lines only. `ruff check` clean on every
+file I touched except `packages/ai-parrot/tests/conftest.py`, which carries 3 pre-existing
+`E402` findings at lines 706/712/713 (mid-file `pandas`/`pytest` imports) — confirmed present
+on the committed `HEAD` version **before** my edit too (`git show HEAD:… | ruff check -`), far
+from my diff (lines 21-42); not touched, out of this task's scope, and this task's AC does not
+require a full-file `ruff check` (only AC8/marker/import-boundary criteria).
+
+**Deviations from spec**: none in file scope (all 9 declared targets, nothing else — confirmed
+via `git status --porcelain`). Per the task's own "NOT in scope" note,
+`packages/ai-parrot-tools/tests/integration` and `.../tool_optimizations/integration` are
+**not** auto-marked (no ai-parrot-tools conftest in this task's file set) — flagging as a
+follow-up for a future task, exactly as instructed.
 
 **Deviations from spec**: none | describe if any
