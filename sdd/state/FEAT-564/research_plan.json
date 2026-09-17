@@ -1,0 +1,120 @@
+{
+  "schema_version": "1.0",
+  "mode_hint": "enrichment",
+  "rationale": "Verify Omni SDK contracts and map the existing reel review to repair requirements before writing a formal draft.",
+  "queries": [
+    {
+      "id": "Q001",
+      "type": "read",
+      "priority": 1,
+      "intent": "Verify handler request and job surface.",
+      "params": {
+        "path": "packages/ai-parrot-server/src/parrot/handlers/video_reel.py",
+        "lines": [
+          119,
+          335
+        ]
+      }
+    },
+    {
+      "id": "Q002",
+      "type": "read",
+      "priority": 1,
+      "intent": "Verify shared scene pipeline and adapter boundary.",
+      "params": {
+        "path": "packages/ai-parrot-client-google/src/parrot/clients/google/generation.py",
+        "lines": [
+          1905,
+          2449
+        ]
+      }
+    },
+    {
+      "id": "Q003",
+      "type": "read",
+      "priority": 1,
+      "intent": "Carry all reviewed defects and evidence into scope.",
+      "params": {
+        "path": "artifacts/video_reel_review.md",
+        "lines": null
+      }
+    },
+    {
+      "id": "Q004",
+      "type": "read",
+      "priority": 1,
+      "intent": "Verify provider client resource ownership.",
+      "params": {
+        "path": "packages/ai-parrot-client-google/src/parrot/clients/google/client.py",
+        "lines": [
+          630,
+          700
+        ]
+      }
+    },
+    {
+      "id": "Q005",
+      "type": "read",
+      "priority": 1,
+      "intent": "Inspect SDK response format to distinguish supported controls.",
+      "params": {
+        "path": ".venv/lib/python3.12/site-packages/google/genai/_gaos/types/interactions/videoresponseformat.py",
+        "lines": null
+      }
+    },
+    {
+      "id": "Q006",
+      "type": "read",
+      "priority": 1,
+      "intent": "Inspect async SDK Interactions wrapper contract.",
+      "params": {
+        "path": ".venv/lib/python3.12/site-packages/google/genai/_gaos/google_genai.py",
+        "lines": [
+          396,
+          478
+        ]
+      }
+    },
+    {
+      "id": "Q007",
+      "type": "git_log",
+      "priority": 2,
+      "intent": "Identify recent provider extraction and formatting history.",
+      "params": {
+        "path": "packages/ai-parrot-client-google/src/parrot/clients/google/generation.py",
+        "since": "30.days.ago",
+        "max_results": 5
+      }
+    },
+    {
+      "id": "Q008",
+      "type": "read",
+      "priority": 1,
+      "intent": "Verify Veo person generation configuration.",
+      "params": {
+        "path": "packages/ai-parrot-client-google/src/parrot/clients/google/generation.py",
+        "lines": [
+          965,
+          987
+        ]
+      }
+    }
+  ],
+  "meta": {
+    "wiki_orientation": {
+      "query": "Video reel generation Omni interactions model support SDK generation",
+      "page": "file:packages/ai-parrot-server/src/parrot/handlers/video_reel.py",
+      "completed": true
+    },
+    "external_sources": [
+      "https://ai.google.dev/gemini-api/docs/omni",
+      "https://ai.google.dev/gemini-api/docs/veo"
+    ],
+    "schema_note": "Wiki-first requirement executed; schema excludes wiki query kinds and priority 0, so wiki preflight is recorded here. External docs supplement Q005. Findings aggregate paired reads and prior review.",
+    "estimated_budget_use": {
+      "files_read": 40,
+      "grep_calls": 15,
+      "git_calls": 12
+    }
+  }
+}
