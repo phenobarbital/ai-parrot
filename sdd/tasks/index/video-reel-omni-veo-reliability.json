@@ -117,7 +117,7 @@
       "feature_id": "FEAT-564",
       "feature": "video-reel-omni-veo-reliability",
       "spec": "sdd/specs/video-reel-omni-veo-reliability.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -128,8 +128,8 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3324-reel-veo-adapter.md",
+      "completed_at": "2026-09-17T15:46:47+00:00",
+      "file": "sdd/tasks/completed/TASK-3324-reel-veo-adapter.md",
       "acceptance_criteria": [
         "AC03",
         "AC04",

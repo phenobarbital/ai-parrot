@@ -148,4 +148,64 @@ Test names and assertions must describe observable behavior, not mirror private 
 
 ## Completion Note
 
-Pending implementation. The executor must record completed-by, date, test results, evidence-gate resolution and deviations before marking done.
+Completed 2026-09-17 by sdd-worker orchestrator (fallback sequential loop, sonnet).
+
+- `VeoClipAdapter(owner, poll_interval_seconds=10.0, max_read_retries=3)` with
+  `generate(*, profile, prompt, output_directory, aspect_ratio, resolution, target_duration_seconds,
+  starting_frame, deadline) -> GeneratedReelClip` exactly per §3 M3. Owns a fresh provider client via
+  `owner.get_client(model=profile.model_id)` (no shared-client reuse across scenes).
+- **Root cause of the documented F002/F009/F010 bug found and fixed**: `generation.py`'s
+  `video_generation()` (the shared public method) did `person_generation.upper()` and forced
+  `"ALLOW_ADULT"`/`"ALLOW_ALL"` — uppercase survives SDK serialization (per F008's probe log), which
+  the API silently accepts differently than documented lowercase. Fixed to `.lower()` /
+  `"allow_adult"`/`"allow_all"` — a 4-line diff, nothing else touched (verified via `git diff`);
+  Veo 2 behavior and the public signature are unchanged. `test_google_reel.py` (pre-existing, not
+  in this task's file list) re-run for regression — still 7 passed.
+- Submit once: `generate_videos()` is called exactly once per `generate()` invocation, even on an
+  immediate safety error or an ambiguous timeout (verified via `assert_awaited_once()` in every
+  failure-path test) — the adapter never resubmits generation.
+- Poll/download share the caller's original absolute `deadline`; at most `max_read_retries` bounded
+  retries apply ONLY to transient `operations.get`/`files.download` reads (`_read_with_retries`),
+  never to submission. `asyncio.CancelledError` during a read is never retried or converted — it
+  propagates on the first occurrence.
+- Duration/person_generation: uses `select_generation_duration()` (TASK-3323) for the covering
+  duration and a lowercase `_resolve_person_generation()` (`"allow_adult"` with a starting frame,
+  `"allow_all"` without, falling back to the profile's first legal value if neither is registered).
+  `generate_audio` is never set on `GenerateVideosConfig` — verified via
+  `config.generate_audio is None` against the REAL `google.genai.types.GenerateVideosConfig`.
+- Failure normalization: immediate SDK errors, `operation.error`, and empty/RAI-filtered output all
+  go through `classify_provider_error()`; a structured RAI signal maps to `SAFETY_BLOCKED`, empty
+  output without one maps to `PROVIDER_FAILURE`. `operation_id` (the LRO's `.name`) is preserved on
+  every raised error once an operation exists — verified for the operation-error and ambiguous-
+  timeout paths specifically (AC17: reconciliation, never resubmission).
+- Media validation: starting-frame image is verified readable (`PIL.Image.verify()`) BEFORE any
+  submission (an unreadable frame never reaches `generate_videos` — verified via
+  `gen.assert_not_awaited()`); the downloaded clip's real duration/audio-track presence is measured
+  via `moviepy.VideoFileClip` in an executor (never trusted from the request/config), an unreadable
+  downloaded clip raises `MEDIA_INVALID`.
+- **Lint findings during self-review, fixed before commit**: `ASYNC240` (blocking `Path.mkdir`/
+  `write_bytes` in an async function — moved into a `_write_clip` static helper run via
+  `run_in_executor`) and `B023` (a polling closure captured the loop variable `operation` by
+  reference — fixed with an explicit `op=operation` default-argument binding). Both caught by
+  `ruff check`, not by the tests (tests use mocks that don't exercise real blocking I/O timing or
+  closure staleness) — flagging since this is exactly the kind of defect these two rules exist to
+  catch and is worth remembering for the remaining reel modules.
+- AC03, AC04, AC07, AC12, AC17 (owned by this task): covered by the 14 tests in
+  `test_reel_veo.py` (wire config serialization incl. real `GenerateVideosConfig`, single-submit on
+  safety/timeout, operation-id preservation, bounded read retries succeeding/exhausting,
+  cancellation non-retry, media measurement/validation for both starting frame and output).
+- Tests: `pytest packages/ai-parrot-client-google/tests/unit/reel/test_reel_veo.py -q` — 14 passed
+  (7.2s — includes real `asyncio.sleep` calls in retry/poll tests with small intervals, not mocked
+  out, since verifying actual bounded-retry *timing* was in scope). Full `tests/unit/reel/`
+  directory — 87 passed. `test_google_reel.py` regression — 7 passed. Same temporary main-checkout
+  `.so` copy-then-remove as prior tasks; nothing committed.
+- Lint: `ruff check` — all checks passed on all three touched files (pre-existing, unrelated
+  findings at `generation.py:1951/2456/2497`, `ASYNC240`/`F821`, are far outside this task's 4-line
+  diff — confirmed via `git diff` — and left for `/sdd-done`'s feature-wide style pass). `black
+  --line-length 120` reformatted `veo.py`/`test_reel_veo.py` (wrapping only); re-ran both suites
+  after reformatting — still 87/7 passed.
+- No live-service claims inferred from mocks; no default test performs a paid provider call. No
+  files outside the task's three listed targets were created or modified.
+
+Seat: sonnet (fallback sequential, orchestrator-implemented) · Backend: native · Model: sonnet ·
+Attempts: 1 · Duration: n/a (fallback, not MCP/native-agent timed) · Tokens: n/a
