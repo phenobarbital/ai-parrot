@@ -5,13 +5,13 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-17T02:29:04+00:00",
-  "completed_at": null,
+  "completed_at": "2026-09-17T17:13:25+00:00",
   "parallel_semantics": "exclusive",
   "tasks": [
     {
       "id": "TASK-3302",
       "slug": "feat562-gate-contract-reverify",
-      "title": "Gate: FEAT-562 merged + re-verify spec §6 contract",
+      "title": "Gate: FEAT-562 merged + re-verify spec \u00a76 contract",
       "feature_id": "FEAT-563",
       "feature": "scoped-test-selection",
       "spec": "sdd/specs/scoped-test-selection.spec.md",
@@ -24,7 +24,8 @@
       "assigned_to": null,
       "started_at": "2026-09-17T11:00:26+00:00",
       "completed_at": "2026-09-17T11:39:28+00:00",
-      "file": "sdd/tasks/completed/TASK-3302-feat562-gate-contract-reverify.md"
+      "file": "sdd/tasks/completed/TASK-3302-feat562-gate-contract-reverify.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3303",
@@ -42,7 +43,8 @@
       "assigned_to": null,
       "started_at": "2026-09-17T11:00:26+00:00",
       "completed_at": "2026-09-17T12:02:29+00:00",
-      "file": "sdd/tasks/completed/TASK-3303-spike-conftest-rootdir.md"
+      "file": "sdd/tasks/completed/TASK-3303-spike-conftest-rootdir.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3304",
@@ -60,7 +62,8 @@
       "assigned_to": null,
       "started_at": "2026-09-17T11:00:26+00:00",
       "completed_at": "2026-09-17T12:08:54+00:00",
-      "file": "sdd/tasks/completed/TASK-3304-kernel-datatypes-mirror-contract.md"
+      "file": "sdd/tasks/completed/TASK-3304-kernel-datatypes-mirror-contract.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3305",
@@ -81,7 +84,8 @@
       "assigned_to": null,
       "started_at": "2026-09-17T11:00:26+00:00",
       "completed_at": "2026-09-17T12:12:09+00:00",
-      "file": "sdd/tasks/completed/TASK-3305-kernel-policy-planner.md"
+      "file": "sdd/tasks/completed/TASK-3305-kernel-policy-planner.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3306",
@@ -101,7 +105,8 @@
       "assigned_to": null,
       "started_at": "2026-09-17T11:00:26+00:00",
       "completed_at": "2026-09-17T12:14:14+00:00",
-      "file": "sdd/tasks/completed/TASK-3306-kernel-context-ledger.md"
+      "file": "sdd/tasks/completed/TASK-3306-kernel-context-ledger.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3307",
@@ -122,7 +127,8 @@
       "assigned_to": null,
       "started_at": "2026-09-17T11:00:26+00:00",
       "completed_at": "2026-09-17T12:37:35+00:00",
-      "file": "sdd/tasks/completed/TASK-3307-kernel-impact-core-detector.md"
+      "file": "sdd/tasks/completed/TASK-3307-kernel-impact-core-detector.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3308",
@@ -144,7 +150,8 @@
       "assigned_to": null,
       "started_at": "2026-09-17T11:00:26+00:00",
       "completed_at": "2026-09-17T12:41:24+00:00",
-      "file": "sdd/tasks/completed/TASK-3308-kernel-select-plan-tests.md"
+      "file": "sdd/tasks/completed/TASK-3308-kernel-select-plan-tests.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3309",
@@ -164,7 +171,8 @@
       "assigned_to": null,
       "started_at": "2026-09-17T11:00:26+00:00",
       "completed_at": "2026-09-17T12:44:42+00:00",
-      "file": "sdd/tasks/completed/TASK-3309-kernel-guard.md"
+      "file": "sdd/tasks/completed/TASK-3309-kernel-guard.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3310",
@@ -184,7 +192,8 @@
       "assigned_to": null,
       "started_at": "2026-09-17T11:00:26+00:00",
       "completed_at": "2026-09-17T12:49:25+00:00",
-      "file": "sdd/tasks/completed/TASK-3310-models-and-select-tests-cli.md"
+      "file": "sdd/tasks/completed/TASK-3310-models-and-select-tests-cli.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3311",
@@ -204,7 +213,8 @@
       "assigned_to": null,
       "started_at": "2026-09-17T11:00:26+00:00",
       "completed_at": "2026-09-17T12:55:47+00:00",
-      "file": "sdd/tasks/completed/TASK-3311-qanode-feature-tier.md"
+      "file": "sdd/tasks/completed/TASK-3311-qanode-feature-tier.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3312",
@@ -224,7 +234,8 @@
       "assigned_to": null,
       "started_at": "2026-09-17T11:00:26+00:00",
       "completed_at": "2026-09-17T13:04:20+00:00",
-      "file": "sdd/tasks/completed/TASK-3312-mcp-seat-guard-and-attempt-context.md"
+      "file": "sdd/tasks/completed/TASK-3312-mcp-seat-guard-and-attempt-context.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3313",
@@ -245,7 +256,8 @@
       "assigned_to": null,
       "started_at": "2026-09-17T11:00:26+00:00",
       "completed_at": "2026-09-17T13:10:26+00:00",
-      "file": "sdd/tasks/completed/TASK-3313-native-hook-guard.md"
+      "file": "sdd/tasks/completed/TASK-3313-native-hook-guard.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3314",
@@ -265,7 +277,8 @@
       "assigned_to": null,
       "started_at": "2026-09-17T11:00:26+00:00",
       "completed_at": "2026-09-17T13:28:54+00:00",
-      "file": "sdd/tasks/completed/TASK-3314-codex-deny-hook-tracked-config.md"
+      "file": "sdd/tasks/completed/TASK-3314-codex-deny-hook-tracked-config.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3315",
@@ -285,7 +298,8 @@
       "assigned_to": null,
       "started_at": "2026-09-17T11:00:26+00:00",
       "completed_at": "2026-09-17T12:22:49+00:00",
-      "file": "sdd/tasks/completed/TASK-3315-task-validation-contract-lint.md"
+      "file": "sdd/tasks/completed/TASK-3315-task-validation-contract-lint.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3316",
@@ -306,7 +320,8 @@
       "assigned_to": null,
       "started_at": "2026-09-17T11:00:26+00:00",
       "completed_at": "2026-09-17T12:32:01+00:00",
-      "file": "sdd/tasks/completed/TASK-3316-directory-markers.md"
+      "file": "sdd/tasks/completed/TASK-3316-directory-markers.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3317",
@@ -326,7 +341,8 @@
       "assigned_to": null,
       "started_at": "2026-09-17T11:00:26+00:00",
       "completed_at": "2026-09-17T13:56:30+00:00",
-      "file": "sdd/tasks/completed/TASK-3317-spike-xdist-allowlist.md"
+      "file": "sdd/tasks/completed/TASK-3317-spike-xdist-allowlist.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3318",
@@ -347,7 +363,8 @@
       "assigned_to": null,
       "started_at": "2026-09-17T11:00:26+00:00",
       "completed_at": "2026-09-17T14:16:32+00:00",
-      "file": "sdd/tasks/completed/TASK-3318-spike-core-fanin-core-paths.md"
+      "file": "sdd/tasks/completed/TASK-3318-spike-core-fanin-core-paths.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3319",
@@ -368,7 +385,8 @@
       "assigned_to": null,
       "started_at": "2026-09-17T11:00:26+00:00",
       "completed_at": "2026-09-17T14:23:20+00:00",
-      "file": "sdd/tasks/completed/TASK-3319-agents-commands-docs.md"
+      "file": "sdd/tasks/completed/TASK-3319-agents-commands-docs.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3320",
@@ -389,7 +407,8 @@
       "assigned_to": null,
       "started_at": "2026-09-17T11:00:26+00:00",
       "completed_at": "2026-09-17T14:36:55+00:00",
-      "file": "sdd/tasks/completed/TASK-3320-evidence-budget-and-core-escalation.md"
+      "file": "sdd/tasks/completed/TASK-3320-evidence-budget-and-core-escalation.md",
+      "verification": "verified"
     }
   ]
 }
