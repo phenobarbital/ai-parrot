@@ -1,0 +1,76 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-564",
+  "feature_slug": "video-reel-omni-veo-reliability",
+  "started_at": "2026-09-17T01:21:00Z",
+  "updated_at": "2026-09-17T01:31:25Z",
+  "source": {
+    "kind": "inline",
+    "raw_path": "sdd/state/FEAT-564/source.md",
+    "fetched_at": "2026-09-17T01:21:00Z",
+    "summary_oneline": "Repair video reel reliability and add Gemini Omni alongside Veo 3.1."
+  },
+  "mode": "enrichment",
+  "detected_mode": "enrichment",
+  "phase": "committed",
+  "phases": {
+    "source": {
+      "status": "completed"
+    },
+    "plan": {
+      "status": "completed",
+      "approved_by_user": false,
+      "plan_path": "sdd/state/FEAT-564/research_plan.json"
+    },
+    "research": {
+      "status": "completed",
+      "truncated": false,
+      "depth_reached": 2,
+      "files_read": 40,
+      "grep_calls": 15,
+      "git_calls": 12
+    },
+    "synthesis": {
+      "status": "completed",
+      "synthesis_path": "sdd/state/FEAT-564/synthesis.json",
+      "overall_confidence": "medium",
+      "claims_total": 6,
+      "claims_high_conf": 4,
+      "claims_medium_conf": 1,
+      "claims_low_conf": 1,
+      "unknowns_count": 2,
+      "lint_passed": true,
+      "lint_iterations": 1
+    },
+    "qa": {
+      "status": "pending",
+      "questions_total": 2,
+      "questions_answered": 0
+    },
+    "output": {
+      "status": "completed",
+      "proposal_path": "sdd/proposals/video-reel-omni-veo-reliability.proposal.md",
+      "commit_sha": null,
+      "next_command_recommended": "sdd-spec",
+      "next_command_rationale": "Formal draft requested and generated; user review remains pending."
+    }
+  },
+  "budget": {
+    "profile": "loose",
+    "max_files_read": 100,
+    "max_grep_calls": 60,
+    "max_git_calls": 20,
+    "max_depth": 3,
+    "max_wall_seconds": 900
+  },
+  "consumed": {
+    "files_read": 40,
+    "grep_calls": 15,
+    "git_calls": 12,
+    "wall_seconds": 625
+  },
+  "resume_hint": {
+    "next_phase": "qa_complete",
+    "next_action": "Record user choices in proposal and draft spec before approval/task decomposition."
+  }
+}

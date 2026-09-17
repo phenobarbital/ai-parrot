@@ -1,0 +1,276 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-564",
+  "mode": "enrichment",
+  "summary_oneline": "Repair video reel reliability and add Gemini Omni alongside Veo 3.1.",
+  "localization": [
+    {
+      "path": "packages/ai-parrot-server/src/parrot/handlers/video_reel.py",
+      "symbol": "VideoReelHandler",
+      "lines": "119-335",
+      "role": "HTTP job entry point",
+      "evidence": [
+        "F001"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/models/google.py",
+      "symbol": "VideoReelRequest",
+      "lines": "399-453",
+      "role": "Request extensions",
+      "evidence": [
+        "F001"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-client-google/src/parrot/clients/google/generation.py",
+      "symbol": "generate_video_reel",
+      "lines": "1905-2032",
+      "role": "Shared orchestration",
+      "evidence": [
+        "F002"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-client-google/src/parrot/clients/google/models.py",
+      "symbol": "GoogleModel",
+      "lines": "41-69",
+      "role": "Model IDs",
+      "evidence": [
+        "F002"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/models/responses.py",
+      "symbol": "AIMessage",
+      "lines": "75-158",
+      "role": "Typed output extension points",
+      "evidence": [
+        "F003"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-client-google/src/parrot/clients/google/client.py",
+      "symbol": "GoogleGenAIClient.get_client",
+      "lines": "630-700",
+      "role": "Resource ownership",
+      "evidence": [
+        "F004"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-client-google/pyproject.toml",
+      "symbol": "dependencies",
+      "lines": "17",
+      "role": "SDK floor",
+      "evidence": [
+        "F006"
+      ]
+    }
+  ],
+  "constraints": [
+    {
+      "statement": "Core request models must remain provider independent.",
+      "evidence": [
+        "F007"
+      ],
+      "implication": "Validate strings using satellite capabilities; keep lazy provider imports."
+    },
+    {
+      "statement": "AIMessage.files is Path-typed; metadata and artifacts already exist.",
+      "evidence": [
+        "F003"
+      ],
+      "implication": "Use additive typed artifact descriptors without changing shared Path semantics."
+    }
+  ],
+  "investigation": null,
+  "enrichment": {
+    "new": [
+      "Proposed normalized clip contract and Omni adapter",
+      "Proposed reel/scene video_model selection",
+      "Proposed authorized artifact download route"
+    ],
+    "modified": [
+      {
+        "path": "packages/ai-parrot-server/src/parrot/handlers/video_reel.py",
+        "symbol": "VideoReelHandler",
+        "evidence": [
+          "F001"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/models/google.py",
+        "symbol": "VideoReelRequest",
+        "evidence": [
+          "F001"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot-client-google/src/parrot/clients/google/generation.py",
+        "symbol": "generate_video_reel",
+        "evidence": [
+          "F002"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot-client-google/src/parrot/clients/google/models.py",
+        "symbol": "GoogleModel",
+        "evidence": [
+          "F002"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/models/responses.py",
+        "symbol": "AIMessage",
+        "evidence": [
+          "F003"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot-client-google/src/parrot/clients/google/client.py",
+        "symbol": "GoogleGenAIClient.get_client",
+        "evidence": [
+          "F004"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot-client-google/pyproject.toml",
+        "symbol": "dependencies",
+        "evidence": [
+          "F006"
+        ]
+      }
+    ],
+    "untouched": [
+      "Shared AbstractClient implementation",
+      "Automatic cross-model fallback",
+      "Conversational video editing and extension"
+    ],
+    "patterns": [
+      {
+        "statement": "Use async provider calls and existing job surface.",
+        "evidence": [
+          "F001",
+          "F004",
+          "F006"
+        ]
+      }
+    ],
+    "risks": [
+      {
+        "statement": "Live model access and download contract still require verification.",
+        "evidence": [
+          "F005",
+          "F006"
+        ]
+      }
+    ]
+  },
+  "confidence_map": [
+    {
+      "id": "C1",
+      "statement": "Reel entry points and request models are localized.",
+      "evidence": [
+        "F001",
+        "F002"
+      ],
+      "confidence": "high",
+      "reasoning": "Direct source and wiki reads."
+    },
+    {
+      "id": "C2",
+      "statement": "Prior probes reproduce URL, PCM and multipart defects.",
+      "evidence": [
+        "F003"
+      ],
+      "confidence": "high",
+      "reasoning": "Persisted review and offline probe log."
+    },
+    {
+      "id": "C3",
+      "statement": "Installed SDK 2.23.0 exposes async Interactions and video output fields.",
+      "evidence": [
+        "F006"
+      ],
+      "confidence": "high",
+      "reasoning": "Introspection with dummy credentials; no network."
+    },
+    {
+      "id": "C4",
+      "statement": "Two adapters can feed shared local clip assembly.",
+      "evidence": [
+        "F002",
+        "F005",
+        "F006"
+      ],
+      "confidence": "medium",
+      "reasoning": "Proposed architecture; live outputs not tested."
+    },
+    {
+      "id": "C5",
+      "statement": "Veo 3.1 remains a documented backend.",
+      "evidence": [
+        "F008"
+      ],
+      "confidence": "high",
+      "reasoning": "Official documentation."
+    },
+    {
+      "id": "C6",
+      "statement": "Deployment access, URI behavior and Omni timing remain unverified.",
+      "evidence": [
+        "F005",
+        "F006"
+      ],
+      "confidence": "low",
+      "reasoning": "No live generation."
+    }
+  ],
+  "unknowns": [
+    {
+      "id": "U1",
+      "question": "Confirm default-plus-per-scene model selection versus one model per reel.",
+      "blocks_claims": [
+        "C4"
+      ],
+      "plausible_answers": [
+        "Default plus scene overrides",
+        "One model per reel"
+      ],
+      "ask_user": true
+    },
+    {
+      "id": "U2",
+      "question": "Confirm proposed scope excluding automatic fallback and conversational editing.",
+      "blocks_claims": [
+        "C4"
+      ],
+      "plausible_answers": [
+        "Proceed",
+        "Refine scope"
+      ],
+      "ask_user": true
+    }
+  ],
+  "answers": [],
+  "recommended_next_command": {
+    "command": "sdd-spec",
+    "rationale": "User explicitly requested a formal spec; draft it now with open design decisions visible, not approved or decomposed into tasks."
+  },
+  "overall_confidence": "medium",
+  "meta": {
+    "findings_used": [
+      "F001",
+      "F002",
+      "F003",
+      "F004",
+      "F005",
+      "F006",
+      "F007",
+      "F008"
+    ],
+    "findings_unused": [],
+    "notes": "Research gate and targeted questions presented asynchronously. No answer received at drafting time; user authorized documents, not acceptance of policies. Draft spec produced in same turn. No hidden reasoning log persisted. Budget counters are conservative upper-bound accounting for research reads, including instruction/schema files. FEAT-564 reserved successfully; local courtesy fast-forward skipped due to divergence; no other work published."
+  }
+}
