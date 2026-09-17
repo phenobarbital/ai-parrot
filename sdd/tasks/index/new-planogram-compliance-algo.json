@@ -55,7 +55,7 @@
       "feature_id": "FEAT-565",
       "feature": "new-planogram-compliance-algo",
       "spec": "sdd/specs/new-planogram-compliance-algo.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -65,8 +65,8 @@
       "parallelism_notes": "Needs the .gitignore re-include block from TASK-3336 — without it git silently drops every file under examples/planogram/ this task creates.",
       "assigned_to": null,
       "started_at": "2026-09-17T23:08:13+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3337-models-core.md"
+      "completed_at": "2026-09-17T23:18:02+00:00",
+      "file": "sdd/tasks/completed/TASK-3337-models-core.md"
     },
     {
       "id": "TASK-3338",
