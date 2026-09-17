@@ -4,6 +4,7 @@ The MCP tools used to hardcode ``"agent:mcp"``. The remote server sets the
 caller's ``X-Wiki-Actor`` here per request; the local stdio server sets
 nothing and keeps the historical default.
 """
+
 from __future__ import annotations
 
 from collections.abc import Iterator
