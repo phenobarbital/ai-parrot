@@ -1,0 +1,80 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-569",
+  "feature_slug": "memory-dynamics",
+  "started_at": "2026-09-17T21:47:09.212549+00:00",
+  "updated_at": "2026-09-17T22:16:16.931569+00:00",
+  "source": {
+    "kind": "file",
+    "file_path": "sdd/proposals/memory-dynamics.brainstorm.md",
+    "raw_path": "sdd/state/FEAT-569/source.md",
+    "fetched_at": "2026-09-17T21:47:09.212549+00:00",
+    "summary_oneline": "Outcome-verified memory dynamics across episodes, brain pages and coder feedback"
+  },
+  "mode": "auto",
+  "detected_mode": "enrichment",
+  "phase": "committed",
+  "phases": {
+    "source": {
+      "status": "completed"
+    },
+    "plan": {
+      "status": "completed",
+      "approved_by_user": false,
+      "plan_path": "sdd/state/FEAT-569/research_plan.json"
+    },
+    "research": {
+      "status": "completed",
+      "files_read": 26,
+      "grep_calls": 16,
+      "git_calls": 3,
+      "depth_reached": 1,
+      "truncated": false,
+      "truncation_reason": null
+    },
+    "synthesis": {
+      "status": "completed",
+      "synthesis_path": "sdd/state/FEAT-569/synthesis.json",
+      "overall_confidence": "medium",
+      "claims_total": 10,
+      "claims_high_conf": 8,
+      "claims_medium_conf": 1,
+      "claims_low_conf": 1,
+      "unknowns_count": 4,
+      "lint_passed": true,
+      "lint_iterations": 1
+    },
+    "qa": {
+      "status": "skipped",
+      "questions_total": 4,
+      "questions_answered": 0,
+      "skipped_reason": "User proceeded with the discussion proposal; U1–U4 remain explicit follow-up questions, without inferred answers."
+    },
+    "output": {
+      "status": "completed",
+      "proposal_path": "sdd/proposals/memory-dynamics.proposal.md",
+      "commit_sha": null,
+      "next_command_recommended": "sdd-spec",
+      "next_command_rationale": "Owner decision 2026-09-18: run sdd-spec with S1-S4 as Lane 0a gate tasks that block every implementation lane; do not open a second brainstorm. U1-U6 remain open questions for the spec.",
+      "completed_at": "2026-09-17T21:59:25.876007+00:00"
+    }
+  },
+  "budget": {
+    "profile": "default",
+    "max_files_read": 40,
+    "max_grep_calls": 25,
+    "max_git_calls": 10,
+    "max_depth": 2,
+    "max_wall_seconds": 300
+  },
+  "consumed": {
+    "files_read": 26,
+    "grep_calls": 16,
+    "git_calls": 3,
+    "wall_seconds": 111.882
+  },
+  "resume_hint": {
+    "next_phase": "discussion",
+    "next_action": "Run /sdd-spec memory-dynamics. Inputs: this proposal's Design Corrections + sdd/proposals/memory-dynamics.brainstorm.md (authoritative where not corrected)."
+  }
+}

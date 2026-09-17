@@ -1,0 +1,188 @@
+{
+  "schema_version": "1.0",
+  "mode_hint": "enrichment",
+  "rationale": "Verify the supplied FSRS design against current contracts and identify pre-spec validation gates.",
+  "queries": [
+    {
+      "id": "Q001",
+      "intent": "Owner direction and unexecuted spike gates",
+      "type": "read",
+      "priority": 1,
+      "params": {
+        "path": "sdd/proposals/memory-dynamics.brainstorm.md",
+        "lines": [
+          31,
+          55
+        ]
+      }
+    },
+    {
+      "id": "Q002",
+      "intent": "Recall and warnings require separate integration",
+      "type": "read",
+      "priority": 1,
+      "params": {
+        "path": "packages/ai-parrot/src/parrot/memory/episodic/store.py",
+        "lines": [
+          377,
+          434
+        ]
+      }
+    },
+    {
+      "id": "Q003",
+      "intent": "Metadata patches are not atomic review transitions",
+      "type": "read",
+      "priority": 1,
+      "params": {
+        "path": "packages/ai-parrot/src/parrot/memory/episodic/backends/abstract.py",
+        "lines": [
+          106,
+          125
+        ]
+      }
+    },
+    {
+      "id": "Q004",
+      "intent": "Conversational recording fabricates success in a wrapper",
+      "type": "read",
+      "priority": 1,
+      "params": {
+        "path": "packages/ai-parrot/src/parrot/memory/episodic/mixin.py",
+        "lines": [
+          423,
+          487
+        ]
+      }
+    },
+    {
+      "id": "Q005",
+      "intent": "Brain retrieval and consolidation need structured provenance",
+      "type": "read",
+      "priority": 1,
+      "params": {
+        "path": "packages/ai-parrot/src/parrot/memory/dream/brain.py",
+        "lines": [
+          50,
+          149
+        ]
+      }
+    },
+    {
+      "id": "Q006",
+      "intent": "Feedback migration has identity and retrieval compatibility risks",
+      "type": "read",
+      "priority": 1,
+      "params": {
+        "path": "packages/ai-parrot/src/parrot/knowledge/wiki/ledger/coder_feedback.py",
+        "lines": [
+          77,
+          85
+        ]
+      }
+    },
+    {
+      "id": "Q007",
+      "intent": "Existing coder reviews cannot supply memory-level grades",
+      "type": "read",
+      "priority": 1,
+      "params": {
+        "path": "packages/ai-parrot/src/parrot/knowledge/wiki/ledger/coder_reviews.py",
+        "lines": [
+          21,
+          44
+        ]
+      }
+    },
+    {
+      "id": "Q008",
+      "intent": "Attribution must survive final context packing",
+      "type": "read",
+      "priority": 1,
+      "params": {
+        "path": "packages/ai-parrot/src/parrot/memory/unified/models.py",
+        "lines": [
+          13,
+          43
+        ]
+      }
+    },
+    {
+      "id": "Q009",
+      "intent": "Shared-root and durable logging primitives exist",
+      "type": "read",
+      "priority": 1,
+      "params": {
+        "path": "packages/ai-parrot/src/parrot/knowledge/wiki/project.py",
+        "lines": [
+          1184,
+          1222
+        ]
+      }
+    },
+    {
+      "id": "Q010",
+      "intent": "Existing tests encode contracts worth preserving",
+      "type": "read",
+      "priority": 1,
+      "params": {
+        "path": "packages/ai-parrot/tests/memory/episodic/test_store_integration.py",
+        "lines": [
+          44,
+          99
+        ]
+      }
+    },
+    {
+      "id": "Q011",
+      "intent": "Verify FSRS algorithm, scheduler and optimizer contracts",
+      "type": "read",
+      "priority": 1,
+      "params": {
+        "path": "https://github.com/open-spaced-repetition/awesome-fsrs/wiki/The-Algorithm",
+        "lines": null
+      }
+    },
+    {
+      "id": "Q012",
+      "intent": "Identify recent memory and review changes",
+      "type": "git_log",
+      "priority": 2,
+      "params": {
+        "path": "packages/ai-parrot/src/parrot/knowledge/wiki/ledger/coder_reviews.py",
+        "max_results": 5
+      }
+    }
+  ],
+  "expected_findings": [
+    "Existing retention and outcome contracts",
+    "Atomicity and attribution gaps",
+    "Compatibility and pre-spec spike gates"
+  ],
+  "meta": {
+    "wiki_orientation": [
+      {
+        "type": "wiki_query",
+        "priority": 0,
+        "question": "agent memory dynamics episodic memory decay consolidation dream cycle long term memory"
+      },
+      {
+        "type": "wiki_page",
+        "priority": 0,
+        "page_id": "file:packages/ai-parrot/src/parrot/memory/dream/brain.py"
+      }
+    ],
+    "schema_note": "The template prompt requires priority-0 wiki queries but the schema excludes them; free wiki orientation is recorded in meta to retain schema validity.",
+    "estimated_budget_use": {
+      "files_read": 25,
+      "grep_calls": 12,
+      "git_calls": 3
+    },
+    "external_verification": [
+      "Official FSRS algorithm and reference implementation"
+    ],
+    "followups": "Read discovered models, metadata implementations, tests and CLI seams as needed, depth <=2.",
+    "execution_note": "Consolidated audit plan: original planned areas retained; primary reads and discovered follow-up citations recorded by finding. Q011 is an external read, not a local path.",
+    "presented_plan": "Verify episodic, brain and coder-feedback contracts; check FSRS primary references; distinguish implemented contracts from candidate behavior and retain S1\u2013S4."
+  }
+}
