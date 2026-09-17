@@ -93,11 +93,14 @@ Facts that constrain the design (established in the brainstorm):
 - G9. **Tiered scoring**: strict % and lenient % side by side, per shelf and
   overall, plus coverage, occupancy and brand share (facings and linear).
 - G10. Optional `--prices` file adds a **separate** price-compliance metric.
-- G11. Vision LLM reached **only through ai-parrot clients**: Gemini Flash
-  (default `google:gemini-3.8-flash`), local llama.cpp (`llamacpp:<alias>` +
-  `--base-url`), any other `provider:model`.
-- G12. Code, tests, the detector script and `planogram_page1.json` are
-  **tracked in git** (the directory is ignored today); store photos stay untracked.
+- G11. Vision LLM reached **only through ai-parrot client methods** — no script code
+  ever touches a provider SDK handle: Gemini Flash (default `google:gemini-3.8-flash`),
+  any other `provider:model` whose client has `ask_to_image()`, and local llama.cpp
+  (`llamacpp:<alias>` + `--base-url`) **once the prerequisite feature
+  `localllm-ask-to-image` lands** (§ Worktree Strategy, §8 Q7).
+- G12. Code, tests and the detector script are **tracked in git** (the directory is
+  ignored today). `planogram_page1.json` (retailer-derived; the repo is PUBLIC),
+  store photos and results stay **untracked** and are read from the primary checkout.
 
 ### Non-Goals (explicitly out of scope)
 
@@ -106,8 +109,10 @@ Facts that constrain the design (established in the brainstorm):
 - No per-crop LLM mode (brainstorm Option A) and no "LLM does the mapping" mode
   (Option C) — rejected in the brainstorm.
 - No change to `parrot_pipelines.planogram`, to `inkcheck/`, or to any core
-  client. **`parrot/clients/base.py` is not modified**; the missing common vision
-  method is bridged by a script-local adapter only.
+  client **within this feature**. `parrot/clients/base.py` is not modified. The
+  script-local adapter only reconciles two existing method signatures; it never
+  calls `chat.completions` or any SDK object. Vision for `LocalLLMClient` is delivered
+  by the separate prerequisite feature `localllm-ask-to-image`, not here.
 - No perspective rectification of shelf planes; axis-aligned boxes only.
 - No price database, currency conversion or sale-price interpretation.
 - No identification-accuracy claim: there is no ground truth for the two photos.
@@ -150,7 +155,8 @@ Eight stages. Stages 1, 2, 4, 6, 8 are deterministic Python; 3, 5, 7 call OCR/LL
    prices file. `--emit-catalog-template` writes a skeleton with every planogram
    SKU for the user to fill, then exits.
 5. **Pass 1 — open-set identification** — per visible row: full-resolution strip
-   with thin numbered slot outlines (Set-of-Marks) + JSON of slot boxes normalised
+   with thin numbered slot outlines (Set-of-Marks, **on by default**; the first real run A/Bs it with
+   `--no-marks`, the README records the result, and the default is flipped if marks hurt) + JSON of slot boxes normalised
    to the strip (0–1000, `[ymin, xmin, ymax, xmax]`). Structured response keyed by
    slot id; unknown ids are dropped and counted as errors. The model is **not**
    told what is expected. Readings are resolved against the catalog.
@@ -172,7 +178,9 @@ Eight stages. Stages 1, 2, 4, 6, 8 are deterministic Python; 3, 5, 7 call OCR/LL
 `--planogram` (default `planogram_page1.json` next to the script); `--catalog`
 (required); `--output <new dir>` (must not exist); `--llm provider:model`
 (default `google:gemini-3.8-flash`); `--ocr-llm` (default = `--llm`);
-`--base-url`; `--prices`; `--roi L T R B`; `--no-verify-pass`; `--no-marks`
+`--base-url`; `--prices`; `--roi L T R B`; `--verify-pass` / `--no-verify-pass`
+(default: **on for cloud backends, off for local backends** — the local model is
+LFM2.5-VL-1.6B, too weak for the discrimination task); `--no-marks`
 (A/B switch for the Set-of-Marks overlay); `--concurrency`
 (default 4; 1 when the provider is a local server); `--cache-dir` (default
 `examples/planogram/results/.plancheck_cache`); `--visit-id`;
@@ -220,11 +228,11 @@ grid.build_slots ──────────────────┐      
 | `parrot.clients.factory.LLMFactory` | uses | `create("provider:model", model_args=…, **kwargs)`; `base_url`/`api_key` pass through `**kwargs` |
 | `GoogleGenAIClient.image_understanding()` | uses | multi-image + `structured_output`; result on `AIMessage.structured_output` |
 | `OpenAIClient` / `AnthropicClient` `.ask_to_image()` | uses (generic lane) | first image → `image`, rest → `reference_images`, `structured_output=schema` |
-| `LocalLLMClient` (`OpenAIBaseClient`) | uses (openai-compatible lane) | no vision helper: `_encode_image_for_openai()` + `self.client.chat.completions.create` inside `async with client:` |
+| `LocalLLMClient` | uses (generic lane) — **after prerequisite** | has no vision method today; gains `ask_to_image()` from feature `localllm-ask-to-image`. Until then `--llm llamacpp:…` exits 1 with a message naming that feature |
 | `parrot/clients/base.py` | none | **not modified** |
 | `examples/planogram/white_label_detector/detect_price_labels.py` | adapted copy | `candidates()`, `group_rows()`; original untouched, becomes tracked |
 | `examples/planogram/inkcheck/` | reference only | not imported |
-| `.gitignore` | modifies | line 5 `examples/planogram/` replaced by a fine-grained block placed after the `examples/**` rules |
+| `.gitignore` | modifies | line 5 `examples/planogram/` replaced by a fine-grained block placed after the `examples/**` rules; `planogram_page1.json` stays ignored |
 | `packages/ai-parrot-pipelines/.../planogram/` | none | untouched |
 
 ### Data Models
@@ -342,7 +350,7 @@ while any entry is `inferred`/`partial`, and the report says so in `notes`.
 | M3: detection | yes | verbatim adaptation of two verified functions | — |
 | M4: grid | yes | clamps, gap tolerance (±25 %), untagged-row threshold (0.6 pitch) fixed | — |
 | M5: prices | yes | grammar, contact-sheet contract, `partial` rule fixed | — |
-| M6: vision | yes | three duck-typed lanes, cache key recipe, one repair retry fixed | — |
+| M6: vision | yes | two duck-typed lanes, no-vision-method error, cache key recipe, one repair retry fixed | — |
 | M7: identify | yes | strip/SoM/JSON contract, id filtering fixed | prompt wording is the implementer's; the *schema* is not |
 | M8: registration | yes | score table, gap costs, prior, grade thresholds fixed in §2 | — |
 | M9: verify | yes | distractor policy, option order, downgrade rule fixed | — |
@@ -351,10 +359,10 @@ while any entry is `inferred`/`partial`, and the report says so in `notes`.
 | M12: pipeline-cli | yes | stage order, concurrency, exit codes fixed | — |
 
 ### Module 0: repo-tracking
-- **Path**: `.gitignore`; adopts `examples/planogram/white_label_detector/detect_price_labels.py`, `examples/planogram/planogram_page1.json`
-- **Responsibility**: make the feature's code and small inputs trackable; keep photos/results/PDFs/videos ignored. Replace `.gitignore:5` with the block in §7. Commit the two existing input files.
+- **Path**: `.gitignore`; adopts `examples/planogram/white_label_detector/detect_price_labels.py`
+- **Responsibility**: make the feature's code and small inputs trackable; keep photos/results/PDFs/videos ignored. Replace `.gitignore:5` with the block in §7. Commit the existing detector script. `planogram_page1.json` is deliberately NOT adopted (§8 Q1).
 - **Depends on**: nothing. **Every other module depends on it** (without it `git add` silently drops their files).
-- **Execution constraint**: performed in the **primary checkout** directly on `dev` (single commit) *before* the feature worktree is created — the two adopted files exist only there. `planogram_page1.json` is included only after §8 Q1 is answered "yes".
+- **Execution constraint**: performed in the **primary checkout** directly on `dev` (single commit) *before* the feature worktree is created — the adopted detector script exists only there.
 - **Interface Skeleton**: none (configuration + file adoption). Verification commands:
   ```bash
   git check-ignore -q examples/planogram/plancheck/models.py;        test $? -eq 1   # not ignored
@@ -363,6 +371,7 @@ while any entry is `inferred`/`partial`, and the report says so in `notes`.
   git check-ignore -q "examples/planogram/images/a.jpeg";            test $? -eq 0   # still ignored
   git check-ignore -q examples/planogram/results/x/compliance.json;  test $? -eq 0
   git check-ignore -q examples/planogram/inkcheck/README.md;         test $? -eq 0
+  git check-ignore -q examples/planogram/planogram_page1.json;       test $? -eq 0   # retailer data stays local
   ```
 
 ### Module 1: models
@@ -531,7 +540,8 @@ while any entry is `inferred`/`partial`, and the report says so in `notes`.
       images: list[str]; planogram: str; catalog: str; output: str
       prices: str | None = None; llm: str = "google:gemini-3.8-flash"; ocr_llm: str | None = None
       base_url: str | None = None; roi: tuple[float, float, float, float] | None = None
-      verify_pass: bool = True; marks: bool = True; concurrency: int = Field(default=4, ge=1, le=16)
+      verify_pass: bool | None = None         # None = auto: True for cloud, False when backend.is_local
+      marks: bool = True; concurrency: int = Field(default=4, ge=1, le=16)
       cache_dir: str; visit_id: str = "visit"; work_width: int = Field(default=2048, ge=256)
       weights: ScoringWeights = Field(default_factory=ScoringWeights)
   ```
@@ -656,11 +666,12 @@ while any entry is `inferred`/`partial`, and the report says so in `notes`.
           Lanes (duck-typed, in this order):
             1. ``hasattr(client, "image_understanding")`` → Google
                # verified: packages/ai-parrot-client-google/src/parrot/clients/google/analysis.py:438
-            2. ``hasattr(client, "ask_to_image")`` → generic (OpenAI :1468, Anthropic :1307 — verified)
-            3. ``hasattr(client, "_encode_image_for_openai")`` → OpenAI-compatible chat.completions
-               # verified: packages/ai-parrot/src/parrot/clients/openai_base.py:1137
-               # json_schema response_format, falling back to schema-in-prompt on rejection
-               # (same strategy as local/client.py:256-292 — verified)
+            2. ``hasattr(client, "ask_to_image")`` → generic (OpenAI :1468, Anthropic :1307 — verified;
+               ``LocalLLMClient`` once feature ``localllm-ask-to-image`` lands): first image →
+               ``image``, rest → ``reference_images``, ``structured_output=schema``
+            3. neither → ``VisionError("client <name> has no vision method …")`` raised at
+               ``__aenter__`` time so the CLI exits 1 before any work. NEVER reach into
+               ``client.client`` / ``chat.completions`` / any SDK handle from this module.
           Raises ``VisionError``; failed calls are never cached."""
   def cache_key(llm: str, base_url: str | None, max_tokens: int, stage: str, prompt_version: str,
                 prompt: str, schema: type[BaseModel], images: Sequence[bytes]) -> str:
@@ -686,8 +697,9 @@ while any entry is `inferred`/`partial`, and the report says so in `notes`.
   async def identify_rows(image: np.ndarray, slots: list[Slot], backend: VisionBackend,
                           catalog: Catalog, semaphore: asyncio.Semaphore, *, marks: bool = True
                           ) -> tuple[list[SlotObservation], list[str]]:
-      """One call per row (rows with > 14 slots on a local backend are split into sub-strips of
-      ≤ 8). Unknown slot ids dropped + reported; missing ids → ``uncertain``/``unusable``.
+      """One call per row on cloud backends. On local backends (LFM2.5-VL-1.6B) EVERY row is split
+      into sub-strips of ≤ 8 slots, one call each; cloud rows are split the same way only above
+      20 slots. Unknown slot ids dropped + reported; missing ids → ``uncertain``/``unusable``.
       An ``empty`` with visibility != full is downgraded to ``uncertain``. A failed row → all its
       slots ``uncertain`` + one error string. Returns (observations, errors)."""
   ```
@@ -797,7 +809,7 @@ synthesised with numpy/cv2; LLM clients are duck-typed fakes.
 ### Unit Tests
 | Test | Module | Description |
 |---|---|---|
-| `test_gitignore_tracks_code_not_photos` | M0 | the six `git check-ignore` assertions of Module 0 |
+| `test_gitignore_tracks_code_not_photos` | M0 | the seven `git check-ignore` assertions of Module 0 |
 | `test_models_forbid_extra` / `test_report_roundtrip_json` | M1 | strictness; `ComplianceReport` dumps/loads with Decimals |
 | `test_load_planogram_expands_facings` | M2 | 3-facing CLOSEOUT → 3 occupancy-only facings, ids `pNNN_fK` |
 | `test_load_planogram_orders_by_slot_not_position` | M2 | shelf with positions 1,2,8,6,7 and slots 1..5 → facings in slot order |
@@ -818,8 +830,11 @@ synthesised with numpy/cv2; LLM clients are duck-typed fakes.
 | `test_read_prices_llm_only_for_unread` | M5 | fake backend called once per row with only unread cells |
 | `test_cache_key_stable_and_sensitive` | M6 | same inputs same key; image / prompt (slot JSON, options) / schema / base_url / max_tokens change → new key |
 | `test_cache_store_atomic` | M6 | no partial file is left when serialisation raises |
-| `test_lane_dispatch` | M6 | three fake clients hit the three lanes |
+| `test_lane_dispatch` | M6 | two fake clients hit the two lanes (images split into `image` + `reference_images` on the generic lane) |
+| `test_no_vision_method_is_clear_error` | M6 | a client with neither method → `VisionError` naming `localllm-ask-to-image`; CLI exit 1 |
+| `test_vision_module_never_touches_sdk_handle` | M6 | source of `plancheck/vision.py` contains no `chat.completions`, `.client.` SDK access, `openai`, `google.genai` or `anthropic` import |
 | `test_repair_retry_then_error_not_cached` | M6 | invalid JSON twice → `VisionError`, no cache file |
+| `test_identify_substrips_on_local` | M7 | `backend.is_local` + 12-slot row → 2 calls of ≤ 8 slots; cloud → 1 call |
 | `test_identify_marks_flag` | M7 | `marks=False` renders a strip with no outlines and yields a different cache key |
 | `test_identify_drops_unknown_ids` | M7 | foreign slot id dropped + error recorded |
 | `test_identify_downgrades_partial_empty` | M7 | empty+partial → uncertain |
@@ -841,6 +856,7 @@ synthesised with numpy/cv2; LLM clients are duck-typed fakes.
 | `test_price_compliance_optional` | M10 | `None` without `--prices`; Decimal equality with it |
 | `test_write_report_refuses_existing_dir` | M11 | `FileExistsError` |
 | `test_cli_requires_catalog` / `test_cli_exit_codes` | M12 | exit 1 without `--catalog`; 2 when errors recorded |
+| `test_verify_pass_auto_default` | M12 | unset → on for a cloud fake, off for a local fake; explicit flags win |
 
 ### Integration Tests
 | Test | Description |
@@ -875,12 +891,12 @@ class FakeBackend:                           # .ask(prompt, images, schema, *, s
       `PYTHONPATH=packages/ai-parrot/src:packages/ai-parrot-client-google/src:packages/ai-parrot-client-local/src`).
 - [ ] `ruff check examples/planogram/planogram_check.py examples/planogram/plancheck examples/planogram/tests` is clean (TID251: no `requests`/`httpx`).
 - [ ] No `print(` in `plancheck/` or `planogram_check.py`; no `matplotlib`/`seaborn` import.
-- [ ] Module 0's six `git check-ignore` assertions hold; `git ls-files examples/planogram` lists only code, tests, README, `catalog.example.json`, the detector script (and `planogram_page1.json` iff §8 Q1 = yes) — **no** image, video, PDF, xlsx, zip or result file.
-- [ ] `planogram_check.py` does **not** import `inkcheck` and does not import a provider SDK (`google.genai`, `openai`, `anthropic`) directly; every LLM call goes through `VisionBackend` → `LLMFactory`.
+- [ ] Module 0's seven `git check-ignore` assertions hold; `git ls-files examples/planogram` lists only code, tests, README, `catalog.example.json` and the detector script — **no** `planogram_page1.json`, image, video, PDF, xlsx, zip or result file. `catalog.example.json`, README and test fixtures contain only synthetic SKUs.
+- [ ] `planogram_check.py` / `plancheck/` do **not** import `inkcheck`, do not import a provider SDK (`google.genai`, `openai`, `anthropic`) and never access a client's SDK handle (`client.client`, `chat.completions`); every LLM call is a parrot client *method* reached through `VisionBackend` → `LLMFactory`.
 - [ ] `packages/ai-parrot/src/parrot/clients/base.py` is unchanged (`git diff origin/dev -- packages/` is empty).
 - [ ] Running without `--catalog` exits 1 with a message naming `--emit-catalog-template`; the template lists every identity-required planogram SKU exactly once.
 - [ ] A run needs no interactive step and no positional hints; `--output` that already exists exits 1 and writes nothing.
-- [ ] `--llm google:gemini-3.8-flash`, `--llm llamacpp:<alias> --base-url http://127.0.0.1:8089/v1` and `--llm openai:<model>` each reach their lane (covered by `test_lane_dispatch`).
+- [ ] `--llm google:gemini-3.8-flash` reaches the Google lane and `--llm openai:<model>` / `--llm llamacpp:<alias> --base-url http://127.0.0.1:8089/v1` reach the generic `ask_to_image` lane (`test_lane_dispatch`, with fakes). A client lacking both methods exits 1 naming the prerequisite feature — this is today's behaviour for `llamacpp:` until `localllm-ask-to-image` is merged; **no FEAT-565 code changes are needed when it lands**.
 - [ ] Pass-1 prompt contains no planogram expectation (`test_prompt_has_no_expectations`); responses for unknown slot ids are dropped and logged.
 - [ ] The LLM never sets `facing_id`: registration is produced only by `registration.py`, and it is deterministic (same observations → byte-identical `ImageRegistration`).
 - [ ] Synthesized slots carry `origin` `gap_filled` / `untagged_row`; `untagged_row` slots have price `not_assessed`.
@@ -888,14 +904,14 @@ class FakeBackend:                           # .ask(prompt, images, schema, *, s
 - [ ] `compliance.json` validates as `ComplianceReport` and contains strict % **and** lenient % overall and per shelf, coverage, occupancy %, per-brand expected/observed/linear share, empty facings, and — only with `--prices` — a price-compliance block. Price never changes a position status.
 - [ ] `verified_by_expectation` and `inferred` contribute 0 to strict; every such position is identifiable by its `resolution` field.
 - [ ] Two overlapping photos of the same facings count each facing once; disagreeing reliable views yield `conflict`.
-- [ ] `--no-verify-pass` runs without any pass-2 call; `--no-marks` sends unmarked strips (both exist so pass-2 bias and Set-of-Marks can be ablated on cached images).
+- [ ] Pass 2 defaults to on for cloud and off for local backends; `--no-verify-pass` runs without any pass-2 call; `--no-marks` sends unmarked strips (both exist so pass-2 bias and Set-of-Marks can be ablated on cached images).
 - [ ] Planogram facings are ordered by `slot`; a non-contiguous shelf is rejected at load time.
 - [ ] Unseen (`not_visible`) and seen-but-unknown (`not_assessed`) facings are distinct statuses, never `empty`, and excluded from occupancy/compliance denominators.
 - [ ] The report exposes reference confidence separately: `strict_pct_direct_reference`, `lenient_pct_direct_reference`, `run.reference_provisional`.
 - [ ] With `rapidocr` absent the run still completes (LLM-only price reading, one warning).
 - [ ] A second run with the same inputs and `--cache-dir` performs zero LLM calls.
 - [ ] A row-level provider failure ends with exit code 2 and a complete report; failed calls are absent from the cache.
-- [ ] `examples/planogram/README.md` documents install, catalog format, CLI, outputs, scoring semantics and the local-server recipe.
+- [ ] `examples/planogram/README.md` documents install, catalog format, CLI, outputs, scoring semantics, the local-server recipe (incl. the `localllm-ask-to-image` prerequisite) and has a "Set-of-Marks A/B" section to be filled from the first real run.
 
 ---
 
@@ -968,6 +984,8 @@ class OpenAIClient(OpenAIBaseClient):  # :87
 #   AnthropicClient.ask_to_image(prompt, image, reference_images=None, model=…, …) -> AIMessage  # :1307
 
 # packages/ai-parrot/src/parrot/clients/openai_base.py
+# REFERENCE ONLY (context for the prerequisite feature `localllm-ask-to-image`) — FEAT-565 code must NOT call
+# `_encode_image_for_openai`, `get_client()` or `self.client.chat.completions` (§8 Q7).
 class OpenAIBaseClient(AbstractClient):  # :73
     def _encode_image_for_openai(self, image: Path | bytes | Image.Image, low_quality: bool = False) -> dict[str, Any]:  # :1137
         # → {"type": "image_url", "image_url": {"url": "data:<mime>;base64,…", "detail": "low"|"auto"}}; bytes are tagged image/jpeg (:1164-1166)
@@ -1008,13 +1026,12 @@ brands HP, Epson, Canon, Brother, Paris Corp, Paris Business, one `None` (`CLOSE
 | `VisionBackend.__aenter__` | `AbstractClient.__aenter__` | `async with client` | `clients/base.py:1155` |
 | `VisionBackend.ask` lane 1 | `image_understanding()` | `images=[PIL…]`, `model=<parsed model>`, `structured_output=schema`, `temperature=0` | `google/analysis.py:438` |
 | `VisionBackend.ask` lane 2 | `ask_to_image()` | `image=first`, `reference_images=rest`, `structured_output=schema` | `openai/client.py:1468`, `anthropic/client.py:1307` |
-| `VisionBackend.ask` lane 3 | `_encode_image_for_openai()` + `client.client.chat.completions.create` | OpenAI-shaped message | `clients/openai_base.py:1137`, `local/client.py:268` |
 | result extraction | `AIMessage.structured_output` / `.output` | instance of schema, else `schema.model_validate(...)` | `models/responses.py:148` |
 | `detection.py` | `candidates()` / `group_rows()` | adapted copy | `detect_price_labels.py:15,55` |
 
 ### Does NOT Exist (Anti-Hallucination)
 - ~~`AbstractClient.ask_to_image`~~ / ~~`AbstractClient.image_understanding`~~ — no vision method on the base client.
-- ~~`LocalLLMClient.ask_to_image`~~ / ~~`OpenAIBaseClient.ask_to_image`~~ — not defined; `LocalLLMClient.invoke()` is text-only.
+- ~~`LocalLLMClient.ask_to_image`~~ / ~~`OpenAIBaseClient.ask_to_image`~~ — not defined **today**; `LocalLLMClient.invoke()` is text-only. `LocalLLMClient.ask_to_image` is what the prerequisite feature `localllm-ask-to-image` will add (expected to mirror `OpenAIClient.ask_to_image`, `openai/client.py:1468`: `prompt, image, reference_images=None, model=None, max_tokens=None, temperature=None, structured_output=None, …) -> AIMessage`). FEAT-565 code must only *duck-type* it, never assume it exists.
 - ~~`client.ask(prompt, files=[image])` as a vision path~~ — `AbstractClient._encode_file` emits a `"type": "document"` block (`clients/base.py:1392-1401`) and `OpenAIBaseClient.ask` uploads `files` through `files.create` (`openai_base.py:807,1128-1135`); neither sends an inline image.
 - ~~`from parrot.models.google import GoogleModel`~~ — ImportError; use `parrot.clients.google.models`.
 - ~~`tesseract` binary~~ — not installed; do not use `pytesseract`.
@@ -1043,7 +1060,6 @@ brands HP, Epson, Canon, Brother, Paris Corp, Paris Business, one `None` (`CLOSE
   !examples/planogram/planogram_check.py
   !examples/planogram/README.md
   !examples/planogram/catalog.example.json
-  !examples/planogram/planogram_page1.json
   !examples/planogram/plancheck/
   !examples/planogram/plancheck/**/*.py
   !examples/planogram/tests/
@@ -1052,11 +1068,11 @@ brands HP, Epson, Canon, Brother, Paris Corp, Paris Business, one `None` (`CLOSE
   examples/planogram/white_label_detector/*
   !examples/planogram/white_label_detector/detect_price_labels.py
   ```
-  (drop the `planogram_page1.json` line if §8 Q1 = no).
+  `planogram_page1.json` is intentionally absent from the block (§8 Q1).
 
 ### Known Risks / Gotchas
-- **Public repository.** `phenobarbital/ai-parrot` is PUBLIC. `planogram_page1.json` is an extraction of a retailer planogram PDF; tracking it publishes it irreversibly (§8 Q1). Photos are never tracked.
-- **Worktree blindness.** Until Module 0 lands on `dev`, a worktree has no detector/planogram file; afterwards it still has no photos — real end-to-end runs happen only in the primary checkout.
+- **Public repository.** `phenobarbital/ai-parrot` is PUBLIC. `planogram_page1.json` (extraction of a retailer planogram PDF) and the store photos are **never tracked**; nothing committed by this feature (fixtures, README, `catalog.example.json`, test data) may copy real part numbers or layout from it — synthetic data only.
+- **Worktree blindness.** A worktree never contains the planogram file or the photos (and, until Module 0 lands, not even the detector script) — real end-to-end runs happen only in the primary checkout; everything automated runs on synthetic fixtures.
 - **Worktree imports.** The shared venv is editable-installed against the primary checkout; tests touching `vision.py` need the `PYTHONPATH` prefix from §5. Never `uv sync` in the worktree.
 - **`import parrot` side effect**: navconfig `chdir`s to the repo root — resolve all CLI paths to absolute **before** the first parrot import.
 - **`image_understanding` default model** is `GEMINI_3_FLASH_PREVIEW`, not the client's model — always pass `model=`.
@@ -1068,7 +1084,7 @@ brands HP, Epson, Canon, Brother, Paris Corp, Paris Business, one `None` (`CLOSE
 - **Multi-facing CLOSEOUT** → occupancy-only, excluded from SKU denominators.
 - **Glare / partial visibility** → `empty` + non-full visibility is downgraded to `uncertain`.
 - **Confirmation bias of pass 2** → contained by distractors, mandatory evidence, deterministic option order, and by excluding `verified_by_expectation` from the strict score.
-- **Weak local models** may fail the row-strip contract → automatic sub-strips (≤ 8 slots) on local backends and `--no-verify-pass`; llama.cpp + LFM2.5-VL needs `cache_prompt: false` with JSON-schema constraints (inkcheck README §2).
+- **Local model is LFM2.5-VL-1.6B** (§8 Q4): sub-strips of ≤ 8 slots are always used locally, pass 2 defaults to off, concurrency 1. llama.cpp + LFM2.5-VL needs `cache_prompt: false` with JSON-schema constraints (inkcheck README §2) — a requirement on the prerequisite feature, not solvable from script code.
 - **Provider/schema failure** → slots `uncertain`, error recorded, exit 2, not cached.
 - **Price conflicts** across photos → `conflict`, both raw readings kept.
 - **Cloud data egress**: Gemini runs send store-photo strips to Google — documented in the README.
@@ -1096,7 +1112,7 @@ in its README. Not used: `pytesseract` (binary missing), `easyocr`, `paddleocr`.
   from `origin/dev`; the `sdd-coder` engine gives each task its own sub-worktree.
 - **Prerequisite outside the worktree**: **M0** is committed in the primary
   checkout directly on `dev` and pushed *before* the worktree is created (the
-  adopted files are untracked and exist only there). Its task is `parallel: false`.
+  adopted detector script is untracked and exists only there). Its task is `parallel: false`.
 - **Module dependency graph** (edge = "imports a symbol of"):
   - M1 → M0 · every other module → M1 (imports `plancheck.models`).
   - M5 → M6 (`VisionBackend` for the price fallback).
@@ -1111,19 +1127,20 @@ in its README. Not used: `pytesseract` (binary missing), `easyocr`, `paddleocr`.
   modules are all declared in M1's conftest per §4).
 - **Exclusive resources**: `.gitignore` (M0 only). No lockfile, migration or
   extension rebuild. No `uv add`.
-- **Cross-feature dependencies**: none. No overlap with FEAT-564 or any in-flight spec.
+- **Cross-feature dependencies**: **`localllm-ask-to-image`** (placeholder slug — no brainstorm/spec yet; owner runs `/sdd-brainstorm`): adds `ask_to_image()` to `LocalLLMClient` only (not `OpenAIBaseClient`, not `AbstractClient`). It is a **soft** dependency: no FEAT-565 task waits for it (M6 is duck-typed and tested with fakes) and FEAT-565 can merge first; only *real* runs with `--llm llamacpp:…` need it. Requirements FEAT-565 places on it: multi-image input (`image` + `reference_images`), `structured_output` with a Pydantic type, `temperature=0`, and a way to send llama.cpp's `cache_prompt: false` (LFM2.5-VL + JSON-schema constraints crash with prompt reuse — inkcheck README §2). No overlap with FEAT-564 or any other in-flight spec.
 
 ---
 
 ## 8. Open Questions
 
-- [ ] **Q1 — Public exposure of `planogram_page1.json`.** The repo is PUBLIC and the file is an extraction of a retailer planogram PDF. Confirm it may be published; otherwise M0 drops that one line and tests/README use only synthetic data. (The decision to track it is carried from the brainstorm; this asks only for confirmation of the public-repo consequence, discovered during spec research.) — *Owner: Jesus Lara*
-- [ ] Q2 — Partial-credit weights: defaults 0.5 / 0.5 / 0.5 / 1.0 are implemented as `ScoringWeights`; supply business weights if they differ. Does not block implementation. — *Owner: Jesus Lara*
-- [ ] Q3 — Ground truth for the two store-560 photos: hand-labelled regions + registration mappings would let us measure detector coverage, registration accuracy, occupancy, price parsing, identity and strict-vs-lenient separately, with pass-2 and Set-of-Marks ablations (flags exist). Needed to claim accuracy; not needed to implement. (Design research S11.) — *Owner: Jesus Lara*
-- [ ] Q4 — Which vision model serves `:8089` for this script (LFM2.5-VL-1.6B vs the qwen vision WIP)? Sub-strips are already the local default, so this does not block. — *Owner: Jesus Lara*
-- [ ] **Q7 — Local-vision lane vs "never call a provider SDK directly".** No parrot client method can send an image to an OpenAI-compatible local server (verified: `LocalLLMClient.invoke()` is text-only, `ask(files=…)` uploads documents). The spec's lane 3 therefore uses the client's own `AsyncOpenAI` handle (`client.client.chat.completions.create`) plus its `_encode_image_for_openai()` — configured and owned by the parrot client, but still an SDK call from script code. Accept this as a documented, single-function exception for v1 (spec default), **or** first add `ask_to_image()` to `OpenAIBaseClient` (inherited by `LocalLLMClient`) as a small prerequisite feature and make lane 3 disappear? (Design research S1; supersedes Q5 if the second option is chosen.) — *Owner: Jesus Lara*
-- [ ] Q5 — Should a common vision method on `AbstractClient`/`LocalLLMClient` become its own core feature later? Out of scope here. — *Owner: Jesus Lara*
-- [ ] Q6 — Set-of-Marks overlays: A/B during the manual run; `render_strip(marks=False)` exists for it. — *Owner: implementer*
+- [x] **Q1 — Public exposure of `planogram_page1.json`** — *Resolved 2026-09-17 (Jesus Lara)*: do NOT track it. The repo is PUBLIC; the file stays local like the photos; M0 drops its re-include line; tests, README and `catalog.example.json` use synthetic data only. (Supersedes the "track `planogram_page1.json`" part of the brainstorm's git-tracking answer.)
+- [x] Q2 — Partial-credit weights — *Resolved 2026-09-17 (Jesus Lara)*: misplaced 0.5 / variant_unresolved 0.5 / inferred_present 0.5 / verified_by_expectation 1.0, overridable through `ScoringWeights`.
+- [x] Q3 — Ground truth for the two store-560 photos — *Resolved 2026-09-17 (Jesus Lara)*: out of scope for FEAT-565. No accuracy claim is made; the ablation switches (`--no-verify-pass`, `--no-marks`) ship; a labelled evaluation set is a follow-up after the first real run. (Design research S11.)
+- [x] Q4 — Local vision model on `:8089` — *Resolved 2026-09-17 (Jesus Lara)*: LFM2.5-VL-1.6B. Sub-strips of ≤ 8 slots always on local backends; pass 2 off by default locally; `cache_prompt: false` is a requirement on the prerequisite feature.
+- [x] Q5 — Common vision method in core — *Resolved 2026-09-17 (Jesus Lara)*: not on `AbstractClient` and not on `OpenAIBaseClient`; the prerequisite adds `ask_to_image()` to **`LocalLLMClient` only** (see Q7).
+- [x] Q6 — Set-of-Marks overlays — *Resolved 2026-09-17 (Jesus Lara)*: on by default (2-px outlines, number over the tag area only); A/B with `--no-marks` at the first real run, result recorded in the README, default flipped if marks hurt.
+- [x] **Q7 — Local-vision lane vs "never call a provider SDK directly"** — *Resolved 2026-09-17 (Jesus Lara)*: core `ask_to_image` first. No script-local SDK-handle lane exists in FEAT-565; `VisionBackend` has two lanes (Google `image_understanding`, generic `ask_to_image`). A separate prerequisite feature (placeholder slug `localllm-ask-to-image`, brainstormed by the owner) adds the method to `LocalLLMClient`; it is a soft dependency — until it lands `--llm llamacpp:…` exits 1 with a message naming it. (Design research S1.)
+- [ ] Q8 — Create the prerequisite feature `localllm-ask-to-image` (`/sdd-brainstorm`), carrying the four requirements listed under Worktree Strategy → Cross-feature dependencies. Does not block any FEAT-565 task. — *Owner: Jesus Lara*
 - [x] Flow type / base branch — *Resolved in brainstorm*: feature on `dev`.
 - [x] Relationship to inkcheck / ai-parrot — *Resolved in brainstorm*: standalone script, LLM via ai-parrot clients; inkcheck is reference only.
 - [x] Input unit — *Resolved in brainstorm*: N photos of one fixture, merged per planogram position.
@@ -1133,7 +1150,7 @@ in its README. Not used: `pytesseract` (binary missing), `easyocr`, `paddleocr`.
 - [x] Scoring strictness — *Resolved in brainstorm*: tiered; strict % and lenient % reported side by side, per shelf and overall.
 - [x] Prices — *Resolved in brainstorm*: always reported; optional `--prices` file adds a separate price-compliance metric.
 - [x] Tag OCR engine — *Resolved in brainstorm*: local OCR first, LLM fallback.
-- [x] Git tracking — *Resolved in brainstorm*: track code + small inputs — force-add the new script/package, tests, `planogram_page1.json` and the detector script; store photos stay untracked and end-to-end runs take `--images-dir` from the main checkout. (Implemented as a `.gitignore` re-include block rather than `git add -f`, so coder agents' plain `git add` works.)
+- [x] Git tracking — *Resolved in brainstorm*: track code + small inputs — force-add the new script/package, tests, `planogram_page1.json` and the detector script; store photos stay untracked and end-to-end runs take `--images-dir` from the main checkout. (**`planogram_page1.json` part superseded by Q1 — not tracked.** Implemented as a `.gitignore` re-include block rather than `git add -f`, so coder agents' plain `git add` works.)
 - [x] Part-number ↔ consumer-name bridge — *Resolved in brainstorm*: the user supplies the catalog file — `--catalog` is required for identification; NO LLM enrichment module in v1.
 - [x] Single file vs small package — *Resolved in brainstorm*: thin `planogram_check.py` CLI entry point + sibling helper package `examples/planogram/plancheck/` (one module per stage).
 
@@ -1152,7 +1169,7 @@ in its README. Not used: `pytesseract` (binary missing), `easyocr`, `paddleocr`.
 
 | # | Suggestion (kind) | Disposition | Reason | Landed in |
 |---|---|---|---|---|
-| S1 | Resolve the vision-client capability gap first (architecture) | ESCALATE | Claim verified: no parrot method sends an image to a local OpenAI-compatible server. Whether a script-local SDK-handle lane is acceptable, or a core `ask_to_image` must come first, is the owner's call (touches a non-negotiable rule and core scope) | §8 Q7 |
+| S1 | Resolve the vision-client capability gap first (architecture) | ESCALATE → resolved | Claim verified: no parrot method sends an image to a local OpenAI-compatible server. Owner decided (Q7): core `ask_to_image` first, on `LocalLLMClient` only, as a separate prerequisite feature; the script-local SDK lane was removed from this spec | §8 Q7, §3 M6, Worktree Strategy |
 | S2 | Make the deliverable and tests trackable (architecture) | CONFIRM | Reached independently; narrow `.gitignore` re-include block instead of `git add -f` | §3 M0, §7 |
 | S3 | Normalize a physical planogram axis before alignment (architecture) | CONFIRM | Verified: `position` is not monotone on shelf 1; order by `slot`, validate contiguity, keep `segment_slot` | §2 stage 4, §3 M1/M2, §4 |
 | S4 | Versioned consumer-visible SKU identity bridge (api) | CONFIRM | Catalog already required with family/xl/colors/pack/aliases; added `provenance`; uncovered SKUs reported in `run.catalog_missing_skus`; MPNs never fuzzy-matched | §2 resolution rules, §3 M1/M2 |
@@ -1162,10 +1179,10 @@ in its README. Not used: `pytesseract` (binary missing), `easyocr`, `paddleocr`.
 | S8 | Structured price evidence instead of raw strings (api) | CONFIRM | `PriceReading` already structured; made explicit that agreement/compliance compare normalised amounts and conflicts keep all raws. OCR confidence score not added (grammar acceptance is the gate) | §2 metrics, §4 |
 | S9 | Preserve cross-photo conflicts before deduplication (architecture) | CONFIRM | Every observation stays in `slots[]`, `PositionResult.slot_ids` links them; added identity/price-conflict and per-image injectivity tests | §4 |
 | S10 | Expand cache invalidation to all perception inputs (risk) | CONFIRM | Key already hashes full prompt text + rendered images (covers slot JSON, distractors, overlays); added base URL + generation params and atomic writes. OCR is not cached; alignment parameters never reach an LLM call | §2, §3 M6, §4 |
-| S11 | Hand-labelled evaluation fixture before claiming accuracy (testing) | ESCALATE | Producing ground truth is the owner's effort/decision; spec already makes no accuracy claim and ships the ablation switches | §8 Q3 |
+| S11 | Hand-labelled evaluation fixture before claiming accuracy (testing) | ESCALATE → resolved | Owner decided (Q3): out of scope for FEAT-565, follow-up after the first real run; spec makes no accuracy claim and ships the ablation switches | §8 Q3 |
 | S12 | Gate Set-of-Marks and local OCR behind A/B tests (testing) | CONFIRM | Added `--no-marks`, marks-sensitive cache key, graceful absence of `rapidocr`. Default stays marks-on with labels drawn over the tag area only, pending the A/B (§8 Q6) | §2 CLI, §3 M5/M7, §4, §5 |
 
-Summary: **10** confirmed · **0** rejected · **2** escalated.
+Summary: **10** confirmed · **0** rejected · **2** escalated (both since resolved by the owner in §8).
 
 ---
 
@@ -1174,3 +1191,4 @@ Summary: **10** confirmed · **0** rejected · **2** escalated.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-09-17 | Jesus Lara | Initial draft from accepted brainstorm (Option D); design-research triage folded in (10 confirm / 2 escalate) |
+| 0.2 | 2026-09-17 | Jesus Lara | Open questions Q1–Q7 resolved: planogram JSON not tracked (public repo); script-local SDK lane removed — prerequisite `localllm-ask-to-image` (LocalLLMClient only, soft dependency); weights confirmed; ground truth out of scope; local model LFM2.5-VL-1.6B (sub-strips always, pass 2 off locally); Set-of-Marks on by default |
