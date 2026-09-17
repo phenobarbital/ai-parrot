@@ -75,7 +75,7 @@
       "feature_id": "FEAT-565",
       "feature": "new-planogram-compliance-algo",
       "spec": "sdd/specs/new-planogram-compliance-algo.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -85,8 +85,8 @@
       "parallelism_notes": "Modifies examples/planogram/plancheck/models.py, the same file TASK-3337 creates (appends below its marker comment), and subclasses its StrictModel/Slot/PriceReading.",
       "assigned_to": null,
       "started_at": "2026-09-17T23:08:13+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3338-models-results.md"
+      "completed_at": "2026-09-17T23:24:41+00:00",
+      "file": "sdd/tasks/completed/TASK-3338-models-results.md"
     },
     {
       "id": "TASK-3339",
@@ -95,7 +95,7 @@
       "feature_id": "FEAT-565",
       "feature": "new-planogram-compliance-algo",
       "spec": "sdd/specs/new-planogram-compliance-algo.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -105,8 +105,8 @@
       "parallelism_notes": "Imports PlanogramRef, PlanogramFacing, Catalog, CatalogItem, SlotReading, Resolution from TASK-3337 (examples/planogram/plancheck/models.py); tests use its conftest fixtures mini_planogram_data / mini_catalog.",
       "assigned_to": null,
       "started_at": "2026-09-17T23:08:13+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3339-reference.md"
+      "completed_at": "2026-09-17T23:24:41+00:00",
+      "file": "sdd/tasks/completed/TASK-3339-reference.md"
     },
     {
       "id": "TASK-3340",
