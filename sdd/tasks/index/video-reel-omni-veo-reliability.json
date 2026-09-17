@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-17T11:52:28Z",
-  "completed_at": null,
+  "completed_at": "2026-09-17T22:02:18+00:00",
   "parallel_semantics": "exclusive",
   "approval_basis": "Committed spec body says approved; user repeated explicit sdd-task after the draft-frontmatter warning. YAML draft is stale; spec is preserved.",
   "reservation": {
@@ -423,7 +423,7 @@
       "feature_id": "FEAT-564",
       "feature": "video-reel-omni-veo-reliability",
       "spec": "sdd/specs/video-reel-omni-veo-reliability.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -434,13 +434,14 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": "2026-09-17T21:44:50+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3335-reel-sdk-smoke-docs.md",
+      "completed_at": "2026-09-17T22:02:18+00:00",
+      "file": "sdd/tasks/completed/TASK-3335-reel-sdk-smoke-docs.md",
       "acceptance_criteria": [
         "AC15",
         "AC16",
         "AC18"
-      ]
+      ],
+      "verification": "verified"
     }
   ]
 }
