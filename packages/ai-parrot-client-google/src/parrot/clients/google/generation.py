@@ -13,6 +13,8 @@ import base64
 import io
 import tempfile
 import uuid
+import os
+import shutil
 import aiohttp
 import aiofiles
 from PIL import Image
@@ -79,8 +81,18 @@ if TYPE_CHECKING:
     from .reel.errors import ReelError
 
 
+def _reel_scene_deadline_seconds() -> float:
+    """Server-configurable per-scene generation deadline (spec §2 item 10, default 600s)."""
+    return float(os.environ.get("VIDEO_REEL_SCENE_DEADLINE_SECONDS", "600"))
+
+
+def _reel_job_deadline_seconds() -> float:
+    """Server-configurable job deadline (spec §2 item 10, default 3600s)."""
+    return float(os.environ.get("VIDEO_REEL_JOB_DEADLINE_SECONDS", "3600"))
+
+
 class _ReelRunContext:
-    """Internal per-job context threaded through scene processing (FEAT-564 TASK-3330).
+    """Internal per-job context threaded through scene processing (FEAT-564 TASK-3330/3331).
 
     Not part of any public interface — a plain container so ``_process_scene``
     doesn't need a dozen positional parameters, and so the generated clip/
@@ -93,7 +105,12 @@ class _ReelRunContext:
         registry: The resolved ``VideoProfileRegistry`` for this job.
         api_surface: The API surface (``"gemini_developer"`` or ``"vertex"``).
         output_directory: Per-job local working directory.
-        scene_deadline_seconds: Per-scene generation deadline (spec §2 item 10).
+        job_deadline: Absolute ``time.monotonic()``-comparable job deadline —
+            every per-scene budget shares what remains of it (TASK-3331:
+            "transport budgets share remaining absolute deadline").
+        scene_deadline_seconds: Per-scene generation deadline ceiling (spec
+            §2 item 10); the EFFECTIVE budget for any given scene is never
+            more than what remains of ``job_deadline`` either.
     """
 
     def __init__(
@@ -103,16 +120,31 @@ class _ReelRunContext:
         registry: Any,
         api_surface: str,
         output_directory: Path,
-        scene_deadline_seconds: float = 600.0,
+        job_deadline: float,
+        scene_deadline_seconds: Optional[float] = None,
     ) -> None:
         self.request = request
         self.registry = registry
         self.api_surface = api_surface
         self.output_directory = output_directory
-        self.scene_deadline_seconds = scene_deadline_seconds
+        self.job_deadline = job_deadline
+        self.scene_deadline_seconds = (
+            scene_deadline_seconds if scene_deadline_seconds is not None else _reel_scene_deadline_seconds()
+        )
         self.clips: dict = {}
         self.narration_paths: dict = {}
         self.narration_durations: dict = {}
+
+    def effective_scene_timeout_seconds(self) -> float:
+        """The scene deadline, clamped to whatever remains of the shared job deadline.
+
+        Never more than ``scene_deadline_seconds`` even early in a job, and
+        never more than the job's own remaining budget late in a job — this
+        is the "transport budgets share remaining absolute deadline"
+        requirement (TASK-3331).
+        """
+        remaining_job_seconds = max(0.0, self.job_deadline - time.monotonic())
+        return min(self.scene_deadline_seconds, remaining_job_seconds)
 
 
 class GoogleGeneration:
@@ -1695,6 +1727,11 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
                 )
 
         model_str = model.value if isinstance(model, GoogleModel) else model
+        # FEAT-564 TASK-3331: "Directly created clients require explicit
+        # ownership" (client.py's get_client docstring) — this call is on
+        # the reel pipeline's background/foreground-image path
+        # (`_process_scene` -> `generate_image`) and owns this client
+        # solely for the duration of this call; always closed below.
         client = await self.get_client(model=model_str)
 
         # --- Prepare prompt + reference content --------------------------------
@@ -1842,6 +1879,8 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         except Exception as e:
             self.logger.error(f"Image generation failed: {e}")
             raise
+        finally:
+            await client.aio.aclose()
 
     async def _maybe_upscale(self, client, img):
         """Best-effort x2 upscale of a generated image via Google's upscaler."""
@@ -2098,7 +2137,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
 
         self.logger.info(f"Starting Video Reel Generation: {request.prompt}")
         start_time = time.time()
-        job_deadline = time.monotonic() + 3600.0  # spec §2 item 10 default job deadline
+        job_deadline = time.monotonic() + _reel_job_deadline_seconds()
 
         api_surface = "vertex" if getattr(self, "vertexai", False) else "gemini_developer"
         registry = VideoProfileRegistry.default()
@@ -2113,14 +2152,17 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
                 fm_kwargs = dict(request.storage_config or {})
                 file_manager = FileManagerFactory.create(request.storage_backend, **fm_kwargs)
 
-        # Generate a unique job prefix for organizing this reel's artifacts
-        job_prefix = f"reels/{uuid.uuid4().hex}"
+        # Generate a unique job id for organizing this reel's artifacts — the
+        # SAME id names both the storage prefix and the LOCAL working
+        # directory, so two concurrent jobs (whether or not the caller
+        # passed the same base output_directory) can never overwrite or
+        # clean up each other's files (TASK-3331).
+        job_id = uuid.uuid4().hex
+        job_prefix = f"reels/{job_id}"
 
-        if output_directory:
-            output_directory.mkdir(parents=True, exist_ok=True)
-        else:
-            output_directory = BASE_DIR.joinpath("static", "generated_reels")
-            output_directory.mkdir(parents=True, exist_ok=True)
+        base_output_directory = output_directory or BASE_DIR.joinpath("static", "generated_reels")
+        output_directory = base_output_directory / job_id
+        output_directory.mkdir(parents=True, exist_ok=True)
 
         # Validate request-known profiles BEFORE any director (paid) work.
         self._validate_known_video_profiles(request, registry, api_surface)
@@ -2175,66 +2217,79 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
             registry=registry,
             api_surface=api_surface,
             output_directory=output_directory,
+            job_deadline=job_deadline,
         )
-        scene_results: List["ReelSceneResult"] = []
-        partial = False
-        for i, scene in enumerate(request.scenes):
-            try:
-                result = await self._process_scene(scene, i, context=run_context)
-                scene_results.append(result)
-            except ReelError as exc:
-                if request.partial_failure_policy == "fail":
-                    music_task.cancel()
-                    with contextlib.suppress(Exception, asyncio.CancelledError):
-                        await music_task
-                    raise
-                partial = True
-                self.logger.warning("Scene %d failed under partial_failure_policy='skip': %s", i, exc)
-                scene_results.append(self._failed_scene_result(scene, i, exc))
+        try:
+            scene_results: List["ReelSceneResult"] = []
+            partial = False
+            for i, scene in enumerate(request.scenes):
+                try:
+                    result = await self._process_scene(scene, i, context=run_context)
+                    scene_results.append(result)
+                except ReelError as exc:
+                    if request.partial_failure_policy == "fail":
+                        raise
+                    partial = True
+                    self.logger.warning("Scene %d failed under partial_failure_policy='skip': %s", i, exc)
+                    scene_results.append(self._failed_scene_result(scene, i, exc))
 
-        if all(r.status == "failed" for r in scene_results):
-            music_task.cancel()
+            if all(r.status == "failed" for r in scene_results):
+                raise ReelError(
+                    ReelErrorCode.PROVIDER_FAILURE,
+                    "All scene generations failed.",
+                    stage="reel_scenes",
+                    retryable=False,
+                )
+
+            music_outcome = await music_task
+
+            # Build the ONE explicit TimelinePlan from succeeded scenes only,
+            # preserving original indices (TASK-3328).
+            entries: List[TimelineEntry] = []
+            for result in scene_results:
+                if result.status != "succeeded":
+                    continue
+                clip = run_context.clips[result.index]
+                scene = request.scenes[result.index]
+                check_measured_duration(scene.duration, clip.measured_duration_seconds, fps=24.0)
+                narration_path = run_context.narration_paths.get(result.index)
+                if narration_path is not None:
+                    narration_clip_seconds = run_context.narration_durations.get(result.index)
+                    if narration_clip_seconds is not None:
+                        check_narration_fits(scene.duration, narration_clip_seconds)
+                entries.append(
+                    TimelineEntry(
+                        scene_index=result.index,
+                        clip_path=clip.local_path,
+                        edit_seconds=scene.duration,
+                        narration_path=narration_path,
+                    )
+                )
+
+            plan = plan_timeline(entries, transition=request.transition_type, fps=24.0)
+
+            assembled_path = await assemble_reel(
+                plan,
+                music_path=music_outcome.local_path if music_outcome.status == "succeeded" else None,
+                audio_mode=request.audio_mode,
+                output_format=request.output_format,
+                work_dir=output_directory,
+                deadline=job_deadline,
+            )
+        except BaseException:
+            # Any failure past this point — a raised ReelError, a genuine
+            # asyncio.CancelledError from the caller, or anything else —
+            # must cancel-and-await the still-owned music task (a no-op if
+            # it is already done) and remove this job's isolated working
+            # directory before propagating. Never runs on the success path:
+            # local storage backends still need this directory for the
+            # persisted final artifact below (TASK-3331).
+            if not music_task.done():
+                music_task.cancel()
             with contextlib.suppress(Exception, asyncio.CancelledError):
                 await music_task
-            raise ReelError(
-                ReelErrorCode.PROVIDER_FAILURE, "All scene generations failed.", stage="reel_scenes", retryable=False
-            )
-
-        music_outcome = await music_task
-
-        # Build the ONE explicit TimelinePlan from succeeded scenes only,
-        # preserving original indices (TASK-3328).
-        entries: List[TimelineEntry] = []
-        for result in scene_results:
-            if result.status != "succeeded":
-                continue
-            clip = run_context.clips[result.index]
-            scene = request.scenes[result.index]
-            check_measured_duration(scene.duration, clip.measured_duration_seconds, fps=24.0)
-            narration_path = run_context.narration_paths.get(result.index)
-            if narration_path is not None:
-                narration_clip_seconds = run_context.narration_durations.get(result.index)
-                if narration_clip_seconds is not None:
-                    check_narration_fits(scene.duration, narration_clip_seconds)
-            entries.append(
-                TimelineEntry(
-                    scene_index=result.index,
-                    clip_path=clip.local_path,
-                    edit_seconds=scene.duration,
-                    narration_path=narration_path,
-                )
-            )
-
-        plan = plan_timeline(entries, transition=request.transition_type, fps=24.0)
-
-        assembled_path = await assemble_reel(
-            plan,
-            music_path=music_outcome.local_path if music_outcome.status == "succeeded" else None,
-            audio_mode=request.audio_mode,
-            output_format=request.output_format,
-            work_dir=output_directory,
-            deadline=job_deadline,
-        )
+            await self._cleanup_reel_job_directory(output_directory)
+            raise
 
         # Persist the final artifact through FileManager (only the final
         # artifact — intermediates were already local-only, per TASK-3329).
@@ -2297,6 +2352,22 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         ai_message.metadata["video_reel"] = reel_result.model_dump(mode="json")
         ai_message.artifacts = [artifact.model_dump(mode="json")]
         return ai_message
+
+    @staticmethod
+    async def _cleanup_reel_job_directory(directory: Path) -> None:
+        """Removes a job's isolated local working directory after abort/cancellation.
+
+        Never called on the success path — local storage backends ("fs"/"temp")
+        still need this directory for the persisted final artifact (TASK-3331).
+        The blocking removal runs off the event loop and never raises: a
+        best-effort cleanup failure must not mask the original error the
+        caller is already propagating.
+        """
+        loop = asyncio.get_running_loop()
+        try:
+            await loop.run_in_executor(None, lambda: shutil.rmtree(directory, ignore_errors=True))
+        except Exception:
+            logging.getLogger(__name__).warning("Failed to clean up reel job directory: %s", directory)
 
     @staticmethod
     def _reel_sdk_version() -> str:
@@ -2372,8 +2443,14 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         )
 
         model_str = model.value if isinstance(model, GoogleModel) else str(model)
+        # FEAT-564 TASK-3331: "Directly created clients require explicit
+        # ownership" (client.py's get_client docstring) — this director
+        # client is owned solely by this call and closed on every exit.
         client = await self.get_client(model=model_str)
-        response = await client.aio.models.generate_content(model=model_str, contents=prompt, config=config)
+        try:
+            response = await client.aio.models.generate_content(model=model_str, contents=prompt, config=config)
+        finally:
+            await client.aio.aclose()
 
         try:
             scenes_data = json.loads(response.text)
@@ -2480,7 +2557,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
             target_duration_seconds=scene.duration,
             starting_frame=starting_frame,
             audio_mode=request.audio_mode,
-            timeout_seconds=context.scene_deadline_seconds,
+            timeout_seconds=context.effective_scene_timeout_seconds(),
         )
         context.clips[index] = clip
 
