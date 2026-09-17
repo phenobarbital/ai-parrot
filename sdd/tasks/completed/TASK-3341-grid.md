@@ -511,10 +511,15 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-coder (backend nova, model zai.glm-5, attempt_uid 599efcf86cae449794b448322ddcf039)
+**Date**: 2026-09-17
+**Notes**: Created `examples/planogram/plancheck/grid.py` (row_pitch, build_slots,
+strip_box, to_strip_norm) and `examples/planogram/tests/test_plancheck_grid.py` with
+7 tests (anchored geometry, gap-fill accept/reject, untagged bottom row, Gemini 0-1000
+normalization, strip containment). `ruff check` clean. Engine lint autofix commit
+`ccb1e87e6`. Post-merge full suite → 39 passed. Review recorded:
+`coder-review:b91e973033e31b085af1921b`, no corrections needed.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Seat**: glm5 · Backend: nova · Model: zai.glm-5 · Attempts: 1 · Duration: 248.7s · Tokens: 626716/12645
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

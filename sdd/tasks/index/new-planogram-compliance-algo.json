@@ -115,7 +115,7 @@
       "feature_id": "FEAT-565",
       "feature": "new-planogram-compliance-algo",
       "spec": "sdd/specs/new-planogram-compliance-algo.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -125,8 +125,8 @@
       "parallelism_notes": "Imports Tag, TagRow, Box from TASK-3337 (examples/planogram/plancheck/models.py) and the shelf_image fixture from its conftest; the parity test loads the detector script adopted by TASK-3336 (transitive).",
       "assigned_to": null,
       "started_at": "2026-09-17T23:08:13+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3340-detection.md"
+      "completed_at": "2026-09-17T23:38:33+00:00",
+      "file": "sdd/tasks/completed/TASK-3340-detection.md"
     },
     {
       "id": "TASK-3341",
@@ -135,7 +135,7 @@
       "feature_id": "FEAT-565",
       "feature": "new-planogram-compliance-algo",
       "spec": "sdd/specs/new-planogram-compliance-algo.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -145,8 +145,8 @@
       "parallelism_notes": "Imports TagRow, Tag, Slot, Box from TASK-3337 (examples/planogram/plancheck/models.py); tests build TagRow objects by hand, no detector needed.",
       "assigned_to": null,
       "started_at": "2026-09-17T23:08:13+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3341-grid.md"
+      "completed_at": "2026-09-17T23:38:33+00:00",
+      "file": "sdd/tasks/completed/TASK-3341-grid.md"
     },
     {
       "id": "TASK-3342",
