@@ -3,6 +3,7 @@
 One coroutine — prompt + images + Pydantic schema -> validated instance — over any ai-parrot
 client, with a disk cache. Two duck-typed lanes; provider SDK objects are never touched here.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -41,8 +42,16 @@ def split_llm(llm: str) -> tuple[str, str | None]:
     return llm.strip().lower(), None
 
 
-def cache_key(llm: str, base_url: str | None, max_tokens: int, stage: str, prompt_version: str,
-              prompt: str, schema: type[BaseModel], images: Sequence[bytes]) -> str:
+def cache_key(
+    llm: str,
+    base_url: str | None,
+    max_tokens: int,
+    stage: str,
+    prompt_version: str,
+    prompt: str,
+    schema: type[BaseModel],
+    images: Sequence[bytes],
+) -> str:
     """Return the sha256 hex digest of a canonical JSON of ALL arguments (images by their sha256)."""
     payload = {
         "llm": llm,
@@ -93,8 +102,16 @@ def _cache_load(path: Path, schema: type[T]) -> T | None:
 class VisionBackend:
     """Adapter: prompt + images + Pydantic schema -> validated instance."""
 
-    def __init__(self, llm: str, *, cache_dir: Path, base_url: str | None = None,
-                 api_key: str | None = None, max_tokens: int = 8192, client: Any | None = None) -> None:
+    def __init__(
+        self,
+        llm: str,
+        *,
+        cache_dir: Path,
+        base_url: str | None = None,
+        api_key: str | None = None,
+        max_tokens: int = 8192,
+        client: Any | None = None,
+    ) -> None:
         """Create (or accept) the ai-parrot client.
 
         Args:
@@ -143,8 +160,7 @@ class VisionBackend:
             exc_args = exc if exc else (None, None, None)
             await self._llm_client.__aexit__(*exc_args)
 
-    async def ask(self, prompt: str, images: Sequence[bytes], schema: type[T], *, stage: str,
-                  prompt_version: str) -> T:
+    async def ask(self, prompt: str, images: Sequence[bytes], schema: type[T], *, stage: str, prompt_version: str) -> T:
         """Cache lookup -> lane dispatch -> validate -> one repair retry -> cache store.
 
         Raises:
@@ -170,8 +186,7 @@ class VisionBackend:
             result = self._extract(message, schema)
         except (ValidationError, ValueError) as exc:
             repair_prompt = (
-                f"{prompt}\n\nYour previous answer was rejected: {exc}. "
-                "Return ONLY valid JSON for the schema."
+                f"{prompt}\n\nYour previous answer was rejected: {exc}. " "Return ONLY valid JSON for the schema."
             )
             try:
                 message = await self._call(repair_prompt, images, schema)
@@ -186,7 +201,12 @@ class VisionBackend:
 
         cache_store(
             path,
-            {"llm": self.llm, "stage": stage, "prompt_version": prompt_version, "parsed": result.model_dump(mode="json")},
+            {
+                "llm": self.llm,
+                "stage": stage,
+                "prompt_version": prompt_version,
+                "parsed": result.model_dump(mode="json"),
+            },
         )
         return result
 
@@ -198,8 +218,13 @@ class VisionBackend:
                 prompt, images=list(images), structured_output=schema, temperature=0.0, stateless=True, **model_kw
             )
         return await self._llm_client.ask_to_image(  # lane 2 — generic common subset
-            prompt, image=images[0], reference_images=list(images[1:]) or None, structured_output=schema,
-            temperature=0.0, max_tokens=self.max_tokens, **model_kw
+            prompt,
+            image=images[0],
+            reference_images=list(images[1:]) or None,
+            structured_output=schema,
+            temperature=0.0,
+            max_tokens=self.max_tokens,
+            **model_kw,
         )
 
     @staticmethod

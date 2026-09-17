@@ -1,4 +1,5 @@
 """Unit tests for plancheck.vision (FEAT-565, TASK-3342). No network, no parrot import."""
+
 from __future__ import annotations
 
 import re
@@ -24,12 +25,18 @@ class _Msg:
 
 class FakeGoogle:
     """Has BOTH methods, like GoogleGenAIClient — lane 1 must win."""
+
     def __init__(self, replies: list[Any]) -> None:
         self.replies, self.calls = replies, []
+
     async def image_understanding(self, prompt: str, images: Any, **kw: Any) -> Any:
-        self.calls.append(("image_understanding", prompt, images, kw)); return self._next()
+        self.calls.append(("image_understanding", prompt, images, kw))
+        return self._next()
+
     async def ask_to_image(self, prompt: str, image: Any, **kw: Any) -> Any:
-        self.calls.append(("ask_to_image", prompt, image, kw)); return self._next()
+        self.calls.append(("ask_to_image", prompt, image, kw))
+        return self._next()
+
     def _next(self) -> Any:
         r = self.replies.pop(0)
         if isinstance(r, Exception):
@@ -40,8 +47,10 @@ class FakeGoogle:
 class FakeGeneric:
     """Exposes ONLY ask_to_image (OpenAI / Anthropic / future LocalLLMClient). Do NOT subclass FakeGoogle:
     ``hasattr`` would still see ``image_understanding``."""
+
     def __init__(self, replies: list[Any]) -> None:
         self.replies, self.calls = replies, []
+
     async def ask_to_image(self, prompt: str, image: Any, **kw: Any) -> Any:
         self.calls.append(("ask_to_image", prompt, image, kw))
         r = self.replies.pop(0)
@@ -56,8 +65,14 @@ class NoVision:
 
 def test_cache_key_stable_and_sensitive() -> None:
     base_kwargs = dict(
-        llm="google:gemini-3-flash", base_url=None, max_tokens=8192, stage="identify",
-        prompt_version="v1", prompt="hello", schema=Answer, images=[b"img1", b"img2"],
+        llm="google:gemini-3-flash",
+        base_url=None,
+        max_tokens=8192,
+        stage="identify",
+        prompt_version="v1",
+        prompt="hello",
+        schema=Answer,
+        images=[b"img1", b"img2"],
     )
     key = cache_key(**base_kwargs)
     assert key == cache_key(**base_kwargs)  # determinism
