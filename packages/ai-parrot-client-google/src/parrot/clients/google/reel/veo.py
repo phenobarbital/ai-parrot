@@ -132,46 +132,52 @@ class VeoClipAdapter:
         if starting_frame is not None:
             gen_kwargs["image"] = self._load_starting_frame(starting_frame)
 
+        # "Directly created clients require explicit ownership" (verified:
+        # client.py's get_client docstring) — this adapter owns and closes
+        # the async surface (client.aio.aclose(), NOT the sync close()) on
+        # every exit, success or failure.
         client = await self._owner.get_client(model=profile.model_id)
-
         try:
-            operation = await client.aio.models.generate_videos(**gen_kwargs)
-        except asyncio.CancelledError:
-            raise
-        except Exception as exc:
-            raise classify_provider_error(exc, stage="veo_submit") from exc
+            try:
+                operation = await client.aio.models.generate_videos(**gen_kwargs)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                raise classify_provider_error(exc, stage="veo_submit") from exc
 
-        operation_id = getattr(operation, "name", None)
+            operation_id = getattr(operation, "name", None)
 
-        operation = await self._poll(client, operation, deadline=deadline, operation_id=operation_id)
+            operation = await self._poll(client, operation, deadline=deadline, operation_id=operation_id)
 
-        if getattr(operation, "error", None):
-            raise classify_provider_error(
-                OperationFailure(
-                    str(operation.error), code=getattr(operation.error, "code", None), operation_id=operation_id
-                ),
-                stage="veo_poll",
-                scene_index=None,
+            if getattr(operation, "error", None):
+                raise classify_provider_error(
+                    OperationFailure(
+                        str(operation.error), code=getattr(operation.error, "code", None), operation_id=operation_id
+                    ),
+                    stage="veo_poll",
+                    scene_index=None,
+                )
+
+            response = operation.response or operation.result
+            generated_videos = getattr(response, "generated_videos", None) if response else None
+            if not generated_videos:
+                rai_count = getattr(response, "rai_media_filtered_count", None)
+                rai_reasons = getattr(response, "rai_media_filtered_reasons", None)
+                reason = "SAFETY" if (rai_count or rai_reasons) else None
+                raise classify_provider_error(
+                    FilteredOutputError(
+                        f"No videos returned (rai_count={rai_count}, rai_reasons={rai_reasons}).",
+                        reason=reason,
+                        operation_id=operation_id,
+                    ),
+                    stage="veo_result",
+                )
+
+            video_bytes = await self._download_with_retries(
+                client, generated_videos[0].video, deadline=deadline, operation_id=operation_id
             )
-
-        response = operation.response or operation.result
-        generated_videos = getattr(response, "generated_videos", None) if response else None
-        if not generated_videos:
-            rai_count = getattr(response, "rai_media_filtered_count", None)
-            rai_reasons = getattr(response, "rai_media_filtered_reasons", None)
-            reason = "SAFETY" if (rai_count or rai_reasons) else None
-            raise classify_provider_error(
-                FilteredOutputError(
-                    f"No videos returned (rai_count={rai_count}, rai_reasons={rai_reasons}).",
-                    reason=reason,
-                    operation_id=operation_id,
-                ),
-                stage="veo_result",
-            )
-
-        video_bytes = await self._download_with_retries(
-            client, generated_videos[0].video, deadline=deadline, operation_id=operation_id
-        )
+        finally:
+            await client.aio.aclose()
 
         local_path = output_directory / f"veo_{uuid.uuid4().hex[:8]}.mp4"
         await asyncio.get_running_loop().run_in_executor(

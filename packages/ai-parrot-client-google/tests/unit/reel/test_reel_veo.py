@@ -56,6 +56,7 @@ def _fake_client(*, generate_videos, operations_get=None, files_download=None):
     client.aio.operations.get = operations_get or AsyncMock()
     client.aio.files = MagicMock()
     client.aio.files.download = files_download or AsyncMock(return_value=b"FAKEVIDEOBYTES")
+    client.aio.aclose = AsyncMock()
     return client
 
 
@@ -89,6 +90,7 @@ class TestWireConfigSerialization:
         )
 
         gen.assert_awaited_once()
+        client.aio.aclose.assert_awaited_once()
         call_kwargs = gen.call_args.kwargs
         config = call_kwargs["config"]
         assert config.person_generation == "allow_all"
@@ -168,6 +170,7 @@ class TestSafetyAndTimeoutSingleSubmit:
         assert exc_info.value.code is ReelErrorCode.SAFETY_BLOCKED
         assert exc_info.value.retryable is False
         gen.assert_awaited_once()
+        client.aio.aclose.assert_awaited_once()
 
     async def test_operation_error_normalized_and_keeps_operation_id(self, profile, tmp_path):
         gen = AsyncMock(return_value=_op(error=SimpleNamespace(code=400, message="bad config"), name="operations/xyz"))
@@ -339,6 +342,7 @@ class TestCancellation:
             )
 
         assert cancel_calls["n"] == 1  # never retried
+        client.aio.aclose.assert_awaited_once()  # closed even on cancellation
 
 
 class TestMediaMeasurement:
