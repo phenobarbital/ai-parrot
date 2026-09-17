@@ -174,7 +174,7 @@ class TestCodexCommandAndEvents:
         assert command[command.index("-c") + 1] == "approval_policy=never"
         assert "--output-schema" in command
         assert "-o" in command
-        assert "--ignore-user-config" in command
+        assert "--ignore-user-config" not in command  # FEAT-563: dev dispatches load project hooks
 
         kinds = [event["kind"] for event in _published_events(dispatcher)]
         assert "dispatch.queued" in kinds

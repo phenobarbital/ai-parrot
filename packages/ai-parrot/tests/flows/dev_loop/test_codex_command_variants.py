@@ -71,7 +71,7 @@ def test_command_shape_options_preserved_for_adversarial_profile(dispatcher):
     assert "--model" in cmd and "gpt-5.5" in cmd
     assert "--output-schema" in cmd and "/s.json" in cmd
     assert "-o" in cmd and "/o.json" in cmd
-    assert "--ignore-user-config" in cmd  # default True on the base profile
+    assert "--ignore-user-config" in cmd  # review profiles pin ignore_user_config=True (FEAT-563)
     assert cmd[-1] == "P"
 
 
