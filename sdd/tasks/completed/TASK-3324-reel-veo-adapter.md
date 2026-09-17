@@ -207,5 +207,23 @@ Completed 2026-09-17 by sdd-worker orchestrator (fallback sequential loop, sonne
 - No live-service claims inferred from mocks; no default test performs a paid provider call. No
   files outside the task's three listed targets were created or modified.
 
+### Addendum (2026-09-17, same session, discovered while implementing TASK-3326)
+
+**Self-caught defect, fixed via `fix(video-reel-omni-veo-reliability): TASK-3324 review fix —
+close the owned async Veo client on every exit`**: the initial delivery above called
+`await self._owner.get_client(model=profile.model_id)` but never closed the returned client.
+`GoogleGenAIClient.get_client()`'s own docstring says "Directly created clients require explicit
+ownership" — confirmed via source inspection that `get_client()` builds a genuinely fresh
+`genai.Client` on every call (no caching), and that `genai.Client.close()` is sync and only closes
+the SYNC surface — the async surface this adapter actually uses (`client.aio.*`) requires
+`await client.aio.aclose()` instead (verified via `inspect.getsource`/`inspect.signature` on the
+installed `google-genai` package). Fixed by wrapping submit→poll→download in a
+`try/finally: await client.aio.aclose()`, so the client closes on success, every classified
+failure, AND cancellation. Added `client.aio.aclose.assert_awaited_once()` to the success,
+immediate-safety-block, and cancellation tests (3 of the 14) — re-ran the full `test_reel_veo.py`
+(14 passed) and `tests/unit/reel/` (107 passed) after the fix. This directly satisfies this task's
+own Acceptance Criterion "Create/close the stage client using the effective model" (§2), which the
+original delivery missed for the "close" half.
+
 Seat: sonnet (fallback sequential, orchestrator-implemented) · Backend: native · Model: sonnet ·
 Attempts: 1 · Duration: n/a (fallback, not MCP/native-agent timed) · Tokens: n/a
