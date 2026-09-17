@@ -10,7 +10,7 @@ base_branch: dev
 
 **Date**: 2026-09-18
 **Author**: Jesus Lara / Claude
-**Status**: exploration
+**Status**: accepted
 **Recommended Option**: Option A
 
 ---
@@ -752,7 +752,7 @@ import questionary   # core dependency, pyproject.toml:165
 - [x] wikitoolkit's place in `parrot toolkits list` — *Owner: Jesus*:
   completely invisible; it stays owned by `parrot claude install`.
 
-- [ ] **`env:` cannot hold a secret — confirm the intended resolution path.**
+- [x] **`env:` cannot hold a secret — confirm the intended resolution path.**
   `ToolkitSection.env` values are written *verbatim* into the host config
   (`google/assets.py:99`), and `.mcp.json` is git-tracked in this repo, so a
   DSN placed there would be committed. parrot performs no `${VAR}`
@@ -761,8 +761,10 @@ import questionary   # core dependency, pyproject.toml:165
   which is how `querysource.conf.asyncpg_url` (`_qs.py:63`) already resolves
   its DSN. Is "empty `env:`, inherit the host process environment, document
   the relevant variable names in the template comments" the intended
-  reading of the no-secrets-on-disk decision? — *Owner: Jesus*
-- [ ] **"Permissive" is not expressible for `DatabaseQueryToolkit`.** It has
+  reading of the no-secrets-on-disk decision? — *Owner: Jesus*: **yes** — templates ship `env: {}` and the spawned `parrot mcp-local`
+  inherits the MCP host's environment. Template comments name the relevant
+  variables; parrot never writes or expands a secret.
+- [x] **"Permissive" is not expressible for `DatabaseQueryToolkit`.** It has
   no `allow_write`/`allow_raw_sql` kwargs and its `QueryValidator` DDL/DML
   guard is unconditional (toolkit.py:365-367) — `__init__` accepts only
   `output_dir` and `static_dir`. So the only permissive knob available is
@@ -770,21 +772,28 @@ import questionary   # core dependency, pyproject.toml:165
   permissive means `allow_write=true` (exposes `qs_save_multiquery`, which is
   in `confirming_tools` and therefore gets an injected `confirm` flag) and
   `allow_raw_sql=true`. Confirm both readings — and note `max_rows` defaults
-  to 200 in querysource vs 10000 in databasequery. — *Owner: Jesus*
-- [ ] Should `list` and `status` be **one** subcommand or two? The decision
+  to 200 in querysource vs 10000 in databasequery. — *Owner: Jesus*: both readings confirmed. `querysource` seeds `allow_write: true` +
+  `allow_raw_sql: true`; `database-query` seeds `output_dir` so
+  `dq_save_result` is exposed. The host's own per-tool permission prompt is
+  the human gate.
+- [x] Should `list` and `status` be **one** subcommand or two? The decision
   selected "list / status" as a pair, but the described output (templates ×
   state × per-host entries × drift) is a single table. Proposal: `list` is
   the table and `status` is an alias, or `status` adds per-host config file
-  paths and health. — *Owner: Jesus*
-- [ ] Core ships a template whose `class:` points at
+  paths and health. — *Owner: Jesus*: **two subcommands** — `list` is the template × state × per-host × drift
+  table; `status` reports the resolved config-file path and health per host.
+- [x] Core ships a template whose `class:` points at
   `parrot_tools.querysource...`, which core cannot import and does not own.
   Accept the wart for now (Option D is the eventual fix), or place the
   `querysource`/`scraping`/`browsing` templates in `ai-parrot-tools` and
-  teach `available_templates()` to scan more than one package? — *Owner: Jesus*
-- [ ] Does `parrot toolkits install` with no `--host` default to **all
+  teach `available_templates()` to scan more than one package? — *Owner: Jesus*: **accept the wart for v1** — all templates stay in core's
+  `_toolkit_templates/`. Option D (entry-point discovery) remains the eventual
+  fix and is not precluded.
+- [x] Does `parrot toolkits install` with no `--host` default to **all
   detected hosts** (config file present in the repo) or prompt for host
-  selection every time? — *Owner: Jesus*
-- [ ] After the cut, should `parrot claude|codex|google install` *warn* when
+  selection every time? — *Owner: Jesus*: **all detected hosts** — every host whose config file already exists in
+  the repo. `--host` narrows it explicitly.
+- [x] After the cut, should `parrot claude|codex|google install` *warn* when
   `.parrot/mcp-toolkits.yaml` is absent or empty (pointing at
   `parrot toolkits install`), so the removal of `--toolkits` is discoverable
-  rather than silent? — *Owner: Jesus*
+  rather than silent? — *Owner: Jesus*: **yes** — warn and name `parrot toolkits install`.
