@@ -176,7 +176,7 @@
       "feature_id": "FEAT-558",
       "feature": "querysource-toolkit-refactor",
       "spec": "sdd/specs/querysource-toolkit-refactor.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -186,9 +186,9 @@
       "parallel": false,
       "parallelism_notes": "Modifies toolkit.py after execute_slug; needs normalize_pipeline.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3253-qs-components-and-validate-pipeline.md"
+      "started_at": "2026-09-17T00:11:02+00:00",
+      "completed_at": "2026-09-17T00:11:02+00:00",
+      "file": "sdd/tasks/completed/TASK-3253-qs-components-and-validate-pipeline.md"
     },
     {
       "id": "TASK-3254",
