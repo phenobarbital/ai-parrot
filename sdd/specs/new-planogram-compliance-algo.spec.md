@@ -139,11 +139,14 @@ Eight stages. Stages 1, 2, 4, 6, 8 are deterministic Python; 3, 5, 7 call OCR/LL
 2. **Slot grid** — (a) *tag-anchored* slots: horizontal bounds from neighbouring
    tag centres clamped to ±0.85 median tag width (±0.65 at row ends); top = the
    previous row's fitted line + 0.7 tag height (first row: tag top − 0.7 row gap);
-   bottom = tag top. (b) *gap-filled* slots: where the centre-to-centre distance
-   between consecutive tags is within ±25 % of `k ×` the row's median pitch
-   (k ≥ 2), synthesize k−1 slots; otherwise none. (c) *untagged row*: if at least
+   bottom = tag top. (b) *gap-filled* slots: for consecutive tags at centre distance `d` and row median
+   pitch `p`, let `k = round(d / p)`; when `k ≥ 2` **and** `|d/p − k| ≤ 0.25` synthesize k−1 slots
+   (bounds by the anchored-slot rule over the merged real + virtual centres); otherwise none
+   (so 1.5 × pitch is rejected). (c) *untagged row*: if at least
    0.6 × median row pitch of image remains below the last tag row, synthesize one
-   row using the column boundaries of the row above. Origins are recorded.
+   row using the column boundaries of the row above (requires ≥ 2 tag rows — one row gives no vertical
+   pitch; for registration it inherits the horizontal pitch of the row above). Origins are recorded.
+   Row numbers, `Slot.index`, `Tag.position` and mark numbers are all **1-based**.
 3. **Tag price reading** — 4× bicubic upscale; RapidOCR; a price grammar accepts
    only *dollars + two-digit cents*. Everything else goes to the vision LLM as
    **one numbered contact sheet per row**. Dollars-only reads that the LLM cannot
@@ -181,11 +184,14 @@ Eight stages. Stages 1, 2, 4, 6, 8 are deterministic Python; 3, 5, 7 call OCR/LL
 `--base-url`; `--prices`; `--roi L T R B`; `--verify-pass` / `--no-verify-pass`
 (default: **on for cloud backends, off for local backends** — the local model is
 LFM2.5-VL-1.6B, too weak for the discrimination task); `--no-marks`
-(A/B switch for the Set-of-Marks overlay); `--concurrency`
+(A/B switch for the Set-of-Marks overlay — affects **pass 1 only**; pass 2 always renders marked strips,
+one call per row, because its options are tied to mark numbers); `--concurrency`
 (default 4; 1 when the provider is a local server); `--cache-dir` (default
 `examples/planogram/results/.plancheck_cache`); `--visit-id`;
 `--emit-catalog-template <path>`. Exit codes: `0` complete, `2` complete with
-recorded model/OCR errors (results still written), `1` invalid input.
+recorded model/OCR errors (results still written), `1` invalid input (argparse usage errors are
+remapped from 2 to 1; a backend without a vision method is also 1). A photo with zero tag rows is
+recorded in `notes`, not in `run.errors`.
 
 Artefacts in `--output`: `compliance.json` (primary), `annotated_<image_id>.jpg`,
 `slots/`, `tags/`, `run.snapshot.json` (settings, model ids, prompt versions,
@@ -279,7 +285,15 @@ the reading's normalised brand:
    AND colour set equal (when the item lists colours) AND `pack` equal (when the
    reading has one). Exactly one item → that SKU.
 3. *Alias*: `rapidfuzz.fuzz.token_set_ratio(alias, line) ≥ 92` for exactly one item.
-- One SKU → `direct`. Several → `ambiguous` with `candidate_skus`. None → `unresolved`.
+- The rules **short-circuit**: the first rule yielding ≥ 1 SKU decides. One SKU → `direct`. Several →
+  `ambiguous` with `candidate_skus`. None → `unresolved`.
+- Rule 2 with `reading.xl is None` can only produce *candidates*: the result is `ambiguous` even with a
+  single candidate, never `direct`.
+- Both sides are casefolded before every `rapidfuzz` call (rapidfuzz 3.x does no default lowercasing).
+  Near-twin aliases ("Acme 10 Black" / "Acme 10XL Black" score 92.9) legitimately make rule 3 return several
+  items → `ambiguous`; no exact-match tie-break is added — rule 2 is what separates variants.
+- `identify_rows` stores the catalog-normalised brand (`normalize_brand`) on the reading it keeps, so
+  `registration.py` and `scoring.py` compare brands by `casefold()` only.
 - XL vs standard, colour and pack variants are **never** fuzzy-merged. `rapidfuzz`
   is used only for brand-name normalisation (≥ 90) and rule 3.
 
@@ -319,12 +333,14 @@ capped at lenient-only credit.
 `match` (`direct`) 1 · `match` (`verified_by_expectation`) `w.verified_by_expectation`
 (default 1.0) · `misplaced` `w.misplaced` (0.5) · `variant_unresolved` (0.5) ·
 `inferred_present` (0.5) · others 0. Rows graded `low` contribute 0 to strict.
-Weights live in `ScoringWeights` and are overridable from the CLI settings.
+Weights live in `ScoringWeights`, overridable programmatically through `Settings.weights`; there is
+no CLI flag for them in v1.
 
 **Metrics.** `coverage` = facings not in {`not_visible`, `not_assessed`, `conflict`} / all
 facings. `strict_pct`, `lenient_pct` = Σ credits / decided SKU-specific facings
 (decided = `identity_required` and covered). `occupancy_pct` = occupied /
-(occupied + empty). Undefined ratios are `null`. Brand share: expected facings
+(occupied + empty). Undefined ratios are `null`. **Units:** every `*_pct` field is a percentage
+0–100 rounded to 2 decimals; `coverage` and every `*_share` are fractions 0–1 rounded to 4 decimals. Brand share: expected facings
 share vs observed facings share (observed brand; unknown bucket kept) vs
 **linear share** (slot widths normalised by their row's total slot width).
 Price compliance (only with `--prices`): over facings with `match` and a `read`
@@ -633,10 +649,12 @@ while any entry is `inferred`/`partial`, and the report says so in `notes`.
   def contact_sheet(crops: list[np.ndarray], cell_height: int = 240) -> bytes:
       """One PNG with numbered cells (1-based) for the LLM fallback."""
   async def read_prices(image: np.ndarray, slots: list[Slot], ocr: TagOcr,
-                        backend: "VisionBackend | None") -> dict[str, PriceReading]:
+                        backend: "VisionBackend | None", *, semaphore: asyncio.Semaphore | None = None,
+                        errors: list[str] | None = None) -> dict[str, PriceReading]:
       """slot_id → PriceReading. OCR runs via ``asyncio.to_thread``; per row, tags that are not
       ``read`` go to ONE contact-sheet LLM call (schema ``RowPriceReading``). Slots without a
-      tag → ``not_assessed``. LLM failure keeps the OCR result and records an issue upstream."""
+      tag → ``not_assessed``. LLM calls run under ``semaphore``; a per-row LLM failure keeps the OCR result
+      and appends one string to ``errors`` (→ exit code 2)."""
   ```
 
 ### Module 6: vision
@@ -652,9 +670,9 @@ while any entry is `inferred`/`partial`, and the report says so in `notes`.
   class VisionBackend:
       """Adapter: prompt + images + Pydantic schema → validated instance."""
       def __init__(self, llm: str, *, cache_dir: Path, base_url: str | None = None,
-                   api_key: str | None = None, max_tokens: int = 8192) -> None:
+                   api_key: str | None = None, max_tokens: int = 8192, client: Any | None = None) -> None:
           """``LLMFactory.create(llm, model_args={"temperature": 0.0, "max_tokens": …}, **kw)``
-          # verified: packages/ai-parrot/src/parrot/clients/factory.py:257 (kwargs merged at :334)"""
+          # verified: packages/ai-parrot/src/parrot/clients/factory.py:257 (kwargs merged at :336)"""
       async def __aenter__(self) -> "VisionBackend": ...   # enters the client (base.py:1155 — verified)
       async def __aexit__(self, *exc: object) -> None: ...
       @property
@@ -786,8 +804,9 @@ while any entry is `inferred`/`partial`, and the report says so in `notes`.
 - **Interface Skeleton**:
   ```python
   # examples/planogram/plancheck/pipeline.py  (new)
-  async def run_check(settings: Settings) -> ComplianceReport:
-      """Stages 1→8. Images are decoded with cv2 in ``asyncio.to_thread``; per image:
+  async def run_check(settings: Settings, *, backend_factory: Callable[..., Any] | None = None) -> ComplianceReport:
+      """``backend_factory(llm, *, cache_dir, base_url)`` is a test seam (default: ``VisionBackend``); pure helpers
+      ``resolve_verify_pass``, ``effective_concurrency`` and ``absolutize`` live beside it. Stages 1→8. Images are decoded with cv2 in ``asyncio.to_thread``; per image:
       detect → grid → (prices ‖ identify) → register → verify; then merge/score/report.
       A photo with no tag rows is reported unregistered and the run continues."""
   # examples/planogram/planogram_check.py  (new)
@@ -943,7 +962,7 @@ class LLMFactory:
     @staticmethod
     def create(llm: str, model_args: Optional[Dict[str, Any]] = None,
                tool_manager: Optional[Any] = None, **kwargs) -> AbstractClient:  # :257
-    # model_args keys honoured: temperature, top_k, top_p, max_tokens (:313-322); **kwargs merged last (:334)
+    # model_args keys honoured: temperature, top_k, top_p, max_tokens (:313-322); **kwargs merged last (:336)
     # providers include: google, openai, anthropic, local, localllm, llamacpp, ollama, vllm, groq, …
 
 # packages/ai-parrot/src/parrot/clients/base.py   (READ-ONLY — do not modify)
@@ -1022,7 +1041,7 @@ brands HP, Epson, Canon, Brother, Paris Corp, Paris Business, one `None` (`CLOSE
 ### Integration Points
 | New Component | Connects To | Via | Verified At |
 |---|---|---|---|
-| `VisionBackend.__init__` | `LLMFactory.create()` | call with `model_args` + `base_url`/`api_key` kwargs | `clients/factory.py:257,334` |
+| `VisionBackend.__init__` | `LLMFactory.create()` | call with `model_args` + `base_url`/`api_key` kwargs | `clients/factory.py:257,336` |
 | `VisionBackend.__aenter__` | `AbstractClient.__aenter__` | `async with client` | `clients/base.py:1155` |
 | `VisionBackend.ask` lane 1 | `image_understanding()` | `images=[PIL…]`, `model=<parsed model>`, `structured_output=schema`, `temperature=0` | `google/analysis.py:438` |
 | `VisionBackend.ask` lane 2 | `ask_to_image()` | `image=first`, `reference_images=rest`, `structured_output=schema` | `openai/client.py:1468`, `anthropic/client.py:1307` |
@@ -1192,3 +1211,4 @@ Summary: **10** confirmed · **0** rejected · **2** escalated (both since resol
 |---|---|---|---|
 | 0.1 | 2026-09-17 | Jesus Lara | Initial draft from accepted brainstorm (Option D); design-research triage folded in (10 confirm / 2 escalate) |
 | 0.2 | 2026-09-17 | Jesus Lara | Open questions Q1–Q7 resolved: planogram JSON not tracked (public repo); script-local SDK lane removed — prerequisite `localllm-ask-to-image` (LocalLLMClient only, soft dependency); weights confirmed; ground truth out of scope; local model LFM2.5-VL-1.6B (sub-strips always, pass 2 off locally); Set-of-Marks on by default |
+| 0.3 | 2026-09-17 | Jesus Lara | Clarifications surfaced while writing the 15 tasks: gap-fill formula, untagged-row preconditions, 1-based indices, resolution short-circuit / xl-None / casefold rules, brand normalisation at identify, metric units, `--no-marks` scope, weights without CLI flag, exit-code details, `read_prices(semaphore=, errors=)`, test seams (`client=`, `backend_factory=`), factory anchor :336 |
