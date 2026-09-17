@@ -1314,7 +1314,7 @@ class QANode(DevLoopNode):
         synthesized: List[CriterionResult] = []
         audit_lines: List[str] = []
         all_passed = True
-        for (criterion, _gate_id), gate in zip(opened, resolved_gates):
+        for (criterion, _gate_id), gate in zip(opened, resolved_gates, strict=True):
             passed = gate.status == "approved"
             all_passed = all_passed and passed
             synthesized.append(

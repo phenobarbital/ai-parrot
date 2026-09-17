@@ -799,13 +799,14 @@ def test_edit_file_missing_match_does_not_raise(monkeypatch, tmp_path):
 @pytest.mark.asyncio
 async def test_apply_patch_recovers_a_wrong_hunk_line_count(monkeypatch, tmp_path):
     """--recount rescues the arithmetic error models make most often."""
+    import asyncio
     import subprocess
 
     dispatcher = _dispatcher(monkeypatch, _FakeClient([]))
-    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    await asyncio.to_thread(subprocess.run, ["git", "init", "-q"], cwd=tmp_path, check=True)
     target = tmp_path / "mod.py"
     target.write_text("a = 1\nb = 2\nc = 3\n", encoding="utf-8")
-    subprocess.run(["git", "add", "mod.py"], cwd=tmp_path, check=True)
+    await asyncio.to_thread(subprocess.run, ["git", "add", "mod.py"], cwd=tmp_path, check=True)
 
     # Header claims 9 lines of context; there are 3. Strict git apply says
     # "corrupt patch at line N"; --recount infers the real counts.
@@ -829,10 +830,11 @@ async def test_apply_patch_recovers_a_wrong_hunk_line_count(monkeypatch, tmp_pat
 
 @pytest.mark.asyncio
 async def test_unsalvageable_patch_points_at_edit_file(monkeypatch, tmp_path):
+    import asyncio
     import subprocess
 
     dispatcher = _dispatcher(monkeypatch, _FakeClient([]))
-    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    await asyncio.to_thread(subprocess.run, ["git", "init", "-q"], cwd=tmp_path, check=True)
     (tmp_path / "mod.py").write_text("a = 1\n", encoding="utf-8")
 
     patch = (

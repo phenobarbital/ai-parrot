@@ -568,7 +568,8 @@ class TestCodexStdinIsolation:
             "uvloop.run(main())\n"
         )
 
-        harness = subprocess.Popen(
+        harness = await asyncio.to_thread(
+            subprocess.Popen,
             [sys.executable, str(harness_script), str(child_script)],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,

@@ -1603,7 +1603,7 @@ class LLMCodeDispatcher:
 
         command, backend = self._search_command(
             query=query,
-            rel_path=os.path.relpath(path, cwd),
+            rel_path=os.path.relpath(path, cwd),  # noqa: ASYNC240 — pure string math, no I/O
             file_glob=str(file_glob) if file_glob else None,
         )
         if command is None:
@@ -1930,7 +1930,7 @@ class LLMCodeDispatcher:
         run_cwd = cwd
         if args.get("cwd"):
             run_cwd = self._resolve_repo_path(cwd, str(args["cwd"]))
-            if not os.path.isdir(run_cwd):
+            if not await asyncio.to_thread(os.path.isdir, run_cwd):
                 return {
                     "ok": False,
                     "exit_code": None,

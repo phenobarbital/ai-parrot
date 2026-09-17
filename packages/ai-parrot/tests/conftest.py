@@ -6,10 +6,12 @@ import logging
 import os
 import sys
 from dataclasses import dataclass, field
+from io import BytesIO
 from pathlib import Path
 import types
 from typing import Any, Dict, List, Optional
 
+import pandas as pd
 import pytest
 
 
@@ -727,13 +729,8 @@ _install_navigator_stubs()
 # ── Permission System Fixtures ─────────────────────────────────────────────────
 # These fixtures support FEAT-014: Granular Permissions System tests.
 
-import pytest
-
 # ── Dataset Manager Fixtures ────────────────────────────────────────────────
 # These fixtures support FEAT-021: DatasetManager Support tests.
-
-import pandas as pd
-from io import BytesIO
 
 
 @pytest.fixture
