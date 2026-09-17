@@ -55,7 +55,7 @@ class SnippetApprovalService:
             check_conformance: Runs TASK-3175's tier-conformance +
                 equivalence gate against a bundle. Injected so this
                 service has no import-time dependency on
-                scripts/check_snippet_conformance.py.
+                services/snippets/conformance.py.
         """
         self._store = store
         self._check_conformance = check_conformance
