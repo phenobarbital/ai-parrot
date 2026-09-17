@@ -112,7 +112,7 @@
       "feature_id": "FEAT-558",
       "feature": "querysource-toolkit-refactor",
       "spec": "sdd/specs/querysource-toolkit-refactor.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -121,9 +121,9 @@
       "parallel": true,
       "parallelism_notes": "Only touches results.py + test.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3250-qs-results-shaping.md"
+      "started_at": "2026-09-17T00:04:05+00:00",
+      "completed_at": "2026-09-17T00:04:05+00:00",
+      "file": "sdd/tasks/completed/TASK-3250-qs-results-shaping.md"
     },
     {
       "id": "TASK-3251",
