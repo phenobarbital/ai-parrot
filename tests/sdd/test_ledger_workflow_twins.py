@@ -65,6 +65,13 @@ class TestCodereviewTwins:
             assert "Deferred" in content and "findings" in content.lower(), path
             assert "ledger open" in content, path
 
+    def test_read_only_ledger_is_retained_as_an_unfiled_finding(self):
+        """Sandboxes may not write the shared ledger, but must preserve the review finding."""
+        for path in (self.CLAUDE, self.ANTIGRAVITY, self.CODEX):
+            content = read_workflow_file(path)
+            assert "shared ledger is read-only" in content, path
+            assert "worktree-local ledger" in content, path
+
     def test_no_findings_outcome_is_explicit(self):
         """A clean review (no deferred findings) has an explicit row/outcome, not silence."""
         for path in (self.CLAUDE, self.ANTIGRAVITY):

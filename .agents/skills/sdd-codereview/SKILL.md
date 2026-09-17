@@ -7,9 +7,12 @@ description: Code review a completed SDD task against acceptance criteria, code 
 
 Use this skill when the user asks to review a completed SDD task, run `sdd-codereview`, or perform an adversarial code review on completed task artifacts.
 
-**Mandatory Deferred Findings Table**: Every CONFIRMED 🔴/🟡 finding not fixed in-review MUST be filed 
-with `wikitoolkit ledger open` and listed in the report's Deferred findings table. Reviews with 
-unfixed confirmed findings and an empty Deferred table are invalid.
+**Mandatory Deferred Findings Table**: Every CONFIRMED 🔴/🟡 finding not fixed in-review MUST be
+attempted with `wikitoolkit ledger open` and listed in the report's Deferred findings table. The
+ledger intentionally resolves to the main checkout. If a sandbox makes it read-only, do not request
+broader filesystem access or create a worktree-local ledger; list the full finding with
+`(NOT filed: shared ledger is read-only)`. Reviews with unfiled confirmed findings and an empty
+Deferred table are invalid.
 
 ## Purpose
 
@@ -45,7 +48,7 @@ Reads the task file from `sdd/tasks/completed/`, loads all referenced source fil
    - Synthesize agreements and disagreements.
 5. Generate report:
    - Summary, Critical, Major, Minor/Suggestions.
-   - **Deferred Findings table**: Every CONFIRMED 🔴/🟡 finding not fixed in-review MUST be filed with `wikitoolkit ledger open` and listed in this table.
+   - **Deferred Findings table**: Every CONFIRMED 🔴/🟡 finding not fixed in-review MUST be attempted with `wikitoolkit ledger open` and listed in this table. If the shared ledger is read-only, retain the full finding with `(NOT filed: shared ledger is read-only)`.
    - Acceptance Criteria check table.
    - Adversarial cross-check disposition table.
    - Positive highlights.

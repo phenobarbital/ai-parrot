@@ -5,6 +5,7 @@ Tests CLI registration, exit codes, command behavior, and WikiStoreBusy handling
 
 from __future__ import annotations
 
+import errno
 import json
 from pathlib import Path
 from typing import Any
@@ -111,6 +112,30 @@ def test_ledger_open_busy_soft_success(runner: CliRunner, mock_ledger_service: M
         )
     assert result.exit_code == 0
     assert "index_pending" in result.output
+
+
+def test_ledger_open_read_only_shared_root_is_reported(runner: CliRunner) -> None:
+    """A sandboxed shared ledger write is reported without an unhandled exception."""
+    with patch(
+        "parrot.knowledge.wiki.cli.LedgerService.from_root",
+        side_effect=OSError(errno.EROFS, "Read-only file system"),
+    ):
+        result = runner.invoke(
+            ledger,
+            [
+                "open",
+                "--kind",
+                "bug",
+                "--discovered-from",
+                "spec:FEAT-566",
+                "--title",
+                "Test",
+                "--body",
+                "Desc",
+            ],
+        )
+    assert result.exit_code == 0
+    assert "NOT filed: shared ledger is read-only" in result.output
 
 
 def test_ledger_claim_busy_exit_2(runner: CliRunner, mock_ledger_service: MagicMock) -> None:
