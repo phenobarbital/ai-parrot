@@ -57,10 +57,16 @@ outputs burn seat tokens.
   agent-issued commands**; humans and CI keep seeing everything.
 - G7 — Merge-tier **import-impact selection** from an own AST import scanner over
   the worktree, with a per-distribution cap that escalates to the package suite.
+- G7b — **Core-change escalation**: a change to a *core* source module (transitive
+  source fan-in ≥ threshold, default **50**, or listed in `CORE_PATHS`) escalates to
+  the full suites of **every distribution whose source imports it**, at the merge and
+  feature tiers — **paid once per feature** (deduplicated by content hash of the core
+  files), never at the task tier.
 - G8 — `pytest -n auto` only for distributions on an explicit xdist-safe allowlist.
-- G9 — **Guiding principle: cut wall-clock, never raise test volume.** No SDD tier
-  may run more than today's `QANode` mirror-of-directories selection, except the
-  merge-tier import-impact additions; package suites are never the default of any tier.
+- G9 — **Guiding principle: cost proportional to blast radius.** A leaf change pays
+  the mirror of directories (today's `QANode` granularity); a core change pays the
+  suites of the affected distributions — once. Package suites are never the default
+  of any tier; they appear only through core escalation or the impact cap.
 
 ### Non-Goals (explicitly out of scope)
 
@@ -102,9 +108,25 @@ Kernel parts:
    (plus the `parrot.tools.<x>` → `parrot_tools.<x>` redirect). Default depth
    **1 hop** through source modules. Cache keyed by the worktree `HEAD` tree id
    in the per-worktree git admin dir. Used at the `merge` tier only.
+2b. **Core detector** — the same AST pass also builds the **source** reverse
+   import graph (`src` module → `src` modules importing it). A changed module is
+   *core* when its **transitive** source fan-in ≥ `core_fanin_threshold`
+   (default **50**) or it matches `CORE_PATHS`. Escalation targets = the package
+   suite of the module's own distribution **plus** every distribution whose
+   source imports it (e.g. `parrot.clients.base` → `ai-parrot`, `ai-parrot-tools`,
+   `ai-parrot-server`, `ai-parrot-integrations`, … as measured). Test-module
+   counts are **not** the core signal: tests import concrete classes, not bases
+   (measured: `clients/base.py` has 182 source importers but only 37 direct test
+   importers; `bots/abstract.py` 146 vs 13 — a test-count cap would never fire).
+2c. **Escalation ledger** — `parrot-test-scope-escalations.json` in the
+   per-worktree git admin dir maps `distribution → {core file path → blob hash}`
+   of the last **green** escalated run. A later merge/feature plan skips an
+   escalation whose core files still have the same blob hashes; any content
+   change (or a red run) re-arms it.
 3. **Policy** — per tier: selectors, marker expression
-   `not e2e and not real_llm and not integration`, per-distribution module cap
-   (default **150**) with escalation to that distribution's package suite,
+   `not e2e and not real_llm and not integration`, core escalation (threshold
+   **50**, `CORE_PATHS`, ledger dedupe), per-distribution impacted-test cap
+   (default **150**) as a secondary escalation trigger,
    xdist allowlist (initially **empty**; populated by a spike), fixed flags
    `-q --tb=short -p no:cacheprovider -o log_cli=false`.
 4. **Planner** — groups targets **per distribution** (root `tests/` is its own
@@ -127,15 +149,17 @@ Kernel parts:
 
 | Tier | Where | Selection | Markers excluded | xdist |
 |---|---|---|---|---|
-| `task` | every `sdd-coder` attempt (guard) | task `## Validation Commands` targets ∪ mirror of the attempt's changed files | yes | no |
-| `merge` | `sdd-worker` after each `coder_merge` (CLI) | mirror ∪ import-impact of the merge's changed files; over cap → package suite | yes | allowlisted dists |
-| `feature` | `qa-runner`, `QANode._default_criteria`, `/sdd-done` (CLI / kernel) | **mirror of directories** over every file the feature changed vs its base ∪ the `## Validation Commands` of the feature's tasks — the same granularity `QANode` uses today; **no package suites, no import-impact** | yes | allowlisted dists |
+| `task` | every `sdd-coder` attempt (guard) | task `## Validation Commands` targets ∪ mirror of the attempt's changed files — **never escalates** (< 60 s) | yes | no |
+| `merge` | `sdd-worker` after each `coder_merge` (CLI) | mirror ∪ import-impact of the merge's changed files; **core change → suites of every importing distribution** (skipped if the ledger shows the same core content already green); impacted tests over cap → package suite | yes | allowlisted dists |
+| `feature` | `qa-runner`, `QANode._default_criteria`, `/sdd-done` (CLI / kernel) | **mirror of directories** over every file the feature changed vs its base ∪ the `## Validation Commands` of the feature's tasks (today's `QANode` granularity; no import-impact) ∪ **core escalation** with the same ledger dedupe — so a core change already paid green at merge is not paid again | yes | allowlisted dists |
 | `ci` | GitHub Actions | unchanged | no | unchanged |
 
 **User-facing behaviour**
 
 - Task attempts validate in under a minute; merge / feature QA reports list
-  which tests ran and why (`declared` / `mirror` / `import` / `escalated`).
+  which tests ran and why (`declared` / `mirror` / `import` / `core` / `escalated`),
+  including which core module triggered an escalation and which escalations were
+  skipped because the ledger already had them green.
 - MCP seats see the rewrite in the `run_command` tool result `hint`; native
   seats see the rewritten command in their transcript.
 - An over-broad pytest with an empty plan is refused: "no scoped tests for this
@@ -188,7 +212,7 @@ Kernel parts:
 class TestTarget:
     path: str            # repo-relative file, dir or node id
     distribution: str    # "<dist>" or "root"
-    reason: str          # "declared" | "mirror" | "import" | "escalated"
+    reason: str          # "declared" | "mirror" | "import" | "core" | "escalated"
 
 @dataclass(frozen=True)
 class PytestInvocation:
@@ -200,8 +224,23 @@ class PytestInvocation:
 class ScopePlan:
     tier: str                    # "task" | "merge" | "feature"
     invocations: tuple[PytestInvocation, ...]
-    escalated: tuple[str, ...]   # distributions escalated over the cap
+    escalated: tuple[str, ...]   # distributions escalated (core or cap)
+    core_hits: tuple["CoreHit", ...]   # core modules that triggered escalation
+    skipped_escalations: tuple[str, ...]  # distributions skipped: ledger already green for same content
     notes: tuple[str, ...]       # index-build skips, missing declared paths, …
+
+@dataclass(frozen=True)
+class CoreHit:
+    path: str                    # changed core source file
+    module: str                  # dotted name
+    fanin: int                   # transitive source importers
+    forced: bool                 # matched CORE_PATHS
+    distributions: tuple[str, ...]   # escalation targets
+
+@dataclass(frozen=True)
+class LedgerEntry:
+    distribution: str
+    core_blobs: dict[str, str]   # core file path → git blob hash of the last green escalated run
 
 @dataclass(frozen=True)
 class AttemptContext:
@@ -277,6 +316,11 @@ python -m scripts.sdd.select_tests --tier {task,merge,feature} [--base origin/de
   AGENT_FLAGS: tuple[str, ...] = ("-q", "--tb=short", "-p", "no:cacheprovider", "-o", "log_cli=false")
   DEFAULT_IMPACT_CAP: int = 150
   DEFAULT_IMPACT_DEPTH: int = 1
+  DEFAULT_CORE_FANIN_THRESHOLD: int = 50
+  CORE_PATHS: tuple[str, ...] = (  # seeded from spike S4 measurements; always escalate
+      "packages/ai-parrot/src/parrot/clients/base.py",     # 182 source importers (measured 2026-09-17)
+      "packages/ai-parrot/src/parrot/bots/abstract.py",    # 146 source importers (measured 2026-09-17)
+  )
   XDIST_SAFE_DISTRIBUTIONS: frozenset[str] = frozenset()
   TIERS: tuple[str, ...] = ("task", "merge", "feature")
 
@@ -285,12 +329,15 @@ python -m scripts.sdd.select_tests --tier {task,merge,feature} [--base origin/de
       """Per-tier knobs; defaults above."""
       impact_cap: int = DEFAULT_IMPACT_CAP
       impact_depth: int = DEFAULT_IMPACT_DEPTH
+      core_fanin_threshold: int = DEFAULT_CORE_FANIN_THRESHOLD
+      core_paths: tuple[str, ...] = CORE_PATHS
       xdist_safe: frozenset[str] = XDIST_SAFE_DISTRIBUTIONS
       marker_expression: str = AGENT_MARKER_EXPRESSION
 
   # test_scope/planner.py  (new)
   def build_plan(targets: Sequence[TestTarget], *, tier: str, worktree: Path, policy: ScopePolicy,
-                 escalated: Sequence[str] = (), notes: Sequence[str] = ()) -> ScopePlan:
+                 escalated: Sequence[str] = (), core_hits: Sequence[CoreHit] = (),
+                 skipped_escalations: Sequence[str] = (), notes: Sequence[str] = ()) -> ScopePlan:
       """Group by distribution, prune nested, add flags/markers/xdist → one PytestInvocation per group."""
 
   # test_scope/contract.py  (new)
@@ -303,14 +350,14 @@ python -m scripts.sdd.select_tests --tier {task,merge,feature} [--base origin/de
   # test_scope/__init__.py  (new) — stdlib-only re-exports
   def plan_tests(*, worktree: Path, changed_files: Sequence[str], tier: str,
                  declared: Sequence[Sequence[str]] = (), policy: ScopePolicy | None = None) -> ScopePlan:
-      """Tier entry point: task=declared∪mirror; merge=mirror∪impact (cap→escalate); feature=declared(all tasks)∪mirror."""
+      """Tier entry point: task=declared∪mirror (no escalation); merge=mirror∪impact∪core escalation (cap→escalate); feature=declared(all tasks)∪mirror∪core escalation; escalations deduped by the ledger."""
   def changed_files(worktree: Path, base_ref: str) -> list[str]:
       """git diff --name-only --diff-filter=d <base>...HEAD ∪ untracked/uncommitted (sync subprocess)."""
   ```
 
-### Module 2: Import-impact selector
+### Module 2: Import-impact selector + core detector
 - **Path**: `packages/ai-parrot/src/parrot/flows/dev_loop/test_scope/impact.py`
-- **Responsibility**: AST reverse import index over all test modules in the worktree; map changed source modules (depth-limited through source-module imports) to test files; cache by `HEAD` tree id in the per-worktree git admin dir; syntax errors → skip module and add a plan note.
+- **Responsibility**: one AST pass over the worktree builds (a) the reverse import index test-module side and (b) the **source** reverse import graph; maps changed source modules (depth-limited) to test files; computes **transitive source fan-in** and the set of importing distributions per changed module; classifies core (fan-in ≥ threshold or `CORE_PATHS`); cache by `HEAD` tree id in the per-worktree git admin dir; syntax errors → skip module and add a plan note.
 - **Depends on**: Module 1
 - **Interface Skeleton**:
   ```python
@@ -320,7 +367,9 @@ python -m scripts.sdd.select_tests --tier {task,merge,feature} [--base origin/de
   @dataclass
   class ImportIndex:
       """Reverse index: dotted module → repo-relative test files importing it (or a submodule of it)."""
-      by_module: dict[str, set[str]]
+      by_module: dict[str, set[str]]          # module → test files
+      src_importers: dict[str, set[str]]      # module → source modules importing it
+      module_dist: dict[str, str]             # source module → distribution
       skipped: list[str]
       @classmethod
       def build(cls, worktree: Path) -> "ImportIndex": ...
@@ -329,11 +378,15 @@ python -m scripts.sdd.select_tests --tier {task,merge,feature} [--base origin/de
           """Reuse cache keyed by `git rev-parse HEAD^{tree}` when present."""
   def impacted_tests(index: ImportIndex, changed: Sequence[str], *, worktree: Path, depth: int) -> list[str]:
       """Test files importing a changed module directly, or via ≤ depth source-module hops."""
+  def source_fanin(index: ImportIndex, module: str) -> tuple[int, frozenset[str]]:
+      """Transitive count of source modules importing `module`, and the distributions they belong to."""
+  def detect_core(index: ImportIndex, changed: Sequence[str], *, policy: ScopePolicy) -> list[CoreHit]:
+      """CoreHit per changed source file with fan-in ≥ policy.core_fanin_threshold or in policy.core_paths."""
   ```
 
 ### Module 3: Guard core + attempt context
 - **Path**: `packages/ai-parrot/src/parrot/flows/dev_loop/test_scope/{guard.py,context.py}`
-- **Responsibility**: argv guard (rewrite/block), bash-string guard (rewrite only the pytest segment of a parseable command; unparseable → untouched + note), attempt-context read/write in the per-worktree git admin dir.
+- **Responsibility**: argv guard (rewrite/block), bash-string guard (rewrite only the pytest segment of a parseable command; unparseable → untouched + note), attempt-context and **escalation-ledger** read/write in the per-worktree git admin dir.
 - **Depends on**: Module 1
 - **Interface Skeleton**:
   ```python
@@ -344,6 +397,13 @@ python -m scripts.sdd.select_tests --tier {task,merge,feature} [--base origin/de
   def write_attempt_context(worktree: Path, ctx: AttemptContext) -> Path: ...
   def read_attempt_context(worktree: Path) -> AttemptContext | None:
       """None when absent or malformed — the guard is then inactive."""
+  LEDGER_FILENAME: str = "parrot-test-scope-escalations.json"
+  def read_ledger(worktree: Path) -> dict[str, LedgerEntry]:
+      """Empty when absent or malformed (→ escalations re-run; never silently skipped)."""
+  def record_green_escalation(worktree: Path, hit_dists: Sequence[str], core_files: Sequence[str]) -> None:
+      """Store current blob hashes (`git hash-object`) of core_files for each distribution after a green run."""
+  def pending_escalations(worktree: Path, hits: Sequence[CoreHit]) -> tuple[list[str], list[str]]:
+      """(distributions to run, distributions skipped because ledger blobs match current content)."""
 
   # test_scope/guard.py  (new)
   @dataclass(frozen=True)
@@ -359,18 +419,21 @@ python -m scripts.sdd.select_tests --tier {task,merge,feature} [--base origin/de
 
 ### Module 4: Pydantic boundary models + CLI
 - **Path**: `packages/ai-parrot/src/parrot/flows/dev_loop/test_scope/models.py`, `scripts/sdd/select_tests.py`
-- **Responsibility**: Pydantic mirrors of `ScopePlan` for QANode/JSON; CLI printing either shell-ready commands or `--json`; `--run` executes invocations sequentially and exits non-zero if any fails; exit 2 on usage errors / empty task-tier plan.
-- **Depends on**: Modules 1, 2
+- **Responsibility**: Pydantic mirrors of `ScopePlan` for QANode/JSON; CLI printing either shell-ready commands or `--json`; `--run` executes invocations sequentially, exits non-zero if any fails, and **records green escalated invocations in the ledger**; exit 2 on usage errors / empty task-tier plan.
+- **Depends on**: Modules 1, 2, 3
 - **Interface Skeleton**:
   ```python
   # test_scope/models.py  (new — the ONLY test_scope module importing pydantic)
   class TestTargetModel(BaseModel):
-      path: str; distribution: str; reason: Literal["declared", "mirror", "import", "escalated"]
+      path: str; distribution: str; reason: Literal["declared", "mirror", "import", "core", "escalated"]
   class PytestInvocationModel(BaseModel):
       distribution: str; argv: list[str]; targets: list[TestTargetModel]
   class ScopePlanModel(BaseModel):
       tier: Literal["task", "merge", "feature"]; invocations: list[PytestInvocationModel]
       escalated: list[str] = Field(default_factory=list); notes: list[str] = Field(default_factory=list)
+      core_hits: list[CoreHitModel] = Field(default_factory=list); skipped_escalations: list[str] = Field(default_factory=list)
+  class CoreHitModel(BaseModel):
+      path: str; module: str; fanin: int; forced: bool; distributions: list[str]
       @classmethod
       def from_plan(cls, plan: ScopePlan) -> "ScopePlanModel": ...
 
@@ -381,8 +444,8 @@ python -m scripts.sdd.select_tests --tier {task,merge,feature} [--base origin/de
 
 ### Module 5: QANode integration
 - **Path**: `packages/ai-parrot/src/parrot/flows/dev_loop/nodes/qa.py` (modifies L529-717)
-- **Responsibility**: `_default_criteria` builds a `feature`-tier plan — i.e. **the same mirror-of-directories selection it computes today** (no package suites), now split per distribution and carrying agent flags/markers — and emits one `ShellCriterion` per invocation; an empty plan yields **no** criterion (log warning) instead of bare `pytest`. `_pytest_targets` & co. become one-line delegations to `test_scope.mirror`.
-- **Depends on**: Modules 1, 4
+- **Responsibility**: `_default_criteria` builds a `feature`-tier plan — **the same mirror-of-directories selection it computes today**, plus **core escalation** (suites of importing distributions, deduped by the ledger), split per distribution and carrying agent flags/markers — and emits one `ShellCriterion` per invocation; after the `QAReport` returns, escalated criteria that passed are recorded in the ledger; an empty plan yields **no** criterion (log warning) instead of bare `pytest`. `_pytest_targets` & co. become one-line delegations to `test_scope.mirror`.
+- **Depends on**: Modules 1, 2, 3, 4
 - **Interface Skeleton**:
   ```python
   # nodes/qa.py  (modifies)
@@ -508,6 +571,13 @@ python -m scripts.sdd.select_tests --tier {task,merge,feature} [--base origin/de
 | `test_module_name_for_src_layout_and_tools_redirect` | M2 | path → dotted name, `parrot.tools.x` alias |
 | `test_impacted_tests_direct_and_one_hop` | M2 | direct importer found; 2-hop importer excluded at depth 1 |
 | `test_cap_escalates_to_package_suite` | M2/M1 | > cap impacted files → dist escalated, plan note |
+| `test_core_detected_by_source_fanin_not_test_count` | M2 | module with fan-in ≥ threshold but few test importers → CoreHit |
+| `test_core_paths_force_escalation` | M2 | low fan-in file listed in `CORE_PATHS` → CoreHit(forced=True) |
+| `test_core_escalates_every_importing_distribution` | M2/M1 | core module imported from dists a,b → package suites for a and b |
+| `test_task_tier_never_escalates` | M1 | core change at task tier → declared ∪ mirror only |
+| `test_ledger_skips_green_same_content` | M3 | green escalation recorded; unchanged blobs → skipped at next merge/feature plan |
+| `test_ledger_rearms_on_content_change_or_red` | M3 | changed blob or failed run → escalation planned again |
+| `test_qanode_records_green_escalations` | M5 | passed escalated criteria written to the ledger |
 | `test_index_skips_syntax_errors` | M2 | broken test module skipped, listed in notes |
 | `test_context_in_per_worktree_gitdir` | M3 | written under `gitdir:` target, not commondir, not checkout |
 | `test_guard_inactive_without_context` | M3 | broad pytest allowed when no context file |
@@ -555,10 +625,12 @@ def fixture_monorepo(tmp_path: Path) -> Path:
 - [ ] AC6 — Codex seats inside an attempt receive a **deny** whose reason contains the scoped command; `.codex/hooks.json` is tracked with a portable launcher; development codex dispatches no longer pass `--ignore-user-config` (review profiles still do); the hook is verified active in a codex attempt sub-worktree (spike S1 evidence in `artifacts/logs/`).
 - [ ] AC7 — `/sdd-task` emits `## Validation Commands` with file-level pytest commands for every task and `"validation_contract": "required"` in the index header; `check_task_graph.py` reports the four new codes as specified, and legacy indexes only warn.
 - [ ] AC8 — `integration/` and `e2e/` test directories are auto-marked; `integrations/` directories are not; `pytest --strict-markers` collection succeeds in every touched distribution.
-- [ ] AC9 — Merge tier unions mirror and import-impact targets; a distribution over the cap (default 150 modules) is escalated to its package suite and listed in `escalated`.
+- [ ] AC9 — Merge tier unions mirror and import-impact targets; a distribution over the impacted-test cap (default 150 modules) is escalated to its package suite and listed in `escalated`.
+- [ ] AC9b — **Core escalation**: at merge and feature tiers, a change to a module with transitive source fan-in ≥ 50 or listed in `CORE_PATHS` escalates to the suites of every distribution whose source imports it; verified with `bots/abstract.py` and `clients/base.py` on the real tree (plan `--json` saved to `artifacts/logs/feat-563-core-escalation.json`). The task tier never escalates.
+- [ ] AC9c — **Paid once**: after a green escalated run, a later merge or feature plan with identical core-file blob hashes lists the distribution under `skipped_escalations` and does not run it; any content change or red run re-arms it.
 - [ ] AC10 — `-n auto` appears only for distributions in `XDIST_SAFE_DISTRIBUTIONS`; the allowlist ships with the distributions proven safe by spike S3 (may be empty).
 - [ ] AC11 — Plans never contain one invocation spanning two distributions.
-- [ ] AC11b — The `feature` tier (QANode, qa-runner, `/sdd-done`) selects by mirror of directories ∪ declared validation commands only — no package-suite targets are added by the tier itself, and QANode's selected test set for a given change is never larger than before this feature (parity test).
+- [ ] AC11b — For a change with **no core hit**, the `feature` tier (QANode, qa-runner, `/sdd-done`) selects by mirror of directories ∪ declared validation commands only, and QANode's selected test set is never larger than before this feature (parity test). Package suites appear only through core escalation.
 - [ ] AC12 — **Budget**: on a representative 1–4 file task in `packages/ai-parrot`, task-tier validation wall-clock < 60 s (measured, log in `artifacts/logs/feat-563-task-tier-budget.log`).
 - [ ] AC13 — All new/changed unit tests pass: `pytest packages/ai-parrot/tests/flows/dev_loop/test_scope/ packages/ai-parrot/tests/flows/dev_loop/test_qa_default_criteria.py packages/ai-parrot/tests/flows/dev_loop/test_worktree_environment.py packages/ai-parrot/tests/flows/dev_loop/test_llm_code_dispatcher.py -q`, `pytest packages/ai-parrot-tools/tests/tool_optimizations/test_hooks.py -q`, `pytest tests/sdd_scripts/test_check_task_graph.py tests/sdd_scripts/test_select_tests.py -q`.
 - [ ] AC14 — `ruff check` clean on changed files; `docs/dev_loop/sdd-coder-orchestrator.md` documents tiers, guard behaviour and the CLI.
@@ -685,6 +757,7 @@ filterwarnings = ignore::DeprecationWarning
 - Per-dist pytest sections: `packages/ai-parrot/pyproject.toml:997` (markers `real_llm`, `network`, `live`), `ai-parrot-server:118`, `ai-parrot-integrations:143`, `parrot-formdesigner:93`.
 - `.venv`: pytest 9.1.1, pytest-xdist 3.3.1 (root `pyproject.toml:64`), pytest-asyncio 1.4.0.
 - `.gitignore:363-366` — `.codex/*` ignored except `.codex/agents/*.toml`; `.codex/hooks.json` is local-only today (`git check-ignore -v` → `.gitignore:363`) and its command hard-codes `/home/jesuslara/proyectos/ai-parrot/.venv/bin/python` — M8 tracks it with a portable launcher.
+- Measured source fan-in (grep of `parrot.<m> import` + relative forms over `packages/*/src`, 2026-09-17): `parrot.clients.base` 182 source importers / 37 direct test importers; `parrot.bots.abstract` 146 / 13. Spike S4 re-measures transitively with the M2 index.
 - Codex command build: `_build_command` `dispatchers/codex.py:341`; `--ignore-user-config` appended at L379-380 and L442-443; `--model` at L432; `-c approval_policy=…` at L372-373. `CodexCodeReviewProfile` `models/codex.py:38`, `CodexAdversarialReviewProfile` follows it.
 - Native seat hook wiring: `.claude/agents/sdd-coder.md:16-22` / `sdd-worker.md:27-33` → `python3 "$CLAUDE_PROJECT_DIR/packages/ai-parrot/src/parrot/flows/dev_loop/worktree_environment.py" --hook || exit 2`; SDK path `dispatchers/claude.py:620-640`.
 - Template sections: `sdd/templates/task.md` — `## Acceptance Criteria` L266, `## Test Specification` L276, `## Delegation Contract` L110.
@@ -741,12 +814,16 @@ filterwarnings = ignore::DeprecationWarning
 - **R9 — Hot files**: `dispatchers/llm.py` and `sdd_coder/engine.py` are under active development (FEAT-549/559/561); rebase before each task.
 - **R10 — Timeout budget**: a task-tier plan exceeding the attempt's `command_timeout_seconds` is a failed attempt with the plan attached, not retried broader.
 - **R11 — FEAT-562 drift**: §6 config references must be re-verified after FEAT-562 merges.
-- **R12 — Feature tier granularity** (*decided*): the brainstorm's "package suites of touched distributions" for the feature tier is **dropped**. The feature tier uses the mirror of directories (today's QANode granularity, which avoids the ~9 min full `ai-parrot` suite recorded in `qa.py:591-594`) ∪ declared validation commands. Goal is lower wall-clock, not more coverage (G9).
+- **R12 — Feature tier granularity** (*decided*): the brainstorm's "package suites of touched distributions" as the feature-tier default is **dropped**; the default is the mirror of directories (today's QANode granularity, avoiding the ~9 min full `ai-parrot` suite recorded in `qa.py:591-594`) ∪ declared validation commands. Package suites run only for core changes (G7b, G9).
+- **R13 — Core escalation cost**: `clients/base.py` escalates across `ai-parrot` (1,450 modules, ~9 min) and every satellite importing it. Mitigations: never at task tier; ledger pays it once per feature content; spike S3 prioritises making `ai-parrot` xdist-safe, since that suite dominates escalation cost.
+- **R14 — Ledger trust**: the ledger lives in the per-worktree git admin dir, so it disappears with the worktree (correct: a new worktree re-pays). A malformed ledger reads as empty (re-run, never skip). Only runs executed by the kernel (CLI `--run`, QANode criteria) write it.
+- **R15 — Fan-in blind spots**: dynamic imports and the `parrot.tools` meta_path redirect can under-count fan-in; `CORE_PATHS` is the manual override.
 
 ### Spikes (first tasks, evidence to `artifacts/logs/`)
 - **S1** — confirm the tracked `.codex/hooks.json` fires under `codex exec --cd <attempt sub-worktree>` without `--ignore-user-config` (R3).
 - **S2** — conftest/rootdir behaviour for `pytest packages/<dist>/tests/...` from a worktree (R6).
-- **S3** — xdist safety per small distribution (R7) → initial `XDIST_SAFE_DISTRIBUTIONS`.
+- **S3** — xdist safety per distribution, **`ai-parrot` first** (it dominates core-escalation cost, R13), then satellites (R7) → initial `XDIST_SAFE_DISTRIBUTIONS`.
+- **S4** — measure transitive source fan-in for all source modules with the M2 index; review the top of the distribution against threshold 50 and finalise `CORE_PATHS` (evidence `artifacts/logs/feat-563-core-fanin.tsv`).
 
 ### External Dependencies
 | Package | Version | Reason |
@@ -764,6 +841,7 @@ No new dependencies.
 - [x] Flow type / base branch — *Resolved in brainstorm*: feature → dev
 - [x] Task-tier time budget — *Resolved in brainstorm*: < 60 s for a typical 1–4 file task
 - [x] Overflow policy when impact selection exceeds the cap — *Resolved in brainstorm*: escalate to package suite + xdist (if allowlisted)
+- [x] Core changes (e.g. `clients/base.py`, `bots/abstract.py`) — *Owner: Jesus Lara*: pay the full suites of every importing distribution, detected by transitive source fan-in ≥ 50 or `CORE_PATHS`; at merge and feature tiers only, once per feature via a blob-hash ledger; G9 reworded to "cost proportional to blast radius"
 - [x] Guard mode for over-broad pytest — *Resolved in brainstorm*: rewrite automatically
 - [x] Guard behaviour when the rewrite would be empty — *Resolved in brainstorm*: block with guidance
 - [x] Where marker exclusion applies — *Resolved in brainstorm*: only in agent-issued commands
@@ -776,6 +854,7 @@ No new dependencies.
 - [x] Codex hook reachability — *Owner: Jesus Lara*: take `.codex/hooks.json` out of `.gitignore` (tracked, portable launcher) and stop passing `--ignore-user-config` for development dispatches
 - [x] CI `packages/*/tests` gap — *Owner: Jesus Lara*: out of scope — non-goal here, separate feature
 - [ ] Cap and depth defaults (150 modules / 1 hop) — confirm or tune after measuring on real merges — *Owner: Jesus Lara*
+- [ ] Final `CORE_PATHS` list and fan-in threshold (default 50, seeded with `clients/base.py` and `bots/abstract.py`) — confirm after spike S4 — *Owner: Jesus Lara*
 - [ ] Root conftest loading when rooted at `packages/<dist>/` (spike S2) — *Owner: implementer*
 - [ ] Initial xdist allowlist (spike S3) — *Owner: implementer*
 - [x] Feature tier for `QANode` / qa-runner / `/sdd-done` — *Owner: Jesus Lara*: mirror of directories (∪ declared validation commands), never package suites — the goal is to cut time, not to raise test volume
@@ -800,15 +879,15 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 - **Module dependency graph** (evidence = imported symbols):
   - M2 → M1 (`TestTarget`, `ScopePolicy`, `build_plan`)
   - M3 → M1 (`plan_tests`, `is_broad_pytest`, `parse_validation_commands`)
-  - M4 → M1, M2 (`ScopePlan`, `ImportIndex`)
-  - M5 → M1, M4 (`mirror.*`, `plan_tests`)
+  - M4 → M1, M2, M3 (`ScopePlan`, `ImportIndex`, `record_green_escalation`)
+  - M5 → M1, M2, M3, M4 (`mirror.*`, `plan_tests`, `detect_core`, `record_green_escalation`)
   - M6 → M3 (`guard_argv`, `write_attempt_context`)
   - M7 → M3 (`guard_bash`, `write_attempt_context`)
   - M8 → M3 (`read_attempt_context`, `guard_bash`)
   - M9 → M1 (`parse_validation_commands`, `is_broad_pytest`)
   - M11 → M4 (CLI) — except the two full-suite deletions (no dependency)
   - M10 — no edges
-- **Concurrency**: after M1: {M2, M3, M9, M10} in parallel; after M3: {M6, M7, M8} in parallel; M4 after M2; M5/M11 after M4. Spikes S1–S3 have no code edges and run first/in parallel.
+- **Concurrency**: after M1: {M2, M3, M9, M10} in parallel; after M3: {M6, M7, M8} in parallel; M4 after M2 and M3; M5/M11 after M4. Spikes S1–S3 have no code edges and run first/in parallel; S4 runs after M2 (it uses the index).
 - **Shared files**: `sdd_coder/engine.py` (M6 `_run_attempt`, M7 `prepare_native`) → serialize M6/M7 engine edits or assign the context writer to M6 and have M7 depend on it; `packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_engine_dispatch.py` (M6, M7).
 - **Exclusive resources**: none (no lockfile, migration or extension rebuild). M8 touches `.gitignore` and `models/codex.py` (shared with no other module). Spikes S1 (codex CLI run) may be `parallel: false` if it needs a real codex session.
 - **Cross-feature dependencies**: **FEAT-562 must be merged into `dev` first**. Active edits in `dispatchers/llm.py` / `sdd_coder/engine.py` (FEAT-549/559/561) → rebase before M6/M7.
@@ -821,3 +900,4 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 |---|---|---|---|
 | 0.1 | 2026-09-17 | Jesus Lara / Claude Opus 5 | Initial draft from `scoped-test-selection.brainstorm.md` (Option B) + 4 spec-time decisions |
 | 0.2 | 2026-09-17 | Jesus Lara / Claude Opus 5 | R3: track `.codex/hooks.json` + drop `--ignore-user-config` for dev dispatches; R12: feature tier = mirror of directories, never package suites (G9) |
+| 0.3 | 2026-09-17 | Jesus Lara / Claude Opus 5 | G9 → cost proportional to blast radius; G7b core escalation by transitive source fan-in ≥ 50 / `CORE_PATHS` across importing distributions, merge+feature tiers only, deduped by blob-hash ledger; spikes S3 (ai-parrot first) and S4 |
