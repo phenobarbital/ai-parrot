@@ -3,7 +3,7 @@ type: feature
 base_branch: dev
 id: FEAT-571
 slug: memory-dynamics
-status: draft
+status: approved
 isolation: mixed
 proposal_audit: FEAT-569
 ---
@@ -13,7 +13,7 @@ proposal_audit: FEAT-569
 **Feature ID**: FEAT-571
 **Date**: 2026-09-18
 **Author**: Jesus Lara, with Codex
-**Status**: draft — gate-first specification; production decisions remain blocked as listed below
+**Status**: approved — gate-first specification. Lane 0 (G1–G4 gate tasks and the M0 repair) is released for decomposition; M1–M6 stay blocked until their gate amendments are reviewed and merged into this document.
 **Target version**: next release after gate acceptance; release number unassigned
 
 **Inputs:** [accepted brainstorm](../proposals/memory-dynamics.brainstorm.md), [accepted proposal](../proposals/memory-dynamics.proposal.md), and [proposal findings](../state/FEAT-569/findings/).
@@ -480,3 +480,4 @@ Summary: **6 confirmed · 1 rejected · 1 escalated**. New author findings carri
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-09-18 | Jesus Lara / Codex | Initial gate-first specification from accepted exploration; formal FEAT-571 reservation; reverified contracts and explicit open decisions |
+| 0.2 | 2026-09-18 | Jesus Lara / Claude | Approved for Lane 0 decomposition (G1–G4 gates + M0). M1–M6 task blueprints deferred until gate amendments land (§3 Gate and Dependency Rules). |
