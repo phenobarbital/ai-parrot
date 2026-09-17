@@ -254,7 +254,7 @@
       "feature_id": "FEAT-563",
       "feature": "scoped-test-selection",
       "spec": "sdd/specs/scoped-test-selection.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -264,8 +264,8 @@
       "parallelism_notes": "calls guard/plan primitives from TASK-3309 (guard.py) inside tool_optimizations/hooks.py evaluate_scope",
       "assigned_to": null,
       "started_at": "2026-09-17T11:00:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3314-codex-deny-hook-tracked-config.md"
+      "completed_at": "2026-09-17T13:28:54+00:00",
+      "file": "sdd/tasks/completed/TASK-3314-codex-deny-hook-tracked-config.md"
     },
     {
       "id": "TASK-3315",
