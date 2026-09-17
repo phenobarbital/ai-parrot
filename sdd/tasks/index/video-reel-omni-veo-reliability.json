@@ -423,7 +423,7 @@
       "feature_id": "FEAT-564",
       "feature": "video-reel-omni-veo-reliability",
       "spec": "sdd/specs/video-reel-omni-veo-reliability.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -433,7 +433,7 @@
       "parallelism_notes": "Exclusive dependency/lock/config edits after integration; do not run with other shared-config writers.",
       "assigned_to": null,
       "assigned_at": null,
-      "started_at": null,
+      "started_at": "2026-09-17T21:44:50+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3335-reel-sdk-smoke-docs.md",
       "acceptance_criteria": [
