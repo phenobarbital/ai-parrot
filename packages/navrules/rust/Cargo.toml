@@ -1,6 +1,6 @@
 [package]
 name = "navrules_native"
-version = "1.0.2"
+version = "1.0.3"
 edition = "2021"
 description = "Native condition-matching backend for navrules"
 license = "MIT"
