@@ -1,0 +1,46 @@
+Decisions taken in discovery (Rounds 0–2) are binding for the spec:
+
+- **Flow**: `type: feature`, `base_branch: dev`.
+- **Topology**: **standalone `wikitoolkit serve`** process (aiohttp), small
+  container deployed next to ArangoDB. Not mounted in the ai-parrot server
+  app (may be added later; must not be required).
+- **Auth**: **static bearer token from an env var** on the server
+  (`WIKITOOLKIT_SERVER_TOKEN`) and on clients (`WIKITOOLKIT_TOKEN`).
+  OAuth2 explicitly out of scope for v1.
+- **Build path**: `build` / `upsert` / `ingest` **stay local** (they need
+  the repo's AST/tree-sitter scan); the resulting pages / edges / symbols
+  are **pushed to the server through MCP** (bulk ingest tools), never by a
+  client-side ArangoDB connection.
+- **Tenancy**: **multi-wiki by path** — `/mcp/<wiki_name>`; clients
+  register one MCP server per wiki they use.
+- **Attribution**: writes carry the caller identity in an
+  **`X-Wiki-Actor` header** (`human:<local-user>` — same identity scheme
+  `sync` already uses), trusted from the client. Hosts that cannot send
+  custom headers (Codex's native HTTP client) fall back to a server-side
+  default actor — see Open Questions.
+- **Mode switch**: a `remote` block in `.parrot/wiki.json` (overlayable per
+  env like FEAT-461) plus a `WIKITOOLKIT_REMOTE_URL` env override;
+  **fail-closed** — if the remote is unreachable the command errors, no
+  silent fallback to the local SQLite plane.
+- Transport is **MCP Streamable HTTP (2025-03-26)** — the revision both
+  Claude Code (`"type": "http"`) and Codex (`url = ...`) consume; legacy
+  SSE not required.
+- Use **ai-parrot's own MCP stack** (`parrot.mcp.*`), not the `mcp` PyPI
+  SDK — the SDK stays where it is today (optional extras + one interop
+  test used as an independent client).
+- Async-first, aiohttp only, Pydantic models, Google docstrings; no new
+  runtime dependency for clients (core already ships aiohttp).
+- Existing stdio installs (`.mcp.json` → `wikitoolkit mcp`) must keep
+  working unchanged; MCP tool **names** (`wiki_query`, `ledger_open`, …)
+  must not change so `.claude/settings.local.json` approvals stay valid.
+- **Ledger backend v1**: SQLite on the server host; ArangoDB port is a
+  follow-up feature, not a blocker.
+- **CLI-only commands** (`link`, `memories`, `audit`, `ground`, `export`,
+  `communities`, non-tool `ledger` subcommands) are **out of scope**: they
+  are refused in remote mode until a separate spec exposes them as MCP
+  tools.
+- The server host has **no git checkout** of the wikis it serves: anything
+  that today derives from `find_project_root()` / `find_shared_root()`
+  (ledger location, build) needs an explicit server-side configuration.
+
+---
