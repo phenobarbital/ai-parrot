@@ -1,0 +1,55 @@
+## Problem Statement
+
+FEAT-566 built the SDD Work Ledger: `/sdd-codereview` files every confirmed-but-unfixed
+finding via `wikitoolkit ledger open`, and those findings accumulate at
+`<main>/.parrot/ledger/` with a committed snapshot at `sdd/ledger/issues.jsonl`.
+**The ledger fills, but it never drains.**
+
+Measured on `dev` at 2026-09-18 — 15 open issues, **0 claimed, 0 closed**:
+
+| Severity | Count | Kinds |
+|---|---|---|
+| critical | 0 | — |
+| major | 2 | `bug`, `feature_gap` |
+| minor | 9 | `tech_debt` ×6, `feature_gap`, `vulnerability`, `bug` |
+| low | 4 | `tech_debt` ×4 |
+
+Every one of them was discovered by a feature that has since **merged and closed**:
+`FEAT-551` (`completed_at: 2026-09-15T13:46:35Z`), `FEAT-559`
+(`2026-09-16T09:21:54Z`), `FEAT-560` (`2026-09-15T23:44:12Z`). Their worktrees are
+gone and their per-spec indexes are stamped.
+
+Four concrete mechanisms cause the stall:
+
+1. **No severity ordering.** `LedgerService.ready_work()`
+   (`ledger/service.py:199-207`) filters `status == "open"` and returns rows in
+   index order. `wikitoolkit ledger ready` prints that order verbatim
+   (`cli.py:2681-2695`). A `low` "leftover exploratory comment" can print above a
+   `major` aiohttp session leak. Nothing tells an operator what to pick up first.
+2. **The only promotion path needs a live parent spec.** `/sdd-next` suggests
+   `/sdd-task --from-issue <issue-id> <spec.md>` (`sdd-next.md:107`), which seeds a
+   task *inside an existing spec's* per-spec index (`sdd-task.md:234-241`). For all
+   15 current issues the parent spec's index already carries `completed_at`, so the
+   suggested command would append a task to a finished feature — reopening a merged
+   index, with no worktree and a `/sdd-done` that already ran. **Orphaned issues have
+   no route at all.**
+3. **Uniform ceremony for non-uniform work.** The pipeline
+   (`/sdd-spec → /sdd-task → worktree → /sdd-done`) is right for
+   `issue:a9514c9232ad` (unclosed aiohttp sessions across two files) and absurd for
+   `issue:337359a3ec81` ("Leftover exploratory comment in `RecentActivityCache.seen()`").
+   Facing ~6 SDD commits to delete one comment, an operator does neither.
+4. **Closing an issue loses the evidence.** `IssueClosedPayload` carries
+   `resolved_by: str | None` (`ledger/events.py:52`) and `_apply_issue_closed` persists
+   it (`ledger/index.py:209-219`) — but `LedgerService.close_issue()`
+   (`service.py:235-246`) builds its payload as
+   `{"reason": ..., "closed_by": actor}` and **never passes `resolved_by`**. The CLI
+   (`cli.py:2730-2746`) has no `--resolved-by` flag either. Today a close is an
+   unfalsifiable assertion: nothing links the issue to the commit or task that fixed it.
+
+### Who is affected
+
+Developers and autonomous agents (`sdd-worker`, dev-loop) that produce ledger issues as
+a by-product of every code review, and the operator who wants a tech-debt burndown lane
+that is as cheap as the debt is small.
+
+---
