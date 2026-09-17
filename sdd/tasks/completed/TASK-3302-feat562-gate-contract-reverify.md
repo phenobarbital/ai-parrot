@@ -237,10 +237,25 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (sonnet, attempt 3 — sequential fallback after both MCP attempts failed to deliver)
+**Date**: 2026-09-17
+**Notes**: Two automated MCP attempts were dispatched first — attempt 1 (glm/zai.glm-4.7-flash)
+hit `max_turns=60` with no final output; attempt 2 (mistral/mistral-devstral-2-123b) was marked
+"salvaged" by the engine but delivered zero files (`development_output.files_changed: []`,
+`merge_performed: false`) despite the job initially reporting `outcome: "merged"` — verified by
+inspecting the feature branch (`git log`: no new commit past the SDD-start commit) and the
+attempt branch diff (identical to `dev`, no task-related changes). Treated as failed per policy
+and implemented directly: fetched `origin/dev`, ran `git merge-base --is-ancestor
+origin/feat-FEAT-562-ci-test-failures-root-cause-remediation origin/dev` (exit 0 — merged),
+re-read all twelve spec §6 anchors fresh (all **unchanged** in line number and content),
+inventoried every `pytest_collection_modifyitems`/`pytest_configure`/`addinivalue_line` hook and
+every registered marker in the tree (no `e2e` marker, no directory-based auto-marking anywhere —
+confirms TASK-3316 is pure addition), and wrote
+`artifacts/logs/feat-563-contract-reverify.md` with `verdict: PASS`. Force-added with `git add -f`
+per existing repo precedent for `artifacts/logs/*` deliverables (globally gitignored via
+`.gitignore:280` `artifacts/`).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none. One informational note recorded in the log: the FEAT-562
+per-spec index on `origin/dev` still shows `completed_at: null` with most of its tasks
+`pending` despite its branch being an ancestor of `origin/dev` — flagged for the orchestrator,
+does not block this gate since the git ancestor check alone satisfies the acceptance criterion.

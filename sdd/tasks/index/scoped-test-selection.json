@@ -15,7 +15,7 @@
       "feature_id": "FEAT-563",
       "feature": "scoped-test-selection",
       "spec": "sdd/specs/scoped-test-selection.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -23,8 +23,8 @@
       "parallelism_notes": "no dependencies; writes only artifacts/logs/feat-563-contract-reverify.md; gates TASK-3316 (markers build on FEAT-562 registrations)",
       "assigned_to": null,
       "started_at": "2026-09-17T11:00:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3302-feat562-gate-contract-reverify.md"
+      "completed_at": "2026-09-17T11:39:28+00:00",
+      "file": "sdd/tasks/completed/TASK-3302-feat562-gate-contract-reverify.md"
     },
     {
       "id": "TASK-3303",
