@@ -82,7 +82,9 @@ def test_env_prefixed_pytest_is_recognized_and_rewritten(tmp_path, with_plan):
 
 def test_env_prefixed_pytest_bash_preserves_the_prefix_on_rewrite(tmp_path, with_plan):
     with_plan(_plan(("pytest", "a.py")))
-    outcome, rewritten = guard_bash("PYTHONPATH=packages/ai-parrot/src pytest packages/ai-parrot/tests", worktree=tmp_path)
+    outcome, rewritten = guard_bash(
+        "PYTHONPATH=packages/ai-parrot/src pytest packages/ai-parrot/tests", worktree=tmp_path
+    )
     assert outcome.action == "rewrite"
     assert "PYTHONPATH=packages/ai-parrot/src pytest a.py" in rewritten
 
@@ -108,6 +110,8 @@ def test_maxfail_space_form_does_not_defeat_broad_detection(tmp_path, with_plan)
 
 def test_guard_bash_rewrites_every_broad_segment_in_a_compound(tmp_path, with_plan):
     with_plan(_plan(("pytest", "a.py")))
-    outcome, rewritten = guard_bash("pytest packages/ai-parrot/tests && pytest packages/a-parrot/tests", worktree=tmp_path)
+    outcome, rewritten = guard_bash(
+        "pytest packages/ai-parrot/tests && pytest packages/a-parrot/tests", worktree=tmp_path
+    )
     assert outcome.action == "rewrite"
     assert rewritten.count("( pytest a.py; r=$?; exit $r )") == 2
