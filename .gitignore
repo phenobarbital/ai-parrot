@@ -2,7 +2,6 @@
 __pycache__/
 *.py[cod]
 *$py.class
-examples/planogram/
 # C extensions
 *.so
 *.c
@@ -410,3 +409,18 @@ sdd/state/.design_research/
 # Local Claude Code config: machine-specific settings and local-only skills
 .claude/settings.json
 .claude/skills/bookstore/
+
+# FEAT-565: planogram compliance example — track code + small inputs only.
+# The repo is public: planogram_page1.json (retailer-derived), store photos,
+# videos, PDFs, zips, inkcheck/ and results/ stay ignored by the first rule.
+examples/planogram/*
+!examples/planogram/planogram_check.py
+!examples/planogram/README.md
+!examples/planogram/catalog.example.json
+!examples/planogram/plancheck/
+!examples/planogram/plancheck/**/*.py
+!examples/planogram/tests/
+!examples/planogram/tests/**/*.py
+!examples/planogram/white_label_detector/
+examples/planogram/white_label_detector/*
+!examples/planogram/white_label_detector/detect_price_labels.py

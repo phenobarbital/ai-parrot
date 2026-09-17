@@ -37,16 +37,16 @@
       "feature_id": "FEAT-565",
       "feature": "new-planogram-compliance-algo",
       "spec": "sdd/specs/new-planogram-compliance-algo.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "EXCLUSIVE: edits the repo-wide .gitignore and adopts an untracked file that exists only in the primary checkout — must run there, on dev, before the feature worktree exists. No dependencies.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3336-repo-tracking.md"
+      "started_at": "2026-09-17T23:08:13+00:00",
+      "completed_at": "2026-09-17T23:09:37+00:00",
+      "file": "sdd/tasks/completed/TASK-3336-repo-tracking.md"
     },
     {
       "id": "TASK-3337",
@@ -55,7 +55,7 @@
       "feature_id": "FEAT-565",
       "feature": "new-planogram-compliance-algo",
       "spec": "sdd/specs/new-planogram-compliance-algo.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -64,7 +64,7 @@
       "parallel": true,
       "parallelism_notes": "Needs the .gitignore re-include block from TASK-3336 — without it git silently drops every file under examples/planogram/ this task creates.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-17T23:08:13+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3337-models-core.md"
     },
@@ -75,7 +75,7 @@
       "feature_id": "FEAT-565",
       "feature": "new-planogram-compliance-algo",
       "spec": "sdd/specs/new-planogram-compliance-algo.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -84,7 +84,7 @@
       "parallel": true,
       "parallelism_notes": "Modifies examples/planogram/plancheck/models.py, the same file TASK-3337 creates (appends below its marker comment), and subclasses its StrictModel/Slot/PriceReading.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-17T23:08:13+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3338-models-results.md"
     },
@@ -95,7 +95,7 @@
       "feature_id": "FEAT-565",
       "feature": "new-planogram-compliance-algo",
       "spec": "sdd/specs/new-planogram-compliance-algo.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -104,7 +104,7 @@
       "parallel": true,
       "parallelism_notes": "Imports PlanogramRef, PlanogramFacing, Catalog, CatalogItem, SlotReading, Resolution from TASK-3337 (examples/planogram/plancheck/models.py); tests use its conftest fixtures mini_planogram_data / mini_catalog.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-17T23:08:13+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3339-reference.md"
     },
@@ -115,7 +115,7 @@
       "feature_id": "FEAT-565",
       "feature": "new-planogram-compliance-algo",
       "spec": "sdd/specs/new-planogram-compliance-algo.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -124,7 +124,7 @@
       "parallel": true,
       "parallelism_notes": "Imports Tag, TagRow, Box from TASK-3337 (examples/planogram/plancheck/models.py) and the shelf_image fixture from its conftest; the parity test loads the detector script adopted by TASK-3336 (transitive).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-17T23:08:13+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3340-detection.md"
     },
@@ -135,7 +135,7 @@
       "feature_id": "FEAT-565",
       "feature": "new-planogram-compliance-algo",
       "spec": "sdd/specs/new-planogram-compliance-algo.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -144,7 +144,7 @@
       "parallel": true,
       "parallelism_notes": "Imports TagRow, Tag, Slot, Box from TASK-3337 (examples/planogram/plancheck/models.py); tests build TagRow objects by hand, no detector needed.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-17T23:08:13+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3341-grid.md"
     },
@@ -155,7 +155,7 @@
       "feature_id": "FEAT-565",
       "feature": "new-planogram-compliance-algo",
       "spec": "sdd/specs/new-planogram-compliance-algo.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -164,7 +164,7 @@
       "parallel": true,
       "parallelism_notes": "Needs only the plancheck package (examples/planogram/plancheck/__init__.py) and the tests conftest sys.path bootstrap created by TASK-3337; imports no model.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-17T23:08:13+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3342-vision.md"
     },
@@ -175,7 +175,7 @@
       "feature_id": "FEAT-565",
       "feature": "new-planogram-compliance-algo",
       "spec": "sdd/specs/new-planogram-compliance-algo.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -185,7 +185,7 @@
       "parallel": true,
       "parallelism_notes": "Imports Slot, PriceReading, RowPriceReading from TASK-3337 (examples/planogram/plancheck/models.py); type-imports VisionBackend from TASK-3342 (examples/planogram/plancheck/vision.py) and calls its ask() contract.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-17T23:08:13+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3343-prices.md"
     },
@@ -196,7 +196,7 @@
       "feature_id": "FEAT-565",
       "feature": "new-planogram-compliance-algo",
       "spec": "sdd/specs/new-planogram-compliance-algo.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -208,7 +208,7 @@
       "parallel": true,
       "parallelism_notes": "Imports SlotObservation from TASK-3338 (examples/planogram/plancheck/models.py), resolve_identity from TASK-3339 (examples/planogram/plancheck/reference.py), strip_box/to_strip_norm from TASK-3341 (examples/planogram/plancheck/grid.py), VisionBackend from TASK-3342 (examples/planogram/plancheck/vision.py).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-17T23:08:13+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3344-identify.md"
     },
@@ -219,7 +219,7 @@
       "feature_id": "FEAT-565",
       "feature": "new-planogram-compliance-algo",
       "spec": "sdd/specs/new-planogram-compliance-algo.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -228,7 +228,7 @@
       "parallel": true,
       "parallelism_notes": "Imports SlotObservation, RowRegistration, ImageRegistration from TASK-3338 (examples/planogram/plancheck/models.py); pure functions, touches no other FEAT-565 module.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-17T23:08:13+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3345-registration.md"
     },
@@ -239,7 +239,7 @@
       "feature_id": "FEAT-565",
       "feature": "new-planogram-compliance-algo",
       "spec": "sdd/specs/new-planogram-compliance-algo.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -250,7 +250,7 @@
       "parallel": true,
       "parallelism_notes": "Imports render_strip from TASK-3344 (examples/planogram/plancheck/identify.py), VisionBackend from TASK-3342 (examples/planogram/plancheck/vision.py), SlotObservation/RowVerification from TASK-3338 (examples/planogram/plancheck/models.py).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-17T23:08:13+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3346-verify.md"
     },
@@ -261,7 +261,7 @@
       "feature_id": "FEAT-565",
       "feature": "new-planogram-compliance-algo",
       "spec": "sdd/specs/new-planogram-compliance-algo.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -270,7 +270,7 @@
       "parallel": true,
       "parallelism_notes": "Imports PositionResult, ShelfScore, BrandShare, ComplianceSummary, ScoringWeights from TASK-3338 (examples/planogram/plancheck/models.py); pure functions, independent of registration/identify code.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-17T23:08:13+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3347-scoring.md"
     },
@@ -281,7 +281,7 @@
       "feature_id": "FEAT-565",
       "feature": "new-planogram-compliance-algo",
       "spec": "sdd/specs/new-planogram-compliance-algo.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -290,7 +290,7 @@
       "parallel": true,
       "parallelism_notes": "Imports ComplianceReport, Settings, SlotObservation, PositionResult from TASK-3338 (examples/planogram/plancheck/models.py); only cv2/json I/O otherwise.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-17T23:08:13+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3348-report.md"
     },
@@ -301,7 +301,7 @@
       "feature_id": "FEAT-565",
       "feature": "new-planogram-compliance-algo",
       "spec": "sdd/specs/new-planogram-compliance-algo.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -319,7 +319,7 @@
       "parallel": true,
       "parallelism_notes": "Imports one entry point from every stage: load_* (TASK-3339 reference.py), detect_tags (TASK-3340 detection.py), build_slots (TASK-3341 grid.py), VisionBackend (TASK-3342 vision.py), read_prices (TASK-3343 prices.py), identify_rows (TASK-3344 identify.py), register_image (TASK-3345 registration.py), verify_rows (TASK-3346 verify.py), merge_positions (TASK-3347 scoring.py), write_report (TASK-3348 report.py).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-17T23:08:13+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3349-pipeline.md"
     },
@@ -330,7 +330,7 @@
       "feature_id": "FEAT-565",
       "feature": "new-planogram-compliance-algo",
       "spec": "sdd/specs/new-planogram-compliance-algo.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -340,7 +340,7 @@
       "parallel": true,
       "parallelism_notes": "Calls run_check from TASK-3349 (examples/planogram/plancheck/pipeline.py) and emit_catalog_template/load_planogram from TASK-3339 (examples/planogram/plancheck/reference.py).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-17T23:08:13+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3350-cli-readme.md"
     }
