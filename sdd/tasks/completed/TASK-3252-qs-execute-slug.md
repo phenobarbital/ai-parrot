@@ -215,10 +215,21 @@ async def test_empty_and_error(fake_qs):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5), manual fallback implementation
+**Date**: 2026-09-17
+**Notes**: Added `execute_slug` after `describe_slug` in `toolkit.py`, plus its imports. Filled both FILL IN
+markers (`if error: raise QuerysourceToolkitError(...)` after `query()`; `QueryException` wrapping already
+given verbatim). `pytest packages/ai-parrot-tools/tests/querysource/test_execute_slug.py -v` — 3 passed.
+`ruff check` — clean.
 
-**Completed by**:
-**Date**:
-**Notes**:
+**One additional file touched beyond this task's table**: adding `execute_slug` grew
+`QuerysourceToolkit.list_tool_names()` from 3 to 4 entries, which broke TASK-3251's own
+`test_toolkit_core.py::test_tool_names_and_write_gate` (a literal snapshot equality assertion,
+`sorted(...) == ["qs_describe_slug", "qs_get_dialect_reference", "qs_list_slugs"]` — TASK-3251's own doc
+flags this list as "at this task (later tasks add the rest)"). Updated that one assertion line to include
+`"qs_execute_slug"` so the full `packages/ai-parrot-tools/tests/querysource/` suite stays green (57 passed);
+no other line in that file changed. Implemented manually: same repo-wide `complex_model_unavailable` block
+(empty `strong_models` policy); user authorized continuing the fallback loop for the rest of the feature.
 
-**Deviations from spec**: none
+**Deviations from spec**: touched `test_toolkit_core.py` (not in this task's file table) to fix the now-stale
+tool-name snapshot assertion caused directly by this task's own change; no behavior change, single-line edit.

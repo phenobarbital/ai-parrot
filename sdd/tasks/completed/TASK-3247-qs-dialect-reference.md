@@ -367,10 +367,15 @@ def test_dialect_reference_matches_pxd():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5), manual fallback implementation
+**Date**: 2026-09-17
+**Notes**: Implemented per spec §3 Module 3 blueprint; filled the three FILL IN markers: `validate_filter`
+dict form (exactly one key, must be in `DICT_OPERATORS`), list form (`[op, v]` comparison vs plain IN list of
+scalars), and `load_variables` dotted-path/`module:attr` resolution with first-docstring-line extraction,
+never raising. `pytest packages/ai-parrot-tools/tests/querysource/ -q` — 33 passed (includes the real
+`.pxd` surface test, querysource is installed). `ruff check` on the package/tests dirs — clean (fixed E702
+semicolon-statements in the spec's own test snippet to satisfy the task's "ruff check clean" AC). Implemented
+manually: same repo-wide `complex_model_unavailable` block as TASK-3245/3246 (empty `strong_models` policy);
+user authorized continuing the fallback loop for the rest of the feature.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**: none (semicolon statements in the test spec were reformatted to satisfy the lint AC; behavior unchanged)

@@ -375,10 +375,26 @@ async def test_upsert_cross_program_refused(patched_qs):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5), manual fallback implementation
+**Date**: 2026-09-17
+**Notes**: Implemented per spec §3 Module 4 blueprint; filled the five FILL IN markers: `SlugRecord.from_row`
+(full column mapping incl. conditions/cond_definition/filtering/fields/ordering/grouping/description),
+`TenantGuard.resolve_write_program` (4 branches: restricted+explicit, restricted+single-default,
+restricted+ambiguous error, unrestricted+explicit/error), `SlugCatalog.list` (program selection +
+filter/all dispatch with a `TenantDeniedError` guard on an explicit foreign `program` arg), and
+`SlugCatalog.upsert` (found/absent + cross-program-refusal branches per S5). `pytest
+packages/ai-parrot-tools/tests/querysource/ -q` — 38 passed. `ruff check` — clean.
 
-**Completed by**:
-**Date**:
-**Notes**:
+**One deliberate deviation from the "FILL IN" *comment*** in `SlugCatalog.get`: the comment suggested
+narrowing the `except Exception` to `asyncdb.NoDataFound` / `querysource.exceptions.SlugNotFound`, but the
+spec's own fixed `conftest.py` fixture (`patched_qs`) raises a bespoke local `NoData(Exception)` for a
+missing slug that is unrelated to either of those types by inheritance — narrowing the catch would make
+`test_tenant_denied_and_not_found`'s `SlugNotFoundError` assertion fail. Kept the broad `except Exception`
+(same as the blueprint's pre-FILL-IN code) so the given Test Specification passes; documented here per
+Cardinal Rule 4 (STOP/report on ambiguity) rather than silently picking a side. Same broad-except choice was
+reused in `upsert()`'s existence probe for consistency. Implemented manually: same repo-wide
+`complex_model_unavailable` block as TASK-3245..3247 (empty `strong_models` policy); user authorized
+continuing the fallback loop for the rest of the feature.
 
-**Deviations from spec**: none
+**Deviations from spec**: `SlugCatalog.get`/`upsert` keep a broad `except Exception` instead of narrowing to
+two named exception types, to satisfy the fixed test fixture (see note above); behavior/AC otherwise unchanged.

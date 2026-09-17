@@ -212,10 +212,28 @@ def test_multi_shapes():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5), manual fallback implementation
+**Date**: 2026-09-17
+**Notes**: Implemented per spec §3 Module 5 blueprint; filled the `json_safe` FILL IN marker (NaT/NaN/pandas-NA,
+numpy scalars via `.item()`, bytes decode, bool/int/float/str passthrough, `str()` fallback). `pytest
+packages/ai-parrot-tools/tests/querysource/ -q` — 49 passed. `ruff check` — clean.
 
-**Completed by**:
-**Date**:
-**Notes**:
+**One reordering fix, discovered while writing an extra direct scalar test I added for `json_safe`**:
+`pd.NaT` duck-types `datetime` closely enough that `isinstance(pd.NaT, (datetime, date, time))` is `True` in
+the installed pandas version, and `pd.NaT.isoformat()` returns the literal string `"NaT"` — so placing the
+NaT/NaN `pd.isna()` check *after* the datetime branch (as the blueprint ordered it) let `NaT` leak through as
+the string `"NaT"` instead of `None`. Reordered so the `pd.isna()` check runs first (right after the
+None/dict/list/tuple/set short-circuits), before the datetime/Decimal/numpy/bytes checks. All given tests
+(`test_json_safe_contract` etc., which check `rows[1]["ts"] is None` for a `NaT` cell) still pass — this was
+verified as correct behavior, not a regression, via the added `test_json_safe_scalars_directly`. Also added
+`float` to the final passthrough tuple (`bool, int, float, str`) since a non-NaN Python float (e.g. `amt=2.0`
+in the object-dtype test column) would otherwise fall through to the `str()` fallback and be needlessly
+stringified — the spec's own "AC: json.dumps succeeds" doesn't require numeric fidelity, but a stringified
+float is a worse LLM-facing value with no compensating requirement forcing it. Removed the unused `math`
+import after dropping the separate `math.isnan` branch (now subsumed by `pd.isna`). Implemented manually:
+same repo-wide `complex_model_unavailable` block (empty `strong_models` policy); user authorized continuing
+the fallback loop for the rest of the feature.
 
-**Deviations from spec**: none
+**Deviations from spec**: `json_safe`'s check order (`pd.isna` before datetime/Decimal) differs from the
+blueprint's literal ordering, and `float` was added to the passthrough tuple — both required for correct NaT
+handling and non-lossy floats; all fixed acceptance criteria and given tests still pass.

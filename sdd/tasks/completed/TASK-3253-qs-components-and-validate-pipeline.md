@@ -233,10 +233,19 @@ async def test_policy_permissive_and_external(fake_registry):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5), manual fallback implementation
+**Date**: 2026-09-17
+**Notes**: Added `_get_catalog`, `_destination_names`, `list_components`, `_policy_check`, `validate_pipeline`
+to `toolkit.py` (plus imports) per spec §3 Module 6. Filled the FILL IN policy loop (raw-node issues when
+`restricted or not allow_raw_sql`; files/sources issues when `not allow_external_sources`; destination-step
+issues when `not allow_write`). `pytest packages/ai-parrot-tools/tests/querysource/test_components_validate.py
+-v` — 3 passed. `ruff check` — clean.
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Same recurring stale-snapshot fix as TASK-3252**: updated `test_toolkit_core.py::test_tool_names_and_write_gate`'s
+tool-name list to add `qs_list_components`/`qs_validate_pipeline` (this task's own AC explicitly requires "Both
+tools appear in `list_tool_names()`"). Full `packages/ai-parrot-tools/tests/querysource/` suite — 60 passed.
+Implemented manually: same repo-wide `complex_model_unavailable` block (empty `strong_models` policy); user
+authorized continuing the fallback loop for the rest of the feature.
 
-**Deviations from spec**: none
+**Deviations from spec**: touched `test_toolkit_core.py` again (one line) to keep its tool-name snapshot
+current, consistent with this task's own acceptance criterion; no other deviation.
