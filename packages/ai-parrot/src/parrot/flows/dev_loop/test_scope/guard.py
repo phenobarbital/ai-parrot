@@ -124,7 +124,9 @@ def guard_bash(command: str, *, worktree: Path) -> tuple[GuardOutcome, str | Non
                 segments[-1].append(token)
 
         broad_indices = [
-            i for i, seg in enumerate(segments) if seg and _is_pytest_argv(seg) and is_broad_pytest(seg, worktree=worktree)
+            i
+            for i, seg in enumerate(segments)
+            if seg and _is_pytest_argv(seg) and is_broad_pytest(seg, worktree=worktree)
         ]
         if not broad_indices:
             return GuardOutcome(action="allow"), None
