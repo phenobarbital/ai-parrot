@@ -1,4 +1,5 @@
 """Unit tests for plancheck.reference (FEAT-565, spec §4 — Module 2). Synthetic data only."""
+
 from __future__ import annotations
 
 import copy

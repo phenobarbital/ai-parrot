@@ -2,6 +2,7 @@
 
 Pure module: no parrot import, no network. ``resolve_identity`` never sees planogram expectations.
 """
+
 from __future__ import annotations
 
 import json
