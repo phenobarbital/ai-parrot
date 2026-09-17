@@ -132,6 +132,12 @@ class _ReelRunContext:
             scene_deadline_seconds if scene_deadline_seconds is not None else _reel_scene_deadline_seconds()
         )
         self.clips: dict = {}
+        # Resolved VideoModelProfile per scene index, stashed as soon as
+        # profile resolution succeeds in `_process_scene` — BEFORE any
+        # paid provider call. Lets `_failed_scene_result` report the real
+        # backend/model for a scene that failed AFTER resolution instead
+        # of a hardcoded placeholder (code-review finding, TASK-3331).
+        self.resolved_profiles: dict = {}
         self.narration_paths: dict = {}
         self.narration_durations: dict = {}
 
@@ -1727,12 +1733,6 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
                 )
 
         model_str = model.value if isinstance(model, GoogleModel) else model
-        # FEAT-564 TASK-3331: "Directly created clients require explicit
-        # ownership" (client.py's get_client docstring) — this call is on
-        # the reel pipeline's background/foreground-image path
-        # (`_process_scene` -> `generate_image`) and owns this client
-        # solely for the duration of this call; always closed below.
-        client = await self.get_client(model=model_str)
 
         # --- Prepare prompt + reference content --------------------------------
         full_prompt = prompt_text
@@ -1811,6 +1811,14 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
 
         config = types.GenerateContentConfig(**config_kwargs)
 
+        # FEAT-564 TASK-3331 (code-review finding — the client used to be
+        # acquired ~80 lines earlier, before all of the fallible
+        # prompt/history/config-building above; an exception in that window
+        # leaked it since it predated the try/finally below): "Directly
+        # created clients require explicit ownership" (client.py's
+        # get_client docstring) — acquired right before first use so every
+        # remaining exit path is covered by the `finally` below.
+        client = await self.get_client(model=model_str)
         try:
             # --- Call API ------------------------------------------------------
             if stateless:
@@ -2231,7 +2239,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
                         raise
                     partial = True
                     self.logger.warning("Scene %d failed under partial_failure_policy='skip': %s", i, exc)
-                    scene_results.append(self._failed_scene_result(scene, i, exc))
+                    scene_results.append(self._failed_scene_result(scene, i, exc, context=run_context))
 
             if all(r.status == "failed" for r in scene_results):
                 raise ReelError(
@@ -2309,6 +2317,16 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
             download_url=download_url,
         )
 
+        # Cloud-only backends have now persisted the final artifact through
+        # FileManager above — the local per-job working directory (raw
+        # scene clips, narration/music WAVs, the assembled video itself)
+        # is pure redundant disk usage from here on and is removed.
+        # "fs"/"temp" backends still need it: their `files` entry below
+        # points directly at `assembled_path` inside it (code-review
+        # finding, TASK-3331).
+        if request.storage_backend not in ("fs", "temp"):
+            await self._cleanup_reel_job_directory(output_directory)
+
         effective_video_model = request.video_model or registry.default_video_model(api_surface)
         reel_result = ReelResult(
             final_artifact=artifact,
@@ -2380,23 +2398,35 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
             return "unknown"
 
     @staticmethod
-    def _failed_scene_result(scene: VideoReelScene, index: int, exc: "ReelError") -> "ReelSceneResult":
+    def _failed_scene_result(
+        scene: VideoReelScene, index: int, exc: "ReelError", *, context: "_ReelRunContext"
+    ) -> "ReelSceneResult":
         """Builds a failed ReelSceneResult from a caught ReelError, preserving the original index.
 
         ``video_model``/``backend`` are required, non-optional fields on
-        ``ReelSceneResult`` (TASK-3321) — when resolution failed before a
-        backend was ever determined, a best-effort label/placeholder is
-        used rather than leaving the field unset.
+        ``ReelSceneResult`` (TASK-3321). The scene's profile is resolved in
+        `_process_scene` BEFORE any paid provider call and stashed on
+        ``context.resolved_profiles`` — used here to report the REAL
+        backend/model the failed attempt used, instead of a hardcoded
+        placeholder (code-review finding, TASK-3331). Only when resolution
+        itself failed (nothing stashed) does this fall back to a
+        best-effort label rather than leaving the field unset.
+        ``provider_operation_id`` is threaded from ``exc.operation_id`` so a
+        failed scene under `partial_failure_policy="skip"` still preserves
+        its operation id for reconciliation (AC17).
         """
         from .reel.errors import ReelErrorCode
 
         code = getattr(exc, "code", None)
+        operation_id = getattr(exc, "operation_id", None)
+        profile = context.resolved_profiles.get(index)
         return ReelSceneResult(
             index=index,
-            video_model=scene.video_model or "unknown",
-            backend="veo",
+            video_model=profile.model_id if profile is not None else (scene.video_model or "unknown"),
+            backend=profile.backend if profile is not None else "veo",
             status="failed",
             requested_duration_seconds=scene.duration,
+            provider_operation_id=operation_id,
             error_code=code.value if isinstance(code, ReelErrorCode) else None,
             error_message=str(exc)[:500],
         )
@@ -2494,6 +2524,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
             scene.video_model or request.video_model or context.registry.default_video_model(context.api_surface)
         )
         profile = context.registry.resolve(video_model, context.api_surface)
+        context.resolved_profiles[index] = profile
 
         has_starting_frame = bool(scene.reference_image)
         context.registry.validate_scene(

@@ -46,6 +46,18 @@ MOVIEPY_AVAILABLE = importlib.util.find_spec("moviepy") is not None
 
 _T = TypeVar("_T")
 
+# Codes that must never enter the bounded read-retry path (AC07: "Auth and
+# validation errors never enter a retry path") even though
+# `classify_provider_error`'s own default for an UNCLASSIFIED exception is
+# conservatively `retryable=False` too — that default exists to make an
+# unrecognized *provider* error safe-by-default, not to blanket-disable the
+# existing transient-network retry loop (e.g. a bare `ConnectionError`
+# during download SHOULD still be retried). Checking these specific codes
+# is deliberately narrower than trusting `ReelError.retryable` wholesale.
+_NEVER_RETRY_CODES = frozenset(
+    {ReelErrorCode.AUTH_OR_ACCESS, ReelErrorCode.SAFETY_BLOCKED, ReelErrorCode.INVALID_CONFIGURATION}
+)
+
 
 class VeoClipAdapter:
     """Generates one Veo clip for a reel scene.
@@ -180,9 +192,19 @@ class VeoClipAdapter:
             await client.aio.aclose()
 
         local_path = output_directory / f"veo_{uuid.uuid4().hex[:8]}.mp4"
-        await asyncio.get_running_loop().run_in_executor(
-            None, self._write_clip, output_directory, local_path, video_bytes
-        )
+        try:
+            await asyncio.get_running_loop().run_in_executor(
+                None, self._write_clip, output_directory, local_path, video_bytes
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            # A raw OSError (disk full, permission denied, ...) must become
+            # a ReelError so the caller's partial_failure_policy="skip" path
+            # can catch it — an unclassified exception here bypasses skip
+            # entirely and fails the whole job (code-review finding,
+            # TASK-3331).
+            raise classify_provider_error(exc, stage="veo_write", scene_index=None) from exc
 
         try:
             measured_duration, has_audio = await self._measure(local_path)
@@ -231,7 +253,15 @@ class VeoClipAdapter:
     async def _read_with_retries(
         self, read: Callable[[], Awaitable[_T]], *, stage: str, operation_id: Optional[str]
     ) -> _T:
-        """Runs ``read`` with at most ``max_read_retries`` bounded retries on transient failure."""
+        """Runs ``read`` with at most ``max_read_retries`` bounded retries on transient failure.
+
+        Every failure is classified BEFORE deciding whether to retry (not
+        only on the final attempt, as before) — an auth/safety/validation
+        failure surfacing mid-poll or mid-download is raised immediately,
+        never retried like a transient `ConnectionError` (AC07). See
+        `_NEVER_RETRY_CODES` for why this checks specific codes rather than
+        the classified error's generic `.retryable` flag.
+        """
         last_exc: Optional[BaseException] = None
         for attempt in range(self._max_read_retries + 1):
             try:
@@ -239,6 +269,10 @@ class VeoClipAdapter:
             except asyncio.CancelledError:
                 raise
             except Exception as exc:  # noqa: BLE001 - normalized below via classify_provider_error
+                classified = classify_provider_error(exc, stage=stage)
+                classified.operation_id = classified.operation_id or operation_id
+                if classified.code in _NEVER_RETRY_CODES:
+                    raise classified from exc
                 last_exc = exc
                 if attempt >= self._max_read_retries:
                     break

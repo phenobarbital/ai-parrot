@@ -270,9 +270,19 @@ class OmniClipAdapter:
             raise classify_provider_error(
                 MediaValidationFailure("Omni inline video data decoded to zero bytes."), stage="omni_decode"
             )
-        await asyncio.get_running_loop().run_in_executor(
-            None, self._write_bytes, output_directory, local_path, raw_bytes
-        )
+        try:
+            await asyncio.get_running_loop().run_in_executor(
+                None, self._write_bytes, output_directory, local_path, raw_bytes
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            # A raw OSError (disk full, permission denied, ...) must become
+            # a ReelError so the caller's partial_failure_policy="skip" path
+            # can catch it — an unclassified exception here bypasses skip
+            # entirely and fails the whole job (code-review finding,
+            # TASK-3331).
+            raise classify_provider_error(exc, stage="omni_write") from exc
         return local_path
 
     @staticmethod
