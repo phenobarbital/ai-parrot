@@ -279,7 +279,7 @@
       "feature_id": "FEAT-564",
       "feature": "video-reel-omni-veo-reliability",
       "spec": "sdd/specs/video-reel-omni-veo-reliability.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -291,8 +291,8 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3330-reel-stage-orchestration.md",
+      "completed_at": "2026-09-17T16:44:24+00:00",
+      "file": "sdd/tasks/completed/TASK-3330-reel-stage-orchestration.md",
       "acceptance_criteria": [
         "AC01",
         "AC02",
