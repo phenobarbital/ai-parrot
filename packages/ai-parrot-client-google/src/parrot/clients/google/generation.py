@@ -2389,77 +2389,49 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
                 else:
                     local_music = Path(music_key)
 
-            # --- Assembly phase: MoviePy on local temp files ---
-            output_filename = f"final_reel_{uuid.uuid4().hex}.{output_format}"
-            local_output = tmp_path / output_filename
+            # --- Assembly phase: delegate to reel.assembly.assemble_reel ---
+            # (FEAT-564 TASK-3329). This legacy signature has no explicit
+            # per-scene edit-target duration, so each clip's OWN measured
+            # duration is used as its edit_seconds (i.e. "keep the whole
+            # clip") — TASK-3330 replaces this call site with a real
+            # TimelinePlan built from VideoReelScene.duration targets and a
+            # genuine job deadline/audio_mode.
+            from .reel.assembly import assemble_reel
+            from .reel.timeline import TimelineEntry, plan_timeline
 
-            def _moviepy_assemble() -> Path:
-                """Blocking MoviePy assembly — runs in a thread."""
+            def _measure_clip_duration(path: Path) -> float:
+                """Blocking: opens the clip just to read its duration."""
+                from moviepy import VideoFileClip
+
+                clip = VideoFileClip(str(path))
                 try:
-                    from moviepy import VideoFileClip, AudioFileClip, concatenate_videoclips, vfx, CompositeAudioClip
+                    return clip.duration
+                finally:
+                    clip.close()
 
-                    clips = []
-                    for p_idx, (vid_p, narr_p) in enumerate(local_scenes):
-                        clip = VideoFileClip(str(vid_p))
-
-                        if narr_p and narr_p.exists():
-                            scene_audio = AudioFileClip(str(narr_p))
-                            clip = clip.with_audio(scene_audio)
-
-                        if transition == "crossfade" and p_idx > 0:
-                            clip = clip.with_effects([vfx.CrossFadeIn(0.5)])
-
-                        clips.append(clip)
-
-                    final_video = concatenate_videoclips(clips, method="compose")
-
-                    if local_music and local_music.exists():
-                        try:
-                            music = AudioFileClip(str(local_music))
-                            if music.duration < final_video.duration:
-                                music = music.with_effects([vfx.Loop(duration=final_video.duration)])
-                            else:
-                                music = music.subclipped(0, final_video.duration)
-
-                            if hasattr(music, "with_volume_scaled"):
-                                music = music.with_volume_scaled(0.3)
-                            elif hasattr(music, "multiply_volume"):
-                                music = music.multiply_volume(0.3)
-
-                            if final_video.audio is not None:
-                                final_audio = CompositeAudioClip([final_video.audio, music])
-                            else:
-                                final_audio = music
-
-                            final_video = final_video.with_audio(final_audio)
-                        except Exception as me:
-                            self.logger.error(f"Failed to add background music: {me}")
-
-                    final_video.write_videofile(
-                        str(local_output), codec="libx264" if output_format == "mp4" else "libvpx", audio_codec="aac"
+            entries: List[TimelineEntry] = []
+            for idx, (vid_p, narr_p) in enumerate(local_scenes):
+                measured = await asyncio.to_thread(_measure_clip_duration, vid_p)
+                effective_narr = narr_p if (narr_p and narr_p.exists()) else None
+                entries.append(
+                    TimelineEntry(
+                        scene_index=idx, clip_path=vid_p, edit_seconds=measured, narration_path=effective_narr
                     )
+                )
 
-                    # Cleanup clips
-                    for clip in clips:
-                        with contextlib.suppress(Exception):
-                            clip.close()
-                    if "music" in locals():
-                        with contextlib.suppress(Exception):
-                            music.close()
-                    with contextlib.suppress(Exception):
-                        final_video.close()
-
-                    return local_output
-
-                except ImportError:
-                    self.logger.error("MoviePy not installed.")
-                    raise
-                except Exception as e:
-                    self.logger.error(f"Assembly failed: {e}")
-                    raise
-
-            # Run blocking MoviePy in a thread
-            assembled_path = await asyncio.to_thread(_moviepy_assemble)
+            plan = plan_timeline(
+                entries,
+                transition="crossfade" if transition == "crossfade" else "cut",
+                fps=24.0,
+            )
+            assembled_path = await assemble_reel(
+                plan,
+                music_path=local_music if (local_music and local_music.exists()) else None,
+                audio_mode="separate",
+                output_format=output_format,
+                work_dir=tmp_path,
+                deadline=time.monotonic() + 600.0,
+            )
 
             # --- Upload phase: persist final video to storage ---
             final_key = f"{job_prefix}/final/final_reel.{output_format}" if job_prefix else str(assembled_path)

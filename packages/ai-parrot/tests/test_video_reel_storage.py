@@ -8,6 +8,7 @@ Covers:
 - Assembly hybrid storage pattern
 - Backward compatibility
 """
+
 from __future__ import annotations
 
 import os
@@ -23,10 +24,10 @@ from parrot.models.google import VideoReelRequest
 from parrot.interfaces.file import FileManagerInterface
 from parrot.tools.filemanager import FileManagerFactory
 
-
 # ---------------------------------------------------------------------------
 # 1. Model field tests (TASK-289)
 # ---------------------------------------------------------------------------
+
 
 class TestVideoReelRequestStorageFields:
     """Verify storage_backend and storage_config fields on VideoReelRequest."""
@@ -90,6 +91,7 @@ class TestVideoReelRequestStorageFields:
 # 2. FileManager factory tests (TASK-290)
 # ---------------------------------------------------------------------------
 
+
 class TestFileManagerFactory:
     """Verify FileManagerFactory creates the right backend types."""
 
@@ -114,6 +116,7 @@ class TestFileManagerFactory:
 # ---------------------------------------------------------------------------
 # 3. Handler storage configuration tests (TASK-294)
 # ---------------------------------------------------------------------------
+
 
 class TestHandlerStorageConfig:
     """Verify VideoReelHandler._create_file_manager reads env vars."""
@@ -159,10 +162,7 @@ class TestHandlerStorageConfig:
         """S3 backend without bucket falls back to None."""
         env = {"VIDEO_REEL_STORAGE_BACKEND": "s3"}
         # Ensure no bucket env var
-        cleaned = {
-            k: v for k, v in os.environ.items()
-            if not k.startswith("VIDEO_REEL_STORAGE_BUCKET")
-        }
+        cleaned = {k: v for k, v in os.environ.items() if not k.startswith("VIDEO_REEL_STORAGE_BUCKET")}
         cleaned.update(env)
         with patch.dict(os.environ, cleaned, clear=True):
             fm = handler._create_file_manager()
@@ -188,6 +188,7 @@ class TestHandlerStorageConfig:
 # ---------------------------------------------------------------------------
 # 4. Pipeline FileManager initialization tests (TASK-290)
 # ---------------------------------------------------------------------------
+
 
 class TestPipelineFileManagerInit:
     """Verify generate_video_reel() accepts and initializes FileManager."""
@@ -235,6 +236,7 @@ class TestPipelineFileManagerInit:
 # 5. Assembly hybrid storage tests (TASK-293)
 # ---------------------------------------------------------------------------
 
+
 class TestAssemblyHybridStorage:
     """Verify _create_reel_assembly uses download→assemble→upload pattern."""
 
@@ -277,9 +279,7 @@ class TestAssemblyHybridStorage:
 
         with patch("parrot.clients.google.generation.asyncio") as mock_aio:
             # Make to_thread return the local_output path
-            mock_aio.to_thread = AsyncMock(
-                return_value=Path("/tmp/fake_output.mp4")
-            )
+            mock_aio.to_thread = AsyncMock(return_value=Path("/tmp/fake_output.mp4"))
             try:
                 result = await obj._create_reel_assembly(
                     scene_outputs=scene_outputs,
@@ -318,8 +318,24 @@ class TestAssemblyHybridStorage:
         fake_output = Path(tmp_path)
         fake_output.write_bytes(b"\x00" * 100)
 
-        with patch("parrot.clients.google.generation.asyncio") as mock_aio:
-            mock_aio.to_thread = AsyncMock(return_value=fake_output)
+        # FEAT-564 TASK-3329: _create_reel_assembly now delegates the actual
+        # encode to reel.assembly.assemble_reel (a managed-process call) and
+        # measures each scene's real duration via moviepy.VideoFileClip
+        # before building a TimelinePlan — mock both instead of the whole
+        # `asyncio` module (the old single asyncio.to_thread() call this test
+        # used to stub no longer exists; asyncio.to_thread is now used only
+        # for the per-scene duration probe, not for running the encode).
+        fake_clip = MagicMock()
+        fake_clip.duration = 1.0
+        fake_clip.close = MagicMock()
+
+        with (
+            patch("moviepy.VideoFileClip", return_value=fake_clip),
+            patch(
+                "parrot.clients.google.reel.assembly.assemble_reel",
+                new=AsyncMock(return_value=fake_output),
+            ),
+        ):
             result = await obj._create_reel_assembly(
                 scene_outputs=scene_outputs,
                 music_key=None,
@@ -350,6 +366,7 @@ class TestAssemblyHybridStorage:
 # 6. Backward compatibility tests
 # ---------------------------------------------------------------------------
 
+
 class TestBackwardCompatibility:
     """Ensure existing behavior is preserved when no storage config is set."""
 
@@ -357,10 +374,12 @@ class TestBackwardCompatibility:
         """VideoReelRequest without storage fields uses defaults."""
         req = VideoReelRequest(
             prompt="Test reel",
-            scenes=[{
-                "background_prompt": "Ocean",
-                "video_prompt": "Pan right",
-            }],
+            scenes=[
+                {
+                    "background_prompt": "Ocean",
+                    "video_prompt": "Pan right",
+                }
+            ],
         )
         assert req.storage_backend == "fs"
         assert req.storage_config is None
