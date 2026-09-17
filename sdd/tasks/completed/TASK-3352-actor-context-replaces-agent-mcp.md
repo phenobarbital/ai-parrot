@@ -265,10 +265,24 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-coder (native, sonnet), consolidated by sdd-worker
+**Date**: 2026-09-18
+**Notes**: Implemented exactly per blueprint — `actor.py` created with
+`current_actor()`/`actor_scope()`, all 5 `"agent:mcp"` literals in
+`tools.py` replaced with `current_actor()`. `test_actor.py` (4 tests)
+passes; `test_wiki_tools.py` (31 tests) passes with no regression.
+`test_mcp_server.py` has 2 pre-existing failures unrelated to this task
+(`test_sqlite_backend_unaffected_by_arango_branch` — unrelated
+`sqlite_policy` kwarg from TASK-3235; `test_initialize_and_list_tools` —
+subprocess spawns a fresh interpreter that lacks the worktree's compiled
+Cython extensions). Confirmed via a merge-tier test run against 13
+failures total: 12 reproduce identically on the pre-feature base commit
+(dev tip), and the 13th (`test_vault_tools_over_stdio`) turned green once
+the worktree's missing `parrot.utils.types`/`toml` compiled `.so`
+extensions were copied in from the main checkout for local testing only
+(gitignored, not committed) — a documented environment gap, not a
+regression from this diff. Review recorded:
+`coder-review:6e9deb1f8ca5df945af5038c` (0 corrections).
+Seat: sonnet · Backend: native · Model: sonnet · Attempts: 1
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

@@ -34,7 +34,7 @@
       "feature_id": "FEAT-569",
       "feature": "wikitoolkit-http-mcp",
       "spec": "sdd/specs/wikitoolkit-http-mcp.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -42,8 +42,8 @@
       "parallelism_notes": "graph root: creates actor.py; first writer of tools.py in this feature (5 literal substitutions)",
       "assigned_to": null,
       "started_at": "2026-09-17T23:14:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3352-actor-context-replaces-agent-mcp.md"
+      "completed_at": "2026-09-17T23:41:17+00:00",
+      "file": "sdd/tasks/completed/TASK-3352-actor-context-replaces-agent-mcp.md"
     },
     {
       "id": "TASK-3353",
