@@ -256,10 +256,40 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (sonnet, sequential fallback — `complex_model_unavailable`, same
+systemic roster gap as prior tasks; user-authorized direct implementation)
+**Date**: 2026-09-17
+**Notes**: Attempted the spike for real (no simulation). First measurement (`ai-parrot`,
+without `--continue-on-collection-errors`) aborted at collection with the same 25 pre-existing,
+unrelated broken test modules already flagged in TASK-3304/3311's completion notes. Second
+measurement (with `--continue-on-collection-errors`, matching `ci.yml:147`) hit the `timeout
+900` (15 min) bound at only ~11% progress, extrapolating to **~2.3 hours** for a single serial
+pass of the marker-filtered `ai-parrot` suite alone — this single number already makes the
+spec's §1 motivation concrete, and makes the full protocol (1 serial + 2×`-n auto`, repeated
+across 9 distributions) genuinely infeasible inside one spike task's time budget within this
+session. Independently reproduced one of the task's own named hazards as a side effect: a
+*relative* `--junitxml` path resolved against the **main checkout**, not this worktree, after
+the first (interrupted) run — `parrot`/navconfig's import-time `os.chdir`, exactly the R7
+hazard called out in Context — recorded as a real, observed finding, not a guess. Given no
+distribution completed a comparable serial+xdist run, followed spec R7's own fail-safe rule
+("either proven or excluded") and AC10's explicit allowance ("may stay empty"): every
+distribution is recorded as `skipped: <reason>` with the real partial evidence for `ai-parrot`
+(required first) and the same time-budget rationale for the rest, and
+`XDIST_SAFE_DISTRIBUTIONS` stays `frozenset()`. Verified the log against its own embedded
+self-check script (table row present, decision line present, the `safe`-verdict regex finds
+zero rows so the `assert` is vacuously true) before committing. `policy.py`'s only change is
+the `XDIST_SAFE_DISTRIBUTIONS` definition + its comment, confirmed via `git status
+--porcelain` scoped to exactly the two declared targets. All 54 tests in `test_planner.py` +
+the full `test_scope` suite pass; `ruff check` clean. No scratch `--junitxml`/log files from
+the two real runs were committed (summary numbers transcribed into the markdown log; the raw
+files were removed after recording them).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: the spike's own measurement protocol (1 serial + 2×`-n auto` per
+distribution, compared by nodeid) could not be completed for any distribution within this
+task's time budget — documented above and in the log itself as the reason every row is
+`skipped:` rather than `safe`/`unsafe`. This is an explicitly spec-sanctioned outcome (AC10:
+"may stay empty"; R7: "either proven or excluded"), not a silent scope reduction. Flagging for
+the orchestrator: a genuine xdist-safety measurement pass (likely requiring a dedicated,
+multi-hour allocation outside a single SDD-worker task) remains a real, valuable follow-up —
+the log's Decision section names the exact fix (absolute `--junitxml` path,
+`--continue-on-collection-errors` from the first run) for whoever picks it up.

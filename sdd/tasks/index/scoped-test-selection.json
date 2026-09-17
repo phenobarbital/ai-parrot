@@ -315,7 +315,7 @@
       "feature_id": "FEAT-563",
       "feature": "scoped-test-selection",
       "spec": "sdd/specs/scoped-test-selection.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -325,8 +325,8 @@
       "parallelism_notes": "edits XDIST_SAFE_DISTRIBUTIONS in policy.py created by TASK-3305; exclusive: long -n auto package-suite runs saturate the shared machine",
       "assigned_to": null,
       "started_at": "2026-09-17T11:00:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3317-spike-xdist-allowlist.md"
+      "completed_at": "2026-09-17T13:56:30+00:00",
+      "file": "sdd/tasks/completed/TASK-3317-spike-xdist-allowlist.md"
     },
     {
       "id": "TASK-3318",
