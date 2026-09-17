@@ -1,4 +1,5 @@
 """Tests for scripts/sdd/select_tests.py (FEAT-563 TASK-3310)."""
+
 from __future__ import annotations
 
 import json
@@ -11,7 +12,9 @@ from scripts.sdd.select_tests import main
 
 
 def _git(root: Path, *args: str) -> None:
-    subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", *args], cwd=root, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "-c", "user.email=t@t", "-c", "user.name=t", *args], cwd=root, check=True, capture_output=True
+    )
 
 
 @pytest.fixture
@@ -56,13 +59,15 @@ def test_select_tests_on_fixture_monorepo(fixture_monorepo):
     task_file.write_text("## Validation Commands\n\n- `pytest packages/a/tests/test_x.py -q`\n")
     (fixture_monorepo / "packages/a/src/pa/x.py").write_text("X = 2\n")
 
-    rc = main(["--tier", "task", "--base", "HEAD", "--worktree", str(fixture_monorepo),
-               "--task-file", "task.md", "--run"])
+    rc = main(
+        ["--tier", "task", "--base", "HEAD", "--worktree", str(fixture_monorepo), "--task-file", "task.md", "--run"]
+    )
     assert rc == 0
 
     (fixture_monorepo / "packages/a/tests/test_x.py").write_text("def test_x():\n    assert False\n")
-    rc = main(["--tier", "task", "--base", "HEAD", "--worktree", str(fixture_monorepo),
-               "--task-file", "task.md", "--run"])
+    rc = main(
+        ["--tier", "task", "--base", "HEAD", "--worktree", str(fixture_monorepo), "--task-file", "task.md", "--run"]
+    )
     assert rc == 1
 
 

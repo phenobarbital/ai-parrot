@@ -611,7 +611,7 @@ class QANode(DevLoopNode):
             for result in report.criterion_results:
                 if not result.passed or not result.name.endswith(" (core escalation)"):
                     continue
-                dist = result.name[len("pytest["):result.name.index("]")]
+                dist = result.name[len("pytest[") : result.name.index("]")]
                 core_files = [hit.path for hit in plan.core_hits if dist in hit.distributions]
                 if not core_files:
                     continue

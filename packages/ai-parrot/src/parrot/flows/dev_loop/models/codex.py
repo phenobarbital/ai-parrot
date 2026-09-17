@@ -37,7 +37,6 @@ class CodexCodeDispatchProfile(BaseModel):
     )
 
 
-
 class CodexCodeReviewProfile(CodexCodeDispatchProfile):
     """Review profile for the Codex code review dispatcher (FEAT-270).
 

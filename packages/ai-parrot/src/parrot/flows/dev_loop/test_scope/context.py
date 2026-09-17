@@ -1,4 +1,5 @@
 """Attempt context and escalation ledger stored in the per-worktree git dir (FEAT-563 M3)."""
+
 from __future__ import annotations
 
 import json
@@ -119,8 +120,7 @@ def pending_escalations(worktree: Path, hits: Sequence[CoreHit]) -> tuple[list[s
         relevant = [h.path for h in hits if dist in h.distributions]
         entry = ledger.get(dist)
         if entry is not None and all(
-            (blob := _blob(worktree, path)) is not None and blob == entry.core_blobs.get(path)
-            for path in relevant
+            (blob := _blob(worktree, path)) is not None and blob == entry.core_blobs.get(path) for path in relevant
         ):
             skipped.append(dist)
         else:

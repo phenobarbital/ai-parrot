@@ -475,7 +475,10 @@ def _load_scope_guard(cwd: Path) -> Optional[tuple[Any, Path]]:
     try:
         proc = subprocess.run(
             ["git", "-C", str(cwd), "rev-parse", "--show-toplevel"],
-            capture_output=True, text=True, timeout=5, check=False,
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
         )
         if proc.returncode != 0:
             return None

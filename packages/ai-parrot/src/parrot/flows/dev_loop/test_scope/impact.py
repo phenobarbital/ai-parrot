@@ -4,6 +4,7 @@ Stdlib-only: one AST pass builds a reverse import index for test modules and
 for source modules, used by the merge tier (impacted tests) and by the merge
 and feature tiers (core detection by transitive source fan-in).
 """
+
 from __future__ import annotations
 
 import ast
@@ -263,6 +264,9 @@ def detect_core(index: ImportIndex, changed: Sequence[str], *, policy: ScopePoli
         forced = path in policy.core_paths
         if forced or fanin >= policy.core_fanin_threshold:
             own = distribution_of(path)
-            hits.append(CoreHit(path=path, module=module, fanin=fanin, forced=forced,
-                                distributions=tuple(sorted(dists | {own}))))
+            hits.append(
+                CoreHit(
+                    path=path, module=module, fanin=fanin, forced=forced, distributions=tuple(sorted(dists | {own}))
+                )
+            )
     return hits

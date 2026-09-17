@@ -6,6 +6,7 @@ Postgres connection (FEAT-106 / TASK-746).
 Fixtures requiring a live DB are conditionally skipped when
 ``NAVIGATOR_PG_DSN`` is not set in the environment.
 """
+
 from __future__ import annotations
 
 import os
@@ -34,6 +35,7 @@ def pytest_collection_modifyitems(config, items):  # noqa: D401
 # pg_dsn — source from environment
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def pg_dsn() -> str:
     """Return the Postgres DSN from the environment.
@@ -49,6 +51,7 @@ def pg_dsn() -> str:
 # ---------------------------------------------------------------------------
 # pg_toolkit_with_fixture_table — scratch-table fixture for CRUD round-trips
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 async def pg_toolkit_with_fixture_table(pg_dsn):
@@ -74,10 +77,7 @@ async def pg_toolkit_with_fixture_table(pg_dsn):
         pytest.skip("NAVIGATOR_PG_DSN not set — skipping integration fixture")
 
     # Load worktree source so we get the FEAT-106 PostgresToolkit.
-    _WT_SRC = os.path.normpath(
-        os.path.join(os.path.dirname(__file__), os.pardir,
-                     "packages", "ai-parrot", "src")
-    )
+    _WT_SRC = os.path.normpath(os.path.join(os.path.dirname(__file__), os.pardir, "packages", "ai-parrot", "src"))
     if _WT_SRC not in sys.path:
         sys.path.insert(0, _WT_SRC)
 
@@ -102,6 +102,7 @@ async def pg_toolkit_with_fixture_table(pg_dsn):
 
     # Use asyncpg directly to create the scratch table.
     import asyncpg  # type: ignore[import]
+
     conn = await asyncpg.connect(pg_dsn)
     try:
         await conn.execute(CREATE_SQL)
@@ -172,12 +173,8 @@ def bind_sdk_client(monkeypatch):
             state["sdk"] = None
 
         monkeypatch.setattr(type(client), "client", property(_get, _set))
-        monkeypatch.setattr(
-            client, "get_client", AsyncMock(return_value=sdk), raising=False
-        )
-        monkeypatch.setattr(
-            client, "_ensure_client", AsyncMock(return_value=sdk), raising=False
-        )
+        monkeypatch.setattr(client, "get_client", AsyncMock(return_value=sdk), raising=False)
+        monkeypatch.setattr(client, "_ensure_client", AsyncMock(return_value=sdk), raising=False)
         return sdk
 
     return _bind

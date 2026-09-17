@@ -1,4 +1,5 @@
 """Tier tests for test_scope.plan_tests (FEAT-563 TASK-3308)."""
+
 from __future__ import annotations
 
 import subprocess
@@ -36,34 +37,54 @@ def repo(tmp_path: Path) -> Path:
 
 
 def test_task_tier_never_escalates(repo):
-    plan = plan_tests(worktree=repo, changed_files=["packages/a/src/pa/base.py"], tier="task",
-                      policy=ScopePolicy(core_fanin_threshold=1))
+    plan = plan_tests(
+        worktree=repo,
+        changed_files=["packages/a/src/pa/base.py"],
+        tier="task",
+        policy=ScopePolicy(core_fanin_threshold=1),
+    )
     assert plan.escalated == () and plan.core_hits == ()
 
 
 def test_core_escalates_every_importing_distribution(repo):
-    plan = plan_tests(worktree=repo, changed_files=["packages/a/src/pa/base.py"], tier="merge",
-                      policy=ScopePolicy(core_fanin_threshold=1))
+    plan = plan_tests(
+        worktree=repo,
+        changed_files=["packages/a/src/pa/base.py"],
+        tier="merge",
+        policy=ScopePolicy(core_fanin_threshold=1),
+    )
     paths = {t.path for inv in plan.invocations for t in inv.targets}
     assert {"packages/a/tests", "packages/b/tests"} <= paths
 
 
 def test_feature_tier_no_impact_without_core(repo):
-    plan = plan_tests(worktree=repo, changed_files=["packages/a/src/pa/leaf.py"], tier="feature",
-                      policy=ScopePolicy(core_fanin_threshold=999))
+    plan = plan_tests(
+        worktree=repo,
+        changed_files=["packages/a/src/pa/leaf.py"],
+        tier="feature",
+        policy=ScopePolicy(core_fanin_threshold=999),
+    )
     assert all(t.reason in {"mirror", "declared"} for inv in plan.invocations for t in inv.targets)
 
 
 def test_ledger_skips_green_same_content(repo):
     record_green_escalation(repo, ["a", "b"], ["packages/a/src/pa/base.py"])
-    plan = plan_tests(worktree=repo, changed_files=["packages/a/src/pa/base.py"], tier="merge",
-                      policy=ScopePolicy(core_fanin_threshold=1))
+    plan = plan_tests(
+        worktree=repo,
+        changed_files=["packages/a/src/pa/base.py"],
+        tier="merge",
+        policy=ScopePolicy(core_fanin_threshold=1),
+    )
     assert plan.skipped_escalations == ("a", "b")
 
 
 def test_cap_escalates_to_package_suite(repo):
-    plan = plan_tests(worktree=repo, changed_files=["packages/a/src/pa/leaf.py"], tier="merge",
-                      policy=ScopePolicy(impact_cap=0, core_fanin_threshold=999))
+    plan = plan_tests(
+        worktree=repo,
+        changed_files=["packages/a/src/pa/leaf.py"],
+        tier="merge",
+        policy=ScopePolicy(impact_cap=0, core_fanin_threshold=999),
+    )
     assert "a" in plan.escalated
 
 

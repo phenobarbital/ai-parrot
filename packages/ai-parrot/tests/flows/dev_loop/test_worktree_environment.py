@@ -227,7 +227,9 @@ def test_standalone_hook_denies_invalid_input() -> None:
     assert json.loads(result.stdout)["hookSpecificOutput"]["permissionDecision"] == "deny"
 
 
-def test_hook_rewrites_broad_pytest_before_sandbox(checkout: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch) -> None:
+def test_hook_rewrites_broad_pytest_before_sandbox(
+    checkout: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setattr(policy.shutil, "which", lambda _: "/usr/bin/bwrap")
     monkeypatch.setattr(policy, "_scope_guard", lambda command, cwd: ("rewrite", "pytest tests/test_a.py -q"))
     response = policy.hook_response({"cwd": str(checkout[0]), "tool_name": "Bash", "tool_input": {"command": "pytest"}})

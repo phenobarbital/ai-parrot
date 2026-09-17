@@ -1,4 +1,5 @@
 """Attempt context + escalation ledger tests on real temp git repos/worktrees (FEAT-563 M3)."""
+
 import subprocess
 from pathlib import Path
 

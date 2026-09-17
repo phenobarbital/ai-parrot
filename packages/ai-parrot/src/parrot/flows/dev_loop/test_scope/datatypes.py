@@ -1,4 +1,5 @@
 """Frozen, stdlib-only data carriers for the test-scope kernel (FEAT-563)."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

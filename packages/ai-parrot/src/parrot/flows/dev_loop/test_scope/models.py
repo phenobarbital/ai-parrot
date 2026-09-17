@@ -1,4 +1,5 @@
 """Pydantic boundary models for the test-scope kernel (FEAT-563). The ONLY kernel module importing pydantic."""
+
 from __future__ import annotations
 
 from typing import Literal
@@ -55,8 +56,7 @@ class ScopePlanModel(BaseModel):
                     distribution=inv.distribution,
                     argv=list(inv.argv),
                     targets=[
-                        TestTargetModel(path=t.path, distribution=t.distribution, reason=t.reason)
-                        for t in inv.targets
+                        TestTargetModel(path=t.path, distribution=t.distribution, reason=t.reason) for t in inv.targets
                     ],
                 )
                 for inv in plan.invocations
@@ -65,7 +65,10 @@ class ScopePlanModel(BaseModel):
             notes=list(plan.notes),
             core_hits=[
                 CoreHitModel(
-                    path=hit.path, module=hit.module, fanin=hit.fanin, forced=hit.forced,
+                    path=hit.path,
+                    module=hit.module,
+                    fanin=hit.fanin,
+                    forced=hit.forced,
                     distributions=list(hit.distributions),
                 )
                 for hit in plan.core_hits

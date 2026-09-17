@@ -1742,7 +1742,9 @@ class TestObservationalScope:
 async def test_run_command_rewrites_broad_pytest(monkeypatch, tmp_path):
     dispatcher = _dispatcher(monkeypatch, _FakeClient([]))
     replacement = (("pytest", "tests/test_a.py", "-q"), ("pytest", "packages/x/tests/test_b.py", "-q"))
-    monkeypatch.setattr(llm_module, "guard_argv", lambda argv, *, worktree: GuardOutcome("rewrite", replacement, "scoped"))
+    monkeypatch.setattr(
+        llm_module, "guard_argv", lambda argv, *, worktree: GuardOutcome("rewrite", replacement, "scoped")
+    )
     ran: list[list[str]] = []
 
     async def _fake_run(argv, *, cwd, timeout, stdin=None):
@@ -1780,14 +1782,18 @@ async def test_run_command_blocks_without_exec(monkeypatch, tmp_path):
 async def test_run_command_first_nonzero_exit_wins(monkeypatch, tmp_path):
     dispatcher = _dispatcher(monkeypatch, _FakeClient([]))
     replacement = (("pytest", "a.py"), ("pytest", "b.py"))
-    monkeypatch.setattr(llm_module, "guard_argv", lambda argv, *, worktree: GuardOutcome("rewrite", replacement, "scoped"))
+    monkeypatch.setattr(
+        llm_module, "guard_argv", lambda argv, *, worktree: GuardOutcome("rewrite", replacement, "scoped")
+    )
     ran: list[list[str]] = []
 
     async def _fake_run(argv, *, cwd, timeout, stdin=None):
         ran.append(list(argv))
-        return {"exit_code": 1, "stdout": "", "stderr": ""} if list(argv) == ["pytest", "a.py"] else {
-            "exit_code": 0, "stdout": "", "stderr": ""
-        }
+        return (
+            {"exit_code": 1, "stdout": "", "stderr": ""}
+            if list(argv) == ["pytest", "a.py"]
+            else {"exit_code": 0, "stdout": "", "stderr": ""}
+        )
 
     monkeypatch.setattr(dispatcher, "_run_argv", _fake_run)
     result = await dispatcher._tool_run_command(str(tmp_path), {"argv": ["pytest"]}, LLMCodeDispatchProfile())

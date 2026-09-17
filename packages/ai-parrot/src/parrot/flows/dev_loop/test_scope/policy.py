@@ -1,4 +1,5 @@
 """Tier policy for the test-scope kernel (FEAT-563). Stdlib only — data, not logic."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

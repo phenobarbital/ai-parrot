@@ -1,4 +1,5 @@
 """Directory auto-marking rules (FEAT-563 M10, AC8, R8)."""
+
 from __future__ import annotations
 
 import pytest

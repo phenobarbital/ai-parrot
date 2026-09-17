@@ -1,4 +1,5 @@
 """Tests for test_scope.impact (FEAT-563 TASK-3307)."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -48,15 +49,21 @@ def test_impacted_tests_direct_and_one_hop(tmp_path):
 
 def test_core_detected_by_source_fanin_not_test_count(tmp_path):
     root = _tree(tmp_path)
-    hits = detect_core(ImportIndex.build(root), ["packages/a/src/pa/base.py"],
-                       policy=ScopePolicy(core_fanin_threshold=2, core_paths=()))
+    hits = detect_core(
+        ImportIndex.build(root),
+        ["packages/a/src/pa/base.py"],
+        policy=ScopePolicy(core_fanin_threshold=2, core_paths=()),
+    )
     assert hits and hits[0].distributions == ("a", "b")
 
 
 def test_core_paths_force_escalation(tmp_path):
     root = _tree(tmp_path)
-    hits = detect_core(ImportIndex.build(root), ["packages/a/src/pa/impl.py"],
-                       policy=ScopePolicy(core_fanin_threshold=999, core_paths=("packages/a/src/pa/impl.py",)))
+    hits = detect_core(
+        ImportIndex.build(root),
+        ["packages/a/src/pa/impl.py"],
+        policy=ScopePolicy(core_fanin_threshold=999, core_paths=("packages/a/src/pa/impl.py",)),
+    )
     assert hits[0].forced is True
 
 

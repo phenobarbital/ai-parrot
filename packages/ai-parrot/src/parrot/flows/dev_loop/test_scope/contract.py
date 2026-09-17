@@ -1,4 +1,5 @@
 """`## Validation Commands` parsing and over-broad pytest detection (FEAT-563 M1/M9)."""
+
 from __future__ import annotations
 
 import re
@@ -19,7 +20,7 @@ def parse_validation_commands(task_md: str) -> list[list[str]]:
     match = _HEADING_RE.search(task_md)
     if not match:
         return []
-    body = task_md[match.end():]
+    body = task_md[match.end() :]
     nxt = _NEXT_HEADING_RE.search(body)
     body = body[: nxt.start()] if nxt else body
     commands: list[list[str]] = []

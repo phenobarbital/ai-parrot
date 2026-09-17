@@ -61,16 +61,10 @@ def _form(sections: list[FormSection], form_id: str = "f") -> FormSchema:
 def form_with_nested_fields() -> FormSchema:
     """FormSchema with sections, a subsection, a GROUP (children) and an
     ARRAY (item_template) — exercises the full-tree traversal (spec §4)."""
-    group = _field(
-        "group", field_type=FieldType.GROUP, children=[_field("child")]
-    )
-    array_field = _field(
-        "arr", field_type=FieldType.ARRAY, item_template=_field("item")
-    )
+    group = _field("group", field_type=FieldType.GROUP, children=[_field("child")])
+    array_field = _field("arr", field_type=FieldType.ARRAY, item_template=_field("item"))
     subsection = FormSubsection(subsection_id="sub", fields=[_field("in_sub")])
-    return _form([
-        FormSection(section_id="s", fields=[group, array_field, subsection])
-    ])
+    return _form([FormSection(section_id="s", fields=[group, array_field, subsection])])
 
 
 @pytest.fixture

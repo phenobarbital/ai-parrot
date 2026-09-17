@@ -1,4 +1,5 @@
 """Group selected targets into one pytest invocation per distribution (FEAT-563 M1)."""
+
 from __future__ import annotations
 
 from collections.abc import Sequence
@@ -21,7 +22,9 @@ def _dist_root(distribution: str) -> str:
     return "." if distribution == "root" else f"packages/{distribution}"
 
 
-def _invocation(distribution: str, targets: Sequence[TestTarget], *, worktree: Path, policy: ScopePolicy) -> PytestInvocation:
+def _invocation(
+    distribution: str, targets: Sequence[TestTarget], *, worktree: Path, policy: ScopePolicy
+) -> PytestInvocation:
     """Build the argv for one distribution's pruned targets."""
     kept_paths = prune_nested({t.path for t in targets})
     candidates = tuple(t for t in targets if t.path in kept_paths)
@@ -61,9 +64,7 @@ def build_plan(
     groups: dict[str, list[TestTarget]] = {}
     for target in targets:
         groups.setdefault(target.distribution, []).append(target)
-    invocations = tuple(
-        _invocation(dist, groups[dist], worktree=worktree, policy=policy) for dist in sorted(groups)
-    )
+    invocations = tuple(_invocation(dist, groups[dist], worktree=worktree, policy=policy) for dist in sorted(groups))
     return ScopePlan(
         tier=tier,
         invocations=invocations,

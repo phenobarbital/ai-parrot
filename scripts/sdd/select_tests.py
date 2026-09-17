@@ -4,6 +4,7 @@ Usage:
     python -m scripts.sdd.select_tests --tier {task,merge,feature} [--base origin/dev]
         [--task-file sdd/tasks/active/TASK-NNN-x.md ...] [--worktree .] [--run] [--json]
 """
+
 from __future__ import annotations
 
 import argparse

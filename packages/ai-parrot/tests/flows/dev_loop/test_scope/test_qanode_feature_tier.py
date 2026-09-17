@@ -1,4 +1,5 @@
 """QANode feature tier via the test-scope kernel (FEAT-563 TASK-3311)."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -33,9 +34,7 @@ async def test_feature_tier_equals_mirror_selection(tmp_path, monkeypatch):
 
     criteria = await node._default_criteria(shared, _research(tmp_path))
 
-    got_targets = {
-        op for c in criteria for op in c.command.split() if op.startswith(("packages/", "tests/"))
-    }
+    got_targets = {op for c in criteria for op in c.command.split() if op.startswith(("packages/", "tests/"))}
     assert got_targets == set(QANode._pytest_targets(files, str(tmp_path)))
 
 
@@ -45,9 +44,7 @@ async def test_empty_feature_plan_derives_no_criterion(tmp_path, monkeypatch):
     monkeypatch.setattr(QANode, "_get_changed_files", AsyncMock(return_value=[]))
 
     shared = {
-        "development_output": DevelopmentOutput(
-            files_changed=["packages/x/src/mod.py"], commit_shas=["a"], summary="s"
-        )
+        "development_output": DevelopmentOutput(files_changed=["packages/x/src/mod.py"], commit_shas=["a"], summary="s")
     }
     node = QANode(dispatcher=MagicMock())
 

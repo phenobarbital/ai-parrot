@@ -1,4 +1,5 @@
 """Tier entry point for the test-scope kernel (FEAT-563)."""
+
 from __future__ import annotations
 
 import subprocess
@@ -24,7 +25,10 @@ def changed_files(worktree: Path, base_ref: str) -> list[str]:
     try:
         diff = subprocess.run(
             ["git", "diff", "--name-only", "--diff-filter=d", f"{base_ref}...HEAD"],
-            cwd=worktree, capture_output=True, text=True, check=False,
+            cwd=worktree,
+            capture_output=True,
+            text=True,
+            check=False,
         )
     except OSError:
         diff = None
@@ -37,7 +41,10 @@ def changed_files(worktree: Path, base_ref: str) -> list[str]:
     try:
         status = subprocess.run(
             ["git", "status", "--porcelain", "--untracked-files=all"],
-            cwd=worktree, capture_output=True, text=True, check=False,
+            cwd=worktree,
+            capture_output=True,
+            text=True,
+            check=False,
         )
     except OSError:
         status = None
@@ -127,17 +134,25 @@ def plan_tests(
     policy = policy or ScopePolicy()
     notes: list[str] = []
     targets = [TestTarget(path=p, distribution=_dist(p), reason="declared") for p in _declared_targets(declared, notes)]
-    targets += [TestTarget(path=p, distribution=_dist(p), reason="mirror")
-                for p in pytest_targets(list(changed_files), str(worktree))]
+    targets += [
+        TestTarget(path=p, distribution=_dist(p), reason="mirror")
+        for p in pytest_targets(list(changed_files), str(worktree))
+    ]
     escalated: list[str] = []
     hits: list[CoreHit] = []
     skipped: list[str] = []
     if tier != "task":
         try:
-            is_git = subprocess.run(
-                ["git", "rev-parse", "--is-inside-work-tree"],
-                cwd=worktree, capture_output=True, text=True, check=False,
-            ).returncode == 0
+            is_git = (
+                subprocess.run(
+                    ["git", "rev-parse", "--is-inside-work-tree"],
+                    cwd=worktree,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                ).returncode
+                == 0
+            )
         except OSError:
             is_git = False
 
@@ -179,5 +194,13 @@ def plan_tests(
                     else:
                         notes.append(f"{dist}: core escalation target suite does not exist, skipped")
 
-    return build_plan(targets, tier=tier, worktree=worktree, policy=policy, escalated=escalated,
-                      core_hits=hits, skipped_escalations=skipped, notes=notes)
+    return build_plan(
+        targets,
+        tier=tier,
+        worktree=worktree,
+        policy=policy,
+        escalated=escalated,
+        core_hits=hits,
+        skipped_escalations=skipped,
+        notes=notes,
+    )

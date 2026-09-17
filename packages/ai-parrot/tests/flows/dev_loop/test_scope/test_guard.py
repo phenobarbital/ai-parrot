@@ -1,4 +1,5 @@
 """Decision matrix for test_scope.guard (FEAT-563 TASK-3309)."""
+
 from __future__ import annotations
 
 import subprocess
@@ -25,6 +26,7 @@ def _plan(*argvs: tuple[str, ...]) -> ScopePlan:
 def with_plan(monkeypatch):
     def _set(plan):
         monkeypatch.setattr(guard_mod, "_task_plan", lambda worktree: plan)
+
     return _set
 
 

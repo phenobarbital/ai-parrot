@@ -1,4 +1,5 @@
 """Over-broad pytest guard for sdd-coder attempts (FEAT-563, spec Module 3)."""
+
 from __future__ import annotations
 
 import shlex
@@ -67,8 +68,9 @@ def guard_argv(argv: Sequence[str], *, worktree: Path) -> GuardOutcome:
             return GuardOutcome(action="block", message=BLOCK_MESSAGE)
         argvs = tuple(inv.argv for inv in plan.invocations)
         rendered = " ; ".join(shlex.join(a) for a in argvs)
-        return GuardOutcome(action="rewrite", argvs=argvs,
-                            message=f"rewritten `{shlex.join(argv)}` → `{rendered}` (tier=task)")
+        return GuardOutcome(
+            action="rewrite", argvs=argvs, message=f"rewritten `{shlex.join(argv)}` → `{rendered}` (tier=task)"
+        )
     except Exception:  # noqa: BLE001 — a broken guard must never break a seat
         return GuardOutcome(action="allow")
 
