@@ -141,4 +141,54 @@ Test names and assertions must describe observable behavior, not mirror private 
 
 ## Completion Note
 
-Pending implementation. The executor must record completed-by, date, test results, evidence-gate resolution and deviations before marking done.
+Completed 2026-09-17 by sdd-worker orchestrator (fallback sequential loop, sonnet).
+
+- `TimelineEntry`/`TimelineSegment`/`TimelinePlan` (Pydantic v2) and `plan_timeline()`,
+  `check_measured_duration()`, `check_narration_fits()` — pure functions, no MoviePy/provider
+  calls/I/O (verified: only stdlib `math` + Pydantic imports).
+- **`TimelinePlan` dependency interface for the assembly task (documented per Scope bullet 2)**:
+  `TimelinePlan.segments: List[TimelineSegment]`, each carrying `scene_index` (original index,
+  preserved even with gaps — e.g. only scenes 0 and 3 survived), `clip_path`, `start_seconds`
+  (absolute position in the final timeline), `edit_seconds` (this segment's own duration,
+  unchanged from the entry), `narration_path`, and `overlap_with_next_seconds` (crossfade overlap
+  consumed with the NEXT segment; `0.0` for cut or the last segment). `TimelinePlan.fps` and
+  `.final_duration_seconds` are top-level. The assembly task should read `start_seconds` +
+  `overlap_with_next_seconds` directly rather than recomputing placement — this IS the one
+  explicit plan the spec's M6 responsibility names.
+- Cuts: `final_duration_seconds` = Σ `edit_seconds`. Crossfades: subtracts Σ actual consumed
+  overlaps (`crossfade_seconds` between each adjacent pair, `0.0` after the last segment). Four 5s
+  scenes → 20s cut / 18.5s crossfade (three 0.5s overlaps), matching AC05 exactly.
+- Validation: `fps` must be finite and > 0; every `edit_seconds` must be finite and > 0; a
+  crossfade's `crossfade_seconds` must be finite, non-negative, and **strictly shorter than BOTH**
+  neighboring scenes' durations (`>=` rejected, not just `>`) — an overlap consuming an entire
+  scene leaves nothing of that scene to show. Empty `entries` rejected.
+- `check_measured_duration(target, measured, fps)`: one-frame tolerance = `1.0/fps`; raises
+  `ReelError(INSUFFICIENT_DURATION)` only when `measured < target - tolerance` — exactly at the
+  tolerance boundary passes (tested), longer-than-target never raises. Never loops/stretches/
+  regenerates — the function only ever raises or returns.
+- `check_narration_fits(target, narration_seconds)`: raises `ReelError(NARRATION_TOO_LONG)` only
+  when narration EXCEEDS target (`==` passes); shorter narration is left untouched (padding with
+  silence is a later assembly-stage concern, not this function's).
+- Both duration-check functions raise `ReelError` (not `ReelValidationError`) since they run
+  AFTER generation/measurement, not before a paid call — consistent with `ReelValidationError`
+  being reserved for pre-paid-call registry/config validation (TASK-3322's distinction).
+- **Lint finding during self-review, fixed before commit**: `ruff` B905 (`zip()` without explicit
+  `strict=`) on the offset-by-one neighbor-pairing loop — added `strict=False` explicitly (the two
+  slices are deliberately unequal length by one).
+- AC04, AC05 (owned by this task): covered by the 20 tests in `test_reel_timeline.py` (cut/
+  crossfade totals, original-index preservation under skip, single-entry plan, empty-entries/
+  invalid-fps/invalid-edit-seconds/negative-crossfade rejection, overlap-equal-to-and-longer-than-
+  neighbor rejection, zero-crossfade degenerate case, measured-duration exact/boundary/short/long
+  cases, narration exact/within/overflow/shorter cases).
+- Tests: `pytest packages/ai-parrot-client-google/tests/unit/reel/test_reel_timeline.py -q` — 20
+  passed. Full `tests/unit/reel/` directory — 107 passed. Same temporary main-checkout `.so`
+  copy-then-remove as prior tasks; nothing committed.
+- Lint: `ruff check` — all checks passed (after the B905 fix). `black --line-length 120`
+  reformatted `timeline.py` (wrapping only); re-ran both suites after reformatting — still 107/20
+  passed.
+- No live-service claims inferred from mocks; no default test performs a paid provider call. No
+  files outside the task's two listed targets were created or modified. `generation.py` was NOT
+  touched (Implementation Notes: "no generation.py changes" — confirmed).
+
+Seat: sonnet (fallback sequential, orchestrator-implemented) · Backend: native · Model: sonnet ·
+Attempts: 1 · Duration: n/a (fallback, not MCP/native-agent timed) · Tokens: n/a

@@ -246,6 +246,7 @@ filterwarnings = [
 markers = [
     "asyncio: mark a test as a coroutine that should be run by pytest-asyncio",
     "real_llm: mark a test as requiring a live LLM provider",
+    "live_google: Opt-in paid Google GenAI (Veo/Omni/Lyria) reel smoke tests. Require real credentials and PARROT_TEST_LIVE_GOOGLE=1; skipped by default, never run at collection time (FEAT-564 TASK-3335).",
 ]
 
 [tool.black]

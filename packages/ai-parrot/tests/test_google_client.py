@@ -1121,6 +1121,8 @@ async def test_generate_image_config_developer_api():
 
         # In generate_image (stateless=True), we call aio.models.generate_content
         mock_client_instance.aio.models.generate_content = AsyncMock(return_value=mock_response)
+        # generate_image owns and closes this directly-created client (FEAT-564 TASK-3331).
+        mock_client_instance.aio.aclose = AsyncMock()
 
         client = GoogleGenAIClient(api_key="fake_key", vertexai=False)
         client.get_client = AsyncMock(return_value=mock_client_instance)
@@ -1154,6 +1156,8 @@ async def test_generate_image_config_vertexai():
 
         # In generate_image (stateless=True), we call aio.models.generate_content
         mock_client_instance.aio.models.generate_content = AsyncMock(return_value=mock_response)
+        # generate_image owns and closes this directly-created client (FEAT-564 TASK-3331).
+        mock_client_instance.aio.aclose = AsyncMock()
 
         client = GoogleGenAIClient(
             api_key="fake_key", vertexai=True, vertex_project="fake_project", vertex_location="us-central1"
