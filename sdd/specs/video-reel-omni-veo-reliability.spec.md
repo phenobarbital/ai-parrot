@@ -11,7 +11,7 @@ proposal: sdd/proposals/video-reel-omni-veo-reliability.proposal.md
 **Feature ID**: FEAT-564
 **Date**: 2026-09-17
 **Author**: Jesus Lara / Claude
-**Status**: draft
+**Status**: approved
 **Target version**: next
 **Research**: `sdd/state/FEAT-564/` (findings F001–F012)
 
