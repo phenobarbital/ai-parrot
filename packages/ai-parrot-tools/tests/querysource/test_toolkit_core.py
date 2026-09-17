@@ -12,10 +12,14 @@ def tk(patched_qs):
 
 
 def test_tool_names_and_write_gate(tk):
-    # Snapshot as of TASK-3251 + TASK-3252 (execute_slug) + TASK-3253 (list_components/validate_pipeline);
-    # TASK-3254 extends this further with run_multiquery/save_multiquery.
+    # Final tool set (spec §5 AC): 7 without write; qs_save_multiquery only when allow_write=True (added TASK-3254).
     assert sorted(tk().list_tool_names()) == ["qs_describe_slug", "qs_execute_slug", "qs_get_dialect_reference",
-                                              "qs_list_components", "qs_list_slugs", "qs_validate_pipeline"]
+                                              "qs_list_components", "qs_list_slugs", "qs_run_multiquery",
+                                              "qs_validate_pipeline"]
+    assert sorted(tk(allow_write=True).list_tool_names()) == ["qs_describe_slug", "qs_execute_slug",
+                                                              "qs_get_dialect_reference", "qs_list_components",
+                                                              "qs_list_slugs", "qs_run_multiquery",
+                                                              "qs_save_multiquery", "qs_validate_pipeline"]
     assert "save_multiquery" in tk().exclude_tools and "save_multiquery" not in tk(allow_write=True).exclude_tools
 
 

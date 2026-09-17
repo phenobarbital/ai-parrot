@@ -6,6 +6,7 @@ qs_list_components, qs_validate_pipeline, qs_run_multiquery and — only when al
 from __future__ import annotations
 
 import asyncio
+import copy
 import time
 from dataclasses import asdict
 from typing import Any
@@ -15,9 +16,9 @@ from parrot.tools.toolkit import AbstractToolkit  # verified: packages/ai-parrot
 from parrot_tools.querysource import _qs
 from parrot_tools.querysource.catalog import NormalizedPipeline, SlugCatalog, SlugRecord, TenantGuard, normalize_pipeline
 from parrot_tools.querysource.dialect import DIALECT_REFERENCE, build_conditions, check_version_compatibility, load_variables, validate_filter, validate_placeholders
-from parrot_tools.querysource.errors import QuerysourceToolkitError, SlugNotFoundError, TenantDeniedError
-from parrot_tools.querysource.models import ComponentDoc, DialectReference, ExecutionResult, FilterValue, PipelineIssue, PipelineValidation, PlaceholderInfo, SlugDetail, SlugSummary
-from parrot_tools.querysource.results import frame_to_result
+from parrot_tools.querysource.errors import QuerysourceToolkitError, RawSqlForbiddenError, SlugNotFoundError, TenantDeniedError, WriteDisabledError
+from parrot_tools.querysource.models import ComponentDoc, DialectReference, ExecutionResult, FilterValue, MultiQueryResult, PipelineIssue, PipelineValidation, PlaceholderInfo, SavedSlug, SlugDetail, SlugSummary
+from parrot_tools.querysource.results import frame_to_result, multi_to_result
 
 
 class QuerysourceToolkit(AbstractToolkit):
@@ -211,3 +212,63 @@ class QuerysourceToolkit(AbstractToolkit):
             result.issues.append(PipelineIssue(step=err.step, field=err.field, message=err.message))
         result.valid = not result.issues
         return result
+
+    def _raise_for_issues(self, validation: PipelineValidation) -> None:
+        """Map policy issues to the toolkit error hierarchy (raw → RawSqlForbiddenError, Output → WriteDisabledError)."""
+        if validation.valid:
+            return
+        fields = {i.field for i in validation.issues}
+        msg = "; ".join(f"{i.step}.{i.field}: {i.message}" for i in validation.issues)
+        if "query" in fields:
+            raise RawSqlForbiddenError(f"pipeline rejected: {msg}")
+        if "Output" in fields:
+            raise WriteDisabledError(f"pipeline rejected: {msg}")
+        raise QuerysourceToolkitError(f"pipeline rejected: {msg}")
+
+    async def run_multiquery(self, pipeline: dict[str, Any] | None = None, slug: str | None = None,
+                             conditions: dict[str, Any] | None = None) -> MultiQueryResult:
+        """Run a MultiQuery pipeline inline (`pipeline`, the JSON with queries/Join/Concat/…/Output) or a saved
+        multi-query slug (`slug`). Every referenced slug must be executable by this toolkit; raw SQL nodes, external
+        sources and destination steps follow the instance configuration (see qs_validate_pipeline). Results are
+        bounded per frame."""
+        started = time.monotonic()
+        if (pipeline is None) == (slug is None):
+            raise QuerysourceToolkitError("pass exactly one of `pipeline` or `slug`")
+        await self._open()
+        if slug is not None:
+            rec = await self._catalog.get_allowed(slug)
+            if rec.is_multiquery:
+                self._raise_for_issues(await self._policy_check(rec.pipeline))
+            mq = _qs.get_multiqs()(slug=slug, conditions=dict(conditions or {}))            # multi/__init__.py:62
+        else:
+            self._raise_for_issues(await self._policy_check(pipeline))
+            mq = _qs.get_multiqs()(query=copy.deepcopy(pipeline), conditions=dict(conditions or {}))  # deepcopy: __init__ pops keys (:95-97)
+        exc_mod = _qs.get_exceptions()
+        self.logger.info("qs_run_multiquery slug=%s inline=%s", slug, pipeline is not None)
+        try:
+            result, _options = await asyncio.wait_for(mq.query(), timeout=self.multiquery_timeout)   # :166 ; §8 Q3 option a
+        except exc_mod.DataNotFound:
+            return multi_to_result(None, max_rows=self.max_rows, started=started)
+        except asyncio.TimeoutError as exc:
+            raise QuerysourceToolkitError(f"multiquery timed out after {self.multiquery_timeout}s") from exc
+        except exc_mod.QueryException as exc:
+            raise QuerysourceToolkitError(str(exc)) from exc
+        return multi_to_result(result, max_rows=self.max_rows, started=started)
+
+    async def save_multiquery(self, slug: str, pipeline: dict[str, Any], description: str,
+                              program: str | None = None, overwrite: bool = False) -> SavedSlug:
+        """Persist a validated MultiQuery pipeline as a query-slug owned by `program` (forced to the single allowed
+        program when this toolkit is tenant-restricted). Requires operator opt-in (allow_write) and user confirmation.
+        Refuses to overwrite a slug owned by another program; set overwrite=True to update your own."""
+        if not self.allow_write:
+            raise WriteDisabledError("save_multiquery is disabled for this toolkit (allow_write=False)")
+        program_slug = self.guard.resolve_write_program(program)
+        validation = await self.validate_pipeline(pipeline)
+        self._raise_for_issues(validation)
+        return await self._catalog.upsert(slug=slug, description=description, pipeline=pipeline,
+                                          program_slug=program_slug, overwrite=overwrite)
+
+    async def _pre_execute(self, tool_name: str, /, **kwargs: Any) -> None:
+        """Defence in depth: block the write tool even if it were exposed (toolkit.py:455 hook)."""
+        if tool_name.endswith("save_multiquery") and not self.allow_write:
+            raise WriteDisabledError("save_multiquery is disabled for this toolkit (allow_write=False)")
