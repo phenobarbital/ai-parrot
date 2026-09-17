@@ -302,6 +302,14 @@ After all tasks are done:
    - **SUGGESTION (🟡) / NITPICK (💡)**: Note in the completion summary. Do NOT fix.
    - If the code-reviewer agent is unavailable, log a warning and proceed.
 
+   **File every deferred finding in the SDD ledger.** A finding you verified against
+   the real code but did not fix — any severity, including ones out of this
+   feature's file scope — MUST be attempted with `wikitoolkit ledger open` before you
+   push. The ledger intentionally resolves to the main checkout. When a sandbox
+   mounts that root read-only, do not retry without protection and do not create a
+   worktree-local ledger. Record the complete finding in the final summary as
+   `(NOT filed: shared ledger is read-only)` so a privileged follow-up can file it.
+
 2. **Push the feature branch** (from worktree):
    ```bash
    git push origin HEAD

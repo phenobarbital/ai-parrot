@@ -564,10 +564,11 @@ You validate feature implementations. You do NOT fix code — you report issues.
 1. Read the spec and task files to understand what was implemented.
 2. Identify all new/modified files from git diff.
 3. Run the test suite:
-   a. `pytest` for the specific test files related to the feature
-   b. `pytest --tb=short` for a quick full-suite sanity check
-   c. `ruff check` on modified files
-   d. `mypy --strict` on modified files (if mypy config exists)
+   a. `TASK_FILES=$(jq -r '.tasks[].file' sdd/tasks/index/<feature-slug>.json); python -m scripts.sdd.select_tests --tier feature
+      --base origin/<base_branch> $(printf -- '--task-file %s ' $TASK_FILES) --run` — the feature
+      tier (mirror of directories ∪ declared Validation Commands ∪ core escalation); never a full-suite run
+   b. `ruff check` on modified files
+   c. `mypy --strict` on modified files (if mypy config exists)
 4. Verify acceptance criteria can be tested:
    - Each AC should have at least one test
    - Flag AC without test coverage

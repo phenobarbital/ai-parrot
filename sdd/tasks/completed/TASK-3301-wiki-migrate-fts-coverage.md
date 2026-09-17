@@ -204,3 +204,16 @@ trigger names before writing the assertion.
 **Notes**:
 
 **Deviations from spec**: none | describe if any
+
+---
+
+## Completion Note
+
+**Completed by**: sdd-worker (Claude Opus 4.8), retarget pass
+**Date**: 2026-09-17
+**Notes**: Re-applied on top of current dev (branch rebuilt from dev to guarantee zero
+conflict with dev PR #1408). `test_open_v1_db_reaches_v3_external_content_fts` +
+`_triggers`/`_fts_create_sql` helpers added to `test_store_migration_v2.py`; verified
+5/5 pass locally (`wiki.store` imports fine). Non-conflicting with dev (dev has no
+`_migrate_fts` coverage). This is the only original FEAT-562 task that survived the
+retarget as-is.

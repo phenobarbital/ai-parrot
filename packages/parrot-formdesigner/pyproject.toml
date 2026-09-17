@@ -51,12 +51,12 @@ dependencies = [
 
 [project.optional-dependencies]
 ai-parrot = [
-    "ai-parrot>=1.0.3",
+    "ai-parrot>=1.0.4",
 ]
 # FEAT-544: alias for the "a2ui" render format — same pin as `ai-parrot`,
 # named for discoverability (`pip install parrot-formdesigner[a2ui]`).
 a2ui = [
-    "ai-parrot>=1.0.3",
+    "ai-parrot>=1.0.4",
 ]
 redis = [
     "redis>=4.5",
@@ -92,3 +92,7 @@ include = ["parrot_formdesigner*"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+markers = [
+    "integration: test lives under an integration/ directory (FEAT-563 auto-mark)",
+    "e2e: test lives under an e2e/ directory (FEAT-563 auto-mark)",
+]

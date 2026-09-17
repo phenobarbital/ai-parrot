@@ -271,6 +271,7 @@ and ignored by all FEAT-145 commands). Schema:
   "created_at": "<ISO-8601>",
   "completed_at": null,
   "parallel_semantics": "exclusive",
+  "validation_contract": "required",
   "tasks": [
     {
       "id": "TASK-<NNN>",
@@ -333,6 +334,24 @@ complete. `design_complete: true` is a declaration the task author signs.
 - Omit the section entirely when the task is not eligible. Most tasks are not,
   and that is the normal, expected route.
 
+#### Validation Commands (mandatory, per task — FEAT-563)
+
+Every generated task MUST carry a `## Validation Commands` section placed right
+after `## Acceptance Criteria`: one bullet per command, each a backticked
+`pytest` invocation whose operands are **test files or node ids** — never a
+directory, never `tests/` or `packages/<dist>/tests`, never a bare `pytest`.
+
+```markdown
+## Validation Commands
+- `pytest packages/ai-parrot/tests/flows/dev_loop/test_scope/test_mirror.py -q`
+- `pytest tests/sdd_scripts/test_check_task_graph.py::test_validation_contract_findings -q`
+```
+
+This is what the sdd-coder guard rewrites a broad pytest to. New per-spec index
+headers MUST include `"validation_contract": "required"`; `check_task_graph`
+then reports `missing-validation-commands`, `broad-validation-command` and
+`directory-validation-target` as errors (`validation-path-unknown` warns).
+
 #### Complexity Contract (mandatory, per task)
 
 Every generated task MUST carry a `## Complexity Contract` section containing
@@ -378,6 +397,10 @@ python -m scripts.sdd.check_task_graph sdd/tasks/index/<feature-slug>.json
   edge, or write its evidence in `parallelism_notes` (naming the dependency id);
   `possible-missing-dependency` → add the edge or confirm the reference is not
   a use; `duplicate-notes` / `exclusive-without-notes` → write per-task notes.
+- FEAT-563 validation-contract codes: `missing-validation-commands`,
+  `broad-validation-command`, `directory-validation-target` (errors when the
+  header requires the contract) and `validation-path-unknown` (warning) — add
+  or fix the task's `## Validation Commands` section.
 - Copy the report's first line (`<N> tasks, <W> waves, max width <M>`) into the
   §6 output. A width of 1 on a multi-task feature needs a one-line justification.
 

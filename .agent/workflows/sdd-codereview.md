@@ -8,9 +8,12 @@ Reads the task file from `sdd/tasks/completed/`, loads every referenced file, ap
 `code-reviewer` rule, and runs an adversarial cross-check (`codex`) before
 producing a structured review report.
 
-**Mandatory Deferred Findings Table**: Every CONFIRMED 🔴/🟡 finding not fixed in-review MUST be filed 
-with `wikitoolkit ledger open` and listed in the report's Deferred findings table. Reviews with 
-unfixed confirmed findings and an empty Deferred table are invalid.
+**Mandatory Deferred Findings Table**: Every CONFIRMED 🔴/🟡 finding not fixed in-review MUST be
+attempted with `wikitoolkit ledger open` and listed in the report's Deferred findings table. The
+ledger intentionally resolves to the main checkout. If a sandbox makes it read-only, do not request
+broader filesystem access or create a worktree-local ledger; list the full finding with
+`(NOT filed: shared ledger is read-only)`. Reviews with unfiled confirmed findings and an empty
+Deferred table are invalid.
 
 ## Usage
 ```
@@ -144,9 +147,11 @@ Output a structured markdown report:
 - **[file:line]** <description>
 
 ## Deferred Findings
-Every CONFIRMED 🔴/🟡 finding not fixed in-review MUST be filed with `wikitoolkit ledger open` 
-and listed below. Use `ledger open` with `--kind bug --severity major|critical --discovered-from task:TASK-NNN 
---about "sym:<rel>#<qualname>" --title … --body …` for each finding.
+Every CONFIRMED 🔴/🟡 finding not fixed in-review MUST be attempted with `wikitoolkit ledger open`
+and listed below. Use `ledger open` with `--kind bug --severity major|critical --discovered-from task:TASK-NNN
+--about "sym:<rel>#<qualname>" --title … --body …` for each finding. If it reports the shared
+ledger is read-only, retain the full finding and use `(NOT filed: shared ledger is read-only)` as
+the Issue ID.
 
 | Severity | Title | Issue ID | Filed By |
 |----------|-------|----------|----------|

@@ -71,7 +71,7 @@ def test_command_shape_options_preserved_for_adversarial_profile(dispatcher):
     assert "--model" in cmd and "gpt-5.5" in cmd
     assert "--output-schema" in cmd and "/s.json" in cmd
     assert "-o" in cmd and "/o.json" in cmd
-    assert "--ignore-user-config" in cmd  # default True on the base profile
+    assert "--ignore-user-config" in cmd  # review profiles pin ignore_user_config=True (FEAT-563)
     assert cmd[-1] == "P"
 
 
@@ -80,3 +80,23 @@ def test_adversarial_profile_never_emits_ask_for_approval(dispatcher):
     assert "--ask-for-approval" not in cmd
     resume_cmd = _cmd(dispatcher, CodexAdversarialReviewProfile(resume_last=True))
     assert "--ask-for-approval" not in resume_cmd
+
+
+def test_dev_dispatch_bypasses_hook_trust_so_the_tracked_hook_fires_unattended(dispatcher):
+    """FEAT-563 C2: ignore_user_config=False (dev default) must pass
+    --dangerously-bypass-hook-trust, or the tracked .codex/hooks.json scope guard is
+    registered but never actually engages in a headless dispatch (blocked on its
+    one-time interactive trust prompt)."""
+    cmd = _cmd(dispatcher, CodexCodeDispatchProfile())
+    assert "--ignore-user-config" not in cmd
+    assert "--dangerously-bypass-hook-trust" in cmd
+
+
+def test_review_profiles_never_bypass_hook_trust(dispatcher):
+    """Review profiles pin ignore_user_config=True and stay isolated from the operator's
+    config (and therefore the tracked project hook) — bypassing hook trust is meaningless
+    there and must not appear."""
+    cmd = _cmd(dispatcher, CodexAdversarialReviewProfile())
+    assert "--dangerously-bypass-hook-trust" not in cmd
+    resume_cmd = _cmd(dispatcher, CodexAdversarialReviewProfile(resume_last=True))
+    assert "--dangerously-bypass-hook-trust" not in resume_cmd

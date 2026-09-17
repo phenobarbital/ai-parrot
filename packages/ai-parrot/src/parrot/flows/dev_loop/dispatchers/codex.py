@@ -378,6 +378,12 @@ class CodexCodeDispatcher:
         ]
         if profile.ignore_user_config:
             cmd.append("--ignore-user-config")
+        else:
+            # FEAT-563 C2: the tracked project .codex/hooks.json PreToolUse hook (the codex-seat
+            # scope guard) is registered but silently blocked by codex's one-time interactive
+            # trust confirmation in an unattended dispatch — only reachable when the operator's
+            # config (and therefore the project hook) applies at all, i.e. ignore_user_config=False.
+            cmd.append("--dangerously-bypass-hook-trust")
         if profile.ignore_rules:
             cmd.append("--ignore-rules")
         cmd.append(prompt)
@@ -441,6 +447,10 @@ class CodexCodeDispatcher:
         cmd += ["--json", "--output-schema", schema_path, "-o", output_path]
         if profile.ignore_user_config:
             cmd.append("--ignore-user-config")
+        else:
+            # FEAT-563 C2: see the matching branch in `_build_command` — dead in practice today
+            # since both review profiles pin ignore_user_config=True, kept for parity.
+            cmd.append("--dangerously-bypass-hook-trust")
         if profile.ignore_rules:
             cmd.append("--ignore-rules")
         cmd.append(prompt)

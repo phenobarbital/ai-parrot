@@ -33,6 +33,7 @@ import os
 import re
 import shlex
 import stat
+import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -458,6 +459,73 @@ def build_reason(decision: GuardDecision, policy: GuardPolicy, cwd: Optional[Pat
     )
 
 
+#: Repo-relative directory holding the stdlib-only test-scope kernel (FEAT-563).
+SCOPE_KERNEL_DIR = Path("packages/ai-parrot/src/parrot/flows/dev_loop")
+
+
+def _load_scope_guard(cwd: Path) -> Optional[tuple[Any, Path]]:
+    """Load ``test_scope.guard.guard_bash`` by path, without importing Parrot.
+
+    Args:
+        cwd: The host's working directory (an attempt sub-worktree).
+
+    Returns:
+        ``(guard_bash, repo_root)`` or None when git or the kernel is unavailable.
+    """
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(cwd), "rev-parse", "--show-toplevel"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+        if proc.returncode != 0:
+            return None
+        root = Path(proc.stdout.strip())
+        kernel_dir = root / SCOPE_KERNEL_DIR
+        if not (kernel_dir / "test_scope").is_dir():
+            return None
+        if str(kernel_dir) not in sys.path:
+            sys.path.insert(0, str(kernel_dir))
+        from test_scope.guard import guard_bash  # noqa: PLC0415 — lazy by design (dependency-light hook)
+
+        return guard_bash, root
+    except Exception:  # noqa: BLE001 — never break the host session
+        return None
+
+
+def evaluate_scope(command: str, cwd: Path) -> Optional[GuardDecision]:
+    """Deny an over-broad pytest inside an sdd-coder attempt (FEAT-563).
+
+    Args:
+        command: The raw shell command.
+        cwd: The host's working directory.
+
+    Returns:
+        A denying decision whose reason is the scoped command (rewrite) or
+        the guard message (block); None when the guard is inactive or fails.
+    """
+    loaded = _load_scope_guard(cwd)
+    if loaded is None:
+        return None
+    guard_bash, root = loaded
+    try:
+        outcome, _rewritten = guard_bash(command, worktree=root)
+    except Exception:  # noqa: BLE001
+        return None
+    if outcome.action == "rewrite":
+        scoped = " && ".join(shlex.join(argv) for argv in outcome.argvs)
+        return GuardDecision(
+            deny=True,
+            reason=f"{outcome.message} Run the scoped command instead: {scoped}",
+            coverage="shell",
+        )
+    if outcome.action == "block":
+        return GuardDecision(deny=True, reason=outcome.message, coverage="shell")
+    return None
+
+
 #: The refusal value each host's PreToolUse decision enum accepts.
 #:
 #: Both hosts accept ``deny`` inside ``hookSpecificOutput.permissionDecision``.
@@ -575,7 +643,8 @@ def main(argv: Optional[list[str]] = None, stdin: Any = None, stdout: Any = None
         if tool_name == "Read":
             decision = evaluate_read(tool_input, cwd, policy)
         elif tool_name == "Bash":
-            decision = evaluate_shell(str(tool_input.get("command", "")), cwd, policy)
+            command = str(tool_input.get("command", ""))
+            decision = evaluate_scope(command, cwd) or evaluate_shell(command, cwd, policy)
         else:
             decision = None
 

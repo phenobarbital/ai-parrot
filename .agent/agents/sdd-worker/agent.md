@@ -229,7 +229,9 @@ If ANY check fails, fix or STOP.
 
 ### e) Validate (in worktree)
 - Run linting and fix issues.
-- Run acceptance-criteria tests.
+- Run the task's `## Validation Commands`, then `python -m scripts.sdd.select_tests --tier merge --base origin/<base_branch>
+  --task-file sdd/tasks/active/TASK-<NNN>-<slug>.md --run`
+  (this lane has no attempt context, so no harness guard — never run a directory or full-suite pytest by hand).
 - If stuck after 3 attempts, mark as `"done-with-issues"`.
 
 ### f) Commit Code (in worktree)
@@ -304,11 +306,13 @@ After all tasks are done:
 
    **File every deferred finding in the SDD ledger.** A finding you verified against
    the real code but did not fix — any severity, including ones out of this
-   feature's file scope — MUST be opened with `wikitoolkit ledger open` before you
+   feature's file scope — MUST be attempted with `wikitoolkit ledger open` before you
    push, so it survives the PR and shows up in `ledger ready` / `ledger context`
-   for future work. "Noted for PR" alone is not enough: `/sdd-done` only exports
-   what is already in the ledger. Rejected (false-positive) findings are not filed.
-   The ledger resolves to the main checkout, so running it from the worktree is fine.
+   for future work. Rejected (false-positive) findings are not filed. The ledger
+   intentionally resolves to the main checkout. When a sandbox mounts that root
+   read-only, do not retry without protection and do not create a worktree-local
+   ledger. Record the complete finding in the final summary as
+   `(NOT filed: shared ledger is read-only)` so a privileged follow-up can file it.
 
    ```bash
    wikitoolkit ledger open \
@@ -323,8 +327,9 @@ After all tasks are done:
    Map 🟠 → `major`, 🟡 → `minor`, 💡 → `low` (🔴 is always fixed; if you ever
    defer one, file it as `critical` — it blocks `/sdd-done`). Pass `--about` once per
    affected file/symbol with the repo-relative path: `ledger context` matches on it.
-   Record each returned `issue:<id>` in the summary. If `wikitoolkit` is
-   unavailable, log a warning and list the findings with `(NOT filed)`.
+   Record each returned `issue:<id>` in the summary. If `wikitoolkit` reports
+   `Ledger unavailable; NOT filed: shared ledger is read-only`, or is unavailable,
+   log a warning and list the findings with `(NOT filed: shared ledger is read-only)`.
 
 2. **Push the feature branch** (from worktree):
    ```bash

@@ -8,11 +8,13 @@ import sys
 from pathlib import Path
 
 import pytest
+from parrot_tools.tool_optimizations import hooks as hooks_module
 from parrot_tools.tool_optimizations.hooks import (
     GuardPolicy,
     build_reason,
     count_lines_bounded,
     coverage_matrix,
+    evaluate_scope,
     evaluate_shell,
     main,
     parse_shell_subset,
@@ -376,3 +378,40 @@ def test_file_operands_respect_per_program_flag_semantics():
     assert _file_operands(["head", "-n", "50", "big.py"], "head") == ["big.py"]
     assert _file_operands(["cat", "-"], "cat") is None
     assert _file_operands(["cat", "--", "-weird-name.py"], "cat") == ["-weird-name.py"]
+
+
+# --------------------------------------------------------------------------- #
+# FEAT-563 — test-scope guard (evaluate_scope)
+# --------------------------------------------------------------------------- #
+class _Outcome:
+    def __init__(self, action, argvs=(), message=""):
+        self.action, self.argvs, self.message = action, argvs, message
+
+
+def test_scope_rewrite_denies_with_scoped_command(workspace, monkeypatch):
+    def fake(command, *, worktree):
+        return _Outcome("rewrite", (("pytest", "tests/test_a.py", "-q"),), "scoped"), None
+
+    monkeypatch.setattr(hooks_module, "_load_scope_guard", lambda cwd: (fake, workspace))
+    out = json.loads(_run(_bash_payload("pytest packages/ai-parrot/tests"), host="codex", cwd=workspace))
+    output = out["hookSpecificOutput"]
+    assert output["permissionDecision"] == "deny"
+    assert "pytest tests/test_a.py -q" in output["permissionDecisionReason"]
+
+
+def test_scope_inactive_falls_back_to_read_guard(workspace, monkeypatch):
+    def fake(command, *, worktree):
+        return _Outcome("allow"), None
+
+    monkeypatch.setattr(hooks_module, "_load_scope_guard", lambda cwd: (fake, workspace))
+
+    denied = json.loads(_run(_bash_payload("cat big.py"), host="codex", cwd=workspace))
+    assert denied["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+    harmless = _run(_bash_payload("pytest tests/test_a.py"), host="codex", cwd=workspace)
+    assert harmless == ""
+
+
+def test_scope_missing_kernel_is_silent(tmp_path):
+    """A directory that is not a git repo (or has no kernel) → no decision, never an exception."""
+    assert evaluate_scope("pytest packages/ai-parrot/tests", tmp_path) is None

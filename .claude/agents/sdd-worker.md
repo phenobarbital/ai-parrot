@@ -281,7 +281,10 @@ consolidate, and own SDD state. Coders (`sdd-coder`) run one task each in their 
    coders are still out, do NOT busy-wait with `sleep` loops in Bash: print one line
    (`⏳ waiting for native TASK-NNN …`) and end your message — the notification wakes you and the loop resumes there.
 4. **Consolidate each task by outcome** (`data.tasks[*].outcome`, or the `coder_merge` result):
-   - `merged` → run THAT task's acceptance criteria in this worktree (integration with sibling merges can break them);
+   - `merged` → in this worktree run `TASK_FILES=$(jq -r '.tasks[].file' sdd/tasks/index/<feature-slug>.json);
+     python -m scripts.sdd.select_tests --tier merge --base <feature branch merge-base>
+     $(printf -- '--task-file %s ' $TASK_FILES) --run`
+     (mirror ∪ import-impact of the merge ∪ core escalation, paid once per content via the ledger — integration with sibling merges can break them);
      green → step (g) of the Fallback loop for this task, with a Completion Note that ends with
      `Seat: <seat_label> · Backend: <backend> · Model: <model> · Attempts: <n> · Duration: <sum duration_s> · Tokens: <usage>`
      taken from `attempts[*]`; red → treat as `failed`.
@@ -428,7 +431,9 @@ If ANY check fails, fix or STOP.
 - Lint mechanically, never by hand (this path has no engine to do it): `ruff check --fix <task .py files>`, then
   `black <task .py files>` only if `pyproject.toml` has `[tool.black]`. Fix only syntax errors / undefined names
   (`ruff check --select E9,F63,F7,F82`); leave remaining style findings to `/sdd-done`.
-- Run acceptance-criteria tests.
+- Run the task's `## Validation Commands`, then `python -m scripts.sdd.select_tests --tier merge --base origin/<base_branch>
+  --task-file sdd/tasks/active/TASK-<NNN>-<slug>.md --run`
+  (this lane has no attempt context, so no harness guard — never run a directory or full-suite pytest by hand).
 - If stuck after 3 attempts, mark as `"done-with-issues"`.
 
 ### f) Commit Code (in worktree)
@@ -503,11 +508,13 @@ After all tasks are done:
 
    **File every deferred finding in the SDD ledger.** A finding you verified against
    the real code but did not fix — any severity, including ones out of this
-   feature's file scope — MUST be opened with `wikitoolkit ledger open` before you
+   feature's file scope — MUST be attempted with `wikitoolkit ledger open` before you
    push, so it survives the PR and shows up in `ledger ready` / `ledger context`
-   for future work. "Noted for PR" alone is not enough: `/sdd-done` only exports
-   what is already in the ledger. Rejected (false-positive) findings are not filed.
-   The ledger resolves to the main checkout, so running it from the worktree is fine.
+   for future work. Rejected (false-positive) findings are not filed. The ledger
+   intentionally resolves to the main checkout. When a sandbox mounts that root
+   read-only, do not retry without protection and do not create a worktree-local
+   ledger. Record the complete finding in the final summary as
+   `(NOT filed: shared ledger is read-only)` so a privileged follow-up can file it.
 
    ```bash
    wikitoolkit ledger open \
@@ -522,8 +529,9 @@ After all tasks are done:
    Map 🟠 → `major`, 🟡 → `minor`, 💡 → `low` (🔴 is always fixed; if you ever
    defer one, file it as `critical` — it blocks `/sdd-done`). Pass `--about` once per
    affected file/symbol with the repo-relative path: `ledger context` matches on it.
-   Record each returned `issue:<id>` in the summary. If `wikitoolkit` is
-   unavailable, log a warning and list the findings with `(NOT filed)`.
+   Record each returned `issue:<id>` in the summary. If `wikitoolkit` reports
+   `Ledger unavailable; NOT filed: shared ledger is read-only`, or is unavailable,
+   log a warning and list the findings with `(NOT filed: shared ledger is read-only)`.
 
 2. **Push the feature branch** (from worktree):
    ```bash

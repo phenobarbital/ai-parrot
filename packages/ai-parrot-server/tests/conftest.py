@@ -1,4 +1,5 @@
 """Shared fixtures for the ai-parrot-server test suite."""
+
 import importlib.util
 import shutil
 import subprocess
@@ -34,6 +35,7 @@ if "parrot.utils.parsers.toml" not in sys.modules:
 
         def parse(self, content: str) -> dict:
             import tomllib as _tomllib  # type: ignore[import]
+
             return _tomllib.loads(content)
 
     _parsers_toml_mod.TOMLParser = _TOMLParser
@@ -76,9 +78,7 @@ if str(_CORE_PKG_SRC) not in sys.path:
 # ai-parrot-integrations worktree src — exports new integrations (e.g. mcp/)
 # added in FEAT-263 / TASK-1648 and not yet present in the installed editable
 # package that points at the main-repo path.
-_INTEGRATIONS_PKG_SRC = (
-    _WORKTREE_ROOT / "packages" / "ai-parrot-integrations" / "src"
-).resolve()
+_INTEGRATIONS_PKG_SRC = (_WORKTREE_ROOT / "packages" / "ai-parrot-integrations" / "src").resolve()
 if str(_INTEGRATIONS_PKG_SRC) not in sys.path:
     sys.path.insert(0, str(_INTEGRATIONS_PKG_SRC))
 
@@ -88,6 +88,7 @@ if str(_INTEGRATIONS_PKG_SRC) not in sys.path:
 try:
     import importlib
     import parrot as _parrot_pkg  # noqa: E402
+
     _wt_parrot_dir = str(_CORE_PKG_SRC / "parrot")
     _wt_server_dir = str(_THIS_PKG_SRC / "parrot")
     _wt_integrations_dir = str(_INTEGRATIONS_PKG_SRC / "parrot")
@@ -98,6 +99,7 @@ try:
     # (e.g. parrot.integrations.mcp) are found even when parrot.integrations
     # was already loaded from the editable install's main-repo path.
     import parrot.integrations as _parrot_integrations_pkg  # noqa: E402
+
     _wt_integrations_subdir = str(_INTEGRATIONS_PKG_SRC / "parrot" / "integrations")
     if _wt_integrations_subdir not in _parrot_integrations_pkg.__path__:
         _parrot_integrations_pkg.__path__.insert(0, _wt_integrations_subdir)
@@ -112,6 +114,7 @@ try:
     if _ph_mod is not None and not hasattr(_ph_mod, "WaitStrategy"):
         _wt_models_file = _wt_parrot_dir + "/human/models.py"
         import importlib.util as _ilu
+
         _spec = _ilu.spec_from_file_location("_wt_parrot_human_models", _wt_models_file)
         if _spec and _spec.loader:
             _wt_models = _ilu.module_from_spec(_spec)
@@ -156,6 +159,25 @@ def pytest_configure(config):
         "markers",
         "live: hits live external services; opt-in, deselect with -m 'not live'",
     )
+    config.addinivalue_line("markers", "integration: test lives under an integration/ directory (FEAT-563 auto-mark)")
+    config.addinivalue_line("markers", "e2e: test lives under an e2e/ directory (FEAT-563 auto-mark)")
+
+
+_DIRECTORY_MARKERS = {"integration": "integration", "e2e": "e2e"}
+
+
+def pytest_collection_modifyitems(config, items):  # noqa: D401
+    """Mark items under ``integration/`` and ``e2e/`` directories (FEAT-563)."""
+    base = Path(__file__).resolve().parent
+    for item in items:
+        try:
+            parts = Path(str(item.path)).resolve().relative_to(base).parts[:-1]
+        except ValueError:
+            continue
+        for segment in parts:
+            marker = _DIRECTORY_MARKERS.get(segment)
+            if marker:
+                item.add_marker(getattr(pytest.mark, marker))
 
 
 def pytest_runtest_setup(item):

@@ -138,6 +138,58 @@ class TestSeedingAndApproval:
         for template in templates:
             assert f"{template}:" in content
 
+    def test_reinstall_reports_keys_missing_from_existing_section(self, repo_root):
+        # A section seeded before its template gained a key is never rewritten,
+        # but the missing key must be surfaced instead of silently skipped.
+        yaml_path = repo_root / ".parrot" / "mcp-toolkits.yaml"
+        yaml_path.write_text(
+            "toolkits:\n"
+            "  sdd-coder:\n"
+            "    class: parrot.flows.dev_loop.sdd_coder.toolkit.SddCoderToolkit\n"
+            "    kwargs:\n"
+            "      roster:\n"
+            "        - {label: haiku, kind: native, model: haiku}\n"
+        )
+        before = yaml_path.read_text()
+        actions = install_claude_integration(repo_root, toolkits=["sdd-coder"], bookstore=False)
+        assert yaml_path.read_text() == before
+        warnings = [a for a in actions if "lacks template key(s)" in a]
+        assert len(warnings) == 1
+        assert "'sdd-coder'" in warnings[0]
+        assert "kwargs.complexity" in warnings[0]
+        assert "kwargs.roster" not in warnings[0]
+
+    def test_reinstall_of_current_section_reports_no_drift(self, repo_root):
+        install_claude_integration(repo_root, toolkits=["sdd-coder"], bookstore=False)
+        actions = install_claude_integration(repo_root, toolkits=["sdd-coder"], bookstore=False)
+        assert not [a for a in actions if "lacks template key(s)" in a]
+
+
+class TestToolkitTemplateDrift:
+    def test_missing_keys_recurses_mappings_only(self):
+        from parrot.mcp.toolkit_seed import _missing_keys
+
+        template = {"class": "X", "kwargs": {"roster": [1, 2], "complexity": {"strong_models": []}}}
+        existing = {"class": "Y", "kwargs": {"roster": [1]}}
+        assert _missing_keys(template, existing) == ["kwargs.complexity"]
+
+    def test_template_drift_empty_for_unparseable_file(self, repo_root):
+        from parrot.mcp.toolkit_seed import template_drift
+
+        (repo_root / ".parrot" / "mcp-toolkits.yaml").write_text("toolkits: [unbalanced\n")
+        assert template_drift(repo_root, "sdd-coder") == []
+
+    def test_template_drift_ignores_enabled_switch(self, repo_root):
+        from parrot.mcp.toolkit_seed import template_drift
+
+        (repo_root / ".parrot" / "mcp-toolkits.yaml").write_text(
+            "toolkits:\n"
+            "  targeted-writer:\n"
+            "    class: parrot_tools.tool_optimizations.writer.TargetedWriterToolkit\n"
+            f"    kwargs:\n      repo_root: {repo_root}\n"
+        )
+        assert template_drift(repo_root, "targeted-writer") == []
+
 
 class TestInstallCLIToolkitOptions:
     """CLI-level coverage: options, hint, exception mapping (AC bullets 4-7)."""

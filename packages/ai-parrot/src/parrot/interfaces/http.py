@@ -17,12 +17,28 @@ import backoff
 from requests.auth import HTTPBasicAuth
 from requests.exceptions import HTTPError
 from requests.exceptions import Timeout as RequestTimeoutException
-from duckduckgo_search import DDGS
-from duckduckgo_search.exceptions import (
-    DuckDuckGoSearchException,
-    RatelimitException,
-    TimeoutException,
-)
+try:
+    from duckduckgo_search import DDGS
+    from duckduckgo_search.exceptions import (
+        DuckDuckGoSearchException,
+        RatelimitException,
+        TimeoutException,
+    )
+except ImportError:  # FEAT-562: duckduckgo-search is optional (declared under the
+    # search/`all` extras, not a core dependency), so importing this interface —
+    # and everything that transitively imports it, e.g. parrot.manager.manager —
+    # must not require it. Same guard pattern as the accepted tqdm fix (M1):
+    # keep the module importable and degrade only the DuckDuckGo search feature.
+    DDGS = None
+
+    class DuckDuckGoSearchException(Exception):  # noqa: N818 — mirrors the upstream name
+        """Fallback stub used when duckduckgo-search is not installed."""
+
+    class RatelimitException(DuckDuckGoSearchException):
+        """Fallback stub used when duckduckgo-search is not installed."""
+
+    class TimeoutException(DuckDuckGoSearchException):
+        """Fallback stub used when duckduckgo-search is not installed."""
 import primp
 import aiohttp
 from aiohttp import BasicAuth
@@ -1347,7 +1363,16 @@ class HTTPService(CredentialsInterface, PandasDataframe):
 
         Returns:
             list: A list of search results.
+
+        Raises:
+            RuntimeError: If the optional ``duckduckgo-search`` package is not
+                installed (declared under the search/``all`` extras).
         """
+        if DDGS is None:
+            raise RuntimeError(
+                "duckduckgo-search is not installed; install the ai-parrot "
+                "search extra to use DuckDuckGo search."
+            )
         proxies = None
         if use_proxy is True:
             self._proxies = await self.get_proxies()
