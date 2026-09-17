@@ -16,7 +16,7 @@
       "feature_id": "FEAT-570",
       "feature": "expose-local-mcp-tools",
       "spec": "sdd/specs/expose-local-mcp-tools.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -24,8 +24,8 @@
       "parallelism_notes": "No dependencies — owns toolkit_config.py and the builtin-assuming tests in tests/mcp/ exclusively.",
       "assigned_to": null,
       "started_at": "2026-09-17T23:36:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3368-delete-builtin-toolkits.md"
+      "completed_at": "2026-09-17T23:50:08+00:00",
+      "file": "sdd/tasks/completed/TASK-3368-delete-builtin-toolkits.md"
     },
     {
       "id": "TASK-3369",
