@@ -9,8 +9,25 @@ Fixtures requiring a live DB are conditionally skipped when
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 import pytest
+
+_DIRECTORY_MARKERS = {"integration": "integration", "e2e": "e2e"}
+
+
+def pytest_collection_modifyitems(config, items):  # noqa: D401
+    """Mark items under ``integration/`` and ``e2e/`` directories (FEAT-563)."""
+    base = Path(__file__).resolve().parent
+    for item in items:
+        try:
+            parts = Path(str(item.path)).resolve().relative_to(base).parts[:-1]
+        except ValueError:
+            continue
+        for segment in parts:
+            marker = _DIRECTORY_MARKERS.get(segment)
+            if marker:
+                item.add_marker(getattr(pytest.mark, marker))
 
 
 # ---------------------------------------------------------------------------

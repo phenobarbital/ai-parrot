@@ -156,6 +156,25 @@ def pytest_configure(config):
         "markers",
         "live: hits live external services; opt-in, deselect with -m 'not live'",
     )
+    config.addinivalue_line("markers", "integration: test lives under an integration/ directory (FEAT-563 auto-mark)")
+    config.addinivalue_line("markers", "e2e: test lives under an e2e/ directory (FEAT-563 auto-mark)")
+
+
+_DIRECTORY_MARKERS = {"integration": "integration", "e2e": "e2e"}
+
+
+def pytest_collection_modifyitems(config, items):  # noqa: D401
+    """Mark items under ``integration/`` and ``e2e/`` directories (FEAT-563)."""
+    base = Path(__file__).resolve().parent
+    for item in items:
+        try:
+            parts = Path(str(item.path)).resolve().relative_to(base).parts[:-1]
+        except ValueError:
+            continue
+        for segment in parts:
+            marker = _DIRECTORY_MARKERS.get(segment)
+            if marker:
+                item.add_marker(getattr(pytest.mark, marker))
 
 
 def pytest_runtest_setup(item):

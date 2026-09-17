@@ -21,6 +21,28 @@ def pytest_collection_modifyitems(config, items):  # noqa: D401
         for item in items:
             if "real_llm" in item.keywords:
                 item.add_marker(skip_real_llm)
+    _mark_by_directory(items)
+
+
+_DIRECTORY_MARKERS = {"integration": "integration", "e2e": "e2e"}
+
+
+def _mark_by_directory(items) -> None:
+    """Add ``integration``/``e2e`` markers from the test's directory (FEAT-563).
+
+    Only exact path segments below this ``tests`` directory count, so
+    ``integrations/`` (unit tests of integration packages) is never marked.
+    """
+    base = Path(__file__).resolve().parent
+    for item in items:
+        try:
+            parts = Path(str(item.path)).resolve().relative_to(base).parts[:-1]
+        except ValueError:
+            continue
+        for segment in parts:
+            marker = _DIRECTORY_MARKERS.get(segment)
+            if marker:
+                item.add_marker(getattr(pytest.mark, marker))
 
 
 @pytest.fixture(autouse=True)

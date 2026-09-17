@@ -1000,6 +1000,8 @@ markers = [
     "real_llm: mark a test as requiring a live LLM provider",
     "network: mark a test as requiring live network access (e.g. spec drift checks)",
     "live: needs provider credentials; opt-in with -m live",
+    "integration: test lives under an integration/ directory (FEAT-563 auto-mark)",
+    "e2e: test lives under an e2e/ directory (FEAT-563 auto-mark)",
 ]
 
 [tool.cibuildwheel]
