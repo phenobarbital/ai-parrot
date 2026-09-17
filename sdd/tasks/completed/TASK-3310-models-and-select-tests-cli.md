@@ -404,10 +404,38 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (sonnet, sequential fallback — `complex_model_unavailable`, same
+systemic roster gap as prior tasks; user-authorized direct implementation)
+**Date**: 2026-09-17
+**Notes**: `models.py::ScopePlanModel.from_plan` — explicit 1:1 field-by-field construction
+(not `dataclasses.asdict`, since `TestTarget.reason` needed the `Literal` type and nested
+dataclasses need their own Pydantic model wrappers, not raw dicts). `select_tests.py::main` —
+declared commands parsed from every `--task-file` via `kernel.contract.parse_validation_commands`;
+plan built via `kernel.plan_tests`; empty **task**-tier plan → prints `guard.BLOCK_MESSAGE`
+(imported lazily as `test_scope.guard`, since `guard.py` is never transitively imported by
+`__init__.py` and needed an explicit path-dependent import) and exits 2; `--json` lazily
+imports `test_scope.models` (keeping pydantic out of the default code path); `--run` executes
+each invocation via `subprocess.run` (uncaptured, so agents see real pytest output) and, for
+any invocation whose targets include a `reason == "core"` entry AND that exited 0, calls
+`kernel.context.record_green_escalation` for that one distribution with its own core files
+(not blindly for every `plan.core_hits` distribution — only ones that were ACTUALLY
+core-escalated and green this run). Wrote `test_select_tests_on_fixture_monorepo` (task tier,
+`--run`, pass then fail) and `test_run_records_green_core_escalation` (FILL IN tests): the
+core-escalation test needed a working monkeypatch strategy — `ScopePolicy`'s dataclass-default
+constants are baked into the generated `__init__`'s parameter defaults at class-definition
+time, so patching `policy.py`'s module constants or even the class attribute post-import has
+no effect on new instances; the test instead monkeypatches `test_scope.select.ScopePolicy`
+(the name binding INSIDE the `select` module's own namespace, where `plan_tests` actually
+calls `ScopePolicy()`) with a zero-arg factory returning a real `ScopePolicy(core_fanin_threshold=1)`.
+Hit one real bug while writing that test: `capsys.readouterr()` called only once after TWO
+`main()` calls returned the concatenated output of both (shell-line plan + subprocess pytest
+output from the first `--run`, followed by the second call's JSON) — `json.loads` failed on
+the combined string; fixed by draining `capsys` between the two calls. All 5 new tests pass;
+full `test_scope` suite still 51/51 (unaffected — this task adds no kernel wiring, only a new
+sibling module + CLI); `ruff check` clean; confirmed `models.py` is the only kernel file
+importing pydantic (`grep -rl "import pydantic\|from pydantic" test_scope/`) and
+`select_tests.py` never imports `parrot`.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Deviations from spec**: none — only the three listed files were created.
 
 **Deviations from spec**: none | describe if any
