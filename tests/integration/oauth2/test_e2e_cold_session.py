@@ -18,7 +18,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from parrot.integrations.oauth2.models import UserAgentToolkitRow
+from parrot.auth.oauth2.models import UserAgentToolkitRow
 
 
 from .helpers import make_mock_db as _make_mock_db
@@ -57,7 +57,7 @@ class TestE2EColdSessionRehydration:
         mock_toolkit.get_tools_sync.return_value = [fake_tool]
 
         with patch(
-            "parrot.integrations.oauth2.persistence.DocumentDb",
+            "parrot.auth.oauth2.persistence.DocumentDb",
             mock_db_cls,
         ):
             with patch(
@@ -99,7 +99,7 @@ class TestE2EColdSessionRehydration:
         mock_db.read = AsyncMock(return_value=[])
 
         with patch(
-            "parrot.integrations.oauth2.persistence.DocumentDb",
+            "parrot.auth.oauth2.persistence.DocumentDb",
             mock_db_cls,
         ):
             handler = UserObjectsHandler()
@@ -132,7 +132,7 @@ class TestE2EColdSessionRehydration:
         mock_db.read = AsyncMock(return_value=[unknown_row.model_dump()])
 
         with patch(
-            "parrot.integrations.oauth2.persistence.DocumentDb",
+            "parrot.auth.oauth2.persistence.DocumentDb",
             mock_db_cls,
         ):
             handler = UserObjectsHandler()
@@ -158,7 +158,7 @@ class TestE2EColdSessionRehydration:
         mock_db.read = AsyncMock(return_value=[])
 
         with patch(
-            "parrot.integrations.oauth2.persistence.DocumentDb",
+            "parrot.auth.oauth2.persistence.DocumentDb",
             mock_db_cls,
         ):
             handler = UserObjectsHandler()

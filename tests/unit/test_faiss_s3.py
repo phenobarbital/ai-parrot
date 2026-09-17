@@ -73,7 +73,7 @@ _WT_ROOT = Path(__file__).resolve().parents[2]
 _FAISS_SRC = (
     _WT_ROOT
     / "packages"
-    / "ai-parrot"
+    / "ai-parrot-embeddings"
     / "src"
     / "parrot"
     / "stores"

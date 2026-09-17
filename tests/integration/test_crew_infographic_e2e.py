@@ -90,8 +90,8 @@ def _stub_result_agent_llm(monkeypatch):
 def _stub_google_genai_client(monkeypatch):
     """Prevent real ``GoogleGenAIClient`` construction (resource-leak guard).
 
-    ``BasicAgent.__init__`` unconditionally does ``self.client =
-    GoogleGenAIClient()`` (agent.py:105) regardless of the ``llm=`` kwarg —
+    ``BasicAgent.__init__`` unconditionally constructs ``GoogleGenAIClient()``
+    regardless of the ``llm=`` kwarg —
     every ``ResultAgent()`` built by ``_finalize_infographic`` (once per
     ``run_*()`` call) therefore constructs a REAL client whose underlying
     SDK opens background gRPC/thread-pool resources that are never closed
@@ -99,9 +99,14 @@ def _stub_google_genai_client(monkeypatch):
     (observed: 53 lingering non-daemon threads, all
     ``hrtimer_nanosleep``/``futex_do_wait``, keeping the interpreter alive
     well after all tests had already passed). Scoped to this module only.
+
+    Since FEAT-523 (TASK-2846) ``agent.py`` imports the client lazily inside
+    ``__init__`` (``from ..clients.google import GoogleGenAIClient``), so the
+    name is resolved on the ``parrot.clients.google`` package at call time —
+    that is the attribute to patch.
     """
     monkeypatch.setattr(
-        "parrot.bots.agent.GoogleGenAIClient",
+        "parrot.clients.google.GoogleGenAIClient",
         lambda *a, **kw: MagicMock(),
     )
 
@@ -113,6 +118,11 @@ def _make_crew(stub_agents, fake_llm, **kwargs) -> AgentCrew:
         llm=fake_llm,
         generate_infographic=True,
         auto_configure=False,
+        # Hermetic: result persistence (FEAT-147/306) defaults ON and writes
+        # through DocumentDB (motor, 10-minute server-selection timeout) from
+        # executor threads — with no MongoDB those non-daemon threads keep the
+        # pytest process alive long after every test has passed.
+        persist_results=False,
         **kwargs,
     )
 
@@ -158,21 +168,6 @@ class TestAllModesGenerateInfographic:
         assert result.infographic is not None
         assert result.infographic.template_name == "crew_report"
 
-    @pytest.mark.xfail(
-        reason=(
-            "Pre-existing bug in AgentCrew.run_loop(), unrelated to FEAT-308: "
-            "its per-iteration FSM reset does `node.fsm = AgentTaskMachine(...)` "
-            "(crew.py, introduced by TASK-1062's migration to a frozen "
-            "CrewAgentNode Pydantic model), which pydantic v2 rejects with "
-            "`ValidationError: Instance is frozen` on every call — the codebase "
-            "already has an `object.__setattr__` escape hatch for frozen-node "
-            "mutation elsewhere (flows/core/node.py:227) that run_loop's reset "
-            "does not use. Reproducible on `dev` prior to this feature; out of "
-            "scope for FEAT-308 to fix (touches crew.py's loop internals, not "
-            "listed in any FEAT-308 task's file list). Filed for follow-up."
-        ),
-        strict=True,
-    )
     @pytest.mark.asyncio
     async def test_run_loop_generates_infographic(self, stub_agents, fake_llm):
         crew = _make_crew(stub_agents, fake_llm)
@@ -214,6 +209,7 @@ class TestFlagOffUnaffected:
             agents=list(stub_agents),
             llm=fake_llm,
             auto_configure=False,
+            persist_results=False,  # hermetic — see _make_crew()
         )
         result = await crew.run_sequential("start", generate_summary=False)
         assert result.infographic is None

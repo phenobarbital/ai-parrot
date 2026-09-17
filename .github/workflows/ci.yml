@@ -123,8 +123,17 @@ jobs:
         with:
           version: "latest"
 
-      - name: Sync core package
-        run: uv sync --package ai-parrot
+      # `tests/` exercises the whole workspace, not only core: the LLM clients
+      # ship as `ai-parrot-client-*` satellites, the handlers/scheduler as
+      # `ai-parrot-server`, etc. Syncing core alone left ~340 tests failing on
+      # `No module named 'parrot.clients.google'` / `apscheduler` / `mcp`.
+      # `scheduler` (apscheduler) is the one extra added: `parrot.scheduler` is
+      # imported by the crew/agent scheduling handlers and several agents, so
+      # without it ~140 tests error instead of exercising real code. Every
+      # other extra stays off on purpose — those seams are covered by the
+      # dedicated jobs below.
+      - name: Sync all workspace packages (+ scheduler extra)
+        run: uv sync --all-packages --extra scheduler
 
       # NavConfig refuses to import without an env/<environment>/.env file,
       # and env/ is gitignored — so the suite could never even be collected on

@@ -13,12 +13,12 @@ from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 
-from parrot.integrations.oauth2.models import (
+from parrot.auth.oauth2.models import (
     ConnectInitResponse,
     IntegrationDescriptor,
     UsersIntegrationRow,
 )
-from parrot.integrations.oauth2.service import IntegrationsService
+from parrot.auth.oauth2.service import IntegrationsService
 
 
 from .helpers import make_mock_db as _make_mock_db
@@ -38,7 +38,7 @@ class TestE2EWebConnectJiraHappyPath:
         svc = IntegrationsService()
 
         with patch(
-            "parrot.integrations.oauth2.service._get_allowed_origins",
+            "parrot.auth.oauth2.service._get_allowed_origins",
             return_value=["https://app.example.com"],
         ):
             result = await svc.start_connect(
@@ -64,7 +64,7 @@ class TestE2EWebConnectJiraHappyPath:
         svc = IntegrationsService()
 
         with patch(
-            "parrot.integrations.oauth2.service._get_allowed_origins",
+            "parrot.auth.oauth2.service._get_allowed_origins",
             return_value=["https://app.example.com"],
         ):
             with pytest.raises(ValueError, match="not in the list of allowed"):
@@ -88,7 +88,7 @@ class TestE2EWebConnectJiraHappyPath:
         svc = IntegrationsService()
 
         with patch(
-            "parrot.integrations.oauth2.persistence.DocumentDb",
+            "parrot.auth.oauth2.persistence.DocumentDb",
             mock_db_cls,
         ):
             row = await svc.persist_credential(
@@ -119,7 +119,7 @@ class TestE2EWebConnectJiraHappyPath:
         svc = IntegrationsService()
 
         with patch(
-            "parrot.integrations.oauth2.persistence.DocumentDb",
+            "parrot.auth.oauth2.persistence.DocumentDb",
             mock_db_cls,
         ):
             descriptor = await svc.confirm_enable(
@@ -150,11 +150,11 @@ class TestE2EWebConnectJiraHappyPath:
         svc = IntegrationsService()
 
         with patch(
-            "parrot.integrations.oauth2.persistence.DocumentDb",
+            "parrot.auth.oauth2.persistence.DocumentDb",
             mock_db_cls,
         ):
             with patch(
-                "parrot.integrations.oauth2.service._get_allowed_origins",
+                "parrot.auth.oauth2.service._get_allowed_origins",
                 return_value=["https://app.example.com"],
             ):
                 # Step 1: start connect
@@ -201,7 +201,7 @@ class TestE2EDisconnectRemovesCredentialAndEnablement:
         svc = IntegrationsService()
 
         with patch(
-            "parrot.integrations.oauth2.persistence.DocumentDb",
+            "parrot.auth.oauth2.persistence.DocumentDb",
             mock_db_cls,
         ):
             response = await svc.disconnect(
@@ -226,7 +226,7 @@ class TestE2EDisconnectRemovesCredentialAndEnablement:
         svc = IntegrationsService()
 
         with patch(
-            "parrot.integrations.oauth2.persistence.DocumentDb",
+            "parrot.auth.oauth2.persistence.DocumentDb",
             mock_db_cls,
         ):
             resp1 = await svc.disconnect(
@@ -257,7 +257,7 @@ class TestE2EDisconnectRemovesCredentialAndEnablement:
         svc = IntegrationsService()
 
         with patch(
-            "parrot.integrations.oauth2.persistence.DocumentDb",
+            "parrot.auth.oauth2.persistence.DocumentDb",
             mock_db_cls,
         ):
             with pytest.raises(LookupError, match="No credential found"):
@@ -365,7 +365,7 @@ class TestE2EWebCallbackOriginRejection:
             ["https://app.example.com"],
         ):
             with patch(
-                "parrot.integrations.oauth2.persistence.DocumentDb",
+                "parrot.auth.oauth2.persistence.DocumentDb",
                 mock_db_cls,
             ):
                 response = await jira_oauth_callback(request)

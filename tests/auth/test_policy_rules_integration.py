@@ -227,7 +227,7 @@ class TestScenario2BotListingFilter:
         handler._get_all = ChatbotHandler._get_all.__get__(handler, ChatbotHandler)
 
         with patch('parrot.handlers.bots._PBAC_AVAILABLE', True), \
-             patch('parrot.handlers.bots._EvalContext', MagicMock(return_value=MagicMock())), \
+             patch('parrot.handlers.bots._core_build_eval_context', AsyncMock(return_value=MagicMock())), \
              patch('parrot.handlers.bots._ResourceType', MagicMock(AGENT='AGENT')):
             await handler._get_all()
 
@@ -338,7 +338,7 @@ class TestScenario4ToolListFilter:
         mock_tools = {"tool_public": "path.public", "tool_admin": "path.admin"}
 
         with patch('parrot.handlers.bots._PBAC_AVAILABLE', True), \
-             patch('parrot.handlers.bots._EvalContext', MagicMock(return_value=MagicMock())), \
+             patch('parrot.handlers.bots._core_build_eval_context', AsyncMock(return_value=MagicMock())), \
              patch('parrot.handlers.bots._ResourceType', MagicMock(TOOL='TOOL')), \
              patch('parrot.handlers.bots.discover_all', return_value=mock_tools):
             await handler.get()

@@ -208,10 +208,13 @@ class TestLoad:
 
         assert len(docs) == 2
         assert docs[0].page_content  # non-empty
-        assert docs[0].metadata['document_meta']['table'] == 'plans'
-        assert docs[0].metadata['document_meta']['schema'] == 'att'
-        assert docs[0].metadata['document_meta']['row_index'] == 0
-        assert docs[0].metadata['document_meta']['driver'] == 'pg'
+        # TASK-857 (d31959725): loader-specific extras are top-level metadata
+        # keys; ``document_meta`` is a closed canonical shape.
+        assert docs[0].metadata['table'] == 'plans'
+        assert docs[0].metadata['schema'] == 'att'
+        assert docs[0].metadata['row_index'] == 0
+        assert docs[0].metadata['driver'] == 'pg'
+        assert 'table' not in docs[0].metadata['document_meta']
         assert docs[0].metadata['source'] == 'att.plans'
 
     @pytest.mark.asyncio

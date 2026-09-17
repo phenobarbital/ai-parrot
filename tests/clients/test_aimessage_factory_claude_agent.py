@@ -41,14 +41,23 @@ def _sdk_types_or_none():
         return None
 
 
+def _named_namespace(class_name: str, **attrs: Any) -> SimpleNamespace:
+    """Build a namespace whose ``type(obj).__name__`` is ``class_name``.
+
+    ``from_claude_agent`` duck-types SDK objects by class name. Reassigning
+    ``__class__`` on a ``SimpleNamespace`` to an unrelated plain class raises
+    ``TypeError`` on Python 3.11 (incompatible object layout), so instantiate
+    a ``SimpleNamespace`` subclass carrying the desired name instead.
+    """
+    return type(class_name, (SimpleNamespace,), {})(**attrs)
+
+
 def _make_text_block(text: str):
     """Build a ``TextBlock`` (real SDK if available, namespace otherwise)."""
     sdk = _sdk_types_or_none()
     if sdk is not None:
         return sdk.TextBlock(text=text)
-    ns = SimpleNamespace(text=text)
-    ns.__class__ = type("TextBlock", (), {})
-    return ns
+    return _named_namespace("TextBlock", text=text)
 
 
 def _make_tool_use_block(tool_id: str, name: str, tool_input: dict):
@@ -56,9 +65,7 @@ def _make_tool_use_block(tool_id: str, name: str, tool_input: dict):
     sdk = _sdk_types_or_none()
     if sdk is not None:
         return sdk.ToolUseBlock(id=tool_id, name=name, input=tool_input)
-    ns = SimpleNamespace(id=tool_id, name=name, input=tool_input)
-    ns.__class__ = type("ToolUseBlock", (), {})
-    return ns
+    return _named_namespace("ToolUseBlock", id=tool_id, name=name, input=tool_input)
 
 
 def _make_assistant_message(content: List[Any], model: str = "claude-sonnet-4-6", **kwargs):
@@ -66,10 +73,8 @@ def _make_assistant_message(content: List[Any], model: str = "claude-sonnet-4-6"
     sdk = _sdk_types_or_none()
     if sdk is not None:
         return sdk.AssistantMessage(content=content, model=model, **kwargs)
-    ns = SimpleNamespace(content=content, model=model, usage=None,
-                          stop_reason=None, session_id=None, **kwargs)
-    ns.__class__ = type("AssistantMessage", (), {})
-    return ns
+    attrs: dict = {"usage": None, "stop_reason": None, "session_id": None, **kwargs}
+    return _named_namespace("AssistantMessage", content=content, model=model, **attrs)
 
 
 def _make_result_message(
@@ -104,7 +109,8 @@ def _make_result_message(
             structured_output=structured_output,
             model_usage=model_usage,
         )
-    ns = SimpleNamespace(
+    return _named_namespace(
+        "ResultMessage",
         subtype=subtype,
         duration_ms=duration_ms,
         duration_api_ms=duration_api_ms,
@@ -118,8 +124,6 @@ def _make_result_message(
         structured_output=structured_output,
         model_usage=model_usage,
     )
-    ns.__class__ = type("ResultMessage", (), {})
-    return ns
 
 
 # ---------------------------------------------------------------------------

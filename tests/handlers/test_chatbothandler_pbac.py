@@ -71,7 +71,7 @@ class TestChatbotHandlerPBAC:
         handler.json_response = MagicMock(return_value={"status": 200})
 
         with patch('parrot.handlers.bots._PBAC_AVAILABLE', True), \
-             patch('parrot.handlers.bots._EvalContext', MagicMock(return_value=MagicMock())), \
+             patch('parrot.handlers.bots._core_build_eval_context', AsyncMock(return_value=MagicMock())), \
              patch('parrot.handlers.bots._ResourceType', MagicMock(AGENT='AGENT')):
             result = await handler._get_one("test_bot")
 
@@ -85,7 +85,7 @@ class TestChatbotHandlerPBAC:
         handler.error = MagicMock(return_value={"status": 403})
 
         with patch('parrot.handlers.bots._PBAC_AVAILABLE', True), \
-             patch('parrot.handlers.bots._EvalContext', MagicMock(return_value=MagicMock())), \
+             patch('parrot.handlers.bots._core_build_eval_context', AsyncMock(return_value=MagicMock())), \
              patch('parrot.handlers.bots._ResourceType', MagicMock(AGENT='AGENT')):
             result = await handler._get_one("restricted_bot")
 
@@ -139,7 +139,7 @@ class TestChatbotHandlerPBAC:
         handler.json_response = MagicMock(return_value={"status": 200})
 
         with patch('parrot.handlers.bots._PBAC_AVAILABLE', True), \
-             patch('parrot.handlers.bots._EvalContext', MagicMock(return_value=MagicMock())), \
+             patch('parrot.handlers.bots._core_build_eval_context', AsyncMock(return_value=MagicMock())), \
              patch('parrot.handlers.bots._ResourceType', MagicMock(AGENT='AGENT')):
             result = await handler._get_all()
 
@@ -165,7 +165,7 @@ class TestChatbotHandlerPBAC:
         handler.error = MagicMock(return_value={"status": 400})
 
         with patch('parrot.handlers.bots._PBAC_AVAILABLE', True), \
-             patch('parrot.handlers.bots._EvalContext', MagicMock(return_value=MagicMock())), \
+             patch('parrot.handlers.bots._core_build_eval_context', AsyncMock(return_value=MagicMock())), \
              patch('parrot.handlers.bots._ResourceType', MagicMock(AGENT='AGENT')):
             await handler._get_all()
 

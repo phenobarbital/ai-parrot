@@ -17,8 +17,6 @@ import backoff
 from requests.auth import HTTPBasicAuth
 from requests.exceptions import HTTPError
 from requests.exceptions import Timeout as RequestTimeoutException
-from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError
 from duckduckgo_search import DDGS
 from duckduckgo_search.exceptions import (
     DuckDuckGoSearchException,

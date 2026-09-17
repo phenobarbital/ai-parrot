@@ -85,7 +85,7 @@ class CrewExecutionDocument:
             Dictionary that is a superset of ``FlowResult.to_dict()``'s
             keys (``output``, ``summary``, ``status``, ``total_time``,
             ``nodes``, ``agents``, ``responses``, ``errors``,
-            ``execution_log``, ``metadata``), plus ``execution_id``,
+            ``execution_log``, ``infographic``, ``metadata``), plus ``execution_id``,
             ``agent_results``, ``execution_order``, ``crew_name``, ``method``.
         """
         extra = self.metadata.get("_flow_extra", {}) if isinstance(self.metadata, dict) else {}
@@ -110,6 +110,7 @@ class CrewExecutionDocument:
             "agents": extra.get("agents", []),
             "responses": extra.get("responses", {}),
             "execution_log": extra.get("execution_log", []),
+            "infographic": extra.get("infographic"),
             "metadata": metadata_out,
         }
 
@@ -217,6 +218,7 @@ class CrewExecutionDocument:
             "agents": flow_dict.get("agents", []),
             "responses": flow_dict.get("responses", {}),
             "execution_log": flow_dict.get("execution_log", []),
+            "infographic": flow_dict.get("infographic"),
         }
 
         return cls(
@@ -321,6 +323,7 @@ class CrewExecutionDocument:
                 "agents": crew_doc.get("agents", []),
                 "responses": crew_doc.get("responses", {}),
                 "execution_log": crew_doc.get("execution_log", []),
+                "infographic": crew_doc.get("infographic"),
             }
             return cls(
                 execution_id=execution_id,

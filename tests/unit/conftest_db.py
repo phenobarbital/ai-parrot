@@ -111,6 +111,7 @@ def setup_worktree_imports() -> None:
         ("parrot.bots.database.toolkits.sql", "parrot/bots/database/toolkits/sql.py"),
         ("parrot.bots.database.toolkits.postgres", "parrot/bots/database/toolkits/postgres.py"),
         ("parrot.bots.database.toolkits._crud", "parrot/bots/database/toolkits/_crud.py"),
+        ("parrot.bots.database.toolkits._internal", "parrot/bots/database/toolkits/_internal.py"),
         ("parrot.bots.database.toolkits.bigquery", "parrot/bots/database/toolkits/bigquery.py"),
         ("parrot.bots.database.toolkits.influx", "parrot/bots/database/toolkits/influx.py"),
         ("parrot.bots.database.toolkits.elastic", "parrot/bots/database/toolkits/elastic.py"),
@@ -119,3 +120,16 @@ def setup_worktree_imports() -> None:
         filepath = os.path.join(_WT_SRC, *rel_path.split("/"))
         if os.path.isfile(filepath):
             _load_wt(mod_name, rel_path)
+
+    # The stub package skips ``toolkits/__init__.py``; mirror its public
+    # re-exports so ``from .toolkits import X`` (e.g. agent.py importing
+    # ``DatabaseAgentToolkit``) resolves against the loaded submodules.
+    _tk_pkg = sys.modules["parrot.bots.database.toolkits"]
+    for _sub in list(sys.modules):
+        if _sub.startswith("parrot.bots.database.toolkits."):
+            _submod = sys.modules[_sub]
+            for _name in dir(_submod):
+                _obj = getattr(_submod, _name)
+                if isinstance(_obj, type) and _name.endswith(("Toolkit", "ToolkitConfig")):
+                    if not hasattr(_tk_pkg, _name):
+                        setattr(_tk_pkg, _name, _obj)

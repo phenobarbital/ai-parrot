@@ -19,7 +19,7 @@ from parrot.clients.base import AbstractClient
 # ---------------------------------------------------------------------------
 
 CLIENT_SPECS = [
-    ("parrot.clients.google.client", "GoogleGenAIClient", "gemini-3.1-flash-lite-preview"),
+    ("parrot.clients.google.client", "GoogleGenAIClient", "gemini-3.1-flash-lite"),
     ("parrot.clients.anthropic.client", "AnthropicClient", "claude-sonnet-4.5"),
     ("parrot.clients.openai.client", "OpenAIClient", "gpt-5-nano"),
 ]
@@ -172,7 +172,7 @@ class TestBotLevelNoRetry:
     def test_conversation_no_retry_loop(self):
         from parrot.bots.base import BaseBot
 
-        source = inspect.getsource(BaseBot.conversation)
+        source = inspect.getsource(BaseBot.conversation) + inspect.getsource(BaseBot._conversation_body)
         assert "for attempt in range" not in source
         assert "retries + 1" not in source
         assert "kwargs.get('retries'" not in source
@@ -188,7 +188,9 @@ class TestBotLevelNoRetry:
     def test_conversation_still_closes_llm(self):
         from parrot.bots.base import BaseBot
 
-        source = inspect.getsource(BaseBot.conversation)
+        # conversation() delegates to _conversation_body() (TASK-1501), which
+        # owns the LLM lifecycle.
+        source = inspect.getsource(BaseBot._conversation_body)
         assert "self._llm.close()" in source
 
     def test_ask_preserves_exception_handling(self):

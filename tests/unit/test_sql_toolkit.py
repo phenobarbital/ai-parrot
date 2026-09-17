@@ -87,6 +87,15 @@ class TestSQLToolkitExecution:
     @pytest.mark.asyncio
     async def test_execute_not_connected(self):
         tk = SQLToolkit(dsn="postgresql://test")
+        # Since TASK-1129 (8b5d046fd) a toolkit with a retry_config (the base
+        # class always installs a default QueryRetryConfig) re-raises
+        # non-retryable errors so DatabaseAgent can surface them; the
+        # swallow-into-failure-response path is reserved for retry_config=None.
+        assert tk.retry_config is not None
+        with pytest.raises(Exception, match="Not connected"):
+            await tk.execute_query("SELECT 1")
+
+        tk.retry_config = None
         result = await tk.execute_query("SELECT 1")
         assert not result.success
         assert "Not connected" in result.error_message

@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 from parrot.knowledge.wiki.cli import wiki
+from parrot.knowledge.wiki.languages import astgrep
 from parrot.knowledge.wiki.project import WikiProjectConfig, load_effective_config
 from parrot.knowledge.wiki.store import BaseWikiStore, create_wiki_store
 from parrot.knowledge.wiki.structural import (
@@ -83,8 +84,11 @@ class TestCreateStructuralTools:
         tools = create_structural_tools(store, built_repo, config)
         blast = next(t for t in tools if t.name == "wiki_blast_radius")
         result = await blast._execute(symbol="sym:a.py#helper")
-        assert "b.py" in result.result["files"]
         assert result.result["root"]["qualname"] == "helper"
+        # Python `calls` edges come only from the optional ast-grep seam
+        # (`wiki-structural` extra); without it there are no dependents.
+        if astgrep.is_available():
+            assert "b.py" in result.result["files"]
 
     def test_args_schema_fields_match_spec(self, built_repo: Path):
         store, config = _store_and_config(built_repo)
@@ -149,7 +153,11 @@ class TestCodeStructuralToolkit:
         blast = await tk.blast_radius("sym:a.py#helper")
         assert lookup["hits"][0]["qualname"] == "helper"
         assert any(s["qualname"] == "helper" for s in outline["symbols"])
-        assert "b.py" in blast["files"]
+        assert blast["root"]["qualname"] == "helper"
+        # Python `calls` edges come only from the optional ast-grep seam
+        # (`wiki-structural` extra); without it there are no dependents.
+        if astgrep.is_available():
+            assert "b.py" in blast["files"]
 
     def test_toolkit_accepts_injected_store_and_config(self, built_repo: Path):
         store, config = _store_and_config(built_repo)

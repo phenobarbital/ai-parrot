@@ -50,7 +50,10 @@ class TestMaybeOffload:
 
         # Verify the upload call
         call_args = mock_s3.create_from_bytes.call_args
-        uploaded_bytes = call_args.args[0] if call_args.args else call_args.kwargs.get("data")
+        # FileManager.create_from_bytes(path, data) — data is the 2nd arg.
+        uploaded_path = call_args.args[0] if call_args.args else call_args.kwargs.get("path")
+        assert uploaded_path == "prefix/art-1.json"
+        uploaded_bytes = call_args.args[1] if len(call_args.args) > 1 else call_args.kwargs.get("data")
         assert isinstance(uploaded_bytes, bytes)
         assert len(uploaded_bytes) >= 250 * 1024
 
