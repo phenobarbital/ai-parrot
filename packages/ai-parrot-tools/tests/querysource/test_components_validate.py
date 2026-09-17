@@ -54,7 +54,9 @@ async def test_policy_restricted(fake_registry):
     raw = dict(PIPELINE, queries={**PIPELINE["queries"], "n1": {"query": "select 1", "driver": "pg"}})
     v = await QuerysourceToolkit(dsn="postgres://fake", programs=["pokemon"]).validate_pipeline(raw)
     assert not v.valid and {i.step for i in v.issues} >= {"n1", "tableOutput"} and v.has_raw_nodes
-    assert v.referenced_slugs == ["pokemon_all_fso_odoo_new", "pokemon_warehouses_kiosk_all_fso"] or "pokemon_warehouses_kiosk_all_fso" in [i.step for i in v.issues] or True
+    # referenced_slugs lists every queries[*] slug value verbatim, regardless of whether the row exists
+    # ("pokemon_warehouses_kiosk_all_fso" is absent from fake_rows and surfaces separately as a "b" issue).
+    assert v.referenced_slugs == ["pokemon_all_fso_odoo_new", "pokemon_warehouses_kiosk_all_fso"]
 
 
 async def test_policy_permissive_and_external(fake_registry):

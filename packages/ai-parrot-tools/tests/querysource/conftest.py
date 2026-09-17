@@ -2,6 +2,7 @@ import json
 
 import pytest
 from types import SimpleNamespace
+from asyncdb.exceptions import NoDataFound
 from parrot_tools.querysource import _qs
 
 PIPELINE = {
@@ -53,9 +54,6 @@ class FakeAsyncDB:
 def patched_qs(monkeypatch, fake_rows):
     calls = {"get": [], "filter": [], "insert": [], "update": []}
 
-    class NoData(Exception):
-        pass
-
     class FakeQueryModel:
         def __init__(self, **kw):
             self.__dict__.update(kw)
@@ -65,7 +63,9 @@ def patched_qs(monkeypatch, fake_rows):
             calls["get"].append((kw, _connection))
             row = fake_rows.get(kw["query_slug"])
             if row is None:
-                raise NoData(kw["query_slug"])
+                # Real "no such row" signal (asyncdb.exceptions.NoDataFound) — matches production behavior
+                # so catalog.py's narrowed `except (NoDataFound, SlugNotFound)` clauses exercise real types.
+                raise NoDataFound(kw["query_slug"])
             return row
 
         @classmethod

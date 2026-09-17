@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from asyncdb import AsyncDB  # verified: parrot_tools/querytoolkit.py:18
+from asyncdb.exceptions import NoDataFound  # verified: real "no such row" signal from QueryModel.get/filter
 
 from parrot_tools.querysource import _qs
 from parrot_tools.querysource.errors import InvalidConditionsError, QuerysourceToolkitError, SlugNotFoundError, TenantDeniedError
@@ -14,6 +15,18 @@ from parrot_tools.querysource.models import SavedSlug
 
 logger = logging.getLogger(__name__)
 _PIPELINE_KEYS = ("queries", "files", "sources")  # multi/__init__.py:182-183
+
+
+def _not_found_exception_types() -> tuple[type[BaseException], ...]:
+    """Real "no such row" signals only: asyncdb's NoDataFound, plus querysource's SlugNotFound when the
+    optional dependency is importable. Never widen this to a bare Exception — a connection drop, auth
+    failure or driver bug must propagate as itself, not be misreported to the agent as a missing slug."""
+    types: list[type[BaseException]] = [NoDataFound]
+    try:
+        types.append(_qs.get_exceptions().SlugNotFound)
+    except ImportError:
+        pass
+    return tuple(types)
 
 
 @dataclass(frozen=True)
@@ -134,7 +147,7 @@ class SlugCatalog:
         async with await self._db.connection() as conn:  # connections.py:459
             try:
                 row = await model.get(query_slug=slug, _connection=conn)  # connections.py:463
-            except Exception as exc:  # asyncdb NoDataFound / querysource SlugNotFound / any not-found signal
+            except _not_found_exception_types() as exc:  # asyncdb NoDataFound / querysource SlugNotFound only
                 raise SlugNotFoundError(f"slug '{slug}' not found") from exc
         return SlugRecord.from_row(row)
 
@@ -179,7 +192,7 @@ class SlugCatalog:
         async with await self._db.connection() as conn:
             try:
                 existing = await model.get(query_slug=slug, _connection=conn)
-            except Exception:  # noqa: BLE001 — absent slug: any not-found signal means "insert"
+            except _not_found_exception_types():  # asyncdb NoDataFound / querysource SlugNotFound → "insert"
                 existing = None
             if existing is not None:
                 if not overwrite:

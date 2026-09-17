@@ -3,7 +3,7 @@ import pytest
 import pandas as pd
 from parrot_tools.querysource import _qs
 from parrot_tools.querysource.toolkit import QuerysourceToolkit
-from parrot_tools.querysource.errors import RawSqlForbiddenError, WriteDisabledError, QuerysourceToolkitError
+from parrot_tools.querysource.errors import RawSqlForbiddenError, WriteDisabledError, QuerysourceToolkitError, TenantDeniedError
 from .test_components_validate import fake_registry  # noqa: F401 — reused fixture (patches _qs.ComponentRegistry)
 
 
@@ -32,6 +32,22 @@ async def test_policy_blocks_before_multiqs(fake_mq):
         await tk.run_multiquery(pipeline={"queries": {"a": {"slug": "pokemon_all_fso_odoo_new"}},
                                           "Output": [{"tableOutput": {}}]})
     assert fake_mq["init"] is None
+
+
+async def test_nested_foreign_slug_raises_tenant_denied(fake_mq, patched_qs):
+    """A queries[*] node referencing a slug outside the allowlist must raise TenantDeniedError — the same
+    type as a top-level `slug=` denial (spec §5 AC5) — not a generic QuerysourceToolkitError, from both
+    run_multiquery(pipeline=...) and save_multiquery(pipeline=...). Regression test for the review finding
+    that _raise_for_issues previously collapsed this into a generic error."""
+    tk = QuerysourceToolkit(dsn="postgres://fake", programs=["pokemon"])
+    with pytest.raises(TenantDeniedError):
+        await tk.run_multiquery(pipeline={"queries": {"a": {"slug": "epson_field_activity"}}})
+    assert fake_mq["init"] is None
+
+    tw = QuerysourceToolkit(dsn="postgres://fake", allow_write=True, programs=["pokemon"])
+    with pytest.raises(TenantDeniedError):
+        await tw.save_multiquery("mq1", {"queries": {"a": {"slug": "epson_field_activity"}}}, "d")
+    assert not patched_qs["insert"] and not patched_qs["update"]
 
 
 async def test_inline_run_deepcopies_and_shapes(fake_mq):

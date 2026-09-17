@@ -39,6 +39,11 @@ DIALECT_REFERENCE = DialectReference(
         "filter_options": "dict — extra WHERE entries merged into filter", "qry_options": "dict — provider-specific options",
         "hierarchy": "list — hierarchical filtering rules", "distinct": "bool — SELECT DISTINCT",
         "conditions": "dict — nested placeholder values; merged over the flat ones",
+        "add_fields": "list[str] — additional columns appended to the projection alongside `fields`, not replacing it",
+        "tablename": "str — override the source/destination table name (provider-specific; rarely set by agents)",
+        "schema": "str — override the database schema (provider-specific; rarely set by agents)",
+        "database": "str — override the target database name (provider-specific; rarely set by agents)",
+        "slug": "str — the query-slug identifier itself; pass it as the tool's own `slug` argument, never nested here",
     },
     placeholder_rules=[
         "A slug's stored `conditions` are DEFAULT values for the placeholders in its SQL (e.g. {firstdate}); "

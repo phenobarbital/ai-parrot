@@ -214,16 +214,30 @@ class QuerysourceToolkit(AbstractToolkit):
         return result
 
     def _raise_for_issues(self, validation: PipelineValidation) -> None:
-        """Map policy issues to the toolkit error hierarchy (raw → RawSqlForbiddenError, Output → WriteDisabledError)."""
+        """Map policy issues to the toolkit error hierarchy (raw -> RawSqlForbiddenError, Output -> WriteDisabledError,
+        slug -> TenantDeniedError as a defense-in-depth fallback). In the normal call path a denied nested
+        `queries[*]` slug is already raised with its real type by `_assert_pipeline_slugs_allowed` before this
+        runs (spec §5 AC5); this branch only guards against a future caller that skips that pre-check."""
         if validation.valid:
             return
         fields = {i.field for i in validation.issues}
         msg = "; ".join(f"{i.step}.{i.field}: {i.message}" for i in validation.issues)
+        if "slug" in fields:
+            raise TenantDeniedError(f"pipeline rejected: {msg}")
         if "query" in fields:
             raise RawSqlForbiddenError(f"pipeline rejected: {msg}")
         if "Output" in fields:
             raise WriteDisabledError(f"pipeline rejected: {msg}")
         raise QuerysourceToolkitError(f"pipeline rejected: {msg}")
+
+    async def _assert_pipeline_slugs_allowed(self, pipeline: dict[str, Any]) -> None:
+        """Re-verify every queries[*] slug node directly against the tenant guard, letting `TenantDeniedError`
+        / `SlugNotFoundError` propagate with their real type — `_policy_check` collapses both into a single
+        `PipelineIssue(field="slug")` for `validate_pipeline`'s report-only contract, which would otherwise
+        surface a generic `QuerysourceToolkitError` from `run_multiquery`/`save_multiquery` (spec §5 AC5:
+        a foreign slug must raise `TenantDeniedError`, the same as the top-level `slug=` argument)."""
+        for referenced_slug in set(normalize_pipeline(pipeline).slug_nodes.values()):
+            await self._catalog.get_allowed(referenced_slug)
 
     async def run_multiquery(self, pipeline: dict[str, Any] | None = None, slug: str | None = None,
                              conditions: dict[str, Any] | None = None) -> MultiQueryResult:
@@ -238,9 +252,11 @@ class QuerysourceToolkit(AbstractToolkit):
         if slug is not None:
             rec = await self._catalog.get_allowed(slug)
             if rec.is_multiquery:
+                await self._assert_pipeline_slugs_allowed(rec.pipeline)
                 self._raise_for_issues(await self._policy_check(rec.pipeline))
             mq = _qs.get_multiqs()(slug=slug, conditions=dict(conditions or {}))            # multi/__init__.py:62
         else:
+            await self._assert_pipeline_slugs_allowed(pipeline)
             self._raise_for_issues(await self._policy_check(pipeline))
             mq = _qs.get_multiqs()(query=copy.deepcopy(pipeline), conditions=dict(conditions or {}))  # deepcopy: __init__ pops keys (:95-97)
         exc_mod = _qs.get_exceptions()
@@ -263,6 +279,8 @@ class QuerysourceToolkit(AbstractToolkit):
         if not self.allow_write:
             raise WriteDisabledError("save_multiquery is disabled for this toolkit (allow_write=False)")
         program_slug = self.guard.resolve_write_program(program)
+        await self._open()
+        await self._assert_pipeline_slugs_allowed(pipeline)
         validation = await self.validate_pipeline(pipeline)
         self._raise_for_issues(validation)
         return await self._catalog.upsert(slug=slug, description=description, pipeline=pipeline,
