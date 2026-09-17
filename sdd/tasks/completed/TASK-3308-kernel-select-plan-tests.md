@@ -377,10 +377,28 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (sonnet, sequential fallback — `complex_model_unavailable`, same
+systemic roster gap as prior tasks; user-authorized direct implementation)
+**Date**: 2026-09-17
+**Notes**: Implemented all FILL INs. `changed_files` — diff + status subprocess calls, each
+individually try/except-guarded (`OSError`) so a missing git binary degrades to `[]` rather
+than raising; status codes containing `D` are excluded for consistency with the diff's
+`--diff-filter=d`; rename lines (`old -> new`) resolved to the new path. `_operands` —
+reimplemented the pytest-argv flag-skipping locally (rather than importing contract.py's
+private `_pytest_operands`) since declared-command node ids must be KEPT whole (`TestTarget.path`
+explicitly allows a node id), unlike contract's broad-detection use case. `_declared_targets` —
+drops broad commands (noted) and operands that don't map to a distribution (noted).
+`plan_tests`'s merge/feature branch: added an explicit `git rev-parse --is-inside-work-tree`
+probe BEFORE calling `ImportIndex.load_or_build` — necessary because `load_or_build` itself
+degrades *silently* to an empty `ImportIndex.build()` for a non-git directory (by design, from
+TASK-3307, "cache failures never fail planning"), which would NOT have produced the
+plan-level note this task's own acceptance criterion and `test_non_git_worktree_degrades_with_note`
+require ("a note mentions the index"); the explicit probe closes that gap. Wired
+merge-tier impact + cap escalation and merge/feature core escalation with ledger dedupe exactly
+per the Tiers table. Re-exported `changed_files`/`plan_tests` from `__init__.py`. All 7 new
+tests pass; full `test_scope` suite now 45/45; `ruff check` clean; `test_stdlib_only.py` still
+passes (subprocess/pathlib/typing only, no pydantic/parrot in the kernel core).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Deviations from spec**: none — only the three listed targets were touched.
 
 **Deviations from spec**: none | describe if any

@@ -131,7 +131,7 @@
       "feature_id": "FEAT-563",
       "feature": "scoped-test-selection",
       "spec": "sdd/specs/scoped-test-selection.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -143,8 +143,8 @@
       "parallelism_notes": "calls build_plan/ScopePolicy from TASK-3305, pending_escalations from TASK-3306 (context.py), impacted_tests/detect_core from TASK-3307 (impact.py); modifies __init__.py created by TASK-3304",
       "assigned_to": null,
       "started_at": "2026-09-17T11:00:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3308-kernel-select-plan-tests.md"
+      "completed_at": "2026-09-17T12:41:24+00:00",
+      "file": "sdd/tasks/completed/TASK-3308-kernel-select-plan-tests.md"
     },
     {
       "id": "TASK-3309",
