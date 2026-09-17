@@ -213,7 +213,7 @@
       "feature_id": "FEAT-563",
       "feature": "scoped-test-selection",
       "spec": "sdd/specs/scoped-test-selection.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -223,8 +223,8 @@
       "parallelism_notes": "calls guard_argv from TASK-3309 (guard.py) in dispatchers/llm.py and write_attempt_context (TASK-3306 via TASK-3309 chain) in engine._run_attempt",
       "assigned_to": null,
       "started_at": "2026-09-17T11:00:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3312-mcp-seat-guard-and-attempt-context.md"
+      "completed_at": "2026-09-17T13:04:20+00:00",
+      "file": "sdd/tasks/completed/TASK-3312-mcp-seat-guard-and-attempt-context.md"
     },
     {
       "id": "TASK-3313",

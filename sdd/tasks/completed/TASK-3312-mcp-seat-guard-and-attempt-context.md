@@ -455,10 +455,40 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (sonnet, sequential fallback — `complex_model_unavailable`, same
+systemic roster gap as prior tasks; user-authorized direct implementation)
+**Date**: 2026-09-17
+**Notes**: Verified every anchor line number in `dispatchers/llm.py` and `sdd_coder/engine.py`
+via `grep` before editing (all matched the contract exactly). Inserted the guard block in
+`_tool_run_command` exactly at the fixed position (allow-list → path validation → cwd/timeout
+resolution → **guard** → `command_policy_error` → `_run_argv`), calling `guard_argv(argv,
+worktree=Path(cwd))` — the attempt worktree root, not `run_cwd` — via `asyncio.to_thread`;
+guard exceptions are caught and logged, falling through as `allow`. Added
+`_run_guarded_invocations` with the FILL-IN exit-code aggregation (first non-zero wins; `None`
+from a timeout counts as failure code 1; every invocation still runs). Added
+`_write_attempt_scope` to `engine.py` next to `_path_for`/`_branch_for` and wired its call
+immediately after `manager.create` in `_run_attempt`, using the already-computed `path`
+variable and `ctx.feature_branch` as `base_ref`; write failures are caught and logged, never
+failing the attempt. Wrote all four `test_llm_code_dispatcher.py` FILL-IN test bodies (rewrite,
+block-without-exec, first-nonzero-exit-wins, guard-exception-runs-unchanged) and the
+`test_engine_dispatch.py` context-writer test (read via `call["cwd"]`/`call["brief"].task_file`
+straight after `engine.wait()` — the sub-worktree was NOT removed by then, so the
+`FakeDispatcher`-subclass capture-at-dispatch-time fallback noted in the blueprint was not
+needed). Moved the two new test-file imports (`llm_module`, `GuardOutcome`) to the existing
+top-of-file import block rather than literally appending them at the end as the blueprint's
+code fragment showed, to avoid an avoidable `E402`.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Regression check**: `test_llm_code_dispatcher.py` has 4 pre-existing failures
+(`test_apply_patch_recovers_a_wrong_hunk_line_count`, `test_run_command_cwd_replaces_the_cd_prefix`,
+`test_path_guard_can_be_turned_off`, `test_run_command_success_never_carries_a_glob_hint`) —
+confirmed via `git stash` that these fail identically on the unmodified `HEAD` (before any of
+this task's edits), so they are pre-existing environment issues, not a regression introduced
+here. All 4 new dispatcher tests pass, the new engine test passes, the full `test_engine_dispatch.py`
+suite is 32/32, and the full `test_scope` + `test_qa_default_criteria.py` suites remain 71/71.
+`ruff check` clean on every file except pre-existing, unrelated findings confirmed present on
+`HEAD` before this task (`ASYNC240` at two untouched lines in `llm.py`; `ASYNC221` inside the
+three pre-existing-failure test functions, nowhere near this diff's line ranges per `git diff`).
+
+**Deviations from spec**: none — only the four listed files were touched.
 
 **Deviations from spec**: none | describe if any
