@@ -1,4 +1,5 @@
 """Shared fixtures for the plancheck tests (FEAT-565). Synthetic data only — the repo is public."""
+
 from __future__ import annotations
 
 import sys
@@ -62,16 +63,38 @@ def mini_planogram_data() -> dict[str, Any]:
         for slot in range(1, 7):
             sku, brand = _sku(shelf, slot)
             products[f"pos {shelf}:{slot}"] = {
-                "position": _position(shelf, slot), "segment": "left" if slot <= 3 else "right",
-                "segment_number": 1 if slot <= 3 else 2, "slot": slot,
-                "segment_slot": slot if slot <= 3 else slot - 3, "product": sku, "brand": brand,
-                "shelf": shelf, "facings": 2 if sku == "CLOSEOUT" else 1, "confidence": "high",
-                "read_method": "inferred" if shelf == 2 else "direct", "notes": None,
+                "position": _position(shelf, slot),
+                "segment": "left" if slot <= 3 else "right",
+                "segment_number": 1 if slot <= 3 else 2,
+                "slot": slot,
+                "segment_slot": slot if slot <= 3 else slot - 3,
+                "product": sku,
+                "brand": brand,
+                "shelf": shelf,
+                "facings": 2 if sku == "CLOSEOUT" else 1,
+                "confidence": "high",
+                "read_method": "inferred" if shelf == 2 else "direct",
+                "notes": None,
             }
-        shelves.append({"shelf": f"Shelf {shelf}", "shelf_number": shelf, "product_count": 6,
-                        "facing_count": 7 if shelf == 3 else 6, "products": products})
-    meta = {"product_count": 18, "physical_facing_count": 19, "source": "synthetic fixture", "shelves": 3,
-            "segments": 2, "planogram": "Mini", "fixture": "test", "option": "A"}
+        shelves.append(
+            {
+                "shelf": f"Shelf {shelf}",
+                "shelf_number": shelf,
+                "product_count": 6,
+                "facing_count": 7 if shelf == 3 else 6,
+                "products": products,
+            }
+        )
+    meta = {
+        "product_count": 18,
+        "physical_facing_count": 19,
+        "source": "synthetic fixture",
+        "shelves": 3,
+        "segments": 2,
+        "planogram": "Mini",
+        "fixture": "test",
+        "option": "A",
+    }
     return {"planogram": meta, "shelves": shelves}
 
 
@@ -82,13 +105,22 @@ def mini_planogram(mini_planogram_data: dict[str, Any]) -> PlanogramRef:
     for shelf in mini_planogram_data["shelves"]:
         for product in sorted(shelf["products"].values(), key=lambda p: p["slot"]):
             for k in range(1, product["facings"] + 1):
-                facings.append(PlanogramFacing(
-                    facing_id=f"p{product['position']:03d}_f{k}", position=product["position"],
-                    shelf=product["shelf"], segment=product["segment"], slot=product["slot"],
-                    segment_slot=product["segment_slot"], facing=k, sku=product["product"],
-                    brand=product["brand"], identity_required=product["product"] != "CLOSEOUT",
-                    source_confidence=product["confidence"], reference_read_method=product["read_method"],
-                ))
+                facings.append(
+                    PlanogramFacing(
+                        facing_id=f"p{product['position']:03d}_f{k}",
+                        position=product["position"],
+                        shelf=product["shelf"],
+                        segment=product["segment"],
+                        slot=product["slot"],
+                        segment_slot=product["segment_slot"],
+                        facing=k,
+                        sku=product["product"],
+                        brand=product["brand"],
+                        identity_required=product["product"] != "CLOSEOUT",
+                        source_confidence=product["confidence"],
+                        reference_read_method=product["read_method"],
+                    )
+                )
     return PlanogramRef(planogram_id="mini", source="synthetic fixture", shelf_count=3, facings=facings)
 
 
@@ -105,8 +137,19 @@ def mini_catalog() -> Catalog:
             variant = (slot - 1) % 3
             xl, colors = variant == 1, (["tri-color"] if variant == 2 else ["black"])
             name = f"{brand} {family}{'XL' if xl else ''} {'Tri-color' if variant == 2 else 'Black'}"
-            items.append(CatalogItem(sku=sku, brand=brand, display_name=name, family=family, xl=xl,
-                                     colors=colors, identifiers=[sku], aliases=[name], provenance="fixture"))
+            items.append(
+                CatalogItem(
+                    sku=sku,
+                    brand=brand,
+                    display_name=name,
+                    family=family,
+                    xl=xl,
+                    colors=colors,
+                    identifiers=[sku],
+                    aliases=[name],
+                    provenance="fixture",
+                )
+            )
     return Catalog(items=items)
 
 

@@ -1,4 +1,5 @@
 """TASK-3337: core models are strict; fixtures honour their contract."""
+
 from __future__ import annotations
 
 import cv2
@@ -61,7 +62,7 @@ def test_shelf_image_tags_pass_detector_filters(shelf_image: np.ndarray) -> None
 
     x, top, bw, bh = 150, 300, 70, 30
     gray = cv2.cvtColor(shelf_image, cv2.COLOR_BGR2GRAY)
-    crop = gray[top:top + bh, x:x + bw]
+    crop = gray[top : top + bh, x : x + bw]
     assert crop.std() >= 25
     assert crop.mean() > 150
 

@@ -1,4 +1,5 @@
 """Shared Pydantic v2 models for the planogram compliance check (FEAT-565)."""
+
 from __future__ import annotations
 
 from decimal import Decimal
@@ -14,8 +15,16 @@ Resolution = Literal["direct", "verified_by_expectation", "inferred", "ambiguous
 Grade = Literal["high", "medium", "low"]
 PriceStatus = Literal["read", "partial", "unreadable", "not_assessed", "conflict"]
 PositionStatus = Literal[
-    "match", "misplaced", "variant_unresolved", "mismatch", "empty", "inferred_present",
-    "occupied_unassigned", "conflict", "not_assessed", "not_visible",
+    "match",
+    "misplaced",
+    "variant_unresolved",
+    "mismatch",
+    "empty",
+    "inferred_present",
+    "occupied_unassigned",
+    "conflict",
+    "not_assessed",
+    "not_visible",
 ]
 
 
