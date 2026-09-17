@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Any, AsyncIterator, List, Optional, Union, Sequence
+from typing import TYPE_CHECKING, Any, AsyncIterator, List, Optional, Union, Sequence
 import logging
 import warnings
 import asyncio
@@ -57,6 +57,9 @@ from ...models.google import (
     ALL_VOICE_PROFILES,
     VideoReelRequest,
     VideoReelScene,
+    ReelArtifact,
+    ReelResult,
+    ReelSceneResult,
 )
 from .models import GoogleModel
 from ...exceptions import SpeechGenerationError
@@ -68,6 +71,48 @@ import importlib.util
 # the _strip_audio / video assembly methods use it. We probe availability
 # at import time and import the actual symbols lazily at point of use.
 MOVIEPY_AVAILABLE = importlib.util.find_spec("moviepy") is not None
+
+if TYPE_CHECKING:
+    # Type-hint-only imports (FEAT-564 TASK-3330) — never imported at
+    # runtime, so no eager provider-module import happens at class-load time.
+    from .reel.clip import GeneratedReelClip
+    from .reel.errors import ReelError
+
+
+class _ReelRunContext:
+    """Internal per-job context threaded through scene processing (FEAT-564 TASK-3330).
+
+    Not part of any public interface — a plain container so ``_process_scene``
+    doesn't need a dozen positional parameters, and so the generated clip/
+    narration paths it produces (needed by the caller's timeline-planning
+    step, but not part of ``ReelSceneResult``'s typed shape) have somewhere
+    to live.
+
+    Args:
+        request: The reel request being processed.
+        registry: The resolved ``VideoProfileRegistry`` for this job.
+        api_surface: The API surface (``"gemini_developer"`` or ``"vertex"``).
+        output_directory: Per-job local working directory.
+        scene_deadline_seconds: Per-scene generation deadline (spec §2 item 10).
+    """
+
+    def __init__(
+        self,
+        *,
+        request: VideoReelRequest,
+        registry: Any,
+        api_surface: str,
+        output_directory: Path,
+        scene_deadline_seconds: float = 600.0,
+    ) -> None:
+        self.request = request
+        self.registry = registry
+        self.api_surface = api_surface
+        self.output_directory = output_directory
+        self.scene_deadline_seconds = scene_deadline_seconds
+        self.clips: dict = {}
+        self.narration_paths: dict = {}
+        self.narration_durations: dict = {}
 
 
 class GoogleGeneration:
@@ -1922,6 +1967,97 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
             include_audio=include_audio,
         )
 
+    async def generate_video_clip(
+        self,
+        *,
+        prompt: str,
+        model: str,
+        output_directory: Path,
+        aspect_ratio: str,
+        resolution: str,
+        target_duration_seconds: float,
+        starting_frame: Optional[Path] = None,
+        audio_mode: str = "separate",
+        timeout_seconds: float = 600.0,
+    ) -> "GeneratedReelClip":
+        """Resolves ``model`` against the capability registry, then dispatches to the
+        matching backend adapter (Veo or Omni) for exactly one clip.
+
+        FEAT-564 TASK-3330. Registry resolve -> VeoClipAdapter | OmniClipAdapter.
+
+        Args:
+            prompt: The scene's video prompt.
+            model: The exact, already-resolved video model id (never a bare
+                alias or unverified string — callers resolve stage
+                precedence before calling this).
+            output_directory: Directory the generated clip is written into.
+            aspect_ratio: Requested aspect ratio.
+            resolution: Requested resolution.
+            target_duration_seconds: The scene's edit target duration.
+            starting_frame: Optional starting-frame image path.
+            audio_mode: ``"separate"``, ``"native"`` or ``"muted"``.
+            timeout_seconds: Per-scene generation deadline.
+
+        Returns:
+            The generated, measured, locally-saved clip.
+
+        Raises:
+            ReelError: Unknown/wrong-surface/disabled model, unsupported
+                option for this profile, or any adapter-level failure.
+        """
+        from .reel.download import ProviderMediaDownloader
+        from .reel.omni import OmniClipAdapter
+        from .reel.profiles import VideoProfileRegistry
+        from .reel.veo import VeoClipAdapter
+
+        api_surface = "vertex" if getattr(self, "vertexai", False) else "gemini_developer"
+        registry = VideoProfileRegistry.default()
+        profile = registry.resolve(model, api_surface)
+        registry.validate_scene(
+            profile,
+            resolution=resolution,
+            audio_mode=audio_mode,
+            has_starting_frame=starting_frame is not None,
+        )
+
+        deadline = time.monotonic() + timeout_seconds
+
+        if profile.backend == "veo":
+            adapter = VeoClipAdapter(self)
+        else:
+            adapter = OmniClipAdapter(self, ProviderMediaDownloader())
+
+        return await adapter.generate(
+            profile=profile,
+            prompt=prompt,
+            output_directory=output_directory,
+            aspect_ratio=aspect_ratio,
+            resolution=resolution,
+            target_duration_seconds=target_duration_seconds,
+            starting_frame=starting_frame,
+            deadline=deadline,
+        )
+
+    def _validate_known_video_profiles(self, request: VideoReelRequest, registry, api_surface: str) -> None:
+        """Validates every video-model choice KNOWN before paying for generation.
+
+        Called twice by ``generate_video_reel``: once before the director
+        runs (validates the reel-level ``video_model`` and, if the caller
+        already supplied ``scenes``, each scene's override — "request-known
+        profiles"), and again right after the director produces scenes (now
+        THEIR overrides are "known" too) — but never for scenes that do not
+        exist yet ("keep the director cost boundary explicit rather than
+        promising impossible validation of nonexistent scenes").
+
+        Raises:
+            ReelValidationError: Unknown/wrong-surface/disabled model.
+        """
+        if request.video_model:
+            registry.resolve(request.video_model, api_surface)
+        for scene in request.scenes or []:
+            if scene.video_model:
+                registry.resolve(scene.video_model, api_surface)
+
     async def generate_video_reel(
         self,
         request: VideoReelRequest,
@@ -1936,7 +2072,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         1. Scene breakdown (if not provided)
         2. Apply user-provided speech texts to scenes (if provided; otherwise no narration)
         3. Parallel generation of Music and Scenes (Image -> Video, Audio)
-        4. Assembly using MoviePy
+        4. Assembly via the managed process (reel.assembly.assemble_reel)
 
         Args:
             request: The video reel request configuration.
@@ -1947,9 +2083,25 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
                 manager is created from request.storage_backend.
             user_id: Optional user identifier for the response.
             session_id: Optional session identifier for the response.
+
+        Returns:
+            AIMessage with ``metadata["video_reel"]`` set to a JSON-mode
+            ``ReelResult`` and ``artifacts`` set to the single final
+            ``ReelArtifact`` (both FEAT-564 TASK-3321 models). ``files``
+            holds only real local paths (empty for cloud-only storage).
         """
+        from .reel.errors import ReelError, ReelErrorCode
+        from .reel.music import ReelMusicService
+        from .reel.profiles import VideoProfileRegistry
+        from .reel.assembly import assemble_reel
+        from .reel.timeline import TimelineEntry, check_measured_duration, check_narration_fits, plan_timeline
+
         self.logger.info(f"Starting Video Reel Generation: {request.prompt}")
         start_time = time.time()
+        job_deadline = time.monotonic() + 3600.0  # spec §2 item 10 default job deadline
+
+        api_surface = "vertex" if getattr(self, "vertexai", False) else "gemini_developer"
+        registry = VideoProfileRegistry.default()
 
         # Initialize FileManager if not provided
         if file_manager is None:
@@ -1970,10 +2122,20 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
             output_directory = BASE_DIR.joinpath("static", "generated_reels")
             output_directory.mkdir(parents=True, exist_ok=True)
 
+        # Validate request-known profiles BEFORE any director (paid) work.
+        self._validate_known_video_profiles(request, registry, api_surface)
+
+        warnings_list: List[str] = list(request.deprecation_warnings())
+        director_unused = bool(request.scenes)
+        director_model: Optional[str] = None
+
         # 1. Breakdown scenes if needed
         if not request.scenes:
+            director_model = request.effective_director_model()
             self.logger.info("Breaking down prompt into scenes...")
-            request.scenes = await self._breakdown_prompt_to_scenes(request.prompt)
+            request.scenes = await self._breakdown_prompt_to_scenes(request.prompt, director_model)
+            # Validate director-PRODUCED scenes before spending on image/video work.
+            self._validate_known_video_profiles(request, registry, api_surface)
 
         # 2. Apply user-provided speech texts to scenes (if provided)
         # This overrides any narration_text that might exist in scenes
@@ -1989,60 +2151,142 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
             for scene in request.scenes:
                 scene.narration_text = None
 
-        # 3. Apply reference images to scenes (one image per scene, by index)
-        if request.reference_images:
-            for i, scene in enumerate(request.scenes):
-                if i < len(request.reference_images):
-                    scene.reference_image = request.reference_images[i]
-                # Scenes beyond the list keep reference_image=None (already default)
+        # 3. Sparse reference-image correspondence, via TASK-3321's own
+        # index-preserving accessor (never a raw list-index loop).
+        for i, scene in enumerate(request.scenes):
+            image_for_scene = request.image_for_scene(i)
+            if image_for_scene:
+                scene.reference_image = image_for_scene
 
         # 4. Parallel Generation
-        # Task 1: Music
+        # Task 1: Music (isolated, owned Lyria session — TASK-3327)
+        music_service = ReelMusicService(self, api_version="v1beta")
+        approx_reel_duration = sum(s.duration for s in request.scenes) + 5.0
         music_task = asyncio.create_task(
-            self._generate_reel_music(request, output_directory, file_manager=file_manager, job_prefix=job_prefix)
+            music_service.generate(
+                request, duration_seconds=approx_reel_duration, output_directory=output_directory, deadline=job_deadline
+            )
         )
 
-        # Task 2: Scenes
-        scene_video_paths = []
+        # Task 2: Scenes — sequential, to preserve order and bound concurrent
+        # provider rate limits (unchanged policy from the legacy pipeline).
+        run_context = _ReelRunContext(
+            request=request,
+            registry=registry,
+            api_surface=api_surface,
+            output_directory=output_directory,
+        )
+        scene_results: List["ReelSceneResult"] = []
+        partial = False
         for i, scene in enumerate(request.scenes):
             try:
-                # We await each scene sequentially to maintain order and limit concurrent rate limits
-                scene_path = await self._process_scene(
-                    scene, i, output_directory, request.aspect_ratio, file_manager=file_manager, job_prefix=job_prefix
+                result = await self._process_scene(scene, i, context=run_context)
+                scene_results.append(result)
+            except ReelError as exc:
+                if request.partial_failure_policy == "fail":
+                    music_task.cancel()
+                    with contextlib.suppress(Exception, asyncio.CancelledError):
+                        await music_task
+                    raise
+                partial = True
+                self.logger.warning("Scene %d failed under partial_failure_policy='skip': %s", i, exc)
+                scene_results.append(self._failed_scene_result(scene, i, exc))
+
+        if all(r.status == "failed" for r in scene_results):
+            music_task.cancel()
+            with contextlib.suppress(Exception, asyncio.CancelledError):
+                await music_task
+            raise ReelError(
+                ReelErrorCode.PROVIDER_FAILURE, "All scene generations failed.", stage="reel_scenes", retryable=False
+            )
+
+        music_outcome = await music_task
+
+        # Build the ONE explicit TimelinePlan from succeeded scenes only,
+        # preserving original indices (TASK-3328).
+        entries: List[TimelineEntry] = []
+        for result in scene_results:
+            if result.status != "succeeded":
+                continue
+            clip = run_context.clips[result.index]
+            scene = request.scenes[result.index]
+            check_measured_duration(scene.duration, clip.measured_duration_seconds, fps=24.0)
+            narration_path = run_context.narration_paths.get(result.index)
+            if narration_path is not None:
+                narration_clip_seconds = run_context.narration_durations.get(result.index)
+                if narration_clip_seconds is not None:
+                    check_narration_fits(scene.duration, narration_clip_seconds)
+            entries.append(
+                TimelineEntry(
+                    scene_index=result.index,
+                    clip_path=clip.local_path,
+                    edit_seconds=scene.duration,
+                    narration_path=narration_path,
                 )
-                scene_video_paths.append(scene_path)
-            except Exception as e:
-                self.logger.error(f"Scene {i} failed: {e}")
-                scene_video_paths.append(None)
+            )
 
-        # Await music
-        music_path = await music_task
+        plan = plan_timeline(entries, transition=request.transition_type, fps=24.0)
 
-        # Filter out failed scenes (where video_path is None)
-        valid_scene_outputs = [result for result in scene_video_paths if result[0] is not None]
+        assembled_path = await assemble_reel(
+            plan,
+            music_path=music_outcome.local_path if music_outcome.status == "succeeded" else None,
+            audio_mode=request.audio_mode,
+            output_format=request.output_format,
+            work_dir=output_directory,
+            deadline=job_deadline,
+        )
 
-        if not valid_scene_outputs:
-            raise RuntimeError("All scene generations failed.")
+        # Persist the final artifact through FileManager (only the final
+        # artifact — intermediates were already local-only, per TASK-3329).
+        final_key = f"{job_prefix}/final/final_reel.{request.output_format}"
+        async with aiofiles.open(assembled_path, "rb") as f:
+            final_bytes = await f.read()
+        await file_manager.create_from_bytes(final_key, final_bytes)
+        download_url = await file_manager.get_file_url(final_key)
 
-        # 4. Assembly
-        final_video_path = await self._create_reel_assembly(
-            valid_scene_outputs,
-            music_path,
-            output_directory,
-            request.transition_type,
-            request.output_format,
-            file_manager=file_manager,
-            job_prefix=job_prefix,
+        mime_type = "video/mp4" if request.output_format == "mp4" else "video/webm"
+        artifact = ReelArtifact(
+            artifact_id=uuid.uuid4().hex,
+            storage_backend=request.storage_backend,
+            storage_key=final_key,
+            mime_type=mime_type,
+            size_bytes=assembled_path.stat().st_size,
+            download_url=download_url,
+        )
+
+        effective_video_model = request.video_model or registry.default_video_model(api_surface)
+        reel_result = ReelResult(
+            final_artifact=artifact,
+            requested_models={
+                "director": request.director_model,
+                "image": request.image_model,
+                "video": request.video_model,
+            },
+            effective_models={
+                "director": None if director_unused else director_model,
+                "image": request.image_model,
+                "video": effective_video_model,
+            },
+            director_unused=director_unused,
+            api_surface=api_surface,
+            sdk_version=self._reel_sdk_version(),
+            audio_mode=request.audio_mode,
+            music_status=music_outcome.status,
+            scenes=scene_results,
+            partial=partial,
+            warnings=warnings_list,
+            final_duration_seconds=plan.final_duration_seconds,
         )
 
         execution_time = time.time() - start_time
 
-        # Build the file URL through the file manager
-        final_url = await file_manager.get_file_url(str(final_video_path))
+        # `files` holds only durable LOCAL paths — empty for cloud-only
+        # storage backends (spec §2 item 8).
+        files = [assembled_path] if request.storage_backend in ("fs", "temp") else []
 
-        return AIMessageFactory.from_video(
+        ai_message = AIMessageFactory.from_video(
             output=None,  # No single raw output object
-            files=[final_url],
+            files=files,
             input=request.prompt,
             model="google-reel-pipeline",
             provider="google_genai",
@@ -2050,12 +2294,51 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
             user_id=user_id,
             session_id=session_id,
         )
+        ai_message.metadata["video_reel"] = reel_result.model_dump(mode="json")
+        ai_message.artifacts = [artifact.model_dump(mode="json")]
+        return ai_message
 
-    async def _breakdown_prompt_to_scenes(self, prompt: str) -> List[VideoReelScene]:
-        """Uses Gemini to parse the user prompt into structured scenes."""
-        # Use a lightweight model for this logic task
-        model = GoogleModel.GEMINI_2_5_FLASH
+    @staticmethod
+    def _reel_sdk_version() -> str:
+        """Returns the installed google-genai SDK version, never a claim about a live surface."""
+        try:
+            import google.genai
 
+            return getattr(google.genai, "__version__", "unknown")
+        except Exception:
+            return "unknown"
+
+    @staticmethod
+    def _failed_scene_result(scene: VideoReelScene, index: int, exc: "ReelError") -> "ReelSceneResult":
+        """Builds a failed ReelSceneResult from a caught ReelError, preserving the original index.
+
+        ``video_model``/``backend`` are required, non-optional fields on
+        ``ReelSceneResult`` (TASK-3321) — when resolution failed before a
+        backend was ever determined, a best-effort label/placeholder is
+        used rather than leaving the field unset.
+        """
+        from .reel.errors import ReelErrorCode
+
+        code = getattr(exc, "code", None)
+        return ReelSceneResult(
+            index=index,
+            video_model=scene.video_model or "unknown",
+            backend="veo",
+            status="failed",
+            requested_duration_seconds=scene.duration,
+            error_code=code.value if isinstance(code, ReelErrorCode) else None,
+            error_message=str(exc)[:500],
+        )
+
+    async def _breakdown_prompt_to_scenes(self, prompt: str, model: str) -> List[VideoReelScene]:
+        """Uses the given director model to parse the user prompt into structured scenes.
+
+        Args:
+            prompt: The reel's high-level prompt.
+            model: The director model to use (FEAT-564 TASK-3330: was
+                hardcoded to ``GoogleModel.GEMINI_2_5_FLASH``; now forwarded
+                from ``VideoReelRequest.effective_director_model()``).
+        """
         system_instruction = """
         You are a professional video director. Break down the user's request into a series of 3-5 distinct scenes for a short video reel (9:16 vertical format).
         For each scene, provide:
@@ -2105,118 +2388,148 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         self,
         scene: VideoReelScene,
         index: int,
-        output_dir: Path,
-        aspect_ratio: AspectRatio,
-        file_manager: Optional[FileManagerInterface] = None,
-        job_prefix: Optional[str] = None,
-    ) -> tuple[Optional[str], Optional[str]]:
-        """Process a single scene and persist artifacts via FileManager.
+        *,
+        context: "_ReelRunContext",
+    ) -> "ReelSceneResult":
+        """Process a single scene end to end: background/foreground image, video
+        clip (via ``generate_video_clip``'s registry dispatch) and narration.
 
-        Steps:
-        1. Generate Background Image
-        2. (Optional) Generate Foreground Image & Composite
-        3. Generate Video (Image-to-Video)
-        4. (Optional) Generate Narration Audio
-        5. Store all artifacts via file_manager and return storage keys
+        FEAT-564 TASK-3330: replaces the legacy tuple/None return with a
+        typed ``ReelSceneResult``, and removes the text-to-video safety-block
+        retry entirely (adapters never resubmit after a safety block).
+
+        Raises:
+            ReelError: Any stage failure — the caller applies the
+                fail/skip policy around this call; this method never
+                swallows a failure into a "skipped" result itself.
 
         Returns:
-            Tuple of (video_storage_key, narration_storage_key).
-            Either element may be None on failure/skip.
+            The scene's ``ReelSceneResult`` on success. The generated clip
+            and any narration path are stashed on ``context`` (not part of
+            this typed return) for the caller's timeline-planning step.
         """
+        from .reel.errors import ReelError, ReelErrorCode
+
+        request = context.request
+
+        # Resolve the effective video model: scene override -> reel value -> surface default.
+        video_model = (
+            scene.video_model or request.video_model or context.registry.default_video_model(context.api_surface)
+        )
+        profile = context.registry.resolve(video_model, context.api_surface)
+
+        has_starting_frame = bool(scene.reference_image)
+        context.registry.validate_scene(
+            profile,
+            resolution=request.resolution,
+            audio_mode=request.audio_mode,
+            has_starting_frame=has_starting_frame,
+        )
+
+        # 1. Generate Background — image_model is passed EXPLICITLY (Q4: no
+        # silent substitution; an invalid id surfaces as a real provider
+        # error, never silently mapped to another id).
+        ref_images = [Path(scene.reference_image)] if scene.reference_image else None
         try:
-            # 1. Generate Background
-            ref_images = [Path(scene.reference_image)] if scene.reference_image else None
             bg_message = await self.generate_image(
                 prompt=scene.background_prompt,
+                model=request.image_model,
                 reference_images=ref_images,
-                aspect_ratio=aspect_ratio,
-                output_directory=str(output_dir),
+                aspect_ratio=request.aspect_ratio,
+                output_directory=str(context.output_directory),
             )
-            if not bg_message.images:
-                raise RuntimeError(f"Failed to generate background for scene {index}")
-            bg_path = Path(bg_message.images[0])
+        except Exception as exc:
+            raise ReelError(
+                ReelErrorCode.PROVIDER_FAILURE,
+                f"Background image generation failed: {exc}",
+                stage="scene_background",
+                scene_index=index,
+            ) from exc
+        if not bg_message.images:
+            raise ReelError(
+                ReelErrorCode.PROVIDER_FAILURE,
+                f"Failed to generate background for scene {index}",
+                stage="scene_background",
+                scene_index=index,
+            )
+        bg_path = Path(bg_message.images[0])
 
-            # Store background image via FileManager
-            if file_manager and job_prefix:
-                bg_key = f"{job_prefix}/scenes/scene_{index}_bg.jpeg"
-                async with aiofiles.open(bg_path, "rb") as f:
-                    bg_bytes = await f.read()
-                await file_manager.create_from_bytes(bg_key, bg_bytes)
-
-            # 2. Composite Foreground if needed
-            final_image_path = bg_path
-            if scene.foreground_prompt:
-                fg_message = await self.generate_image(
-                    prompt=scene.foreground_prompt, aspect_ratio=aspect_ratio, output_directory=str(output_dir)
+        # 2. Composite Foreground if needed
+        final_image_path = bg_path
+        if scene.foreground_prompt:
+            fg_message = await self.generate_image(
+                prompt=scene.foreground_prompt,
+                model=request.image_model,
+                aspect_ratio=request.aspect_ratio,
+                output_directory=str(context.output_directory),
+            )
+            if fg_message.images:
+                final_image_path = await self._composite_images(
+                    bg_path, fg_message.images[0], context.output_directory, index
                 )
-                if fg_message.images:
-                    fg_path = fg_message.images[0]
-                    final_image_path = await self._composite_images(bg_path, fg_path, output_dir, index)
 
-            # 3. Generate Video (Veo)
-            video_message = None
+        # 3. Generate the video clip via the registry-backed dispatcher —
+        # never resubmitted on a safety block (the legacy retry is removed).
+        starting_frame = final_image_path if (has_starting_frame or profile.supports_starting_frame) else None
+        clip = await self.generate_video_clip(
+            prompt=scene.video_prompt,
+            model=profile.model_id,
+            output_directory=context.output_directory,
+            aspect_ratio=str(request.aspect_ratio),
+            resolution=request.resolution,
+            target_duration_seconds=scene.duration,
+            starting_frame=starting_frame,
+            audio_mode=request.audio_mode,
+            timeout_seconds=context.scene_deadline_seconds,
+        )
+        context.clips[index] = clip
+
+        # 4. Generate Narration (if needed) — kept local-only; assembly
+        # consumes the local path directly.
+        narration_path: Optional[Path] = None
+        if scene.narration_text:
+            speech_message = await self.generate_speech(
+                prompt_data=SpeechGenerationPrompt(
+                    prompt=scene.narration_text, speakers=[SpeakerConfig(name="Narrator", voice="zephyr")]
+                ),
+                output_directory=context.output_directory,
+            )
+            if speech_message.files:
+                narration_path = Path(speech_message.files[0])
+                context.narration_paths[index] = narration_path
+                context.narration_durations[index] = await self._measure_audio_duration(narration_path)
+
+        return ReelSceneResult(
+            index=index,
+            video_model=profile.model_id,
+            backend=profile.backend,
+            status="succeeded",
+            requested_duration_seconds=scene.duration,
+            submitted_duration_seconds=clip.submitted_duration_seconds,
+            measured_duration_seconds=clip.measured_duration_seconds,
+            final_duration_seconds=scene.duration,
+            provider_operation_id=clip.provider_operation_id,
+        )
+
+    @staticmethod
+    async def _measure_audio_duration(path: Path) -> Optional[float]:
+        """Measures a narration audio file's real duration (never trusted from the request)."""
+        if not MOVIEPY_AVAILABLE:
+            return None
+
+        def _do() -> Optional[float]:
             try:
-                video_message = await self.video_generation(
-                    prompt=scene.video_prompt,
-                    reference_image=final_image_path,
-                    model=GoogleModel.VEO_3_1,
-                    aspect_ratio=aspect_ratio,
-                    output_directory=output_dir,
-                    include_audio=False,
-                )
-            except RuntimeError as veo_err:
-                if "content safety filter" in str(veo_err):
-                    self.logger.warning(
-                        "Scene %d: reference image blocked by safety filter, " "retrying as text-to-video: %s",
-                        index,
-                        veo_err,
-                    )
-                    video_message = await self.video_generation(
-                        prompt=scene.video_prompt,
-                        model=GoogleModel.VEO_3_1,
-                        aspect_ratio=aspect_ratio,
-                        output_directory=output_dir,
-                        include_audio=False,
-                    )
-                else:
-                    raise
+                from moviepy import AudioFileClip
 
-            if not video_message or not video_message.files:
-                raise RuntimeError(f"Failed to generate video for scene {index}")
+                clip = AudioFileClip(str(path))
+                try:
+                    return clip.duration
+                finally:
+                    clip.close()
+            except Exception:
+                return None
 
-            video_local_path = Path(video_message.files[0])
-
-            # Store video via FileManager
-            video_key = f"{job_prefix}/scenes/scene_{index}_video.mp4" if job_prefix else str(video_local_path)
-            if file_manager and job_prefix:
-                async with aiofiles.open(video_local_path, "rb") as f:
-                    vid_bytes = await f.read()
-                await file_manager.create_from_bytes(video_key, vid_bytes)
-
-            # 4. Generate Narration (if needed)
-            narration_key = None
-            if scene.narration_text:
-                speech_message = await self.generate_speech(
-                    prompt_data=SpeechGenerationPrompt(
-                        prompt=scene.narration_text, speakers=[SpeakerConfig(name="Narrator", voice="zephyr")]
-                    ),
-                    output_directory=output_dir,
-                )
-                if speech_message.files:
-                    audio_local_path = Path(speech_message.files[0])
-                    narration_key = (
-                        f"{job_prefix}/scenes/scene_{index}_narration.wav" if job_prefix else str(audio_local_path)
-                    )
-                    if file_manager and job_prefix:
-                        async with aiofiles.open(audio_local_path, "rb") as f:
-                            audio_bytes = await f.read()
-                        await file_manager.create_from_bytes(narration_key, audio_bytes)
-
-            return (video_key, narration_key)
-
-        except Exception as e:
-            self.logger.error(f"Error processing scene {index}: {e}")
-            return (None, None)
+        return await asyncio.to_thread(_do)
 
     def _merge_video_audio(self, video_path: Path, audio_path: Path, output_path: Path):
         """Merges specific narration audio into the video clip."""

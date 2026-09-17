@@ -204,23 +204,27 @@ class TestPipelineFileManagerInit:
         assert "output_directory" in params
 
     def test_process_scene_signature(self):
-        """_process_scene has file_manager and job_prefix parameters."""
+        """FEAT-564 TASK-3330: _process_scene now takes a single `context`
+        keyword-only parameter (bundling file_manager/job_prefix/registry/etc.)
+        instead of separate file_manager/job_prefix parameters."""
         import inspect
         from parrot.clients.google.generation import GoogleGeneration
 
         sig = inspect.signature(GoogleGeneration._process_scene)
         params = list(sig.parameters.keys())
-        assert "file_manager" in params
-        assert "job_prefix" in params
+        assert "context" in params
+        assert "file_manager" not in params
+        assert "job_prefix" not in params
 
     def test_process_scene_returns_strings(self):
-        """_process_scene return annotation is tuple of optional strings."""
+        """FEAT-564 TASK-3330: _process_scene's return annotation is now the
+        typed ReelSceneResult, replacing the legacy tuple[Optional[str], Optional[str]]."""
         import inspect
         from parrot.clients.google.generation import GoogleGeneration
 
         sig = inspect.signature(GoogleGeneration._process_scene)
         ret = sig.return_annotation
-        assert "str" in str(ret), f"Expected str in return type, got {ret}"
+        assert "ReelSceneResult" in str(ret), f"Expected ReelSceneResult in return type, got {ret}"
 
     def test_generate_reel_music_returns_optional_str(self):
         """_generate_reel_music return annotation is Optional[str]."""
