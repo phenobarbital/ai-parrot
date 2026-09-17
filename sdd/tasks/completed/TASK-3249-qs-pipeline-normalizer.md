@@ -188,10 +188,21 @@ def test_malformed(bad):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5), manual fallback implementation
+**Date**: 2026-09-17
+**Notes**: Appended `NormalizedPipeline`/`normalize_pipeline` to `catalog.py` per spec §3 Module 4 (second
+half); filled the FILL IN node-classification loop (raw if any of `query`/`raw_query` present, even
+alongside `slug`, else `slug_nodes[name] = node.get("slug", name)`). `pytest
+packages/ai-parrot-tools/tests/querysource/ -q` — 44 passed. `ruff check` — clean.
 
-**Completed by**:
-**Date**:
-**Notes**:
+**One bug fix in the blueprint's non-FILL-IN code**: the given block used
+`queries = pipeline.get("queries") or {}`, which coerces an explicitly-malformed `{"queries": []}` (falsy
+empty list) into `{}` before the `isinstance(queries, dict)` check ever sees it — so `test_malformed[{"queries":
+[]}]` failed to raise. Changed to `pipeline.get("queries", {})` (default only on a missing key, not on a
+falsy value) so the type check actually runs; verified all four `test_malformed` parametrizations plus the
+two shape tests now pass. `files`/`sources` lines keep `or` since only their truthiness is used. Implemented
+manually: same repo-wide `complex_model_unavailable` block (empty `strong_models` policy); user authorized
+continuing the fallback loop for the rest of the feature.
 
-**Deviations from spec**: none
+**Deviations from spec**: `queries = pipeline.get("queries", {})` instead of `pipeline.get("queries") or {}`
+(see note above) — required for the fixed Test Specification to pass; no other deviation.
