@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-570
 **Date**: 2026-09-18
 **Author**: Jesus Lara (with Claude)
-**Status**: draft
+**Status**: approved
 **Target version**: next minor after 0.29.x (core `ai-parrot` only)
 **Brainstorm**: `sdd/proposals/expose-local-mcp-tools.brainstorm.md` (accepted 2026-09-18, Option A)
 
@@ -864,9 +864,9 @@ than a new core dependency for two operations.
   default and touch the user-global one only with `--mcp-config`.
   **Interim default for implementation: (a)** — it honors "all detected hosts"
   while surfacing the blast radius. — *Owner: Jesus*
-- [ ] **Q2.** Should `parrot toolkits uninstall` also delete a toolkit's on-disk
+- [x] **Q2.** Should `parrot toolkits uninstall` also delete a toolkit's on-disk
   artifacts (e.g. `.parrot/scraping_plans`, `.parrot/db_results`)? Interim
-  default: **no** — remove config only, never operator data. — *Owner: Jesus*
+  default: **no** — remove config only, never operator data. — *Owner: Jesus*: only remove config
 
 ---
 
