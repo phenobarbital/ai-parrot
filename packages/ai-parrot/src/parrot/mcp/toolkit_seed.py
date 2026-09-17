@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import logging
+import os
+import re
+import tempfile
 from importlib.resources import files
 from pathlib import Path
 from typing import Any, Sequence
@@ -149,54 +152,197 @@ def template_drift(root: Path, name: str) -> list[str]:
     return [key for key in _missing_keys(template_section, existing_section) if key not in _DRIFT_IGNORED_KEYS]
 
 
+def _config_path(root: Path) -> Path:
+    """Return `<root>/.parrot/mcp-toolkits.yaml`."""
+    return Path(root) / ".parrot" / "mcp-toolkits.yaml"
+
+
+def _atomic_write(path: Path, text: str) -> None:
+    """Replace `path` with `text` atomically.
+
+    Writes a temp file in the SAME directory (os.replace is only atomic within a
+    filesystem), flushes and fsyncs it, then renames over the target.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=".mcp-toolkits.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise
+
+
+def preflight_seed(root: Path, names: Sequence[str]) -> None:
+    """Validate a seeding request BEFORE anything is written.
+
+    Raises:
+        ValueError: any name has no packaged template (all-or-nothing — the
+            pre-FEAT-570 behavior seeded the valid names anyway), or an existing
+            `.parrot/mcp-toolkits.yaml` cannot be parsed (the pre-FEAT-570
+            behavior swallowed this and appended to the malformed file).
+    """
+    from parrot.mcp.toolkit_config import load_toolkits_config  # local: keeps import cost off module load
+
+    available = set(available_templates())
+    unknown = [name for name in dict.fromkeys(names) if name not in available]
+    if unknown:
+        raise ValueError(
+            f"No packaged template for: {', '.join(sorted(unknown))}. "
+            f"Available: {', '.join(available_templates())}"
+        )
+    path = _config_path(root)
+    if path.exists():
+        load_toolkits_config(Path(root))  # raises ValueError naming file+section
+
+
+def _find_section_span(lines: list[str], name: str) -> tuple[int, int] | None:
+    """Return the [start, end) line span of section `name`, including its leading comments.
+
+    A section header is `  <name>:` at two-space indent; the body runs until the
+    next line at that same indent that is not a comment, or EOF. Returns None when
+    the section is absent.
+    """
+    header_pattern = re.compile(rf"^  {re.escape(name)}:\s*$")
+    header_index = None
+    for index, line in enumerate(lines):
+        if header_pattern.match(line):
+            header_index = index
+            break
+    if header_index is None:
+        return None
+
+    # A comment line immediately preceding the header (same two-space indent,
+    # no blank-line gap) belongs to this section.
+    start = header_index
+    while start > 0 and re.match(r"^  #", lines[start - 1]):
+        start -= 1
+
+    # The body runs until the next sibling line at the same two-space indent
+    # (another section header, or a comment leading the next one).
+    end = header_index + 1
+    while end < len(lines) and not re.match(r"^  \S", lines[end]):
+        end += 1
+
+    return start, end
+
+
+def set_section_enabled(root: Path, name: str, enabled: bool) -> bool:
+    """Flip (or insert) `enabled:` for one section, preserving comments and formatting.
+
+    Lexical edit + atomic replace — never `yaml.safe_dump` of a parsed model, which
+    would discard every operator comment (no round-trip parser is declared).
+
+    Returns:
+        False when the section is absent; True when the file was rewritten.
+    """
+    path = _config_path(root)
+    if not path.exists():
+        return False
+
+    lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+    span = _find_section_span(lines, name)
+    if span is None:
+        return False
+    start, end = span
+
+    header_pattern = re.compile(rf"^  {re.escape(name)}:\s*$")
+    header_index = next(index for index in range(start, end) if header_pattern.match(lines[index]))
+
+    value = "true" if enabled else "false"
+    enabled_pattern = re.compile(r"^(?P<indent>[ \t]+)enabled:\s*\S.*$")
+    for index in range(header_index + 1, end):
+        match = enabled_pattern.match(lines[index])
+        if match:
+            lines[index] = f"{match.group('indent')}enabled: {value}\n"
+            break
+    else:
+        lines.insert(header_index + 1, f"    enabled: {value}\n")
+
+    _atomic_write(path, "".join(lines))
+    return True
+
+
+def remove_section(root: Path, name: str) -> bool:
+    """Delete one section and its leading comment block; atomic replace.
+
+    Returns:
+        False when the section is absent; True when the file was rewritten.
+    """
+    path = _config_path(root)
+    if not path.exists():
+        return False
+
+    lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+    span = _find_section_span(lines, name)
+    if span is None:
+        return False
+    start, end = span
+
+    del lines[start:end]
+
+    # Collapse any run of blank lines the removal left behind into one.
+    collapsed: list[str] = []
+    for line in lines:
+        if line.strip() == "" and collapsed and collapsed[-1].strip() == "":
+            continue
+        collapsed.append(line)
+
+    _atomic_write(path, "".join(collapsed))
+    return True
+
+
 def seed_toolkit_sections(root: Path, names: Sequence[str]) -> SeedResult:
     """Create/extend `<root>/.parrot/mcp-toolkits.yaml` with the named sections.
 
     Creates the file with a `toolkits:` root when absent; appends only sections
     whose key is not already present (an existing section is NEVER rewritten,
-    but template keys it lacks are reported in `SeedResult.drift`); renders `REPO_ROOT_PLACEHOLDER` as `root`. Re-loads the result with
+    but template keys it lacks are reported in `SeedResult.drift`); renders
+    `REPO_ROOT_PLACEHOLDER` as `root`. The whole request is validated by
+    `preflight_seed` before anything is written, the new text is assembled in
+    memory, and the file is replaced with one atomic write — a failure anywhere
+    leaves the original file byte-identical. Re-loads the result with
     `load_toolkits_config(root)` and raises if what it just wrote does not parse.
 
     Returns:
-        SeedResult naming what was created, added, skipped and unknown.
+        SeedResult naming what was created, added and skipped (`unknown` is
+        always empty now — an unknown name fails `preflight_seed` before this
+        point).
 
     Raises:
-        ValueError: the existing file is malformed, or the rendered result fails
-            to re-load.
+        ValueError: any name has no packaged template, the existing file is
+            malformed, or the rendered result fails to re-load.
     """
     from parrot.mcp.toolkit_config import load_toolkits_config  # local: keeps import cost off module load
 
     root_path = Path(root)
-    path = root_path / ".parrot" / "mcp-toolkits.yaml"
+    path = _config_path(root_path)
+
+    preflight_seed(root_path, names)
+
     result = SeedResult(created_file=not path.exists())
 
-    # Resolve requested names against available templates, deduping while
-    # preserving order — a caller passing "foo,foo" (e.g. an un-deduped
-    # `--toolkits` value) must not queue "foo" twice, which would otherwise
-    # write a literal duplicate `foo:` YAML key.
-    available = set(available_templates())
+    # Resolve requested names, deduping while preserving order — a caller
+    # passing "foo,foo" (e.g. an un-deduped `--toolkits` value) must not queue
+    # "foo" twice, which would otherwise write a literal duplicate `foo:` YAML
+    # key. preflight_seed already proved every name has a packaged template.
     seen: set[str] = set()
-    deduped_names: list[str] = []
+    valid_names: list[str] = []
     for name in names:
         if name not in seen:
             seen.add(name)
-            deduped_names.append(name)
-    result.unknown = [name for name in deduped_names if name not in available]
-    valid_names = [name for name in deduped_names if name in available]
+            valid_names.append(name)
 
-    # Determine already-present section keys
-    existing_sections = set()
+    # Determine already-present section keys and the file's current text.
+    existing_sections: set[str] = set()
+    content = ""
     if path.exists():
-        try:
-            config = load_toolkits_config(root_path)
-            existing_sections = set(config.toolkits.keys())
-        except ValueError:
-            # If the file is malformed, we'll handle it when we try to re-load after writing
-            pass
-
-    # Ensure .parrot directory exists
-    parrot_dir = root_path / ".parrot"
-    parrot_dir.mkdir(exist_ok=True)
+        content = path.read_text(encoding="utf-8")
+        config = load_toolkits_config(root_path)
+        existing_sections = set(config.toolkits.keys())
 
     # Check which sections need to be added
     sections_to_add = []
@@ -210,33 +356,30 @@ def seed_toolkit_sections(root: Path, names: Sequence[str]) -> SeedResult:
             sections_to_add.append(name)
 
     # If file doesn't exist or doesn't have toolkits root, create/add it
-    needs_toolkits_root = not path.exists()
-    needs_leading_newline = False
-    if path.exists():
-        content = path.read_text(encoding="utf-8")
-        needs_toolkits_root = "toolkits:" not in content
-        # A hand-edited file missing a trailing newline would otherwise have
-        # the first appended section's key concatenated onto its last line
-        # (e.g. "enabled: true  bounded-source:") before re-load validation
-        # even runs — corrupting the file with no rollback on failure.
-        needs_leading_newline = bool(content) and not content.endswith("\n")
+    needs_toolkits_root = not path.exists() or "toolkits:" not in content
+    # A hand-edited file missing a trailing newline would otherwise have the
+    # first appended section's key concatenated onto its last line (e.g.
+    # "enabled: true  bounded-source:") — corrupting the file.
+    needs_leading_newline = bool(content) and not content.endswith("\n")
 
-    # Write/append sections
+    # Assemble the complete new file text in memory, then write it once.
     if sections_to_add:
-        with open(path, "a" if path.exists() else "w", encoding="utf-8") as f:
-            if needs_toolkits_root:
-                f.write("toolkits:\n")
-            elif needs_leading_newline:
-                f.write("\n")
+        pieces = [content]
+        if needs_toolkits_root:
+            pieces.append("toolkits:\n")
+        elif needs_leading_newline:
+            pieces.append("\n")
 
-            for name in sections_to_add:
-                template = load_template(name)
-                rendered_body = template.body.replace(REPO_ROOT_PLACEHOLDER, str(root))
-                f.write(rendered_body)
-                # Ensure exactly one trailing newline
-                if not rendered_body.endswith("\n"):
-                    f.write("\n")
-                result.added.append(name)
+        for name in sections_to_add:
+            template = load_template(name)
+            rendered_body = template.body.replace(REPO_ROOT_PLACEHOLDER, str(root))
+            pieces.append(rendered_body)
+            # Ensure exactly one trailing newline
+            if not rendered_body.endswith("\n"):
+                pieces.append("\n")
+            result.added.append(name)
+
+        _atomic_write(path, "".join(pieces))
 
     # Re-load with load_toolkits_config(root) and raise ValueError if seeded names are not all present
     if result.added:
