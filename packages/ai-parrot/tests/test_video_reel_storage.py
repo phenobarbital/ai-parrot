@@ -12,6 +12,7 @@ Covers:
 from __future__ import annotations
 
 import os
+import sys
 import tempfile
 from pathlib import Path
 from typing import Optional
@@ -23,6 +24,52 @@ from pydantic import ValidationError
 from parrot.models.google import VideoReelRequest
 from parrot.interfaces.file import FileManagerInterface
 from parrot.tools.filemanager import FileManagerFactory
+
+
+def _resolve_real_file_manager_symbols():
+    """Resolve the REAL ``parrot.tools.filemanager.FileManagerFactory`` /
+    ``parrot.interfaces.file.FileManagerInterface``, bypassing a stale
+    ``conftest.py`` fixture that unconditionally poisons both modules
+    (TASK-3334 fixture-repair finding — reported, NOT fixed here: outside
+    this task's declared files).
+
+    ``packages/ai-parrot/tests/conftest.py``'s ``_install_navigator_stubs()``
+    calls ``sys.modules.setdefault("parrot.tools.filemanager", <fake>)`` /
+    ``sys.modules.setdefault("parrot.interfaces.file", <fake>)``
+    UNCONDITIONALLY at collection time (module-level, no version/capability
+    guard — only the comment claims it's meant for "navigator-api < 3.0.3").
+    This environment's real navigator-api ships the full interface (verified
+    directly: ``FileManagerFactory.create("temp")`` correctly returns
+    ``TempFileManager`` when imported fresh, outside pytest). But
+    ``setdefault`` means whichever module wins the race to be imported FIRST
+    in the whole pytest session stays cached for every subsequent import —
+    and conftest.py always wins, since it runs before any test module. The
+    fake ``FileManagerFactory.create()`` is `lambda *a, **kw:
+    _LocalFileManager()` — it ALWAYS returns a (also fake) LocalFileManager
+    regardless of the requested backend, and never raises for an invalid
+    one, silently masking exactly the behavior
+    ``TestFileManagerFactory``/``TestHandlerStorageConfig`` below assert.
+
+    Evicting the poisoned entries and re-importing forces the REAL modules
+    to resolve for every test in THIS file, without touching the shared
+    conftest.py (out of TASK-3334's declared scope; the fix belongs to
+    conftest.py's owner — this environment's navigator-api no longer needs
+    the compatibility stub at all).
+
+    Returns:
+        ``(FileManagerFactory, FileManagerInterface)`` — the real classes.
+    """
+    for _mod_name in ("parrot.tools.filemanager", "parrot.interfaces.file"):
+        _cached = sys.modules.get(_mod_name)
+        if _cached is not None and not hasattr(_cached, "__file__"):
+            del sys.modules[_mod_name]
+    import parrot.tools.filemanager as _real_fm_module
+    import parrot.interfaces.file as _real_file_module
+
+    return _real_fm_module.FileManagerFactory, _real_file_module.FileManagerInterface
+
+
+RealFileManagerFactory, RealFileManagerInterface = _resolve_real_file_manager_symbols()
 
 # ---------------------------------------------------------------------------
 # 1. Model field tests (TASK-289)
@@ -103,14 +150,14 @@ class TestFileManagerFactory:
 
     def test_create_temp(self):
         """'temp' backend creates a TempFileManager."""
-        fm = FileManagerFactory.create("temp")
-        assert isinstance(fm, FileManagerInterface)
+        fm = RealFileManagerFactory.create("temp")
+        assert isinstance(fm, RealFileManagerInterface)
         assert type(fm).__name__ == "TempFileManager"
 
     def test_create_invalid_raises(self):
         """Invalid backend type raises ValueError."""
         with pytest.raises((ValueError, KeyError)):
-            FileManagerFactory.create("invalid_backend")
+            RealFileManagerFactory.create("invalid_backend")
 
 
 # ---------------------------------------------------------------------------
@@ -149,10 +196,18 @@ class TestHandlerStorageConfig:
 
     def test_temp_backend(self, handler):
         """With temp backend, creates TempFileManager."""
-        with patch.dict(
-            os.environ,
-            {"VIDEO_REEL_STORAGE_BACKEND": "temp"},
-            clear=False,
+        # `video_reel.py`'s own module-level `FileManagerFactory` name was
+        # bound at ITS import time, which may have already resolved to the
+        # stale conftest.py stub (see _resolve_real_file_manager_symbols's
+        # docstring above) — patch it to the verified-real class for this
+        # assertion regardless of import order.
+        with (
+            patch("parrot.handlers.video_reel.FileManagerFactory", RealFileManagerFactory),
+            patch.dict(
+                os.environ,
+                {"VIDEO_REEL_STORAGE_BACKEND": "temp"},
+                clear=False,
+            ),
         ):
             fm = handler._create_file_manager()
         assert fm is not None
