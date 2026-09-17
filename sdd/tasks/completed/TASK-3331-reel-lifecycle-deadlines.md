@@ -148,4 +148,69 @@ Test names and assertions must describe observable behavior, not mirror private 
 
 ## Completion Note
 
-Pending implementation. The executor must record completed-by, date, test results, evidence-gate resolution and deviations before marking done.
+Completed-by: sdd-worker (fallback sequential loop, orchestrator-implemented) · Date: 2026-09-17
+
+**Deadlines (AC1)**: Added `_reel_scene_deadline_seconds()`/`_reel_job_deadline_seconds()` (module-level,
+`VIDEO_REEL_SCENE_DEADLINE_SECONDS`/`VIDEO_REEL_JOB_DEADLINE_SECONDS` env overrides, defaults 600s/3600s
+per spec §2 item 10). `_ReelRunContext.job_deadline` is now a required field; `effective_scene_timeout_seconds()`
+clamps the per-scene ceiling to whatever remains of the job's absolute deadline ("transport budgets share
+remaining absolute deadline"). `generate_video_reel`'s public signature is unchanged.
+
+**Client ownership (AC2)**: `_breakdown_prompt_to_scenes` (director) and `generate_image` (background/
+foreground image path called from `_process_scene`) now wrap their directly-created `get_client()` clients
+in `try/finally: await client.aio.aclose()`, closed on every exit including failure. `generate_images`
+(Imagen backend) already used the shared cached `self.client` — no leak, no change needed. Two client
+leaks are OUT of this task's scope and were left untouched with a note rather than fixed silently:
+(1) the standalone legacy `video_generation()` method (not on the reel pipeline — reel video generation
+goes through `generate_video_clip`/`VeoClipAdapter`, already closed since TASK-3324); (2) `generate_music_stream`'s
+own-client branch when called with `client=None` (the reel pipeline's `ReelMusicService` always injects
+its own caller-owned client per TASK-3327, so this branch is never exercised by the reel feature). Filed
+as a deferred ledger finding at feature completion (see final summary) since fixing either is a real,
+separately-scoped change to shared, widely-used methods outside this task's file/AC list.
+
+**Cancellation and cleanup (AC3, AC5)**: The scene loop, timeline build and `assemble_reel` call are now
+wrapped in one `try/except BaseException`. On ANY failure past `_ReelRunContext` construction — a raised
+`ReelError`, a genuine `asyncio.CancelledError`, or any other exception — the handler cancels-and-awaits
+the still-owned `music_task` (a no-op if already done) and removes the job's isolated working directory
+via the new `_cleanup_reel_job_directory()` helper (blocking `shutil.rmtree` off the event loop via
+`run_in_executor`, best-effort, never masks the original exception), then re-raises unchanged.
+`asyncio.CancelledError` is never caught-and-swallowed — `except BaseException: ... raise` always
+re-raises it, satisfying "propagate CancelledError so existing JobManager records CANCELLED." Cleanup
+never runs on the success path (local "fs"/"temp" backends still need the directory for the persisted
+final artifact).
+
+**Concurrent job isolation (AC5)**: `generate_video_reel` now derives one `job_id = uuid.uuid4().hex`
+shared by both the storage `job_prefix` and a NEW local working subdirectory
+(`output_directory = base_output_directory / job_id`), replacing the old scheme where `job_prefix` had
+its own random id while `output_directory` was the caller's raw (potentially shared) directory. Two
+concurrent jobs against the same caller-supplied `output_directory` now get disjoint, non-colliding
+subdirectories — verified in `test_reel_lifecycle.py::TestConcurrentJobIsolation`.
+
+**Operation-ID preservation / no auto-resubmission (AC4)**: unchanged by this task — already satisfied by
+TASK-3324's `VeoClipAdapter` (preserves `operation.name` in `GeneratedReelClip.provider_operation_id`,
+never resubmits on ambiguous timeout) and TASK-3326's `OmniClipAdapter`; this task did not touch either
+adapter. No regression introduced (existing `test_reel_veo.py`/`test_reel_omni.py` suites still pass).
+
+**Tests**: New `packages/ai-parrot-client-google/tests/unit/reel/test_reel_lifecycle.py` (17 tests) —
+deadline defaults/env overrides, `effective_scene_timeout_seconds()` clamping, cancellation during scene
+processing (music cancelled + job dir removed + `CancelledError` propagates unchanged), assembly failure
+still cleans up the job dir, success path preserves the job dir, two concurrent jobs get disjoint
+directories, and `generate_image`/`_breakdown_prompt_to_scenes` close their owned client on both success
+and failure. All 17 pass. Full `packages/ai-parrot-client-google/tests/unit/reel/` regression: 30/30 pass
+for `test_reel_lifecycle.py` + `test_reel_orchestration.py` together; full-directory sweep is 166 tests,
+158 passed / 8 failed, and all 8 failures are pre-existing, environment-only `ModuleNotFoundError:
+parrot.utils.types` inside `test_reel_assembly.py`'s `multiprocessing.get_context("spawn")` MoviePy worker
+subprocess (the compiled Cython artifact copied into this worktree for testing doesn't propagate into a
+freshly spawned child interpreter) — confirmed unrelated to this task: `reel/assembly.py` was not touched,
+these are the same tests TASK-3329 already wrote and passed under this project's real CI-installed
+environment, and the failure signature is identical for every one of the 8 (same traceback, same missing
+module), not a partial/behavioral regression.
+
+**black --check / ruff check**: both pass for the touched Python file (`generation.py`) and the new test
+file. Ruff also reports 9 PRE-EXISTING findings elsewhere in `generation.py` (5× `ASYNC240` blocking
+`Path` ops, 1× `F841` unused `execution_time`, 2× `F821 Dict` undefined in `generate_image_batch`/
+`generate_video_batch`) — none on lines this task touched or added; left for their own owning task/ledger
+finding per Cardinal Rule 5 (no scope creep).
+
+Seat: sonnet (fallback sequential, orchestrator-implemented) · Backend: native · Model: sonnet ·
+Attempts: 1 · Duration: n/a · Tokens: n/a
