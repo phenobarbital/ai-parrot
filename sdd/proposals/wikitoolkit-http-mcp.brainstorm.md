@@ -10,7 +10,7 @@ base_branch: dev
 
 **Date**: 2026-09-17
 **Author**: Jesus Lara (with Claude)
-**Status**: exploration
+**Status**: accepted
 **Recommended Option**: A
 
 ---
@@ -82,6 +82,12 @@ Decisions taken in discovery (Rounds 0–2) are binding for the spec:
 - Existing stdio installs (`.mcp.json` → `wikitoolkit mcp`) must keep
   working unchanged; MCP tool **names** (`wiki_query`, `ledger_open`, …)
   must not change so `.claude/settings.local.json` approvals stay valid.
+- **Ledger backend v1**: SQLite on the server host; ArangoDB port is a
+  follow-up feature, not a blocker.
+- **CLI-only commands** (`link`, `memories`, `audit`, `ground`, `export`,
+  `communities`, non-tool `ledger` subcommands) are **out of scope**: they
+  are refused in remote mode until a separate spec exposes them as MCP
+  tools.
 - The server host has **no git checkout** of the wikis it serves: anything
   that today derives from `find_project_root()` / `find_shared_root()`
   (ledger location, build) needs an explicit server-side configuration.
@@ -282,9 +288,13 @@ remote-aware command.
   protocol. Both are bounded and testable against a fake server, and the
   bulk tools double as the future home of `sync push/pull` (so the current
   client-side ArangoDB path in `sync._open_remote` can be retired).
-- What we accept for v1: the ledger remains a SQLite file **on the server
-  host** (centralised, unexposed), not an ArangoDB collection. Porting
-  `LedgerStore` to ArangoDB is orthogonal and can be its own feature.
+- What we accept for v1 (decided 2026-09-17): the ledger remains a SQLite
+  file **on the server host** (centralised, unexposed), not an ArangoDB
+  collection — the port is the follow-up feature `wikitoolkit-ledger-arangodb`.
+  CLI-only commands without an MCP tool are refused in remote mode; their
+  tools arrive through a separate spec. The stdio pass-through is the
+  intermediate install path, so the installer lane is optional polish
+  rather than a prerequisite.
 
 ---
 
@@ -338,9 +348,18 @@ set, `wikitoolkit status` prints `mode: remote (<url>)`, and:
 
 **Coding-agent install**
 
+Two paths, both valid in v1:
+
+- **Pass-through (default, zero migration).** Nothing to reinstall: the
+  existing stdio entries keep launching `wikitoolkit mcp`, which forwards
+  every `tools/list` / `tools/call` to the remote server when `remote` is
+  configured, adding `X-Wiki-Actor`. Recommended for Codex (no custom
+  headers in its native HTTP client) and for any repo already installed.
+- **Native HTTP registration (optional, Claude Code).**
+
 ```bash
 parrot claude install --remote            # reads remote.url from wiki.json
-parrot codex  install --remote
+parrot codex  install --remote            # url + bearer_token_env_var; no actor header
 ```
 
 writes an HTTP entry (`"type": "http"`, `url`, `Authorization` header from
@@ -445,9 +464,21 @@ entry either way.
 - `coding-agent-remote-mcp-install`: `--remote` for `parrot claude install`
   and `parrot codex install` (HTTP entry, same server key).
 
+### Follow-up features (out of scope, referenced by this spec)
+- `wikitoolkit-ledger-arangodb`: port `LedgerStore` (today a
+  `SQLiteWikiStore` subclass with `ledger_transaction` / `read_cursor`)
+  to an ArangoDB-backed store so the ledger lives in the same database as
+  the wiki plane. Needs its own brainstorm/spec; this feature only keeps
+  `LedgerService` construction backend-agnostic.
+- Exposing the CLI-only commands (`link`, `memories`, `audit`, `ground`,
+  `export`, `communities`, non-tool `ledger` subcommands) as MCP tools —
+  separate spec owned by the user; the remote proxy adopts them
+  automatically.
+
 ### Modified Capabilities
 - `mcp-local-server-wikitoolkit` (FEAT-403): tool assembly extracted into a
-  transport-agnostic builder; stdio server gains pass-through mode.
+  transport-agnostic builder; stdio server gains pass-through mode
+  (**the v1 intermediate install path** — no installer change required).
 - `wikitoolkit-env-support` (FEAT-461): `remote` joins the overlayable
   fields; `sync push/pull` gain an MCP path.
 - `claude-install-mcp-autoenable` (FEAT-556): managed `.mcp.json` entry
@@ -764,12 +795,13 @@ from parrot.knowledge.wiki.codex import assets, installer
 - [x] One wiki per server or many? — *Owner: Jesus*: multi-wiki by path, `/mcp/<wiki_name>`.
 - [x] Write attribution with a shared token? — *Owner: Jesus*: client sends `X-Wiki-Actor: human:<local-user>`; trusted for the internal team.
 - [x] Local vs remote selection and failure behaviour? — *Owner: Jesus*: `remote` block in `wiki.json` (env-overlayable) + `WIKITOOLKIT_REMOTE_URL` override; fail-closed, no silent local fallback.
-- [ ] **Ledger storage on the server**: accept SQLite-on-server-disk for v1 (centralised, unexposed) or require an ArangoDB `LedgerStore` port as part of this feature? — *Owner: Jesus*
-- [ ] **CLI-only commands in remote mode**: which of `link`, `memories`, `audit`, `ground`, `export`, `communities`, `ledger acknowledge|blockers|audit|export` must work remotely in v1 (new tools) vs. return "not available in remote mode"? — *Owner: Jesus*
+- [x] **Ledger storage on the server** — *Owner: Jesus*: v1 keeps `LedgerStore` as SQLite on the server host (centralised, unexposed). Porting the ledger to ArangoDB is a **follow-up feature** with its own spec (`wikitoolkit-ledger-arangodb`, see "Follow-up features"); this feature must not block on it and must leave `LedgerService` construction backend-agnostic enough for that port.
+- [x] **CLI-only commands in remote mode** — *Owner: Jesus*: out of scope here. `link`, `memories`, `audit`, `ground`, `export`, `communities` and the non-tool `ledger` subcommands return "not available in remote mode" in v1; exposing them as MCP tools belongs to a **separate spec** (exposing wikitoolkit CLI commands as MCP tools — not yet present under `sdd/specs/` on 2026-09-17; slug to be linked from the spec §8 when it lands). Once those tools exist, the remote proxy picks them up through the same command→tool mapping with no protocol change.
+- [x] **Stdio pass-through as the intermediate install path** — *Owner: Jesus*: yes. `wikitoolkit mcp` forwards `tools/list`/`tools/call` to the remote server whenever `remote` is configured, so the existing stdio `.mcp.json` / `.codex/config.toml` entries work against the remote plane with **no installer change** and always carry `X-Wiki-Actor`. This is the recommended v1 path for Codex (its native HTTP client cannot send custom headers) and the zero-migration path for every repo already installed; the native `"type": "http"` registration is an optional optimisation for Claude Code.
 - [ ] **Server packaging**: make `ai-parrot-server` an optional extra of core (`ai-parrot[wikitoolkit-server]`) or move a dependency-light Streamable HTTP server into core? (Affects who can `pip install` the server image.) — *Owner: Jesus / spec*
 - [ ] **Token gate implementation**: aiohttp middleware in `wikitoolkit serve` vs. `AuthMethod.API_KEY` with a one-token `api_key_store` (locate the `APIKeyStore` class first) — *Owner: spec*
 - [ ] **Bulk-ingest limits**: max payload per `wiki_ingest_batch` call, slices per call, and whether embeddings (`upsert_embedding`) are pushed or recomputed server-side — *Owner: spec*
 - [ ] **Federation in remote mode**: should `ns list` show the server's namespaces (read-only) so users understand what a remote `--ns` targets? — *Owner: Jesus*
 - [x] **Exact Claude Code / Codex remote-MCP config keys** — *Owner: spec*: checked against `claude mcp add --help` (Claude Code 2.1.274) and `codex mcp add --help` on 2026-09-17. Claude Code: `.mcp.json` entry `{"type": "http", "url": "<url>", "headers": {"Authorization": "Bearer ${WIKITOOLKIT_TOKEN}"}}`; CLI `claude mcp add --transport http wikitoolkit <url> --header "Authorization: Bearer ${WIKITOOLKIT_TOKEN}" --scope project`; `${VAR}` expansion is confirmed at config level (2.1.274 changelog) — the installer task must include a smoke test that the header value expands. Codex: `[mcp_servers.wikitoolkit] url = "<url>"` + `bearer_token_env_var = "WIKITOOLKIT_TOKEN"` (+ optional `startup_timeout_sec`, `tool_timeout_sec`); CLI `codex mcp add --url <url> wikitoolkit --bearer-token-env-var WIKITOOLKIT_TOKEN`; project-level `.codex/config.toml` is honoured (already used by `parrot codex install`). Codex documents **no arbitrary-header key**, so `X-Wiki-Actor` cannot be sent by Codex's native HTTP client — the server must default the actor (e.g. to a per-token or `unknown` identity) when the header is absent, or Codex keeps using the stdio pass-through. Both hosts still accept legacy SSE, but it is not needed.
-- [ ] **Default actor when `X-Wiki-Actor` is absent** (Codex native HTTP, curl): attribute to `service:<token-name>` / `unknown`, or reject writes (reads always allowed)? — *Owner: Jesus*
+- [ ] **Default actor when `X-Wiki-Actor` is absent** (only native-HTTP callers without header support, e.g. Codex registered directly, or curl): proposed default `agent:unknown` for writes, reads unaffected. Low priority now that the stdio pass-through is the recommended Codex path. — *Owner: spec*
 - [ ] **TLS termination**: `wikitoolkit serve` speaks plain HTTP behind a reverse proxy, or supports `ssl_cert_path`/`ssl_key_path` from `MCPServerConfig` directly? — *Owner: ops*

@@ -1,4 +1,5 @@
 """Tests for VideoReelHandler and VideoReelRequest."""
+
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -15,10 +16,10 @@ from parrot.models.google import (
     VideoReelScene,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_response(body, status=200, content_type="application/json"):
     """Build a lightweight fake web.Response-like object."""
@@ -29,6 +30,15 @@ def _make_response(body, status=200, content_type="application/json"):
     return resp
 
 
+# TASK-3333: fixed test identity — the `handler` fixture's
+# `_get_session_user_id` mock resolves to this, and `_make_job()` defaults
+# a job's owner to it, so every PRE-EXISTING test in this file (which
+# exercises status-serialization/POST-parsing behavior, not authorization)
+# passes `_authorize_job`'s ownership check by default. Authorization
+# itself is exercised separately in test_video_reel_artifacts.py.
+_TEST_USER_ID = "test-user-id"
+
+
 def _make_job(
     job_id="job-123",
     status_value="pending",
@@ -37,6 +47,7 @@ def _make_job(
     elapsed_time=None,
     started_at=None,
     completed_at=None,
+    user_id=_TEST_USER_ID,
 ):
     """Create a lightweight mock Job."""
     from parrot.handlers.jobs import JobStatus
@@ -50,12 +61,14 @@ def _make_job(
     job.created_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
     job.started_at = started_at
     job.completed_at = completed_at
+    job.user_id = user_id
     return job
 
 
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def video_reel_payload() -> dict:
@@ -74,7 +87,15 @@ def handler():
 
     h = VideoReelHandler.__new__(VideoReelHandler)
     h.logger = MagicMock()
-    h.request = MagicMock()
+    # `request` is a read-only BaseView property (`self._request`); the
+    # historical fixture assigned the non-existent setter directly, which
+    # raises AttributeError against current navigator-api. Set the backing
+    # attribute instead — this is real BaseView-compatible construction
+    # (mirrors packages/ai-parrot-server/tests/handlers/test_infographic_render_route.py's
+    # `_handler()` helper), while keeping `request` itself a MagicMock so
+    # every existing assertion below (which stubs `.json`/`.content_type`/
+    # `.match_info` directly) keeps working unchanged.
+    h._request = MagicMock()
 
     # Mock JobManager accessible via request.app['job_manager']
     mock_jm = MagicMock()
@@ -86,21 +107,39 @@ def handler():
     h.request.app = {"job_manager": mock_jm}
     h.request.content_type = "application/json"
 
-    h.error = MagicMock(side_effect=lambda *a, **kw: _make_response(
-        body=kw.get('response', a[0] if a else "error"),
-        status=kw.get('status', 400),
-        content_type="application/json",
-    ))
-    h.json_response = MagicMock(side_effect=lambda data, **kw: _make_response(
-        body=data, status=kw.get('status', 200), content_type="application/json",
-    ))
+    h.error = MagicMock(
+        side_effect=lambda *a, **kw: _make_response(
+            body=kw.get("response", a[0] if a else "error"),
+            status=kw.get("status", 400),
+            content_type="application/json",
+        )
+    )
+    h.json_response = MagicMock(
+        side_effect=lambda data, **kw: _make_response(
+            body=data,
+            status=kw.get("status", 200),
+            content_type="application/json",
+        )
+    )
     h.request.match_info = {}
+    # TASK-3333: `_resolve_job_id()`/`get()` now read `request.query` for
+    # the `?job_id=` fallback — a real (empty, overridable per-test) dict
+    # so `.get("job_id")` behaves like aiohttp's real MultiDict instead of
+    # a MagicMock auto-vivifying a truthy garbage value.
+    h.request.query = {}
+    # TASK-3333: bypass real navigator-auth session machinery entirely —
+    # every pre-existing test in this file is about parsing/status-
+    # serialization behavior, not authorization (that's
+    # test_video_reel_artifacts.py's job). Fixed to a known identity that
+    # `_make_job()` defaults its owner to, so `_authorize_job` passes.
+    h._get_session_user_id = AsyncMock(return_value=_TEST_USER_ID)
     return h
 
 
 # ---------------------------------------------------------------------------
 # 1. Model validation tests
 # ---------------------------------------------------------------------------
+
 
 class TestVideoReelRequestModel:
     """Pydantic model tests for VideoReelRequest."""
@@ -143,13 +182,30 @@ class TestVideoReelRequestModel:
         assert req.scenes[0].background_prompt == "Ocean waves"
 
     def test_model_json_schema(self):
-        """JSON schema includes core properties."""
+        """JSON schema includes core properties (FEAT-564 TASK-3321 additive fields included)."""
         schema = VideoReelRequest.model_json_schema()
         props = schema["properties"]
         expected = {
-            "prompt", "scenes", "speech", "music_prompt", "music_genre",
-            "music_mood", "aspect_ratio", "transition_type", "output_format",
-            "reference_images", "storage_backend", "storage_config",
+            "prompt",
+            "scenes",
+            "speech",
+            "music_prompt",
+            "music_genre",
+            "music_mood",
+            "aspect_ratio",
+            "transition_type",
+            "output_format",
+            "reference_images",
+            "storage_backend",
+            "storage_config",
+            "director_model",
+            "model",
+            "image_model",
+            "video_model",
+            "resolution",
+            "audio_mode",
+            "music_policy",
+            "partial_failure_policy",
         }
         assert expected == set(props.keys())
 
@@ -172,6 +228,7 @@ class TestVideoReelRequestModel:
 # ---------------------------------------------------------------------------
 # 2. Handler POST tests (now returns 202 with job_id)
 # ---------------------------------------------------------------------------
+
 
 class TestVideoReelHandlerPost:
     """Tests for VideoReelHandler.post()."""
@@ -216,7 +273,12 @@ class TestVideoReelHandlerPost:
 
     @pytest.mark.asyncio
     async def test_post_extracts_control_keys(self, handler, video_reel_payload):
-        """POST extracts output_directory, user_id, session_id before validation."""
+        """POST extracts output_directory/session_id from the body, but job
+        ownership (`user_id`) always comes from the authenticated session —
+        a body-supplied `user_id` is a spoofable claim, never trusted as
+        ownership (§8 Q7; TASK-3333). See TestVideoReelArtifactOwnership in
+        test_video_reel_artifacts.py for the full authorization matrix.
+        """
         payload = {
             **video_reel_payload,
             "output_directory": "/tmp/reels",
@@ -228,7 +290,8 @@ class TestVideoReelHandlerPost:
         await handler.post()
 
         create_call = handler.job_manager.create_job.call_args
-        assert create_call.kwargs["user_id"] == "user-123"
+        assert create_call.kwargs["user_id"] == _TEST_USER_ID
+        assert create_call.kwargs["user_id"] != "user-123"
         assert create_call.kwargs["session_id"] == "sess-456"
 
     @pytest.mark.asyncio
@@ -248,6 +311,7 @@ class TestVideoReelHandlerPost:
 # 3. Handler GET schema tests (no job_id)
 # ---------------------------------------------------------------------------
 
+
 class TestVideoReelHandlerGet:
     """Tests for VideoReelHandler.get() without job_id — schema catalog."""
 
@@ -259,8 +323,11 @@ class TestVideoReelHandlerGet:
         handler.json_response.assert_called_once()
         payload = handler.json_response.call_args[0][0]
         expected_keys = {
-            "video_reel_request", "video_reel_scene",
-            "aspect_ratios", "music_genres", "music_moods",
+            "video_reel_request",
+            "video_reel_scene",
+            "aspect_ratios",
+            "music_genres",
+            "music_moods",
         }
         assert set(payload.keys()) == expected_keys
 
@@ -312,6 +379,7 @@ class TestVideoReelHandlerGet:
 # ---------------------------------------------------------------------------
 # 4. Handler GET job status tests (with job_id)
 # ---------------------------------------------------------------------------
+
 
 class TestVideoReelHandlerGetJobStatus:
     """Tests for VideoReelHandler.get() with ?job_id= query parameter."""
@@ -402,6 +470,7 @@ class TestVideoReelHandlerGetJobStatus:
 # 5. Schema helper test
 # ---------------------------------------------------------------------------
 
+
 class TestSchemaHelper:
     """Test GoogleGenerationHelper.list_schemas includes video reel schema."""
 
@@ -426,6 +495,7 @@ class TestSchemaHelper:
 # ---------------------------------------------------------------------------
 # 6. Model field tests — reference_image / reference_images (FEAT-029)
 # ---------------------------------------------------------------------------
+
 
 class TestVideoReelReferenceImageFields:
     """Tests for new reference_image / reference_images model fields."""
@@ -460,6 +530,7 @@ class TestVideoReelReferenceImageFields:
 # 7. Handler multipart tests (FEAT-029)
 # ---------------------------------------------------------------------------
 
+
 class TestVideoReelHandlerMultipart:
     """Tests for multipart/form-data upload path in VideoReelHandler.post()."""
 
@@ -477,7 +548,12 @@ class TestVideoReelHandlerMultipart:
 
     @pytest.mark.asyncio
     async def test_post_multipart_single_image(self, handler, tmp_path):
-        """Multipart POST with one image assigns it to reference_images."""
+        """Multipart POST with one image assigns it to reference_images.
+
+        TASK-3332: `_parse_multipart` now returns an explicit
+        `{scene_index: Path}` mapping (not a positional list) so sparse
+        slots survive losslessly — see TASK-3321's `reference_images`.
+        """
         img = tmp_path / "ref.jpg"
         img.write_bytes(b"\xff\xd8\xff\xe0")
 
@@ -485,7 +561,7 @@ class TestVideoReelHandlerMultipart:
         with patch.object(
             handler,
             "_parse_multipart",
-            new=AsyncMock(return_value=({"prompt": "test reel"}, [img])),
+            new=AsyncMock(return_value=({"prompt": "test reel"}, {0: img})),
         ):
             result = await handler.post()
 
@@ -514,7 +590,7 @@ class TestVideoReelHandlerMultipart:
         with patch.object(
             handler,
             "_parse_multipart",
-            new=AsyncMock(return_value=({"prompt": "test"}, [img0, img1])),
+            new=AsyncMock(return_value=({"prompt": "test"}, {0: img0, 1: img1})),
         ):
             result = await handler.post()
 
