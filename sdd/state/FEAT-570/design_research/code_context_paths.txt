@@ -1,0 +1,10 @@
+packages/ai-parrot-tools/src/parrot_tools/querysource/_qs.py
+packages/ai-parrot-tools/src/parrot_tools/querysource/toolkit.py
+packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/installer.py
+packages/ai-parrot/src/parrot/knowledge/wiki/codex/assets.py
+packages/ai-parrot/src/parrot/knowledge/wiki/codex/installer.py
+packages/ai-parrot/src/parrot/knowledge/wiki/google/assets.py
+packages/ai-parrot/src/parrot/knowledge/wiki/google/installer.py
+packages/ai-parrot/src/parrot/mcp/toolkit_config.py
+packages/ai-parrot/src/parrot/mcp/toolkit_seed.py
+packages/ai-parrot/src/parrot/tools/databasequery/toolkit.py

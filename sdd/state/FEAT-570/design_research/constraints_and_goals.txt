@@ -1,0 +1,24 @@
+- **Full replacement.** `parrot toolkits` becomes the *only* toolkit
+  selection surface. `--toolkits=` / `--all-toolkits` are removed from
+  `parrot claude|codex|google install` (hard cut — no external consumers, per
+  project policy).
+- **All three hosts.** Claude Code (`.mcp.json`), Codex
+  (`.codex/config.toml`), Google Antigravity (`mcp_config.json`) must all be
+  installable/uninstallable targets.
+- **No secrets on disk.** The installer must never prompt for, capture, or
+  write a DSN or credential. `ToolkitSection.env` values are copied
+  **verbatim** into the host entry (`google/assets.py:99`), and `.mcp.json`
+  is git-tracked in this repo — so a baked secret would be committed.
+- **`BUILTIN_TOOLKITS` is deleted.** `scraping`, `browsing` and `memory`
+  become packaged templates like any other; `load_toolkits_config` returns
+  only sections actually declared in the file.
+- **Hard cut on migration.** No auto-migration of existing installs. Repos
+  re-run `parrot toolkits install` and pick what they want.
+- **wikitoolkit stays invisible** to this command — it remains owned by
+  `parrot claude install` and its siblings.
+- Every subcommand needs a non-interactive form (`--yes`, explicit names,
+  `--host`) so CI and scripts never block on a picker.
+- Lean startup preserved: listing templates must not import any toolkit
+  class (the existing `--list` contract, `local_cli.py:35`).
+
+---
