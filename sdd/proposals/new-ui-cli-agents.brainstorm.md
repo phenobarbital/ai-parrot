@@ -10,8 +10,8 @@ base_branch: dev
 
 **Date**: 2026-09-18
 **Author**: Codex / Jesus Lara
-**Status**: exploration
-**Recommended Option**: B (provisional; product scope and dependency decision pending)
+**Status**: accepted
+**Recommended Option**: B — Native Textual Agent Workspace (accepted 2026-09-18, inline Rich fallback retained)
 
 ---
 
@@ -261,10 +261,10 @@ Observed source imports, not fresh runtime import tests:
 
 ## Open Questions
 
-- [ ] Confirm feature/dev defaults and intended audience — *Owner: Jesus Lara*.
-- [ ] Is the target a persistent full-screen workspace or improved inline chat? — *Owner: Jesus Lara*.
-- [ ] Approve Textual as the UI dependency, prefer existing dependencies, or choose external Toad/ACP? — *Owner: Jesus Lara*.
-- [ ] Does this supersede FEAT-519's Textual rejection, or layer on top of its shared inline infrastructure? — *Owner: Jesus Lara / maintainer*.
-- [ ] Confirm v1 scope: single session versus persistent resume, switching, shell/files and concurrent sessions — *Owner: Jesus Lara*.
-- [ ] Choose mode defaults, non-TTY behavior, keybindings and supported terminal/platform baseline — *Owner: CLI maintainer*.
-- [ ] Identify supported tool-event and cancellation contracts for standalone/server backends; decide whether backend expansion is deferred — *Owner: agent runtime maintainer*.
+- [x] Confirm feature/dev defaults and intended audience — *Owner: Jesus Lara*: `type: feature`, `base_branch: dev` confirmed. Audience is developers and operators interacting with registered Parrot agents.
+- [x] Is the target a persistent full-screen workspace or improved inline chat? — *Owner: Jesus Lara*: Full-screen Textual workspace (Option B) with the inline Rich chat retained as the fallback mode for non-TTY and `--ui inline`.
+- [x] Approve Textual as the UI dependency, prefer existing dependencies, or choose external Toad/ACP? — *Owner: Jesus Lara*: Textual approved as a new core dependency. Toad/ACP (Option C) and prompt_toolkit full-screen (Option D) rejected.
+- [x] Does this supersede FEAT-519's Textual rejection, or layer on top of its shared inline infrastructure? — *Owner: Jesus Lara / maintainer*: This feature absorbs and supersedes FEAT-519. Its inline fixes (shared console, LiveRegion, Markdown streaming, post-turn hook) become this feature's inline mode; the TUI is added on top. FEAT-519 is marked superseded. One worktree, one owner of the CLI files.
+- [x] Confirm v1 scope: single session versus persistent resume, switching, shell/files and concurrent sessions — *Owner: Jesus Lara*: v1 includes (1) the core workspace — one agent, one session, multiline composer, transcript navigation with auto-follow, slash commands with completion, cancellation, tool-call details, usage footer, `--ui auto|inline|tui`; (2) persistent input history across launches; (3) conversation resume of a prior `session_id` from bot-owned memory; (4) live tool progress from the backend (new event contract in the streaming path and the server). Embedded shell, file attachments, session switching and concurrent sessions remain out of scope.
+- [x] Choose mode defaults, non-TTY behavior, keybindings and supported terminal/platform baseline — *Owner: CLI maintainer*: `--ui auto` is the default — TUI when stdin and stdout are TTYs and `TERM` is not `dumb`, inline Rich otherwise. Non-TTY never emits full-screen escapes, never opens the interactive picker (agent name required), and reads queries line by line from stdin. Keybindings and platform baseline are spec decisions.
+- [x] Identify supported tool-event and cancellation contracts for standalone/server backends; decide whether backend expansion is deferred — *Owner: agent runtime maintainer*: Backend expansion is NOT deferred — live tool progress is in v1 scope, so the spec must define the tool-event contract for the standalone streaming path and the server. Cancellation remains local (task cancellation + stream close); no remote rollback is claimed.
