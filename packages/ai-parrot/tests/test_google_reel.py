@@ -12,6 +12,7 @@ match the new interfaces.
 """
 
 import asyncio
+import time
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from pathlib import Path
@@ -273,6 +274,7 @@ async def test_process_scene_passes_reference_image(mock_google_generation, tmp_
         registry=VideoProfileRegistry.default(),
         api_surface="gemini_developer",
         output_directory=tmp_path,
+        job_deadline=time.monotonic() + 3600.0,
     )
     await mock_google_generation._process_scene(scene, 0, context=context)
 
@@ -302,6 +304,7 @@ async def test_process_scene_no_reference_image(mock_google_generation, tmp_path
         registry=VideoProfileRegistry.default(),
         api_surface="gemini_developer",
         output_directory=tmp_path,
+        job_deadline=time.monotonic() + 3600.0,
     )
     await mock_google_generation._process_scene(scene, 0, context=context)
 
