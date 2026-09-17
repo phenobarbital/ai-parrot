@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-569
 **Date**: 2026-09-17
 **Author**: Jesus Lara (with Claude)
-**Status**: draft
+**Status**: approved
 **Target version**: next minor after 0.29.x (core `ai-parrot` + new optional extra; nothing ships in ai-parrot-server)
 **Brainstorm**: `sdd/proposals/wikitoolkit-http-mcp.brainstorm.md` (accepted 2026-09-17, Option A)
 
@@ -1001,7 +1001,7 @@ class StreamableHttpMCPServer(HttpMCPServer) L250-1125: __init__(config, parent_
 - [x] Should `wiki_sync_pull` be paginated? — *Resolved after design research (S9)*: yes — `since` + `limit` (default 500) + opaque `cursor` (`updated_at,concept_id`); tombstones stay out of scope like the existing sync engine. → M5.
 - [ ] Q3. HA / multi-worker: should `WikiServerConfig` accept `session_store_url: redis://…` to use `RedisSessionStore` (session_store.py:282), or is single-process + reverse-proxy sticky routing enough for v1? — *Owner: ops* (raised by S6)
 - [ ] Q4. Cross-slice atomicity for `wiki_ingest_batch` on ArangoDB: accept per-slice atomicity (today's `replace_source_slice` semantics) or add staging-and-swap? — *Owner: Jesus* (raised by S8)
-- [ ] Q5. **Structural plane on ArangoDB**: `ArangoDBWikiStore` has no `upsert_symbols`/`symbols_for`/`find_symbols`, so `wiki_symbol_lookup|code_outline|blast_radius` return empty on ArangoDB-backed wikis and pushed symbols are dropped. Implement the symbol tables for ArangoDB inside this feature (new module, ~M5b), or ship v1 with structural tools documented as SQLite-only and open a follow-up? — *Owner: Jesus* (raised by S8; blocks AC5 for ArangoDB wikis)
+- [x] Q5. **Structural plane on ArangoDB**: `ArangoDBWikiStore` has no `upsert_symbols`/`symbols_for`/`find_symbols`, so `wiki_symbol_lookup|code_outline|blast_radius` return empty on ArangoDB-backed wikis and pushed symbols are dropped. Implement the symbol tables for ArangoDB inside this feature (new module, ~M5b), or ship v1 with structural tools documented as SQLite-only and open a follow-up? — *Owner: Jesus* (raised by S8; blocks AC5 for ArangoDB wikis): ships on v1.
 
 ---
 
