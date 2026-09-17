@@ -110,7 +110,7 @@
       "feature_id": "FEAT-563",
       "feature": "scoped-test-selection",
       "spec": "sdd/specs/scoped-test-selection.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -121,8 +121,8 @@
       "parallelism_notes": "imports CoreHit from TASK-3304 (datatypes.py) and ScopePolicy from TASK-3305 (policy.py); resolves git dir itself to avoid an edge on TASK-3306",
       "assigned_to": null,
       "started_at": "2026-09-17T11:00:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3307-kernel-impact-core-detector.md"
+      "completed_at": "2026-09-17T12:37:35+00:00",
+      "file": "sdd/tasks/completed/TASK-3307-kernel-impact-core-detector.md"
     },
     {
       "id": "TASK-3308",

@@ -399,10 +399,33 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (sonnet, sequential fallback — `complex_model_unavailable`, same
+systemic roster gap as prior tasks; user-authorized direct implementation)
+**Date**: 2026-09-17
+**Notes**: Implemented all five FILL INs. `module_aliases` — both spellings for the
+`parrot.tools`/`parrot_tools` redirect. `ImportIndex.build` — two-pass design: pass 1 globs
+`packages/*/src/**/*.py`, computing `module_dist` and the set of known module names (needed
+to disambiguate `from X import Y` as "submodule X.Y" vs "attribute Y of X"); pass 2 parses
+every source file's AST (relative imports resolved via the file's own package, handling both
+plain modules and `__init__.py`) and every test file's AST (`tests/**/test_*.py` +
+`packages/*/tests/**/test_*.py`, relative imports skipped — not meaningful for test packages),
+registering each resolved target **and every ancestor prefix** (so a lookup for a package also
+matches an import of one of its submodules, per the spec docstring "or a submodule of it").
+Syntax/Unicode/OS errors on any file → appended to `skipped`, never raised. `load_or_build` —
+tree-id cache (`git rev-parse HEAD^{tree}`) in the per-worktree git dir
+(`--absolute-git-dir`, not `context.py`, per the task's own note to avoid that edge); any git,
+JSON, or write failure falls back to a fresh `build()` silently. `impacted_tests` — BFS over
+`src_importers` up to `depth` hops (aliases expanded at every hop), then union of `by_module`
+for every reached module, filtered to paths that still exist under `worktree`. `source_fanin`
+— BFS over `src_importers`, cycle-safe via a `seen` set seeded with the **starting** module
+itself (a naive visited-only BFS undercounts correctly in a simple chain but a mutual-import
+cycle would loop back and wrongly count the target as its own importer; verified by the new
+`test_source_fanin_is_cycle_safe` — a two-module mutual-import fixture — which caught exactly
+this bug before I fixed it: initial `fanin` computed as 2 instead of the correct 1). All 6
+tests in `test_impact.py` pass, the full `test_scope` suite is now 38/38, `ruff check` clean,
+imports verified stdlib + relative-only (`grep '^import\|^from'`), and `test_stdlib_only.py`
+still passes (confirming `__init__.py` was correctly left untouched — TASK-3308's job).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Deviations from spec**: none — only the two listed files were created.
 
 **Deviations from spec**: none | describe if any
