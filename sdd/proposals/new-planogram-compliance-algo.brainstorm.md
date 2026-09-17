@@ -10,7 +10,7 @@ base_branch: dev
 
 **Date**: 2026-09-17
 **Author**: Jesus Lara
-**Status**: exploration
+**Status**: accepted
 **Recommended Option**: D
 
 ---
@@ -730,11 +730,11 @@ import cv2, numpy, rapidfuzz                                 # installed
 - [x] Scoring strictness — *Owner: Jesus Lara*: tiered; strict % and lenient % reported side by side, per shelf and overall.
 - [x] Prices — *Owner: Jesus Lara*: always reported; optional `--prices` file adds a separate price-compliance metric.
 - [x] Tag OCR engine — *Owner: Jesus Lara*: local OCR first, LLM fallback.
-- [ ] Git tracking: should `planogram_check.py` (+ tests, `planogram_page1.json`, the detector) be force-added / un-ignored so the SDD flow and worktrees can see them, or does this stay a local-only example? Store photos are large and possibly sensitive — track them, or a downscaled fixture set, or nothing? — *Owner: Jesus Lara*
-- [ ] Part-number ↔ consumer-name bridge: is there an authoritative catalog (BBY SKU / cartridge family / colour / pack) we can ship as `catalog.json`, or is a cached one-off LLM enrichment with human correction acceptable for v1? — *Owner: Jesus Lara*
+- [x] Git tracking: should `planogram_check.py` (+ tests, `planogram_page1.json`, the detector) be force-added / un-ignored so the SDD flow and worktrees can see them, or does this stay a local-only example? Store photos are large and possibly sensitive — track them, or a downscaled fixture set, or nothing? — *Owner: Jesus Lara*: track code + small inputs — force-add the new script/package, tests, `planogram_page1.json` and the detector script; store photos stay untracked and end-to-end runs take `--images-dir` from the main checkout.
+- [x] Part-number ↔ consumer-name bridge: is there an authoritative catalog (BBY SKU / cartridge family / colour / pack) we can ship as `catalog.json`, or is a cached one-off LLM enrichment with human correction acceptable for v1? — *Owner: Jesus Lara*: the user supplies the catalog file — `--catalog` is required for identification; NO LLM enrichment module in v1 (supersedes stage 4's enrichment fallback in the Feature Description).
 - [ ] Partial-credit weights for the lenient score (`misplaced`, `variant_unresolved`, `inferred_present`, `verified_by_expectation`): proposed 0.5 / 0.5 / 0.5 / 1.0 — confirm or supply business weights. — *Owner: Jesus Lara*
 - [ ] Ground truth: is there (or can we produce) a hand-labelled answer for the two store-560 photos? Without it we can test determinism and plumbing but cannot report identification accuracy. — *Owner: Jesus Lara*
-- [ ] Single file vs small package: the recommended design is ~900–1200 lines. Keep strictly one `planogram_check.py`, or allow `planogram_check.py` + a sibling helper package? — *Owner: Jesus Lara*
+- [x] Single file vs small package: the recommended design is ~900–1200 lines. Keep strictly one `planogram_check.py`, or allow `planogram_check.py` + a sibling helper package? — *Owner: Jesus Lara*: thin `planogram_check.py` CLI entry point + sibling helper package `examples/planogram/plancheck/` (one module per stage).
 - [ ] Which vision model runs on the local `:8089` server for this script (LFM2.5-VL-1.6B as in inkcheck, or the qwen vision model from the recent `llama server for vision model` WIP)? It determines whether the row-strip contract is realistic locally or sub-strips must be the default there. — *Owner: Jesus Lara*
 - [ ] Should the `VisionBackend` adapter stay script-local, or is the missing common vision method on `AbstractClient` / `LocalLLMClient` worth its own core feature later? (Out of scope here — `clients/base.py` must not be modified without discussion.) — *Owner: Jesus Lara*
 - [ ] Set-of-Marks overlays: do thin numbered outlines measurably help Gemini on these strips, or do they occlude small package text? To be settled by an A/B run during implementation. — *Owner: implementer*
