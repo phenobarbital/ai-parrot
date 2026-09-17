@@ -145,4 +145,88 @@ Test names and assertions must describe observable behavior, not mirror private 
 
 ## Completion Note
 
-Pending implementation. The executor must record completed-by, date, test results, evidence-gate resolution and deviations before marking done.
+Completed 2026-09-17 by sdd-worker orchestrator (fallback sequential loop, sonnet).
+
+- `OmniClipAdapter(owner, downloader, *, max_download_bytes=200MiB)` with the spec's
+  `generate(*, profile, prompt, output_directory, aspect_ratio, resolution, target_duration_seconds,
+  starting_frame, deadline) -> GeneratedReelClip` signature (matches VeoClipAdapter's shape exactly,
+  though `resolution`/`starting_frame` are not applicable to Omni — documented in the docstring).
+  Calls `client.aio.interactions.create(agent=<model>, input=<prompt>, background=False,
+  store=False, stream=False, response_format={"type":"video","aspect_ratio":...}, timeout=<remaining
+  deadline seconds>)` — the public async surface, never `GoogleGenAIClient._deep_research_ask`'s
+  synchronous `client.interactions.create(..., stream=True)` streaming pattern (client.py:5153,
+  confirmed via read, not copied). No `duration` key in `response_format` (unverified legal values
+  — spec explicitly forbids inventing one), no `temperature`/`negative_prompt` (verified absent from
+  the built kwargs in tests).
+- **Q3 evidence gate (response SHAPE only, not the download-auth question — see TASK-3325's note for
+  that half)**: `Interaction.status`/`.errors`/`.output_video` → `VideoContent.data`/`.uri`/
+  `.mime_type`, and the legal `InteractionStatus` values (`in_progress`, `requires_action`,
+  `completed`, `failed`, `cancelled`, `incomplete`, `budget_exceeded`, `queued`) were verified via
+  **offline `inspect.getsource`/enum-introspection of the installed `google-genai` 2.23.0 package**
+  (`google.genai._gaos.types.interactions.{interaction,videocontent,videoresponseformat}` — evidence
+  only, never imported in `omni.py` itself, per the Codebase Contract's "internal SDK files are
+  evidence, not import paths"). **Not verified**: an actual live Omni response was never observed: no
+  concrete duration values, no confirmed safety-block signal/reason string (Omni's `Error.code`/
+  `.message` shape is generic; my classifier does not infer `SAFETY_BLOCKED` for Omni failures —
+  every terminal-status failure maps to `PROVIDER_FAILURE` via `OperationFailure`, which is the
+  conservative, evidence-honest choice given "never infer safety... solely from" a generic error).
+  `Interaction.output_audio`/`.output_image` exist on the same model but no separate-audio-track
+  signal was found — audio presence is verified from the DOWNLOADED FILE itself via moviepy, not
+  from any Omni response field.
+- **Design decision — public `google.genai.types.VideoResponseFormat` is NOT the same class**: the
+  top-level `google.genai.types` module re-exports a DIFFERENT `VideoResponseFormat` belonging to the
+  Veo/`GenerateVideosConfig` world (confirmed: constructing it with `aspect_ratio="16:9"` emits a
+  `UserWarning: 16:9 is not a valid AspectRatio` and produces `Delivery.INLINE`-style uppercase
+  enums, inconsistent with the Interactions-side field shape verified above). To avoid importing the
+  private `_gaos` path, `response_format` is built as a **plain dict** — `create()`'s own signature
+  is `(self, *, request=None, ..., **body: Any)`, so the SDK's internal validation (not this
+  adapter's) discriminates the dict against its own `InteractionResponseFormat` union. This is
+  unverified against a live call; flagging for reviewer attention alongside Q3.
+- Base64 inline decoding: `is not None` (not truthiness) gates the data/URI branch — an
+  explicitly-empty `data=""` field (valid, zero-length base64) must reach the "decoded to zero
+  bytes" check, not be misclassified as "no output at all" (a real bug caught by my own test:
+  `base64.b64encode(b"")` legitimately produces `""`, which is falsy in Python — fixed before
+  commit, both code and the test's own assumption were wrong the first time).
+- URI delivery goes through TASK-3325's `ProviderMediaDownloader.fetch()` (its
+  `DEFAULT_CREDENTIAL_ORIGINS` allowlist decision for Omni is still unverified — see that task's own
+  Completion Note); its `DownloadFailure` is normalized via `classify_provider_error`.
+- `submitted_duration_seconds` is always `None` (never sent, matches `profile.durations_seconds is
+  None`); the measured output is checked against `target_duration_seconds` with a documented
+  ASSUMED one-frame tolerance at 24fps (`_ASSUMED_FPS_FOR_TOLERANCE` — Omni's actual output fps is
+  itself unverified; flagged, not silently assumed correct).
+- Ambiguous creation failures are never retried (one `interactions.create` call; any exception
+  classifies and raises immediately — verified via `create.assert_awaited_once()` implicitly by
+  every failure-path test only calling it once). The client is owned and closed
+  (`await client.aio.aclose()`) on every exit via `try/finally` — applied `_pattern learned from the
+  TASK-3324 self-caught defect` from the start this time (no separate fix needed here).
+- `starting_frame` is rejected BEFORE any client call at all (`owner.get_client` never invoked) since
+  `profile.supports_starting_frame=False` — defensive validation independent of upstream
+  orchestration's own checks.
+- AC01, AC04, AC06, AC12, AC17 (owned by this task): covered by the 16 tests in `test_reel_omni.py`
+  (create-kwargs shape/no-Veo-fields, inline+URI delivery, MIME→extension mapping, malformed
+  base64/empty-decoded/no-output/neither-data-nor-uri, terminal-status + operation-id preservation,
+  unexpected in-progress status, insufficient-duration, download-failure normalization,
+  starting-frame/expired-deadline rejection before submission, cancellation + client-close).
+- Tests: `pytest packages/ai-parrot-client-google/tests/unit/reel/test_reel_omni.py -q` — 16 passed.
+  Full `tests/unit/reel/` directory — 123 passed. Same temporary main-checkout `.so` copy-then-remove
+  as prior tasks; nothing committed.
+- Lint: `ruff check` — all checks passed on first run (no findings this time). `black --line-length
+  120` — no changes needed.
+- No live-service claims inferred from mocks; no default test performs a paid provider call. No
+  files outside the task's two listed targets were created or modified.
+
+Seat: sonnet (fallback sequential, orchestrator-implemented) · Backend: native · Model: sonnet ·
+Attempts: 1 · Duration: n/a (fallback, not MCP/native-agent timed) · Tokens: n/a
+
+### Addendum (2026-09-17, mid-feature adversarial code review during TASK-3331)
+
+One confirmed defect fixed in the same follow-up commit as the TASK-3331/TASK-3324 review addenda:
+**`_decode_inline`'s local write (`_write_bytes`, `run_in_executor`) was unguarded** — a raw
+`OSError` (disk full, permission denied) propagated unclassified past `_process_scene`'s
+`except ReelError:` catch, bypassing `partial_failure_policy="skip"` entirely (same class of bug
+as TASK-3324's veo.py `_write_clip`, found in the same review pass). Fixed: wrapped in
+`try/except Exception: raise classify_provider_error(exc, stage="omni_write")` (with
+`asyncio.CancelledError` re-raised unchanged first). Regression evidence: full
+`packages/ai-parrot-client-google/tests/unit/reel/` sweep (excluding the known environment-only
+`test_reel_assembly.py` multiprocessing failures) — 175 passed, 0 new failures. `black --check`/
+`ruff check` clean on `omni.py`.

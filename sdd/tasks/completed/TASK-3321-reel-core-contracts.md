@@ -144,4 +144,35 @@ Test names and assertions must describe observable behavior, not mirror private 
 
 ## Completion Note
 
-Pending implementation. The executor must record completed-by, date, test results, evidence-gate resolution and deviations before marking done.
+Completed 2026-09-17 by sdd-worker orchestrator (native `sonnet` seat, `sdd-coder`).
+
+- Added `AudioMode`/`MusicPolicy`/`PartialFailurePolicy`/`VideoResolution` literals; extended
+  `VideoReelScene` (`video_model` override, duration validator 0<d<=8, blank-rejection validator)
+  and `VideoReelRequest` (`director_model`, `model` deprecated alias, `image_model`, `video_model`,
+  `resolution`, `audio_mode`, `music_policy`, `partial_failure_policy`; tightened `transition_type`/
+  `output_format` to `Literal`); added `effective_director_model()` / `deprecation_warnings()`;
+  added `_validate_audio_controls` rejecting speech/music controls under native/muted; extended
+  `_parse_json_strings` to decode `storage_config`. Added `ReelArtifact`, `ReelSceneResult`,
+  `ReelResult` per spec §2.
+- **Design decision flagged for reviewer**: sparse `reference_images` was changed from
+  `Optional[List[str]]` to `Optional[List[Optional[str]]]` (None = empty upload slot, position =
+  scene index) since the spec's Scope item 4 had no exact interface skeleton. Backward compatible
+  with existing dense-list callers in `test_google_reel.py` (untouched). Added `image_for_scene()`
+  helper. **TASK-3332/TASK-3333 (HTTP task, not yet implemented) must build their padded list to
+  match this representation** — confirm before those tasks start.
+- Evidence gates AC01, AC02, AC04, AC06, AC10 (owned by this task): covered by the 57 tests in
+  `test_reel_contracts.py` (alias resolution, duration bounds, audio-control conflicts, storage_config
+  decoding, sparse reference-image holes, JSON-mode round trips).
+- Tests: `pytest packages/ai-parrot/tests/test_reel_contracts.py -q` — 57 passed, both in the
+  coder's isolated attempt worktree and re-verified independently in the integration worktree after
+  merge (compiled Cython artifacts `parrot.utils.types`/`parrot.utils.parsers.toml` are absent from
+  every worktree's source tree — documented shared-venv/worktree limitation, not a code defect;
+  copied the main-checkout `.so` files in temporarily to run pytest, then removed them — nothing
+  committed).
+- Lint: `ruff check` reports 2 pre-existing PIE796 duplicate-enum-value findings in `GoogleVoiceModel`
+  (lines 20-28) that predate this diff; no new findings. `black` auto-applied by the merge-time engine
+  (commit `ea967cbdb`).
+- No live-service claims inferred from mocks. No files outside the task's two listed targets were
+  created or modified.
+
+Seat: sonnet (native) · Backend: native · Model: sonnet · Attempts: 1 · Duration: 18m9s · Tokens: 217964 (combined; no in/out split reported)

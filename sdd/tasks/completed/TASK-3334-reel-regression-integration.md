@@ -50,9 +50,9 @@ from parrot.models.responses import AIMessage, AIMessageFactory
 
 ### Existing Signatures to Use
 
-- `packages/ai-parrot-client-google/src/parrot/clients/google/generation.py:1905`: async generate_video_reel(self, request: VideoReelRequest, output_directory: Optional[Path] = None, file_manager: Optional[FileManagerInterface] = None, user_id: Optional[str] = None, session_id: Optional[str] = None) -> AIMessage; current _process_scene(self, scene, index, output_dir, aspect_ratio, file_manager=None, job_prefix=None) returns tuple[Optional[str], Optional[str]].
+- **[STALE — corrected 2026-09-17 at TASK-3334 start]** `packages/ai-parrot-client-google/src/parrot/clients/google/generation.py:2107`: `async generate_video_reel(self, request: VideoReelRequest, output_directory: Optional[Path] = None, file_manager: Optional[FileManagerInterface] = None, user_id: Optional[str] = None, session_id: Optional[str] = None) -> AIMessage` — unchanged, still accurate. `_process_scene` is NOT the stale tuple-returning form this contract originally described (that predates TASK-3330's rewrite) — its VERIFIED current signature is `async def _process_scene(self, scene: VideoReelScene, index: int, *, context: "_ReelRunContext") -> "ReelSceneResult"` (generation.py:2493), a keyword-only `context` object, returning a typed `ReelSceneResult` (see `packages/ai-parrot/src/parrot/models/google.py`), never a tuple.
   Symbols: `sym:packages/ai-parrot-client-google/src/parrot/clients/google/generation.py#GoogleGeneration.generate_video_reel`, `sym:packages/ai-parrot-client-google/src/parrot/clients/google/generation.py#GoogleGeneration._process_scene`.
-- `packages/ai-parrot-server/src/parrot/handlers/video_reel.py:31`: VideoReelHandler(BaseView); setup(cls, app, route='/api/v1/google/generation/video_reel'); async _parse_multipart(self) -> tuple[dict, list[Path]]; async post(self) -> web.Response; async get(self) -> web.Response.
+- **[STALE `_parse_multipart` return type — corrected 2026-09-17]** `packages/ai-parrot-server/src/parrot/handlers/video_reel.py:62`: `VideoReelHandler(BaseView)`; `setup(cls, app, route='/api/v1/google/generation/video_reel')` now also registers `{route}/{job_id}/artifacts/{artifact_id}` (TASK-3333); `async _parse_multipart(self) -> tuple[dict, dict[int, Path]]` (index→path mapping, NOT a list — sparse indices preserved); `async post(self) -> web.Response`; `async get(self) -> web.Response` (dispatches to `_get_job_status` or, when an `artifact_id` route param is present, `_get_artifact`). New since TASK-3333: `_resolve_job_id`, `_authorize_job`, `_get_artifact`, `_get_session_user_id`, `_refresh_result_urls`, `_stream_file` — all owner-checked (§8 Q7); `job_manager.create_job(user_id=...)` uses the session identity, never a body-supplied `user_id`.
   Symbols: `sym:packages/ai-parrot-server/src/parrot/handlers/video_reel.py#VideoReelHandler`, `sym:packages/ai-parrot-server/src/parrot/handlers/video_reel.py#VideoReelHandler._parse_multipart`, `sym:packages/ai-parrot-server/src/parrot/handlers/video_reel.py#VideoReelHandler.post`, `sym:packages/ai-parrot-server/src/parrot/handlers/video_reel.py#VideoReelHandler.get`.
 - `packages/ai-parrot-server/src/parrot/handlers/jobs/job.py:209`: async execute_job(self, job_id: str, execution_func: Callable[[], Awaitable[Any]]) -> None schedules _run_job; async get_job_async(self, job_id: str) -> Optional[Job]. _run_job awaits the callback before publishing completion/cancellation.
   Symbols: `sym:packages/ai-parrot-server/src/parrot/handlers/jobs/job.py#JobManager.execute_job`, `sym:packages/ai-parrot-server/src/parrot/handlers/jobs/job.py#JobManager.get_job_async`.
@@ -174,4 +174,102 @@ Test names and assertions must describe observable behavior, not mirror private 
 
 ## Completion Note
 
-Pending implementation. The executor must record completed-by, date, test results, evidence-gate resolution and deviations before marking done.
+Completed-by: sdd-worker (fallback sequential loop, orchestrator-implemented) · Date: 2026-09-17
+
+**Codebase Contract corrections (stale entries fixed before implementing)**: `_process_scene`'s
+documented signature (`(self, scene, index, output_dir, aspect_ratio, file_manager=None,
+job_prefix=None)` returning a `tuple`) predated TASK-3330's rewrite — verified and corrected in this
+task file to the real, current `async def _process_scene(self, scene, index, *, context:
+"_ReelRunContext") -> "ReelSceneResult"`. `_parse_multipart`'s documented return type
+(`tuple[dict, list[Path]]`) was also stale — corrected to `tuple[dict, dict[int, Path]]` (sparse index
+→ path mapping), and the `VideoReelHandler` entry was extended to note TASK-3333's new owner-checked
+surface (`_resolve_job_id`/`_authorize_job`/`_get_artifact`/artifact route).
+
+**Real handler+JobManager queued execution through polling and artifact retrieval**
+(`test_video_reel_integration.py`, 6 tests): built a REAL `JobManager` (in-memory, no Redis) bound to a
+real `web.Application`; `VideoReelHandler.post()` schedules a genuine `JobManager.execute_job()`
+background `asyncio.Task`, awaited directly to completion in every test (never a sleep/poll loop) —
+only `GoogleGenAIClient.generate_video_reel` (the provider call) is mocked, returning REAL
+`AIMessage`/`ReelResult`/`ReelArtifact` Pydantic objects backed by a REAL local file on disk. Covers
+all 4 terminal job states (successful, partial, failed, cancelled — Test Specification's explicit
+list) with exact result-JSON assertions, real `job.result["metadata"]["video_reel"]`/`artifacts[]`
+round-tripped through `model_dump(mode="json")` exactly as production stores it, real artifact-bytes
+verification (`_stream_file`'s call args resolve to the actual on-disk file with the actual bytes),
+the owner-boundary enforced end-to-end through the REAL queued path (not just a unit-level
+`_authorize_job` call, which TASK-3333 already covers), and independent verification that the queued
+callback's `generate_video_reel` call args (not the HTTP request echoed back) determine effective
+models.
+
+**Real local/temp storage boundary + mocked cloud transport** (`test_reel_storage.py`, 7 tests):
+exercises `generate_video_reel`'s own `FileManagerFactory` dispatch (`file_manager=None` →
+`request.storage_backend`) with REAL disk I/O for `"fs"`/`"temp"` — actual bytes written by a REAL
+`LocalFileManager`/`TempFileManager`, read back and compared byte-for-byte, both the raw working-copy
+(`AIMessage.files`) and the separately-persisted FileManager copy (at `storage_key`) verified as
+distinct REAL files. `"s3"`/`"gcs"` dispatch through a MOCKED `FileManagerFactory.create` (verified
+called with the request's own backend/config — the real DECISION logic — never a real network call or
+cloud credential). Confirms `files == []` for cloud vs a real `Path` for local (AC10/AC18: "durable
+paths versus URL strings"). Also covers the `file_manager=` explicit-override path (bypasses
+`FileManagerFactory` entirely, regardless of `storage_backend`) and the no-`output_directory` default
+path (`BASE_DIR/static/generated_reels` fallback — `BASE_DIR` patched to `tmp_path` for this one test
+only, since the real repo-root `static/` directory is correctly read-only in this sandboxed worktree;
+verified via `assemble_reel`'s captured `work_dir=` call arg rather than the mocked return path).
+
+**Stale historical fixture repair — root-caused, not just patched around**: `test_video_reel_storage.py`'s
+3 previously-failing tests (`TestFileManagerFactory::test_create_temp`/`test_create_invalid_raises`,
+`TestHandlerStorageConfig::test_temp_backend`) were documented in earlier tasks' Completion Notes as
+vague "navigator-api environment drift: FileManagerFactory returns LocalFileManager instead of
+TempFileManager." Investigated properly this time (per this task's explicit scope) and found the REAL
+root cause: this repo's ROOT `conftest.py` (and `packages/ai-parrot/tests/conftest.py`, redundantly)
+unconditionally `sys.modules.setdefault("parrot.tools.filemanager", <fake module>)` at collection time
+for EVERY test run in this repo, regardless of package — a compatibility shim for "navigator-api <
+3.0.3" with no actual version/capability check. This environment's real navigator-api (confirmed via
+direct, outside-pytest reproduction) fully supports `FileManagerFactory.create("temp")` →
+`TempFileManager` correctly; the fake stub (whichever conftest.py's `setdefault` wins the race — always
+the repo-root one) silently substitutes a synthetic `LocalFileManager`-shaped object for EVERY backend
+request, masking the real behavior for any test asserting on the returned type. Root-caused via direct
+reproduction (`hasattr(cached_module, "__file__")` distinguishes the synthetic `types.ModuleType` stub
+from a real, file-backed module) — NOT fixed at its source (`conftest.py` is a shared, repo-wide file
+outside this task's declared Files list; "Report implementation defects to their owners... rather than
+expanding target scope" per this task's own Implementation Notes). Worked around, transparently
+documented, entirely within the two owned test files: evict the poisoned `sys.modules` entry and
+re-import the real module at file-import time, AND (for `generation.py`'s already-possibly-bound
+reference, when another test file imported it first in the same pytest session) `patch(
+"parrot.clients.google.generation.FileManagerFactory", <real class>)` directly for the affected
+assertions. Neither production code nor the test's actual assertions were weakened — the REAL
+`TempFileManager`/`LocalFileManager` classes are what's now genuinely exercised and asserted against
+(AC: "without replacing the production classes under test or weakening success/error assertions").
+
+**`test_google_reel.py`**: already correct (no changes needed) — confirmed via a fresh isolated run at
+the start of this task; all 7 tests pass.
+
+**Tests**: `test_video_reel_integration.py` — 6 passed. `test_reel_storage.py` — 7 passed.
+`test_video_reel_storage.py` — 26 passed (0 pre-existing failures remain — the "former 20 fixture
+errors are gone" and 3 MORE, previously mis-attributed-to-environment failures are now genuinely
+fixed). `test_google_reel.py` — 7 passed. Full regression: `ai-parrot-client-google` — 206 passed.
+`ai-parrot-server/tests/handlers/` — 583 passed, 4 skipped, 2 failed (`test_agent_a2ui_stream.py`,
+confirmed unrelated — zero A2UI files in this feature's diff). `ai-parrot` reel-related files
+(`test_google_reel`/`test_video_reel_storage`/`test_reel_contracts`/`test_video_reel_handler`) — 123
+passed together.
+
+**AC coverage mapping**: AC01 (model selection) — `test_video_reel_integration.py`'s
+`test_queued_job_independently_reflects_effective_models`. AC08 (handler fixture repair) — already
+satisfied by TASK-3332; this task's integration tests build on the SAME real-construction pattern.
+AC10 (URL/path round-trip) — `test_reel_storage.py`'s durable-Path-vs-URL-string assertions +
+`test_video_reel_integration.py`'s `model_dump(mode="json")` round-trip checks. AC11 (upload cleanup)
+— unchanged, already covered by TASK-3332's `test_video_reel_inputs.py`. AC12 (resource cleanup /
+deadlines) — unchanged, already covered by TASK-3331. AC13 (fail/skip policy) — unchanged, already
+covered by TASK-3330's `test_reel_orchestration.py`. AC14 (owner-checked polling) —
+`test_video_reel_integration.py`'s `test_second_owner_cannot_poll_first_owners_job`, exercising
+TASK-3333's ownership boundary through the REAL queued-execution path end to end. AC18 (focused suites
++ lint) — all four commands from this task's Test Specification pass; `black`/`ruff` clean on all
+touched/created files (only 6 pre-existing, untouched-line residual findings remain repo-wide, unchanged
+from prior tasks).
+
+**No live-service readiness claim**: all provider/cloud-transport calls are mocked throughout; Q3/Q4/
+Q5/Q6 evidence gates (Omni URI auth, image model ID, Vertex Veo GA, Lyria api_version) remain open,
+unresolved by this testing-only task, and are not claimed resolved.
+
+`black --check`/`ruff check`: clean on all four touched/created files.
+
+Seat: sonnet (fallback sequential, orchestrator-implemented) · Backend: native · Model: sonnet ·
+Attempts: 1 · Duration: n/a · Tokens: n/a
