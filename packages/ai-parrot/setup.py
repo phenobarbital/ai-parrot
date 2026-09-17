@@ -1,11 +1,13 @@
 #!/usr/bin/env python
 """Minimal setup.py for Cython extensions only."""
 
+import sys
+
 from Cython.Build import cythonize
 from setuptools import Extension, setup
 from setuptools.command.build_ext import build_ext
 
-COMPILE_ARGS = ["-O2"]
+COMPILE_ARGS = ["/O2"] if sys.platform == "win32" else ["-O2"]
 
 extensions = [
     Extension(

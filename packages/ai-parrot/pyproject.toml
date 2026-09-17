@@ -21,6 +21,7 @@ classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Operating System :: POSIX :: Linux",
+    "Operating System :: Microsoft :: Windows",
     "Environment :: Web Environment",
     "Topic :: Software Development :: Build Tools",
     "Topic :: Software Development :: Libraries :: Python Modules",
@@ -1005,8 +1006,11 @@ markers = [
 ]
 
 [tool.cibuildwheel]
-build = "cp3{11,12,13,14}-manylinux_x86_64"
-skip = "pp*"
+build = "cp3{11,12,13,14}-*"
+skip = "pp* *-musllinux* *-manylinux_i686 *-manylinux_aarch64 *-win32"
 
 [tool.cibuildwheel.linux]
 archs = ["x86_64"]
+
+[tool.cibuildwheel.windows]
+archs = ["AMD64"]
