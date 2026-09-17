@@ -5,16 +5,18 @@ qs_list_components, qs_validate_pipeline, qs_run_multiquery and — only when al
 """
 from __future__ import annotations
 
+import asyncio
 import time
+from dataclasses import asdict
 from typing import Any
 
 from parrot.tools.toolkit import AbstractToolkit  # verified: packages/ai-parrot/src/parrot/tools/toolkit.py:206
 
 from parrot_tools.querysource import _qs
-from parrot_tools.querysource.catalog import SlugCatalog, SlugRecord, TenantGuard
+from parrot_tools.querysource.catalog import NormalizedPipeline, SlugCatalog, SlugRecord, TenantGuard, normalize_pipeline
 from parrot_tools.querysource.dialect import DIALECT_REFERENCE, build_conditions, check_version_compatibility, load_variables, validate_filter, validate_placeholders
-from parrot_tools.querysource.errors import QuerysourceToolkitError, SlugNotFoundError
-from parrot_tools.querysource.models import DialectReference, ExecutionResult, FilterValue, PlaceholderInfo, SlugDetail, SlugSummary
+from parrot_tools.querysource.errors import QuerysourceToolkitError, SlugNotFoundError, TenantDeniedError
+from parrot_tools.querysource.models import ComponentDoc, DialectReference, ExecutionResult, FilterValue, PipelineIssue, PipelineValidation, PlaceholderInfo, SlugDetail, SlugSummary
 from parrot_tools.querysource.results import frame_to_result
 
 
@@ -148,3 +150,64 @@ class QuerysourceToolkit(AbstractToolkit):
         finally:
             await qs.close()                                             # qs.py:519
         return frame_to_result(result, slug=slug, max_rows=self.max_rows, applied=conditions, rejected=rejected, started=started)
+
+    async def _get_catalog(self) -> list[Any]:
+        """ComponentRegistry.get_catalog() via to_thread, cached per instance (handlers/components.py:50)."""
+        if self._components_cache is None:
+            registry = _qs.get_component_registry()
+            self._components_cache = await asyncio.to_thread(registry.get_catalog)      # registry.py:187
+        return self._components_cache
+
+    async def _destination_names(self) -> set[str]:
+        return {c.name for c in await self._get_catalog() if c.category == "Destinations"}
+
+    async def list_components(self, category: str | None = None) -> list[ComponentDoc]:
+        """List MultiQuery pipeline components (Operators, Transformations, Sources, Destinations) with their JSON
+        schema and a usage example — the same catalog as GET /api/v3/qs/components. Optional `category` filter."""
+        catalog = await self._get_catalog()
+        if category:
+            catalog = [c for c in catalog if c.category == category]
+        return [ComponentDoc(**asdict(c)) for c in catalog]
+
+    async def _policy_check(self, pipeline: dict[str, Any]) -> PipelineValidation:
+        """Toolkit policy over normalize_pipeline(): tenancy per slug node, raw nodes, external sources, destinations."""
+        norm: NormalizedPipeline = normalize_pipeline(pipeline)
+        issues: list[PipelineIssue] = []
+        await self._open()
+        for node, slug in norm.slug_nodes.items():
+            try:
+                await self._catalog.get_allowed(slug)
+            except (TenantDeniedError, SlugNotFoundError) as exc:
+                issues.append(PipelineIssue(step=node, field="slug", message=str(exc)))
+        destinations = sorted(set(norm.output_steps) & await self._destination_names())
+        if norm.raw_nodes and (self.restricted or not self.allow_raw_sql):
+            for node in norm.raw_nodes:
+                issues.append(PipelineIssue(
+                    step=node, field="query",
+                    message="inline query/raw_query nodes are not allowed for this instance",
+                ))
+        if norm.has_files and not self.allow_external_sources:
+            issues.append(PipelineIssue(step="files", field="files",
+                                        message="external files are disabled (allow_external_sources=False)"))
+        if norm.has_sources and not self.allow_external_sources:
+            issues.append(PipelineIssue(step="sources", field="sources",
+                                        message="external sources are disabled (allow_external_sources=False)"))
+        if destinations and not self.allow_write:
+            for step in destinations:
+                issues.append(PipelineIssue(step=step, field="Output",
+                                            message="destination steps require allow_write=True"))
+        return PipelineValidation(valid=not issues, issues=issues, referenced_slugs=sorted(set(norm.slug_nodes.values())),
+                                  has_raw_nodes=bool(norm.raw_nodes), has_external_sources=norm.has_files or norm.has_sources,
+                                  destination_steps=destinations)
+
+    async def validate_pipeline(self, pipeline: dict[str, Any]) -> PipelineValidation:
+        """Validate a MultiQuery pipeline without running it: structural rules (known step names, ≥1 source, Join/Merge
+        arity) plus this toolkit's policy — every queries[*] slug must be one this instance may execute; raw SQL nodes,
+        external sources and destination (write) steps are reported when the configuration forbids them."""
+        result = await self._policy_check(pipeline)
+        registry = _qs.get_component_registry()
+        structural = await asyncio.to_thread(registry.validate_pipeline, dict(pipeline))   # registry.py:332
+        for err in getattr(structural, "errors", []):
+            result.issues.append(PipelineIssue(step=err.step, field=err.field, message=err.message))
+        result.valid = not result.issues
+        return result
