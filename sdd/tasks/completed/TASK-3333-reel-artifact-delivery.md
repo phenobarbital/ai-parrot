@@ -156,4 +156,101 @@ Test names and assertions must describe observable behavior, not mirror private 
 
 ## Completion Note
 
-Pending implementation. The executor must record completed-by, date, test results, evidence-gate resolution and deviations before marking done.
+Completed-by: sdd-worker (fallback sequential loop, orchestrator-implemented) · Date: 2026-09-17
+
+**Q7 evidence gate resolution**: Searched the codebase (via `wikitoolkit query`) for an existing
+deployed owner/tenant helper before inventing one. Found two verified, working patterns:
+`StudioBaseView` (`handlers/studio/_base.py`, FEAT-467 TASK-2511 — `_resolve_session()`/`_get_user()`/
+`_require_owner()`) and `CredentialsHandler` (`credentials.py:57-59` — `@is_authenticated()
+@user_session()` class decorators + `_get_user_id()`). Verified `BaseView.get_userid()` is defined
+directly on `navigator.views.BaseView` (not `AbstractModel`-only), confirmed via `inspect.getsource`.
+Adapted `StudioBaseView`'s `_resolve_session()` pattern directly into `VideoReelHandler` (no PBAC/
+superuser bypass needed — out of this task's scope). **Deviated from the class-decorator half of the
+pattern** after discovering, via actually running `test_video_reel_inputs.py`'s real-`aiohttp.Request`
+suite, that `@user_session()` unconditionally calls `navigator_session.get_session()` with no
+test-friendly short circuit (unlike `@is_authenticated()`'s documented `request["authenticated"] =
+True` bypass, used in 12+ other handler test files in this package) — it hard-crashes with
+`RuntimeError: Missing Configuration of Session Storage` against a bare `web.Application()`. Since
+`_resolve_session()` already implements the identical "decorated or not" duality `StudioBaseView`'s
+own docstring describes (falls back to calling the plain, inherited `BaseView.session()` method), and
+`post()` independently rejects an unresolvable session via `HTTPUnauthorized`, the class decorators
+would add a hard session-storage-middleware dependency with no additional security this handler
+doesn't already enforce itself. Documented this deviation in the class docstring.
+
+**Never trust body user_id as ownership**: `post()`'s `job_manager.create_job(user_id=...)` now
+always uses `await self._get_session_user_id()` (session-derived), never the body's `user_id` field
+(which is still forwarded to `generate_video_reel(user_id=..., session_id=...)` as AI-message
+conversational metadata only — a documented "reserved" field, never load-bearing for authorization).
+An unauthenticated `post()` now raises `HTTPUnauthorized` before any job is created.
+
+**`_resolve_job_id`/`_authorize_job`/`_get_artifact`** implemented exactly per the spec's Interface
+Skeleton (§3 M8): route `match_info` vs `?job_id=` query conflict → 400; missing/unauthorized jobs →
+the SAME non-disclosing 404 (verified indistinguishable by status code, since the "missing" path goes
+through the mocked `self.error()` in tests but the real `BaseView.error()` also raises `HTTPNotFound`
+in production — same class, same status, either way); a job with `user_id=None` (legacy/anonymous) is
+denied to everyone, fail-closed, not fail-open.
+
+**Artifact delivery**: `_get_artifact` resolves `artifact_id` only by string-equality against
+`job.result["artifacts"][*]["artifact_id"]` — never interpolated into a path, so a traversal-shaped
+`artifact_id` simply fails to match (404), never touching the filesystem with attacker input. Local
+(`"fs"`/`"temp"`) artifacts stream via `aiofiles` (new `_stream_file`, chunked, genuinely async — never
+blocks the event loop) reading the path from `job.result["files"][0]` (server-recorded, never a
+caller-supplied path). Cloud (`s3`/`gcs`) artifacts redirect (`web.HTTPFound`) to a freshly-signed URL
+resolved from the artifact's stable `storage_key` via `_create_file_manager(backend=...)` (extended
+with a `backend` override so the artifact's *recorded* backend is used, not necessarily the server's
+*current* `VIDEO_REEL_STORAGE_BACKEND` env default). Route registered:
+`{route}/{job_id}/artifacts/{artifact_id}`.
+
+**Signed URL refresh at both polling and delivery**: new `_refresh_result_urls()` re-signs every
+cloud artifact's `download_url` from its stable `storage_key` on every `_get_job_status` poll (not
+just at `_get_artifact` delivery time) — cloud signed URLs recorded at job-completion time can expire
+long before a caller polls. The SAME refreshed URL is applied to both places the artifact is
+serialized (top-level `artifacts[]` and `metadata.video_reel.final_artifact`) so they stay consistent
+(AC10: byte-exact round trip). A refresh failure for one artifact is logged and its original URL is
+kept — never fails the whole poll response. Local artifacts are never touched (their `file://` URL
+never expires).
+
+**CANCELLED state**: `_get_job_status` was missing an `elif job.status == JobStatus.CANCELLED:`
+branch entirely (an existing gap, not introduced by this task) — a cancelled job's `error`/
+`completed_at` were silently dropped even though `JobManager._run_job`'s cancellation handler sets
+both. Added, matching the `FAILED` branch's shape.
+
+**Serialization**: `run_logic()`'s `result.model_dump()` → `result.model_dump(mode="json")` per this
+module's own declared responsibility ("...400/403/404/413 mapping, `model_dump(mode="json")`").
+
+**Known limitation (documented, not fixed — outside this task's file scope)**: cloud signed-URL
+refresh reconstructs the `FileManagerInterface` from *server* env config
+(`VIDEO_REEL_STORAGE_BUCKET`/`_PREFIX`), matching `_create_file_manager`'s existing precedent. A job
+whose `storage_backend`/`storage_config` were *client*-supplied per-request (not mirrored in server
+env) cannot have its signed URL correctly refreshed later — this would need the `Job` model itself to
+persist the original storage config (`jobs/models.py`, outside this task's declared Files list). Not a
+regression: the original design already only reliably resolves storage config from server env at
+generation time too.
+
+**Deviations to pre-existing, out-of-scope test files (task-mandated, not scope creep)**: both
+`test_video_reel_handler.py` (TASK-3330-era file) and `test_video_reel_inputs.py` (TASK-3332's own
+file) exercise `post()`/`get()` code paths that now require a resolvable session identity. Updated
+both fixtures to mock `_get_session_user_id`/`_handler()`'s helper with a fixed test identity, and
+`test_video_reel_handler.py`'s `_make_job()`/`handler` fixture to default a matching job owner. One
+existing assertion (`test_post_extracts_control_keys`) explicitly asserted the OLD, insecure behavior
+(`job.user_id == body's "user-123"`) — corrected to assert the new, secure behavior (session identity
+used, body value explicitly NOT used), consistent with this task's own AC.
+
+**Tests**: New `packages/ai-parrot-server/tests/handlers/test_video_reel_artifacts.py` (26 tests) —
+job-id resolution (route/query/conflict), ownership (owner/other-user/missing-job/no-owner/
+unauthenticated — all converging on non-disclosing 404), spoofed-body-identity rejection, CANCELLED
+state, signed-URL refresh (cloud refreshed + consistent, local untouched, refresh-failure-tolerant),
+artifact delivery (local streaming, temp backend, missing file, unknown/traversal-shaped artifact_id,
+incomplete job, cloud redirect with query-string preservation, unconfigured cloud backend, ownership
+enforcement, missing job). All 26 pass. Full regression: `packages/ai-parrot-server/tests/handlers/`
+— 577 passed, 4 skipped, 2 failed (both `test_agent_a2ui_stream.py`, confirmed unrelated — zero A2UI
+files appear in this feature's diff). `packages/ai-parrot/tests/test_video_reel_handler.py` — 33
+passed. `packages/ai-parrot/tests/{test_google_reel,test_reel_contracts,test_video_reel_storage}.py`
+— 86 passed, 1 skipped, 3 known pre-existing environment-drift failures (documented since TASK-3329/
+3330: navigator-api `FileManagerFactory` returns `LocalFileManager` instead of `TempFileManager`,
+unrelated to this feature).
+
+**black --check / ruff check**: both clean on all four touched/created files.
+
+Seat: sonnet (fallback sequential, orchestrator-implemented) · Backend: native · Model: sonnet ·
+Attempts: 1 · Duration: n/a · Tokens: n/a

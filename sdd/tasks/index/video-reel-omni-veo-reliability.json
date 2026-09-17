@@ -364,7 +364,7 @@
       "feature_id": "FEAT-564",
       "feature": "video-reel-omni-veo-reliability",
       "spec": "sdd/specs/video-reel-omni-veo-reliability.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -376,12 +376,13 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": "2026-09-17T18:52:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3333-reel-artifact-delivery.md",
+      "completed_at": "2026-09-17T19:15:30+00:00",
+      "file": "sdd/tasks/completed/TASK-3333-reel-artifact-delivery.md",
       "acceptance_criteria": [
         "AC10",
         "AC14"
-      ]
+      ],
+      "verification": "verified"
     },
     {
       "id": "TASK-3334",
