@@ -364,7 +364,7 @@
       "feature_id": "FEAT-564",
       "feature": "video-reel-omni-veo-reliability",
       "spec": "sdd/specs/video-reel-omni-veo-reliability.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -375,7 +375,7 @@
       "parallelism_notes": "Handler edits are serialized TASK-3332 -> TASK-3333. May run with ready provider tasks only when files do not overlap.",
       "assigned_to": null,
       "assigned_at": null,
-      "started_at": null,
+      "started_at": "2026-09-17T18:52:14+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3333-reel-artifact-delivery.md",
       "acceptance_criteria": [
