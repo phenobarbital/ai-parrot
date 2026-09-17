@@ -280,6 +280,13 @@ def install_google_integration(
             actions.append(
                 f".parrot/mcp-toolkits.yaml — {len(seeded.skipped)} section(s) already present: {', '.join(seeded.skipped)}"
             )
+        if seeded.drift:
+            for section, keys in seeded.drift.items():
+                actions.append(
+                    f".parrot/mcp-toolkits.yaml — WARNING: '{section}' lacks template key(s) {', '.join(keys)} "
+                    f"(existing sections are never rewritten; copy them from "
+                    f"parrot/mcp/_toolkit_templates/{section}.yaml)"
+                )
         if seeded.unknown:
             actions.append(f".parrot/mcp-toolkits.yaml — unknown toolkit name(s) skipped: {', '.join(seeded.unknown)}")
 

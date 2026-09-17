@@ -94,6 +94,74 @@ The built-in web UI is at <http://localhost:8089/>.
 
 ---
 
+## LiquidAI LFM2.5 vision (occupancy)
+
+The [LFM preset](lfm.env.example) runs **1.6B Q4_K_M**, alias `occupancy`,
+8192 context tokens and one slot, with GPU offload. It uses the same container
+and model cache as the other recipes, replacing the selected model on startup.
+Your existing `.env` remains available for switching back.
+
+From `llama_server/`:
+
+```bash
+docker compose --env-file lfm.env.example -f docker-compose.llama.yml config --quiet
+# Refresh llama.cpp if the cached image does not support the model:
+docker compose --env-file lfm.env.example -f docker-compose.llama.yml build --pull
+docker compose --env-file lfm.env.example -f docker-compose.llama.yml up -d
+docker compose --env-file lfm.env.example -f docker-compose.llama.yml logs -f
+```
+
+The server binds `0.0.0.0:8080` **inside** Docker; the preset publishes it only
+on `127.0.0.1:8089`. Use `http://127.0.0.1:8089/v1` and model `occupancy`
+in clients. Set `LLAMA_PORT=8080` in the shell before a Compose command if you
+want host port 8080. Shell variables override the preset. Authentication is
+disabled in this localhost preset; set `LLAMA_API_KEY` if needed.
+
+For 3B, use its **GGUF** repository (the original checkpoint is Safetensors):
+
+```bash
+LLAMA_HF_MODEL=LiquidAI/LFM2.5-VL-3B-GGUF:Q4_K_M \
+  docker compose --env-file lfm.env.example -f docker-compose.llama.yml up -d
+```
+
+Current llama.cpp automatically fetches the vision projector with `-hf`.
+Keep it enabled: `--no-mmproj` disables vision. Both downloads persist in the
+model cache. The 1.6B Q4_K_M language weights are about 731 MB; the 3B ones
+are about 1.67 GB, **plus** the projector and runtime memory. Do not carry
+Qwen's `--n-cpu-moe` or reasoning flags into this preset.
+
+Check readiness and send an actual image (a text-only reply does not verify vision):
+
+```bash
+curl --fail-with-body http://127.0.0.1:8089/health
+curl --fail-with-body http://127.0.0.1:8089/v1/models
+curl --fail-with-body http://127.0.0.1:8089/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"occupancy","messages":[{"role":"user","content":[{"type":"text","text":"Describe what you see in this image."},{"type":"image_url","image_url":{"url":"https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/p-blog/candy.JPG"}}]}],"max_tokens":128}'
+```
+
+For a local camera frame, use an `image_url` with a
+`data:image/jpeg;base64,...` URL. Add an Authorization Bearer header if you
+configured an API key. The web UI at <http://127.0.0.1:8089/> also accepts images.
+
+If loading reports an unknown architecture or projector, refresh the image
+with `build --pull`, then rerun `up -d`. CUDA failures need inspection of
+`docker compose ... logs` and `nvidia-smi`; lowering `LLAMA_NGL` alone does
+not move the vision encoder to CPU (`--no-mmproj-offload` does).
+
+Stop with the same preset's `down` command (without `-v` to retain downloads).
+To restore the previous model, run:
+
+```bash
+docker compose --env-file .env -f docker-compose.llama.yml up -d
+```
+
+References: [1.6B GGUF](https://huggingface.co/LiquidAI/LFM2.5-VL-1.6B-GGUF),
+[3B GGUF](https://huggingface.co/LiquidAI/LFM2.5-VL-3B-GGUF),
+[llama.cpp multimodal loading](https://github.com/ggml-org/llama.cpp/blob/master/docs/multimodal.md).
+
+---
+
 ## Why experts belong in RAM
 
 Qwen3.6-35B-A3B is a sparse MoE model:
