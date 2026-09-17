@@ -62,7 +62,11 @@ also edits can mask the very defects it should surface.
    # Feature tier (FEAT-563): mirror of directories over the feature's changes ∪ every
    # task's `## Validation Commands` ∪ core escalation (paid once, ledger-deduped).
    # Never run the whole suite here — CI owns full-suite and e2e runs.
-   python -m scripts.sdd.select_tests --tier feature --base origin/<base_branch> --run
+   # --task-file enumerates the feature's own tasks from its per-spec index, so the
+   # "∪ declared Validation Commands" half of the feature tier is actually exercised.
+   TASK_FILES=$(jq -r '.tasks[].file' "sdd/tasks/index/<feature-slug>.json")
+   python -m scripts.sdd.select_tests --tier feature --base origin/<base_branch> \
+     $(printf -- '--task-file %s ' $TASK_FILES) --run
    ```
    Add `--json` once (without `--run`) to record in the report which tests ran and why
    (`declared` / `mirror` / `core` / `escalated`, plus `skipped_escalations`).
