@@ -191,8 +191,7 @@ def preflight_seed(root: Path, names: Sequence[str]) -> None:
     unknown = [name for name in dict.fromkeys(names) if name not in available]
     if unknown:
         raise ValueError(
-            f"No packaged template for: {', '.join(sorted(unknown))}. "
-            f"Available: {', '.join(available_templates())}"
+            f"No packaged template for: {', '.join(sorted(unknown))}. " f"Available: {', '.join(available_templates())}"
         )
     path = _config_path(root)
     if path.exists():
