@@ -360,7 +360,7 @@ alone (a seat pointing at `tests/flows/dev_loop/` is already scoped).
 | conftest layer (root `conftest.py` or `tests/conftest.py` + `packages/*/tests/conftest.py`) | extends | directory auto-marking |
 | `pytest.ini`, per-package `[tool.pytest.ini_options]` | modifies | register `e2e` where missing (strict markers) |
 | `.github/workflows/ci.yml` | none | CI keeps full selections |
-| FEAT-562 (`ci-test-failures-root-cause-remediation`) | overlap | also registers markers / touches CI selections |
+| FEAT-562 (`ci-test-failures-root-cause-remediation`) | depends on | lands first; registers markers / touches CI selections — this feature builds on it |
 
 No new runtime dependencies; no public API change.
 
@@ -481,7 +481,12 @@ filterwarnings = ignore::DeprecationWarning
   selector (step 6) depends on the kernel.
 - **Cross-feature independence**: FEAT-562 (`ci-test-failures-root-cause-remediation`,
   approved, TASK-3296..3301 pending) registers markers and changes CI selections →
-  potential conflict on `pytest.ini` / conftest / marker registration. The
+  potential conflict on `pytest.ini` / conftest / marker registration.
+  **Decision: FEAT-562 lands first** — `/sdd-task` for this feature must not
+  run (and no worktree be created) until FEAT-562 is merged into `dev`; the
+  marker/conftest step (5) then extends FEAT-562's registrations instead of
+  duplicating them, and the Code Context must be re-verified against the
+  post-FEAT-562 `pytest.ini`, conftests and `ci.yml`. The
   `dev_loop` dispatcher and QA node areas are active (FEAT-549 sdd-coder,
   complexity routing TASK-3291) → rebase risk on `dispatchers/llm.py`.
 - **Recommended isolation**: `mixed`
@@ -507,6 +512,6 @@ filterwarnings = ignore::DeprecationWarning
 - [ ] Codex: is deny-with-suggestion acceptable, or should codex attempts get a C-style env-driven plugin later? Also unverified whether `codex exec --cd <worktree>` loads the repo's `.codex/hooks.json` — *Owner: Jesus Lara*
 - [ ] Verify conftest loading when pytest is rooted at `packages/<dist>/pyproject.toml`: does the root `conftest.py` (worktree source precedence) still load? Determines whether per-dist invocations need `--rootdir`/`-c` — *Owner: implementer (spike)*
 - [ ] Initial xdist allowlist — which distributions are verified xdist-safe (candidates: small client packages, loaders, embeddings) — *Owner: implementer (spike)*
-- [ ] Sequencing with FEAT-562 marker/CI changes (land after FEAT-562, or coordinate `e2e` registration there) — *Owner: Jesus Lara*
+- [x] Sequencing with FEAT-562 marker/CI changes — *Owner: Jesus Lara*: FEAT-562 goes first; this feature bases on `dev` after FEAT-562 is merged and builds on its marker registration and CI selections
 - [ ] Should the dead root `pyproject.toml [tool.pytest.ini_options]` (shadowed by `pytest.ini`) be merged/removed here or left to FEAT-562 — *Owner: Jesus Lara*
 - [ ] CI coverage gap: `test-core` runs only root `tests/`; most `packages/*/tests` never run in CI, which weakens "full suite only in CI" — in scope here or a separate feature? — *Owner: Jesus Lara*
