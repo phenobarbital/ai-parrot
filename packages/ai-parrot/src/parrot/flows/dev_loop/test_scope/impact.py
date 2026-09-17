@@ -142,8 +142,15 @@ class ImportIndex:
             own_package = _own_package(module, is_init)
             targets = _extract_targets(tree, own_package=own_package, known_modules=known_modules)
             for target in targets:
-                for prefix in _prefixes(target):
-                    index.src_importers.setdefault(prefix, set()).add(module)
+                # Exact target only — NOT ancestor prefixes (FEAT-563 fix, TASK-3318 S4 finding):
+                # unlike `by_module` (where "imports a submodule" should also match a lookup on
+                # the parent, for test-impact purposes), expanding source-to-source edges to
+                # every ancestor floods `src_importers["parrot"]` with nearly every file in the
+                # tree (every satellite package imports *something* under the bare `parrot`
+                # namespace), which then inflates `source_fanin`'s transitive BFS for almost any
+                # module to a number close to the total file count. `source_fanin` must only
+                # follow exact import edges.
+                index.src_importers.setdefault(target, set()).add(module)
 
         test_files: set[Path] = set()
         for pattern in ("tests/**/test_*.py", "packages/*/tests/**/test_*.py"):
