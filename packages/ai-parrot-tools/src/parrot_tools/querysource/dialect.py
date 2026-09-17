@@ -4,6 +4,7 @@ Verified against querysource 4.5.11 (GitHub tag 4.5.11 == dev): parsers/abstract
 and parsers/sql.pyx:25,96,113-235. The wheel ships compiled parsers, so this module is the source of truth
 for the LLM — never introspect the parser at runtime.
 """
+
 from __future__ import annotations
 
 import importlib
@@ -16,15 +17,37 @@ from parrot_tools.querysource.models import DialectReference, FilterValue
 logger = logging.getLogger(__name__)
 
 DIALECT_VERIFIED_AGAINST: str = "4.5.11"
-OPTION_KEYS: frozenset[str] = frozenset({
-    "fields", "querylimit", "_limit", "_offset", "paged", "page", "group_by", "grouping", "order_by", "ordering",
-    "filter", "where_cond", "filter_options", "qry_options", "refresh", "hierarchy", "distinct", "add_fields",
-    "tablename", "schema", "database", "slug", "conditions",
-})
-LIST_OPERATORS: tuple[str, ...] = ("<", ">", ">=", "<=", "<>", "!=", "IS NOT", "IS")   # sql.pyx:96
-DICT_OPERATORS: tuple[str, ...] = (">=", "<=", "<>", "!=", "<", ">")                  # sql.pyx:25
-KEY_SUFFIX_CHARS: str = "|!~#@:"                                                       # sql.pyx:132
-_BETWEEN_FORBIDDEN: tuple[str, ...] = (";", "--", "/*", "UNION", "SELECT")            # sql.pyx:184-189
+OPTION_KEYS: frozenset[str] = frozenset(
+    {
+        "fields",
+        "querylimit",
+        "_limit",
+        "_offset",
+        "paged",
+        "page",
+        "group_by",
+        "grouping",
+        "order_by",
+        "ordering",
+        "filter",
+        "where_cond",
+        "filter_options",
+        "qry_options",
+        "refresh",
+        "hierarchy",
+        "distinct",
+        "add_fields",
+        "tablename",
+        "schema",
+        "database",
+        "slug",
+        "conditions",
+    }
+)
+LIST_OPERATORS: tuple[str, ...] = ("<", ">", ">=", "<=", "<>", "!=", "IS NOT", "IS")  # sql.pyx:96
+DICT_OPERATORS: tuple[str, ...] = (">=", "<=", "<>", "!=", "<", ">")  # sql.pyx:25
+KEY_SUFFIX_CHARS: str = "|!~#@:"  # sql.pyx:132
+_BETWEEN_FORBIDDEN: tuple[str, ...] = (";", "--", "/*", "UNION", "SELECT")  # sql.pyx:184-189
 
 DIALECT_REFERENCE = DialectReference(
     verified_against=DIALECT_VERIFIED_AGAINST,
@@ -36,8 +59,10 @@ DIALECT_REFERENCE = DialectReference(
         "grouping": "list[str] — GROUP BY columns; alias `group_by`",
         "filter": "dict — WHERE clauses (see where_grammar); alias `where_cond`",
         "refresh": "bool — bypass the QuerySource cache for this call",
-        "filter_options": "dict — extra WHERE entries merged into filter", "qry_options": "dict — provider-specific options",
-        "hierarchy": "list — hierarchical filtering rules", "distinct": "bool — SELECT DISTINCT",
+        "filter_options": "dict — extra WHERE entries merged into filter",
+        "qry_options": "dict — provider-specific options",
+        "hierarchy": "list — hierarchical filtering rules",
+        "distinct": "bool — SELECT DISTINCT",
         "conditions": "dict — nested placeholder values; merged over the flat ones",
         "add_fields": "list[str] — additional columns appended to the projection alongside `fields`, not replacing it",
         "tablename": "str — override the source/destination table name (provider-specific; rarely set by agents)",
@@ -54,12 +79,14 @@ DIALECT_REFERENCE = DialectReference(
         "Values starting with '@' call a deployment variable function (see `variables`), e.g. '@today'.",
     ],
     where_grammar=[
-        "col: 'v'            → col = 'v'", "col: '!v'  or  'col!': 'v'   → col != 'v'",
+        "col: 'v'            → col = 'v'",
+        "col: '!v'  or  'col!': 'v'   → col != 'v'",
         "col: ['a', 'b']    → col IN ('a','b');   'col!': [...] → NOT IN",
         "col: ['>=', 10]    → col >= 10   (first item must be one of operators_list_form)",
         "col: {'>': 10}     → col > 10    (single key from operators_dict_form)",
         "col: 'BETWEEN 1 AND 5' → (col BETWEEN 1 AND 5)  — no ';', '--', '/*', UNION, SELECT",
-        "col: 'null' / '!null' → IS NULL / IS NOT NULL", "col: true → col = True",
+        "col: 'null' / '!null' → IS NULL / IS NOT NULL",
+        "col: true → col = True",
         "Keys must be identifier-safe ([A-Za-z0-9_.] after stripping suffix chars |!~#@:); "
         "the parser silently DROPS unsafe keys/operators — this toolkit rejects them up front instead.",
     ],
@@ -67,13 +94,24 @@ DIALECT_REFERENCE = DialectReference(
     operators_dict_form=list(DICT_OPERATORS),
     examples=[
         {"slug": "epson_field_activity", "placeholders": {"firstdate": "2026-08-09", "lastdate": "2026-08-15"}},
-        {"slug": "epson_field_activity", "placeholders": {"firstdate": "@yesterday", "lastdate": "@today"},
-         "filter": {"store_id": ["101", "102"]}, "fields": ["store_id", "visits"], "limit": 50},
-        {"slug": "pokemon_all_fso_odoo_new", "filter": {"warehouse_alias!": "DC01", "qty": {">": 0}},
-         "ordering": ["qty DESC"], "grouping": ["warehouse_alias"]},
+        {
+            "slug": "epson_field_activity",
+            "placeholders": {"firstdate": "@yesterday", "lastdate": "@today"},
+            "filter": {"store_id": ["101", "102"]},
+            "fields": ["store_id", "visits"],
+            "limit": 50,
+        },
+        {
+            "slug": "pokemon_all_fso_odoo_new",
+            "filter": {"warehouse_alias!": "DC01", "qty": {">": 0}},
+            "ordering": ["qty DESC"],
+            "grouping": ["warehouse_alias"],
+        },
     ],
-    notes=["Unsafe keys/operators are dropped silently by the SQL parser; validate first.",
-           "querylimit is always applied by the toolkit; results are bounded by max_rows."],
+    notes=[
+        "Unsafe keys/operators are dropped silently by the SQL parser; validate first.",
+        "querylimit is always applied by the toolkit; results are bounded by max_rows.",
+    ],
 )
 
 
@@ -124,10 +162,19 @@ def validate_filter(filter: dict[str, FilterValue], *, strict: bool = True) -> l
     return rejected
 
 
-def build_conditions(*, placeholders: dict[str, Any] | None, filter: dict[str, FilterValue] | None,
-                     fields: list[str] | None, ordering: list[str] | None, grouping: list[str] | None,
-                     limit: int | None, offset: int | None, refresh: bool, max_rows: int,
-                     forced: dict[str, Any] | None) -> dict[str, Any]:
+def build_conditions(
+    *,
+    placeholders: dict[str, Any] | None,
+    filter: dict[str, FilterValue] | None,
+    fields: list[str] | None,
+    ordering: list[str] | None,
+    grouping: list[str] | None,
+    limit: int | None,
+    offset: int | None,
+    refresh: bool,
+    max_rows: int,
+    forced: dict[str, Any] | None,
+) -> dict[str, Any]:
     """Assemble the QS `conditions` payload deterministically; `forced` wins (query_slug.py:143 precedence)."""
     payload: dict[str, Any] = dict(placeholders or {})
     if filter:
@@ -150,8 +197,10 @@ def check_version_compatibility(installed: str) -> str | None:
     want = DIALECT_VERIFIED_AGAINST.split(".")[:2]
     have = str(installed).split(".")[:2]
     if have != want:
-        return (f"querysource {installed} differs from the dialect reference version {DIALECT_VERIFIED_AGAINST}; "
-                "the conditions reference may be inaccurate.")
+        return (
+            f"querysource {installed} differs from the dialect reference version {DIALECT_VERIFIED_AGAINST}; "
+            "the conditions reference may be inaccurate."
+        )
     return None
 
 

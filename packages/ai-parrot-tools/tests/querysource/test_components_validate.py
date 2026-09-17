@@ -31,8 +31,12 @@ def fake_registry(patched_qs, monkeypatch):
         @classmethod
         def get_catalog(cls):
             calls["catalog"] += 1
-            return [CI("Concat", "Operators", json_schema={"type": "object"}, example='{"Concat": {}}', icon="git-merge"),
-                    CI("Join", "Operators"), CI("tableOutput", "Destinations"), CI("pivot", "Transformations")]
+            return [
+                CI("Concat", "Operators", json_schema={"type": "object"}, example='{"Concat": {}}', icon="git-merge"),
+                CI("Join", "Operators"),
+                CI("tableOutput", "Destinations"),
+                CI("pivot", "Transformations"),
+            ]
 
         @classmethod
         def validate_pipeline(cls, payload):
@@ -47,7 +51,16 @@ async def test_components_cached_and_filtered(fake_registry):
     docs = await tk.list_components()
     await tk.list_components(category="Operators")
     assert fake_registry["catalog"] == 1 and {d.name for d in docs} == {"Concat", "Join", "tableOutput", "pivot"}
-    assert set(docs[0].model_dump()) == {"name", "category", "description", "usage", "attributes", "json_schema", "example", "icon"}
+    assert set(docs[0].model_dump()) == {
+        "name",
+        "category",
+        "description",
+        "usage",
+        "attributes",
+        "json_schema",
+        "example",
+        "icon",
+    }
 
 
 async def test_policy_restricted(fake_registry):
@@ -61,7 +74,9 @@ async def test_policy_restricted(fake_registry):
 
 async def test_policy_permissive_and_external(fake_registry):
     tk = QuerysourceToolkit(dsn="postgres://fake", allow_raw_sql=True, allow_write=True)
-    assert (await tk.validate_pipeline({"queries": {"a": {"slug": "epson_field_activity"}}, "files": {"f": "x.csv"}})).valid
+    assert (
+        await tk.validate_pipeline({"queries": {"a": {"slug": "epson_field_activity"}}, "files": {"f": "x.csv"}})
+    ).valid
     tk2 = QuerysourceToolkit(dsn="postgres://fake", allow_external_sources=False)
     v = await tk2.validate_pipeline({"queries": {"a": {"slug": "epson_field_activity"}}, "files": {"f": "x.csv"}})
     assert [i.step for i in v.issues] == ["files"]

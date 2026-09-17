@@ -10,15 +10,41 @@ from parrot_tools.querysource.errors import InvalidConditionsError
 
 
 def test_build_conditions_shape_and_cap():
-    p = d.build_conditions(placeholders={"firstdate": "2026-08-09"}, filter={"store": ["1", "2"]}, fields=["a"],
-                           ordering=None, grouping=None, limit=500, offset=10, refresh=True, max_rows=200, forced=None)
-    assert p == {"firstdate": "2026-08-09", "filter": {"store": ["1", "2"]}, "fields": ["a"],
-                 "querylimit": 200, "_offset": 10, "refresh": True}
+    p = d.build_conditions(
+        placeholders={"firstdate": "2026-08-09"},
+        filter={"store": ["1", "2"]},
+        fields=["a"],
+        ordering=None,
+        grouping=None,
+        limit=500,
+        offset=10,
+        refresh=True,
+        max_rows=200,
+        forced=None,
+    )
+    assert p == {
+        "firstdate": "2026-08-09",
+        "filter": {"store": ["1", "2"]},
+        "fields": ["a"],
+        "querylimit": 200,
+        "_offset": 10,
+        "refresh": True,
+    }
 
 
 def test_forced_precedence():
-    p = d.build_conditions(placeholders={"program": "epson"}, filter=None, fields=None, ordering=None, grouping=None,
-                           limit=None, offset=None, refresh=False, max_rows=50, forced={"program": "pokemon"})
+    p = d.build_conditions(
+        placeholders={"program": "epson"},
+        filter=None,
+        fields=None,
+        ordering=None,
+        grouping=None,
+        limit=None,
+        offset=None,
+        refresh=False,
+        max_rows=50,
+        forced={"program": "pokemon"},
+    )
     assert p["program"] == "pokemon" and p["querylimit"] == 50
 
 
@@ -27,14 +53,28 @@ def test_validate_placeholders_unknown():
         d.validate_placeholders({"firstdate": "x", "fields": ["a"]}, allowed={"firstdate", "lastdate"})
 
 
-@pytest.mark.parametrize("flt", [{"a": "v"}, {"a": "!v"}, {"a!": "v"}, {"a": ["x", "y"]}, {"a": [">=", 1]},
-                                 {"a": {">": 1}}, {"a": "BETWEEN 1 AND 5"}, {"a": "null"}, {"a": True}])
+@pytest.mark.parametrize(
+    "flt",
+    [
+        {"a": "v"},
+        {"a": "!v"},
+        {"a!": "v"},
+        {"a": ["x", "y"]},
+        {"a": [">=", 1]},
+        {"a": {">": 1}},
+        {"a": "BETWEEN 1 AND 5"},
+        {"a": "null"},
+        {"a": True},
+    ],
+)
 def test_validate_filter_accepts(flt):
     assert d.validate_filter(flt) == []
 
 
-@pytest.mark.parametrize("flt", [{"a b": 1}, {"a": {"LIKE": "v"}}, {"a": {">": 1, "<": 5}},
-                                 {"a": "BETWEEN 1 AND 5; DROP TABLE x"}, {"a;": 1}])
+@pytest.mark.parametrize(
+    "flt",
+    [{"a b": 1}, {"a": {"LIKE": "v"}}, {"a": {">": 1, "<": 5}}, {"a": "BETWEEN 1 AND 5; DROP TABLE x"}, {"a;": 1}],
+)
 def test_validate_filter_rejects(flt):
     with pytest.raises(InvalidConditionsError):
         d.validate_filter(flt)
@@ -67,5 +107,14 @@ def test_dialect_reference_matches_pxd():
     spec = importlib.util.find_spec("querysource")
     pxd = pathlib.Path(spec.submodule_search_locations[0]) / "parsers" / "abstract.pxd"
     text = pxd.read_text()
-    for attr in ("filter", "filter_options", "fields", "ordering", "grouping", "querylimit", "cond_definition", "_offset"):
+    for attr in (
+        "filter",
+        "filter_options",
+        "fields",
+        "ordering",
+        "grouping",
+        "querylimit",
+        "cond_definition",
+        "_offset",
+    ):
         assert re.search(rf"\b{re.escape(attr)}\b", text), attr

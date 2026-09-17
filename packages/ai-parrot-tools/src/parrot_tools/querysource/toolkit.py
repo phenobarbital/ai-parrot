@@ -3,6 +3,7 @@
 Generated tool names (tool_prefix 'qs'): qs_get_dialect_reference, qs_list_slugs, qs_describe_slug, qs_execute_slug,
 qs_list_components, qs_validate_pipeline, qs_run_multiquery and — only when allow_write=True — qs_save_multiquery.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -14,25 +15,65 @@ from typing import Any
 from parrot.tools.toolkit import AbstractToolkit  # verified: packages/ai-parrot/src/parrot/tools/toolkit.py:206
 
 from parrot_tools.querysource import _qs
-from parrot_tools.querysource.catalog import NormalizedPipeline, SlugCatalog, SlugRecord, TenantGuard, normalize_pipeline
-from parrot_tools.querysource.dialect import DIALECT_REFERENCE, build_conditions, check_version_compatibility, load_variables, validate_filter, validate_placeholders
-from parrot_tools.querysource.errors import QuerysourceToolkitError, RawSqlForbiddenError, SlugNotFoundError, TenantDeniedError, WriteDisabledError
-from parrot_tools.querysource.models import ComponentDoc, DialectReference, ExecutionResult, FilterValue, MultiQueryResult, PipelineIssue, PipelineValidation, PlaceholderInfo, SavedSlug, SlugDetail, SlugSummary
+from parrot_tools.querysource.catalog import (
+    NormalizedPipeline,
+    SlugCatalog,
+    SlugRecord,
+    TenantGuard,
+    normalize_pipeline,
+)
+from parrot_tools.querysource.dialect import (
+    DIALECT_REFERENCE,
+    build_conditions,
+    check_version_compatibility,
+    load_variables,
+    validate_filter,
+    validate_placeholders,
+)
+from parrot_tools.querysource.errors import (
+    QuerysourceToolkitError,
+    RawSqlForbiddenError,
+    SlugNotFoundError,
+    TenantDeniedError,
+    WriteDisabledError,
+)
+from parrot_tools.querysource.models import (
+    ComponentDoc,
+    DialectReference,
+    ExecutionResult,
+    FilterValue,
+    MultiQueryResult,
+    PipelineIssue,
+    PipelineValidation,
+    PlaceholderInfo,
+    SavedSlug,
+    SlugDetail,
+    SlugSummary,
+)
 from parrot_tools.querysource.results import frame_to_result, multi_to_result
 
 
 class QuerysourceToolkit(AbstractToolkit):
     """Explain, list, describe and execute QuerySource query-slugs and MultiQuery pipelines, scoped to tenants."""
 
-    tool_prefix: str | None = "qs"                                   # toolkit.py:257
-    exclude_tools: tuple[str, ...] = ("open", "close")               # toolkit.py:243
+    tool_prefix: str | None = "qs"  # toolkit.py:257
+    exclude_tools: tuple[str, ...] = ("open", "close")  # toolkit.py:243
     confirming_tools: frozenset[str] = frozenset({"save_multiquery"})  # toolkit.py:275
-    auto_open: bool = True                                           # toolkit.py:319
+    auto_open: bool = True  # toolkit.py:319
 
-    def __init__(self, programs: list[str] | None = None, allow_write: bool = False, allow_raw_sql: bool = False,
-                 allow_external_sources: bool = True, include_sql: bool = True, max_rows: int = 200,
-                 forced_conditions: dict[str, Any] | None = None, dsn: str | None = None,
-                 multiquery_timeout: float = 600.0, **kwargs: Any) -> None:
+    def __init__(
+        self,
+        programs: list[str] | None = None,
+        allow_write: bool = False,
+        allow_raw_sql: bool = False,
+        allow_external_sources: bool = True,
+        include_sql: bool = True,
+        max_rows: int = 200,
+        forced_conditions: dict[str, Any] | None = None,
+        dsn: str | None = None,
+        multiquery_timeout: float = 600.0,
+        **kwargs: Any,
+    ) -> None:
         """Configure tenancy and gates; querysource itself is imported lazily on first use."""
         super().__init__(**kwargs)
         self.programs = list(programs) if programs is not None else None
@@ -79,8 +120,14 @@ class QuerysourceToolkit(AbstractToolkit):
         return result
 
     def _summary(self, rec: SlugRecord) -> SlugSummary:
-        return SlugSummary(slug=rec.slug, description=rec.description, program_slug=rec.program_slug,
-                           provider=rec.provider, is_multiquery=rec.is_multiquery, placeholders=rec.placeholder_names)
+        return SlugSummary(
+            slug=rec.slug,
+            description=rec.description,
+            program_slug=rec.program_slug,
+            provider=rec.provider,
+            is_multiquery=rec.is_multiquery,
+            placeholders=rec.placeholder_names,
+        )
 
     async def get_dialect_reference(self) -> DialectReference:
         """Return the QuerySource conditions dialect: which keys are options, which become placeholders, which
@@ -88,7 +135,9 @@ class QuerysourceToolkit(AbstractToolkit):
         accepts as values (e.g. '@today'). Call this before building conditions."""
         return DIALECT_REFERENCE.model_copy(update={"variables": load_variables()})
 
-    async def list_slugs(self, search: str | None = None, program: str | None = None, limit: int = 50) -> list[SlugSummary]:
+    async def list_slugs(
+        self, search: str | None = None, program: str | None = None, limit: int = 50
+    ) -> list[SlugSummary]:
         """List query-slugs visible to this toolkit (allowlist-filtered). `search` matches slug or description."""
         await self._open()
         records = await self._catalog.list(search=search, program=program, limit=max(1, min(int(limit), 500)))
@@ -102,61 +151,88 @@ class QuerysourceToolkit(AbstractToolkit):
         rec = await self._catalog.get_allowed(slug)
         detail = SlugDetail(
             **self._summary(rec).model_dump(),
-            placeholders_detail=[PlaceholderInfo(name=n, type=rec.cond_definition.get(n), default=rec.conditions.get(n))
-                                 for n in rec.placeholder_names],
-            filtering=rec.filtering, fields=rec.fields, ordering=rec.ordering, grouping=rec.grouping,
-            is_cached=rec.is_cached, cache_timeout=rec.cache_timeout,
+            placeholders_detail=[
+                PlaceholderInfo(name=n, type=rec.cond_definition.get(n), default=rec.conditions.get(n))
+                for n in rec.placeholder_names
+            ],
+            filtering=rec.filtering,
+            fields=rec.fields,
+            ordering=rec.ordering,
+            grouping=rec.grouping,
+            is_cached=rec.is_cached,
+            cache_timeout=rec.cache_timeout,
             sql=rec.query_raw if (self.include_sql and not rec.is_multiquery) else None,
             pipeline=rec.pipeline if self.include_sql else None,
         )
         if dry_run and not rec.is_multiquery:
-            qs = _qs.get_qs()(slug=slug)                    # qs.py:42
+            qs = _qs.get_qs()(slug=slug)  # qs.py:42
             try:
-                result, error = await qs.dry_run()          # qs.py:529
+                result, error = await qs.dry_run()  # qs.py:529
                 detail.rendered_query = str(result) if result is not None else f"dry_run error: {error}"
             finally:
-                await qs.close()                            # qs.py:519
+                await qs.close()  # qs.py:519
         return detail
 
-    async def execute_slug(self, slug: str, placeholders: dict[str, Any] | None = None,
-                           filter: dict[str, FilterValue] | None = None, fields: list[str] | None = None,
-                           ordering: list[str] | None = None, grouping: list[str] | None = None,
-                           limit: int | None = None, offset: int | None = None, refresh: bool = False) -> ExecutionResult:
+    async def execute_slug(
+        self,
+        slug: str,
+        placeholders: dict[str, Any] | None = None,
+        filter: dict[str, FilterValue] | None = None,
+        fields: list[str] | None = None,
+        ordering: list[str] | None = None,
+        grouping: list[str] | None = None,
+        limit: int | None = None,
+        offset: int | None = None,
+        refresh: bool = False,
+    ) -> ExecutionResult:
         """Run a query-slug. `placeholders` fill the slug's declared conditions (see qs_describe_slug);
         `filter` adds WHERE clauses in the dialect grammar (see qs_get_dialect_reference); `fields`, `ordering`,
         `grouping` override the stored projection; `limit` is capped at the toolkit's max_rows; `refresh` bypasses
         the QuerySource cache. Returns bounded rows plus returned_rows/total_rows/truncated."""
         started = time.monotonic()
         await self._open()
-        rec = await self._catalog.get_allowed(slug)                     # tenant check first (spec §2)
+        rec = await self._catalog.get_allowed(slug)  # tenant check first (spec §2)
         placeholders = dict(placeholders or {})
         validate_placeholders(placeholders, set(rec.placeholder_names))
-        rejected = validate_filter(dict(filter or {}))                   # raises when strict (default)
-        conditions = build_conditions(placeholders=placeholders, filter=filter, fields=fields, ordering=ordering,
-                                      grouping=grouping, limit=limit, offset=offset, refresh=refresh,
-                                      max_rows=self.max_rows, forced=self.forced_conditions)
+        rejected = validate_filter(dict(filter or {}))  # raises when strict (default)
+        conditions = build_conditions(
+            placeholders=placeholders,
+            filter=filter,
+            fields=fields,
+            ordering=ordering,
+            grouping=grouping,
+            limit=limit,
+            offset=offset,
+            refresh=refresh,
+            max_rows=self.max_rows,
+            forced=self.forced_conditions,
+        )
         self.logger.info("qs_execute_slug %s querylimit=%s", slug, conditions.get("querylimit"))
         exc_mod = _qs.get_exceptions()
-        qs = _qs.get_qs()(slug=slug, conditions=conditions)              # qs.py:42
+        qs = _qs.get_qs()(slug=slug, conditions=conditions)  # qs.py:42
         try:
-            result, error = await qs.query(output_format="pandas")      # qs.py:363
+            result, error = await qs.query(output_format="pandas")  # qs.py:363
             if error:
                 raise QuerysourceToolkitError(f"query '{slug}' failed: {error}")
         except exc_mod.DataNotFound:
-            return frame_to_result(None, slug=slug, max_rows=self.max_rows, applied=conditions, rejected=rejected, started=started)
+            return frame_to_result(
+                None, slug=slug, max_rows=self.max_rows, applied=conditions, rejected=rejected, started=started
+            )
         except exc_mod.SlugNotFound as exc:
             raise SlugNotFoundError(f"slug '{slug}' not found") from exc
         except exc_mod.QueryException as exc:
             raise QuerysourceToolkitError(str(exc)) from exc
         finally:
-            await qs.close()                                             # qs.py:519
-        return frame_to_result(result, slug=slug, max_rows=self.max_rows, applied=conditions, rejected=rejected, started=started)
+            await qs.close()  # qs.py:519
+        return frame_to_result(
+            result, slug=slug, max_rows=self.max_rows, applied=conditions, rejected=rejected, started=started
+        )
 
     async def _get_catalog(self) -> list[Any]:
         """ComponentRegistry.get_catalog() via to_thread, cached per instance (handlers/components.py:50)."""
         if self._components_cache is None:
             registry = _qs.get_component_registry()
-            self._components_cache = await asyncio.to_thread(registry.get_catalog)      # registry.py:187
+            self._components_cache = await asyncio.to_thread(registry.get_catalog)  # registry.py:187
         return self._components_cache
 
     async def _destination_names(self) -> set[str]:
@@ -183,23 +259,40 @@ class QuerysourceToolkit(AbstractToolkit):
         destinations = sorted(set(norm.output_steps) & await self._destination_names())
         if norm.raw_nodes and (self.restricted or not self.allow_raw_sql):
             for node in norm.raw_nodes:
-                issues.append(PipelineIssue(
-                    step=node, field="query",
-                    message="inline query/raw_query nodes are not allowed for this instance",
-                ))
+                issues.append(
+                    PipelineIssue(
+                        step=node,
+                        field="query",
+                        message="inline query/raw_query nodes are not allowed for this instance",
+                    )
+                )
         if norm.has_files and not self.allow_external_sources:
-            issues.append(PipelineIssue(step="files", field="files",
-                                        message="external files are disabled (allow_external_sources=False)"))
+            issues.append(
+                PipelineIssue(
+                    step="files", field="files", message="external files are disabled (allow_external_sources=False)"
+                )
+            )
         if norm.has_sources and not self.allow_external_sources:
-            issues.append(PipelineIssue(step="sources", field="sources",
-                                        message="external sources are disabled (allow_external_sources=False)"))
+            issues.append(
+                PipelineIssue(
+                    step="sources",
+                    field="sources",
+                    message="external sources are disabled (allow_external_sources=False)",
+                )
+            )
         if destinations and not self.allow_write:
             for step in destinations:
-                issues.append(PipelineIssue(step=step, field="Output",
-                                            message="destination steps require allow_write=True"))
-        return PipelineValidation(valid=not issues, issues=issues, referenced_slugs=sorted(set(norm.slug_nodes.values())),
-                                  has_raw_nodes=bool(norm.raw_nodes), has_external_sources=norm.has_files or norm.has_sources,
-                                  destination_steps=destinations)
+                issues.append(
+                    PipelineIssue(step=step, field="Output", message="destination steps require allow_write=True")
+                )
+        return PipelineValidation(
+            valid=not issues,
+            issues=issues,
+            referenced_slugs=sorted(set(norm.slug_nodes.values())),
+            has_raw_nodes=bool(norm.raw_nodes),
+            has_external_sources=norm.has_files or norm.has_sources,
+            destination_steps=destinations,
+        )
 
     async def validate_pipeline(self, pipeline: dict[str, Any]) -> PipelineValidation:
         """Validate a MultiQuery pipeline without running it: structural rules (known step names, ≥1 source, Join/Merge
@@ -207,7 +300,7 @@ class QuerysourceToolkit(AbstractToolkit):
         external sources and destination (write) steps are reported when the configuration forbids them."""
         result = await self._policy_check(pipeline)
         registry = _qs.get_component_registry()
-        structural = await asyncio.to_thread(registry.validate_pipeline, dict(pipeline))   # registry.py:332
+        structural = await asyncio.to_thread(registry.validate_pipeline, dict(pipeline))  # registry.py:332
         for err in getattr(structural, "errors", []):
             result.issues.append(PipelineIssue(step=err.step, field=err.field, message=err.message))
         result.valid = not result.issues
@@ -239,8 +332,9 @@ class QuerysourceToolkit(AbstractToolkit):
         for referenced_slug in set(normalize_pipeline(pipeline).slug_nodes.values()):
             await self._catalog.get_allowed(referenced_slug)
 
-    async def run_multiquery(self, pipeline: dict[str, Any] | None = None, slug: str | None = None,
-                             conditions: dict[str, Any] | None = None) -> MultiQueryResult:
+    async def run_multiquery(
+        self, pipeline: dict[str, Any] | None = None, slug: str | None = None, conditions: dict[str, Any] | None = None
+    ) -> MultiQueryResult:
         """Run a MultiQuery pipeline inline (`pipeline`, the JSON with queries/Join/Concat/…/Output) or a saved
         multi-query slug (`slug`). Every referenced slug must be executable by this toolkit; raw SQL nodes, external
         sources and destination steps follow the instance configuration (see qs_validate_pipeline). Results are
@@ -254,15 +348,19 @@ class QuerysourceToolkit(AbstractToolkit):
             if rec.is_multiquery:
                 await self._assert_pipeline_slugs_allowed(rec.pipeline)
                 self._raise_for_issues(await self._policy_check(rec.pipeline))
-            mq = _qs.get_multiqs()(slug=slug, conditions=dict(conditions or {}))            # multi/__init__.py:62
+            mq = _qs.get_multiqs()(slug=slug, conditions=dict(conditions or {}))  # multi/__init__.py:62
         else:
             await self._assert_pipeline_slugs_allowed(pipeline)
             self._raise_for_issues(await self._policy_check(pipeline))
-            mq = _qs.get_multiqs()(query=copy.deepcopy(pipeline), conditions=dict(conditions or {}))  # deepcopy: __init__ pops keys (:95-97)
+            mq = _qs.get_multiqs()(
+                query=copy.deepcopy(pipeline), conditions=dict(conditions or {})
+            )  # deepcopy: __init__ pops keys (:95-97)
         exc_mod = _qs.get_exceptions()
         self.logger.info("qs_run_multiquery slug=%s inline=%s", slug, pipeline is not None)
         try:
-            result, _options = await asyncio.wait_for(mq.query(), timeout=self.multiquery_timeout)   # :166 ; §8 Q3 option a
+            result, _options = await asyncio.wait_for(
+                mq.query(), timeout=self.multiquery_timeout
+            )  # :166 ; §8 Q3 option a
         except exc_mod.DataNotFound:
             return multi_to_result(None, max_rows=self.max_rows, started=started)
         except asyncio.TimeoutError as exc:
@@ -271,8 +369,9 @@ class QuerysourceToolkit(AbstractToolkit):
             raise QuerysourceToolkitError(str(exc)) from exc
         return multi_to_result(result, max_rows=self.max_rows, started=started)
 
-    async def save_multiquery(self, slug: str, pipeline: dict[str, Any], description: str,
-                              program: str | None = None, overwrite: bool = False) -> SavedSlug:
+    async def save_multiquery(
+        self, slug: str, pipeline: dict[str, Any], description: str, program: str | None = None, overwrite: bool = False
+    ) -> SavedSlug:
         """Persist a validated MultiQuery pipeline as a query-slug owned by `program` (forced to the single allowed
         program when this toolkit is tenant-restricted). Requires operator opt-in (allow_write) and user confirmation.
         Refuses to overwrite a slug owned by another program; set overwrite=True to update your own."""
@@ -283,8 +382,9 @@ class QuerysourceToolkit(AbstractToolkit):
         await self._assert_pipeline_slugs_allowed(pipeline)
         validation = await self.validate_pipeline(pipeline)
         self._raise_for_issues(validation)
-        return await self._catalog.upsert(slug=slug, description=description, pipeline=pipeline,
-                                          program_slug=program_slug, overwrite=overwrite)
+        return await self._catalog.upsert(
+            slug=slug, description=description, pipeline=pipeline, program_slug=program_slug, overwrite=overwrite
+        )
 
     async def _pre_execute(self, tool_name: str, /, **kwargs: Any) -> None:
         """Defence in depth: block the write tool even if it were exposed (toolkit.py:455 hook)."""

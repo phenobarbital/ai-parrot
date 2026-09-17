@@ -32,8 +32,14 @@ async def test_list_restricted(patched_qs):
 async def test_upsert_cross_program_refused(patched_qs):
     cat = SlugCatalog("postgres://fake", TenantGuard(None))
     with pytest.raises(QuerysourceToolkitError):
-        await cat.upsert(slug="epson_field_activity", description="x", pipeline={"queries": {}},
-                         program_slug="pokemon", overwrite=True)
-    saved = await cat.upsert(slug="new_mq", description="x", pipeline={"queries": {}}, program_slug="pokemon",
-                             overwrite=False)
+        await cat.upsert(
+            slug="epson_field_activity",
+            description="x",
+            pipeline={"queries": {}},
+            program_slug="pokemon",
+            overwrite=True,
+        )
+    saved = await cat.upsert(
+        slug="new_mq", description="x", pipeline={"queries": {}}, program_slug="pokemon", overwrite=False
+    )
     assert saved.action == "inserted" and patched_qs["insert"][0]["is_cached"] is False

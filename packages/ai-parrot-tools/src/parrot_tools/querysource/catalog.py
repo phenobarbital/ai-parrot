@@ -1,4 +1,5 @@
 """Slug catalog over public.queries with explicit tenant checks (spec §3 M4)."""
+
 from __future__ import annotations
 
 import json
@@ -10,7 +11,12 @@ from asyncdb import AsyncDB  # verified: parrot_tools/querytoolkit.py:18
 from asyncdb.exceptions import NoDataFound  # verified: real "no such row" signal from QueryModel.get/filter
 
 from parrot_tools.querysource import _qs
-from parrot_tools.querysource.errors import InvalidConditionsError, QuerysourceToolkitError, SlugNotFoundError, TenantDeniedError
+from parrot_tools.querysource.errors import (
+    InvalidConditionsError,
+    QuerysourceToolkitError,
+    SlugNotFoundError,
+    TenantDeniedError,
+)
 from parrot_tools.querysource.models import SavedSlug
 
 logger = logging.getLogger(__name__)
@@ -32,6 +38,7 @@ def _not_found_exception_types() -> tuple[type[BaseException], ...]:
 @dataclass(frozen=True)
 class SlugRecord:
     """Redacted view of one public.queries row (never source/params/attributes/dwh_*/cache_options)."""
+
     slug: str
     program_slug: str
     description: str | None
@@ -184,8 +191,9 @@ class SlugCatalog:
             records = [r for r in records if needle in r.slug.lower() or needle in (r.description or "").lower()]
         return sorted(records, key=lambda r: r.slug)[:limit]
 
-    async def upsert(self, *, slug: str, description: str, pipeline: dict[str, Any], program_slug: str,
-                     overwrite: bool) -> SavedSlug:
+    async def upsert(
+        self, *, slug: str, description: str, pipeline: dict[str, Any], program_slug: str, overwrite: bool
+    ) -> SavedSlug:
         """Insert or (guarded) update a multi-query row: query_raw=json, is_cached=False (S5 ownership check)."""
         await self.open()
         model = _qs.get_query_model()
@@ -207,8 +215,13 @@ class SlugCatalog:
                 await existing.update(_connection=conn)
                 action = "updated"
             else:
-                row = model(query_slug=slug, description=description, query_raw=json.dumps(pipeline),
-                           program_slug=program_slug, is_cached=False)
+                row = model(
+                    query_slug=slug,
+                    description=description,
+                    query_raw=json.dumps(pipeline),
+                    program_slug=program_slug,
+                    is_cached=False,
+                )
                 await row.insert(_connection=conn)
                 action = "inserted"
         logger.info("catalog.upsert %s (%s) program=%s", slug, action, program_slug)
@@ -222,12 +235,13 @@ _RAW_NODE_KEYS = ("query", "raw_query")
 @dataclass
 class NormalizedPipeline:
     """Flat view of a MultiQS pipeline dict (design research S6)."""
-    slug_nodes: dict[str, str]          # node name → slug
-    raw_nodes: list[str]                # node names carrying query/raw_query
+
+    slug_nodes: dict[str, str]  # node name → slug
+    raw_nodes: list[str]  # node names carrying query/raw_query
     has_files: bool
     has_sources: bool
-    step_names: list[str]               # top-level keys other than queries/files/sources/Output
-    output_steps: list[str]             # step names inside Output (transformations + destinations)
+    step_names: list[str]  # top-level keys other than queries/files/sources/Output
+    output_steps: list[str]  # step names inside Output (transformations + destinations)
 
 
 def normalize_pipeline(pipeline: dict[str, Any]) -> NormalizedPipeline:

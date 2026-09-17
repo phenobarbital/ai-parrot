@@ -3,7 +3,12 @@ import pytest
 import pandas as pd
 from parrot_tools.querysource import _qs
 from parrot_tools.querysource.toolkit import QuerysourceToolkit
-from parrot_tools.querysource.errors import RawSqlForbiddenError, WriteDisabledError, QuerysourceToolkitError, TenantDeniedError
+from parrot_tools.querysource.errors import (
+    RawSqlForbiddenError,
+    WriteDisabledError,
+    QuerysourceToolkitError,
+    TenantDeniedError,
+)
 from .test_components_validate import fake_registry  # noqa: F401 — reused fixture (patches _qs.ComponentRegistry)
 
 
@@ -29,8 +34,9 @@ async def test_policy_blocks_before_multiqs(fake_mq):
     with pytest.raises(RawSqlForbiddenError):
         await tk.run_multiquery(pipeline=raw)
     with pytest.raises(WriteDisabledError):
-        await tk.run_multiquery(pipeline={"queries": {"a": {"slug": "pokemon_all_fso_odoo_new"}},
-                                          "Output": [{"tableOutput": {}}]})
+        await tk.run_multiquery(
+            pipeline={"queries": {"a": {"slug": "pokemon_all_fso_odoo_new"}}, "Output": [{"tableOutput": {}}]}
+        )
     assert fake_mq["init"] is None
 
 

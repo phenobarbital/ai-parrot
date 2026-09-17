@@ -1,4 +1,5 @@
 """Registry integrity after the hard cut + integration tests against the real querysource (skipped when absent)."""
+
 import importlib
 import importlib.util
 import pytest
@@ -18,6 +19,7 @@ def test_registry_has_no_stale_qsource_keys():
 @pytest.mark.skipif(not HAS_QS, reason="querysource not installed")
 async def test_component_catalog_real_registry():
     from parrot_tools.querysource import QuerysourceToolkit
+
     docs = await QuerysourceToolkit(dsn="postgres://unused").list_components(category="Operators")
     names = {d.name for d in docs}
     assert {"Concat", "Join"} <= names and all(d.json_schema is not None for d in docs if d.name == "Concat")
@@ -26,6 +28,7 @@ async def test_component_catalog_real_registry():
 @pytest.mark.skipif(not HAS_QS, reason="querysource not installed")
 def test_validate_pipeline_real_registry_structural():
     from querysource.queries.multi.registry import ComponentRegistry
+
     result = ComponentRegistry.validate_pipeline(PIPELINE)
     assert result.valid and result.errors == []
 

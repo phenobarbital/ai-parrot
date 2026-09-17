@@ -8,12 +8,14 @@ from parrot_tools.querysource.results import frame_to_result, multi_to_result, j
 
 
 def _df(n=3):
-    return pd.DataFrame({
-        "ts": pd.to_datetime(["2026-08-09", None, "2026-08-11"][:n]),
-        "qty": np.array([1, 2, 3][:n], dtype="int64"),
-        "amt": [Decimal("1.5"), float("nan"), 2.0][:n],
-        "cat": pd.Categorical(["a", "b", "a"][:n]),
-    })
+    return pd.DataFrame(
+        {
+            "ts": pd.to_datetime(["2026-08-09", None, "2026-08-11"][:n]),
+            "qty": np.array([1, 2, 3][:n], dtype="int64"),
+            "amt": [Decimal("1.5"), float("nan"), 2.0][:n],
+            "cat": pd.Categorical(["a", "b", "a"][:n]),
+        }
+    )
 
 
 def test_json_safe_contract():
@@ -29,7 +31,9 @@ def test_truncation_and_counts():
 
 
 def test_empty_frame():
-    r = frame_to_result(pd.DataFrame(columns=["a", "b"]), slug="s", max_rows=5, applied={}, rejected=[], started=time.monotonic())
+    r = frame_to_result(
+        pd.DataFrame(columns=["a", "b"]), slug="s", max_rows=5, applied={}, rejected=[], started=time.monotonic()
+    )
     assert r.status == "empty" and r.columns == ["a", "b"] and r.rows == []
 
 

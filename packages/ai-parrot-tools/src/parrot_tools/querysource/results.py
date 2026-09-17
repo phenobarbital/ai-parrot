@@ -1,4 +1,5 @@
 """Shape QuerySource results into bounded, JSON-safe Pydantic models (spec §3 M5, S8/S9)."""
+
 from __future__ import annotations
 
 import time
@@ -51,8 +52,9 @@ def _as_frame(result: Any) -> pd.DataFrame:
     return pd.DataFrame(list(result))
 
 
-def frame_to_result(result: Any, *, slug: str | None, max_rows: int, applied: dict[str, Any],
-                    rejected: list[str], started: float) -> ExecutionResult:
+def frame_to_result(
+    result: Any, *, slug: str | None, max_rows: int, applied: dict[str, Any], rejected: list[str], started: float
+) -> ExecutionResult:
     """DataFrame → ExecutionResult: head(max_rows) rows, honest counts, status 'empty' for zero rows."""
     frame = _as_frame(result)
     total = int(len(frame))
@@ -75,7 +77,9 @@ def frame_to_result(result: Any, *, slug: str | None, max_rows: int, applied: di
 def multi_to_result(result: Any, *, max_rows: int, started: float) -> MultiQueryResult:
     """MultiQS output (DataFrame | dict[str, DataFrame]) → MultiQueryResult keyed by frame name ('result' when single)."""
     frames = result if isinstance(result, dict) else {"result": result}
-    results = {str(name): frame_to_result(frame, slug=None, max_rows=max_rows, applied={}, rejected=[], started=started)
-               for name, frame in frames.items()}
+    results = {
+        str(name): frame_to_result(frame, slug=None, max_rows=max_rows, applied={}, rejected=[], started=started)
+        for name, frame in frames.items()
+    }
     status = "empty" if results and all(r.status == "empty" for r in results.values()) else "success"
     return MultiQueryResult(status=status, results=results, duration_ms=int((time.monotonic() - started) * 1000))

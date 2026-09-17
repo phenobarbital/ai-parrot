@@ -1,4 +1,5 @@
 """Lazy, patchable access to the optional ``querysource`` dependency (spec §3 M1)."""
+
 from __future__ import annotations
 
 from types import ModuleType

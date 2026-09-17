@@ -42,9 +42,16 @@ def fake_qs(patched_qs, monkeypatch):
 
 async def test_payload_cap_and_close(fake_qs):
     tk = QuerysourceToolkit(dsn="postgres://fake", max_rows=200)
-    r = await tk.execute_slug("epson_field_activity", placeholders={"firstdate": "2026-08-09", "lastdate": "2026-08-15"},
-                              filter={"store": ["1", "2"]}, limit=5000)
-    assert fake_qs["init"]["conditions"]["querylimit"] == 200 and fake_qs["init"]["conditions"]["firstdate"] == "2026-08-09"
+    r = await tk.execute_slug(
+        "epson_field_activity",
+        placeholders={"firstdate": "2026-08-09", "lastdate": "2026-08-15"},
+        filter={"store": ["1", "2"]},
+        limit=5000,
+    )
+    assert (
+        fake_qs["init"]["conditions"]["querylimit"] == 200
+        and fake_qs["init"]["conditions"]["firstdate"] == "2026-08-09"
+    )
     assert fake_qs["query"] == "pandas" and fake_qs["closed"] == 1 and r.returned_rows == 3
 
 

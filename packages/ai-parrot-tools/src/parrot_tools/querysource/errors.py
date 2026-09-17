@@ -1,4 +1,5 @@
 """Error hierarchy for QuerysourceToolkit (spec §3 M1). Messages are written for the LLM."""
+
 from __future__ import annotations
 
 from parrot.exceptions import ToolError  # verified: packages/ai-parrot/src/parrot/exceptions.py:57
