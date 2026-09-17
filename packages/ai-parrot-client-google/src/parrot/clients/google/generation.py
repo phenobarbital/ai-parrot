@@ -962,7 +962,10 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
             return types.Image(image_bytes=buf.getvalue(), mime_type="image/jpeg")
 
         # --- Build GenerateVideosConfig ----------------------------------------
-        pg_val = person_generation.upper() if isinstance(person_generation, str) else person_generation
+        # FEAT-564 TASK-3324: the wire value is lowercase (verified: reel/profiles.py's
+        # person_generation_values, reel/veo.py's adapter) — the SDK previously
+        # uppercased this, which the SDK serializes as-is (uppercase survives).
+        pg_val = person_generation.lower() if isinstance(person_generation, str) else person_generation
         # VEO 3.x only accepts specific personGeneration values, and they differ
         # by modality (per https://ai.google.dev/gemini-api/docs/video):
         #   - text-to-video & extension: 'allow_all' only
@@ -971,7 +974,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         # avoid a 400 INVALID_ARGUMENT.
         if is_veo31:
             is_image_to_video = ref_img_pil is not None or bool(reference_images) or last_frame is not None
-            required = "ALLOW_ADULT" if is_image_to_video else "ALLOW_ALL"
+            required = "allow_adult" if is_image_to_video else "allow_all"
             if pg_val != required:
                 self.logger.warning(
                     f"person_generation={pg_val!r} is not supported by VEO 3.x for "
