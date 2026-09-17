@@ -294,6 +294,7 @@ parrot codex  install --remote [--remote-url URL] [--token-env NAME]
 | M3: Core Streamable HTTP client | yes | `RemoteWikiClient` contract + error codes fixed; SSE parsing mirrors `HttpMCPSession._read_sse_response` (transports/http.py:473-530); one re-initialize on unknown session | — |
 | M4: `wikitoolkit serve` | yes | `WikiServerConfig`; `StaticBearerKeyStore`; `MCPServerConfig(transport="streamable-http", auth_method=API_KEY, api_key_header="Authorization", base_path=f"{base}/{wiki}")`; one `StreamableHttpMCPServer(parent_app=app)` per wiki; actor middleware; lazy import with typed error | — |
 | M5: Bulk tools | yes | four tools, payload models and limits fixed above; server body = `replace_source_slice` + `upsert_symbols` under `wiki_write_lock`; sync body = `_sync_records` with an in-memory `InMemoryWikiStore` holding the payload | — |
+| M5b: ArangoDB symbol plane | yes | `wiki_symbols` collection + `{wiki}_symbols_view`; four overrides with the exact `BaseWikiStore` signatures; UPSERT keyed by `document_key(sym_concept_id(...))`; mirrors `_create_pages_view` | — |
 | M6: CLI remote proxy + pass-through + push | yes | command→tool table fixed in §3 M6; refusal list fixed; `build/upsert/ingest --no-push`; `sync` via tools; `ProxyStdioMCPServer` | — |
 | M7: Installers `--remote` | yes | entry shapes fixed (`type: http`, `url`, `headers.Authorization = "Bearer ${TOKEN_ENV}"`; Codex `url` + `bearer_token_env_var`); managed detection extended | — |
 | M8: Docs + end-to-end evidence | yes | `docs/guides/llm-wiki-remote.md`; in-process e2e test (serve on 127.0.0.1 ephemeral port → CLI proxy) | — |
@@ -530,6 +531,29 @@ parrot codex  install --remote [--remote-url URL] [--token-env NAME]
   def create_bulk_tools(store: BaseWikiStore, root: Path, config: WikiProjectConfig) -> list[AbstractTool]: ...
   ```
 
+### Module 5b: ArangoDB symbol plane
+- **Path**: `packages/ai-parrot/src/parrot/knowledge/wiki/arango_store.py`
+- **Responsibility**: give the ArangoDB backend the native symbol store that SQLite already has (store.py:131 `symbols` table, :193 `symbols_fts`), so structural tools and `wiki_ingest_batch` behave identically on both backends (§8 Q5).
+- **Depends on**: none (M5's `wiki_ingest_batch` benefits; M8's e2e asserts it).
+- **Interface Skeleton**:
+  ```python
+  # modifies packages/ai-parrot/src/parrot/knowledge/wiki/arango_store.py
+  SYMBOLS_COLLECTION = "wiki_symbols"                        # next to PAGES_COLLECTION … META_COLLECTION (verified: arango_store.py:46-50)
+
+  class ArangoDBWikiStore(BaseWikiStore):                    # verified: arango_store.py:135
+      async def initialize(self) -> None:                    # verified: arango_store.py:258-307 — add (SYMBOLS_COLLECTION, False) to the create loop and call self._create_symbols_view()
+      async def _create_symbols_view(self) -> None:
+          """ArangoSearch view f"{wiki_name}_symbols_view" over SYMBOLS_COLLECTION fields name/qualname/doc/signature with self.analyzers (mirror _create_pages_view)."""
+      async def upsert_symbols(self, symbols: list[SymbolRecord], source_id: Optional[str] = None) -> int:   # overrides store.py:687-705
+          """AQL UPSERT keyed by document_key(sym_concept_id(rel_path, qualname)) (verified: arango_store.py:73-114); when source_id is given, REMOVE stale rows of that source first (slice semantics like replace_source_slice, :599-675). Returns rows written."""
+      async def symbols_for(self, rel_path: str) -> list[SymbolRecord]:                                        # overrides store.py:707
+      async def find_symbols(self, name: Optional[str] = None, *, qualname_prefix: Optional[str] = None, kind: Optional[str] = None,
+                             language: Optional[str] = None, path_prefix: Optional[str] = None, limit: int = 50) -> list[SymbolRecord]:   # same params as store.py:734-780
+      async def search_symbols_fts(self, query: str, limit: int = 20) -> list[SymbolRecord]:                   # overrides store.py:782 — BM25 over the symbols view
+      def _doc_to_symbol_record(self, doc: dict[str, Any]) -> SymbolRecord:
+          """Inverse of the UPSERT document shape (all SymbolRecord fields, verified: symbols.py:56-81)."""
+  ```
+
 ### Module 6: CLI remote proxy, stdio pass-through, build push
 - **Path**: new `packages/ai-parrot/src/parrot/knowledge/wiki/remote_cli.py`; `cli.py`; `mcp_server.py`
 - **Responsibility**: the user-visible proxy. One helper decides remote vs local; each proxied command branches at its top; unsupported commands refuse; `build/upsert/ingest` push deltas; `sync` uses the bulk tools; `wikitoolkit mcp` forwards when remote is configured.
@@ -690,7 +714,7 @@ async def wiki_server(tmp_path, monkeypatch):
 - [ ] AC2. Requests without `Authorization: Bearer <WIKITOOLKIT_SERVER_TOKEN>` get 401 on POST, GET, DELETE **and** `/info`; wrong wiki name gets 404; the comparison is constant-time; the server refuses to start when the token env is unset.
 - [ ] AC3. `tools/list` on `/mcp/<wiki>` returns exactly today's 14 tool names plus `wiki_page_hashes`, `wiki_ingest_batch`, `wiki_sync_push`, `wiki_sync_pull` (plus Obsidian tools only when a vault is configured); the local stdio server never lists the four bulk tools.
 - [ ] AC4. Writes through the server record `X-Wiki-Actor` as `asserted_by` / ledger `actor`; absent header → `default_actor` (`agent:unknown`); malformed header → 400. The literal `"agent:mcp"` no longer appears in `tools.py` except as `current_actor()`'s default.
-- [ ] AC5. Structural tools work on the server with no source tree (`read_repair=False`): outline from stored symbols, `include_source` yields no excerpt, no disk access attempted.
+- [ ] AC5. Structural tools work on the server with no source tree (`read_repair=False`): outline from stored symbols, `include_source` yields no excerpt, no disk access attempted — on **both** backends: `ArangoDBWikiStore` persists symbols in `wiki_symbols` and answers `symbols_for` / `find_symbols` / `search_symbols_fts` (M5b), so `wiki_ingest_batch` reports `symbols_dropped == 0` on ArangoDB.
 - [ ] AC6. The ledger on the server opens from `ledger_dir` without a git root (`LedgerService.from_dir`); `ledger_open|ready|claim|close|context` succeed remotely.
 - [ ] AC7. With `remote` configured (base, overlay or `WIKITOOLKIT_REMOTE_URL`), `query|page|related|status|remember|note|symbols *|ledger open|ready|claim|close|context` run against the server and print the tool's text result (the same text an agent receives — not the local table renderer); remote resolution happens before any store open, so no local `wiki.db` is opened or required.
 - [ ] AC8. Fail-closed: server unreachable / 401 / timeout → exit code 2 with `[remote:<code>]`; the local plane is never consulted. Missing token env → error before any request. An expired session is re-initialised once for read-only tools only; a write on an expired session fails with `session_expired` and is never replayed.
@@ -962,7 +986,7 @@ class StreamableHttpMCPServer(HttpMCPServer) L250-1125: __init__(config, parent_
 
 - **Isolation**: one feature worktree for FEAT-569 (`.claude/worktrees/feat-FEAT-569-wikitoolkit-http-mcp`, from `origin/dev`); the `sdd-coder` engine gives each task its own sub-worktree inside it.
 - **Module dependency graph** (edge = imports/needs):
-  - M2 → (none). M1 → (none). They may run concurrently.
+  - M2 → (none). M1 → (none). M5b → (none). They may run concurrently.
   - M3 → M1 (`WikiRemoteConfig`).
   - M5 → M2 (`current_actor`, `build_wiki_tools(include_bulk_tools=)` registration).
   - M4 → M2, M5 (registers the bulk tools; `read_repair=False`, `from_dir`).
@@ -999,8 +1023,8 @@ class StreamableHttpMCPServer(HttpMCPServer) L250-1125: __init__(config, parent_
 - [x] TLS termination — *Resolved in spec*: plain HTTP behind a reverse proxy by default; `--ssl-cert/--ssl-key` pass through to `MCPServerConfig.ssl_cert_path/ssl_key_path` (already honoured by `HttpMCPServer.start`). → M4, AC16.
 - [ ] Target version — *Owner: release maintainer*: `next minor after 0.29.x`; pick the concrete release when scheduling. Does not block decomposition.
 - [x] Should `wiki_sync_pull` be paginated? — *Resolved after design research (S9)*: yes — `since` + `limit` (default 500) + opaque `cursor` (`updated_at,concept_id`); tombstones stay out of scope like the existing sync engine. → M5.
-- [ ] Q3. HA / multi-worker: should `WikiServerConfig` accept `session_store_url: redis://…` to use `RedisSessionStore` (session_store.py:282), or is single-process + reverse-proxy sticky routing enough for v1? — *Owner: ops* (raised by S6)
-- [ ] Q4. Cross-slice atomicity for `wiki_ingest_batch` on ArangoDB: accept per-slice atomicity (today's `replace_source_slice` semantics) or add staging-and-swap? — *Owner: Jesus* (raised by S8)
+- [x] Q3. HA / multi-worker — *Owner: Jesus, resolved 2026-09-18*: v1 is **single process**, documented; `wikitoolkit serve` exposes no worker option; `RedisSessionStore` wiring is a follow-up. → M4 `run_server`, AC16.
+- [x] Q4. Cross-slice atomicity — *Owner: Jesus, resolved 2026-09-18*: **per-slice atomicity** (today's `replace_source_slice` semantics); a re-run converges through the hash oracle; documented in the guide. No staging-and-swap. → M5, §7 Risks.
 - [x] Q5. **Structural plane on ArangoDB**: `ArangoDBWikiStore` has no `upsert_symbols`/`symbols_for`/`find_symbols`, so `wiki_symbol_lookup|code_outline|blast_radius` return empty on ArangoDB-backed wikis and pushed symbols are dropped. Implement the symbol tables for ArangoDB inside this feature (new module, ~M5b), or ship v1 with structural tools documented as SQLite-only and open a follow-up? — *Owner: Jesus* (raised by S8; blocks AC5 for ArangoDB wikis): ships on v1.
 
 ---
@@ -1037,3 +1061,4 @@ Summary: **9** confirmed (4 partial) · **2** rejected (unverifiable path) · **
 |---|---|---|---|
 | 0.1 | 2026-09-17 | Jesus Lara (with Claude) | Initial draft from accepted brainstorm (Option A); FEAT-569 reserved (ledger drift past hand-assigned FEAT-566..568 repaired in the same reservation) |
 | 0.2 | 2026-09-18 | Jesus Lara (with Claude) | Design research (codex gpt-5.6-luna) triaged: 9 confirmed / 2 rejected / 3 escalated; added async store lifecycle, read-only-only session retry, ingest deletions + batch_id, sync pagination, `remote_aware` decorator, ArangoDB symbol-plane gap (§8 Q5) |
+| 0.3 | 2026-09-18 | Jesus Lara (with Claude) | **Approved.** Q3 single-process, Q4 per-slice atomicity, Q5 resolved by adding Module 5b (ArangoDB symbol plane); AC5 extended to both backends |
