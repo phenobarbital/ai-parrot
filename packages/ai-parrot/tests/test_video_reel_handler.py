@@ -30,6 +30,15 @@ def _make_response(body, status=200, content_type="application/json"):
     return resp
 
 
+# TASK-3333: fixed test identity — the `handler` fixture's
+# `_get_session_user_id` mock resolves to this, and `_make_job()` defaults
+# a job's owner to it, so every PRE-EXISTING test in this file (which
+# exercises status-serialization/POST-parsing behavior, not authorization)
+# passes `_authorize_job`'s ownership check by default. Authorization
+# itself is exercised separately in test_video_reel_artifacts.py.
+_TEST_USER_ID = "test-user-id"
+
+
 def _make_job(
     job_id="job-123",
     status_value="pending",
@@ -38,6 +47,7 @@ def _make_job(
     elapsed_time=None,
     started_at=None,
     completed_at=None,
+    user_id=_TEST_USER_ID,
 ):
     """Create a lightweight mock Job."""
     from parrot.handlers.jobs import JobStatus
@@ -51,6 +61,7 @@ def _make_job(
     job.created_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
     job.started_at = started_at
     job.completed_at = completed_at
+    job.user_id = user_id
     return job
 
 
@@ -111,6 +122,17 @@ def handler():
         )
     )
     h.request.match_info = {}
+    # TASK-3333: `_resolve_job_id()`/`get()` now read `request.query` for
+    # the `?job_id=` fallback — a real (empty, overridable per-test) dict
+    # so `.get("job_id")` behaves like aiohttp's real MultiDict instead of
+    # a MagicMock auto-vivifying a truthy garbage value.
+    h.request.query = {}
+    # TASK-3333: bypass real navigator-auth session machinery entirely —
+    # every pre-existing test in this file is about parsing/status-
+    # serialization behavior, not authorization (that's
+    # test_video_reel_artifacts.py's job). Fixed to a known identity that
+    # `_make_job()` defaults its owner to, so `_authorize_job` passes.
+    h._get_session_user_id = AsyncMock(return_value=_TEST_USER_ID)
     return h
 
 
@@ -251,7 +273,12 @@ class TestVideoReelHandlerPost:
 
     @pytest.mark.asyncio
     async def test_post_extracts_control_keys(self, handler, video_reel_payload):
-        """POST extracts output_directory, user_id, session_id before validation."""
+        """POST extracts output_directory/session_id from the body, but job
+        ownership (`user_id`) always comes from the authenticated session —
+        a body-supplied `user_id` is a spoofable claim, never trusted as
+        ownership (§8 Q7; TASK-3333). See TestVideoReelArtifactOwnership in
+        test_video_reel_artifacts.py for the full authorization matrix.
+        """
         payload = {
             **video_reel_payload,
             "output_directory": "/tmp/reels",
@@ -263,7 +290,8 @@ class TestVideoReelHandlerPost:
         await handler.post()
 
         create_call = handler.job_manager.create_job.call_args
-        assert create_call.kwargs["user_id"] == "user-123"
+        assert create_call.kwargs["user_id"] == _TEST_USER_ID
+        assert create_call.kwargs["user_id"] != "user-123"
         assert create_call.kwargs["session_id"] == "sess-456"
 
     @pytest.mark.asyncio

@@ -121,6 +121,13 @@ def _handler(request) -> VideoReelHandler:
     h = VideoReelHandler.__new__(VideoReelHandler)
     h.logger = logging.getLogger("test.video_reel_inputs")
     h._request = request
+    # TASK-3333: post() now requires a session-resolved identity for job
+    # ownership (§8 Q7) — bypass real navigator-auth session machinery
+    # (there is none configured on the bare `web.Application()` these
+    # tests build) with a fixed test identity. This suite tests request
+    # body/upload parsing, not authorization — that's
+    # test_video_reel_artifacts.py's job.
+    h._get_session_user_id = AsyncMock(return_value="test-user-id")
     return h
 
 
