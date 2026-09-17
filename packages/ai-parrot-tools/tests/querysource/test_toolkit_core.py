@@ -12,7 +12,9 @@ def tk(patched_qs):
 
 
 def test_tool_names_and_write_gate(tk):
-    assert sorted(tk().list_tool_names()) == ["qs_describe_slug", "qs_get_dialect_reference", "qs_list_slugs"]
+    # Snapshot as of TASK-3251 + TASK-3252 (execute_slug); TASK-3253/3254 extend this further.
+    assert sorted(tk().list_tool_names()) == ["qs_describe_slug", "qs_execute_slug", "qs_get_dialect_reference",
+                                              "qs_list_slugs"]
     assert "save_multiquery" in tk().exclude_tools and "save_multiquery" not in tk(allow_write=True).exclude_tools
 
 

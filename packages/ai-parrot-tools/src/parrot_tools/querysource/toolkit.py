@@ -5,14 +5,17 @@ qs_list_components, qs_validate_pipeline, qs_run_multiquery and — only when al
 """
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from parrot.tools.toolkit import AbstractToolkit  # verified: packages/ai-parrot/src/parrot/tools/toolkit.py:206
 
 from parrot_tools.querysource import _qs
 from parrot_tools.querysource.catalog import SlugCatalog, SlugRecord, TenantGuard
-from parrot_tools.querysource.dialect import DIALECT_REFERENCE, check_version_compatibility, load_variables
-from parrot_tools.querysource.models import DialectReference, PlaceholderInfo, SlugDetail, SlugSummary
+from parrot_tools.querysource.dialect import DIALECT_REFERENCE, build_conditions, check_version_compatibility, load_variables, validate_filter, validate_placeholders
+from parrot_tools.querysource.errors import QuerysourceToolkitError, SlugNotFoundError
+from parrot_tools.querysource.models import DialectReference, ExecutionResult, FilterValue, PlaceholderInfo, SlugDetail, SlugSummary
+from parrot_tools.querysource.results import frame_to_result
 
 
 class QuerysourceToolkit(AbstractToolkit):
@@ -111,3 +114,37 @@ class QuerysourceToolkit(AbstractToolkit):
             finally:
                 await qs.close()                            # qs.py:519
         return detail
+
+    async def execute_slug(self, slug: str, placeholders: dict[str, Any] | None = None,
+                           filter: dict[str, FilterValue] | None = None, fields: list[str] | None = None,
+                           ordering: list[str] | None = None, grouping: list[str] | None = None,
+                           limit: int | None = None, offset: int | None = None, refresh: bool = False) -> ExecutionResult:
+        """Run a query-slug. `placeholders` fill the slug's declared conditions (see qs_describe_slug);
+        `filter` adds WHERE clauses in the dialect grammar (see qs_get_dialect_reference); `fields`, `ordering`,
+        `grouping` override the stored projection; `limit` is capped at the toolkit's max_rows; `refresh` bypasses
+        the QuerySource cache. Returns bounded rows plus returned_rows/total_rows/truncated."""
+        started = time.monotonic()
+        await self._open()
+        rec = await self._catalog.get_allowed(slug)                     # tenant check first (spec §2)
+        placeholders = dict(placeholders or {})
+        validate_placeholders(placeholders, set(rec.placeholder_names))
+        rejected = validate_filter(dict(filter or {}))                   # raises when strict (default)
+        conditions = build_conditions(placeholders=placeholders, filter=filter, fields=fields, ordering=ordering,
+                                      grouping=grouping, limit=limit, offset=offset, refresh=refresh,
+                                      max_rows=self.max_rows, forced=self.forced_conditions)
+        self.logger.info("qs_execute_slug %s querylimit=%s", slug, conditions.get("querylimit"))
+        exc_mod = _qs.get_exceptions()
+        qs = _qs.get_qs()(slug=slug, conditions=conditions)              # qs.py:42
+        try:
+            result, error = await qs.query(output_format="pandas")      # qs.py:363
+            if error:
+                raise QuerysourceToolkitError(f"query '{slug}' failed: {error}")
+        except exc_mod.DataNotFound:
+            return frame_to_result(None, slug=slug, max_rows=self.max_rows, applied=conditions, rejected=rejected, started=started)
+        except exc_mod.SlugNotFound as exc:
+            raise SlugNotFoundError(f"slug '{slug}' not found") from exc
+        except exc_mod.QueryException as exc:
+            raise QuerysourceToolkitError(str(exc)) from exc
+        finally:
+            await qs.close()                                             # qs.py:519
+        return frame_to_result(result, slug=slug, max_rows=self.max_rows, applied=conditions, rejected=rejected, started=started)
