@@ -317,7 +317,7 @@ python -m scripts.sdd.select_tests --tier {task,merge,feature} [--base origin/de
   DEFAULT_IMPACT_CAP: int = 150
   DEFAULT_IMPACT_DEPTH: int = 1
   DEFAULT_CORE_FANIN_THRESHOLD: int = 50
-  CORE_PATHS: tuple[str, ...] = (  # seeded from spike S4 measurements; always escalate
+  CORE_PATHS: tuple[str, ...] = (  # seed; final list written from spike S4 measurement; always escalate
       "packages/ai-parrot/src/parrot/clients/base.py",     # 182 source importers (measured 2026-09-17)
       "packages/ai-parrot/src/parrot/bots/abstract.py",    # 146 source importers (measured 2026-09-17)
   )
@@ -823,7 +823,7 @@ filterwarnings = ignore::DeprecationWarning
 - **S1** — confirm the tracked `.codex/hooks.json` fires under `codex exec --cd <attempt sub-worktree>` without `--ignore-user-config` (R3).
 - **S2** — conftest/rootdir behaviour for `pytest packages/<dist>/tests/...` from a worktree (R6).
 - **S3** — xdist safety per distribution, **`ai-parrot` first** (it dominates core-escalation cost, R13), then satellites (R7) → initial `XDIST_SAFE_DISTRIBUTIONS`.
-- **S4** — measure transitive source fan-in for all source modules with the M2 index; review the top of the distribution against threshold 50 and finalise `CORE_PATHS` (evidence `artifacts/logs/feat-563-core-fanin.tsv`).
+- **S4** — measure transitive source fan-in for all source modules with the M2 index and write `CORE_PATHS` from that measurement: every module with fan-in ≥ 50 (threshold confirmed) plus any module the measurement shows under-counted by dynamic imports / the `parrot.tools` redirect (R15). The measurement is authoritative — no extra sign-off (evidence `artifacts/logs/feat-563-core-fanin.tsv`).
 
 ### External Dependencies
 | Package | Version | Reason |
@@ -854,7 +854,7 @@ No new dependencies.
 - [x] Codex hook reachability — *Owner: Jesus Lara*: take `.codex/hooks.json` out of `.gitignore` (tracked, portable launcher) and stop passing `--ignore-user-config` for development dispatches
 - [x] CI `packages/*/tests` gap — *Owner: Jesus Lara*: out of scope — non-goal here, separate feature
 - [ ] Cap and depth defaults (150 modules / 1 hop) — confirm or tune after measuring on real merges — *Owner: Jesus Lara*
-- [ ] Final `CORE_PATHS` list and fan-in threshold (default 50, seeded with `clients/base.py` and `bots/abstract.py`) — confirm after spike S4 — *Owner: Jesus Lara*
+- [x] Final `CORE_PATHS` list and fan-in threshold — *Owner: Jesus Lara*: threshold **50** confirmed; `CORE_PATHS` is set from the spike S4 measurement (no further sign-off required)
 - [ ] Root conftest loading when rooted at `packages/<dist>/` (spike S2) — *Owner: implementer*
 - [ ] Initial xdist allowlist (spike S3) — *Owner: implementer*
 - [x] Feature tier for `QANode` / qa-runner / `/sdd-done` — *Owner: Jesus Lara*: mirror of directories (∪ declared validation commands), never package suites — the goal is to cut time, not to raise test volume
@@ -900,4 +900,5 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 |---|---|---|---|
 | 0.1 | 2026-09-17 | Jesus Lara / Claude Opus 5 | Initial draft from `scoped-test-selection.brainstorm.md` (Option B) + 4 spec-time decisions |
 | 0.2 | 2026-09-17 | Jesus Lara / Claude Opus 5 | R3: track `.codex/hooks.json` + drop `--ignore-user-config` for dev dispatches; R12: feature tier = mirror of directories, never package suites (G9) |
+| 0.4 | 2026-09-17 | Jesus Lara / Claude Opus 5 | Threshold 50 confirmed; `CORE_PATHS` set by spike S4 measurement |
 | 0.3 | 2026-09-17 | Jesus Lara / Claude Opus 5 | G9 → cost proportional to blast radius; G7b core escalation by transitive source fan-in ≥ 50 / `CORE_PATHS` across importing distributions, merge+feature tiers only, deduped by blob-hash ledger; spikes S3 (ai-parrot first) and S4 |
