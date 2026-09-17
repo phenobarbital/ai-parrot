@@ -9,6 +9,7 @@ derivation including src-layout resolution.
 import hashlib
 from pathlib import Path
 
+from parrot.knowledge.wiki.languages import astgrep
 from parrot.knowledge.wiki.repo_scan import (
     DEFAULT_MAX_FILE_BYTES,
     WIKI_BUNDLE_MARKER,
@@ -461,5 +462,8 @@ class TestScanRepositorySymbolPlane:
         scan = scan_repository(tmp_path, use_git=False)
         titles = {r.title for r in scan.symbol_records}
         assert titles == {"helper", "run"}
-        calls = {(s, d) for s, d, rel, prov in scan.symbol_edges if rel == "calls" and prov == "extracted"}
-        assert ("sym:b.py#run", "sym:a.py#helper") in calls
+        # Python `calls` refs come only from the optional ast-grep seam
+        # (`wiki-structural` extra); without it only `defines` edges exist.
+        if astgrep.is_available():
+            calls = {(s, d) for s, d, rel, prov in scan.symbol_edges if rel == "calls" and prov == "extracted"}
+            assert ("sym:b.py#run", "sym:a.py#helper") in calls

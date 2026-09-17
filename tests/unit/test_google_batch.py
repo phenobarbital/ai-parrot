@@ -14,6 +14,19 @@ from parrot.models.basic import CompletionUsage
 from parrot.clients.google.models import GoogleModel  # FEAT-523 (TASK-2841): relocated
 
 
+def _bind_sdk_client(client, sdk_client, settable: bool = False) -> None:
+    """Make ``client.client`` return *sdk_client* for this instance only.
+
+    Swaps the instance onto a throwaway subclass that overrides the ``client``
+    property. Assigning ``type(client).client = property(...)`` instead would
+    mutate ``GoogleGenAIClient`` itself for the rest of the pytest process and
+    break every later test that relies on the real property.
+    """
+    cls = type(client)
+    prop = property(lambda self: sdk_client, (lambda self, val: None) if settable else None)
+    client.__class__ = type(cls.__name__, (cls,), {"client": prop})
+
+
 class TestData(BaseModel):
     name: str
     age: int
@@ -54,7 +67,7 @@ def mock_google_client():
     sdk_client.aio.models = MagicMock()
 
     # Redefine client property to return our mocked SDK client
-    type(client).client = property(lambda self: sdk_client)
+    _bind_sdk_client(client, sdk_client)
 
     client._ensure_client = AsyncMock(return_value=sdk_client)
 
@@ -361,7 +374,7 @@ class TestGoogleBatch:
         google_client.get_client = AsyncMock(return_value=sdk_client)
 
         # Patch client property
-        type(google_client).client = property(lambda self: sdk_client)
+        _bind_sdk_client(google_client, sdk_client)
 
         msg = await google_client.generate_image(prompt="a cute parrot", auto_upscale=True)
 
@@ -386,7 +399,7 @@ class TestGoogleBatch:
         google_client.get_client = AsyncMock(return_value=sdk_client)
 
         # Patch client property
-        type(google_client).client = property(lambda self: sdk_client)
+        _bind_sdk_client(google_client, sdk_client)
 
         from parrot.models import ImageGenerationPrompt
 

@@ -257,6 +257,27 @@ def test_example_config_parses():
     assert "browsing" in cfg.toolkits
 
 
+def _strip_navconfig_env_warnings(stderr: str) -> str:
+    """Drop NavConfig's own bootstrap warning about a missing ``etc/config.ini``.
+
+    ``etc/`` is gitignored, so on a fresh checkout (the CI runner) NavConfig
+    logs ``WARNING:root:Navconfig: INI file doesn't exists on path: .../config.ini``
+    at import time. That is environment noise from the host project, not
+    output from ``mcp-local`` itself; every other stderr line still counts.
+
+    Args:
+        stderr: Captured stderr of the ``mcp-local --list`` subprocess.
+
+    Returns:
+        ``stderr`` without those NavConfig INI-file warning lines.
+    """
+    return "".join(
+        line
+        for line in stderr.splitlines(keepends=True)
+        if not (line.startswith("WARNING:root:Navconfig: INI file doesn't exists on path:") and "config.ini" in line)
+    )
+
+
 @pytest.mark.parametrize("name", ["memory"])
 def test_mcp_local_list_shows_builtin(tmp_path, name):
     """Sanity check that `--list` (a fast, non-serving path) still works
@@ -271,4 +292,4 @@ def test_mcp_local_list_shows_builtin(tmp_path, name):
     )
     assert proc.returncode == 0, proc.stderr
     assert name in proc.stdout
-    assert proc.stderr == ""
+    assert _strip_navconfig_env_warnings(proc.stderr) == ""

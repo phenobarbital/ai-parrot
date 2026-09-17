@@ -89,11 +89,13 @@ class TestFieldTypeMapping:
         assert extra == {}
 
     def test_field_image_upload(self) -> None:
+        # b9f47805a: a multi-photo question is MULTI_UPLOAD (FILE is
+        # single-cardinality everywhere else in the library).
         mapping = _FIELD_TYPE_MAP["FIELD_IMAGE_UPLOAD_MULTIPLE"]
         assert mapping is not None
         field_type, extra = mapping
-        assert field_type == FieldType.FILE
-        assert extra.get("meta") == {"accept": "image/*", "multiple": True}
+        assert field_type == FieldType.MULTI_UPLOAD
+        assert extra.get("meta") == {"accept": "image/*"}
 
     def test_display_text_readonly(self) -> None:
         mapping = _FIELD_TYPE_MAP["FIELD_DISPLAY_TEXT"]
@@ -111,10 +113,9 @@ class TestFieldTypeMapping:
         assert extra.get("read_only") is True
         assert extra.get("meta", {}).get("render_as") == "display_image"
 
-    def test_unsupported_type_skipped(self) -> None:
-        """FIELD_SIGNATURE_CAPTURE must be mapped to None (skip with warning)."""
-        assert "FIELD_SIGNATURE_CAPTURE" in _FIELD_TYPE_MAP
-        assert _FIELD_TYPE_MAP["FIELD_SIGNATURE_CAPTURE"] is None
+    def test_signature_capture_mapped(self) -> None:
+        """FEAT-300: FIELD_SIGNATURE_CAPTURE maps to SIGNATURE (was skipped)."""
+        assert _FIELD_TYPE_MAP["FIELD_SIGNATURE_CAPTURE"] == (FieldType.SIGNATURE, {})
 
 
 # ===========================================================================
@@ -232,8 +233,12 @@ class TestConditionalLogic:
         assert field.depends_on.logic == "or"
         assert len(field.depends_on.conditions) == 2
 
-    def test_multi_groups_and(self) -> None:
-        """Multiple logic_groups → logic='and'."""
+    def test_multi_groups_same_field_or(self) -> None:
+        """Multiple logic_groups on the SAME field are alternatives → logic='or'.
+
+        An AND of two EQ conditions on one answer is unsatisfiable, so the
+        importer treats same-field groups as alternatives (a92b5d024 lineage).
+        """
         logic_groups = [
             {
                 "logic_group_id": 1,
@@ -266,8 +271,65 @@ class TestConditionalLogic:
             if f.field_id == "field_8552"
         )
         assert field.depends_on is not None
-        assert field.depends_on.logic == "and"
+        assert field.depends_on.logic == "or"
         assert len(field.depends_on.conditions) == 2
+
+    def test_multi_groups_different_fields_and(self) -> None:
+        """Multiple logic_groups over DIFFERENT fields → logic='and'."""
+        logic_groups = [
+            {
+                "logic_group_id": 1,
+                "conditions": [
+                    {
+                        "condition_logic": "EQUALS",
+                        "condition_comparison_value": "yes",
+                        "condition_question_reference_id": 85,
+                        "condition_option_id": None,
+                    }
+                ],
+            },
+            {
+                "logic_group_id": 2,
+                "conditions": [
+                    {
+                        "condition_logic": "EQUALS",
+                        "condition_comparison_value": "confirmed",
+                        "condition_question_reference_id": 84,
+                        "condition_option_id": None,
+                    }
+                ],
+            },
+        ]
+        row = self._make_row_with_logic(logic_groups)
+        blocks = json.loads(row["question_blocks"])
+        blocks[0]["questions"].insert(
+            0,
+            {
+                "question_id": 84,
+                "question_column_name": 8550,
+                "question_description": "Second trigger",
+                "logic_groups": [],
+                "validations": [],
+            },
+        )
+        row["question_blocks"] = json.dumps(blocks)
+        row["metadata"].append(
+            {
+                "column_id": 84,
+                "column_name": "8550",
+                "data_type": "FIELD_TEXT",
+                "description": "Second trigger",
+            }
+        )
+        form = _build(row)
+        field = next(
+            f
+            for f in form.sections[0].fields
+            if f.field_id == "field_8552"
+        )
+        assert field.depends_on is not None
+        assert field.depends_on.logic == "and"
+        assert {c.field_id for c in field.depends_on.conditions} == {"field_8551", "field_8550"}
 
     def test_question_id_to_field_id_resolution(self) -> None:
         """condition_question_reference_id → question_id → column_name → field_id."""
@@ -519,10 +581,9 @@ class TestQuestionBlockSections:
         }
         form = _build(row)
         field = form.sections[0].fields[0]
-        assert field.field_type == FieldType.FILE
+        assert field.field_type == FieldType.MULTI_UPLOAD
         assert field.meta is not None
         assert field.meta.get("accept") == "image/*"
-        assert field.meta.get("multiple") is True
 
 
 # ===========================================================================
@@ -574,9 +635,8 @@ class TestFullFormGeneration:
         assert cond_field.depends_on.conditions[0].operator == ConditionOperator.EQ
         assert cond_field.depends_on.conditions[0].value == "0"
 
-    def test_malformed_json_raises(self) -> None:
-        """Invalid question_blocks JSON → json.JSONDecodeError."""
-        import json as _json
+    def test_malformed_json_tolerated(self) -> None:
+        """Invalid question_blocks JSON is tolerated (FEAT-300): no sections, no raise."""
         svc = _make_service()
         bad_row = {
             "formid": 5,
@@ -586,8 +646,8 @@ class TestFullFormGeneration:
             "question_blocks": "THIS IS NOT JSON }{",
             "metadata": [],
         }
-        with pytest.raises(_json.JSONDecodeError):
-            svc.to_form_schema(bad_row)
+        form = svc.to_form_schema(bad_row)
+        assert form.sections == []
 
     def test_dsn_resolution_order(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """DSN resolution: explicit arg > PARROT_NETWORKNINJA_DSN > parrot.conf."""

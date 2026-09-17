@@ -118,117 +118,160 @@ class TestEndcapNoShelvesInit:
 
 
 # ---------------------------------------------------------------------------
-# Unit tests: detect_objects always returns empty
+# Unit tests: detect_objects — one product/region per configured zone
+#
+# TASK-625 (378cc7b69) replaced the original "always ([], [])" behaviour:
+# zones now come from ``planogram_config["shelves"]`` (default: backlit_panel
+# + lower_poster) and illumination is checked once per image via the LLM.
 # ---------------------------------------------------------------------------
+
+_ILLUM_ON = "illumination_status: ON"
+_ILLUM_OFF = "illumination_status: OFF"
+
 
 class TestEndcapDetectObjects:
-    """Tests for detect_objects — must always return ([], [])."""
+    """Tests for detect_objects zone synthesis from config."""
 
     @pytest.mark.asyncio
-    async def test_returns_empty_products(self, endcap):
-        """detect_objects returns empty identified_products list."""
+    async def test_returns_one_product_per_default_zone(self, endcap):
+        """Default config yields backlit_panel and lower_poster products."""
         img = _make_image()
-        products, shelves = await endcap.detect_objects(img, None, None)
-        assert products == []
+        with patch.object(endcap, "_check_illumination", AsyncMock(return_value=_ILLUM_ON)):
+            products, _ = await endcap.detect_objects(img, None, None)
+        assert [p.shelf_location for p in products] == ["backlit_panel", "lower_poster"]
+        assert [p.product_model for p in products] == ["backlit_panel", "lower_poster"]
 
     @pytest.mark.asyncio
-    async def test_returns_empty_shelf_regions(self, endcap):
-        """detect_objects returns empty shelf_regions list."""
+    async def test_returns_one_shelf_region_per_zone(self, endcap):
+        """One ShelfRegion is produced per configured zone."""
         img = _make_image()
-        products, shelves = await endcap.detect_objects(img, None, None)
-        assert shelves == []
+        with patch.object(endcap, "_check_illumination", AsyncMock(return_value=_ILLUM_ON)):
+            _, shelves = await endcap.detect_objects(img, None, None)
+        assert [s.level for s in shelves] == ["backlit_panel", "lower_poster"]
 
     @pytest.mark.asyncio
-    async def test_detect_objects_ignores_roi(self, endcap):
-        """detect_objects returns empty regardless of roi value."""
+    async def test_illumination_checked_once_and_seeded(self, endcap):
+        """Only the illuminated zone is checked, and its state is seeded."""
         img = _make_image()
         roi = _make_detection("endcap", x1=0.0, y1=0.0, x2=1.0, y2=1.0)
-        products, shelves = await endcap.detect_objects(img, roi, [])
-        assert products == []
-        assert shelves == []
+        check = AsyncMock(return_value=_ILLUM_OFF)
+        with patch.object(endcap, "_check_illumination", check):
+            products, _ = await endcap.detect_objects(img, roi, [])
+        check.assert_awaited_once()
+        assert products[0].visual_features == [_ILLUM_OFF]
+        assert products[1].visual_features == []
+
+    @pytest.mark.asyncio
+    async def test_illumination_check_failure_does_not_crash(self, endcap):
+        """A failed LLM illumination check (None) leaves features empty."""
+        img = _make_image()
+        with patch.object(endcap, "_check_illumination", AsyncMock(return_value=None)):
+            products, _ = await endcap.detect_objects(img, None, None)
+        assert len(products) == 2
+        assert products[0].visual_features == []
 
 
 # ---------------------------------------------------------------------------
-# Unit tests: check_planogram_compliance
+# Unit tests: check_planogram_compliance — one ComplianceResult per zone
 # ---------------------------------------------------------------------------
+
+def _description(threshold: float = 0.8) -> MagicMock:
+    """Planogram description stub with a real numeric compliance threshold."""
+    desc = MagicMock()
+    desc.global_compliance_threshold = threshold
+    return desc
+
+
+def _zone_product(zone: str, visual_features: list | None = None) -> IdentifiedProduct:
+    """IdentifiedProduct placed on *zone* (matched by ``shelf_location``)."""
+    product = _make_identified_product(zone, visual_features=visual_features)
+    product.shelf_location = zone
+    return product
+
 
 class TestEndcapCompliance:
     """Tests for check_planogram_compliance scoring logic."""
 
+    @staticmethod
+    def _by_level(results):
+        return {r.shelf_level: r for r in results}
+
     def test_both_zones_present_backlit_on_is_compliant(self, endcap):
-        """Backlit ON + both zones present → COMPLIANT, score = 1.0."""
+        """Backlit ON + both zones present → every zone COMPLIANT, score = 1.0."""
         products = [
-            _make_identified_product("backlit_panel", visual_features=["illumination_status: ON"]),
-            _make_identified_product("lower_poster"),
+            _zone_product("backlit_panel", visual_features=[_ILLUM_ON]),
+            _zone_product("lower_poster"),
         ]
-        results = endcap.check_planogram_compliance(products, MagicMock())
-        r = results[0]
-        assert r.compliance_status == ComplianceStatus.COMPLIANT
-        assert r.compliance_score == pytest.approx(1.0, abs=0.001)
-        assert "backlit_panel" in r.found_products
-        assert "lower_poster" in r.found_products
+        results = self._by_level(endcap.check_planogram_compliance(products, _description()))
+        for level in ("backlit_panel", "lower_poster"):
+            assert results[level].compliance_status == ComplianceStatus.COMPLIANT
+            assert results[level].compliance_score == pytest.approx(1.0, abs=0.001)
+            assert level in results[level].found_products
 
     def test_backlit_off_penalises_score(self, endcap):
-        """Backlit OFF when expected ON → heavy illumination penalty."""
+        """Backlit OFF when expected ON → full illumination penalty on that zone."""
         products = [
-            _make_identified_product("backlit_panel", visual_features=["illumination_status: OFF"]),
-            _make_identified_product("lower_poster"),
+            _zone_product("backlit_panel", visual_features=[_ILLUM_OFF]),
+            _zone_product("lower_poster"),
         ]
-        results = endcap.check_planogram_compliance(products, MagicMock())
-        r = results[0]
-        # Backlit present but penalised → score should be lower than full
-        assert r.compliance_status != ComplianceStatus.COMPLIANT or r.compliance_score < 1.0
-        # Penalty is 100% of backlit weight → only lower_poster score remains
-        # total_weight=1.5, poster=0.5, so score = 0.5/1.5 ≈ 0.333
-        assert r.compliance_score <= (1.0 / 1.5) + 0.05  # ≤ 0.717
+        results = self._by_level(endcap.check_planogram_compliance(products, _description()))
+        backlit = results["backlit_panel"]
+        assert backlit.compliance_status == ComplianceStatus.NON_COMPLIANT
+        assert backlit.compliance_score == pytest.approx(0.0, abs=0.001)
+        assert any("backlight OFF" in m for m in backlit.missing_products)
+        assert results["lower_poster"].compliance_status == ComplianceStatus.COMPLIANT
 
     def test_missing_poster_penalises(self, endcap):
-        """Missing lower_poster → score reduced but backlit still contributes."""
-        products = [
-            _make_identified_product("backlit_panel", visual_features=["illumination_status: ON"]),
-        ]
-        results = endcap.check_planogram_compliance(products, MagicMock())
-        r = results[0]
-        assert r.compliance_score > 0.0
-        assert r.compliance_score < 1.0
-        assert "lower_poster" in r.missing_products
+        """Missing lower_poster → that zone MISSING; backlit zone unaffected."""
+        products = [_zone_product("backlit_panel", visual_features=[_ILLUM_ON])]
+        results = self._by_level(endcap.check_planogram_compliance(products, _description()))
+        poster = results["lower_poster"]
+        assert poster.compliance_status == ComplianceStatus.MISSING
+        assert poster.compliance_score == 0.0
+        assert "lower_poster" in poster.missing_products
+        assert results["backlit_panel"].compliance_score == pytest.approx(1.0, abs=0.001)
 
     def test_no_zones_detected_is_missing(self, endcap):
-        """No zones detected → MISSING status."""
-        results = endcap.check_planogram_compliance([], MagicMock())
-        r = results[0]
-        assert r.compliance_status == ComplianceStatus.MISSING
-        assert r.compliance_score == 0.0
+        """No zones detected → every zone MISSING with score 0."""
+        results = endcap.check_planogram_compliance([], _description())
+        for r in results:
+            assert r.compliance_status == ComplianceStatus.MISSING
+            assert r.compliance_score == 0.0
 
-    def test_shelf_level_is_endcap(self, endcap):
-        """ComplianceResult shelf_level is 'endcap'."""
-        results = endcap.check_planogram_compliance([], MagicMock())
-        assert results[0].shelf_level == "endcap"
+    def test_shelf_levels_are_config_zones(self, endcap):
+        """ComplianceResult shelf_level values are the configured zone levels."""
+        results = endcap.check_planogram_compliance([], _description())
+        assert [r.shelf_level for r in results] == ["backlit_panel", "lower_poster"]
 
-    def test_returns_list_with_one_result(self, endcap):
-        """check_planogram_compliance always returns a list with one item."""
-        results = endcap.check_planogram_compliance([], MagicMock())
+    def test_returns_one_result_per_zone(self, endcap):
+        """check_planogram_compliance returns one ComplianceResult per zone."""
+        results = endcap.check_planogram_compliance([], _description())
         assert isinstance(results, list)
-        assert len(results) == 1
-        assert isinstance(results[0], ComplianceResult)
+        assert len(results) == 2
+        assert all(isinstance(r, ComplianceResult) for r in results)
 
     def test_illumination_expected_off_no_penalty_when_off(self, mock_pipeline):
-        """If illumination_expected=OFF and actual=OFF → no penalty."""
+        """If the zone expects OFF and actual=OFF → no penalty."""
         config = _make_config(
             planogram_config={
                 "brand": "Test",
-                "expected_elements": ["backlit_panel", "lower_poster"],
-                "illumination_expected": "OFF",
+                "shelves": [
+                    {
+                        "level": "backlit_panel",
+                        "products": [{"name": "backlit_panel", "visual_features": [_ILLUM_OFF]}],
+                    },
+                    {"level": "lower_poster", "products": [{"name": "lower_poster"}]},
+                ],
             }
         )
         e = EndcapNoShelvesPromotional(pipeline=mock_pipeline, config=config)
         products = [
-            _make_identified_product("backlit_panel", visual_features=["illumination_status: OFF"]),
-            _make_identified_product("lower_poster"),
+            _zone_product("backlit_panel", visual_features=[_ILLUM_OFF]),
+            _zone_product("lower_poster"),
         ]
-        results = e.check_planogram_compliance(products, MagicMock())
-        r = results[0]
-        assert r.compliance_score == pytest.approx(1.0, abs=0.001)
+        results = self._by_level(e.check_planogram_compliance(products, _description()))
+        assert results["backlit_panel"].compliance_score == pytest.approx(1.0, abs=0.001)
+        assert results["backlit_panel"].compliance_status == ComplianceStatus.COMPLIANT
 
 
 # ---------------------------------------------------------------------------

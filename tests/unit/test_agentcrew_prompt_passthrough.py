@@ -20,6 +20,11 @@ def _fake_agent(name: str = "agent1") -> MagicMock:
     agent.is_configured = True
     agent.description = "fake agent"
     agent.ask = AsyncMock(return_value=SimpleNamespace(content="agent output"))
+    # CrewAgentNode validates ``agent`` against the runtime-checkable
+    # ``AgentLike`` protocol, which (Python >= 3.12) resolves members via
+    # ``inspect.getattr_static`` — MagicMock's lazily-created attributes are
+    # invisible to it, so ``invoke`` must be set explicitly.
+    agent.invoke = AsyncMock(return_value=SimpleNamespace(content="agent output"))
     return agent
 
 

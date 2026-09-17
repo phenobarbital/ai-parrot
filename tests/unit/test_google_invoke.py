@@ -8,6 +8,19 @@ from parrot.models.responses import InvokeResult
 from parrot.exceptions import InvokeError
 
 
+def _bind_sdk_client(client, sdk_client, settable: bool = False) -> None:
+    """Make ``client.client`` return *sdk_client* for this instance only.
+
+    Swaps the instance onto a throwaway subclass that overrides the ``client``
+    property. Assigning ``type(client).client = property(...)`` instead would
+    mutate ``GoogleGenAIClient`` itself for the rest of the pytest process and
+    break every later test that relies on the real property.
+    """
+    cls = type(client)
+    prop = property(lambda self: sdk_client, (lambda self, val: None) if settable else None)
+    client.__class__ = type(cls.__name__, (cls,), {"client": prop})
+
+
 class ExtractedData(BaseModel):
     """Fixture Pydantic model."""
     entities: list
@@ -62,7 +75,7 @@ def mock_google_client():
     sdk_client.aio.models = mock_models
     
     # Redefine the client property to bypass loop cache entirely in testing
-    type(client).client = property(lambda self: sdk_client, lambda self, val: None)
+    _bind_sdk_client(client, sdk_client, settable=True)
     
     async def mock_ensure_client(model=None, **hints):
         return sdk_client

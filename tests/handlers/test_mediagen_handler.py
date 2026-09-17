@@ -31,7 +31,8 @@ def mock_client_methods():
     """Context manager to patch GoogleGenAIClient methods."""
     class PatchCtx:
         def __init__(self):
-            self.patcher = patch("parrot.handlers.mediagen.GoogleGenAIClient")
+            # Lazy import in the handler (FEAT-523 / TASK-2846): patch the source module.
+            self.patcher = patch("parrot.clients.google.GoogleGenAIClient")
             self.mock_class = None
             self.client_instance = None
 

@@ -18,7 +18,9 @@ from parrot.handlers.understanding import UnderstandingHandler
 # ---------------------------------------------------------------------------
 
 ROUTE = "/api/v1/google/understanding"
-HANDLER_PATH = "parrot.handlers.understanding.GoogleGenAIClient"
+# The handler lazy-imports the client (FEAT-523 / TASK-2846), so patch it
+# at its source module rather than on parrot.handlers.understanding.
+HANDLER_PATH = "parrot.clients.google.GoogleGenAIClient"
 
 
 # ---------------------------------------------------------------------------
@@ -85,6 +87,24 @@ def sample_video_bytes(tmp_path: Path) -> tuple[bytes, str]:
 # ---------------------------------------------------------------------------
 # Helper
 # ---------------------------------------------------------------------------
+
+
+def _patch_download():
+    """Patch ``UnderstandingHandler._download_url`` with an offline stub.
+
+    JSON (``media_url``) mode downloads the URL before dispatching to the
+    client; without this stub the tests would hit the network and fail with
+    a 400 whenever the host is unreachable.
+    """
+    from urllib.parse import urlparse
+
+    async def _fake_download(self, url, dest_dir):  # noqa: ANN001
+        name = Path(urlparse(url).path).name or "file"
+        dest = Path(dest_dir) / name
+        dest.write_bytes(b"\x89PNG\r\n" + b"\x00" * 50)
+        return dest
+
+    return patch.object(UnderstandingHandler, "_download_url", _fake_download)
 
 
 def _make_client_patch(mock_msg: MagicMock, *, is_image: bool):
@@ -417,7 +437,7 @@ class TestPostJSONMode:
         """JSON POST with image URL returns 200."""
         client = await aiohttp_client(app)
 
-        with _make_client_patch(mock_image_ai_message, is_image=True):
+        with _make_client_patch(mock_image_ai_message, is_image=True), _patch_download():
             resp = await client.post(
                 ROUTE,
                 json={
@@ -439,7 +459,7 @@ class TestPostJSONMode:
         """JSON POST with video URL returns 200."""
         client = await aiohttp_client(app)
 
-        with _make_client_patch(mock_video_ai_message, is_image=False):
+        with _make_client_patch(mock_video_ai_message, is_image=False), _patch_download():
             resp = await client.post(
                 ROUTE,
                 json={

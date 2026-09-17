@@ -13,7 +13,9 @@ from parrot.handlers.understanding import UnderstandingHandler
 # Helpers / fixtures
 # ---------------------------------------------------------------------------
 
-HANDLER_PATH = "parrot.handlers.understanding.GoogleGenAIClient"
+# The handler lazy-imports the client (FEAT-523 / TASK-2846), so patch it
+# at its source module rather than on parrot.handlers.understanding.
+HANDLER_PATH = "parrot.clients.google.GoogleGenAIClient"
 
 
 def _make_ai_message(content: str = "Analysis result") -> MagicMock:

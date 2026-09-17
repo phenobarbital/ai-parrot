@@ -8,6 +8,9 @@ Verifies:
 """
 import pytest
 from pathlib import PurePath
+
+# The tests pin backend="pptx"; python-pptx is an ai-parrot-loaders extra.
+pytest.importorskip("pptx")
 from unittest.mock import patch, MagicMock, PropertyMock
 from parrot_loaders.ppt import PowerPointLoader
 from parrot.loaders.abstract import AbstractLoader
@@ -130,8 +133,9 @@ class TestPowerPointLoaderFullDocument:
         docs = await loader._load(PurePath("/fake/test.pptx"))
 
         assert len(docs) == 1
-        doc_meta = docs[0].metadata.get("document_meta", {})
-        assert doc_meta.get("total_slides") == 4
+        # total_slides is a loader extra → top-level metadata (TASK-857, d31959725)
+        assert docs[0].metadata.get("total_slides") == 4
+        assert "total_slides" not in docs[0].metadata["document_meta"]
 
     @pytest.mark.asyncio
     @patch.object(AbstractLoader, '_setup_llm')

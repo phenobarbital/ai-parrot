@@ -23,6 +23,8 @@ from parrot.storage.security_reports import (
     SecurityReportStore,
     SeverityBreakdown,
 )
+from parrot.storage.security_reports import store as store_module
+from parrot.storage.security_reports.store import _INSERT_SQL
 
 
 # ---------------------------------------------------------------------------
@@ -76,7 +78,10 @@ class TestBuildKey:
         ref = _ref()
         ref = ref.model_copy(update={"framework": None})
         key = store._build_key(ref)
-        assert "/none/" in key
+        # A framework-less report is filed under the generic "security" bucket
+        # (changed from "none" in commit 51c160a57).
+        assert key.startswith("security-reports/cloudsploit/security/")
+        assert "/none/" not in key
 
 
 class TestSaveReportUnit:
@@ -103,8 +108,12 @@ class TestSaveReportUnit:
         assert saved.uri != ""
         # S3 upload was called
         fm.create_file.assert_called_once()
-        # Postgres insert was called
-        mock_conn.execute.assert_called_once()
+        # Postgres insert was called exactly once. The remaining execute()
+        # calls are the lazy, idempotent schema bootstrap (_ensure_schema)
+        # that the first write triggers.
+        insert_calls = [c for c in mock_conn.execute.call_args_list if c.args and c.args[0] == _INSERT_SQL]
+        assert len(insert_calls) == 1
+        assert insert_calls[0].args[1] == ref.report_id
 
     async def test_save_bytes_uses_create_file(self):
         fm = AsyncMock()
@@ -194,10 +203,13 @@ class TestBootstrapSchema:
             store = PostgresS3SecurityReportStore(dsn="pg://localhost/test", file_manager=fm)
             await store.bootstrap_schema()
 
-        # Execute was called with the schema SQL
-        mock_conn.execute.assert_called_once()
-        schema_sql = mock_conn.execute.call_args.args[0]
-        assert "CREATE TABLE IF NOT EXISTS security_reports" in schema_sql
+        # schema.sql is applied one statement per execute() (asyncpg rejects
+        # multi-statement DDL — see commit 96c035a63).
+        schema_text = (Path(store_module.__file__).parent / "schema.sql").read_text()
+        expected = [stmt.strip() for stmt in schema_text.split(";") if stmt.strip()]
+        executed = [c.args[0] for c in mock_conn.execute.call_args_list]
+        assert executed == expected
+        assert any("CREATE TABLE IF NOT EXISTS security_reports" in sql for sql in executed)
 
 
 # ---------------------------------------------------------------------------

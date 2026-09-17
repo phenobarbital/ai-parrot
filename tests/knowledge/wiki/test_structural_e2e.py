@@ -133,7 +133,17 @@ class TestPolyglotBuildProducesSymbols:
             assert outline_on == outline_off, f"{rel}: outline differs between seam on/off"
 
 
+#: Python ``calls`` refs (and so every call/blast-radius edge) and all
+#: non-Python ``sym:`` pages are only produced by the optional ast-grep seam
+#: (``ai-parrot[wiki-structural]``). Tests asserting them skip without it;
+#: the seam-off half is still covered by ``test_polyglot_build_produces_symbols``.
+requires_astgrep = pytest.mark.skipif(
+    not astgrep.is_available(), reason="ast-grep-py not installed (wiki-structural extra)"
+)
+
+
 class TestNoExtraIsNoop:
+    @requires_astgrep
     @pytest.mark.asyncio
     async def test_no_extra_installed_is_noop(self, polyglot_repo: Path, monkeypatch):
         """AC2: without the extra, only Python gains `sym:` pages/edges.
@@ -212,6 +222,7 @@ class TestMCPServerNineTools:
 
 
 class TestUpsertChangedRefreshesSymbols:
+    @requires_astgrep
     def test_upsert_changed_refreshes_symbols(self, tmp_path: Path):
         root = tmp_path / "repo"
         root.mkdir()
@@ -275,6 +286,7 @@ class TestUpsertChangedRefreshesSymbols:
 
 
 class TestEndToEndLookupBlastRepair:
+    @requires_astgrep
     def test_end_to_end_lookup_blast_repair(self, tmp_path: Path):
         # NOT an async def — see TestMCPServerNineTools's note: `build`
         # calls `asyncio.run()` internally, so it must run outside any

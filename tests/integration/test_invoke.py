@@ -59,7 +59,9 @@ def _make_openai_response(text: str = '{"name": "John", "age": 30}'):
 
 def _make_google_response(text: str = '{"name": "John", "age": 30}'):
     """Google GenAI-compatible mock response."""
-    part = SimpleNamespace(text=text)
+    # Real ``google.genai.types.Part`` objects always expose ``thought``
+    # (``None`` for answer parts); the client filters on ``part.thought is True``.
+    part = SimpleNamespace(text=text, thought=None)
     content = SimpleNamespace(parts=[part])
     candidate = SimpleNamespace(content=content, finish_reason="STOP")
     um = SimpleNamespace(prompt_token_count=10, candidates_token_count=5, total_token_count=15)
@@ -132,6 +134,8 @@ def _make_google_client(response_text: str = '{"name": "John", "age": 30}'):
     client.model = "gemini-2.5-flash"
     client._lightweight_model = "gemini-3-flash-lite"
     client._fallback_model = None
+    # __new__ skips __init__, which sets the reformat-recovery model.
+    client._reformat_model = GoogleGenAIClient._default_reformat_model
     client.logger = MagicMock()
     client._tool_manager = MagicMock()
     client._tool_manager.get_tool_schemas.return_value = []
@@ -422,13 +426,26 @@ class TestInvokeModelResolution:
     """Verify model resolution across clients."""
 
     async def test_lightweight_model_default(self, mock_client):
-        """Each client uses _lightweight_model when none specified."""
-        result = await mock_client.invoke("test")
+        """Each client uses _lightweight_model when no model was selected.
+
+        ``self.model`` is only set from an explicit ``model=`` constructor
+        kwarg, so it outranks ``_lightweight_model`` (commit 0a5e7026b); the
+        lightweight default applies only when no model was selected.
+        """
         if mock_client._lightweight_model:
+            mock_client.model = None
+            result = await mock_client.invoke("test")
             assert result.model == mock_client._lightweight_model
         else:
             # LocalLLMClient: falls back to self.model
+            result = await mock_client.invoke("test")
             assert result.model == mock_client.model
+
+    async def test_selected_model_outranks_lightweight(self, mock_client):
+        """An explicitly selected self.model wins over _lightweight_model."""
+        assert mock_client.model
+        result = await mock_client.invoke("test")
+        assert result.model == mock_client.model
 
     async def test_model_override(self, mock_client):
         """Explicit model param overrides _lightweight_model."""

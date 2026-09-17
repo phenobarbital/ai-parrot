@@ -33,9 +33,15 @@ pytestmark = pytest.mark.skipif(
 def _load_agent_module():
     """Import agents/fireflies_wiki.py by path.
 
+    Skips the calling test when ``apscheduler`` is not installed: the agent
+    imports ``parrot.scheduler`` (``@schedule`` runs at import time), whose
+    implementation needs the optional ``ai-parrot-server[scheduler]`` extra —
+    absent from a plain ``uv sync --all-packages`` (the core CI job).
+
     Returns:
         The imported module object.
     """
+    pytest.importorskip("apscheduler", reason="apscheduler not installed (ai-parrot-server[scheduler] extra)")
     if "fireflies_wiki_agent_under_test" in sys.modules:
         return sys.modules["fireflies_wiki_agent_under_test"]
     spec = importlib.util.spec_from_file_location("fireflies_wiki_agent_under_test", AGENT_PATH)

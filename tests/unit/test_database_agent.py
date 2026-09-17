@@ -18,9 +18,16 @@ if os.path.isfile(_agent_file):
 else:
     from parrot.bots.database.agent import DatabaseAgent  # type: ignore
 
+from unittest.mock import AsyncMock, MagicMock  # noqa: E402
+
 import pytest  # noqa: E402
 from parrot.models import AIMessage  # noqa: E402
-from parrot.bots.database.models import UserRole, OutputComponent, QueryExecutionResponse  # noqa: E402
+from parrot.bots.database.models import (  # noqa: E402
+    UserRole,
+    OutputComponent,
+    QueryExecutionResponse,
+    QueryResponse,
+)
 from parrot.bots.database.toolkits.base import DatabaseToolkit  # noqa: E402
 
 
@@ -32,6 +39,9 @@ class MockToolkit(DatabaseToolkit):
     """Minimal concrete toolkit for agent testing."""
 
     def __init__(self, db_type: str = "postgresql", schemas=None):
+        # FEAT-172 (TASK-1210): two toolkits in one agent must not share a
+        # tool namespace, so each mock gets a backend-specific prefix.
+        self.tool_prefix = {"postgresql": "pg", "bigquery": "bq"}.get(db_type, db_type)
         super().__init__(
             dsn=f"{db_type}://test:test@localhost/test",
             allowed_schemas=schemas or ["public"],
@@ -117,20 +127,43 @@ class TestDatabaseAgentConfigure:
         assert len(agent.query_router.registered_databases) >= 2
 
 
+def _mock_llm() -> MagicMock:
+    """LLM client stub returning a canned structured ``QueryResponse``.
+
+    ``ask()`` is LLM-backed with ``QueryResponse`` structured output since
+    FEAT-164; without this stub the test would reach a real provider.
+    Inject it AFTER ``configure()``, which resolves a fresh ``_llm``.
+    """
+    client = MagicMock()
+    client.ask = AsyncMock(return_value=MagicMock(
+        spec=AIMessage,
+        is_structured=True,
+        output=QueryResponse(explanation="ok", query=None, data=None),
+        response="ok",
+        data=None,
+        session_id=None,
+    ))
+    return client
+
+
 class TestDatabaseAgentAsk:
     @pytest.mark.asyncio
     async def test_ask_not_configured(self):
         agent = DatabaseAgent(toolkits=[MockToolkit()])
         result = await agent.ask("show me orders")
-        assert "not configured" in result.content.lower()
+        # ask() always returns a structured QueryResponse (FEAT-164).
+        assert isinstance(result.output, QueryResponse)
+        assert "not configured" in result.output.explanation.lower()
 
     @pytest.mark.asyncio
     async def test_ask_returns_ai_message(self):
         agent = DatabaseAgent(toolkits=[MockToolkit()])
         await agent.configure()
+        agent._llm = _mock_llm()
         result = await agent.ask("show me all orders")
         assert isinstance(result, AIMessage)
-        assert isinstance(result.content, str)
+        assert isinstance(result.output, QueryResponse)
+        assert agent._llm.ask.called
 
     @pytest.mark.asyncio
     async def test_ask_with_explicit_role(self):
@@ -139,6 +172,7 @@ class TestDatabaseAgentAsk:
             default_user_role=UserRole.DATA_ANALYST,
         )
         await agent.configure()
+        agent._llm = _mock_llm()
         # Explicit role should be used
         result = await agent.ask(
             "show me orders", user_role=UserRole.BUSINESS_USER

@@ -234,9 +234,14 @@ async def test_anthropic_betas_param_omitted_by_default():
 async def test_anthropic_live_smoke():
     """End-to-end smoke test against the real Anthropic API on SDK 0.97.
 
-    Skipped when ``ANTHROPIC_API_KEY`` is not set so the suite remains green
-    in environments without a key (CI defaults, contributor laptops).
+    Opt-in only: runs when ``PARROT_TEST_REAL_LLM=1`` (see the ``real_llm``
+    marker in ``pytest.ini``). A key in the environment is NOT consent — NavConfig
+    loads ``ANTHROPIC_API_KEY`` from ``env/`` on developer machines, which would
+    otherwise make a plain ``pytest`` spend credits and fail on billing errors.
+    Also skipped when ``ANTHROPIC_API_KEY`` is not set.
     """
+    if os.environ.get("PARROT_TEST_REAL_LLM") != "1":
+        pytest.skip("live LLM test; set PARROT_TEST_REAL_LLM=1 to run it.")
     if not os.environ.get("ANTHROPIC_API_KEY"):
         pytest.skip("ANTHROPIC_API_KEY not set; live test skipped.")
 

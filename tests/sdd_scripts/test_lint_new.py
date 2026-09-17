@@ -6,12 +6,19 @@ ls-files`` behave exactly as they would in a feature worktree.
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 
 import pytest
 
 from scripts.sdd import lint_new
 from scripts.sdd.lint_new import main
+
+#: ``lint_new`` shells out to the ``ruff`` binary, which ships only with the
+#: ``ai-parrot[dev]`` extra — absent from a plain ``uv sync --all-packages``
+#: (the core CI job), where the script correctly exits 2 ("ruff could not be
+#: run"). Tests that need real ruff findings skip there instead of failing.
+requires_ruff = pytest.mark.skipif(shutil.which("ruff") is None, reason="ruff binary not installed (ai-parrot[dev])")
 
 
 @pytest.fixture
@@ -38,6 +45,7 @@ def test_no_paths_exits_zero(capsys):
     assert main([]) == 0
 
 
+@requires_ruff
 def test_pre_existing_finding_on_unchanged_line_is_ignored(repo, capsys):
     """Baseline mod.py carries UP035; the branch appends a clean line → exit 0."""
     (repo / "mod.py").write_text("from typing import Dict\n\nX: Dict = {}\nY = 1\n")
@@ -45,6 +53,7 @@ def test_pre_existing_finding_on_unchanged_line_is_ignored(repo, capsys):
     assert "pre-existing finding(s)" in capsys.readouterr().out
 
 
+@requires_ruff
 def test_new_finding_on_added_line_fails(repo, capsys):
     """Branch adds a line with an F401-style violation → exit 1, finding printed."""
     (repo / "mod.py").write_text("from typing import Dict\nimport os\n\nX: Dict = {}\n")  # os unused → F401
@@ -52,6 +61,7 @@ def test_new_finding_on_added_line_fails(repo, capsys):
     assert "F401" in capsys.readouterr().out
 
 
+@requires_ruff
 def test_i001_import_block_is_attributed_to_the_added_import(repo, capsys):
     """Adding an out-of-order import → I001 reported even though its row (1) is unchanged (G4)."""
     (repo / "mod.py").write_text("from typing import Dict\nimport aaa\n\nX: Dict = {}\n")
@@ -59,6 +69,7 @@ def test_i001_import_block_is_attributed_to_the_added_import(repo, capsys):
     assert "I001" in capsys.readouterr().out
 
 
+@requires_ruff
 def test_untracked_file_counts_as_fully_added(repo, capsys):
     (repo / "new.py").write_text("import os\n")  # F401
     assert main(["--base", "dev", "new.py"]) == 1

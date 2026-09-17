@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 from parrot.knowledge.wiki.cli import wiki
+from parrot.knowledge.wiki.languages import astgrep
 
 
 @pytest.fixture
@@ -100,7 +101,11 @@ class TestSymbolsBlast:
         )
         assert result.exit_code == 0, result.output
         payload = json.loads(result.output)
-        assert "b.py" in payload["files"]
+        assert payload["root"]["qualname"] == "helper"
+        # Python `calls` edges come only from the optional ast-grep seam
+        # (`wiki-structural` extra); without it there are no dependents.
+        if astgrep.is_available():
+            assert "b.py" in payload["files"]
 
     def test_symbols_blast_no_inferred(self, runner: CliRunner, tmp_path: Path):
         root = tmp_path / "repo"

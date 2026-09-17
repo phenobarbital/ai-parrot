@@ -27,6 +27,7 @@ All non-live tests fully mock the SDK; no subprocess is spawned.
 
 from __future__ import annotations
 
+import os
 import shutil
 import sys
 from types import SimpleNamespace
@@ -699,9 +700,13 @@ class TestPromptThreading:
 async def test_claude_agent_live_smoke():
     """Live smoke test — requires the bundled ``claude`` CLI.
 
-    Skipped when the binary is unavailable so CI environments without it
-    remain green.
+    Opt-in only: runs when ``PARROT_TEST_REAL_LLM=1`` (see the ``real_llm``
+    marker in ``pytest.ini``) — having the ``claude`` CLI installed is not
+    consent to spend credits on a plain ``pytest`` run. Also skipped when the
+    binary is unavailable.
     """
+    if os.environ.get("PARROT_TEST_REAL_LLM") != "1":
+        pytest.skip("live LLM test; set PARROT_TEST_REAL_LLM=1 to run it.")
     if not shutil.which("claude"):
         pytest.skip("claude CLI not found on PATH")
     from parrot.clients.anthropic.claude_agent import ClaudeAgentClient
