@@ -1,0 +1,27 @@
+Today `wikitoolkit` is consumed **locally**: the CLI opens a plane on disk
+(SQLite under `.parrot/wiki/`) or connects **directly** to ArangoDB when
+`backend: arangodb` is resolved (base `wiki.json` or a per-env overlay,
+FEAT-461), and `wikitoolkit mcp` exposes the same plane to Claude Code /
+Codex as a **stdio** MCP server (FEAT-403). Every team member — and every
+coding agent — that wants the shared plane therefore needs network reach
+to ArangoDB plus its credentials (`ARANGODB_*` via navconfig). That is the
+pain point: sharing the graph means **exposing the database** (VPN, per-user
+DB credentials, driver/analyzer version drift on every laptop).
+
+We want a **remote wikitoolkit MCP server** that owns the ArangoDB
+connection (and the SDD work ledger, FEAT-566) and that clients reach over
+HTTPS with a bearer token. Three concrete actions are in scope:
+
+1. **Expose wikitoolkit as an HTTP MCP** — a `wikitoolkit serve` process
+   speaking MCP Streamable HTTP, serving one or more wikis, connected to
+   ArangoDB behind it.
+2. **`wikitoolkit` CLI (and the stdio `wikitoolkit mcp`) act as a proxy**
+   to that remote server when the repo is configured for it — same
+   commands, same output, no local DB credentials.
+3. **Install wikitoolkit as a remote HTTP MCP** in Claude Code and Codex
+   via the existing installers (`parrot claude install`, `parrot codex
+   install`), so agents call the shared graph natively.
+
+**Affected users**: developers running Claude Code / Codex against shared
+wikis (parrot, fieldsync, issues), ops (one deployable instead of N DB
+clients), and the SDD dev-loop agents that write to the ledger.

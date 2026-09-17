@@ -1,0 +1,86 @@
+**Option A** is recommended because:
+
+- It delivers all three requested actions with a **single protocol and a
+  single server surface** (`/mcp/<wiki>` speaking Streamable HTTP), reusing
+  `StreamableHttpMCPServer` and the tool assembly that already exists for
+  stdio. Option B's transparency is attractive, but it doubles the wire
+  surface, exposes the store contract as a remote API and still needs a
+  tool-level path for the ledger; Option C was ruled out in discovery;
+  Option D does not satisfy the "CLI as proxy" requirement and cannot host
+  the ledger.
+- What we trade off: explicit command→tool mapping and a bulk-ingest
+  protocol. Both are bounded and testable against a fake server, and the
+  bulk tools double as the future home of `sync push/pull` (so the current
+  client-side ArangoDB path in `sync._open_remote` can be retired).
+- What we accept for v1 (decided 2026-09-17): the ledger remains a SQLite
+  file **on the server host** (centralised, unexposed), not an ArangoDB
+  collection — the port is the follow-up feature `wikitoolkit-ledger-arangodb`.
+  CLI-only commands without an MCP tool are refused in remote mode; their
+  tools arrive through a separate spec. The stdio pass-through is the
+  intermediate install path, so the installer lane is optional polish
+  rather than a prerequisite.
+
+---
+
+The remote server publishes exactly the tool set `wikitoolkit mcp` already
+builds (`create_wiki_tools` + `create_structural_tools` + ledger tools) over
+Streamable HTTP, once per wiki at `/mcp/<wiki_name>`. The CLI in remote
+mode maps each command onto the matching MCP tool (`query` →
+`wiki_query`, `remember` → `wiki_remember`, `symbols blast` →
+`wiki_blast_radius`, `ledger claim` → `ledger_claim`, …) through a small
+core-side Streamable HTTP JSON-RPC client, and renders the tool result with
+the renderers it already has. `wikitoolkit mcp` (stdio) becomes a
+pass-through when `remote` is configured: `tools/list` and `tools/call`
+are forwarded verbatim, so hosts without HTTP-MCP support (and existing
+`.mcp.json` entries) keep working. Local build results reach the server via
+**two new bulk tools** — `wiki_ingest_batch` (source slices: pages + edges
++ symbols, chunked, delta by `page_hashes`) and `wiki_sync_push` /
+`wiki_sync_pull` (authored knowledge, LWW — the `sync.py` engine run
+server-side). CLI-only commands with no tool today (`link`, `memories`,
+`audit`, `ground`, `export`, `communities`, `ledger acknowledge|blockers|
+audit|export`) either gain a tool or return "not available in remote
+mode" (see Open Questions).
+
+✅ **Pros:**
+- One wire protocol (MCP) and one auth path for agents and the CLI; the
+  server has nothing to expose besides `/mcp/<wiki>`.
+- Maximal reuse: the tool assembly in `create_wiki_mcp_server()` is
+  refactored into a shared builder used by both stdio and HTTP; the
+  Streamable HTTP server, session handling, origin checks and principal
+  binding already exist (`StreamableHttpMCPServer`).
+- Remote-mode CLI output is guaranteed identical to what agents see —
+  easy to reason about, easy to test with a fake server.
+- Keeps SQLite-specific behaviour (writer lock, checkpoints, pragmas) fully
+  server-side; the client never learns about the backend.
+
+❌ **Cons:**
+- Command → tool mapping is explicit code per command (≈20 commands),
+  and a handful of CLI-only commands need new tools or a scoped error.
+- Bulk ingest over `tools/call` is heavier than a direct store write:
+  needs chunking, payload caps and a delta protocol (`page_hashes`).
+- Ledger stays **SQLite on the server's disk** (`LedgerStore` is a
+  `SQLiteWikiStore` subclass); it is centralised and hidden, but not "in
+  ArangoDB".
+
+📊 **Effort:** Medium–High
+
+📦 **Libraries / Tools:**
+| Package | Purpose | Notes |
+|---|---|---|
+| `aiohttp` (already a core dep) | server app + client JSON-RPC calls | client parses `application/json` **or** SSE-wrapped responses |
+| `ai-parrot-server` (workspace dist) | `StreamableHttpMCPServer`, `MCPServerConfig` | **server host only**, lazily imported by `wikitoolkit serve`; clear error if missing |
+| `pydantic>=2` | `WikiRemoteConfig`, server config model | existing |
+| `click` | `wikitoolkit serve`, `--remote` flags | existing |
+| `mcp>=1.28.1,<2` (optional extra) | official client in an interop test only | precedent: `packages/ai-parrot-server/tests/mcp/test_streamable_http_interop.py` |
+
+🔗 **Existing Code to Reuse:**
+- `packages/ai-parrot/src/parrot/knowledge/wiki/mcp_server.py` — `create_wiki_mcp_server()` tool assembly (store → federation → ledger overlay → tools); split into `build_wiki_tools()` + transport wrapper.
+- `packages/ai-parrot-server/src/parrot/mcp/transports/streamable_http.py` — `StreamableHttpMCPServer` (sessions, SSE buffers, `_principal`, origin checks).
+- `packages/ai-parrot-server/src/parrot/mcp/transports/http.py` — `HttpMCPServer` standalone/parent-app mounting; `HttpMCPSession._read_sse_response` as reference for the core client.
+- `packages/ai-parrot-server/src/parrot/mcp/parrot_server.py` — `_check_base_path_conflicts` precedent for mounting several MCP servers on one app.
+- `packages/ai-parrot/src/parrot/knowledge/wiki/sync.py` — `_sync_records` LWW core, `SyncReport`, `default_local_identity()`.
+- `packages/ai-parrot/src/parrot/knowledge/wiki/store.py` — `BaseWikiStore.replace_source_slice`, `upsert_symbols`, `page_hashes` for delta ingest.
+- `packages/ai-parrot/src/parrot/knowledge/wiki/project.py` — `WikiProjectConfig` + `WikiEnvOverlay` + `load_effective_config` for the `remote` block.
+- `packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/installer.py`, `codex/installer.py`, `claude_code/assets.py`, `codex/assets.py` — the managed `.mcp.json` / `.codex/config.toml` entries.
+
+---

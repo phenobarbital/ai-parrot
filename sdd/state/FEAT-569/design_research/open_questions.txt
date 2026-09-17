@@ -1,0 +1,6 @@
+- [ ] **Server packaging**: make `ai-parrot-server` an optional extra of core (`ai-parrot[wikitoolkit-server]`) or move a dependency-light Streamable HTTP server into core? (Affects who can `pip install` the server image.) — *Owner: Jesus / spec*
+- [ ] **Token gate implementation**: aiohttp middleware in `wikitoolkit serve` vs. `AuthMethod.API_KEY` with a one-token `api_key_store` (locate the `APIKeyStore` class first) — *Owner: spec*
+- [ ] **Bulk-ingest limits**: max payload per `wiki_ingest_batch` call, slices per call, and whether embeddings (`upsert_embedding`) are pushed or recomputed server-side — *Owner: spec*
+- [ ] **Federation in remote mode**: should `ns list` show the server's namespaces (read-only) so users understand what a remote `--ns` targets? — *Owner: Jesus*
+- [ ] **Default actor when `X-Wiki-Actor` is absent** (only native-HTTP callers without header support, e.g. Codex registered directly, or curl): proposed default `agent:unknown` for writes, reads unaffected. Low priority now that the stdio pass-through is the recommended Codex path. — *Owner: spec*
+- [ ] **TLS termination**: `wikitoolkit serve` speaks plain HTTP behind a reverse proxy, or supports `ssl_cert_path`/`ssl_key_path` from `MCPServerConfig` directly? — *Owner: ops*
