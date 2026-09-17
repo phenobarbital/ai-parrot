@@ -170,6 +170,22 @@ def test_missing_validation_commands_warning_on_legacy_header(tmp_path):
     assert missing and missing[0].level == "warning"
 
 
+def test_non_pytest_validation_command_is_error(tmp_path):
+    """FEAT-563 review: a declared command that isn't pytest at all (e.g. `true`) used to pass
+    the lint cleanly — it is invisible to select_tests.py's declared-command handling, so the
+    task effectively has no enforced test coverage."""
+    index = _with_validation(tmp_path, ["true"], required=True)
+    report = check_graph(index, tmp_path)
+    assert "non-pytest-validation-command" in _codes(report)
+    assert main([str(index), "--root", str(tmp_path)]) == 1
+
+
+def test_non_pytest_validation_command_does_not_also_fire_broad_or_directory_findings(tmp_path):
+    index = _with_validation(tmp_path, ["ruff check ."], required=True)
+    report = check_graph(index, tmp_path)
+    assert _codes(report) == ["non-pytest-validation-command"]
+
+
 def test_broad_validation_command_is_error(tmp_path):
     index = _with_validation(tmp_path, ["pytest packages/x/tests -q"], required=True)
     report = check_graph(index, tmp_path)
@@ -204,6 +220,7 @@ def test_declared_or_existing_file_passes(tmp_path):
     report = check_graph(index, tmp_path)
     contract_codes = {
         "missing-validation-commands",
+        "non-pytest-validation-command",
         "broad-validation-command",
         "directory-validation-target",
         "validation-path-unknown",

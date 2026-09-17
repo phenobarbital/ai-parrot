@@ -88,10 +88,15 @@ def main(argv: list[str] | None = None) -> int:
     exit_code = 0
     for invocation in plan.invocations:
         result = subprocess.run(list(invocation.argv), cwd=worktree)
+        is_core_escalation = any(target.reason == "core" for target in invocation.targets)
         if result.returncode != 0:
             exit_code = 1
+            if is_core_escalation:
+                # R14/AC9c: a red run on a core escalation re-arms it, even when the core file's
+                # content is unchanged — never leave a stale green ledger record covering it.
+                kernel.context.record_red_run(worktree, [invocation.distribution])
             continue
-        if any(target.reason == "core" for target in invocation.targets):
+        if is_core_escalation:
             core_files = [hit.path for hit in plan.core_hits if invocation.distribution in hit.distributions]
             if core_files:
                 kernel.context.record_green_escalation(worktree, [invocation.distribution], core_files)

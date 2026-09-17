@@ -19,6 +19,10 @@ Errors (exit 1):
     over-broad ``pytest`` invocation (FEAT-563).
   * ``directory-validation-target`` — a task's validation command targets an
     existing directory instead of a file or node id (FEAT-563).
+  * ``non-pytest-validation-command`` — a task's declared validation command is
+    not a pytest invocation at all (e.g. ``true`` or ``ruff check .``); it is
+    silently invisible to ``select_tests.py``'s declared-command handling, so
+    the task effectively has no enforced test coverage (FEAT-563).
 
 Warnings (exit 0):
   * ``unjustified-edge`` — B depends on A, but they share no file, B's task
@@ -227,8 +231,8 @@ def _check_validation_contract(tasks: dict[str, _Task], root: Path, required: bo
         required: True when the index header declares ``"validation_contract": "required"``.
 
     Returns:
-        Findings: missing-validation-commands, broad-validation-command,
-        directory-validation-target, validation-path-unknown.
+        Findings: missing-validation-commands, non-pytest-validation-command,
+        broad-validation-command, directory-validation-target, validation-path-unknown.
     """
     contract = _load_contract()
     findings: list[Finding] = []
@@ -247,6 +251,19 @@ def _check_validation_contract(tasks: dict[str, _Task], root: Path, required: bo
             )
             continue
         for argv in commands:
+            if not contract.is_pytest_invocation(argv):
+                findings.append(
+                    Finding(
+                        level="error",
+                        code="non-pytest-validation-command",
+                        tasks=[tid],
+                        message=(
+                            f"{tid}: validation command is not a pytest invocation, so it is "
+                            f"invisible to select_tests.py's declared-command handling: {' '.join(argv)}"
+                        ),
+                    )
+                )
+                continue
             if contract.is_broad_pytest(argv):
                 findings.append(
                     Finding(

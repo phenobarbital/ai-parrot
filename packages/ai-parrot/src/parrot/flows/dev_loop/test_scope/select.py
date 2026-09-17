@@ -95,13 +95,13 @@ def _operands(argv: Sequence[str]) -> list[str]:
     return operands
 
 
-def _declared_targets(declared: Sequence[Sequence[str]], notes: list[str]) -> list[str]:
+def _declared_targets(declared: Sequence[Sequence[str]], notes: list[str], *, worktree: Path) -> list[str]:
     """Path operands of declared pytest argvs; broad ones (or unmappable ones) are dropped with a note."""
     targets: list[str] = []
     for argv in declared:
         if not argv:
             continue
-        if is_broad_pytest(argv):
+        if is_broad_pytest(argv, worktree=worktree):
             notes.append(f"declared command is over-broad, dropped: {' '.join(argv)}")
             continue
         for operand in _operands(argv):
@@ -133,7 +133,10 @@ def plan_tests(
         raise ValueError(f"unknown tier {tier!r}; expected one of {TIERS}")
     policy = policy or ScopePolicy()
     notes: list[str] = []
-    targets = [TestTarget(path=p, distribution=_dist(p), reason="declared") for p in _declared_targets(declared, notes)]
+    targets = [
+        TestTarget(path=p, distribution=_dist(p), reason="declared")
+        for p in _declared_targets(declared, notes, worktree=worktree)
+    ]
     targets += [
         TestTarget(path=p, distribution=_dist(p), reason="mirror")
         for p in pytest_targets(list(changed_files), str(worktree))

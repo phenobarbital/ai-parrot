@@ -89,3 +89,36 @@ def test_run_records_green_core_escalation(fixture_monorepo, capsys, monkeypatch
     main(["--tier", "merge", "--base", "HEAD", "--worktree", str(fixture_monorepo), "--json"])
     payload = json.loads(capsys.readouterr().out)
     assert "a" in payload["skipped_escalations"]
+
+
+def test_run_rearms_escalation_on_a_later_red_run(fixture_monorepo, capsys, monkeypatch):
+    """FEAT-563 review (R14/AC9c): a red run on a core-escalation invocation must re-arm it — a
+    stale ledger record for that distribution must not survive a red run, even one that predates
+    (or otherwise never matched) the current core-file content.
+
+    A distribution whose ledger entry already matches the current content is *skipped* by
+    `pending_escalations` — the escalated invocation is then never even added to the plan, so it
+    cannot go red "for real" through this path. This test instead seeds a ledger entry that does
+    NOT match (so the escalation is still attempted, exactly like a genuinely-stale or corrupted
+    record would be) and asserts a subsequent red run clears it rather than leaving a misleading
+    record behind."""
+    from scripts.sdd.select_tests import _load_kernel
+
+    kernel = _load_kernel()
+    import test_scope.select as select_mod
+    from test_scope.policy import ScopePolicy as RealScopePolicy
+
+    monkeypatch.setattr(select_mod, "ScopePolicy", lambda: RealScopePolicy(core_fanin_threshold=1))
+
+    (fixture_monorepo / "packages/a/src/pa/x.py").write_text("X = 2\n")
+    # Seed a ledger entry with no matching blobs, so pending_escalations does NOT skip "a"/"b".
+    kernel.context.record_green_escalation(fixture_monorepo, ["a", "b"], [])
+    assert "a" in kernel.context.read_ledger(fixture_monorepo)
+
+    (fixture_monorepo / "packages/a/tests/test_x.py").write_text("def test_x():\n    assert False\n")
+    rc = main(["--tier", "merge", "--base", "HEAD", "--worktree", str(fixture_monorepo), "--run"])
+    assert rc == 1  # "a"'s escalated suite failed; "b"'s passed
+
+    ledger = kernel.context.read_ledger(fixture_monorepo)
+    assert "a" not in ledger  # re-armed: the stale/red entry was dropped, not left in place
+    assert "b" in ledger  # "b" was green and got a fresh, correct record

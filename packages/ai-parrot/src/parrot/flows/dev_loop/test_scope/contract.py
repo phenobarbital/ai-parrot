@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 import shlex
 from collections.abc import Sequence
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 
 VALIDATION_HEADING: str = "## Validation Commands"
 _HEADING_RE = re.compile(r"^## Validation Commands\s*$", re.M)
@@ -112,15 +112,46 @@ def _pytest_operands(argv: Sequence[str]) -> list[str] | None:
     return operands
 
 
-def is_broad_pytest(argv: Sequence[str]) -> bool:
-    """True for pytest with no path operand or an operand in {., tests, packages/<dist>/tests} or a parent."""
+def _relativize(op_path: str, worktree: Path | None) -> str:
+    """Best-effort: rewrite an absolute `op_path` relative to `worktree`; unchanged otherwise.
+
+    An absolute operand pointing at the exact same broad directory as its relative form (e.g.
+    `/abs/repo/packages/ai-parrot/tests` vs. `packages/ai-parrot/tests`) must be recognized the
+    same way — `is_broad_pytest` only ever inspects the relative shape, so without this the guard
+    silently treats an absolute-path broad run as narrow. `worktree=None` (no worktree known, e.g.
+    a worktree-agnostic caller/unit test) leaves any absolute operand untouched, same as before
+    this parameter existed.
+    """
+    if worktree is None or not PurePosixPath(op_path).is_absolute():
+        return op_path
+    try:
+        return str(Path(op_path).resolve().relative_to(Path(worktree).resolve()).as_posix())
+    except (OSError, ValueError):
+        return op_path
+
+
+def is_pytest_invocation(argv: Sequence[str]) -> bool:
+    """True when `argv` is `pytest ...` / `python[3] -m pytest ...` (past env/`uv run` prefixes).
+
+    A declared `## Validation Commands` entry that is NOT a pytest invocation at all (e.g. `true`
+    or `ruff check .`) is silently invisible to `plan_tests`/`is_broad_pytest` — this lets a task
+    (or a lint) tell the two apart from a command that IS pytest but simply narrow.
+    """
+    return _pytest_operands(argv) is not None
+
+
+def is_broad_pytest(argv: Sequence[str], *, worktree: Path | None = None) -> bool:
+    """True for pytest with no path operand or an operand in {., tests, packages/<dist>/tests} or a
+    parent. Pass `worktree` so an absolute operand pointing at one of those same directories is
+    also recognized (see `_relativize`)."""
     operands = _pytest_operands(argv)
     if operands is None:
         return False
     if not operands:
         return True
     for op in operands:
-        path = PurePosixPath(op.split("::", 1)[0].rstrip("/") or ".")
+        raw = _relativize(op.split("::", 1)[0].rstrip("/") or ".", worktree)
+        path = PurePosixPath(raw)
         parts = path.parts
         if parts in ((), (".",), ("tests",), ("packages",)):
             return True

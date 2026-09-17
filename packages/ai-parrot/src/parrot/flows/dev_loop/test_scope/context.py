@@ -111,6 +111,26 @@ def record_green_escalation(worktree: Path, hit_dists: Sequence[str], core_files
     return None
 
 
+def record_red_run(worktree: Path, hit_dists: Sequence[str]) -> None:
+    """Drop each `hit_dists` distribution's ledger entry after a red escalated run (spec R14/AC9c:
+    "any content change or red run re-arms it"). `record_green_escalation` is the only writer of a
+    ledger entry, so without this a red run on otherwise-unchanged core-file content silently
+    leaves the stale green record in place — `pending_escalations` would then keep skipping the
+    same escalation on every later plan even though it is currently failing.
+    """
+    git_dir = worktree_git_dir(worktree)
+    if git_dir is None:
+        return
+    current = {d: {"core_blobs": dict(e.core_blobs)} for d, e in read_ledger(worktree).items()}
+    changed = False
+    for dist in hit_dists:
+        if current.pop(dist, None) is not None:
+            changed = True
+    if changed:
+        _atomic_write_json(git_dir / LEDGER_FILENAME, current)
+    return None
+
+
 def pending_escalations(worktree: Path, hits: Sequence[CoreHit]) -> tuple[list[str], list[str]]:
     """(distributions to run, distributions skipped because ledger blobs match current content)."""
     ledger = read_ledger(worktree)

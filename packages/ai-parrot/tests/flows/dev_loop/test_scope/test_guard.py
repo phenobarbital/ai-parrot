@@ -115,3 +115,10 @@ def test_guard_bash_rewrites_every_broad_segment_in_a_compound(tmp_path, with_pl
     )
     assert outcome.action == "rewrite"
     assert rewritten.count("( pytest a.py; r=$?; exit $r )") == 2
+
+
+def test_absolute_path_to_a_broad_directory_is_rewritten(tmp_path, with_plan):
+    with_plan(_plan(("pytest", "a.py")))
+    broad_abs = str(tmp_path / "packages" / "ai-parrot" / "tests")
+    outcome = guard_argv(["pytest", broad_abs], worktree=tmp_path)
+    assert outcome.action == "rewrite"

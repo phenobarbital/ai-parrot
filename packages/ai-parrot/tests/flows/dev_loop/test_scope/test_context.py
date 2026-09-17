@@ -54,11 +54,27 @@ def test_ledger_skips_green_same_content(linked: Path):
     assert ctxmod.pending_escalations(linked, [hit]) == (["b"], ["a"])
 
 
-def test_ledger_rearms_on_content_change_or_red(linked: Path):
+def test_ledger_rearms_on_content_change(linked: Path):
     hit = CoreHit(path="core.py", module="core", fanin=60, forced=True, distributions=("a",))
     ctxmod.record_green_escalation(linked, ["a"], ["core.py"])
     (linked / "core.py").write_text("x = 2\n")
     assert ctxmod.pending_escalations(linked, [hit]) == (["a"], [])
+
+
+def test_ledger_rearms_on_a_red_run_even_with_unchanged_content(linked: Path):
+    """FEAT-563 review (R14/AC9c): "any content change **or red run** re-arms it" — record_red_run
+    is the writer for the second half; record_green_escalation alone never covers this case."""
+    hit = CoreHit(path="core.py", module="core", fanin=60, forced=True, distributions=("a", "b"))
+    ctxmod.record_green_escalation(linked, ["a", "b"], ["core.py"])
+    assert ctxmod.pending_escalations(linked, [hit]) == ([], ["a", "b"])  # both skipped, still green
+    ctxmod.record_red_run(linked, ["a"])
+    # "a" re-armed by the red run; "b" is untouched and still correctly skipped.
+    assert ctxmod.pending_escalations(linked, [hit]) == (["a"], ["b"])
+
+
+def test_record_red_run_on_a_distribution_with_no_ledger_entry_is_a_no_op(linked: Path):
+    ctxmod.record_red_run(linked, ["never-recorded"])  # must not raise or create a spurious entry
+    assert ctxmod.read_ledger(linked) == {}
 
 
 def test_malformed_ledger_is_empty(linked: Path):

@@ -62,7 +62,7 @@ def _task_plan(worktree: Path) -> ScopePlan | None:
 def guard_argv(argv: Sequence[str], *, worktree: Path) -> GuardOutcome:
     """allow when no attempt context or not broad; else rewrite to the task-tier plan, or block when empty."""
     try:
-        if not _is_pytest_argv(argv) or not is_broad_pytest(argv):
+        if not _is_pytest_argv(argv) or not is_broad_pytest(argv, worktree=worktree):
             return GuardOutcome(action="allow")
         plan = _task_plan(worktree)
         if plan is None:
@@ -123,7 +123,9 @@ def guard_bash(command: str, *, worktree: Path) -> tuple[GuardOutcome, str | Non
             else:
                 segments[-1].append(token)
 
-        broad_indices = [i for i, seg in enumerate(segments) if seg and _is_pytest_argv(seg) and is_broad_pytest(seg)]
+        broad_indices = [
+            i for i, seg in enumerate(segments) if seg and _is_pytest_argv(seg) and is_broad_pytest(seg, worktree=worktree)
+        ]
         if not broad_indices:
             return GuardOutcome(action="allow"), None
 
