@@ -1,0 +1,237 @@
+[
+  {
+    "id": "F001",
+    "title": "Owner direction and unexecuted spike gates",
+    "summary": "Preserve Option B: full FSRS-6, verified outcomes only, recall does not reinforce, forgotten is recoverable, and coder feedback joins episodic memory. The source explicitly requires S1\u2013S4 before specification. Its formulas, compatibility claims and proposed symbols are design input, not implemented contracts.",
+    "citations": [
+      {
+        "path": "sdd/proposals/agent-memory-dynamics.brainstorm.md",
+        "lines": "31-55",
+        "symbol": "owner constraints"
+      },
+      {
+        "path": "sdd/proposals/agent-memory-dynamics.brainstorm.md",
+        "lines": "565-600",
+        "symbol": "spikes and open questions"
+      }
+    ]
+  },
+  {
+    "id": "F002",
+    "title": "Recall and warnings require separate integration",
+    "summary": "EpisodicMemoryStore.recall_similar requires an embedding provider and returns an empty list without one. It delegates ranking to the strategy/backend; get_failure_warnings separately fetches recent failures by tenant and agent and re-sorts by importance and timestamp. Updating semantic recall alone will neither preserve final warning ordering nor provide complete namespace isolation in the recent-failure branch.",
+    "citations": [
+      {
+        "path": "packages/ai-parrot/src/parrot/memory/episodic/store.py",
+        "lines": "377-434",
+        "symbol": "EpisodicMemoryStore.recall_similar"
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/memory/episodic/store.py",
+        "lines": "436-508",
+        "symbol": "EpisodicMemoryStore.get_failure_warnings"
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/memory/episodic/models.py",
+        "lines": "214-271",
+        "symbol": "MemoryNamespace"
+      }
+    ]
+  },
+  {
+    "id": "F003",
+    "title": "Metadata patches are not atomic review transitions",
+    "summary": "The protocol only promises a metadata merge. PostgreSQL merges top-level JSONB keys, leaving concurrent replacements of the same fsrs object vulnerable to stale writes. Redis uses read/merge/write without a transaction in this method. FAISS updates process-local objects and saves replacement snapshots. Review deduplication, ordered state application and crash recovery therefore need a stronger contract; append-only logging alone cannot atomically update state.",
+    "citations": [
+      {
+        "path": "packages/ai-parrot/src/parrot/memory/episodic/backends/abstract.py",
+        "lines": "106-125",
+        "symbol": "AbstractEpisodeBackend.update_metadata"
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/memory/episodic/backends/pgvector.py",
+        "lines": "492-525",
+        "symbol": "PgVectorBackend.update_metadata"
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/memory/episodic/backends/redis_vector.py",
+        "lines": "544-596",
+        "symbol": "RedisVectorBackend.update_metadata"
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/memory/episodic/backends/faiss.py",
+        "lines": "257-315",
+        "symbol": "FAISSBackend.update_metadata / save"
+      }
+    ]
+  },
+  {
+    "id": "F004",
+    "title": "Conversational recording fabricates success in a wrapper",
+    "summary": "The precise hardcoded SUCCESS/3 write is in _safe_record_ask, scheduled by _record_post_ask after trivial-query filtering. Correct that path without equating a returned answer with verified task success. The unified manager also records through record_tool_episode and must be covered by outcome-policy tests before claiming all agent paths are fixed.",
+    "citations": [
+      {
+        "path": "packages/ai-parrot/src/parrot/memory/episodic/mixin.py",
+        "lines": "423-487",
+        "symbol": "EpisodicMemoryMixin._record_post_ask / _safe_record_ask"
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/memory/unified/manager.py",
+        "lines": "368-400",
+        "symbol": "UnifiedMemoryManager._record_episodic"
+      }
+    ]
+  },
+  {
+    "id": "F005",
+    "title": "Brain retrieval and consolidation need structured provenance",
+    "summary": "BrainStore.search returns packed text from FTS, not a typed list of injected memory IDs. remember derives page identity from title/category, while WikiPageRecord has no metadata field. DreamCycleRunner collects by importance or lesson text, skips consolidated episodes and advances a created-at watermark. Promotion counts distinct cycles, not verified outcomes. A state sidecar must survive rewriting/copying; re-distillation needs versioned identity and recovery of old episodes below the watermark.",
+    "citations": [
+      {
+        "path": "packages/ai-parrot/src/parrot/memory/dream/brain.py",
+        "lines": "50-149",
+        "symbol": "BrainStore.remember / search"
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/knowledge/wiki/store.py",
+        "lines": "409-455",
+        "symbol": "WikiPageRecord"
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/memory/dream/runner.py",
+        "lines": "180-225",
+        "symbol": "DreamCycleRunner.run_cycle"
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/memory/dream/runner.py",
+        "lines": "237-269",
+        "symbol": "DreamCycleRunner._collect"
+      }
+    ]
+  },
+  {
+    "id": "F006",
+    "title": "Feedback migration has identity and retrieval compatibility risks",
+    "summary": "CoderFeedback.feedback_id is a stable coder-feedback: hash, with first occurrence winning on replay. context groups by pattern within backend/model, ranks file scope then recurrence then timestamp, applies max_age_days, and packs whole lessons including verification. PostgreSQL episodes use UUID keys, so feedback_id cannot universally become episode_id unchanged. Preserve a legacy alias and deterministic UUID mapping, historical timestamps, recurrence deduplication and full verification text. An embedding-only adapter would remove working feedback when no embedding provider is configured.",
+    "citations": [
+      {
+        "path": "packages/ai-parrot/src/parrot/knowledge/wiki/ledger/coder_feedback.py",
+        "lines": "77-85",
+        "symbol": "CoderFeedback.feedback_id"
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/knowledge/wiki/ledger/coder_feedback.py",
+        "lines": "101-215",
+        "symbol": "CoderFeedbackStore.record / context"
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/memory/episodic/backends/pgvector.py",
+        "lines": "118-149",
+        "symbol": "PgVectorBackend episode DDL"
+      }
+    ]
+  },
+  {
+    "id": "F007",
+    "title": "Existing coder reviews cannot supply memory-level grades",
+    "summary": "CoderReview records task/attempt/backend/model, fix commits, textual evidence and execution ID; no recalled IDs, checked patterns or machine outcome receipt. The engine checks known attempt identity and reachable correction commits, then stores exposure measured using the literal [coder-feedback: text marker. It does not verify a successful merge inside record_review. Replay selects the latest measurement for an attempt, unlike feedback replay which selects the first occurrence. Grading requires immutable outcome revisions and attribution receipts, not merely calling the existing review tool.",
+    "citations": [
+      {
+        "path": "packages/ai-parrot/src/parrot/knowledge/wiki/ledger/coder_reviews.py",
+        "lines": "21-44",
+        "symbol": "CoderReview / CoderReviewMeasurement"
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/knowledge/wiki/ledger/coder_reviews.py",
+        "lines": "77-107",
+        "symbol": "CoderReviewStore.record / _report"
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/engine.py",
+        "lines": "1433-1500",
+        "symbol": "SddCoderEngine._feedback_for / record_review"
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/models.py",
+        "lines": "165-170",
+        "symbol": "FeedbackConfig"
+      }
+    ]
+  },
+  {
+    "id": "F008",
+    "title": "Attribution must survive final context packing",
+    "summary": "MemoryContext stores strings and token counts without an injected-ID manifest. UnifiedMemoryManager gathers text sections and ContextAssembler truncates them to section budgets. Tracking candidates before packing would credit memories not actually delivered to the model. The two coder prompt copies request prose about checked patterns; this is not verified structured evidence.",
+    "citations": [
+      {
+        "path": "packages/ai-parrot/src/parrot/memory/unified/models.py",
+        "lines": "13-43",
+        "symbol": "MemoryContext"
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/memory/unified/manager.py",
+        "lines": "158-175",
+        "symbol": "UnifiedMemoryManager.get_context_for_query"
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/memory/unified/context.py",
+        "lines": "49-129",
+        "symbol": "ContextAssembler.assemble"
+      },
+      {
+        "path": ".claude/agents/sdd-coder.md",
+        "lines": "115-124",
+        "symbol": "Apply Previous Delivery Feedback"
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/flows/dev_loop/_subagent_data/sdd-coder.md",
+        "lines": "115-124",
+        "symbol": "Apply Previous Delivery Feedback"
+      }
+    ]
+  },
+  {
+    "id": "F009",
+    "title": "Shared-root and durable logging primitives exist",
+    "summary": "find_shared_root resolves linked worktrees to the common repository root. LedgerLog bounds records to 4096 bytes, writes once under O_APPEND, checks for short writes and fsyncs; its offset is explicitly best-effort under concurrency. These are useful patterns, not a transaction spanning log and memory state. aiosqlite is already a declared core dependency. No fsrs match appeared in the searched workspace pyproject files; adding an optimizer remains a separate dependency decision.",
+    "citations": [
+      {
+        "path": "packages/ai-parrot/src/parrot/knowledge/wiki/project.py",
+        "lines": "1184-1222",
+        "symbol": "find_shared_root"
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/knowledge/wiki/ledger/log.py",
+        "lines": "20-81",
+        "symbol": "LedgerLog.append"
+      },
+      {
+        "path": "packages/ai-parrot/pyproject.toml",
+        "lines": "180-193",
+        "symbol": "core dependencies"
+      }
+    ]
+  },
+  {
+    "id": "F010",
+    "title": "Existing tests encode contracts worth preserving",
+    "summary": "Read tests assert default strategy delegation, default importance, feedback deduplication and backend/model isolation, file-scope ordering and bounded complete-lesson packing. Metadata tests use real FAISS and mocked PostgreSQL/Redis; they do not demonstrate concurrent review safety. Tests were inspected, not executed; there is no implementation change in this proposal.",
+    "citations": [
+      {
+        "path": "packages/ai-parrot/tests/memory/episodic/test_store_integration.py",
+        "lines": "44-99",
+        "symbol": "TestDefaultBehaviorUnchanged"
+      },
+      {
+        "path": "packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_feedback.py",
+        "lines": "41-80",
+        "symbol": "feedback replay and scope tests"
+      },
+      {
+        "path": "tests/memory/dream/test_update_metadata.py",
+        "lines": "1-75",
+        "symbol": "TestFAISSUpdateMetadata"
+      }
+    ]
+  }
+]

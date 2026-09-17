@@ -1,0 +1,635 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-569",
+  "mode": "enrichment",
+  "summary_oneline": "Unify episodic, brain and coder-feedback retention through verified outcome-driven FSRS dynamics",
+  "localization": [
+    {
+      "path": "packages/ai-parrot/src/parrot/memory/episodic/store.py",
+      "lines": "377-434",
+      "symbol": "EpisodicMemoryStore.recall_similar",
+      "role": "Recall and warnings require separate integration",
+      "evidence": [
+        "F002"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/memory/episodic/store.py",
+      "lines": "436-508",
+      "symbol": "EpisodicMemoryStore.get_failure_warnings",
+      "role": "Recall and warnings require separate integration",
+      "evidence": [
+        "F002"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/memory/episodic/models.py",
+      "lines": "214-271",
+      "symbol": "MemoryNamespace",
+      "role": "Recall and warnings require separate integration",
+      "evidence": [
+        "F002"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/memory/episodic/backends/abstract.py",
+      "lines": "106-125",
+      "symbol": "AbstractEpisodeBackend.update_metadata",
+      "role": "Metadata patches are not atomic review transitions",
+      "evidence": [
+        "F003"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/memory/episodic/backends/pgvector.py",
+      "lines": "492-525",
+      "symbol": "PgVectorBackend.update_metadata",
+      "role": "Metadata patches are not atomic review transitions",
+      "evidence": [
+        "F003"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/memory/episodic/backends/redis_vector.py",
+      "lines": "544-596",
+      "symbol": "RedisVectorBackend.update_metadata",
+      "role": "Metadata patches are not atomic review transitions",
+      "evidence": [
+        "F003"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/memory/episodic/backends/faiss.py",
+      "lines": "257-315",
+      "symbol": "FAISSBackend.update_metadata / save",
+      "role": "Metadata patches are not atomic review transitions",
+      "evidence": [
+        "F003"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/memory/episodic/mixin.py",
+      "lines": "423-487",
+      "symbol": "EpisodicMemoryMixin._record_post_ask / _safe_record_ask",
+      "role": "Conversational recording fabricates success in a wrapper",
+      "evidence": [
+        "F004"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/memory/unified/manager.py",
+      "lines": "368-400",
+      "symbol": "UnifiedMemoryManager._record_episodic",
+      "role": "Conversational recording fabricates success in a wrapper",
+      "evidence": [
+        "F004"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/memory/dream/brain.py",
+      "lines": "50-149",
+      "symbol": "BrainStore.remember / search",
+      "role": "Brain retrieval and consolidation need structured provenance",
+      "evidence": [
+        "F005"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/store.py",
+      "lines": "409-455",
+      "symbol": "WikiPageRecord",
+      "role": "Brain retrieval and consolidation need structured provenance",
+      "evidence": [
+        "F005"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/memory/dream/runner.py",
+      "lines": "180-225",
+      "symbol": "DreamCycleRunner.run_cycle",
+      "role": "Brain retrieval and consolidation need structured provenance",
+      "evidence": [
+        "F005"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/memory/dream/runner.py",
+      "lines": "237-269",
+      "symbol": "DreamCycleRunner._collect",
+      "role": "Brain retrieval and consolidation need structured provenance",
+      "evidence": [
+        "F005"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/ledger/coder_feedback.py",
+      "lines": "77-85",
+      "symbol": "CoderFeedback.feedback_id",
+      "role": "Feedback migration has identity and retrieval compatibility risks",
+      "evidence": [
+        "F006"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/ledger/coder_feedback.py",
+      "lines": "101-215",
+      "symbol": "CoderFeedbackStore.record / context",
+      "role": "Feedback migration has identity and retrieval compatibility risks",
+      "evidence": [
+        "F006"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/memory/episodic/backends/pgvector.py",
+      "lines": "118-149",
+      "symbol": "PgVectorBackend episode DDL",
+      "role": "Feedback migration has identity and retrieval compatibility risks",
+      "evidence": [
+        "F006"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/ledger/coder_reviews.py",
+      "lines": "21-44",
+      "symbol": "CoderReview / CoderReviewMeasurement",
+      "role": "Existing coder reviews cannot supply memory-level grades",
+      "evidence": [
+        "F007"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/ledger/coder_reviews.py",
+      "lines": "77-107",
+      "symbol": "CoderReviewStore.record / _report",
+      "role": "Existing coder reviews cannot supply memory-level grades",
+      "evidence": [
+        "F007"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/engine.py",
+      "lines": "1433-1500",
+      "symbol": "SddCoderEngine._feedback_for / record_review",
+      "role": "Existing coder reviews cannot supply memory-level grades",
+      "evidence": [
+        "F007"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/models.py",
+      "lines": "165-170",
+      "symbol": "FeedbackConfig",
+      "role": "Existing coder reviews cannot supply memory-level grades",
+      "evidence": [
+        "F007"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/memory/unified/models.py",
+      "lines": "13-43",
+      "symbol": "MemoryContext",
+      "role": "Attribution must survive final context packing",
+      "evidence": [
+        "F008"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/memory/unified/manager.py",
+      "lines": "158-175",
+      "symbol": "UnifiedMemoryManager.get_context_for_query",
+      "role": "Attribution must survive final context packing",
+      "evidence": [
+        "F008"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/memory/unified/context.py",
+      "lines": "49-129",
+      "symbol": "ContextAssembler.assemble",
+      "role": "Attribution must survive final context packing",
+      "evidence": [
+        "F008"
+      ]
+    },
+    {
+      "path": ".claude/agents/sdd-coder.md",
+      "lines": "115-124",
+      "symbol": "Apply Previous Delivery Feedback",
+      "role": "Attribution must survive final context packing",
+      "evidence": [
+        "F008"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/flows/dev_loop/_subagent_data/sdd-coder.md",
+      "lines": "115-124",
+      "symbol": "Apply Previous Delivery Feedback",
+      "role": "Attribution must survive final context packing",
+      "evidence": [
+        "F008"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/project.py",
+      "lines": "1184-1222",
+      "symbol": "find_shared_root",
+      "role": "Shared-root and durable logging primitives exist",
+      "evidence": [
+        "F009"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/ledger/log.py",
+      "lines": "20-81",
+      "symbol": "LedgerLog.append",
+      "role": "Shared-root and durable logging primitives exist",
+      "evidence": [
+        "F009"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/pyproject.toml",
+      "lines": "180-193",
+      "symbol": "core dependencies",
+      "role": "Shared-root and durable logging primitives exist",
+      "evidence": [
+        "F009"
+      ]
+    }
+  ],
+  "constraints": [
+    {
+      "statement": "Semantic recall requires embeddings and warning assembly independently reorders results.",
+      "evidence": [
+        "F002"
+      ],
+      "implication": "Direct control-flow inspection."
+    },
+    {
+      "statement": "Existing metadata patch APIs do not ensure atomic, idempotent review application.",
+      "evidence": [
+        "F003",
+        "F009"
+      ],
+      "implication": "Inspected all three update paths and the log boundary."
+    },
+    {
+      "statement": "The conversational wrapper records unverified SUCCESS/3.",
+      "evidence": [
+        "F004"
+      ],
+      "implication": "Direct read of the write arguments."
+    },
+    {
+      "statement": "Brain state and injected-memory provenance require new structured contracts.",
+      "evidence": [
+        "F005",
+        "F008"
+      ],
+      "implication": "Existing records and returns were read."
+    },
+    {
+      "statement": "Feedback IDs need mapping to UUID episode keys; exposure detection also needs migration.",
+      "evidence": [
+        "F006",
+        "F007"
+      ],
+      "implication": "Direct identifier and engine checks."
+    },
+    {
+      "statement": "Existing coder reviews cannot reconstruct historical per-memory grades.",
+      "evidence": [
+        "F007"
+      ],
+      "implication": "No memory IDs or causal outcome receipts in the inspected model."
+    },
+    {
+      "statement": "Shared-root resolution and aiosqlite are available foundations.",
+      "evidence": [
+        "F009"
+      ],
+      "implication": "Source and dependency declarations verified."
+    },
+    {
+      "statement": "The FSRS design needs reference clamps and an explicit optimizer adapter.",
+      "evidence": [
+        "F011"
+      ],
+      "implication": "Primary algorithm and reference code inspected."
+    }
+  ],
+  "investigation": null,
+  "enrichment": {
+    "scope_confidence": "medium",
+    "new": [
+      "Versioned FSRS state and pure transitions; not yet implemented",
+      "Durable review identities, atomic application and replay",
+      "Post-packing attribution receipts and verified outcome adapters",
+      "Spike-gated shared local storage, review export and operations surfaces"
+    ],
+    "modified": [
+      {
+        "area": "Recall and warnings require separate integration",
+        "evidence": [
+          "F002"
+        ]
+      },
+      {
+        "area": "Metadata patches are not atomic review transitions",
+        "evidence": [
+          "F003"
+        ]
+      },
+      {
+        "area": "Conversational recording fabricates success in a wrapper",
+        "evidence": [
+          "F004"
+        ]
+      },
+      {
+        "area": "Brain retrieval and consolidation need structured provenance",
+        "evidence": [
+          "F005"
+        ]
+      },
+      {
+        "area": "Feedback migration has identity and retrieval compatibility risks",
+        "evidence": [
+          "F006"
+        ]
+      },
+      {
+        "area": "Existing coder reviews cannot supply memory-level grades",
+        "evidence": [
+          "F007"
+        ]
+      },
+      {
+        "area": "Attribution must survive final context packing",
+        "evidence": [
+          "F008"
+        ]
+      },
+      {
+        "area": "Shared-root and durable logging primitives exist",
+        "evidence": [
+          "F009"
+        ]
+      }
+    ],
+    "untouched": [
+      "Provider clients and conversation compaction",
+      "Per-principal profile plane",
+      "Active rehearsal probes (v2)",
+      "Skill usefulness scoring"
+    ],
+    "patterns": [
+      {
+        "statement": "Preserve shared-root resolution, bounded durable receipts and complete-lesson packing",
+        "evidence": [
+          "F006",
+          "F009",
+          "F010"
+        ]
+      }
+    ],
+    "risks": [
+      {
+        "statement": "Concurrent metadata writes lose review state",
+        "evidence": [
+          "F003"
+        ]
+      },
+      {
+        "statement": "No embeddings silently empties a feedback adapter",
+        "evidence": [
+          "F002",
+          "F006"
+        ]
+      },
+      {
+        "statement": "Packed text loses per-memory attribution",
+        "evidence": [
+          "F005",
+          "F008"
+        ]
+      },
+      {
+        "statement": "UUID migration breaks feedback identity or exposure statistics",
+        "evidence": [
+          "F006",
+          "F007"
+        ]
+      },
+      {
+        "statement": "Inheriting maximal stability can promote unverified distilled content",
+        "evidence": [
+          "F001",
+          "F005"
+        ]
+      }
+    ]
+  },
+  "confidence_map": [
+    {
+      "id": "C1",
+      "statement": "Semantic recall requires embeddings and warning assembly independently reorders results.",
+      "evidence": [
+        "F002"
+      ],
+      "confidence": "high",
+      "reasoning": "Direct control-flow inspection."
+    },
+    {
+      "id": "C2",
+      "statement": "Existing metadata patch APIs do not ensure atomic, idempotent review application.",
+      "evidence": [
+        "F003",
+        "F009"
+      ],
+      "confidence": "high",
+      "reasoning": "Inspected all three update paths and the log boundary."
+    },
+    {
+      "id": "C3",
+      "statement": "The conversational wrapper records unverified SUCCESS/3.",
+      "evidence": [
+        "F004"
+      ],
+      "confidence": "high",
+      "reasoning": "Direct read of the write arguments."
+    },
+    {
+      "id": "C4",
+      "statement": "Brain state and injected-memory provenance require new structured contracts.",
+      "evidence": [
+        "F005",
+        "F008"
+      ],
+      "confidence": "high",
+      "reasoning": "Existing records and returns were read."
+    },
+    {
+      "id": "C5",
+      "statement": "Feedback IDs need mapping to UUID episode keys; exposure detection also needs migration.",
+      "evidence": [
+        "F006",
+        "F007"
+      ],
+      "confidence": "high",
+      "reasoning": "Direct identifier and engine checks."
+    },
+    {
+      "id": "C6",
+      "statement": "Existing coder reviews cannot reconstruct historical per-memory grades.",
+      "evidence": [
+        "F007"
+      ],
+      "confidence": "high",
+      "reasoning": "No memory IDs or causal outcome receipts in the inspected model."
+    },
+    {
+      "id": "C7",
+      "statement": "Shared-root resolution and aiosqlite are available foundations.",
+      "evidence": [
+        "F009"
+      ],
+      "confidence": "high",
+      "reasoning": "Source and dependency declarations verified."
+    },
+    {
+      "id": "C8",
+      "statement": "The FSRS design needs reference clamps and an explicit optimizer adapter.",
+      "evidence": [
+        "F011"
+      ],
+      "confidence": "high",
+      "reasoning": "Primary algorithm and reference code inspected."
+    },
+    {
+      "id": "C9",
+      "statement": "A shared dynamics policy can unify these flows while preserving their public adapters.",
+      "evidence": [
+        "F002",
+        "F005",
+        "F006",
+        "F008"
+      ],
+      "confidence": "medium",
+      "reasoning": "Architectural synthesis; implementation and concurrency spikes remain."
+    },
+    {
+      "id": "C10",
+      "statement": "The supplied defaults improve autonomous agent retention and outcome quality.",
+      "evidence": [
+        "F001",
+        "F011"
+      ],
+      "confidence": "low",
+      "reasoning": "Unvalidated hypothesis; S1/S3 remain required. No efficacy claim is accepted."
+    }
+  ],
+  "unknowns": [
+    {
+      "id": "U1",
+      "question": "For v1, should generic-agent overlap attribution remain disabled until S3 validates it, with verified explicit citations enabled first?",
+      "blocks_claims": [
+        "C9",
+        "C10"
+      ],
+      "plausible_answers": [
+        "Citations first; enable overlap only after S3",
+        "Enable both after S3 meets an agreed precision threshold"
+      ],
+      "ask_user": true
+    },
+    {
+      "id": "U2",
+      "question": "Should CoderFeedbackStore remain a permanent compatibility adapter, preserving legacy IDs and configuration, or have an announced deprecation window?",
+      "blocks_claims": [
+        "C5",
+        "C9"
+      ],
+      "plausible_answers": [
+        "Permanent adapter",
+        "Deprecate after one release with explicit migration"
+      ],
+      "ask_user": true
+    },
+    {
+      "id": "U3",
+      "question": "What measurable operating horizon and minimum attribution precision should S1/S3 target before enabling dynamics by default?",
+      "blocks_claims": [
+        "C10"
+      ],
+      "plausible_answers": [
+        "Keep the 30-day horizon and define precision before the spike",
+        "Supply a different horizon and precision target"
+      ],
+      "ask_user": true
+    },
+    {
+      "id": "U4",
+      "question": "Should review logs remain complete through v1, or be archived after fitting with replay and export still supported?",
+      "blocks_claims": [
+        "C9"
+      ],
+      "plausible_answers": [
+        "Retain complete logs in v1",
+        "Archive after fit with replayable manifests"
+      ],
+      "ask_user": true
+    }
+  ],
+  "answers": [],
+  "recommended_next_command": {
+    "command": "sdd-brainstorm",
+    "rationale": "Resolve policy decisions and execute source-mandated S1\u2013S4 before sdd-spec; do not generate implementation tasks yet."
+  },
+  "overall_confidence": "medium",
+  "meta": {
+    "findings_used": [
+      "F001",
+      "F002",
+      "F003",
+      "F004",
+      "F005",
+      "F006",
+      "F007",
+      "F008",
+      "F009",
+      "F010",
+      "F011",
+      "F012"
+    ],
+    "findings_unused": [],
+    "notes": "Medium confidence applies to localization and probable scope, not efficacy. C10 remains an unaccepted low-confidence hypothesis. Technical unknowns (time unit, page state, backend and threshold calibration) belong to spikes, not user guessing. Brainstorm source preserved verbatim. Proposal-only FEAT identity; formal spec ID reservation deferred.",
+    "spikes_status": {
+      "S1": "not_run",
+      "S2": "not_run",
+      "S3": "not_run",
+      "S4": "not_run"
+    },
+    "review_gate": {
+      "status": "proceeded",
+      "choices": [
+        "proceed",
+        "refine research",
+        "refine synthesis",
+        "abort"
+      ],
+      "choice": "proceed",
+      "user_answer": "proceed",
+      "recorded_at": "2026-09-17T21:59:25.876007+00:00",
+      "scope": "Finalize and commit the discussion proposal; policy questions and spike gates remain unresolved."
+    },
+    "research_status": {
+      "truncated": false,
+      "files_read": 26,
+      "grep_calls": 16,
+      "git_calls": 3,
+      "wall_seconds": 111.882,
+      "counting": "Unique inspected repository research files, including source and dependency manifest; excludes workflow guidance/templates and artifact validation. Searches include discovery and follow-ups; wall time excludes synthesis and review. Wall time is the measured bounded research interval; final audit reads are excluded."
+    }
+  }
+}
