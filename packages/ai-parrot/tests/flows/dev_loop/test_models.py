@@ -8,6 +8,7 @@ from pydantic import ValidationError
 from parrot.flows.dev_loop import (
     BugBrief,
     ClaudeCodeDispatchProfile,
+    CodexAdversarialReviewProfile,
     CodexCodeDispatchProfile,
     DispatchEvent,
     FlowtaskCriterion,
@@ -15,7 +16,7 @@ from parrot.flows.dev_loop import (
     ShellCriterion,
     WorkBrief,
 )
-from parrot.flows.dev_loop.models import WorkKind  # internal alias — verified import path
+from parrot.flows.dev_loop.models import CodexCodeReviewProfile, WorkKind  # internal alias — verified import path
 
 
 class TestBugBrief:
@@ -147,8 +148,13 @@ class TestDispatchProfile:
         assert profile.sandbox == "workspace-write"
         assert profile.approval_policy == "never"
         assert profile.timeout_seconds == 1800
-        assert profile.ignore_user_config is True
+        assert profile.ignore_user_config is False
         assert profile.ignore_rules is False
+
+    def test_codex_review_profiles_pin_ignore_user_config(self):
+        """FEAT-563: review profiles never inherit operator Codex config, unlike dev dispatches."""
+        assert CodexCodeReviewProfile().ignore_user_config is True
+        assert CodexAdversarialReviewProfile().ignore_user_config is True
 
 
 class TestDispatchEvent:

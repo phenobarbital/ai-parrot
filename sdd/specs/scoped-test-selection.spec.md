@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-563
 **Date**: 2026-09-17
 **Author**: Jesus Lara (with Claude Opus 5)
-**Status**: draft
+**Status**: approved
 **Target version**: n/a (dev-loop / SDD tooling, no package version bump)
 **Input**: `sdd/proposals/scoped-test-selection.brainstorm.md` (Option B)
 **Hard prerequisite**: FEAT-562 (`ci-test-failures-root-cause-remediation`) merged into `dev` before `/sdd-task` runs — see Worktree Strategy.
@@ -207,7 +207,8 @@ Kernel parts:
 ### Data Models
 
 ```python
-# test_scope/core types — stdlib dataclasses (importable from the system-python hook)
+# test_scope/datatypes.py — stdlib dataclasses (importable from the system-python hook).
+# NOT `types.py` (would shadow stdlib). Classes named Test* set `__test__ = False` so pytest never collects them.
 @dataclass(frozen=True)
 class TestTarget:
     path: str            # repo-relative file, dir or node id
@@ -294,7 +295,7 @@ python -m scripts.sdd.select_tests --tier {task,merge,feature} [--base origin/de
 | M11: agent/command markdown | yes | exact CLI lines below | — |
 
 ### Module 1: Test-scope kernel core
-- **Path**: `packages/ai-parrot/src/parrot/flows/dev_loop/test_scope/{__init__.py,mirror.py,policy.py,planner.py,contract.py}`
+- **Path**: `packages/ai-parrot/src/parrot/flows/dev_loop/test_scope/{__init__.py,datatypes.py,mirror.py,policy.py,planner.py,contract.py}` (+ `select.py` holding `plan_tests`/`changed_files`, re-exported from `__init__`)
 - **Responsibility**: stdlib-only selection primitives: mirror targets, tier policy, per-distribution planning, `## Validation Commands` parsing. Relative imports only (package must import both as `parrot.flows.dev_loop.test_scope` and, from the hook, as top-level `test_scope`).
 - **Depends on**: existing `QANode` helpers (moved)
 - **Interface Skeleton**:
@@ -459,7 +460,7 @@ python -m scripts.sdd.select_tests --tier {task,merge,feature} [--base origin/de
 
 ### Module 6: MCP seat adapter + engine context writer
 - **Path**: `dispatchers/llm.py` (modifies `_tool_run_command` L1893-1950), `sdd_coder/engine.py` (modifies `_run_attempt` L1897 after `manager.create`, ~L2036)
-- **Responsibility**: engine writes `AttemptContext(tier="task", task_id, task_file, base_ref=<feature branch>)` for every MCP attempt right after the sub-worktree exists; `_tool_run_command` calls `guard_argv` after the allowlist + `_validate_command_paths` checks and before `command_policy_error`; `rewrite` → run each replacement invocation sequentially via `_run_argv`, concatenate output, `exit_code` = first non-zero, `hint` = guard message; `block` → `{"ok": False, "stderr": message}` without executing.
+- **Responsibility**: engine writes `AttemptContext(tier="task", task_id, task_file, base_ref=<feature branch>)` for every MCP attempt right after the sub-worktree exists, via a new helper `SddCoderEngine._write_attempt_scope` (reused by M7's `prepare_native`); `_tool_run_command` calls `guard_argv(argv, worktree=Path(cwd))` — the **worktree root**, not `run_cwd`, because plan paths are repo-relative — after the allowlist + `_validate_command_paths` checks and before `command_policy_error`; `rewrite` → run each replacement invocation sequentially via `_run_argv`, concatenate output, `exit_code` = first non-zero, `hint` = guard message; `block` → `{"ok": False, "stderr": message}` without executing.
 - **Depends on**: Module 3
 - **Interface Skeleton**:
   ```python
@@ -620,7 +621,7 @@ def fixture_monorepo(tmp_path: Path) -> Path:
 - [ ] AC1 — `qa-runner.md` and `sdd-autopilot.md` contain no full-suite pytest invocation (grep for `pytest -q --tb=line` and "full-suite sanity" returns nothing).
 - [ ] AC2 — All agent-issued plans carry `-o log_cli=false -p no:cacheprovider -q --tb=short` and `-m "not e2e and not real_llm and not integration"`; `pytest.ini` and pyproject `addopts` are unchanged by this feature.
 - [ ] AC3 — `test_scope` core imports with the standard library only (`test_core_is_stdlib_only` passes); only `test_scope/models.py` imports pydantic.
-- [ ] AC4 — The 17 existing tests in `test_qa_default_criteria.py` pass (with the single updated fallback assertion); `QANode` never emits a bare `pytest` criterion.
+- [ ] AC4 — The existing tests in `test_qa_default_criteria.py` pass, with only the command-string assertions updated for per-distribution invocations and the no-bare-`pytest` fallback (L83, L109, L142, L277 as of 2026-09-17); `QANode` never emits a bare `pytest` criterion. QANode has no task files, so its feature tier runs with `declared=()`.
 - [ ] AC5 — Inside an `sdd-coder` attempt, an over-broad pytest from an MCP seat or the native seat is **rewritten** to the task-tier plan; with an empty plan it is **blocked**; outside attempts (no context file) commands are untouched.
 - [ ] AC6 — Codex seats inside an attempt receive a **deny** whose reason contains the scoped command; `.codex/hooks.json` is tracked with a portable launcher; development codex dispatches no longer pass `--ignore-user-config` (review profiles still do); the hook is verified active in a codex attempt sub-worktree (spike S1 evidence in `artifacts/logs/`).
 - [ ] AC7 — `/sdd-task` emits `## Validation Commands` with file-level pytest commands for every task and `"validation_contract": "required"` in the index header; `check_task_graph.py` reports the four new codes as specified, and legacy indexes only warn.
@@ -817,6 +818,9 @@ filterwarnings = ignore::DeprecationWarning
 - **R12 — Feature tier granularity** (*decided*): the brainstorm's "package suites of touched distributions" as the feature-tier default is **dropped**; the default is the mirror of directories (today's QANode granularity, avoiding the ~9 min full `ai-parrot` suite recorded in `qa.py:591-594`) ∪ declared validation commands. Package suites run only for core changes (G7b, G9).
 - **R13 — Core escalation cost**: `clients/base.py` escalates across `ai-parrot` (1,450 modules, ~9 min) and every satellite importing it. Mitigations: never at task tier; ledger pays it once per feature content; spike S3 prioritises making `ai-parrot` xdist-safe, since that suite dominates escalation cost.
 - **R14 — Ledger trust**: the ledger lives in the per-worktree git admin dir, so it disappears with the worktree (correct: a new worktree re-pays). A malformed ledger reads as empty (re-run, never skip). Only runs executed by the kernel (CLI `--run`, QANode criteria) write it.
+- **R16 — Dual kernel import identity**: out-of-process consumers (`worktree_environment.py`, `scripts/sdd/select_tests.py`, `check_task_graph.py`, `tool_optimizations/hooks.py`) load the kernel by path as top-level `test_scope`; in-process consumers (QANode, dispatchers) use `parrot.flows.dev_loop.test_scope`. Never mix both in one process — dataclass identities differ.
+- **R17 — Native guard needs the kernel in the main checkout**: the hook runs `$CLAUDE_PROJECT_DIR/.../worktree_environment.py` (main checkout), so the native guard activates only once FEAT-563 is merged; before that the `ImportError` path allows every command.
+- **R18 — Test package must mirror the source name**: kernel tests live in `packages/ai-parrot/tests/flows/dev_loop/test_scope/`; any other name makes the mirror selector fall back to all of `tests/flows/dev_loop` and breaks the task-tier budget.
 - **R15 — Fan-in blind spots**: dynamic imports and the `parrot.tools` meta_path redirect can under-count fan-in; `CORE_PATHS` is the manual override.
 
 ### Spikes (first tasks, evidence to `artifacts/logs/`)
@@ -858,6 +862,7 @@ No new dependencies.
 - [ ] Root conftest loading when rooted at `packages/<dist>/` (spike S2) — *Owner: implementer*
 - [ ] Initial xdist allowlist (spike S3) — *Owner: implementer*
 - [x] Feature tier for `QANode` / qa-runner / `/sdd-done` — *Owner: Jesus Lara*: mirror of directories (∪ declared validation commands), never package suites — the goal is to cut time, not to raise test volume
+- [ ] `packages/ai-parrot-tools/tests/integration/` and `tool_optimizations/integration/` are not auto-marked (no tools conftest in M10's scope) — add a tools conftest in a follow-up? — *Owner: Jesus Lara*
 - [ ] Dead root `pyproject.toml [tool.pytest.ini_options]` (shadowed by `pytest.ini`): clean up here or leave to FEAT-562 — *Owner: Jesus Lara*
 
 ---
@@ -890,7 +895,7 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 - **Concurrency**: after M1: {M2, M3, M9, M10} in parallel; after M3: {M6, M7, M8} in parallel; M4 after M2 and M3; M5/M11 after M4. Spikes S1–S3 have no code edges and run first/in parallel; S4 runs after M2 (it uses the index).
 - **Shared files**: `sdd_coder/engine.py` (M6 `_run_attempt`, M7 `prepare_native`) → serialize M6/M7 engine edits or assign the context writer to M6 and have M7 depend on it; `packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_engine_dispatch.py` (M6, M7).
 - **Exclusive resources**: none (no lockfile, migration or extension rebuild). M8 touches `.gitignore` and `models/codex.py` (shared with no other module). Spikes S1 (codex CLI run) may be `parallel: false` if it needs a real codex session.
-- **Cross-feature dependencies**: **FEAT-562 must be merged into `dev` first**. Active edits in `dispatchers/llm.py` / `sdd_coder/engine.py` (FEAT-549/559/561) → rebase before M6/M7.
+- **Cross-feature dependencies**: **FEAT-562 must be merged into `dev` first**. Decision 2026-09-17: `/sdd-task` ran before that merge **with guards** — TASK-3302 verifies FEAT-562 is merged and re-verifies §6, and TASK-3316 (markers/conftests/pytest config) depends on it. Active edits in `dispatchers/llm.py` / `sdd_coder/engine.py` (FEAT-549/559/561) → rebase before M6/M7.
 
 ---
 
@@ -900,5 +905,6 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 |---|---|---|---|
 | 0.1 | 2026-09-17 | Jesus Lara / Claude Opus 5 | Initial draft from `scoped-test-selection.brainstorm.md` (Option B) + 4 spec-time decisions |
 | 0.2 | 2026-09-17 | Jesus Lara / Claude Opus 5 | R3: track `.codex/hooks.json` + drop `--ignore-user-config` for dev dispatches; R12: feature tier = mirror of directories, never package suites (G9) |
+| 0.5 | 2026-09-17 | Jesus Lara / Claude Opus 5 | Post-decomposition fixes: `datatypes.py`/`select.py`, `__test__ = False`, `_write_attempt_scope`, guard uses worktree root, AC4 wording, R16–R18, tools integration marker gap, guarded `/sdd-task` before FEAT-562 |
 | 0.4 | 2026-09-17 | Jesus Lara / Claude Opus 5 | Threshold 50 confirmed; `CORE_PATHS` set by spike S4 measurement |
 | 0.3 | 2026-09-17 | Jesus Lara / Claude Opus 5 | G9 → cost proportional to blast radius; G7b core escalation by transitive source fan-in ≥ 50 / `CORE_PATHS` across importing distributions, merge+feature tiers only, deduped by blob-hash ledger; spikes S3 (ai-parrot first) and S4 |

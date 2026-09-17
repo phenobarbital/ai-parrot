@@ -40,9 +40,8 @@ also edits can mask the very defects it should surface.
 - **Activate the venv first.** Per `CLAUDE.md`, ALWAYS
   `source .venv/bin/activate` before any `python`/`pytest`/`ruff`/`mypy`/`uv`
   command. Never invoke them without activating first.
-- **Stay in scope.** Validate the feature's new/modified files. A full-suite
-  sanity pass is welcome, but a pre-existing unrelated failure must be
-  reported as such — do not blame it on this feature.
+- **Stay in scope.** Validate the feature's new/modified files via the feature tier;
+  a pre-existing unrelated failure inside that selection must be reported as such — do not blame it on this feature.
 
 ## Process
 
@@ -60,12 +59,17 @@ also edits can mask the very defects it should surface.
    ```
 3. **Run the test suite** (capture exit codes — they decide the verdict):
    ```bash
-   # a) Targeted: the feature's own tests
-   pytest <feature-test-paths> -q --tb=short
-   # b) Sanity: quick full-suite signal (tolerate pre-existing failures,
-   #    but attribute them correctly in the report)
-   pytest -q --tb=line 2>&1 | tail -30
+   # Feature tier (FEAT-563): mirror of directories over the feature's changes ∪ every
+   # task's `## Validation Commands` ∪ core escalation (paid once, ledger-deduped).
+   # Never run the whole suite here — CI owns full-suite and e2e runs.
+   # --task-file enumerates the feature's own tasks from its per-spec index, so the
+   # "∪ declared Validation Commands" half of the feature tier is actually exercised.
+   TASK_FILES=$(jq -r '.tasks[].file' "sdd/tasks/index/<feature-slug>.json")
+   python -m scripts.sdd.select_tests --tier feature --base origin/<base_branch> \
+     $(printf -- '--task-file %s ' $TASK_FILES) --run
    ```
+   Add `--json` once (without `--run`) to record in the report which tests ran and why
+   (`declared` / `mirror` / `core` / `escalated`, plus `skipped_escalations`).
    Use `pytest-asyncio` conventions already in the repo for async tests.
 4. **Lint and type-check the changed files only:**
    ```bash
@@ -92,7 +96,7 @@ directory if needed). The autopilot loop greps it with
 
 ## Test Results
 - Targeted tests: 15/15 passed
-- Full-suite sanity: 0 new failures (2 pre-existing, unrelated — see notes)
+- Feature-tier selection: 0 new failures (2 pre-existing, unrelated — see notes)
 - Linting (ruff): 0 errors, 2 warnings
 - Type checking (mypy): 0 errors
 
@@ -109,7 +113,7 @@ directory if needed). The autopilot loop greps it with
 - [parrot/integrations/jira/oauth.py:88] missing `await` on async call (FAIL)
 
 ## Notes
-Two full-suite failures (tests/loaders/test_pdf.py) predate this feature
+Two failures in the feature-tier selection (tests/loaders/test_pdf.py) predate this feature
 and are unrelated to FEAT-<ID>.
 ```
 

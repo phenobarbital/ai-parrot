@@ -3,7 +3,7 @@
   "feat_id": "FEAT-564",
   "feature_slug": "video-reel-omni-veo-reliability",
   "started_at": "2026-09-17T01:21:00Z",
-  "updated_at": "2026-09-17T01:31:25Z",
+  "updated_at": "2026-09-17T11:20:18Z",
   "source": {
     "kind": "inline",
     "raw_path": "sdd/state/FEAT-564/source.md",
@@ -34,17 +34,17 @@
       "status": "completed",
       "synthesis_path": "sdd/state/FEAT-564/synthesis.json",
       "overall_confidence": "medium",
-      "claims_total": 6,
-      "claims_high_conf": 4,
+      "claims_total": 11,
+      "claims_high_conf": 9,
       "claims_medium_conf": 1,
       "claims_low_conf": 1,
-      "unknowns_count": 2,
+      "unknowns_count": 3,
       "lint_passed": true,
       "lint_iterations": 1
     },
     "qa": {
       "status": "pending",
-      "questions_total": 2,
+      "questions_total": 3,
       "questions_answered": 0
     },
     "output": {
@@ -52,7 +52,7 @@
       "proposal_path": "sdd/proposals/video-reel-omni-veo-reliability.proposal.md",
       "commit_sha": null,
       "next_command_recommended": "sdd-spec",
-      "next_command_rationale": "Formal draft requested and generated; user review remains pending."
+      "next_command_rationale": "Proposal revised against Gemini review with F009-F012. Reconcile existing draft spec before approval or task decomposition."
     }
   },
   "budget": {
@@ -71,6 +71,6 @@
   },
   "resume_hint": {
     "next_phase": "qa_complete",
-    "next_action": "Record user choices in proposal and draft spec before approval/task decomposition."
+    "next_action": "Review revised proposal policies and reconcile draft spec: director/image routing, model alias conflicts, API-specific model profiles, music policies and R01-R11. Original budget counters are historical; revision audit is in F009-F012 and research_plan.meta.revision."
   }
 }

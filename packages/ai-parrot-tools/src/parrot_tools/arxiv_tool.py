@@ -1,6 +1,15 @@
 """
 ArxivTool - Search and retrieve papers from arXiv.org
 """
+# FEAT-562: PEP 563 lazy annotations. `arxiv` is an optional dependency
+# (guarded below as ``arxiv = None``), but the method annotations
+# ``List[arxiv.Result.Author]`` / ``arxiv.Result`` are evaluated at
+# class-definition time and raise ``AttributeError: 'NoneType' object has no
+# attribute 'Result'`` when arxiv is absent — breaking this module's import and,
+# transitively, BotManager / the botmanager wiring tests. Making annotations
+# lazy strings keeps the module importable without the optional package.
+from __future__ import annotations
+
 from typing import List, Dict, Any, Type
 from pydantic import BaseModel, Field
 from parrot.tools.abstract import AbstractTool, AbstractToolArgsSchema

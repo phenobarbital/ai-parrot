@@ -78,9 +78,10 @@ async def test_derives_pytest_scoped_to_changed_packages(ctx):
     await QANode(dispatcher=dispatcher).execute(ctx)
 
     criteria = _qa_brief(dispatcher).acceptance_criteria
-    assert len(criteria) == 1
-    assert isinstance(criteria[0], ShellCriterion)
-    assert criteria[0].command == ("pytest packages/ai-parrot-tools/tests packages/ai-parrot/tests")
+    assert [c.name for c in criteria] == ["pytest[ai-parrot]", "pytest[ai-parrot-tools]"]
+    assert all(isinstance(c, ShellCriterion) for c in criteria)
+    assert criteria[0].command.startswith("pytest") and "packages/ai-parrot/tests" in criteria[0].command
+    assert criteria[1].command.startswith("pytest") and "packages/ai-parrot-tools/tests" in criteria[1].command
 
 
 @pytest.mark.asyncio
@@ -95,18 +96,19 @@ async def test_derived_criterion_gates_the_run(ctx):
 
 @pytest.mark.asyncio
 async def test_package_without_tests_is_not_a_target(ctx):
-    """pytest exits 4 on a missing path — never point it at one."""
+    """pytest exits 4 on a missing path — never point it at one; no criterion at all (FEAT-563 AC4)."""
     ctx["development_output"] = DevelopmentOutput(
         files_changed=["packages/ai-parrot-visualizations/src/parrot/outputs/x.py"],
         commit_shas=["abc"],
         summary="s",
     )
-    dispatcher = _dispatcher()
+    dispatcher = MagicMock()
+    dispatcher.dispatch = AsyncMock(side_effect=[CodeReviewVerdict(passed=True)])
 
     await QANode(dispatcher=dispatcher).execute(ctx)
 
-    # Nothing mapped to an existing test tree → unscoped fallback.
-    assert _qa_brief(dispatcher).acceptance_criteria[0].command == "pytest"
+    # Nothing mapped to an existing test tree → no pytest criterion (never a bare fallback).
+    assert dispatcher.dispatch.await_count == 1  # code review only
 
 
 @pytest.mark.asyncio
@@ -139,7 +141,7 @@ async def test_falls_back_to_git_diff_when_development_published_nothing(ctx, mo
 
     await QANode(dispatcher=dispatcher).execute(ctx)
 
-    assert _qa_brief(dispatcher).acceptance_criteria[0].command == "pytest packages/ai-parrot/tests"
+    assert "packages/ai-parrot/tests" in _qa_brief(dispatcher).acceptance_criteria[0].command
 
 
 @pytest.mark.asyncio
@@ -274,10 +276,9 @@ async def test_tests_created_by_development_are_unioned_with_the_diff(ctx, mirro
 
     await QANode(dispatcher=dispatcher).execute(ctx)
 
-    assert _qa_brief(dispatcher).acceptance_criteria[0].command == (
-        "pytest packages/ai-parrot/tests/flows/dev_loop "
-        "packages/ai-parrot/tests/loaders/test_new.py"
-    )
+    command = _qa_brief(dispatcher).acceptance_criteria[0].command
+    assert "packages/ai-parrot/tests/flows/dev_loop" in command
+    assert "packages/ai-parrot/tests/loaders/test_new.py" in command
 
 
 def test_root_level_test_module_is_its_own_target(mirrored):

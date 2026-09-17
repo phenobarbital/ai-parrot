@@ -123,6 +123,8 @@ markers = [
     "requires_aioquic: requires the mcp extra (aioquic)",
     "requires_mcp_sdk: requires the official mcp SDK (mcp extra)",
     "live: hits live external services; opt-in, deselect with -m 'not live'",
+    "integration: test lives under an integration/ directory (FEAT-563 auto-mark)",
+    "e2e: test lives under an e2e/ directory (FEAT-563 auto-mark)",
 ]
 
 [tool.uv.sources]

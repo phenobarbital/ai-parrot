@@ -155,6 +155,67 @@ def protected_argv(cwd: Path, argv: Sequence[str]) -> list[str]:
     return command
 
 
+def _load_guard_bash() -> Any:
+    """Import the stdlib-only test-scope guard without importing Parrot.
+
+    Returns:
+        The kernel's ``guard_bash`` callable.
+
+    Raises:
+        ImportError: The checkout serving this hook has no test-scope kernel.
+    """
+    if __package__:
+        from .test_scope.guard import guard_bash
+    else:  # run as a script: this file's directory is sys.path[0]
+        from test_scope.guard import guard_bash
+    return guard_bash
+
+
+_COMPOUND_MARKERS = ("&&", "||", ";", "|")
+
+
+def _is_lone_pytest(command: str) -> bool:
+    """True when `command` is a single pytest/python invocation with no shell compounding."""
+    stripped = command.strip()
+    if any(marker in stripped for marker in _COMPOUND_MARKERS):
+        return False
+    try:
+        argv = shlex.split(stripped)
+    except ValueError:
+        return False
+    return bool(argv) and Path(argv[0]).name in {"pytest", "python", "python3"}
+
+
+def _scope_guard(command: str, cwd: Path) -> tuple[str, str | None]:
+    """Decide whether a native Bash command runs an over-broad pytest (FEAT-563).
+
+    Args:
+        command: The Bash command the seat issued.
+        cwd: The hook's working directory.
+
+    Returns:
+        ``("allow", None)``, ``("rewrite", <command>)`` or ``("block", <message>)``.
+        Import failures and guard errors always yield ``("allow", None)``.
+    """
+    try:
+        guard_bash = _load_guard_bash()
+        root, _common = repository_paths(cwd)
+        outcome, rewritten = guard_bash(command, worktree=root)
+    except Exception:  # noqa: BLE001 — the sandbox wrapper must never break
+        return "allow", None
+    if outcome.action == "block":
+        return "block", outcome.message
+    if outcome.action == "rewrite" and rewritten:
+        # The kernel's rewritten command is root-relative; when the hook's cwd is a
+        # different directory, a lone pytest invocation needs an explicit `cd` first
+        # so the rewritten (repo-relative) paths still resolve (spec R2). A command
+        # that already mixes its own `cd`/segments keeps its author's cwd handling.
+        if root != cwd and _is_lone_pytest(command):
+            rewritten = f"cd {shlex.quote(str(root))} && {rewritten}"
+        return "rewrite", rewritten
+    return "allow", None
+
+
 def hook_response(payload: dict[str, Any]) -> dict[str, Any]:
     """Wrap native Bash input and reject shared-environment file-tool writes."""
     cwd = Path(payload["cwd"])
@@ -165,6 +226,11 @@ def hook_response(payload: dict[str, Any]) -> dict[str, Any]:
             command = tool_input["command"]
             if not isinstance(command, str) or not command:
                 raise ValueError("Bash command must be a non-empty string")
+            action, value = _scope_guard(command, cwd)
+            if action == "block":
+                raise ValueError(value or "over-broad pytest blocked by the test-scope guard")
+            if action == "rewrite" and value:
+                command = value
             wrapped = protected_argv(cwd, ["/bin/bash", "-c", command])
             # Preserve timeout/background/description without granting approval
             # or overriding decisions from other hooks.

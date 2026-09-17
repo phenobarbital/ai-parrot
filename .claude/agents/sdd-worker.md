@@ -281,7 +281,10 @@ consolidate, and own SDD state. Coders (`sdd-coder`) run one task each in their 
    coders are still out, do NOT busy-wait with `sleep` loops in Bash: print one line
    (`⏳ waiting for native TASK-NNN …`) and end your message — the notification wakes you and the loop resumes there.
 4. **Consolidate each task by outcome** (`data.tasks[*].outcome`, or the `coder_merge` result):
-   - `merged` → run THAT task's acceptance criteria in this worktree (integration with sibling merges can break them);
+   - `merged` → in this worktree run `TASK_FILES=$(jq -r '.tasks[].file' sdd/tasks/index/<feature-slug>.json);
+     python -m scripts.sdd.select_tests --tier merge --base <feature branch merge-base>
+     $(printf -- '--task-file %s ' $TASK_FILES) --run`
+     (mirror ∪ import-impact of the merge ∪ core escalation, paid once per content via the ledger — integration with sibling merges can break them);
      green → step (g) of the Fallback loop for this task, with a Completion Note that ends with
      `Seat: <seat_label> · Backend: <backend> · Model: <model> · Attempts: <n> · Duration: <sum duration_s> · Tokens: <usage>`
      taken from `attempts[*]`; red → treat as `failed`.
@@ -428,7 +431,9 @@ If ANY check fails, fix or STOP.
 - Lint mechanically, never by hand (this path has no engine to do it): `ruff check --fix <task .py files>`, then
   `black <task .py files>` only if `pyproject.toml` has `[tool.black]`. Fix only syntax errors / undefined names
   (`ruff check --select E9,F63,F7,F82`); leave remaining style findings to `/sdd-done`.
-- Run acceptance-criteria tests.
+- Run the task's `## Validation Commands`, then `python -m scripts.sdd.select_tests --tier merge --base origin/<base_branch>
+  --task-file sdd/tasks/active/TASK-<NNN>-<slug>.md --run`
+  (this lane has no attempt context, so no harness guard — never run a directory or full-suite pytest by hand).
 - If stuck after 3 attempts, mark as `"done-with-issues"`.
 
 ### f) Commit Code (in worktree)

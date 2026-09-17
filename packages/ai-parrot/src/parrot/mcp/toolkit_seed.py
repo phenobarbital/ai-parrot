@@ -5,8 +5,9 @@ from __future__ import annotations
 import logging
 from importlib.resources import files
 from pathlib import Path
-from typing import Sequence
+from typing import Any, Sequence
 
+import yaml
 from pydantic import BaseModel, Field
 
 from parrot.mcp.toolkit_config import BUILTIN_TOOLKITS
@@ -17,6 +18,9 @@ TEMPLATE_PACKAGE: str = "parrot.mcp"
 TEMPLATE_DIR: str = "_toolkit_templates"
 REPO_ROOT_PLACEHOLDER: str = "{{repo_root}}"
 _META_PREFIX: str = "# parrot:"
+# Section-level keys whose absence is a valid state, not drift: `enabled` is an
+# on/off switch that templates seed as `false` and configured sections omit.
+_DRIFT_IGNORED_KEYS: frozenset[str] = frozenset({"enabled"})
 
 
 class ToolkitTemplate(BaseModel):
@@ -35,6 +39,9 @@ class SeedResult(BaseModel):
     added: list[str] = Field(default_factory=list)
     skipped: list[str] = Field(default_factory=list)
     unknown: list[str] = Field(default_factory=list)
+    # Skipped section name -> dotted template keys the existing section lacks
+    # (e.g. `kwargs.complexity`). Reported only; an existing section is never rewritten.
+    drift: dict[str, list[str]] = Field(default_factory=dict)
 
 
 def available_templates() -> tuple[str, ...]:
@@ -91,12 +98,65 @@ def load_template(name: str) -> ToolkitTemplate:
     return ToolkitTemplate(name=name, body=body, requires_llm=requires_llm, summary=summary)
 
 
+def _missing_keys(template: Any, existing: Any, prefix: str = "") -> list[str]:
+    """Return dotted mapping keys present in `template` but absent from `existing`.
+
+    Recurses into nested mappings only; lists and scalars are compared by
+    presence of their key, never by value.
+
+    Args:
+        template: The parsed template section (or sub-mapping).
+        existing: The parsed on-disk section (or sub-mapping).
+        prefix: Dotted path of the current mapping, used to build key names.
+
+    Returns:
+        Dotted key paths missing from `existing`, in template order.
+    """
+    if not isinstance(template, dict) or not isinstance(existing, dict):
+        return []
+    missing: list[str] = []
+    for key, value in template.items():
+        path = f"{prefix}{key}"
+        if key not in existing:
+            missing.append(path)
+        else:
+            missing.extend(_missing_keys(value, existing[key], f"{path}."))
+    return missing
+
+
+def template_drift(root: Path, name: str) -> list[str]:
+    """Report template keys an existing `.parrot/mcp-toolkits.yaml` section lacks.
+
+    Sections are seeded once and never rewritten, so keys a template gains in a
+    later release (e.g. `kwargs.complexity` for `sdd-coder`) never reach an
+    already-seeded file. This surfaces them so the operator can copy them in.
+
+    Args:
+        root: Project root containing `.parrot/mcp-toolkits.yaml`.
+        name: Template / section name.
+
+    Returns:
+        Dotted template keys missing from the on-disk section; empty when the
+        section, the file or the template cannot be parsed.
+    """
+    path = Path(root) / ".parrot" / "mcp-toolkits.yaml"
+    try:
+        template = load_template(name)
+        rendered = template.body.replace(REPO_ROOT_PLACEHOLDER, str(root))
+        template_section = (yaml.safe_load(f"toolkits:\n{rendered}") or {}).get("toolkits", {}).get(name)
+        existing_section = ((yaml.safe_load(path.read_text(encoding="utf-8")) or {}).get("toolkits") or {}).get(name)
+    except (KeyError, OSError, AttributeError, yaml.YAMLError) as exc:
+        logger.debug("cannot compare section %s with its template: %s", name, exc)
+        return []
+    return [key for key in _missing_keys(template_section, existing_section) if key not in _DRIFT_IGNORED_KEYS]
+
+
 def seed_toolkit_sections(root: Path, names: Sequence[str]) -> SeedResult:
     """Create/extend `<root>/.parrot/mcp-toolkits.yaml` with the named sections.
 
     Creates the file with a `toolkits:` root when absent; appends only sections
-    whose key is not already present (an existing section is NEVER rewritten);
-    renders `REPO_ROOT_PLACEHOLDER` as `root`. Re-loads the result with
+    whose key is not already present (an existing section is NEVER rewritten,
+    but template keys it lacks are reported in `SeedResult.drift`); renders `REPO_ROOT_PLACEHOLDER` as `root`. Re-loads the result with
     `load_toolkits_config(root)` and raises if what it just wrote does not parse.
 
     Returns:
@@ -155,6 +215,9 @@ def seed_toolkit_sections(root: Path, names: Sequence[str]) -> SeedResult:
     for name in valid_names:
         if name in existing_sections:
             result.skipped.append(name)
+            drift = template_drift(root_path, name)
+            if drift:
+                result.drift[name] = drift
         else:
             sections_to_add.append(name)
 
@@ -198,5 +261,5 @@ def seed_toolkit_sections(root: Path, names: Sequence[str]) -> SeedResult:
             raise ValueError(f"Failed to re-load seeded config from {path}: {e}") from e
 
     if result.added or result.skipped:
-        logger.info("seeded %s: added=%s skipped=%s", path, result.added, result.skipped)
+        logger.info("seeded %s: added=%s skipped=%s drift=%s", path, result.added, result.skipped, result.drift)
     return result

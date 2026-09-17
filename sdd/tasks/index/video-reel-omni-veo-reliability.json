@@ -1,0 +1,444 @@
+{
+  "feature": "video-reel-omni-veo-reliability",
+  "feature_id": "FEAT-564",
+  "spec": "sdd/specs/video-reel-omni-veo-reliability.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-09-17T11:52:28Z",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "approval_basis": "Committed spec body says approved; user repeated explicit sdd-task after the draft-frontmatter warning. YAML draft is stale; spec is preserved.",
+  "reservation": {
+    "ids": [
+      "TASK-3321",
+      "TASK-3322",
+      "TASK-3323",
+      "TASK-3324",
+      "TASK-3325",
+      "TASK-3326",
+      "TASK-3327",
+      "TASK-3328",
+      "TASK-3329",
+      "TASK-3330",
+      "TASK-3331",
+      "TASK-3332",
+      "TASK-3333",
+      "TASK-3334",
+      "TASK-3335"
+    ],
+    "remote_committed": true,
+    "local_fast_forward": false,
+    "note": "Allocator succeeded; local courtesy fast-forward skipped due to one local spec-approval commit. Do not re-reserve IDs."
+  },
+  "tasks": [
+    {
+      "id": "TASK-3321",
+      "slug": "reel-core-contracts",
+      "title": "Core reel request and result contracts",
+      "feature_id": "FEAT-564",
+      "feature": "video-reel-omni-veo-reliability",
+      "spec": "sdd/specs/video-reel-omni-veo-reliability.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "May run with other ready tasks whose target files are disjoint. Dependency completion is mandatory; do not append exports to another task's __init__.py.",
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": "2026-09-17T13:56:56+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3321-reel-core-contracts.md",
+      "acceptance_criteria": [
+        "AC01",
+        "AC02",
+        "AC04",
+        "AC06",
+        "AC10"
+      ]
+    },
+    {
+      "id": "TASK-3322",
+      "slug": "reel-error-taxonomy",
+      "title": "Provider error taxonomy and classification",
+      "feature_id": "FEAT-564",
+      "feature": "video-reel-omni-veo-reliability",
+      "spec": "sdd/specs/video-reel-omni-veo-reliability.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-3321"
+      ],
+      "parallel": true,
+      "parallelism_notes": "May run with other ready tasks whose target files are disjoint. Dependency completion is mandatory; do not append exports to another task's __init__.py.",
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": "2026-09-17T13:56:56+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3322-reel-error-taxonomy.md",
+      "acceptance_criteria": [
+        "AC07",
+        "AC17"
+      ]
+    },
+    {
+      "id": "TASK-3323",
+      "slug": "reel-capability-profiles",
+      "title": "API-specific video profiles and generated clip record",
+      "feature_id": "FEAT-564",
+      "feature": "video-reel-omni-veo-reliability",
+      "spec": "sdd/specs/video-reel-omni-veo-reliability.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-3321",
+        "TASK-3322"
+      ],
+      "parallel": true,
+      "parallelism_notes": "May run with other ready tasks whose target files are disjoint. Dependency completion is mandatory; do not append exports to another task's __init__.py.",
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": "2026-09-17T13:56:56+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3323-reel-capability-profiles.md",
+      "acceptance_criteria": [
+        "AC03",
+        "AC04",
+        "AC06",
+        "AC17"
+      ]
+    },
+    {
+      "id": "TASK-3324",
+      "slug": "reel-veo-adapter",
+      "title": "Bounded Veo clip adapter and wire compatibility",
+      "feature_id": "FEAT-564",
+      "feature": "video-reel-omni-veo-reliability",
+      "spec": "sdd/specs/video-reel-omni-veo-reliability.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-3323"
+      ],
+      "parallel": true,
+      "parallelism_notes": "generation.py is serialized by dependencies: TASK-3324 -> TASK-3327 -> TASK-3329 -> TASK-3330 -> TASK-3331. Other ready tasks with disjoint files may run.",
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": "2026-09-17T13:56:56+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3324-reel-veo-adapter.md",
+      "acceptance_criteria": [
+        "AC03",
+        "AC04",
+        "AC07",
+        "AC12",
+        "AC17"
+      ]
+    },
+    {
+      "id": "TASK-3325",
+      "slug": "reel-media-downloader",
+      "title": "Bounded provider media URI downloader",
+      "feature_id": "FEAT-564",
+      "feature": "video-reel-omni-veo-reliability",
+      "spec": "sdd/specs/video-reel-omni-veo-reliability.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-3322"
+      ],
+      "parallel": true,
+      "parallelism_notes": "May run with other ready tasks whose target files are disjoint. Dependency completion is mandatory; do not append exports to another task's __init__.py.",
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": "2026-09-17T13:56:56+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3325-reel-media-downloader.md",
+      "acceptance_criteria": [
+        "AC10",
+        "AC12",
+        "AC17"
+      ]
+    },
+    {
+      "id": "TASK-3326",
+      "slug": "reel-omni-adapter",
+      "title": "Omni async Interactions clip adapter",
+      "feature_id": "FEAT-564",
+      "feature": "video-reel-omni-veo-reliability",
+      "spec": "sdd/specs/video-reel-omni-veo-reliability.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-3323",
+        "TASK-3325"
+      ],
+      "parallel": true,
+      "parallelism_notes": "May run with other ready tasks whose target files are disjoint. Dependency completion is mandatory; do not append exports to another task's __init__.py.",
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": "2026-09-17T13:56:56+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3326-reel-omni-adapter.md",
+      "acceptance_criteria": [
+        "AC01",
+        "AC04",
+        "AC06",
+        "AC12",
+        "AC17"
+      ]
+    },
+    {
+      "id": "TASK-3327",
+      "slug": "reel-music-service",
+      "title": "Music policies, isolated Lyria session and PCM encoding",
+      "feature_id": "FEAT-564",
+      "feature": "video-reel-omni-veo-reliability",
+      "spec": "sdd/specs/video-reel-omni-veo-reliability.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-3324"
+      ],
+      "parallel": true,
+      "parallelism_notes": "generation.py is serialized by dependencies: TASK-3324 -> TASK-3327 -> TASK-3329 -> TASK-3330 -> TASK-3331. Other ready tasks with disjoint files may run.",
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": "2026-09-17T13:56:56+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3327-reel-music-service.md",
+      "acceptance_criteria": [
+        "AC06",
+        "AC09",
+        "AC12"
+      ]
+    },
+    {
+      "id": "TASK-3328",
+      "slug": "reel-timeline-planning",
+      "title": "Scene timeline planning and duration checks",
+      "feature_id": "FEAT-564",
+      "feature": "video-reel-omni-veo-reliability",
+      "spec": "sdd/specs/video-reel-omni-veo-reliability.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-3323"
+      ],
+      "parallel": true,
+      "parallelism_notes": "May run with other ready tasks whose target files are disjoint. Dependency completion is mandatory; do not append exports to another task's __init__.py.",
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": "2026-09-17T13:56:56+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3328-reel-timeline-planning.md",
+      "acceptance_criteria": [
+        "AC04",
+        "AC05"
+      ]
+    },
+    {
+      "id": "TASK-3329",
+      "slug": "reel-process-assembly",
+      "title": "Managed media assembly with trim and audio modes",
+      "feature_id": "FEAT-564",
+      "feature": "video-reel-omni-veo-reliability",
+      "spec": "sdd/specs/video-reel-omni-veo-reliability.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-3327",
+        "TASK-3328"
+      ],
+      "parallel": true,
+      "parallelism_notes": "generation.py is serialized by dependencies: TASK-3324 -> TASK-3327 -> TASK-3329 -> TASK-3330 -> TASK-3331. Other ready tasks with disjoint files may run.",
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": "2026-09-17T13:56:56+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3329-reel-process-assembly.md",
+      "acceptance_criteria": [
+        "AC04",
+        "AC05",
+        "AC06",
+        "AC12"
+      ]
+    },
+    {
+      "id": "TASK-3330",
+      "slug": "reel-stage-orchestration",
+      "title": "Stage routing, scene policies and typed reel output",
+      "feature_id": "FEAT-564",
+      "feature": "video-reel-omni-veo-reliability",
+      "spec": "sdd/specs/video-reel-omni-veo-reliability.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-3326",
+        "TASK-3329"
+      ],
+      "parallel": true,
+      "parallelism_notes": "generation.py is serialized by dependencies: TASK-3324 -> TASK-3327 -> TASK-3329 -> TASK-3330 -> TASK-3331. Other ready tasks with disjoint files may run.",
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": "2026-09-17T13:56:56+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3330-reel-stage-orchestration.md",
+      "acceptance_criteria": [
+        "AC01",
+        "AC02",
+        "AC03",
+        "AC04",
+        "AC06",
+        "AC10",
+        "AC13",
+        "AC17"
+      ]
+    },
+    {
+      "id": "TASK-3331",
+      "slug": "reel-lifecycle-deadlines",
+      "title": "Reel deadlines, cancellation and resource ownership",
+      "feature_id": "FEAT-564",
+      "feature": "video-reel-omni-veo-reliability",
+      "spec": "sdd/specs/video-reel-omni-veo-reliability.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-3330"
+      ],
+      "parallel": true,
+      "parallelism_notes": "generation.py is serialized by dependencies: TASK-3324 -> TASK-3327 -> TASK-3329 -> TASK-3330 -> TASK-3331. Other ready tasks with disjoint files may run.",
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": "2026-09-17T13:56:56+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3331-reel-lifecycle-deadlines.md",
+      "acceptance_criteria": [
+        "AC12",
+        "AC14",
+        "AC17"
+      ]
+    },
+    {
+      "id": "TASK-3332",
+      "slug": "reel-http-inputs",
+      "title": "HTTP request validation, indexed uploads and fixture repair",
+      "feature_id": "FEAT-564",
+      "feature": "video-reel-omni-veo-reliability",
+      "spec": "sdd/specs/video-reel-omni-veo-reliability.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-3321"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Handler edits are serialized TASK-3332 -> TASK-3333. May run with ready provider tasks only when files do not overlap.",
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": "2026-09-17T13:56:56+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3332-reel-http-inputs.md",
+      "acceptance_criteria": [
+        "AC01",
+        "AC02",
+        "AC08",
+        "AC11"
+      ]
+    },
+    {
+      "id": "TASK-3333",
+      "slug": "reel-artifact-delivery",
+      "title": "Owner-checked job polling and artifact delivery",
+      "feature_id": "FEAT-564",
+      "feature": "video-reel-omni-veo-reliability",
+      "spec": "sdd/specs/video-reel-omni-veo-reliability.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-3331",
+        "TASK-3332"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Handler edits are serialized TASK-3332 -> TASK-3333. May run with ready provider tasks only when files do not overlap.",
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": "2026-09-17T13:56:56+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3333-reel-artifact-delivery.md",
+      "acceptance_criteria": [
+        "AC10",
+        "AC14"
+      ]
+    },
+    {
+      "id": "TASK-3334",
+      "slug": "reel-regression-integration",
+      "title": "Cross-module reel regression and storage coverage",
+      "feature_id": "FEAT-564",
+      "feature": "video-reel-omni-veo-reliability",
+      "spec": "sdd/specs/video-reel-omni-veo-reliability.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-3333"
+      ],
+      "parallel": true,
+      "parallelism_notes": "May run with other ready tasks whose target files are disjoint. Dependency completion is mandatory; do not append exports to another task's __init__.py.",
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": "2026-09-17T13:56:56+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3334-reel-regression-integration.md",
+      "acceptance_criteria": [
+        "AC01",
+        "AC08",
+        "AC10",
+        "AC11",
+        "AC12",
+        "AC13",
+        "AC14",
+        "AC18"
+      ]
+    },
+    {
+      "id": "TASK-3335",
+      "slug": "reel-sdk-smoke-docs",
+      "title": "SDK floor, opt-in smoke suite and migration documentation",
+      "feature_id": "FEAT-564",
+      "feature": "video-reel-omni-veo-reliability",
+      "spec": "sdd/specs/video-reel-omni-veo-reliability.spec.md",
+      "status": "in-progress",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-3334"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Exclusive dependency/lock/config edits after integration; do not run with other shared-config writers.",
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": "2026-09-17T13:56:56+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3335-reel-sdk-smoke-docs.md",
+      "acceptance_criteria": [
+        "AC15",
+        "AC16",
+        "AC18"
+      ]
+    }
+  ]
+}
