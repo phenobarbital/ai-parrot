@@ -348,10 +348,27 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (sonnet, sequential fallback — `complex_model_unavailable`, same
+systemic roster gap as prior tasks; user-authorized direct implementation)
+**Date**: 2026-09-17
+**Notes**: Implemented all FILL INs. `_is_pytest_argv` — basename match on the three forms.
+`_task_plan` — reads the attempt's task file (`OSError` → empty declared list, mirror still
+runs), builds `changed_files(worktree, ctx.base_ref)`, calls `plan_tests(tier="task", ...)`.
+`guard_bash` — rejects `$(`/backtick/`<<` via a direct substring check first (cheapest,
+catches the unparseable-by-design cases before tokenizing); tokenizes with
+`shlex.shlex(..., punctuation_chars=True)` (verified empirically that `"cd sub && pytest x |
+tail -n 5"` tokenizes to `['cd','sub','&&','pytest','x','|','tail','-n','5']` before writing
+the segmentation logic); any punctuation-only token NOT in the four allowed separators
+(redirects, subshell parens, background `&`, …) → allow (outside the supported subset, R2);
+locates the first segment that is both a pytest invocation and `is_broad_pytest`; rewrites
+only that segment into a `_subshell` (`( a; r=$?; b; r=$((r|$?)); …; exit $r )`, R1) while
+rejoining every other segment via `shlex.join`, preserving the original separators in order —
+verified this reproduces `"cd sub && ( … ) | tail -n 5"` exactly. Wrote
+`test_rewritten_bash_propagates_failure` (FILL IN) actually executing the rewritten string via
+`bash -c` with `("false",)` + `("true",)` invocations to prove the OR-of-exit-codes aggregation
+is not just string-shaped but behaviourally correct. All 6 new tests pass; full `test_scope`
+suite now 51/51; `ruff check` clean; imports verified stdlib + relative-only.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Deviations from spec**: none — only the two listed files were created.
 
 **Deviations from spec**: none | describe if any
