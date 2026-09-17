@@ -378,10 +378,38 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (sonnet, sequential fallback — `complex_model_unavailable`, same
+systemic roster gap as prior tasks; user-authorized direct implementation)
+**Date**: 2026-09-17
+**Notes**: Replaced `from pathlib import PurePosixPath` with `Path` and removed `import os`
+(both confirmed unused after step 2 via `grep`, since their only uses were inside the four
+mirror helpers now delegating). Added the three kernel imports after the `session_state`
+import. Rewrote `_default_criteria`'s tail exactly per the blueprint (feature-tier
+`plan_tests` via `asyncio.to_thread`, `shared["test_scope_plan"]`, one `ShellCriterion` per
+invocation, `[]` on empty plan, `Returns:` docstring updated). Replaced all four mirror
+helper bodies with one-line delegations to `test_scope.mirror`. Added
+`_record_green_escalations` (FILL IN: parses the distribution out of a criterion name like
+`"pytest[ai-parrot] (core escalation)"` via `name[len("pytest["):name.index("]")]`, looks up
+that distribution's core files from `plan.core_hits`, records via `asyncio.to_thread`, wrapped
+in `try/except Exception` so ledger failures never fail QA) and wired its call immediately
+before the **main-path** `shared["qa_report"] = report` (line ~416) — confirmed via `grep`
+there are exactly two such assignments and left the early-return one (line 215) untouched.
+Updated all four flagged assertions in `test_qa_default_criteria.py`: L83 now asserts
+`["pytest[ai-parrot]", "pytest[ai-parrot-tools]"]` criterion names (verified empirically that
+`build_plan`'s `sorted(groups)` produces `ai-parrot` before `ai-parrot-tools` — a shorter
+string that is a prefix of a longer one sorts first — rather than assuming the old test's
+tools-first order); L96-109 now asserts `dispatcher.dispatch.await_count == 1` (no bare
+`pytest` fallback survives, mirroring `test_docs_only_change_derives_nothing`); L142 and
+L277-280 now use substring (`in`) checks against the per-distribution command instead of an
+exact multi-target string, since target ordering inside one invocation is not the property
+under test. Created `test_qanode_feature_tier.py` with all three FILL IN test bodies (calling
+`_default_criteria`/`_record_green_escalations` directly rather than the full `.execute()`
+dispatch stack, since the kernel-integration behaviour — not the dispatcher plumbing — is what
+these tests target). All 71 tests pass across both files plus the full `test_scope` suite;
+`ruff check` clean except one pre-existing, unrelated `B905` finding at `qa.py:1317` (confirmed
+present on the committed `HEAD` version before this task's edits, far from anything touched
+here).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Deviations from spec**: none — only the three listed files were touched.
 
 **Deviations from spec**: none | describe if any
