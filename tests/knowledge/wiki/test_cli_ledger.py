@@ -330,7 +330,7 @@ def test_ledger_rebuild_re_ingests_sdd_graph(runner: CliRunner, mock_ledger_serv
     mock_ingester.ingest_all = AsyncMock(return_value={"specs": 1, "tasks": 5, "edges": 3})
 
     with patch("parrot.knowledge.wiki.cli.LedgerService.from_root", return_value=mock_ledger_service):
-        with patch("parrot.knowledge.wiki.cli.SDDGraphIngest", return_value=mock_ingester) as mock_cls:
+        with patch("parrot.knowledge.wiki.ledger.sdd_ingest.SDDGraphIngest", return_value=mock_ingester) as mock_cls:
             result = runner.invoke(ledger, ["rebuild"])
 
     assert result.exit_code == 0
@@ -344,7 +344,7 @@ def test_ledger_ingest_sdd_calls_checkpoint(runner: CliRunner, mock_ledger_servi
     mock_ingester.ingest_all = AsyncMock(return_value={"specs": 1, "tasks": 5, "edges": 3})
 
     with patch("parrot.knowledge.wiki.cli.LedgerService.from_root", return_value=mock_ledger_service):
-        with patch("parrot.knowledge.wiki.cli.SDDGraphIngest", return_value=mock_ingester):
+        with patch("parrot.knowledge.wiki.ledger.sdd_ingest.SDDGraphIngest", return_value=mock_ingester):
             result = runner.invoke(ledger, ["ingest-sdd"])
     assert result.exit_code == 0
     assert "ingested" in result.output
@@ -370,7 +370,7 @@ def test_ledger_ingest_sdd_busy_exits_2(runner: CliRunner, mock_ledger_service: 
     mock_ingester.ingest_all = AsyncMock(side_effect=WikiStoreBusy("ledger.db", "write", 1.5))
 
     with patch("parrot.knowledge.wiki.cli.LedgerService.from_root", return_value=mock_ledger_service):
-        with patch("parrot.knowledge.wiki.cli.SDDGraphIngest", return_value=mock_ingester):
+        with patch("parrot.knowledge.wiki.ledger.sdd_ingest.SDDGraphIngest", return_value=mock_ingester):
             result = runner.invoke(ledger, ["ingest-sdd"])
     assert result.exit_code == 2
     assert "failed" in result.output
