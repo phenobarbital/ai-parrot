@@ -108,7 +108,11 @@ def test_generate_a2ui_css_vendor_check():
     `test_all_folium_default_resources_have_a_vendored_path` (which only
     asserts the CURRENT, correct mapping — never exercises a broken one).
     """
-    import folium
+    # FEAT-562: folium ships under the `ai-parrot-visualizations[map]` extra,
+    # which the `test-core` workspace sync does not install. The identical
+    # vendored-asset check already runs in the `lint-and-registry` job WITH
+    # folium installed (ci.yml), so skip cleanly here rather than erroring.
+    folium = pytest.importorskip("folium")
     import folium.plugins as fp
 
     sys.path.insert(
