@@ -33,7 +33,7 @@
       "feature_id": "FEAT-563",
       "feature": "scoped-test-selection",
       "spec": "sdd/specs/scoped-test-selection.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -41,8 +41,8 @@
       "parallelism_notes": "no dependencies; read-only pytest --co experiments, writes only artifacts/logs/feat-563-s2-conftest-rootdir.md",
       "assigned_to": null,
       "started_at": "2026-09-17T11:00:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3303-spike-conftest-rootdir.md"
+      "completed_at": "2026-09-17T12:02:29+00:00",
+      "file": "sdd/tasks/completed/TASK-3303-spike-conftest-rootdir.md"
     },
     {
       "id": "TASK-3304",

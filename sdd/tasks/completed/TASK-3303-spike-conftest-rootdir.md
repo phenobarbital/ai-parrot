@@ -213,10 +213,45 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (sonnet, sequential fallback — TASK-3303 was routed `complex`
+by the complexity gate with `complex_model_unavailable`; no roster seat was eligible for
+`complex` work, so the user explicitly authorized implementing it directly)
+**Date**: 2026-09-17
+**Notes**: Ran the three required probes (`tests/sdd_scripts/test_check_task_graph.py`,
+`packages/ai-parrot/tests/loaders/test_chunk_documents_atomic.py`,
+`packages/ai-parrot-tools/tests/tool_optimizations/test_hooks.py`) via a `pytest -p s2probe
+--co -q` collect-only plugin, capturing `rootdir`/`inifile`/loaded conftests/`parrot.__file__`.
+**Critical methodology finding**: this interactive shell has a Claude-Code-injected
+`PYTHONPATH` already listing every `packages/*/src` under this worktree, which trivially
+masks the real bug for a bare `pytest` run from this shell. Re-ran every probe via
+`subprocess.run(cwd=worktree, env={PATH, HOME, PYTHONPATH=<throwaway dir>})` — a fully
+explicit, minimal environment — to see what `SddCoderEngine`/`LLMCodeDispatcher`/the native
+hook's own raw subprocess calls will actually experience. Under that clean env, confirmed the
+real bug: `packages/ai-parrot/tests/...` invocations get their OWN package's worktree
+precedence right (via `packages/ai-parrot/conftest.py`'s local `sys.path.insert`) but a
+**cross-package** import (`parrot.server`, contributed by ai-parrot-server) silently resolved
+to the **main checkout**, because the repo-root `conftest.py` — which has the comprehensive
+`_EXTRA_PATHS` prepend list AND patches `parrot.__path__` directly (required since `parrot`
+uses `pkgutil.extend_path`) — never loads when rootdir stops at `packages/ai-parrot`'s own
+`pyproject.toml`. Additionally probed (beyond the three required targets, for cross-check)
+`packages/ai-parrot-server/tests/...`, which happened to be correct already because that dist
+carries its own equivalent (narrower) local fix in `packages/ai-parrot-server/tests/conftest.py`
+— and confirmed by grep that `parrot-formdesigner` has no such local fix at all and imports
+from `parrot.*` core in 5 modules, structurally at the same risk (not directly probed — outside
+the three required targets). Tested and confirmed the fix: `--confcutdir=<worktree>` forces
+pytest to keep loading conftest.py files up to the worktree root WITHOUT changing
+`rootdir`/`inifile` selection (verified via `pytest --markers` that all three of
+`packages/ai-parrot`'s own registered markers — real_llm/network/live — plus its
+`asyncio_mode` stayed in effect), and confirmed it's a no-op for the two targets whose
+rootdir is already the worktree root. Wrote
+`artifacts/logs/feat-563-s2-conftest-rootdir.md` with `PER_DIST_EXTRA_ARGS = ("--confcutdir",
+"{worktree}")` and `verdict: FLAG_REQUIRED`.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none in scope/files touched (only the declared log file was created;
+no conftest/pytest.ini/pyproject changed; no `uv sync` run). One scope EXTENSION beyond the
+task's literal three probe targets: I additionally probed `packages/ai-parrot-server/tests/...`
+to sanity-check that the chosen flag doesn't regress a dist that already has its own local
+fix, and grepped `parrot-formdesigner` for cross-package imports to flag it as an
+un-probed-but-structurally-equivalent risk for the orchestrator/TASK-3305's awareness. Neither
+extension changed any file; both are documented in the log's "Root cause" section for
+TASK-3305 to consider.
