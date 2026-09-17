@@ -13,7 +13,15 @@ CORE_PATHS: tuple[str, ...] = (  # seed; final list written from spike S4 measur
     "packages/ai-parrot/src/parrot/clients/base.py",  # 182 source importers (measured 2026-09-17)
     "packages/ai-parrot/src/parrot/bots/abstract.py",  # 146 source importers (measured 2026-09-17)
 )
-XDIST_SAFE_DISTRIBUTIONS: frozenset[str] = frozenset()  # filled by spike S3 (TASK-3317)
+# Measured safe under `-n auto` (same per-test outcome as serial, twice) — evidence:
+# artifacts/logs/feat-563-s3-xdist.md (FEAT-563 S3). Add a distribution only with new evidence.
+XDIST_SAFE_DISTRIBUTIONS: frozenset[str] = frozenset(
+    {
+        # S3: no distribution completed the full serial+2x-xdist comparison within the
+        # spike's time budget (ai-parrot alone extrapolates to ~2.3h for one serial pass);
+        # the fail-safe default (spec R7: "either proven or excluded") excludes all of them.
+    }
+)
 TIERS: tuple[str, ...] = ("task", "merge", "feature")
 
 
