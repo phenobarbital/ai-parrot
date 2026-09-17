@@ -253,10 +253,74 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Sonnet 5, sequential fallback lane, user-authorized for
+`complex_model_unavailable`-blocked tasks)
+**Date**: 2026-09-17
+**Notes**:
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**AC12 (task-tier budget) — PASS.** Blueprint deviation: `git log --format=%H --grep 'TASK-3309'
+-n 1` (as literally written) matches the MOST RECENT commit with "TASK-3309" in its message —
+the `sdd: complete TASK-3309` state-update commit, not the 2-file
+(`test_scope/guard.py` + `test_guard.py`) implementation commit the task's own Context
+describes. I used the correct commit (`8ca7092277a9a0997fd53dcaf9ec5b347f40404e`, verified
+`git show --stat` = exactly those 2 files). A second, more consequential problem: that commit
+predates TASK-3310, so `scripts/sdd/select_tests.py` does not exist in that historical tree —
+the literal blueprint (checkout `GUARD_SHA`, run the CLI there) cannot work at all. Adapted the
+measurement to preserve AC12's intent (a real, representative 1-4 file `packages/ai-parrot`
+change) while keeping the CLI available: in the scratch checkout, at the feature tip, I removed
+those same 2 files (commit `b383ca2939a5a37c2406c5ba7be52855a369e46c`, "PRE") then restored them
+from the tip's content (commit `e0aa9c0e7202a266b51558ebf416e6ff727b4340`, "POST") — an exact
+replay of the real 203-line/2-file diff as a fresh commit pair, with `--base PRE_SHA`. Measured:
+plan selects the mirrored `packages/ai-parrot/tests/flows/dev_loop/test_scope` directory (54
+tests, correct — the changed files' own test directory); 3 runs = 7.29s / 7.21s / 7.43s;
+median 7.29s, bound 60s, **verdict PASS**. Evidence: `artifacts/logs/feat-563-task-tier-budget.log`
+(force-added — `artifacts/` is gitignored, same as prior FEAT-563 evidence logs).
 
-**Deviations from spec**: none | describe if any
+**AC9b (core escalation) — confirmed miss on the literal assertion; intended behavior verified
+correct by other means.** Probed both `bots/abstract.py` and `clients/base.py` with a throwaway
+commit each, capturing `--json` (no `--run`) plans for all three tiers. Results
+(`artifacts/logs/feat-563-core-escalation.json`):
+- Both files: `task` tier has empty `core_hits`/`escalated` (never escalates) — ✅ matches AC9b.
+- Both files: `merge` and `feature` tiers correctly detect the file as core (`fanin=917`,
+  `forced=True`) and correctly add a `reason="core"` target for the package-tests suite of
+  **every one of its 25 importing distributions** (confirmed: 25-26 invocations per plan, one per
+  distribution) — this is the actual, intended escalation behavior, and it is correct.
+- **However**, the AC's literal wording — `escalated ⊇ core_hits[*].distributions` (including
+  `ai-parrot`) — does NOT hold: I ran the task's own embedded Test Specification script verbatim
+  and it fails all 4 combinations (both files × merge/feature) on exactly that assertion.
+  Root cause (verified by reading `test_scope/select.py::plan_tests`, TASK-3308, already
+  implemented and covered by its own passing test suite): `ScopePlan.escalated` is populated
+  **only** by the merge-tier impact-cap path (`if len(paths) > policy.impact_cap: escalated.append(dist)`),
+  never by core-hit escalation — core hits are represented exclusively via `core_hits` +
+  `reason="core"` targets. TASK-3308's own `test_core_escalates_every_importing_distribution`
+  asserts escalation by checking `invocation.targets`, not `.escalated`, confirming this is the
+  established, intentional, tested contract — not a regression I introduced. The one place
+  `escalated` and core detection coincide is accidental: `bots/abstract.py`'s merge-tier plan
+  shows `escalated: ["ai-parrot"]`, but that is the UNRELATED impact-cap trigger firing
+  independently (275 impacted tests > cap 150), not the core-hit path; `clients/base.py`'s
+  merge tier has no impact-cap trigger and correctly shows `escalated: []` despite also having a
+  core hit. Per this task's own scope ("if a number misses its bound, the task records the miss
+  and fails its acceptance criterion — it does not change kernel code"), I did not touch
+  `select.py`: AC9b as literally written is **not met**, while its underlying intent (escalate
+  the package suites of every importing distribution, once, at merge+feature only) **is**
+  demonstrably satisfied and evidenced in the committed JSON. This spec/AC-vs-kernel-contract
+  mismatch is worth a follow-up (either loosen AC9b's wording to check `core_hits`/targets, or
+  extend `select.py` to also populate `.escalated` for core hits) — flagging for the feature's
+  final code review / ledger rather than deciding unilaterally here.
+- Encountered and recovered from one environment instability: a scratch git worktree
+  (`/tmp/feat563-evidence`) became invalid mid-measurement (`fatal: no es un repositorio git`,
+  likely a concurrent worktree-admin operation from another session racing my throwaway
+  worktree, since `/tmp` is sandbox-local but `.git/worktrees/*` registration is repo-shared) —
+  the `clients/base.py` feature-tier probe came back corrupted (empty plan with a "not a git
+  repository" note). Detected it via a full sanity pass over all 6 captured plans before
+  assembling the final JSON, and re-ran just that one probe cleanly in a fresh scratch worktree
+  before finalizing. The other 5 probes were confirmed unaffected and correct.
+- Scratch checkout(s) were removed at the end of each probe (`git worktree remove`, without
+  `--force` per the dangerous-actions hook); `git worktree list` shows none remaining.
+
+**Deviations from spec**: (1) used the correct 2-file TASK-3309 implementation commit instead of
+the blueprint's literal (ambiguous, `-n 1`-picks-the-wrong-commit) grep, and replayed its diff on
+top of the feature tip instead of checking it out historically, because the CLI it needs to run
+does not exist at that historical commit — both purely measurement-methodology adaptations, no
+kernel/source file was changed. (2) AC9b is recorded as a confirmed literal miss for the reason
+above; no kernel code was touched to "fix" it, per this task's explicit scope.

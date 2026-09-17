@@ -377,7 +377,7 @@
       "feature_id": "FEAT-563",
       "feature": "scoped-test-selection",
       "spec": "sdd/specs/scoped-test-selection.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -388,8 +388,8 @@
       "parallelism_notes": "runs scripts/sdd/select_tests.py from TASK-3310 against CORE_PATHS finalised by TASK-3318",
       "assigned_to": null,
       "started_at": "2026-09-17T11:00:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3320-evidence-budget-and-core-escalation.md"
+      "completed_at": "2026-09-17T14:36:55+00:00",
+      "file": "sdd/tasks/completed/TASK-3320-evidence-budget-and-core-escalation.md"
     }
   ]
 }
