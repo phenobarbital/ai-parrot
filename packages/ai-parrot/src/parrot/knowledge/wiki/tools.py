@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Union
 from pydantic import BaseModel, Field
 
 from parrot.knowledge.wiki.bookkeeper import WikiBookkeeper
+from parrot.knowledge.wiki.actor import current_actor
 from parrot.knowledge.wiki.context import DEFAULT_BUDGET_TOKENS, pack_results
 from parrot.knowledge.wiki.project import WikiProjectConfig
 from parrot.knowledge.wiki.store import BaseWikiStore, WikiPageRecord, estimate_tokens
@@ -349,7 +350,7 @@ class WikiRememberTool(AbstractTool):
                     body=fact,
                     token_count=estimate_tokens(fact),
                     origin="memory",
-                    asserted_by="agent:mcp",
+                    asserted_by=current_actor(),
                 )
             ]
         )
@@ -443,7 +444,7 @@ class WikiNoteTool(AbstractTool):
                     source_id=page.get("source_id"),
                     token_count=estimate_tokens(body),
                     origin=page.get("origin") or "ingest",
-                    asserted_by="agent:mcp",
+                    asserted_by=current_actor(),
                 )
             ]
         )
@@ -651,7 +652,7 @@ class LedgerOpenTool(AbstractTool):
                 severity=severity,  # type: ignore
                 discovered_from=discovered_from,
                 about=about,
-                actor="agent:mcp",
+                actor=current_actor(),
             )
             return ToolResult(result={"issue_id": issue_id})
         except Exception as exc:
@@ -694,7 +695,7 @@ class LedgerClaimTool(AbstractTool):
 
     async def _execute(self, issue_id: str) -> ToolResult:
         try:
-            success = await self._ledger_service.claim(issue_id, "agent:mcp")
+            success = await self._ledger_service.claim(issue_id, current_actor())
             return ToolResult(result={"success": success})
         except Exception as exc:
             return ToolResult(success=False, status="error", result=None, error=str(exc))
@@ -713,7 +714,7 @@ class LedgerCloseTool(AbstractTool):
 
     async def _execute(self, issue_id: str, reason: str) -> ToolResult:
         try:
-            success = await self._ledger_service.close_issue(issue_id, reason, "agent:mcp")
+            success = await self._ledger_service.close_issue(issue_id, reason, current_actor())
             return ToolResult(result={"success": success})
         except Exception as exc:
             return ToolResult(success=False, status="error", result=None, error=str(exc))
