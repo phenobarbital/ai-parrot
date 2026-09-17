@@ -226,7 +226,7 @@
       "feature_id": "FEAT-564",
       "feature": "video-reel-omni-veo-reliability",
       "spec": "sdd/specs/video-reel-omni-veo-reliability.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -237,8 +237,8 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3328-reel-timeline-planning.md",
+      "completed_at": "2026-09-17T15:49:49+00:00",
+      "file": "sdd/tasks/completed/TASK-3328-reel-timeline-planning.md",
       "acceptance_criteria": [
         "AC04",
         "AC05"
