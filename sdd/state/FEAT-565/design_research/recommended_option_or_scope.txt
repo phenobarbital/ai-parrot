@@ -1,0 +1,86 @@
+**Option D** is recommended because:
+
+- It is the only option that delivers **every** requested step — in particular
+  step 3's planogram-referenced inference — without giving up auditability. A
+  (no context, 230 calls) contradicts the chosen feeding strategy; C contradicts
+  the chosen deterministic registration and maximises confirmation bias; B is
+  D minus the step the request explicitly asks for.
+- The inkcheck post-mortem shows the two things that actually failed were
+  *registration* and *identification strength*. D attacks both: deterministic
+  2-D alignment for the first, row-context + a closed-set verification pass for
+  the second.
+- Reporting **strict and lenient side by side** (already decided) is what makes
+  the closed-set pass acceptable: the biased-but-useful number never
+  masquerades as the unbiased one.
+
+What we trade off: effort (High) and script length. This is acceptable because
+the expensive parts — alignment, scoring, merge, price normalisation — are pure
+functions that can be built and tested incrementally, and because **D strictly
+contains B**: if pass 2 proves unhelpful it is switched off by a flag, not ripped out.
+One idea is borrowed from C: light Set-of-Marks outlines on the strips, because
+visible marks ground slot ids more reliably than coordinates in JSON.
+
+### Recommended option body (Option D)
+
+Option B's pipeline, plus a bounded second LLM pass that implements the
+request's step 3 ("sometimes we need to infer … the product referenced in the
+planogram") **with visual confirmation instead of blind inference**:
+
+1. **Pass 1 (open-set, unbiased)** — row strips + slot JSON + light
+   Set-of-Marks outlines; model describes what it sees per slot. Confident
+   reads become **anchors**.
+2. **Deterministic registration** — monotone 2-D alignment of anchors against
+   the planogram; every slot gets a planogram position (or `unregistered`).
+3. **Pass 2 (closed-set, only for occupied-but-unresolved slots)** — per row,
+   the model gets the strip again and, for each unresolved slot, the expected
+   product *plus 2–3 distractors* from the same family/neighbours, and must
+   choose one of them, `other`, or `cannot_tell`, quoting visible evidence.
+   Results are tagged `verified_by_expectation`, distinct from pass-1 `direct` reads.
+4. Anything still unresolved but occupied and registered is `inferred`.
+
+Strict score counts only `direct` matches; lenient score also counts
+`verified_by_expectation` (full) and `inferred` (partial). Both are reported.
+
+✅ **Pros:**
+- Fulfils all five requested steps, including inference, while keeping an
+  **unbiased strict number** next to the assisted lenient number — the bias of
+  the closed-set pass is contained and visible, not hidden.
+- Distractors + mandatory evidence make pass 2 a discrimination task rather
+  than a yes/no rubber stamp.
+- Still cheap: ~6 calls/photo in pass 1 + ≤6 in pass 2 (only rows with
+  unresolved slots); all cached.
+- Registration stays deterministic and testable; the LLM never assigns positions.
+- Degrades gracefully on weak local models: pass 2 can be disabled, leaving Option B.
+
+❌ **Cons:**
+- Highest design/implementation effort; two prompt contracts and three
+  evidence grades to keep straight.
+- If pass 1 yields too few anchors on a row, registration of that row relies on
+  vertical order and geometry alone (mitigated, not eliminated — see Edge Cases).
+- Single-file script will be long (~900–1200 lines); needs disciplined sectioning.
+
+📊 **Effort:** High
+
+📦 **Libraries / Tools:**
+| Package | Purpose | Notes |
+|---|---|---|
+| `opencv-python` | detection, strips, overlays, annotated output | 4.10.0.84 installed |
+| `numpy` | geometry, alignment DP matrices | 2.4.6 installed |
+| `rapidocr` | local-first tag price OCR | 3.9.2 installed; ONNX, CPU-only OK |
+| `rapidfuzz` | fuzzy description ↔ catalog matching | 3.11.0 installed |
+| `pydantic` | I/O schemas, LLM structured output | v2 |
+| `ai-parrot-client-google` | Gemini vision (`gemini-3.8-flash`) | `image_understanding()` accepts multiple images + `structured_output` |
+| `ai-parrot-client-local` | llama.cpp `:8089` | no vision helper — needs a thin adapter (Code Context) |
+| `pillow` | image hand-off to clients | 11.3.0 installed |
+
+Not used: `pytesseract` (package installed, **`tesseract` binary is not**),
+`easyocr`/`paddleocr` (installed, heavier; keep as a documented alternative
+OCR engine, not a v1 dependency).
+
+🔗 **Existing Code to Reuse:**
+- `examples/planogram/white_label_detector/detect_price_labels.py` — `candidates()` L15–52, `group_rows()` L55–107, ROI filter L123–126, crop padding L146–147
+- `examples/planogram/inkcheck/inkcheck/prepare.py` L37–60 — slot-box derivation
+- `examples/planogram/inkcheck/inkcheck/catalog.py` — `normalize_planogram()` L5–20 (facings expansion, CLOSEOUT → `identity_required=False`)
+- `examples/planogram/inkcheck/inkcheck/compare.py` — multi-view merge rules (conflict / agreeing views count once) L24–47, metric definitions L64–69
+- `examples/planogram/inkcheck/inkcheck/vision.py` L25–40 — cache-key recipe
+- `packages/ai-parrot/src/parrot/clients/factory.py` — `LLMFactory.create()`
