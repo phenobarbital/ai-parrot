@@ -9,6 +9,59 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [1.0.4] — 2026-09-17
+
+Twelve core-line distributions move to `1.0.4`. The sixteen satellites
+(`ai-parrot-client-*`, `ai-parrot-openlit-bridge`) move to `0.2.4` and are
+re-pinned to `ai-parrot>=1.0.4`.
+
+### Fixed
+
+- **`wikitoolkit` crashed at startup in every installed copy** (hotfix PR
+  #1410). `parrot.knowledge.wiki.ledger.sdd_ingest` imported the repo-local
+  `scripts.sdd.sdd_meta`, which no wheel ships. The parser now lives in
+  `parrot.knowledge.wiki.ledger.sdd_meta` (`scripts/sdd/sdd_meta.py` is a
+  re-export shim), and the CLI imports `SDDGraphIngest` lazily in the two
+  ledger commands that use it. New guard test: no `packages/*/src` module may
+  import `scripts.*`.
+- **parrot-formdesigner:** same packaging bug — `tools/snippet_authoring`
+  imported `scripts.check_snippet_conformance`. The gate moved to
+  `parrot_formdesigner.services.snippets.conformance` (old path kept as shim).
+- **`wikitoolkit ledger open`** on a read-only shared ledger now reports
+  "NOT filed" instead of raising.
+- **Crew execution history handler:** the authenticated user id was silently
+  dropped (`await self.session()` raised under `@user_session()`), so a
+  client-supplied `user_id` always won.
+- **`parrot.tools` redirector** aliased every `parrot_tools.*` module onto
+  `parrot.tools.*`, clobbering core `parrot.tools.abstract` once any
+  redirected tool was imported.
+- **NavigatorToolkit** could not be constructed (merge resurrected a second
+  `super().__init__` without `dsn`).
+- **CrewExecutionDocument** dropped FlowResult's `infographic` key.
+- **Planogram endcap:** a failed illumination check crashed detection.
+- **`parrot.interfaces.http`:** unused top-level `googleapiclient` imports
+  broke core import without that optional dependency.
+- **CI:** `test-core` installs the whole workspace; ~200 drifted tests
+  repaired, optional-extra / live-service tests skip cleanly.
+
+### Changed
+
+- **BREAKING — FEAT-558: `QuerysourceToolkit` replaces `QSourceTool`.**
+  `parrot_tools/qsource.py` is removed (hard cut). The new
+  `parrot_tools.querysource` toolkit offers `list_slugs`, `describe_slug`,
+  `execute_slug` (typed conditions), `run_multiquery` / `save_multiquery`,
+  `list_components`, `validate_pipeline` and `get_dialect_reference`, with
+  tenant guarding over `public.queries` and bounded JSON-safe results.
+  The `ai-parrot-tools[db]` extra now requires `querysource>=4.5.11`.
+- **sdd-codereview / sdd-worker** prompt updates.
+
+### Docs
+
+- SDD specs: FEAT-563 (scoped-test-selection), FEAT-564
+  (video-reel Omni/Veo reliability).
+
+---
+
 ## [1.0.3] — 2026-09-17
 
 Twelve core-line distributions move to `1.0.3`. The sixteen satellites
