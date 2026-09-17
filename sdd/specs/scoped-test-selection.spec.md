@@ -58,6 +58,9 @@ outputs burn seat tokens.
 - G7 — Merge-tier **import-impact selection** from an own AST import scanner over
   the worktree, with a per-distribution cap that escalates to the package suite.
 - G8 — `pytest -n auto` only for distributions on an explicit xdist-safe allowlist.
+- G9 — **Guiding principle: cut wall-clock, never raise test volume.** No SDD tier
+  may run more than today's `QANode` mirror-of-directories selection, except the
+  merge-tier import-impact additions; package suites are never the default of any tier.
 
 ### Non-Goals (explicitly out of scope)
 
@@ -68,6 +71,8 @@ outputs burn seat tokens.
 - Coverage-based selection (`pytest-testmon`) — rejected in brainstorm (Option D).
 - An env-driven `pytest_ignore_collect` plugin (brainstorm Option C) — not built;
   codex stays deny-only.
+- `--ignore-user-config` in the `/sdd-spec` §3b design-research seat and in the
+  codex *review* profiles — unchanged; only development dispatches drop it.
 - wikitoolkit blast radius as a selection source (optional signal at most; not wired).
 - Enforcement for `sdd-worker`'s own sequential fallback implementation (no
   per-attempt context exists there — it uses the CLI by instruction only).
@@ -124,7 +129,7 @@ Kernel parts:
 |---|---|---|---|---|
 | `task` | every `sdd-coder` attempt (guard) | task `## Validation Commands` targets ∪ mirror of the attempt's changed files | yes | no |
 | `merge` | `sdd-worker` after each `coder_merge` (CLI) | mirror ∪ import-impact of the merge's changed files; over cap → package suite | yes | allowlisted dists |
-| `feature` | `qa-runner`, `QANode._default_criteria`, `/sdd-done` (CLI / kernel) | package suites of touched distributions (+ root `tests/` modules mapped by mirror) | yes | allowlisted dists |
+| `feature` | `qa-runner`, `QANode._default_criteria`, `/sdd-done` (CLI / kernel) | **mirror of directories** over every file the feature changed vs its base ∪ the `## Validation Commands` of the feature's tasks — the same granularity `QANode` uses today; **no package suites, no import-impact** | yes | allowlisted dists |
 | `ci` | GitHub Actions | unchanged | no | unchanged |
 
 **User-facing behaviour**
@@ -168,7 +173,8 @@ Kernel parts:
 | `worktree_environment.hook_response` (`worktree_environment.py:158`) | modifies | guard rewrite of the Bash string before `protected_argv` |
 | `tool_optimizations.hooks.main` / `evaluate_shell` (`hooks.py:549`, `:400`) | extends | codex/claude Bash: deny with scoped command |
 | `SddCoderEngine._run_attempt` (`engine.py:1897`) / `prepare_native` (`engine.py:1225`) | modifies | write attempt context after sub-worktree creation |
-| `CodexCodeDispatcher` (`dispatchers/codex.py:136`) | modifies | make the deny hook reachable in the attempt sub-worktree (see §7 risk R3) |
+| `CodexCodeDispatchProfile.ignore_user_config` (`models/codex.py:23`) / `CodexCodeDispatcher._build_command` (`dispatchers/codex.py:341`, flag at L379-380 and L442-443) | modifies | development dispatches stop passing `--ignore-user-config` (default → `False`); review profiles keep `True` explicitly |
+| `.gitignore:363-366`, `.codex/hooks.json` | modifies | `.codex/hooks.json` becomes tracked (`!.codex/hooks.json`) with a portable launcher command, so every worktree carries the codex hook |
 | `scripts/sdd/check_task_graph.py` (`check_graph` L176, `Finding` L50) | extends | contract lint codes |
 | `sdd/templates/task.md`, `.claude/commands/sdd-task.md`, `.agent/workflows/sdd-task.md` | modifies | mandatory `## Validation Commands` |
 | `.claude/agents/{sdd-coder,sdd-worker,qa-runner,sdd-autopilot}.md`, `.claude/commands/sdd-done.md`, `.agent/workflows/sdd-done.md` | modifies | tier CLI replaces prose and full-suite passes |
@@ -243,7 +249,7 @@ python -m scripts.sdd.select_tests --tier {task,merge,feature} [--base origin/de
 | M5: QANode integration | yes | delegate + replace bare fallback; update `test_package_without_tests_is_not_a_target` | — |
 | M6: MCP seat adapter + engine context writer | no | — | touches hot engine paths; attempt-context timing |
 | M7: native hook adapter | no | — | bash string segment rewrite under system python |
-| M8: codex deny adapter | no | — | hook reachability in sub-worktrees unverified (R3) |
+| M8: codex deny adapter | no | — | portable hook launcher + verification that codex loads the tracked project hook (S1) |
 | M9: task validation contract (template, commands, lint) | yes | section format + lint codes below | — |
 | M10: directory markers | yes | directory names + registration list below | — |
 | M11: agent/command markdown | yes | exact CLI lines below | — |
@@ -297,7 +303,7 @@ python -m scripts.sdd.select_tests --tier {task,merge,feature} [--base origin/de
   # test_scope/__init__.py  (new) — stdlib-only re-exports
   def plan_tests(*, worktree: Path, changed_files: Sequence[str], tier: str,
                  declared: Sequence[Sequence[str]] = (), policy: ScopePolicy | None = None) -> ScopePlan:
-      """Tier entry point: task=declared∪mirror; merge=mirror∪impact (cap→escalate); feature=package suites."""
+      """Tier entry point: task=declared∪mirror; merge=mirror∪impact (cap→escalate); feature=declared(all tasks)∪mirror."""
   def changed_files(worktree: Path, base_ref: str) -> list[str]:
       """git diff --name-only --diff-filter=d <base>...HEAD ∪ untracked/uncommitted (sync subprocess)."""
   ```
@@ -375,7 +381,7 @@ python -m scripts.sdd.select_tests --tier {task,merge,feature} [--base origin/de
 
 ### Module 5: QANode integration
 - **Path**: `packages/ai-parrot/src/parrot/flows/dev_loop/nodes/qa.py` (modifies L529-717)
-- **Responsibility**: `_default_criteria` builds a `feature`-tier plan and emits one `ShellCriterion` per invocation; an empty plan yields **no** criterion (log warning) instead of bare `pytest`. `_pytest_targets` & co. become one-line delegations to `test_scope.mirror`.
+- **Responsibility**: `_default_criteria` builds a `feature`-tier plan — i.e. **the same mirror-of-directories selection it computes today** (no package suites), now split per distribution and carrying agent flags/markers — and emits one `ShellCriterion` per invocation; an empty plan yields **no** criterion (log warning) instead of bare `pytest`. `_pytest_targets` & co. become one-line delegations to `test_scope.mirror`.
 - **Depends on**: Modules 1, 4
 - **Interface Skeleton**:
   ```python
@@ -415,8 +421,12 @@ python -m scripts.sdd.select_tests --tier {task,merge,feature} [--base origin/de
   ```
 
 ### Module 8: Codex deny adapter
-- **Path**: `packages/ai-parrot-tools/src/parrot_tools/tool_optimizations/hooks.py` (extends `main` L549 Bash branch), `dispatchers/codex.py` (modifies attempt setup)
-- **Responsibility**: in the Bash branch, when an attempt context exists and the command contains an over-broad pytest, produce a deny `GuardDecision` whose reason is the exact scoped command (joined invocations). Ensure the hook is **active inside codex attempt sub-worktrees**: `.codex/hooks.json` is git-ignored (`.gitignore:363`) and the dispatcher passes `--ignore-user-config` (`models/codex.py` `ignore_user_config=True`), so the dispatcher must provision hook config for the attempt (spike S1 decides between writing an untracked-safe hooks file in the sub-worktree vs. `-c` overrides).
+- **Path**: `packages/ai-parrot-tools/src/parrot_tools/tool_optimizations/hooks.py` (extends `main` L549 Bash branch), `.gitignore` (L363-366), `.codex/hooks.json` (becomes tracked), `scripts/sdd/codex_hook.sh` (new launcher), `packages/ai-parrot/src/parrot/flows/dev_loop/models/codex.py` (`ignore_user_config` default), `CodexCodeReviewProfile` / `CodexAdversarialReviewProfile` (explicit `True`)
+- **Responsibility**:
+  1. In the Bash branch, when an attempt context exists and the command contains an over-broad pytest, produce a deny `GuardDecision` whose reason is the exact scoped command (joined invocations).
+  2. **Track `.codex/hooks.json`**: add `!.codex/hooks.json` after `.codex/*` in `.gitignore`, and replace the machine-specific absolute interpreter path (`/home/<user>/…/.venv/bin/python`) with a tracked, portable launcher `scripts/sdd/codex_hook.sh` that resolves the main checkout via `git rev-parse --path-format=absolute --git-common-dir` and execs `<main-checkout>/.venv/bin/python -m parrot_tools.tool_optimizations.hooks --host codex`; a missing venv → exit 0 silently (never break codex).
+  3. **Drop `--ignore-user-config` for development dispatches**: `CodexCodeDispatchProfile.ignore_user_config` default becomes `False` (field kept, still honoured at `codex.py:379-380` / `:442-443`); the review profiles set `ignore_user_config: bool = True` explicitly so reviewers keep an isolated config. `--model`, sandbox and approval policy are already passed explicitly (`codex.py:432`, `:372-373`), so the operator config cannot swap them.
+  4. Spike S1 verifies with a real `codex exec --cd <attempt sub-worktree>` that the tracked project hook fires and denies.
 - **Depends on**: Module 3
 - **Interface Skeleton**:
   ```python
@@ -424,7 +434,18 @@ python -m scripts.sdd.select_tests --tier {task,merge,feature} [--base origin/de
   def evaluate_scope(command: str, cwd: Path) -> Optional[GuardDecision]:
       """Deny over-broad pytest inside an sdd-coder attempt; reason = scoped command; None otherwise."""
   # main(): Bash branch → evaluate_scope first, then evaluate_shell (verified: hooks.py:577-578)
+
+  # models/codex.py  (modifies)
+  class CodexCodeDispatchProfile(BaseModel):  # verified: models/codex.py:10
+      ignore_user_config: bool = Field(default=False, ...)  # was True (L23)
+  class CodexCodeReviewProfile(CodexCodeDispatchProfile):  # verified: models/codex.py:38
+      ignore_user_config: bool = True  # explicit — reviewers stay isolated
   ```
+  ```json
+  // .codex/hooks.json  (tracked)
+  {"hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "sh scripts/sdd/codex_hook.sh", "timeout": 10}]}]}}
+  ```
+  Tests to update: `test_codex_dispatcher.py:177`, `test_codex_command_variants.py:74` (assert flag absent by default), `test_models.py:150` (`is False`), plus review-profile assertions (`is True`).
 
 ### Module 9: Task validation contract
 - **Path**: `sdd/templates/task.md`, `.claude/commands/sdd-task.md`, `.agent/workflows/sdd-task.md`, `scripts/sdd/check_task_graph.py`, `sdd/templates/*` index header docs
@@ -501,6 +522,9 @@ python -m scripts.sdd.select_tests --tier {task,merge,feature} [--base origin/de
 | `test_hook_response_rewrites_before_sandbox` | M7 | `updatedInput.command` wraps the rewritten command |
 | `test_hook_response_import_failure_is_allow` | M7 | missing `test_scope` → unchanged behaviour |
 | `test_codex_hook_denies_broad_pytest_with_scoped_reason` | M8 | deny reason contains the scoped command |
+| `test_codex_dev_profile_drops_ignore_user_config` | M8 | dev dispatch argv has no `--ignore-user-config`; review profiles still pass it |
+| `test_codex_hooks_json_is_tracked_and_portable` | M8 | `git check-ignore .codex/hooks.json` fails; command contains no absolute `/home/` path |
+| `test_feature_tier_equals_mirror_selection` | M1/M5 | feature plan targets == `mirror.pytest_targets` ∪ declared; never a `packages/<dist>/tests` root unless mirror itself fell back to it |
 | `test_validation_contract_findings` | M9 | four lint codes, required vs legacy header |
 | `test_directory_auto_marking` | M10 | `integration/` and `e2e/` marked; `integrations/` not |
 
@@ -528,12 +552,13 @@ def fixture_monorepo(tmp_path: Path) -> Path:
 - [ ] AC3 — `test_scope` core imports with the standard library only (`test_core_is_stdlib_only` passes); only `test_scope/models.py` imports pydantic.
 - [ ] AC4 — The 17 existing tests in `test_qa_default_criteria.py` pass (with the single updated fallback assertion); `QANode` never emits a bare `pytest` criterion.
 - [ ] AC5 — Inside an `sdd-coder` attempt, an over-broad pytest from an MCP seat or the native seat is **rewritten** to the task-tier plan; with an empty plan it is **blocked**; outside attempts (no context file) commands are untouched.
-- [ ] AC6 — Codex seats inside an attempt receive a **deny** whose reason contains the scoped command; the hook is verified active in a codex attempt sub-worktree (spike S1 evidence in `artifacts/logs/`).
+- [ ] AC6 — Codex seats inside an attempt receive a **deny** whose reason contains the scoped command; `.codex/hooks.json` is tracked with a portable launcher; development codex dispatches no longer pass `--ignore-user-config` (review profiles still do); the hook is verified active in a codex attempt sub-worktree (spike S1 evidence in `artifacts/logs/`).
 - [ ] AC7 — `/sdd-task` emits `## Validation Commands` with file-level pytest commands for every task and `"validation_contract": "required"` in the index header; `check_task_graph.py` reports the four new codes as specified, and legacy indexes only warn.
 - [ ] AC8 — `integration/` and `e2e/` test directories are auto-marked; `integrations/` directories are not; `pytest --strict-markers` collection succeeds in every touched distribution.
 - [ ] AC9 — Merge tier unions mirror and import-impact targets; a distribution over the cap (default 150 modules) is escalated to its package suite and listed in `escalated`.
 - [ ] AC10 — `-n auto` appears only for distributions in `XDIST_SAFE_DISTRIBUTIONS`; the allowlist ships with the distributions proven safe by spike S3 (may be empty).
 - [ ] AC11 — Plans never contain one invocation spanning two distributions.
+- [ ] AC11b — The `feature` tier (QANode, qa-runner, `/sdd-done`) selects by mirror of directories ∪ declared validation commands only — no package-suite targets are added by the tier itself, and QANode's selected test set for a given change is never larger than before this feature (parity test).
 - [ ] AC12 — **Budget**: on a representative 1–4 file task in `packages/ai-parrot`, task-tier validation wall-clock < 60 s (measured, log in `artifacts/logs/feat-563-task-tier-budget.log`).
 - [ ] AC13 — All new/changed unit tests pass: `pytest packages/ai-parrot/tests/flows/dev_loop/test_scope/ packages/ai-parrot/tests/flows/dev_loop/test_qa_default_criteria.py packages/ai-parrot/tests/flows/dev_loop/test_worktree_environment.py packages/ai-parrot/tests/flows/dev_loop/test_llm_code_dispatcher.py -q`, `pytest packages/ai-parrot-tools/tests/tool_optimizations/test_hooks.py -q`, `pytest tests/sdd_scripts/test_check_task_graph.py tests/sdd_scripts/test_select_tests.py -q`.
 - [ ] AC14 — `ruff check` clean on changed files; `docs/dev_loop/sdd-coder-orchestrator.md` documents tiers, guard behaviour and the CLI.
@@ -659,7 +684,8 @@ filterwarnings = ignore::DeprecationWarning
 ```
 - Per-dist pytest sections: `packages/ai-parrot/pyproject.toml:997` (markers `real_llm`, `network`, `live`), `ai-parrot-server:118`, `ai-parrot-integrations:143`, `parrot-formdesigner:93`.
 - `.venv`: pytest 9.1.1, pytest-xdist 3.3.1 (root `pyproject.toml:64`), pytest-asyncio 1.4.0.
-- `.gitignore:363-366` — `.codex/*` ignored except `.codex/agents/*.toml`; `.codex/hooks.json` is local-only.
+- `.gitignore:363-366` — `.codex/*` ignored except `.codex/agents/*.toml`; `.codex/hooks.json` is local-only today (`git check-ignore -v` → `.gitignore:363`) and its command hard-codes `/home/jesuslara/proyectos/ai-parrot/.venv/bin/python` — M8 tracks it with a portable launcher.
+- Codex command build: `_build_command` `dispatchers/codex.py:341`; `--ignore-user-config` appended at L379-380 and L442-443; `--model` at L432; `-c approval_policy=…` at L372-373. `CodexCodeReviewProfile` `models/codex.py:38`, `CodexAdversarialReviewProfile` follows it.
 - Native seat hook wiring: `.claude/agents/sdd-coder.md:16-22` / `sdd-worker.md:27-33` → `python3 "$CLAUDE_PROJECT_DIR/packages/ai-parrot/src/parrot/flows/dev_loop/worktree_environment.py" --hook || exit 2`; SDK path `dispatchers/claude.py:620-640`.
 - Template sections: `sdd/templates/task.md` — `## Acceptance Criteria` L266, `## Test Specification` L276, `## Delegation Contract` L110.
 
@@ -684,7 +710,8 @@ filterwarnings = ignore::DeprecationWarning
 - ~~pytest-timeout~~; ~~any `-n`/`--dist`/`xdist_group`/`worker_id` usage~~
 - ~~an `imports` relation in wikitoolkit blast radius~~ — calls/extends/implements/references/contains only; test→`Class.method(...)` produces no edge
 - ~~argv interception for codex~~ — codex executes its own commands
-- ~~a tracked `.codex/hooks.json`~~ — git-ignored, absent from worktrees
+- ~~a tracked `.codex/hooks.json`~~ — git-ignored, absent from worktrees (tracked by M8)
+- ~~`scripts/sdd/codex_hook.sh`~~ — new in M8
 - ~~a pytest run in the sdd_coder engine~~ — `fidelity.py:86` runs only ruff TID251
 - ~~a per-worktree git dir helper~~ — `repository_paths` returns the *common* dir; M3 adds `worktree_git_dir`
 - ~~`scripts/sdd/select_tests.py`~~, ~~`parrot.flows.dev_loop.test_scope`~~ — new in this spec
@@ -704,7 +731,8 @@ filterwarnings = ignore::DeprecationWarning
 ### Known Risks / Gotchas
 - **R1 — Cross-distribution runs**: MCP `run_command` returns one result; replacement invocations run sequentially, output concatenated, first non-zero exit wins. Native rewrite uses a subshell that runs every invocation and exits with the OR of exit codes.
 - **R2 — Compound bash** (`cd x && pytest …`, `| tail`, env prefixes, heredocs): rewrite only a parseable pytest segment; unparseable → allow + note. Never break a command.
-- **R3 — Codex hook reachability**: `.codex/hooks.json` is git-ignored and `--ignore-user-config` is passed, so codex attempt sub-worktrees currently have **no** hook. Spike S1 must prove a provisioning path before M8 claims enforcement; if none works, M8 degrades to prompt-only and AC6 is re-scoped via §8.
+- **R3 — Codex hook reachability** (*decided*): `.codex/hooks.json` becomes tracked and development dispatches drop `--ignore-user-config`, so every attempt sub-worktree carries the project hook. Residual: the tracked command must be portable (launcher, no absolute user path), and S1 must confirm codex loads a project-level hook under `codex exec --cd`.
+- **R3b — Operator config now inherited by codex dev seats**: without `--ignore-user-config`, `~/.codex/config.toml` (MCP servers, profiles, extra hooks) applies to development dispatches. Model, sandbox and approval policy stay pinned by explicit flags; review profiles keep the flag. Document in `docs/dev_loop/sdd-coder-orchestrator.md`.
 - **R4 — Rewrite empty** → block (brainstorm decision); exit 5 (no tests collected) from a plan is a scoping miss, reported, never green.
 - **R5 — Static import blind spots** (dynamic imports, fixtures in `conftest.py`, meta_path redirects other than `parrot.tools`): covered by feature tier and CI.
 - **R6 — conftest loading when rooted at `packages/<dist>/`**: if the root `conftest.py` (worktree source precedence) does not load, worktree runs import main-checkout code. Spike S2 decides whether invocations need `--rootdir`/`-c`/`--confcutdir`.
@@ -713,10 +741,10 @@ filterwarnings = ignore::DeprecationWarning
 - **R9 — Hot files**: `dispatchers/llm.py` and `sdd_coder/engine.py` are under active development (FEAT-549/559/561); rebase before each task.
 - **R10 — Timeout budget**: a task-tier plan exceeding the attempt's `command_timeout_seconds` is a failed attempt with the plan attached, not retried broader.
 - **R11 — FEAT-562 drift**: §6 config references must be re-verified after FEAT-562 merges.
-- **R12 — Feature tier is coarser than today's QANode**: `QANode._default_criteria` currently runs mirror targets (the `qa.py:591-594` docstring records ~9 min for the full `ai-parrot` suite); the brainstorm's feature tier runs package suites of touched distributions. With an empty xdist allowlist this can make dev-loop QA slower than today — see §8.
+- **R12 — Feature tier granularity** (*decided*): the brainstorm's "package suites of touched distributions" for the feature tier is **dropped**. The feature tier uses the mirror of directories (today's QANode granularity, which avoids the ~9 min full `ai-parrot` suite recorded in `qa.py:591-594`) ∪ declared validation commands. Goal is lower wall-clock, not more coverage (G9).
 
 ### Spikes (first tasks, evidence to `artifacts/logs/`)
-- **S1** — codex hook provisioning inside an attempt sub-worktree (R3).
+- **S1** — confirm the tracked `.codex/hooks.json` fires under `codex exec --cd <attempt sub-worktree>` without `--ignore-user-config` (R3).
 - **S2** — conftest/rootdir behaviour for `pytest packages/<dist>/tests/...` from a worktree (R6).
 - **S3** — xdist safety per small distribution (R7) → initial `XDIST_SAFE_DISTRIBUTIONS`.
 
@@ -745,12 +773,12 @@ No new dependencies.
 - [x] SSOT for `validation_commands` — *Owner: Jesus Lara*: a new mandatory `## Validation Commands` section in the task file (parsed like `parse_task_files`, linted by `check_task_graph`)
 - [x] Kernel home — *Owner: Jesus Lara*: `parrot/flows/dev_loop/test_scope/` with a stdlib-only core and Pydantic models in a separate `models.py` (documented exception)
 - [x] Codex seat — *Owner: Jesus Lara*: deny with the exact scoped command (reachability verified by spike S1)
+- [x] Codex hook reachability — *Owner: Jesus Lara*: take `.codex/hooks.json` out of `.gitignore` (tracked, portable launcher) and stop passing `--ignore-user-config` for development dispatches
 - [x] CI `packages/*/tests` gap — *Owner: Jesus Lara*: out of scope — non-goal here, separate feature
 - [ ] Cap and depth defaults (150 modules / 1 hop) — confirm or tune after measuring on real merges — *Owner: Jesus Lara*
 - [ ] Root conftest loading when rooted at `packages/<dist>/` (spike S2) — *Owner: implementer*
 - [ ] Initial xdist allowlist (spike S3) — *Owner: implementer*
-- [ ] If spike S1 finds no way to activate a hook in codex attempts: accept prompt-only for codex, or remove codex from the task-tier roster? — *Owner: Jesus Lara*
-- [ ] Feature tier for `QANode`: package suites (brainstorm table) vs. mirror ∪ import-impact (merge-tier selection, today's QANode granularity) until xdist allowlists exist — *Owner: Jesus Lara*
+- [x] Feature tier for `QANode` / qa-runner / `/sdd-done` — *Owner: Jesus Lara*: mirror of directories (∪ declared validation commands), never package suites — the goal is to cut time, not to raise test volume
 - [ ] Dead root `pyproject.toml [tool.pytest.ini_options]` (shadowed by `pytest.ini`): clean up here or leave to FEAT-562 — *Owner: Jesus Lara*
 
 ---
@@ -782,7 +810,7 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
   - M10 — no edges
 - **Concurrency**: after M1: {M2, M3, M9, M10} in parallel; after M3: {M6, M7, M8} in parallel; M4 after M2; M5/M11 after M4. Spikes S1–S3 have no code edges and run first/in parallel.
 - **Shared files**: `sdd_coder/engine.py` (M6 `_run_attempt`, M7 `prepare_native`) → serialize M6/M7 engine edits or assign the context writer to M6 and have M7 depend on it; `packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_engine_dispatch.py` (M6, M7).
-- **Exclusive resources**: none (no lockfile, migration or extension rebuild). Spikes S1 (codex CLI run) may be `parallel: false` if it needs a real codex session.
+- **Exclusive resources**: none (no lockfile, migration or extension rebuild). M8 touches `.gitignore` and `models/codex.py` (shared with no other module). Spikes S1 (codex CLI run) may be `parallel: false` if it needs a real codex session.
 - **Cross-feature dependencies**: **FEAT-562 must be merged into `dev` first**. Active edits in `dispatchers/llm.py` / `sdd_coder/engine.py` (FEAT-549/559/561) → rebase before M6/M7.
 
 ---
@@ -792,3 +820,4 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-09-17 | Jesus Lara / Claude Opus 5 | Initial draft from `scoped-test-selection.brainstorm.md` (Option B) + 4 spec-time decisions |
+| 0.2 | 2026-09-17 | Jesus Lara / Claude Opus 5 | R3: track `.codex/hooks.json` + drop `--ignore-user-config` for dev dispatches; R12: feature tier = mirror of directories, never package suites (G9) |
