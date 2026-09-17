@@ -385,10 +385,34 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (sonnet, sequential fallback — `complex_model_unavailable`, same
+systemic roster gap as prior tasks; user-authorized direct implementation)
+**Date**: 2026-09-17
+**Notes**: Added `VALIDATION_CONTRACT`, `_KERNEL_DIR`, `_FLAG_WITH_VALUE`, `_load_contract`
+(path-loads `test_scope.contract`, never `parrot`), `_pytest_operands` (flag/value skipping
+per the given `_FLAG_WITH_VALUE` set), and `_check_validation_contract` (all four finding
+codes) to `scripts/sdd/check_task_graph.py`; wired into `check_graph` right before
+`return report`; extended the module docstring's Errors/Warnings lists. Extended
+`tests/sdd_scripts/test_check_task_graph.py`: gave `_TASK`/`_repo` an optional per-task
+`validation` list (rendered as a real `## Validation Commands` section only when provided —
+absence means no section at all, needed for `test_missing_validation_commands_warning_on_legacy_header`
+to fire correctly), added `_with_validation` and six new tests covering all four codes and
+both header modes, and added a self-referencing `validation` command (the task's own generated
+`.md` file — always exists, never broad, never a directory) to the three pre-existing
+exact-findings tests (`test_evidence_free_chain_is_flagged`, `test_justified_edges_pass`,
+`test_missing_dependency_and_legacy_semantics_warned`) so they stay green under the new
+`missing-validation-commands` warning. All 12 tests pass, `ruff check` clean, no `import
+parrot`/`from parrot` in the script (grep empty), and the two `.claude`/`.agent` sdd-task.md
+copies verified byte-identical for the inserted `#### Validation Commands` block (`diff`
+empty).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Orchestrator follow-up applied** (separate commit, per this task's own instruction that the
+sdd-coder fidelity gate rejects any `sdd/` change): edited `sdd/templates/task.md` to insert a
+`## Validation Commands` section (with a one-line "file-level pytest only" note and the same
+two example bullets as the command docs) immediately after `## Acceptance Criteria`, before
+`## Test Specification`.
+
+**Deviations from spec**: none — only the four listed coder-diff files plus the
+orchestrator-owned `sdd/templates/task.md` follow-up were touched.
 
 **Deviations from spec**: none | describe if any

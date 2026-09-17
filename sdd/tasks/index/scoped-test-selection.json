@@ -274,7 +274,7 @@
       "feature_id": "FEAT-563",
       "feature": "scoped-test-selection",
       "spec": "sdd/specs/scoped-test-selection.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -284,8 +284,8 @@
       "parallelism_notes": "imports parse_validation_commands/is_broad_pytest from TASK-3304 (test_scope/contract.py) by path in check_task_graph.py",
       "assigned_to": null,
       "started_at": "2026-09-17T11:00:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3315-task-validation-contract-lint.md"
+      "completed_at": "2026-09-17T12:22:49+00:00",
+      "file": "sdd/tasks/completed/TASK-3315-task-validation-contract-lint.md"
     },
     {
       "id": "TASK-3316",
