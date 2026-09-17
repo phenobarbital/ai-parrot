@@ -408,10 +408,27 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-coder (native, sonnet)
+**Date**: 2026-09-18
+**Notes**: Added `_config_path`, `_atomic_write`, `preflight_seed` (all-or-nothing
+unknown-name + malformed-YAML rejection), `_find_section_span`,
+`set_section_enabled` and `remove_section` (lexical, comment-preserving) to
+`toolkit_seed.py`; `seed_toolkit_sections` now preflights, assembles the full
+file text in memory, then does exactly one atomic write instead of appending.
+Replaced pre-existing `test_unknown_name_reported_not_raised` (asserted the OLD
+non-atomic report-but-still-seed behavior) with
+`test_seed_unknown_name_raises_before_writing_new_sections`, since the old
+assertions directly contradicted this task's AC8 all-or-nothing mandate —
+confirmed against spec §5's own test list, which has no surviving counterpart
+for the old test. Validation: `pytest tests/mcp/test_toolkit_seed.py
+tests/mcp/test_toolkit_config.py -q` → 35 passed; `ruff check --no-cache`
+clean. Merge-tier check: only "file not found" for sibling tasks' not-yet-
+created test files (TASK-3372, TASK-3376) — no real regressions. Lint autofix
+(black) applied by the merge gate, commit 82e5ab77b.
+Seat: sonnet · Backend: native · Model: sonnet · Attempts: 1 · Duration: n/a · Tokens: n/a
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Replaced one pre-existing test
+(`test_unknown_name_reported_not_raised` → `test_seed_unknown_name_raises_before_writing_new_sections`)
+whose assertions were incompatible with the new all-or-nothing preflight
+contract this task mandates (AC8). Verified against spec §4/§5 — required, not
+scope creep.

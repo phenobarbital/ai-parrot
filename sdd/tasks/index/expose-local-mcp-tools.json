@@ -34,7 +34,7 @@
       "feature_id": "FEAT-570",
       "feature": "expose-local-mcp-tools",
       "spec": "sdd/specs/expose-local-mcp-tools.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -44,8 +44,8 @@
       "parallelism_notes": "Modifies the same file as TASK-3368 (parrot/mcp/toolkit_seed.py); serialized after it.",
       "assigned_to": null,
       "started_at": "2026-09-17T23:36:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3369-seed-preflight-and-mutation-helpers.md"
+      "completed_at": "2026-09-17T23:59:50+00:00",
+      "file": "sdd/tasks/completed/TASK-3369-seed-preflight-and-mutation-helpers.md"
     },
     {
       "id": "TASK-3370",
