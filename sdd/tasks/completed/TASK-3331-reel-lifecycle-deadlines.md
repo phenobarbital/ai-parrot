@@ -214,3 +214,49 @@ finding per Cardinal Rule 5 (no scope creep).
 
 Seat: sonnet (fallback sequential, orchestrator-implemented) · Backend: native · Model: sonnet ·
 Attempts: 1 · Duration: n/a · Tokens: n/a
+
+### Addendum — code-review findings fixed (2026-09-17)
+
+A mid-feature adversarial code review (`code-reviewer` agent + an independent `sdd-secondopinion`
+cross-check, both verified against source before acceptance) found two confirmed, non-trivial defects
+in this task's own file (`generation.py`), fixed in a follow-up commit:
+
+1. **Job working directory never cleaned up on success for cloud (`gcs`/`s3`) backends.** The original
+   `except BaseException:` cleanup only ran on failure; for cloud backends the final artifact is already
+   durably persisted via `file_manager.create_from_bytes` by the time the job returns, so the local
+   per-job working directory (raw scene clips, narration/music WAVs, the assembled video) was pure
+   unbounded disk growth. Fixed: `_cleanup_reel_job_directory(output_directory)` is now also called on
+   the success path when `request.storage_backend not in ("fs", "temp")`, placed after the artifact's
+   `.stat().st_size` is read so it never races the read. **Not adopted**: the second-opinion's follow-up
+   suggestion to also clean up for `"fs"`/`"temp"` — verified via `LocalFileManager.create_from_bytes`/
+   `_resolve_path` that for `"fs"` the FileManager-persisted copy lives at a DIFFERENT path
+   (`base_output_directory/reels/{job_id}/final/...`) than `assembled_path`
+   (`base_output_directory/{job_id}/...`, the exact file `AIMessage.files` returns for `"fs"`/`"temp"`
+   per the existing, tested contract in `test_reel_orchestration.py`); cleaning up for `"fs"` too would
+   delete `assembled_path` before the caller could read it, breaking that contract. Filed as a ledger
+   finding instead — see final feature summary (`(NOT filed: shared ledger is read-only)`).
+2. **`_failed_scene_result` hardcoded `backend="veo"` and dropped `exc.operation_id`.** Every scene that
+   failed under `partial_failure_policy="skip"` was mislabeled as a Veo failure (even Omni failures) and
+   lost its provider operation id, undermining AC17's reconciliation requirement. Fixed: `_process_scene`
+   now stashes the resolved `VideoModelProfile` on `context.resolved_profiles[index]` immediately after
+   resolution (before any paid call), and `_failed_scene_result` reads the real `backend`/`model_id` from
+   there plus `exc.operation_id` for `provider_operation_id`, falling back to the old placeholder only
+   when resolution itself never completed.
+3. **`generate_image`'s own earlier-in-this-task client-close fix (see body above) was itself
+   incomplete.** An independent second-opinion cross-check caught that `client = await
+   self.get_client(model=model_str)` still sat ~80 lines BEFORE the `try/finally` it was supposed to
+   be covered by — every step in between (reference-image loading, `_format_history`,
+   `SafetySetting`/`ImageConfig`/`GenerateContentConfig` construction) could raise and leak the
+   client, since none of that code depends on `client` at all. Fixed: moved the acquisition to
+   immediately before first use (right before the `try:`), matching the pattern used everywhere
+   else in this diff (`veo.py`, `omni.py`, `music.py`, `_breakdown_prompt_to_scenes`).
+
+Two further confirmed defects were in `reel/veo.py` (TASK-3324) and `reel/omni.py`
+(TASK-3326) respectively — see the addenda on those tasks' own completed files for details;
+noted here because they were found and fixed in the same review pass.
+
+Regression evidence: `packages/ai-parrot-client-google/tests/unit/reel/` (excluding the known
+environment-only `test_reel_assembly.py` multiprocessing failures) — 175 passed (158 baseline + 17 new
+TASK-3331 lifecycle tests), 0 new failures. `packages/ai-parrot-server/tests/handlers -k reel` — 19
+passed, 1 skipped, unchanged. `black --check`/`ruff check` clean on all touched files (same 9
+pre-existing, untouched-line findings as before).

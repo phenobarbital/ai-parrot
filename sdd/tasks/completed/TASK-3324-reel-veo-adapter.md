@@ -227,3 +227,35 @@ original delivery missed for the "close" half.
 
 Seat: sonnet (fallback sequential, orchestrator-implemented) · Backend: native · Model: sonnet ·
 Attempts: 1 · Duration: n/a (fallback, not MCP/native-agent timed) · Tokens: n/a
+
+### Addendum 2 (2026-09-17, mid-feature adversarial code review during TASK-3331)
+
+Two more confirmed defects in this task's `veo.py`, fixed in the same follow-up commit as the
+TASK-3331 review addendum:
+
+1. **`_read_with_retries` retried an auth/safety/validation failure exactly like a transient
+   `ConnectionError`.** Classification only ran on the FINAL attempt (purely to label the raised
+   error), so an auth (401/403) failure surfacing mid-poll/mid-download during Veo's LRO poll or
+   file download got up to `max_read_retries` retries before failing — contradicting this
+   module's own docstring ("bounded retries to transient poll/download reads only") and AC07
+   ("Auth and validation errors never enter a retry path"). Fixed: every caught exception is now
+   classified immediately; if its code is in the new `_NEVER_RETRY_CODES` set
+   (`AUTH_OR_ACCESS`/`SAFETY_BLOCKED`/`INVALID_CONFIGURATION`) it raises on the spot with no
+   retry. Deliberately checks specific codes rather than the classified error's generic
+   `.retryable` flag, because `classify_provider_error`'s fallback conservatively marks EVERY
+   unclassified exception `retryable=False` — trusting that flag wholesale would have made a bare
+   `ConnectionError` (the exact case `test_download_failure_after_retries_exhausted_raises` and
+   `test_transient_poll_error_retried_then_succeeds` cover) stop retrying too, breaking both tests.
+   Verified this narrower fix preserves both tests' existing retry-count assertions unchanged.
+2. **The downloaded-clip write (`_write_clip`, `run_in_executor`) was unguarded.** A raw `OSError`
+   (disk full, permission denied) propagated unclassified past `_process_scene`'s
+   `except ReelError:` catch, bypassing `partial_failure_policy="skip"` entirely and failing the
+   whole job instead of just that scene. Fixed: the `run_in_executor` call is now wrapped in
+   `try/except Exception: raise classify_provider_error(exc, stage="veo_write", ...)` (with
+   `asyncio.CancelledError` re-raised unchanged first).
+
+Regression evidence: `packages/ai-parrot-client-google/tests/unit/reel/test_reel_veo.py` — all
+existing tests still pass, including the two retry tests named above. Full
+`packages/ai-parrot-client-google/tests/unit/reel/` sweep (excluding the known environment-only
+`test_reel_assembly.py` multiprocessing failures): 175 passed, 0 new failures. `black --check`/
+`ruff check` clean on `veo.py`.

@@ -217,3 +217,16 @@ Completed 2026-09-17 by sdd-worker orchestrator (fallback sequential loop, sonne
 
 Seat: sonnet (fallback sequential, orchestrator-implemented) · Backend: native · Model: sonnet ·
 Attempts: 1 · Duration: n/a (fallback, not MCP/native-agent timed) · Tokens: n/a
+
+### Addendum (2026-09-17, mid-feature adversarial code review during TASK-3331)
+
+One confirmed defect fixed in the same follow-up commit as the TASK-3331/TASK-3324 review addenda:
+**`_decode_inline`'s local write (`_write_bytes`, `run_in_executor`) was unguarded** — a raw
+`OSError` (disk full, permission denied) propagated unclassified past `_process_scene`'s
+`except ReelError:` catch, bypassing `partial_failure_policy="skip"` entirely (same class of bug
+as TASK-3324's veo.py `_write_clip`, found in the same review pass). Fixed: wrapped in
+`try/except Exception: raise classify_provider_error(exc, stage="omni_write")` (with
+`asyncio.CancelledError` re-raised unchanged first). Regression evidence: full
+`packages/ai-parrot-client-google/tests/unit/reel/` sweep (excluding the known environment-only
+`test_reel_assembly.py` multiprocessing failures) — 175 passed, 0 new failures. `black --check`/
+`ruff check` clean on `omni.py`.
