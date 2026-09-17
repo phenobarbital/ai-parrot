@@ -12,7 +12,52 @@ _HEADING_RE = re.compile(r"^## Validation Commands\s*$", re.M)
 _NEXT_HEADING_RE = re.compile(r"^## ", re.M)
 _BULLET_CMD_RE = re.compile(r"^\s*[-*]\s+`([^`]+)`")
 _PYTEST_MODULE_FORMS = (("python", "-m", "pytest"), ("python3", "-m", "pytest"))
-_OPTIONS_WITH_VALUE = frozenset({"-m", "-k", "-c", "-p", "-o", "-n", "--rootdir", "--confcutdir", "--tb", "--ignore"})
+_OPTIONS_WITH_VALUE = frozenset(
+    {"-m", "-k", "-c", "-p", "-o", "-n", "--rootdir", "--confcutdir", "--tb", "--ignore", "--maxfail"}
+)
+_ENV_ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+
+
+def env_prefix_of(argv: Sequence[str]) -> list[str]:
+    """The leading POSIX simple-command `NAME=value` assignment tokens of `argv`, in order ([] if none)."""
+    prefix: list[str] = []
+    for token in argv:
+        if not _ENV_ASSIGNMENT_RE.match(token):
+            break
+        prefix.append(token)
+    return prefix
+
+
+def strip_env_prefix(argv: Sequence[str]) -> list[str]:
+    """Drop leading POSIX simple-command `NAME=value` assignment tokens (e.g. `PYTHONPATH=x pytest ...`).
+
+    `.claude/rules/worktree-management.md` documents exactly this idiom for running pytest inside a
+    worktree (`PYTHONPATH=packages/ai-parrot/src pytest ...`) — without this strip, the guard's
+    `argv[0]`/`seg[0]` check never recognizes the command as pytest and silently allows it unscoped.
+    """
+    argv = list(argv)
+    return argv[len(env_prefix_of(argv)) :]
+
+
+def _strip_uv_run_prefix(argv: list[str]) -> list[str]:
+    """Drop a leading `uv run [-FLAG ...]` launcher prefix (e.g. `uv run --no-sync pytest ...`).
+
+    `.claude/rules/worktree-management.md` documents `uv run --no-sync` as the sanctioned way to
+    invoke tools in a worktree without mutating the shared environment — pytest run this way must
+    be recognized just like a bare `pytest` invocation.
+    """
+    if len(argv) < 2 or PurePosixPath(argv[0]).name != "uv" or argv[1] != "run":
+        return argv
+    rest = argv[2:]
+    i = 0
+    while i < len(rest) and rest[i].startswith("-"):
+        i += 1
+    return rest[i:]
+
+
+def normalize_pytest_argv(argv: Sequence[str]) -> list[str]:
+    """`argv` past any leading env-assignment and/or `uv run [flags]` launcher prefix."""
+    return _strip_uv_run_prefix(strip_env_prefix(argv))
 
 
 def parse_validation_commands(task_md: str) -> list[list[str]]:
@@ -37,7 +82,7 @@ def parse_validation_commands(task_md: str) -> list[list[str]]:
 
 def _pytest_operands(argv: Sequence[str]) -> list[str] | None:
     """Positional operands of a pytest argv, or None when argv is not a pytest invocation."""
-    argv = list(argv)
+    argv = normalize_pytest_argv(argv)
     if not argv:
         return None
     head = PurePosixPath(argv[0]).name

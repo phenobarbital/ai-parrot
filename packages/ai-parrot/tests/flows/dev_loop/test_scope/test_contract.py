@@ -31,6 +31,15 @@ def test_parse_validation_commands():
         (["pytest", "packages/ai-parrot/tests/flows"], False),
         (["pytest", "tests/a.py::test_b"], False),
         (["ruff", "check", "."], False),
+        # Hardening regressions (FEAT-563 review): documented worktree idioms and a
+        # space-separated `--maxfail` value used to defeat detection entirely.
+        (["PYTHONPATH=packages/ai-parrot/src", "pytest", "tests"], True),
+        (["PYTHONPATH=packages/ai-parrot/src", "pytest", "tests/a.py::test_b"], False),
+        (["uv", "run", "pytest", "tests"], True),
+        (["uv", "run", "--no-sync", "pytest", "tests"], True),
+        (["uv", "run", "--no-sync", "pytest", "tests/a.py::test_b"], False),
+        (["pytest", "tests", "--maxfail", "1"], True),
+        (["pytest", "--maxfail=1", "tests"], True),
     ],
 )
 def test_is_broad_pytest_matrix(argv, broad):

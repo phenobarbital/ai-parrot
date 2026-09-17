@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Sequence
 
 from .context import read_attempt_context
-from .contract import is_broad_pytest, parse_validation_commands
+from .contract import env_prefix_of, is_broad_pytest, normalize_pytest_argv, parse_validation_commands
 from .datatypes import ScopePlan
 from .select import changed_files, plan_tests
 
@@ -29,7 +29,10 @@ class GuardOutcome:
 
 
 def _is_pytest_argv(argv: Sequence[str]) -> bool:
-    """True for pytest / python -m pytest / python3 -m pytest (basename match on argv[0])."""
+    """True for pytest / python -m pytest / python3 -m pytest, past a leading `NAME=value` env
+    prefix and/or a `uv run [flags]` launcher prefix (both documented idioms in
+    `.claude/rules/worktree-management.md` for running pytest inside a worktree)."""
+    argv = normalize_pytest_argv(argv)
     if not argv:
         return False
     head = Path(argv[0]).name
@@ -66,6 +69,12 @@ def guard_argv(argv: Sequence[str], *, worktree: Path) -> GuardOutcome:
             return GuardOutcome(action="allow")
         if not plan.invocations:
             return GuardOutcome(action="block", message=BLOCK_MESSAGE)
+        # NOTE: unlike `guard_bash` below, `argvs` here are executed as literal subprocess argv
+        # lists, never through a shell — a `NAME=value` token has no special meaning there (it
+        # would be exec'd as a program name and fail), so the original command's env-assignment
+        # prefix is intentionally NOT re-applied. In practice this path's caller (the MCP seat)
+        # already rejects a `NAME=value` argv[0] via its own command allowlist before the guard
+        # ever runs, so `argv` reaching here with such a prefix should not occur.
         argvs = tuple(inv.argv for inv in plan.invocations)
         rendered = " ; ".join(shlex.join(a) for a in argvs)
         return GuardOutcome(
@@ -75,9 +84,12 @@ def guard_argv(argv: Sequence[str], *, worktree: Path) -> GuardOutcome:
         return GuardOutcome(action="allow")
 
 
-def _subshell(argvs: Sequence[tuple[str, ...]]) -> str:
-    """`( a; r=$?; b; r=$((r|$?)); ...; exit $r )` — every invocation runs, exit is the OR of all codes."""
-    pieces = [shlex.join(argv) for argv in argvs]
+def _subshell(argvs: Sequence[tuple[str, ...]], *, env_prefix: Sequence[str] = ()) -> str:
+    """`( [ENV] a; r=$?; [ENV] b; r=$((r|$?)); ...; exit $r )` — every invocation runs, exit is the OR
+    of all codes. `env_prefix` (e.g. `PYTHONPATH=x`) is re-applied to each invocation — this runs
+    through a real shell, so a `NAME=value` simple-command prefix is valid before every piece."""
+    prefix = f"{shlex.join(env_prefix)} " if env_prefix else ""
+    pieces = [f"{prefix}{shlex.join(argv)}" for argv in argvs]
     body = f"{pieces[0]}; r=$?"
     for piece in pieces[1:]:
         body += f"; {piece}; r=$((r|$?))"
@@ -111,11 +123,10 @@ def guard_bash(command: str, *, worktree: Path) -> tuple[GuardOutcome, str | Non
             else:
                 segments[-1].append(token)
 
-        broad_index = next(
-            (i for i, seg in enumerate(segments) if seg and _is_pytest_argv(seg) and is_broad_pytest(seg)),
-            None,
-        )
-        if broad_index is None:
+        broad_indices = [
+            i for i, seg in enumerate(segments) if seg and _is_pytest_argv(seg) and is_broad_pytest(seg)
+        ]
+        if not broad_indices:
             return GuardOutcome(action="allow"), None
 
         plan = _task_plan(worktree)
@@ -125,12 +136,15 @@ def guard_bash(command: str, *, worktree: Path) -> tuple[GuardOutcome, str | Non
             return GuardOutcome(action="block", message=BLOCK_MESSAGE), None
 
         argvs = tuple(inv.argv for inv in plan.invocations)
+        broad_set = set(broad_indices)
         pieces_out: list[str] = []
         for i, seg in enumerate(segments):
-            pieces_out.append(_subshell(argvs) if i == broad_index else shlex.join(seg))
+            # Every broad segment is rewritten (a compound `pytest a ; pytest b` with two broad
+            # halves must not leave the second one unscoped), each keeping its own env prefix.
+            pieces_out.append(_subshell(argvs, env_prefix=env_prefix_of(seg)) if i in broad_set else shlex.join(seg))
             if i < len(separators):
                 pieces_out.append(separators[i])
         rewritten = " ".join(pieces_out)
-        return GuardOutcome(action="rewrite", argvs=argvs, message="rewritten pytest segment (tier=task)"), rewritten
+        return GuardOutcome(action="rewrite", argvs=argvs, message="rewritten pytest segment(s) (tier=task)"), rewritten
     except Exception:  # noqa: BLE001 — a broken guard must never break a seat
         return GuardOutcome(action="allow"), None
