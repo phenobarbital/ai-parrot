@@ -391,7 +391,7 @@
       "feature_id": "FEAT-564",
       "feature": "video-reel-omni-veo-reliability",
       "spec": "sdd/specs/video-reel-omni-veo-reliability.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -401,7 +401,7 @@
       "parallelism_notes": "May run with other ready tasks whose target files are disjoint. Dependency completion is mandatory; do not append exports to another task's __init__.py.",
       "assigned_to": null,
       "assigned_at": null,
-      "started_at": null,
+      "started_at": "2026-09-17T20:40:34+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3334-reel-regression-integration.md",
       "acceptance_criteria": [
