@@ -24,7 +24,7 @@
       "assigned_to": null,
       "started_at": null,
       "completed_at": "2026-09-17T18:16:00+00:00",
-      "file": "sdd/tasks/active/TASK-3296-ci-result-checker.md",
+      "file": "sdd/tasks/completed/TASK-3296-ci-result-checker.md",
       "retarget_status": "OBE \u2014 superseded by dev PR #1408 (install-everything approach)",
       "resolution": "OBE \u2014 superseded by dev PR #1408 (install-everything approach)"
     },
@@ -46,7 +46,7 @@
       "assigned_to": null,
       "started_at": null,
       "completed_at": "2026-09-17T18:16:00+00:00",
-      "file": "sdd/tasks/active/TASK-3297-optional-integrations-job-and-guards.md",
+      "file": "sdd/tasks/completed/TASK-3297-optional-integrations-job-and-guards.md",
       "retarget_status": "OBE \u2014 superseded by dev PR #1408; its guards would conflict with dev",
       "resolution": "OBE \u2014 superseded by dev PR #1408 (its guards would conflict with dev)"
     },
@@ -66,7 +66,7 @@
       "assigned_to": null,
       "started_at": null,
       "completed_at": "2026-09-17T18:16:00+00:00",
-      "file": "sdd/tasks/active/TASK-3298-infographic-basecss-rewrite.md",
+      "file": "sdd/tasks/completed/TASK-3298-infographic-basecss-rewrite.md",
       "retarget_status": "superseded \u2014 M6 fixed independently on dev",
       "resolution": "superseded \u2014 M6 BASE_CSS fixed independently on dev"
     },
@@ -86,7 +86,7 @@
       "assigned_to": null,
       "started_at": null,
       "completed_at": "2026-09-17T18:16:00+00:00",
-      "file": "sdd/tasks/active/TASK-3299-diagnose-database-agent-netsuite.md",
+      "file": "sdd/tasks/completed/TASK-3299-diagnose-database-agent-netsuite.md",
       "retarget_status": "remaining \u2014 M7 netsuite token_store; needs mcp/working env (handed off)",
       "resolution": "spun off \u2014 M7 netsuite token_store -> ledger issue:f010a27ccadd (out of retargeted scope; not a test-core failure)"
     },
@@ -108,7 +108,7 @@
       "assigned_to": null,
       "started_at": null,
       "completed_at": "2026-09-17T18:16:00+00:00",
-      "file": "sdd/tasks/active/TASK-3300-fix-stale-mock-patch-targets.md",
+      "file": "sdd/tasks/completed/TASK-3300-fix-stale-mock-patch-targets.md",
       "retarget_status": "superseded \u2014 M8 fixed independently on dev",
       "resolution": "superseded \u2014 M8 handler patch targets fixed independently on dev"
     },
