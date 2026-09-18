@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-574 — New Planogram Compliance Pipeline
 **Spec**: `sdd/specs/new-planogram-pipeline.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: none
@@ -514,7 +514,11 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (FEAT-574 orchestrator)
+**Date**: 2026-09-19
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+Implemented in fallback sequential mode (parrot-sdd-coder server unresponsive).
+13 characterization tests pin today's per-shelf math against unmodified product_on_shelves.py: basic_score/MISSING, 0.8/0.1/0.2 weight-sum clamp (0.7 half-match), basic-score-only threshold (0.9 combined still NON_COMPLIANT at 0.8, COMPLIANT at 0.7), explicit weights (0.75), zone-only and tags-only shelves (0.3 NON_COMPLIANT), no MISPLACED, illumination penalty before clamp (0.55; 1.0 penalty -> 0.0; ON/None -> no penalty), header text score (0.5, mandatory miss), no-promos header (text score stays 1.0, score 0.36), brand gate (status only, shared result object), matching rules (printer<->product, empty base wildcard, greedy 1:1, skipped types), unexpected products (allow_extra_products, expected-elsewhere protection, 'ink' not major).
+Deviations: none — every expectation derived in the task matched the observed values.
+
+Seat: orchestrator (fallback) · Backend: native · Model: claude-opus-5 · Attempts: 1
