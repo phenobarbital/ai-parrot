@@ -245,10 +245,20 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (native `sonnet` seat, attempt_uid `20773687cf414c7593d401481d048def`)
+**Date**: 2026-09-18
+**Notes**: Hard-cut removal of `--toolkits`/`--all-toolkits` from
+`parrot google install` (and its `gemini` alias). `google/cli.py`: deleted
+both options, their params, the `available_templates` import, and the
+set-building. `google/installer.py`: removed the `toolkits` parameter and
+its seeding block from `install_google_integration`; added the empty-config
+hint. `reconcile_toolkit_entries` (TASK-3373) untouched. Proactively grepped
+for all `install_google_integration(...toolkits=...)` callers before editing
+(per orchestrator note referencing TASK-3378's fidelity_violation) — found
+none beyond `cli.py` itself, so no collateral file-scope expansion was
+needed this time. Validation:
+`pytest test_google_installer_toolkit_entries.py test_google_integration.py
+test_google_bookstore.py -q` → 24 passed; `ruff check` clean. Review
+recorded: `coder-review:c0bd7507787c32c761dba8aa`.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.

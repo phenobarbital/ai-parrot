@@ -72,7 +72,10 @@ class TestInstaller:
     def test_fresh_install_writes_all_artifacts(self, repo):
         actions = install_claude_integration(repo)
         # FEAT-556: approve_mcp defaults to True, adding one MCP-approval action.
-        assert len(actions) == 9
+        # FEAT-570 TASK-3377: an empty/absent toolkit config appends a hint
+        # naming `parrot toolkits install` as the replacement seeding surface.
+        assert len(actions) == 10
+        assert any("parrot toolkits install" in action for action in actions)
 
         assert (repo / ".parrot" / "wiki.json").exists()
         claude_md = (repo / "CLAUDE.md").read_text(encoding="utf-8")

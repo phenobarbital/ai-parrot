@@ -448,10 +448,38 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (native `sonnet` seat, attempt_uid `eb8d3f54496c432c8cb798efeac087e5`)
+**Date**: 2026-09-18
+**Notes**: Created `packages/ai-parrot/src/parrot/mcp/toolkit_install.py`
+(`ToolkitState`, `ToolkitRow`, `ActionReport`, `dist_available`, `_resolve_hosts`,
+`_class_path_for_template`, `inventory`, `_reconcile_all`, `install_toolkits`,
+`uninstall_toolkits`, `set_toolkits_enabled`) and
+`packages/ai-parrot/tests/mcp/test_toolkit_install.py`. Mutation order is
+preflight → seed/toggle/remove → reconcile → approvals, matching the
+blueprint. `uninstall_toolkits`/`set_toolkits_enabled(enabled=False)` snapshot
+each host's managed entry names via `adapter.inspect()` BEFORE mutating
+(design research S3), so approval cleanup targets exactly the removed
+`parrot-<name>` keys.
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Blocked, then unblocked, mid-attempt**: the native coder implemented this
+task correctly on its first pass, but its own 9th test —
+`test_uninstall_drops_only_its_own_approvals`, mandated by this task's own
+blueprint to verify AC5/S3 — failed due to a confirmed, out-of-scope defect
+in already-merged TASK-3374 code (`hosts.py::ClaudeAdapter.sync_approvals`
+delegated toolkit-only removal to `_uninstall_mcp_approval`, which always
+ALSO strips `"wikitoolkit"` — correct for the FULL `parrot claude uninstall`
+path it was written for, wrong here). The coder correctly stopped without
+committing rather than deliver code that silently violates AC5, and reported
+the root cause with a reproduction. The orchestrator verified the report
+against the actual code, fixed TASK-3374's `hosts.py` (see
+`fix(expose-local-mcp-tools): TASK-3374 review fixes`, commit `27e541609`,
+which adds a toolkit-only `uninstall_toolkit_approvals` sibling to
+`claude_code/installer.py` that never touches `"wikitoolkit"`), then
+committed the coder's already-correct `toolkit_install.py` +
+`test_toolkit_install.py` verbatim after re-verifying: all 9 tests pass
+(including the previously-failing one), plus `test_hosts.py` (6 passed),
+`ruff check` clean, `black` formatted. Feedback on the TASK-3374 defect
+recorded: `coder-feedback:8321f2734cd04e07d580eb71`. Review recorded:
+`coder-review:3a856f218778852b62bf6682`.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none in this task's own two files.

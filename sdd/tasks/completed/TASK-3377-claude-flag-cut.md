@@ -245,10 +245,25 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (native `sonnet` seat, attempt_uid `bd3bb29198934bfa941ce45faf0b04b9`)
+**Date**: 2026-09-18
+**Notes**: Hard-cut removal of `--toolkits`/`--all-toolkits` from
+`parrot claude install`. `claude_code/cli.py`: deleted both options, their
+callback params, the `names=` set-building, the `available_templates`
+import, and the `toolkits=` kwarg passed to `install_claude_integration`.
+`claude_code/installer.py`: removed the `toolkits` parameter and its seeding
+block from `install_claude_integration`; added the empty-config
+discoverability hint pointing to `parrot toolkits install`.
+`reconcile_toolkit_entries` (TASK-3371) untouched; reconciliation still runs
+unconditionally. Test file rewritten per blueprint: toolkit seeding coverage
+now seeds `.parrot/mcp-toolkits.yaml` directly instead of via the removed
+`toolkits=` kwarg; `TestInstallCLIToolkitOptions` asserts the AC9 hard cut
+(`--toolkits`/`--all-toolkits` rejected with "no such option", exit != 0).
+Validation: `pytest test_installer_mcp.py -q` → 22 passed, 2 failed — the
+same pre-existing, environment-dependent `wikitoolkit`-bin-path-resolution
+failures already noted in TASK-3374's review (unrelated `assets.py`, not
+touched by this task). `ruff check` clean;
+`grep -rn seed_toolkit_sections packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/`
+returns nothing. Review recorded: `coder-review:71879609e4257c3f5b255598`.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.

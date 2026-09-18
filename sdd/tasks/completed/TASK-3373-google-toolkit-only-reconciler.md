@@ -320,10 +320,32 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (native `sonnet` seat, attempt_uid `6d6b4f016a4e40a0b32fcad5822a8c38`)
+**Date**: 2026-09-18
+**Notes**: Added `toolkit_config_paths(root, mcp_path=None)` (user-global primary +
+repo plugin secondary) and `reconcile_toolkit_entries(root, mcp_path=None)` in
+`google/installer.py`, lifting the toolkit-entry half of `_install_mcp` (:162-191)
+into a standalone function applied to BOTH config files, never touching the
+`"wikitoolkit"` key. `_install_mcp` now delegates to it and extends its own
+`actions` list; the plugin file's `"wikitoolkit"` key is merged separately
+(load-merge-save) since reconcile no longer owns it. 4 new tests added to
+`tests/knowledge/wiki/test_google_installer_toolkit_entries.py` (all pass
+`mcp_path=` explicitly, never touch real `~/.gemini`); all 6 pre-existing tests
+kept unchanged. Validation: `pytest tests/knowledge/wiki/test_google_installer_toolkit_entries.py
+tests/knowledge/wiki/test_google_integration.py tests/knowledge/wiki/test_google_bookstore.py -q`
+→ 10 passed (installer suite) + integration/bookstore suites green; `ruff check`
+clean. Merge-tier `select_tests --tier merge` run: both batches touching existing
+code passed (61 passed/1 deselected; 225 passed); the run's overall exit code was
+1 solely because it also selected `packages/ai-parrot/tests/cli/test_toolkits_cli.py`,
+which belongs to not-yet-implemented TASK-3376 and does not exist yet — expected
+given mid-feature merge-tier selection across the full task-file list, not a
+regression from this task. Review recorded: `coder-review:9aceef76da0a50e470ddbcdf`.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: One deliberate, spec-directed behavior nuance: the
+plugin file's `mcpServers` map was previously fully overwritten on every install
+(`{"wikitoolkit": wiki_entry, **desired_toolkits}`), silently dropping any
+third-party key. It is now load-merged like the primary file, so a foreign
+`parrot-<name>` key in the plugin file is preserved-with-warning instead of
+silently dropped — this is exactly the AC4/AC5 "in both files" behavior the task
+asked for, but is a genuine behavior change for that one file. No existing test
+asserted the old drop-on-overwrite behavior; new tests cover the new behavior.

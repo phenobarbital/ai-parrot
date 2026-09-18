@@ -323,10 +323,28 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-coder (native, sonnet)
+**Date**: 2026-09-18
+**Notes**: Added `toolkit_server_names(root)` (extracted from `_managed_server_names`
+minus the `["wikitoolkit"]` seed) and `reconcile_toolkit_entries(root)` (owns the
+full read-modify-write cycle for `.mcp.json`'s `parrot-<name>` keys only —
+upsert, foreign-entry warn-and-skip, cleanup — never touches `"wikitoolkit"`).
+`_install_mcp_json` now delegates to it, keeping only the wikitoolkit upsert.
+Added `TestToolkitOnlyReconciler` (wikitoolkit-preserved, foreign-entry
+preserved+warned, `toolkit_server_names` excludes wikitoolkit) satisfying AC5.
+Validation: root `tests/` tree (206 tests incl. `test_installer_toolkit_entries.py`,
+`test_installer_mcp_approval.py`, `test_google_installer_toolkit_entries.py`,
+`test_codex_installer_toolkit_entries.py`) all green. The scoped
+`packages/ai-parrot/tests/knowledge/wiki/test_installer_mcp.py` (26 passed, 2
+pre-existing failures unrelated to this diff — `assets.resolve_wikitoolkit_bin`
+resolving to this sandbox's venv-installed binary instead of the bare
+`"wikitoolkit"` string the tests expect, reproducible on unmodified code) was
+verified by the coder using an in-process `.so` preload workaround for the
+known local-venv `parrot.utils.types` collection defect (read-only, no files
+written); this shell independently confirmed the whole
+`packages/ai-parrot/tests/` tree is uncollectable here without that
+workaround, consistent with the spec's own "Local venv caveat" and prior
+session memory. `ruff check` clean on both touched files.
+Seat: sonnet · Backend: native · Model: sonnet · Attempts: 1 · Duration: n/a · Tokens: n/a
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

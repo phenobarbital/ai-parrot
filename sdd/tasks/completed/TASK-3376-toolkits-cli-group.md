@@ -447,10 +447,32 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (native `sonnet` seat, attempt_uid `08eb5eae815542548e03a919078a0cd8`)
+**Date**: 2026-09-18
+**Notes**: Created `packages/ai-parrot/src/parrot/cli/toolkits.py` — the
+`parrot toolkits` Click group with `list`/`status`/`install`/`uninstall`/
+`enable`/`disable` subcommands, a blocking `questionary.checkbox` picker with
+a no-TTY exit-2 fallback, and a Google user-global blast-radius warning — and
+registered it in `cli/__init__.py`'s `_lazy_commands`. Applied the TASK-3374
+feedback correctly: this task never touches `hosts.py` directly, only calls
+the already-corrected `toolkit_install` orchestration layer. Validation:
+`pytest packages/ai-parrot/tests/cli/test_toolkits_cli.py -q` → 6 passed;
+`ruff check` clean. Wider batch (`packages/ai-parrot/tests/{cli,mcp}`): 5
+unrelated pre-existing failures (`TypeError: object MagicMock can't be used
+in 'await' expression` in `test_integration.py::TestStandaloneAgentLoader`
+and `test_wizard.py`) — neither failing file references `toolkits` or
+`_lazy_commands`, both last touched by commits predating this feature
+(`2e1707801`/`6a0ac3291`), and this task's diff to `cli/__init__.py` is a
+single new dict entry. Review recorded: `coder-review:30eb60ed9110086abc033052`.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Three implementation-detail interpretation calls,
+all flagged by the delivering agent and consistent with the blueprint's
+intent: (1) the questionary Choice title appends "(missing distribution)"
+when `dist_available` is False — blueprint said "mark rows" without exact
+rendering; (2) `_render`'s exit-1 condition uses "nothing at all succeeded"
+as the closest verifiable proxy for "failed_hosts covers every requested
+host" given the fixed `_render(report) -> None` signature has no access to
+the requested-hosts set; (3) `status` defaults to `list(HostKind)` (all
+three) rather than the shared `_resolve_hosts`'s detected-only default,
+because the task's own Test Specification requires reporting Codex/Google as
+absent on a Claude-only repo — impossible if defaulting to detected-only.

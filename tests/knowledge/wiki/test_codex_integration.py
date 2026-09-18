@@ -27,7 +27,10 @@ def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 def test_install_writes_mcp_skill_instructions_and_permissions(repo: Path) -> None:
     actions = install_codex_integration(repo)
 
-    assert len(actions) == 6
+    # FEAT-570 TASK-3378: an empty/absent toolkit config appends a hint
+    # naming `parrot toolkits install` as the replacement seeding surface.
+    assert len(actions) == 7
+    assert any("parrot toolkits install" in action for action in actions)
     assert assets.AGENTS_BEGIN in (repo / "AGENTS.md").read_text(encoding="utf-8")
     assert (repo / assets.SKILL_PATH).read_text(encoding="utf-8") == assets.SKILL
 

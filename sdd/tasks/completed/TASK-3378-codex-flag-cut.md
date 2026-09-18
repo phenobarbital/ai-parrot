@@ -47,6 +47,8 @@ is absent or declares nothing (spec §8, resolved).
 | `packages/ai-parrot/src/parrot/knowledge/wiki/codex/cli.py` | MODIFY | Delete both options and their parameters |
 | `packages/ai-parrot/src/parrot/knowledge/wiki/codex/installer.py` | MODIFY | Delete the `toolkits` parameter + seeding; add the hint |
 | `tests/knowledge/wiki/test_codex_toolkit_reconcile.py` | MODIFY | Drop flag coverage; assert the flags are rejected |
+| `tests/knowledge/wiki/test_codex_installer_toolkit_entries.py` | MODIFY | Correction (post-implementation): the only pre-existing caller of `install_codex_integration(toolkits=...)` — a TypeError after this task's own mandated cut. Fix mirrors TASK-3377's sibling pattern: seed the toolkit YAML directly instead of via the removed kwarg. |
+| `tests/knowledge/wiki/test_codex_integration.py` | MODIFY | Correction (post-implementation): one assertion hardcoded `len(actions) == 6`; this task's own mandated hint adds a 7th action when the toolkit config is empty. Updated the expected count. |
 
 ---
 
@@ -245,10 +247,26 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (native `sonnet` seat, attempt_uid `95b6c96d5e8346a18cb29ab7310bc8ff`)
+**Date**: 2026-09-18
+**Notes**: Hard-cut removal of `--toolkits`/`--all-toolkits` from
+`parrot codex install`, mirroring TASK-3377's pattern. `codex/cli.py`:
+deleted both options, their callback params, the `available_templates`
+import, and the `names=`/`toolkits=` building. `codex/installer.py`: removed
+the `toolkits` parameter and its seeding block from
+`install_codex_integration`; added the empty-config discoverability hint.
+`reconcile_toolkit_tables` (TASK-3372) untouched. The native attempt also
+fixed 2 pre-existing test callers this task's own kwarg removal broke
+(mechanical consequence, not a design choice) — the fidelity gate correctly
+flagged them as outside the task's original 3-file list, so the orchestrator
+verified both hunks, corrected the Files table above to authorize them, and
+applied the verified diff. Validation:
+`pytest test_codex_toolkit_reconcile.py test_codex_installer_toolkit_entries.py
+test_codex_integration.py test_codex_bookstore.py -q` → 37 passed; `ruff
+check` clean; `grep -rn seed_toolkit_sections .../codex/` empty. Review
+recorded: `coder-review:497344817acfd8e959f65a22`.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: File scope expanded post-hoc by 2 test files (see
+Files table note above) — a task-planning gap (the removed kwarg's only
+existing callers were not enumerated at task-write time), not a functional
+deviation. No production code deviates from the blueprint.

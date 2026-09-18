@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-17T23:28:17.184655+00:00",
-  "completed_at": null,
+  "completed_at": "2026-09-18T11:16:16+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -16,7 +16,7 @@
       "feature_id": "FEAT-570",
       "feature": "expose-local-mcp-tools",
       "spec": "sdd/specs/expose-local-mcp-tools.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -24,8 +24,9 @@
       "parallelism_notes": "No dependencies — owns toolkit_config.py and the builtin-assuming tests in tests/mcp/ exclusively.",
       "assigned_to": null,
       "started_at": "2026-09-17T23:36:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3368-delete-builtin-toolkits.md"
+      "completed_at": "2026-09-17T23:50:08+00:00",
+      "file": "sdd/tasks/completed/TASK-3368-delete-builtin-toolkits.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3369",
@@ -34,7 +35,7 @@
       "feature_id": "FEAT-570",
       "feature": "expose-local-mcp-tools",
       "spec": "sdd/specs/expose-local-mcp-tools.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -44,8 +45,9 @@
       "parallelism_notes": "Modifies the same file as TASK-3368 (parrot/mcp/toolkit_seed.py); serialized after it.",
       "assigned_to": null,
       "started_at": "2026-09-17T23:36:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3369-seed-preflight-and-mutation-helpers.md"
+      "completed_at": "2026-09-17T23:59:50+00:00",
+      "file": "sdd/tasks/completed/TASK-3369-seed-preflight-and-mutation-helpers.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3370",
@@ -54,7 +56,7 @@
       "feature_id": "FEAT-570",
       "feature": "expose-local-mcp-tools",
       "spec": "sdd/specs/expose-local-mcp-tools.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -64,8 +66,9 @@
       "parallelism_notes": "Modifies parrot/mcp/toolkit_seed.py (header parser) — same file as TASK-3369; serialized after it.",
       "assigned_to": null,
       "started_at": "2026-09-17T23:36:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3370-toolkit-templates.md"
+      "completed_at": "2026-09-18T00:14:12+00:00",
+      "file": "sdd/tasks/completed/TASK-3370-toolkit-templates.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3371",
@@ -74,7 +77,7 @@
       "feature_id": "FEAT-570",
       "feature": "expose-local-mcp-tools",
       "spec": "sdd/specs/expose-local-mcp-tools.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -82,8 +85,9 @@
       "parallelism_notes": "No dependencies — owns knowledge/wiki/claude_code/installer.py exclusively at this stage.",
       "assigned_to": null,
       "started_at": "2026-09-17T23:36:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3371-claude-toolkit-only-reconciler.md"
+      "completed_at": "2026-09-18T00:27:38+00:00",
+      "file": "sdd/tasks/completed/TASK-3371-claude-toolkit-only-reconciler.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3372",
@@ -92,7 +96,7 @@
       "feature_id": "FEAT-570",
       "feature": "expose-local-mcp-tools",
       "spec": "sdd/specs/expose-local-mcp-tools.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -100,8 +104,9 @@
       "parallelism_notes": "No dependencies — owns knowledge/wiki/codex/installer.py exclusively at this stage.",
       "assigned_to": null,
       "started_at": "2026-09-17T23:36:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3372-codex-toolkit-only-reconciler.md"
+      "completed_at": "2026-09-18T00:37:56+00:00",
+      "file": "sdd/tasks/completed/TASK-3372-codex-toolkit-only-reconciler.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3373",
@@ -110,7 +115,7 @@
       "feature_id": "FEAT-570",
       "feature": "expose-local-mcp-tools",
       "spec": "sdd/specs/expose-local-mcp-tools.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -118,8 +123,9 @@
       "parallelism_notes": "No dependencies — owns knowledge/wiki/google/installer.py exclusively at this stage.",
       "assigned_to": null,
       "started_at": "2026-09-17T23:36:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3373-google-toolkit-only-reconciler.md"
+      "completed_at": "2026-09-18T05:36:12+00:00",
+      "file": "sdd/tasks/completed/TASK-3373-google-toolkit-only-reconciler.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3374",
@@ -128,7 +134,7 @@
       "feature_id": "FEAT-570",
       "feature": "expose-local-mcp-tools",
       "spec": "sdd/specs/expose-local-mcp-tools.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -140,8 +146,9 @@
       "parallelism_notes": "Wraps reconcile_toolkit_entries from TASK-3371 (claude_code/installer.py), reconcile_toolkit_tables from TASK-3372 (codex/installer.py) and reconcile_toolkit_entries + toolkit_config_paths from TASK-3373 (google/installer.py).",
       "assigned_to": null,
       "started_at": "2026-09-17T23:36:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3374-host-adapter-contract.md"
+      "completed_at": "2026-09-18T05:54:13+00:00",
+      "file": "sdd/tasks/completed/TASK-3374-host-adapter-contract.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3375",
@@ -150,7 +157,7 @@
       "feature_id": "FEAT-570",
       "feature": "expose-local-mcp-tools",
       "spec": "sdd/specs/expose-local-mcp-tools.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -161,8 +168,9 @@
       "parallelism_notes": "Imports HostKind/detect_hosts/get_adapter from TASK-3374 (parrot/mcp/hosts.py) and ToolkitTemplate.requires_dist from TASK-3370 (toolkit_seed.py).",
       "assigned_to": null,
       "started_at": "2026-09-17T23:36:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3375-install-orchestration.md"
+      "completed_at": "2026-09-18T06:14:19+00:00",
+      "file": "sdd/tasks/completed/TASK-3375-install-orchestration.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3376",
@@ -171,7 +179,7 @@
       "feature_id": "FEAT-570",
       "feature": "expose-local-mcp-tools",
       "spec": "sdd/specs/expose-local-mcp-tools.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -181,8 +189,9 @@
       "parallelism_notes": "Imports inventory/install_toolkits/uninstall_toolkits/set_toolkits_enabled from TASK-3375 (parrot/mcp/toolkit_install.py).",
       "assigned_to": null,
       "started_at": "2026-09-17T23:36:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3376-toolkits-cli-group.md"
+      "completed_at": "2026-09-18T06:31:12+00:00",
+      "file": "sdd/tasks/completed/TASK-3376-toolkits-cli-group.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3377",
@@ -191,7 +200,7 @@
       "feature_id": "FEAT-570",
       "feature": "expose-local-mcp-tools",
       "spec": "sdd/specs/expose-local-mcp-tools.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -202,8 +211,9 @@
       "parallelism_notes": "Modifies claude_code/installer.py — same file as TASK-3371; and its empty-config hint names the command TASK-3376 creates.",
       "assigned_to": null,
       "started_at": "2026-09-17T23:36:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3377-claude-flag-cut.md"
+      "completed_at": "2026-09-18T06:42:57+00:00",
+      "file": "sdd/tasks/completed/TASK-3377-claude-flag-cut.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3378",
@@ -212,7 +222,7 @@
       "feature_id": "FEAT-570",
       "feature": "expose-local-mcp-tools",
       "spec": "sdd/specs/expose-local-mcp-tools.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -223,8 +233,9 @@
       "parallelism_notes": "Modifies codex/installer.py — same file as TASK-3372; and its empty-config hint names the command TASK-3376 creates.",
       "assigned_to": null,
       "started_at": "2026-09-17T23:36:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3378-codex-flag-cut.md"
+      "completed_at": "2026-09-18T06:55:04+00:00",
+      "file": "sdd/tasks/completed/TASK-3378-codex-flag-cut.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3379",
@@ -233,7 +244,7 @@
       "feature_id": "FEAT-570",
       "feature": "expose-local-mcp-tools",
       "spec": "sdd/specs/expose-local-mcp-tools.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -244,8 +255,9 @@
       "parallelism_notes": "Modifies google/installer.py — same file as TASK-3373; and its empty-config hint names the command TASK-3376 creates.",
       "assigned_to": null,
       "started_at": "2026-09-17T23:36:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3379-google-flag-cut.md"
+      "completed_at": "2026-09-18T07:00:37+00:00",
+      "file": "sdd/tasks/completed/TASK-3379-google-flag-cut.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3380",
@@ -254,7 +266,7 @@
       "feature_id": "FEAT-570",
       "feature": "expose-local-mcp-tools",
       "spec": "sdd/specs/expose-local-mcp-tools.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -264,8 +276,9 @@
       "parallelism_notes": "Its mcp-local error text and docs name the command TASK-3376 creates; also modifies tests/mcp/test_local_cli.py, reached from TASK-3368 via TASK-3369 -> 3370 -> 3375 -> 3376.",
       "assigned_to": null,
       "started_at": "2026-09-17T23:36:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3380-builtin-consumer-audit.md"
+      "completed_at": "2026-09-18T07:21:11+00:00",
+      "file": "sdd/tasks/completed/TASK-3380-builtin-consumer-audit.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3381",
@@ -274,7 +287,7 @@
       "feature_id": "FEAT-570",
       "feature": "expose-local-mcp-tools",
       "spec": "sdd/specs/expose-local-mcp-tools.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -287,8 +300,9 @@
       "parallelism_notes": "Drives the finished CLI across all three hosts, so every host flag cut must have landed first: TASK-3377 (claude_code/cli.py), TASK-3378 (codex/cli.py) and TASK-3379 (google/cli.py) each remove --toolkits, and this suite asserts those flags are rejected; TASK-3380 supplies the mcp-local error text it checks.",
       "assigned_to": null,
       "started_at": "2026-09-17T23:36:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3381-cross-host-test-matrix.md"
+      "completed_at": "2026-09-18T07:43:42+00:00",
+      "file": "sdd/tasks/completed/TASK-3381-cross-host-test-matrix.md",
+      "verification": "verified"
     }
   ]
 }

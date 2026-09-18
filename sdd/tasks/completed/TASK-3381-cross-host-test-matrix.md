@@ -51,7 +51,7 @@ the Completion Note and open a ledger issue.
 | File | Action | Description |
 |---|---|---|
 | `packages/ai-parrot/tests/mcp/test_toolkit_matrix.py` | CREATE | Cross-host lifecycle matrix |
-| `packages/ai-parrot/tests/mcp/conftest.py` | MODIFY | `repo_with_hosts` fixture |
+| `packages/ai-parrot/tests/mcp/conftest.py` | CREATE | `repo_with_hosts` fixture (file does not yet exist — corrected from MODIFY, verified via `ls packages/ai-parrot/tests/mcp/`) |
 
 ---
 
@@ -110,7 +110,7 @@ from parrot.mcp.toolkit_seed import available_templates        # verified: toolk
   "schema_version": 1,
   "targets": [
     {"path": "packages/ai-parrot/tests/mcp/test_toolkit_matrix.py", "action": "CREATE"},
-    {"path": "packages/ai-parrot/tests/mcp/conftest.py", "action": "MODIFY"}
+    {"path": "packages/ai-parrot/tests/mcp/conftest.py", "action": "CREATE"}
   ],
   "contract_symbols": [
     "sym:packages/ai-parrot/src/parrot/cli/__init__.py#cli",
@@ -161,7 +161,7 @@ from parrot.mcp.toolkit_seed import available_templates        # verified: toolk
 5. Write the spawn test — *why*: proves an installed toolkit actually serves, which
    is the user-visible point of the whole feature.
 
-### `packages/ai-parrot/tests/mcp/conftest.py` (MODIFY)
+### `packages/ai-parrot/tests/mcp/conftest.py` (CREATE)
 ```python
 # occurrences: verify with `grep -c 'def ' packages/ai-parrot/tests/mcp/conftest.py`
 # ADD:
@@ -334,10 +334,60 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (native `sonnet` seat, attempt_uid `bbaa61fe20904222bb083983b8da1dc9`, 3rd dispatch — see below)
+**Date**: 2026-09-18
+**Notes**: Created `packages/ai-parrot/tests/mcp/conftest.py` (`repo_with_hosts`
+fixture) and `packages/ai-parrot/tests/mcp/test_toolkit_matrix.py` (9 tests):
+host detection, full install→enable→disable→uninstall lifecycle per host
+(Claude/Codex/Google, Google checked on both its user-global primary and
+repo-scoped plugin config), install-without-`--host` targeting every detected
+host, `test_wikitoolkit_never_touched_end_to_end` (AC5, re-proving the
+TASK-3374 fix holds through the full CLI), `test_no_secret_reaches_any_written_file`
+(AC6), `requires_dist` reporting without importing (AC1/AC3), and a real
+subprocess spawn + JSON-RPC handshake against `mcp-local memory` (AC3). No
+defect found in the suite — nothing to route to an owning task or the ledger
+for code. Validation: `pytest packages/ai-parrot/tests/mcp/test_toolkit_matrix.py
+-q` → 9 passed; `pytest tests/mcp/test_mcp_local_e2e.py -q` → 5 passed; `ruff
+check` clean. Review recorded: `coder-review:9d48eab7a5ced547db4378a2`.
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Dispatch history (orchestrator-diagnosed environment issue, not a coder
+defect)**: the first two native attempts on this task each reported their pool
+sub-worktree as read-only and their `pwd`/write-probe evidence pointed at the
+parent feature worktree instead of the assigned `--pool/TASK-3381-...` path,
+and STOPPED without writing anything — correctly refusing to fall back to the
+wrong worktree. The orchestrator independently verified via its own Bash tool
+that direct shell writes (`echo >`, `touch`) into `--pool/` sub-worktrees fail
+with the same "read-only filesystem" error UNIVERSALLY (by design, confirmed
+against a freshly-prepared, otherwise-valid sub-worktree) while the Write/Edit
+tools and `git commit` succeed there — exactly the pattern six earlier tasks in
+this feature (TASK-3374–TASK-3380) already used successfully. The first two
+attempts had ended their sessions before this was diagnosed (each burned its
+own worktree via `coder_merge`'s no-op settlement + `coder_cleanup`, and the
+execution was cycled to get a fresh attempt path); the third dispatch, given
+explicit guidance to use Write/Edit tools for file content and trust `git
+commit`, completed cleanly on the first try.
 
-**Deviations from spec**: none | describe if any
+**Flagged for the feature-level review (environment tooling, not a code
+defect)**: the coder found that a bare `pytest packages/ai-parrot/tests/mcp/...`
+invocation in a fresh bare worktree resolves `packages/ai-parrot/pyproject.toml`
+as the nearer pytest ini file over the repo-root one, skipping the root
+`conftest.py`'s stub for the missing compiled Cython extensions
+(`parrot.utils.types`) and failing with `ModuleNotFoundError` — reproduced
+identically on already-merged sibling test files (`test_hosts.py`,
+`test_toolkit_install.py`), confirming this is pre-existing and unrelated to
+FEAT-570. Worth a ledger entry for a future fix at the pyproject/conftest
+level; out of this task's two-file scope to fix here.
+
+**Deviations from spec**: (1) left the spawn/handshake test unmarked (no
+`@pytest.mark.slow`) — no such marker is registered in this repo's pytest
+config (`--strict-markers`), and the two other real spawn/subprocess
+precedents (`test_jira_wiki_e2e.py`, `test_cold_start.py`) both leave theirs
+unmarked too; the task's blueprint scaffold showing `@pytest.mark.slow` was
+stale against actual repo convention. (2)
+`test_requires_dist_is_reported_without_importing` calls the production
+`dist_available()` (already an authorized Codebase Contract import) rather than
+reimplementing the check with a bare `importlib.util.find_spec`, which raised
+a spurious `ValueError` from a stale `sys.modules` entry in this test
+session — `dist_available()` already guards exactly that `(ImportError,
+ValueError)` pair, so reusing it is correct and avoids duplicating fragile
+probing logic in a test.

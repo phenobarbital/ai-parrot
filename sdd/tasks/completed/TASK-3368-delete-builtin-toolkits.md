@@ -313,10 +313,19 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-coder (native, sonnet)
+**Date**: 2026-09-18
+**Notes**: Deleted `BUILTIN_TOOLKITS` from `toolkit_config.py`; `load_toolkits_config`
+now starts from an empty `merged` dict. Removed the dangling `BUILTIN_TOOLKITS`
+import and builtin-filtering block in `toolkit_seed.seed_toolkit_sections`.
+Updated three test modules (`test_toolkit_config.py`, `test_local_cli.py`,
+`test_mcp_local_e2e.py`) that asserted implicit builtin resolution, replacing
+builtin-reliant assertions with explicit-fixture equivalents per the task
+blueprint. `grep -rn BUILTIN_TOOLKITS packages/ tests/` returns nothing (AC4).
+Validation: `pytest tests/mcp/ -q` → 215 passed; `ruff check` clean on both
+touched source files. Merge-tier check run against the full sibling task list
+shows only "file not found" for test files owned by not-yet-implemented
+sibling tasks (TASK-3372, TASK-3376) — no real regressions.
+Seat: sonnet · Backend: native · Model: sonnet · Attempts: 1 · Duration: n/a · Tokens: n/a
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

@@ -449,10 +449,33 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (native `sonnet` seat, attempt_uid `852ca5a869454f47bda54dc49bd81d2c`)
+**Date**: 2026-09-18
+**Notes**: Created `packages/ai-parrot/src/parrot/mcp/hosts.py` (HostKind,
+HostEntryState, the `HostAdapter` Protocol, `ClaudeAdapter`/`CodexAdapter`/
+`GoogleAdapter`, `get_adapter`, `detect_hosts`) and
+`packages/ai-parrot/tests/mcp/test_hosts.py`. Per-host installer imports are
+function-local, keeping `parrot.mcp` decoupled from `parrot.knowledge.wiki` at
+import time (AC1, verified by `test_inspect_imports_no_toolkit` snapshotting
+`sys.modules`). `CodexAdapter.inspect` classifies entries structurally via the
+MCP_BEGIN/MCP_END marker block (codex has no `_is_managed_toolkit_entry`).
+`GoogleAdapter` always reports `repo_scoped=False` (reads the primary/user-global
+config). Validation: `pytest packages/ai-parrot/tests/mcp/test_hosts.py -q` → 6
+passed. Feature-wide merge-tier batch (`packages/ai-parrot/tests/{mcp,knowledge/wiki,
+flows/dev_loop/sdd_coder,test_coding_agents.py}`, after copying the two Cython
+extensions this bare worktree lacked into `.gitignore`d paths to unblock the
+`parrot.bots` import chain): 409 passed, 12 failed — this task's diff touches
+ONLY 2 new CREATE files with zero MODIFY targets, so none of the 12 pre-date it;
+they trace to missing external services (arango/vault) and matplotlib version
+skew, except `test_examples_mcp_wiring::test_explicit_selection_may_name_builtins`
+which may be a regression from TASK-3368's `BUILTIN_TOOLKITS` deletion — flagged
+for the feature-level code review / ledger, not fixed here (out of this task's
+file scope). `ruff check` clean. Review recorded: `coder-review:258b6a05fbe1d6d5c5c51e5a`.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: The blueprint's `detect_hosts` tests did not
+monkeypatch `Path.home()`; this machine's real `$HOME` has a stray
+`~/.gemini/config/mcp_config.json`, which made the literal empty-list assertion
+flaky. Added the same `Path.home()` monkeypatch already used elsewhere in the
+file to the three `detect_hosts` tests for hermeticity — no production code
+changed, consistent with the blueprint's own "never touch the real home
+directory" rationale.
