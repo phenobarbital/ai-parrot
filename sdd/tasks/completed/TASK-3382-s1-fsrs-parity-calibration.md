@@ -534,10 +534,40 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (orchestrated native `sonnet` delivery)
+**Date**: 2026-09-18
+**Notes**: Vendored py-fsrs v6.3.2 @ `9446cb06…` (LICENSE + PIN.md hashes), pure `candidate.py`
+FSRS-6 port, and a parity harness comparing them over 200 seeded sequences / 1628 review
+steps. PASS: exact (0.0 delta, well under 1e-9) parity on the `days-v1` time policy across all
+four grades, same-day reviews, gaps up to 90 days, and bounds saturation; non-lapsed
+GOOD-reviewed lesson survives the 30-day horizon under both `days-v1` and `hours-v1`.
+PENDING: useful-forgetting/stale-persistence check — 0 lessons in this run's synthetic trace
+were dormant for the *entire* 30-day window, so there is no evidence either way (documented
+in REPORT.md Limitations, not fabricated). Real ledger cadence read via
+`CoderFeedbackStore.from_root()` found 25 rows (recurrence/timestamps only — no grades
+derived or invented, per spec). `amendment.md` proposes freezing `time_policy_id=days-v1`,
+the reference's 21-parameter defaults/bounds/pin, and a retrievability-based promotion
+criterion; `forget_threshold`/`redistill_difficulty` flagged pending owner decision (U3).
+Fast tests (8 passed, 1 env-gated skip) verified green post-merge in the feature worktree.
+Full REPORT.md/metrics.json/amendment.md/vendored reference:
+`packages/ai-parrot/tests/memory/dynamics/spikes/s1_fsrs/` (mirrored by the orchestrator to
+`sdd/state/FEAT-571/spikes/s1-fsrs-parity/` for owner/architecture review — the gate itself
+is NOT passed until that review happens).
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Deviations from spec**: (1) Task's own "Files to Create / Modify" list originally placed
+all spike deliverables under `sdd/state/FEAT-571/spikes/s1-fsrs-parity/`; amended by
+sdd-worker (2026-09-18, Option A, user-approved) to
+`packages/ai-parrot/tests/memory/dynamics/spikes/s1_fsrs/` because the FEAT-549 sdd-coder
+engine's fidelity gate unconditionally rejects any coder-committed path under `sdd/`. (2)
+The merge engine's auto-formatter (`black`) reformatted 2 of the 6 vendored `reference/fsrs/`
+files (`card.py`, `scheduler.py`) despite this task's explicit "leave byte-identical"
+instruction — the coder's originally-computed PIN.md hashes for those two files no longer
+matched the committed content; corrected by sdd-worker post-merge to reflect actual
+committed content (see PIN.md note). Filed as a sdd-coder engine gap (no per-file
+formatting-exclusion mechanism exists), not a coder defect. (3) The synthetic-trace
+"relevance"/"scope_score" proxies used in the calibration metrics are the coder's own
+documented, owner-reviewable modeling choice (REPORT.md Limitations) — not silently
+resolved, consistent with "passing a gate is a review of the amendment."
 
-**Deviations from spec**: none | describe if any
+Seat: sonnet (native) · Backend: native · Model: sonnet · Attempts: 1 · Duration: ~1555s ·
+Tokens: n/a (native — usage not tracked by the engine)
