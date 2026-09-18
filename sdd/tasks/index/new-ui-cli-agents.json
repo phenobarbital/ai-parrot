@@ -88,7 +88,7 @@
       "feature_id": "FEAT-573",
       "feature": "new-ui-cli-agents",
       "spec": "sdd/specs/new-ui-cli-agents.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -96,8 +96,8 @@
       "parallelism_notes": "Root: creates parrot/cli/events.py. Imports only the existing ConversationTurn (commands.py:38). Consumers: TASK-3404, 3405, 3406, 3408, 3410, 3415.",
       "assigned_to": null,
       "started_at": "2026-09-18T05:16:16+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3403-turn-event-model.md"
+      "completed_at": "2026-09-18T06:35:05+00:00",
+      "file": "sdd/tasks/completed/TASK-3403-turn-event-model.md"
     },
     {
       "id": "TASK-3404",

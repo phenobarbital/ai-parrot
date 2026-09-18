@@ -422,10 +422,25 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-coder native `sonnet` seat (attempt 7d1dcad2c4ae4f548959087aebb49527)
+**Date**: 2026-09-18
+**Notes**: Implemented `parrot/cli/events.py` per blueprint: `TurnEventKind`
+enum, `TurnEvent` base, the nine concrete events (fixed `kind` per class),
+`BackendCapabilities`, `PostTurnHook` alias (`CommandContext` imported only
+under `TYPE_CHECKING` since TASK-3406 hasn't created it yet), and
+`summarize_message_text()` following the `renderer.py:89-122` fallback
+order exactly.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+Merge clean (`coder_merge` outcome=merged); engine lint autofix (black)
+applied. The native attempt could not run real `pytest` in its sandboxed
+sub-worktree (same pre-existing missing-compiled-extension limitation as
+prior tasks in this feature); it verified via a standalone importlib-based
+sanity script exercising every test assertion against the real module, then
+committed and flagged the caveat. The orchestrator ran
+`pytest packages/ai-parrot/tests/cli/test_events.py -v` in the top-level
+worktree: **12 passed**.
 
-**Deviations from spec**: none | describe if any
+**Feedback recorded**: none — the historical TASK-3374 pattern
+(unscoped-removal-reuses-full-uninstall-helper) was correctly judged not
+applicable (net-new primitives, no helper reuse).
+**Deviations from spec**: none.
