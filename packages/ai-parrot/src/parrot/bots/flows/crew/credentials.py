@@ -97,3 +97,39 @@ def is_google_llm(llm: Any, default_provider: Optional[str] = "google") -> bool:
     if isinstance(llm, type):
         return issubclass(llm, _google_client_classes())
     return False
+
+
+def apply_google_api_key(agent: Any, api_key: Optional[str]) -> bool:
+    """Inject ``api_key`` into a constructed, unconfigured agent's LLM kwargs.
+
+    Rebinds ``agent._llm_kwargs`` to a NEW dict rather than mutating it. The
+    existing dict is the very object held by ``AgentDefinition.config["llm_kwargs"]``
+    (``abstract.py:516`` assigns by reference), which is persisted to Redis and
+    returned by ``GET /api/v1/crew`` — mutating it would leak the credential.
+
+    Must be called after the agent is constructed and before ``configure()``.
+    An agent that builds its client inside ``__init__``, or that overrides
+    ``configure()`` to ignore ``_llm_kwargs``, will not pick the key up.
+
+    Args:
+        agent: A constructed, not-yet-configured agent. Non-``AbstractBot``
+            objects are a no-op.
+        api_key: The credential to inject. Falsy values are a no-op.
+
+    Returns:
+        ``True`` when the key was injected, ``False`` otherwise.
+    """
+    if not api_key:
+        return False
+    if not hasattr(agent, "_llm_raw") or not hasattr(agent, "_llm_kwargs"):
+        return False
+    if not is_google_llm(getattr(agent, "_llm_raw", None), getattr(agent, "_default_llm", "google")):
+        return False
+    llm_kwargs = getattr(agent, "_llm_kwargs", None) or {}
+    if any(llm_kwargs.get(key) for key in _CREDENTIAL_KWARGS):
+        return False
+    if llm_kwargs.get("vertexai"):
+        return False
+    agent._llm_kwargs = {**llm_kwargs, "api_key": api_key}
+    logger.debug("Injected CREW_AI_KEY into agent's Google llm_kwargs")
+    return True
