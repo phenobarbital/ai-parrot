@@ -23,6 +23,7 @@ Inspect all per-spec indexes (`sdd/tasks/index/*.json`), identify tasks whose de
 
 1. Aggregate tasks:
    - Read all `sdd/tasks/index/*.json` excluding `_orphans.json`.
+   - Optional `--project` / `--tag` (FEAT-576): get matching spec paths from `python -m scripts.sdd.doc_taxonomy --kind spec --paths-only ...` and keep only indexes whose `spec` is listed.
 2. Inspect worktrees:
    - Run `git worktree list` to match active feature worktrees.
 3. Compute unblocked tasks:
