@@ -54,7 +54,7 @@
       "feature_id": "FEAT-570",
       "feature": "expose-local-mcp-tools",
       "spec": "sdd/specs/expose-local-mcp-tools.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -64,8 +64,8 @@
       "parallelism_notes": "Modifies parrot/mcp/toolkit_seed.py (header parser) — same file as TASK-3369; serialized after it.",
       "assigned_to": null,
       "started_at": "2026-09-17T23:36:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3370-toolkit-templates.md"
+      "completed_at": "2026-09-18T00:14:12+00:00",
+      "file": "sdd/tasks/completed/TASK-3370-toolkit-templates.md"
     },
     {
       "id": "TASK-3371",

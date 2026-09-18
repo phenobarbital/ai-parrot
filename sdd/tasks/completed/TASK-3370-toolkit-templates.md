@@ -404,10 +404,29 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-coder (native, sonnet)
+**Date**: 2026-09-18
+**Notes**: Added `requires_dist` header field to `ToolkitTemplate`/`load_template`
+in `toolkit_seed.py`, then created five packaged templates (querysource,
+database-query, scraping, browsing, memory) with `env: {}` per AC6.
+Validation: `pytest tests/mcp/test_toolkit_templates.py tests/mcp/test_toolkit_seed.py
+-q` → 36 passed; `ruff check` clean.
+Orchestrator note: the coder's first attempt correctly widened a hard-coded
+3-name assertion in `tests/mcp/test_toolkit_seed.py`
+(`test_available_templates_lists_packaged_names`) to the 8-name set — required
+by this task's own AC1 and Validation Commands, but the file was omitted from
+the original Files/Complexity-Contract tables. The engine's fidelity gate
+correctly rejected the first merge for the out-of-scope file; the orchestrator
+verified the omission was genuine (confirmed against AC1/Validation Commands),
+corrected the task's Files table + Complexity Contract to add
+`tests/mcp/test_toolkit_seed.py`, and re-merged the same commit unchanged —
+no rework needed. Merge-tier check: root `tests/mcp/` all green; the 4
+failures observed in `packages/ai-parrot/tests/` are the pre-existing,
+documented local-venv `parrot.utils.types` collection defect (spec's own
+"Local venv caveat"), unrelated to this task.
+Seat: sonnet · Backend: native · Model: sonnet · Attempts: 1 (task-scope correction, no rework) · Duration: n/a · Tokens: n/a
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Task's own Files/Complexity-Contract tables omitted
+`tests/mcp/test_toolkit_seed.py`, which its own AC1 and Validation Commands
+require to change. Orchestrator corrected the task file in place before
+re-merging; see Notes above.
