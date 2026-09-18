@@ -137,6 +137,20 @@ def test_resolve_never_merges_xl(mini_catalog):
     assert sku is None and candidates == [] and res == "unresolved"
 
 
+def test_resolve_signature_single_match_null_xl_is_ambiguous(mini_catalog):
+    """Spec §2: rule 2 with reading.xl is None can only produce candidates -- ambiguous
+    even with exactly one signature match, never direct."""
+    # family "10" + colors=["tri-color"] matches exactly one catalog item (AC-13); with
+    # xl left unset the resolution must still be ambiguous, not direct.
+    reading = _reading(brand="Acme", family="10", colors=["tri-color"], xl=None)
+    sku, candidates, res = resolve_identity(reading, mini_catalog)
+    assert sku is None and candidates == ["AC-13"] and res == "ambiguous"
+    # Same signature with xl explicitly set -> direct, as before.
+    reading = _reading(brand="Acme", family="10", colors=["tri-color"], xl=False)
+    sku, candidates, res = resolve_identity(reading, mini_catalog)
+    assert sku == "AC-13" and candidates == ["AC-13"] and res == "direct"
+
+
 def test_emit_catalog_template_refuses_overwrite(tmp_path, mini_planogram):
     path = tmp_path / "template.json"
     # First call should succeed

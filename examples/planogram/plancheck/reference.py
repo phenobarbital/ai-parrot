@@ -243,7 +243,9 @@ def resolve_identity(reading: SlotReading, catalog: Catalog) -> tuple[str | None
             continue
         signature_matches.append(item)
     if signature_matches:
-        if len(signature_matches) == 1:
+        # Spec §2 "Decided semantics": rule 2 with reading.xl is None can only produce
+        # candidates -- ambiguous even with a single match, never direct.
+        if len(signature_matches) == 1 and reading.xl is not None:
             return signature_matches[0].sku, [signature_matches[0].sku], "direct"
         return None, [item.sku for item in signature_matches], "ambiguous"
     # Rule 3: alias

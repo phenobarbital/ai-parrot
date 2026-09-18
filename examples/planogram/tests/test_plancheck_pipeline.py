@@ -217,12 +217,16 @@ async def test_run_check_two_overlapping_photos(
     # Number of planogram facings (19, not 38)
     assert len(report.positions) == 19
 
-    # Matched facings list slot_ids from BOTH images
+    # Matched facings list slot_ids from BOTH images (each overlapping facing is seen by
+    # image_01 AND image_02; a real assertion, not just "doesn't crash").
     matched_positions = [p for p in report.positions if p.status == "match"]
+    assert matched_positions, "expected at least one matched position"
     for pos in matched_positions:
-        if pos.slot_ids:
-            # Should have slot_ids from both images for overlapping facings
-            pass  # Just verify it doesn't crash
+        image_ids = {SLOT_PARTS.sub("", sid) for sid in pos.slot_ids}
+        assert image_ids == {"image_01", "image_02"}, (
+            f"matched position {pos.facing.shelf}/{pos.facing.slot} expected slot_ids from "
+            f"both images, got {pos.slot_ids}"
+        )
 
     # strict_pct equals the single-photo value (agreeing views count once, no double counting)
     # Run a single-image comparison
