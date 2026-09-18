@@ -16,9 +16,10 @@ from pathlib import Path
 from typing import Any
 
 import click
+from parrot.cli.console import get_console
+from parrot.cli.events import PostTurnHook
 from parrot.cli.renderer import ResponseRenderer
 from parrot.cli.repl import AgentREPL, REPLConfig
-from rich.console import Console
 from rich.markdown import Markdown
 
 from .client import AgentDaemonClient, DaemonNotRunning, RpcRemoteError, resolve_socket
@@ -27,7 +28,7 @@ from .mcp_server import run_mcp_proxy
 from .proxy import DaemonAgentProxy, register_daemon_commands
 from .service import AgentDaemon
 
-console = Console()
+console = get_console()
 
 __all__ = [
     "ask",
@@ -180,7 +181,7 @@ async def _run_attach(name_or_socket: str, no_stream: bool) -> None:
     config = REPLConfig(agent_name=display_name, streaming=not no_stream)
     repl = AgentREPL(bot=bot, config=config, renderer=renderer)
     register_daemon_commands(repl, proxy)
-    _wrap_with_event_drain(repl, proxy)
+    repl.add_post_turn_hook(_drain_events_hook(proxy))
 
     console.print(
         f"\n[bold green]Attached to daemon:[/bold green] [bold]{display_name}[/bold]"
@@ -202,37 +203,24 @@ async def _run_attach(name_or_socket: str, no_stream: bool) -> None:
         await proxy.close()
 
 
-def _wrap_with_event_drain(repl: AgentREPL, proxy: DaemonAgentProxy) -> None:
-    """Flush queued job-event lines after each turn, never mid-stream.
+def _drain_events_hook(proxy: DaemonAgentProxy) -> PostTurnHook:
+    """Build the post-turn hook that flushes queued daemon job-event lines.
 
-    `AgentREPL.run()`'s loop is a monolithic method with no exposed
-    post-turn hook, and modifying `parrot.cli.repl` is out of scope for
-    this feature. Instead, this wraps `repl.send`/`repl.send_stream` at
-    the INSTANCE level (shadowing the class methods `run()` calls) so
-    queued events print right after a turn completes and before the next
-    prompt is shown -- the same seam the spec calls for, achieved without
-    touching core.
+    Runs after each COMPLETED turn, before the next prompt is shown — never
+    mid-stream — so job events never interleave with streamed tokens.
+
+    Args:
+        proxy: The attached ``DaemonAgentProxy`` whose ``drain_events()`` queue is flushed.
+
+    Returns:
+        An ``async def hook(ctx, turn) -> None`` suitable for ``AgentREPL.add_post_turn_hook``.
     """
-    original_send = repl.send
-    original_send_stream = repl.send_stream
 
-    async def _send_with_drain(query: str):
-        result = await original_send(query)
-        _print_drained_events(proxy)
-        return result
+    async def _hook(ctx: Any, turn: Any) -> None:  # noqa: ARG001 — turn unused by design
+        for line in proxy.drain_events():
+            ctx.renderer.print(f"[dim]{line}[/dim]")
 
-    async def _send_stream_with_drain(query: str) -> None:
-        await original_send_stream(query)
-        _print_drained_events(proxy)
-
-    repl.send = _send_with_drain
-    repl.send_stream = _send_stream_with_drain
-
-
-def _print_drained_events(proxy: DaemonAgentProxy) -> None:
-    """Print every queued job-event line, then clear the queue."""
-    for line in proxy.drain_events():
-        console.print(f"[dim]{line}[/dim]")
+    return _hook
 
 
 # --------------------------------------------------------------------------
