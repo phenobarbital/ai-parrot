@@ -423,3 +423,11 @@ examples/planogram/*
 !examples/planogram/white_label_detector/
 examples/planogram/white_label_detector/*
 !examples/planogram/white_label_detector/detect_price_labels.py
+# FEAT-574: perception spike harness (code only — photos/annotations dropped here stay ignored)
+!examples/planogram/perception_spike/
+examples/planogram/perception_spike/*
+!examples/planogram/perception_spike/*.py
+!examples/planogram/perception_spike/README.md
+# FEAT-574: example scripts added by later tasks of the same feature
+!examples/planogram/descriptor_assistant.py
+!examples/planogram/backend_benchmark.py
