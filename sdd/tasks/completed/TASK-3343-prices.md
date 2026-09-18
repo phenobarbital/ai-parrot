@@ -438,10 +438,16 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-coder (native, model sonnet, attempt_uid 0167082f529046529fba0082e52ede25)
+**Date**: 2026-09-18
+**Notes**: Created `examples/planogram/plancheck/prices.py` (parse_price grammar, TagOcr,
+contact_sheet, `_tag_crop`/`_ocr_all`/`_price_prompt`, read_prices with concurrent
+per-row LLM calls) and `examples/planogram/tests/test_plancheck_prices.py` with 17
+tests. `pytest examples/planogram/tests/test_plancheck_prices.py -q` → 17 passed;
+`ruff check` clean. Engine lint autofix commit `0df19a689`. Post-merge full suite
+(after TASK-3344's fix) → 93 passed. Review recorded:
+`coder-review:c36a4ebf81d3ca1bfa388b70`, no corrections needed.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Seat**: sonnet(native) · Backend: native · Model: sonnet · Attempts: 1 · Duration: n/a · Tokens: n/a
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

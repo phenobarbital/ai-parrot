@@ -175,7 +175,7 @@
       "feature_id": "FEAT-565",
       "feature": "new-planogram-compliance-algo",
       "spec": "sdd/specs/new-planogram-compliance-algo.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -186,8 +186,8 @@
       "parallelism_notes": "Imports Slot, PriceReading, RowPriceReading from TASK-3337 (examples/planogram/plancheck/models.py); type-imports VisionBackend from TASK-3342 (examples/planogram/plancheck/vision.py) and calls its ask() contract.",
       "assigned_to": null,
       "started_at": "2026-09-17T23:08:13+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3343-prices.md"
+      "completed_at": "2026-09-18T00:30:37+00:00",
+      "file": "sdd/tasks/completed/TASK-3343-prices.md"
     },
     {
       "id": "TASK-3344",
@@ -196,7 +196,7 @@
       "feature_id": "FEAT-565",
       "feature": "new-planogram-compliance-algo",
       "spec": "sdd/specs/new-planogram-compliance-algo.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -209,8 +209,8 @@
       "parallelism_notes": "Imports SlotObservation from TASK-3338 (examples/planogram/plancheck/models.py), resolve_identity from TASK-3339 (examples/planogram/plancheck/reference.py), strip_box/to_strip_norm from TASK-3341 (examples/planogram/plancheck/grid.py), VisionBackend from TASK-3342 (examples/planogram/plancheck/vision.py).",
       "assigned_to": null,
       "started_at": "2026-09-17T23:08:13+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3344-identify.md"
+      "completed_at": "2026-09-18T00:30:37+00:00",
+      "file": "sdd/tasks/completed/TASK-3344-identify.md"
     },
     {
       "id": "TASK-3345",
