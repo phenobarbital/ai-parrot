@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-17T22:02:10Z",
-  "completed_at": null,
+  "completed_at": "2026-09-18T00:56:51+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "reservation": {
@@ -330,7 +330,7 @@
       "feature_id": "FEAT-565",
       "feature": "new-planogram-compliance-algo",
       "spec": "sdd/specs/new-planogram-compliance-algo.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -341,8 +341,8 @@
       "parallelism_notes": "Calls run_check from TASK-3349 (examples/planogram/plancheck/pipeline.py) and emit_catalog_template/load_planogram from TASK-3339 (examples/planogram/plancheck/reference.py).",
       "assigned_to": null,
       "started_at": "2026-09-17T23:08:13+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3350-cli-readme.md"
+      "completed_at": "2026-09-18T00:56:51+00:00",
+      "file": "sdd/tasks/completed/TASK-3350-cli-readme.md"
     }
   ]
 }

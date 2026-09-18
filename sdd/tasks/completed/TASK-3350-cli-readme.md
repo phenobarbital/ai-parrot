@@ -593,10 +593,23 @@ Fixed names from spec §4 (M12): `test_cli_requires_catalog`, `test_cli_exit_cod
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-coder (backend nova, model mistral.devstral-2-123b, attempt_uid 919190d38b904bb385cfc499f18fae4b)
+**Date**: 2026-09-18
+**Notes**: Created `examples/planogram/planogram_check.py` (thin CLI: full option set,
+tri-state `--verify-pass`/`--no-verify-pass`, `--concurrency` 1..16, `--roi`, path
+absolutization before `run_check`, exit-code mapping), `examples/planogram/README.md`,
+`examples/planogram/catalog.example.json` (synthetic, no real SKUs/store data) and
+`examples/planogram/tests/test_plancheck_cli.py` with all 8 blueprint-named tests
+(verified none disabled/renamed). Per the task's "Decided details (do not re-decide)":
+`Settings.weights` stays at its default — spec §2 mentions weights as "overridable from
+the CLI settings" but lists no flag, so no flag was invented (verified: no "weight"
+string appears in `planogram_check.py`). A prior codex-spark attempt failed at dispatch
+(stdin issue, 0 turns, no files produced) before this seat's retry completed cleanly.
+`ruff check` clean. Engine lint autofix commit `f4e6ce0bd`. Post-merge full suite →
+120 passed (all tasks for FEAT-565 now complete). Review recorded:
+`coder-review:6a780922de1bc3822f95fda1`, no corrections needed.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Seat**: mistral · Backend: nova · Model: mistral.devstral-2-123b · Attempts: 2 (1 infra retry) · Duration: 471.9s · Tokens: 1351088/11740
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none — the weights-flag ambiguity noted in the task's own
+Context was resolved as instructed (no flag added; `Settings.weights` keeps its default).
