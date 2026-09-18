@@ -53,12 +53,6 @@ class AbstractPipeline(ABC):
         self.logger.debug(
             "Resolved LLM backend: %s (%s)", self.resolved_backend.as_string(), self.resolved_backend.origin
         )
-        # Ensure a Google Client for multi-modal capabilities:
-        # FEAT-523 (TASK-2846): lazy import — core/satellites must not
-        # import a provider client at module scope (AC-3).
-        from parrot.clients.google import GoogleGenAIClient
-
-        self.roi_client = GoogleGenAIClient(model="gemini-3-flash-preview", temperature=0.0, max_retries=2, timeout=20)
 
     def _get_llm(self, provider: str, model: Optional[str] = None, **kwargs: Any) -> Any:
         """

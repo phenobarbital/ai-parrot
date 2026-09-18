@@ -39,7 +39,7 @@ def test_default_backend_is_google():
     pipe, get_llm = _build()
     assert get_llm.call_args.args[0] == "google"
     assert pipe.resolved_backend.origin == "package_default"
-    assert pipe.roi_client is not None
+    assert not hasattr(pipe, "roi_client")  # removed by TASK-3432
 
 
 def test_config_backend_wins_over_omitted_arguments():
@@ -72,7 +72,7 @@ def test_llm_instance_is_kept_and_provider_read_from_client_name():
     get_llm.assert_not_called()
     assert pipe.llm_provider == "anthropic"
     assert pipe.resolved_backend.origin == "llm_instance"
-    assert pipe.roi_client is not None
+    assert not hasattr(pipe, "roi_client")  # removed by TASK-3432
 
 
 def test_config_backend_not_forwarded_but_other_kwargs_are():
