@@ -1,4 +1,5 @@
 """CommandContext-based dispatcher tests (FEAT-573 TASK-3406, spec §4) — no AgentREPL involved."""
+
 from __future__ import annotations
 
 import contextlib
@@ -17,7 +18,9 @@ class _StubCtx:
     """Minimal CommandContext (structural) for tests."""
 
     def __init__(self, *, resume: bool = True) -> None:
-        self.bot = MagicMock(get_available_tools=MagicMock(return_value=["T"]), get_tools_count=MagicMock(return_value=1))
+        self.bot = MagicMock(
+            get_available_tools=MagicMock(return_value=["T"]), get_tools_count=MagicMock(return_value=1)
+        )
         self.config = SimpleNamespace(agent_name="a", session_id="s-1", user_id="u", streaming=True, server_url=None)
         self.renderer = MagicMock()
         self.dispatcher = SlashCommandDispatcher()
@@ -25,7 +28,9 @@ class _StubCtx:
         self.runner.history = []
         self.runner.capabilities = BackendCapabilities(resume=resume)
         self.runner.reset_session = MagicMock(side_effect=self._reset)
-        self.runner.load_history = AsyncMock(return_value=[ConversationTurn(query="q", response=SimpleNamespace(output="o"))])
+        self.runner.load_history = AsyncMock(
+            return_value=[ConversationTurn(query="q", response=SimpleNamespace(output="o"))]
+        )
         self.suspended = 0
 
     def _reset(self) -> str:

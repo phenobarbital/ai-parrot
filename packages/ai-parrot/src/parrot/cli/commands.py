@@ -10,14 +10,14 @@ Protocol note: handlers take a structural ``CommandContext`` (a
 it without inheritance, which keeps this module free of any runtime import
 of ``parrot.cli.repl`` (avoiding the circular import at ``repl.py:22``).
 """
+
 import asyncio
 import json
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, ContextManager, Dict, List, Optional, Protocol
-from uuid import uuid4
+from typing import TYPE_CHECKING, Any, Callable, ContextManager, Dict, List, Optional, Protocol
 
 from parrot.cli.modes import load_session_pointer  # provided by TASK-3401
 
@@ -241,17 +241,19 @@ async def _cmd_info(ctx: "CommandContext", args: str) -> None:  # noqa: ARG001
     model = getattr(bot, "model", None) or getattr(bot, "_model", "unknown")
     tool_count = bot.get_tools_count()
     streaming_state = "enabled" if config.streaming else "disabled"
-    ctx.renderer.render_info([
-        ("Agent name", config.agent_name),
-        ("Class", bot_class),
-        ("LLM provider", str(provider)),
-        ("Model", str(model)),
-        ("Session ID", config.session_id),
-        ("User ID", config.user_id),
-        ("Tools", str(tool_count)),
-        ("Streaming", streaming_state),
-        ("Server URL", config.server_url or "(standalone)"),
-    ])
+    ctx.renderer.render_info(
+        [
+            ("Agent name", config.agent_name),
+            ("Class", bot_class),
+            ("LLM provider", str(provider)),
+            ("Model", str(model)),
+            ("Session ID", config.session_id),
+            ("User ID", config.user_id),
+            ("Tools", str(tool_count)),
+            ("Streaming", streaming_state),
+            ("Server URL", config.server_url or "(standalone)"),
+        ]
+    )
 
 
 async def _cmd_clear(ctx: "CommandContext", args: str) -> None:  # noqa: ARG001
@@ -267,9 +269,7 @@ async def _cmd_clear(ctx: "CommandContext", args: str) -> None:  # noqa: ARG001
     old_id = ctx.config.session_id
     new_id = ctx.runner.reset_session()  # owns session identity + history (TASK-3404)
     ctx.renderer.print(
-        f"[green]Session cleared.[/green] "
-        f"New session ID: [bold]{new_id}[/bold] "
-        f"(was: [dim]{old_id}[/dim])"
+        f"[green]Session cleared.[/green] " f"New session ID: [bold]{new_id}[/bold] " f"(was: [dim]{old_id}[/dim])"
     )
 
 
@@ -328,15 +328,13 @@ async def _cmd_export(ctx: "CommandContext", args: str) -> None:
         "turns": turns,
     }
     try:
+
         def _write() -> None:
             with open(path, "w", encoding="utf-8") as fh:
                 json.dump(export_data, fh, indent=2, ensure_ascii=False)
 
         await asyncio.to_thread(_write)
-        ctx.renderer.print(
-            f"[green]Conversation exported to:[/green] [bold]{path}[/bold] "
-            f"({len(turns)} turn(s))"
-        )
+        ctx.renderer.print(f"[green]Conversation exported to:[/green] [bold]{path}[/bold] " f"({len(turns)} turn(s))")
     except OSError as exc:
         ctx.renderer.render_error(exc)
 
@@ -423,8 +421,7 @@ async def _cmd_create_agent(ctx: "CommandContext", args: str) -> None:
         parsed = _parse_create_agent_args(args)
         if not parsed["description"]:
             ctx.renderer.print(
-                "[yellow]Usage:[/yellow] /create_agent <description> "
-                "[--clone-from <name>] [--category <dir>]"
+                "[yellow]Usage:[/yellow] /create_agent <description> " "[--clone-from <name>] [--category <dir>]"
             )
             return
 
@@ -462,16 +459,11 @@ async def _cmd_create_agent(ctx: "CommandContext", args: str) -> None:
 
         if result.status == FactoryStatus.SUCCESS:
             ctx.renderer.print(
-                f"[green]Agent created:[/green] "
-                f"[bold]{result.definition.name}[/bold] → {result.yaml_path}"
+                f"[green]Agent created:[/green] " f"[bold]{result.definition.name}[/bold] → {result.yaml_path}"
             )
         elif result.status == FactoryStatus.CANCELLED_BY_USER:
-            ctx.renderer.print(
-                f"[yellow]Cancelled at {result.cancelled_at.value}.[/yellow]"
-            )
+            ctx.renderer.print(f"[yellow]Cancelled at {result.cancelled_at.value}.[/yellow]")
         elif result.status == FactoryStatus.TIMEOUT:
-            ctx.renderer.print(
-                f"[yellow]Timed out at {result.cancelled_at.value}.[/yellow]"
-            )
+            ctx.renderer.print(f"[yellow]Timed out at {result.cancelled_at.value}.[/yellow]")
         else:
             ctx.renderer.print(f"[red]Factory failed:[/red] {result.error or 'unknown'}")
