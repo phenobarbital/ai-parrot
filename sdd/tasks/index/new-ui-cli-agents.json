@@ -106,7 +106,7 @@
       "feature_id": "FEAT-573",
       "feature": "new-ui-cli-agents",
       "spec": "sdd/specs/new-ui-cli-agents.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -118,8 +118,8 @@
       "parallelism_notes": "Imports save_session_pointer from TASK-3401 (cli/modes.py), turn_scope/in_turn_scope from TASK-3402 (core/events/lifecycle/turn_scope.py), and the TurnEvent family + BackendCapabilities + PostTurnHook from TASK-3403 (cli/events.py). Creates cli/session.py.",
       "assigned_to": null,
       "started_at": "2026-09-18T05:16:16+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3404-turn-runner-session.md"
+      "completed_at": "2026-09-18T06:59:15+00:00",
+      "file": "sdd/tasks/completed/TASK-3404-turn-runner-session.md"
     },
     {
       "id": "TASK-3405",

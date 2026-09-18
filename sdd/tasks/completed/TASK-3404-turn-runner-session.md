@@ -520,10 +520,45 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-coder native `sonnet` seat (attempt 20462ebf86d542f7a9837ac7ee8d6730)
+**Date**: 2026-09-18
+**Notes**: Implemented `TurnRunner` (+ `TurnInProgressError`, `_ResumedResponse`)
+per blueprint. During its own verification, the coder found and fixed a
+real race: `BeforeToolCallEvent` reaches the global registry through two
+nested `create_task` hops (`emit_nowait` → tool registry `emit()` →
+forward-to-global task) while `AfterToolCallEvent`/`ToolCallFailedEvent`
+need only one, so a tool with no real internal `await` could have its
+terminal drain (right before yielding `TurnCompleted`) reliably miss
+`ToolStarted` while keeping `ToolFinished` — violating spec AC6 ("both
+before TurnCompleted"). Fixed with a bounded `_flush_pending()` (a few
+`asyncio.sleep(0)` scheduler turns before the terminal drain). Verified via
+a standalone harness before commit (compiled extension unavailable in the
+sandboxed sub-worktree, per the now-familiar pattern in this feature).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Open design note for TASK-3407**: `PostTurnHook` is typed
+`Callable[[CommandContext, ConversationTurn], Awaitable[None]]`, but
+`TurnRunner` has no `CommandContext`. The coder made `run_turn` invoke
+hooks as `await hook(self, turn)` (passing the `TurnRunner` itself),
+documented in `add_post_turn_hook`'s docstring, and expects a presenter
+(TASK-3407's `AgentREPL`) to close over its own `ctx` and wrap the hook
+before registering it with `TurnRunner.add_post_turn_hook` — mirroring the
+spec's Module 15 `agentd` example. TASK-3407's implementer must confirm or
+adjust this convention when wiring `AgentREPL.add_post_turn_hook`.
 
-**Deviations from spec**: none | describe if any
+Merge clean (`coder_merge` outcome=merged); engine lint autofix (black)
+applied. Orchestrator ran `pytest test_session.py` (8 passed) plus the full
+FEAT-573 suite so far (`test_session.py` + `test_events.py` +
+`test_modes.py` + `test_console.py` + `test_turn_scope.py`): **40 passed**,
+no regressions.
+
+**Feedback recorded**: none as a new confirmed-defect pattern — the race
+was caught and fixed by the coder itself before delivery (not a
+post-review correction), so it does not fit the review_fix_commit/
+code_review feedback sources; it is documented here for visibility. The
+historical TASK-3374 pattern was checked and judged relevant to keep in
+mind (it prompted reading `navigator_eventbus` source directly rather than
+trusting the contract summary, which is how the race was found).
+**Deviations from spec**: none in the delivered contract; the PostTurnHook
+first-argument convention above is an implementation decision within an
+underspecified area, flagged for the next task rather than guessed
+silently.
