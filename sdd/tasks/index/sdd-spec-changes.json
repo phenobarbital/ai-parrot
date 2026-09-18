@@ -114,7 +114,7 @@
       "feature_id": "FEAT-576",
       "feature": "sdd-spec-changes",
       "spec": "sdd/specs/sdd-spec-changes.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -125,8 +125,8 @@
       "parallelism_notes": "command prose cites KNOWN_PROJECTS created by TASK-3459 (sdd_meta.py) and the projects/tags template block added by TASK-3460 (sdd/templates/brainstorm.md, proposal.md)",
       "assigned_to": null,
       "started_at": "2026-09-18T22:32:44+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3464-authoring-commands-fill-taxonomy.md"
+      "completed_at": "2026-09-18T23:14:42+00:00",
+      "file": "sdd/tasks/completed/TASK-3464-authoring-commands-fill-taxonomy.md"
     },
     {
       "id": "TASK-3465",
