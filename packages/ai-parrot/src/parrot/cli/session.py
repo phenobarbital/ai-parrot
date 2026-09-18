@@ -198,14 +198,19 @@ class TurnRunner:
                                 yield evt
                             if isinstance(chunk, str):
                                 text = chunk
+                            elif hasattr(chunk, "output"):
+                                # Final AIMessage arrived as last chunk. Checked before the
+                                # generic .text/.content duck-typing below: a real AIMessage
+                                # has no .text/.content attribute, but a duck-typed/mock final
+                                # message (e.g. MagicMock in tests) auto-vivifies EVERY
+                                # attribute access as truthy, so hasattr(chunk, "text") would
+                                # otherwise match first and silently pick the wrong branch.
+                                message = chunk
+                                break
                             elif hasattr(chunk, "text"):
                                 text = chunk.text
                             elif hasattr(chunk, "content"):
                                 text = chunk.content
-                            elif hasattr(chunk, "output"):
-                                # Final AIMessage arrived as last chunk.
-                                message = chunk
-                                break
                             else:
                                 text = str(chunk)
                             partial += text
