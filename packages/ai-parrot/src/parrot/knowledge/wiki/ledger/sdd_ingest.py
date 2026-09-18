@@ -15,6 +15,9 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from pydantic import ValidationError
+
+from parrot.knowledge.wiki.ledger.sdd_meta import DocTaxonomy, parse_taxonomy
 from parrot.knowledge.wiki.ledger.sdd_meta import parse as parse_spec_meta
 from parrot.knowledge.wiki.store import WikiPageRecord
 
@@ -22,6 +25,27 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
     from parrot.knowledge.wiki.ledger.store import LedgerStore
 
 logger = logging.getLogger(__name__)
+
+
+def _taxonomy_suffix(taxonomy: DocTaxonomy) -> str:
+    """Return the projects/tags suffix for a spec page summary (FEAT-576).
+
+    Args:
+        taxonomy: Parsed ``projects``/``tags`` frontmatter for a spec doc.
+
+    Returns:
+        ``"; projects: a, b; tags: x, y"`` with each segment omitted when its
+        list is empty; ``""`` when both are empty (byte-identical to the
+        pre-FEAT-576 summary format, per AC9).
+    """
+    segments = []
+    if taxonomy.projects:
+        segments.append(f"projects: {', '.join(taxonomy.projects)}")
+    if taxonomy.tags:
+        segments.append(f"tags: {', '.join(taxonomy.tags)}")
+    if not segments:
+        return ""
+    return "; " + "; ".join(segments)
 
 
 class SDDGraphIngest:
@@ -123,6 +147,15 @@ class SDDGraphIngest:
             # Parse spec metadata
             meta = parse_spec_meta(spec_path)
 
+            # Parse projects/tags taxonomy (FEAT-576). Caught locally so an
+            # invalid taxonomy never drops the whole page via the outer
+            # `except Exception` below.
+            try:
+                taxonomy = parse_taxonomy(spec_path)
+            except ValidationError as exc:
+                logger.warning("Invalid projects/tags in %s, ingesting without taxonomy: %s", spec_path, exc)
+                taxonomy = DocTaxonomy()
+
             # Read file content
             content = spec_path.read_text(encoding="utf-8")
 
@@ -131,7 +164,10 @@ class SDDGraphIngest:
                 concept_id=spec_id,
                 title=f"Spec: {spec_filename}",
                 category="spec",
-                summary=f"SDD specification for {spec_filename} (type: {meta.type}, base: {meta.base_branch})",
+                summary=(
+                    f"SDD specification for {spec_filename} "
+                    f"(type: {meta.type}, base: {meta.base_branch}{_taxonomy_suffix(taxonomy)})"
+                ),
                 body=content,
                 source_id=str(spec_path.relative_to(self.shared_root)),
                 token_count=len(content.split()),
