@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-18T00:30:14.274956+00:00",
-  "completed_at": "2026-09-18T10:20:41+00:00",
+  "completed_at": "2026-09-18T13:08:22+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -25,7 +25,8 @@
       "assigned_to": null,
       "started_at": "2026-09-18T05:16:16+00:00",
       "completed_at": "2026-09-18T05:48:43+00:00",
-      "file": "sdd/tasks/completed/TASK-3399-dependency-and-feat519-supersession.md"
+      "file": "sdd/tasks/completed/TASK-3399-dependency-and-feat519-supersession.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3400",
@@ -43,7 +44,8 @@
       "assigned_to": null,
       "started_at": "2026-09-18T05:16:16+00:00",
       "completed_at": "2026-09-18T05:59:53+00:00",
-      "file": "sdd/tasks/completed/TASK-3400-shared-console-live-region.md"
+      "file": "sdd/tasks/completed/TASK-3400-shared-console-live-region.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3401",
@@ -61,7 +63,8 @@
       "assigned_to": null,
       "started_at": "2026-09-18T05:16:16+00:00",
       "completed_at": "2026-09-18T06:11:33+00:00",
-      "file": "sdd/tasks/completed/TASK-3401-ui-modes-and-state-paths.md"
+      "file": "sdd/tasks/completed/TASK-3401-ui-modes-and-state-paths.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3402",
@@ -79,7 +82,8 @@
       "assigned_to": null,
       "started_at": "2026-09-18T05:16:16+00:00",
       "completed_at": "2026-09-18T06:28:56+00:00",
-      "file": "sdd/tasks/completed/TASK-3402-lifecycle-turn-scope.md"
+      "file": "sdd/tasks/completed/TASK-3402-lifecycle-turn-scope.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3403",
@@ -97,7 +101,8 @@
       "assigned_to": null,
       "started_at": "2026-09-18T05:16:16+00:00",
       "completed_at": "2026-09-18T06:35:05+00:00",
-      "file": "sdd/tasks/completed/TASK-3403-turn-event-model.md"
+      "file": "sdd/tasks/completed/TASK-3403-turn-event-model.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3404",
@@ -119,7 +124,8 @@
       "assigned_to": null,
       "started_at": "2026-09-18T05:16:16+00:00",
       "completed_at": "2026-09-18T06:59:15+00:00",
-      "file": "sdd/tasks/completed/TASK-3404-turn-runner-session.md"
+      "file": "sdd/tasks/completed/TASK-3404-turn-runner-session.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3405",
@@ -140,7 +146,8 @@
       "assigned_to": null,
       "started_at": "2026-09-18T05:16:16+00:00",
       "completed_at": "2026-09-18T07:13:32+00:00",
-      "file": "sdd/tasks/completed/TASK-3405-renderer-live-region-streaming.md"
+      "file": "sdd/tasks/completed/TASK-3405-renderer-live-region-streaming.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3406",
@@ -161,7 +168,8 @@
       "assigned_to": null,
       "started_at": "2026-09-18T05:16:16+00:00",
       "completed_at": "2026-09-18T07:26:24+00:00",
-      "file": "sdd/tasks/completed/TASK-3406-command-context-and-resume.md"
+      "file": "sdd/tasks/completed/TASK-3406-command-context-and-resume.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3407",
@@ -185,7 +193,8 @@
       "assigned_to": null,
       "started_at": "2026-09-18T05:16:16+00:00",
       "completed_at": "2026-09-18T07:50:50+00:00",
-      "file": "sdd/tasks/completed/TASK-3407-agent-repl-on-turn-runner.md"
+      "file": "sdd/tasks/completed/TASK-3407-agent-repl-on-turn-runner.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3408",
@@ -205,7 +214,8 @@
       "assigned_to": null,
       "started_at": "2026-09-18T05:16:16+00:00",
       "completed_at": "2026-09-18T08:07:49+00:00",
-      "file": "sdd/tasks/completed/TASK-3408-server-proxy-canonical-routes.md"
+      "file": "sdd/tasks/completed/TASK-3408-server-proxy-canonical-routes.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3409",
@@ -225,7 +235,8 @@
       "assigned_to": null,
       "started_at": "2026-09-18T05:16:16+00:00",
       "completed_at": "2026-09-18T08:21:24+00:00",
-      "file": "sdd/tasks/completed/TASK-3409-server-sse-tool-event-frames.md"
+      "file": "sdd/tasks/completed/TASK-3409-server-sse-tool-event-frames.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3410",
@@ -246,7 +257,8 @@
       "assigned_to": null,
       "started_at": "2026-09-18T05:16:16+00:00",
       "completed_at": "2026-09-18T08:36:20+00:00",
-      "file": "sdd/tasks/completed/TASK-3410-tui-widgets.md"
+      "file": "sdd/tasks/completed/TASK-3410-tui-widgets.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3411",
@@ -267,7 +279,8 @@
       "assigned_to": null,
       "started_at": "2026-09-18T05:16:16+00:00",
       "completed_at": "2026-09-18T08:48:00+00:00",
-      "file": "sdd/tasks/completed/TASK-3411-tui-command-adapter.md"
+      "file": "sdd/tasks/completed/TASK-3411-tui-command-adapter.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3412",
@@ -289,7 +302,8 @@
       "assigned_to": null,
       "started_at": "2026-09-18T05:16:16+00:00",
       "completed_at": "2026-09-18T08:58:39+00:00",
-      "file": "sdd/tasks/completed/TASK-3412-tui-workspace-app.md"
+      "file": "sdd/tasks/completed/TASK-3412-tui-workspace-app.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3413",
@@ -313,7 +327,8 @@
       "assigned_to": null,
       "started_at": "2026-09-18T05:16:16+00:00",
       "completed_at": "2026-09-18T09:15:19+00:00",
-      "file": "sdd/tasks/completed/TASK-3413-agent-command-entry-point.md"
+      "file": "sdd/tasks/completed/TASK-3413-agent-command-entry-point.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3414",
@@ -333,7 +348,8 @@
       "assigned_to": null,
       "started_at": "2026-09-18T05:16:16+00:00",
       "completed_at": "2026-09-18T10:00:22+00:00",
-      "file": "sdd/tasks/completed/TASK-3414-devloop-live-region-convergence.md"
+      "file": "sdd/tasks/completed/TASK-3414-devloop-live-region-convergence.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3415",
@@ -355,7 +371,8 @@
       "assigned_to": null,
       "started_at": "2026-09-18T05:16:16+00:00",
       "completed_at": "2026-09-18T10:17:50+00:00",
-      "file": "sdd/tasks/completed/TASK-3415-agentd-post-turn-hook-migration.md"
+      "file": "sdd/tasks/completed/TASK-3415-agentd-post-turn-hook-migration.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3416",
@@ -379,7 +396,8 @@
       "assigned_to": null,
       "started_at": "2026-09-18T05:16:16+00:00",
       "completed_at": "2026-09-18T09:48:08+00:00",
-      "file": "sdd/tasks/completed/TASK-3416-end-to-end-integration-tests.md"
+      "file": "sdd/tasks/completed/TASK-3416-end-to-end-integration-tests.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3417",
@@ -400,7 +418,8 @@
       "assigned_to": null,
       "started_at": "2026-09-18T05:16:16+00:00",
       "completed_at": "2026-09-18T10:20:41+00:00",
-      "file": "sdd/tasks/completed/TASK-3417-docs-parrot-agent.md"
+      "file": "sdd/tasks/completed/TASK-3417-docs-parrot-agent.md",
+      "verification": "verified"
     }
   ]
 }
