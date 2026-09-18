@@ -146,7 +146,11 @@ def align_row(
 
     i, j = best_i, best_j
     while i > 0 or j > 0:
-        if i > 0 and j > 0 and dp[i][j] == dp[i - 1][j - 1] + pair_score(row_obs_sorted[i - 1], facings[j - 1], catalog):
+        if (
+            i > 0
+            and j > 0
+            and dp[i][j] == dp[i - 1][j - 1] + pair_score(row_obs_sorted[i - 1], facings[j - 1], catalog)
+        ):
             obs = row_obs_sorted[i - 1]
             facing = facings[j - 1]
             assignments[obs.slot.slot_id] = facing.facing_id

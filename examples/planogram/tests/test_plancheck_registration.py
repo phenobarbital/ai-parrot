@@ -8,17 +8,53 @@ from plancheck.registration import align_row, apply_registration, pair_score, re
 PITCH = 220.0
 
 
-def _obs(image_id: str, row: int, index: int, *, sku: str | None = None, brand: str | None = None,
-         family: str | None = None, occupancy: str = "occupied", x0: int | None = None, candidate_skus: list[str] | None = None) -> SlotObservation:
+def _obs(
+    image_id: str,
+    row: int,
+    index: int,
+    *,
+    sku: str | None = None,
+    brand: str | None = None,
+    family: str | None = None,
+    occupancy: str = "occupied",
+    x0: int | None = None,
+    candidate_skus: list[str] | None = None,
+) -> SlotObservation:
     """Build one observation; box x-centre advances one PITCH per index unless ``x0`` is given."""
     left = (index - 1) * int(PITCH) if x0 is None else x0
-    slot = Slot(slot_id=f"{image_id}_r{row:02d}_s{index:02d}", image_id=image_id, row=row, index=index,
-                box=(left, 0, left + 160, 200), origin="tag_anchored")
-    reading = SlotReading(slot_id=slot.slot_id, occupancy=occupancy, visibility="full", brand=brand, family=family, xl=None, colors=[], pack=None, visible_text=[], evidence="")
+    slot = Slot(
+        slot_id=f"{image_id}_r{row:02d}_s{index:02d}",
+        image_id=image_id,
+        row=row,
+        index=index,
+        box=(left, 0, left + 160, 200),
+        origin="tag_anchored",
+    )
+    reading = SlotReading(
+        slot_id=slot.slot_id,
+        occupancy=occupancy,
+        visibility="full",
+        brand=brand,
+        family=family,
+        xl=None,
+        colors=[],
+        pack=None,
+        visible_text=[],
+        evidence="",
+    )
     from plancheck.models import PriceReading
-    return SlotObservation(slot=slot, reading=reading, resolved_sku=sku, candidate_skus=candidate_skus or [],
-                           resolution="direct" if sku else "unresolved", price=PriceReading(), facing_id=None,
-                           registration_grade=None, issues=[])
+
+    return SlotObservation(
+        slot=slot,
+        reading=reading,
+        resolved_sku=sku,
+        candidate_skus=candidate_skus or [],
+        resolution="direct" if sku else "unresolved",
+        price=PriceReading(),
+        facing_id=None,
+        registration_grade=None,
+        issues=[],
+    )
 
 
 def test_pair_score_table(mini_planogram: PlanogramRef, mini_catalog: Catalog) -> None:
