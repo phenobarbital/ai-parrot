@@ -1,4 +1,5 @@
 """SSE tool_event frames are emitted per request and never leak across requests (FEAT-573 TASK-3409)."""
+
 from __future__ import annotations
 
 import asyncio
@@ -25,6 +26,7 @@ class _OkTool(AbstractTool):
 
 class _FakeBot:
     """ask_stream: delta, tool execution (emits Before/After), delta, final AIMessage."""
+
     def __init__(self, name: str) -> None:
         self.name = name
 
@@ -49,6 +51,7 @@ class _FakeBot:
 
 class _TextOnlyBot:
     """ask_stream: delta, delta, final AIMessage — no tool activity at all."""
+
     def __init__(self, name: str) -> None:
         self.name = name
 
