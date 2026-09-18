@@ -1,4 +1,5 @@
 """Unit tests for the crew Google-credential helpers (FEAT-575, TASK-3451)."""
+
 import logging
 
 import pytest

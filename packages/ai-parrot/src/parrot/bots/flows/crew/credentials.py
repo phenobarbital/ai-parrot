@@ -8,6 +8,7 @@ declaration so the crew build paths can inject it.
 
 Nothing here mutates a ``CrewDefinition``, and the key value is never logged.
 """
+
 from __future__ import annotations
 
 from typing import Any, Optional
