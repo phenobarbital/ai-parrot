@@ -199,10 +199,43 @@ No new tests: the two existing parity tests are the guard. Run them after every 
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestrator (attempt 3, self-implemented per FEAT-549 protocol)
+**Date**: 2026-09-19
+**Notes**: `/sdd-spec` (3 copies): added the carry-forward row to the §2a mapping
+table, `projects`/`tags` lines to the §5 frontmatter shape block plus a bullet
+explaining the carry-forward rule, and a §5 sanity-check item 5. `sdd-ideation`
+(4 copies): added `projects:`/`tags:` lines to the Step 3 frontmatter block plus
+the derivation paragraph, applied identically to `.claude/agents/sdd-ideation.md`
+→ `_subagent_data/sdd-ideation.md` (byte-identical, verified via `cmp`) and to
+both older `.agent/agents/` / `.agents/agents/` copies (verified identical to
+each other before and after editing).
 
-**Completed by**:
-**Date**:
-**Notes**:
+Verification: `pytest tests/sdd_scripts/test_command_twin_parity.py tests/
+sdd_scripts/test_command_contracts.py -q` → 14 passed. `diff .claude/commands/
+sdd-spec.md .agent/workflows/sdd-spec.md` shows only the pre-existing tolerated
+leading-frontmatter block + the one Worktree-policy substitution (matches
+`test_command_twin_parity.py`'s `_strip_frontmatter` + substitution logic — no
+new drift). `cmp .claude/agents/sdd-ideation.md packages/ai-parrot/src/parrot/
+flows/dev_flow/_subagent_data/sdd-ideation.md` → identical (AC4).
+`packages/ai-parrot/tests/flows/dev_flow/test_subagent_defs.py` could NOT be run
+in this worktree — pre-existing, unrelated environment issue (shared `.venv` is
+editable-installed against the main checkout; `parrot.utils.types` Cython module
+fails to import from the worktree's source tree, documented in this session's
+memory as "Local venv blocks parrot imports"). The `cmp` check above verifies the
+exact same byte-identity condition that test asserts.
+`git status --porcelain` before commit showed exactly the 7 task-listed files.
+
+**Contract note**: the Codebase Contract's phrase "after the ONE substitution at
+:20-33" is a simplification — `test_command_twin_parity.py` actually tolerates a
+leading YAML frontmatter block (present in `.agent/workflows/sdd-spec.md` only)
+PLUS the one substitution; confirmed by reading the test source before editing.
+
+**Attempt history**: attempt 1 (codex-spark) failed immediately with a CLI
+dispatch/stdin error (infra failure, not a model defect); attempt 2 (minimax) ran
+40 turns (~700k tokens) but never emitted a final_output payload — recorded as
+model feedback `coder-feedback:de01475a5e9267f17433d5b0` (pattern:
+`no-final-output-after-long-dispatch`). Implemented directly per protocol
+("attempt 3 is yours... only for a standard classification with confirmed
+evidence" — classification here was `standard`).
 
 **Deviations from spec**: none

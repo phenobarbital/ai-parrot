@@ -401,10 +401,34 @@ def test_known_projects_covers_packages_dir() -> None:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-coder (native, sonnet), via sdd-worker orchestration (FEAT-549)
+**Date**: 2026-09-19
+**Notes**: Implemented exactly per spec §3 Module 1: `KNOWN_PROJECTS`, `PROJECT_ALIASES`,
+`_TAG_RE`, `normalize_tag()`, `normalize_project()`, `_as_list()`, `DocTaxonomy`
+(field_validators coerce None/str/list, normalize, dedupe preserving order),
+`_read_frontmatter()` (shared by `parse()` and `parse_taxonomy()`, byte-identical
+`parse()` behavior verified), and `parse_taxonomy()`. Re-exported the six new public
+names from the `scripts/sdd/sdd_meta.py` shim. Wrote
+`tests/sdd_scripts/test_sdd_taxonomy.py` per the spec's Test Specification, plus
+`test_parse_empty_block_still_raises` locking AC4. `FlowMeta` untouched (no new fields).
 
-**Completed by**:
-**Date**:
-**Notes**:
+Verification: `PYTHONPATH=packages/ai-parrot/src pytest tests/sdd_scripts/test_sdd_taxonomy.py
+tests/sdd_scripts/test_sdd_meta.py tests/sdd_scripts/test_sdd_meta_resolve_flow.py -q` →
+31 passed. `ruff check` clean on all three touched files. `git status --porcelain` before
+commit showed exactly the 3 task-listed files.
+
+Merge-tier `select_tests --tier merge` surfaced 12 unrelated pre-existing failures in
+`packages/ai-parrot/tests/knowledge/wiki/{test_cli,test_google_installer_conventions,
+test_installer_mcp,test_mcp_server,test_mcp_server_namespaces,test_mcp_server_vault}.py`
+(model auto-detection / MCP install / vault-namespace tests) — confirmed unrelated to
+this diff: none import `sdd_meta`, and the shell has `ANTHROPIC_MODEL=claude-opus-4-6`
+set, which pollutes the model-detection assertions. Not fixed (out of scope for this
+task's file list). The second merge-tier command's "no tests ran" for
+`tests/knowledge/wiki/test_ledger_sdd_ingest_taxonomy.py` is expected — that file belongs
+to TASK-3462, not yet implemented.
+
+Review: no defects found (`coder-review:5fe9714af7213765172bbdc1`), fix_commits=[].
+
+Seat: sonnet (native) · Backend: native · Model: sonnet · Attempts: 1 · Duration: n/a · Tokens: n/a
 
 **Deviations from spec**: none

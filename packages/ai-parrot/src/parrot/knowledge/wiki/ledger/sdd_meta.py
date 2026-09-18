@@ -15,10 +15,10 @@ from __future__ import annotations
 import logging
 import re
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +39,63 @@ WORK_KIND_FLOW: dict[str, tuple[str, str]] = {
 }
 
 
+#: Canonical ``projects`` values for SDD docs (FEAT-576): every ``packages/<dist>``
+#: directory name plus non-package areas. Soft vocabulary — like
+#: ``KNOWN_BRANCHES``, an unknown value logs a warning and is kept, never rejected.
+KNOWN_PROJECTS: frozenset[str] = frozenset(
+    {
+        "ai-parrot",
+        "ai-parrot-advisors",
+        "ai-parrot-client-amazon",
+        "ai-parrot-client-anthropic",
+        "ai-parrot-client-gemma4",
+        "ai-parrot-client-google",
+        "ai-parrot-client-grok",
+        "ai-parrot-client-groq",
+        "ai-parrot-client-hf",
+        "ai-parrot-client-jev",
+        "ai-parrot-client-local",
+        "ai-parrot-client-meta",
+        "ai-parrot-client-moonshot",
+        "ai-parrot-client-nvidia",
+        "ai-parrot-client-openai",
+        "ai-parrot-client-openrouter",
+        "ai-parrot-client-vllm",
+        "ai-parrot-client-zai",
+        "ai-parrot-embeddings",
+        "ai-parrot-integrations",
+        "ai-parrot-loaders",
+        "ai-parrot-openlit-bridge",
+        "ai-parrot-pipelines",
+        "ai-parrot-server",
+        "ai-parrot-tools",
+        "ai-parrot-visualizations",
+        "navrules",
+        "parrot-formdesigner",
+        "sdd-tooling",
+        "dev-loop",
+        "admin-ui",
+        "docs",
+        "ci",
+    }
+)
+
+#: alias -> canonical project name, applied after tag-style normalization.
+PROJECT_ALIASES: dict[str, str] = {
+    "parrot-core": "ai-parrot",
+    "core": "ai-parrot",
+    "parrot": "ai-parrot",
+    "formdesigner": "parrot-formdesigner",
+    "server": "ai-parrot-server",
+    "tools": "ai-parrot-tools",
+    "parrot-tools": "ai-parrot-tools",
+    "sdd": "sdd-tooling",
+    "ui": "admin-ui",
+}
+
+_TAG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
+
+
 class FlowMeta(BaseModel):
     """SDD flow metadata derived from a doc's YAML frontmatter."""
 
@@ -50,6 +107,23 @@ class FlowMeta(BaseModel):
         if self.type == "hotfix" and self.base_branch != "main":
             raise ValueError("type='hotfix' requires base_branch='main' " f"(got base_branch={self.base_branch!r})")
         return self
+
+
+def _read_frontmatter(doc_path: Path) -> dict[str, Any] | None:
+    """Return the leading YAML frontmatter of ``doc_path`` as a dict.
+
+    Same rules as :func:`parse`: the block must start at byte 0 with ``---``.
+    Returns ``None`` when there is no usable block (no leading ``---``, an
+    unterminated block, or a non-mapping body) and ``{}`` for an empty block.
+    """
+    text = doc_path.read_text(encoding="utf-8")
+    if not text.startswith("---"):
+        return None
+    parts = text.split("---", 2)
+    if len(parts) < 3:
+        return None
+    block = yaml.safe_load(parts[1]) or {}
+    return block if isinstance(block, dict) else None
 
 
 def parse(doc_path: Path) -> FlowMeta:
@@ -73,14 +147,8 @@ def parse(doc_path: Path) -> FlowMeta:
         pydantic.ValidationError: When frontmatter is present but
             invalid (e.g. ``type: hotfix`` without ``base_branch: main``).
     """
-    text = doc_path.read_text(encoding="utf-8")
-    if not text.startswith("---"):
-        return FlowMeta(type="feature", base_branch="dev")
-    parts = text.split("---", 2)
-    if len(parts) < 3:
-        return FlowMeta(type="feature", base_branch="dev")
-    block = yaml.safe_load(parts[1]) or {}
-    if not isinstance(block, dict):
+    block = _read_frontmatter(doc_path)
+    if block is None:
         return FlowMeta(type="feature", base_branch="dev")
     return FlowMeta(**block)
 
@@ -100,6 +168,96 @@ def emit(meta: FlowMeta) -> str:
     """
     body = yaml.safe_dump(meta.model_dump(), sort_keys=False).rstrip()
     return f"---\n{body}\n---\n"
+
+
+def normalize_tag(raw: str) -> str:
+    """Normalize a tag: lowercase, trim, whitespace/underscore runs -> '-', collapse '--', strip '-'.
+
+    Raises:
+        ValueError: when the result does not match ``^[a-z0-9][a-z0-9-]{0,39}$``.
+    """
+    value = raw.strip().lower()
+    value = re.sub(r"[\s_]+", "-", value)
+    value = re.sub(r"-{2,}", "-", value)
+    value = value.strip("-")
+    if not _TAG_RE.match(value):
+        raise ValueError(f"Invalid tag/project {raw!r}: normalized to {value!r}, " f"must match {_TAG_RE.pattern!r}")
+    return value
+
+
+def normalize_project(raw: str) -> str:
+    """Normalize like a tag, then map through ``PROJECT_ALIASES``.
+
+    Logs a warning (never raises) when the canonical value is not in ``KNOWN_PROJECTS``.
+
+    Raises:
+        ValueError: only when the value is malformed (see :func:`normalize_tag`).
+    """
+    value = normalize_tag(raw)
+    value = PROJECT_ALIASES.get(value, value)
+    if value not in KNOWN_PROJECTS:
+        logger.warning("Unknown SDD project %r (not in KNOWN_PROJECTS); keeping it", value)
+    return value
+
+
+def _as_list(value: Any) -> list[Any]:
+    """Coerce a frontmatter value into a list: ``None`` -> ``[]``, ``str`` -> ``[str]``.
+
+    Raises:
+        ValueError: when ``value`` is neither ``None``, a string, nor a list.
+    """
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, list):
+        return value
+    raise ValueError(f"Expected a string or list of strings, got {type(value).__name__}: {value!r}")
+
+
+class DocTaxonomy(BaseModel):
+    """Organizational metadata of an SDD doc: the projects it concerns and its tags."""
+
+    projects: list[str] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
+
+    @field_validator("projects", mode="before")
+    @classmethod
+    def _norm_projects(cls, value: Any) -> list[str]:
+        """Coerce None/str to a list, normalize each entry, dedupe preserving order."""
+        result: list[str] = []
+        for item in _as_list(value):
+            normalized = normalize_project(item)
+            if normalized not in result:
+                result.append(normalized)
+        return result
+
+    @field_validator("tags", mode="before")
+    @classmethod
+    def _norm_tags(cls, value: Any) -> list[str]:
+        """Same as projects, with :func:`normalize_tag` and no vocabulary check."""
+        result: list[str] = []
+        for item in _as_list(value):
+            normalized = normalize_tag(item)
+            if normalized not in result:
+                result.append(normalized)
+        return result
+
+
+def parse_taxonomy(doc_path: Path) -> DocTaxonomy:
+    """Parse ``projects``/``tags`` from a brainstorm/proposal/spec frontmatter (FEAT-576).
+
+    Args:
+        doc_path: Markdown document to inspect.
+
+    Returns:
+        A ``DocTaxonomy``; empty lists when the doc has no frontmatter or no keys.
+
+    Raises:
+        pydantic.ValidationError: when a tag/project is malformed.
+    """
+    block = _read_frontmatter(doc_path) or {}
+    return DocTaxonomy(projects=block.get("projects"), tags=block.get("tags"))
 
 
 def resolve_flow(

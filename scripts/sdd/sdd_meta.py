@@ -9,12 +9,18 @@ SDD commands, agents and tests.
 
 from parrot.knowledge.wiki.ledger.sdd_meta import (  # noqa: F401
     KNOWN_BRANCHES,
+    KNOWN_PROJECTS,
+    PROJECT_ALIASES,
     WORK_KIND_FLOW,
     WORKTREE_ROOT,
+    DocTaxonomy,
     FlowMeta,
     WorktreePlan,
     emit,
+    normalize_project,
+    normalize_tag,
     parse,
+    parse_taxonomy,
     plan_worktree,
     resolve_flow,
 )

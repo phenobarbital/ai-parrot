@@ -168,6 +168,62 @@ auto-pushed or auto-PR'd to `main`. The user opens the PR manually; afterwards,
 
 ---
 
+## Document Taxonomy (FEAT-576)
+
+Brainstorms, proposals and specs carry two organizational frontmatter keys:
+
+```yaml
+projects: [ai-parrot, ai-parrot-server]   # parts of the codebase the doc concerns
+tags: [memory, compaction]                # free-form kebab-case keywords
+```
+
+- **projects** — `packages/*` distribution names plus the areas `sdd-tooling`,
+  `dev-loop`, `admin-ui`, `docs`, `ci` (`KNOWN_PROJECTS`). Aliases normalize:
+  `parrot-core` → `ai-parrot`, `formdesigner` → `parrot-formdesigner`, …
+  Unknown values **warn but are kept**.
+- **tags** — lowercased, spaces/underscores → `-`, deduplicated.
+- Missing keys read as empty lists; the per-spec task index does not cache them.
+- `/sdd-spec` copies both from the brainstorm/proposal.
+
+### Querying
+
+List documents by taxonomy:
+
+```bash
+python -m scripts.sdd.doc_taxonomy [--root .] [--kind spec|brainstorm|proposal|all] \
+  [--project P ...] [--tag T ...] [--paths-only | --json | --summary]
+```
+
+- `--paths-only` — print relative paths only (one per line).
+- `--json` — full metadata JSON for each doc.
+- `--summary` — project and tag frequency tables.
+- With none of the three flags, prints one TSV row per doc (`path`, `kind`,
+  comma-joined `projects`, comma-joined `tags`).
+
+### Where they are used
+
+- `/sdd-status` and `/sdd-next` accept `--project` and `--tag` to filter the
+  displayed tasks.
+- `/sdd-tojira` maps `projects ∪ tags` to Jira labels (additive on update).
+- The wiki spec-page summary shows the taxonomy for each spec.
+
+### Backfill
+
+Infer missing `projects` frontmatter for existing docs (dry-run by default):
+
+```bash
+python -m scripts.sdd.backfill_taxonomy [--root .] [--kind spec|brainstorm|proposal|all] \
+  [--limit N] [--apply]
+```
+
+- Default is a dry run: prints `<path>: projects = [...]` and never writes.
+- `--apply` writes the edits as text insertions (never a YAML re-dump);
+  non-empty `projects` are never overwritten.
+- Review the proposed diff; if correct, re-run with `--apply` and commit
+  yourself — the script never commits.
+
+---
+
 ## Release Cut
 
 When the team decides to freeze a release, a maintainer cuts `staging`
