@@ -1,4 +1,5 @@
 """BotManager passes CREW_AI_KEY to AgentCrew.from_definition (FEAT-575, TASK-3455)."""
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock
