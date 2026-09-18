@@ -143,9 +143,7 @@ async def test_verify_expected_with_evidence(
     # Set up backend response: expected SKU with evidence
     fake_backend.queue["verify"] = [
         RowVerification(
-            slots=[
-                VerificationReading(slot_id=obs.slot.slot_id, choice="AC-11", evidence="reads 10 Black")
-            ]
+            slots=[VerificationReading(slot_id=obs.slot.slot_id, choice="AC-11", evidence="reads 10 Black")]
         )
     ]
 
@@ -165,9 +163,7 @@ async def test_verify_expected_with_evidence(
 
 
 @pytest.mark.asyncio
-async def test_verify_without_evidence_is_inferred(
-    shelf_image, mini_planogram, mini_catalog, fake_backend
-) -> None:
+async def test_verify_without_evidence_is_inferred(shelf_image, mini_planogram, mini_catalog, fake_backend) -> None:
     """Expected sku + evidence '' → resolution == 'inferred', resolved_sku is None, issue recorded."""
     obs = _occupied_unresolved("img001", 0, 0, "p001_f1")
     observations = [obs]
@@ -188,9 +184,7 @@ async def test_verify_without_evidence_is_inferred(
 
 
 @pytest.mark.asyncio
-async def test_verify_distractor_other_and_invalid(
-    shelf_image, mini_planogram, mini_catalog, fake_backend
-) -> None:
+async def test_verify_distractor_other_and_invalid(shelf_image, mini_planogram, mini_catalog, fake_backend) -> None:
     """Distractor+evidence → resolved to distractor/verified_by_expectation; 'cannot_tell' → unchanged;
     unknown sku → unchanged + 'verify_invalid_choice'; foreign slot_id → error string.
     """
@@ -224,9 +218,7 @@ async def test_verify_cannot_tell_unchanged(shelf_image, mini_planogram, mini_ca
     observations = [obs]
 
     fake_backend.queue["verify"] = [
-        RowVerification(
-            slots=[VerificationReading(slot_id=obs.slot.slot_id, choice="cannot_tell", evidence="")]
-        )
+        RowVerification(slots=[VerificationReading(slot_id=obs.slot.slot_id, choice="cannot_tell", evidence="")])
     ]
 
     errors = await verify_rows(
@@ -261,9 +253,7 @@ async def test_verify_invalid_choice(shelf_image, mini_planogram, mini_catalog, 
 
 
 @pytest.mark.asyncio
-async def test_verify_row_failure_leaves_observations(
-    shelf_image, mini_planogram, mini_catalog, fake_backend
-) -> None:
+async def test_verify_row_failure_leaves_observations(shelf_image, mini_planogram, mini_catalog, fake_backend) -> None:
     """Queue['verify'] = [RuntimeError('boom')] → returns 1 error string, observations unchanged."""
     obs = _occupied_unresolved("img001", 0, 0, "p001_f1")
     observations = [obs]
@@ -290,9 +280,7 @@ async def test_verify_skips_non_targets(shelf_image, mini_planogram, mini_catalo
 
     # 1. Unregistered (no facing_id)
     slot1 = _slot(image_id, 0, 0)
-    reading1 = SlotReading(
-        slot_id=slot1.slot_id, occupancy="occupied", visibility="full", evidence="test"
-    )
+    reading1 = SlotReading(slot_id=slot1.slot_id, occupancy="occupied", visibility="full", evidence="test")
     obs1 = SlotObservation(slot=slot1, reading=reading1, resolution="unresolved", facing_id=None)
 
     # 2. Empty occupancy
@@ -303,9 +291,7 @@ async def test_verify_skips_non_targets(shelf_image, mini_planogram, mini_catalo
     # 3. Already resolved
     slot3 = _slot(image_id, 0, 2)
     reading3 = SlotReading(slot_id=slot3.slot_id, occupancy="occupied", visibility="full", evidence="test")
-    obs3 = SlotObservation(
-        slot=slot3, reading=reading3, resolution="direct", facing_id="p001_f3", resolved_sku="AC-13"
-    )
+    obs3 = SlotObservation(slot=slot3, reading=reading3, resolution="direct", facing_id="p001_f3", resolved_sku="AC-13")
 
     observations = [obs1, obs2, obs3]
 

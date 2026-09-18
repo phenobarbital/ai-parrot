@@ -24,9 +24,7 @@ CHOICE_OTHER = "other"
 CHOICE_CANNOT_TELL = "cannot_tell"
 
 
-def pick_distractors(
-    facing: PlanogramFacing, planogram: PlanogramRef, catalog: Catalog, n: int = 3
-) -> list[str]:
+def pick_distractors(facing: PlanogramFacing, planogram: PlanogramRef, catalog: Catalog, n: int = 3) -> list[str]:
     """Pick up to ``n`` same-brand distractor SKUs for ``facing`` (never the expected SKU).
 
     Tier 1: same family, other variant. Tier 2: shelf neighbours within ±2 slots. Sorted by SKU
@@ -271,8 +269,7 @@ async def verify_rows(
 
     # Run all rows concurrently
     tasks = [
-        _verify_one_row(image_id, row, row_targets)
-        for (image_id, row), row_targets in sorted(targets_by_row.items())
+        _verify_one_row(image_id, row, row_targets) for (image_id, row), row_targets in sorted(targets_by_row.items())
     ]
     results = await asyncio.gather(*tasks)
     return [e for errs in results for e in errs]
