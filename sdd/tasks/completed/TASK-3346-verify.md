@@ -384,10 +384,15 @@ from the conftest fixtures only (`AC-<shelf><slot>`, `BO-<shelf><slot>`).
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-coder (backend nova, model minimax.minimax-m2.5, attempt_uid 1791ac27a284476cb7da8cc2ff0a924c)
+**Date**: 2026-09-18
+**Notes**: Created `examples/planogram/plancheck/verify.py` (pick_distractors two-tier
+selection, option_order deterministic sha256 shuffle, `_targets` filter, prompt builder,
+verify_rows outcome table) and `examples/planogram/tests/test_plancheck_verify.py` with
+9 tests. `ruff check` clean. Engine lint autofix commit `30f1ba65d`. Post-merge full
+suite → 107 passed. Review recorded: `coder-review:a4a95a996ed828fcf4c693d2`, no
+corrections needed.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Seat**: minimax · Backend: nova · Model: minimax.minimax-m2.5 · Attempts: 1 · Duration: 129.9s · Tokens: 389627/8414
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

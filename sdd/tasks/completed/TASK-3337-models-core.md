@@ -561,10 +561,18 @@ See the blueprint's test file: six tests, five with FILL IN bodies bounded above
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-coder (native, model sonnet, attempt_uid 15630b4cf6774fdd866bbec83e290abc)
+**Date**: 2026-09-17
+**Notes**: Created `examples/planogram/plancheck/__init__.py`, `examples/planogram/plancheck/models.py`
+(all 16 scoped classes/aliases ending with the TASK-3338 anchor comment), `examples/planogram/tests/conftest.py`
+(sys.path bootstrap + fixtures + FakeBackend) and `examples/planogram/tests/test_plancheck_models.py`
+(all 5 FILL IN test bodies completed). Verified the Codebase Contract manually (cv2/numpy/pydantic/
+pytest-asyncio versions, no `asyncio_mode=auto`, detector filter constants, no import from the
+nonexistent `inkcheck.schema`, no real SKUs). `pytest examples/planogram/tests/test_plancheck_models.py -q`
+→ 6 passed; `ruff check` clean; re-ran TASK-3336's `test_plancheck_gitignore.py` → 8 passed (no
+regression). Post-merge full suite `pytest examples/planogram/tests/ -q` → 14 passed. Lint auto-fixed
+by the engine (black) on merge, commit `10364c92f`.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Seat**: sonnet(native) · Backend: native · Model: sonnet · Attempts: 1 · Duration: n/a · Tokens: n/a
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

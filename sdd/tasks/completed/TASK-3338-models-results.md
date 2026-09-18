@@ -398,10 +398,17 @@ See the blueprint's test file (six tests, FILL IN bodies bounded above).
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-coder (native, model sonnet, attempt_uid 0b2b6bdc1a68418da10abb2820761cee)
+**Date**: 2026-09-17
+**Notes**: Appended the 13 result/config model classes (SlotObservation, RowRegistration,
+ImageRegistration, ScoringWeights, PositionResult, ShelfScore, BrandShare, PriceCompliance,
+ComplianceSummary, ImageInfo, RunInfo, ComplianceReport, Settings) below the TASK-3337 anchor
+in `models.py` — a pure append (`git diff` confirmed part 1 byte-identical). Created
+`examples/planogram/tests/test_plancheck_models_results.py` with all 6 FILL IN tests.
+`pytest examples/planogram/tests/test_plancheck_models_results.py -q` → 6 passed; TASK-3337
+regression suite still 6 passed; `ruff check` clean. Post-merge full suite → 28 passed.
+Review recorded: `coder-review:70f845327357d564b30ca991`, no corrections needed.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Seat**: sonnet(native) · Backend: native · Model: sonnet · Attempts: 1 · Duration: n/a · Tokens: n/a
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

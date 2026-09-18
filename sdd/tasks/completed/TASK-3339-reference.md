@@ -571,10 +571,15 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-coder (backend nova, model mistral.devstral-2-123b, attempt_uid 1a0eb94d44a84a52bfb9d74fccd0f286)
+**Date**: 2026-09-17
+**Notes**: Created `examples/planogram/plancheck/reference.py` with `load_planogram`,
+`load_catalog`, `load_prices`, `emit_catalog_template`, `normalize_brand`, `resolve_identity`,
+and `examples/planogram/tests/test_plancheck_reference.py` with 8 tests covering all
+acceptance criteria. `ruff check` clean. Engine lint autofix commit `e4d38697d`. Post-merge
+full suite → 28 passed. Review recorded: `coder-review:6d92fde1c13f6b19c27d1e06`, no
+corrections needed.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Seat**: mistral · Backend: nova · Model: mistral.devstral-2-123b · Attempts: 1 · Duration: 229.0s · Tokens: 759196/7738
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

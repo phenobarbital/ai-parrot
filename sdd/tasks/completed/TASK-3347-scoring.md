@@ -544,10 +544,17 @@ from the conftest fixtures only.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-coder (backend nova, model qwen.qwen3-coder-480b-a35b-instruct, attempt_uid aed98fd46ded4b4ba0fb49a4458648ed)
+**Date**: 2026-09-17
+**Notes**: Created `examples/planogram/plancheck/scoring.py` (10-step position-status
+decision list, strict/lenient credit calculations, merge_positions, shelf scores,
+brand shares, summary stats) and `examples/planogram/tests/test_plancheck_scoring.py`.
+A prior attempt on this task (mistral, attempt_uid ce80b352b7d442aa8a1651c3fd12b1c8)
+failed with an API timeout before producing files; this seat's retry completed cleanly.
+`ruff check` clean, engine lint autofix commit `5d6888f44`. Post-merge full suite →
+64 passed. Review recorded: `coder-review:4465ab5d2c807f9fa1f6f9de`, no corrections
+needed.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Seat**: qwen · Backend: nova · Model: qwen.qwen3-coder-480b-a35b-instruct · Attempts: 2 (1 timeout retry) · Duration: 256.7s · Tokens: 1161296/22469
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

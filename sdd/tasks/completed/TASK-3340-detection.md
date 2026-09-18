@@ -511,10 +511,17 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-coder (native, model sonnet, attempt_uid 0660f773642545d48800a2ca4c68e10c)
+**Date**: 2026-09-17
+**Notes**: Created `examples/planogram/plancheck/detection.py` (line-for-line port of the
+adopted `detect_price_labels.py` candidates()/group_rows(), plus detect_tags() with ROI
+filter, crop_box padding, Tag/TagRow construction, unassigned-row fallback) and
+`examples/planogram/tests/test_plancheck_detection.py` (4 tests incl. a parity test
+against the reference script). `pytest examples/planogram/tests/test_plancheck_detection.py -q`
+→ 4 passed; `ruff check` clean. Engine lint autofix commit `30cee2741`. Post-merge full
+suite → 39 passed. Review recorded: `coder-review:bd86c568aabaf580b193e60d`, no
+corrections needed.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Seat**: sonnet(native) · Backend: native · Model: sonnet · Attempts: 1 · Duration: n/a · Tokens: n/a
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
