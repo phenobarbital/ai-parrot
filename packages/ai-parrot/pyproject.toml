@@ -642,6 +642,11 @@ meta = [
     "ai-parrot-client-meta",
 ]
 
+# TypeSafe AI System One (Jev) — typed decisions, not text generation.
+jev = [
+    "ai-parrot-client-jev",
+]
+
 # All 15 provider satellites this feature extracted. Each satellite pulls
 # its own SDK (e.g. ai-parrot-client-openai -> openai==3.3.1,
 # ai-parrot-client-groq -> groq==0.33.0, ...) — nothing else to list here.
@@ -661,6 +666,7 @@ llms = [
     "ai-parrot-client-openrouter",
     "ai-parrot-client-local",
     "ai-parrot-client-vllm",
+    "ai-parrot-client-jev",
 ]
 
 integrations = [
@@ -910,6 +916,7 @@ ai-parrot-client-moonshot = { workspace = true }
 ai-parrot-client-openrouter = { workspace = true }
 ai-parrot-client-local = { workspace = true }
 ai-parrot-client-vllm = { workspace = true }
+ai-parrot-client-jev = { workspace = true }
 
 [tool.setuptools.dynamic]
 version = {attr = "parrot.version.__version__"}

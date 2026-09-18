@@ -77,6 +77,7 @@ NEW_PROJECTS: list[tuple[str, str]] = [
     ("ai-parrot-client-vllm", f"ai_parrot_client_vllm-{VERSION}*"),
     ("ai-parrot-client-openrouter", f"ai_parrot_client_openrouter-{VERSION}*"),
     ("ai-parrot-client-zai", f"ai_parrot_client_zai-{VERSION}*"),
+    ("ai-parrot-client-jev", f"ai_parrot_client_jev-{VERSION}*"),
     ("ai-parrot-openlit-bridge", f"ai_parrot_openlit_bridge-{VERSION}*"),
 ]
 

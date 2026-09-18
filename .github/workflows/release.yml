@@ -479,6 +479,7 @@ jobs:
           - ai-parrot-client-openrouter
           - ai-parrot-client-vllm
           - ai-parrot-client-zai
+          - ai-parrot-client-jev
           - ai-parrot-openlit-bridge
     steps:
       - uses: actions/checkout@v6

@@ -27,6 +27,7 @@ distribution into its own sibling package, one per provider:
 | `parrot.clients.openrouter` | `ai-parrot-client-openrouter` |
 | `parrot.clients.local` | `ai-parrot-client-local` |
 | `parrot.clients.vllm` | `ai-parrot-client-vllm` |
+| `parrot.clients.jev` (new, TypeSafe System One) | `ai-parrot-client-jev` |
 
 **Import paths are unchanged** — code such as
 `from parrot.clients.anthropic import AnthropicClient` continues to work
