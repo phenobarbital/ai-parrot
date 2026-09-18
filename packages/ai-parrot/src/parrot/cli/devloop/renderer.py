@@ -178,7 +178,6 @@ class RunView:
         self._add_line(Text(f"  [{node_id}] skipped", style="dim"))
 
     def _handle_dispatch_queued(self, action: Any) -> None:
-        node_id = getattr(action, "node_id", "")
         dispatcher = getattr(action, "dispatcher", "")
         self._add_line(Text(f"    dispatch queued ({dispatcher})", style="dim"))
 

@@ -8,11 +8,11 @@ import pytest
 
 textual = pytest.importorskip("textual")
 
-from prompt_toolkit.history import InMemoryHistory  # verified: repl.py:16
-from textual.app import App, ComposeResult  # verified: textual 8.2.8 probe
+from prompt_toolkit.history import InMemoryHistory  # noqa: E402
+from textual.app import App, ComposeResult  # noqa: E402
 
-from parrot.cli.events import TextDelta, ToolFinished, ToolStarted, TurnCompleted, TurnEventKind, TurnStarted
-from parrot.cli.tui.widgets import Composer, StatusBar, ToolActivity, TranscriptView, TurnPanel
+from parrot.cli.events import TextDelta, ToolFinished, ToolStarted, TurnCompleted, TurnEventKind, TurnStarted  # noqa: E402
+from parrot.cli.tui.widgets import Composer, StatusBar, ToolActivity, TranscriptView, TurnPanel  # noqa: E402
 
 
 class _Harness(App[None]):

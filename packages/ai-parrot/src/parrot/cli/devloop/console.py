@@ -808,7 +808,7 @@ class DevLoopConsole:
                     stop_event.clear()
 
         # Wait for all runs to complete
-        for run_id, task in list(self._runs.items()):
+        for _run_id, task in list(self._runs.items()):
             if not task.done():
                 task.cancel()
                 try:

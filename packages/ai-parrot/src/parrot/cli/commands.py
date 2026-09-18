@@ -13,6 +13,7 @@ of ``parrot.cli.repl`` (avoiding the circular import at ``repl.py:22``).
 
 import asyncio
 import json
+import os
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -323,9 +324,9 @@ async def _cmd_export(ctx: "CommandContext", args: str) -> None:
     # Path traversal guard — only applies to relative paths to prevent ../escape
     raw = Path(path)
     if not raw.is_absolute():
-        resolved = raw.resolve()
-        cwd = Path.cwd().resolve()
-        if not str(resolved).startswith(str(cwd)):
+        resolved = os.path.realpath(raw)  # noqa: ASYNC240
+        cwd = os.path.realpath(os.getcwd())  # noqa: ASYNC240
+        if not resolved.startswith(cwd):
             ctx.renderer.print("[red]Export path must be within the current directory.[/red]")
             return
     turns = [turn.to_dict() for turn in ctx.history]
