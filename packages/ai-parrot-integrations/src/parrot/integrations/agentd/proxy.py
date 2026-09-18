@@ -17,6 +17,8 @@ from collections import deque
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any
 
+from parrot.cli.events import BackendCapabilities
+
 from .client import AgentDaemonClient, RpcRemoteError, resolve_socket
 from .protocol import (
     METHOD_EVENT_JOB_ERROR,
@@ -25,7 +27,7 @@ from .protocol import (
 )
 
 if TYPE_CHECKING:
-    from parrot.cli.repl import AgentREPL
+    from parrot.cli.commands import CommandContext
 
 __all__ = [
     "DaemonAgentProxy",
@@ -72,7 +74,13 @@ class _DaemonBotProxy:
         _client: The shared `AgentDaemonClient`.
         _tools: Cached list of tool names (populated once via
             `_ensure_tools()`).
+        capabilities: Daemon backend capabilities (spec §2 Data Models; Q9/Q10): streaming only.
     """
+
+    #: Daemon backend capabilities (spec §2 Data Models; Q9/Q10): streaming only.
+    capabilities: BackendCapabilities = BackendCapabilities(
+        streaming=True, live_tool_events=False, usage=False, resume=False
+    )
 
     def __init__(self, name: str, client: AgentDaemonClient) -> None:
         self.name = name
@@ -105,9 +113,7 @@ class _DaemonBotProxy:
         Returns:
             A `_DaemonResponse` with an `.output` attribute.
         """
-        result = await self._client.call(
-            "chat.send", prompt=question, stream=False, metadata=kwargs
-        )
+        result = await self._client.call("chat.send", prompt=question, stream=False, metadata=kwargs)
         return _DaemonResponse(result)
 
     async def ask_stream(
@@ -255,19 +261,19 @@ class DaemonAgentProxy:
 # --------------------------------------------------------------------------
 
 
-async def _cmd_status(repl: AgentREPL, proxy: DaemonAgentProxy) -> None:
+async def _cmd_status(ctx: "CommandContext", proxy: DaemonAgentProxy) -> None:
     """Handle `/status` -- pretty-print `daemon.status`."""
     if proxy._client is None:
-        repl.renderer.print("[red]Not connected to a daemon.[/red]")
+        ctx.renderer.print("[red]Not connected to a daemon.[/red]")
         return
     try:
         status = await proxy._client.call("daemon.status")
     except RpcRemoteError as exc:
-        repl.renderer.render_error(exc)
+        ctx.renderer.render_error(exc)
         return
 
     scheduler = status.get("scheduler", {})
-    repl.renderer.render_info(
+    ctx.renderer.render_info(
         [
             ("PID", str(status.get("pid"))),
             ("Uptime (s)", f"{status.get('uptime_s', 0):.1f}"),
@@ -280,10 +286,10 @@ async def _cmd_status(repl: AgentREPL, proxy: DaemonAgentProxy) -> None:
     )
 
 
-async def _cmd_schedules(repl: AgentREPL, proxy: DaemonAgentProxy, args: str) -> None:
+async def _cmd_schedules(ctx: "CommandContext", proxy: DaemonAgentProxy, args: str) -> None:
     """Handle `/schedules [list|add|pause|resume|remove ...]`."""
     if proxy._client is None:
-        repl.renderer.print("[red]Not connected to a daemon.[/red]")
+        ctx.renderer.print("[red]Not connected to a daemon.[/red]")
         return
 
     parts = args.split(maxsplit=1)
@@ -294,7 +300,7 @@ async def _cmd_schedules(repl: AgentREPL, proxy: DaemonAgentProxy, args: str) ->
         if sub == "list":
             jobs = await proxy._client.call("schedules.list")
             if not jobs:
-                repl.renderer.print("[dim]No schedules registered.[/dim]")
+                ctx.renderer.print("[dim]No schedules registered.[/dim]")
                 return
             rows = [
                 [
@@ -305,46 +311,45 @@ async def _cmd_schedules(repl: AgentREPL, proxy: DaemonAgentProxy, args: str) ->
                 ]
                 for job in jobs
             ]
-            repl.renderer.render_table(
+            ctx.renderer.render_table(
                 headers=["ID", "Agent", "Source", "Next Run"],
                 rows=rows,
                 title="Schedules",
             )
         elif sub == "pause":
             result = await proxy._client.call("schedules.pause", schedule_id=rest.strip())
-            repl.renderer.print(f"[green]Paused:[/green] {result}")
+            ctx.renderer.print(f"[green]Paused:[/green] {result}")
         elif sub == "resume":
             result = await proxy._client.call("schedules.resume", schedule_id=rest.strip())
-            repl.renderer.print(f"[green]Resumed:[/green] {result}")
+            ctx.renderer.print(f"[green]Resumed:[/green] {result}")
         elif sub == "remove":
             result = await proxy._client.call("schedules.remove", schedule_id=rest.strip())
-            repl.renderer.print(f"[green]Removed:[/green] {result}")
+            ctx.renderer.print(f"[green]Removed:[/green] {result}")
         elif sub == "add":
             try:
                 payload = json.loads(rest) if rest.strip() else {}
             except json.JSONDecodeError as exc:
-                repl.renderer.print(f"[red]Invalid JSON for /schedules add: {exc}[/red]")
+                ctx.renderer.print(f"[red]Invalid JSON for /schedules add: {exc}[/red]")
                 return
             result = await proxy._client.call("schedules.add", **payload)
-            repl.renderer.print(f"[green]Added:[/green] {result}")
+            ctx.renderer.print(f"[green]Added:[/green] {result}")
         else:
-            repl.renderer.print(
-                f"[yellow]Unknown /schedules subcommand: {sub}[/yellow] "
-                "(use list|add|pause|resume|remove)"
+            ctx.renderer.print(
+                f"[yellow]Unknown /schedules subcommand: {sub}[/yellow] " "(use list|add|pause|resume|remove)"
             )
     except RpcRemoteError as exc:
-        repl.renderer.render_error(exc)
+        ctx.renderer.render_error(exc)
 
 
-async def _cmd_invoke(repl: AgentREPL, proxy: DaemonAgentProxy, args: str) -> None:
+async def _cmd_invoke(ctx: "CommandContext", proxy: DaemonAgentProxy, args: str) -> None:
     """Handle `/invoke <method> [json-kwargs]`."""
     if proxy._client is None:
-        repl.renderer.print("[red]Not connected to a daemon.[/red]")
+        ctx.renderer.print("[red]Not connected to a daemon.[/red]")
         return
 
     parts = args.split(maxsplit=1)
     if not parts:
-        repl.renderer.print("[yellow]Usage: /invoke <method> [json-kwargs][/yellow]")
+        ctx.renderer.print("[yellow]Usage: /invoke <method> [json-kwargs][/yellow]")
         return
 
     method = parts[0]
@@ -354,51 +359,50 @@ async def _cmd_invoke(repl: AgentREPL, proxy: DaemonAgentProxy, args: str) -> No
         try:
             kwargs = json.loads(raw_kwargs)
         except json.JSONDecodeError as exc:
-            repl.renderer.print(f"[red]Invalid JSON kwargs for /invoke: {exc}[/red]")
+            ctx.renderer.print(f"[red]Invalid JSON kwargs for /invoke: {exc}[/red]")
             return
         if not isinstance(kwargs, dict):
-            repl.renderer.print("[red]/invoke kwargs must be a JSON object.[/red]")
+            ctx.renderer.print("[red]/invoke kwargs must be a JSON object.[/red]")
             return
 
     try:
-        result = await proxy._client.call(
-            "agent.invoke", params={"method": method, "kwargs": kwargs}
-        )
+        result = await proxy._client.call("agent.invoke", params={"method": method, "kwargs": kwargs})
     except RpcRemoteError as exc:
-        repl.renderer.render_error(exc)
+        ctx.renderer.render_error(exc)
         return
 
-    repl.renderer.print(f"[cyan]{method}[/cyan] -> {result}")
+    ctx.renderer.print(f"[cyan]{method}[/cyan] -> {result}")
 
 
-def register_daemon_commands(repl: AgentREPL, proxy: DaemonAgentProxy) -> None:
-    """Register `/status`, `/schedules`, `/invoke` onto an `AgentREPL`.
+def register_daemon_commands(ctx: "CommandContext", proxy: DaemonAgentProxy) -> None:
+    """Register `/status`, `/schedules`, `/invoke` onto a `CommandContext`.
 
     Args:
-        repl: The REPL instance to register commands on.
-        proxy: The `DaemonAgentProxy` backing this REPL session -- its
+        ctx: The command context (inline `AgentREPL` or the TUI adapter) to
+            register commands on.
+        proxy: The `DaemonAgentProxy` backing this session -- its
             `AgentDaemonClient` is what the handlers call.
     """
     from parrot.cli.commands import SlashCommand
 
-    async def _status(repl: AgentREPL, args: str) -> None:
-        await _cmd_status(repl, proxy)
+    async def _status(ctx: "CommandContext", args: str) -> None:
+        await _cmd_status(ctx, proxy)
 
-    async def _schedules(repl: AgentREPL, args: str) -> None:
-        await _cmd_schedules(repl, proxy, args)
+    async def _schedules(ctx: "CommandContext", args: str) -> None:
+        await _cmd_schedules(ctx, proxy, args)
 
-    async def _invoke(repl: AgentREPL, args: str) -> None:
-        await _cmd_invoke(repl, proxy, args)
+    async def _invoke(ctx: "CommandContext", args: str) -> None:
+        await _cmd_invoke(ctx, proxy, args)
 
-    repl.register_command(SlashCommand("status", "Show daemon status.", _status))
-    repl.register_command(
+    ctx.register_command(SlashCommand("status", "Show daemon status.", _status))
+    ctx.register_command(
         SlashCommand(
             "schedules",
             "Manage schedules: /schedules [list|add|pause|resume|remove ...]",
             _schedules,
         )
     )
-    repl.register_command(
+    ctx.register_command(
         SlashCommand(
             "invoke",
             "Invoke an agent method: /invoke <method> [json-kwargs]",

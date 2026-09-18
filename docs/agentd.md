@@ -403,4 +403,5 @@ recipient}`. Answer a pending one with `hitl.respond` above.
 
 - Spec: [`sdd/specs/agent-cli-daemon.spec.md`](../sdd/specs/agent-cli-daemon.spec.md)
 - Console engine reused as-is: `parrot.cli.repl.AgentREPL` (see `parrot agent`)
+  - Queued job events (`event.job_executed`, `event.job_error`, `event.shutdown`) are printed between turns via `AgentREPL.add_post_turn_hook` (FEAT-573); the former instance-level `send`/`send_stream` wrapper is gone.
 - MCP server base reused as-is: `parrot.mcp.local_server.StdioMCPServer`
