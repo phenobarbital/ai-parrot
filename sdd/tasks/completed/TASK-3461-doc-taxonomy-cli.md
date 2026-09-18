@@ -266,10 +266,23 @@ def test_doc_taxonomy_on_repo() -> None:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-coder (native, sonnet), via sdd-worker orchestration (FEAT-549)
+**Date**: 2026-09-19
+**Notes**: Implemented `scripts/sdd/doc_taxonomy.py` exactly per spec §3 Module 4:
+`TaxonomyRow`, `collect()` (globs `sdd/specs/*.spec.md` + `sdd/proposals/*.
+{brainstorm,proposal}.md`, per-file `ValidationError` skipped with a logged
+warning), `filter_rows()` (AND across `--project`/`--tag`, OR within each, values
+normalized via `normalize_project`/`normalize_tag` before matching), and `main()`
+(argparse CLI, `--paths-only`/`--json`/`--summary` mutually exclusive, exit 0 on a
+successful scan, exit 2 on bad args). Wrote `tests/sdd_scripts/test_doc_taxonomy.py`
+per the spec's Test Specification.
 
-**Completed by**:
-**Date**:
-**Notes**:
+Verification: `pytest tests/sdd_scripts/test_doc_taxonomy.py -q` → 4 passed. `ruff
+check` clean. Manual smoke: `python -m scripts.sdd.doc_taxonomy --summary` over the
+real repo → exit 0, 815 docs scanned (AC2).
+
+Review: no defects found (`coder-review:5642fc7a713300d5dfae3c3a`), fix_commits=[].
+
+Seat: sonnet (native) · Backend: native · Model: sonnet · Attempts: 1 · Duration: n/a · Tokens: n/a
 
 **Deviations from spec**: none
