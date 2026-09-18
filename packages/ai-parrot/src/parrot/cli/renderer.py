@@ -3,6 +3,7 @@
 Renders ``AIMessage`` objects to the terminal using Rich for markdown,
 code blocks, tool call panels, usage stats, and streaming live display.
 """
+
 import json
 import logging
 import traceback
@@ -93,9 +94,7 @@ class ResponseRenderer:
             self._render_tool_calls(response.tool_calls)
 
         # Render usage stats
-        if response.usage and (
-            response.usage.prompt_tokens or response.usage.completion_tokens
-        ):
+        if response.usage and (response.usage.prompt_tokens or response.usage.completion_tokens):
             self._render_usage(response.usage)
 
     def _render_tool_calls(self, tool_calls: List[Any]) -> None:
@@ -145,9 +144,7 @@ class ResponseRenderer:
         if usage.estimated_cost is not None:
             parts.append(f"cost=${usage.estimated_cost:.6f}")
         if parts:
-            self.console.print(
-                f"[dim]tokens: {', '.join(parts)}[/dim]"
-            )
+            self.console.print(f"[dim]tokens: {', '.join(parts)}[/dim]")
 
     def render_error(self, error: Exception) -> None:
         """Render an exception in a styled Rich panel.
@@ -199,9 +196,7 @@ class ResponseRenderer:
         for key, value in lines:
             text.append(f"{key}: ", style="bold cyan")
             text.append(f"{value}\n")
-        self.console.print(
-            Panel(text, title="[bold]Agent Info[/bold]", border_style="blue")
-        )
+        self.console.print(Panel(text, title="[bold]Agent Info[/bold]", border_style="blue"))
 
     # ------------------------------------------------------------------
     # Streaming rendering
@@ -289,13 +284,9 @@ class ResponseRenderer:
         elif isinstance(event, (ToolFinished, ToolFailed)):
             self.region.pause()
             if isinstance(event, ToolFinished):
-                self.console.print(
-                    f"[dim]✓ tool [bold]{event.tool_name}[/bold] ({event.duration_ms:.0f} ms)[/dim]"
-                )
+                self.console.print(f"[dim]✓ tool [bold]{event.tool_name}[/bold] ({event.duration_ms:.0f} ms)[/dim]")
             else:
-                self.console.print(
-                    f"[red]✗ tool [bold]{event.tool_name}[/bold]: {event.error_type}[/red]"
-                )
+                self.console.print(f"[red]✗ tool [bold]{event.tool_name}[/bold]: {event.error_type}[/red]")
             self.region.resume()
         elif isinstance(event, TurnCompleted):
             self.render_stream_end(event.message)
@@ -307,9 +298,7 @@ class ResponseRenderer:
             content = Text()
             content.append(f"{event.error_type}: ", style="bold red")
             content.append(event.error_message)
-            self.console.print(
-                Panel(content, title="[bold red]Error[/bold red]", border_style="red")
-            )
+            self.console.print(Panel(content, title="[bold red]Error[/bold red]", border_style="red"))
 
     def render_history(self, turns: List[ConversationTurn], *, session_id: str) -> None:
         """Render a resumed transcript: header, then each turn as ``you> …`` plus its response.

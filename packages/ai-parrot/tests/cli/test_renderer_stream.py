@@ -1,4 +1,5 @@
 """Streaming renderer tests (FEAT-573 TASK-3405, spec §4)."""
+
 from __future__ import annotations
 
 import io
@@ -81,6 +82,8 @@ def test_renderer_render_history():
 
 def test_blocking_safe_file_removed():
     import parrot.cli.renderer as mod
+
     assert not hasattr(mod, "_BlockingSafeFile")
     import inspect
+
     assert "sys.stdout.write" not in inspect.getsource(mod)  # AC11
