@@ -62,6 +62,10 @@ directory switching, no shared mutable state across features.
 - Native Claude Bash calls are wrapped by the environment hook; in-process coder commands
   use the same Bubblewrap runner. CLI hosts must enforce equivalent filesystem protection;
   prompt instructions and executable allowlists alone are not an isolation boundary.
+- The primary checkout's `.claude/worktrees/` is the one writable exception outside your
+  worktree: it exists so `/sdd-done` can run from here (ledger-snapshot worktree, removal
+  of this worktree). Everything else in the primary checkout — `sdd/ledger/`, `sdd/tasks/`,
+  the `.venv` — stays read-only. Never `cd` to the primary checkout to work around that.
 
 ## ⛔ CARDINAL RULES — NEVER VIOLATE THESE
 
@@ -138,16 +142,33 @@ multi-task Execution Loop described below, unchanged.
 
 ### 0. Sync the Base Branch (FEAT-145)
 
-Read the spec's frontmatter to discover the base branch, then sync from origin:
+Read the spec's frontmatter to discover the base branch, then detect whether
+you were launched inside a linked worktree (the documented launch mode) or in
+the primary checkout:
 
 ```bash
 META=$(python -c "from pathlib import Path; from scripts.sdd.sdd_meta import parse; m = parse(Path('<spec-path>')); print(m.type, m.base_branch)")
 TYPE=$(echo "$META" | awk '{print $1}')
 BASE_BRANCH=$(echo "$META" | awk '{print $2}')
 
-git checkout "$BASE_BRANCH"
-git pull --ff-only origin "$BASE_BRANCH"
+if [ "$(git rev-parse --absolute-git-dir)" != "$(cd "$(git rev-parse --git-common-dir)" && pwd)" ]; then
+  IN_WORKTREE=1                      # linked worktree: primary checkout is read-only
+  git fetch origin "$BASE_BRANCH"    # updates shared refs only — never touches the primary tree
+else
+  IN_WORKTREE=0
+  git checkout "$BASE_BRANCH"
+  git pull --ff-only origin "$BASE_BRANCH"
+fi
 ```
+
+**Inside a linked worktree, NEVER `cd` into the primary checkout, and never run
+`git pull`, `checkout`, `merge`, `reset`, `stash` or `commit` against it (also not
+via `git -C <primary>`).** The Bash sandbox binds only the current checkout and
+the common `.git` directory writable; the primary checkout's working tree is
+mounted read-only, so those commands fail with `Read-only file system` — and a
+half-applied pull there would also clobber other sessions. `git fetch` works
+because it only writes the shared `.git`. Compare against `origin/$BASE_BRANCH`
+instead of the local `$BASE_BRANCH`.
 
 `base_branch` defaults to `dev` for `type: feature` and is fixed to `main`
 for `type: hotfix`. `staging` is also a valid `base_branch` for `type: feature`
@@ -188,10 +209,12 @@ Extract from the per-spec index header: `feature_id`, `feature` slug,
 `spec` path. Task list in dependency order is the `tasks[]` array filtered
 to status `"pending"` and topologically sorted on `depends_on`.
 
-### 2. Mark All Tasks as In-Progress (in place, on `<BASE_BRANCH>`)
+### 2. Mark All Tasks as In-Progress (in place)
 
-Update the per-spec index file in place (we are already on `BASE_BRANCH`
-from §0). For each task being worked on, set `status` → `"in-progress"`
+Update the per-spec index file in place. With `IN_WORKTREE=0` you are on
+`BASE_BRANCH` from §0; with `IN_WORKTREE=1` do it in the current worktree, on
+its feature branch — never switch to the primary checkout for this. For each
+task being worked on, set `status` → `"in-progress"`
 and `started_at` → now via `jq`:
 
 ```bash
@@ -235,7 +258,10 @@ If the command exits non-zero, STOP and report its message. Do not implement on
 Already enforced: §3 passed `--spec` and `--index`, and the CLI refuses to hand
 back a worktree in which either is missing. If you reached this point, both are
 present. A failure here means the base branch does not carry the task artifacts
-yet — fetch and re-run §3 rather than working around it.
+yet — fetch and re-run §3 rather than working around it. With `IN_WORKTREE=1`,
+§3 reuses the current worktree and will not refresh it: bring the artifacts in
+with `git merge origin/$BASE_BRANCH` *inside this worktree* (stop and report on
+a conflict), never by pulling in the primary checkout.
 
 ### 5. Read the Spec
 Read the spec file referenced by the tasks.
@@ -281,7 +307,10 @@ consolidate, and own SDD state. Coders (`sdd-coder`) run one task each in their 
    coders are still out, do NOT busy-wait with `sleep` loops in Bash: print one line
    (`⏳ waiting for native TASK-NNN …`) and end your message — the notification wakes you and the loop resumes there.
 4. **Consolidate each task by outcome** (`data.tasks[*].outcome`, or the `coder_merge` result):
-   - `merged` → run THAT task's acceptance criteria in this worktree (integration with sibling merges can break them);
+   - `merged` → in this worktree run `TASK_FILES=$(jq -r '.tasks[].file' sdd/tasks/index/<feature-slug>.json);
+     python -m scripts.sdd.select_tests --tier merge --base <feature branch merge-base>
+     $(printf -- '--task-file %s ' $TASK_FILES) --run`
+     (mirror ∪ import-impact of the merge ∪ core escalation, paid once per content via the ledger — integration with sibling merges can break them);
      green → step (g) of the Fallback loop for this task, with a Completion Note that ends with
      `Seat: <seat_label> · Backend: <backend> · Model: <model> · Attempts: <n> · Duration: <sum duration_s> · Tokens: <usage>`
      taken from `attempts[*]`; red → treat as `failed`.
@@ -428,7 +457,9 @@ If ANY check fails, fix or STOP.
 - Lint mechanically, never by hand (this path has no engine to do it): `ruff check --fix <task .py files>`, then
   `black <task .py files>` only if `pyproject.toml` has `[tool.black]`. Fix only syntax errors / undefined names
   (`ruff check --select E9,F63,F7,F82`); leave remaining style findings to `/sdd-done`.
-- Run acceptance-criteria tests.
+- Run the task's `## Validation Commands`, then `python -m scripts.sdd.select_tests --tier merge --base origin/<base_branch>
+  --task-file sdd/tasks/active/TASK-<NNN>-<slug>.md --run`
+  (this lane has no attempt context, so no harness guard — never run a directory or full-suite pytest by hand).
 - If stuck after 3 attempts, mark as `"done-with-issues"`.
 
 ### f) Commit Code (in worktree)
@@ -570,6 +601,9 @@ After all tasks are done:
 
    Next:
      - Run /sdd-done FEAT-<ID> for verification, PR, and cleanup
+       (it may run from inside this worktree — the sandbox allows worktree
+       administration under the primary checkout's .claude/worktrees/ — or
+       from the main repo)
    ```
 
 ## Structured Output Contract (dispatched runs)

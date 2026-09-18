@@ -21,7 +21,7 @@ reuse_feature_id: FEAT-519
 **Feature ID**: FEAT-519
 **Date**: 2026-09-02
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: superseded by FEAT-573 (sdd/specs/new-ui-cli-agents.spec.md)
 **Target version**: 0.next
 
 > **Source**: `sdd/proposals/new-cli-infra.proposal.md` (research-grounded

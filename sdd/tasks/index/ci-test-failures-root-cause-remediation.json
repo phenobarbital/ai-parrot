@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-16T00:00:00+00:00",
-  "completed_at": null,
+  "completed_at": "2026-09-17T18:16:00+00:00",
   "parallel_semantics": "exclusive",
   "tasks": [
     {
@@ -15,7 +15,7 @@
       "feature_id": "FEAT-562",
       "feature": "ci-test-failures-root-cause-remediation",
       "spec": "sdd/specs/ci-test-failures-root-cause-remediation.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -23,9 +23,10 @@
       "parallelism_notes": "no dependencies; creates new files under scripts/ci/ and tests/ci/, shares no file with any other task",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3296-ci-result-checker.md",
-      "retarget_status": "OBE \u2014 superseded by dev PR #1408 (install-everything approach)"
+      "completed_at": "2026-09-17T18:16:00+00:00",
+      "file": "sdd/tasks/completed/TASK-3296-ci-result-checker.md",
+      "retarget_status": "OBE \u2014 superseded by dev PR #1408 (install-everything approach)",
+      "resolution": "OBE \u2014 superseded by dev PR #1408 (install-everything approach)"
     },
     {
       "id": "TASK-3297",
@@ -34,7 +35,7 @@
       "feature_id": "FEAT-562",
       "feature": "ci-test-failures-root-cause-remediation",
       "spec": "sdd/specs/ci-test-failures-root-cause-remediation.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -44,9 +45,10 @@
       "parallelism_notes": "needs scripts/ci/check_ci_results.py created by TASK-3296 (the new job's gate step invokes it); sole editor of .github/workflows/ci.yml and its guarded test files",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3297-optional-integrations-job-and-guards.md",
-      "retarget_status": "OBE \u2014 superseded by dev PR #1408; its guards would conflict with dev"
+      "completed_at": "2026-09-17T18:16:00+00:00",
+      "file": "sdd/tasks/completed/TASK-3297-optional-integrations-job-and-guards.md",
+      "retarget_status": "OBE \u2014 superseded by dev PR #1408; its guards would conflict with dev",
+      "resolution": "OBE \u2014 superseded by dev PR #1408 (its guards would conflict with dev)"
     },
     {
       "id": "TASK-3298",
@@ -55,7 +57,7 @@
       "feature_id": "FEAT-562",
       "feature": "ci-test-failures-root-cause-remediation",
       "spec": "sdd/specs/ci-test-failures-root-cause-remediation.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -63,9 +65,10 @@
       "parallelism_notes": "no dependencies; sole owner of tests/test_infographic_html.py",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3298-infographic-basecss-rewrite.md",
-      "retarget_status": "superseded \u2014 M6 fixed independently on dev"
+      "completed_at": "2026-09-17T18:16:00+00:00",
+      "file": "sdd/tasks/completed/TASK-3298-infographic-basecss-rewrite.md",
+      "retarget_status": "superseded \u2014 M6 fixed independently on dev",
+      "resolution": "superseded \u2014 M6 BASE_CSS fixed independently on dev"
     },
     {
       "id": "TASK-3299",
@@ -74,7 +77,7 @@
       "feature_id": "FEAT-562",
       "feature": "ci-test-failures-root-cause-remediation",
       "spec": "sdd/specs/ci-test-failures-root-cause-remediation.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [],
@@ -82,9 +85,10 @@
       "parallelism_notes": "no dependencies; owns mcp/integration.py + test_database_agent.py + test_botmanager_wiring.py. Diagnosis may proceed before TASK-3297's job exists; netsuite source fix is verified live in that job but authored independently here",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3299-diagnose-database-agent-netsuite.md",
-      "retarget_status": "remaining \u2014 M7 netsuite token_store; needs mcp/working env (handed off)"
+      "completed_at": "2026-09-17T18:16:00+00:00",
+      "file": "sdd/tasks/completed/TASK-3299-diagnose-database-agent-netsuite.md",
+      "retarget_status": "remaining \u2014 M7 netsuite token_store; needs mcp/working env (handed off)",
+      "resolution": "spun off \u2014 M7 netsuite token_store -> ledger issue:f010a27ccadd (out of retargeted scope; not a test-core failure)"
     },
     {
       "id": "TASK-3300",
@@ -93,7 +97,7 @@
       "feature_id": "FEAT-562",
       "feature": "ci-test-failures-root-cause-remediation",
       "spec": "sdd/specs/ci-test-failures-root-cause-remediation.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -103,9 +107,10 @@
       "parallelism_notes": "runs under the test-optional-integrations job created by TASK-3297 (consumes that CI job as its verification home); edits only its 4 handler/auth files, shares no file with TASK-3297",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3300-fix-stale-mock-patch-targets.md",
-      "retarget_status": "superseded \u2014 M8 fixed independently on dev"
+      "completed_at": "2026-09-17T18:16:00+00:00",
+      "file": "sdd/tasks/completed/TASK-3300-fix-stale-mock-patch-targets.md",
+      "retarget_status": "superseded \u2014 M8 fixed independently on dev",
+      "resolution": "superseded \u2014 M8 handler patch targets fixed independently on dev"
     },
     {
       "id": "TASK-3301",
@@ -122,9 +127,11 @@
       "parallelism_notes": "no dependencies; sole owner of tests/knowledge/wiki/test_store_migration_v2.py",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": "2026-09-17T05:29:19+00:00",
-      "file": "sdd/tasks/completed/TASK-3301-wiki-migrate-fts-coverage.md"
+      "completed_at": "2026-09-17T18:16:00+00:00",
+      "file": "sdd/tasks/completed/TASK-3301-wiki-migrate-fts-coverage.md",
+      "resolution": "done \u2014 M5 _migrate_fts coverage merged (PR #1413)"
     }
   ],
-  "_retarget_note": "2026-09-17 RETARGET (approach A): dev PR #1408 (8c758aa3c, 'install the whole workspace in test-core + repair ~200 drifted tests') independently solved the CI test-failure problem via the OPPOSITE approach to this spec's M2 (install-everything vs guards + a separate optional-integrations job). Consequences: TASK-3296 (M2-A checker) and TASK-3297 (M2 guards/job) are OBE and NOT pursued (their guards would skip tests dev intends to run); TASK-3298 (M6 BASE_CSS) and TASK-3300 (M8 patch targets) were fixed independently on dev and are superseded (this branch carries no code for them). Branch now carries ONLY the non-conflicting remainder on top of dev: TASK-3301 (M5 _migrate_fts) DONE; the retargeted test-core tail \u2014 a duckduckgo-search guard in interfaces/http.py and a folium importorskip in the a2ui vendor-check \u2014 DONE and verified. REMAINING/HANDED-OFF (need a working env \u2014 Jesus): the 2 botmanager 'NoneType.Result' runtime bugs in tests/manager/test_botmanager_wiring.py, and TASK-3299 M7 netsuite token_store (integration.py + tests/mcp/test_netsuite_mcp.py, needs mcp)."
+  "_retarget_note": "2026-09-17 RETARGET (approach A): dev PR #1408 (8c758aa3c, 'install the whole workspace in test-core + repair ~200 drifted tests') independently solved the CI test-failure problem via the OPPOSITE approach to this spec's M2 (install-everything vs guards + a separate optional-integrations job). Consequences: TASK-3296 (M2-A checker) and TASK-3297 (M2 guards/job) are OBE and NOT pursued (their guards would skip tests dev intends to run); TASK-3298 (M6 BASE_CSS) and TASK-3300 (M8 patch targets) were fixed independently on dev and are superseded (this branch carries no code for them). Branch now carries ONLY the non-conflicting remainder on top of dev: TASK-3301 (M5 _migrate_fts) DONE; the retargeted test-core tail \u2014 a duckduckgo-search guard in interfaces/http.py and a folium importorskip in the a2ui vendor-check \u2014 DONE and verified. REMAINING/HANDED-OFF (need a working env \u2014 Jesus): the 2 botmanager 'NoneType.Result' runtime bugs in tests/manager/test_botmanager_wiring.py, and TASK-3299 M7 netsuite token_store (integration.py + tests/mcp/test_netsuite_mcp.py, needs mcp).",
+  "_closeout_note": "2026-09-17 CLOSED. Retargeted goal \u2014 dev's test-core GREEN (3.11 + 3.12) \u2014 achieved via dev PR #1408 (install-everything) plus PRs #1413 (M5 _migrate_fts + duckduckgo guard + folium skip) and #1414 (arxiv lazy-annotations), all merged. M2 (3296/3297) OBE, M6/M8 (3298/3300) superseded by dev, M5 (3301) done. M7 netsuite token_store (3299) was never a test-core failure (tests/mcp uncollected without the mcp SDK) \u2014 spun off out of scope to ledger issue:f010a27ccadd. navigator-session blocker resolved on dev (1.0.1). The successor initiative is FEAT-563 scoped-test-selection."
 }

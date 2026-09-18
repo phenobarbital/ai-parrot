@@ -13,9 +13,13 @@ jobs:
   build-core:
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest]
         python-version: ["3.11", "3.12", "3.13", "3.14"]
+        include:
+          - os: windows-latest
+            python-version: "3.12"
     defaults:
       run:
         working-directory: packages/ai-parrot
@@ -38,13 +42,15 @@ jobs:
 
       - name: Add Rust to PATH
         run: echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+        shell: bash
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install cibuildwheel maturin twine cython build
 
-      - name: Build wheels on Ubuntu
+      - name: Build wheels on Linux
+        if: runner.os == 'Linux'
         env:
           CIBW_ARCHS: x86_64
           CIBW_BEFORE_BUILD: "curl https://sh.rustup.rs -sSf | sh -s -- -y && source $HOME/.cargo/env"
@@ -52,11 +58,18 @@ jobs:
           RUST_SUBPACKAGE_PATH: src/parrot/yaml_rs
           CIBW_BUILD: "cp3{11,12,13,14}-*"
         run: |
-          pip install cibuildwheel
           cibuildwheel --platform linux --output-dir ${{ github.workspace }}/dist
 
+      - name: Build wheels on Windows
+        if: runner.os == 'Windows'
+        env:
+          CIBW_ARCHS: AMD64
+          CIBW_BUILD: "cp3{11,12,13,14}-*"
+        run: |
+          cibuildwheel --platform windows --output-dir ${{ github.workspace }}/dist
+
       - name: Build sdist
-        if: matrix.python-version == '3.12'
+        if: matrix.python-version == '3.12' && runner.os == 'Linux'
         working-directory: packages/ai-parrot
         run: python -m build --sdist --outdir ${{ github.workspace }}/dist
 
@@ -348,7 +361,17 @@ jobs:
           path: dist/*
 
   build-navrules:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            manylinux: auto
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            manylinux: 'off'
     steps:
       - uses: actions/checkout@v6
 
@@ -359,27 +382,27 @@ jobs:
 
       - name: Pre-create dist dir
         run: mkdir -p dist
+        shell: bash
 
-      # maturin-action runs inside a manylinux container (as root).
-      # Pre-creating dist/ ensures the runner user owns it so the
-      # subsequent sdist step can write to it without permission errors.
-      - name: Build wheel (manylinux)
+      - name: Build wheel
         uses: PyO3/maturin-action@v1
         with:
           working-directory: packages/navrules
-          args: --release --out ../../dist
-          manylinux: auto
+          target: ${{ matrix.target }}
+          args: --release --out ${{ github.workspace }}/dist --find-interpreter
+          manylinux: ${{ matrix.manylinux }}
 
       - name: Build sdist
+        if: matrix.target == 'x86_64-unknown-linux-gnu'
         run: |
           pip install maturin
           cd packages/navrules
-          maturin sdist --out ../../dist
+          maturin sdist --out ${{ github.workspace }}/dist
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: dist-navrules
+          name: dist-navrules-${{ matrix.target }}
           path: dist/*
 
   build-parrot-codec:
@@ -479,6 +502,7 @@ jobs:
           - ai-parrot-client-openrouter
           - ai-parrot-client-vllm
           - ai-parrot-client-zai
+          - ai-parrot-client-jev
           - ai-parrot-openlit-bridge
     steps:
       - uses: actions/checkout@v6

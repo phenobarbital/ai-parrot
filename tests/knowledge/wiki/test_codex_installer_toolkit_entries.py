@@ -85,12 +85,26 @@ def test_codex_table_pins_config(tmp_root_with_config):
     assert entry["args"][-2:] == ["--config", str(root / ".parrot" / "mcp-toolkits.yaml")]
 
 
-def test_codex_install_seeds_toolkits(tmp_path):
-    """`install_codex_integration(toolkits=[...])` seeds the YAML and emits the entry in one pass."""
+def test_codex_install_reconciles_declared_toolkits(tmp_path):
+    """`install_codex_integration` emits an entry for a section already declared
+
+    in `.parrot/mcp-toolkits.yaml`. Seeding the YAML is no longer performed by
+    `install_codex_integration` (FEAT-570 TASK-3378) — this test writes the
+    config directly instead of relying on the removed `toolkits=` keyword.
+    """
     from parrot.knowledge.wiki.codex.installer import install_codex_integration
 
     root = tmp_path
-    install_codex_integration(root, gitignore=False, bookstore=False, toolkits=["bounded-source"])
+    parrot_dir = root / ".parrot"
+    parrot_dir.mkdir(parents=True, exist_ok=True)
+    (parrot_dir / "mcp-toolkits.yaml").write_text(
+        "toolkits:\n"
+        "  bounded-source:\n"
+        "    class: parrot_tools.tool_optimizations.reader.BoundedSourceToolkit\n"
+        "    kwargs: {}\n"
+    )
+
+    install_codex_integration(root, gitignore=False, bookstore=False)
 
     assert (root / ".parrot" / "mcp-toolkits.yaml").exists()
     doc = _config(root)

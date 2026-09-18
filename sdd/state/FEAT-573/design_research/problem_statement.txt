@@ -1,0 +1,5 @@
+`parrot agent {agent_id}` should feel like an interactive agent application: a usable composer, readable conversation, discoverable commands, and visible progress. The current implementation already uses Rich for completed answers and prompt_toolkit for input, but its default streaming path writes raw text to stdout. Adding Rich alone therefore does not address the request.
+
+The likely users are developers and operators interacting with registered Parrot agents; this audience is proposed, not yet confirmed. A successful first version would keep input and navigation responsive during generation, render Markdown consistently, support inspecting available tool results, and recover cleanly from cancellation and errors.
+
+There is substantial overlap with the draft **FEAT-519, new-cli-infra**, which already proposes a shared Rich console and explicitly rejects Textual for its inline scope. This document explores the broader interaction model. It does not supersede that prior decision without user confirmation.

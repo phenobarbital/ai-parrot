@@ -1,0 +1,16 @@
+examples/planogram/inkcheck/inkcheck/catalog.py
+examples/planogram/inkcheck/inkcheck/compare.py
+examples/planogram/inkcheck/inkcheck/prepare.py
+examples/planogram/inkcheck/inkcheck/schema.py
+examples/planogram/inkcheck/inkcheck/vision.py
+examples/planogram/planogram_page1.json
+examples/planogram/results/image_01/labels.json
+examples/planogram/white_label_detector/detect_price_labels.py
+packages/ai-parrot-client-anthropic/src/parrot/clients/anthropic/client.py
+packages/ai-parrot-client-google/src/parrot/clients/google/analysis.py
+packages/ai-parrot-client-google/src/parrot/clients/google/client.py
+packages/ai-parrot-client-local/src/parrot/clients/local/client.py
+packages/ai-parrot-client-openai/src/parrot/clients/openai/client.py
+packages/ai-parrot/src/parrot/clients/base.py
+packages/ai-parrot/src/parrot/clients/factory.py
+packages/ai-parrot/src/parrot/clients/openai_base.py

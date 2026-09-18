@@ -133,10 +133,56 @@ is marker-based, idempotent, and reversible with
    into an existing post-commit hook and is removed cleanly on
    uninstall. Skip with `--no-git-hook`.
 6. **`.gitignore`** — adds `.parrot/` (skip with `--no-gitignore`).
+7. **fast-jev-compaction plugin** — enables
+   [tamaratran/fast-jev-compaction](https://github.com/tamaratran/fast-jev-compaction),
+   a Claude Code function-hook plugin that replaces the built-in
+   compaction *summary* with a *verbatim* history: TypeSafe's Jev model
+   scores every tool call and tool result in one fast request, stale
+   ones are dropped or truncated, and everything kept stays word for
+   word (user and assistant text is never rewritten). Skip with
+   `--no-compaction`; see below for what is written.
 
 By default `install` also builds the plane on first run
 (`--no-build` to skip). `parrot claude status` shows what is
 installed.
+
+### fast-jev-compaction
+
+The plugin is wired the way Claude Code documents team plugins, so every
+team member gets it once they trust the folder. `.claude/settings.json`
+receives three managed entries:
+
+```json
+{
+  "env": { "CLAUDE_CODE_ENABLE_FUNCTION_HOOKS": "1" },
+  "extraKnownMarketplaces": {
+    "fast-jev-compaction": { "source": { "source": "github", "repo": "tamaratran/fast-jev-compaction" } }
+  },
+  "enabledPlugins": { "fast-jev-compaction@fast-jev-compaction": true }
+}
+```
+
+- Function hooks are an early-access Claude Code surface (>= 2.1.274);
+  the `env` flag switches them on for sessions in this project.
+- When the `claude` CLI is on `PATH`, the installer also runs
+  `claude plugin marketplace add tamaratran/fast-jev-compaction` and
+  `claude plugin install fast-jev-compaction@fast-jev-compaction --scope project -y`
+  non-interactively so the plugin is live in the next session. Failures
+  are reported, never fatal (`--no-plugin-cli` skips this step).
+- The TypeSafe API key is **never** written to the shared
+  `settings.json`. Export `TYPESAFE_API_KEY` in your shell, or pass
+  `--typesafe-api-key <key>` to store it in the git-ignored
+  `.claude/settings.local.json`. Without a key the plugin logs a
+  fallback and Claude Code's built-in summary is used.
+- Restart Claude Code (or `/reload-plugins`). From then on `/compact`
+  and auto-compaction go through Jev; the toast reads
+  `fast-jev-compaction: kept N/M messages, no summary (…)`.
+
+`parrot claude uninstall` removes the plugin entry, the marketplace entry
+(only when it is the one we wrote) and the function-hooks flag (only when
+no other plugin remains enabled); the API key in `settings.local.json`
+is left for you to remove. The same Jev model is available to agents
+through `parrot.clients.jev.JevClient` — see `docs/clients/jev.md`.
 
 ## How an assistant session flows
 

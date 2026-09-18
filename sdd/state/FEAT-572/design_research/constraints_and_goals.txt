@@ -1,0 +1,28 @@
+## Constraints & Requirements
+
+- **Must not weaken the merge gate.** `/sdd-done` calls `wikitoolkit ledger blockers
+  <FEAT-ID>` (`sdd-done.md:250`), which exits `1` on unacknowledged criticals scoped to
+  the feature (`service.py:280-310`). `acknowledge` rejects any non-`human:` actor
+  (`service.py:213-234`). `/sdd-fix` must never acquire a way to un-gate a merge.
+- **Claim must stay atomic.** `LedgerIndex.claim_issue()` (`index.py:384-445`) is a
+  single `ledger.claim` transaction where first-claim-in-log-order wins and a
+  `WikiStoreBusy` appends nothing. Concurrent `/sdd-fix` sessions on the same host must
+  keep losing races cleanly, not double-claim.
+- **The ledger resolves to the main checkout**, never a worktree-local copy
+  (`find_shared_root`, FEAT-566 §2.1). `/sdd-fix` runs from the main checkout; its
+  worktrees read the shared plane.
+- **Three workflow twins are mandatory and tested.** `tests/sdd/test_ledger_workflow_twins.py`
+  asserts semantic parity across `.claude/commands/<n>.md`, `.agent/workflows/<n>.md`,
+  and `.agents/skills/<n>/SKILL.md`. A twin-less command is a test failure.
+- **Severity/kind vocabularies are closed Literals** — `IssueSeverity =
+  Literal["critical","major","minor","low"]`, `IssueKind =
+  Literal["bug","tech_debt","feature_gap","vulnerability"]` (`events.py:21-22`). No
+  canonical *ordering* constant exists yet; one must be introduced.
+- **Both interactive and non-interactive.** No-args = interactive picker; explicit
+  issue-id or `--top N` = deterministic, promptless, safe for an unattended loop.
+- **Deterministic lane rule with override.** The lane decision must be reproducible and
+  auditable, not a per-invocation model judgement; `--lane fast|sdd` forces it.
+- **`uv` + venv, aiohttp, Pydantic v2, Google docstrings, `black -l 120`, `ruff`** per
+  `.claude/rules/codebase-conventions.md`.
+
+---

@@ -103,7 +103,6 @@ class LazyGroup(click.Group):
 @click.group(cls=LazyGroup)
 def cli():
     """Parrot command-line interface."""
-    pass
 
 
 # Register subcommands — imported only when invoked
@@ -115,6 +114,7 @@ cli._lazy_commands = {
     "bookstore": "parrot.knowledge.bookstore.cli",
     "mcp": "parrot.mcp.cli",
     "mcp-local": "parrot.mcp.local_cli",
+    "toolkits": "parrot.cli.toolkits",
     "autonomous": "parrot.autonomous.cli",
     "agent": "parrot.cli.agent_repl",
     "claude": "parrot.knowledge.wiki.claude_code.cli",

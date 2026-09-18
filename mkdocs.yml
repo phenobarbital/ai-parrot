@@ -134,6 +134,7 @@ nav:
       - Overview: chapters/llm-clients.md
       - OpenAI-Compatible Base Client: clients/openai-compatible.md
       - Bedrock Mantle Client: clients/bedrock-mantle.md
+      - TypeSafe System One (Jev) Client: clients/jev.md
       - Per-loop Caching: clients/per-loop-cache.md
       - Self-hosted llama-server (Qwen3.6): llama-server-qwen3.6.md
       - Contextual Embedding: contextual-embedding.md

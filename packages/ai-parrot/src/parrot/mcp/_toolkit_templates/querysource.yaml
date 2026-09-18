@@ -1,0 +1,16 @@
+# parrot:summary: Tenant-scoped QuerySource query-slugs and MultiQuery pipelines.
+# parrot:requires_llm: false
+# parrot:requires_dist: parrot_tools,querysource
+  querysource:
+    class: parrot_tools.querysource.toolkit.QuerysourceToolkit
+    # CREDENTIALS ARE NEVER WRITTEN HERE. The DSN resolves from the environment
+    # this MCP server inherits, via querysource.conf.asyncpg_url. Set `dsn:` only
+    # to override it, and never commit a secret — `env:` values below are copied
+    # verbatim into .mcp.json / config.toml, which are tracked by git.
+    kwargs:
+      allow_write: true       # exposes qs_save_multiquery (requires confirmation)
+      allow_raw_sql: true
+      # programs: [<tenant-slug>, ...]   # omit for unrestricted tenant access
+      # max_rows: 200
+      # multiquery_timeout: 600.0
+    env: {}

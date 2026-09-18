@@ -1,0 +1,30 @@
+- **Deliverable**: `examples/planogram/planogram_check.py`, runnable as a CLI;
+  self-contained (adapts ideas from `inkcheck/` and `white_label_detector/`, does
+  not import the `inkcheck` package).
+- **Fully autonomous**: no review page, no manual manifest editing, no CLI hints
+  required for a correct run (decision: *auto sequence alignment*).
+- **Vision LLM through ai-parrot clients only** — never a provider SDK or raw
+  HTTP. Must support: Gemini Flash (primary, `gemini-3.8-flash`), the local
+  llama.cpp server (`:8089`, OpenAI-compatible), and any `provider:model`
+  string for comparison runs.
+- **LLM feeding = photo (row strip) + JSON of detected areas**; the model answers
+  per known slot id only and must not report products outside the supplied areas.
+- **Input unit = N photos of one fixture/visit**, merged into a single
+  planogram-level result with cross-photo de-duplication by planogram position.
+- **Tag OCR = local OCR first, LLM fallback** for unreadable tags / cents.
+- **Prices**: always reported (raw + normalized). An **optional `--prices`
+  file** (`sku → expected price`) adds a *separate* price-compliance metric;
+  price never influences product identity or the planogram score.
+- **Scoring is tiered and reports strict % and lenient % side by side**, per
+  shelf and overall.
+- Every inferred value is **flagged as inferred** with its evidence basis;
+  unknown never silently becomes empty or compliant.
+- Repo conventions: async-first, `aiohttp` only (no `requests`/`httpx`),
+  Pydantic v2 models for all structures, Google-style docstrings + strict type
+  hints, `self.logger`/`logging` instead of `print`, no matplotlib. OpenCV/OCR
+  are CPU-bound and must not block the event loop.
+- Determinism: everything except the LLM/OCR calls is pure Python and unit-testable
+  with synthetic fixtures; LLM responses are cached on disk keyed by
+  (model, prompt version, schema, image bytes) so re-runs are free and reproducible.
+- **`examples/planogram/` is git-ignored** (`.gitignore:5`) and nothing under it
+  is tracked — see Impact and Open Questions.

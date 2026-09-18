@@ -65,6 +65,8 @@ def mock_google_client():
     sdk_client.aio.batches = MagicMock()
     sdk_client.aio.files = MagicMock()
     sdk_client.aio.models = MagicMock()
+    # generate_image/generate_images close their per-call client in `finally`.
+    sdk_client.aio.aclose = AsyncMock()
 
     # Redefine client property to return our mocked SDK client
     _bind_sdk_client(client, sdk_client)

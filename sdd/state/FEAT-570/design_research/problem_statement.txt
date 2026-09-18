@@ -1,0 +1,36 @@
+FEAT-485 built the generic local-MCP machinery (`parrot mcp-local <name>`,
+`.parrot/mcp-toolkits.yaml`, managed `.mcp.json` / `.codex/config.toml` /
+`mcp_config.json` reconciliation) and FEAT-556 added packaged **templates**
+so a section can be seeded without hand-editing YAML. Three templates ship
+today: `bounded-source`, `targeted-writer`, `sdd-coder`.
+
+Two problems remain.
+
+**1. The two database toolkits are invisible.** `QuerysourceToolkit`
+(FEAT-558, `parrot_tools.querysource.toolkit`) and `DatabaseQueryToolkit`
+(FEAT-105/136, `parrot.tools.databasequery.toolkit`) are exactly the kind of
+tool a coding or analysis session wants as a first-class MCP tool — schema
+discovery, validated read-only query execution, tenant-scoped query slugs and
+MultiQuery pipelines. Neither ships a template, so exposing them means
+hand-writing a YAML section from the class signature.
+
+**2. Toolkit selection is a flag buried inside the wrong command.** Today the
+only way to choose toolkits is `parrot claude install --toolkits=a,b` or
+`--all-toolkits` — a flag on the *wiki* installer. The operator must already
+know the template names; `--help` only lists them in a fallback hint after a
+no-op run. There is no way to **list** what is available with descriptions,
+no way to **disable** one without hand-editing YAML and re-running the host
+installer, and no way to **uninstall** one at all.
+
+Compounding this: `scraping`, `browsing` and `memory` are hardcoded as
+`BUILTIN_TOOLKITS` (`toolkit_config.py:89`) and resolve implicitly whether or
+not the operator wants them. A repo that never asked for browser automation
+still has `browsing` resolvable, and `parrot claude install` will happily
+write a `parrot-browsing` entry. The owner's decision is that **nothing
+except wikitoolkit should be implicit** — every local MCP server becomes
+opt-in and individually toggleable.
+
+**Who is affected**: every operator wiring an ai-parrot repo into Claude
+Code, Codex, or Google Antigravity — plus the ai-parrot repo itself, whose
+`.mcp.json` currently carries `parrot-browsing`, `parrot-memory` and
+`parrot-scraping` entries that resolve through the builtins.
