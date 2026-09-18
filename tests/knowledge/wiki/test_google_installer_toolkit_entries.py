@@ -173,12 +173,8 @@ def test_reconcile_preserves_wikitoolkit_entry(tmp_root_with_config: Path, mcp_c
     plugin_mcp_file = root / ".agents" / "plugins" / "parrot" / "mcp_config.json"
     plugin_mcp_file.parent.mkdir(parents=True, exist_ok=True)
 
-    mcp_config_path.write_text(
-        json.dumps({"mcpServers": {"wikitoolkit": wiki_entry}}), encoding="utf-8"
-    )
-    plugin_mcp_file.write_text(
-        json.dumps({"mcpServers": {"wikitoolkit": wiki_entry}}), encoding="utf-8"
-    )
+    mcp_config_path.write_text(json.dumps({"mcpServers": {"wikitoolkit": wiki_entry}}), encoding="utf-8")
+    plugin_mcp_file.write_text(json.dumps({"mcpServers": {"wikitoolkit": wiki_entry}}), encoding="utf-8")
 
     reconcile_toolkit_entries(root, mcp_path=mcp_config_path)
 

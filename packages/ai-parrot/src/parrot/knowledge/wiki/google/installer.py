@@ -149,9 +149,7 @@ def toolkit_config_paths(root: Path, mcp_path: Optional[Path] = None) -> tuple[P
     return (primary, root / assets.PLUGIN_DIR / "mcp_config.json")
 
 
-def reconcile_toolkit_entries(
-    root: Path, mcp_path: Optional[Path] = None
-) -> tuple[list[str], list[str]]:
+def reconcile_toolkit_entries(root: Path, mcp_path: Optional[Path] = None) -> tuple[list[str], list[str]]:
     """Reconcile ONLY `parrot-<name>` entries, in BOTH Antigravity config files.
 
     Never reads or writes the "wikitoolkit" key in either file (FEAT-570 AC5).
