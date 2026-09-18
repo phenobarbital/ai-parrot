@@ -1,4 +1,5 @@
 """Unit tests for UnifiedMemoryManager — mocked subsystems."""
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock, create_autospec
 
@@ -26,9 +27,7 @@ def mock_episodic() -> MagicMock:
 @pytest.fixture
 def mock_skills() -> AsyncMock:
     registry = AsyncMock()
-    registry.get_relevant_skills = AsyncMock(
-        return_value="Skill: use pagination for large queries"
-    )
+    registry.get_relevant_skills = AsyncMock(return_value="Skill: use pagination for large queries")
     registry.configure = AsyncMock()
     registry.cleanup = AsyncMock()
     return registry
@@ -104,9 +103,7 @@ class TestUnifiedMemoryManager:
         assert ctx.tokens_used == 0
 
     @pytest.mark.asyncio
-    async def test_configure_calls_subsystems(
-        self, namespace, mock_episodic, mock_skills
-    ):
+    async def test_configure_calls_subsystems(self, namespace, mock_episodic, mock_skills):
         """configure() calls configure on each subsystem that has it."""
         manager = UnifiedMemoryManager(
             namespace=namespace,
@@ -118,9 +115,7 @@ class TestUnifiedMemoryManager:
         mock_skills.configure.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_cleanup_calls_subsystems(
-        self, namespace, mock_episodic, mock_skills
-    ):
+    async def test_cleanup_calls_subsystems(self, namespace, mock_episodic, mock_skills):
         """cleanup() calls cleanup on each subsystem that has it."""
         manager = UnifiedMemoryManager(
             namespace=namespace,
@@ -144,9 +139,7 @@ class TestUnifiedMemoryManager:
         assert ctx.tokens_used <= 500
 
     @pytest.mark.asyncio
-    async def test_conversation_formatted_as_turns(
-        self, namespace, mock_conversation
-    ):
+    async def test_conversation_formatted_as_turns(self, namespace, mock_conversation):
         """Conversation turns are formatted as User/Assistant lines."""
         turn = MagicMock()
         turn.user_message = "hello"
@@ -175,4 +168,5 @@ class TestUnifiedMemoryManager:
     def test_import(self):
         """Import path works as specified."""
         from parrot.memory.unified.manager import UnifiedMemoryManager as UMM  # noqa: F401
+
         assert UMM is UnifiedMemoryManager

@@ -4,6 +4,7 @@ Orchestrates parallel retrieval from episodic memory, skill registry, and
 conversation memory, then passes results through ContextAssembler for
 token-budgeted context assembly.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -197,13 +198,9 @@ class UnifiedMemoryManager:
         """
         try:
             if self.episodic is not None:
-                await self._record_episodic(
-                    query, response, tool_calls, user_id, session_id
-                )
+                await self._record_episodic(query, response, tool_calls, user_id, session_id)
         except Exception as exc:  # noqa: BLE001
-            self.logger.warning(
-                "record_interaction: episodic recording failed — %s", exc
-            )
+            self.logger.warning("record_interaction: episodic recording failed — %s", exc)
 
     # ------------------------------------------------------------------
     # Private retrieval helpers
@@ -277,9 +274,7 @@ class UnifiedMemoryManager:
                         )
                         continue
                     if result and isinstance(result, str):
-                        cross_domain_parts.append(
-                            f"[cross-domain: {agent_id}]\n{result}"
-                        )
+                        cross_domain_parts.append(f"[cross-domain: {agent_id}]\n{result}")
 
         except Exception as exc:  # noqa: BLE001
             self.logger.warning("Cross-domain routing failed: %s", exc)
@@ -390,10 +385,7 @@ class UnifiedMemoryManager:
             room_id=self.namespace.room_id,
             crew_id=self.namespace.crew_id,
         )
-        response_text = (
-            response if isinstance(response, str)
-            else getattr(response, "content", str(response))
-        )
+        response_text = response if isinstance(response, str) else getattr(response, "content", str(response))
         if not isinstance(response_text, str):
             response_text = str(response_text)
         # ``tool_calls`` is accepted for signature compatibility only: tool calls

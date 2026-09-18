@@ -4,6 +4,7 @@ These tests use a real ``EpisodicMemoryStore`` over an in-memory ``FAISSBackend`
 ``AsyncMock`` of the store — so a signature mismatch between the manager and the store
 surfaces as a failure instead of being swallowed by ``record_interaction``.
 """
+
 from __future__ import annotations
 
 from types import SimpleNamespace
