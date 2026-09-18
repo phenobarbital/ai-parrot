@@ -330,77 +330,66 @@ def test_identify_substrips_on_local(shelf_image, mini_catalog, fake_backend):
     assert len(actual_errors) == 0
 
 
-# Temporarily disabled due to test framework issues
-# def test_identify_failed_call_isolated(shelf_image, _row_slots, mini_catalog, fake_backend):
-#     """A failed call -> all its slots uncertain + one error; other rows unaffected."""
-#     # Create a single slot for the first row
-#     first_slot = _row_slots[0]
-#
-#     # Add a second row to test isolation
-#     second_row_slots = [
-#         Slot(
-#             slot_id="img_r02_s01",
-#             image_id="img",
-#             row=2,
-#             index=1,
-#             box=(100, 400, 200, 500),
-#             origin="gap_filled",
-#         )
-#     ]
-#
-#     all_slots = [first_slot] + second_row_slots
-#
-#     # Set backend as local to ensure predictable splitting
-#     fake_backend.is_local = True
-#
-#     # Queue responses - first call fails, second succeeds
-#     fake_backend.queue[IDENTIFY_STAGE] = [
-#         RuntimeError("Test error"),  # First call fails (for row 1)
-#         RowReading(
-#             slots=[
-#                 SlotReading(
-#                     slot_id=second_row_slots[0].slot_id,
-#                     occupancy="occupied",
-#                     visibility="full",
-#                     evidence="Test",
-#                 )
-#             ]
-#         ),  # Second call succeeds (for row 2)
-#     ]
-#
-#     semaphore = asyncio.Semaphore(1)
-#
-#     observations, errors = asyncio.run(
-#         identify_rows(shelf_image, all_slots, fake_backend, mini_catalog, semaphore)
-#     )
-#
-#     # Should have observations for both slots
-#     assert len(observations) == 2
-#
-#     # Find the observation for the first slot (row 1) and second slot (row 2)
-#     # Observations are sorted by (row, index), so row 1 should come first
-#     first_obs = None
-#     second_obs = None
-#     for obs in observations:
-#         if obs.slot.row == 1:
-#             first_obs = obs
-#         elif obs.slot.row == 2:
-#             second_obs = obs
-#
-#     # Make sure we found both observations
-#     assert first_obs is not None
-#     assert second_obs is not None
-#
-#     # First slot should be uncertain due to failure
-#     assert first_obs.reading.occupancy == "uncertain"
-#     assert "identify_failed" in first_obs.issues
-#
-#     # Second slot should be processed normally
-#     assert second_obs.reading.occupancy == "occupied"
-#
-#     # Should have one error message
-#     assert len(errors) == 1
-#     assert "Test error" in errors[0]
+def test_identify_failed_call_isolated(shelf_image, _row_slots, mini_catalog, fake_backend):
+    """A failed call -> all its slots uncertain + one error; other rows unaffected.
+
+    ``identify_rows`` dispatches one coroutine per row via ``asyncio.gather`` and each
+    coroutine reaches ``backend.ask`` only after an ``asyncio.to_thread`` render step, so
+    the two rows' calls can land on the FakeBackend queue in either order. Keying the
+    canned response off each call's own prompt (which embeds every slot_id, see
+    ``build_identify_prompt``) makes the assertion independent of that race — unlike a
+    plain FIFO queue of [exception, success], which is what made the original version of
+    this test flaky enough to be disabled.
+    """
+    first_slot = _row_slots[0]
+    second_row_slots = [
+        Slot(
+            slot_id="img_r02_s01",
+            image_id="img",
+            row=2,
+            index=1,
+            box=(100, 400, 200, 500),
+            origin="gap_filled",
+        )
+    ]
+    all_slots = [first_slot] + second_row_slots
+
+    fake_backend.is_local = True
+
+    def _answer(prompt: str, _images: object) -> RowReading:
+        if first_slot.slot_id in prompt:
+            raise RuntimeError("Test error")
+        return RowReading(
+            slots=[
+                SlotReading(
+                    slot_id=second_row_slots[0].slot_id,
+                    occupancy="occupied",
+                    visibility="full",
+                    evidence="Test",
+                )
+            ]
+        )
+
+    # One queue slot per call (row 1, row 2); each invocation decides its own outcome
+    # from its own prompt, so queue order never has to match call order.
+    fake_backend.queue[IDENTIFY_STAGE] = [_answer, _answer]
+
+    semaphore = asyncio.Semaphore(2)
+
+    observations, errors = asyncio.run(identify_rows(shelf_image, all_slots, fake_backend, mini_catalog, semaphore))
+
+    assert len(observations) == 2
+
+    first_obs = next(obs for obs in observations if obs.slot.row == 1)
+    second_obs = next(obs for obs in observations if obs.slot.row == 2)
+
+    assert first_obs.reading.occupancy == "uncertain"
+    assert "identify_failed" in first_obs.issues
+
+    assert second_obs.reading.occupancy == "occupied"
+
+    assert len(errors) == 1
+    assert "Test error" in errors[0]
 
 
 def test_identify_facing_id_unset(_row_slots, mini_catalog, fake_backend):
