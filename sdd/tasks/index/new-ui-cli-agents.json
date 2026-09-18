@@ -364,7 +364,7 @@
       "feature_id": "FEAT-573",
       "feature": "new-ui-cli-agents",
       "spec": "sdd/specs/new-ui-cli-agents.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -378,8 +378,8 @@
       "parallelism_notes": "Exclusive: edits packages/ai-parrot/tests/cli/conftest.py, which every other CLI test module loads. Exercises AgentREPL.run_batch (TASK-3407), _ServerBotProxy SSE parsing (TASK-3408) against StreamHandler tool frames (TASK-3409), AgentWorkspaceApp (TASK-3412) and the Click command (TASK-3413).",
       "assigned_to": null,
       "started_at": "2026-09-18T05:16:16+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3416-end-to-end-integration-tests.md"
+      "completed_at": "2026-09-18T09:48:08+00:00",
+      "file": "sdd/tasks/completed/TASK-3416-end-to-end-integration-tests.md"
     },
     {
       "id": "TASK-3417",

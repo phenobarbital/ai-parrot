@@ -499,10 +499,56 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-coder native `sonnet` seat (attempt f6683d31fa7c43a88b20782adfd03afd), 1 defect fixed by orchestrator
+**Date**: 2026-09-18
+**Notes**: Added 5 shared conftest fixtures (`quiet_console`, `fake_streaming_bot`,
+`lifecycle_scope`, `tool_emitting_bot`, `sse_frames`) plus 3 e2e suites: inline
+batch through the real Click command + `/export`, the Textual workspace with
+live tool events, and a resume round-trip. Added the real
+`StreamHandler`↔`ServerAgentProxy` round-trip test in ai-parrot-server.
+Correctly applied `unisolated-real-home-in-tests`: verified
+`save_session_pointer()`'s call site directly and used a module-level
+`autouse=True` `_isolated_parrot_home` fixture for every test in
+`test_e2e_workspace.py`, not per-test opt-in.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Task-authorized file outside the Complexity Contract**: renamed
+`test_session.py`'s local `lifecycle_scope` fixture to `_runner_lifecycle_scope`
+(purely mechanical, 7 call sites, no behavior change) — explicitly instructed
+by the task's own Step 1 ("check for fixture-name clashes... rename local
+duplicates"). `coder_merge` flagged this as `fidelity_violation` since it
+wasn't in the declared target list; verified the diff was exactly the
+authorized mechanical rename, then applied it directly on the feature branch
+myself (not merging the flagged branch by hand), per protocol.
 
-**Deviations from spec**: none | describe if any
+**Real defect found and fixed by orchestrator, confirmed via full test
+suite**: `TurnRunner.run_turn` (TASK-3404's `session.py`) checked
+`hasattr(chunk, "text")`/`"content"` before `hasattr(chunk, "output")`; a
+`MagicMock` final message (the repo-standard `_make_ai_message()` test
+helper) auto-vivifies every attribute as truthy, so the generic
+duck-typing branch matched first and fed a `MagicMock` into a Pydantic
+string field, crashing 2 of this task's own new tests. Real `AIMessage`
+has no `.text`/`.content`, so this never hit production — only the
+standard mock helper. Fixed by reordering `.output` first (matching the
+code's own inline comment intent). Fix commit:
+`85263443c90e6f8654963e830d55b804fbacd7c9`. Recorded as model feedback
+against TASK-3404's attempt (`hasattr-duck-typing-before-definitive-signal`).
+
+Coder could not execute pytest at all in its sandboxed sub-worktree (no
+compiled `parrot.utils.types`, confirmed pre-existing); orchestrator ran
+the full suite: `test_e2e_workspace.py` + `test_session.py`: 10 passed, 1
+skipped (textual); `packages/ai-parrot/tests/cli/`: 217 passed, 4 skipped,
+6 pre-existing unrelated failures confirmed unchanged; server round-trip
+test: 1 passed.
+
+**Feedback recorded**: `hasattr-duck-typing-before-definitive-signal`
+against TASK-3404's attempt.
+**Deviations from spec**: `test_resume_roundtrip_standalone` drives resume
+via `/resume last` (asserting against the `quiet_console` buffer) instead
+of `--session last` + `result.output`, because the coder found and
+verified two real, independent gaps in the blueprint's literal assertion
+(`AgentREPL.run_batch()` never reads `config.resume_session_id`; the
+renderer's `Console` is snapshotted at construction, not the process
+stdout `CliRunner` captures) — both mechanisms are named in AC9, and the
+one actually exercised by batch mode was used instead. Documented, not a
+source-code fix (that gap in `--session last` + batch mode is out of this
+task's scope, noted here for visibility, not filed separately).
