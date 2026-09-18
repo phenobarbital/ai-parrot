@@ -166,7 +166,7 @@
       "feature_id": "FEAT-574",
       "feature": "new-planogram-pipeline",
       "spec": "sdd/specs/new-planogram-pipeline.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -174,8 +174,8 @@
       "parallelism_notes": "No dependencies: models.py, new planogram/backend.py and the SQL files are touched by no other root task.",
       "assigned_to": null,
       "started_at": "2026-09-18T22:34:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3426-config-fields-backend-sql.md"
+      "completed_at": "2026-09-18T23:27:45+00:00",
+      "file": "sdd/tasks/completed/TASK-3426-config-fields-backend-sql.md"
     },
     {
       "id": "TASK-3427",

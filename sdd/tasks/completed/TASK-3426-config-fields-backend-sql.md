@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-574 — New Planogram Compliance Pipeline
 **Spec**: `sdd/specs/new-planogram-pipeline.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -516,7 +516,13 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (FEAT-574 orchestrator)
+**Date**: 2026-09-19
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+Implemented in fallback sequential mode (parrot-sdd-coder server unresponsive).
+models.py: prompts Optional[str]=None; slots_definition (dict|str|Path, stored raw) and llm_backend with a field_validator (blank / empty provider rejected, value stripped). planogram/backend.py: _Unset/UNSET, DEFAULT_LLM_BACKEND='google:'+DEFAULT_LLM_MODEL, ResolvedBackend(as_string), resolve_backend implementing matrix rows 1-7 (only LLMFactory.parse_llm_string + parrot.conf imported). table.sql: prompts nullable, slots_definition JSONB NULL / llm_backend TEXT NULL + COMMENTs; alter_planograms_configurations_feat574.sql with the four idempotent statements.
+Tests: test_backend_resolution.py 18 passed; tests/pipelines/test_config_extensions.py 13 passed; whole packages/ai-parrot-pipelines/tests: only the pre-existing test_endcap_no_shelves_promotional failure.
+Pre-existing ruff F401 (unused enum.Enum) in models.py left for /sdd-done.
+Observation (deferred): packages/ai-parrot-pipelines/tests/conftest.py (TASK-3420) and the root tests/conftest.py both import as 'tests.conftest'; a single pytest session collecting both trees fails with ImportPathMismatchError. select_tests runs them in separate sessions, so the merge tier is unaffected.
+
+Seat: orchestrator (fallback) · Backend: native · Model: claude-opus-5 · Attempts: 1
