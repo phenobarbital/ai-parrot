@@ -449,10 +449,31 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (orchestrated native `sonnet` delivery)
+**Date**: 2026-09-18
+**Notes**: Three page-state designs (A-frontmatter, B-sidecar, C-simulated-metadata-column)
+prototyped against a real `SQLiteWikiStore` under `tmp_path` (mirroring `BrainStore.__init__`).
+PASS across all three for 5× re-distillation (distinct versions, old excluded from ordinary
+search, state preserved per version) and no meaningful FTS/pack token-cost drift. Decisive
+result: only **A-frontmatter** survives `BrainStore.copy_page_to()` unmodified — B and C both
+lose state on copy since `copy_page_to` only copies the single `WikiPageRecord` it's given.
+`amendment.md` freezes design A with **no** `WikiPageRecord`/backend schema migration needed.
+`Lineage.canonical()`/`credit_targets()` verified: bounded traversal (depth 32), cycle
+rejection, alias dedup to one credit per canonical version, and a review on version N
+correctly does not auto-credit version N+1. G2 coordination points listed per the task's
+requirement. Fast tests (7 passed, 1 env-gated skip) verified green post-merge in the
+feature worktree.
+Full REPORT.md/metrics.json/amendment.md:
+`packages/ai-parrot/tests/memory/dynamics/spikes/s4_brain_state/` (mirrored by the
+orchestrator to `sdd/state/FEAT-571/spikes/s4-brain-state/` for owner/architecture review —
+the gate itself is NOT passed until that review happens, including G2 coordination).
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Deviations from spec**: Task's own "Files to Create / Modify" list originally placed
+REPORT.md/metrics.json/amendment.md under `sdd/state/FEAT-571/spikes/s4-brain-state/`;
+amended by sdd-worker (2026-09-18, Option A, user-approved) to
+`packages/ai-parrot/tests/memory/dynamics/spikes/s4_brain_state/` because the FEAT-549
+sdd-coder engine's fidelity gate unconditionally rejects any coder-committed path under
+`sdd/`. No other deviation from the blueprint.
 
-**Deviations from spec**: none | describe if any
+Seat: sonnet (native) · Backend: native · Model: sonnet · Attempts: 1 · Duration: ~986s ·
+Tokens: n/a (native — usage not tracked by the engine)

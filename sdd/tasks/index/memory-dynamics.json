@@ -71,7 +71,7 @@
       "feature_id": "FEAT-571",
       "feature": "memory-dynamics",
       "spec": "sdd/specs/memory-dynamics.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -79,8 +79,8 @@
       "parallelism_notes": "graph root (gate G4): writes only tests/memory/dynamics/spikes/s4_brain_state/* and sdd/state/FEAT-571/spikes/s4-brain-state/*; uses a tmp_path SQLite wiki store, never .parrot/; the 'coordinate with G2 before passing' rule (spec §3) is an amendment cross-reference at review time, not a start dependency",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3385-s4-brain-page-state-spike.md"
+      "completed_at": "2026-09-18T13:43:33+00:00",
+      "file": "sdd/tasks/completed/TASK-3385-s4-brain-page-state-spike.md"
     },
     {
       "id": "TASK-3386",
