@@ -2,12 +2,13 @@ from typing import Optional, Dict, List, Any, Union
 from pathlib import Path
 from enum import Enum
 from PIL import Image
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from parrot.models.detections import (
     PlanogramDescription,
     PlanogramDescriptionFactory,
 )
 from parrot_pipelines.planogram.grid.models import DetectionGridConfig
+from parrot.clients.factory import LLMFactory
 
 class EndcapGeometry(BaseModel):
     """Configurable endcap geometry parameters"""
@@ -52,13 +53,15 @@ class PlanogramConfig(BaseModel):
     )
 
     # ROI Detection prompt
-    roi_detection_prompt: str = Field(
-        description="Prompt for ROI detection phase (used by _find_poster method)"
+    roi_detection_prompt: Optional[str] = Field(
+        default=None,
+        description="Prompt for ROI detection (legacy adapter path only; optional since FEAT-574)"
     )
 
     # Object identification prompt
-    object_identification_prompt: str = Field(
-        description="Prompt for Phase 2 object identification (used by _identify_objects method)"
+    object_identification_prompt: Optional[str] = Field(
+        default=None,
+        description="Prompt for object identification (legacy adapter path only; optional since FEAT-574)"
     )
 
     # Reference images — supports single image or list of images per product
@@ -94,6 +97,42 @@ class PlanogramConfig(BaseModel):
             "When None or grid_type='no_grid', pipeline uses current single-image behavior."
         )
     )
+
+    # Slots definition (FEAT-574): dict (JSONB row value) or a path to a JSON file.
+    slots_definition: Optional[Union[Dict[str, Any], str, Path]] = Field(
+        default=None,
+        description="Shelves/slots/products definition for migrated types: a dict or a path to a JSON file"
+    )
+
+    # LLM backend (FEAT-574): "provider:model" — the LLMFactory.create format.
+    llm_backend: Optional[str] = Field(
+        default=None,
+        description='LLM backend as "provider:model"; explicit PlanogramCompliance arguments still win'
+    )
+
+    @field_validator("llm_backend")
+    @classmethod
+    def _check_backend(cls, v: Optional[str]) -> Optional[str]:
+        """Must parse via LLMFactory.parse_llm_string into a non-empty provider.
+
+        Args:
+            v: Raw ``llm_backend`` value.
+
+        Returns:
+            The stripped value, or ``None``.
+
+        Raises:
+            ValueError: Blank value or empty provider.
+        """
+        if v is None:
+            return v
+        value = v.strip()
+        if not value:
+            raise ValueError(f"llm_backend must be 'provider:model', got {v!r}")
+        provider, _ = LLMFactory.parse_llm_string(value)
+        if not provider:
+            raise ValueError(f"llm_backend must be 'provider:model', got {v!r}")
+        return value
 
     class Config:
         """Pydantic configuration."""

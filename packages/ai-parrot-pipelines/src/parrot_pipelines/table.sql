@@ -13,11 +13,15 @@ CREATE TABLE troc.planograms_configurations (
     planogram_config JSONB NOT NULL,
 
     -- Prompts (can be quite long)
-    roi_detection_prompt TEXT NOT NULL,
-    object_identification_prompt TEXT NOT NULL,
+    roi_detection_prompt TEXT NULL,
+    object_identification_prompt TEXT NULL,
 
     -- Reference images (stored as JSONB with paths/references, not actual image data)
     reference_images JSONB DEFAULT '{}',
+
+    -- FEAT-574: slots definition (shelves / slots / products) and LLM backend ("provider:model")
+    slots_definition JSONB NULL,
+    llm_backend TEXT NULL,
 
     -- Detection parameters
     confidence_threshold DECIMAL(3,2) NOT NULL DEFAULT 0.25 CHECK (confidence_threshold >= 0.0 AND confidence_threshold <= 1.0),
@@ -76,6 +80,8 @@ COMMENT ON COLUMN troc.planograms_configurations.planogram_config IS 'Complete p
 COMMENT ON COLUMN troc.planograms_configurations.reference_images IS 'Reference images stored as JSONB with image paths/URLs, not binary data';
 COMMENT ON COLUMN troc.planograms_configurations.roi_detection_prompt IS 'Prompt used for ROI detection phase by _find_poster method';
 COMMENT ON COLUMN troc.planograms_configurations.object_identification_prompt IS 'Prompt used for Phase 2 object identification by _identify_objects method';
+COMMENT ON COLUMN troc.planograms_configurations.slots_definition IS 'FEAT-574: shelves/slots/products definition for migrated planogram types (NULL for legacy types)';
+COMMENT ON COLUMN troc.planograms_configurations.llm_backend IS 'FEAT-574: LLM backend as provider:model (NULL = package default)';
 
 -- Example insert statement
 -- INSERT INTO planograms_configurations (
