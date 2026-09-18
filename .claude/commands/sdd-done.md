@@ -80,7 +80,9 @@ If `IN_WORKTREE=0` and `CURRENT_BRANCH != BASE_BRANCH`, abort:
 ```
 
 If `IN_WORKTREE=1`, the current branch is the feature branch — that is expected,
-skip the base-branch check. The worktree sandbox keeps the primary checkout
+skip the base-branch check. Only the PR flow is available from here: `--merge`
+and `--sync-down` are refused in Steps 9.2 / 9.5 because they need a writable
+checkout of `BASE_BRANCH`. The worktree sandbox keeps the primary checkout
 read-only except its `.git` and `$WORKTREES_DIR`, so: never `cd` to
 `$MAIN_ROOT`, never write anywhere else under it, and reference every
 primary-checkout path through `$MAIN_ROOT` / `$WORKTREES_DIR` (never relative
@@ -408,10 +410,29 @@ If `gh` is not installed or not authenticated, print the manual command:
 
 **Feature flow with `--merge` — direct merge (old behavior):**
 
-When `--merge` is explicitly passed, perform a direct merge instead of a PR:
+When `--merge` is explicitly passed, perform a direct merge instead of a PR.
+
+**Hard refusal — `IN_WORKTREE=1`:** a direct merge needs a writable checkout of
+`BASE_BRANCH`, and inside the feature worktree HEAD *is* the feature branch:
+the merge below would be a no-op self-merge and `git push origin "$BASE_BRANCH"`
+would publish a stale base branch without the feature commits, while the
+command still reports success and removes the worktree. Refuse and fall back
+to the PR flow above:
 
 ```bash
-# We're already on $BASE_BRANCH (verified in Step 1)
+if [[ "$IN_WORKTREE" == "1" && "$MERGE_FLAG" == "--merge" ]]; then
+    cat <<EOF
+⚠️  --merge is not available from inside the feature worktree (HEAD is the
+   feature branch, and the primary checkout is read-only here).
+   Either re-run /sdd-done from the main repo checked out on $BASE_BRANCH,
+   or drop --merge to open a PR instead.
+EOF
+    exit 1
+fi
+```
+
+```bash
+# We're on $BASE_BRANCH in the main repo (verified in Step 1, IN_WORKTREE=0)
 git merge --no-edit feat-<FEAT-ID>-<slug>
 ```
 
@@ -447,6 +468,18 @@ This sub-step runs ONLY when the user passes `--sync-down` (or the deprecated
 `--sync-dev` alias) AND `TYPE == "hotfix"`. It propagates a hotfix that has just
 been merged into `main` (via the manual PR from §9) back into `staging` and `dev`
 so both stay in sync.
+
+**Hard refusal — `IN_WORKTREE=1`:** the sync-down below runs `git checkout
+staging` / `git checkout dev` and merges in the current checkout. Inside a
+worktree those branches are checked out elsewhere (the primary checkout) and
+`git checkout` fails, so refuse and point at the main repo:
+
+```bash
+if [[ "$IN_WORKTREE" == "1" ]]; then
+    echo "⚠️  --sync-down must run from the main repo, not inside a worktree: cd to \$MAIN_ROOT and re-run."
+    exit 1
+fi
+```
 
 If `--sync-dev` is used instead of `--sync-down`, first emit:
 ```
