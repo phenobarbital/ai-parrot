@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-17T23:35:39+00:00",
-  "completed_at": null,
+  "completed_at": "2026-09-18T14:42:25+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "lane_note": "Lane 0 only (gate-first spec §3). G1–G4 are gate tasks whose amendment.md the owner must review before M1–M6 are decomposed; M0 is the independent recording repair. M1–M6 tasks are added by a later /sdd-task run after the gate amendments land.",
@@ -26,7 +26,8 @@
       "assigned_to": null,
       "started_at": null,
       "completed_at": "2026-09-18T13:07:40+00:00",
-      "file": "sdd/tasks/completed/TASK-3382-s1-fsrs-parity-calibration.md"
+      "file": "sdd/tasks/completed/TASK-3382-s1-fsrs-parity-calibration.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3383",
@@ -44,7 +45,8 @@
       "assigned_to": null,
       "started_at": null,
       "completed_at": "2026-09-18T11:39:23+00:00",
-      "file": "sdd/tasks/completed/TASK-3383-s2-concurrent-storage-spike.md"
+      "file": "sdd/tasks/completed/TASK-3383-s2-concurrent-storage-spike.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3384",
@@ -62,7 +64,8 @@
       "assigned_to": null,
       "started_at": null,
       "completed_at": "2026-09-18T13:23:16+00:00",
-      "file": "sdd/tasks/completed/TASK-3384-s3-attribution-precision-spike.md"
+      "file": "sdd/tasks/completed/TASK-3384-s3-attribution-precision-spike.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3385",
@@ -80,7 +83,8 @@
       "assigned_to": null,
       "started_at": null,
       "completed_at": "2026-09-18T13:43:33+00:00",
-      "file": "sdd/tasks/completed/TASK-3385-s4-brain-page-state-spike.md"
+      "file": "sdd/tasks/completed/TASK-3385-s4-brain-page-state-spike.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3386",
@@ -98,7 +102,8 @@
       "assigned_to": null,
       "started_at": null,
       "completed_at": "2026-09-18T14:01:40+00:00",
-      "file": "sdd/tasks/completed/TASK-3386-m0-unified-recording-repair.md"
+      "file": "sdd/tasks/completed/TASK-3386-m0-unified-recording-repair.md",
+      "verification": "verified"
     }
   ]
 }
