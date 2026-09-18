@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-574 — New Planogram Compliance Pipeline
 **Spec**: `sdd/specs/new-planogram-pipeline.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -432,7 +432,11 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (FEAT-574 orchestrator)
+**Date**: 2026-09-19
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+Implemented in fallback sequential mode (parrot-sdd-coder server hung; the first MCP dispatch to gpt-5.6-terra never ran — engine reported 'native tasks use prepare_native', 0 attempts).
+conftest.py: FakeAIMessage, FakeVisionClient (queue per method, call recording incl. image_size, exception/callable/structured coercion, async context manager), fixtures fake_vision_client and synthetic_shelf_image. No parrot imports; no __init__.py in planogram_cycle/.
+Tests: test_fake_vision_client.py 8 passed; test_planogram_types.py passes; test_endcap_no_shelves_promotional.py::test_status_not_missing_when_found fails identically on origin/dev (pre-existing).
+
+Seat: orchestrator (fallback) · Backend: native · Model: claude-opus-5 · Attempts: 1
