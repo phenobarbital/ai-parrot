@@ -2,7 +2,7 @@
 """Autonomous planogram compliance check (FEAT-565) — thin CLI over ``plancheck.pipeline.run_check``.
 
 Example:
-    python examples/planogram/planogram_check.py --catalog my_catalog.json --output results/run1
+    python examples/planogram/planogram_check.py --output results/run1
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from typing import NoReturn
 
 from plancheck.models import Settings
 from plancheck.pipeline import run_check
-from plancheck.reference import emit_catalog_template, load_planogram
+from plancheck.reference import init_descriptor_fields
 from plancheck.vision import VisionError
 
 logger = logging.getLogger("planogram_check")
@@ -40,15 +40,19 @@ def build_parser() -> argparse.ArgumentParser:
     source = parser.add_mutually_exclusive_group()
     source.add_argument("--images-dir", type=Path, default=None, help=f"Photo directory (default: {HERE / 'images'})")
     source.add_argument("--images", type=Path, nargs="+", default=None, help="Explicit photo files")
-    parser.add_argument("--planogram", type=Path, default=HERE / "planogram_page1.json")
     parser.add_argument(
-        "--catalog", type=Path, default=None, help="REQUIRED for a run: part-number ↔ descriptor catalog"
+        "--planogram",
+        type=Path,
+        default=HERE / "planogram_page1.json",
+        help="Planogram JSON: positions + product descriptors (display_name, family, xl, colors, pack, ...)",
     )
     parser.add_argument("--output", type=Path, default=None, help="NEW directory for the artefacts (must not exist)")
     parser.add_argument("--llm", default="google:gemini-3.8-flash", help="provider:model for identification")
     parser.add_argument("--ocr-llm", default=None, help="provider:model for the price fallback (default: --llm)")
     parser.add_argument("--base-url", default=None, help="Base URL for local OpenAI-compatible servers")
-    parser.add_argument("--prices", type=Path, default=None, help="Optional {sku: price} JSON → price compliance")
+    parser.add_argument(
+        "--prices", type=Path, default=None, help="Optional {sku: price} JSON; overrides planogram prices"
+    )
     parser.add_argument("--roi", type=float, nargs=4, metavar=("L", "T", "R", "B"), default=None)
     parser.add_argument(
         "--verify-pass",
@@ -63,11 +67,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--cache-dir", type=Path, default=HERE / "results" / ".plancheck_cache")
     parser.add_argument("--visit-id", default="visit")
     parser.add_argument(
-        "--emit-catalog-template",
-        type=Path,
-        default=None,
-        metavar="PATH",
-        help="Write a catalog skeleton for the planogram and exit",
+        "--init-descriptors",
+        action="store_true",
+        help="Add the missing product-descriptor fields (as null) to every planogram position, in place, and exit",
     )
     return parser
 
@@ -95,10 +97,6 @@ def _discover_images(args: argparse.Namespace) -> list[Path]:
 
 def _settings_from_args(args: argparse.Namespace) -> Settings:
     """Validate run arguments and build ``Settings`` with absolute paths. Raises ``ValueError``."""
-    if args.catalog is None:
-        raise ValueError(
-            "--catalog is required. Create one with --emit-catalog-template <path>, fill it in, then pass it."
-        )
     if args.output is None:
         raise ValueError("--output <new directory> is required.")
 
@@ -115,7 +113,6 @@ def _settings_from_args(args: argparse.Namespace) -> Settings:
     # Build absolute paths
     images = [str(p.expanduser().resolve()) for p in _discover_images(args)]
     planogram = str(args.planogram.expanduser().resolve())
-    catalog = str(args.catalog.expanduser().resolve())
     output = str(args.output.expanduser().resolve())
     cache_dir = str(args.cache_dir.expanduser().resolve())
     prices = str(args.prices.expanduser().resolve()) if args.prices else None
@@ -123,7 +120,6 @@ def _settings_from_args(args: argparse.Namespace) -> Settings:
     return Settings(
         images=images,
         planogram=planogram,
-        catalog=catalog,
         output=output,
         cache_dir=cache_dir,
         prices=prices,
@@ -150,10 +146,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     except SystemExit as exc:  # _Parser.error → 1 ; --help → 0
         return int(exc.code or 0)
     try:
-        if args.emit_catalog_template is not None:
-            planogram = load_planogram(args.planogram.expanduser().resolve())
-            emit_catalog_template(planogram, args.emit_catalog_template.expanduser().resolve())
-            logger.info("Catalog template written to %s", args.emit_catalog_template)
+        if args.init_descriptors:
+            changed = init_descriptor_fields(args.planogram.expanduser().resolve())
+            logger.info("Descriptor fields added to %d positions of %s", changed, args.planogram)
             return EXIT_OK
         settings = _settings_from_args(args)
         report = asyncio.run(run_check(settings))

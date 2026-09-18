@@ -105,7 +105,6 @@ def _snapshot(report: ComplianceReport, settings: Settings, prompt_versions: dic
         "inputs": {
             "images": {info.image_id: info.sha256 for info in report.images},
             "planogram": _sha256_file(Path(settings.planogram)),
-            "catalog": _sha256_file(Path(settings.catalog)),
             "prices": _sha256_file(Path(settings.prices)) if settings.prices else None,
         },
     }

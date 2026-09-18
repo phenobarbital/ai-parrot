@@ -66,7 +66,7 @@ class PlanogramRef(StrictModel):
 
 
 class CatalogItem(StrictModel):
-    """User-supplied bridge between a part number and what the package shows."""
+    """What one planogram SKU's package shows — built from the descriptor fields of its planogram position."""
 
     sku: str
     brand: str
@@ -81,7 +81,7 @@ class CatalogItem(StrictModel):
 
 
 class Catalog(StrictModel):
-    """All catalog items."""
+    """Every described planogram SKU (derived from the planogram, never a separate file)."""
 
     items: list[CatalogItem]
 
@@ -274,7 +274,7 @@ class BrandShare(StrictModel):
 
 
 class PriceCompliance(StrictModel):
-    """Only present when ``--prices`` was supplied."""
+    """Only present when an expected price exists (planogram ``price`` fields and/or ``--prices``)."""
 
     compared: int
     matched: int
@@ -325,7 +325,7 @@ class RunInfo(StrictModel):
     started_at: str
     finished_at: str
     errors: list[str]
-    catalog_missing_skus: list[str]
+    undescribed_skus: list[str]
     registration_method: Literal["auto_alignment"] = "auto_alignment"
     reference_provisional: bool = True
     local_ocr_available: bool = True
@@ -349,7 +349,6 @@ class Settings(StrictModel):
 
     images: list[str]
     planogram: str
-    catalog: str
     output: str
     cache_dir: str
     prices: str | None = None

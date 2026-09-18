@@ -11,8 +11,9 @@ import pytest
 
 from plancheck.models import Catalog, CatalogItem, SlotReading
 from plancheck.reference import (
-    emit_catalog_template,
-    load_catalog,
+    DESCRIPTOR_FIELDS,
+    init_descriptor_fields,
+    load_descriptors,
     load_planogram,
     load_prices,
     normalize_brand,
@@ -74,19 +75,37 @@ def test_load_planogram_rejects_noncontiguous_slots(tmp_path, mini_planogram_dat
         load_planogram(path)
 
 
-def test_load_catalog_reports_missing_skus(tmp_path, mini_planogram, mini_catalog):
-    # Remove items for AC-11 and BO-35
-    items = [item for item in mini_catalog.items if item.sku not in ("AC-11", "BO-35")]
-    catalog = Catalog(items=items)
-    path = _write(tmp_path, "catalog.json", catalog.model_dump(mode="json"))
-    loaded_catalog, missing = load_catalog(path, mini_planogram)
-    assert missing == ["AC-11", "BO-35"]
-    # Duplicate SKU should raise
-    items_with_dup = items + [items[0]]
-    catalog_dup = Catalog(items=items_with_dup)
-    path_dup = _write(tmp_path, "catalog_dup.json", catalog_dup.model_dump(mode="json"))
-    with pytest.raises(ValueError, match="Duplicate SKU"):
-        load_catalog(path_dup, mini_planogram)
+def test_load_descriptors_builds_catalog_and_reports_undescribed(tmp_path, mini_planogram_data, mini_catalog):
+    data = copy.deepcopy(mini_planogram_data)
+    data["shelves"][0]["products"]["pos 1:1"]["display_name"] = None  # AC-11
+    data["shelves"][2]["products"]["pos 3:5"]["display_name"] = "  "  # BO-35 (blank = undescribed)
+    data["shelves"][0]["products"]["pos 1:2"]["price"] = "29.99"  # AC-12
+    data["shelves"][0]["products"]["pos 1:2"]["identifiers"] = ["AC12", "AC-12"]
+    path = _write(tmp_path, "planogram.json", data)
+    catalog, undescribed, prices = load_descriptors(path, load_planogram(path))
+    assert undescribed == ["AC-11", "BO-35"]
+    assert {i.sku for i in catalog.items} == {i.sku for i in mini_catalog.items} - {"AC-11", "BO-35"}
+    assert catalog.by_sku("BO-25") == mini_catalog.by_sku("BO-25")
+    assert catalog.by_sku("AC-12").identifiers == ["AC-12", "AC12"]  # SKU first, no repeats
+    assert prices == {"AC-12": Decimal("29.99")}
+
+
+def test_load_descriptors_rejects_bad_input(tmp_path, mini_planogram_data):
+    base = copy.deepcopy(mini_planogram_data)
+    no_brand = copy.deepcopy(base)
+    no_brand["shelves"][0]["products"]["pos 1:1"]["brand"] = None
+    bad_price = copy.deepcopy(base)
+    bad_price["shelves"][0]["products"]["pos 1:1"]["price"] = "n/a"
+    conflict = copy.deepcopy(base)  # same SKU in two positions, described differently
+    conflict["shelves"][1]["products"]["pos 2:1"].update(product="AC-11", display_name="Acme 10 Other")
+    for name, data, match in (
+        ("no_brand", no_brand, "no brand"),
+        ("bad_price", bad_price, "non-numeric price"),
+        ("conflict", conflict, "described differently"),
+    ):
+        path = _write(tmp_path, f"{name}.json", data)
+        with pytest.raises(ValueError, match=match):
+            load_descriptors(path, load_planogram(path))
 
 
 def test_resolve_identifier_signature_alias(mini_catalog):
@@ -151,17 +170,23 @@ def test_resolve_signature_single_match_null_xl_is_ambiguous(mini_catalog):
     assert sku == "AC-13" and candidates == ["AC-13"] and res == "direct"
 
 
-def test_emit_catalog_template_refuses_overwrite(tmp_path, mini_planogram):
-    path = tmp_path / "template.json"
-    # First call should succeed
-    emit_catalog_template(mini_planogram, path)
-    # Load and verify
-    loaded_catalog, missing = load_catalog(path, mini_planogram)
-    assert missing == []
-    assert len(loaded_catalog.items) == 17  # All identity-required SKUs except CLOSEOUT
-    # Second call should raise FileExistsError
-    with pytest.raises(FileExistsError):
-        emit_catalog_template(mini_planogram, path)
+def test_init_descriptor_fields_adds_nulls_and_keeps_values(tmp_path, mini_planogram_data):
+    data = copy.deepcopy(mini_planogram_data)
+    for shelf in data["shelves"]:
+        for product in shelf["products"].values():
+            for name in DESCRIPTOR_FIELDS:
+                product.pop(name, None)
+    data["shelves"][0]["products"]["pos 1:1"]["display_name"] = "Keep me"
+    path = _write(tmp_path, "planogram.json", data)
+    assert init_descriptor_fields(path) == 18
+    written = json.loads(path.read_text(encoding="utf-8"))
+    pos = written["shelves"][0]["products"]["pos 1:1"]
+    assert pos["display_name"] == "Keep me" and all(name in pos for name in DESCRIPTOR_FIELDS)
+    assert written["shelves"][1]["products"]["pos 2:1"]["xl"] is None
+    assert init_descriptor_fields(path) == 0  # idempotent
+    ref = load_planogram(path)
+    catalog, undescribed, _ = load_descriptors(path, ref)
+    assert [i.sku for i in catalog.items] == ["AC-11"] and len(undescribed) == 16
 
 
 def test_load_prices_decimal_and_errors(tmp_path):
@@ -181,3 +206,17 @@ def test_load_prices_decimal_and_errors(tmp_path):
     path_list.write_text("[]", encoding="utf-8")
     with pytest.raises(ValueError, match="must be a JSON object"):
         load_prices(path_list)
+
+
+def test_resolve_signature_skips_items_without_family():
+    """A described position may leave ``family`` null: rule 2 must skip it, not crash on ``None.casefold()``."""
+    catalog = Catalog(
+        items=[
+            CatalogItem(sku="ZX-1", brand="Zeta", display_name="Zeta Plain", identifiers=["ZX-1"]),
+            CatalogItem(sku="ZX-2", brand="Zeta", display_name="Zeta 5 Black", family="5", colors=["black"]),
+        ]
+    )
+    reading = _reading(brand="Zeta", family="5", xl=False, colors=["black"])
+    assert resolve_identity(reading, catalog) == ("ZX-2", ["ZX-2"], "direct")
+    reading = _reading(brand="Zeta", family="9", xl=False, visible_text=["ZX-1"])
+    assert resolve_identity(reading, catalog) == ("ZX-1", ["ZX-1"], "direct")

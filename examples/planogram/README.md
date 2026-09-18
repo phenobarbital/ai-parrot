@@ -3,49 +3,63 @@
 This tool runs an 8-stage pipeline to check store photos against a planogram: detect price tags, build a grid of product slots, read slot contents with an LLM, verify against expectations, register slots to planogram facings, merge observations, score compliance, and write a report.
 
 ## What stays local
-Photos, `planogram_page1.json`, PDFs, videos and every result directory are git-ignored on purpose (this repository is public). Only code, tests, this README and the synthetic `catalog.example.json` are tracked.
+Photos, `planogram_page1.json`, PDFs, videos and every result directory are git-ignored on purpose (this repository is public). Only code, tests and this README are tracked.
 
 ## Install
 Activate the repo venv (`source .venv/bin/activate`) and ensure the following packages are installed: opencv-python, numpy, rapidocr + onnxruntime (optional — without it prices are read by the LLM only), rapidfuzz, pydantic, pillow, ai-parrot + ai-parrot-client-google (+ -local). Credentials are provided via environment variables only (e.g. GOOGLE_API_KEY).
 
-## The catalog (required)
-The catalog bridges planogram part numbers to consumer-facing package names. Use `--emit-catalog-template <path>` to generate a skeleton from the planogram, then fill in the descriptor fields. Each item has:
-- `sku`: the part number from the planogram
-- `brand`: the brand name
-- `display_name`: what the package shows
-- `family`: optional product family
-- `xl`: whether this is an XL variant
-- `colors`: list of color variants
-- `pack`: number of units in the pack
-- `identifiers`: alternative part numbers
-- `aliases`: alternative display names
-- `provenance`: optional source note
+## Product descriptors (in the planogram)
+The planogram is the only reference file: each position says *where* a product goes **and** *what its package
+shows*. Positions carry these descriptor fields next to `product` (the part number) and `brand`:
+- `display_name`: what the package shows — a position is *described* only when this is non-empty
+- `family`: product family / model number printed on the box (e.g. `"31"`)
+- `xl`: whether this is an XL variant (`true`/`false`)
+- `colors`: list of color variants (e.g. `["black"]`, `["tri-color"]`)
+- `pack`: number of units in the pack (`null` = 1)
+- `identifiers`: extra codes printed on the box (the part number is always one)
+- `aliases`: alternative names that appear on the package
+- `price`: expected shelf price (optional; enables price compliance)
 
-See `catalog.example.json` for a synthetic example. The resolver never merges XL, color or pack variants — each must have its own catalog entry.
+`--init-descriptors` adds every missing field as `null` to each position of the planogram, in place (existing
+values are never touched); then fill them in. A synthetic example position:
+
+```json
+"pos 1:1": {
+  "position": 1, "segment": "left", "segment_number": 1, "slot": 1, "segment_slot": 1,
+  "product": "AC-11", "brand": "Acme", "shelf": 1, "facings": 1,
+  "confidence": "high", "read_method": "direct", "notes": null,
+  "display_name": "Acme 10 Black", "family": "10", "xl": false, "colors": ["black"], "pack": 1,
+  "identifiers": null, "aliases": ["Acme 10 Black Ink"], "price": "29.99"
+}
+```
+
+Fill `family`/`xl`/`colors`/`pack`, not just `display_name`: identity resolution compares those fields and never
+merges XL, color or pack variants. A SKU used in several positions may be described in any of them, but every
+described occurrence must agree. Undescribed identity-required SKUs are listed in `run.undescribed_skus`; a
+planogram with no described position is rejected (exit 1).
 
 ## Usage
 ```bash
-python examples/planogram/planogram_check.py --emit-catalog-template my_catalog.json
-python examples/planogram/planogram_check.py --catalog my_catalog.json --output examples/planogram/results/run1
+python examples/planogram/planogram_check.py --init-descriptors   # once, then fill the fields in
+python examples/planogram/planogram_check.py --output examples/planogram/results/run1
 ```
 
 Options:
 - `--images-dir <path>`: directory containing store photos (default: `examples/planogram/images`)
 - `--images <file>...`: explicit list of photo files
-- `--planogram <file>`: planogram JSON (default: `examples/planogram/planogram_page1.json`)
-- `--catalog <file>`: catalog JSON (required)
+- `--planogram <file>`: planogram JSON with product descriptors (default: `examples/planogram/planogram_page1.json`)
 - `--output <dir>`: new directory for results (required)
 - `--llm <provider:model>`: LLM for identification (default: `google:gemini-3.8-flash`)
 - `--ocr-llm <provider:model>`: LLM for price OCR fallback
 - `--base-url <url>`: base URL for local OpenAI-compatible servers
-- `--prices <file>`: optional JSON mapping SKUs to expected prices
+- `--prices <file>`: optional JSON mapping SKUs to expected prices; overrides the planogram `price` fields
 - `--roi L T R B`: region of interest (0 <= L < R <= 1, 0 <= T < B <= 1)
 - `--verify-pass` / `--no-verify-pass`: enable/disable closed-set verification (default: auto)
 - `--no-marks`: disable Set-of-Marks outlines
 - `--concurrency <n>`: concurrent LLM calls (1-16, default: 4)
 - `--cache-dir <dir>`: cache directory (default: `examples/planogram/results/.plancheck_cache`)
 - `--visit-id <id>`: visit identifier (default: `visit`)
-- `--emit-catalog-template <path>`: write a catalog skeleton and exit
+- `--init-descriptors`: add the missing descriptor fields (as `null`) to the planogram in place, and exit
 
 Exit codes: 0 (success), 1 (invalid input), 2 (completed with errors).
 

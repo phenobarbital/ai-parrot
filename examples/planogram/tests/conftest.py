@@ -75,6 +75,7 @@ def mini_planogram_data() -> dict[str, Any]:
                 "confidence": "high",
                 "read_method": "inferred" if shelf == 2 else "direct",
                 "notes": None,
+                **_descriptor(shelf, slot),
             }
         shelves.append(
             {
@@ -124,30 +125,60 @@ def mini_planogram(mini_planogram_data: dict[str, Any]) -> PlanogramRef:
     return PlanogramRef(planogram_id="mini", source="synthetic fixture", shelf_count=3, facings=facings)
 
 
+def _descriptor(shelf: int, slot: int) -> dict[str, Any]:
+    """Planogram descriptor fields of one synthetic position (all ``None`` for CLOSEOUT).
+
+    Slot 1/4 std black, 2/5 XL black, 3/6 std tri-color.
+    """
+    sku, brand = _sku(shelf, slot)
+    if brand is None:
+        return {
+            "display_name": None,
+            "family": None,
+            "xl": None,
+            "colors": None,
+            "pack": None,
+            "identifiers": None,
+            "aliases": None,
+            "price": None,
+        }
+    family = f"{shelf}{0 if brand == 'Acme' else 1}"
+    variant = (slot - 1) % 3
+    xl, colors = variant == 1, (["tri-color"] if variant == 2 else ["black"])
+    name = f"{brand} {family}{'XL' if xl else ''} {'Tri-color' if variant == 2 else 'Black'}"
+    return {
+        "display_name": name,
+        "family": family,
+        "xl": xl,
+        "colors": colors,
+        "pack": None,
+        "identifiers": None,
+        "aliases": [name],
+        "price": None,
+    }
+
+
 @pytest.fixture
 def mini_catalog() -> Catalog:
-    """One item per identity-required SKU; slot 1/4 std black, 2/5 XL black, 3/6 std tri-color."""
+    """One item per identity-required SKU — exactly what ``load_descriptors`` derives from the planogram."""
     items = []
     for shelf in (1, 2, 3):
         for slot in range(1, 7):
             sku, brand = _sku(shelf, slot)
             if brand is None:
                 continue
-            family = f"{shelf}{0 if brand == 'Acme' else 1}"
-            variant = (slot - 1) % 3
-            xl, colors = variant == 1, (["tri-color"] if variant == 2 else ["black"])
-            name = f"{brand} {family}{'XL' if xl else ''} {'Tri-color' if variant == 2 else 'Black'}"
+            d = _descriptor(shelf, slot)
             items.append(
                 CatalogItem(
                     sku=sku,
                     brand=brand,
-                    display_name=name,
-                    family=family,
-                    xl=xl,
-                    colors=colors,
+                    display_name=d["display_name"],
+                    family=d["family"],
+                    xl=d["xl"],
+                    colors=d["colors"],
                     identifiers=[sku],
-                    aliases=[name],
-                    provenance="fixture",
+                    aliases=d["aliases"],
+                    provenance="planogram",
                 )
             )
     return Catalog(items=items)
