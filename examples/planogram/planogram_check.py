@@ -4,6 +4,7 @@
 Example:
     python examples/planogram/planogram_check.py --catalog my_catalog.json --output results/run1
 """
+
 from __future__ import annotations
 
 import argparse
@@ -40,21 +41,34 @@ def build_parser() -> argparse.ArgumentParser:
     source.add_argument("--images-dir", type=Path, default=None, help=f"Photo directory (default: {HERE / 'images'})")
     source.add_argument("--images", type=Path, nargs="+", default=None, help="Explicit photo files")
     parser.add_argument("--planogram", type=Path, default=HERE / "planogram_page1.json")
-    parser.add_argument("--catalog", type=Path, default=None, help="REQUIRED for a run: part-number ↔ descriptor catalog")
+    parser.add_argument(
+        "--catalog", type=Path, default=None, help="REQUIRED for a run: part-number ↔ descriptor catalog"
+    )
     parser.add_argument("--output", type=Path, default=None, help="NEW directory for the artefacts (must not exist)")
     parser.add_argument("--llm", default="google:gemini-3.8-flash", help="provider:model for identification")
     parser.add_argument("--ocr-llm", default=None, help="provider:model for the price fallback (default: --llm)")
     parser.add_argument("--base-url", default=None, help="Base URL for local OpenAI-compatible servers")
     parser.add_argument("--prices", type=Path, default=None, help="Optional {sku: price} JSON → price compliance")
     parser.add_argument("--roi", type=float, nargs=4, metavar=("L", "T", "R", "B"), default=None)
-    parser.add_argument("--verify-pass", action=argparse.BooleanOptionalAction, default=None,
-                        help="Closed-set verification pass (default: on for cloud, off for local backends)")
-    parser.add_argument("--no-marks", dest="marks", action="store_false", help="Send strips without Set-of-Marks outlines")
+    parser.add_argument(
+        "--verify-pass",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Closed-set verification pass (default: on for cloud, off for local backends)",
+    )
+    parser.add_argument(
+        "--no-marks", dest="marks", action="store_false", help="Send strips without Set-of-Marks outlines"
+    )
     parser.add_argument("--concurrency", type=int, default=4)
     parser.add_argument("--cache-dir", type=Path, default=HERE / "results" / ".plancheck_cache")
     parser.add_argument("--visit-id", default="visit")
-    parser.add_argument("--emit-catalog-template", type=Path, default=None, metavar="PATH",
-                        help="Write a catalog skeleton for the planogram and exit")
+    parser.add_argument(
+        "--emit-catalog-template",
+        type=Path,
+        default=None,
+        metavar="PATH",
+        help="Write a catalog skeleton for the planogram and exit",
+    )
     return parser
 
 
@@ -66,16 +80,16 @@ def _discover_images(args: argparse.Namespace) -> list[Path]:
             if not p.exists():
                 raise FileNotFoundError(f"Image file not found: {p}")
         return sorted(images)
-    
+
     # Use directory
     dir_path = args.images_dir if args.images_dir is not None else HERE / "images"
     if not dir_path.exists():
         raise FileNotFoundError(f"Images directory not found: {dir_path}")
-    
+
     images = [f for f in dir_path.iterdir() if f.is_file() and f.suffix.lower() in IMAGE_SUFFIXES]
     if not images:
         raise ValueError(f"No images found in directory: {dir_path}")
-    
+
     return sorted(images)
 
 
@@ -87,17 +101,17 @@ def _settings_from_args(args: argparse.Namespace) -> Settings:
         )
     if args.output is None:
         raise ValueError("--output <new directory> is required.")
-    
+
     # Validate ROI
     if args.roi is not None:
         L, T, R, B = args.roi
         if not (0 <= L < R <= 1 and 0 <= T < B <= 1):
             raise ValueError("--roi must satisfy 0 <= L < R <= 1 and 0 <= T < B <= 1")
-    
+
     # Validate concurrency
     if not (1 <= args.concurrency <= 16):
         raise ValueError("--concurrency must be between 1 and 16")
-    
+
     # Build absolute paths
     images = [str(p.expanduser().resolve()) for p in _discover_images(args)]
     planogram = str(args.planogram.expanduser().resolve())
@@ -105,7 +119,7 @@ def _settings_from_args(args: argparse.Namespace) -> Settings:
     output = str(args.output.expanduser().resolve())
     cache_dir = str(args.cache_dir.expanduser().resolve())
     prices = str(args.prices.expanduser().resolve()) if args.prices else None
-    
+
     return Settings(
         images=images,
         planogram=planogram,
@@ -146,7 +160,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     except (FileExistsError, FileNotFoundError, ValueError, VisionError) as exc:
         logger.error("Invalid input: %s", exc)
         return EXIT_INVALID
-    
+
     # Log summary
     logger.info(
         "Strict %%: %.2f, Lenient %%: %.2f, Coverage: %.2f, Output: %s",
@@ -155,13 +169,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         report.compliance.coverage,
         settings.output,
     )
-    
+
     # Handle errors
     if report.run.errors:
         for error in report.run.errors:
             logger.warning("Error: %s", error)
         return EXIT_ERRORS
-    
+
     return EXIT_OK
 
 

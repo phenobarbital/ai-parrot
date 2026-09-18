@@ -1,4 +1,5 @@
 """Unit tests for the planogram_check CLI (FEAT-565, TASK-3350) — the pipeline is always faked."""
+
 from __future__ import annotations
 
 import json
@@ -38,27 +39,39 @@ def _run_args(tmp_path: Path) -> list[str]:
     img_dir = tmp_path / "imgs"
     img_dir.mkdir()
     (img_dir / "a.png").write_bytes(b"fake image data")
-    
+
     planogram_file = tmp_path / "planogram.json"
     planogram_file.write_text('{"planogram": {}, "shelves": []}', encoding="utf-8")
-    
+
     catalog_file = tmp_path / "catalog.json"
     catalog_file.write_text('{"items": []}', encoding="utf-8")
-    
+
     return [
-        "--images-dir", str(img_dir),
-        "--planogram", str(planogram_file),
-        "--catalog", str(catalog_file),
-        "--output", str(tmp_path / "out"),
-        "--cache-dir", str(tmp_path / "cache"),
+        "--images-dir",
+        str(img_dir),
+        "--planogram",
+        str(planogram_file),
+        "--catalog",
+        str(catalog_file),
+        "--output",
+        str(tmp_path / "out"),
+        "--cache-dir",
+        str(tmp_path / "cache"),
     ]
 
 
 def test_cli_requires_catalog(tmp_path, monkeypatch, caplog) -> None:
-    args = ["--images-dir", str(tmp_path / "imgs"), "--planogram", str(tmp_path / "planogram.json"), "--output", str(tmp_path / "out")]
+    args = [
+        "--images-dir",
+        str(tmp_path / "imgs"),
+        "--planogram",
+        str(tmp_path / "planogram.json"),
+        "--output",
+        str(tmp_path / "out"),
+    ]
     (tmp_path / "imgs").mkdir()
     (tmp_path / "planogram.json").write_text('{"planogram": {}, "shelves": []}', encoding="utf-8")
-    
+
     caplog.set_level(logging.ERROR)
     code = planogram_check.main(args)
     assert code == 1
@@ -67,28 +80,28 @@ def test_cli_requires_catalog(tmp_path, monkeypatch, caplog) -> None:
 
 def test_cli_exit_codes(tmp_path, monkeypatch) -> None:
     args = _run_args(tmp_path)
-    
+
     # Test successful run
     seen = _patch_run(monkeypatch, errors=[])
     code = planogram_check.main(args)
     assert code == 0
     assert len(seen) == 1
-    
+
     # Test with errors
     seen = _patch_run(monkeypatch, errors=["row failed"])
     code = planogram_check.main(args)
     assert code == 2
-    
+
     # Test FileExistsError
     seen = _patch_run(monkeypatch, raises=FileExistsError("x"))
     code = planogram_check.main(args)
     assert code == 1
-    
+
     # Test ValueError
     seen = _patch_run(monkeypatch, raises=ValueError("x"))
     code = planogram_check.main(args)
     assert code == 1
-    
+
     # Test unknown flag
     code = planogram_check.main(["--unknown-flag"])
     assert code == 1
@@ -104,19 +117,28 @@ def test_cli_verify_pass_tristate() -> None:
 
 def test_cli_settings_passthrough(tmp_path, monkeypatch) -> None:
     args = _run_args(tmp_path)
-    args.extend([
-        "--llm", "llamacpp:occupancy",
-        "--base-url", "http://127.0.0.1:8089/v1",
-        "--roi", "0.1", "0", "0.9", "1",
-        "--no-marks",
-        "--visit-id", "v1",
-    ])
-    
+    args.extend(
+        [
+            "--llm",
+            "llamacpp:occupancy",
+            "--base-url",
+            "http://127.0.0.1:8089/v1",
+            "--roi",
+            "0.1",
+            "0",
+            "0.9",
+            "1",
+            "--no-marks",
+            "--visit-id",
+            "v1",
+        ]
+    )
+
     seen = _patch_run(monkeypatch, errors=[])
     code = planogram_check.main(args)
     assert code == 0
     assert len(seen) == 1
-    
+
     settings = seen[0]
     assert settings.llm == "llamacpp:occupancy"
     assert settings.base_url == "http://127.0.0.1:8089/v1"
@@ -130,19 +152,19 @@ def test_cli_settings_passthrough(tmp_path, monkeypatch) -> None:
 
 def test_cli_images_mutually_exclusive_and_bad_roi(tmp_path, monkeypatch) -> None:
     args = _run_args(tmp_path)
-    
+
     # Test mutually exclusive
     args_with_both = args.copy()
     args_with_both.extend(["--images", str(tmp_path / "a.png")])
     code = planogram_check.main(args_with_both)
     assert code == 1
-    
+
     # Test bad ROI
     args_with_bad_roi = args.copy()
     args_with_bad_roi.extend(["--roi", "0.9", "0", "0.1", "1"])
     code = planogram_check.main(args_with_bad_roi)
     assert code == 1
-    
+
     # Test bad concurrency
     args_with_bad_concurrency = args.copy()
     args_with_bad_concurrency.extend(["--concurrency", "0"])
@@ -153,21 +175,25 @@ def test_cli_images_mutually_exclusive_and_bad_roi(tmp_path, monkeypatch) -> Non
 def test_cli_empty_images_dir(tmp_path, monkeypatch) -> None:
     empty_dir = tmp_path / "empty"
     empty_dir.mkdir()
-    
+
     args = [
-        "--images-dir", str(empty_dir),
-        "--planogram", str(tmp_path / "planogram.json"),
-        "--catalog", str(tmp_path / "catalog.json"),
-        "--output", str(tmp_path / "out"),
+        "--images-dir",
+        str(empty_dir),
+        "--planogram",
+        str(tmp_path / "planogram.json"),
+        "--catalog",
+        str(tmp_path / "catalog.json"),
+        "--output",
+        str(tmp_path / "out"),
     ]
     (tmp_path / "planogram.json").write_text('{"planogram": {}, "shelves": []}', encoding="utf-8")
     (tmp_path / "catalog.json").write_text('{"items": []}', encoding="utf-8")
-    
+
     seen = _patch_run(monkeypatch, errors=[])
     code = planogram_check.main(args)
     assert code == 1
     assert len(seen) == 0
-    
+
     # Test with non-image files
     (empty_dir / "notes.txt").write_text("notes")
     code = planogram_check.main(args)
@@ -178,24 +204,24 @@ def test_cli_emit_catalog_template(tmp_path, monkeypatch, mini_planogram_data, m
     # Write mini_planogram_data to a file
     planogram_file = tmp_path / "planogram.json"
     planogram_file.write_text(json.dumps(mini_planogram_data), encoding="utf-8")
-    
+
     out_file = tmp_path / "template.json"
     args = ["--planogram", str(planogram_file), "--emit-catalog-template", str(out_file)]
-    
+
     code = planogram_check.main(args)
     assert code == 0
-    
+
     # Verify the template was written
     assert out_file.exists()
     template_data = json.loads(out_file.read_text(encoding="utf-8"))
     assert "items" in template_data
-    
+
     # Verify it lists every identity-required SKU
     catalog = Catalog.model_validate(template_data)
     expected_skus = {f.sku for f in mini_planogram.facings if f.identity_required}
     actual_skus = {item.sku for item in catalog.items}
     assert actual_skus == expected_skus
-    
+
     # Test overwrite refusal
     code = planogram_check.main(args)
     assert code == 1
