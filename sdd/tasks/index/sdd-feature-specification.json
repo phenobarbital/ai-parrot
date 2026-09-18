@@ -1,0 +1,152 @@
+{
+  "feature": "sdd-feature-specification",
+  "feature_id": "FEAT-577",
+  "spec": "sdd/specs/sdd-feature-specification.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-09-18T22:48:10+00:00",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "tasks": [
+    {
+      "id": "TASK-3469",
+      "slug": "intake-state-schemas",
+      "title": "Intake record schema + id-less research state schema",
+      "feature_id": "FEAT-577",
+      "feature": "sdd-feature-specification",
+      "spec": "sdd/specs/sdd-feature-specification.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "no dependencies: creates intake.schema.json and widens state.schema.json; the foundation other tasks read",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3469-intake-state-schemas.md"
+    },
+    {
+      "id": "TASK-3470",
+      "slug": "intake-procedure",
+      "title": "Intake procedure — single source for /sdd-spec intake mode",
+      "feature_id": "FEAT-577",
+      "feature": "sdd-feature-specification",
+      "spec": "sdd/specs/sdd-feature-specification.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-3469"
+      ],
+      "parallel": true,
+      "parallelism_notes": "needs sdd/templates/intake.schema.json + widened state.schema.json from TASK-3469 (the procedure names both; its test asserts the paths exist)",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3470-intake-procedure.md"
+    },
+    {
+      "id": "TASK-3471",
+      "slug": "sdd-spec-intake-wiring",
+      "title": "Wire intake mode into the /sdd-spec twins and codex skill",
+      "feature_id": "FEAT-577",
+      "feature": "sdd-feature-specification",
+      "spec": "sdd/specs/sdd-feature-specification.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-3470"
+      ],
+      "parallel": true,
+      "parallelism_notes": "needs sdd/templates/intake.procedure.md from TASK-3470 (§1.5 points at it; test asserts it exists). Rebase on FEAT-576 TASK-3465, which edits the same twin pair",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3471-sdd-spec-intake-wiring.md"
+    },
+    {
+      "id": "TASK-3472",
+      "slug": "unattended-no-interview",
+      "title": "Unattended /sdd-spec callers pass --no-interview",
+      "feature_id": "FEAT-577",
+      "feature": "sdd-feature-specification",
+      "spec": "sdd/specs/sdd-feature-specification.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-3471"
+      ],
+      "parallel": true,
+      "parallelism_notes": "needs the --no-interview flag documented in .claude/commands/sdd-spec.md by TASK-3471",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3472-unattended-no-interview.md"
+    },
+    {
+      "id": "TASK-3473",
+      "slug": "intake-retention",
+      "title": "Intake staging retention — prune_intake.py + /sdd-status Step 0 + gitignore",
+      "feature_id": "FEAT-577",
+      "feature": "sdd-feature-specification",
+      "spec": "sdd/specs/sdd-feature-specification.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-3469"
+      ],
+      "parallel": true,
+      "parallelism_notes": "reads intake.json updated_at as defined by sdd/templates/intake.schema.json from TASK-3469",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3473-intake-retention.md"
+    },
+    {
+      "id": "TASK-3474",
+      "slug": "brainstorm-intake-handoff",
+      "title": "/sdd-brainstorm accepts a hand-off from /sdd-spec intake",
+      "feature_id": "FEAT-577",
+      "feature": "sdd-feature-specification",
+      "spec": "sdd/specs/sdd-feature-specification.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-3469",
+        "TASK-3470"
+      ],
+      "parallel": true,
+      "parallelism_notes": "reads the intake.json shape from TASK-3469 (intake.schema.json) and the `intake: <staging-dir>` pointer emitted by TASK-3470 (intake.procedure.md §3b)",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3474-brainstorm-intake-handoff.md"
+    },
+    {
+      "id": "TASK-3475",
+      "slug": "intake-docs",
+      "title": "Document /sdd-spec intake mode in the SDD workflow",
+      "feature_id": "FEAT-577",
+      "feature": "sdd-feature-specification",
+      "spec": "sdd/specs/sdd-feature-specification.spec.md",
+      "status": "pending",
+      "priority": "low",
+      "effort": "S",
+      "depends_on": [
+        "TASK-3470"
+      ],
+      "parallel": true,
+      "parallelism_notes": "links sdd/templates/intake.procedure.md created by TASK-3470",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3475-intake-docs.md"
+    }
+  ]
+}
