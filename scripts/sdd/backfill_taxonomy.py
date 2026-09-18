@@ -170,13 +170,13 @@ def main(argv: list[str] | None = None) -> int:
             rel = doc_path.relative_to(args.root)
         except ValueError:
             rel = doc_path
-        print(f"{rel}: projects = [{', '.join(inferred)}]")  # noqa: T201 - CLI output
+        sys.stdout.write(f"{rel}: projects = [{', '.join(inferred)}]\n")
         if args.apply:
             doc_path.write_text(new_text, encoding="utf-8")
         changed += 1
 
     verb = "changed" if args.apply else "would change"
-    print(f"{changed} docs {verb}")  # noqa: T201 - CLI output
+    sys.stdout.write(f"{changed} docs {verb}\n")
     return 0
 
 

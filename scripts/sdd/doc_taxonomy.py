@@ -92,7 +92,11 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     rows = collect(args.root, args.kind)
-    rows = filter_rows(rows, args.project, args.tag)
+    try:
+        rows = filter_rows(rows, args.project, args.tag)
+    except ValueError as exc:
+        sys.stderr.write(f"error: invalid --project/--tag value: {exc}\n")
+        return 2
 
     if args.paths_only:
         for row in rows:

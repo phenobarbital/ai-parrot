@@ -197,8 +197,8 @@ python -m scripts.sdd.doc_taxonomy [--root .] [--kind spec|brainstorm|proposal|a
 - `--paths-only` — print relative paths only (one per line).
 - `--json` — full metadata JSON for each doc.
 - `--summary` — project and tag frequency tables.
-- With none of the three flags, the CLI runs the scan silently (exit 0) — pass
-  one of `--paths-only`/`--json`/`--summary` to see output.
+- With none of the three flags, prints one TSV row per doc (`path`, `kind`,
+  comma-joined `projects`, comma-joined `tags`).
 
 ### Where they are used
 
