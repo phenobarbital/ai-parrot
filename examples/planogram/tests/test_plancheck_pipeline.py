@@ -1,4 +1,5 @@
 """Integration tests for plancheck.pipeline (FEAT-565, TASK-3349) — no network, synthetic data only."""
+
 from __future__ import annotations
 
 import json
@@ -163,7 +164,9 @@ def test_absolutize_resolves_relative_paths(tmp_path, monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_run_check_synthetic_end_to_end(tmp_path, monkeypatch, shelf_image, mini_planogram_data, mini_catalog, fake_backend) -> None:
+async def test_run_check_synthetic_end_to_end(
+    tmp_path, monkeypatch, shelf_image, mini_planogram_data, mini_catalog, fake_backend
+) -> None:
     monkeypatch.setattr(pipeline, "TagOcr", _FakeOcr)
     fake_backend.queue["identify"] = [_reader()] * 20
     settings = _settings(tmp_path, shelf_image, mini_planogram_data, mini_catalog)
@@ -202,7 +205,9 @@ async def test_run_check_synthetic_end_to_end(tmp_path, monkeypatch, shelf_image
 
 
 @pytest.mark.asyncio
-async def test_run_check_two_overlapping_photos(tmp_path, monkeypatch, shelf_image, mini_planogram_data, mini_catalog, fake_backend) -> None:
+async def test_run_check_two_overlapping_photos(
+    tmp_path, monkeypatch, shelf_image, mini_planogram_data, mini_catalog, fake_backend
+) -> None:
     monkeypatch.setattr(pipeline, "TagOcr", _FakeOcr)
     fake_backend.queue["identify"] = [_reader()] * 40  # 20 per image
     settings = _settings(tmp_path, shelf_image, mini_planogram_data, mini_catalog, n_images=2)
@@ -233,7 +238,9 @@ async def test_run_check_two_overlapping_photos(tmp_path, monkeypatch, shelf_ima
 
 
 @pytest.mark.asyncio
-async def test_run_check_backend_failure_row(tmp_path, monkeypatch, shelf_image, mini_planogram_data, mini_catalog, fake_backend) -> None:
+async def test_run_check_backend_failure_row(
+    tmp_path, monkeypatch, shelf_image, mini_planogram_data, mini_catalog, fake_backend
+) -> None:
     monkeypatch.setattr(pipeline, "TagOcr", _FakeOcr)
     fake_backend.queue["identify"] = [_reader(fail_rows=frozenset({2}))] * 20
     settings = _settings(tmp_path, shelf_image, mini_planogram_data, mini_catalog)
@@ -249,7 +256,10 @@ async def test_run_check_backend_failure_row(tmp_path, monkeypatch, shelf_image,
     # Shelf-2 facings are "not_assessed" or "not_visible" (never "empty")
     shelf_2_positions = [p for p in report.positions if p.facing.shelf == 2]
     for pos in shelf_2_positions:
-        assert pos.status in ("not_assessed", "not_visible"), f"Expected not_assessed or not_visible for shelf 2, got {pos.status}"
+        assert pos.status in (
+            "not_assessed",
+            "not_visible",
+        ), f"Expected not_assessed or not_visible for shelf 2, got {pos.status}"
 
     # All artefacts are still written
     output = Path(settings.output)

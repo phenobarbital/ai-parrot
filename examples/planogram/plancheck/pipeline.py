@@ -1,4 +1,5 @@
 """Pipeline orchestration for the planogram compliance check (FEAT-565, spec §2 stages 1→8)."""
+
 from __future__ import annotations
 
 import asyncio
@@ -212,7 +213,9 @@ async def run_check(settings: Settings, *, backend_factory: Callable[..., Any] |
         semaphore = asyncio.Semaphore(effective_concurrency(settings.concurrency, backend.is_local))
 
         # Process each image
-        async def _process_one(n: int, path_str: str) -> tuple[ImageInfo, np.ndarray, list[SlotObservation], list[str], list[str]]:
+        async def _process_one(
+            n: int, path_str: str
+        ) -> tuple[ImageInfo, np.ndarray, list[SlotObservation], list[str], list[str]]:
             image_id = f"image_{n:02d}"
             path = Path(path_str)
             return await _process_image(
@@ -279,7 +282,9 @@ async def run_check(settings: Settings, *, backend_factory: Callable[..., Any] |
         shelves=shelf_scores(positions),
         brands=brand_shares(positions, catalog),
         compliance=summarize(positions, shelf_scores(positions), catalog, expected_prices),
-        notes=list(STANDING_NOTES) + all_notes + (["Reference positions are provisional (inferred from planogram)."] if reference_provisional else []),
+        notes=list(STANDING_NOTES)
+        + all_notes
+        + (["Reference positions are provisional (inferred from planogram)."] if reference_provisional else []),
     )
 
     await asyncio.to_thread(
