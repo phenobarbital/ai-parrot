@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -505,20 +506,6 @@ class TestCodexStdinIsolation:
         assert captured["kwargs"]["limit"] == 8 * 1024 * 1024
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(
-        strict=False,
-        reason=(
-            "uvloop 0.21.0 subprocess-spawn DEVNULL fd-accounting quirk: this "
-            "harness/grandchild topology reproduces the leak deterministically "
-            "inside this repo's full pytest session (grandchild fd 0 verified "
-            "via /proc/<pid>/fd to be the harness's own stdin pipe, not "
-            "/dev/null) but passes cleanly every time in an otherwise-identical "
-            "standalone reproduction outside pytest -- see issue:bde3a98caed2 "
-            "for the full reproduction matrix. Not a defect in "
-            "_create_process() itself, which is verified deterministically by "
-            "test_spawn_isolates_stdin above and by the standalone repro."
-        ),
-    )
     async def test_spawn_child_gets_eof_with_parent_stdin_open(self, tmp_path):
         """Integration regression (AC-1/AC-2): a real harness process keeps a
         pipe open as this test's child's stdin, exactly like an MCP server
@@ -529,11 +516,15 @@ class TestCodexStdinIsolation:
         and the sentinel arrives well inside the budget below, regardless of
         the harness's own stdin remaining open throughout.
 
-        Marked ``xfail(strict=False)`` rather than silently excluded from CI
-        runs: see the decorator's ``reason`` and ``issue:bde3a98caed2`` for
-        the full, independently-reproduced root cause. This keeps the test
-        (and its honest red/xfail status) visible in every full-suite run
-        instead of requiring a `-k` exclusion that is easy to miss.
+        The harness is pinned to the exact ``codex.py`` this test session
+        imported (absolute ``PYTHONPATH`` + a ``samefile`` guard). Importing
+        ``parrot`` makes navconfig ``chdir`` to the primary checkout, so a
+        *relative* ``PYTHONPATH=packages/ai-parrot/src`` (the worktree
+        convention) silently resolved, in the spawned harness only, to the
+        primary checkout's source. While the hotfix lived only in its
+        worktree that meant the harness ran the PRE-fix launcher and the
+        grandchild inherited the harness's stdin pipe. That -- not a uvloop
+        fd-accounting quirk -- was the root cause of ``issue:bde3a98caed2``.
         """
         await self._run_stdin_isolation_harness(tmp_path)
 
@@ -546,8 +537,13 @@ class TestCodexStdinIsolation:
         harness_script.write_text(
             "import sys\n"
             "import uvloop\n"
+            "import os\n"
             "async def main():\n"
+            "    import parrot.flows.dev_loop.dispatchers.codex as codex_module\n"
             "    from parrot.flows.dev_loop.dispatchers.codex import CodexCodeDispatcher\n"
+            "    if not os.path.samefile(codex_module.__file__, sys.argv[2]):\n"
+            "        sys.stderr.write('HARNESS_WRONG_CODE ' + codex_module.__file__ + '\\n')\n"
+            "        sys.exit(3)\n"
             "    d = CodexCodeDispatcher(max_concurrent=1, redis_url='redis://localhost', stream_ttl_seconds=300)\n"
             "    print('HARNESS_READY', flush=True)\n"
             "    process = await d._create_process([sys.executable, sys.argv[1]])\n"
@@ -568,9 +564,19 @@ class TestCodexStdinIsolation:
             "uvloop.run(main())\n"
         )
 
+        # Pin the harness to the source tree THIS session imported. A relative
+        # PYTHONPATH entry would be re-resolved against the harness's cwd, which
+        # navconfig has already moved to the primary checkout (see docstring of
+        # test_spawn_child_gets_eof_with_parent_stdin_open).
+        module_under_test = Path(codex_dispatcher_module.__file__).resolve()
+        source_root = module_under_test.parents[4]
+        inherited = [e for e in os.environ.get("PYTHONPATH", "").split(os.pathsep) if e and os.path.isabs(e)]
+        harness_env = {**os.environ, "PYTHONPATH": os.pathsep.join([str(source_root), *inherited])}
+
         harness = await asyncio.to_thread(
             subprocess.Popen,
-            [sys.executable, str(harness_script), str(child_script)],
+            [sys.executable, str(harness_script), str(child_script), str(module_under_test)],
+            env=harness_env,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -583,10 +589,15 @@ class TestCodexStdinIsolation:
             # framework prints unrelated ANSI-colored debug lines to this same
             # stdout as a side effect, so scan for the exact markers rather
             # than assuming they are the very next line.
-            await asyncio.wait_for(
-                asyncio.to_thread(_read_sync_stdout_until, harness.stdout, b"HARNESS_READY"),
-                timeout=60,
-            )
+            try:
+                await asyncio.wait_for(
+                    asyncio.to_thread(_read_sync_stdout_until, harness.stdout, b"HARNESS_READY"),
+                    timeout=60,
+                )
+            except AssertionError as exc:
+                harness.wait(timeout=30)
+                tail = harness.stderr.read().decode(errors="replace")[-2000:]
+                raise AssertionError(f"harness exited {harness.returncode} before READY: {tail}") from exc
 
             # The regressed (pre-fix) behavior hangs for the full dispatch
             # deadline (minutes); a fixed launcher reaches EOF near-instantly.
