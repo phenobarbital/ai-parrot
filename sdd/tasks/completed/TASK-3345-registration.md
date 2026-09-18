@@ -493,10 +493,16 @@ See the test blueprint block above — the six functions there are the required 
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-coder (backend nova, model mistral.devstral-2-123b, attempt_uid 3b5bf5b1a9ac4a0cbdf0f493c33ec17b)
+**Date**: 2026-09-17
+**Notes**: Created `examples/planogram/plancheck/registration.py` (pair_score, align_row,
+register_image, apply_registration) and `examples/planogram/tests/test_plancheck_registration.py`.
+A prior attempt on this task (glm, attempt_uid e5aa66e8031c4f8b8ab9062ed50bf6a1) left
+uncommitted/untracked files (`dirty_task_worktree`) and was salvaged/retried by the
+engine automatically; this seat's retry completed cleanly. `ruff check` clean, engine
+lint autofix commit `76de7c5aa`. Post-merge full suite → 64 passed. Review recorded:
+`coder-review:2cad3a7a69a0a462cc944cd3`, no corrections needed.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Seat**: mistral · Backend: nova · Model: mistral.devstral-2-123b · Attempts: 2 (1 salvaged retry) · Duration: 515.4s · Tokens: 1119205/10347
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

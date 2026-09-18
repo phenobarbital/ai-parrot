@@ -155,7 +155,7 @@
       "feature_id": "FEAT-565",
       "feature": "new-planogram-compliance-algo",
       "spec": "sdd/specs/new-planogram-compliance-algo.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -165,8 +165,8 @@
       "parallelism_notes": "Needs only the plancheck package (examples/planogram/plancheck/__init__.py) and the tests conftest sys.path bootstrap created by TASK-3337; imports no model.",
       "assigned_to": null,
       "started_at": "2026-09-17T23:08:13+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3342-vision.md"
+      "completed_at": "2026-09-18T00:01:56+00:00",
+      "file": "sdd/tasks/completed/TASK-3342-vision.md"
     },
     {
       "id": "TASK-3343",
@@ -219,7 +219,7 @@
       "feature_id": "FEAT-565",
       "feature": "new-planogram-compliance-algo",
       "spec": "sdd/specs/new-planogram-compliance-algo.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -229,8 +229,8 @@
       "parallelism_notes": "Imports SlotObservation, RowRegistration, ImageRegistration from TASK-3338 (examples/planogram/plancheck/models.py); pure functions, touches no other FEAT-565 module.",
       "assigned_to": null,
       "started_at": "2026-09-17T23:08:13+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3345-registration.md"
+      "completed_at": "2026-09-18T00:01:56+00:00",
+      "file": "sdd/tasks/completed/TASK-3345-registration.md"
     },
     {
       "id": "TASK-3346",
@@ -261,7 +261,7 @@
       "feature_id": "FEAT-565",
       "feature": "new-planogram-compliance-algo",
       "spec": "sdd/specs/new-planogram-compliance-algo.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -271,8 +271,8 @@
       "parallelism_notes": "Imports PositionResult, ShelfScore, BrandShare, ComplianceSummary, ScoringWeights from TASK-3338 (examples/planogram/plancheck/models.py); pure functions, independent of registration/identify code.",
       "assigned_to": null,
       "started_at": "2026-09-17T23:08:13+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3347-scoring.md"
+      "completed_at": "2026-09-18T00:01:56+00:00",
+      "file": "sdd/tasks/completed/TASK-3347-scoring.md"
     },
     {
       "id": "TASK-3348",
