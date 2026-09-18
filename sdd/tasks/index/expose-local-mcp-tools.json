@@ -254,7 +254,7 @@
       "feature_id": "FEAT-570",
       "feature": "expose-local-mcp-tools",
       "spec": "sdd/specs/expose-local-mcp-tools.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -264,8 +264,8 @@
       "parallelism_notes": "Its mcp-local error text and docs name the command TASK-3376 creates; also modifies tests/mcp/test_local_cli.py, reached from TASK-3368 via TASK-3369 -> 3370 -> 3375 -> 3376.",
       "assigned_to": null,
       "started_at": "2026-09-17T23:36:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3380-builtin-consumer-audit.md"
+      "completed_at": "2026-09-18T07:21:11+00:00",
+      "file": "sdd/tasks/completed/TASK-3380-builtin-consumer-audit.md"
     },
     {
       "id": "TASK-3381",

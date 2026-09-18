@@ -335,10 +335,50 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (native `sonnet` seat, attempt_uid `ba4a5be4796b42ddaf15306aabbd6982`)
+**Date**: 2026-09-18
+**Notes**: `local_cli.py`'s unknown-name error now names `parrot toolkits
+install <name>`, distinguished from a missing-distribution ImportError;
+dropped "built-in" from both docstrings + `--list` help.
+`docs/mcp-local-toolkits.md` rewritten to document `parrot toolkits`, drop
+the "works without YAML" claim, and add a credential-posture section (also
+fixed two other stale claims the audit surfaced). Both example YAMLs declare
+every toolkit explicitly. `mcp_wiring.py`'s stale "merges builtins"
+docstring corrected (its runtime behavior was already correct post-TASK-3368
+— only the docs were stale); `test_examples_mcp_wiring.py`'s
+`test_explicit_selection_may_name_builtins` replaced with two tests matching
+the real post-cut contract. `tests/mcp/test_local_cli.py` extended per the
+Test Specification. `.mcp.json`: this repo's real root `.mcp.json` is
+gitignored/untracked (commit 145db5786) and per-machine, so nothing to
+commit here — the orchestrator instead ran the REAL `parrot toolkits install
+browsing memory scraping bounded-source sdd-coder --host claude --yes`
+command against this worktree's own local `.mcp.json`/`.parrot/mcp-toolkits.yaml`
+(both gitignored) to verify AC5/AC7 end-to-end: all 5 toolkit entries
+correctly regenerated, `wikitoolkit`/`bookstore` byte-identical. One
+correction to the task's own Codebase Contract for the record: `bounded-source`
+and `sdd-coder` are NOT "non-toolkit servers" — they are toolkit entries
+from the 5 packaged templates (TASK-3370) and ARE reconciled by
+`reconcile_toolkit_entries`; they only appear "left alone" because the real
+`.parrot/mcp-toolkits.yaml` declares both enabled, so reconciliation
+regenerates them byte-identically. Only `wikitoolkit` and `bookstore` are
+genuinely untouched by toolkit reconciliation. Validation:
+`pytest tests/mcp/test_local_cli.py tests/mcp/test_toolkit_config.py -q` →
+32 passed; `pytest packages/ai-parrot/tests/flows/dev_loop/test_examples_mcp_wiring.py -q`
+→ 10 passed (native attempt couldn't run this file due to a missing compiled
+Cython extension in its bare pool worktree; orchestrator ran it with the
+extension copied in, per the same workaround TASK-3374 used). `ruff check`
+clean. Repo-wide audit (AC7): `grep -rn BUILTIN_TOOLKITS --include='*.py'
+--include='*.md' --include='*.yaml' .` → hits only under `sdd/` (historical
+task/spec write-ups, untouched); `grep -rn 'built-in'
+packages/ai-parrot/src/parrot/mcp/ docs/mcp-local-toolkits.md` → 2 hits, both
+correct-as-is (one correctly negates the old behavior, one — `toolkit_config.py:31`
+— is a real stale claim but that file is TASK-3368's scope, not this task's,
+flagged as a follow-up). Two additional stale-doc hits found outside this
+task's scope: `examples/dev_loop/GUIA.md:567` and
+`examples/dev_loop/README.md:719` (same "builtins scraping/browsing/memory"
+claim) — flagged for a future cleanup, not fixed here (file fidelity).
+Review recorded: `coder-review:af82abe8062931f9444cd6a9`.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none in the 7 committed files. `.mcp.json` needed
+no diff (it's gitignored/local-only) — verified operationally instead, as
+described above.
