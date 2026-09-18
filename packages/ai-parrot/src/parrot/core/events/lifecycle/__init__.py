@@ -22,6 +22,7 @@ from navigator_eventbus.lifecycle.registry import EventRegistry, AsyncSubscriber
 from navigator_eventbus.lifecycle.global_registry import get_global_registry, scope
 from navigator_eventbus.lifecycle.provider import EventProvider
 from navigator_eventbus.lifecycle.mixin import EventEmitterMixin
+from parrot.core.events.lifecycle.turn_scope import TURN_SCOPE, turn_scope, in_turn_scope  # FEAT-573 M3
 
 # Concrete events — STAY local (ai-parrot's own taxonomy)
 from parrot.core.events.lifecycle.events import (
@@ -92,6 +93,10 @@ __all__ = [
     "AsyncSubscriber",
     "get_global_registry",
     "scope",
+    # Turn correlation (FEAT-573)
+    "TURN_SCOPE",
+    "turn_scope",
+    "in_turn_scope",
     # Provider + mixin
     "EventProvider",
     "EventEmitterMixin",
