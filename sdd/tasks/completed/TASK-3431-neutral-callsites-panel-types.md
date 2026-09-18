@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-574 — New Planogram Compliance Pipeline
 **Spec**: `sdd/specs/new-planogram-pipeline.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-3429
@@ -352,7 +352,11 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (FEAT-574 orchestrator)
+**Date**: 2026-09-19
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+Implemented in fallback sequential mode (parrot-sdd-coder server unresponsive).
+Closed worklist rewritten (10 sites: EndcapBacklitMultitier x6, GraphicPanelDisplay x4): async with self.pipeline.llm + **self._vision_kwargs(); max_tokens/structured_output preserved; diff exactly 12+/18- and 8+/12-.
+Tests: test_neutral_panel_types.py 5 passed; test_planogram_types.py 26, tests/pipelines/test_abstract_type_grid.py 4, packages/ai-parrot/tests/test_graphic_panel_display.py 13 — all green. No new ruff findings vs origin/dev.
+
+Seat: orchestrator (fallback) · Backend: native · Model: claude-opus-5 · Attempts: 1
