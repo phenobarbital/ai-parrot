@@ -7,12 +7,36 @@ from parrot.mcp.toolkit_seed import (
     SeedResult,
     available_templates,
     load_template,
+    preflight_seed,
+    remove_section,
     seed_toolkit_sections,
+    set_section_enabled,
 )
+
+# A hand-edited config with operator comments and inline trailing comments —
+# the worst case for AC10 (comments/formatting must survive a toggle/remove).
+COMMENTED = """toolkits:
+  # operator note that must survive
+  memory:
+    class: parrot.tools.working_memory.tool.WorkingMemoryToolkit
+    enabled: true
+    kwargs: {}  # trailing comment
+  bounded-source:
+    class: parrot_tools.tool_optimizations.reader.BoundedSourceToolkit
+"""
 
 
 def test_available_templates_lists_packaged_names():
-    assert set(available_templates()) == {"sdd-coder", "bounded-source", "targeted-writer"}
+    assert set(available_templates()) == {
+        "sdd-coder",
+        "bounded-source",
+        "targeted-writer",
+        "querysource",
+        "database-query",
+        "scraping",
+        "browsing",
+        "memory",
+    }
 
 
 def test_templates_resolve_from_package_not_repo():
@@ -73,9 +97,12 @@ def test_requires_llm_section_seeded_disabled(tmp_path):
     assert cfg.toolkits["targeted-writer"].enabled is False
 
 
-def test_unknown_name_reported_not_raised(tmp_path):
-    result = seed_toolkit_sections(tmp_path, ["bounded-source", "nope"])
-    assert result.unknown == ["nope"] and "bounded-source" in result.added
+def test_seed_unknown_name_raises_before_writing_new_sections(tmp_path):
+    # S4/AC8: all-or-nothing now — the pre-FEAT-570 behavior of seeding the
+    # valid names anyway (reporting "nope" in `.unknown`) is gone.
+    with pytest.raises(ValueError, match="No packaged template"):
+        seed_toolkit_sections(tmp_path, ["bounded-source", "nope"])
+    assert not (tmp_path / ".parrot" / "mcp-toolkits.yaml").exists()
 
 
 def test_load_template_parses_metadata():
@@ -118,3 +145,83 @@ def test_seed_roundtrip_validation(tmp_path):
     cfg = load_toolkits_config(tmp_path)
     assert "sdd-coder" in cfg.toolkits
     assert cfg.toolkits["sdd-coder"].class_path == "parrot.flows.dev_loop.sdd_coder.toolkit.SddCoderToolkit"
+
+
+# --- TASK-3369: preflight, atomicity, comment-preserving toggle/remove ---
+
+
+def test_preflight_rejects_unknown_name_before_write(tmp_path):
+    with pytest.raises(ValueError, match="No packaged template"):
+        preflight_seed(tmp_path, ["definitely-not-a-template"])
+
+
+def test_preflight_rejects_malformed_yaml(tmp_path):
+    config_path = tmp_path / ".parrot" / "mcp-toolkits.yaml"
+    config_path.parent.mkdir(parents=True)
+    # Missing the required `class` key — fails ToolkitSection validation.
+    config_path.write_text("toolkits:\n  bad-section:\n    not_class: true\n")
+    before = config_path.read_bytes()
+
+    with pytest.raises(ValueError, match="bad-section"):
+        preflight_seed(tmp_path, ["bounded-source"])
+
+    # preflight must not touch the file even though "bounded-source" is valid.
+    assert config_path.read_bytes() == before
+
+
+def test_seed_unknown_name_leaves_file_byte_identical(tmp_path):
+    config_path = tmp_path / ".parrot" / "mcp-toolkits.yaml"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(COMMENTED)
+    before = config_path.read_bytes()
+
+    with pytest.raises(ValueError, match="No packaged template"):
+        seed_toolkit_sections(tmp_path, ["sdd-coder", "nope"])
+
+    assert config_path.read_bytes() == before
+
+
+def test_set_section_enabled_preserves_comments(tmp_path):
+    config_path = tmp_path / ".parrot" / "mcp-toolkits.yaml"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(COMMENTED)
+
+    changed = set_section_enabled(tmp_path, "memory", False)
+
+    assert changed is True
+    text = config_path.read_text()
+    assert "# operator note that must survive" in text
+    assert "kwargs: {}  # trailing comment" in text
+    assert "    enabled: false" in text
+    # The neighbouring section is untouched.
+    assert "  bounded-source:\n" in text
+    assert "    class: parrot_tools.tool_optimizations.reader.BoundedSourceToolkit\n" in text
+
+
+def test_remove_section_preserves_neighbours(tmp_path):
+    config_path = tmp_path / ".parrot" / "mcp-toolkits.yaml"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(COMMENTED)
+
+    changed = remove_section(tmp_path, "memory")
+
+    assert changed is True
+    text = config_path.read_text()
+    assert "memory:" not in text
+    assert "operator note that must survive" not in text
+    # The neighbouring section and the root key survive intact.
+    assert text.startswith("toolkits:\n")
+    assert "  bounded-source:\n" in text
+    assert "    class: parrot_tools.tool_optimizations.reader.BoundedSourceToolkit\n" in text
+
+
+def test_set_enabled_returns_false_for_absent_section(tmp_path):
+    config_path = tmp_path / ".parrot" / "mcp-toolkits.yaml"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(COMMENTED)
+    before = config_path.read_bytes()
+
+    assert set_section_enabled(tmp_path, "does-not-exist", True) is False
+    assert remove_section(tmp_path, "does-not-exist") is False
+    # Neither helper wrote anything for an absent section.
+    assert config_path.read_bytes() == before

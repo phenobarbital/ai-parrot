@@ -6,9 +6,10 @@ from parrot.knowledge.wiki.claude_code.cli import claude
 from parrot.knowledge.wiki.claude_code.installer import (
     install_claude_integration,
     integration_status,
+    reconcile_toolkit_entries,
+    toolkit_server_names,
     uninstall_claude_integration,
 )
-from parrot.mcp.toolkit_seed import available_templates
 
 
 @pytest.fixture
@@ -17,6 +18,22 @@ def repo_root(tmp_path):
     (tmp_path / ".git").mkdir()
     (tmp_path / ".parrot").mkdir()
     return tmp_path
+
+
+def _write_bounded_source_section(repo_root):
+    """Declare a single enabled `bounded-source` toolkit section directly.
+
+    Seeding is no longer performed by `install_claude_integration`
+    (FEAT-570 TASK-3377) — tests that need an enabled section write the
+    config file themselves instead of relying on the removed `toolkits=`
+    keyword.
+    """
+    (repo_root / ".parrot" / "mcp-toolkits.yaml").write_text(
+        "toolkits:\n"
+        "  bounded-source:\n"
+        "    class: parrot_tools.tool_optimizations.reader.BoundedSourceToolkit\n"
+        "    kwargs: {}\n"
+    )
 
 
 class TestMCPJsonInstall:
@@ -57,6 +74,65 @@ class TestMCPJsonInstall:
         install_claude_integration(repo_root)
         data = json.loads(mcp_json.read_text())
         assert "wikitoolkit" in data["mcpServers"]
+
+
+class TestToolkitOnlyReconciler:
+    """FEAT-570 TASK-3371 — the toolkit-only reconciler never touches wikitoolkit."""
+
+    def test_reconcile_toolkit_entries_preserves_wikitoolkit(self, repo_root):
+        # Seed .mcp.json with a wikitoolkit entry + one managed parrot-bounded-source entry.
+        _write_bounded_source_section(repo_root)
+        install_claude_integration(repo_root, bookstore=False)
+        mcp_json = repo_root / ".mcp.json"
+        before = json.loads(mcp_json.read_text())
+        wikitoolkit_before = before["mcpServers"]["wikitoolkit"]
+        assert "parrot-bounded-source" in before["mcpServers"]
+
+        actions, warnings = reconcile_toolkit_entries(repo_root)
+
+        after = json.loads(mcp_json.read_text())
+        assert after["mcpServers"]["wikitoolkit"] == wikitoolkit_before
+        assert "parrot-bounded-source" in after["mcpServers"]
+        assert isinstance(actions, list)
+        assert isinstance(warnings, list)
+
+    def test_reconcile_toolkit_entries_preserves_foreign_entry(self, repo_root):
+        mcp_json = repo_root / ".mcp.json"
+        mcp_json.write_text(
+            json.dumps(
+                {
+                    "mcpServers": {
+                        "wikitoolkit": {"command": "wikitoolkit", "args": ["mcp"], "env": {}},
+                        "parrot-bounded-source": {"command": "some-other-binary", "args": ["not", "ours"]},
+                    }
+                }
+            )
+        )
+        (repo_root / ".parrot" / "mcp-toolkits.yaml").write_text(
+            "toolkits:\n"
+            "  bounded-source:\n"
+            "    class: parrot_tools.scraping.toolkit.BoundedSourceToolkit\n"
+            "    kwargs: {}\n"
+        )
+
+        wikitoolkit_before = json.loads(mcp_json.read_text())["mcpServers"]["wikitoolkit"]
+        actions, warnings = reconcile_toolkit_entries(repo_root)
+
+        data = json.loads(mcp_json.read_text())
+        assert data["mcpServers"]["wikitoolkit"] == wikitoolkit_before
+        assert data["mcpServers"]["parrot-bounded-source"] == {
+            "command": "some-other-binary",
+            "args": ["not", "ours"],
+        }
+        assert len(warnings) == 1
+        assert "parrot-bounded-source" in warnings[0]
+
+    def test_toolkit_server_names_excludes_wikitoolkit(self, repo_root):
+        _write_bounded_source_section(repo_root)
+        install_claude_integration(repo_root, bookstore=False)
+        names = toolkit_server_names(repo_root)
+        assert "wikitoolkit" not in names
+        assert "parrot-bounded-source" in names
 
 
 class TestMCPJsonUninstall:
@@ -107,16 +183,15 @@ class TestIntegrationStatus:
         assert status["mcp_json"] is True
 
 
-class TestSeedingAndApproval:
-    def test_install_seeds_before_reconciliation(self, repo_root):
-        install_claude_integration(repo_root, toolkits=["bounded-source"], bookstore=False)
+class TestReconciliationAfterSeedingCut:
+    """FEAT-570 TASK-3377 — seeding left `install_claude_integration`; reconciliation didn't."""
+
+    def test_install_reconciles_enabled_sections_without_seeding(self, repo_root):
+        _write_bounded_source_section(repo_root)
+        actions = install_claude_integration(repo_root, bookstore=False)
         servers = json.loads((repo_root / ".mcp.json").read_text())["mcpServers"]
         assert "parrot-bounded-source" in servers
-        assert (repo_root / ".parrot" / "mcp-toolkits.yaml").exists()
-
-    def test_toolkits_default_is_empty(self, repo_root):
-        install_claude_integration(repo_root, bookstore=False)
-        assert not (repo_root / ".parrot" / "mcp-toolkits.yaml").exists()
+        assert not any("no local MCP toolkits configured" in a for a in actions)
 
     def test_install_no_approve_flag_skips_approval(self, repo_root):
         install_claude_integration(repo_root, approve_mcp=False, bookstore=False)
@@ -124,45 +199,15 @@ class TestSeedingAndApproval:
         assert "enabledMcpjsonServers" not in local
 
     def test_install_approve_flag_adds_enabled_servers(self, repo_root):
-        install_claude_integration(repo_root, toolkits=["bounded-source"], approve_mcp=True, bookstore=False)
+        _write_bounded_source_section(repo_root)
+        install_claude_integration(repo_root, approve_mcp=True, bookstore=False)
         local = json.loads((repo_root / ".claude" / "settings.local.json").read_text())
         assert "wikitoolkit" in local["enabledMcpjsonServers"]
         assert "parrot-bounded-source" in local["enabledMcpjsonServers"]
 
-    def test_all_toolkits_seeds_every_template(self, repo_root):
-        templates = available_templates()
-        install_claude_integration(repo_root, toolkits=templates, bookstore=False)
-        yaml_path = repo_root / ".parrot" / "mcp-toolkits.yaml"
-        assert yaml_path.exists()
-        content = yaml_path.read_text()
-        for template in templates:
-            assert f"{template}:" in content
-
-    def test_reinstall_reports_keys_missing_from_existing_section(self, repo_root):
-        # A section seeded before its template gained a key is never rewritten,
-        # but the missing key must be surfaced instead of silently skipped.
-        yaml_path = repo_root / ".parrot" / "mcp-toolkits.yaml"
-        yaml_path.write_text(
-            "toolkits:\n"
-            "  sdd-coder:\n"
-            "    class: parrot.flows.dev_loop.sdd_coder.toolkit.SddCoderToolkit\n"
-            "    kwargs:\n"
-            "      roster:\n"
-            "        - {label: haiku, kind: native, model: haiku}\n"
-        )
-        before = yaml_path.read_text()
-        actions = install_claude_integration(repo_root, toolkits=["sdd-coder"], bookstore=False)
-        assert yaml_path.read_text() == before
-        warnings = [a for a in actions if "lacks template key(s)" in a]
-        assert len(warnings) == 1
-        assert "'sdd-coder'" in warnings[0]
-        assert "kwargs.complexity" in warnings[0]
-        assert "kwargs.roster" not in warnings[0]
-
-    def test_reinstall_of_current_section_reports_no_drift(self, repo_root):
-        install_claude_integration(repo_root, toolkits=["sdd-coder"], bookstore=False)
-        actions = install_claude_integration(repo_root, toolkits=["sdd-coder"], bookstore=False)
-        assert not [a for a in actions if "lacks template key(s)" in a]
+    def test_empty_toolkit_config_hints_at_new_command(self, repo_root):
+        actions = install_claude_integration(repo_root, bookstore=False)
+        assert any("parrot toolkits install" in a for a in actions)
 
 
 class TestToolkitTemplateDrift:
@@ -192,55 +237,31 @@ class TestToolkitTemplateDrift:
 
 
 class TestInstallCLIToolkitOptions:
-    """CLI-level coverage: options, hint, exception mapping (AC bullets 4-7)."""
+    """CLI-level coverage: hard-cut removal of --toolkits/--all-toolkits (AC9)."""
 
-    def test_cli_seeds_named_toolkit_and_approves(self, repo_root):
+    def test_toolkits_flag_is_rejected(self, repo_root):
+        # AC9 — hard cut: the flag must not be silently accepted.
         runner = CliRunner()
-        result = runner.invoke(claude, ["install", "--path", str(repo_root), "--no-build", "--toolkits=bounded-source"])
-        assert result.exit_code == 0, result.output
-        assert (repo_root / ".parrot" / "mcp-toolkits.yaml").exists()
-        local = json.loads((repo_root / ".claude" / "settings.local.json").read_text())
-        assert "parrot-bounded-source" in local["enabledMcpjsonServers"]
-        assert "Start a new Claude Code session" in result.output
+        result = runner.invoke(claude, ["install", "--path", str(repo_root), "--no-build", "--toolkits=memory"])
+        assert result.exit_code != 0
+        assert "no such option" in result.output.lower()
 
-    def test_cli_all_toolkits_seeds_every_template(self, repo_root):
+    def test_all_toolkits_flag_is_rejected(self, repo_root):
+        # AC9 — hard cut: the flag must not be silently accepted.
         runner = CliRunner()
         result = runner.invoke(claude, ["install", "--path", str(repo_root), "--no-build", "--all-toolkits"])
-        assert result.exit_code == 0, result.output
-        yaml_path = repo_root / ".parrot" / "mcp-toolkits.yaml"
-        assert yaml_path.exists()
-        content = yaml_path.read_text()
-        for template in available_templates():
-            assert f"{template}:" in content
+        assert result.exit_code != 0
+        assert "no such option" in result.output.lower()
 
-    def test_cli_no_toolkit_flag_prints_hint_and_seeds_nothing(self, repo_root):
+    def test_empty_toolkit_config_hints_at_new_command(self, repo_root):
         runner = CliRunner()
         result = runner.invoke(claude, ["install", "--path", str(repo_root), "--no-build"])
         assert result.exit_code == 0, result.output
-        assert not (repo_root / ".parrot" / "mcp-toolkits.yaml").exists()
-        assert "--toolkits" in result.output
-        assert "--all-toolkits" in result.output
-        for template in available_templates():
-            assert template in result.output
+        assert "parrot toolkits install" in result.output
 
     def test_cli_no_approve_mcp_skips_approval(self, repo_root):
         runner = CliRunner()
-        result = runner.invoke(
-            claude,
-            ["install", "--path", str(repo_root), "--no-build", "--toolkits=bounded-source", "--no-approve-mcp"],
-        )
+        result = runner.invoke(claude, ["install", "--path", str(repo_root), "--no-build", "--no-approve-mcp"])
         assert result.exit_code == 0, result.output
         local = json.loads((repo_root / ".claude" / "settings.local.json").read_text())
         assert "enabledMcpjsonServers" not in local
-
-    def test_cli_seeder_value_error_is_click_exception(self, repo_root, monkeypatch):
-        def _boom(root, names):
-            raise ValueError("boom")
-
-        import parrot.mcp.toolkit_seed as toolkit_seed_module
-
-        monkeypatch.setattr(toolkit_seed_module, "seed_toolkit_sections", _boom)
-        runner = CliRunner()
-        result = runner.invoke(claude, ["install", "--path", str(repo_root), "--no-build", "--toolkits=bounded-source"])
-        assert result.exit_code != 0
-        assert not isinstance(result.exception, ValueError)

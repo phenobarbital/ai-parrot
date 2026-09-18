@@ -1,0 +1,7 @@
+# parrot:summary: DataFrame/result scratchpad for parking large intermediate results.
+# parrot:requires_llm: false
+# parrot:requires_dist:
+  memory:
+    class: parrot.tools.working_memory.tool.WorkingMemoryToolkit
+    kwargs: {}
+    env: {}

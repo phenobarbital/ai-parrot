@@ -1,0 +1,9 @@
+# parrot:summary: Deterministic site automation with recorded actions and profiles.
+# parrot:requires_llm: false
+# parrot:requires_dist: parrot_tools
+  browsing:
+    class: parrot_tools.browsing.toolkit.WebBrowsingToolkit
+    kwargs:
+      catalog_dir: .parrot/browsing_catalog
+      headless: true
+    env: {}

@@ -1,9 +1,10 @@
 """Configuration models and loader for local MCP toolkit servers.
 
-FEAT-485: Toolkit configuration is read from `.parrot/mcp-toolkits.yaml` if present,
-and merged over built-in defaults for `scraping`, `browsing`, and `memory`.
-Each section names a toolkit class via dotted path and provides instantiation kwargs,
-optional tool filtering via include/exclude, and optional LLM wiring.
+FEAT-485/FEAT-570: Toolkit configuration is read exclusively from
+`.parrot/mcp-toolkits.yaml`. Nothing is implicit — a toolkit resolves only if
+the file declares a section for it. Each section names a toolkit class via
+dotted path and provides instantiation kwargs, optional tool filtering via
+include/exclude, and optional LLM wiring.
 
 The loader enforces Pydantic validation with clear error messages naming the file
 and offending section/key.
@@ -86,31 +87,14 @@ class MCPToolkitsConfig(BaseModel):
     toolkits: dict[str, ToolkitSection] = Field(default_factory=dict)
 
 
-BUILTIN_TOOLKITS: dict[str, ToolkitSection] = {
-    "scraping": ToolkitSection(
-        class_path="parrot_tools.scraping.toolkit.WebScrapingToolkit",
-        kwargs={"headless": True, "plans_dir": ".parrot/scraping_plans"},
-    ),
-    "browsing": ToolkitSection(
-        class_path="parrot_tools.browsing.toolkit.WebBrowsingToolkit",
-        kwargs={"catalog_dir": ".parrot/browsing_catalog", "headless": True},
-    ),
-    "memory": ToolkitSection(
-        class_path="parrot.tools.working_memory.tool.WorkingMemoryToolkit",
-        kwargs={},
-    ),
-}
-
-
 def load_toolkits_config(root: Path, config_path: Path | None = None) -> MCPToolkitsConfig:
-    """Load and merge toolkit configuration.
+    """Load toolkit configuration.
 
-    Reads `.parrot/mcp-toolkits.yaml` from the project root if present,
-    and deep-merges sections over BUILTIN_TOOLKITS (file sections take precedence).
+    Reads `.parrot/mcp-toolkits.yaml` from the project root if present. A
+    toolkit resolves ONLY if the file declares a section for it — nothing is
+    implicit (FEAT-570).
 
     For each section:
-    - A file section with a built-in name replaces the built-in completely
-      (kwargs and other fields are not merged — file kwargs replace builtin kwargs).
     - New sections in the file are appended to the config.
     - Disabled sections (enabled: false) are retained in the config for inspection
       and control; they are filtered by consumers (runners, installers).
@@ -120,12 +104,13 @@ def load_toolkits_config(root: Path, config_path: Path | None = None) -> MCPTool
         config_path: Optional explicit config file path (the `parrot
             mcp-local --config` override). When given it is used instead of
             `<root>/.parrot/mcp-toolkits.yaml`, and — unlike the default
-            path, whose absence silently falls back to the built-ins — a
+            path, whose absence silently returns an empty config — a
             missing explicit file raises ValueError: an operator who named
             a file expects it to be read.
 
     Returns:
-        MCPToolkitsConfig with merged sections.
+        MCPToolkitsConfig with the file's sections (empty when the default
+        path is absent).
 
     Raises:
         ValueError: If the file exists but is malformed YAML, contains unknown
@@ -139,10 +124,9 @@ def load_toolkits_config(root: Path, config_path: Path | None = None) -> MCPTool
     else:
         config_path = Path(config_path)
 
-    # Start with built-in defaults (these will be overridden by file sections)
-    merged: dict[str, ToolkitSection] = {name: section.model_copy() for name, section in BUILTIN_TOOLKITS.items()}
+    merged: dict[str, ToolkitSection] = {}
 
-    # If file does not exist: builtins only for the default path; an
+    # If file does not exist: empty config for the default path; an
     # explicitly named file that is absent is operator error.
     if not config_path.exists():
         if explicit:

@@ -1,0 +1,12 @@
+# parrot:summary: Multi-driver schema discovery and validated read-only queries.
+# parrot:requires_llm: false
+# parrot:requires_dist:
+  database-query:
+    class: parrot.tools.databasequery.toolkit.DatabaseQueryToolkit
+    # This toolkit has NO allow_write / allow_raw_sql / dsn options — its
+    # constructor accepts only output_dir and static_dir, its DDL/DML guard is
+    # unconditional, and connection credentials are a per-call tool argument.
+    # Setting output_dir below is what exposes dq_save_result.
+    kwargs:
+      output_dir: {{repo_root}}/.parrot/db_results
+    env: {}

@@ -250,3 +250,26 @@ regenerated with no exclusions after the `xfail` fix). `black --check
 Orchestration note: same `parrot-sdd-coder` MCP task-id-format gap as
 TASK-1 — implemented via the sequential fallback loop. No per-model feedback
 recorded (tooling gap, not a coder delivery defect).
+
+### Addendum 2026-09-18 — `issue:bde3a98caed2` root cause corrected
+
+The "uvloop/libuv 0.21.0 DEVNULL fd-accounting" diagnosis in finding 4 above
+was wrong (the venv ran uvloop 0.22.1 throughout; the root pin is `>=0.22.1`).
+Actual cause, reproduced deterministically:
+
+1. Importing `parrot` makes navconfig `chdir` the pytest process to the
+   primary checkout.
+2. The harness was spawned with the inherited, *relative*
+   `PYTHONPATH=packages/ai-parrot/src` (the worktree convention), which the
+   child re-resolved against that new cwd — i.e. the primary checkout's source.
+3. While this hotfix lived only in its worktree, the primary checkout still
+   had the pre-fix `_create_process()` (no `stdin=DEVNULL`), so the harness ran
+   the PRE-fix launcher and the grandchild inherited the harness's stdin pipe —
+   exactly the `/proc/<pid>/fd` evidence in finding 1. The standalone repro
+   passed because it started from the worktree cwd with no prior `chdir`.
+
+Evidence: pre-fix launcher under uvloop 0.22.1 → grandchild fd 0 is the
+harness pipe; fixed launcher → `/dev/null`. The old test gave a FALSE PASS when
+run from a worktree holding pre-fix code. Fix: the harness is now pinned to the
+session's own `codex.py` (absolute `PYTHONPATH` + `samefile` guard, exit 3 on
+mismatch) and the `xfail` was removed. AC-2 is covered without reservation.

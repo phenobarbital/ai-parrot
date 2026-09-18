@@ -93,16 +93,33 @@ multi-task Execution Loop described below, unchanged.
 
 ### 0. Sync the Base Branch (FEAT-145)
 
-Read the spec's frontmatter to discover the base branch, then sync from origin:
+Read the spec's frontmatter to discover the base branch, then detect whether
+you were launched inside a linked worktree (the documented launch mode) or in
+the primary checkout:
 
 ```bash
 META=$(python -c "from pathlib import Path; from scripts.sdd.sdd_meta import parse; m = parse(Path('<spec-path>')); print(m.type, m.base_branch)")
 TYPE=$(echo "$META" | awk '{print $1}')
 BASE_BRANCH=$(echo "$META" | awk '{print $2}')
 
-git checkout "$BASE_BRANCH"
-git pull --ff-only origin "$BASE_BRANCH"
+if [ "$(git rev-parse --absolute-git-dir)" != "$(cd "$(git rev-parse --git-common-dir)" && pwd)" ]; then
+  IN_WORKTREE=1                      # linked worktree: primary checkout is read-only
+  git fetch origin "$BASE_BRANCH"    # updates shared refs only — never touches the primary tree
+else
+  IN_WORKTREE=0
+  git checkout "$BASE_BRANCH"
+  git pull --ff-only origin "$BASE_BRANCH"
+fi
 ```
+
+**Inside a linked worktree, NEVER `cd` into the primary checkout, and never run
+`git pull`, `checkout`, `merge`, `reset`, `stash` or `commit` against it (also not
+via `git -C <primary>`).** The Bash sandbox binds only the current checkout and
+the common `.git` directory writable; the primary checkout's working tree is
+mounted read-only, so those commands fail with `Read-only file system` — and a
+half-applied pull there would also clobber other sessions. `git fetch` works
+because it only writes the shared `.git`. Compare against `origin/$BASE_BRANCH`
+instead of the local `$BASE_BRANCH`.
 
 `base_branch` defaults to `dev` for `type: feature` and is fixed to `main`
 for `type: hotfix`. `staging` is also a valid `base_branch` for `type: feature`
@@ -143,10 +160,12 @@ Extract from the per-spec index header: `feature_id`, `feature` slug,
 `spec` path. Task list in dependency order is the `tasks[]` array filtered
 to status `"pending"` and topologically sorted on `depends_on`.
 
-### 2. Mark All Tasks as In-Progress (in place, on `<BASE_BRANCH>`)
+### 2. Mark All Tasks as In-Progress (in place)
 
-Update the per-spec index file in place (we are already on `BASE_BRANCH`
-from §0). For each task being worked on, set `status` → `"in-progress"`
+Update the per-spec index file in place. With `IN_WORKTREE=0` you are on
+`BASE_BRANCH` from §0; with `IN_WORKTREE=1` do it in the current worktree, on
+its feature branch — never switch to the primary checkout for this. For each
+task being worked on, set `status` → `"in-progress"`
 and `started_at` → now via `jq`:
 
 ```bash
@@ -161,29 +180,39 @@ git add "$INDEX"
 git commit -m "sdd: start FEAT-<ID> — <feature-slug> (<N> tasks)"
 ```
 
-### 3. Create the Worktree
+### 3. Ensure the Worktree
 
-The worktree branches from HEAD (which is `BASE_BRANCH` after §0). For
-features that's `dev`; for hotfixes that's `main`. The branch name follows
-the existing convention regardless of flow type.
+Provision it through the shared rule — never hand-build the name or the base
+ref (FEAT-552). The command is idempotent: it reuses an existing worktree and
+creates one only when absent.
 
 ```bash
-WORKTREE_NAME="feat-<FEAT-ID>-<feature-slug>"
-WORKTREE_PATH=".claude/worktrees/${WORKTREE_NAME}"
-
-# Check if worktree already exists
-git worktree list | grep "${WORKTREE_NAME}" && echo "Reusing existing worktree" || \
-  git worktree add -b "${WORKTREE_NAME}" "${WORKTREE_PATH}" HEAD
-
-cd "${WORKTREE_PATH}"
+WORKTREE_PATH=$(python -m scripts.sdd.ensure_worktree \
+  --slug "<feature-slug>" \
+  --feature-id "<FEAT-ID>" \
+  --spec "<spec-path>" \
+  --index "sdd/tasks/index/<feature-slug>.json")
+cd "$WORKTREE_PATH"
 ```
+
+For a hotfix (`type: hotfix` in the per-spec index header) pass
+`--jira-key <KEY>` instead of `--feature-id`. This is a real behaviour change:
+the previous block always produced `feat-<FEAT-ID>-<slug>` from `HEAD`, so a
+hotfix inherited unreleased `dev` commits (FEAT-466). Naming and base ref now
+come from `scripts.sdd.sdd_meta.plan_worktree`.
+
+If the command exits non-zero, STOP and report its message. Do not implement on
+`<BASE_BRANCH>`.
 
 ### 4. Verify SDD Files Are Visible
-```bash
-test -f sdd/tasks/index/<feature-slug>.json && echo "Per-spec index OK" || echo "INDEX MISSING"
-test -f <spec-path> && echo "Spec OK" || echo "SPEC MISSING"
-```
-If either is missing, STOP with a clear error message.
+
+Already enforced: §3 passed `--spec` and `--index`, and the CLI refuses to hand
+back a worktree in which either is missing. If you reached this point, both are
+present. A failure here means the base branch does not carry the task artifacts
+yet — fetch and re-run §3 rather than working around it. With `IN_WORKTREE=1`,
+§3 reuses the current worktree and will not refresh it: bring the artifacts in
+with `git merge origin/$BASE_BRANCH` *inside this worktree* (stop and report on
+a conflict), never by pulling in the primary checkout.
 
 ### 5. Read the Spec
 Read the spec file referenced by the tasks.

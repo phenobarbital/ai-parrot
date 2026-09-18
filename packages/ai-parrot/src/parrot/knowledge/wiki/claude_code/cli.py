@@ -3,7 +3,7 @@
 Subcommands:
     install    Wire the repo's wiki into Claude Code (CLAUDE.md
                section, PreToolUse nudge hook, /parrotwiki command,
-               git post-commit auto-upsert).
+               git post-commit auto-upsert, fast-jev-compaction plugin).
     uninstall  Remove every managed artifact.
     status     Show what is currently installed.
     hook       PreToolUse hook runtime (reads stdin; used internally).
@@ -23,7 +23,6 @@ from parrot.knowledge.wiki.claude_code.installer import (
     integration_status,
     uninstall_claude_integration,
 )
-from parrot.mcp.toolkit_seed import available_templates
 from parrot.knowledge.wiki.project import (
     WikiConfigError,
     find_project_root,
@@ -86,23 +85,29 @@ def claude() -> None:
     help="Install the opt-in PreToolUse read guard (FEAT-543) that denies unbounded reads of large files.",
 )
 @click.option(
-    "--toolkits",
-    "toolkits_",
-    default="",
-    help="Comma-separated toolkit sections to seed into .parrot/mcp-toolkits.yaml (e.g. sdd-coder,bounded-source).",
-)
-@click.option(
-    "--all-toolkits",
-    "all_toolkits",
-    is_flag=True,
-    default=False,
-    help="Seed every toolkit template shipped with this release.",
-)
-@click.option(
     "--approve-mcp/--no-approve-mcp",
     default=True,
     show_default=True,
     help="Authorize the managed MCP servers in .claude/settings.local.json.",
+)
+@click.option(
+    "--compaction/--no-compaction",
+    default=True,
+    show_default=True,
+    help="Install the fast-jev-compaction plugin (Jev-guided verbatim /compact) into .claude/settings.json.",
+)
+@click.option(
+    "--typesafe-api-key",
+    "typesafe_api_key",
+    default=None,
+    help="TypeSafe API key for the compaction plugin; stored in the git-ignored .claude/settings.local.json. "
+    "Omit to rely on TYPESAFE_API_KEY in the environment.",
+)
+@click.option(
+    "--plugin-cli/--no-plugin-cli",
+    default=True,
+    show_default=True,
+    help="Also run `claude plugin marketplace add` / `claude plugin install` when the claude CLI is on PATH.",
 )
 def install(
     path_: Optional[str],
@@ -111,21 +116,22 @@ def install(
     build_now: bool,
     bookstore: bool,
     tool_guards: bool,
-    toolkits_: str,
-    all_toolkits: bool,
     approve_mcp: bool,
+    compaction: bool,
+    typesafe_api_key: Optional[str],
+    plugin_cli: bool,
 ) -> None:
     """Install the wiki toolkit as Claude Code infrastructure.
 
     Writes a small config plus assistant-facing wiring so Claude Code
     consults the knowledge graph for codebase questions — preferring
     scoped `wikitoolkit query "<question>"` calls over grepping raw
-    files — and keeps the graph fresh on every git commit.
+    files — and keeps the graph fresh on every git commit. By default it
+    also enables the fast-jev-compaction plugin, which replaces Claude
+    Code's compaction summary with a verbatim history pruned by
+    TypeSafe's Jev model (`--no-compaction` to skip).
     """
     root = _resolve_root(path_)
-    names = sorted(
-        {n.strip() for n in toolkits_.split(",") if n.strip()} | (set(available_templates()) if all_toolkits else set())
-    )
     try:
         config = load_effective_config(root).config
         actions = install_claude_integration(
@@ -134,8 +140,10 @@ def install(
             git_hook=git_hook,
             gitignore=gitignore,
             bookstore=bookstore,
-            toolkits=names,
             approve_mcp=approve_mcp,
+            compaction=compaction,
+            typesafe_api_key=typesafe_api_key,
+            plugin_cli=plugin_cli,
         )
     except (RuntimeError, WikiConfigError, ValueError) as exc:
         raise click.ClickException(str(exc)) from exc
@@ -143,15 +151,7 @@ def install(
     for action in actions:
         click.echo(f"  ✓ {action}")
 
-    if not names:
-        templates = available_templates()
-        if templates:
-            click.echo(
-                f"  ℹ Use --toolkits=<name,...> or --all-toolkits to seed MCP toolkit servers. "
-                f"Available: {', '.join(templates)}"
-            )
-
-    if names or approve_mcp:
+    if approve_mcp:
         click.echo("  ℹ Start a new Claude Code session for the MCP servers to appear.")
 
     if tool_guards:
@@ -227,6 +227,9 @@ def status(path_: Optional[str], as_json: bool) -> None:
         "git_post_commit_hook": "git post-commit auto-upsert",
         "bookstore_mcp": "bookstore MCP (.mcp.json)",
         "bookstore_skill": "bookstore research skill",
+        "compaction_plugin": "fast-jev-compaction plugin (settings.json enabledPlugins)",
+        "compaction_function_hooks": "CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1 (settings.json env)",
+        "compaction_api_key": "TYPESAFE_API_KEY (environment or settings.local.json)",
     }
     for key, label in labels.items():
         mark = "✓" if info.get(key) else "✗"

@@ -64,7 +64,8 @@ class TestBuildResearchMcp:
         monkeypatch.delenv("DEV_LOOP_RESEARCH_MCP_TOOLKITS", raising=False)
         servers, tools = mcp_wiring.build_research_mcp(repo_root)
         assert "parrot-repo" in servers
-        # Disabled sections and undeclared built-ins are never auto-spawned.
+        # Disabled sections and undeclared names are never auto-spawned —
+        # nothing resolves implicitly (FEAT-570 hard cut).
         assert "parrot-disabled_one" not in servers
         assert "parrot-memory" not in servers
         assert "mcp__parrot-repo" in tools
@@ -77,9 +78,30 @@ class TestBuildResearchMcp:
         assert "--config" in args
         assert args[args.index("--config") + 1] == str(repo_root / ".parrot" / "mcp-toolkits.yaml")
 
-    def test_explicit_selection_may_name_builtins(self, mcp_wiring, repo_root, monkeypatch):
+    def test_explicit_selection_of_an_undeclared_name_warns_and_skips(self, mcp_wiring, repo_root, monkeypatch, caplog):
+        """FEAT-570 hard cut: naming a packaged-template name (e.g. `memory`)
+        explicitly does NOT resolve it unless `.parrot/mcp-toolkits.yaml`
+        actually declares a `memory:` section — nothing is implicit, not
+        even via an explicit `DEV_LOOP_RESEARCH_MCP_TOOLKITS` selection."""
         monkeypatch.setenv("DEV_LOOP_RESEARCH_MCP_TOOLKITS", "memory")
-        servers, tools = mcp_wiring.build_research_mcp(repo_root)
+        with caplog.at_level("WARNING"):
+            servers, tools = mcp_wiring.build_research_mcp(repo_root)
+        assert "parrot-memory" not in servers
+        assert "mcp__parrot-memory" not in tools
+        assert any("memory" in rec.message for rec in caplog.records)
+
+    def test_explicit_selection_resolves_a_declared_section(self, mcp_wiring, tmp_path, monkeypatch):
+        """Once `memory:` is declared, explicit selection resolves it — the
+        section is what makes it resolvable, not the name itself."""
+        (tmp_path / ".parrot").mkdir()
+        (tmp_path / ".parrot" / "mcp-toolkits.yaml").write_text(
+            "toolkits:\n"
+            "  memory:\n"
+            "    class: parrot.tools.working_memory.tool.WorkingMemoryToolkit\n"
+            "    kwargs: {}\n"
+        )
+        monkeypatch.setenv("DEV_LOOP_RESEARCH_MCP_TOOLKITS", "memory")
+        servers, tools = mcp_wiring.build_research_mcp(tmp_path)
         assert "parrot-memory" in servers
         assert "mcp__parrot-memory" in tools
 

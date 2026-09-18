@@ -1,4 +1,5 @@
-# Example FEAT-485 local-MCP toolkit config for the dev-loop consoles.
+# Example FEAT-485/FEAT-570 local-MCP toolkit config for the dev-loop
+# consoles.
 #
 # Copy this file to <repo-root>/.parrot/mcp-toolkits.yaml and adjust the
 # paths. Every enabled section becomes a `parrot mcp-local <name>` stdio
@@ -6,10 +7,16 @@
 # research seats (ResearchNode / IdeationNode dispatches) — see
 # mcp_wiring.build_research_mcp().
 #
+# FEAT-570 hard cut: nothing resolves implicitly — a name selected via
+# DEV_LOOP_RESEARCH_MCP_TOOLKITS (or `auto`) only serves if this file
+# declares a matching section. `scraping` / `browsing` / `memory` are
+# packaged templates you can seed with `parrot toolkits install <name>`
+# (or declare by hand, as shown below) — they are not automatic.
+#
 # Selection is controlled by DEV_LOOP_RESEARCH_MCP_TOOLKITS:
 #   auto (default)  → exactly the sections declared in this file
-#   repo,memory,... → an explicit comma list (may include the built-ins
-#                     scraping / browsing / memory)
+#   repo,memory,... → an explicit comma list — each name must still be a
+#                     section declared below (or added by you)
 
 toolkits:
   # FEAT-484: confined, strictly read-only repository access for research
@@ -31,3 +38,12 @@ toolkits:
       # still points at the base checkout, not the per-run clone.
       repo_root: /abs/path/to/your/checkout
       # enable_web_search: true   # opt-in DuckDuckGo web_search tool
+
+  # --- optional: declare a packaged template explicitly (uncomment and
+  # --- adjust) to make it available to DEV_LOOP_RESEARCH_MCP_TOOLKITS=auto
+  # --- or an explicit selection naming it. See examples/mcp-toolkits.yaml
+  # --- for the full annotated set of packaged templates.
+
+  # memory:
+  #   class: parrot.tools.working_memory.tool.WorkingMemoryToolkit
+  #   kwargs: {}
