@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-573
 **Date**: 2026-09-18
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 0.next
 
 > **Source**: `sdd/proposals/new-ui-cli-agents.brainstorm.md` (accepted 2026-09-18,
@@ -749,17 +749,17 @@ class _ServerBotProxy:
       async def load(self, name: str) -> "_ServerBotProxy":
           """``GET {server}/api/v1/chatbots/{name}`` (BotHandler, chat.py:166-186; 404 ⇒ AgentLoadError) — replaces loaders.py:394."""
       async def list_agents(self) -> List[Dict[str, Any]]:
-          """``GET {server}/api/v1/bots`` (ChatbotHandler.get → ``_get_all``, bots.py:649-660) — replaces loaders.py:424.
-          Payload shape is (unverified — check before use): accept a JSON list or ``{"agents": [...]}``; each item must expose ``name``."""
+          """``GET {server}/api/v1/bots`` (ChatbotHandler.get → ``_get_all``, bots.py:649-660, :711-766) — replaces loaders.py:424.
+          Payload (verified): ``{"agents": [{"name": str, "tags": [...], ...}, ...], "total": int}``; return the ``agents`` list."""
 
   class _ServerBotProxy:                                           # loaders.py:169
       capabilities: BackendCapabilities   # streaming=True, live_tool_events=True, usage=True, resume=False
       async def ask(self, question, session_id=None, user_id=None, output_mode=None, **kwargs) -> "_ServerResponse":
-          """``POST {server}/api/v1/agents/chat/{name}`` JSON ``{"query": question, "session_id":…, "stream": false}``
-          plus ``user_id`` only when not None (AgentTalk gives an explicit body user_id precedence over the
-          authenticated identity, agent.py:879-902) — replaces loaders.py:233."""
+          """``POST {server}/api/v1/agents/chat/{name}`` JSON ``{"query": question, "session_id":…, "stream": false}``.
+          **Never** sends ``user_id`` (Q8): AgentTalk gives an explicit body user_id precedence over the authenticated
+          identity (agent.py:879-902), so identity comes only from the bearer token — replaces loaders.py:233."""
       async def ask_stream(self, question, session_id=None, user_id=None, output_mode=None, **kwargs):
-          """``POST {server}/bots/{name}/stream/sse`` (stream.py:467) JSON ``{"prompt": question, "session_id":…, ["user_id":…]}``;
+          """``POST {server}/bots/{name}/stream/sse`` (stream.py:467) JSON ``{"prompt": question, "session_id":…}`` (no ``user_id``, Q8);
           parse ``data:`` lines: ``{"content": str}`` → yield str; ``{"type": "tool_event", "data": {...}}`` → yield
           ToolStarted/ToolFinished/ToolFailed; ``{"type": "ai_message", "data": {...}}`` → build the final
           ``_ServerResponse``; ``[DONE]`` ends; ``error:`` lines raise AgentLoadError. Replaces the local chunker loaders.py:274-288."""
@@ -937,8 +937,10 @@ class _ServerBotProxy:
   async def _run(...) -> None:
       """Sequence: loader → --list → mode = resolve_ui_mode(UIMode(ui), stdin_isatty=sys.stdin.isatty(),
       stdout_isatty=sys.stdout.isatty(), term=os.environ.get('TERM')) → if not interactive and name is None:
-      exit 2 'agent name required when stdin is not a terminal' → picker only when interactive → load bot →
-      permission ctx (unchanged) → config (user_id = user_id or (None if server else 'cli-user'),
+      exit 2 'agent name required when stdin is not a terminal' → if server and user_id: exit 2
+      '--user is not allowed with --server; identity comes from the bearer token (--token / PARROT_SERVER_TOKEN)' (Q8)
+      → picker only when interactive → load bot →
+      permission ctx (unchanged) → config (user_id = None if server else (user_id or 'cli-user'),
       resume_session_id resolved from 'last' via load_session_pointer) → runner = TurnRunner(bot, config,
       capabilities=getattr(bot, 'capabilities', None)) → INLINE & interactive: AgentREPL.run();
       INLINE & non-TTY: AgentREPL.run_batch(sys.stdin); TUI: ``from parrot.cli.tui.app import AgentWorkspaceApp``
@@ -1107,7 +1109,7 @@ def sse_frames():
 - [ ] **AC13 (G7)** Streamed responses render Markdown, code highlighting and wrapping at the same fidelity as `--no-stream`.
 - [ ] **AC14 (G7)** Log records emitted during a stream do not interleave with streamed tokens, and no code path mutates logging handler levels (inline: rendered inside the `LiveRegion`; TUI: routed to the log drawer).
 - [ ] **AC15 (G7)** `AgentREPL.add_post_turn_hook()` exists and `agentd attach` uses it; `_wrap_with_event_drain` is deleted.
-- [ ] **AC16 (G8)** No reference to `/api/agent/` or `/api/agents` remains in `loaders.py`; server mode uses `GET /api/v1/bots`, `GET /api/v1/chatbots/{name}`, `POST /api/v1/agents/chat/{agent_id}`, `POST /bots/{bot_id}/stream/sse`, sending `Authorization: Bearer` when `--token`/`PARROT_SERVER_TOKEN` is set and omitting `user_id` unless `--user` was given.
+- [ ] **AC16 (G8)** No reference to `/api/agent/` or `/api/agents` remains in `loaders.py`; server mode uses `GET /api/v1/bots`, `GET /api/v1/chatbots/{name}`, `POST /api/v1/agents/chat/{agent_id}`, `POST /bots/{bot_id}/stream/sse`, sending `Authorization: Bearer` when `--token`/`PARROT_SERVER_TOKEN` is set and never sending `user_id` (Q8).
 - [ ] **AC17 (G8)** `StreamHandler.stream_sse` emits `tool_event` frames scoped to its own request; two concurrent SSE requests never receive each other's tool events (test).
 - [ ] **AC18 (G9)** Ctrl+C during a turn cancels the active task, closes the async iterator, marks the partial answer *interrupted*, does not append a history turn and does not run post-turn hooks; Ctrl+C at an idle prompt does not exit (inline hint / TUI double-press).
 - [ ] **AC19 (G9)** A backend exception mid-stream preserves the prompt and partial answer, shows a recoverable error, and never automatically replays the request.
@@ -1118,6 +1120,7 @@ def sse_frames():
 - [ ] **AC24** `sdd/specs/new-cli-infra.spec.md` status reads `superseded by FEAT-573`.
 - [ ] **AC25** `pytest packages/ai-parrot/tests/cli/ -v` (incl. `test_integration.py` and `devloop/`), `pytest packages/ai-parrot-server/tests/handlers/test_stream*.py -v`, `pytest packages/ai-parrot-integrations/tests/agentd/ -v` pass; `ruff check` and `mypy` clean on changed files.
 - [ ] **AC26** `docs/cli/parrot-agent.md` documents modes, keys, resume, history location, server mode and non-TTY usage.
+- [ ] **AC27 (Q8)** `parrot agent --server URL --user X` exits 2 with a hint naming `--token`/`PARROT_SERVER_TOKEN`; `CliRunner` test.
 
 ---
 
@@ -1395,7 +1398,7 @@ class StreamHandler(BaseHandler)                                                
   `ask_stream` and unsubscribe in `finally`; callbacks must only enqueue.
 - **`user_id` semantics in server mode.** AgentTalk honours an explicit body
   `user_id` over the authenticated identity (`agent.py:879-902`). The CLI
-  therefore omits `user_id` unless `--user` is passed (§8 Q8).
+  therefore never sends `user_id` in server mode and refuses `--user` there (§8 Q8).
 - **`/quit` raises `SystemExit`.** Kept for the `agentd` handlers and existing
   tests; inline propagates, TUI maps it to `App.exit(0)`.
 - **`agent` function name** must stay `agent` for `LazyGroup`
@@ -1453,8 +1456,8 @@ class StreamHandler(BaseHandler)                                                
 
 ## 8. Open Questions
 
-> Resolved items carry the brainstorm answer verbatim; unresolved items are
-> owned and do not block task decomposition unless marked.
+> All items resolved as of 2026-09-18. Brainstorm answers are carried verbatim;
+> Q8–Q11 were resolved after the design-research cross-check.
 
 - [x] Confirm feature/dev defaults and intended audience — *Resolved in brainstorm*: `type: feature`, `base_branch: dev` confirmed. Audience is developers and operators interacting with registered Parrot agents. → frontmatter, §1.
 - [x] Is the target a persistent full-screen workspace or improved inline chat? — *Resolved in brainstorm*: Full-screen Textual workspace (Option B) with the inline Rich chat retained as the fallback mode for non-TTY and `--ui inline`. → §2 Overview, G1/G2, M11.
@@ -1464,10 +1467,10 @@ class StreamHandler(BaseHandler)                                                
 - [x] Choose mode defaults, non-TTY behavior, keybindings and supported terminal/platform baseline — *Resolved in brainstorm*: `--ui auto` is the default — TUI when stdin and stdout are TTYs and `TERM` is not `dumb`, inline Rich otherwise. Non-TTY never emits full-screen escapes, never opens the interactive picker (agent name required), and reads queries line by line from stdin. Keybindings and platform baseline are spec decisions. → M2, M13, AC1/AC2; keybindings fixed in M11 (Linux/macOS terminals with xterm-compatible `TERM`; Windows Terminal supported by Textual but not part of the acceptance run).
 - [x] Identify supported tool-event and cancellation contracts for standalone/server backends; decide whether backend expansion is deferred — *Resolved in brainstorm*: Backend expansion is NOT deferred — live tool progress is in v1 scope, so the spec must define the tool-event contract for the standalone streaming path and the server. Cancellation remains local (task cancellation + stream close); no remote rollback is claimed. → M3, M4, M5, M10, AC6/AC7/AC17/AC18.
 - [x] **FEAT-519 G7 (generalised wizard, Module 5)** — *Decided by spec author*: not required by the workspace; deferred to a follow-up spec rather than absorbed (§1 Non-Goals). Flagged for the user in the `/sdd-spec` report.
-- [ ] **Q8 — Server-mode identity and PBAC** (codex S3, escalated). The CLI now sends a bearer token and omits `user_id` unless `--user` is given, but the device-code flow (`build_cli_permission_context`) is standalone-only and AgentTalk still lets an explicit body `user_id` override the authenticated identity. Should `--user` be refused in `--server` mode, and should the server ignore body `user_id` for authenticated requests? — *Owner: Jesus Lara*. Does not block decomposition; M9 implements the token + omission behaviour as specified.
-- [ ] **Q9 — Server-side conversation history for resume** (codex S4, escalated). No endpoint exists; v1 resume is standalone-only (`capabilities.resume=False` in server and daemon modes). Add `GET /api/v1/agents/chat/{agent_id}/history?session_id=` in a follow-up? — *Owner: Jesus Lara*. Does not block.
-- [ ] **Q10 — Daemon live tool events.** Add a `chat.tool_event` notification to the agentd protocol so `parrot attach` shows live tool rows? — *Owner: agentd maintainer*. Out of v1; does not block.
-- [ ] **Q11 — `list_agents` payload shape of `GET /api/v1/bots`** (`bots.py:_get_all`, not read in detail). M9 accepts a list or `{"agents": [...]}`; the implementing task must read `_get_all` and pin the shape in its blueprint. — *Owner: implementer of M9*. Does not block.
+- [x] **Q8 — Server-mode identity and PBAC** (codex S3, escalated) — *Resolved by user 2026-09-18*: in `--server` mode identity comes only from the bearer token. The CLI never sends `user_id` to the server, and `parrot agent --server URL --user X` exits 2 with a hint. The server is unchanged in this feature; hardening AgentTalk/StreamHandler to ignore a body `user_id` on authenticated requests is a separate ticket. → M9 (`ask`/`ask_stream` never include `user_id`), M13, AC16, AC27.
+- [x] **Q9 — Server-side conversation history for resume** (codex S4, escalated) — *Resolved by user 2026-09-18*: standalone-only in v1. Server and daemon backends report `capabilities.resume=False`; `--session`/`/resume` print a clear error there. A history endpoint (`GET /api/v1/agents/chat/{agent_id}/history?session_id=`) is a follow-up spec once the server memory read path is designed. → §1 Non-Goals, M9, M15, AC9.
+- [x] **Q10 — Daemon live tool events** — *Resolved by user 2026-09-18*: deferred. The daemon backend reports `live_tool_events=False` and `parrot attach` shows final tool details only; a `chat.tool_event` notification is filed as a follow-up agentd feature. → §1 Non-Goals, M15.
+- [x] **Q11 — `list_agents` payload shape of `GET /api/v1/bots`** — *Resolved by spec author 2026-09-18 from `bots.py:711-766`*: `_get_all()` returns `{"agents": [...], "total": N}`; every entry has `name` and `tags` (DB entries via `_bot_model_to_dict`, registry entries via `_registry_agent_to_dict` also carry `module_path`, `file_path`, `singleton`, `at_startup`, `priority`). PBAC may filter the list when a PDP is configured. → M9.
 
 ---
 
@@ -1483,8 +1486,8 @@ class StreamHandler(BaseHandler)                                                
 |---|---|---|---|---|
 | S1 | Define a presentation-neutral turn event protocol first (architecture) | CONFIRM | Exactly the brainstorm's "presentation-neutral event model"; typed `TurnEvent` family + one `TurnRunner` consumed by both presenters | §2 Data Models, M4, M5, AC5 |
 | S2 | Reconcile `ServerAgentProxy` with the canonical server API (api) | CONFIRM | Verified: `/api/agent/*` routes do not exist; canonical routes are `/api/v1/agents/chat/{agent_id}` (AgentTalk) and `/bots/{bot_id}/stream/sse`. Chose SSE over AgentTalk's `\n\x00` chunked transport for streaming because typed frames are needed for tool events | M9, M10, AC16, §6 Does NOT Exist |
-| S3 | Specify the authenticated identity boundary for server mode (risk) | CONFIRM + ESCALATE | Bearer token (`--token`/`PARROT_SERVER_TOKEN`) added and `user_id` omitted by default (verified precedence at `agent.py:879-902`). Whether to refuse `--user` in server mode and harden the server is the user's call | M9, M13, AC16, §8 Q8 |
-| S4 | Add a session repository and an explicit resume contract (architecture) | CONFIRM (partial) + ESCALATE | Explicit store: `cli_state_dir()` with `0o600` history file and per-agent `SessionPointer`; resume via `bot.get_conversation_history`; display history vs bot memory distinguished. No locking (single-writer, documented). Server-side history endpoint escalated | M2, M5, M7 (`/resume`), AC9/AC10, §8 Q9 |
+| S3 | Specify the authenticated identity boundary for server mode (risk) | CONFIRM (escalation resolved) | Bearer token (`--token`/`PARROT_SERVER_TOKEN`) added; `user_id` never sent in server mode and `--user` refused there (user decision, §8 Q8; verified precedence at `agent.py:879-902`). Server hardening is a separate ticket | M9, M13, AC16, AC27, §8 Q8 |
+| S4 | Add a session repository and an explicit resume contract (architecture) | CONFIRM (partial) + ESCALATE | Explicit store: `cli_state_dir()` with `0o600` history file and per-agent `SessionPointer`; resume via `bot.get_conversation_history`; display history vs bot memory distinguished. No locking (single-writer, documented). Server-side history endpoint deferred to a follow-up (user decision, §8 Q9) | M2, M5, M7 (`/resume`), AC9/AC10, §8 Q9 |
 | S5 | Decouple slash commands from `AgentREPL` and its renderer (api) | CONFIRM (partial) | `CommandContext`/`RendererProtocol` protocols, `ctx.runner` for session mutation, `suspend()` for `CLIHumanChannel`. **Rejected part**: changing `/quit` away from `SystemExit` — kept for agentd handlers and existing tests; hosts catch it | M7, M12, AC20 |
 | S6 | Make cancellation an explicit turn lifecycle (risk) | CONFIRM | `TurnRunner` owns the active task; `CancelledError` → `aclose()` → `TurnCancelled(partial)`; cancelled turns never recorded; no remote rollback claimed | M5, M8, M11, AC18 |
 | S7 | Define live tool-event semantics instead of inferring them from text (api) | CONFIRM | `call_id = span_id`, `seq` ordering, started/finished/failed states, `args_summary` only (already truncated by the emitter), `result_size_bytes` not results, `BackendCapabilities.live_tool_events` fallback | §2 Data Models, M4, M5, M10, AC6–AC8 |
@@ -1493,7 +1496,7 @@ class StreamHandler(BaseHandler)                                                
 | S10 | Build a backend-by-mode test matrix, not only mock no-raise tests (testing) | CONFIRM (partial) | Deterministic event-stream tests per backend, Textual `run_test()` interaction tests, resize via `run_test(size=)`, pipe checks via `CliRunner`. **Rejected part**: PTY-level SIGINT/resize harness — no PTY test dependency (`pexpect`) is in the workspace; covered by unit-level cancellation and Textual headless resize instead | §4, M16 |
 | S11 | Pin and lazily load a resolver-verified Textual version (architecture) | CONFIRM | `textual>=8.2,<9`, `uv lock` verified across 3.11/3.12/3.13 in M0, lazy import in `agent_repl.py` with an AC | M0, M13, AC22/AC23 |
 
-Summary: **11** confirmed (3 partial) · **0** rejected outright · **2** escalated (S3, S4 → §8 Q8, Q9).
+Summary: **11** confirmed (3 partial) · **0** rejected outright · **2** escalated (S3, S4 → §8 Q8, Q9 — both resolved by the user on 2026-09-18).
 
 ---
 
@@ -1502,3 +1505,4 @@ Summary: **11** confirmed (3 partial) · **0** rejected outright · **2** escala
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-09-18 | Jesus Lara | Initial draft from accepted brainstorm; absorbs FEAT-519 Modules 1–4, 6–8; design research (codex, 11 suggestions) folded in |
+| 0.2 | 2026-09-18 | Jesus Lara | Resolved Q8 (no user_id in server mode, `--user` refused), Q9 (resume standalone-only), Q10 (daemon tool events deferred), Q11 (`/api/v1/bots` payload pinned); AC27 added |
