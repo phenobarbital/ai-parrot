@@ -342,7 +342,7 @@
       "feature_id": "FEAT-573",
       "feature": "new-ui-cli-agents",
       "spec": "sdd/specs/new-ui-cli-agents.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -354,8 +354,8 @@
       "parallelism_notes": "Imports BackendCapabilities from TASK-3403 (cli/events.py), CommandContext typing from TASK-3406 (cli/commands.py) and AgentREPL.add_post_turn_hook from TASK-3407 (cli/repl.py). Sole editor of ai-parrot-integrations agentd/cli.py and agentd/proxy.py.",
       "assigned_to": null,
       "started_at": "2026-09-18T05:16:16+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3415-agentd-post-turn-hook-migration.md"
+      "completed_at": "2026-09-18T10:17:50+00:00",
+      "file": "sdd/tasks/completed/TASK-3415-agentd-post-turn-hook-migration.md"
     },
     {
       "id": "TASK-3416",
