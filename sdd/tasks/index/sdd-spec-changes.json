@@ -54,7 +54,7 @@
       "feature_id": "FEAT-576",
       "feature": "sdd-spec-changes",
       "spec": "sdd/specs/sdd-spec-changes.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -64,8 +64,8 @@
       "parallelism_notes": "imports parse_taxonomy, normalize_project, normalize_tag from TASK-3459 (scripts/sdd/sdd_meta.py)",
       "assigned_to": null,
       "started_at": "2026-09-18T22:32:44+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3461-doc-taxonomy-cli.md"
+      "completed_at": "2026-09-18T22:45:00+00:00",
+      "file": "sdd/tasks/completed/TASK-3461-doc-taxonomy-cli.md"
     },
     {
       "id": "TASK-3462",
