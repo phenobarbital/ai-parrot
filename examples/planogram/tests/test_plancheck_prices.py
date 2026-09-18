@@ -1,4 +1,5 @@
 """Unit tests for plancheck.prices (FEAT-565, TASK-3343). No network, no real OCR models."""
+
 from __future__ import annotations
 
 import sys
@@ -38,14 +39,30 @@ def _row_slots(row: int, *, untagged_last: bool = False) -> list[Slot]:
         slot_id = f"img_r{row + 1:02d}_s{i + 1:02d}"
         if untagged_last and i == TAGS_PER_ROW - 1:
             slots.append(
-                Slot(slot_id=slot_id, image_id="img", row=row, index=i, box=box, tag_id=None, tag_box=None,
-                     origin="gap_filled")
+                Slot(
+                    slot_id=slot_id,
+                    image_id="img",
+                    row=row,
+                    index=i,
+                    box=box,
+                    tag_id=None,
+                    tag_box=None,
+                    origin="gap_filled",
+                )
             )
         else:
             tag_box = (x, top, x + TAG_W, top + TAG_H)
             slots.append(
-                Slot(slot_id=slot_id, image_id="img", row=row, index=i, box=box, tag_id=f"tag_{slot_id}",
-                     tag_box=tag_box, origin="tag_anchored")
+                Slot(
+                    slot_id=slot_id,
+                    image_id="img",
+                    row=row,
+                    index=i,
+                    box=box,
+                    tag_id=f"tag_{slot_id}",
+                    tag_box=tag_box,
+                    origin="tag_anchored",
+                )
             )
     return slots
 

@@ -2,6 +2,7 @@
 
 Local OCR first, vision-LLM contact-sheet fallback. Digits are never inferred.
 """
+
 from __future__ import annotations
 
 import asyncio
