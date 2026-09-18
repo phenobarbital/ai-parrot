@@ -25,6 +25,8 @@ from parrot.clients.jev import (
     JevAuthenticationError,
     JevClient,
     JevConfigurationError,
+    JevConnectionError,
+    JevError,
     JevModel,
     MODEL_ALIASES,
     JevRateLimitError,
@@ -375,6 +377,15 @@ def test_answers_to_type_handles_missing_and_enum_fields():
         answers_to_type(response, Strict)
 
 
+def test_answers_to_type_rejects_answer_kind_mismatch():
+    class Model(BaseModel):
+        urgent: bool
+
+    mismatched = SystemOneResponse.model_validate(_sample_response(answers={"urgent": SAMPLE_ANSWERS["severity"]}))
+    with pytest.raises(JevSchemaError, match="expects a noul answer"):
+        answers_to_type(mismatched, Model)
+
+
 # --------------------------------------------------------------------------- #
 # Construction & registration                                                 #
 # --------------------------------------------------------------------------- #
@@ -721,6 +732,76 @@ async def test_server_error_exhausts_retries(stub_api):
         await client.close()
     assert excinfo.value.status == 503
     assert len(calls) == 3
+
+
+async def test_session_default_timeout_is_enforced(stub_api):
+    import asyncio as _asyncio
+
+    async def slow(request):
+        await _asyncio.sleep(1.0)
+        return web.json_response(_sample_response())
+
+    server, calls = await stub_api(slow)
+    client = _client(server, timeout=0.2, max_retries=0)
+    try:
+        with pytest.raises(JevConnectionError, match="timed out"):
+            await client.system_one("x", {"u": Noul()})
+        with pytest.raises(JevConnectionError, match="timed out"):
+            await client.system_one("x", {"u": Noul()}, timeout=0.1)
+    finally:
+        await client.close()
+    assert len(calls) == 2
+
+
+async def test_connection_failure_is_retried_then_raised():
+    client = JevClient(api_key="k", base_url="http://127.0.0.1:9", max_retries=1)
+    with patch.object(JevClient, "_retry_wait", return_value=0.0):
+        try:
+            with pytest.raises(JevConnectionError, match="Connection error"):
+                await client.system_one("x", {"u": Noul()})
+        finally:
+            await client.close()
+
+
+async def test_constructor_noul_threshold_applies_to_ask_and_invoke(stub_api):
+    server, _ = await stub_api()
+
+    class Flag(BaseModel):
+        urgent: bool
+
+    strict = _client(server, noul_threshold=0.9)
+    lenient = _client(server, noul_threshold=0.5)
+    try:
+        assert (await strict.ask("x", structured_output=Flag)).output.urgent is False
+        assert (await strict.invoke("x", output_type=Flag)).output.urgent is False
+        assert (await lenient.ask("x", structured_output=Flag)).output.urgent is True
+    finally:
+        await strict.close()
+        await lenient.close()
+
+
+async def test_list_models_error_and_malformed_body(stub_api):
+    async def forbidden(request):
+        return web.json_response({"error": "nope"}, status=403)
+
+    server, _ = await stub_api(models_handler=forbidden)
+    client = _client(server)
+    try:
+        with pytest.raises(JevAuthenticationError):
+            await client.list_models()
+    finally:
+        await client.close()
+
+    async def malformed(request):
+        return web.json_response({"models": [{"description": "missing name"}]})
+
+    server, _ = await stub_api(models_handler=malformed)
+    client = _client(server)
+    try:
+        with pytest.raises(JevError, match="Invalid models response"):
+            await client.list_models()
+    finally:
+        await client.close()
 
 
 async def test_resume_is_not_supported():

@@ -161,6 +161,17 @@ def questions_from_type(output_type: Type[BaseModel]) -> Dict[str, Question]:
     return {name: question_for_field(name, field) for name, field in output_type.model_fields.items()}
 
 
+def _expected_answer_type(annotation: Any) -> Optional[type]:
+    """The answer class a derived question for ``annotation`` must produce, or ``None`` when unconstrained."""
+    if annotation is bool:
+        return NoulAnswer
+    if _choice_labels(annotation) is not None:
+        return ChoiceAnswer
+    if annotation in (int, float):
+        return ScoreAnswer
+    return None
+
+
 def answers_to_type(
     response: SystemOneResponse,
     output_type: Type[BaseModel],
@@ -178,7 +189,8 @@ def answers_to_type(
         A validated ``output_type`` instance.
 
     Raises:
-        JevSchemaError: When a required field got no answer, or validation fails.
+        JevSchemaError: When a required field got no answer, an answer's kind
+            does not match the field's primitive, or validation fails.
     """
     values: Dict[str, Any] = {}
     for name, field in output_type.model_fields.items():
@@ -188,6 +200,12 @@ def answers_to_type(
                 raise JevSchemaError(f"Jev returned no answer for required field {name!r}")
             continue
         annotation = _unwrap_optional(field.annotation)
+        expected = _expected_answer_type(annotation)
+        if expected is not None and not isinstance(answer, expected):
+            raise JevSchemaError(
+                f"Field {name!r} expects a {expected.model_fields['type'].default} answer but Jev returned "
+                f"{answer.type!r}; the questions sent do not match {output_type.__name__}"
+            )
         if isinstance(answer, NoulAnswer):
             values[name] = answer.is_yes(noul_threshold)
         elif isinstance(answer, ChoiceAnswer):

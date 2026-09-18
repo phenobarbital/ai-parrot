@@ -61,7 +61,7 @@ from .exceptions import (
     api_error,
 )
 from .models import (
-    JSONContent,
+    JSONContent as StateContent,
     JevModel,
     ListModelsResponse,
     ModelMetadata,
@@ -182,9 +182,7 @@ class JevClient(AbstractClient):
         resolved_url = (base_url or config.get("TYPESAFE_BASE_URL") or DEFAULT_BASE_URL).rstrip("/")
         if isinstance(model, Enum):
             model = model.value
-        resolved_model = (
-            model or kwargs.pop("model", None) or config.get("TYPESAFE_DEFAULT_MODEL") or self._default_model
-        )
+        resolved_model = model or config.get("TYPESAFE_DEFAULT_MODEL") or self._default_model
         kwargs["model"] = resolved_model
         super().__init__(api_key=resolved_key, **kwargs)
         # Re-set after super().__init__ because AbstractClient may overwrite
@@ -282,7 +280,9 @@ class JevClient(AbstractClient):
         if body is not None:
             payload = json.dumps(body, ensure_ascii=False, default=_json_default).encode("utf-8")
             headers["Content-Type"] = "application/json"
-        client_timeout = aiohttp.ClientTimeout(total=timeout) if timeout is not None else None
+        # Always pass a concrete ClientTimeout: aiohttp treats an explicit
+        # ``timeout=None`` as "no timeout", NOT as "use the session default".
+        client_timeout = aiohttp.ClientTimeout(total=self.timeout if timeout is None else timeout)
 
         async def attempt() -> Tuple[Any, Optional[str]]:
             try:
@@ -318,7 +318,7 @@ class JevClient(AbstractClient):
         return model or self.model or self._default_model
 
     @staticmethod
-    def _coerce_state(state: Any) -> JSONContent:
+    def _coerce_state(state: Any) -> StateContent:
         """Normalise ``state`` to text / JSON object / JSON array.
 
         Args:
@@ -351,7 +351,7 @@ class JevClient(AbstractClient):
         prompt: str,
         system_prompt: Optional[str] = None,
         history: Optional[Sequence[HistoryMessage]] = None,
-    ) -> JSONContent:
+    ) -> StateContent:
         """Compose the state document for a chat-style call.
 
         A bare prompt is sent as text. When a system prompt or history is

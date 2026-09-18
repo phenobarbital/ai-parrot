@@ -47,12 +47,15 @@ class JevModel(str, Enum):
 
 
 #: Alias → versioned model ID, as documented on https://docs.typesafe.ai/models.
+#: Informational: aliases are sent as-is and resolved server-side; the response's
+#: ``model`` field reports the versioned ID that answered.
 MODEL_ALIASES: Dict[str, str] = {
     JevModel.JEV_LATEST.value: JevModel.JEV_1_13.value,
     JevModel.JEV_PREVIEW.value: JevModel.JEV_1_13.value,
 }
 
-#: Documented Jev 1.13 limits. Input is charged per token; output tokens are free.
+#: Documented Jev 1.13 limits, for callers sizing state/questions or budgeting
+#: cost. Informational only — the client performs no pre-flight enforcement.
 MAX_REQUEST_TOKENS = 64_000
 """Context budget per request: ``state`` plus all questions combined (64k)."""
 MAX_STATE_PLUS_QUESTION_TOKENS = 32_000
