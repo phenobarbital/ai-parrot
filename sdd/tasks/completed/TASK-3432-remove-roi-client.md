@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-574 — New Planogram Compliance Pipeline
 **Spec**: `sdd/specs/new-planogram-pipeline.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-3430, TASK-3431
@@ -290,7 +290,13 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (FEAT-574 orchestrator)
+**Date**: 2026-09-19
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+Implemented in fallback sequential mode (parrot-sdd-coder server unresponsive).
+Precondition verified: the only roi_client left in parrot_pipelines was the assignment in abstract.py. Deleted the comment + lazy GoogleGenAIClient import + self.roi_client block from AbstractPipeline.__init__ (sentinel constructor, resolved_backend and open_image(enhance=) untouched). Guard test test_no_hardcoded_models.py (line scan for model="gemini | roi_client | GoogleGenAIClient, handlers/ excluded until TASK-3447, reports every path:line; vacuous-pass guard; inspect.getsource check) — probe with a temporary '# roi_client' line failed as expected and was reverted.
+Deviation (file outside the declared list): packages/ai-parrot-pipelines/tests/planogram_cycle/test_pipeline_base.py (TASK-3427) asserted 'pipe.roi_client is not None' per TASK-3427's own time-limited AC; the two asserts now read 'assert not hasattr(pipe, "roi_client")'. Without it the suite this task's AC names would fail.
+Tests: guard 3 passed; test_planogram_types 26; test_pipeline_base 7; test_legacy_run_orchestration 10. ruff clean on abstract.py.
+Remaining grep hits for GoogleGenAIClient: handlers/planogram_compliance.py:144/146 only (owned by TASK-3447).
+
+Seat: orchestrator (fallback) · Backend: native · Model: claude-opus-5 · Attempts: 1

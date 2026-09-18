@@ -288,7 +288,7 @@
       "feature_id": "FEAT-574",
       "feature": "new-planogram-pipeline",
       "spec": "sdd/specs/new-planogram-pipeline.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -299,8 +299,8 @@
       "parallelism_notes": "roi_client can only be deleted from abstract.py after TASK-3430 and TASK-3431 removed its last users in the type files; same file as TASK-3427 (reached through TASK-3429).",
       "assigned_to": null,
       "started_at": "2026-09-18T22:34:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3432-remove-roi-client.md"
+      "completed_at": "2026-09-18T23:51:59+00:00",
+      "file": "sdd/tasks/completed/TASK-3432-remove-roi-client.md"
     },
     {
       "id": "TASK-3433",
