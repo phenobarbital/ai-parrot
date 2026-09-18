@@ -23,6 +23,16 @@ def quiet_renderer():
     set_console(None)
 
 
+@pytest.fixture(autouse=True)
+def _isolated_parrot_home(tmp_path, monkeypatch):
+    """Every test in this module runs a real turn, which unconditionally calls
+    ``save_session_pointer()`` (session.py:227). Isolate ``PARROT_HOME`` so tests
+    never write to (or depend on the writability of) the developer's real
+    ``~/.parrot`` — same convention as ``test_modes.py``.
+    """
+    monkeypatch.setenv("PARROT_HOME", str(tmp_path))
+
+
 @pytest.mark.asyncio
 async def test_repl_no_logger_level_mutation(mock_agent, quiet_renderer):
     renderer, _ = quiet_renderer
