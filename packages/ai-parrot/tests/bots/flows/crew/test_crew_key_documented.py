@@ -1,4 +1,5 @@
 """CREW_AI_KEY is documented (FEAT-575 AC10, TASK-3458)."""
+
 from pathlib import Path
 
 import pytest
